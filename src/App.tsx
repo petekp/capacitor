@@ -1,8 +1,8 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
-import type { DashboardData, Project, ProjectDetails, Artifact, SuggestedProject, Plugin as PluginType, ProjectStatus, ProjectSessionState, SessionStatesFile } from "./types";
+import type { DashboardData, Project, ProjectDetails, Artifact, SuggestedProject, Plugin as PluginType, ProjectStatus, ProjectSessionState, SessionStatesFile, BringToFrontResult } from "./types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -76,6 +76,43 @@ function App() {
   const [globalHookInstalled, setGlobalHookInstalled] = useState<boolean | null>(null);
   const [installingHook, setInstallingHook] = useState(false);
   const [addingProject, setAddingProject] = useState(false);
+
+  const prevSessionStatesRef = useRef<Record<string, ProjectSessionState>>({});
+  const audioContextRef = useRef<AudioContext | null>(null);
+
+  const playReadySound = useCallback(() => {
+    if (!audioContextRef.current) {
+      audioContextRef.current = new AudioContext();
+    }
+    const ctx = audioContextRef.current;
+    const oscillator = ctx.createOscillator();
+    const gainNode = ctx.createGain();
+
+    oscillator.connect(gainNode);
+    gainNode.connect(ctx.destination);
+
+    oscillator.type = "sine";
+    oscillator.frequency.setValueAtTime(880, ctx.currentTime);
+    oscillator.frequency.setValueAtTime(1100, ctx.currentTime + 0.1);
+
+    gainNode.gain.setValueAtTime(0.15, ctx.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+
+    oscillator.start(ctx.currentTime);
+    oscillator.stop(ctx.currentTime + 0.3);
+  }, []);
+
+  useEffect(() => {
+    const prev = prevSessionStatesRef.current;
+    for (const [path, state] of Object.entries(sessionStates)) {
+      const prevState = prev[path];
+      if (state.state === "ready" && prevState?.state !== "ready" && prevState?.state !== undefined) {
+        playReadySound();
+        break;
+      }
+    }
+    prevSessionStatesRef.current = sessionStates;
+  }, [sessionStates, playReadySound]);
 
   const loadSessionStates = useCallback(async (projects: Project[]) => {
     if (projects.length === 0) return;
@@ -239,9 +276,15 @@ function App() {
 
   const handleLaunchTerminal = async (path: string, runClaude: boolean = false) => {
     try {
-      await invoke("launch_in_terminal", { path, runClaude });
+      const result = await invoke<BringToFrontResult>("bring_project_windows_to_front", {
+        path,
+        launchIfNone: runClaude
+      });
+      if (result.focused_windows.length > 0) {
+        console.log("Focused windows:", result.focused_windows.map(w => `${w.app_name} (${w.window_type})`).join(", "));
+      }
     } catch (err) {
-      console.error("Failed to launch terminal:", err);
+      console.error("Failed to bring windows to front:", err);
     }
   };
 
@@ -724,49 +767,26 @@ function ProjectCard({
       onClick={onSelect}
       className={`p-3 rounded-lg border bg-(--color-card) hover:bg-(--color-muted)/50 cursor-default transition-colors ${getCardStateClass()}`}
     >
-      <div className="flex items-center justify-between gap-3 mb-2">
-        <h3 className="font-bold text-lg leading-tight tracking-[-0.02em] truncate">
+      <div className="mb-2">
+        <h3 className="font-bold text-lg leading-tight tracking-[-0.02em]">
           {project.name}
         </h3>
-        <div className="flex items-center gap-2 shrink-0">
-          {contextPercent > 0 && (
-            <div className="flex items-center gap-1.5 opacity-60">
-              <div className="w-12 h-1 bg-(--color-muted) rounded-full overflow-hidden">
-                <div
-                  className={`h-full rounded-full transition-all ${getProgressBarColor(contextPercent)}`}
-                  style={{ width: `${contextPercent}%` }}
-                />
-              </div>
-              <span className={`text-[9px] tabular-nums text-muted-foreground`}>
-                {contextPercent}%
-              </span>
-            </div>
-          )}
-          {statusConfig && (
-            <div className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded ${statusConfig.bgClass}`}>
-              <span className={`w-1.5 h-1.5 rounded-full ${statusConfig.dotClass} animate-pulse`} />
-              <span className={`text-[10px] font-semibold uppercase tracking-wide ${statusConfig.textClass}`}>
-                {statusConfig.text}
-              </span>
-            </div>
-          )}
-        </div>
       </div>
 
       {(sessionState?.working_on || sessionState?.next_step || hasStatus) ? (
         <div className="space-y-1 mb-3">
           {(sessionState?.working_on || status?.working_on) && (
-            <div className="text-sm text-foreground font-medium line-clamp-2 leading-snug">
+            <div className="text-sm text-foreground font-medium leading-snug">
               {sessionState?.working_on || status?.working_on}
             </div>
           )}
           {(sessionState?.next_step || status?.next_step) && (
-            <div className="text-[13px] text-foreground/70 line-clamp-1 leading-snug">
+            <div className="text-[13px] text-foreground/70 leading-snug">
               <span className="text-muted-foreground">→</span> {sessionState?.next_step || status?.next_step}
             </div>
           )}
           {status?.blocker && (
-            <div className="text-xs text-red-400 line-clamp-1 leading-snug">
+            <div className="text-xs text-red-400 leading-snug">
               <span className="font-medium">Blocked:</span> {status.blocker}
             </div>
           )}
@@ -777,7 +797,34 @@ function ProjectCard({
         </div>
       )}
 
-      <div className="flex items-center justify-end pt-2 border-t border-(--color-border)">
+      <div className="flex items-center justify-between pt-2 border-t border-(--color-border)">
+        <div className="flex items-center gap-3">
+          <div className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded min-w-[90px] ${statusConfig ? statusConfig.bgClass : "bg-transparent"}`}>
+            {statusConfig ? (
+              <>
+                <span className={`w-1.5 h-1.5 rounded-full ${statusConfig.dotClass} animate-pulse`} />
+                <span className={`text-[10px] font-semibold uppercase tracking-wide ${statusConfig.textClass}`}>
+                  {statusConfig.text}
+                </span>
+              </>
+            ) : (
+              <span className="text-[10px] text-transparent">Placeholder</span>
+            )}
+          </div>
+          {contextPercent > 0 && (
+            <div className="flex items-center gap-1.5 opacity-50">
+              <div className="w-12 h-1 bg-(--color-muted) rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all ${getProgressBarColor(contextPercent)}`}
+                  style={{ width: `${contextPercent}%` }}
+                />
+              </div>
+              <span className="text-[9px] tabular-nums text-muted-foreground">
+                {contextPercent}%
+              </span>
+            </div>
+          )}
+        </div>
         <div className="flex items-center gap-1">
           <Button
             variant="ghost"
@@ -944,40 +991,6 @@ function ProjectDetailPanel({
             )}
           </div>
 
-          {details.tasks.length > 0 && (
-            <section className="border border-(--color-border) rounded-(--radius-lg) overflow-hidden">
-              <div className="flex items-center gap-2 px-4 py-2.5 bg-(--color-muted) border-b border-(--color-border)">
-                <Icon name="list" className="text-(--color-muted-foreground)" />
-                <span className="text-xs font-medium uppercase tracking-wide text-(--color-muted-foreground)">Recent Sessions</span>
-                <span className="text-xs text-(--color-muted-foreground)/60">
-                  {details.tasks.length}
-                </span>
-              </div>
-              <div className="divide-y divide-(--color-border)">
-                {details.tasks.slice(0, 10).map((task) => (
-                  <div
-                    key={task.id}
-                    className="px-4 py-2.5 flex items-start justify-between gap-4 hover:bg-(--color-muted)/50"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm truncate">
-                        {task.summary || task.first_message || (
-                          <span className="text-muted-foreground italic">Session {task.name.slice(0, 8)}</span>
-                        )}
-                      </div>
-                      <div className="text-xs text-muted-foreground font-mono mt-0.5 truncate">
-                        {task.name}
-                      </div>
-                    </div>
-                    <span className="text-xs text-muted-foreground tabular-nums shrink-0">
-                      {task.last_modified}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
-
           {details.project.stats && (details.project.stats.total_input_tokens > 0 || details.project.stats.total_output_tokens > 0) && (
             <section className="border border-(--color-border) rounded-(--radius-lg) overflow-hidden">
               <div className="flex items-center gap-2 px-4 py-2.5 bg-(--color-muted) border-b border-(--color-border)">
@@ -1049,6 +1062,40 @@ function ProjectDetailPanel({
                     )}
                   </div>
                 </div>
+              </div>
+            </section>
+          )}
+
+          {details.tasks.length > 0 && (
+            <section className="border border-(--color-border) rounded-(--radius-lg) overflow-hidden">
+              <div className="flex items-center gap-2 px-4 py-2.5 bg-(--color-muted) border-b border-(--color-border)">
+                <Icon name="list" className="text-(--color-muted-foreground)" />
+                <span className="text-xs font-medium uppercase tracking-wide text-(--color-muted-foreground)">Recent Sessions</span>
+                <span className="text-xs text-(--color-muted-foreground)/60">
+                  {details.tasks.length}
+                </span>
+              </div>
+              <div className="divide-y divide-(--color-border)">
+                {details.tasks.slice(0, 10).map((task) => (
+                  <div
+                    key={task.id}
+                    className="px-4 py-2.5 flex items-start justify-between gap-4 hover:bg-(--color-muted)/50"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm truncate">
+                        {task.summary || task.first_message || (
+                          <span className="text-muted-foreground italic">Session {task.name.slice(0, 8)}</span>
+                        )}
+                      </div>
+                      <div className="text-xs text-muted-foreground font-mono mt-0.5 truncate">
+                        {task.name}
+                      </div>
+                    </div>
+                    <span className="text-xs text-muted-foreground tabular-nums shrink-0">
+                      {task.last_modified}
+                    </span>
+                  </div>
+                ))}
               </div>
             </section>
           )}

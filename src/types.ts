@@ -95,3 +95,51 @@ export interface ProjectStatus {
   blocker: string | null;
   updated_at: string | null;
 }
+
+export type SessionState = "working" | "ready" | "idle" | "compacting";
+
+export interface ContextInfo {
+  percent_used: number;
+  tokens_used: number;
+  context_size: number;
+  updated_at: string | null;
+}
+
+export interface ProjectSessionState {
+  state: SessionState;
+  state_changed_at: string | null;
+  session_id: string | null;
+  working_on: string | null;
+  next_step: string | null;
+  context: ContextInfo | null;
+}
+
+export interface SessionStatesFile {
+  version: number;
+  projects: Record<string, SessionStateEntry>;
+}
+
+export interface SessionStateEntry {
+  state: string;
+  state_changed_at: string | null;
+  session_id: string | null;
+  working_on: string | null;
+  next_step: string | null;
+  context?: {
+    percent_used: number;
+    tokens_used: number;
+    context_size: number;
+    updated_at: string | null;
+  };
+}
+
+export interface FocusedWindow {
+  app_name: string;
+  window_type: "terminal" | "browser" | "ide";
+  details: string | null;
+}
+
+export interface BringToFrontResult {
+  focused_windows: FocusedWindow[];
+  launched_terminal: boolean;
+}

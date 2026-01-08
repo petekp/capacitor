@@ -1,13 +1,13 @@
+use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::mpsc;
 use std::time::{Duration, SystemTime};
-use regex::Regex;
-use walkdir::WalkDir;
-use notify::{Watcher, RecommendedWatcher, RecursiveMode, Event, EventKind};
 use tauri::Emitter;
+use walkdir::WalkDir;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct GlobalConfig {
@@ -130,6 +130,58 @@ pub struct SuggestedProject {
     pub has_project_indicators: bool,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum SessionState {
+    Working,
+    Ready,
+    Idle,
+    Compacting,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ContextInfo {
+    pub percent_used: u32,
+    pub tokens_used: u64,
+    pub context_size: u64,
+    pub updated_at: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ProjectSessionState {
+    pub state: SessionState,
+    pub state_changed_at: Option<String>,
+    pub session_id: Option<String>,
+    pub working_on: Option<String>,
+    pub next_step: Option<String>,
+    pub context: Option<ContextInfo>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct SessionStatesFile {
+    pub version: u32,
+    pub projects: HashMap<String, SessionStateEntry>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ContextInfoEntry {
+    pub percent_used: Option<u32>,
+    pub tokens_used: Option<u64>,
+    pub context_size: Option<u64>,
+    pub updated_at: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct SessionStateEntry {
+    #[serde(default)]
+    pub state: String,
+    pub state_changed_at: Option<String>,
+    pub session_id: Option<String>,
+    pub working_on: Option<String>,
+    pub next_step: Option<String>,
+    pub context: Option<ContextInfoEntry>,
+}
+
 #[derive(Debug, Deserialize)]
 struct PluginManifest {
     name: String,
@@ -172,8 +224,7 @@ fn save_hud_config(config: &HudConfig) -> Result<(), String> {
     let path = get_hud_config_path().ok_or("Could not find config path")?;
     let content = serde_json::to_string_pretty(config)
         .map_err(|e| format!("Failed to serialize config: {}", e))?;
-    fs::write(&path, content)
-        .map_err(|e| format!("Failed to write config: {}", e))
+    fs::write(&path, content).map_err(|e| format!("Failed to write config: {}", e))
 }
 
 fn get_stats_cache_path() -> Option<PathBuf> {
@@ -189,10 +240,9 @@ fn load_stats_cache() -> StatsCache {
 
 fn save_stats_cache(cache: &StatsCache) -> Result<(), String> {
     let path = get_stats_cache_path().ok_or("Could not find cache path")?;
-    let content = serde_json::to_string(cache)
-        .map_err(|e| format!("Failed to serialize cache: {}", e))?;
-    fs::write(&path, content)
-        .map_err(|e| format!("Failed to write cache: {}", e))
+    let content =
+        serde_json::to_string(cache).map_err(|e| format!("Failed to serialize cache: {}", e))?;
+    fs::write(&path, content).map_err(|e| format!("Failed to write cache: {}", e))
 }
 
 fn parse_stats_from_content(content: &str, stats: &mut ProjectStats) {
@@ -247,16 +297,21 @@ fn parse_stats_from_content(content: &str, stats: &mut ProjectStats) {
         let ts = &cap[1];
         let date = ts.split('T').next().unwrap_or(ts);
 
-        if stats.first_activity.is_none() || stats.first_activity.as_ref().map(|s| s.as_str()) > Some(date) {
+        if stats.first_activity.is_none() || stats.first_activity.as_deref() > Some(date) {
             stats.first_activity = Some(date.to_string());
         }
-        if stats.last_activity.is_none() || stats.last_activity.as_ref().map(|s| s.as_str()) < Some(date) {
+        if stats.last_activity.is_none() || stats.last_activity.as_deref() < Some(date) {
             stats.last_activity = Some(date.to_string());
         }
     }
 }
 
-fn compute_project_stats(claude_projects_dir: &PathBuf, encoded_name: &str, cache: &mut StatsCache, project_path: &str) -> ProjectStats {
+fn compute_project_stats(
+    claude_projects_dir: &std::path::Path,
+    encoded_name: &str,
+    cache: &mut StatsCache,
+    project_path: &str,
+) -> ProjectStats {
     let project_dir = claude_projects_dir.join(encoded_name);
 
     if !project_dir.exists() {
@@ -271,7 +326,7 @@ fn compute_project_stats(claude_projects_dir: &PathBuf, encoded_name: &str, cach
     if let Ok(entries) = fs::read_dir(&project_dir) {
         for entry in entries.filter_map(|e| e.ok()) {
             let path = entry.path();
-            if path.extension().map_or(false, |ext| ext == "jsonl") {
+            if path.extension().is_some_and(|ext| ext == "jsonl") {
                 let filename = entry.file_name().to_string_lossy().to_string();
                 let metadata = entry.metadata().ok();
 
@@ -286,7 +341,8 @@ fn compute_project_stats(claude_projects_dir: &PathBuf, encoded_name: &str, cach
                 current_files.insert(filename.clone(), CachedFileInfo { size, mtime });
 
                 let cached_file = cached.and_then(|c| c.files.get(&filename));
-                let is_new_or_modified = cached_file.map_or(true, |cf| cf.size != size || cf.mtime != mtime);
+                let is_new_or_modified =
+                    cached_file.map_or(true, |cf| cf.size != size || cf.mtime != mtime);
 
                 if is_new_or_modified {
                     needs_recompute = true;
@@ -307,22 +363,31 @@ fn compute_project_stats(claude_projects_dir: &PathBuf, encoded_name: &str, cach
         }
     }
 
-    let mut stats = ProjectStats::default();
-    stats.session_count = current_files.len() as u32;
+    let mut stats = ProjectStats {
+        session_count: current_files.len() as u32,
+        ..Default::default()
+    };
 
-    for entry in fs::read_dir(&project_dir).into_iter().flatten().filter_map(|e| e.ok()) {
+    for entry in fs::read_dir(&project_dir)
+        .into_iter()
+        .flatten()
+        .filter_map(|e| e.ok())
+    {
         let path = entry.path();
-        if path.extension().map_or(false, |ext| ext == "jsonl") {
+        if path.extension().is_some_and(|ext| ext == "jsonl") {
             if let Ok(content) = fs::read_to_string(&path) {
                 parse_stats_from_content(&content, &mut stats);
             }
         }
     }
 
-    cache.projects.insert(project_path.to_string(), CachedProjectStats {
-        files: current_files,
-        stats: stats.clone(),
-    });
+    cache.projects.insert(
+        project_path.to_string(),
+        CachedProjectStats {
+            files: current_files,
+            stats: stats.clone(),
+        },
+    );
 
     stats
 }
@@ -341,36 +406,30 @@ fn count_artifacts_in_dir(dir: &PathBuf, artifact_type: &str) -> usize {
     }
 
     match artifact_type {
-        "skills" => {
-            WalkDir::new(dir)
-                .min_depth(1)
-                .max_depth(1)
-                .into_iter()
-                .filter_map(|e| e.ok())
-                .filter(|e| e.file_type().is_dir())
-                .filter(|e| {
-                    let skill_md = e.path().join("SKILL.md");
-                    let skill_md_lower = e.path().join("skill.md");
-                    skill_md.exists() || skill_md_lower.exists()
-                })
-                .count()
-        }
-        "commands" | "agents" => {
-            WalkDir::new(dir)
-                .min_depth(1)
-                .max_depth(1)
-                .into_iter()
-                .filter_map(|e| e.ok())
-                .filter(|e| {
-                    e.path().extension().map_or(false, |ext| ext == "md")
-                })
-                .count()
-        }
+        "skills" => WalkDir::new(dir)
+            .min_depth(1)
+            .max_depth(1)
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_type().is_dir())
+            .filter(|e| {
+                let skill_md = e.path().join("SKILL.md");
+                let skill_md_lower = e.path().join("skill.md");
+                skill_md.exists() || skill_md_lower.exists()
+            })
+            .count(),
+        "commands" | "agents" => WalkDir::new(dir)
+            .min_depth(1)
+            .max_depth(1)
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().extension().is_some_and(|ext| ext == "md"))
+            .count(),
         _ => 0,
     }
 }
 
-fn count_hooks_in_dir(dir: &PathBuf) -> usize {
+fn count_hooks_in_dir(dir: &std::path::Path) -> usize {
     let hooks_json = dir.join("hooks").join("hooks.json");
     if hooks_json.exists() {
         1
@@ -387,12 +446,14 @@ fn parse_frontmatter(content: &str) -> Option<(String, String)> {
     let name_re = Regex::new(r"(?m)^name:\s*(.+)$").ok()?;
     let desc_re = Regex::new(r"(?m)^description:\s*(.+)$").ok()?;
 
-    let name = name_re.captures(frontmatter)
+    let name = name_re
+        .captures(frontmatter)
         .and_then(|c| c.get(1))
         .map(|m| m.as_str().trim().to_string())
         .unwrap_or_default();
 
-    let description = desc_re.captures(frontmatter)
+    let description = desc_re
+        .captures(frontmatter)
         .and_then(|c| c.get(1))
         .map(|m| m.as_str().trim().to_string())
         .unwrap_or_default();
@@ -409,7 +470,12 @@ fn collect_artifacts_from_dir(dir: &PathBuf, artifact_type: &str, source: &str) 
 
     match artifact_type {
         "skill" => {
-            for entry in WalkDir::new(dir).min_depth(1).max_depth(1).into_iter().filter_map(|e| e.ok()) {
+            for entry in WalkDir::new(dir)
+                .min_depth(1)
+                .max_depth(1)
+                .into_iter()
+                .filter_map(|e| e.ok())
+            {
                 if entry.file_type().is_dir() {
                     let skill_md = entry.path().join("SKILL.md");
                     let skill_path = if skill_md.exists() {
@@ -424,13 +490,20 @@ fn collect_artifacts_from_dir(dir: &PathBuf, artifact_type: &str, source: &str) 
                     };
 
                     if let Ok(content) = fs::read_to_string(&skill_path) {
-                        let (name, description) = parse_frontmatter(&content)
-                            .unwrap_or_else(|| {
-                                (entry.file_name().to_string_lossy().to_string(), String::new())
+                        let (name, description) =
+                            parse_frontmatter(&content).unwrap_or_else(|| {
+                                (
+                                    entry.file_name().to_string_lossy().to_string(),
+                                    String::new(),
+                                )
                             });
                         artifacts.push(Artifact {
                             artifact_type: "skill".to_string(),
-                            name: if name.is_empty() { entry.file_name().to_string_lossy().to_string() } else { name },
+                            name: if name.is_empty() {
+                                entry.file_name().to_string_lossy().to_string()
+                            } else {
+                                name
+                            },
                             description,
                             source: source.to_string(),
                             path: skill_path.to_string_lossy().to_string(),
@@ -440,12 +513,19 @@ fn collect_artifacts_from_dir(dir: &PathBuf, artifact_type: &str, source: &str) 
             }
         }
         "command" | "agent" => {
-            for entry in WalkDir::new(dir).min_depth(1).max_depth(1).into_iter().filter_map(|e| e.ok()) {
-                if entry.path().extension().map_or(false, |ext| ext == "md") {
+            for entry in WalkDir::new(dir)
+                .min_depth(1)
+                .max_depth(1)
+                .into_iter()
+                .filter_map(|e| e.ok())
+            {
+                if entry.path().extension().is_some_and(|ext| ext == "md") {
                     if let Ok(content) = fs::read_to_string(entry.path()) {
-                        let (name, description) = parse_frontmatter(&content)
-                            .unwrap_or_else(|| {
-                                let file_stem = entry.path().file_stem()
+                        let (name, description) =
+                            parse_frontmatter(&content).unwrap_or_else(|| {
+                                let file_stem = entry
+                                    .path()
+                                    .file_stem()
                                     .map(|s| s.to_string_lossy().to_string())
                                     .unwrap_or_default();
                                 (file_stem, String::new())
@@ -453,7 +533,9 @@ fn collect_artifacts_from_dir(dir: &PathBuf, artifact_type: &str, source: &str) 
                         artifacts.push(Artifact {
                             artifact_type: artifact_type.to_string(),
                             name: if name.is_empty() {
-                                entry.path().file_stem()
+                                entry
+                                    .path()
+                                    .file_stem()
                                     .map(|s| s.to_string_lossy().to_string())
                                     .unwrap_or_default()
                             } else {
@@ -475,13 +557,34 @@ fn collect_artifacts_from_dir(dir: &PathBuf, artifact_type: &str, source: &str) 
 
 fn strip_markdown(text: &str) -> String {
     let mut result = text.to_string();
-    result = Regex::new(r"\*\*([^*]+)\*\*").unwrap().replace_all(&result, "$1").to_string();
-    result = Regex::new(r"\*([^*]+)\*").unwrap().replace_all(&result, "$1").to_string();
-    result = Regex::new(r"__([^_]+)__").unwrap().replace_all(&result, "$1").to_string();
-    result = Regex::new(r"_([^_]+)_").unwrap().replace_all(&result, "$1").to_string();
-    result = Regex::new(r"`([^`]+)`").unwrap().replace_all(&result, "$1").to_string();
-    result = Regex::new(r"^#+\s*").unwrap().replace_all(&result, "").to_string();
-    result = Regex::new(r"\[([^\]]+)\]\([^)]+\)").unwrap().replace_all(&result, "$1").to_string();
+    result = Regex::new(r"\*\*([^*]+)\*\*")
+        .unwrap()
+        .replace_all(&result, "$1")
+        .to_string();
+    result = Regex::new(r"\*([^*]+)\*")
+        .unwrap()
+        .replace_all(&result, "$1")
+        .to_string();
+    result = Regex::new(r"__([^_]+)__")
+        .unwrap()
+        .replace_all(&result, "$1")
+        .to_string();
+    result = Regex::new(r"_([^_]+)_")
+        .unwrap()
+        .replace_all(&result, "$1")
+        .to_string();
+    result = Regex::new(r"`([^`]+)`")
+        .unwrap()
+        .replace_all(&result, "$1")
+        .to_string();
+    result = Regex::new(r"^#+\s*")
+        .unwrap()
+        .replace_all(&result, "")
+        .to_string();
+    result = Regex::new(r"\[([^\]]+)\]\([^)]+\)")
+        .unwrap()
+        .replace_all(&result, "$1")
+        .to_string();
     result
 }
 
@@ -491,10 +594,13 @@ fn extract_text_from_content(content: &serde_json::Value) -> Option<String> {
     }
 
     if let Some(arr) = content.as_array() {
-        let texts: Vec<String> = arr.iter()
+        let texts: Vec<String> = arr
+            .iter()
             .filter_map(|item| {
                 if item.get("type").and_then(|t| t.as_str()) == Some("text") {
-                    item.get("text").and_then(|t| t.as_str()).map(|s| s.to_string())
+                    item.get("text")
+                        .and_then(|t| t.as_str())
+                        .map(|s| s.to_string())
                 } else {
                     None
                 }
@@ -517,12 +623,22 @@ fn extract_session_data(session_path: &std::path::Path) -> SessionExtract {
 
     match session_path.file_name().and_then(|f| f.to_str()) {
         Some(f) if !f.starts_with("agent-") => {}
-        _ => return SessionExtract { first_message: None, summary: None },
+        _ => {
+            return SessionExtract {
+                first_message: None,
+                summary: None,
+            }
+        }
     }
 
     let file = match fs::File::open(session_path) {
         Ok(f) => f,
-        Err(_) => return SessionExtract { first_message: None, summary: None },
+        Err(_) => {
+            return SessionExtract {
+                first_message: None,
+                summary: None,
+            }
+        }
     };
 
     let reader = BufReader::new(file);
@@ -532,7 +648,7 @@ fn extract_session_data(session_path: &std::path::Path) -> SessionExtract {
     let mut first_command: Option<String> = None;
     let mut last_summary: Option<String> = None;
 
-    for line in reader.lines().filter_map(|l| l.ok()) {
+    for line in reader.lines().map_while(Result::ok) {
         if let Some(ref re) = summary_re {
             if let Some(cap) = re.captures(&line) {
                 last_summary = Some(cap[1].to_string());
@@ -545,7 +661,10 @@ fn extract_session_data(session_path: &std::path::Path) -> SessionExtract {
 
         if let Ok(json) = serde_json::from_str::<serde_json::Value>(&line) {
             let msg_type = json.get("type").and_then(|t| t.as_str());
-            let is_meta = json.get("isMeta").and_then(|v| v.as_bool()).unwrap_or(false);
+            let is_meta = json
+                .get("isMeta")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
 
             if is_meta {
                 continue;
@@ -604,16 +723,32 @@ fn format_relative_time(system_time: SystemTime) -> String {
         "just now".to_string()
     } else if secs < 3600 {
         let mins = secs / 60;
-        if mins == 1 { "1 minute ago".to_string() } else { format!("{} minutes ago", mins) }
+        if mins == 1 {
+            "1 minute ago".to_string()
+        } else {
+            format!("{} minutes ago", mins)
+        }
     } else if secs < 86400 {
         let hours = secs / 3600;
-        if hours == 1 { "1 hour ago".to_string() } else { format!("{} hours ago", hours) }
+        if hours == 1 {
+            "1 hour ago".to_string()
+        } else {
+            format!("{} hours ago", hours)
+        }
     } else if secs < 604800 {
         let days = secs / 86400;
-        if days == 1 { "yesterday".to_string() } else { format!("{} days ago", days) }
+        if days == 1 {
+            "yesterday".to_string()
+        } else {
+            format!("{} days ago", days)
+        }
     } else {
         let weeks = secs / 604800;
-        if weeks == 1 { "1 week ago".to_string() } else { format!("{} weeks ago", weeks) }
+        if weeks == 1 {
+            "1 week ago".to_string()
+        } else {
+            format!("{} weeks ago", weeks)
+        }
     }
 }
 
@@ -627,7 +762,7 @@ fn get_claude_md_preview(path: &PathBuf) -> Option<String> {
     }
 }
 
-fn count_tasks_in_project(claude_projects_dir: &PathBuf, encoded_name: &str) -> u32 {
+fn count_tasks_in_project(claude_projects_dir: &std::path::Path, encoded_name: &str) -> u32 {
     let project_dir = claude_projects_dir.join(encoded_name);
     if !project_dir.exists() {
         return 0;
@@ -638,7 +773,7 @@ fn count_tasks_in_project(claude_projects_dir: &PathBuf, encoded_name: &str) -> 
         .map(|entries| {
             entries
                 .filter_map(|e| e.ok())
-                .filter(|e| e.path().extension().map_or(false, |ext| ext == "jsonl"))
+                .filter(|e| e.path().extension().is_some_and(|ext| ext == "jsonl"))
                 .count() as u32
         })
         .unwrap_or(0)
@@ -664,11 +799,22 @@ fn load_dashboard() -> Result<DashboardData, String> {
             None
         },
         skills_dir: skills_dir.as_ref().map(|p| p.to_string_lossy().to_string()),
-        commands_dir: commands_dir.as_ref().map(|p| p.to_string_lossy().to_string()),
+        commands_dir: commands_dir
+            .as_ref()
+            .map(|p| p.to_string_lossy().to_string()),
         agents_dir: agents_dir.as_ref().map(|p| p.to_string_lossy().to_string()),
-        skill_count: skills_dir.as_ref().map(|d| count_artifacts_in_dir(d, "skills")).unwrap_or(0),
-        command_count: commands_dir.as_ref().map(|d| count_artifacts_in_dir(d, "commands")).unwrap_or(0),
-        agent_count: agents_dir.as_ref().map(|d| count_artifacts_in_dir(d, "agents")).unwrap_or(0),
+        skill_count: skills_dir
+            .as_ref()
+            .map(|d| count_artifacts_in_dir(d, "skills"))
+            .unwrap_or(0),
+        command_count: commands_dir
+            .as_ref()
+            .map(|d| count_artifacts_in_dir(d, "commands"))
+            .unwrap_or(0),
+        agent_count: agents_dir
+            .as_ref()
+            .map(|d| count_artifacts_in_dir(d, "agents"))
+            .unwrap_or(0),
     };
 
     let plugins = load_plugins(&claude_dir).unwrap_or_default();
@@ -681,7 +827,7 @@ fn load_dashboard() -> Result<DashboardData, String> {
     })
 }
 
-fn load_plugins(claude_dir: &PathBuf) -> Result<Vec<Plugin>, String> {
+fn load_plugins(claude_dir: &std::path::Path) -> Result<Vec<Plugin>, String> {
     let registry_path = claude_dir.join("plugins").join("installed_plugins.json");
     if !registry_path.exists() {
         return Ok(Vec::new());
@@ -742,7 +888,7 @@ fn load_plugins(claude_dir: &PathBuf) -> Result<Vec<Plugin>, String> {
     Ok(plugins)
 }
 
-fn has_project_indicators(project_path: &PathBuf) -> bool {
+fn has_project_indicators(project_path: &std::path::Path) -> bool {
     let indicators = [
         ".git",
         "package.json",
@@ -762,10 +908,16 @@ fn has_project_indicators(project_path: &PathBuf) -> bool {
         "pubspec.yaml",
     ];
 
-    indicators.iter().any(|indicator| project_path.join(indicator).exists())
+    indicators
+        .iter()
+        .any(|indicator| project_path.join(indicator).exists())
 }
 
-fn build_project_from_path(path: &str, claude_dir: &PathBuf, stats_cache: &mut StatsCache) -> Option<Project> {
+fn build_project_from_path(
+    path: &str,
+    claude_dir: &std::path::Path,
+    stats_cache: &mut StatsCache,
+) -> Option<Project> {
     let project_path = PathBuf::from(path);
     if !project_path.exists() {
         return None;
@@ -775,18 +927,40 @@ fn build_project_from_path(path: &str, claude_dir: &PathBuf, stats_cache: &mut S
     let projects_dir = claude_dir.join("projects");
 
     let display_path = if path.starts_with("/Users/") {
-        format!("~/{}", path.split('/').skip(3).collect::<Vec<_>>().join("/"))
+        format!(
+            "~/{}",
+            path.split('/').skip(3).collect::<Vec<_>>().join("/")
+        )
     } else {
         path.to_string()
     };
 
-    let project_name = path.split('/').last().unwrap_or(path).to_string();
+    let project_name = path.split('/').next_back().unwrap_or(path).to_string();
 
     let claude_project_dir = projects_dir.join(&encoded_name);
-    let last_modified = claude_project_dir.metadata()
-        .ok()
-        .and_then(|m| m.modified().ok());
-    let last_active = last_modified.map(|t| format_relative_time(t));
+
+    let mut most_recent_mtime: Option<SystemTime> = None;
+    if let Ok(entries) = fs::read_dir(&claude_project_dir) {
+        for entry in entries.flatten() {
+            let entry_path = entry.path();
+            if entry_path.extension().is_some_and(|e| e == "jsonl") {
+                if entry_path
+                    .file_stem()
+                    .is_some_and(|s| s.to_string_lossy().starts_with("agent-"))
+                {
+                    continue;
+                }
+                if let Ok(metadata) = entry_path.metadata() {
+                    if let Ok(mtime) = metadata.modified() {
+                        if most_recent_mtime.map_or(true, |t| mtime > t) {
+                            most_recent_mtime = Some(mtime);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    let last_active = most_recent_mtime.map(format_relative_time);
 
     let claude_md_path = project_path.join("CLAUDE.md");
     let claude_md_exists = claude_md_path.exists();
@@ -820,7 +994,7 @@ fn build_project_from_path(path: &str, claude_dir: &PathBuf, stats_cache: &mut S
     })
 }
 
-fn load_projects_internal(claude_dir: &PathBuf) -> Result<Vec<Project>, String> {
+fn load_projects_internal(claude_dir: &std::path::Path) -> Result<Vec<Project>, String> {
     let config = load_hud_config();
     let projects_dir = claude_dir.join("projects");
     let mut stats_cache = load_stats_cache();
@@ -831,7 +1005,8 @@ fn load_projects_internal(claude_dir: &PathBuf) -> Result<Vec<Project>, String> 
         if let Some(project) = build_project_from_path(path, claude_dir, &mut stats_cache) {
             let encoded_name = path.replace('/', "-");
             let claude_project_dir = projects_dir.join(&encoded_name);
-            let sort_time = claude_project_dir.metadata()
+            let sort_time = claude_project_dir
+                .metadata()
                 .ok()
                 .and_then(|m| m.modified().ok())
                 .unwrap_or(SystemTime::UNIX_EPOCH);
@@ -865,18 +1040,40 @@ fn load_project_details(path: String) -> Result<ProjectDetails, String> {
     let projects_dir = claude_dir.join("projects");
 
     let display_path = if path.starts_with("/Users/") {
-        format!("~/{}", path.split('/').skip(3).collect::<Vec<_>>().join("/"))
+        format!(
+            "~/{}",
+            path.split('/').skip(3).collect::<Vec<_>>().join("/")
+        )
     } else {
         path.clone()
     };
 
-    let project_name = path.split('/').last().unwrap_or(&path).to_string();
+    let project_name = path.split('/').next_back().unwrap_or(&path).to_string();
 
     let project_folder = projects_dir.join(&encoded_name);
-    let last_modified = project_folder.metadata()
-        .ok()
-        .and_then(|m| m.modified().ok());
-    let last_active = last_modified.map(|t| format_relative_time(t));
+
+    let mut most_recent_mtime: Option<SystemTime> = None;
+    if let Ok(entries) = fs::read_dir(&project_folder) {
+        for entry in entries.flatten() {
+            let entry_path = entry.path();
+            if entry_path.extension().is_some_and(|e| e == "jsonl") {
+                if entry_path
+                    .file_stem()
+                    .is_some_and(|s| s.to_string_lossy().starts_with("agent-"))
+                {
+                    continue;
+                }
+                if let Ok(metadata) = entry_path.metadata() {
+                    if let Ok(mtime) = metadata.modified() {
+                        if most_recent_mtime.map_or(true, |t| mtime > t) {
+                            most_recent_mtime = Some(mtime);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    let last_active = most_recent_mtime.map(format_relative_time);
 
     let claude_md_path = project_path.join("CLAUDE.md");
     let claude_md_exists = claude_md_path.exists();
@@ -900,7 +1097,9 @@ fn load_project_details(path: String) -> Result<ProjectDetails, String> {
     let task_count = count_tasks_in_project(&projects_dir, &encoded_name);
 
     let stats_cache = load_stats_cache();
-    let stats = stats_cache.projects.get(&path)
+    let stats = stats_cache
+        .projects
+        .get(&path)
         .map(|c| c.stats.clone())
         .unwrap_or_default();
 
@@ -910,7 +1109,7 @@ fn load_project_details(path: String) -> Result<ProjectDetails, String> {
         if let Ok(entries) = fs::read_dir(&claude_project_dir) {
             for entry in entries.filter_map(|e| e.ok()) {
                 let task_path = entry.path();
-                if task_path.extension().map_or(false, |ext| ext == "jsonl") {
+                if task_path.extension().is_some_and(|ext| ext == "jsonl") {
                     let task_id = entry.file_name().to_string_lossy().to_string();
                     let task_name = task_id.trim_end_matches(".jsonl").to_string();
 
@@ -918,7 +1117,8 @@ fn load_project_details(path: String) -> Result<ProjectDetails, String> {
                         continue;
                     }
 
-                    let mtime = entry.metadata()
+                    let mtime = entry
+                        .metadata()
                         .ok()
                         .and_then(|m| m.modified().ok())
                         .unwrap_or(SystemTime::UNIX_EPOCH);
@@ -949,15 +1149,16 @@ fn load_project_details(path: String) -> Result<ProjectDetails, String> {
     let git_dir = project_path.join(".git");
     let (git_branch, git_dirty) = if git_dir.exists() {
         let head_path = git_dir.join("HEAD");
-        let branch = fs::read_to_string(&head_path)
-            .ok()
-            .and_then(|content| {
-                if content.starts_with("ref: refs/heads/") {
-                    Some(content.trim_start_matches("ref: refs/heads/").trim().to_string())
-                } else {
-                    Some("detached".to_string())
-                }
-            });
+        let branch = fs::read_to_string(&head_path).ok().map(|content| {
+            if content.starts_with("ref: refs/heads/") {
+                content
+                    .trim_start_matches("ref: refs/heads/")
+                    .trim()
+                    .to_string()
+            } else {
+                "detached".to_string()
+            }
+        });
 
         let dirty = std::process::Command::new("git")
             .args(["status", "--porcelain"])
@@ -1007,7 +1208,11 @@ fn load_artifacts() -> Result<Vec<Artifact>, String> {
     }
 
     if let Some(commands_dir) = resolve_symlink(&claude_dir.join("commands")) {
-        artifacts.extend(collect_artifacts_from_dir(&commands_dir, "command", "Global"));
+        artifacts.extend(collect_artifacts_from_dir(
+            &commands_dir,
+            "command",
+            "Global",
+        ));
     }
 
     if let Some(agents_dir) = resolve_symlink(&claude_dir.join("agents")) {
@@ -1018,9 +1223,21 @@ fn load_artifacts() -> Result<Vec<Artifact>, String> {
     for plugin in plugins {
         if plugin.enabled {
             let plugin_path = PathBuf::from(&plugin.path);
-            artifacts.extend(collect_artifacts_from_dir(&plugin_path.join("skills"), "skill", &plugin.name));
-            artifacts.extend(collect_artifacts_from_dir(&plugin_path.join("commands"), "command", &plugin.name));
-            artifacts.extend(collect_artifacts_from_dir(&plugin_path.join("agents"), "agent", &plugin.name));
+            artifacts.extend(collect_artifacts_from_dir(
+                &plugin_path.join("skills"),
+                "skill",
+                &plugin.name,
+            ));
+            artifacts.extend(collect_artifacts_from_dir(
+                &plugin_path.join("commands"),
+                "command",
+                &plugin.name,
+            ));
+            artifacts.extend(collect_artifacts_from_dir(
+                &plugin_path.join("agents"),
+                "agent",
+                &plugin.name,
+            ));
         }
     }
 
@@ -1044,8 +1261,7 @@ fn toggle_plugin(plugin_id: String, enabled: bool) -> Result<(), String> {
     let mut settings: serde_json::Value = if settings_path.exists() {
         let content = fs::read_to_string(&settings_path)
             .map_err(|e| format!("Failed to read settings: {}", e))?;
-        serde_json::from_str(&content)
-            .map_err(|e| format!("Failed to parse settings: {}", e))?
+        serde_json::from_str(&content).map_err(|e| format!("Failed to parse settings: {}", e))?
     } else {
         serde_json::json!({})
     };
@@ -1059,16 +1275,14 @@ fn toggle_plugin(plugin_id: String, enabled: bool) -> Result<(), String> {
     let content = serde_json::to_string_pretty(&settings)
         .map_err(|e| format!("Failed to serialize settings: {}", e))?;
 
-    fs::write(&settings_path, content)
-        .map_err(|e| format!("Failed to write settings: {}", e))?;
+    fs::write(&settings_path, content).map_err(|e| format!("Failed to write settings: {}", e))?;
 
     Ok(())
 }
 
 #[tauri::command]
 fn read_file_content(path: String) -> Result<String, String> {
-    fs::read_to_string(&path)
-        .map_err(|e| format!("Failed to read file: {}", e))
+    fs::read_to_string(&path).map_err(|e| format!("Failed to read file: {}", e))
 }
 
 #[tauri::command]
@@ -1130,32 +1344,597 @@ fn open_folder(path: String) -> Result<(), String> {
     Ok(())
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct FocusedWindow {
+    pub app_name: String,
+    pub window_type: String,
+    pub details: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct BringToFrontResult {
+    pub focused_windows: Vec<FocusedWindow>,
+    pub launched_terminal: bool,
+}
+
+#[cfg(target_os = "macos")]
+mod window_management {
+    use super::*;
+    use std::io::Read;
+    use std::sync::mpsc;
+    use std::time::{Duration, Instant};
+
+    const BROWSERS: &[&str] = &["Google Chrome", "Arc", "Safari"];
+    const IDES: &[&str] = &["Cursor", "Code", "Visual Studio Code", "Zed"];
+    const DEV_SERVER_PORTS: &[u16] = &[3000, 5173, 8080, 4200, 3001, 8000, 4000];
+
+    fn run_applescript_with_timeout(script: &str, timeout_ms: u64) -> Option<String> {
+        let mut child = std::process::Command::new("osascript")
+            .arg("-e")
+            .arg(script)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .ok()?;
+
+        let start = Instant::now();
+        let timeout = Duration::from_millis(timeout_ms);
+
+        loop {
+            match child.try_wait() {
+                Ok(Some(status)) => {
+                    if status.success() {
+                        if let Some(stdout) = child.stdout.take() {
+                            let mut output = String::new();
+                            let mut reader = std::io::BufReader::new(stdout);
+                            if reader.read_to_string(&mut output).is_ok() {
+                                return Some(output);
+                            }
+                        }
+                    }
+                    return None;
+                }
+                Ok(None) => {
+                    if start.elapsed() > timeout {
+                        let _ = child.kill();
+                        return None;
+                    }
+                    std::thread::sleep(Duration::from_millis(20));
+                }
+                Err(_) => return None,
+            }
+        }
+    }
+
+    pub fn find_claude_pid_for_project(project_path: &str) -> Option<u32> {
+        let output = std::process::Command::new("pgrep")
+            .args(["-x", "claude"])
+            .output()
+            .ok()?;
+
+        let pids = String::from_utf8_lossy(&output.stdout);
+        for pid_str in pids.lines() {
+            let pid = pid_str.trim();
+            if pid.is_empty() {
+                continue;
+            }
+
+            let lsof_output = std::process::Command::new("lsof")
+                .args(["-p", pid])
+                .output();
+
+            if let Ok(lsof_out) = lsof_output {
+                let lsof_str = String::from_utf8_lossy(&lsof_out.stdout);
+                for line in lsof_str.lines() {
+                    if line.contains("cwd") && line.contains(project_path) {
+                        if let Ok(pid_num) = pid.parse::<u32>() {
+                            eprintln!(
+                                "[HUD DEBUG] Found Claude session PID {} for project: {}",
+                                pid_num, project_path
+                            );
+                            return Some(pid_num);
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    pub fn has_claude_session_for_project(project_path: &str) -> bool {
+        find_claude_pid_for_project(project_path).is_some()
+    }
+
+    pub fn focus_warp_window_by_terminal_content(project_path: &str) -> Result<bool, String> {
+        let project_name = std::path::PathBuf::from(project_path)
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
+
+        // Search for "projectname git:" pattern which appears in the prompt
+        let search_pattern = format!("{} git:", project_name);
+
+        eprintln!(
+            "[HUD DEBUG] Searching terminal content for pattern: '{}'",
+            search_pattern
+        );
+
+        let script = format!(
+            r#"tell application "System Events"
+                tell process "Warp"
+                    set windowCount to count of windows
+                    repeat with i from 1 to windowCount
+                        set w to window i
+                        try
+                            set textAreas to every UI element of w whose role is "AXTextArea"
+                            repeat with ta in textAreas
+                                set content to value of ta
+                                set contentLen to length of content
+                                -- Only search the last 500 chars (prompt area) to avoid false matches
+                                if contentLen > 500 then
+                                    set lastPart to text (contentLen - 500) thru contentLen of content
+                                else
+                                    set lastPart to content
+                                end if
+                                if lastPart contains "{}" then
+                                    perform action "AXRaise" of w
+                                    tell application "Warp" to activate
+                                    return i
+                                end if
+                            end repeat
+                        end try
+                    end repeat
+                    return 0
+                end tell
+            end tell"#,
+            search_pattern
+        );
+
+        let output = std::process::Command::new("osascript")
+            .arg("-e")
+            .arg(&script)
+            .output()
+            .map_err(|e| format!("Failed to run AppleScript: {}", e))?;
+
+        let result = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let found = result != "0" && !result.is_empty();
+
+        if found {
+            eprintln!(
+                "[HUD DEBUG] Found '{}' in terminal content, focused window {}",
+                search_pattern, result
+            );
+        } else {
+            eprintln!(
+                "[HUD DEBUG] Pattern '{}' not found in any terminal content",
+                search_pattern
+            );
+        }
+
+        Ok(found)
+    }
+
+    pub fn focus_warp_for_project(project_path: &str) -> Result<bool, String> {
+        // Primary: Search terminal content for git prompt pattern (most reliable)
+        if focus_warp_window_by_terminal_content(project_path)? {
+            return Ok(true);
+        }
+
+        // Fall back to window name matching
+        eprintln!("[HUD DEBUG] Content search failed, falling back to window name matching");
+        focus_warp_window_for_project(project_path)
+    }
+
+    pub fn focus_app(app_name: &str) -> Result<(), String> {
+        let script = format!(r#"tell application "{}" to activate"#, app_name);
+        std::process::Command::new("osascript")
+            .arg("-e")
+            .arg(&script)
+            .spawn()
+            .map_err(|e| format!("Failed to focus {}: {}", app_name, e))?;
+        Ok(())
+    }
+
+    fn normalize_for_matching(s: &str) -> String {
+        s.to_lowercase().replace(['-', '_', ' '], "")
+    }
+
+    pub fn focus_warp_window_for_project(project_path: &str) -> Result<bool, String> {
+        let project_name = std::path::PathBuf::from(project_path)
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
+
+        let normalized_project = normalize_for_matching(&project_name);
+        eprintln!(
+            "[HUD DEBUG] Looking for Warp window matching project '{}' (normalized: '{}')",
+            project_name, normalized_project
+        );
+
+        let script = r#"tell application "System Events"
+            if exists process "Warp" then
+                tell process "Warp"
+                    set windowCount to count of windows
+                    set windowInfo to ""
+                    repeat with i from 1 to windowCount
+                        set windowInfo to windowInfo & i & ":" & name of window i & linefeed
+                    end repeat
+                    return windowInfo
+                end tell
+            else
+                return ""
+            end if
+        end tell"#;
+
+        let output = std::process::Command::new("osascript")
+            .arg("-e")
+            .arg(script)
+            .output()
+            .map_err(|e| format!("Failed to get Warp windows: {}", e))?;
+
+        let window_info = String::from_utf8_lossy(&output.stdout);
+        eprintln!("[HUD DEBUG] Warp windows: {}", window_info.trim().replace('\n', ", "));
+
+        for line in window_info.lines() {
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+            if let Some((idx_str, title)) = line.split_once(':') {
+                let normalized_title = normalize_for_matching(title);
+                eprintln!(
+                    "[HUD DEBUG] Window {}: '{}' (normalized: '{}') vs project '{}'",
+                    idx_str, title, normalized_title, normalized_project
+                );
+
+                // Skip empty strings to avoid false matches
+                if normalized_title.is_empty() || normalized_project.is_empty() {
+                    continue;
+                }
+
+                if normalized_title.contains(&normalized_project)
+                    || normalized_project.contains(&normalized_title)
+                {
+                    if let Ok(window_index) = idx_str.parse::<usize>() {
+                        eprintln!(
+                            "[HUD DEBUG] Found matching Warp window {} for project",
+                            window_index
+                        );
+                        let focus_script = format!(
+                            r#"tell application "System Events"
+                                tell process "Warp"
+                                    perform action "AXRaise" of window {}
+                                end tell
+                            end tell
+                            tell application "Warp" to activate"#,
+                            window_index
+                        );
+                        std::process::Command::new("osascript")
+                            .arg("-e")
+                            .arg(&focus_script)
+                            .spawn()
+                            .map_err(|e| format!("Failed to focus Warp window: {}", e))?;
+                        return Ok(true);
+                    }
+                }
+            }
+        }
+
+        eprintln!("[HUD DEBUG] No matching Warp window found, just activating Warp");
+        focus_app("Warp")?;
+        Ok(false)
+    }
+
+    pub fn find_dev_server_port(project_path: &str) -> Option<u16> {
+        for &port in DEV_SERVER_PORTS {
+            let output = std::process::Command::new("lsof")
+                .args(["-i", &format!(":{}", port), "-t"])
+                .output()
+                .ok()?;
+
+            let pids = String::from_utf8_lossy(&output.stdout);
+            for pid_str in pids.lines() {
+                if let Ok(pid) = pid_str.trim().parse::<u32>() {
+                    let cwd_output = std::process::Command::new("lsof")
+                        .args(["-p", &pid.to_string(), "-Fn"])
+                        .output()
+                        .ok();
+
+                    if let Some(cwd_out) = cwd_output {
+                        let cwd_str = String::from_utf8_lossy(&cwd_out.stdout);
+                        if cwd_str.contains(project_path) {
+                            log::info!("Found dev server on port {} for project", port);
+                            return Some(port);
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    pub fn find_browser_with_localhost(port: u16) -> Option<String> {
+        let (tx, rx) = mpsc::channel();
+
+        for &browser in BROWSERS {
+            let tx = tx.clone();
+            let browser_name = browser.to_string();
+
+            std::thread::spawn(move || {
+                let script = if browser_name == "Safari" {
+                    r#"tell application "System Events"
+                            if exists process "Safari" then
+                                tell application "Safari"
+                                    set allURLs to ""
+                                    repeat with w in windows
+                                        repeat with t in tabs of w
+                                            set allURLs to allURLs & URL of t & "\n"
+                                        end repeat
+                                    end repeat
+                                    return allURLs
+                                end tell
+                            end if
+                        end tell"#
+                        .to_string()
+                } else if browser_name == "Arc" {
+                    r#"tell application "System Events"
+                        if exists process "Arc" then
+                            tell application "Arc"
+                                set allURLs to ""
+                                repeat with w in windows
+                                    repeat with t in tabs of w
+                                        set allURLs to allURLs & URL of t & "\n"
+                                    end repeat
+                                end repeat
+                                return allURLs
+                            end tell
+                        end if
+                    end tell"#
+                        .to_string()
+                } else {
+                    format!(
+                        r#"tell application "System Events"
+                            if exists process "{}" then
+                                tell application "{}"
+                                    set allURLs to ""
+                                    repeat with w in windows
+                                        repeat with t in tabs of w
+                                            set allURLs to allURLs & URL of t & "\n"
+                                        end repeat
+                                    end repeat
+                                    return allURLs
+                                end tell
+                            end if
+                        end tell"#,
+                        browser_name, browser_name
+                    )
+                };
+
+                if let Some(output) = run_applescript_with_timeout(&script, 2000) {
+                    let localhost_pattern = format!("localhost:{}", port);
+                    let ip_pattern = format!("127.0.0.1:{}", port);
+                    if output.contains(&localhost_pattern) || output.contains(&ip_pattern) {
+                        let _ = tx.send(browser_name);
+                    }
+                }
+            });
+        }
+        drop(tx);
+
+        rx.recv_timeout(Duration::from_millis(2500)).ok()
+    }
+
+    pub fn focus_browser_tab_with_url(browser: &str, port: u16) -> Result<(), String> {
+        let script = if browser == "Safari" {
+            format!(
+                r#"tell application "Safari"
+                    repeat with w in windows
+                        set tabIndex to 1
+                        repeat with t in tabs of w
+                            if URL of t contains "localhost:{}" or URL of t contains "127.0.0.1:{}" then
+                                set current tab of w to t
+                                set index of w to 1
+                                activate
+                                return
+                            end if
+                            set tabIndex to tabIndex + 1
+                        end repeat
+                    end repeat
+                end tell"#,
+                port, port
+            )
+        } else if browser == "Arc" {
+            format!(
+                r#"tell application "Arc"
+                    repeat with w in windows
+                        repeat with t in tabs of w
+                            if URL of t contains "localhost:{}" or URL of t contains "127.0.0.1:{}" then
+                                tell w to set active tab index to index of t
+                                set index of w to 1
+                                activate
+                                return
+                            end if
+                        end repeat
+                    end repeat
+                end tell"#,
+                port, port
+            )
+        } else {
+            format!(
+                r#"tell application "{}"
+                    repeat with w in windows
+                        set tabIndex to 1
+                        repeat with t in tabs of w
+                            if URL of t contains "localhost:{}" or URL of t contains "127.0.0.1:{}" then
+                                set active tab index of w to tabIndex
+                                set index of w to 1
+                                activate
+                                return
+                            end if
+                            set tabIndex to tabIndex + 1
+                        end repeat
+                    end repeat
+                end tell"#,
+                browser, port, port
+            )
+        };
+
+        std::process::Command::new("osascript")
+            .arg("-e")
+            .arg(&script)
+            .spawn()
+            .map_err(|e| format!("Failed to focus browser tab: {}", e))?;
+
+        Ok(())
+    }
+
+    pub fn find_ide_for_project(project_path: &str) -> Option<String> {
+        let project_name = PathBuf::from(project_path)
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
+
+        let (tx, rx) = mpsc::channel();
+
+        for &ide in IDES {
+            let tx = tx.clone();
+            let ide_name = ide.to_string();
+            let path = project_path.to_string();
+            let name = project_name.clone();
+
+            std::thread::spawn(move || {
+                let script = format!(
+                    r#"tell application "System Events"
+                        if exists process "{}" then
+                            tell process "{}"
+                                get name of every window
+                            end tell
+                        else
+                            return ""
+                        end if
+                    end tell"#,
+                    ide_name, ide_name
+                );
+
+                if let Some(output) = run_applescript_with_timeout(&script, 1500) {
+                    if output.contains(&path) || output.contains(&name) {
+                        let _ = tx.send(ide_name);
+                    }
+                }
+            });
+        }
+        drop(tx);
+
+        rx.recv_timeout(Duration::from_millis(2000)).ok()
+    }
+
+    pub fn launch_terminal_with_claude(path: &str) -> Result<(), String> {
+        eprintln!("[HUD DEBUG] launch_terminal_with_claude: opening Warp with path '{}'", path);
+        std::process::Command::new("open")
+            .arg("-a")
+            .arg("Warp")
+            .arg(path)
+            .spawn()
+            .map_err(|e| format!("Failed to launch Warp: {}", e))?;
+
+        let path_owned = path.to_string();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(800));
+            let script = r#"
+                tell application "System Events"
+                    tell process "Warp"
+                        keystroke "claude"
+                        delay 0.1
+                        key code 36
+                    end tell
+                end tell
+            "#;
+            let _ = std::process::Command::new("osascript")
+                .arg("-e")
+                .arg(script)
+                .spawn();
+            log::debug!("Typed claude command in terminal for {}", path_owned);
+        });
+
+        Ok(())
+    }
+}
+
+#[tauri::command]
+fn bring_project_windows_to_front(
+    path: String,
+    launch_if_none: bool,
+) -> Result<BringToFrontResult, String> {
+    eprintln!("[HUD DEBUG] bring_project_windows_to_front called: path='{}', launch_if_none={}", path, launch_if_none);
+
+    #[cfg(target_os = "macos")]
+    {
+        // Spawn window management in background thread to avoid blocking UI
+        std::thread::spawn(move || {
+            use window_management::*;
+
+            if has_claude_session_for_project(&path) {
+                eprintln!("[HUD DEBUG] Claude session exists, focusing via TTY marker");
+                if let Err(e) = focus_warp_for_project(&path) {
+                    eprintln!("[HUD DEBUG] Error focusing Warp: {}", e);
+                }
+            } else if launch_if_none {
+                eprintln!("[HUD DEBUG] No Claude session found, launching new terminal");
+                if let Err(e) = launch_terminal_with_claude(&path) {
+                    eprintln!("[HUD DEBUG] Error launching terminal: {}", e);
+                }
+            } else {
+                eprintln!("[HUD DEBUG] No Claude session and launch_if_none=false, trying to find matching Warp window");
+                if let Err(e) = focus_warp_for_project(&path) {
+                    eprintln!("[HUD DEBUG] Error focusing Warp: {}", e);
+                }
+            }
+
+            if let Some(port) = find_dev_server_port(&path) {
+                if let Some(browser) = find_browser_with_localhost(port) {
+                    log::info!("Found browser {} with localhost:{}", browser, port);
+                    if let Err(e) = focus_browser_tab_with_url(&browser, port) {
+                        eprintln!("[HUD DEBUG] Error focusing browser: {}", e);
+                    }
+                }
+            }
+
+            if let Some(ide) = find_ide_for_project(&path) {
+                log::info!("Found IDE {} for project", ide);
+                if let Err(e) = focus_app(&ide) {
+                    eprintln!("[HUD DEBUG] Error focusing IDE: {}", e);
+                }
+            }
+        });
+
+        // Return immediately with empty result since work happens in background
+        Ok(BringToFrontResult {
+            focused_windows: Vec::new(),
+            launched_terminal: false,
+        })
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        Err("Window management is only supported on macOS currently".to_string())
+    }
+}
+
 #[tauri::command]
 fn launch_in_terminal(path: String, run_claude: bool) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
-        if run_claude {
-            let script = format!(
-                r#"
-                tell application "Warp"
-                    activate
-                    delay 0.2
-                    tell application "System Events"
-                        keystroke "n" using command down
-                        delay 0.3
-                        keystroke "cd {} && claude"
-                        keystroke return
-                    end tell
-                end tell
-                "#,
-                path.replace("\"", "\\\"").replace("'", "'\\''")
-            );
+        use window_management::*;
 
-            std::process::Command::new("osascript")
-                .arg("-e")
-                .arg(&script)
-                .spawn()
-                .map_err(|e| format!("Failed to launch Warp with Claude: {}", e))?;
+        if has_claude_session_for_project(&path) {
+            eprintln!("[HUD DEBUG] launch_in_terminal: Claude session exists, focusing via TTY marker");
+            let _ = focus_warp_for_project(&path);
+            return Ok(());
+        }
+
+        eprintln!("[HUD DEBUG] launch_in_terminal: No Claude session, launching new terminal");
+        if run_claude {
+            launch_terminal_with_claude(&path)?;
         } else {
             std::process::Command::new("open")
                 .arg("-a")
@@ -1164,14 +1943,13 @@ fn launch_in_terminal(path: String, run_claude: bool) -> Result<(), String> {
                 .spawn()
                 .map_err(|e| format!("Failed to launch Warp: {}", e))?;
         }
+        Ok(())
     }
 
     #[cfg(not(target_os = "macos"))]
     {
-        return Err("Terminal launch is only supported on macOS currently".to_string());
+        Err("Terminal launch is only supported on macOS currently".to_string())
     }
-
-    Ok(())
 }
 
 #[tauri::command]
@@ -1212,7 +1990,7 @@ fn load_suggested_projects() -> Result<Vec<SuggestedProject>, String> {
         let entry = entry.map_err(|e| e.to_string())?;
         let encoded_name = entry.file_name().to_string_lossy().to_string();
 
-        if !encoded_name.starts_with('-') || !entry.file_type().map_or(false, |t| t.is_dir()) {
+        if !encoded_name.starts_with('-') || !entry.file_type().is_ok_and(|t| t.is_dir()) {
             continue;
         }
 
@@ -1258,12 +2036,15 @@ fn load_suggested_projects() -> Result<Vec<SuggestedProject>, String> {
         }
 
         let display_path = if path.starts_with("/Users/") {
-            format!("~/{}", path.split('/').skip(3).collect::<Vec<_>>().join("/"))
+            format!(
+                "~/{}",
+                path.split('/').skip(3).collect::<Vec<_>>().join("/")
+            )
         } else {
             path.clone()
         };
 
-        let name = path.split('/').last().unwrap_or(&path).to_string();
+        let name = path.split('/').next_back().unwrap_or(&path).to_string();
 
         suggestions.push((
             SuggestedProject {
@@ -1326,6 +2107,61 @@ fn try_resolve_encoded_path(encoded_name: &str) -> Option<String> {
     }
 }
 
+fn load_session_states_file() -> Option<SessionStatesFile> {
+    let claude_dir = get_claude_dir()?;
+    let state_file = claude_dir.join("hud-session-states.json");
+
+    if !state_file.exists() {
+        return None;
+    }
+
+    fs::read_to_string(&state_file)
+        .ok()
+        .and_then(|content| serde_json::from_str(&content).ok())
+}
+
+fn detect_session_state(project_path: &str) -> ProjectSessionState {
+    let idle_state = ProjectSessionState {
+        state: SessionState::Idle,
+        state_changed_at: None,
+        session_id: None,
+        working_on: None,
+        next_step: None,
+        context: None,
+    };
+
+    if let Some(states_file) = load_session_states_file() {
+        if let Some(entry) = states_file.projects.get(project_path) {
+            let state = match entry.state.as_str() {
+                "working" => SessionState::Working,
+                "ready" => SessionState::Ready,
+                "compacting" => SessionState::Compacting,
+                _ => SessionState::Idle,
+            };
+
+            let context = entry.context.as_ref().and_then(|ctx| {
+                Some(ContextInfo {
+                    percent_used: ctx.percent_used?,
+                    tokens_used: ctx.tokens_used?,
+                    context_size: ctx.context_size?,
+                    updated_at: ctx.updated_at.clone(),
+                })
+            });
+
+            return ProjectSessionState {
+                state,
+                state_changed_at: entry.state_changed_at.clone(),
+                session_id: entry.session_id.clone(),
+                working_on: entry.working_on.clone(),
+                next_step: entry.next_step.clone(),
+                context,
+            };
+        }
+    }
+
+    idle_state
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct ProjectStatus {
     pub working_on: Option<String>,
@@ -1336,7 +2172,9 @@ pub struct ProjectStatus {
 }
 
 fn read_project_status(project_path: &str) -> Option<ProjectStatus> {
-    let status_path = PathBuf::from(project_path).join(".claude").join("hud-status.json");
+    let status_path = PathBuf::from(project_path)
+        .join(".claude")
+        .join("hud-status.json");
     if status_path.exists() {
         fs::read_to_string(&status_path)
             .ok()
@@ -1349,6 +2187,43 @@ fn read_project_status(project_path: &str) -> Option<ProjectStatus> {
 #[tauri::command]
 fn get_project_status(project_path: String) -> Result<Option<ProjectStatus>, String> {
     Ok(read_project_status(&project_path))
+}
+
+#[tauri::command]
+fn get_session_state(project_path: String) -> Result<ProjectSessionState, String> {
+    Ok(detect_session_state(&project_path))
+}
+
+#[tauri::command]
+fn get_all_session_states(
+    project_paths: Vec<String>,
+) -> Result<HashMap<String, ProjectSessionState>, String> {
+    let mut states = HashMap::new();
+    for path in project_paths {
+        states.insert(path.clone(), detect_session_state(&path));
+    }
+    Ok(states)
+}
+
+#[tauri::command]
+fn update_project_status(project_path: String, status: String) -> Result<ProjectStatus, String> {
+    let status_path = PathBuf::from(&project_path)
+        .join(".claude")
+        .join("hud-status.json");
+
+    let claude_dir = PathBuf::from(&project_path).join(".claude");
+    if !claude_dir.exists() {
+        fs::create_dir_all(&claude_dir).map_err(|e| e.to_string())?;
+    }
+
+    let mut current_status = read_project_status(&project_path).unwrap_or_default();
+    current_status.status = Some(status);
+    current_status.updated_at = Some(chrono::Utc::now().to_rfc3339());
+
+    let content = serde_json::to_string_pretty(&current_status).map_err(|e| e.to_string())?;
+    fs::write(&status_path, content).map_err(|e| e.to_string())?;
+
+    Ok(current_status)
 }
 
 const HUD_STATUS_SCRIPT: &str = r#"#!/bin/bash
@@ -1421,7 +2296,7 @@ exit 0
 fn check_global_hook_installed() -> Result<bool, String> {
     let claude_dir = get_claude_dir().ok_or("Could not find Claude directory")?;
     let settings_path = claude_dir.join("settings.json");
-    let script_path = claude_dir.join("scripts").join("generate-hud-status.sh");
+    let script_path = claude_dir.join("scripts").join("hud-state-tracker.sh");
 
     if !script_path.exists() {
         return Ok(false);
@@ -1434,8 +2309,8 @@ fn check_global_hook_installed() -> Result<bool, String> {
     let content = fs::read_to_string(&settings_path)
         .map_err(|e| format!("Failed to read settings: {}", e))?;
 
-    let settings: serde_json::Value = serde_json::from_str(&content)
-        .map_err(|e| format!("Failed to parse settings: {}", e))?;
+    let settings: serde_json::Value =
+        serde_json::from_str(&content).map_err(|e| format!("Failed to parse settings: {}", e))?;
 
     let has_hook = settings
         .get("hooks")
@@ -1449,7 +2324,7 @@ fn check_global_hook_installed() -> Result<bool, String> {
                         hooks.iter().any(|hook| {
                             hook.get("command")
                                 .and_then(|c| c.as_str())
-                                .map(|cmd| cmd.contains("generate-hud-status.sh"))
+                                .map(|cmd| cmd.contains("hud-state-tracker.sh"))
                                 .unwrap_or(false)
                         })
                     })
@@ -1508,8 +2383,7 @@ fn install_global_hook() -> Result<(), String> {
     let content = serde_json::to_string_pretty(&settings)
         .map_err(|e| format!("Failed to serialize settings: {}", e))?;
 
-    fs::write(&settings_path, content)
-        .map_err(|e| format!("Failed to write settings: {}", e))?;
+    fs::write(&settings_path, content).map_err(|e| format!("Failed to write settings: {}", e))?;
 
     Ok(())
 }
@@ -1519,17 +2393,18 @@ fn start_status_watcher(app: tauri::AppHandle, project_paths: Vec<String>) -> Re
     std::thread::spawn(move || {
         let (tx, rx) = mpsc::channel();
 
-        let mut watcher: RecommendedWatcher = match notify::recommended_watcher(move |res: Result<Event, _>| {
-            if let Ok(event) = res {
-                let _ = tx.send(event);
-            }
-        }) {
-            Ok(w) => w,
-            Err(e) => {
-                log::error!("Failed to create watcher: {}", e);
-                return;
-            }
-        };
+        let mut watcher: RecommendedWatcher =
+            match notify::recommended_watcher(move |res: Result<Event, _>| {
+                if let Ok(event) = res {
+                    let _ = tx.send(event);
+                }
+            }) {
+                Ok(w) => w,
+                Err(e) => {
+                    log::error!("Failed to create watcher: {}", e);
+                    return;
+                }
+            };
 
         for path in &project_paths {
             let status_path = PathBuf::from(path).join(".claude").join("hud-status.json");
@@ -1545,13 +2420,77 @@ fn start_status_watcher(app: tauri::AppHandle, project_paths: Vec<String>) -> Re
                 Ok(event) => {
                     if matches!(event.kind, EventKind::Modify(_) | EventKind::Create(_)) {
                         for path in &event.paths {
-                            if path.file_name().map(|n| n == "hud-status.json").unwrap_or(false) {
+                            if path
+                                .file_name()
+                                .map(|n| n == "hud-status.json")
+                                .unwrap_or(false)
+                            {
                                 if let Some(project_path) = path.parent().and_then(|p| p.parent()) {
-                                    let project_path_str = project_path.to_string_lossy().to_string();
+                                    let project_path_str =
+                                        project_path.to_string_lossy().to_string();
                                     if let Some(status) = read_project_status(&project_path_str) {
-                                        let _ = app.emit("status-changed", (&project_path_str, &status));
+                                        let _ = app
+                                            .emit("status-changed", (&project_path_str, &status));
                                     }
                                 }
+                            }
+                        }
+                    }
+                }
+                Err(mpsc::RecvTimeoutError::Timeout) => continue,
+                Err(mpsc::RecvTimeoutError::Disconnected) => break,
+            }
+        }
+    });
+
+    Ok(())
+}
+
+#[tauri::command]
+fn start_session_state_watcher(app: tauri::AppHandle) -> Result<(), String> {
+    std::thread::spawn(move || {
+        let claude_dir = match get_claude_dir() {
+            Some(dir) => dir,
+            None => return,
+        };
+
+        let state_file = claude_dir.join("hud-session-states.json");
+
+        let (tx, rx) = mpsc::channel();
+
+        let mut watcher: RecommendedWatcher =
+            match notify::recommended_watcher(move |res: Result<Event, _>| {
+                if let Ok(event) = res {
+                    let _ = tx.send(event);
+                }
+            }) {
+                Ok(w) => w,
+                Err(e) => {
+                    log::error!("Failed to create session state watcher: {}", e);
+                    return;
+                }
+            };
+
+        if let Err(e) = watcher.watch(&claude_dir, RecursiveMode::NonRecursive) {
+            log::error!("Failed to watch claude dir: {}", e);
+            return;
+        }
+
+        loop {
+            match rx.recv_timeout(Duration::from_secs(60)) {
+                Ok(event) => {
+                    if matches!(event.kind, EventKind::Modify(_) | EventKind::Create(_)) {
+                        for path in &event.paths {
+                            if path
+                                .file_name()
+                                .map(|n| n == "hud-session-states.json")
+                                .unwrap_or(false)
+                                || *path == state_file
+                            {
+                                if let Some(states) = load_session_states_file() {
+                                    let _ = app.emit("session-states-changed", &states);
+                                }
+                                break;
                             }
                         }
                     }
@@ -1590,13 +2529,18 @@ pub fn run() {
             open_in_editor,
             open_folder,
             launch_in_terminal,
+            bring_project_windows_to_front,
             add_project,
             remove_project,
             load_suggested_projects,
             get_project_status,
+            update_project_status,
+            get_session_state,
+            get_all_session_states,
             check_global_hook_installed,
             install_global_hook,
-            start_status_watcher
+            start_status_watcher,
+            start_session_state_watcher
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
