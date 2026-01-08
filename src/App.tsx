@@ -689,38 +689,19 @@ function ProjectCard({
   onLaunchTerminal: () => void;
 }) {
   const hasStatus = status && (status.working_on || status.next_step);
-  const stats = project.stats;
-  const totalTokens = stats ? stats.total_input_tokens + stats.total_output_tokens : 0;
-  const cost = stats ? calculateCost(stats) : 0;
+  const contextPercent = sessionState?.context?.percent_used ?? 0;
 
-  const getBeaconConfig = () => {
-    if (!sessionState) return null;
-    if (sessionState.state === "ready") {
-      return { class: "beacon-ready", pulse: true };
-    }
-    if (sessionState.state === "compacting") {
-      return { class: "beacon-compacting", pulse: true };
-    }
-    if (sessionState.state === "working") {
-      return { class: "beacon-working", pulse: true };
-    }
-    return null;
-  };
-
-  const beaconConfig = getBeaconConfig();
-
-  const getSessionLabelConfig = () => {
+  const getStatusConfig = () => {
     if (!sessionState) return null;
     switch (sessionState.state) {
-      case "ready": return { text: "Your turn", color: "text-emerald-400" };
-      case "compacting": return { text: "Compacting...", color: "text-pink-400" };
-      case "working": return { text: "Working...", color: "text-amber-500" };
+      case "ready": return { text: "Your turn", bgClass: "bg-emerald-500/20", textClass: "text-emerald-400", dotClass: "bg-emerald-400" };
+      case "compacting": return { text: "Compacting", bgClass: "bg-pink-500/20", textClass: "text-pink-400", dotClass: "bg-pink-400" };
+      case "working": return { text: "Working", bgClass: "bg-amber-500/20", textClass: "text-amber-400", dotClass: "bg-amber-400" };
       default: return null;
     }
   };
 
-  const sessionLabelConfig = getSessionLabelConfig();
-  const contextPercent = sessionState?.context?.percent_used;
+  const statusConfig = getStatusConfig();
 
   const getCardStateClass = () => {
     if (!sessionState) return "";
@@ -732,81 +713,84 @@ function ProjectCard({
     }
   };
 
+  const getProgressBarColor = (percent: number) => {
+    if (percent >= 80) return "bg-red-500";
+    if (percent >= 60) return "bg-amber-500";
+    return "bg-emerald-500";
+  };
+
   return (
     <div
       onClick={onSelect}
       className={`p-3 rounded-lg border bg-(--color-card) hover:bg-(--color-muted)/50 cursor-default transition-colors ${getCardStateClass()}`}
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1">
-            {beaconConfig && (
-              <span
-                className={`w-2 h-2 rounded-full ${beaconConfig.class} ${beaconConfig.pulse ? "beacon" : ""}`}
-                style={{ backgroundColor: 'currentColor' }}
-              />
-            )}
-            <span className="font-semibold text-[15px] leading-none tracking-[-0.01em]">{project.name}</span>
-            {(sessionLabelConfig || (contextPercent !== undefined && contextPercent > 0)) && (
-              <span className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider leading-none">
-                {sessionLabelConfig && (
-                  <span className={sessionLabelConfig.color}>{sessionLabelConfig.text}</span>
-                )}
-                {contextPercent !== undefined && contextPercent > 0 && (
-                  <span className={`tabular-nums ${contextPercent >= 80 ? "text-amber-500" : "text-muted-foreground"}`}>
-                    {contextPercent}%
-                  </span>
-                )}
+      <div className="flex items-center justify-between gap-3 mb-2">
+        <h3 className="font-bold text-lg leading-tight tracking-[-0.02em] truncate">
+          {project.name}
+        </h3>
+        <div className="flex items-center gap-2 shrink-0">
+          {contextPercent > 0 && (
+            <div className="flex items-center gap-1.5 opacity-60">
+              <div className="w-12 h-1 bg-(--color-muted) rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all ${getProgressBarColor(contextPercent)}`}
+                  style={{ width: `${contextPercent}%` }}
+                />
+              </div>
+              <span className={`text-[9px] tabular-nums text-muted-foreground`}>
+                {contextPercent}%
               </span>
-            )}
-          </div>
-
-          {(sessionState?.working_on || sessionState?.next_step || hasStatus) ? (
-            <div className="space-y-0.5 mb-1.5">
-              {(sessionState?.working_on || status?.working_on) && (
-                <div className="text-[13px] text-foreground/90 line-clamp-1 leading-snug">
-                  {sessionState?.working_on || status?.working_on}
-                </div>
-              )}
-              {(sessionState?.next_step || status?.next_step) && (
-                <div className="text-xs text-muted-foreground line-clamp-1 leading-snug">
-                  <span className="text-muted-foreground/60">→</span> {sessionState?.next_step || status?.next_step}
-                </div>
-              )}
-              {status?.blocker && (
-                <div className="text-xs text-red-400 line-clamp-1 leading-snug">
-                  <span className="font-medium">Blocked:</span> {status.blocker}
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="text-xs text-muted-foreground/60 italic mb-1.5">
-              No recent activity
             </div>
           )}
-
-          <div className="flex items-center gap-2 text-[10px] text-muted-foreground/70 tabular-nums">
-            <span>{project.task_count || 0} sessions</span>
-            {cost > 0 && <span>{formatCost(cost)}</span>}
-            {totalTokens > 0 && <span>{formatTokenCount(totalTokens)}</span>}
-          </div>
+          {statusConfig && (
+            <div className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded ${statusConfig.bgClass}`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${statusConfig.dotClass} animate-pulse`} />
+              <span className={`text-[10px] font-semibold uppercase tracking-wide ${statusConfig.textClass}`}>
+                {statusConfig.text}
+              </span>
+            </div>
+          )}
         </div>
+      </div>
 
-        <div className="flex items-center gap-2 shrink-0">
-          <span className="text-[10px] text-muted-foreground">
-            {project.last_active || "—"}
-          </span>
+      {(sessionState?.working_on || sessionState?.next_step || hasStatus) ? (
+        <div className="space-y-1 mb-3">
+          {(sessionState?.working_on || status?.working_on) && (
+            <div className="text-sm text-foreground font-medium line-clamp-2 leading-snug">
+              {sessionState?.working_on || status?.working_on}
+            </div>
+          )}
+          {(sessionState?.next_step || status?.next_step) && (
+            <div className="text-[13px] text-foreground/70 line-clamp-1 leading-snug">
+              <span className="text-muted-foreground">→</span> {sessionState?.next_step || status?.next_step}
+            </div>
+          )}
+          {status?.blocker && (
+            <div className="text-xs text-red-400 line-clamp-1 leading-snug">
+              <span className="font-medium">Blocked:</span> {status.blocker}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="text-xs text-muted-foreground/50 italic mb-3">
+          No recent activity
+        </div>
+      )}
+
+      <div className="flex items-center justify-end pt-2 border-t border-(--color-border)">
+        <div className="flex items-center gap-1">
           <Button
             variant="ghost"
-            size="icon"
+            size="sm"
             onClick={(e) => {
               e.stopPropagation();
               onLaunchTerminal();
             }}
-            title="Continue in Claude"
-            className="h-7 w-7"
+            title="Resume in Claude"
+            className="h-6 px-2 text-[11px] gap-1"
           >
             <Icon name="play" className="w-3 h-3" />
+            Resume
           </Button>
         </div>
       </div>
