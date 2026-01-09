@@ -23,6 +23,7 @@ tauri = { version = "2.9.5", features = [] }
 tauri-plugin-log = "2"
 tauri-plugin-shell = "2"
 tauri-plugin-dialog = "2"
+tauri-plugin-window-state = "2"
 dirs = "6.0"
 walkdir = "2.5"
 regex = "1.11"

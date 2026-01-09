@@ -143,6 +143,7 @@ pub enum SessionState {
     Ready,
     Idle,
     Compacting,
+    Waiting,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -1469,18 +1470,29 @@ mod window_management {
             .unwrap_or(false)
     }
 
-    /// Get the current tmux session name (if any client is attached)
+    /// Get the most recently active tmux session name (if any client is attached)
     pub fn get_current_tmux_session() -> Option<String> {
         let output = std::process::Command::new("tmux")
-            .args(["display-message", "-p", "#S"])
+            .args(["list-clients", "-F", "#{client_activity}:#{session_name}"])
             .output()
             .ok()?;
 
         if output.status.success() {
-            let session = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if !session.is_empty() {
-                return Some(session);
+            let result = String::from_utf8_lossy(&output.stdout);
+            let mut best_activity: u64 = 0;
+            let mut best_session: Option<String> = None;
+
+            for line in result.lines() {
+                if let Some((activity_str, session)) = line.split_once(':') {
+                    if let Ok(activity) = activity_str.parse::<u64>() {
+                        if activity > best_activity {
+                            best_activity = activity;
+                            best_session = Some(session.to_string());
+                        }
+                    }
+                }
             }
+            return best_session;
         }
         None
     }
@@ -2338,6 +2350,7 @@ fn detect_session_state(project_path: &str) -> ProjectSessionState {
                 "working" => SessionState::Working,
                 "ready" => SessionState::Ready,
                 "compacting" => SessionState::Compacting,
+                "waiting" => SessionState::Waiting,
                 _ => SessionState::Idle,
             };
 
@@ -2711,6 +2724,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_window_state::Builder::new().build())
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(

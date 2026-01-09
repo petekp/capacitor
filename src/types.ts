@@ -96,7 +96,7 @@ export interface ProjectStatus {
   updated_at: string | null;
 }
 
-export type SessionState = "working" | "ready" | "idle" | "compacting";
+export type SessionState = "working" | "ready" | "idle" | "compacting" | "waiting";
 
 export interface ContextInfo {
   percent_used: number;

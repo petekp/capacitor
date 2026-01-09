@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { saveWindowState, restoreStateCurrent, StateFlags } from "@tauri-apps/plugin-window-state";
 import type { DashboardData, Project, ProjectDetails, Artifact, SuggestedProject, Plugin as PluginType, ProjectStatus, ProjectSessionState, SessionStatesFile, BringToFrontResult } from "./types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -153,6 +154,29 @@ function App() {
     };
     document.addEventListener("mouseenter", handleMouseEnter);
     return () => document.removeEventListener("mouseenter", handleMouseEnter);
+  }, []);
+
+  useEffect(() => {
+    restoreStateCurrent(StateFlags.ALL).catch(() => {});
+
+    const win = getCurrentWindow();
+    let saveTimeout: ReturnType<typeof setTimeout> | null = null;
+
+    const debouncedSave = () => {
+      if (saveTimeout) clearTimeout(saveTimeout);
+      saveTimeout = setTimeout(() => {
+        saveWindowState(StateFlags.ALL).catch(() => {});
+      }, 500);
+    };
+
+    const unlistenMove = win.onMoved(debouncedSave);
+    const unlistenResize = win.onResized(debouncedSave);
+
+    return () => {
+      if (saveTimeout) clearTimeout(saveTimeout);
+      unlistenMove.then((f) => f());
+      unlistenResize.then((f) => f());
+    };
   }, []);
 
   const loadSessionStates = useCallback(async (projects: Project[]) => {
@@ -796,8 +820,9 @@ function ProjectCard({
     if (!sessionState) return null;
     switch (sessionState.state) {
       case "ready": return { text: "Ready", bgClass: "bg-emerald-500/20", shimmerClass: "shimmer shimmer-bg shimmer-color-emerald-300/20 shimmer-speed-500", textClass: "text-emerald-400", dotClass: "bg-emerald-400" };
-      case "compacting": return { text: "Compacting", bgClass: "bg-pink-500/20", textClass: "text-pink-400", dotClass: "bg-pink-400" };
+      case "compacting": return { text: "Compacting", bgClass: "bg-amber-700/20", textClass: "text-amber-500", dotClass: "bg-amber-500" };
       case "working": return { text: "Working", bgClass: "bg-orange-500/20", textClass: "text-orange-300", dotClass: "bg-orange-400" };
+      case "waiting": return { text: "Input needed", bgClass: "bg-yellow-500/20", shimmerClass: "shimmer shimmer-bg shimmer-color-yellow-300/30 shimmer-speed-600", textClass: "text-yellow-300", dotClass: "bg-yellow-400" };
       default: return null;
     }
   };
@@ -811,6 +836,7 @@ function ProjectCard({
       case "working": return "card-working";
       case "ready": return "card-ready";
       case "compacting": return "card-compacting";
+      case "waiting": return "card-waiting";
       default: return "";
     }
   };
@@ -826,7 +852,7 @@ function ProjectCard({
         </h3>
         <div className="flex items-center gap-1 shrink-0">
           {statusConfig && (
-            <div className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded ${statusConfig.bgClass} ${!isAcknowledged && statusConfig.shimmerClass ? statusConfig.shimmerClass : ""}`}>
+            <div className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded ${statusConfig.bgClass} ${(sessionState?.state === "waiting" || !isAcknowledged) && statusConfig.shimmerClass ? statusConfig.shimmerClass : ""}`}>
               <span className={`w-1.5 h-1.5 rounded-full ${statusConfig.dotClass} animate-pulse`} />
               <span className={`text-[9px] font-semibold uppercase tracking-wide ${statusConfig.textClass}`}>
                 {statusConfig.text}
