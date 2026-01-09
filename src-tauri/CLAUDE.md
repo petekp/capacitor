@@ -131,22 +131,24 @@ React component re-renders with data
 
 | If you're modifying... | File | Key Functions |
 |------------------------|------|---|
-| Statistics parsing, project discovery, artifact counting | `src-tauri/src/lib.rs` | `parse_stats_from_content()`, `has_project_indicators()`, `count_artifacts_in_dir()` |
-| UI, dashboard layout, forms | `src/App.tsx` | React components (all in one file) |
+| Statistics parsing and caching | `src-tauri/src/stats.rs` | `parse_stats_from_content()`, `compute_project_stats()` |
+| Project discovery, artifact counting, IPC handlers | `src-tauri/src/lib.rs` | `has_project_indicators()`, `count_artifacts_in_dir()`, all `#[tauri::command]` functions |
+| UI, dashboard layout, forms | `src/App.tsx` + `src/components/` | React components (modular structure) |
 | Type definitions | `src/types.ts` | TypeScript interfaces (must match Rust structs) |
 
-### Backend Organization (src-tauri/src/lib.rs - 1907 lines)
+### Backend Organization (modular)
 
-The entire backend is **one 1907-line file** organized in 4 layers:
+The backend is organized into modules under `src-tauri/src/`:
 
-| Layer | Lines | Purpose |
-|-------|-------|---------|
-| **Data Structures** | 10–136 | Rust types: `Project`, `ProjectStats`, `Task`, `Artifact`, `Plugin`, etc. |
-| **Utilities** | 154–810 | Config loading, stats parsing, artifact discovery, caching, path resolution |
-| **Business Logic** | 837–1039 | Project discovery, plugin loading, path encoding/decoding |
-| **IPC Handlers** | 839–1907 | 14 `#[tauri::command]` functions that frontend calls |
+| Module | Purpose |
+|--------|---------|
+| `lib.rs` (~2376 lines) | IPC command handlers and business logic |
+| `types.rs` (~183 lines) | Public structs: Project, Task, Artifact, Plugin, etc. |
+| `patterns.rs` (~39 lines) | Pre-compiled regex patterns for JSONL parsing |
+| `config.rs` (~51 lines) | Path resolution and config file operations |
+| `stats.rs` (~143 lines) | Token usage parsing and mtime-based caching |
 
-**Key insight:** When frontend calls `invoke('load_projects')`, it triggers the corresponding `#[tauri::command]` function in lib.rs, which does all the work.
+**Key insight:** When frontend calls `invoke('load_projects')`, it triggers the corresponding `#[tauri::command]` function in lib.rs, which uses functions from the other modules.
 
 ### The 14 IPC Commands
 
@@ -236,7 +238,7 @@ if path.join("gradle.build").exists() {
 
 When modifying `Project`, `Task`, `ProjectStats`:
 
-1. **Backend:** Update struct in `src-tauri/src/lib.rs` (lines 10–136)
+1. **Backend:** Update struct in `src-tauri/src/types.rs`
    ```rust
    pub struct ProjectStats {
        pub new_field: String,  // Add this
@@ -306,16 +308,24 @@ claude-hud/
 ├── pnpm-lock.yaml               # Frontend lock file
 ├── src/                         # React 19 frontend
 │   ├── main.tsx                 # Entry point
-│   ├── App.tsx                  # Root component (all UI, 1342 lines)
+│   ├── App.tsx                  # Root component (~476 lines)
 │   ├── types.ts                 # TypeScript interfaces
 │   ├── index.css                # Tailwind CSS theme
 │   ├── lib/utils.ts             # Utility functions
-│   └── components/ui/           # shadcn/ui components
+│   ├── utils/                   # Format and pricing utilities
+│   ├── hooks/                   # Custom hooks (window, theme, focus, audio)
+│   └── components/              # UI components
+│       ├── ui/                  # shadcn/ui components
+│       └── panels/              # Panel components
 ├── dist/                        # Built frontend (generated)
 └── src-tauri/                   # Rust backend
     ├── src/
     │   ├── main.rs              # Tauri app entry (6 lines)
-    │   └── lib.rs               # All backend logic (1907 lines)
+    │   ├── lib.rs               # IPC handlers & logic (~2376 lines)
+    │   ├── types.rs             # Public type definitions
+    │   ├── patterns.rs          # Regex patterns
+    │   ├── config.rs            # Path & config utilities
+    │   └── stats.rs             # Stats parsing & caching
     ├── Cargo.toml               # Rust dependencies
     ├── Cargo.lock               # Rust lock file
     ├── tauri.conf.json          # Tauri app config
@@ -350,7 +360,7 @@ The app reads from `~/.claude/`:
 
 ## Core Data Structures
 
-Located in `src/lib.rs:10–136`
+Located in `src/types.rs`
 
 **Global Configuration (`GlobalConfig`)**
 - Reads from ~/.claude/settings.json
@@ -380,13 +390,13 @@ Located in `src/lib.rs:10–136`
 
 ## Key Functions & Modules
 
-### Configuration & Path Management (lines 154-195)
+### Configuration & Path Management (`config.rs`)
 - `get_claude_dir()` - Resolves ~/.claude directory using `dirs` crate
 - `get_hud_config_path()` / `get_stats_cache_path()` - File path construction
 - `load_hud_config()` / `save_hud_config()` - Pinned projects persistence
 - `load_stats_cache()` / `save_stats_cache()` - Token stats caching
 
-### Statistics & Parsing (lines 196-326)
+### Statistics & Parsing (`stats.rs`)
 - `parse_stats_from_content()` - Regex-based extraction from JSONL:
   - Extracts input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens
   - Detects model type (opus/sonnet/haiku)
@@ -396,7 +406,7 @@ Located in `src/lib.rs:10–136`
   - Only re-parses files that have changed
   - Stores metadata to avoid redundant file reads
 
-### File Discovery & Artifacts (lines 336-472)
+### File Discovery & Artifacts (`lib.rs`)
 - `count_artifacts_in_dir()` - Counts skills/commands/agents
   - Skills: directories containing SKILL.md or skill.md
   - Commands/Agents: .md files
@@ -405,14 +415,14 @@ Located in `src/lib.rs:10–136`
 - `collect_artifacts_from_dir()` - Gathers artifact objects with metadata
 - `count_hooks_in_dir()` - Checks for hooks.json in plugin directories
 
-### Project Management (lines 937-1039)
+### Project Management (`lib.rs`)
 - `has_project_indicators()` - Detects project type by file presence
   - .git, package.json, Cargo.toml, pyproject.toml, tsconfig.json, etc.
 - `build_project_from_path()` - Constructs single project object
 - `load_projects_internal()` - Loads pinned projects from HUD config
   - Sorts by most recent activity
 
-### Session Summarization (lines 569-605, 1462-1606)
+### Session Summarization (`lib.rs`)
 - `generate_session_summary()` - Invokes Claude CLI for summary
   - Caches summaries in `~/.claude/hud-summaries.json`
   - Validates summaries with `is_bad_summary()`
@@ -428,7 +438,7 @@ Located in `src/lib.rs:10–136`
   - Creates 3-bullet project overview
   - Caches in `~/.claude/hud-project-summaries.json`
 
-### Plugin Management (lines 876-934)
+### Plugin Management (`lib.rs`)
 - `load_plugins()` - Reads from installed plugins registry
   - Parses plugin.json for manifest
   - Checks enabled status in settings.json
@@ -443,15 +453,20 @@ Located in `src/lib.rs:10–136`
 - **Platform:** macOS, Windows, Linux
 
 **High-Level Design:**
-- `src/lib.rs` (1907 lines) contains the entire backend — no module structure
-- Single monolithic file with 4 conceptual layers:
-  1. **Data Structures** (lines 10-136) — Rust types for all domain concepts
-  2. **Utilities** (lines 154-810) — Config loading, path resolution, file operations
-  3. **Business Logic** (lines 837-1039) — Data discovery and aggregation
-  4. **IPC Handlers** (lines 839-1907) — Frontend API via `#[tauri::command]`
+
+The backend is organized into modules:
+- `types.rs` — Public Rust types (Project, Task, Artifact, Plugin, etc.)
+- `patterns.rs` — Pre-compiled regex patterns for JSONL parsing
+- `config.rs` — Path resolution and config file operations
+- `stats.rs` — Statistics parsing with mtime-based caching
+- `lib.rs` — IPC handlers, business logic, and remaining utilities
 
 **File Organization:**
-- `src/lib.rs` — Application logic (data structures, utilities, command handlers)
+- `src/lib.rs` — IPC handlers, business logic (~2376 lines)
+- `src/types.rs` — Public type definitions (~183 lines)
+- `src/patterns.rs` — Regex patterns (~39 lines)
+- `src/config.rs` — Config utilities (~51 lines)
+- `src/stats.rs` — Stats parsing (~143 lines)
 - `src/main.rs` — Minimal entry point (6 lines, delegates to lib.rs)
 - `Cargo.toml` — Dependencies and project metadata
 - `tauri.conf.json` — App configuration (window size, app name, dev server URL)
@@ -756,7 +771,7 @@ cargo tauri build --target x86_64-pc-windows-msvc # Windows
 ## Notes for Future Developers
 
 - **No async I/O:** All file operations are synchronous (acceptable for desktop app)
-- **Single monolithic backend:** src-tauri/src/lib.rs contains everything - consider modularization if >2000 lines
+- **Modular backend:** Backend is split into `types.rs`, `patterns.rs`, `config.rs`, `stats.rs`, with IPC handlers in `lib.rs`
 - **Type synchronization:** Changes to backend structs require matching TypeScript interfaces in `src/types.ts`
 - **Frontend build required:** Must run `pnpm build` before `cargo tauri build` for distribution
 - **Cache-driven design:** Many operations are mtime-cached for performance

@@ -1,5 +1,16 @@
+mod config;
+mod patterns;
+mod stats;
+mod types;
+
+pub use types::*;
+
+use config::*;
+use patterns::*;
+use stats::*;
+
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
-use regex::Regex;
+use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -8,186 +19,6 @@ use std::sync::mpsc;
 use std::time::{Duration, SystemTime};
 use tauri::Emitter;
 use walkdir::WalkDir;
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct GlobalConfig {
-    pub settings_path: String,
-    pub settings_exists: bool,
-    pub instructions_path: Option<String>,
-    pub skills_dir: Option<String>,
-    pub commands_dir: Option<String>,
-    pub agents_dir: Option<String>,
-    pub skill_count: usize,
-    pub command_count: usize,
-    pub agent_count: usize,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct Plugin {
-    pub id: String,
-    pub name: String,
-    pub description: String,
-    pub enabled: bool,
-    pub path: String,
-    pub skill_count: usize,
-    pub command_count: usize,
-    pub agent_count: usize,
-    pub hook_count: usize,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
-pub struct ProjectStats {
-    pub total_input_tokens: u64,
-    pub total_output_tokens: u64,
-    pub total_cache_read_tokens: u64,
-    pub total_cache_creation_tokens: u64,
-    pub opus_messages: u32,
-    pub sonnet_messages: u32,
-    pub haiku_messages: u32,
-    pub session_count: u32,
-    pub latest_summary: Option<String>,
-    pub first_activity: Option<String>,
-    pub last_activity: Option<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
-pub struct CachedFileInfo {
-    pub size: u64,
-    pub mtime: u64,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
-pub struct CachedProjectStats {
-    pub files: HashMap<String, CachedFileInfo>,
-    pub stats: ProjectStats,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
-pub struct StatsCache {
-    pub projects: HashMap<String, CachedProjectStats>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct Project {
-    pub name: String,
-    pub path: String,
-    pub display_path: String,
-    pub last_active: Option<String>,
-    pub claude_md_path: Option<String>,
-    pub claude_md_preview: Option<String>,
-    pub has_local_settings: bool,
-    pub task_count: u32,
-    pub stats: Option<ProjectStats>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct Task {
-    pub id: String,
-    pub name: String,
-    pub path: String,
-    pub last_modified: String,
-    pub summary: Option<String>,
-    pub first_message: Option<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct ProjectDetails {
-    pub project: Project,
-    pub claude_md_content: Option<String>,
-    pub tasks: Vec<Task>,
-    pub git_branch: Option<String>,
-    pub git_dirty: bool,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct Artifact {
-    pub artifact_type: String,
-    pub name: String,
-    pub description: String,
-    pub source: String,
-    pub path: String,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct DashboardData {
-    pub global: GlobalConfig,
-    pub plugins: Vec<Plugin>,
-    pub projects: Vec<Project>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
-pub struct HudConfig {
-    pub pinned_projects: Vec<String>,
-    #[serde(default = "default_terminal_app")]
-    pub terminal_app: String,
-}
-
-fn default_terminal_app() -> String {
-    "Ghostty".to_string()
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct SuggestedProject {
-    pub path: String,
-    pub display_path: String,
-    pub name: String,
-    pub task_count: u32,
-    pub has_claude_md: bool,
-    pub has_project_indicators: bool,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
-#[serde(rename_all = "lowercase")]
-pub enum SessionState {
-    Working,
-    Ready,
-    Idle,
-    Compacting,
-    Waiting,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct ContextInfo {
-    pub percent_used: u32,
-    pub tokens_used: u64,
-    pub context_size: u64,
-    pub updated_at: Option<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct ProjectSessionState {
-    pub state: SessionState,
-    pub state_changed_at: Option<String>,
-    pub session_id: Option<String>,
-    pub working_on: Option<String>,
-    pub next_step: Option<String>,
-    pub context: Option<ContextInfo>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
-pub struct SessionStatesFile {
-    pub version: u32,
-    pub projects: HashMap<String, SessionStateEntry>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct ContextInfoEntry {
-    pub percent_used: Option<u32>,
-    pub tokens_used: Option<u64>,
-    pub context_size: Option<u64>,
-    pub updated_at: Option<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
-pub struct SessionStateEntry {
-    #[serde(default)]
-    pub state: String,
-    pub state_changed_at: Option<String>,
-    pub session_id: Option<String>,
-    pub working_on: Option<String>,
-    pub next_step: Option<String>,
-    pub context: Option<ContextInfoEntry>,
-}
 
 #[derive(Debug, Deserialize)]
 struct PluginManifest {
@@ -212,200 +43,6 @@ struct Settings {
     enabled_plugins: Option<HashMap<String, bool>>,
 }
 
-fn get_claude_dir() -> Option<PathBuf> {
-    dirs::home_dir().map(|h| h.join(".claude"))
-}
-
-fn get_hud_config_path() -> Option<PathBuf> {
-    get_claude_dir().map(|d| d.join("hud.json"))
-}
-
-fn load_hud_config() -> HudConfig {
-    get_hud_config_path()
-        .and_then(|p| fs::read_to_string(&p).ok())
-        .and_then(|c| serde_json::from_str(&c).ok())
-        .unwrap_or_default()
-}
-
-fn save_hud_config(config: &HudConfig) -> Result<(), String> {
-    let path = get_hud_config_path().ok_or("Could not find config path")?;
-    let content = serde_json::to_string_pretty(config)
-        .map_err(|e| format!("Failed to serialize config: {}", e))?;
-    fs::write(&path, content).map_err(|e| format!("Failed to write config: {}", e))
-}
-
-fn get_stats_cache_path() -> Option<PathBuf> {
-    get_claude_dir().map(|d| d.join("hud-stats-cache.json"))
-}
-
-fn load_stats_cache() -> StatsCache {
-    get_stats_cache_path()
-        .and_then(|p| fs::read_to_string(&p).ok())
-        .and_then(|c| serde_json::from_str(&c).ok())
-        .unwrap_or_default()
-}
-
-fn save_stats_cache(cache: &StatsCache) -> Result<(), String> {
-    let path = get_stats_cache_path().ok_or("Could not find cache path")?;
-    let content =
-        serde_json::to_string(cache).map_err(|e| format!("Failed to serialize cache: {}", e))?;
-    fs::write(&path, content).map_err(|e| format!("Failed to write cache: {}", e))
-}
-
-fn parse_stats_from_content(content: &str, stats: &mut ProjectStats) {
-    let input_re = Regex::new(r#""input_tokens":(\d+)"#).unwrap();
-    let output_re = Regex::new(r#""output_tokens":(\d+)"#).unwrap();
-    let cache_read_re = Regex::new(r#""cache_read_input_tokens":(\d+)"#).unwrap();
-    let cache_create_re = Regex::new(r#""cache_creation_input_tokens":(\d+)"#).unwrap();
-    let model_re = Regex::new(r#""model":"claude-([^"]+)"#).unwrap();
-    let summary_re = Regex::new(r#""type":"summary","summary":"([^"]+)""#).unwrap();
-    let timestamp_re = Regex::new(r#""timestamp":"(\d{4}-\d{2}-\d{2}T[^"]+)""#).unwrap();
-
-    for cap in input_re.captures_iter(content) {
-        if let Ok(n) = cap[1].parse::<u64>() {
-            stats.total_input_tokens += n;
-        }
-    }
-
-    for cap in output_re.captures_iter(content) {
-        if let Ok(n) = cap[1].parse::<u64>() {
-            stats.total_output_tokens += n;
-        }
-    }
-
-    for cap in cache_read_re.captures_iter(content) {
-        if let Ok(n) = cap[1].parse::<u64>() {
-            stats.total_cache_read_tokens += n;
-        }
-    }
-
-    for cap in cache_create_re.captures_iter(content) {
-        if let Ok(n) = cap[1].parse::<u64>() {
-            stats.total_cache_creation_tokens += n;
-        }
-    }
-
-    for cap in model_re.captures_iter(content) {
-        let model = &cap[1];
-        if model.contains("opus") {
-            stats.opus_messages += 1;
-        } else if model.contains("sonnet") {
-            stats.sonnet_messages += 1;
-        } else if model.contains("haiku") {
-            stats.haiku_messages += 1;
-        }
-    }
-
-    if let Some(cap) = summary_re.captures_iter(content).last() {
-        stats.latest_summary = Some(cap[1].to_string());
-    }
-
-    for cap in timestamp_re.captures_iter(content) {
-        let ts = &cap[1];
-        let date = ts.split('T').next().unwrap_or(ts);
-
-        if stats.first_activity.is_none() || stats.first_activity.as_deref() > Some(date) {
-            stats.first_activity = Some(date.to_string());
-        }
-        if stats.last_activity.is_none() || stats.last_activity.as_deref() < Some(date) {
-            stats.last_activity = Some(date.to_string());
-        }
-    }
-}
-
-fn compute_project_stats(
-    claude_projects_dir: &std::path::Path,
-    encoded_name: &str,
-    cache: &mut StatsCache,
-    project_path: &str,
-) -> ProjectStats {
-    let project_dir = claude_projects_dir.join(encoded_name);
-
-    if !project_dir.exists() {
-        return ProjectStats::default();
-    }
-
-    let cached = cache.projects.get(project_path);
-    let mut current_files: HashMap<String, CachedFileInfo> = HashMap::new();
-    let mut needs_recompute = false;
-    let mut files_to_parse: Vec<(PathBuf, bool)> = Vec::new();
-
-    if let Ok(entries) = fs::read_dir(&project_dir) {
-        for entry in entries.filter_map(|e| e.ok()) {
-            let path = entry.path();
-            if path.extension().is_some_and(|ext| ext == "jsonl") {
-                let filename = entry.file_name().to_string_lossy().to_string();
-                let metadata = entry.metadata().ok();
-
-                let size = metadata.as_ref().map(|m| m.len()).unwrap_or(0);
-                let mtime = metadata
-                    .as_ref()
-                    .and_then(|m| m.modified().ok())
-                    .and_then(|t| t.duration_since(SystemTime::UNIX_EPOCH).ok())
-                    .map(|d| d.as_secs())
-                    .unwrap_or(0);
-
-                current_files.insert(filename.clone(), CachedFileInfo { size, mtime });
-
-                let cached_file = cached.and_then(|c| c.files.get(&filename));
-                let is_new_or_modified =
-                    cached_file.map_or(true, |cf| cf.size != size || cf.mtime != mtime);
-
-                if is_new_or_modified {
-                    needs_recompute = true;
-                    files_to_parse.push((path, true));
-                }
-            }
-        }
-    }
-
-    let file_count_changed = cached.map_or(true, |c| c.files.len() != current_files.len());
-    if file_count_changed {
-        needs_recompute = true;
-    }
-
-    if !needs_recompute {
-        if let Some(c) = cached {
-            return c.stats.clone();
-        }
-    }
-
-    let mut stats = ProjectStats {
-        session_count: current_files.len() as u32,
-        ..Default::default()
-    };
-
-    for entry in fs::read_dir(&project_dir)
-        .into_iter()
-        .flatten()
-        .filter_map(|e| e.ok())
-    {
-        let path = entry.path();
-        if path.extension().is_some_and(|ext| ext == "jsonl") {
-            if let Ok(content) = fs::read_to_string(&path) {
-                parse_stats_from_content(&content, &mut stats);
-            }
-        }
-    }
-
-    cache.projects.insert(
-        project_path.to_string(),
-        CachedProjectStats {
-            files: current_files,
-            stats: stats.clone(),
-        },
-    );
-
-    stats
-}
-
-fn resolve_symlink(path: &PathBuf) -> Option<PathBuf> {
-    if path.exists() {
-        fs::canonicalize(path).ok()
-    } else {
-        None
-    }
-}
 
 fn count_artifacts_in_dir(dir: &PathBuf, artifact_type: &str) -> usize {
     if !dir.exists() {
@@ -446,20 +83,16 @@ fn count_hooks_in_dir(dir: &std::path::Path) -> usize {
 }
 
 fn parse_frontmatter(content: &str) -> Option<(String, String)> {
-    let re = Regex::new(r"(?s)^---\s*\n(.*?)\n---").ok()?;
-    let caps = re.captures(content)?;
+    let caps = RE_FRONTMATTER.captures(content)?;
     let frontmatter = caps.get(1)?.as_str();
 
-    let name_re = Regex::new(r"(?m)^name:\s*(.+)$").ok()?;
-    let desc_re = Regex::new(r"(?m)^description:\s*(.+)$").ok()?;
-
-    let name = name_re
+    let name = RE_FRONTMATTER_NAME
         .captures(frontmatter)
         .and_then(|c| c.get(1))
         .map(|m| m.as_str().trim().to_string())
         .unwrap_or_default();
 
-    let description = desc_re
+    let description = RE_FRONTMATTER_DESC
         .captures(frontmatter)
         .and_then(|c| c.get(1))
         .map(|m| m.as_str().trim().to_string())
@@ -564,34 +197,15 @@ fn collect_artifacts_from_dir(dir: &PathBuf, artifact_type: &str, source: &str) 
 
 fn strip_markdown(text: &str) -> String {
     let mut result = text.to_string();
-    result = Regex::new(r"\*\*([^*]+)\*\*")
-        .unwrap()
+    result = RE_MD_BOLD_ASTERISK.replace_all(&result, "$1").to_string();
+    result = RE_MD_ITALIC_ASTERISK.replace_all(&result, "$1").to_string();
+    result = RE_MD_BOLD_UNDERSCORE.replace_all(&result, "$1").to_string();
+    result = RE_MD_ITALIC_UNDERSCORE
         .replace_all(&result, "$1")
         .to_string();
-    result = Regex::new(r"\*([^*]+)\*")
-        .unwrap()
-        .replace_all(&result, "$1")
-        .to_string();
-    result = Regex::new(r"__([^_]+)__")
-        .unwrap()
-        .replace_all(&result, "$1")
-        .to_string();
-    result = Regex::new(r"_([^_]+)_")
-        .unwrap()
-        .replace_all(&result, "$1")
-        .to_string();
-    result = Regex::new(r"`([^`]+)`")
-        .unwrap()
-        .replace_all(&result, "$1")
-        .to_string();
-    result = Regex::new(r"^#+\s*")
-        .unwrap()
-        .replace_all(&result, "")
-        .to_string();
-    result = Regex::new(r"\[([^\]]+)\]\([^)]+\)")
-        .unwrap()
-        .replace_all(&result, "$1")
-        .to_string();
+    result = RE_MD_CODE.replace_all(&result, "$1").to_string();
+    result = RE_MD_HEADING.replace_all(&result, "").to_string();
+    result = RE_MD_LINK.replace_all(&result, "$1").to_string();
     result
 }
 
@@ -649,17 +263,13 @@ fn extract_session_data(session_path: &std::path::Path) -> SessionExtract {
     };
 
     let reader = BufReader::new(file);
-    let summary_re = Regex::new(r#""type":"summary","summary":"([^"]+)""#).ok();
-
     let mut first_message: Option<String> = None;
     let mut first_command: Option<String> = None;
     let mut last_summary: Option<String> = None;
 
     for line in reader.lines().map_while(Result::ok) {
-        if let Some(ref re) = summary_re {
-            if let Some(cap) = re.captures(&line) {
-                last_summary = Some(cap[1].to_string());
-            }
+        if let Some(cap) = RE_SUMMARY.captures(&line) {
+            last_summary = Some(cap[1].to_string());
         }
 
         if first_message.is_some() {
@@ -1432,24 +1042,6 @@ mod window_management {
         output.map(|o| o.status.success()).unwrap_or(false)
     }
 
-    /// Ensure a tmux session exists for a project (creates if needed)
-    pub fn ensure_tmux_session(project_path: &str) -> Result<String, String> {
-        let session_name = get_tmux_session_name(project_path);
-
-        if !has_tmux_session(project_path) {
-            eprintln!(
-                "[HUD DEBUG] Creating tmux session '{}' at '{}'",
-                session_name, project_path
-            );
-            std::process::Command::new("tmux")
-                .args(["new-session", "-d", "-s", &session_name, "-c", project_path])
-                .output()
-                .map_err(|e| format!("Failed to create tmux session: {}", e))?;
-        }
-
-        Ok(session_name)
-    }
-
     /// Switch the current tmux client to a session
     pub fn switch_to_tmux_session(session_name: &str) -> Result<bool, String> {
         eprintln!("[HUD DEBUG] Switching to tmux session '{}'", session_name);
@@ -1729,10 +1321,7 @@ mod window_management {
                 session_name, path
             )
         } else {
-            format!(
-                "tmux new-session -A -s '{}' -c '{}'",
-                session_name, path
-            )
+            format!("tmux new-session -A -s '{}' -c '{}'", session_name, path)
         };
 
         // Launch terminal app with tmux command
@@ -1760,7 +1349,15 @@ mod window_management {
             }
             "Alacritty" => {
                 std::process::Command::new("open")
-                    .args(["-na", "Alacritty.app", "--args", "-e", "sh", "-c", &tmux_cmd])
+                    .args([
+                        "-na",
+                        "Alacritty.app",
+                        "--args",
+                        "-e",
+                        "sh",
+                        "-c",
+                        &tmux_cmd,
+                    ])
                     .spawn()
                     .map_err(|e| format!("Failed to launch Alacritty: {}", e))?;
             }
@@ -1831,9 +1428,7 @@ mod window_management {
         }
 
         // No attached client - need to launch terminal and attach
-        eprintln!(
-            "[HUD DEBUG] No attached tmux client, launching terminal to attach"
-        );
+        eprintln!("[HUD DEBUG] No attached tmux client, launching terminal to attach");
         launch_terminal_with_tmux(project_path, terminal_app, false)?;
         Ok(true)
     }
@@ -1844,7 +1439,10 @@ fn bring_project_windows_to_front(
     path: String,
     launch_if_none: bool,
 ) -> Result<BringToFrontResult, String> {
-    eprintln!("[HUD DEBUG] bring_project_windows_to_front called: path='{}', launch_if_none={}", path, launch_if_none);
+    eprintln!(
+        "[HUD DEBUG] bring_project_windows_to_front called: path='{}', launch_if_none={}",
+        path, launch_if_none
+    );
 
     #[cfg(target_os = "macos")]
     {
@@ -1869,7 +1467,9 @@ fn bring_project_windows_to_front(
                     eprintln!("[HUD DEBUG] Error launching terminal: {}", e);
                 }
             } else {
-                eprintln!("[HUD DEBUG] No tmux session and launch_if_none=false, activating terminal");
+                eprintln!(
+                    "[HUD DEBUG] No tmux session and launch_if_none=false, activating terminal"
+                );
                 let _ = focus_app(&terminal_app);
             }
 
@@ -1937,7 +1537,6 @@ fn launch_in_terminal(path: String, run_claude: bool) -> Result<(), String> {
 }
 
 use std::sync::Mutex;
-use once_cell::sync::Lazy;
 
 struct FocusedProjectCache {
     value: Option<String>,
@@ -2006,7 +1605,15 @@ fn compute_focused_project() -> Option<String> {
 
     let frontmost_app = String::from_utf8_lossy(&output.stdout).trim().to_string();
 
-    let terminal_apps = ["Warp", "Terminal", "iTerm2", "iTerm", "Alacritty", "kitty", "Ghostty"];
+    let terminal_apps = [
+        "Warp",
+        "Terminal",
+        "iTerm2",
+        "iTerm",
+        "Alacritty",
+        "kitty",
+        "Ghostty",
+    ];
     let hud_apps = ["claude-hud", "Claude HUD", "stable"];
 
     if hud_apps.iter().any(|&app| frontmost_app.contains(app)) {
@@ -2033,11 +1640,16 @@ fn compute_focused_project() -> Option<String> {
     }
 
     // Fallback to old TTY-based detection for non-tmux terminals
-    get_terminal_working_directory(&frontmost_app, &config.pinned_projects).ok().flatten()
+    get_terminal_working_directory(&frontmost_app, &config.pinned_projects)
+        .ok()
+        .flatten()
 }
 
 #[cfg(target_os = "macos")]
-fn get_terminal_working_directory(app_name: &str, pinned_projects: &[String]) -> Result<Option<String>, String> {
+fn get_terminal_working_directory(
+    app_name: &str,
+    pinned_projects: &[String],
+) -> Result<Option<String>, String> {
     if app_name.contains("Warp") {
         let output = std::process::Command::new("lsof")
             .arg("-c")

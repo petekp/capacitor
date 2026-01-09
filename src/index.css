@@ -185,16 +185,63 @@
   outline-offset: -1px;
 }
 
-.card-working {
+
+/* One-time flash animations for state changes */
+@keyframes flash-ready {
+  0% {
+    box-shadow: 0 0 0 0 oklch(0.7 0.2 145 / 0%);
+    background-color: var(--card);
+  }
+  10% {
+    box-shadow: 0 0 0 3px oklch(0.7 0.2 145 / 50%), 0 0 20px 4px oklch(0.7 0.2 145 / 30%);
+    background-color: oklch(0.7 0.2 145 / 15%);
+  }
+  100% {
+    box-shadow: 0 0 0 0 oklch(0.7 0.2 145 / 0%);
+    background-color: var(--card);
+  }
 }
 
-.card-ready {
+@keyframes flash-waiting {
+  0% {
+    box-shadow: 0 0 0 0 oklch(0.8 0.15 85 / 0%);
+    background-color: var(--card);
+  }
+  10% {
+    box-shadow: 0 0 0 3px oklch(0.8 0.15 85 / 50%), 0 0 20px 4px oklch(0.8 0.15 85 / 30%);
+    background-color: oklch(0.8 0.15 85 / 15%);
+  }
+  100% {
+    box-shadow: 0 0 0 0 oklch(0.8 0.15 85 / 0%);
+    background-color: var(--card);
+  }
 }
 
-.card-compacting {
+@keyframes flash-compacting {
+  0% {
+    box-shadow: 0 0 0 0 oklch(0.65 0.12 55 / 0%);
+    background-color: var(--card);
+  }
+  10% {
+    box-shadow: 0 0 0 3px oklch(0.65 0.12 55 / 50%), 0 0 20px 4px oklch(0.65 0.12 55 / 30%);
+    background-color: oklch(0.65 0.12 55 / 15%);
+  }
+  100% {
+    box-shadow: 0 0 0 0 oklch(0.65 0.12 55 / 0%);
+    background-color: var(--card);
+  }
 }
 
-.card-waiting {
+.card-flash-ready {
+  animation: flash-ready 1400ms ease-out;
+}
+
+.card-flash-waiting {
+  animation: flash-waiting 1400ms ease-out;
+}
+
+.card-flash-compacting {
+  animation: flash-compacting 1400ms ease-out;
 }
 
 @keyframes shimmer {
