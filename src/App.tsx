@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { DashboardData, Project, ProjectDetails, Artifact, SuggestedProject, Plugin as PluginType, ProjectStatus, ProjectSessionState, SessionStatesFile, BringToFrontResult } from "./types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -58,6 +59,29 @@ function formatCost(cost: number): string {
   return `$${cost.toFixed(1)}`;
 }
 
+function TabButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex-1 flex items-center justify-center gap-1 px-3 py-2 text-[12px] font-medium transition-colors ${
+        active
+          ? "text-(--color-foreground) border-b-2 border-(--color-foreground)"
+          : "text-(--color-muted-foreground) hover:text-(--color-foreground) border-b-2 border-transparent"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
 function App() {
   const [activeTab, setActiveTab] = useState<Tab>("projects");
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
@@ -76,6 +100,9 @@ function App() {
   const [globalHookInstalled, setGlobalHookInstalled] = useState<boolean | null>(null);
   const [installingHook, setInstallingHook] = useState(false);
   const [addingProject, setAddingProject] = useState(false);
+  const [alwaysOnTop, setAlwaysOnTop] = useState(false);
+  const [focusedProjectPath, setFocusedProjectPath] = useState<string | null>(null);
+  const [acknowledgedProjects, setAcknowledgedProjects] = useState<Set<string>>(new Set());
 
   const prevSessionStatesRef = useRef<Record<string, ProjectSessionState>>({});
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -113,6 +140,20 @@ function App() {
     }
     prevSessionStatesRef.current = sessionStates;
   }, [sessionStates, playReadySound]);
+
+  useEffect(() => {
+    let lastFocus = 0;
+    const handleMouseEnter = () => {
+      const now = Date.now();
+      if (now - lastFocus < 500) return;
+      lastFocus = now;
+      if (!document.hasFocus()) {
+        getCurrentWindow().setFocus();
+      }
+    };
+    document.addEventListener("mouseenter", handleMouseEnter);
+    return () => document.removeEventListener("mouseenter", handleMouseEnter);
+  }, []);
 
   const loadSessionStates = useCallback(async (projects: Project[]) => {
     if (projects.length === 0) return;
@@ -181,6 +222,17 @@ function App() {
     }
   };
 
+  const handleToggleAlwaysOnTop = async () => {
+    try {
+      const window = getCurrentWindow();
+      const newValue = !alwaysOnTop;
+      await window.setAlwaysOnTop(newValue);
+      setAlwaysOnTop(newValue);
+    } catch (err) {
+      console.error("Failed to toggle always-on-top:", err);
+    }
+  };
+
   useEffect(() => {
     loadData();
   }, [loadData]);
@@ -226,6 +278,24 @@ function App() {
 
     return () => clearInterval(interval);
   }, [dashboard, activeTab, projectView, loadSessionStates]);
+
+  useEffect(() => {
+    if (activeTab !== "projects" || projectView !== "list") return;
+
+    const pollFocusedProject = async () => {
+      try {
+        const path = await invoke<string | null>("get_focused_project_path");
+        setFocusedProjectPath(path);
+      } catch (err) {
+        console.error("Failed to get focused project:", err);
+      }
+    };
+
+    pollFocusedProject();
+    const interval = setInterval(pollFocusedProject, 2000);
+
+    return () => clearInterval(interval);
+  }, [activeTab, projectView]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -384,31 +454,38 @@ function App() {
   }
 
   return (
-    <div className="flex h-screen bg-(--color-background) text-(--color-foreground)">
-      <aside className="w-52 border-r border-(--color-border) flex flex-col bg-(--color-muted)/30">
-        <div className="pt-8 pb-4 px-3">
-          <nav className="space-y-1">
-            <SidebarItem
+    <div className="flex flex-col h-screen bg-(--color-background) text-(--color-foreground)">
+      <header className="flex-shrink-0 border-b border-(--color-border) bg-(--color-muted)/30">
+        <div className="flex items-center">
+          <nav className="flex flex-1">
+            <TabButton
               active={activeTab === "projects"}
               onClick={() => { setActiveTab("projects"); setProjectView("list"); setSelectedProject(null); }}
-              icon="folder"
-              count={dashboard?.projects.length ?? 0}
             >
               Projects
-            </SidebarItem>
-            <SidebarItem
+              <span className="ml-1.5 text-xs opacity-60">{dashboard?.projects.length ?? 0}</span>
+            </TabButton>
+            <TabButton
               active={activeTab === "artifacts"}
               onClick={() => setActiveTab("artifacts")}
-              icon="lightbulb"
-              count={artifacts.length}
             >
               Artifacts
-            </SidebarItem>
+              <span className="ml-1.5 text-xs opacity-60">{artifacts.length}</span>
+            </TabButton>
           </nav>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleToggleAlwaysOnTop}
+            title={alwaysOnTop ? "Unpin from top" : "Pin to top"}
+            className={`h-7 w-7 mr-1 ${alwaysOnTop ? "text-blue-400" : "opacity-50 hover:opacity-100"}`}
+          >
+            <Icon name="pin" className="w-3.5 h-3.5" />
+          </Button>
         </div>
-      </aside>
+      </header>
 
-      <main className="flex-1 overflow-auto p-6">
+      <main className="flex-1 overflow-auto p-3">
         {globalHookInstalled === false && (
           <div className="mb-6 p-4 rounded-lg border border-blue-500/30 bg-blue-500/10">
             <div className="flex items-center justify-between">
@@ -434,9 +511,12 @@ function App() {
             projects={dashboard.projects}
             projectStatuses={projectStatuses}
             sessionStates={sessionStates}
+            focusedProjectPath={focusedProjectPath}
+            acknowledgedProjects={acknowledgedProjects}
             onSelectProject={handleSelectProject}
             onAddProject={handleShowAddProject}
             onLaunchTerminal={handleLaunchTerminal}
+            onAcknowledge={(path) => setAcknowledgedProjects((prev) => new Set(prev).add(path))}
           />
         )}
 
@@ -483,41 +563,6 @@ function App() {
   );
 }
 
-function SidebarItem({
-  active,
-  onClick,
-  icon,
-  count,
-  total,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  icon: string;
-  count?: number;
-  total?: number;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={`w-full flex items-center gap-2 px-3 py-1.5 text-sm rounded-(--radius-md) transition-colors ${
-        active
-          ? "bg-(--color-muted) text-(--color-foreground)"
-          : "text-(--color-muted-foreground) hover:text-(--color-foreground) hover:bg-(--color-muted)/50"
-      }`}
-    >
-      <Icon name={icon} className="w-4 h-4" />
-      <span className="flex-1 text-left">{children}</span>
-      {count !== undefined && (
-        <span className="text-xs opacity-60">
-          {total !== undefined ? `${count}/${total}` : count}
-        </span>
-      )}
-    </button>
-  );
-}
-
 function Icon({ name, className = "" }: { name: string; className?: string }) {
   const icons: Record<string, string> = {
     home: "M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6",
@@ -542,6 +587,8 @@ function Icon({ name, className = "" }: { name: string; className?: string }) {
     sparkle: "M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456z",
     chevronDown: "M19 9l-7 7-7-7",
     chevronRight: "M9 5l7 7-7 7",
+    info: "M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z",
+    pin: "M16 12V4h1a1 1 0 000-2H7a1 1 0 000 2h1v8l-2 2v2h5v6l1 1 1-1v-6h5v-2l-2-2z",
   };
 
   return (
@@ -561,16 +608,22 @@ function ProjectsPanel({
   projects,
   projectStatuses,
   sessionStates,
+  focusedProjectPath,
+  acknowledgedProjects,
   onSelectProject,
   onAddProject,
   onLaunchTerminal,
+  onAcknowledge,
 }: {
   projects: Project[];
   projectStatuses: Record<string, ProjectStatus>;
   sessionStates: Record<string, ProjectSessionState>;
+  focusedProjectPath: string | null;
+  acknowledgedProjects: Set<string>;
   onSelectProject: (project: Project) => void;
   onAddProject: () => void;
   onLaunchTerminal: (path: string, runClaude: boolean) => void;
+  onAcknowledge: (path: string) => void;
 }) {
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -585,7 +638,7 @@ function ProjectsPanel({
     return true;
   });
 
-  const isRecentTimestamp = (timestamp: string | null | undefined, hoursThreshold = 48) => {
+  const isRecentTimestamp = (timestamp: string | null | undefined, hoursThreshold = 24) => {
     if (!timestamp) return false;
     const hoursSince = (Date.now() - new Date(timestamp).getTime()) / 3600000;
     return hoursSince < hoursThreshold;
@@ -641,19 +694,19 @@ function ProjectsPanel({
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-3">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2 flex-1">
           {projects.length > 0 && (
             <Input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search..."
-              className="h-7 text-xs w-40"
+              className="h-6 text-[11px] flex-1"
             />
           )}
         </div>
-        <Button variant="secondary" size="sm" onClick={onAddProject} className="h-7 text-xs">
+        <Button variant="ghost" size="sm" onClick={onAddProject} className="h-6 px-2 text-[11px] ml-2">
           + Add
         </Button>
       </div>
@@ -672,8 +725,10 @@ function ProjectsPanel({
                     project={project}
                     status={status}
                     sessionState={sessionState}
+                    isFocused={focusedProjectPath === project.path}
+                    isAcknowledged={acknowledgedProjects.has(project.path)}
                     onSelect={() => onSelectProject(project)}
-                    onLaunchTerminal={() => onLaunchTerminal(project.path, true)}
+                    onLaunchTerminal={() => { onAcknowledge(project.path); onLaunchTerminal(project.path, true); }}
                   />
                 ))}
               </div>
@@ -685,7 +740,7 @@ function ProjectsPanel({
               <h2 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">
                 {recentProjects.length > 0 ? `Dormant (${dormantProjects.length})` : "Projects"}
               </h2>
-              <div className="grid grid-cols-2 gap-1.5">
+              <div className="space-y-1.5">
                 {dormantProjects.map(({ project, status }) => (
                   <CompactProjectCard
                     key={project.path}
@@ -722,24 +777,27 @@ function ProjectCard({
   project,
   status,
   sessionState,
+  isFocused,
+  isAcknowledged,
   onSelect,
   onLaunchTerminal,
 }: {
   project: Project;
   status: ProjectStatus | undefined;
   sessionState: ProjectSessionState | undefined;
+  isFocused: boolean;
+  isAcknowledged: boolean;
   onSelect: () => void;
   onLaunchTerminal: () => void;
 }) {
   const hasStatus = status && (status.working_on || status.next_step);
-  const contextPercent = sessionState?.context?.percent_used ?? 0;
 
   const getStatusConfig = () => {
     if (!sessionState) return null;
     switch (sessionState.state) {
-      case "ready": return { text: "Your turn", bgClass: "bg-emerald-500/20", textClass: "text-emerald-400", dotClass: "bg-emerald-400" };
+      case "ready": return { text: "Ready", bgClass: "bg-emerald-500/20", shimmerClass: "shimmer shimmer-bg shimmer-color-emerald-300/20 shimmer-speed-500", textClass: "text-emerald-400", dotClass: "bg-emerald-400" };
       case "compacting": return { text: "Compacting", bgClass: "bg-pink-500/20", textClass: "text-pink-400", dotClass: "bg-pink-400" };
-      case "working": return { text: "Working", bgClass: "bg-amber-500/20", textClass: "text-amber-400", dotClass: "bg-amber-400" };
+      case "working": return { text: "Working", bgClass: "bg-orange-500/20", textClass: "text-orange-300", dotClass: "bg-orange-400" };
       default: return null;
     }
   };
@@ -747,6 +805,7 @@ function ProjectCard({
   const statusConfig = getStatusConfig();
 
   const getCardStateClass = () => {
+    if (isFocused) return "card-focused";
     if (!sessionState) return "";
     switch (sessionState.state) {
       case "working": return "card-working";
@@ -756,91 +815,63 @@ function ProjectCard({
     }
   };
 
-  const getProgressBarColor = (percent: number) => {
-    if (percent >= 80) return "bg-red-500";
-    if (percent >= 60) return "bg-amber-500";
-    return "bg-emerald-500";
-  };
-
   return (
     <div
-      onClick={onSelect}
-      className={`p-3 rounded-lg border bg-(--color-card) hover:bg-(--color-muted)/50 cursor-default transition-colors ${getCardStateClass()}`}
+      onClick={onLaunchTerminal}
+      className={`p-2.5 rounded-lg border bg-(--color-card) hover:bg-(--color-muted) active:bg-(--color-muted)/70 transition-colors ${getCardStateClass()}`}
     >
-      <div className="mb-2">
-        <h3 className="font-bold text-lg leading-tight tracking-[-0.02em]">
+      <div className="flex items-start justify-between gap-2 mb-1.5">
+        <h3 className="font-semibold text-lg leading-tight tracking-[-0.01em]">
           {project.name}
         </h3>
+        <div className="flex items-center gap-1 shrink-0">
+          {statusConfig && (
+            <div className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded ${statusConfig.bgClass} ${!isAcknowledged && statusConfig.shimmerClass ? statusConfig.shimmerClass : ""}`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${statusConfig.dotClass} animate-pulse`} />
+              <span className={`text-[9px] font-semibold uppercase tracking-wide ${statusConfig.textClass}`}>
+                {statusConfig.text}
+              </span>
+            </div>
+          )}
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={(e) => {
+              e.stopPropagation();
+              onSelect();
+            }}
+            title="View details"
+            className="h-5 w-5 opacity-50 hover:opacity-100"
+          >
+            <Icon name="info" className="w-3 h-3" />
+          </Button>
+        </div>
       </div>
 
       {(sessionState?.working_on || sessionState?.next_step || hasStatus) ? (
-        <div className="space-y-1 mb-3">
+        <div className="space-y-0.5 mb-2">
           {(sessionState?.working_on || status?.working_on) && (
-            <div className="text-sm text-foreground font-medium leading-snug">
+            <div className="text-[12px] text-foreground/90 leading-snug line-clamp-2">
               {sessionState?.working_on || status?.working_on}
             </div>
           )}
           {(sessionState?.next_step || status?.next_step) && (
-            <div className="text-[13px] text-foreground/70 leading-snug">
+            <div className="text-[11px] text-foreground/60 leading-snug line-clamp-1">
               <span className="text-muted-foreground">→</span> {sessionState?.next_step || status?.next_step}
             </div>
           )}
           {status?.blocker && (
-            <div className="text-xs text-red-400 leading-snug">
+            <div className="text-[10px] text-red-400 leading-snug">
               <span className="font-medium">Blocked:</span> {status.blocker}
             </div>
           )}
         </div>
       ) : (
-        <div className="text-xs text-muted-foreground/50 italic mb-3">
+        <div className="text-[11px] text-muted-foreground/40 italic mb-2">
           No recent activity
         </div>
       )}
 
-      <div className="flex items-center justify-between pt-2 border-t border-(--color-border)">
-        <div className="flex items-center gap-3">
-          <div className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded min-w-[90px] ${statusConfig ? statusConfig.bgClass : "bg-transparent"}`}>
-            {statusConfig ? (
-              <>
-                <span className={`w-1.5 h-1.5 rounded-full ${statusConfig.dotClass} animate-pulse`} />
-                <span className={`text-[10px] font-semibold uppercase tracking-wide ${statusConfig.textClass}`}>
-                  {statusConfig.text}
-                </span>
-              </>
-            ) : (
-              <span className="text-[10px] text-transparent">Placeholder</span>
-            )}
-          </div>
-          {contextPercent > 0 && (
-            <div className="flex items-center gap-1.5 opacity-50">
-              <div className="w-12 h-1 bg-(--color-muted) rounded-full overflow-hidden">
-                <div
-                  className={`h-full rounded-full transition-all ${getProgressBarColor(contextPercent)}`}
-                  style={{ width: `${contextPercent}%` }}
-                />
-              </div>
-              <span className="text-[9px] tabular-nums text-muted-foreground">
-                {contextPercent}%
-              </span>
-            </div>
-          )}
-        </div>
-        <div className="flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={(e) => {
-              e.stopPropagation();
-              onLaunchTerminal();
-            }}
-            title="Resume in Claude"
-            className="h-6 px-2 text-[11px] gap-1"
-          >
-            <Icon name="play" className="w-3 h-3" />
-            Resume
-          </Button>
-        </div>
-      </div>
     </div>
   );
 }
@@ -880,19 +911,19 @@ function CompactProjectCard({
 
   return (
     <div
-      onClick={onSelect}
-      className="p-2.5 rounded-md border bg-(--color-card) hover:bg-(--color-muted)/50 cursor-default transition-colors group"
+      onClick={onLaunchTerminal}
+      className="p-2 rounded-md border bg-(--color-card) hover:bg-(--color-muted) active:bg-(--color-muted)/70 transition-colors group"
     >
-      <div className="flex items-start justify-between gap-2">
+      <div className="flex items-center justify-between gap-2">
         <div className="flex-1 min-w-0">
-          <div className="flex items-center justify-between gap-2 mb-1">
-            <span className="font-medium text-[12px] leading-none truncate">{project.name}</span>
-            <span className="text-[10px] text-muted-foreground/50 shrink-0">
+          <div className="flex items-center gap-2">
+            <span className="font-medium text-[11px] leading-none truncate">{project.name}</span>
+            <span className="text-[9px] text-muted-foreground/40 shrink-0">
               {formatRelativeTime(project.last_active)}
             </span>
           </div>
           {context && (
-            <div className="text-[11px] text-muted-foreground/70 leading-snug line-clamp-1">
+            <div className="text-[10px] text-muted-foreground/60 leading-snug line-clamp-1 mt-0.5">
               {context}
             </div>
           )}
@@ -902,12 +933,12 @@ function CompactProjectCard({
           size="icon"
           onClick={(e) => {
             e.stopPropagation();
-            onLaunchTerminal();
+            onSelect();
           }}
-          title="Continue in Claude"
-          className="h-5 w-5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+          title="View details"
+          className="h-5 w-5 opacity-0 group-hover:opacity-50 hover:!opacity-100 transition-opacity shrink-0"
         >
-          <Icon name="play" className="w-2.5 h-2.5" />
+          <Icon name="info" className="w-2.5 h-2.5" />
         </Button>
       </div>
     </div>

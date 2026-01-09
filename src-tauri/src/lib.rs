@@ -118,6 +118,12 @@ pub struct DashboardData {
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct HudConfig {
     pub pinned_projects: Vec<String>,
+    #[serde(default = "default_terminal_app")]
+    pub terminal_app: String,
+}
+
+fn default_terminal_app() -> String {
+    "Ghostty".to_string()
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -1406,123 +1412,77 @@ mod window_management {
         }
     }
 
-    pub fn find_claude_pid_for_project(project_path: &str) -> Option<u32> {
-        let output = std::process::Command::new("pgrep")
-            .args(["-x", "claude"])
+    /// Get the tmux session name for a project (uses directory name)
+    pub fn get_tmux_session_name(project_path: &str) -> String {
+        PathBuf::from(project_path)
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| "default".to_string())
+    }
+
+    /// Check if a tmux session exists for this project
+    pub fn has_tmux_session(project_path: &str) -> bool {
+        let session_name = get_tmux_session_name(project_path);
+        let output = std::process::Command::new("tmux")
+            .args(["has-session", "-t", &session_name])
+            .output()
+            .ok();
+
+        output.map(|o| o.status.success()).unwrap_or(false)
+    }
+
+    /// Ensure a tmux session exists for a project (creates if needed)
+    pub fn ensure_tmux_session(project_path: &str) -> Result<String, String> {
+        let session_name = get_tmux_session_name(project_path);
+
+        if !has_tmux_session(project_path) {
+            eprintln!(
+                "[HUD DEBUG] Creating tmux session '{}' at '{}'",
+                session_name, project_path
+            );
+            std::process::Command::new("tmux")
+                .args(["new-session", "-d", "-s", &session_name, "-c", project_path])
+                .output()
+                .map_err(|e| format!("Failed to create tmux session: {}", e))?;
+        }
+
+        Ok(session_name)
+    }
+
+    /// Switch the current tmux client to a session
+    pub fn switch_to_tmux_session(session_name: &str) -> Result<bool, String> {
+        eprintln!("[HUD DEBUG] Switching to tmux session '{}'", session_name);
+        let output = std::process::Command::new("tmux")
+            .args(["switch-client", "-t", session_name])
+            .output()
+            .map_err(|e| format!("Failed to switch tmux session: {}", e))?;
+
+        Ok(output.status.success())
+    }
+
+    /// Check if tmux is running (has any sessions)
+    pub fn is_tmux_running() -> bool {
+        std::process::Command::new("tmux")
+            .args(["list-sessions"])
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+    }
+
+    /// Get the current tmux session name (if any client is attached)
+    pub fn get_current_tmux_session() -> Option<String> {
+        let output = std::process::Command::new("tmux")
+            .args(["display-message", "-p", "#S"])
             .output()
             .ok()?;
 
-        let pids = String::from_utf8_lossy(&output.stdout);
-        for pid_str in pids.lines() {
-            let pid = pid_str.trim();
-            if pid.is_empty() {
-                continue;
-            }
-
-            let lsof_output = std::process::Command::new("lsof")
-                .args(["-p", pid])
-                .output();
-
-            if let Ok(lsof_out) = lsof_output {
-                let lsof_str = String::from_utf8_lossy(&lsof_out.stdout);
-                for line in lsof_str.lines() {
-                    if line.contains("cwd") && line.contains(project_path) {
-                        if let Ok(pid_num) = pid.parse::<u32>() {
-                            eprintln!(
-                                "[HUD DEBUG] Found Claude session PID {} for project: {}",
-                                pid_num, project_path
-                            );
-                            return Some(pid_num);
-                        }
-                    }
-                }
+        if output.status.success() {
+            let session = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !session.is_empty() {
+                return Some(session);
             }
         }
         None
-    }
-
-    pub fn has_claude_session_for_project(project_path: &str) -> bool {
-        find_claude_pid_for_project(project_path).is_some()
-    }
-
-    pub fn focus_warp_window_by_terminal_content(project_path: &str) -> Result<bool, String> {
-        let project_name = std::path::PathBuf::from(project_path)
-            .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_default();
-
-        // Search for "projectname git:" pattern which appears in the prompt
-        let search_pattern = format!("{} git:", project_name);
-
-        eprintln!(
-            "[HUD DEBUG] Searching terminal content for pattern: '{}'",
-            search_pattern
-        );
-
-        let script = format!(
-            r#"tell application "System Events"
-                tell process "Warp"
-                    set windowCount to count of windows
-                    repeat with i from 1 to windowCount
-                        set w to window i
-                        try
-                            set textAreas to every UI element of w whose role is "AXTextArea"
-                            repeat with ta in textAreas
-                                set content to value of ta
-                                set contentLen to length of content
-                                -- Only search the last 500 chars (prompt area) to avoid false matches
-                                if contentLen > 500 then
-                                    set lastPart to text (contentLen - 500) thru contentLen of content
-                                else
-                                    set lastPart to content
-                                end if
-                                if lastPart contains "{}" then
-                                    perform action "AXRaise" of w
-                                    tell application "Warp" to activate
-                                    return i
-                                end if
-                            end repeat
-                        end try
-                    end repeat
-                    return 0
-                end tell
-            end tell"#,
-            search_pattern
-        );
-
-        let output = std::process::Command::new("osascript")
-            .arg("-e")
-            .arg(&script)
-            .output()
-            .map_err(|e| format!("Failed to run AppleScript: {}", e))?;
-
-        let result = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        let found = result != "0" && !result.is_empty();
-
-        if found {
-            eprintln!(
-                "[HUD DEBUG] Found '{}' in terminal content, focused window {}",
-                search_pattern, result
-            );
-        } else {
-            eprintln!(
-                "[HUD DEBUG] Pattern '{}' not found in any terminal content",
-                search_pattern
-            );
-        }
-
-        Ok(found)
-    }
-
-    pub fn focus_warp_for_project(project_path: &str) -> Result<bool, String> {
-        // Primary: Search terminal content for git prompt pattern (most reliable)
-        if focus_warp_window_by_terminal_content(project_path)? {
-            return Ok(true);
-        }
-
-        // Fall back to window name matching
-        eprintln!("[HUD DEBUG] Content search failed, falling back to window name matching");
-        focus_warp_window_for_project(project_path)
     }
 
     pub fn focus_app(app_name: &str) -> Result<(), String> {
@@ -1533,96 +1493,6 @@ mod window_management {
             .spawn()
             .map_err(|e| format!("Failed to focus {}: {}", app_name, e))?;
         Ok(())
-    }
-
-    fn normalize_for_matching(s: &str) -> String {
-        s.to_lowercase().replace(['-', '_', ' '], "")
-    }
-
-    pub fn focus_warp_window_for_project(project_path: &str) -> Result<bool, String> {
-        let project_name = std::path::PathBuf::from(project_path)
-            .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_default();
-
-        let normalized_project = normalize_for_matching(&project_name);
-        eprintln!(
-            "[HUD DEBUG] Looking for Warp window matching project '{}' (normalized: '{}')",
-            project_name, normalized_project
-        );
-
-        let script = r#"tell application "System Events"
-            if exists process "Warp" then
-                tell process "Warp"
-                    set windowCount to count of windows
-                    set windowInfo to ""
-                    repeat with i from 1 to windowCount
-                        set windowInfo to windowInfo & i & ":" & name of window i & linefeed
-                    end repeat
-                    return windowInfo
-                end tell
-            else
-                return ""
-            end if
-        end tell"#;
-
-        let output = std::process::Command::new("osascript")
-            .arg("-e")
-            .arg(script)
-            .output()
-            .map_err(|e| format!("Failed to get Warp windows: {}", e))?;
-
-        let window_info = String::from_utf8_lossy(&output.stdout);
-        eprintln!("[HUD DEBUG] Warp windows: {}", window_info.trim().replace('\n', ", "));
-
-        for line in window_info.lines() {
-            let line = line.trim();
-            if line.is_empty() {
-                continue;
-            }
-            if let Some((idx_str, title)) = line.split_once(':') {
-                let normalized_title = normalize_for_matching(title);
-                eprintln!(
-                    "[HUD DEBUG] Window {}: '{}' (normalized: '{}') vs project '{}'",
-                    idx_str, title, normalized_title, normalized_project
-                );
-
-                // Skip empty strings to avoid false matches
-                if normalized_title.is_empty() || normalized_project.is_empty() {
-                    continue;
-                }
-
-                if normalized_title.contains(&normalized_project)
-                    || normalized_project.contains(&normalized_title)
-                {
-                    if let Ok(window_index) = idx_str.parse::<usize>() {
-                        eprintln!(
-                            "[HUD DEBUG] Found matching Warp window {} for project",
-                            window_index
-                        );
-                        let focus_script = format!(
-                            r#"tell application "System Events"
-                                tell process "Warp"
-                                    perform action "AXRaise" of window {}
-                                end tell
-                            end tell
-                            tell application "Warp" to activate"#,
-                            window_index
-                        );
-                        std::process::Command::new("osascript")
-                            .arg("-e")
-                            .arg(&focus_script)
-                            .spawn()
-                            .map_err(|e| format!("Failed to focus Warp window: {}", e))?;
-                        return Ok(true);
-                    }
-                }
-            }
-        }
-
-        eprintln!("[HUD DEBUG] No matching Warp window found, just activating Warp");
-        focus_app("Warp")?;
-        Ok(false)
     }
 
     pub fn find_dev_server_port(project_path: &str) -> Option<u16> {
@@ -1828,35 +1698,132 @@ mod window_management {
         rx.recv_timeout(Duration::from_millis(2000)).ok()
     }
 
-    pub fn launch_terminal_with_claude(path: &str) -> Result<(), String> {
-        eprintln!("[HUD DEBUG] launch_terminal_with_claude: opening Warp with path '{}'", path);
-        std::process::Command::new("open")
-            .arg("-a")
-            .arg("Warp")
-            .arg(path)
-            .spawn()
-            .map_err(|e| format!("Failed to launch Warp: {}", e))?;
+    /// Launch terminal app with tmux attached to the project session
+    pub fn launch_terminal_with_tmux(
+        path: &str,
+        terminal_app: &str,
+        run_claude: bool,
+    ) -> Result<(), String> {
+        let session_name = get_tmux_session_name(path);
+        eprintln!(
+            "[HUD DEBUG] launch_terminal_with_tmux: app='{}' session='{}' path='{}'",
+            terminal_app, session_name, path
+        );
 
-        let path_owned = path.to_string();
-        std::thread::spawn(move || {
-            std::thread::sleep(Duration::from_millis(800));
-            let script = r#"
-                tell application "System Events"
-                    tell process "Warp"
-                        keystroke "claude"
-                        delay 0.1
-                        key code 36
-                    end tell
-                end tell
-            "#;
-            let _ = std::process::Command::new("osascript")
-                .arg("-e")
-                .arg(script)
-                .spawn();
-            log::debug!("Typed claude command in terminal for {}", path_owned);
-        });
+        // Build the tmux command: attach to existing session or create new one
+        let tmux_cmd = if run_claude {
+            format!(
+                "tmux new-session -A -s '{}' -c '{}' 'claude --continue; exec $SHELL'",
+                session_name, path
+            )
+        } else {
+            format!(
+                "tmux new-session -A -s '{}' -c '{}'",
+                session_name, path
+            )
+        };
+
+        // Launch terminal app with tmux command
+        match terminal_app {
+            "Ghostty" => {
+                // Ghostty's -e expects the command as separate args, use sh -c for complex commands
+                std::process::Command::new("open")
+                    .args(["-na", "Ghostty.app", "--args", "-e", "sh", "-c", &tmux_cmd])
+                    .spawn()
+                    .map_err(|e| format!("Failed to launch Ghostty: {}", e))?;
+            }
+            "iTerm" | "iTerm2" => {
+                let script = format!(
+                    r#"tell application "iTerm"
+                        create window with default profile command "{}"
+                        activate
+                    end tell"#,
+                    tmux_cmd.replace('"', r#"\""#)
+                );
+                std::process::Command::new("osascript")
+                    .arg("-e")
+                    .arg(&script)
+                    .spawn()
+                    .map_err(|e| format!("Failed to launch iTerm: {}", e))?;
+            }
+            "Alacritty" => {
+                std::process::Command::new("open")
+                    .args(["-na", "Alacritty.app", "--args", "-e", "sh", "-c", &tmux_cmd])
+                    .spawn()
+                    .map_err(|e| format!("Failed to launch Alacritty: {}", e))?;
+            }
+            "kitty" => {
+                std::process::Command::new("kitty")
+                    .args(["sh", "-c", &tmux_cmd])
+                    .spawn()
+                    .map_err(|e| format!("Failed to launch kitty: {}", e))?;
+            }
+            "Warp" => {
+                std::process::Command::new("open")
+                    .args(["-a", "Warp", path])
+                    .spawn()
+                    .map_err(|e| format!("Failed to launch Warp: {}", e))?;
+                // Warp doesn't support -e flag well, so just open the directory
+                // User will need to run tmux manually
+            }
+            _ => {
+                // Default to Terminal.app with AppleScript
+                let script = format!(
+                    r#"tell application "Terminal"
+                        activate
+                        do script "{}"
+                    end tell"#,
+                    tmux_cmd.replace('"', r#"\""#)
+                );
+                std::process::Command::new("osascript")
+                    .arg("-e")
+                    .arg(&script)
+                    .spawn()
+                    .map_err(|e| format!("Failed to launch Terminal: {}", e))?;
+            }
+        }
 
         Ok(())
+    }
+
+    /// Focus the terminal for a project using tmux session switching
+    /// Returns true if an existing session was found and switched to
+    pub fn focus_terminal_for_project(
+        project_path: &str,
+        terminal_app: &str,
+    ) -> Result<bool, String> {
+        let session_name = get_tmux_session_name(project_path);
+        eprintln!(
+            "[HUD DEBUG] focus_terminal_for_project: session='{}' path='{}'",
+            session_name, project_path
+        );
+
+        // Check if tmux session exists
+        if !has_tmux_session(project_path) {
+            eprintln!("[HUD DEBUG] No tmux session '{}' found", session_name);
+            return Ok(false);
+        }
+
+        // Session exists - check if we have an attached client
+        if is_tmux_running() {
+            // Try to switch the current client to this session
+            if switch_to_tmux_session(&session_name).unwrap_or(false) {
+                eprintln!(
+                    "[HUD DEBUG] Switched tmux client to session '{}'",
+                    session_name
+                );
+                // Bring the terminal app to front
+                let _ = focus_app(terminal_app);
+                return Ok(true);
+            }
+        }
+
+        // No attached client - need to launch terminal and attach
+        eprintln!(
+            "[HUD DEBUG] No attached tmux client, launching terminal to attach"
+        );
+        launch_terminal_with_tmux(project_path, terminal_app, false)?;
+        Ok(true)
     }
 }
 
@@ -1869,25 +1836,29 @@ fn bring_project_windows_to_front(
 
     #[cfg(target_os = "macos")]
     {
-        // Spawn window management in background thread to avoid blocking UI
+        let config = load_hud_config();
+        let terminal_app = config.terminal_app.clone();
+
         std::thread::spawn(move || {
             use window_management::*;
 
-            if has_claude_session_for_project(&path) {
-                eprintln!("[HUD DEBUG] Claude session exists, focusing via TTY marker");
-                if let Err(e) = focus_warp_for_project(&path) {
-                    eprintln!("[HUD DEBUG] Error focusing Warp: {}", e);
+            // Try to focus existing tmux session
+            if has_tmux_session(&path) {
+                eprintln!("[HUD DEBUG] tmux session exists, focusing");
+                if focus_terminal_for_project(&path, &terminal_app).unwrap_or(false) {
+                    eprintln!("[HUD DEBUG] Focused tmux session successfully");
+                } else {
+                    eprintln!("[HUD DEBUG] Failed to focus tmux session, activating terminal app");
+                    let _ = focus_app(&terminal_app);
                 }
             } else if launch_if_none {
-                eprintln!("[HUD DEBUG] No Claude session found, launching new terminal");
-                if let Err(e) = launch_terminal_with_claude(&path) {
+                eprintln!("[HUD DEBUG] No tmux session, launching new terminal with tmux");
+                if let Err(e) = launch_terminal_with_tmux(&path, &terminal_app, true) {
                     eprintln!("[HUD DEBUG] Error launching terminal: {}", e);
                 }
             } else {
-                eprintln!("[HUD DEBUG] No Claude session and launch_if_none=false, trying to find matching Warp window");
-                if let Err(e) = focus_warp_for_project(&path) {
-                    eprintln!("[HUD DEBUG] Error focusing Warp: {}", e);
-                }
+                eprintln!("[HUD DEBUG] No tmux session and launch_if_none=false, activating terminal");
+                let _ = focus_app(&terminal_app);
             }
 
             if let Some(port) = find_dev_server_port(&path) {
@@ -1907,7 +1878,6 @@ fn bring_project_windows_to_front(
             }
         });
 
-        // Return immediately with empty result since work happens in background
         Ok(BringToFrontResult {
             focused_windows: Vec::new(),
             launched_terminal: false,
@@ -1924,25 +1894,27 @@ fn bring_project_windows_to_front(
 fn launch_in_terminal(path: String, run_claude: bool) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
-        use window_management::*;
+        let config = load_hud_config();
+        let terminal_app = config.terminal_app.clone();
 
-        if has_claude_session_for_project(&path) {
-            eprintln!("[HUD DEBUG] launch_in_terminal: Claude session exists, focusing via TTY marker");
-            let _ = focus_warp_for_project(&path);
-            return Ok(());
-        }
+        std::thread::spawn(move || {
+            use window_management::*;
 
-        eprintln!("[HUD DEBUG] launch_in_terminal: No Claude session, launching new terminal");
-        if run_claude {
-            launch_terminal_with_claude(&path)?;
-        } else {
-            std::process::Command::new("open")
-                .arg("-a")
-                .arg("Warp")
-                .arg(&path)
-                .spawn()
-                .map_err(|e| format!("Failed to launch Warp: {}", e))?;
-        }
+            // Try to focus existing tmux session first
+            if has_tmux_session(&path) {
+                eprintln!("[HUD DEBUG] launch_in_terminal: tmux session exists, focusing");
+                if focus_terminal_for_project(&path, &terminal_app).unwrap_or(false) {
+                    eprintln!("[HUD DEBUG] launch_in_terminal: Focused tmux session successfully");
+                    return;
+                }
+            }
+
+            // Launch new terminal with tmux
+            eprintln!("[HUD DEBUG] launch_in_terminal: Launching new terminal with tmux");
+            if let Err(e) = launch_terminal_with_tmux(&path, &terminal_app, run_claude) {
+                eprintln!("[HUD DEBUG] Error launching terminal: {}", e);
+            }
+        });
         Ok(())
     }
 
@@ -1950,6 +1922,236 @@ fn launch_in_terminal(path: String, run_claude: bool) -> Result<(), String> {
     {
         Err("Terminal launch is only supported on macOS currently".to_string())
     }
+}
+
+use std::sync::Mutex;
+use once_cell::sync::Lazy;
+
+struct FocusedProjectCache {
+    value: Option<String>,
+    last_update: std::time::Instant,
+    update_in_progress: bool,
+}
+
+static FOCUSED_PROJECT_CACHE: Lazy<Mutex<FocusedProjectCache>> = Lazy::new(|| {
+    Mutex::new(FocusedProjectCache {
+        value: None,
+        last_update: std::time::Instant::now(),
+        update_in_progress: false,
+    })
+});
+
+#[tauri::command]
+fn get_focused_project_path() -> Result<Option<String>, String> {
+    #[cfg(target_os = "macos")]
+    {
+        let mut cache = FOCUSED_PROJECT_CACHE.lock().unwrap();
+        let elapsed = cache.last_update.elapsed();
+
+        // Return cached value immediately, trigger background update if stale
+        if elapsed < std::time::Duration::from_millis(500) || cache.update_in_progress {
+            return Ok(cache.value.clone());
+        }
+
+        // Mark update in progress and get current cached value
+        cache.update_in_progress = true;
+        let cached_value = cache.value.clone();
+        drop(cache); // Release lock before spawning
+
+        // Spawn background update
+        std::thread::spawn(move || {
+            let result = compute_focused_project();
+            if let Ok(mut cache) = FOCUSED_PROJECT_CACHE.lock() {
+                cache.value = result;
+                cache.last_update = std::time::Instant::now();
+                cache.update_in_progress = false;
+            }
+        });
+
+        Ok(cached_value)
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        Ok(None)
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn compute_focused_project() -> Option<String> {
+    let script = r#"
+        tell application "System Events"
+            set frontApp to name of first application process whose frontmost is true
+            return frontApp
+        end tell
+    "#;
+
+    let output = std::process::Command::new("osascript")
+        .arg("-e")
+        .arg(script)
+        .output()
+        .ok()?;
+
+    let frontmost_app = String::from_utf8_lossy(&output.stdout).trim().to_string();
+
+    let terminal_apps = ["Warp", "Terminal", "iTerm2", "iTerm", "Alacritty", "kitty", "Ghostty"];
+    let hud_apps = ["claude-hud", "Claude HUD", "stable"];
+
+    if hud_apps.iter().any(|&app| frontmost_app.contains(app)) {
+        return FOCUSED_PROJECT_CACHE.lock().ok()?.value.clone();
+    }
+
+    if !terminal_apps.iter().any(|&app| frontmost_app.contains(app)) {
+        return None;
+    }
+
+    let config = load_hud_config();
+
+    // First try tmux-based detection (fast and reliable)
+    if let Some(session_name) = window_management::get_current_tmux_session() {
+        for pinned in &config.pinned_projects {
+            let project_name = std::path::PathBuf::from(pinned)
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default();
+            if session_name == project_name {
+                return Some(pinned.clone());
+            }
+        }
+    }
+
+    // Fallback to old TTY-based detection for non-tmux terminals
+    get_terminal_working_directory(&frontmost_app, &config.pinned_projects).ok().flatten()
+}
+
+#[cfg(target_os = "macos")]
+fn get_terminal_working_directory(app_name: &str, pinned_projects: &[String]) -> Result<Option<String>, String> {
+    if app_name.contains("Warp") {
+        let output = std::process::Command::new("lsof")
+            .arg("-c")
+            .arg("zsh")
+            .arg("-c")
+            .arg("bash")
+            .arg("-d")
+            .arg("cwd")
+            .arg("-Fn")
+            .output()
+            .map_err(|e| format!("Failed to run lsof: {}", e))?;
+
+        let result = String::from_utf8_lossy(&output.stdout);
+        let mut cwds: Vec<String> = Vec::new();
+
+        for line in result.lines() {
+            if let Some(path) = line.strip_prefix('n') {
+                if path.starts_with("/Users/") && !path.contains("/Library/") {
+                    cwds.push(path.to_string());
+                }
+            }
+        }
+
+        for pinned in pinned_projects {
+            for cwd in &cwds {
+                if cwd.starts_with(pinned) || cwd == pinned {
+                    return Ok(Some(pinned.clone()));
+                }
+            }
+        }
+
+        return Ok(None);
+    }
+
+    if app_name.contains("Terminal") {
+        let script = r#"
+            tell application "Terminal"
+                if (count of windows) > 0 then
+                    set currentTab to selected tab of window 1
+                    set ttyName to tty of currentTab
+                    return ttyName
+                end if
+            end tell
+            return ""
+        "#;
+
+        let output = std::process::Command::new("osascript")
+            .arg("-e")
+            .arg(script)
+            .output()
+            .map_err(|e| format!("Failed to get Terminal tty: {}", e))?;
+
+        let tty = String::from_utf8_lossy(&output.stdout).trim().to_string();
+
+        if !tty.is_empty() {
+            if let Some(cwd) = get_cwd_from_tty(&tty) {
+                return Ok(Some(cwd));
+            }
+        }
+    }
+
+    if app_name.contains("iTerm") {
+        let script = r#"
+            tell application "iTerm"
+                if (count of windows) > 0 then
+                    tell current session of current window
+                        return tty
+                    end tell
+                end if
+            end tell
+            return ""
+        "#;
+
+        let output = std::process::Command::new("osascript")
+            .arg("-e")
+            .arg(script)
+            .output()
+            .map_err(|e| format!("Failed to get iTerm tty: {}", e))?;
+
+        let tty = String::from_utf8_lossy(&output.stdout).trim().to_string();
+
+        if !tty.is_empty() {
+            if let Some(cwd) = get_cwd_from_tty(&tty) {
+                return Ok(Some(cwd));
+            }
+        }
+    }
+
+    Ok(None)
+}
+
+#[cfg(target_os = "macos")]
+fn get_cwd_from_tty(tty: &str) -> Option<String> {
+    let tty_device = if tty.starts_with("/dev/") {
+        tty.to_string()
+    } else {
+        format!("/dev/{}", tty)
+    };
+
+    let output = std::process::Command::new("lsof")
+        .arg("-t")
+        .arg(&tty_device)
+        .output()
+        .ok()?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let pids: Vec<&str> = stdout.trim().lines().collect();
+
+    if let Some(pid) = pids.first() {
+        let cwd_output = std::process::Command::new("lsof")
+            .arg("-p")
+            .arg(*pid)
+            .arg("-d")
+            .arg("cwd")
+            .arg("-Fn")
+            .output()
+            .ok()?;
+
+        let result = String::from_utf8_lossy(&cwd_output.stdout);
+        for line in result.lines() {
+            if let Some(path) = line.strip_prefix('n') {
+                return Some(path.to_string());
+            }
+        }
+    }
+    None
 }
 
 #[tauri::command]
@@ -2540,7 +2742,8 @@ pub fn run() {
             check_global_hook_installed,
             install_global_hook,
             start_status_watcher,
-            start_session_state_watcher
+            start_session_state_watcher,
+            get_focused_project_path
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

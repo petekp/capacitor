@@ -56,7 +56,7 @@
   --secondary-foreground: oklch(0.205 0 0);
   --muted: oklch(0.965 0 0);
   --muted-foreground: oklch(0.45 0 0);
-  --accent: oklch(0.646 0.222 41.116);
+  --accent: oklch(0.45 0 0);
   --accent-foreground: oklch(1 0 0);
   --destructive: oklch(0.577 0.245 27.325);
   --border: oklch(0.9 0 0);
@@ -85,7 +85,7 @@
   --secondary-foreground: oklch(0.95 0 0);
   --muted: oklch(0.22 0 0);
   --muted-foreground: oklch(0.6 0 0);
-  --accent: oklch(0.646 0.222 41.116);
+  --accent: oklch(0.55 0 0);
   --accent-foreground: oklch(1 0 0);
   --destructive: oklch(0.704 0.191 22.216);
   --border: oklch(1 0 0 / 12%);
@@ -93,7 +93,7 @@
   --ring: oklch(0.5 0 0);
   --sidebar: oklch(0.14 0 0);
   --sidebar-foreground: oklch(0.95 0 0);
-  --sidebar-primary: oklch(0.646 0.222 41.116);
+  --sidebar-primary: oklch(0.55 0 0);
   --sidebar-primary-foreground: oklch(1 0 0);
   --sidebar-accent: oklch(0.22 0 0);
   --sidebar-accent-foreground: oklch(0.95 0 0);
@@ -150,7 +150,7 @@
 }
 
 .beacon-working {
-  color: oklch(0.7 0.18 55);
+  color: oklch(0.5 0 0);
 }
 
 .beacon-ready {
@@ -162,19 +162,6 @@
 }
 
 /* Card state animations */
-@keyframes card-glow-working {
-  0%, 100% {
-    box-shadow:
-      0 0 0 1px oklch(0.7 0.18 55 / 40%),
-      0 0 8px 0 oklch(0.7 0.18 55 / 20%);
-  }
-  50% {
-    box-shadow:
-      0 0 0 1px oklch(0.7 0.18 55 / 60%),
-      0 0 16px 2px oklch(0.7 0.18 55 / 35%);
-  }
-}
-
 @keyframes card-glow-ready {
   0%, 100% {
     box-shadow:
@@ -188,20 +175,25 @@
   }
 }
 
+.card-focused {
+  outline: 2px solid oklch(0.6 0.15 250);
+  outline-offset: -1px;
+}
+
+.dark .card-focused {
+  outline: 2px solid oklch(0.55 0.18 250);
+  outline-offset: -1px;
+}
+
 .card-working {
-  animation: card-glow-working 2s ease-in-out infinite;
-  border-color: oklch(0.7 0.18 55 / 30%);
 }
 
 .card-ready {
-  animation: card-glow-ready 2s ease-in-out infinite;
-  border-color: oklch(0.7 0.2 145 / 40%);
 }
 
 .card-compacting {
   position: relative;
   overflow: hidden;
-  border-color: oklch(0.75 0.15 330 / 30%);
 }
 
 .card-compacting::before {
