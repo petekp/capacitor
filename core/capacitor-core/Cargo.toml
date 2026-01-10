@@ -1,0 +1,34 @@
+[package]
+name = "capacitor-core"
+description = "Canonical Capacitor runtime core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[lib]
+crate-type = ["lib", "staticlib", "cdylib"]
+name = "capacitor_core"
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "uniffi-bindgen.rs"
+
+[dependencies]
+chrono.workspace = true
+dirs.workspace = true
+fs-err.workspace = true
+once_cell.workspace = true
+regex.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+walkdir.workspace = true
+uniffi = { version = "0.28", features = ["cli"] }
+md5 = "0.7"
+tempfile = "3.14"
+ulid = "1.0"
+
+[dev-dependencies]
+chrono.workspace = true

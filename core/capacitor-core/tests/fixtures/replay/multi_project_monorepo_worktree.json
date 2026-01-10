@@ -1,0 +1,115 @@
+{
+  "name": "multi_project_monorepo_worktree",
+  "events": [
+    {
+      "kind": "hook",
+      "command": {
+        "event_id": "evt-1",
+        "recorded_at": "2026-02-28T00:00:00Z",
+        "event_type": "session_start",
+        "session_id": "session-api",
+        "pid": 100,
+        "project_path": "/Users/pete/Code/monorepo/packages/api",
+        "cwd": "/Users/pete/Code/monorepo/packages/api",
+        "file_path": null,
+        "workspace_id": null,
+        "notification_type": null,
+        "stop_hook_active": null,
+        "tool_name": null,
+        "agent_id": null,
+        "teammate_name": null
+      }
+    },
+    {
+      "kind": "hook",
+      "command": {
+        "event_id": "evt-2",
+        "recorded_at": "2026-02-28T00:00:01Z",
+        "event_type": "user_prompt_submit",
+        "session_id": "session-api",
+        "pid": 100,
+        "project_path": "/Users/pete/Code/monorepo/packages/api",
+        "cwd": "/Users/pete/Code/monorepo/packages/api",
+        "file_path": "src/main.ts",
+        "workspace_id": null,
+        "notification_type": null,
+        "stop_hook_active": null,
+        "tool_name": null,
+        "agent_id": null,
+        "teammate_name": null
+      }
+    },
+    {
+      "kind": "shell",
+      "command": {
+        "pid": 100,
+        "cwd": "/Users/pete/Code/monorepo/packages/api",
+        "tty": "/dev/ttys011",
+        "parent_app": "ghostty",
+        "tmux_session": "monorepo",
+        "recorded_at": "2026-02-28T00:00:01Z"
+      }
+    },
+    {
+      "kind": "hook",
+      "command": {
+        "event_id": "evt-3",
+        "recorded_at": "2026-02-28T00:00:02Z",
+        "event_type": "session_start",
+        "session_id": "session-web",
+        "pid": 200,
+        "project_path": "/Users/pete/Code/monorepo/packages/web",
+        "cwd": "/Users/pete/Code/monorepo/packages/web",
+        "file_path": null,
+        "workspace_id": null,
+        "notification_type": null,
+        "stop_hook_active": null,
+        "tool_name": null,
+        "agent_id": null,
+        "teammate_name": null
+      }
+    },
+    {
+      "kind": "hook",
+      "command": {
+        "event_id": "evt-4",
+        "recorded_at": "2026-02-28T00:00:03Z",
+        "event_type": "permission_request",
+        "session_id": "session-web",
+        "pid": 200,
+        "project_path": "/Users/pete/Code/monorepo/packages/web",
+        "cwd": "/Users/pete/Code/monorepo/packages/web",
+        "file_path": null,
+        "workspace_id": null,
+        "notification_type": null,
+        "stop_hook_active": null,
+        "tool_name": "Edit",
+        "agent_id": null,
+        "teammate_name": null
+      }
+    },
+    {
+      "kind": "shell",
+      "command": {
+        "pid": 200,
+        "cwd": "/Users/pete/Code/monorepo/packages/web",
+        "tty": "/dev/ttys012",
+        "parent_app": "ghostty",
+        "tmux_session": "monorepo",
+        "recorded_at": "2026-02-28T00:00:03Z"
+      }
+    }
+  ],
+  "expected": {
+    "events_ingested": 6,
+    "project_states": {
+      "/users/pete/code/monorepo/packages/api": "working",
+      "/users/pete/code/monorepo/packages/web": "waiting"
+    },
+    "session_states": {
+      "session-api": "working",
+      "session-web": "waiting"
+    },
+    "shell_count": 2
+  }
+}

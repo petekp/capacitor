@@ -1,0 +1,148 @@
+{
+  "name": "hook_burst_out_of_order",
+  "events": [
+    {
+      "kind": "hook",
+      "command": {
+        "event_id": "evt-1",
+        "recorded_at": "2026-02-28T00:00:05Z",
+        "event_type": "session_start",
+        "session_id": "session-burst",
+        "pid": 777,
+        "project_path": "/Users/pete/Code/capacitor",
+        "cwd": "/Users/pete/Code/capacitor",
+        "file_path": null,
+        "workspace_id": null,
+        "notification_type": null,
+        "stop_hook_active": null,
+        "tool_name": null,
+        "agent_id": null,
+        "teammate_name": null
+      }
+    },
+    {
+      "kind": "hook",
+      "command": {
+        "event_id": "evt-2",
+        "recorded_at": "2026-02-28T00:00:10Z",
+        "event_type": "user_prompt_submit",
+        "session_id": "session-burst",
+        "pid": 777,
+        "project_path": "/Users/pete/Code/capacitor",
+        "cwd": "/Users/pete/Code/capacitor",
+        "file_path": "apps/swift/Sources/Capacitor/Models/AppState.swift",
+        "workspace_id": null,
+        "notification_type": null,
+        "stop_hook_active": null,
+        "tool_name": null,
+        "agent_id": null,
+        "teammate_name": null
+      }
+    },
+    {
+      "kind": "hook",
+      "command": {
+        "event_id": "evt-3",
+        "recorded_at": "2026-02-28T00:00:01Z",
+        "event_type": "permission_request",
+        "session_id": "session-burst",
+        "pid": 777,
+        "project_path": "/Users/pete/Code/capacitor",
+        "cwd": "/Users/pete/Code/capacitor",
+        "file_path": null,
+        "workspace_id": null,
+        "notification_type": null,
+        "stop_hook_active": null,
+        "tool_name": "Write",
+        "agent_id": null,
+        "teammate_name": null
+      }
+    },
+    {
+      "kind": "hook",
+      "command": {
+        "event_id": "evt-4",
+        "recorded_at": "2026-02-28T00:00:11Z",
+        "event_type": "notification",
+        "session_id": "session-burst",
+        "pid": 777,
+        "project_path": "/Users/pete/Code/capacitor",
+        "cwd": "/Users/pete/Code/capacitor",
+        "file_path": null,
+        "workspace_id": null,
+        "notification_type": "idle_prompt",
+        "stop_hook_active": null,
+        "tool_name": null,
+        "agent_id": null,
+        "teammate_name": null
+      }
+    },
+    {
+      "kind": "hook",
+      "command": {
+        "event_id": "evt-5",
+        "recorded_at": "2026-02-28T00:00:12Z",
+        "event_type": "pre_tool_use",
+        "session_id": "session-burst",
+        "pid": 777,
+        "project_path": "/Users/pete/Code/capacitor",
+        "cwd": "/Users/pete/Code/capacitor",
+        "file_path": "core/capacitor-core/src/reduce/mod.rs",
+        "workspace_id": null,
+        "notification_type": null,
+        "stop_hook_active": null,
+        "tool_name": "Edit",
+        "agent_id": null,
+        "teammate_name": null
+      }
+    },
+    {
+      "kind": "hook",
+      "command": {
+        "event_id": "evt-6",
+        "recorded_at": "2026-02-28T00:00:13Z",
+        "event_type": "post_tool_use",
+        "session_id": "session-burst",
+        "pid": 777,
+        "project_path": "/Users/pete/Code/capacitor",
+        "cwd": "/Users/pete/Code/capacitor",
+        "file_path": "core/capacitor-core/src/reduce/mod.rs",
+        "workspace_id": null,
+        "notification_type": null,
+        "stop_hook_active": null,
+        "tool_name": "Edit",
+        "agent_id": null,
+        "teammate_name": null
+      }
+    },
+    {
+      "kind": "hook",
+      "command": {
+        "event_id": "evt-7",
+        "recorded_at": "2026-02-28T00:00:14Z",
+        "event_type": "stop",
+        "session_id": "session-burst",
+        "pid": 777,
+        "project_path": "/Users/pete/Code/capacitor",
+        "cwd": "/Users/pete/Code/capacitor",
+        "file_path": null,
+        "workspace_id": null,
+        "notification_type": null,
+        "stop_hook_active": false,
+        "tool_name": null,
+        "agent_id": null,
+        "teammate_name": null
+      }
+    }
+  ],
+  "expected": {
+    "events_ingested": 7,
+    "project_states": {
+      "/users/pete/code/capacitor": "ready"
+    },
+    "session_states": {
+      "session-burst": "ready"
+    },
+    "shell_count": 0
+  }
+}
