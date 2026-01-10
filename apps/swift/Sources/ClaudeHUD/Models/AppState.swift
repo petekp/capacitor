@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import SwiftUI
 
@@ -29,6 +30,7 @@ class AppState: ObservableObject {
     @Published var activeTab: Tab = .projects
     @Published var projectView: ProjectView = .list
     @Published var selectedProject: Project?
+    @Published var navigationDirection: NavigationDirection = .push
 
     // Data
     @Published var dashboard: DashboardData?
@@ -43,20 +45,147 @@ class AppState: ObservableObject {
     @Published var alwaysOnTop = false
     @Published var flashingProjects: [String: SessionState] = [:]
 
+    // Dev Environment
+    @Published var devServerPorts: [String: UInt16] = [:]
+    @Published var devServerBrowsers: [String: String] = [:]
+
+    // Manual dormant overrides (persisted in UserDefaults)
+    @Published var manuallyDormant: Set<String> = [] {
+        didSet {
+            saveDormantOverrides()
+        }
+    }
+
+    // Custom project ordering (persisted in UserDefaults)
+    @Published var customProjectOrder: [String] = [] {
+        didSet {
+            saveProjectOrder()
+        }
+    }
+
     // Internal state tracking (non-published)
     private var previousSessionStates: [String: SessionState] = [:]
+    private let dormantOverridesKey = "manuallyDormantProjects"
+    private let projectOrderKey = "customProjectOrder"
 
     // Rust bridge
     private var engine: HudEngine?
 
+    // Relay client for remote state sync
+    @Published var relayClient = RelayClient()
+    @Published var isRemoteMode = false
+
     init() {
+        loadDormantOverrides()
+        loadProjectOrder()
         do {
             engine = try HudEngine()
             loadDashboard()
+            setupRelayObserver()
         } catch {
             self.error = error.localizedDescription
             self.isLoading = false
         }
+    }
+
+    private func setupRelayObserver() {
+        relayClient.$lastState
+            .compactMap { $0 }
+            .sink { [weak self] state in
+                self?.applyRelayState(state)
+            }
+            .store(in: &cancellables)
+    }
+
+    private var cancellables = Set<AnyCancellable>()
+
+    private func applyRelayState(_ state: RelayHudState) {
+        for (path, projectState) in state.projects {
+            let sessionState = parseSessionState(projectState.state)
+
+            sessionStates[path] = ProjectSessionState(
+                state: sessionState,
+                stateChangedAt: projectState.lastUpdated,
+                sessionId: nil,
+                workingOn: projectState.workingOn,
+                nextStep: projectState.nextStep,
+                context: nil
+            )
+
+            if let previous = previousSessionStates[path], previous != sessionState {
+                switch sessionState {
+                case .ready, .waiting, .compacting:
+                    flashingProjects[path] = sessionState
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) { [weak self] in
+                        self?.flashingProjects.removeValue(forKey: path)
+                    }
+                case .working, .idle:
+                    break
+                }
+            }
+            previousSessionStates[path] = sessionState
+        }
+    }
+
+    private func parseSessionState(_ raw: String) -> SessionState {
+        switch raw {
+        case "working": return .working
+        case "ready": return .ready
+        case "compacting": return .compacting
+        case "waiting": return .waiting
+        default: return .idle
+        }
+    }
+
+    func connectRelay() {
+        isRemoteMode = true
+        relayClient.connect()
+    }
+
+    func disconnectRelay() {
+        isRemoteMode = false
+        relayClient.disconnect()
+    }
+
+    private func loadDormantOverrides() {
+        if let paths = UserDefaults.standard.array(forKey: dormantOverridesKey) as? [String] {
+            manuallyDormant = Set(paths)
+        }
+    }
+
+    private func saveDormantOverrides() {
+        UserDefaults.standard.set(Array(manuallyDormant), forKey: dormantOverridesKey)
+    }
+
+    private func loadProjectOrder() {
+        if let order = UserDefaults.standard.array(forKey: projectOrderKey) as? [String] {
+            customProjectOrder = order
+        }
+    }
+
+    private func saveProjectOrder() {
+        UserDefaults.standard.set(customProjectOrder, forKey: projectOrderKey)
+    }
+
+    func orderedProjects(_ projects: [Project]) -> [Project] {
+        guard !customProjectOrder.isEmpty else { return projects }
+
+        var result: [Project] = []
+        var remaining = projects
+
+        for path in customProjectOrder {
+            if let index = remaining.firstIndex(where: { $0.path == path }) {
+                result.append(remaining.remove(at: index))
+            }
+        }
+        result.append(contentsOf: remaining)
+        return result
+    }
+
+    func moveProject(from source: IndexSet, to destination: Int, in projectList: [Project]) {
+        var paths = projectList.map { $0.path }
+        paths.move(fromOffsets: source, toOffset: destination)
+        customProjectOrder = paths
     }
 
     func loadDashboard() {
@@ -68,6 +197,7 @@ class AppState: ObservableObject {
             projects = dashboard?.projects ?? []
             refreshSessionStates()
             refreshProjectStatuses()
+            refreshDevServers()
             isLoading = false
         } catch {
             self.error = error.localizedDescription
@@ -174,12 +304,86 @@ class AppState: ObservableObject {
     }
 
     func showProjectDetail(_ project: Project) {
+        navigationDirection = .push
         selectedProject = project
         projectView = .detail(project)
     }
 
+    func showAddProject() {
+        navigationDirection = .push
+        projectView = .add
+    }
+
     func showProjectList() {
+        navigationDirection = .pop
         selectedProject = nil
         projectView = .list
+    }
+
+    func moveToDormant(_ project: Project) {
+        manuallyDormant.insert(project.path)
+    }
+
+    func moveToRecent(_ project: Project) {
+        manuallyDormant.remove(project.path)
+    }
+
+    func isManuallyDormant(_ project: Project) -> Bool {
+        manuallyDormant.contains(project.path)
+    }
+
+    nonisolated func refreshDevServers() {
+        _Concurrency.Task { @MainActor [weak self] in
+            guard let self = self else { return }
+            let projectsCopy = self.projects
+
+            for project in projectsCopy {
+                let projectPath = project.path
+
+                let port = await DevEnvironment.findDevServerPort(for: projectPath)
+
+                if let port = port {
+                    self.devServerPorts[projectPath] = port
+
+                    let browser = await DevEnvironment.findBrowserWithLocalhost(port: port)
+                    if let browser = browser {
+                        self.devServerBrowsers[projectPath] = browser
+                    }
+                } else {
+                    self.devServerPorts.removeValue(forKey: projectPath)
+                    self.devServerBrowsers.removeValue(forKey: projectPath)
+                }
+            }
+        }
+    }
+
+    func getDevServerPort(for project: Project) -> UInt16? {
+        devServerPorts[project.path]
+    }
+
+    func hasDevServer(_ project: Project) -> Bool {
+        devServerPorts[project.path] != nil
+    }
+
+    func openInBrowser(_ project: Project) {
+        guard let port = devServerPorts[project.path] else { return }
+
+        if let browser = devServerBrowsers[project.path] {
+            DevEnvironment.focusBrowserTab(browser: browser, port: port)
+        } else {
+            DevEnvironment.openInBrowser(port: port)
+        }
+    }
+
+    func launchFullEnvironment(for project: Project) {
+        launchTerminal(for: project)
+
+        if let port = devServerPorts[project.path] {
+            if let browser = devServerBrowsers[project.path] {
+                DevEnvironment.focusBrowserTab(browser: browser, port: port)
+            } else {
+                DevEnvironment.openInBrowser(port: port)
+            }
+        }
     }
 }

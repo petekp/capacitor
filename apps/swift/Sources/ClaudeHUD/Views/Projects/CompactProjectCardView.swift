@@ -4,8 +4,10 @@ struct CompactProjectCardView: View {
     let project: Project
     let sessionState: ProjectSessionState?
     let projectStatus: ProjectStatus?
+    let isManuallyDormant: Bool
     let onTap: () -> Void
     let onInfoTap: () -> Void
+    let onMoveToRecent: () -> Void
 
     @State private var isHovered = false
 
@@ -59,6 +61,20 @@ struct CompactProjectCardView: View {
         .onHover { hovering in
             withAnimation(.easeInOut(duration: 0.15)) {
                 isHovered = hovering
+            }
+        }
+        .contextMenu {
+            Button(action: onTap) {
+                Label("Open in Terminal", systemImage: "terminal")
+            }
+            Button(action: onInfoTap) {
+                Label("View Details", systemImage: "info.circle")
+            }
+            if isManuallyDormant {
+                Divider()
+                Button(action: onMoveToRecent) {
+                    Label("Move to Recent", systemImage: "sun.max")
+                }
             }
         }
     }

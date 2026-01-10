@@ -2,31 +2,26 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject var appState: AppState
+    @Environment(\.transparentMode) private var transparentMode
 
     var body: some View {
         VStack(spacing: 0) {
             HeaderView()
 
             Divider()
+                .opacity(transparentMode ? 0.5 : 1)
 
-            Group {
+            ZStack {
                 switch appState.activeTab {
                 case .projects:
-                    switch appState.projectView {
-                    case .list:
-                        ProjectsView()
-                    case .detail(let project):
-                        ProjectDetailView(project: project)
-                    case .add:
-                        AddProjectView()
-                    }
+                    NavigationContainer()
                 case .artifacts:
                     ArtifactsView()
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .background(Color.hudBackground)
+        .background(transparentMode ? Color.clear : Color.hudBackground)
         .preferredColorScheme(.dark)
     }
 }

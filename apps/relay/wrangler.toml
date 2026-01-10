@@ -1,0 +1,12 @@
+name = "hud-relay"
+main = "src/index.ts"
+compatibility_date = "2025-01-10"
+
+[durable_objects]
+bindings = [
+  { name = "HUD_SESSION", class_name = "HudSession" }
+]
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["HudSession"]

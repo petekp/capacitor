@@ -3,16 +3,24 @@ import SwiftUI
 struct ProjectsView: View {
     @EnvironmentObject var appState: AppState
     @State private var searchText = ""
+    @State private var draggingProject: Project?
+
+    private var orderedProjects: [Project] {
+        appState.orderedProjects(appState.projects)
+    }
 
     private var filteredProjects: [Project] {
-        guard !searchText.isEmpty else { return appState.projects }
-        return appState.projects.filter {
+        guard !searchText.isEmpty else { return orderedProjects }
+        return orderedProjects.filter {
             $0.name.localizedCaseInsensitiveContains(searchText)
         }
     }
 
     private var recentProjects: [Project] {
         filteredProjects.filter { project in
+            if appState.isManuallyDormant(project) {
+                return false
+            }
             let state = appState.getSessionState(for: project)
             if let s = state?.state {
                 switch s {
@@ -73,13 +81,37 @@ struct ProjectsView: View {
                                 sessionState: appState.getSessionState(for: project),
                                 projectStatus: appState.getProjectStatus(for: project),
                                 flashState: appState.isFlashing(project),
+                                devServerPort: appState.getDevServerPort(for: project),
                                 onTap: {
                                     appState.launchTerminal(for: project)
                                 },
                                 onInfoTap: {
                                     appState.showProjectDetail(project)
+                                },
+                                onMoveToDormant: {
+                                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                        appState.moveToDormant(project)
+                                    }
+                                },
+                                onOpenBrowser: {
+                                    appState.openInBrowser(project)
                                 }
                             )
+                            .opacity(draggingProject?.path == project.path ? 0.5 : 1)
+                            .draggable(project.path) {
+                                ProjectCardDragPreview(project: project)
+                            }
+                            .dropDestination(for: String.self) { items, _ in
+                                guard let droppedPath = items.first,
+                                      let fromIndex = recentProjects.firstIndex(where: { $0.path == droppedPath }),
+                                      let toIndex = recentProjects.firstIndex(where: { $0.path == project.path }) else {
+                                    return false
+                                }
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                    appState.moveProject(from: IndexSet(integer: fromIndex), to: toIndex > fromIndex ? toIndex + 1 : toIndex, in: recentProjects)
+                                }
+                                return true
+                            }
                             .transition(.asymmetric(
                                 insertion: .opacity.combined(with: .move(edge: .top)),
                                 removal: .opacity
@@ -102,11 +134,17 @@ struct ProjectsView: View {
                                 project: project,
                                 sessionState: appState.getSessionState(for: project),
                                 projectStatus: appState.getProjectStatus(for: project),
+                                isManuallyDormant: appState.isManuallyDormant(project),
                                 onTap: {
                                     appState.launchTerminal(for: project)
                                 },
                                 onInfoTap: {
                                     appState.showProjectDetail(project)
+                                },
+                                onMoveToRecent: {
+                                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                        appState.moveToRecent(project)
+                                    }
                                 }
                             )
                             .transition(.asymmetric(
@@ -192,5 +230,29 @@ struct SearchField: View {
         .padding(.vertical, 6)
         .background(Color.white.opacity(0.05))
         .clipShape(RoundedRectangle(cornerRadius: 6))
+    }
+}
+
+struct ProjectCardDragPreview: View {
+    let project: Project
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "line.3.horizontal")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundColor(.white.opacity(0.5))
+            Text(project.name)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundColor(.white)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color.hudCard)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color.hudAccent.opacity(0.5), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
     }
 }

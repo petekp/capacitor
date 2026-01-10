@@ -3,18 +3,31 @@ import SwiftUI
 struct AddProjectView: View {
     @EnvironmentObject var appState: AppState
 
+    @State private var isBackHovered = false
+
     var body: some View {
         VStack(spacing: 16) {
             HStack {
                 Button(action: { appState.showProjectList() }) {
-                    HStack(spacing: 4) {
+                    HStack(spacing: 6) {
                         Image(systemName: "chevron.left")
-                        Text("Back")
+                            .font(.system(size: 11, weight: .semibold))
+                        Text("Projects")
+                            .font(.system(size: 12, weight: .medium))
                     }
-                    .font(.system(size: 13))
-                    .foregroundColor(.white.opacity(0.6))
+                    .foregroundColor(.white.opacity(isBackHovered ? 0.9 : 0.5))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(Color.white.opacity(isBackHovered ? 0.08 : 0))
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
                 }
                 .buttonStyle(.plain)
+                .onHover { hovering in
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        isBackHovered = hovering
+                    }
+                }
+                .keyboardShortcut("[", modifiers: .command)
 
                 Spacer()
             }
