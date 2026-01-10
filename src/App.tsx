@@ -1,10 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { motion, AnimatePresence } from "motion/react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { DashboardData, Project, ProjectDetails, Artifact, SuggestedProject, ProjectStatus, ProjectSessionState, SessionState, SessionStatesFile, BringToFrontResult } from "./types";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/Icon";
+import { springs } from "@/lib/motion";
 import { TabButton } from "@/components/TabButton";
 import { ProjectsPanel } from "@/components/panels/ProjectsPanel";
 import { ProjectDetailPanel } from "@/components/panels/ProjectDetailPanel";
@@ -343,7 +345,39 @@ function App() {
   if (loading) {
     return (
       <div className="flex h-screen items-center justify-center bg-(--color-background)">
-        <div className="text-(--color-muted-foreground)">Loading...</div>
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={springs.gentle}
+          className="flex flex-col items-center gap-4"
+        >
+          <div className="flex gap-1.5">
+            {[0, 1, 2].map((i) => (
+              <motion.div
+                key={i}
+                className="w-2 h-2 rounded-full bg-(--color-muted-foreground)"
+                animate={{
+                  y: [0, -8, 0],
+                  opacity: [0.4, 1, 0.4],
+                }}
+                transition={{
+                  duration: 0.8,
+                  repeat: Infinity,
+                  delay: i * 0.15,
+                  ease: "easeInOut",
+                }}
+              />
+            ))}
+          </div>
+          <motion.span
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 0.5 }}
+            transition={{ delay: 0.3 }}
+            className="text-[11px] text-(--color-muted-foreground)"
+          >
+            Loading
+          </motion.span>
+        </motion.div>
       </div>
     );
   }
@@ -351,19 +385,41 @@ function App() {
   if (error) {
     return (
       <div className="flex h-screen items-center justify-center bg-(--color-background)">
-        <div className="text-center">
-          <div className="text-red-500 mb-2">Error loading configuration</div>
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={springs.smooth}
+          className="text-center"
+        >
+          <motion.div
+            initial={{ scale: 0.9 }}
+            animate={{ scale: 1 }}
+            transition={springs.bouncy}
+            className="text-red-500 mb-2"
+          >
+            Error loading configuration
+          </motion.div>
           <div className="text-(--color-muted-foreground) text-sm">{error}</div>
-          <Button onClick={loadData} className="mt-4">
-            Retry
-          </Button>
-        </div>
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.2 }}
+          >
+            <Button onClick={loadData} className="mt-4">
+              Retry
+            </Button>
+          </motion.div>
+        </motion.div>
       </div>
     );
   }
 
   return (
     <div className="flex flex-col h-screen bg-(--color-background) text-(--color-foreground)">
+      <div
+        data-tauri-drag-region
+        className="h-7 flex-shrink-0 flex items-center justify-end px-2"
+      />
       <header className="flex-shrink-0 border-b border-(--color-border) bg-(--color-muted)/30">
         <div className="flex items-center">
           <nav className="flex flex-1">
@@ -382,92 +438,143 @@ function App() {
               <span className="ml-1.5 text-xs opacity-60">{artifacts.length}</span>
             </TabButton>
           </nav>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={handleToggleAlwaysOnTop}
-            title={alwaysOnTop ? "Unpin from top" : "Pin to top"}
-            className={`h-7 w-7 mr-1 ${alwaysOnTop ? "text-blue-400" : "opacity-50 hover:opacity-100"}`}
+          <motion.div
+            whileHover={{ scale: 1.1, rotate: alwaysOnTop ? 0 : 15 }}
+            whileTap={{ scale: 0.9 }}
+            animate={{ rotate: alwaysOnTop ? 0 : 0 }}
+            transition={springs.snappy}
           >
-            <Icon name="pin" className="w-3.5 h-3.5" />
-          </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleToggleAlwaysOnTop}
+              title={alwaysOnTop ? "Unpin from top" : "Pin to top"}
+              className={`h-7 w-7 mr-1 ${alwaysOnTop ? "text-blue-400" : "opacity-50 hover:opacity-100"}`}
+            >
+              <Icon name="pin" className="w-3.5 h-3.5" />
+            </Button>
+          </motion.div>
         </div>
       </header>
 
       <main className="flex-1 overflow-auto p-3">
-        {globalHookInstalled === false && (
-          <div className="mb-6 p-4 rounded-lg border border-blue-500/30 bg-blue-500/10">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="font-medium text-sm">Enable Status Tracking</div>
-                <div className="text-xs text-muted-foreground mt-0.5">
-                  Track what you're working on across all projects
+        <AnimatePresence>
+          {globalHookInstalled === false && (
+            <motion.div
+              initial={{ opacity: 0, y: -10, height: 0 }}
+              animate={{ opacity: 1, y: 0, height: "auto" }}
+              exit={{ opacity: 0, y: -10, height: 0 }}
+              transition={springs.smooth}
+              className="mb-6 p-4 rounded-lg border border-blue-500/30 bg-blue-500/10"
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="font-medium text-sm">Enable Status Tracking</div>
+                  <div className="text-xs text-muted-foreground mt-0.5">
+                    Track what you're working on across all projects
+                  </div>
                 </div>
+                <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                  <Button
+                    size="sm"
+                    onClick={handleInstallHook}
+                    disabled={installingHook}
+                  >
+                    {installingHook ? "Enabling..." : "Enable"}
+                  </Button>
+                </motion.div>
               </div>
-              <Button
-                size="sm"
-                onClick={handleInstallHook}
-                disabled={installingHook}
-              >
-                {installingHook ? "Enabling..." : "Enable"}
-              </Button>
-            </div>
-          </div>
-        )}
+            </motion.div>
+          )}
+        </AnimatePresence>
 
-        {activeTab === "projects" && dashboard && projectView === "list" && (
-          <ProjectsPanel
-            projects={dashboard.projects}
-            projectStatuses={projectStatuses}
-            sessionStates={sessionStates}
-            focusedProjectPath={focusedProjectPath}
-            acknowledgedProjects={acknowledgedProjects}
-            flashingProjects={flashingProjects}
-            onSelectProject={handleSelectProject}
-            onAddProject={handleShowAddProject}
-            onLaunchTerminal={handleLaunchTerminal}
-            onAcknowledge={(path) => setAcknowledgedProjects((prev) => new Set(prev).add(path))}
-          />
-        )}
+        <AnimatePresence mode="wait">
+          {activeTab === "projects" && dashboard && projectView === "list" && (
+            <motion.div
+              key="projects-list"
+              initial={{ opacity: 0, x: -10 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 10 }}
+              transition={springs.smooth}
+            >
+              <ProjectsPanel
+                projects={dashboard.projects}
+                projectStatuses={projectStatuses}
+                sessionStates={sessionStates}
+                focusedProjectPath={focusedProjectPath}
+                acknowledgedProjects={acknowledgedProjects}
+                flashingProjects={flashingProjects}
+                onSelectProject={handleSelectProject}
+                onAddProject={handleShowAddProject}
+                onLaunchTerminal={handleLaunchTerminal}
+                onAcknowledge={(path) => setAcknowledgedProjects((prev) => new Set(prev).add(path))}
+              />
+            </motion.div>
+          )}
 
-        {activeTab === "projects" && projectView === "detail" && selectedProject && (
-          <ProjectDetailPanel
-            project={selectedProject}
-            details={projectDetails}
-            onBack={handleBackToProjects}
-            onOpenEditor={handleOpenEditor}
-            onOpenFolder={handleOpenFolder}
-            onRemove={handleRemoveProject}
-          />
-        )}
+          {activeTab === "projects" && projectView === "detail" && selectedProject && (
+            <motion.div
+              key="project-detail"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              transition={springs.smooth}
+            >
+              <ProjectDetailPanel
+                project={selectedProject}
+                details={projectDetails}
+                onBack={handleBackToProjects}
+                onOpenEditor={handleOpenEditor}
+                onOpenFolder={handleOpenFolder}
+                onRemove={handleRemoveProject}
+              />
+            </motion.div>
+          )}
 
-        {activeTab === "projects" && projectView === "add" && (
-          <AddProjectPanel
-            suggestions={suggestedProjects}
-            onAdd={handleAddProject}
-            onBack={handleBackToProjects}
-            isAdding={addingProject}
-          />
-        )}
+          {activeTab === "projects" && projectView === "add" && (
+            <motion.div
+              key="add-project"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={springs.smooth}
+            >
+              <AddProjectPanel
+                suggestions={suggestedProjects}
+                onAdd={handleAddProject}
+                onBack={handleBackToProjects}
+                isAdding={addingProject}
+              />
+            </motion.div>
+          )}
 
-        {activeTab === "artifacts" && dashboard && (
-          <ArtifactsPanel
-            artifacts={filteredArtifacts}
-            plugins={dashboard.plugins}
-            filter={artifactFilter}
-            onFilterChange={setArtifactFilter}
-            selectedArtifact={selectedArtifact}
-            artifactContent={artifactContent}
-            onSelectArtifact={handleSelectArtifact}
-            onOpenEditor={handleOpenEditor}
-            onTogglePlugin={handleTogglePlugin}
-            onOpenFolder={handleOpenFolder}
-            onCloseArtifact={() => {
-              setSelectedArtifact(null);
-              setArtifactContent(null);
-            }}
-          />
-        )}
+          {activeTab === "artifacts" && dashboard && (
+            <motion.div
+              key="artifacts"
+              initial={{ opacity: 0, x: 10 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -10 }}
+              transition={springs.smooth}
+            >
+              <ArtifactsPanel
+                artifacts={filteredArtifacts}
+                plugins={dashboard.plugins}
+                filter={artifactFilter}
+                onFilterChange={setArtifactFilter}
+                selectedArtifact={selectedArtifact}
+                artifactContent={artifactContent}
+                onSelectArtifact={handleSelectArtifact}
+                onOpenEditor={handleOpenEditor}
+                onTogglePlugin={handleTogglePlugin}
+                onOpenFolder={handleOpenFolder}
+                onCloseArtifact={() => {
+                  setSelectedArtifact(null);
+                  setArtifactContent(null);
+                }}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
       </main>
     </div>
   );

@@ -1,3 +1,6 @@
+import { motion } from "motion/react";
+import { springs } from "@/lib/motion";
+
 interface TabButtonProps {
   active: boolean;
   onClick: () => void;
@@ -6,15 +9,25 @@ interface TabButtonProps {
 
 export function TabButton({ active, onClick, children }: TabButtonProps) {
   return (
-    <button
+    <motion.button
       onClick={onClick}
-      className={`flex-1 flex items-center justify-center gap-1 px-3 py-2 text-[12px] font-medium transition-colors ${
+      whileHover={{ backgroundColor: "var(--color-muted)" }}
+      whileTap={{ scale: 0.98 }}
+      transition={springs.snappy}
+      className={`flex-1 flex items-center justify-center gap-1 px-3 py-2 text-[12px] font-medium relative ${
         active
-          ? "text-(--color-foreground) border-b-2 border-(--color-foreground)"
-          : "text-(--color-muted-foreground) hover:text-(--color-foreground) border-b-2 border-transparent"
+          ? "text-(--color-foreground)"
+          : "text-(--color-muted-foreground)"
       }`}
     >
       {children}
-    </button>
+      {active && (
+        <motion.div
+          layoutId="tab-indicator"
+          className="absolute bottom-0 left-2 right-2 h-0.5 bg-(--color-foreground) rounded-full"
+          transition={springs.snappy}
+        />
+      )}
+    </motion.button>
   );
 }

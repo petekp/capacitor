@@ -1,6 +1,8 @@
+import { motion } from "motion/react";
 import type { Project, ProjectStatus } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/Icon";
+import { springs, cardVariants } from "@/lib/motion";
 
 interface CompactProjectCardProps {
   project: Project;
@@ -37,9 +39,16 @@ export function CompactProjectCard({
   const context = status?.working_on || status?.next_step;
 
   return (
-    <div
+    <motion.div
+      layout
+      variants={cardVariants}
+      initial="initial"
+      animate="animate"
+      whileHover="hover"
+      whileTap="tap"
       onClick={onLaunchTerminal}
-      className="p-2 rounded-md border bg-(--color-card) hover:bg-(--color-muted) active:bg-(--color-muted)/70 transition-colors group"
+      transition={springs.snappy}
+      className="p-2 rounded-md border bg-(--color-card) cursor-pointer group"
     >
       <div className="flex items-center justify-between gap-2">
         <div className="flex-1 min-w-0">
@@ -50,9 +59,14 @@ export function CompactProjectCard({
             </span>
           </div>
           {context && (
-            <div className="text-[10px] text-muted-foreground/60 leading-snug line-clamp-1 mt-0.5">
+            <motion.div
+              initial={{ opacity: 0, y: 2 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.1, ...springs.gentle }}
+              className="text-[10px] text-muted-foreground/60 leading-snug line-clamp-1 mt-0.5"
+            >
               {context}
-            </div>
+            </motion.div>
           )}
         </div>
         <Button
@@ -68,6 +82,6 @@ export function CompactProjectCard({
           <Icon name="info" className="w-2.5 h-2.5" />
         </Button>
       </div>
-    </div>
+    </motion.div>
   );
 }
