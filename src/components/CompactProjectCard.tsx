@@ -36,11 +36,10 @@ export function CompactProjectCard({
     return `${diffMonths}mo`;
   };
 
-  const context = status?.working_on || status?.next_step;
+  const context = status?.working_on;
 
   return (
     <motion.div
-      layout
       variants={cardVariants}
       initial="initial"
       animate="animate"
@@ -48,7 +47,7 @@ export function CompactProjectCard({
       whileTap="tap"
       onClick={onLaunchTerminal}
       transition={springs.snappy}
-      className="p-2 rounded-md border bg-(--color-card) cursor-pointer group"
+      className="project-card-compact cursor-pointer group"
     >
       <div className="flex items-center justify-between gap-2">
         <div className="flex-1 min-w-0">
@@ -63,7 +62,7 @@ export function CompactProjectCard({
               initial={{ opacity: 0, y: 2 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.1, ...springs.gentle }}
-              className="text-[10px] text-muted-foreground/60 leading-snug line-clamp-1 mt-0.5"
+              className="text-[11px] text-muted-foreground leading-snug line-clamp-1 mt-0.5"
             >
               {context}
             </motion.div>

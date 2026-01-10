@@ -1,8 +1,6 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import type { Project, ProjectStatus, ProjectSessionState } from "@/types";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { ProjectCard } from "@/components/ProjectCard";
 import { CompactProjectCard } from "@/components/CompactProjectCard";
 import { listVariants, springs, stagger } from "@/lib/motion";
@@ -91,20 +89,23 @@ export function ProjectsPanel({
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2 flex-1">
           {projects.length > 0 && (
-            <Input
+            <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search..."
-              className="h-6 text-[11px] flex-1"
+              placeholder="Search projects..."
+              className="search-input h-6 flex-1"
             />
           )}
         </div>
-        <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
-          <Button variant="ghost" size="sm" onClick={onAddProject} className="h-6 px-2 text-[11px] ml-2">
-            + Add
-          </Button>
-        </motion.div>
+        <motion.button
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
+          onClick={onAddProject}
+          className="action-button h-6 ml-2"
+        >
+          + Add
+        </motion.button>
       </div>
 
       <AnimatePresence mode="wait">
@@ -122,7 +123,7 @@ export function ProjectsPanel({
                   initial={{ opacity: 0, x: -10 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={springs.smooth}
-                  className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2"
+                  className="section-header mb-3"
                 >
                   Recent
                 </motion.h2>
@@ -161,7 +162,7 @@ export function ProjectsPanel({
                   initial={{ opacity: 0, x: -10 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: recentProjects.length * stagger.fast + 0.1, ...springs.smooth }}
-                  className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2"
+                  className="section-header mb-3"
                 >
                   {recentProjects.length > 0 ? `Dormant (${dormantProjects.length})` : "Projects"}
                 </motion.h2>
@@ -205,14 +206,11 @@ export function ProjectsPanel({
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
             transition={springs.gentle}
+            onClick={onAddProject}
+            className="empty-state cursor-pointer"
           >
-            <Button
-              variant="ghost"
-              onClick={onAddProject}
-              className="w-full text-muted-foreground py-16 h-auto text-sm"
-            >
-              No projects yet
-            </Button>
+            <span className="text-[10px] uppercase tracking-wider font-medium mb-1">No projects yet</span>
+            <span className="text-[11px] opacity-60">Click to add your first project</span>
           </motion.div>
         )}
       </AnimatePresence>

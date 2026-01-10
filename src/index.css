@@ -73,32 +73,32 @@
 }
 
 .dark {
-  --background: oklch(0.12 0 0);
-  --foreground: oklch(0.95 0 0);
-  --card: oklch(0.16 0 0);
-  --card-foreground: oklch(0.95 0 0);
-  --popover: oklch(0.16 0 0);
-  --popover-foreground: oklch(0.95 0 0);
-  --primary: oklch(0.95 0 0);
-  --primary-foreground: oklch(0.12 0 0);
-  --secondary: oklch(0.22 0 0);
-  --secondary-foreground: oklch(0.95 0 0);
-  --muted: oklch(0.22 0 0);
-  --muted-foreground: oklch(0.6 0 0);
-  --accent: oklch(0.55 0 0);
+  --background: oklch(0.11 0.005 260);
+  --foreground: oklch(0.92 0.01 250);
+  --card: oklch(0.145 0.008 260);
+  --card-foreground: oklch(0.92 0.01 250);
+  --popover: oklch(0.145 0.008 260);
+  --popover-foreground: oklch(0.92 0.01 250);
+  --primary: oklch(0.92 0.01 250);
+  --primary-foreground: oklch(0.11 0.005 260);
+  --secondary: oklch(0.19 0.01 260);
+  --secondary-foreground: oklch(0.92 0.01 250);
+  --muted: oklch(0.19 0.01 260);
+  --muted-foreground: oklch(0.55 0.02 250);
+  --accent: oklch(0.5 0.02 250);
   --accent-foreground: oklch(1 0 0);
   --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 12%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.5 0 0);
-  --sidebar: oklch(0.14 0 0);
-  --sidebar-foreground: oklch(0.95 0 0);
-  --sidebar-primary: oklch(0.55 0 0);
+  --border: oklch(1 0.02 250 / 10%);
+  --input: oklch(1 0.02 250 / 12%);
+  --ring: oklch(0.5 0.03 250);
+  --sidebar: oklch(0.13 0.006 260);
+  --sidebar-foreground: oklch(0.92 0.01 250);
+  --sidebar-primary: oklch(0.5 0.02 250);
   --sidebar-primary-foreground: oklch(1 0 0);
-  --sidebar-accent: oklch(0.22 0 0);
-  --sidebar-accent-foreground: oklch(0.95 0 0);
-  --sidebar-border: oklch(1 0 0 / 12%);
-  --sidebar-ring: oklch(0.5 0 0);
+  --sidebar-accent: oklch(0.19 0.01 260);
+  --sidebar-accent-foreground: oklch(0.92 0.01 250);
+  --sidebar-border: oklch(1 0.02 250 / 10%);
+  --sidebar-ring: oklch(0.5 0.03 250);
 }
 
 @layer base {
@@ -251,4 +251,232 @@
   100% {
     transform: translateX(100%);
   }
+}
+
+/* Observatory Design System */
+
+/* Section header with elegant line */
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.625rem;
+  font-weight: 600;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.section-header::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, var(--border) 0%, transparent 100%);
+}
+
+/* Refined project card */
+.project-card {
+  position: relative;
+  padding: 0.875rem 1rem;
+  border-radius: 0.625rem;
+  border: 1px solid var(--border);
+  background: var(--card);
+  transition: all 200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.project-card::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.75rem;
+  bottom: 0.75rem;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--muted-foreground);
+  opacity: 0.15;
+  transition: all 200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.project-card:hover {
+  border-color: oklch(1 0.02 250 / 18%);
+  background: oklch(0.155 0.01 260);
+  transform: translateY(-1px);
+}
+
+.project-card:hover::before {
+  opacity: 0.4;
+  background: oklch(0.6 0.1 250);
+}
+
+/* Status indicator refined */
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.5625rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.status-dot {
+  width: 0.375rem;
+  height: 0.375rem;
+  border-radius: 9999px;
+  animation: status-breathe 2.5s ease-in-out infinite;
+}
+
+@keyframes status-breathe {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.6;
+    transform: scale(0.85);
+  }
+}
+
+/* Status colors - harmonious with observatory theme */
+.status-ready {
+  background: oklch(0.45 0.12 160 / 20%);
+  color: oklch(0.72 0.14 160);
+}
+.status-ready .status-dot {
+  background: oklch(0.72 0.14 160);
+  box-shadow: 0 0 6px oklch(0.72 0.14 160 / 50%);
+}
+
+.status-working {
+  background: oklch(0.5 0.1 45 / 18%);
+  color: oklch(0.75 0.12 45);
+}
+.status-working .status-dot {
+  background: oklch(0.75 0.12 45);
+}
+
+.status-waiting {
+  background: oklch(0.55 0.12 85 / 20%);
+  color: oklch(0.8 0.14 85);
+}
+.status-waiting .status-dot {
+  background: oklch(0.8 0.14 85);
+  box-shadow: 0 0 6px oklch(0.8 0.14 85 / 50%);
+}
+
+.status-compacting {
+  background: oklch(0.45 0.08 55 / 18%);
+  color: oklch(0.7 0.1 55);
+}
+.status-compacting .status-dot {
+  background: oklch(0.7 0.1 55);
+}
+
+/* Project name typography */
+.project-name {
+  font-size: 1.0625rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  color: var(--foreground);
+}
+
+/* Session summary typography */
+.session-summary {
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--muted-foreground);
+  letter-spacing: -0.005em;
+}
+
+/* Compact card variant */
+.project-card-compact {
+  position: relative;
+  padding: 0.625rem 0.75rem;
+  border-radius: 0.5rem;
+  border: 1px solid transparent;
+  background: transparent;
+  transition: all 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.project-card-compact:hover {
+  border-color: var(--border);
+  background: oklch(0.14 0.008 260);
+}
+
+.project-card-compact::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 2px;
+  height: 60%;
+  border-radius: 1px;
+  background: var(--muted-foreground);
+  opacity: 0;
+  transition: all 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.project-card-compact:hover::before {
+  opacity: 0.25;
+}
+
+/* Empty state refinement */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem 1.5rem;
+  border: 1px dashed var(--border);
+  border-radius: 0.75rem;
+  color: var(--muted-foreground);
+  font-size: 0.8125rem;
+  transition: all 200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.empty-state:hover {
+  border-color: oklch(1 0.02 250 / 20%);
+  background: oklch(0.13 0.006 260);
+}
+
+/* Action button refined */
+.action-button {
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--muted-foreground);
+  padding: 0.375rem 0.625rem;
+  border-radius: 0.375rem;
+  transition: all 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.action-button:hover {
+  color: var(--foreground);
+  background: oklch(1 0.02 250 / 8%);
+}
+
+/* Search input refined */
+.search-input {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 0.375rem;
+  font-size: 0.6875rem;
+  padding: 0.375rem 0.625rem;
+  color: var(--foreground);
+  transition: all 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.search-input::placeholder {
+  color: var(--muted-foreground);
+  opacity: 0.5;
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: oklch(0.5 0.08 250);
+  background: oklch(0.13 0.006 260);
 }
