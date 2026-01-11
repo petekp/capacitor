@@ -1,0 +1,11 @@
+# Dependencies
+node_modules/
+
+# Wrangler
+.wrangler/
+.dev.vars
+
+# Environment files with secrets
+.env
+.env.local
+.env*.local

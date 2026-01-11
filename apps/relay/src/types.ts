@@ -19,8 +19,15 @@ export interface EncryptedMessage {
 }
 
 export interface WebSocketMessage {
-  type: 'state' | 'command' | 'ping' | 'pong';
-  data?: EncryptedMessage;
+  type: 'state_update' | 'hello' | 'ping' | 'pong' | 'command' | 'heartbeat';
+  state?: EncryptedMessage;
+  deviceId?: string;
+  heartbeat?: HeartbeatData;
+}
+
+export interface HeartbeatData {
+  project: string;
+  timestamp: string;
 }
 
 export interface Env {

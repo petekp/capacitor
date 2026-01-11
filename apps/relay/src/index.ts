@@ -10,7 +10,7 @@ export default {
       return new Response('OK', { status: 200 });
     }
 
-    const match = url.pathname.match(/^\/api\/v1\/(state|ws)\/([a-zA-Z0-9-]+)$/);
+    const match = url.pathname.match(/^\/api\/v1\/(state|ws|heartbeat)\/([a-zA-Z0-9-]+)$/);
     if (!match) {
       return new Response('Not Found', { status: 404 });
     }
@@ -21,7 +21,13 @@ export default {
     const stub = env.HUD_SESSION.get(id);
 
     const internalUrl = new URL(request.url);
-    internalUrl.pathname = action === 'ws' ? '/ws' : '/state';
+    if (action === 'ws') {
+      internalUrl.pathname = '/ws';
+    } else if (action === 'heartbeat') {
+      internalUrl.pathname = '/heartbeat';
+    } else {
+      internalUrl.pathname = '/state';
+    }
 
     return stub.fetch(new Request(internalUrl.toString(), request));
   },

@@ -82,9 +82,19 @@ class AppState: ObservableObject {
             engine = try HudEngine()
             loadDashboard()
             setupRelayObserver()
+            setupStalenessTimer()
         } catch {
             self.error = error.localizedDescription
             self.isLoading = false
+        }
+    }
+
+    private func setupStalenessTimer() {
+        // Check every second for responsive staleness detection
+        stalenessTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            DispatchQueue.main.async {
+                self?.objectWillChange.send()
+            }
         }
     }
 
@@ -95,9 +105,35 @@ class AppState: ObservableObject {
                 self?.applyRelayState(state)
             }
             .store(in: &cancellables)
+
+        // Forward relayClient state changes to trigger SwiftUI updates
+        relayClient.$isConnected
+            .sink { [weak self] _ in
+                self?.objectWillChange.send()
+            }
+            .store(in: &cancellables)
+
+        relayClient.$connectionError
+            .sink { [weak self] _ in
+                self?.objectWillChange.send()
+            }
+            .store(in: &cancellables)
+
+        relayClient.$projectHeartbeats
+            .sink { [weak self] _ in
+                self?.objectWillChange.send()
+            }
+            .store(in: &cancellables)
+
+        relayClient.$connectedAt
+            .sink { [weak self] _ in
+                self?.objectWillChange.send()
+            }
+            .store(in: &cancellables)
     }
 
     private var cancellables = Set<AnyCancellable>()
+    private var stalenessTimer: Timer?
 
     private func applyRelayState(_ state: RelayHudState) {
         for (path, projectState) in state.projects {
@@ -267,7 +303,71 @@ class AppState: ObservableObject {
     }
 
     func getSessionState(for project: Project) -> ProjectSessionState? {
-        sessionStates[project.path]
+        guard let state = sessionStates[project.path] else {
+            return nil
+        }
+
+        if state.state == .working {
+            let stalenessThreshold: TimeInterval = 5
+
+            if isRemoteMode {
+                // Find the most recent heartbeat from any subdirectory of this project
+                // Heartbeats are keyed by cwd which may be a subdirectory of the pinned project path
+                let lastHeartbeat = relayClient.projectHeartbeats
+                    .filter { $0.key.hasPrefix(project.path) }
+                    .map { $0.value }
+                    .max()
+
+                // If we have a heartbeat, check its staleness
+                if let heartbeat = lastHeartbeat {
+                    if Date().timeIntervalSince(heartbeat) > stalenessThreshold {
+                        return ProjectSessionState(
+                            state: .waiting,
+                            stateChangedAt: state.stateChangedAt,
+                            sessionId: state.sessionId,
+                            workingOn: state.workingOn,
+                            nextStep: state.nextStep,
+                            context: state.context
+                        )
+                    }
+                } else if let connectedAt = relayClient.connectedAt,
+                          Date().timeIntervalSince(connectedAt) > stalenessThreshold {
+                    // No heartbeats received, but we've been connected long enough
+                    // If Claude were actually working, we would have received heartbeats by now
+                    return ProjectSessionState(
+                        state: .waiting,
+                        stateChangedAt: state.stateChangedAt,
+                        sessionId: state.sessionId,
+                        workingOn: state.workingOn,
+                        nextStep: state.nextStep,
+                        context: state.context
+                    )
+                }
+            } else {
+                let lastHeartbeat: Date?
+                if let updatedAt = state.context?.updatedAt {
+                    lastHeartbeat = ISO8601DateFormatter().date(from: updatedAt)
+                } else if let stateChangedAt = state.stateChangedAt {
+                    lastHeartbeat = ISO8601DateFormatter().date(from: stateChangedAt)
+                } else {
+                    lastHeartbeat = nil
+                }
+
+                if let heartbeat = lastHeartbeat,
+                   Date().timeIntervalSince(heartbeat) > stalenessThreshold {
+                    return ProjectSessionState(
+                        state: .waiting,
+                        stateChangedAt: state.stateChangedAt,
+                        sessionId: state.sessionId,
+                        workingOn: state.workingOn,
+                        nextStep: state.nextStep,
+                        context: state.context
+                    )
+                }
+            }
+        }
+
+        return state
     }
 
     func launchTerminal(for project: Project) {

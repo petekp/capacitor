@@ -31,12 +31,19 @@ enum WebSocketMessageType: String, Codable {
     case hello
     case ping
     case pong
+    case heartbeat
+}
+
+struct HeartbeatData: Codable {
+    let project: String
+    let timestamp: String
 }
 
 struct WebSocketMessage: Codable {
     let type: WebSocketMessageType
     let state: EncryptedMessage?
     let deviceId: String?
+    let heartbeat: HeartbeatData?
 }
 
 @MainActor
@@ -44,12 +51,16 @@ class RelayClient: NSObject, ObservableObject {
     @Published var isConnected = false
     @Published var lastState: RelayHudState?
     @Published var connectionError: String?
+    @Published var projectHeartbeats: [String: Date] = [:]
+    @Published var connectedAt: Date?
 
     private var webSocket: URLSessionWebSocketTask?
     private var config: RelayConfig?
     private var reconnectAttempts = 0
-    private let maxReconnectAttempts = 5
+    private let maxReconnectAttempts = 10
+    private let reconnectBackoffMax: TimeInterval = 60
     private var isReconnecting = false
+    private var isIntentionalDisconnect = false
 
     override init() {
         super.init()
@@ -83,6 +94,11 @@ class RelayClient: NSObject, ObservableObject {
             return
         }
 
+        // Reset disconnect/reconnect state
+        isIntentionalDisconnect = false
+        reconnectAttempts = 0
+        connectionError = nil
+
         let wsUrl = config.relayUrl
             .replacingOccurrences(of: "https://", with: "wss://")
             .replacingOccurrences(of: "http://", with: "ws://")
@@ -101,9 +117,18 @@ class RelayClient: NSObject, ObservableObject {
     }
 
     func disconnect() {
+        isIntentionalDisconnect = true
+        reconnectAttempts = maxReconnectAttempts + 1  // Prevent auto-reconnect
         webSocket?.cancel(with: .normalClosure, reason: nil)
         webSocket = nil
         isConnected = false
+        connectedAt = nil
+        connectionError = nil  // Clear any existing error
+    }
+
+    private func cleanupOldHeartbeats() {
+        let cutoff = Date().addingTimeInterval(-86400)  // 24 hours ago
+        projectHeartbeats = projectHeartbeats.filter { $0.value > cutoff }
     }
 
     private func receiveMessage() {
@@ -151,12 +176,19 @@ class RelayClient: NSObject, ObservableObject {
                 }
             case .hello:
                 isConnected = true
+                connectedAt = Date()
                 reconnectAttempts = 0
                 connectionError = nil
+                cleanupOldHeartbeats()
             case .pong:
                 break
             case .ping:
                 sendPong()
+            case .heartbeat:
+                if let heartbeat = wsMessage.heartbeat,
+                   let date = ISO8601DateFormatter().date(from: heartbeat.timestamp) {
+                    projectHeartbeats[heartbeat.project] = date
+                }
             }
         } catch {
             connectionError = "Failed to parse message: \(error.localizedDescription)"
@@ -179,7 +211,7 @@ class RelayClient: NSObject, ObservableObject {
     }
 
     private func sendPong() {
-        let pong = WebSocketMessage(type: .pong, state: nil, deviceId: nil)
+        let pong = WebSocketMessage(type: .pong, state: nil, deviceId: nil, heartbeat: nil)
         guard let data = try? JSONEncoder().encode(pong),
               let text = String(data: data, encoding: .utf8) else { return }
 
@@ -192,7 +224,7 @@ class RelayClient: NSObject, ObservableObject {
                 try? await _Concurrency.Task.sleep(nanoseconds: 30_000_000_000)
                 guard webSocket != nil else { break }
 
-                let ping = WebSocketMessage(type: .ping, state: nil, deviceId: nil)
+                let ping = WebSocketMessage(type: .ping, state: nil, deviceId: nil, heartbeat: nil)
                 if let data = try? JSONEncoder().encode(ping),
                    let text = String(data: data, encoding: .utf8) {
                     webSocket?.send(.string(text)) { _ in }
@@ -203,14 +235,28 @@ class RelayClient: NSObject, ObservableObject {
 
     private func handleDisconnection(error: Error) {
         isConnected = false
+        connectedAt = nil
+
+        // Don't show error or reconnect if this was intentional
+        if isIntentionalDisconnect {
+            isIntentionalDisconnect = false
+            return
+        }
+
         connectionError = error.localizedDescription
 
-        guard !isReconnecting, reconnectAttempts < maxReconnectAttempts else { return }
+        guard !isReconnecting else { return }
 
         isReconnecting = true
         reconnectAttempts += 1
 
-        let delay = min(pow(2.0, Double(reconnectAttempts)), 30.0)
+        // Exponential backoff: 2, 4, 8, 16, 30, 60, 60, 60...
+        let delay: TimeInterval
+        if reconnectAttempts <= maxReconnectAttempts {
+            delay = min(pow(2.0, Double(reconnectAttempts)), 30.0)
+        } else {
+            delay = reconnectBackoffMax  // Long-term retry every 60s
+        }
 
         _Concurrency.Task {
             try? await _Concurrency.Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))

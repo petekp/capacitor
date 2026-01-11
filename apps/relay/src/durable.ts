@@ -1,15 +1,32 @@
-import type { EncryptedMessage, WebSocketMessage } from './types';
+import type { EncryptedMessage, WebSocketMessage, HeartbeatData } from './types';
 
 export class HudSession implements DurableObject {
-  private connections: Set<WebSocket> = new Set();
   private lastState: EncryptedMessage | null = null;
+  private initialized = false;
 
   constructor(
     private state: DurableObjectState,
     _env: unknown
   ) {}
 
+  private async ensureInitialized(): Promise<void> {
+    if (this.initialized) return;
+    this.initialized = true;
+
+    const stored = await this.state.storage.get<EncryptedMessage>('lastState');
+    if (stored) {
+      this.lastState = stored;
+    }
+
+    // Ensure ping alarm is running
+    const currentAlarm = await this.state.storage.getAlarm();
+    if (currentAlarm === null) {
+      await this.state.storage.setAlarm(Date.now() + 30000);
+    }
+  }
+
   async fetch(request: Request): Promise<Response> {
+    await this.ensureInitialized();
     const url = new URL(request.url);
 
     if (url.pathname === '/ws') {
@@ -24,6 +41,10 @@ export class HudSession implements DurableObject {
       return this.handleGetState();
     }
 
+    if (url.pathname === '/heartbeat' && request.method === 'POST') {
+      return this.handleHeartbeat(request);
+    }
+
     return new Response('Not Found', { status: 404 });
   }
 
@@ -36,12 +57,17 @@ export class HudSession implements DurableObject {
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
 
+    // acceptWebSocket enables hibernation - WebSocket is tracked by the runtime
     this.state.acceptWebSocket(server);
-    this.connections.add(server);
 
+    // Send hello on connect
+    const helloMsg: WebSocketMessage = { type: 'hello' };
+    server.send(JSON.stringify(helloMsg));
+
+    // Send current state if available
     if (this.lastState) {
-      const msg: WebSocketMessage = { type: 'state', data: this.lastState };
-      server.send(JSON.stringify(msg));
+      const stateMsg: WebSocketMessage = { type: 'state_update', state: this.lastState };
+      server.send(JSON.stringify(stateMsg));
     }
 
     return new Response(null, { status: 101, webSocket: client });
@@ -58,7 +84,7 @@ export class HudSession implements DurableObject {
       this.lastState = message;
       await this.state.storage.put('lastState', message);
 
-      this.broadcast({ type: 'state', data: message });
+      this.broadcast({ type: 'state_update', state: message });
 
       return new Response('OK', {
         status: 200,
@@ -79,45 +105,57 @@ export class HudSession implements DurableObject {
     });
   }
 
+  private async handleHeartbeat(request: Request): Promise<Response> {
+    try {
+      const heartbeat = (await request.json()) as HeartbeatData;
+
+      if (!heartbeat.project || !heartbeat.timestamp) {
+        return new Response('Invalid heartbeat format', { status: 400 });
+      }
+
+      this.broadcast({ type: 'heartbeat', heartbeat });
+
+      return new Response('OK', { status: 200 });
+    } catch {
+      return new Response('Invalid JSON', { status: 400 });
+    }
+  }
+
   private broadcast(message: WebSocketMessage): void {
     const json = JSON.stringify(message);
-    const deadConnections: WebSocket[] = [];
+    // getWebSockets() returns all WebSockets accepted via acceptWebSocket()
+    // This persists across hibernation, unlike an in-memory Set
+    const webSockets = this.state.getWebSockets();
 
-    for (const ws of this.connections) {
+    for (const ws of webSockets) {
       try {
         ws.send(json);
       } catch {
-        deadConnections.push(ws);
+        // WebSocket will be cleaned up automatically by the runtime
       }
-    }
-
-    for (const ws of deadConnections) {
-      this.connections.delete(ws);
     }
   }
 
   async webSocketMessage(_ws: WebSocket, message: string | ArrayBuffer): Promise<void> {
     try {
-      const data = JSON.parse(message as string) as WebSocketMessage;
+      const msg = JSON.parse(message as string) as WebSocketMessage;
 
-      if (data.type === 'pong') {
+      if (msg.type === 'pong') {
         return;
       }
 
-      if (data.type === 'command' && data.data) {
-        this.broadcast({ type: 'command', data: data.data });
-      }
+      // Future: handle command messages for bidirectional control
     } catch {
       // Ignore malformed messages
     }
   }
 
-  async webSocketClose(ws: WebSocket): Promise<void> {
-    this.connections.delete(ws);
+  async webSocketClose(_ws: WebSocket): Promise<void> {
+    // WebSocket is automatically removed from getWebSockets() by the runtime
   }
 
-  async webSocketError(ws: WebSocket): Promise<void> {
-    this.connections.delete(ws);
+  async webSocketError(_ws: WebSocket): Promise<void> {
+    // WebSocket is automatically removed from getWebSockets() by the runtime
   }
 
   async alarm(): Promise<void> {
