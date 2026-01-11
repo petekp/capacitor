@@ -7,6 +7,7 @@ struct ProjectCardView: View {
     let flashState: SessionState?
     let devServerPort: UInt16?
     let isStale: Bool
+    let todoStatus: (completed: Int, total: Int)?
     let onTap: () -> Void
     let onInfoTap: () -> Void
     let onMoveToDormant: () -> Void
@@ -65,6 +66,10 @@ struct ProjectCardView: View {
                     }
 
                     HealthBadge(project: project)
+
+                    if let status = todoStatus, status.total > 0 {
+                        TodoBadge(completed: status.completed, total: status.total)
+                    }
 
                     Button(action: onInfoTap) {
                         Image(systemName: "info.circle")
@@ -648,6 +653,7 @@ struct PressableButtonStyle: ButtonStyle {
 
 struct HealthBadge: View {
     let project: Project
+    @State private var showingPopover = false
 
     private var healthResult: HealthScoreResult {
         ClaudeMdHealthScorer.score(content: project.claudeMdPreview)
@@ -666,17 +672,127 @@ struct HealthBadge: View {
 
     var body: some View {
         if project.claudeMdPath != nil {
-            Text(healthResult.grade.rawValue)
-                .font(.system(size: 8, weight: .bold, design: .rounded))
-                .foregroundColor(badgeColor)
-                .frame(width: 14, height: 14)
-                .background(badgeColor.opacity(0.15))
-                .clipShape(Circle())
-                .overlay(
-                    Circle()
-                        .strokeBorder(badgeColor.opacity(0.3), lineWidth: 0.5)
-                )
-                .help("CLAUDE.md health: \(healthResult.grade.rawValue) (\(healthResult.score)/100)")
+            Button(action: { showingPopover.toggle() }) {
+                Text(healthResult.grade.rawValue)
+                    .font(.system(size: 8, weight: .bold, design: .rounded))
+                    .foregroundColor(badgeColor)
+                    .frame(width: 14, height: 14)
+                    .background(badgeColor.opacity(0.15))
+                    .clipShape(Circle())
+                    .overlay(
+                        Circle()
+                            .strokeBorder(badgeColor.opacity(0.3), lineWidth: 0.5)
+                    )
+            }
+            .buttonStyle(.plain)
+            .help("CLAUDE.md health: \(healthResult.grade.rawValue) (\(healthResult.score)/100) - Click for details")
+            .popover(isPresented: $showingPopover, arrowEdge: .bottom) {
+                HealthDetailPopover(result: healthResult, projectPath: project.claudeMdPath ?? "")
+            }
         }
+    }
+}
+
+struct HealthDetailPopover: View {
+    let result: HealthScoreResult
+    let projectPath: String
+    @State private var copiedTemplate: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("CLAUDE.md Health")
+                    .font(.system(size: 13, weight: .semibold))
+                Spacer()
+                Text("\(result.score)/\(result.maxScore)")
+                    .font(.system(size: 12, weight: .medium, design: .monospaced))
+                    .foregroundColor(.secondary)
+            }
+
+            Divider()
+
+            ForEach(result.details, id: \.name) { check in
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: check.passed ? "checkmark.circle.fill" : "circle")
+                        .font(.system(size: 12))
+                        .foregroundColor(check.passed ? .green : .secondary)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(check.name)
+                            .font(.system(size: 11, weight: .medium))
+
+                        if !check.passed, let suggestion = check.suggestion {
+                            Text(suggestion)
+                                .font(.system(size: 10))
+                                .foregroundColor(.secondary)
+                        }
+
+                        if !check.passed, let template = check.template {
+                            Button(action: {
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(template, forType: .string)
+                                copiedTemplate = check.name
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                                    if copiedTemplate == check.name {
+                                        copiedTemplate = nil
+                                    }
+                                }
+                            }) {
+                                HStack(spacing: 3) {
+                                    Image(systemName: copiedTemplate == check.name ? "checkmark" : "doc.on.doc")
+                                        .font(.system(size: 9))
+                                    Text(copiedTemplate == check.name ? "Copied!" : "Copy template")
+                                        .font(.system(size: 9))
+                                }
+                                .foregroundColor(.accentColor)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+
+                    Spacer()
+
+                    Text("+\(check.points)")
+                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .foregroundColor(check.passed ? .green : .secondary.opacity(0.5))
+                }
+            }
+        }
+        .padding(12)
+        .frame(width: 260)
+    }
+}
+
+struct TodoBadge: View {
+    let completed: Int
+    let total: Int
+
+    private var isAllDone: Bool {
+        completed == total && total > 0
+    }
+
+    private var badgeColor: Color {
+        if isAllDone {
+            return Color(hue: 0.35, saturation: 0.6, brightness: 0.75)
+        } else if completed > 0 {
+            return Color(hue: 0.12, saturation: 0.5, brightness: 0.8)
+        } else {
+            return Color.white.opacity(0.4)
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 2) {
+            Image(systemName: isAllDone ? "checkmark.circle.fill" : "checklist")
+                .font(.system(size: 8))
+            Text("\(completed)/\(total)")
+                .font(.system(size: 8, weight: .medium, design: .monospaced))
+        }
+        .foregroundColor(badgeColor)
+        .padding(.horizontal, 5)
+        .padding(.vertical, 2)
+        .background(badgeColor.opacity(0.12))
+        .clipShape(Capsule())
+        .help("\(completed) of \(total) tasks completed")
     }
 }

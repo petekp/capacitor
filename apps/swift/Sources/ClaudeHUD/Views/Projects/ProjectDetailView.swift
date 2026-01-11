@@ -83,10 +83,20 @@ struct ProjectDetailView: View {
                 .offset(y: appeared ? 0 : 16)
 
                 let todos = appState.todosManager.getTodos(for: project.path)
+                let todoFileId = appState.todosManager.getFileId(for: project.path)
 
-                if !todos.isEmpty {
+                if !todos.isEmpty || todoFileId != nil {
                     DetailCard {
-                        TodosSection(todos: todos)
+                        TodosSection(
+                            todos: todos,
+                            fileId: todoFileId,
+                            onStatusChange: { fileId, todoId, newStatus in
+                                appState.todosManager.updateTodoStatus(fileId: fileId, todoId: todoId, newStatus: newStatus)
+                            },
+                            onAddTodo: { fileId, content in
+                                appState.todosManager.addTodo(fileId: fileId, content: content)
+                            }
+                        )
                     }
                     .opacity(appeared ? 1 : 0)
                     .offset(y: appeared ? 0 : 20)
@@ -111,6 +121,24 @@ struct ProjectDetailView: View {
                     .opacity(appeared ? 1 : 0)
                     .offset(y: appeared ? 0 : 28)
                 }
+
+                DetailCard {
+                    HooksSetupSection()
+                }
+                .opacity(appeared ? 1 : 0)
+                .offset(y: appeared ? 0 : 32)
+
+                DetailCard {
+                    PluginRecommendationSection(projectPath: project.path)
+                }
+                .opacity(appeared ? 1 : 0)
+                .offset(y: appeared ? 0 : 36)
+
+                DetailCard {
+                    UsageInsightsSection(projectPath: project.path)
+                }
+                .opacity(appeared ? 1 : 0)
+                .offset(y: appeared ? 0 : 40)
 
                 Spacer()
             }

@@ -18,11 +18,11 @@
 **Research complete.** Plan files are stored in `~/.claude/plans/{adjective-animal}.md` (e.g., `zesty-frolicking-yeti.md`). They're permanent Markdown documents created via Plan Mode (`--permission-mode plan` or `Shift+Tab`).
 
 **Implementation options:**
-- [ ] Add "Plans" section to Artifacts tab (alongside Skills, Commands, Agents)
-- [ ] Show project-associated plans in Project Detail view
-- [ ] Add plan search/filter by name, date, or content
-- [ ] Enable in-app plan viewing with Markdown rendering
-- [ ] Optional: status tracking (implemented/in-progress/archived)
+- [x] Add "Plans" section to Artifacts tab (alongside Skills, Commands, Agents)
+- [x] Show project-associated plans in Project Detail view
+- [x] Add plan search/filter by name, date, or content
+- [x] Enable in-app plan viewing with Markdown rendering
+- [x] Optional: status tracking (implemented/in-progress/archived)
 
 #### Todos Feature
 **Research complete.** Two todo systems exist:
@@ -30,11 +30,11 @@
 2. **Persistent**: `~/.claude/todos/{uuid}-agent-{uuid}.json` files
 
 **Implementation options:**
-- [ ] Parse and display `~/.claude/todos/*.json` files per project
-- [ ] Add "Todos" section to Project Detail view
-- [ ] Show todo completion status on project cards (e.g., "3/7 tasks")
-- [ ] Optional: Allow marking todos complete from HUD
-- [ ] Optional: Create new todos from HUD (writes to project's todos.json)
+- [x] Parse and display `~/.claude/todos/*.json` files per project
+- [x] Add "Todos" section to Project Detail view
+- [x] Show todo completion status on project cards (e.g., "3/7 tasks")
+- [x] Optional: Allow marking todos complete from HUD
+- [x] Optional: Create new todos from HUD (writes to project's todos.json)
 
 #### Agent SDK
 **Research complete.** Already have custom SDK implementation in `apps/daemon/` based on `--output-format stream-json`. Reserved for mobile/remote client integration.
@@ -81,35 +81,90 @@ Summary Bar: "3 need input • 2 working • 15 paused"
    - Checks: description, commands, architecture, style rules, freshness
    - [x] Implement health scoring algorithm
    - [x] Add badge to project cards
-   - [ ] Create improvement suggestions with templates
+   - [x] Create improvement suggestions with templates (popover with copy-to-clipboard)
 
 2. **Hooks Setup Wizard**
    - Detects current hook configuration
-   - [ ] One-click "Install HUD Hooks" button
-   - [ ] Show setup status (None/Basic/Complete/Custom)
-   - [ ] Diff preview before applying changes
+   - [x] One-click "Install HUD Hooks" button (copy config to clipboard)
+   - [x] Show setup status (None/Basic/Complete/Custom)
+   - [x] Diff preview before applying changes
 
 3. **Plugin Recommendations**
    - Analyzes project files for tech stack
-   - [ ] Detect project type from files (package.json, Cargo.toml, etc.)
-   - [ ] Cross-reference with plugin registry
-   - [ ] Show contextual "Recommended Plugins" section
+   - [x] Detect project type from files (package.json, Cargo.toml, etc.)
+   - [x] Cross-reference with plugin registry
+   - [x] Show contextual "Recommended Plugins" section
 
 4. **Usage Insights**
    - Parse session JSONL for metrics
-   - [ ] Weekly digest: sessions, tokens, estimated cost
-   - [ ] Trend sparklines and anomaly alerts
-   - [ ] Coaching tips based on patterns
+   - [x] Weekly digest: sessions, tokens, estimated cost
+   - [x] Trend sparklines and anomaly alerts
+   - [x] Coaching tips based on patterns
 
 **Implementation phases:** Health Score → Hooks Wizard → Plugins → Insights
 
 ## Completed
 
-- [x] CLAUDE.md Health Score (January 2026):
+- [x] CLAUDE.md Health Score + Coaching (January 2026):
   - Health scoring algorithm analyzes CLAUDE.md content for: project description, workflow/commands, architecture info, style rules, sufficient detail
   - Grades: A (90+), B (75-89), C (60-74), D (40-59), F (<40), None (no CLAUDE.md)
   - Color-coded circular badge on project cards (green=A, yellow=C, red=F)
-  - Hover tooltip shows score breakdown
+  - Click badge for detailed popover showing pass/fail status for each criterion
+  - Copy-to-clipboard templates for missing sections (one-click improvement)
+
+- [x] Plans Integration (January 2026):
+  - PlansManager scans `~/.claude/plans/` for plan files
+  - PlansSection in Project Detail shows recent plans with Markdown preview
+  - Sorted by modification date
+  - Full Artifacts view with Plans tab featuring:
+    - Search/filter by name or content
+    - Sort by date, name, or size (plus status)
+    - Expandable plan cards with full content preview
+    - Copy to clipboard and open in editor actions
+  - Plan status tracking:
+    - Four status types: Active, In Progress, Implemented, Archived
+    - Status filter chips with counts
+    - Click status badge to change via dropdown menu
+    - Status persists in ~/.claude/hud-plan-statuses.json
+    - Color-coded borders and badges
+
+- [x] Todos Integration (January 2026):
+  - TodosManager parses `~/.claude/todos/*.json` files
+  - TodosSection in Project Detail shows todos with completion status
+  - Groups: In Progress, Pending, Completed
+  - Interactive todo management:
+    - Click checkbox to toggle completed/pending status
+    - Menu to set todo as "in_progress" or "completed"
+    - Add new todos via + button and inline text field
+    - Changes write back to original todo JSON files
+
+- [x] Usage Insights (January 2026):
+  - UsageInsightsManager parses session JSONL files for token usage
+  - Weekly digest: sessions this week, tokens this week, estimated cost
+  - 7-day sparkline showing daily activity
+  - Average tokens per session metric
+  - Pricing based on Claude API rates (input $3/M, output $15/M, cache $0.30/M)
+  - Coaching tips based on usage patterns:
+    - Cache efficiency tips (encourages prompt caching when cache ratio is low)
+    - Session size guidance (suggests smaller sessions for very long averages)
+    - Power user recognition (celebrates high activity)
+    - Welcome back prompts (when no sessions this week)
+    - Cost awareness warnings (for high estimated costs)
+    - Output ratio analysis (suggests focused prompts for high output ratios)
+
+- [x] Plugin Recommendations (January 2026):
+  - ProjectTypeDetector scans project files (package.json, Cargo.toml, requirements.txt, etc.)
+  - Detects tech stack: React, Next.js, TypeScript, Tailwind, Rust, Python, Go, Ruby, Docker
+  - PluginRecommender suggests relevant plugins based on detected tech
+  - PluginRecommendationSection in Project Detail shows contextual recommendations
+
+- [x] Hooks Setup Wizard (January 2026):
+  - HooksManager detects current hooks configuration from ~/.claude/settings.json
+  - HooksSetupSection shows status (None/Basic/Complete/Custom) with visual indicator
+  - Shows which hooks are configured (UserPromptSubmit, PostToolUse, Stop, Notification)
+  - One-click copy-to-clipboard for recommended hooks configuration
+  - Setup sheet with full configuration preview
+  - Diff preview showing current vs recommended hooks (added/removed highlighting)
 
 - [x] Projects View IA Redesign (January 2026):
   - Urgency-based grouping: "Needs Input" (Ready) → "In Progress" (Working/Waiting/Compacting) → "Paused" (everything else)

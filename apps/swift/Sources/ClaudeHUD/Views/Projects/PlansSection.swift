@@ -82,7 +82,6 @@ struct PlanItem: View {
 
     private func formattedDate(_ date: Date) -> String {
         let calendar = Calendar.current
-        let now = Date()
 
         if calendar.isDateInToday(date) {
             return "Today"

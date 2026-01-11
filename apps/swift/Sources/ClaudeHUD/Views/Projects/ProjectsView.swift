@@ -78,6 +78,7 @@ struct ProjectsView: View {
                                 flashState: appState.isFlashing(project),
                                 devServerPort: appState.getDevServerPort(for: project),
                                 isStale: isStale(project),
+                                todoStatus: appState.todosManager.getCompletionStatus(for: project.path),
                                 onTap: {
                                     appState.launchTerminal(for: project)
                                 },
@@ -113,6 +114,7 @@ struct ProjectsView: View {
                                 flashState: appState.isFlashing(project),
                                 devServerPort: appState.getDevServerPort(for: project),
                                 isStale: false,
+                                todoStatus: appState.todosManager.getCompletionStatus(for: project.path),
                                 onTap: {
                                     appState.launchTerminal(for: project)
                                 },
