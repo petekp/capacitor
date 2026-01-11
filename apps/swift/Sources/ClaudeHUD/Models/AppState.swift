@@ -239,6 +239,7 @@ class AppState: ObservableObject {
         do {
             dashboard = try engine.loadDashboard()
             projects = dashboard?.projects ?? []
+            artifacts = engine.listArtifacts()
             refreshSessionStates()
             refreshProjectStatuses()
             refreshDevServers()

@@ -23,6 +23,18 @@ struct ArtifactsView: View {
     @State private var selectedTab: ArtifactTab = .plans
     @State private var searchText = ""
 
+    private var skills: [Artifact] {
+        appState.artifacts.filter { $0.artifactType == "skill" }
+    }
+
+    private var commands: [Artifact] {
+        appState.artifacts.filter { $0.artifactType == "command" }
+    }
+
+    private var agents: [Artifact] {
+        appState.artifacts.filter { $0.artifactType == "agent" }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             ArtifactTabBar(selectedTab: $selectedTab)
@@ -35,11 +47,23 @@ struct ArtifactsView: View {
                     case .plans:
                         PlansTab(plansManager: plansManager, searchText: $searchText)
                     case .skills:
-                        ComingSoonPlaceholder(title: "Skills", description: "Browse and manage your Claude Code skills")
+                        ArtifactListTab(
+                            artifacts: skills,
+                            artifactType: .skills,
+                            searchText: $searchText
+                        )
                     case .commands:
-                        ComingSoonPlaceholder(title: "Commands", description: "View available slash commands")
+                        ArtifactListTab(
+                            artifacts: commands,
+                            artifactType: .commands,
+                            searchText: $searchText
+                        )
                     case .agents:
-                        ComingSoonPlaceholder(title: "Agents", description: "Explore your custom agents")
+                        ArtifactListTab(
+                            artifacts: agents,
+                            artifactType: .agents,
+                            searchText: $searchText
+                        )
                     }
                 }
                 .padding()
@@ -486,5 +510,284 @@ struct ComingSoonPlaceholder: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 60)
+    }
+}
+
+enum ArtifactListType {
+    case skills
+    case commands
+    case agents
+
+    var singular: String {
+        switch self {
+        case .skills: return "skill"
+        case .commands: return "command"
+        case .agents: return "agent"
+        }
+    }
+
+    var plural: String {
+        switch self {
+        case .skills: return "skills"
+        case .commands: return "commands"
+        case .agents: return "agents"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .skills: return "sparkles"
+        case .commands: return "terminal"
+        case .agents: return "person.2"
+        }
+    }
+
+    var emptyMessage: String {
+        switch self {
+        case .skills: return "Create skills in ~/.claude/skills/"
+        case .commands: return "Create commands in ~/.claude/commands/"
+        case .agents: return "Create agents in ~/.claude/agents/"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .skills: return .purple
+        case .commands: return .cyan
+        case .agents: return .orange
+        }
+    }
+}
+
+struct ArtifactListTab: View {
+    let artifacts: [Artifact]
+    let artifactType: ArtifactListType
+    @Binding var searchText: String
+    @State private var selectedArtifact: String?
+
+    var filteredArtifacts: [Artifact] {
+        if searchText.isEmpty {
+            return artifacts
+        }
+        let query = searchText.lowercased()
+        return artifacts.filter { artifact in
+            artifact.name.lowercased().contains(query) ||
+            artifact.description.lowercased().contains(query)
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 10))
+                    .foregroundColor(.white.opacity(0.4))
+
+                TextField("Search \(artifactType.plural)...", text: $searchText)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 11))
+                    .foregroundColor(.white.opacity(0.9))
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(Color.white.opacity(0.05))
+            .cornerRadius(6)
+
+            if artifacts.isEmpty {
+                VStack(spacing: 8) {
+                    Image(systemName: artifactType.icon)
+                        .font(.system(size: 24))
+                        .foregroundColor(.white.opacity(0.3))
+                    Text("No \(artifactType.plural) yet")
+                        .font(.system(size: 12))
+                        .foregroundColor(.white.opacity(0.5))
+                    Text(artifactType.emptyMessage)
+                        .font(.system(size: 10))
+                        .foregroundColor(.white.opacity(0.3))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 40)
+            } else if filteredArtifacts.isEmpty {
+                VStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 24))
+                        .foregroundColor(.white.opacity(0.3))
+                    Text("No matching \(artifactType.plural)")
+                        .font(.system(size: 12))
+                        .foregroundColor(.white.opacity(0.5))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 40)
+            } else {
+                Text("\(filteredArtifacts.count) \(filteredArtifacts.count == 1 ? artifactType.singular : artifactType.plural)")
+                    .font(.system(size: 9))
+                    .foregroundColor(.white.opacity(0.4))
+
+                LazyVStack(spacing: 8) {
+                    ForEach(filteredArtifacts, id: \.path) { artifact in
+                        ArtifactCardView(
+                            artifact: artifact,
+                            artifactType: artifactType,
+                            isSelected: selectedArtifact == artifact.path
+                        )
+                        .onTapGesture {
+                            withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                                if selectedArtifact == artifact.path {
+                                    selectedArtifact = nil
+                                } else {
+                                    selectedArtifact = artifact.path
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+struct ArtifactCardView: View {
+    let artifact: Artifact
+    let artifactType: ArtifactListType
+    let isSelected: Bool
+    @State private var fileContent: String?
+
+    private var isFromPlugin: Bool {
+        !artifact.source.isEmpty && artifact.source != "Global" && artifact.source != "user"
+    }
+
+    private var sourceLabel: String {
+        artifact.source
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Image(systemName: artifactType.icon)
+                    .font(.system(size: 11))
+                    .foregroundColor(artifactType.color.opacity(0.8))
+
+                Text(artifact.name)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.85))
+
+                if isFromPlugin {
+                    Text(sourceLabel)
+                        .font(.system(size: 8, weight: .medium))
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(Color.white.opacity(0.08))
+                        .foregroundColor(.white.opacity(0.5))
+                        .cornerRadius(4)
+                }
+
+                Spacer()
+            }
+
+            if !artifact.description.isEmpty {
+                Text(artifact.description)
+                    .font(.system(size: 10))
+                    .foregroundColor(.white.opacity(0.5))
+                    .lineLimit(isSelected ? nil : 2)
+            }
+
+            if isSelected {
+                Divider()
+                    .background(Color.white.opacity(0.1))
+
+                if let content = fileContent {
+                    ScrollView {
+                        Text(content)
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundColor(.white.opacity(0.7))
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .frame(maxHeight: 250)
+                } else {
+                    HStack {
+                        ProgressView()
+                            .scaleEffect(0.6)
+                        Text("Loading content...")
+                            .font(.system(size: 10))
+                            .foregroundColor(.white.opacity(0.4))
+                    }
+                }
+
+                HStack {
+                    Button {
+                        if let content = fileContent {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(content, forType: .string)
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "doc.on.doc")
+                                .font(.system(size: 9))
+                            Text("Copy")
+                                .font(.system(size: 9))
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.white.opacity(0.08))
+                        .cornerRadius(4)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundColor(.white.opacity(0.6))
+                    .disabled(fileContent == nil)
+
+                    Spacer()
+
+                    Button {
+                        let url = URL(fileURLWithPath: artifact.path)
+                        NSWorkspace.shared.open(url)
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "arrow.up.right.square")
+                                .font(.system(size: 9))
+                            Text("Open")
+                                .font(.system(size: 9))
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.white.opacity(0.08))
+                        .cornerRadius(4)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundColor(.white.opacity(0.6))
+                }
+            }
+
+            Text(artifact.path.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
+                .font(.system(size: 9, design: .monospaced))
+                .foregroundColor(.white.opacity(0.3))
+                .lineLimit(1)
+        }
+        .padding(12)
+        .background(Color.white.opacity(isSelected ? 0.06 : 0.03))
+        .cornerRadius(8)
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(artifactType.color.opacity(isSelected ? 0.3 : 0.1), lineWidth: 1)
+        )
+        .onChange(of: isSelected) { _, selected in
+            if selected && fileContent == nil {
+                loadContent()
+            }
+        }
+        .onAppear {
+            if isSelected && fileContent == nil {
+                loadContent()
+            }
+        }
+    }
+
+    private func loadContent() {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let content = try? String(contentsOfFile: artifact.path, encoding: .utf8)
+            DispatchQueue.main.async {
+                self.fileContent = content ?? "Unable to load file content"
+            }
+        }
     }
 }

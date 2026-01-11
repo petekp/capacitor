@@ -105,6 +105,18 @@ Summary Bar: "3 need input • 2 working • 15 paused"
 
 ## Completed
 
+- [x] Artifacts Browser: Skills, Commands, Agents (January 2026):
+  - Skills tab shows all skills from ~/.claude/skills/ directories
+  - Commands tab shows all commands from ~/.claude/commands/*.md files
+  - Agents tab shows all agents from ~/.claude/agents/*.md files
+  - Each artifact displays: name, description, source (user/plugin), file path
+  - Expandable cards show full file content with syntax highlighting
+  - Copy to clipboard and open in editor actions
+  - Search filtering across name and description
+  - Lazy content loading for performance
+  - Uses hud-core Rust library via UniFFI for artifact discovery
+  - Consistent with Plans tab UX patterns
+
 - [x] CLAUDE.md Health Score + Coaching (January 2026):
   - Health scoring algorithm analyzes CLAUDE.md content for: project description, workflow/commands, architecture info, style rules, sufficient detail
   - Grades: A (90+), B (75-89), C (60-74), D (40-59), F (<40), None (no CLAUDE.md)
