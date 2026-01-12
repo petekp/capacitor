@@ -2,17 +2,18 @@ import SwiftUI
 
 struct CompactProjectCardView: View {
     let project: Project
-    let sessionState: ProjectSessionState?
-    let projectStatus: ProjectStatus?
-    let isManuallyDormant: Bool
     let onTap: () -> Void
     let onInfoTap: () -> Void
     let onMoveToRecent: () -> Void
+    var showSeparator: Bool = true
 
     @State private var isHovered = false
+    @State private var isReviveHovered = false
+
+    private let rowHeight: CGFloat = 32
 
     var body: some View {
-        Button(action: onMoveToRecent) {
+        VStack(spacing: 0) {
             HStack(spacing: 8) {
                 Text(project.name)
                     .font(.system(size: 12, weight: .regular))
@@ -21,17 +22,37 @@ struct CompactProjectCardView: View {
 
                 Spacer()
 
-                Text(relativeTime(from: project.lastActive))
-                    .font(.system(size: 10))
-                    .foregroundColor(.white.opacity(isHovered ? 0.4 : 0.25))
+                Button(action: onMoveToRecent) {
+                    Text("Revive")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.white.opacity(isReviveHovered ? 0.9 : 0.7))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Color.white.opacity(isReviveHovered ? 0.15 : 0.1))
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .opacity(isHovered ? 1 : 0)
+                .onHover { hovering in
+                    withAnimation(.easeOut(duration: 0.1)) {
+                        isReviveHovered = hovering
+                    }
+                }
             }
-            .padding(.vertical, 6)
+            .frame(height: rowHeight)
             .padding(.horizontal, 4)
             .contentShape(Rectangle())
+            .onTapGesture {
+                onTap()
+            }
+
+            if showSeparator {
+                Divider()
+                    .background(Color.white.opacity(0.08))
+            }
         }
-        .buttonStyle(.plain)
         .onHover { hovering in
-            withAnimation(.easeOut(duration: 0.12)) {
+            withAnimation(.easeOut(duration: 0.15)) {
                 isHovered = hovering
             }
         }
@@ -41,6 +62,10 @@ struct CompactProjectCardView: View {
             }
             Button(action: onInfoTap) {
                 Label("View Details", systemImage: "info.circle")
+            }
+            Divider()
+            Button(action: onMoveToRecent) {
+                Label("Move to In Progress", systemImage: "arrow.up.circle")
             }
         }
     }

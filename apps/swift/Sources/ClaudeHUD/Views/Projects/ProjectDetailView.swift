@@ -25,11 +25,15 @@ struct ProjectDetailView: View {
                     Spacer()
                 }
 
-                Text(project.name)
-                    .font(.system(size: 22, weight: .bold))
-                    .foregroundColor(.white)
-                    .opacity(appeared ? 1 : 0)
-                    .offset(y: appeared ? 0 : 8)
+                HStack(spacing: 10) {
+                    Text(project.name)
+                        .font(.system(size: 22, weight: .bold))
+                        .foregroundColor(.white)
+
+                    HealthBadge(project: project)
+                }
+                .opacity(appeared ? 1 : 0)
+                .offset(y: appeared ? 0 : 8)
 
                 if let sessionState = appState.getSessionState(for: project) {
                     DetailCard {
