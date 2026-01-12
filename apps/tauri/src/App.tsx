@@ -12,13 +12,14 @@ import { ProjectsPanel } from "@/components/panels/ProjectsPanel";
 import { ProjectDetailPanel } from "@/components/panels/ProjectDetailPanel";
 import { AddProjectPanel } from "@/components/panels/AddProjectPanel";
 import { ArtifactsPanel } from "@/components/panels/ArtifactsPanel";
+import { NewIdeaPanel } from "@/components/panels/NewIdeaPanel";
 import { useWindowPersistence } from "@/hooks/useWindowPersistence";
 import { useTheme } from "@/hooks/useTheme";
 import { useFocusOnHover } from "@/hooks/useFocusOnHover";
 import { useNotificationSound } from "@/hooks/useNotificationSound";
 
 type Tab = "projects" | "artifacts";
-type ProjectView = "list" | "detail" | "add";
+type ProjectView = "list" | "detail" | "add" | "newIdea";
 
 function App() {
   const [activeTab, setActiveTab] = useState<Tab>("projects");
@@ -505,6 +506,7 @@ function App() {
                 flashingProjects={flashingProjects}
                 onSelectProject={handleSelectProject}
                 onAddProject={handleShowAddProject}
+                onNewIdea={() => setProjectView("newIdea")}
                 onLaunchTerminal={handleLaunchTerminal}
                 onAcknowledge={(path) => setAcknowledgedProjects((prev) => new Set(prev).add(path))}
               />
@@ -543,6 +545,24 @@ function App() {
                 onAdd={handleAddProject}
                 onBack={handleBackToProjects}
                 isAdding={addingProject}
+              />
+            </motion.div>
+          )}
+
+          {activeTab === "projects" && projectView === "newIdea" && (
+            <motion.div
+              key="new-idea"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={springs.smooth}
+            >
+              <NewIdeaPanel
+                onBack={handleBackToProjects}
+                onSuccess={() => {
+                  loadData();
+                  setProjectView("list");
+                }}
               />
             </motion.div>
           )}

@@ -45,7 +45,12 @@ struct ProjectsView: View {
                     EmptyProjectsView()
                 } else {
                     if !activeProjects.isEmpty {
-                        SectionHeader(title: "In Progress", count: activeProjects.count)
+                        SectionHeader(
+                            title: "In Progress",
+                            count: activeProjects.count,
+                            showNewIdea: true,
+                            onNewIdea: { appState.showNewIdea() }
+                        )
                             .padding(.top, 4)
                             .transition(.opacity)
 
@@ -159,6 +164,10 @@ struct ProjectsView: View {
 struct SectionHeader: View {
     let title: String
     let count: Int
+    var showNewIdea: Bool = false
+    var onNewIdea: (() -> Void)?
+
+    @State private var isHovered = false
 
     var body: some View {
         HStack(spacing: 6) {
@@ -173,6 +182,28 @@ struct SectionHeader: View {
             }
 
             Spacer()
+
+            if showNewIdea {
+                Button(action: { onNewIdea?() }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "lightbulb.fill")
+                            .font(.system(size: 10))
+                        Text("New Idea")
+                            .font(.system(size: 10, weight: .medium))
+                    }
+                    .foregroundColor(isHovered ? .hudAccent : .white.opacity(0.5))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.white.opacity(isHovered ? 0.1 : 0.05))
+                    .cornerRadius(6)
+                }
+                .buttonStyle(.plain)
+                .onHover { hovering in
+                    withAnimation(.easeOut(duration: 0.15)) {
+                        isHovered = hovering
+                    }
+                }
+            }
         }
     }
 }

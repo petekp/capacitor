@@ -11,10 +11,11 @@ enum ProjectView: Equatable {
     case list
     case detail(Project)
     case add
+    case newIdea
 
     static func == (lhs: ProjectView, rhs: ProjectView) -> Bool {
         switch (lhs, rhs) {
-        case (.list, .list), (.add, .add):
+        case (.list, .list), (.add, .add), (.newIdea, .newIdea):
             return true
         case let (.detail(p1), .detail(p2)):
             return p1.path == p2.path
@@ -22,6 +23,21 @@ enum ProjectView: Equatable {
             return false
         }
     }
+}
+
+struct NewProjectRequest {
+    let name: String
+    let description: String
+    let location: String
+    let language: String?
+    let framework: String?
+}
+
+struct CreateProjectResult {
+    let success: Bool
+    let projectPath: String
+    let sessionId: String?
+    let error: String?
 }
 
 @MainActor
@@ -255,10 +271,11 @@ class AppState: ObservableObject {
         guard let engine = engine else { return }
         var states = engine.getAllSessionStates(projects: projects)
 
-        // Cross-check: if state is "working" or "ready" but lock isn't held, Claude isn't running
+        // Cross-check: if state is "working" but lock isn't held, Claude likely crashed
         // This detects stale state from crashed/terminated sessions
+        // Note: "ready" without lock is valid - Claude releases lock when waiting for input
         for (path, state) in states {
-            if (state.state == .working || state.state == .ready) && !state.isLocked {
+            if state.state == .working && !state.isLocked {
                 states[path] = ProjectSessionState(
                     state: .idle,
                     stateChangedAt: state.stateChangedAt,
@@ -533,9 +550,172 @@ class AppState: ObservableObject {
         projectView = .add
     }
 
+    func showNewIdea() {
+        projectView = .newIdea
+    }
+
     func showProjectList() {
         selectedProject = nil
         projectView = .list
+    }
+
+    func createProjectFromIdea(_ request: NewProjectRequest, completion: @escaping (CreateProjectResult) -> Void) {
+        _Concurrency.Task {
+            do {
+                let result = try await createProjectAsync(request)
+                await MainActor.run {
+                    completion(result)
+                }
+            } catch {
+                await MainActor.run {
+                    completion(CreateProjectResult(
+                        success: false,
+                        projectPath: "",
+                        sessionId: nil,
+                        error: error.localizedDescription
+                    ))
+                }
+            }
+        }
+    }
+
+    private func createProjectAsync(_ request: NewProjectRequest) async throws -> CreateProjectResult {
+        let location = (request.location as NSString).expandingTildeInPath
+        let sanitizedName = request.name
+            .lowercased()
+            .replacingOccurrences(of: " ", with: "-")
+            .filter { $0.isLetter || $0.isNumber || $0 == "-" }
+
+        let projectPath = (location as NSString).appendingPathComponent(sanitizedName)
+
+        let fileManager = FileManager.default
+        if fileManager.fileExists(atPath: projectPath) {
+            return CreateProjectResult(
+                success: false,
+                projectPath: projectPath,
+                sessionId: nil,
+                error: "Project directory already exists"
+            )
+        }
+
+        try fileManager.createDirectory(atPath: projectPath, withIntermediateDirectories: true)
+
+        let claudeMd = generateClaudeMd(request)
+        let claudeMdPath = (projectPath as NSString).appendingPathComponent("CLAUDE.md")
+        try claudeMd.write(toFile: claudeMdPath, atomically: true, encoding: .utf8)
+
+        let prompt = buildCreationPrompt(request)
+
+        var sessionId: String?
+        do {
+            sessionId = try await runClaudeForProject(projectPath: projectPath, prompt: prompt)
+        } catch {
+            return CreateProjectResult(
+                success: false,
+                projectPath: projectPath,
+                sessionId: nil,
+                error: "Failed to run Claude: \(error.localizedDescription)"
+            )
+        }
+
+        do {
+            try engine?.addProject(path: projectPath)
+        } catch {
+            // Continue even if adding to HUD fails
+        }
+
+        return CreateProjectResult(
+            success: true,
+            projectPath: projectPath,
+            sessionId: sessionId,
+            error: nil
+        )
+    }
+
+    private func generateClaudeMd(_ request: NewProjectRequest) -> String {
+        var content = "# \(request.name)\n\n"
+        content += "## Overview\n\n"
+        content += "\(request.description)\n\n"
+
+        if request.language != nil || request.framework != nil {
+            content += "## Tech Stack\n\n"
+            if let language = request.language {
+                content += "- Language: \(language.capitalized)\n"
+            }
+            if let framework = request.framework {
+                content += "- Framework: \(framework)\n"
+            }
+            content += "\n"
+        }
+
+        content += "## Status\n\n"
+        content += "🚀 Initial v1 bootstrap in progress\n"
+
+        return content
+    }
+
+    private func buildCreationPrompt(_ request: NewProjectRequest) -> String {
+        var prompt = """
+        Create a working v1 of "\(request.name)".
+
+        Description: \(request.description)
+
+        """
+
+        if let language = request.language {
+            prompt += "Use \(language) as the primary language.\n"
+        }
+
+        if let framework = request.framework {
+            prompt += "Use \(framework) as the framework.\n"
+        }
+
+        prompt += """
+
+        Requirements:
+        - Create a WORKING implementation, not just scaffolding
+        - Include a README.md with clear usage instructions
+        - Make it runnable with a simple command (npm start, cargo run, etc.)
+        - Focus on functionality over perfection - a working v1 is the goal
+        - Include basic error handling
+        """
+
+        return prompt
+    }
+
+    private func runClaudeForProject(projectPath: String, prompt: String) async throws -> String? {
+        // Write prompt to a temp file to avoid shell escaping issues
+        let tempDir = FileManager.default.temporaryDirectory
+        let promptFile = tempDir.appendingPathComponent("claude-prompt-\(UUID().uuidString).txt")
+        try prompt.write(to: promptFile, atomically: true, encoding: .utf8)
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/bash")
+        process.arguments = ["-c", """
+            PROJECT_PATH="\(projectPath)"
+            PROMPT_FILE="\(promptFile.path)"
+            CLAUDE_CMD="/opt/homebrew/bin/claude \\"\\$(cat '$PROMPT_FILE')\\" ; rm -f '$PROMPT_FILE'"
+
+            # Try terminals in preference order
+            if [ -d "/Applications/Ghostty.app" ]; then
+                open -na "Ghostty.app" --args --working-directory="$PROJECT_PATH" -e bash -c "$CLAUDE_CMD"
+            elif [ -d "/Applications/iTerm.app" ]; then
+                osascript -e "tell application \\"iTerm\\" to create window with default profile command \\"cd '$PROJECT_PATH' && $CLAUDE_CMD\\""
+                osascript -e 'tell application "iTerm" to activate'
+            elif [ -d "/Applications/Warp.app" ]; then
+                # Warp: open directory, then use AppleScript to run command
+                osascript -e "tell application \\"Terminal\\" to do script \\"cd '$PROJECT_PATH' && $CLAUDE_CMD\\""
+                osascript -e 'tell application "Terminal" to activate'
+            else
+                osascript -e "tell application \\"Terminal\\" to do script \\"cd '$PROJECT_PATH' && $CLAUDE_CMD\\""
+                osascript -e 'tell application "Terminal" to activate'
+            fi
+        """]
+
+        try process.run()
+        // Don't wait - the terminal runs independently
+
+        return nil
     }
 
     func moveToDormant(_ project: Project) {

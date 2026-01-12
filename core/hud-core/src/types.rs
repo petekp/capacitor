@@ -289,3 +289,61 @@ pub struct SessionStatesFile {
     pub version: u32,
     pub projects: HashMap<String, SessionStateEntry>,
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Project Creation Types (Idea → V1 Launcher)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// Request to create a new project from an idea.
+#[derive(Debug, Serialize, Deserialize, Clone, uniffi::Record)]
+pub struct NewProjectRequest {
+    pub name: String,
+    pub description: String,
+    pub location: String,
+    pub language: Option<String>,
+    pub framework: Option<String>,
+}
+
+/// Status of a project creation.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default, uniffi::Enum)]
+#[serde(rename_all = "lowercase")]
+pub enum CreationStatus {
+    #[default]
+    Pending,
+    InProgress,
+    Completed,
+    Failed,
+    Cancelled,
+}
+
+/// Progress information for a project creation.
+#[derive(Debug, Serialize, Deserialize, Clone, uniffi::Record)]
+pub struct CreationProgress {
+    pub phase: String,
+    pub message: String,
+    pub percent_complete: Option<u8>,
+}
+
+/// A project being created via the Idea → V1 flow.
+#[derive(Debug, Serialize, Deserialize, Clone, uniffi::Record)]
+pub struct ProjectCreation {
+    pub id: String,
+    pub name: String,
+    pub path: String,
+    pub description: String,
+    pub status: CreationStatus,
+    pub session_id: Option<String>,
+    pub progress: Option<CreationProgress>,
+    pub error: Option<String>,
+    pub created_at: String,
+    pub completed_at: Option<String>,
+}
+
+/// Result of starting a project creation.
+#[derive(Debug, Serialize, Deserialize, Clone, uniffi::Record)]
+pub struct CreateProjectResult {
+    pub success: bool,
+    pub project_path: String,
+    pub session_id: Option<String>,
+    pub error: Option<String>,
+}

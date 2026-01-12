@@ -143,3 +143,24 @@ export interface BringToFrontResult {
   focused_windows: FocusedWindow[];
   launched_terminal: boolean;
 }
+
+export type CreationStatus = "pending" | "in_progress" | "completed" | "failed" | "cancelled";
+
+export interface CreationProgress {
+  phase: string;
+  message: string;
+  percent_complete: number | null;
+}
+
+export interface ProjectCreation {
+  id: string;
+  name: string;
+  path: string;
+  description: string;
+  status: CreationStatus;
+  session_id: string | null;
+  progress: CreationProgress | null;
+  error: string | null;
+  created_at: string;
+  completed_at: string | null;
+}

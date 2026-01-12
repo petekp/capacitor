@@ -38,6 +38,9 @@ tauri-plugin-dialog = "2"
 tauri-plugin-window-state = "2"
 notify = "6.1"
 
+# UUID for creation tracking
+uuid = { version = "1.8", features = ["v4"] }
+
 # TUI dependencies (for hud-tui binary)
 ratatui = "0.29.0"
 crossterm = "0.29.0"

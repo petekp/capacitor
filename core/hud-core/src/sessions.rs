@@ -133,13 +133,9 @@ pub fn is_session_active(project_path: &str) -> bool {
         return false;
     }
 
-    // Read the PID from the lock directory
-    let pid_file = lock_dir.join("pid");
-    let Ok(pid_str) = fs::read_to_string(&pid_file) else {
-        return false;
-    };
-
-    let Ok(pid) = pid_str.trim().parse::<i32>() else {
+    // Try to read the PID - support both old format (pid file) and new format (meta.json)
+    let pid = read_pid_from_lock(&lock_dir);
+    let Some(pid) = pid else {
         return false;
     };
 
@@ -147,6 +143,29 @@ pub fn is_session_active(project_path: &str) -> bool {
     // This sends no signal but checks if the process exists
     let result = unsafe { libc::kill(pid, 0) };
     result == 0
+}
+
+/// Reads PID from lock directory, supporting both old (pid file) and new (meta.json) formats
+fn read_pid_from_lock(lock_dir: &Path) -> Option<i32> {
+    // Try old format: direct pid file
+    let pid_file = lock_dir.join("pid");
+    if let Ok(pid_str) = fs::read_to_string(&pid_file) {
+        if let Ok(pid) = pid_str.trim().parse::<i32>() {
+            return Some(pid);
+        }
+    }
+
+    // Try new format: meta.json with {"pid": N, ...}
+    let meta_file = lock_dir.join("meta.json");
+    if let Ok(meta_str) = fs::read_to_string(&meta_file) {
+        if let Ok(meta) = serde_json::from_str::<serde_json::Value>(&meta_str) {
+            if let Some(pid) = meta.get("pid").and_then(|v| v.as_i64()) {
+                return Some(pid as i32);
+            }
+        }
+    }
+
+    None
 }
 
 #[cfg(test)]

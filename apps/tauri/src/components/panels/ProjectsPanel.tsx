@@ -14,6 +14,7 @@ interface ProjectsPanelProps {
   flashingProjects: Record<string, string>;
   onSelectProject: (project: Project) => void;
   onAddProject: () => void;
+  onNewIdea?: () => void;
   onLaunchTerminal: (path: string, runClaude: boolean) => void;
   onAcknowledge: (path: string) => void;
 }
@@ -27,6 +28,7 @@ export function ProjectsPanel({
   flashingProjects,
   onSelectProject,
   onAddProject,
+  onNewIdea,
   onLaunchTerminal,
   onAcknowledge,
 }: ProjectsPanelProps) {
@@ -98,14 +100,26 @@ export function ProjectsPanel({
             />
           )}
         </div>
-        <motion.button
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.98 }}
-          onClick={onAddProject}
-          className="action-button h-6 ml-2"
-        >
-          + Add
-        </motion.button>
+        <div className="flex items-center gap-2 ml-2">
+          {onNewIdea && (
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              onClick={onNewIdea}
+              className="action-button h-6 bg-accent/10 text-accent hover:bg-accent/20"
+            >
+              ✨ New Idea
+            </motion.button>
+          )}
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={onAddProject}
+            className="action-button h-6"
+          >
+            + Add
+          </motion.button>
+        </div>
       </div>
 
       <AnimatePresence mode="wait">

@@ -15,9 +15,13 @@ use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
-use std::sync::mpsc;
+use std::process::Child;
+use std::sync::{mpsc, Mutex};
 use std::time::{Duration, SystemTime};
 use tauri::Emitter;
+
+static ACTIVE_CREATIONS: Lazy<Mutex<HashMap<String, Child>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
 
 fn extract_text_from_content(content: &serde_json::Value) -> Option<String> {
     if let Some(s) = content.as_str() {
@@ -312,6 +316,7 @@ fn load_project_details(path: String) -> Result<ProjectDetails, String> {
         has_local_settings,
         task_count,
         stats: Some(stats),
+        is_missing: false,
     };
 
     Ok(ProjectDetails {
@@ -995,8 +1000,6 @@ fn launch_in_terminal(path: String, run_claude: bool) -> Result<(), String> {
     }
 }
 
-use std::sync::Mutex;
-
 struct FocusedProjectCache {
     value: Option<String>,
     last_update: std::time::Instant,
@@ -1575,6 +1578,333 @@ fn start_session_state_watcher(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+#[derive(Debug, serde::Deserialize)]
+struct CreateIdeaRequest {
+    name: String,
+    description: String,
+    location: String,
+    language: Option<String>,
+    framework: Option<String>,
+}
+
+#[derive(Debug, serde::Serialize)]
+struct CreateIdeaResult {
+    success: bool,
+    project_path: String,
+    session_id: Option<String>,
+    error: Option<String>,
+}
+
+#[tauri::command]
+fn create_project_from_idea(request: CreateIdeaRequest) -> Result<CreateIdeaResult, String> {
+    let creation_id = uuid::Uuid::new_v4().to_string();
+
+    let location = if request.location.starts_with("~/") {
+        dirs::home_dir()
+            .map(|h| h.join(&request.location[2..]))
+            .unwrap_or_else(|| std::path::PathBuf::from(&request.location))
+            .to_string_lossy()
+            .to_string()
+    } else {
+        request.location.clone()
+    };
+    let sanitized_name = request
+        .name
+        .to_lowercase()
+        .replace(' ', "-")
+        .chars()
+        .filter(|c| c.is_alphanumeric() || *c == '-')
+        .collect::<String>();
+
+    let project_path = std::path::Path::new(&location).join(&sanitized_name);
+    let project_path_str = project_path.to_string_lossy().to_string();
+
+    if project_path.exists() {
+        return Ok(CreateIdeaResult {
+            success: false,
+            project_path: project_path_str,
+            session_id: None,
+            error: Some("Project directory already exists".to_string()),
+        });
+    }
+
+    if let Err(e) = std::fs::create_dir_all(&project_path) {
+        return Ok(CreateIdeaResult {
+            success: false,
+            project_path: project_path_str,
+            session_id: None,
+            error: Some(format!("Failed to create directory: {}", e)),
+        });
+    }
+
+    let claude_md = generate_claude_md(&request);
+    let claude_md_path = project_path.join("CLAUDE.md");
+    if let Err(e) = std::fs::write(&claude_md_path, claude_md) {
+        return Ok(CreateIdeaResult {
+            success: false,
+            project_path: project_path_str,
+            session_id: None,
+            error: Some(format!("Failed to write CLAUDE.md: {}", e)),
+        });
+    }
+
+    let prompt = build_creation_prompt(&request);
+
+    let child = match std::process::Command::new("/opt/homebrew/bin/claude")
+        .arg("--print")
+        .arg(&prompt)
+        .current_dir(&project_path)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            return Ok(CreateIdeaResult {
+                success: false,
+                project_path: project_path_str,
+                session_id: None,
+                error: Some(format!("Failed to start Claude: {}", e)),
+            });
+        }
+    };
+
+    {
+        let mut creations = ACTIVE_CREATIONS.lock().unwrap();
+        creations.insert(creation_id.clone(), child);
+    }
+
+    let was_cancelled = loop {
+        std::thread::sleep(Duration::from_millis(100));
+
+        let mut creations = ACTIVE_CREATIONS.lock().unwrap();
+        if let Some(child) = creations.get_mut(&creation_id) {
+            match child.try_wait() {
+                Ok(Some(_status)) => {
+                    creations.remove(&creation_id);
+                    break false;
+                }
+                Ok(None) => {}
+                Err(_) => {
+                    creations.remove(&creation_id);
+                    break false;
+                }
+            }
+        } else {
+            break true;
+        }
+        drop(creations);
+    };
+
+    if was_cancelled {
+        return Ok(CreateIdeaResult {
+            success: false,
+            project_path: project_path_str,
+            session_id: None,
+            error: Some("Creation was cancelled".to_string()),
+        });
+    }
+
+    if let Ok(engine) = hud_core::HudEngine::new() {
+        let _ = engine.add_project(project_path_str.clone());
+    }
+
+    let session_id = find_latest_session_id(&project_path_str);
+
+    Ok(CreateIdeaResult {
+        success: true,
+        project_path: project_path_str,
+        session_id,
+        error: None,
+    })
+}
+
+fn find_latest_session_id(project_path: &str) -> Option<String> {
+    let claude_dir = dirs::home_dir()?.join(".claude").join("projects");
+    let encoded_path = project_path.replace('/', "-");
+    let project_sessions_dir = claude_dir.join(&encoded_path);
+
+    if !project_sessions_dir.exists() {
+        return None;
+    }
+
+    let mut latest_session: Option<(String, std::time::SystemTime)> = None;
+
+    if let Ok(entries) = std::fs::read_dir(&project_sessions_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().map(|e| e == "jsonl").unwrap_or(false) {
+                if let Ok(metadata) = path.metadata() {
+                    if let Ok(modified) = metadata.modified() {
+                        let session_id = path
+                            .file_stem()
+                            .and_then(|s| s.to_str())
+                            .map(|s| s.to_string());
+
+                        if let Some(id) = session_id {
+                            match &latest_session {
+                                None => latest_session = Some((id, modified)),
+                                Some((_, latest_time)) if modified > *latest_time => {
+                                    latest_session = Some((id, modified));
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    latest_session.map(|(id, _)| id)
+}
+
+#[tauri::command]
+fn resume_project_creation(
+    project_path: String,
+    session_id: String,
+    prompt: Option<String>,
+) -> Result<CreateIdeaResult, String> {
+    let resume_prompt = prompt.unwrap_or_else(|| {
+        "Continue building this project. Pick up where you left off and ensure the v1 is functional.".to_string()
+    });
+
+    let child = match std::process::Command::new("/opt/homebrew/bin/claude")
+        .arg("--resume")
+        .arg(&session_id)
+        .arg("--print")
+        .arg(&resume_prompt)
+        .current_dir(&project_path)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            return Ok(CreateIdeaResult {
+                success: false,
+                project_path,
+                session_id: Some(session_id),
+                error: Some(format!("Failed to resume Claude: {}", e)),
+            });
+        }
+    };
+
+    let creation_id = uuid::Uuid::new_v4().to_string();
+    {
+        let mut creations = ACTIVE_CREATIONS.lock().unwrap();
+        creations.insert(creation_id.clone(), child);
+    }
+
+    let was_cancelled = loop {
+        std::thread::sleep(Duration::from_millis(100));
+
+        let mut creations = ACTIVE_CREATIONS.lock().unwrap();
+        if let Some(child) = creations.get_mut(&creation_id) {
+            match child.try_wait() {
+                Ok(Some(_status)) => {
+                    creations.remove(&creation_id);
+                    break false;
+                }
+                Ok(None) => {}
+                Err(_) => {
+                    creations.remove(&creation_id);
+                    break false;
+                }
+            }
+        } else {
+            break true;
+        }
+        drop(creations);
+    };
+
+    if was_cancelled {
+        return Ok(CreateIdeaResult {
+            success: false,
+            project_path,
+            session_id: Some(session_id),
+            error: Some("Resumption was cancelled".to_string()),
+        });
+    }
+
+    let new_session_id = find_latest_session_id(&project_path);
+
+    Ok(CreateIdeaResult {
+        success: true,
+        project_path,
+        session_id: new_session_id,
+        error: None,
+    })
+}
+
+#[tauri::command]
+fn cancel_project_creation(creation_id: String) -> Result<bool, String> {
+    let mut creations = ACTIVE_CREATIONS.lock().unwrap();
+    if let Some(mut child) = creations.remove(&creation_id) {
+        let _ = child.kill();
+        Ok(true)
+    } else {
+        Ok(false)
+    }
+}
+
+fn generate_claude_md(request: &CreateIdeaRequest) -> String {
+    let mut content = format!("# {}\n\n", request.name);
+    content.push_str("## Overview\n\n");
+    content.push_str(&request.description);
+    content.push_str("\n\n");
+
+    if request.language.is_some() || request.framework.is_some() {
+        content.push_str("## Tech Stack\n\n");
+        if let Some(lang) = &request.language {
+            content.push_str(&format!("- Language: {}\n", lang));
+        }
+        if let Some(fw) = &request.framework {
+            content.push_str(&format!("- Framework: {}\n", fw));
+        }
+        content.push('\n');
+    }
+
+    content.push_str("## Status\n\n");
+    content.push_str("🚀 Initial v1 bootstrap in progress\n");
+
+    content
+}
+
+fn build_creation_prompt(request: &CreateIdeaRequest) -> String {
+    let mut prompt = format!(
+        r#"Create a working v1 of "{}".
+
+Description: {}
+
+"#,
+        request.name, request.description
+    );
+
+    if let Some(lang) = &request.language {
+        prompt.push_str(&format!("Use {} as the primary language.\n", lang));
+    }
+
+    if let Some(fw) = &request.framework {
+        prompt.push_str(&format!("Use {} as the framework.\n", fw));
+    }
+
+    prompt.push_str(
+        r#"
+Requirements:
+- Create a WORKING implementation, not just scaffolding
+- Include a README.md with clear usage instructions
+- Make it runnable with a simple command (npm start, cargo run, etc.)
+- Focus on functionality over perfection - a working v1 is the goal
+- Include basic error handling
+"#,
+    );
+
+    prompt
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -1613,7 +1943,10 @@ pub fn run() {
             install_global_hook,
             start_status_watcher,
             start_session_state_watcher,
-            get_focused_project_path
+            get_focused_project_path,
+            create_project_from_idea,
+            resume_project_creation,
+            cancel_project_creation
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
