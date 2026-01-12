@@ -35,7 +35,7 @@
 - [ ] Implement session resumption via `resume: sessionId`
 
 ### Agent SDK - Phase 3: Embedded Agent Panel
-- [ ] Design activity panel UI component (Swift + Tauri)
+- [ ] Design activity panel UI component (Swift)
 - [ ] Implement real-time message streaming from SDK
 - [ ] Add "Work On This" button to launch agents from HUD
 - [ ] Display tool calls, thinking, and results in activity panel
@@ -77,8 +77,7 @@ Flagship feature: go from project idea to working v1 with minimal friction.
 |----------|-------------|
 | `.claude/docs/agent-sdk-migration-guide.md` | Full SDK migration analysis and phases |
 | `.claude/docs/feature-idea-to-v1-launcher.md` | TDD spec for Idea → V1 feature |
-| `.claude/docs/status-sync-architecture.md` | Real-time status sync system |
-| `.claude/docs/multi-platform-architecture.md` | Tauri/Swift/TUI architecture |
+| `.claude/docs/status-sync-architecture.md` | Real-time status sync architecture |
 
 ---
 

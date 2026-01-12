@@ -40,6 +40,33 @@ struct CreateProjectResult {
     let error: String?
 }
 
+enum CreationStatus: String, Codable {
+    case pending
+    case inProgress = "in_progress"
+    case completed
+    case failed
+    case cancelled
+}
+
+struct CreationProgress: Codable {
+    var phase: String
+    var message: String
+    var percentComplete: Int?
+}
+
+struct ProjectCreation: Identifiable, Codable {
+    let id: String
+    let name: String
+    let path: String
+    let description: String
+    var status: CreationStatus
+    var sessionId: String?
+    var progress: CreationProgress?
+    var error: String?
+    let createdAt: Date
+    var completedAt: Date?
+}
+
 @MainActor
 class AppState: ObservableObject {
     // Navigation
@@ -53,6 +80,10 @@ class AppState: ObservableObject {
     @Published var projectStatuses: [String: ProjectStatus] = [:]
     @Published var artifacts: [Artifact] = []
     @Published var projects: [Project] = []
+
+    // Active project creations (Idea → V1)
+    @Published var activeCreations: [ProjectCreation] = []
+    private let creationsKey = "activeProjectCreations"
 
     // UI State
     @Published var isLoading = true
@@ -99,6 +130,7 @@ class AppState: ObservableObject {
     init() {
         loadDormantOverrides()
         loadProjectOrder()
+        loadCreations()
         todosManager.loadTodos()
         plansManager.loadPlans()
         do {
@@ -226,6 +258,153 @@ class AppState: ObservableObject {
 
     private func saveProjectOrder() {
         UserDefaults.standard.set(customProjectOrder, forKey: projectOrderKey)
+    }
+
+    private func loadCreations() {
+        let creationsPath = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".claude/hud-creations.json")
+
+        guard FileManager.default.fileExists(atPath: creationsPath.path) else { return }
+
+        do {
+            let data = try Data(contentsOf: creationsPath)
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            activeCreations = try decoder.decode([ProjectCreation].self, from: data)
+            cleanupCompletedCreations()
+        } catch {
+            // File doesn't exist or is invalid - start fresh
+        }
+    }
+
+    private func saveCreations() {
+        let creationsPath = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".claude/hud-creations.json")
+
+        do {
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            encoder.outputFormatting = .prettyPrinted
+            let data = try encoder.encode(activeCreations)
+            try data.write(to: creationsPath)
+        } catch {
+            // Silently fail - creations will be lost but app continues
+        }
+    }
+
+    private func cleanupCompletedCreations() {
+        let cutoff = Date().addingTimeInterval(-24 * 60 * 60)
+        activeCreations = activeCreations.filter { creation in
+            if creation.status == .completed || creation.status == .failed || creation.status == .cancelled {
+                return (creation.completedAt ?? creation.createdAt) > cutoff
+            }
+            return true
+        }
+    }
+
+    func startCreation(request: NewProjectRequest, projectPath: String) -> String {
+        let id = UUID().uuidString
+        let creation = ProjectCreation(
+            id: id,
+            name: request.name,
+            path: projectPath,
+            description: request.description,
+            status: .pending,
+            sessionId: nil,
+            progress: CreationProgress(phase: "setup", message: "Initializing project...", percentComplete: 0),
+            error: nil,
+            createdAt: Date(),
+            completedAt: nil
+        )
+        activeCreations.insert(creation, at: 0)
+        saveCreations()
+        return id
+    }
+
+    func updateCreationStatus(_ id: String, status: CreationStatus, sessionId: String? = nil, error: String? = nil) {
+        guard let index = activeCreations.firstIndex(where: { $0.id == id }) else { return }
+        activeCreations[index].status = status
+        if let sessionId = sessionId {
+            activeCreations[index].sessionId = sessionId
+        }
+        if let error = error {
+            activeCreations[index].error = error
+        }
+        if status == .completed || status == .failed || status == .cancelled {
+            activeCreations[index].completedAt = Date()
+        }
+        saveCreations()
+    }
+
+    func updateCreationProgress(_ id: String, phase: String, message: String, percentComplete: Int?) {
+        guard let index = activeCreations.firstIndex(where: { $0.id == id }) else { return }
+        activeCreations[index].progress = CreationProgress(
+            phase: phase,
+            message: message,
+            percentComplete: percentComplete
+        )
+        saveCreations()
+    }
+
+    func cancelCreation(_ id: String) {
+        updateCreationStatus(id, status: .cancelled)
+    }
+
+    func resumeCreation(_ id: String) {
+        guard let creation = activeCreations.first(where: { $0.id == id }),
+              let sessionId = creation.sessionId,
+              (creation.status == .failed || creation.status == .cancelled) else {
+            return
+        }
+
+        updateCreationStatus(id, status: .inProgress)
+        updateCreationProgress(id, phase: "resuming", message: "Resuming session...", percentComplete: 30)
+
+        _Concurrency.Task {
+            do {
+                try await launchClaudeResume(projectPath: creation.path, sessionId: sessionId, creationId: id)
+            } catch {
+                await MainActor.run {
+                    updateCreationStatus(id, status: .failed, error: "Failed to resume: \(error.localizedDescription)")
+                }
+            }
+        }
+    }
+
+    func canResumeCreation(_ id: String) -> Bool {
+        guard let creation = activeCreations.first(where: { $0.id == id }) else {
+            return false
+        }
+        return creation.sessionId != nil &&
+               (creation.status == .failed || creation.status == .cancelled)
+    }
+
+    func getActiveCreationsCount() -> Int {
+        activeCreations.filter { $0.status == .pending || $0.status == .inProgress }.count
+    }
+
+    private func launchClaudeResume(projectPath: String, sessionId: String, creationId: String) async throws {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/bash")
+        process.arguments = ["-c", """
+            PROJECT_PATH="\(projectPath)"
+            SESSION_ID="\(sessionId)"
+            CLAUDE_CMD="/opt/homebrew/bin/claude --resume $SESSION_ID"
+
+            if [ -d "/Applications/Ghostty.app" ]; then
+                open -na "Ghostty.app" --args --working-directory="$PROJECT_PATH" -e bash -c "$CLAUDE_CMD"
+            elif [ -d "/Applications/iTerm.app" ]; then
+                osascript -e "tell application \\"iTerm\\" to create window with default profile command \\"cd '$PROJECT_PATH' && $CLAUDE_CMD\\""
+                osascript -e 'tell application "iTerm" to activate'
+            else
+                osascript -e "tell application \\"Terminal\\" to do script \\"cd '$PROJECT_PATH' && $CLAUDE_CMD\\""
+                osascript -e 'tell application "Terminal" to activate'
+            fi
+        """]
+
+        try process.run()
+
+        startCompletionMonitor(projectPath: projectPath, creationId: creationId, sessionId: sessionId)
     }
 
     func orderedProjects(_ projects: [Project]) -> [Project] {
@@ -598,18 +777,38 @@ class AppState: ObservableObject {
             )
         }
 
+        let creationId = await MainActor.run {
+            startCreation(request: request, projectPath: projectPath)
+        }
+
+        await MainActor.run {
+            updateCreationProgress(creationId, phase: "setup", message: "Creating project directory...", percentComplete: 10)
+        }
+
         try fileManager.createDirectory(atPath: projectPath, withIntermediateDirectories: true)
+
+        await MainActor.run {
+            updateCreationProgress(creationId, phase: "setup", message: "Generating CLAUDE.md...", percentComplete: 20)
+        }
 
         let claudeMd = generateClaudeMd(request)
         let claudeMdPath = (projectPath as NSString).appendingPathComponent("CLAUDE.md")
         try claudeMd.write(toFile: claudeMdPath, atomically: true, encoding: .utf8)
 
+        await MainActor.run {
+            updateCreationProgress(creationId, phase: "building", message: "Launching Claude to build v1...", percentComplete: 30)
+            updateCreationStatus(creationId, status: .inProgress)
+        }
+
         let prompt = buildCreationPrompt(request)
 
         var sessionId: String?
         do {
-            sessionId = try await runClaudeForProject(projectPath: projectPath, prompt: prompt)
+            sessionId = try await runClaudeForProject(projectPath: projectPath, prompt: prompt, creationId: creationId)
         } catch {
+            await MainActor.run {
+                updateCreationStatus(creationId, status: .failed, error: "Failed to run Claude: \(error.localizedDescription)")
+            }
             return CreateProjectResult(
                 success: false,
                 projectPath: projectPath,
@@ -622,6 +821,10 @@ class AppState: ObservableObject {
             try engine?.addProject(path: projectPath)
         } catch {
             // Continue even if adding to HUD fails
+        }
+
+        await MainActor.run {
+            updateCreationProgress(creationId, phase: "building", message: "Claude is building your project in the terminal...", percentComplete: 50)
         }
 
         return CreateProjectResult(
@@ -683,11 +886,12 @@ class AppState: ObservableObject {
         return prompt
     }
 
-    private func runClaudeForProject(projectPath: String, prompt: String) async throws -> String? {
-        // Write prompt to a temp file to avoid shell escaping issues
+    private func runClaudeForProject(projectPath: String, prompt: String, creationId: String) async throws -> String? {
         let tempDir = FileManager.default.temporaryDirectory
         let promptFile = tempDir.appendingPathComponent("claude-prompt-\(UUID().uuidString).txt")
         try prompt.write(to: promptFile, atomically: true, encoding: .utf8)
+
+        let existingSessions = getExistingSessionIds(for: projectPath)
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/bash")
@@ -703,7 +907,6 @@ class AppState: ObservableObject {
                 osascript -e "tell application \\"iTerm\\" to create window with default profile command \\"cd '$PROJECT_PATH' && $CLAUDE_CMD\\""
                 osascript -e 'tell application "iTerm" to activate'
             elif [ -d "/Applications/Warp.app" ]; then
-                # Warp: open directory, then use AppleScript to run command
                 osascript -e "tell application \\"Terminal\\" to do script \\"cd '$PROJECT_PATH' && $CLAUDE_CMD\\""
                 osascript -e 'tell application "Terminal" to activate'
             else
@@ -713,9 +916,105 @@ class AppState: ObservableObject {
         """]
 
         try process.run()
-        // Don't wait - the terminal runs independently
+
+        startSessionMonitor(projectPath: projectPath, creationId: creationId, existingSessions: existingSessions)
 
         return nil
+    }
+
+    private func getExistingSessionIds(for projectPath: String) -> Set<String> {
+        let claudeProjectsDir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".claude/projects")
+
+        let encodedPath = projectPath
+            .replacingOccurrences(of: "/", with: "-")
+            .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+
+        let sessionDir = claudeProjectsDir.appendingPathComponent(encodedPath)
+
+        guard let files = try? FileManager.default.contentsOfDirectory(at: sessionDir, includingPropertiesForKeys: nil) else {
+            return []
+        }
+
+        return Set(files
+            .filter { $0.pathExtension == "jsonl" }
+            .map { $0.deletingPathExtension().lastPathComponent })
+    }
+
+    private func startSessionMonitor(projectPath: String, creationId: String, existingSessions: Set<String>) {
+        _Concurrency.Task {
+            let maxAttempts = 60
+            let pollInterval: UInt64 = 2_000_000_000
+
+            for _ in 0..<maxAttempts {
+                try? await _Concurrency.Task.sleep(nanoseconds: pollInterval)
+
+                let currentSessions = getExistingSessionIds(for: projectPath)
+                let newSessions = currentSessions.subtracting(existingSessions)
+
+                if let sessionId = newSessions.first {
+                    await MainActor.run {
+                        updateCreationStatus(creationId, status: .inProgress, sessionId: sessionId)
+                        updateCreationProgress(creationId, phase: "building", message: "Claude is building your project...", percentComplete: 40)
+                    }
+                    startCompletionMonitor(projectPath: projectPath, creationId: creationId, sessionId: sessionId)
+                    return
+                }
+            }
+        }
+    }
+
+    private func startCompletionMonitor(projectPath: String, creationId: String, sessionId: String) {
+        _Concurrency.Task {
+            let claudeProjectsDir = FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent(".claude/projects")
+
+            let encodedPath = projectPath
+                .replacingOccurrences(of: "/", with: "-")
+                .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+
+            let sessionFile = claudeProjectsDir
+                .appendingPathComponent(encodedPath)
+                .appendingPathComponent("\(sessionId).jsonl")
+
+            var lastSize: UInt64 = 0
+            var stableCount = 0
+            let maxStableChecks = 30
+
+            for _ in 0..<300 {
+                try? await _Concurrency.Task.sleep(nanoseconds: 2_000_000_000)
+
+                guard let creation = activeCreations.first(where: { $0.id == creationId }),
+                      creation.status == .inProgress else {
+                    return
+                }
+
+                guard let attrs = try? FileManager.default.attributesOfItem(atPath: sessionFile.path),
+                      let currentSize = attrs[.size] as? UInt64 else {
+                    continue
+                }
+
+                if currentSize == lastSize {
+                    stableCount += 1
+                    if stableCount >= maxStableChecks {
+                        await MainActor.run {
+                            updateCreationStatus(creationId, status: .completed)
+                            updateCreationProgress(creationId, phase: "complete", message: "Project created successfully!", percentComplete: 100)
+                            loadDashboard()
+                        }
+                        return
+                    }
+                } else {
+                    stableCount = 0
+                    lastSize = currentSize
+
+                    let progress = min(90, 40 + (stableCount * 2))
+                    await MainActor.run {
+                        updateCreationProgress(creationId, phase: "building", message: "Claude is building your project...", percentComplete: progress)
+                    }
+                }
+            }
+        }
     }
 
     func moveToDormant(_ project: Project) {

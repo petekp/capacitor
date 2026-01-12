@@ -112,7 +112,7 @@ pub enum HudError {
 /// Convenience type alias for Results using HudError.
 pub type Result<T> = std::result::Result<T, HudError>;
 
-// Conversion for Tauri compatibility (commands return Result<T, String>)
+// Conversion for string error compatibility
 impl From<HudError> for String {
     fn from(err: HudError) -> String {
         err.to_string()

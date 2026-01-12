@@ -1,12 +1,11 @@
 //! Core types shared across all Claude HUD clients.
 //!
 //! These types are the "lingua franca" of the HUD ecosystem. All clients
-//! (TUI, Tauri, mobile, native Swift) use these exact same types, ensuring consistency.
+//! (Swift desktop, TUI, mobile) use these exact same types, ensuring consistency.
 //!
 //! **FFI Support:** All types are annotated with UniFFI macros for Swift/Kotlin/Python bindings.
 //!
-//! **Note:** These types match the existing src-tauri/src/types.rs exactly
-//! to ensure backward compatibility during the migration.
+//! **Note:** These types are exported via UniFFI for Swift consumption.
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

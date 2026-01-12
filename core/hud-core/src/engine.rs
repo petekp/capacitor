@@ -3,7 +3,7 @@
 //! The HudEngine provides a unified, client-agnostic API for all HUD functionality.
 //! It's designed to be:
 //! - **Synchronous**: No async runtime required
-//! - **Client-agnostic**: Works with TUI, Tauri, mobile, etc.
+//! - **Client-agnostic**: Works with Swift, TUI, mobile, etc.
 //! - **Stateless**: Each call is independent (caching happens at lower levels)
 //!
 //! ## Example Usage

@@ -1,11 +1,11 @@
 # Claude HUD - Project Development Guide
 
-Claude HUD is a cross-platform desktop application that serves as a dashboard for Claude Code, displaying project statistics, task tracking, plugin management, and global Claude Code configuration insights. It features multiple frontends sharing a common Rust core:
+Claude HUD is a native macOS desktop application that serves as a dashboard for Claude Code, displaying project statistics, task tracking, plugin management, and global Claude Code configuration insights.
 
-- **Tauri App** (apps/tauri) - Cross-platform desktop app with React frontend
-- **Swift App** (apps/swift) - Native macOS app with SwiftUI, 120Hz animations
+- **Swift App** (apps/swift) - Native macOS app with SwiftUI, 120Hz ProMotion animations
+- **Rust Core** (core/hud-core) - Shared business logic via UniFFI bindings
 
-> **Development Workflow:** For the Tauri app, run `cd apps/tauri && pnpm tauri dev`. For the Swift app, run `cd apps/swift && swift build`. Changes auto-rebuild and hot-reload.
+> **Development Workflow:** Run `cd apps/swift && swift build && swift run`. Rebuild after changes.
 
 ## Session Startup Checklist
 
@@ -27,53 +27,37 @@ When starting a development session on this project:
 
 ## Project Overview
 
-**Multi-Platform Architecture:**
+**Architecture:**
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    Frontend Clients                         │
-│  ┌─────────────────────┐  ┌─────────────────────────────┐  │
-│  │ Tauri (apps/tauri)  │  │ Swift (apps/swift)          │  │
-│  │ React 19 + Tailwind │  │ SwiftUI + 120Hz ProMotion   │  │
-│  └──────────┬──────────┘  └──────────────┬──────────────┘  │
-└─────────────┼────────────────────────────┼──────────────────┘
-              │ Tauri IPC                  │ UniFFI
-              ▼                            ▼
+│               Swift App (apps/swift)                        │
+│               SwiftUI + 120Hz ProMotion                     │
+│               Native macOS 14+                              │
+└──────────────────────────┬──────────────────────────────────┘
+                           │ UniFFI
+                           ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                    hud-core (core/hud-core)                 │
 │  Shared Rust library: projects, sessions, stats, artifacts │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-**Tauri App** (`apps/tauri/`):
-- Frontend: React 19 + TypeScript + Tailwind CSS 4 (`src/`)
-- Backend: Rust + Tauri v2.9.5 (`src-tauri/`)
-- Cross-platform: macOS, Windows, Linux
-
 **Swift App** (`apps/swift/`):
 - Native SwiftUI for macOS 14+
 - UniFFI bindings to hud-core
 - 120Hz ProMotion animations
+- Single-platform focus for optimal native experience
 
 **Shared Core** (`core/hud-core/`):
 - Pure Rust library with all business logic
 - Project scanning, session state, statistics, artifacts
-- Exports via UniFFI for Swift, Tauri IPC for React
+- Exports via UniFFI for Swift
 
 ## Development Workflow
 
 ### Quick Start
 
-**IMPORTANT: Keep apps running during development.** Changes auto-rebuild and hot-reload.
-
-#### Tauri App (from `apps/tauri/`)
-```bash
-cd apps/tauri
-pnpm install      # First time only
-pnpm tauri dev    # Launch with hot reload
-```
-
-#### Swift App (from `apps/swift/`)
 ```bash
 cargo build -p hud-core --release  # Build Rust library first
 cd apps/swift
@@ -93,15 +77,6 @@ cargo clippy -- -D warnings  # Lint
 cargo test                 # Run all tests
 ```
 
-#### Tauri App (from `apps/tauri/`)
-```bash
-pnpm dev          # Start frontend dev server
-pnpm build        # Build frontend for production
-pnpm tauri dev    # Launch app in dev mode
-pnpm tauri build  # Build app for distribution
-pnpm lint         # Run ESLint
-```
-
 #### Swift App (from `apps/swift/`)
 ```bash
 swift build             # Debug build
@@ -111,16 +86,6 @@ swift run               # Run the app
 
 ### Building for Distribution
 
-#### Tauri App
-```bash
-cd apps/tauri
-pnpm tauri build --target aarch64-apple-darwin  # macOS Apple Silicon
-pnpm tauri build --target x86_64-apple-darwin   # macOS Intel
-pnpm tauri build --target x86_64-pc-windows-msvc # Windows
-```
-Built apps appear in `apps/tauri/src-tauri/target/release/bundle/`.
-
-#### Swift App
 ```bash
 cargo build -p hud-core --release
 cd apps/swift
@@ -129,8 +94,6 @@ swift build -c release
 ```
 
 ## Project Structure
-
-This is a **Cargo workspace** with a shared core and multiple app frontends:
 
 ```
 claude-hud/
@@ -151,24 +114,6 @@ claude-hud/
 │           ├── sessions.rs      # Session state detection
 │           └── artifacts.rs     # Artifact discovery
 ├── apps/
-│   ├── tauri/                   # Tauri desktop app (cross-platform)
-│   │   ├── package.json         # Frontend dependencies
-│   │   ├── vite.config.ts       # Vite bundler config
-│   │   ├── tsconfig.json        # TypeScript configuration
-│   │   ├── index.html           # HTML entry point
-│   │   ├── src/                 # React frontend
-│   │   │   ├── main.tsx
-│   │   │   ├── App.tsx
-│   │   │   ├── types.ts
-│   │   │   ├── index.css
-│   │   │   ├── components/
-│   │   │   ├── hooks/
-│   │   │   └── utils/
-│   │   └── src-tauri/           # Rust backend
-│   │       ├── Cargo.toml
-│   │       ├── src/lib.rs       # IPC command handlers
-│   │       ├── tauri.conf.json
-│   │       └── icons/
 │   ├── swift/                   # Native macOS app
 │   │   ├── Package.swift        # Swift Package Manager config
 │   │   ├── Sources/
@@ -182,13 +127,9 @@ claude-hud/
 │   │   └── bindings/            # Generated UniFFI bindings
 │   │       ├── hud_core.swift
 │   │       └── hud_coreFFI.h
-│   └── daemon/                  # HUD daemon (TypeScript)
-│       ├── package.json
-│       ├── tsconfig.json
-│       └── src/
-│           ├── sdk/             # Claude Code SDK (stream-json)
-│           ├── daemon/          # State tracking & relay
-│           └── cli/             # hud-claude entry point
+│   ├── daemon/                  # HUD daemon (TypeScript) - for future remote use
+│   ├── relay/                   # WebSocket relay server
+│   └── sdk-bridge/              # Agent SDK integration bridge
 ├── target/                      # Shared Rust build output
 ├── .claude/
 │   └── docs/                    # Project architecture documentation
@@ -202,82 +143,44 @@ claude-hud/
     └── fetch-agent-sdk-docs.ts  # Fetch Agent SDK docs (requires Playwright)
 ```
 
-## Frontend Architecture (React 19)
+## Swift App Architecture
 
-The Tauri frontend is a **modular React application** in `apps/tauri/src/`. It communicates with the Rust backend exclusively through Tauri IPC.
+The Swift app is a **native SwiftUI application** in `apps/swift/`. It communicates with the Rust core via UniFFI bindings.
 
 ### Key Files
 
 | File | Purpose |
 |------|---------|
-| `apps/tauri/src/App.tsx` | State, event handlers, top-level layout |
-| `apps/tauri/src/types.ts` | TypeScript interfaces (must match Rust structs) |
-| `apps/tauri/src/index.css` | Tailwind CSS theme with oklch colors |
-| `apps/tauri/src/hooks/*.ts` | Custom hooks for window, theme, focus, audio |
-| `apps/tauri/src/utils/*.ts` | Formatting and pricing utilities |
-| `apps/tauri/src/components/panels/*.tsx` | Panel components (Projects, Details, Add, Artifacts) |
+| `Sources/ClaudeHUD/App.swift` | SwiftUI app entry point |
+| `Sources/ClaudeHUD/ContentView.swift` | Main view with navigation |
+| `Sources/ClaudeHUD/Models/AppState.swift` | State management with HudEngine bridge |
+| `Sources/ClaudeHUD/Views/` | SwiftUI views (Projects, Artifacts, etc.) |
+| `Sources/ClaudeHUD/Theme/` | Design system and styling |
+| `bindings/hud_core.swift` | Generated UniFFI Swift bindings |
 
 ### Architecture
 
-- **State Management:** React `useState` hooks (no external state library)
-- **IPC:** `invoke()` from `@tauri-apps/api/core` for commands
-- **Events:** `listen()` from `@tauri-apps/api/event` for backend events
-- **UI Components:** shadcn/ui (Radix primitives + Tailwind CSS)
-- **Styling:** Tailwind CSS 4 with oklch color scheme, dark mode via system preference
-- **Custom Hooks:** Window persistence, theme detection, focus-on-hover, notification sounds
+- **State Management:** `@Observable` AppState class bridging to HudEngine
+- **FFI:** UniFFI-generated Swift bindings to hud-core
+- **UI Framework:** SwiftUI with 120Hz ProMotion support
+- **Styling:** Native macOS design language
+- **Navigation:** Tab-based with sidebar
 
-### Navigation
+### Adding a New View
 
-Tab-based navigation with internal view states:
-- `Tab = "projects" | "artifacts"`
-- `ProjectView = "list" | "detail" | "add"`
+1. **Create view:** Add SwiftUI view in `apps/swift/Sources/ClaudeHUD/Views/`
+2. **Update state:** Add published properties to `AppState.swift` if needed
+3. **Wire up:** Add navigation in `ContentView.swift`
 
-### Panel Components (in `src/components/panels/`)
+## Rust Core Architecture
 
-| Component | Purpose |
-|-----------|---------|
-| `ProjectsPanel` | List of pinned projects with stats |
-| `ProjectDetailPanel` | Project details, sessions, CLAUDE.md content |
-| `AddProjectPanel` | Add projects via drag-drop, browse, or suggestions |
-| `ArtifactsPanel` | Browse skills, commands, agents, and manage plugins |
-
-### Type Safety
-
-TypeScript interfaces in `src/types.ts` **must match** Rust struct definitions in `lib.rs`:
-
-```typescript
-// Frontend (src/types.ts)
-export interface ProjectStats {
-  total_input_tokens: number;
-  total_output_tokens: number;
-  // ... must match Rust exactly
-}
-```
-
-```rust
-// Backend (src-tauri/src/lib.rs)
-pub struct ProjectStats {
-    pub total_input_tokens: u64,
-    pub total_output_tokens: u64,
-    // ... serialized to JSON
-}
-```
-
-## Backend Architecture (Rust/Tauri)
-
-The backend uses a **two-layer architecture**:
-
-1. **`hud-core`** - Shared core library with all business logic (in `core/hud-core/`)
-2. **Tauri app** - Thin IPC wrappers that delegate to hud-core (in `apps/tauri/src-tauri/`)
-3. **Swift app** - UniFFI bindings to hud-core (in `apps/swift/`)
-
-This design enables multiple clients (Tauri desktop, Swift native, TUI) to share the same business logic.
+The `hud-core` library contains all business logic, exported via UniFFI for Swift consumption.
 
 ### hud-core Modules (in `core/hud-core/src/`)
 
 | Module | Purpose |
 |--------|---------|
-| `engine.rs` | `HudEngine` facade - unified API for all clients |
+| `engine.rs` | `HudEngine` facade - unified API for Swift |
 | `types.rs` | Shared types: Project, Task, Artifact, Plugin, etc. |
 | `patterns.rs` | Pre-compiled regex patterns for JSONL parsing |
 | `config.rs` | Path resolution and config file operations |
@@ -286,22 +189,6 @@ This design enables multiple clients (Tauri desktop, Swift native, TUI) to share
 | `sessions.rs` | Session state detection and status reading |
 | `artifacts.rs` | Artifact discovery and frontmatter parsing |
 | `error.rs` | Error types and Result alias |
-
-### Tauri App (in `apps/tauri/src-tauri/src/`)
-
-| File | Purpose |
-|------|---------|
-| `lib.rs` | IPC command handlers (~1,620 lines) - thin wrappers over `HudEngine` |
-| `bin/hud-tui.rs` | Terminal UI (~500 lines) - uses `hud-core` directly |
-
-### Swift App (in `apps/swift/`)
-
-| File | Purpose |
-|------|---------|
-| `Sources/ClaudeHUD/App.swift` | SwiftUI app entry point |
-| `Sources/ClaudeHUD/Models/AppState.swift` | State management with HudEngine bridge |
-| `Sources/ClaudeHUD/Views/` | SwiftUI views (Projects, Artifacts, etc.) |
-| `bindings/hud_core.swift` | Generated UniFFI Swift bindings |
 
 ### Data Structures (in `hud-core/types.rs`)
 - **GlobalConfig:** Claude Code global settings (skills, commands, agents directories)
@@ -337,50 +224,25 @@ This design enables multiple clients (Tauri desktop, Swift native, TUI) to share
 - `list_artifacts()`, `list_plugins()` - Artifact discovery
 - `load_dashboard()` - All dashboard data in one call
 
-**Session Summarization (in Tauri `lib.rs`):**
-- `generate_session_summary_sync()` - Summary generation via Claude CLI
-- `start_background_summaries()` - Background thread-based generation
-- Caches in `~/.claude/hud-summaries.json`
-
-### IPC Commands (Tauri `lib.rs` - thin wrappers)
-
-| Command | Purpose | Returns |
-|---------|---------|---------|
-| `load_dashboard` | All dashboard data | `DashboardData` |
-| `load_projects` | Pinned projects only | `Vec<Project>` |
-| `load_project_details` | Project with tasks and git status | `ProjectDetails` |
-| `load_artifacts` | All skills/commands/agents | `Vec<Artifact>` |
-| `toggle_plugin` | Enable/disable plugins | `()` |
-| `read_file_content` | Read arbitrary files | `String` |
-| `open_in_editor` / `open_folder` / `launch_in_terminal` | Platform-specific operations | `()` |
-| `add_project` / `remove_project` | Manage pinned projects | `()` |
-| `load_suggested_projects` | Discover projects with activity | `Vec<SuggestedProject>` |
-| `generate_session_summary` | On-demand summary generation | `String` |
-| `start_background_summaries` / `start_background_project_summaries` | Background tasks | `()` |
-
 ### Key Patterns
 
 **Error Handling:**
-- Functions return `Result<T, String>` for Tauri IPC compatibility
+- Functions return `Result<T, HudError>` with UniFFI error support
 - File operations gracefully degrade (return empty defaults on missing files)
 
 **Caching:**
 - Stats cache uses mtime-based invalidation
 - Summary cache persists generated summaries to avoid re-computation
 
-**Threading:**
-- `std::thread::spawn()` for background tasks
-- `app_handle.emit()` sends events back to frontend
-
 ## State Tracking Architecture
 
-**Current approach:** Hooks for local TUI sessions, daemon reserved for future remote/mobile use.
+**Current approach:** Hooks for local sessions, daemon reserved for future remote/mobile use.
 
 See [ADR-001: State Tracking Approach](docs/architecture-decisions/001-state-tracking-approach.md) for the full decision rationale.
 
 ### Local Sessions (Current)
 
-For interactive TUI sessions, we use Claude Code hooks:
+For interactive CLI sessions, we use Claude Code hooks:
 
 ```
 User runs claude → Hooks fire → State file updated → Swift HUD reads
@@ -401,19 +263,6 @@ User runs claude → Hooks fire → State file updated → Swift HUD reads
 The daemon in `apps/daemon/` provides **precise state tracking** via `--output-format stream-json`. It's reserved for future mobile/remote client integration.
 
 **Why not use daemon for local?** Claude's `--output-format stream-json` replaces the TUI with JSON output. You can't have both Claude's interactive TUI and structured JSON from the same process.
-
-**When to use daemon:**
-- Building mobile client relay integration
-- Programmatic/scripted Claude interactions
-- Testing state tracking precision
-
-```bash
-# Build daemon (if needed)
-cd apps/daemon && npm install && npm run build
-
-# Run daemon (JSON output, no TUI)
-hud-claude-daemon -p "explain this code"
-```
 
 For detailed daemon design, see `docs/hud-daemon-design.md`.
 
@@ -436,7 +285,7 @@ For a comprehensive reference of all Claude Code disk artifacts (file formats, d
 
 ## Documentation
 
-This project has comprehensive documentation organized by purpose. Use this guide to find the right docs for your task.
+This project has comprehensive documentation organized by purpose.
 
 ### Quick Reference: Where to Look
 
@@ -463,11 +312,11 @@ Official Claude Code documentation for integrating with hooks, plugins, settings
 | Memory | `memory.md` | CLAUDE.md files, project context |
 | Sub-agents | `sub-agents.md` | Task tool, agent spawning |
 
-**Update:** `npx tsx scripts/fetch-cc-docs.ts` (sources: anthropics/claude-code, ericbuess/claude-code-docs)
+**Update:** `npx tsx scripts/fetch-cc-docs.ts`
 
 ### Agent SDK Documentation (`docs/agent-sdk/`)
 
-TypeScript/Python SDK for programmatic Claude Code integration. Use this for building automated tools, custom clients, or SDK-based features.
+TypeScript/Python SDK for programmatic Claude Code integration.
 
 | Topic | File | Use When |
 |-------|------|----------|
@@ -489,8 +338,7 @@ HUD-specific architecture documents, design decisions, and feature specs.
 
 | Document | Purpose |
 |----------|---------|
-| `status-sync-architecture.md` | Real-time status sync between Claude sessions and HUD clients |
-| `multi-platform-architecture.md` | Tauri/Swift/TUI sharing hud-core |
+| `status-sync-architecture.md` | Real-time status sync between Claude sessions and HUD |
 | `agent-sdk-migration-guide.md` | Migration strategy from CLI to Agent SDK |
 | `feature-idea-to-v1-launcher.md` | TDD feature spec for "Idea → V1 Launcher" |
 
@@ -503,8 +351,6 @@ Architecture Decision Records documenting key technical decisions.
 | `001-state-tracking-approach.md` | Hooks for local sessions, daemon for remote/mobile |
 
 ### Maintaining Documentation
-
-When working on this project, follow this organizational scheme:
 
 | Content Type | Location | When to Use |
 |--------------|----------|-------------|
@@ -522,31 +368,11 @@ When working on this project, follow this organizational scheme:
 - Link to detailed specs rather than embedding them
 - Use sections: 🎯 Active → 📋 Next → 💡 Backlog
 
-**Rules for .claude/docs/:**
-- Feature specs: `feature-{name}.md`
-- Architecture: `{system}-architecture.md`
-- Guides: `{topic}-guide.md`
-- Keep updated when implementation diverges from spec
-
 ## Common Development Scenarios
-
-### Adding a New Dashboard Tab (Tauri)
-
-1. **Backend:** Add `#[tauri::command]` function in `apps/tauri/src-tauri/src/lib.rs`
-2. **Backend:** Register in `invoke_handler`
-3. **Frontend:** Add to `Tab` type union in `apps/tauri/src/App.tsx`
-4. **Frontend:** Create panel component in `apps/tauri/src/components/panels/`
-5. **Types:** Ensure TypeScript types in `apps/tauri/src/types.ts` match Rust structs
-
-### Adding a New View (Swift)
-
-1. **Create view:** Add SwiftUI view in `apps/swift/Sources/ClaudeHUD/Views/`
-2. **Update state:** Add published properties to `AppState.swift` if needed
-3. **Wire up:** Add navigation in `ContentView.swift`
 
 ### Modifying Statistics Parsing
 - Update regex patterns in `parse_stats_from_content()` (`core/hud-core/src/stats.rs`)
-- Update `ProjectStats` struct in `core/hud-core/src/types.rs` and `apps/tauri/src/types.ts`
+- Update `ProjectStats` struct in `core/hud-core/src/types.rs`
 - Delete `~/.claude/hud-stats-cache.json` to force recomputation
 
 ### Adding Project Type Detection
@@ -559,56 +385,41 @@ cd core/hud-core
 cargo run --bin uniffi-bindgen generate src/lib.rs --language swift --out-dir ../../apps/swift/bindings/
 ```
 
-### Running the TUI
-```bash
-cargo run --bin hud-tui
-```
-The TUI provides a terminal-based interface using the same `hud-core` library.
-
 ## Code Style & Conventions
 
-**Backend (Rust):**
+**Rust:**
 - Use `cargo fmt` for formatting (required)
 - Run `cargo clippy -- -D warnings` for linting
 - Prefer easy-to-read code over clever code
 - No extraneous comments; code should be self-documenting
 
-**Frontend (TypeScript/React):**
-- No IIFEs in React components
-- ESLint configured in project
-- TypeScript strict mode enabled
+**Swift:**
+- Follow Swift API Design Guidelines
+- Use SwiftUI idioms and patterns
 - Prefer easy-to-read code over clever code
 
 ## Debugging
 
-**Backend:**
 ```bash
 # Inspect cache files
 cat ~/.claude/hud-stats-cache.json | jq .
 
-# Enable debug logging
-RUST_LOG=debug pnpm tauri dev
+# Enable Rust debug logging
+RUST_LOG=debug swift run
 
 # Test regex patterns
 echo '{"input_tokens":1234}' | rg 'input_tokens":(\d+)'
 ```
 
-**Frontend:**
-- Chrome DevTools via right-click "Inspect" in app window
-- Check browser console for IPC errors
-
 ## Key Dependencies
 
-**Frontend:**
-- React 19 - UI framework
-- TypeScript - Type safety
-- Vite - Build tool
-- Tailwind CSS 4 - Styling
-- Radix UI - Accessible primitives
-- Tauri API - IPC bridge
+**Swift App:**
+- SwiftUI - Native UI framework
+- Foundation - Core utilities
+- AppKit - macOS integration
 
-**Backend:**
-- Tauri 2.9.5 - Desktop app framework
+**Rust Core:**
+- UniFFI - Swift/Kotlin/Python bindings
 - Serde - JSON serialization
 - Regex - Pattern matching in session files
 - Walkdir - Directory traversal
@@ -616,13 +427,9 @@ echo '{"input_tokens":1234}' | rg 'input_tokens":(\d+)'
 
 ## Important Notes
 
-- **Workspace Structure:** This is a Cargo workspace with `core/hud-core` (shared library), `apps/tauri/src-tauri` (Tauri app). Use `cargo build --workspace` to build all crates.
-- **Multi-Client Architecture:** Tauri desktop, Swift native, and TUI all use `hud-core` for shared business logic
+- **Workspace Structure:** This is a Cargo workspace with `core/hud-core` (shared library). Use `cargo build --workspace` to build.
 - **UniFFI Bindings:** Swift app uses UniFFI-generated bindings in `apps/swift/bindings/`
 - **Path Encoding:** Project paths use `/` → `-` replacement (e.g., `/Users/peter/Code` → `-Users-peter-Code`)
-- **IPC Communication:** Tauri frontend must go through Tauri commands; Swift uses UniFFI directly
 - **Caching Strategy:** Mtime-based invalidation; old cache entries are harmless
-- **Platform Support:** Tauri handles Windows, macOS (Intel/ARM), and Linux; Swift is macOS-only
+- **Platform Support:** macOS 14+ (Apple Silicon and Intel)
 - **Claude CLI Path:** Summary generation uses `/opt/homebrew/bin/claude` (macOS Homebrew)
-
-For detailed Tauri backend documentation, refer to `apps/tauri/src-tauri/CLAUDE.md`.

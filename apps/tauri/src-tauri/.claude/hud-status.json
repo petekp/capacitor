@@ -1,7 +1,0 @@
-{
-  "working_on": "Live session state detection for Claude HUD projects",
-  "next_step": "Test the implementation by opening Claude in a project and verifying the beacon updates in real-time as Claude works",
-  "status": "done",
-  "blocker": null,
-  "updated_at": "2026-01-08T01:40:13Z"
-}

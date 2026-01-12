@@ -1,7 +1,6 @@
 [workspace]
 members = [
     "core/hud-core",
-    "apps/tauri/src-tauri",
 ]
 resolver = "2"
 

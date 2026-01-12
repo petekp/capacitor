@@ -787,7 +787,7 @@ for await (const message of query({
 
 ### 1. Summary Generation (High Priority)
 
-**Current implementation** (`apps/tauri/src-tauri/src/lib.rs`):
+**Current implementation** (in `apps/sdk-bridge/` or Swift app):
 ```rust
 fn generate_session_summary_sync(transcript: &str) -> Result<String, String> {
     let output = Command::new("/opt/homebrew/bin/claude")
@@ -1235,7 +1235,7 @@ server.listen("/tmp/hud-sdk.sock");
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    HUD Frontend (Swift/Tauri)                    │
+│                    HUD Frontend (Swift)                          │
 │  - Project list, details, artifacts                              │
 │  - Activity panel (streamed from SDK)                            │
 │  - Quick action buttons                                          │

@@ -41,9 +41,11 @@ struct ProjectsView: View {
                         SkeletonCard()
                     }
                     .padding(.top, 8)
-                } else if appState.projects.isEmpty {
+                } else if appState.projects.isEmpty && appState.activeCreations.isEmpty {
                     EmptyProjectsView()
                 } else {
+                    ActivityPanel()
+
                     if !activeProjects.isEmpty {
                         SectionHeader(
                             title: "In Progress",

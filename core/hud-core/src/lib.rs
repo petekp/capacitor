@@ -1,7 +1,7 @@
 //! # hud-core
 //!
 //! Core library for Claude HUD, providing shared business logic for all clients
-//! (TUI, Tauri desktop, mobile server, native Swift).
+//! (Swift desktop, TUI, mobile server).
 //!
 //! ## Design Principles
 //!
