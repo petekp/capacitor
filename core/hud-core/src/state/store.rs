@@ -79,6 +79,7 @@ impl StateStore {
     pub fn update(&mut self, session_id: &str, state: ClaudeState, cwd: &str) {
         let existing = self.sessions.get(session_id);
         let working_on = existing.and_then(|r| r.working_on.clone());
+        let pid = existing.and_then(|r| r.pid);
 
         self.sessions.insert(
             session_id.to_string(),
@@ -88,6 +89,7 @@ impl StateStore {
                 cwd: cwd.to_string(),
                 updated_at: Utc::now(),
                 working_on,
+                pid,
             },
         );
     }
@@ -114,6 +116,18 @@ impl StateStore {
             }
         }
 
+        // CRITICAL: If we found an exact match but it shares a PID with other sessions,
+        // check if there's a fresher session for the same PID (handles cd scenarios)
+        if let Some(exact_match) = best {
+            if let Some(pid) = exact_match.pid {
+                for record in self.sessions.values() {
+                    if record.pid == Some(pid) && record.updated_at > exact_match.updated_at {
+                        best = Some(record);
+                    }
+                }
+            }
+        }
+
         if best.is_some() {
             return best;
         }
@@ -132,6 +146,17 @@ impl StateStore {
                     None => best = Some(record),
                     Some(current) if record.updated_at > current.updated_at => best = Some(record),
                     _ => {}
+                }
+            }
+        }
+
+        // Check for fresher sessions with same PID (child directory case)
+        if let Some(child_match) = best {
+            if let Some(pid) = child_match.pid {
+                for record in self.sessions.values() {
+                    if record.pid == Some(pid) && record.updated_at > child_match.updated_at {
+                        best = Some(record);
+                    }
                 }
             }
         }
@@ -155,6 +180,17 @@ impl StateStore {
                         None => best = Some(record),
                         Some(current) if record.updated_at > current.updated_at => best = Some(record),
                         _ => {}
+                    }
+                }
+            }
+
+            // Check for fresher sessions with same PID before returning
+            if let Some(parent_match) = best {
+                if let Some(pid) = parent_match.pid {
+                    for record in self.sessions.values() {
+                        if record.pid == Some(pid) && record.updated_at > parent_match.updated_at {
+                            best = Some(record);
+                        }
                     }
                 }
             }

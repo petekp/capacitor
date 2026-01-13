@@ -61,6 +61,8 @@ pub struct SessionRecord {
     pub updated_at: DateTime<Utc>,
     #[serde(default)]
     pub working_on: Option<String>,
+    #[serde(default)]
+    pub pid: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
