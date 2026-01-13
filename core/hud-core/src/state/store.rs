@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
+use super::lock::is_pid_alive;
 use super::types::{ClaudeState, SessionRecord};
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -49,13 +50,36 @@ impl StateStore {
 
         let content = fs::read_to_string(file_path).map_err(|e| format!("Failed to read state file: {}", e))?;
 
-        let store_file: StoreFile =
-            serde_json::from_str(&content).map_err(|e| format!("Failed to parse state file: {}", e))?;
+        // Defensive: Handle empty file
+        if content.trim().is_empty() {
+            eprintln!("Warning: Empty state file, returning empty store");
+            return Ok(StateStore::new(file_path));
+        }
 
-        Ok(StateStore {
-            sessions: store_file.sessions,
-            file_path: Some(file_path.to_path_buf()),
-        })
+        // Defensive: Handle JSON parse errors
+        match serde_json::from_str::<StoreFile>(&content) {
+            Ok(store_file) => {
+                // Opportunistic cleanup: Remove sessions with dead PIDs
+                let cleaned_sessions: HashMap<String, SessionRecord> = store_file
+                    .sessions
+                    .into_iter()
+                    .filter(|(_, record)| match record.pid {
+                        Some(pid) => is_pid_alive(pid),
+                        None => true, // Keep sessions without PID (legacy)
+                    })
+                    .collect();
+
+                Ok(StateStore {
+                    sessions: cleaned_sessions,
+                    file_path: Some(file_path.to_path_buf()),
+                })
+            }
+            Err(e) => {
+                eprintln!("Warning: Failed to parse state file ({}), returning empty store", e);
+                // Defensive: Corrupt JSON → empty store (don't crash)
+                Ok(StateStore::new(file_path))
+            }
+        }
     }
 
     pub fn save(&self) -> Result<(), String> {
@@ -105,7 +129,7 @@ impl StateStore {
     pub fn find_by_cwd(&self, cwd: &str) -> Option<&SessionRecord> {
         let mut best: Option<&SessionRecord> = None;
 
-        // 1. Exact match
+        // 1. Exact match - collect all, don't return early
         for record in self.sessions.values() {
             if record.cwd == cwd {
                 match best {
@@ -116,24 +140,9 @@ impl StateStore {
             }
         }
 
-        // CRITICAL: If we found an exact match but it shares a PID with other sessions,
-        // check if there's a fresher session for the same PID (handles cd scenarios)
-        if let Some(exact_match) = best {
-            if let Some(pid) = exact_match.pid {
-                for record in self.sessions.values() {
-                    if record.pid == Some(pid) && record.updated_at > exact_match.updated_at {
-                        best = Some(record);
-                    }
-                }
-            }
-        }
-
-        if best.is_some() {
-            return best;
-        }
-
         // 2. Session is in a CHILD directory of the query path
         // e.g., query="/project", session.cwd="/project/subdir"
+        // Don't return early - child might be fresher than exact match
         let cwd_with_slash = if cwd.ends_with('/') {
             cwd.to_string()
         } else {
@@ -150,23 +159,15 @@ impl StateStore {
             }
         }
 
-        // Check for fresher sessions with same PID (child directory case)
-        if let Some(child_match) = best {
-            if let Some(pid) = child_match.pid {
-                for record in self.sessions.values() {
-                    if record.pid == Some(pid) && record.updated_at > child_match.updated_at {
-                        best = Some(record);
-                    }
-                }
-            }
-        }
-
+        // If we found exact or child match, return it
+        // Child sessions take precedence over parent fallbacks
         if best.is_some() {
             return best;
         }
 
         // 3. Session is in a PARENT directory of the query path
         // e.g., query="/project/subdir", session.cwd="/project"
+        // Only use parent as fallback if no exact/child found
         let mut current_path = cwd;
         while let Some(parent) = Path::new(current_path).parent() {
             let parent_str = parent.to_string_lossy();
@@ -184,17 +185,6 @@ impl StateStore {
                 }
             }
 
-            // Check for fresher sessions with same PID before returning
-            if let Some(parent_match) = best {
-                if let Some(pid) = parent_match.pid {
-                    for record in self.sessions.values() {
-                        if record.pid == Some(pid) && record.updated_at > parent_match.updated_at {
-                            best = Some(record);
-                        }
-                    }
-                }
-            }
-
             if best.is_some() {
                 return best;
             }
@@ -207,6 +197,20 @@ impl StateStore {
 
     pub fn all_sessions(&self) -> impl Iterator<Item = &SessionRecord> {
         self.sessions.values()
+    }
+
+    #[cfg(test)]
+    pub fn set_pid_for_test(&mut self, session_id: &str, pid: u32) {
+        if let Some(record) = self.sessions.get_mut(session_id) {
+            record.pid = Some(pid);
+        }
+    }
+
+    #[cfg(test)]
+    pub fn set_timestamp_for_test(&mut self, session_id: &str, timestamp: chrono::DateTime<chrono::Utc>) {
+        if let Some(record) = self.sessions.get_mut(session_id) {
+            record.updated_at = timestamp;
+        }
     }
 }
 
@@ -315,5 +319,119 @@ mod tests {
         store.update("s2", ClaudeState::Ready, "/proj2");
         let sessions: Vec<_> = store.all_sessions().collect();
         assert_eq!(sessions.len(), 2);
+    }
+
+    #[test]
+    fn test_find_by_cwd_returns_most_recent_when_multiple_at_same_path() {
+        let mut store = StateStore::new_in_memory();
+
+        // Create session-1 at /project
+        store.update("session-1", ClaudeState::Working, "/project");
+        store.set_pid_for_test("session-1", 1234);
+
+        thread::sleep(Duration::from_millis(10));
+
+        // Create session-2 at /project (more recent)
+        store.update("session-2", ClaudeState::Ready, "/project");
+        store.set_pid_for_test("session-2", 5678);
+
+        // Query for /project should return the more recent session (session-2)
+        // Timestamp-based selection, no PID tie-breaking
+        let record = store.find_by_cwd("/project").unwrap();
+
+        // Should get the fresher one (session-2) since both have same cwd
+        assert_eq!(record.session_id, "session-2");
+    }
+
+    #[test]
+    fn test_load_empty_file_returns_empty_store() {
+        let temp = tempdir().unwrap();
+        let file = temp.path().join("empty.json");
+        fs::write(&file, "").unwrap();
+
+        let store = StateStore::load(&file).unwrap();
+        assert!(store.get_by_session_id("any").is_none());
+        assert_eq!(store.all_sessions().count(), 0);
+    }
+
+    #[test]
+    fn test_load_corrupt_json_returns_empty_store() {
+        let temp = tempdir().unwrap();
+        let file = temp.path().join("corrupt.json");
+        fs::write(&file, "{invalid json}").unwrap();
+
+        let store = StateStore::load(&file).unwrap();
+        assert!(store.get_by_session_id("any").is_none());
+        assert_eq!(store.all_sessions().count(), 0);
+    }
+
+    #[test]
+    fn test_load_cleans_up_dead_pids() {
+        let temp = tempdir().unwrap();
+        let file = temp.path().join("with_dead_pid.json");
+
+        // Create a state file with one live PID and one dead PID
+        let live_pid = std::process::id();
+        let dead_pid = 99999999u32; // Unlikely to be alive
+
+        let content = format!(
+            r#"{{
+                "version": 2,
+                "sessions": {{
+                    "live-session": {{
+                        "session_id": "live-session",
+                        "state": "working",
+                        "cwd": "/project1",
+                        "updated_at": "2024-01-01T00:00:00Z",
+                        "pid": {}
+                    }},
+                    "dead-session": {{
+                        "session_id": "dead-session",
+                        "state": "working",
+                        "cwd": "/project2",
+                        "updated_at": "2024-01-01T00:00:00Z",
+                        "pid": {}
+                    }}
+                }}
+            }}"#,
+            live_pid, dead_pid
+        );
+        fs::write(&file, content).unwrap();
+
+        let store = StateStore::load(&file).unwrap();
+
+        // Live session should be kept
+        assert!(store.get_by_session_id("live-session").is_some());
+
+        // Dead session should be removed
+        assert!(store.get_by_session_id("dead-session").is_none());
+
+        // Should have exactly 1 session
+        assert_eq!(store.all_sessions().count(), 1);
+    }
+
+    #[test]
+    fn test_load_keeps_sessions_without_pid() {
+        let temp = tempdir().unwrap();
+        let file = temp.path().join("no_pid.json");
+
+        let content = r#"{
+            "version": 2,
+            "sessions": {
+                "legacy-session": {
+                    "session_id": "legacy-session",
+                    "state": "working",
+                    "cwd": "/project",
+                    "updated_at": "2024-01-01T00:00:00Z"
+                }
+            }
+        }"#;
+        fs::write(&file, content).unwrap();
+
+        let store = StateStore::load(&file).unwrap();
+
+        // Legacy session without PID should be kept
+        assert!(store.get_by_session_id("legacy-session").is_some());
+        assert_eq!(store.all_sessions().count(), 1);
     }
 }

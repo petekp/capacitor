@@ -141,7 +141,8 @@ fn test_multiple_sessions_same_project() {
 }
 
 #[test]
-fn test_cd_scenario_child_inherits_parent() {
+fn test_cd_scenario_child_does_not_inherit_parent() {
+    // Correct semantics: Parent locks do NOT make children active
     let temp = tempdir().unwrap();
     let mut store = StateStore::new_in_memory();
     let parent_cwd = "/parent";
@@ -154,7 +155,8 @@ fn test_cd_scenario_child_inherits_parent() {
     apply_event(&mut store, session_id, parent_cwd, HookEvent::UserPromptSubmit);
 
     assert_eq!(resolve_state(temp.path(), &store, parent_cwd), Some(ClaudeState::Working));
-    assert_eq!(resolve_state(temp.path(), &store, child_cwd), Some(ClaudeState::Working));
+    // Child query should return None (parent lock doesn't propagate down)
+    assert_eq!(resolve_state(temp.path(), &store, child_cwd), None);
 }
 
 #[test]

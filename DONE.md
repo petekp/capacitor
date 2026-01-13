@@ -6,6 +6,42 @@ Archive of completed features and improvements. See `TODO.md` for active work.
 
 ## January 2026
 
+### State Resolver Matching Logic Refinement (8 Iterations)
+**ADR:** `docs/architecture-decisions/002-state-resolver-matching-logic.md`
+
+Comprehensive fixes to session state detection through iterative ChatGPT review:
+
+**Core Changes:**
+- Three-way matching: Exact > Child > Parent (removed sibling due to cross-project contamination risk)
+- Root path matches any descendant (not just immediate children): `/` ↔ `/a/b/c` works
+- Timestamp-based lock selection: when multiple locks share PID, picks newest by `started`
+- PID-only fallback includes exact matches (not just children)
+- Deterministic tie-breaker: freshness → match type → session_id
+
+**Issues Fixed:**
+1. Root special-case only matched immediate children (broke `/` ↔ `/foo/bar`)
+2. PID-only lock matching nondeterministic (returned first match, not newest)
+3. Sibling matching depth guard insufficient (still allowed cross-project contamination)
+4. Exact locks excluded from PID-only search (could pair wrong lock)
+5. Test helper used same timestamp (timestamp selection not validated)
+6. Docstrings mentioned removed sibling matching
+
+**Testing:**
+- 94 tests passing (removed 3 sibling tests, added 2 root nesting tests)
+- Test coverage for root ↔ nested paths, multi-lock scenarios, timestamp selection
+- `create_lock_with_timestamp()` helper for deterministic tests
+
+**Trade-offs:**
+- ✅ No cross-project contamination (safe)
+- ✅ Deterministic behavior (reliable)
+- ✅ Root nesting works (arbitrary depth)
+- ❌ cd ../sibling won't match (must cd back to parent) - acceptable for safety
+
+**Files Modified:**
+- `core/hud-core/src/state/resolver.rs` - Matching logic, root special-cases
+- `core/hud-core/src/state/lock.rs` - Timestamp selection, exact+child scanning
+- Test helpers and comprehensive test coverage
+
 ### Projects View Polish Pass
 - Session summary text changed to normal weight (was semibold)
 - Section counts hidden when only 1 item (show "In Progress" not "In Progress (1)")

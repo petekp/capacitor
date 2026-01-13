@@ -51,6 +51,41 @@ if [ ! -f "$STATE_FILE" ] || ! jq -e . "$STATE_FILE" &>/dev/null; then
   echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") | Initialized state file" >> "$LOG_FILE"
 fi
 
+# Opportunistic cleanup: remove dead sessions (non-blocking, best-effort)
+cleanup_dead_sessions() {
+  local tmp_file dead_sessions
+
+  # Extract session IDs with PIDs, check if they're alive
+  dead_sessions=$(jq -r '.sessions | to_entries[] | select(.value.pid != null) | "\(.key)|\(.value.pid)"' "$STATE_FILE" 2>/dev/null | \
+    while IFS='|' read -r sid pid; do
+      # Check if PID is dead (not running)
+      if [ -n "$pid" ] && ! kill -0 "$pid" 2>/dev/null; then
+        echo "$sid"
+      fi
+    done)
+
+  # If we found dead sessions, remove them
+  if [ -n "$dead_sessions" ]; then
+    tmp_file=$(mktemp)
+    # Build jq delete expression for all dead sessions
+    local delete_expr=""
+    for sid in $dead_sessions; do
+      delete_expr="$delete_expr | del(.sessions[\"$sid\"])"
+    done
+    # Remove leading " | "
+    delete_expr="${delete_expr# | }"
+
+    # Apply the deletions
+    if jq "$delete_expr" "$STATE_FILE" > "$tmp_file" 2>/dev/null && \
+       jq -e . "$tmp_file" &>/dev/null; then
+      mv "$tmp_file" "$STATE_FILE"
+      echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") | Cleaned up dead sessions: $dead_sessions" >> "$LOG_FILE"
+    else
+      rm -f "$tmp_file"
+    fi
+  fi
+}
+
 case "$event" in
   "SessionStart")
     new_state="ready"
@@ -78,17 +113,9 @@ case "$event" in
     # IMPORTANT: Redirect all file descriptors to fully detach from parent process
     # Without this, Claude hangs waiting for inherited FDs to close
     (
-      # CLEANUP: Remove any existing locks held by this same PID (handles cd scenarios)
-      # This prevents multiple lock files pointing to the same Claude process
-      for existing_lock in "$LOCK_DIR"/*.lock; do
-        [ -d "$existing_lock" ] || continue
-        [ "$existing_lock" = "$LOCK_FILE" ] && continue  # Skip our target lock
-        existing_pid=$(cat "$existing_lock/pid" 2>/dev/null)
-        if [ "$existing_pid" = "$CLAUDE_PID" ]; then
-          rm -rf "$existing_lock"
-          echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") | Cleaned up duplicate lock for PID $CLAUDE_PID: $existing_lock" >> "$LOG_FILE"
-        fi
-      done
+      # NOTE: Duplicate cleanup removed - resolver expects multiple locks per PID
+      # When session cd's, BOTH old and new locks should exist (newest selected by timestamp)
+      # This enables proper parent/child matching in the resolver
 
       # CLEANUP: Opportunistically clean up any stale locks (dead PIDs)
       for existing_lock in "$LOCK_DIR"/*.lock; do
@@ -105,14 +132,28 @@ case "$event" in
         # Lock exists - check if the holding process is still alive
         if [ -f "$LOCK_FILE/pid" ]; then
           OLD_PID=$(cat "$LOCK_FILE/pid" 2>/dev/null)
-          if [ -n "$OLD_PID" ] && kill -0 "$OLD_PID" 2>/dev/null; then
-            # Process still running - exit
-            exit 0
-          fi
-          # Stale lock - remove and retry
-          rm -rf "$LOCK_FILE"
-          if ! mkdir "$LOCK_FILE" 2>/dev/null; then
-            exit 0  # Another process grabbed it
+          if [ -n "$OLD_PID" ]; then
+            if [ "$OLD_PID" = "$CLAUDE_PID" ]; then
+              # FIX #2: Lock is ours (resume at same location) - just update timestamp
+              echo "{\"pid\": $CLAUDE_PID, \"started\": \"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\", \"path\": \"$cwd\"}" > "$LOCK_FILE/meta.json"
+              echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") | Reused existing lock for PID $CLAUDE_PID at $cwd" >> "$LOG_FILE"
+              exit 0  # Lock exists and is valid
+            elif kill -0 "$OLD_PID" 2>/dev/null; then
+              # Different PID still alive - conflict, exit
+              exit 0
+            else
+              # Stale lock - remove and retry
+              rm -rf "$LOCK_FILE"
+              if ! mkdir "$LOCK_FILE" 2>/dev/null; then
+                exit 0  # Another process grabbed it
+              fi
+            fi
+          else
+            # Empty PID file - remove and retry
+            rm -rf "$LOCK_FILE"
+            if ! mkdir "$LOCK_FILE" 2>/dev/null; then
+              exit 0
+            fi
           fi
         else
           exit 0  # Lock dir exists but no pid file - race condition, exit
@@ -427,6 +468,11 @@ update_state() {
 }
 
 update_state
+
+# Opportunistic cleanup in background (non-blocking, SessionEnd only)
+if [ "$event" = "SessionEnd" ]; then
+  (cleanup_dead_sessions &) 2>/dev/null
+fi
 
 # Publish state if transitioning from compacting → working
 if [ "$should_publish" = "true" ]; then

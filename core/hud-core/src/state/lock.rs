@@ -7,7 +7,7 @@ fn compute_lock_hash(path: &str) -> String {
     format!("{:x}", md5::compute(path))
 }
 
-fn is_pid_alive(pid: u32) -> bool {
+pub fn is_pid_alive(pid: u32) -> bool {
     #[cfg(unix)]
     {
         unsafe { libc::kill(pid as i32, 0) == 0 }
@@ -53,43 +53,24 @@ fn check_lock_for_path(lock_base: &Path, project_path: &str) -> Option<LockInfo>
 }
 
 pub fn is_session_running(lock_base: &Path, project_path: &str) -> bool {
+    // Check for exact lock match at this path
     if check_lock_for_path(lock_base, project_path).is_some() {
         return true;
     }
 
-    let mut current = project_path;
-    while let Some(parent) = Path::new(current).parent() {
-        let parent_str = parent.to_string_lossy();
-        if parent_str.is_empty() || parent_str == "/" {
-            break;
-        }
-        if check_lock_for_path(lock_base, &parent_str).is_some() {
-            return true;
-        }
-        current = parent.to_str().unwrap_or("");
-    }
-
-    false
+    // Check if any CHILD path has a lock (child makes parent active)
+    // Do NOT check parent paths (parent lock should not make child active)
+    find_child_lock(lock_base, project_path).is_some()
 }
 
 pub fn get_lock_info(lock_base: &Path, project_path: &str) -> Option<LockInfo> {
+    // Check for exact lock match at this path
     if let Some(info) = check_lock_for_path(lock_base, project_path) {
         return Some(info);
     }
 
-    let mut current = project_path;
-    while let Some(parent) = Path::new(current).parent() {
-        let parent_str = parent.to_string_lossy();
-        if parent_str.is_empty() || parent_str == "/" {
-            break;
-        }
-        if let Some(info) = check_lock_for_path(lock_base, &parent_str) {
-            return Some(info);
-        }
-        current = parent.to_str().unwrap_or("");
-    }
-
-    None
+    // Check if any CHILD path has a lock
+    find_child_lock(lock_base, project_path)
 }
 
 pub fn find_child_lock(lock_base: &Path, project_path: &str) -> Option<LockInfo> {
@@ -115,6 +96,65 @@ pub fn find_child_lock(lock_base: &Path, project_path: &str) -> Option<LockInfo>
     None
 }
 
+/// Find a lock that matches the given PID and/or path
+/// Checks both exact matches and child locks
+/// When multiple locks match, returns the one with the newest 'started' timestamp
+pub fn find_matching_child_lock(
+    lock_base: &Path,
+    project_path: &str,
+    target_pid: Option<u32>,
+    target_cwd: Option<&str>,
+) -> Option<LockInfo> {
+    // Normalize project_path for comparison
+    let project_path_normalized = project_path.trim_end_matches('/');
+
+    let prefix = if project_path.ends_with('/') {
+        project_path.to_string()
+    } else {
+        format!("{}/", project_path)
+    };
+
+    let entries = fs::read_dir(lock_base).ok()?;
+
+    let mut best_match: Option<LockInfo> = None;
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() && path.extension().is_some_and(|e| e == "lock") {
+            if let Some(info) = read_lock_info(&path) {
+                if is_pid_alive(info.pid) {
+                    let info_path_normalized = info.path.trim_end_matches('/');
+
+                    // Check for exact match or child match
+                    let is_match = info_path_normalized == project_path_normalized ||
+                                   info.path.starts_with(&prefix);
+
+                    if is_match {
+                        // Check if this lock matches the target criteria
+                        let pid_matches = target_pid.map_or(true, |pid| pid == info.pid);
+                        let path_matches = target_cwd.map_or(true, |cwd| cwd == info.path);
+
+                        if pid_matches && path_matches {
+                            // Keep the match with the newest 'started' timestamp
+                            match &best_match {
+                                None => best_match = Some(info),
+                                Some(current) => {
+                                    // ISO timestamps can be compared lexicographically
+                                    if info.started > current.started {
+                                        best_match = Some(info);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    best_match
+}
+
 #[cfg(test)]
 pub mod tests_helper {
     use super::compute_lock_hash;
@@ -122,13 +162,17 @@ pub mod tests_helper {
     use std::path::Path;
 
     pub fn create_lock(lock_base: &Path, pid: u32, path: &str) {
+        create_lock_with_timestamp(lock_base, pid, path, "2024-01-01T00:00:00Z");
+    }
+
+    pub fn create_lock_with_timestamp(lock_base: &Path, pid: u32, path: &str, started: &str) {
         let hash = compute_lock_hash(path);
         let lock_dir = lock_base.join(format!("{}.lock", hash));
         fs::create_dir_all(&lock_dir).unwrap();
         fs::write(lock_dir.join("pid"), pid.to_string()).unwrap();
         fs::write(
             lock_dir.join("meta.json"),
-            format!(r#"{{"pid": {}, "path": "{}", "started": "2024-01-01T00:00:00Z"}}"#, pid, path),
+            format!(r#"{{"pid": {}, "path": "{}", "started": "{}"}}"#, pid, path, started),
         )
         .unwrap();
     }
@@ -161,17 +205,11 @@ mod tests {
     }
 
     #[test]
-    fn test_child_project_inherits_parent_lock() {
+    fn test_child_does_not_inherit_parent_lock() {
         let temp = tempdir().unwrap();
         create_lock(temp.path(), std::process::id(), "/parent");
-        assert!(is_session_running(temp.path(), "/parent/child"));
-    }
-
-    #[test]
-    fn test_parent_does_not_inherit_child_lock() {
-        let temp = tempdir().unwrap();
-        create_lock(temp.path(), std::process::id(), "/parent/child");
-        assert!(!is_session_running(temp.path(), "/parent"));
+        // Child should NOT inherit parent lock (parent lock doesn't make child active)
+        assert!(!is_session_running(temp.path(), "/parent/child"));
     }
 
     #[test]
@@ -190,10 +228,26 @@ mod tests {
     }
 
     #[test]
-    fn test_get_lock_info_inherits_parent_lock() {
+    fn test_get_lock_info_does_not_inherit_parent_lock() {
         let temp = tempdir().unwrap();
         create_lock(temp.path(), std::process::id(), "/parent");
-        let info = get_lock_info(temp.path(), "/parent/child").unwrap();
-        assert_eq!(info.path, "/parent");
+        // Child should NOT get parent's lock info
+        assert!(get_lock_info(temp.path(), "/parent/child").is_none());
+    }
+
+    #[test]
+    fn test_parent_query_finds_child_lock() {
+        let temp = tempdir().unwrap();
+        create_lock(temp.path(), std::process::id(), "/parent/child");
+        // Parent SHOULD find child lock (child makes parent active)
+        assert!(is_session_running(temp.path(), "/parent"));
+    }
+
+    #[test]
+    fn test_get_lock_info_finds_child_lock() {
+        let temp = tempdir().unwrap();
+        create_lock(temp.path(), std::process::id(), "/parent/child");
+        let info = get_lock_info(temp.path(), "/parent").unwrap();
+        assert_eq!(info.path, "/parent/child");
     }
 }

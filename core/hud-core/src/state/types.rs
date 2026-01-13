@@ -65,6 +65,15 @@ pub struct SessionRecord {
     pub pid: Option<u32>,
 }
 
+impl SessionRecord {
+    /// Returns true if this record is stale (not updated in last 5 minutes)
+    pub fn is_stale(&self) -> bool {
+        let now = Utc::now();
+        let age = now.signed_duration_since(self.updated_at);
+        age.num_seconds() > 300 // 5 minutes
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LockInfo {
     pub pid: u32,
