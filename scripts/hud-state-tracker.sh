@@ -199,6 +199,128 @@ case "$event" in
     ;;
   "UserPromptSubmit")
     new_state="working"
+
+    # CRITICAL: Ensure lock exists for resumed sessions
+    # SessionStart only fires on initial launch, not on session resume
+    # If this is a resumed session, we need to create the lock retroactively
+    LOCK_DIR="$HOME/.claude/sessions"
+    mkdir -p "$LOCK_DIR"
+
+    if command -v md5 &>/dev/null; then
+      LOCK_HASH=$(echo -n "$cwd" | md5)
+    elif command -v md5sum &>/dev/null; then
+      LOCK_HASH=$(echo -n "$cwd" | md5sum | cut -d' ' -f1)
+    else
+      LOCK_HASH=$(echo -n "$cwd" | cksum | cut -d' ' -f1)
+    fi
+    LOCK_FILE="$LOCK_DIR/${LOCK_HASH}.lock"
+
+    # Check if lock exists for this cwd
+    if [ ! -d "$LOCK_FILE" ]; then
+      # No lock exists - this is likely a resumed session
+      # Create lock holder (same logic as SessionStart)
+      CLAUDE_PID=$PPID
+      echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") | No lock found for $cwd, creating retroactively (resumed session, PID $CLAUDE_PID)" >> "$LOG_FILE"
+
+      (
+        # CLEANUP: Remove any existing locks held by this same PID
+        for existing_lock in "$LOCK_DIR"/*.lock; do
+          [ -d "$existing_lock" ] || continue
+          [ "$existing_lock" = "$LOCK_FILE" ] && continue
+          existing_pid=$(cat "$existing_lock/pid" 2>/dev/null)
+          if [ "$existing_pid" = "$CLAUDE_PID" ]; then
+            rm -rf "$existing_lock"
+            echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") | Cleaned up duplicate lock for PID $CLAUDE_PID: $existing_lock" >> "$LOG_FILE"
+          fi
+        done
+
+        # Try to create lock directory
+        if ! mkdir "$LOCK_FILE" 2>/dev/null; then
+          # Lock exists - check if holding process is alive
+          if [ -f "$LOCK_FILE/pid" ]; then
+            OLD_PID=$(cat "$LOCK_FILE/pid" 2>/dev/null)
+            if [ -n "$OLD_PID" ] && kill -0 "$OLD_PID" 2>/dev/null; then
+              # Process still running - exit
+              exit 0
+            fi
+            # Stale lock - remove and retry
+            rm -rf "$LOCK_FILE"
+            if ! mkdir "$LOCK_FILE" 2>/dev/null; then
+              exit 0
+            fi
+          else
+            exit 0
+          fi
+        fi
+
+        # Write lock metadata
+        echo "$CLAUDE_PID" > "$LOCK_FILE/pid"
+        echo "{\"pid\": $CLAUDE_PID, \"started\": \"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\", \"path\": \"$cwd\"}" > "$LOCK_FILE/meta.json"
+
+        # Monitor loop (same as SessionStart)
+        current_pid=$CLAUDE_PID
+        while true; do
+          while kill -0 $current_pid 2>/dev/null; do
+            sleep 1
+          done
+
+          # Attempt handoff
+          handoff_pid=""
+          if [ -f "$STATE_FILE" ]; then
+            dead_sids=""
+            while IFS='|' read -r sid pid; do
+              if [ -n "$sid" ]; then
+                if [ "$pid" = "$current_pid" ]; then
+                  dead_sids="$dead_sids $sid"
+                elif [ -n "$pid" ] && ! kill -0 "$pid" 2>/dev/null; then
+                  dead_sids="$dead_sids $sid"
+                fi
+              fi
+            done < <(jq -r --arg cwd "$cwd" '
+              .sessions | to_entries[]
+              | select(.value.cwd == $cwd)
+              | select(.value.pid != null)
+              | "\(.key)|\(.value.pid)"
+            ' "$STATE_FILE" 2>/dev/null)
+
+            if [ -n "$dead_sids" ]; then
+              tmp_file=$(mktemp)
+              jq_filter='.'
+              for sid in $dead_sids; do
+                jq_filter="$jq_filter | del(.sessions[\"$sid\"])"
+                echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") | Cleaned up stale session $sid for $cwd" >> "$LOG_FILE"
+              done
+              jq "$jq_filter" "$STATE_FILE" > "$tmp_file" && mv "$tmp_file" "$STATE_FILE"
+            fi
+
+            handoff_pid=$(jq -r --arg cwd "$cwd" --arg my_pid "$current_pid" '
+              .sessions | to_entries[]
+              | select(.value.cwd == $cwd)
+              | select(.value.pid != null)
+              | select((.value.pid | tostring) != $my_pid)
+              | .value.pid
+            ' "$STATE_FILE" 2>/dev/null | while read candidate_pid; do
+              if [ -n "$candidate_pid" ] && kill -0 "$candidate_pid" 2>/dev/null; then
+                echo "$candidate_pid"
+                break
+              fi
+            done)
+          fi
+
+          if [ -n "$handoff_pid" ]; then
+            echo "$handoff_pid" > "$LOCK_FILE/pid"
+            echo "{\"pid\": $handoff_pid, \"started\": \"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\", \"path\": \"$cwd\", \"handoff_from\": $current_pid}" > "$LOCK_FILE/meta.json"
+            echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") | Lock handoff: $current_pid -> $handoff_pid for $cwd" >> "$LOG_FILE"
+            current_pid=$handoff_pid
+          else
+            rm -rf "$LOCK_FILE"
+            echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") | Lock released for $cwd (PID $current_pid exited, no handoff candidate)" >> "$LOG_FILE"
+            break
+          fi
+        done
+      ) </dev/null >/dev/null 2>&1 &
+      disown 2>/dev/null
+    fi
     ;;
   "PermissionRequest")
     new_state="blocked"
