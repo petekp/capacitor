@@ -256,14 +256,24 @@ User runs claude → Hooks fire → State file updated → Swift HUD reads
 ```
 
 **Hooks configured:**
-- `UserPromptSubmit` → thinking: true, state: working
-- `PostToolUse` → heartbeat (maintains thinking: true)
-- `Stop` → thinking: false, state: ready
-- `Notification` (idle_prompt) → thinking: false, state: ready
+- `SessionStart` → state: ready (creates lock file)
+- `UserPromptSubmit` → state: working (creates lock if missing for resumed sessions)
+- `PermissionRequest` → state: blocked
+- `PostToolUse` → state transitions + heartbeat updates
+- `Notification` (idle_prompt) → state: ready
+- `Stop` → state: ready
+- `PreCompact` → state: compacting
+- `SessionEnd` → removes session from state file
 
-**State file:** `~/.claude/hud-session-states.json`
+**State file:** `~/.claude/hud-session-states-v2.json`
 
 **Hook script:** `~/.claude/scripts/hud-state-tracker.sh`
+
+**Testing & Documentation:**
+- **State machine reference:** `.claude/docs/hook-state-machine.md` - Complete behavior spec for all events
+- **Prevention checklist:** `.claude/docs/hook-prevention-checklist.md` - How to avoid hook failures
+- **Test suite:** `~/.claude/scripts/test-hud-hooks.sh` - Validates all 11 event handlers
+- Run tests before deploying hook changes: `~/.claude/scripts/test-hud-hooks.sh`
 
 ### HUD Daemon (Future Remote Use)
 
@@ -348,6 +358,8 @@ HUD-specific architecture documents, design decisions, and feature specs.
 | `status-sync-architecture.md` | Real-time status sync between Claude sessions and HUD |
 | `agent-sdk-migration-guide.md` | Migration strategy from CLI to Agent SDK |
 | `feature-idea-to-v1-launcher.md` | TDD feature spec for "Idea → V1 Launcher" |
+| `hook-state-machine.md` | **Complete state machine reference** for all hook events |
+| `hook-prevention-checklist.md` | **Prevention procedures** to avoid hook failures |
 
 ### ADRs (`docs/architecture-decisions/`)
 
@@ -376,6 +388,31 @@ Architecture Decision Records documenting key technical decisions.
 - Use sections: 🎯 Active → 📋 Next → 💡 Backlog
 
 ## Common Development Scenarios
+
+### Modifying Hook State Tracking
+**IMPORTANT: Always test hooks before deploying changes!**
+
+1. **Read the docs first:**
+   - `.claude/docs/hook-state-machine.md` - Understand current behavior
+   - `.claude/docs/hook-prevention-checklist.md` - Follow prevention procedures
+   - `docs/claude-code/hooks.md` - Verify Claude Code event payloads
+
+2. **Make your changes** to `~/.claude/scripts/hud-state-tracker.sh`
+   - Add logging for all decision points
+   - Never exit silently without logging reason
+   - Don't assume fields exist - always validate
+
+3. **Run the test suite (mandatory):**
+   ```bash
+   ~/.claude/scripts/test-hud-hooks.sh
+   ```
+
+4. **Test manually** with a real Claude session:
+   - Trigger the specific event you modified
+   - Check debug log: `tail -20 ~/.claude/hud-hook-debug.log`
+   - Verify state in HUD app
+
+5. **Update documentation** if behavior changed
 
 ### Modifying Statistics Parsing
 - Update regex patterns in `parse_stats_from_content()` (`core/hud-core/src/stats.rs`)
@@ -411,6 +448,8 @@ cargo run --bin uniffi-bindgen generate --library ../../target/release/libhud_co
 
 ## Debugging
 
+### General Debugging
+
 ```bash
 # Inspect cache files
 cat ~/.claude/hud-stats-cache.json | jq .
@@ -421,6 +460,38 @@ RUST_LOG=debug swift run
 # Test regex patterns
 echo '{"input_tokens":1234}' | rg 'input_tokens":(\d+)'
 ```
+
+### Hook State Tracking Debugging
+
+```bash
+# Watch hook events in real-time
+tail -f ~/.claude/hud-hook-debug.log
+
+# Check recent state transitions
+grep "State transition" ~/.claude/hud-hook-debug.log | tail -20
+
+# Check for errors/warnings
+grep -E "ERROR|WARNING" ~/.claude/hud-hook-debug.log | tail -20
+
+# View current session states
+cat ~/.claude/hud-session-states-v2.json | jq .
+
+# Check active lock files
+for lock in ~/.claude/sessions/*.lock; do
+  [ -d "$lock" ] && cat "$lock/meta.json" 2>/dev/null
+done | jq -s .
+
+# Test hook event handlers
+~/.claude/scripts/test-hud-hooks.sh
+
+# Manually inject test event
+echo '{"hook_event_name":"PreCompact","session_id":"test","cwd":"/tmp","trigger":"manual"}' | \
+  bash ~/.claude/scripts/hud-state-tracker.sh
+```
+
+**Debugging Resources:**
+- Hook state machine: `.claude/docs/hook-state-machine.md`
+- Prevention checklist: `.claude/docs/hook-prevention-checklist.md`
 
 ## Key Dependencies
 

@@ -15,8 +15,8 @@ LOG_FILE="$HOME/.claude/hud-hook-debug.log"
 
 input=$(cat)
 
-# Log every hook call
-echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") | $(echo "$input" | jq -c '{event: .hook_event_name, cwd: .cwd, stop_hook_active: .stop_hook_active}')" >> "$LOG_FILE"
+# Log every hook call (include trigger for PreCompact debugging)
+echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") | $(echo "$input" | jq -c '{event: .hook_event_name, cwd: .cwd, stop_hook_active: .stop_hook_active, trigger: .trigger}')" >> "$LOG_FILE"
 
 event=$(echo "$input" | jq -r '.hook_event_name // empty')
 cwd=$(echo "$input" | jq -r '.cwd // empty')
@@ -30,10 +30,12 @@ trigger=$(echo "$input" | jq -r '.trigger // empty')
 transcript_path="${transcript_path/#\~/$HOME}"
 
 if [ "$event" = "Stop" ] && [ "$stop_hook_active" = "true" ]; then
+  echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") | Skipping Stop event (stop_hook_active=true)" >> "$LOG_FILE"
   exit 0
 fi
 
 if [ -z "$cwd" ] || [ -z "$event" ]; then
+  echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") | Invalid input: cwd='$cwd' event='$event'" >> "$LOG_FILE"
   exit 0
 fi
 
@@ -329,6 +331,7 @@ case "$event" in
     # Tool use means Claude is actively working
     # Requires session_id for state lookup
     if [ -z "$session_id" ]; then
+      echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") | PostToolUse: no session_id, skipping" >> "$LOG_FILE"
       exit 0
     fi
 
@@ -337,6 +340,7 @@ case "$event" in
     if [ "$current_state" = "compacting" ]; then
       new_state="working"
       should_publish=true
+      echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") | PostToolUse: compacting->working transition" >> "$LOG_FILE"
     elif [ "$current_state" = "working" ]; then
       # Update heartbeat timestamp
       timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
@@ -349,7 +353,9 @@ case "$event" in
       # Tool use in non-working state means Claude is working
       # (e.g., session resumption, permission granted)
       new_state="working"
+      echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") | PostToolUse: $current_state->working transition" >> "$LOG_FILE"
     else
+      echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") | PostToolUse: unexpected state '$current_state', ignoring" >> "$LOG_FILE"
       exit 0
     fi
     ;;
@@ -358,7 +364,9 @@ case "$event" in
     notification_type=$(echo "$input" | jq -r '.notification_type // empty')
     if [ "$notification_type" = "idle_prompt" ]; then
       new_state="ready"
+      echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") | Notification: idle_prompt -> ready" >> "$LOG_FILE"
     else
+      echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") | Notification: ignoring type '$notification_type'" >> "$LOG_FILE"
       exit 0
     fi
     ;;
@@ -371,22 +379,25 @@ case "$event" in
     new_state="idle"
     ;;
   "PreCompact")
-    if [ "$trigger" = "auto" ]; then
-      new_state="compacting"
-    else
-      exit 0
-    fi
+    # Always show "compacting" status for both auto and manual compaction
+    # Users want visibility into compaction regardless of how it was triggered
+    new_state="compacting"
     ;;
   *)
+    echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") | Unhandled event: $event" >> "$LOG_FILE"
     exit 0
     ;;
 esac
 
 timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
+# Log state transition for debugging
+echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") | State transition: event=$event, new_state=$new_state, session_id=$session_id, cwd=$cwd" >> "$LOG_FILE"
+
 update_state() {
   # Skip if no session_id
   if [ -z "$session_id" ]; then
+    echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") | WARNING: Skipping state update (no session_id), event=$event, cwd=$cwd" >> "$LOG_FILE"
     return
   fi
 
