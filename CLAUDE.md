@@ -388,8 +388,12 @@ Architecture Decision Records documenting key technical decisions.
 
 ### Regenerating Swift Bindings
 ```bash
+# First, build the release library
+cargo build -p hud-core --release
+
+# Then generate bindings from the built library
 cd core/hud-core
-cargo run --bin uniffi-bindgen generate src/lib.rs --language swift --out-dir ../../apps/swift/bindings/
+cargo run --bin uniffi-bindgen generate --library ../../target/release/libhud_core.dylib --language swift --out-dir ../../apps/swift/bindings/
 ```
 
 ## Code Style & Conventions
