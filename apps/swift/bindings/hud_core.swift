@@ -398,6 +398,22 @@ private class UniffiHandleMap<T> {
 #if swift(>=5.8)
     @_documentation(visibility: private)
 #endif
+private struct FfiConverterUInt8: FfiConverterPrimitive {
+    typealias FfiType = UInt8
+    typealias SwiftType = UInt8
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> UInt8 {
+        return try lift(readInt(&buf))
+    }
+
+    public static func write(_ value: UInt8, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
 private struct FfiConverterUInt32: FfiConverterPrimitive {
     typealias FfiType = UInt32
     typealias SwiftType = UInt32
@@ -511,6 +527,7 @@ public protocol HudEngineProtocol: AnyObject {
 
     /**
      * Gets session states for multiple projects.
+     * Uses v2 state resolution with session-ID keyed state and lock detection.
      *
      * Takes a Vec instead of slice for FFI compatibility.
      */
@@ -528,6 +545,7 @@ public protocol HudEngineProtocol: AnyObject {
 
     /**
      * Gets the session state for a single project.
+     * Uses the new v2 state resolution with session-ID keyed state and lock detection.
      */
     func getSessionState(projectPath: String) -> ProjectSessionState
 
@@ -649,6 +667,7 @@ open class HudEngine:
 
     /**
      * Gets session states for multiple projects.
+     * Uses v2 state resolution with session-ID keyed state and lock detection.
      *
      * Takes a Vec instead of slice for FFI compatibility.
      */
@@ -680,6 +699,7 @@ open class HudEngine:
 
     /**
      * Gets the session state for a single project.
+     * Uses the new v2 state resolution with session-ID keyed state and lock detection.
      */
     open func getSessionState(projectPath: String) -> ProjectSessionState {
         return try! FfiConverterTypeProjectSessionState.lift(try! rustCall {
@@ -1167,6 +1187,158 @@ public func FfiConverterTypeContextInfoEntry_lower(_ value: ContextInfoEntry) ->
 }
 
 /**
+ * Result of starting a project creation.
+ */
+public struct CreateProjectResult {
+    public var success: Bool
+    public var projectPath: String
+    public var sessionId: String?
+    public var error: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(success: Bool, projectPath: String, sessionId: String?, error: String?) {
+        self.success = success
+        self.projectPath = projectPath
+        self.sessionId = sessionId
+        self.error = error
+    }
+}
+
+extension CreateProjectResult: Equatable, Hashable {
+    public static func == (lhs: CreateProjectResult, rhs: CreateProjectResult) -> Bool {
+        if lhs.success != rhs.success {
+            return false
+        }
+        if lhs.projectPath != rhs.projectPath {
+            return false
+        }
+        if lhs.sessionId != rhs.sessionId {
+            return false
+        }
+        if lhs.error != rhs.error {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(success)
+        hasher.combine(projectPath)
+        hasher.combine(sessionId)
+        hasher.combine(error)
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCreateProjectResult: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CreateProjectResult {
+        return
+            try CreateProjectResult(
+                success: FfiConverterBool.read(from: &buf),
+                projectPath: FfiConverterString.read(from: &buf),
+                sessionId: FfiConverterOptionString.read(from: &buf),
+                error: FfiConverterOptionString.read(from: &buf)
+            )
+    }
+
+    public static func write(_ value: CreateProjectResult, into buf: inout [UInt8]) {
+        FfiConverterBool.write(value.success, into: &buf)
+        FfiConverterString.write(value.projectPath, into: &buf)
+        FfiConverterOptionString.write(value.sessionId, into: &buf)
+        FfiConverterOptionString.write(value.error, into: &buf)
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCreateProjectResult_lift(_ buf: RustBuffer) throws -> CreateProjectResult {
+    return try FfiConverterTypeCreateProjectResult.lift(buf)
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCreateProjectResult_lower(_ value: CreateProjectResult) -> RustBuffer {
+    return FfiConverterTypeCreateProjectResult.lower(value)
+}
+
+/**
+ * Progress information for a project creation.
+ */
+public struct CreationProgress {
+    public var phase: String
+    public var message: String
+    public var percentComplete: UInt8?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(phase: String, message: String, percentComplete: UInt8?) {
+        self.phase = phase
+        self.message = message
+        self.percentComplete = percentComplete
+    }
+}
+
+extension CreationProgress: Equatable, Hashable {
+    public static func == (lhs: CreationProgress, rhs: CreationProgress) -> Bool {
+        if lhs.phase != rhs.phase {
+            return false
+        }
+        if lhs.message != rhs.message {
+            return false
+        }
+        if lhs.percentComplete != rhs.percentComplete {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(phase)
+        hasher.combine(message)
+        hasher.combine(percentComplete)
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCreationProgress: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CreationProgress {
+        return
+            try CreationProgress(
+                phase: FfiConverterString.read(from: &buf),
+                message: FfiConverterString.read(from: &buf),
+                percentComplete: FfiConverterOptionUInt8.read(from: &buf)
+            )
+    }
+
+    public static func write(_ value: CreationProgress, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.phase, into: &buf)
+        FfiConverterString.write(value.message, into: &buf)
+        FfiConverterOptionUInt8.write(value.percentComplete, into: &buf)
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCreationProgress_lift(_ buf: RustBuffer) throws -> CreationProgress {
+    return try FfiConverterTypeCreationProgress.lift(buf)
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCreationProgress_lower(_ value: CreationProgress) -> RustBuffer {
+    return FfiConverterTypeCreationProgress.lower(value)
+}
+
+/**
  * Aggregate data for the dashboard view.
  */
 public struct DashboardData {
@@ -1420,6 +1592,94 @@ public func FfiConverterTypeHudConfig_lift(_ buf: RustBuffer) throws -> HudConfi
 #endif
 public func FfiConverterTypeHudConfig_lower(_ value: HudConfig) -> RustBuffer {
     return FfiConverterTypeHudConfig.lower(value)
+}
+
+/**
+ * Request to create a new project from an idea.
+ */
+public struct NewProjectRequest {
+    public var name: String
+    public var description: String
+    public var location: String
+    public var language: String?
+    public var framework: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(name: String, description: String, location: String, language: String?, framework: String?) {
+        self.name = name
+        self.description = description
+        self.location = location
+        self.language = language
+        self.framework = framework
+    }
+}
+
+extension NewProjectRequest: Equatable, Hashable {
+    public static func == (lhs: NewProjectRequest, rhs: NewProjectRequest) -> Bool {
+        if lhs.name != rhs.name {
+            return false
+        }
+        if lhs.description != rhs.description {
+            return false
+        }
+        if lhs.location != rhs.location {
+            return false
+        }
+        if lhs.language != rhs.language {
+            return false
+        }
+        if lhs.framework != rhs.framework {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(name)
+        hasher.combine(description)
+        hasher.combine(location)
+        hasher.combine(language)
+        hasher.combine(framework)
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeNewProjectRequest: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> NewProjectRequest {
+        return
+            try NewProjectRequest(
+                name: FfiConverterString.read(from: &buf),
+                description: FfiConverterString.read(from: &buf),
+                location: FfiConverterString.read(from: &buf),
+                language: FfiConverterOptionString.read(from: &buf),
+                framework: FfiConverterOptionString.read(from: &buf)
+            )
+    }
+
+    public static func write(_ value: NewProjectRequest, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterString.write(value.description, into: &buf)
+        FfiConverterString.write(value.location, into: &buf)
+        FfiConverterOptionString.write(value.language, into: &buf)
+        FfiConverterOptionString.write(value.framework, into: &buf)
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeNewProjectRequest_lift(_ buf: RustBuffer) throws -> NewProjectRequest {
+    return try FfiConverterTypeNewProjectRequest.lift(buf)
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeNewProjectRequest_lower(_ value: NewProjectRequest) -> RustBuffer {
+    return FfiConverterTypeNewProjectRequest.lower(value)
 }
 
 /**
@@ -1739,6 +1999,134 @@ public func FfiConverterTypeProject_lift(_ buf: RustBuffer) throws -> Project {
 #endif
 public func FfiConverterTypeProject_lower(_ value: Project) -> RustBuffer {
     return FfiConverterTypeProject.lower(value)
+}
+
+/**
+ * A project being created via the Idea → V1 flow.
+ */
+public struct ProjectCreation {
+    public var id: String
+    public var name: String
+    public var path: String
+    public var description: String
+    public var status: CreationStatus
+    public var sessionId: String?
+    public var progress: CreationProgress?
+    public var error: String?
+    public var createdAt: String
+    public var completedAt: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: String, name: String, path: String, description: String, status: CreationStatus, sessionId: String?, progress: CreationProgress?, error: String?, createdAt: String, completedAt: String?) {
+        self.id = id
+        self.name = name
+        self.path = path
+        self.description = description
+        self.status = status
+        self.sessionId = sessionId
+        self.progress = progress
+        self.error = error
+        self.createdAt = createdAt
+        self.completedAt = completedAt
+    }
+}
+
+extension ProjectCreation: Equatable, Hashable {
+    public static func == (lhs: ProjectCreation, rhs: ProjectCreation) -> Bool {
+        if lhs.id != rhs.id {
+            return false
+        }
+        if lhs.name != rhs.name {
+            return false
+        }
+        if lhs.path != rhs.path {
+            return false
+        }
+        if lhs.description != rhs.description {
+            return false
+        }
+        if lhs.status != rhs.status {
+            return false
+        }
+        if lhs.sessionId != rhs.sessionId {
+            return false
+        }
+        if lhs.progress != rhs.progress {
+            return false
+        }
+        if lhs.error != rhs.error {
+            return false
+        }
+        if lhs.createdAt != rhs.createdAt {
+            return false
+        }
+        if lhs.completedAt != rhs.completedAt {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+        hasher.combine(name)
+        hasher.combine(path)
+        hasher.combine(description)
+        hasher.combine(status)
+        hasher.combine(sessionId)
+        hasher.combine(progress)
+        hasher.combine(error)
+        hasher.combine(createdAt)
+        hasher.combine(completedAt)
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeProjectCreation: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ProjectCreation {
+        return
+            try ProjectCreation(
+                id: FfiConverterString.read(from: &buf),
+                name: FfiConverterString.read(from: &buf),
+                path: FfiConverterString.read(from: &buf),
+                description: FfiConverterString.read(from: &buf),
+                status: FfiConverterTypeCreationStatus.read(from: &buf),
+                sessionId: FfiConverterOptionString.read(from: &buf),
+                progress: FfiConverterOptionTypeCreationProgress.read(from: &buf),
+                error: FfiConverterOptionString.read(from: &buf),
+                createdAt: FfiConverterString.read(from: &buf),
+                completedAt: FfiConverterOptionString.read(from: &buf)
+            )
+    }
+
+    public static func write(_ value: ProjectCreation, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterString.write(value.path, into: &buf)
+        FfiConverterString.write(value.description, into: &buf)
+        FfiConverterTypeCreationStatus.write(value.status, into: &buf)
+        FfiConverterOptionString.write(value.sessionId, into: &buf)
+        FfiConverterOptionTypeCreationProgress.write(value.progress, into: &buf)
+        FfiConverterOptionString.write(value.error, into: &buf)
+        FfiConverterString.write(value.createdAt, into: &buf)
+        FfiConverterOptionString.write(value.completedAt, into: &buf)
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeProjectCreation_lift(_ buf: RustBuffer) throws -> ProjectCreation {
+    return try FfiConverterTypeProjectCreation.lift(buf)
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeProjectCreation_lower(_ value: ProjectCreation) -> RustBuffer {
+    return FfiConverterTypeProjectCreation.lower(value)
 }
 
 /**
@@ -2615,6 +3003,79 @@ public func FfiConverterTypeTask_lower(_ value: Task) -> RustBuffer {
     return FfiConverterTypeTask.lower(value)
 }
 
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * Status of a project creation.
+ */
+
+public enum CreationStatus {
+    case pending
+    case inProgress
+    case completed
+    case failed
+    case cancelled
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCreationStatus: FfiConverterRustBuffer {
+    typealias SwiftType = CreationStatus
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CreationStatus {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        case 1: return .pending
+
+        case 2: return .inProgress
+
+        case 3: return .completed
+
+        case 4: return .failed
+
+        case 5: return .cancelled
+
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: CreationStatus, into buf: inout [UInt8]) {
+        switch value {
+        case .pending:
+            writeInt(&buf, Int32(1))
+
+        case .inProgress:
+            writeInt(&buf, Int32(2))
+
+        case .completed:
+            writeInt(&buf, Int32(3))
+
+        case .failed:
+            writeInt(&buf, Int32(4))
+
+        case .cancelled:
+            writeInt(&buf, Int32(5))
+        }
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCreationStatus_lift(_ buf: RustBuffer) throws -> CreationStatus {
+    return try FfiConverterTypeCreationStatus.lift(buf)
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCreationStatus_lower(_ value: CreationStatus) -> RustBuffer {
+    return FfiConverterTypeCreationStatus.lower(value)
+}
+
+extension CreationStatus: Equatable, Hashable {}
+
 /**
  * FFI-safe error type for use across language boundaries.
  *
@@ -2732,6 +3193,30 @@ public func FfiConverterTypeSessionState_lower(_ value: SessionState) -> RustBuf
 }
 
 extension SessionState: Equatable, Hashable {}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+private struct FfiConverterOptionUInt8: FfiConverterRustBuffer {
+    typealias SwiftType = UInt8?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterUInt8.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterUInt8.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
 
 #if swift(>=5.8)
     @_documentation(visibility: private)
@@ -2872,6 +3357,30 @@ private struct FfiConverterOptionTypeContextInfoEntry: FfiConverterRustBuffer {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeContextInfoEntry.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+private struct FfiConverterOptionTypeCreationProgress: FfiConverterRustBuffer {
+    typealias SwiftType = CreationProgress?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeCreationProgress.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeCreationProgress.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -3201,7 +3710,7 @@ private var initializationResult: InitializationResult = {
     if uniffi_hud_core_checksum_method_hudengine_claude_dir() != 21224 {
         return InitializationResult.apiChecksumMismatch
     }
-    if uniffi_hud_core_checksum_method_hudengine_get_all_session_states() != 51139 {
+    if uniffi_hud_core_checksum_method_hudengine_get_all_session_states() != 27905 {
         return InitializationResult.apiChecksumMismatch
     }
     if uniffi_hud_core_checksum_method_hudengine_get_config() != 46018 {
@@ -3210,7 +3719,7 @@ private var initializationResult: InitializationResult = {
     if uniffi_hud_core_checksum_method_hudengine_get_project_status() != 14524 {
         return InitializationResult.apiChecksumMismatch
     }
-    if uniffi_hud_core_checksum_method_hudengine_get_session_state() != 4867 {
+    if uniffi_hud_core_checksum_method_hudengine_get_session_state() != 27061 {
         return InitializationResult.apiChecksumMismatch
     }
     if uniffi_hud_core_checksum_method_hudengine_get_suggested_projects() != 38527 {

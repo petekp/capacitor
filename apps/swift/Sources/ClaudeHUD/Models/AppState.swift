@@ -25,47 +25,6 @@ enum ProjectView: Equatable {
     }
 }
 
-struct NewProjectRequest {
-    let name: String
-    let description: String
-    let location: String
-    let language: String?
-    let framework: String?
-}
-
-struct CreateProjectResult {
-    let success: Bool
-    let projectPath: String
-    let sessionId: String?
-    let error: String?
-}
-
-enum CreationStatus: String, Codable {
-    case pending
-    case inProgress = "in_progress"
-    case completed
-    case failed
-    case cancelled
-}
-
-struct CreationProgress: Codable {
-    var phase: String
-    var message: String
-    var percentComplete: Int?
-}
-
-struct ProjectCreation: Identifiable, Codable {
-    let id: String
-    let name: String
-    let path: String
-    let description: String
-    var status: CreationStatus
-    var sessionId: String?
-    var progress: CreationProgress?
-    var error: String?
-    let createdAt: Date
-    var completedAt: Date?
-}
 
 @MainActor
 class AppState: ObservableObject {
@@ -296,7 +255,8 @@ class AppState: ObservableObject {
         let cutoff = Date().addingTimeInterval(-24 * 60 * 60)
         activeCreations = activeCreations.filter { creation in
             if creation.status == .completed || creation.status == .failed || creation.status == .cancelled {
-                return (creation.completedAt ?? creation.createdAt) > cutoff
+                let completionDate = creation.completedAtDate ?? creation.createdAtDate ?? Date.distantPast
+                return completionDate > cutoff
             }
             return true
         }
@@ -304,6 +264,7 @@ class AppState: ObservableObject {
 
     func startCreation(request: NewProjectRequest, projectPath: String) -> String {
         let id = UUID().uuidString
+        let now = ISO8601DateFormatter().string(from: Date())
         let creation = ProjectCreation(
             id: id,
             name: request.name,
@@ -313,7 +274,7 @@ class AppState: ObservableObject {
             sessionId: nil,
             progress: CreationProgress(phase: "setup", message: "Initializing project...", percentComplete: 0),
             error: nil,
-            createdAt: Date(),
+            createdAt: now,
             completedAt: nil
         )
         activeCreations.insert(creation, at: 0)
@@ -331,7 +292,7 @@ class AppState: ObservableObject {
             activeCreations[index].error = error
         }
         if status == .completed || status == .failed || status == .cancelled {
-            activeCreations[index].completedAt = Date()
+            activeCreations[index].completedAt = ISO8601DateFormatter().string(from: Date())
         }
         saveCreations()
     }
@@ -341,7 +302,7 @@ class AppState: ObservableObject {
         activeCreations[index].progress = CreationProgress(
             phase: phase,
             message: message,
-            percentComplete: percentComplete
+            percentComplete: percentComplete.map { UInt8(clamping: $0) }
         )
         saveCreations()
     }
@@ -450,21 +411,61 @@ class AppState: ObservableObject {
         guard let engine = engine else { return }
         var states = engine.getAllSessionStates(projects: projects)
 
-        // Cross-check: if state is "working" but lock isn't held, Claude likely crashed
-        // This detects stale state from crashed/terminated sessions
-        // Note: "ready" without lock is valid - Claude releases lock when waiting for input
+        // Cross-check: The lock file is the source of truth for whether Claude is running.
+        // The state file may be stale because hooks write to cwd, which can differ from
+        // the pinned project path (e.g., running from apps/swift but pinned at claude-hud).
         for (path, state) in states {
-            if state.state == .working && !state.isLocked {
-                states[path] = ProjectSessionState(
-                    state: .idle,
-                    stateChangedAt: state.stateChangedAt,
-                    sessionId: state.sessionId,
-                    workingOn: state.workingOn,
-                    nextStep: state.nextStep,
-                    context: state.context,
-                    thinking: false,
-                    isLocked: false
-                )
+            if state.isLocked {
+                // Lock exists = Claude IS running for this project (or a related path)
+                if state.state == .idle {
+                    // State file says idle, but lock proves Claude is running
+                    // This happens when hooks write to a different cwd than the pinned project
+                    // Default to "ready" since we don't know if it's actively working
+                    states[path] = ProjectSessionState(
+                        state: .ready,
+                        stateChangedAt: nil,
+                        sessionId: state.sessionId,
+                        workingOn: state.workingOn,
+                        nextStep: state.nextStep,
+                        context: state.context,
+                        thinking: nil,
+                        isLocked: true
+                    )
+                }
+                // If state is "working" or "ready" and locked, that's valid - keep it
+            } else {
+                // No lock = Claude is definitely not running for this project
+                if state.state == .working || state.state == .compacting {
+                    // "working"/"compacting" without lock means Claude finished or terminated
+                    // Show as "ready" since user can resume the session
+                    states[path] = ProjectSessionState(
+                        state: .ready,
+                        stateChangedAt: state.stateChangedAt,
+                        sessionId: state.sessionId,
+                        workingOn: state.workingOn,
+                        nextStep: state.nextStep,
+                        context: state.context,
+                        thinking: false,
+                        isLocked: false
+                    )
+                } else if state.state == .ready {
+                    // "ready" without lock means session ended but SessionEnd hook didn't fire
+                    // Check staleness: if state is older than 2 minutes, mark as idle
+                    if let stateChangedAt = state.stateChangedAt,
+                       let changeDate = ISO8601DateFormatter().date(from: stateChangedAt),
+                       Date().timeIntervalSince(changeDate) > 120 {
+                        states[path] = ProjectSessionState(
+                            state: .idle,
+                            stateChangedAt: state.stateChangedAt,
+                            sessionId: state.sessionId,
+                            workingOn: state.workingOn,
+                            nextStep: state.nextStep,
+                            context: state.context,
+                            thinking: false,
+                            isLocked: false
+                        )
+                    }
+                }
             }
         }
 
@@ -527,14 +528,98 @@ class AppState: ObservableObject {
         }
     }
 
+    /// Finds the most relevant state for a project by checking both the pinned path
+    /// and any child paths (subdirectories). Returns the state with the most recent
+    /// `context.updated_at` timestamp.
+    ///
+    /// This is needed because Claude Code hooks write to the cwd, which may be a
+    /// subdirectory of the pinned project path. For example:
+    /// - Pinned project: `/Users/foo/claude-hud`
+    /// - Actual cwd: `/Users/foo/claude-hud/apps/swift`
+    ///
+    /// We want to show the freshest state data regardless of which path it's keyed under.
+    private func findMostRecentState(for projectPath: String) -> ProjectSessionState? {
+        var bestState: ProjectSessionState? = nil
+        var bestTimestamp: Date? = nil
+        let isoFormatter = ISO8601DateFormatter()
+
+        for (path, state) in sessionStates {
+            // Match exact path OR child paths (paths that start with project path + "/")
+            let isMatch = (path == projectPath) || path.hasPrefix(projectPath + "/")
+
+            if isMatch {
+                // Parse the timestamp from context.updated_at
+                var stateTimestamp: Date? = nil
+                if let updatedAt = state.context?.updatedAt {
+                    stateTimestamp = isoFormatter.date(from: updatedAt)
+                }
+
+                // If no timestamp, fall back to stateChangedAt
+                if stateTimestamp == nil, let stateChangedAt = state.stateChangedAt {
+                    stateTimestamp = isoFormatter.date(from: stateChangedAt)
+                }
+
+                // Compare timestamps to find the most recent
+                if let current = stateTimestamp {
+                    if bestTimestamp == nil || current > bestTimestamp! {
+                        bestState = state
+                        bestTimestamp = current
+                    }
+                } else if bestState == nil {
+                    // No timestamp but we have no state yet - use this one
+                    bestState = state
+                }
+            }
+        }
+
+        return bestState
+    }
+
     func getSessionState(for project: Project) -> ProjectSessionState? {
-        guard let state = sessionStates[project.path] else {
+        // First, find the most relevant state for this project.
+        // Hooks write to the cwd, which may be a subdirectory of the pinned project.
+        // We need to check BOTH the pinned path AND any child paths, using the most recent.
+        guard var state = findMostRecentState(for: project.path) else {
             return nil
         }
 
-        // If we have real-time "thinking" state from the fetch-intercepting launcher,
-        // use it directly - it's the most accurate source of truth
-        if let thinking = state.thinking {
+        // If we got state from a child path, it might have is_locked=false even though
+        // the parent project IS locked. Check if the parent is locked and inherit that.
+        if !state.isLocked {
+            if let parentState = sessionStates[project.path], parentState.isLocked {
+                state = ProjectSessionState(
+                    state: state.state,
+                    stateChangedAt: state.stateChangedAt,
+                    sessionId: state.sessionId,
+                    workingOn: state.workingOn,
+                    nextStep: state.nextStep,
+                    context: state.context,
+                    thinking: state.thinking,
+                    isLocked: true  // Inherit lock from parent
+                )
+            }
+        }
+
+        // Check if the "thinking" state is stale
+        // The thinking flag is updated by PostToolUse hooks. If it's been more than
+        // 30 seconds since the last update and thinking=true, Claude likely finished
+        // working and is waiting for input (Ready state).
+        let thinkingStalenessThreshold: TimeInterval = 30
+        var effectiveThinking = state.thinking
+
+        if let thinking = state.thinking, thinking {
+            // thinking=true, but check if it's stale
+            if let thinkingUpdatedAt = state.context?.updatedAt,
+               let updateDate = ISO8601DateFormatter().date(from: thinkingUpdatedAt),
+               Date().timeIntervalSince(updateDate) > thinkingStalenessThreshold {
+                // thinking=true is stale - treat as false
+                effectiveThinking = false
+            }
+        }
+
+        // Use the effective thinking state (after staleness check)
+        // But TRUST THE LOCK: if isLocked=true, Claude IS running - don't downgrade.
+        if let thinking = effectiveThinking {
             if thinking {
                 // Claude is actively making API calls - definitely working
                 return ProjectSessionState(
@@ -547,9 +632,9 @@ class AppState: ObservableObject {
                     thinking: true,
                     isLocked: state.isLocked
                 )
-            } else if state.state == .working {
-                // thinking=false but state=working means API call finished
-                // but hooks haven't updated state yet - show as ready
+            } else if state.state == .working && !state.isLocked {
+                // thinking=false AND no lock means Claude actually finished
+                // The session ended but hooks were slow to update
                 return ProjectSessionState(
                     state: .ready,
                     stateChangedAt: state.stateChangedAt,
@@ -558,43 +643,30 @@ class AppState: ObservableObject {
                     nextStep: state.nextStep,
                     context: state.context,
                     thinking: false,
-                    isLocked: state.isLocked
+                    isLocked: false
                 )
             }
+            // If state=working AND isLocked=true, trust it - Claude is working
+            // (even if thinking is stale, Claude could be generating a long response)
         }
 
-        // Fallback to staleness-based detection when thinking state isn't available
-        if state.state == .working {
-            // 30 seconds allows for tool-free responses (just text) to complete
-            // without falsely showing "Waiting" status
+        // Staleness-based "Waiting" detection
+        // IMPORTANT: Only use in remote mode where we have reliable heartbeats.
+        // Local mode staleness detection is too unreliable - Claude can generate
+        // long text responses without tool use, causing false "Waiting" states.
+        if state.state == .working && isRemoteMode {
             let stalenessThreshold: TimeInterval = 30
 
-            if isRemoteMode {
-                // Find the most recent heartbeat from any subdirectory of this project
-                // Heartbeats are keyed by cwd which may be a subdirectory of the pinned project path
-                let lastHeartbeat = relayClient.projectHeartbeats
-                    .filter { $0.key.hasPrefix(project.path) }
-                    .map { $0.value }
-                    .max()
+            // Find the most recent heartbeat from any subdirectory of this project
+            // Heartbeats are keyed by cwd which may be a subdirectory of the pinned project path
+            let lastHeartbeat = relayClient.projectHeartbeats
+                .filter { $0.key.hasPrefix(project.path) }
+                .map { $0.value }
+                .max()
 
-                // If we have a heartbeat, check its staleness
-                if let heartbeat = lastHeartbeat {
-                    if Date().timeIntervalSince(heartbeat) > stalenessThreshold {
-                        return ProjectSessionState(
-                            state: .waiting,
-                            stateChangedAt: state.stateChangedAt,
-                            sessionId: state.sessionId,
-                            workingOn: state.workingOn,
-                            nextStep: state.nextStep,
-                            context: state.context,
-                            thinking: state.thinking,
-                            isLocked: state.isLocked
-                        )
-                    }
-                } else if let connectedAt = relayClient.connectedAt,
-                          Date().timeIntervalSince(connectedAt) > stalenessThreshold {
-                    // No heartbeats received, but we've been connected long enough
-                    // If Claude were actually working, we would have received heartbeats by now
+            // If we have a heartbeat, check its staleness
+            if let heartbeat = lastHeartbeat {
+                if Date().timeIntervalSince(heartbeat) > stalenessThreshold {
                     return ProjectSessionState(
                         state: .waiting,
                         stateChangedAt: state.stateChangedAt,
@@ -606,29 +678,20 @@ class AppState: ObservableObject {
                         isLocked: state.isLocked
                     )
                 }
-            } else {
-                let lastHeartbeat: Date?
-                if let updatedAt = state.context?.updatedAt {
-                    lastHeartbeat = ISO8601DateFormatter().date(from: updatedAt)
-                } else if let stateChangedAt = state.stateChangedAt {
-                    lastHeartbeat = ISO8601DateFormatter().date(from: stateChangedAt)
-                } else {
-                    lastHeartbeat = nil
-                }
-
-                if let heartbeat = lastHeartbeat,
-                   Date().timeIntervalSince(heartbeat) > stalenessThreshold {
-                    return ProjectSessionState(
-                        state: .waiting,
-                        stateChangedAt: state.stateChangedAt,
-                        sessionId: state.sessionId,
-                        workingOn: state.workingOn,
-                        nextStep: state.nextStep,
-                        context: state.context,
-                        thinking: state.thinking,
-                        isLocked: state.isLocked
-                    )
-                }
+            } else if let connectedAt = relayClient.connectedAt,
+                      Date().timeIntervalSince(connectedAt) > stalenessThreshold {
+                // No heartbeats received, but we've been connected long enough
+                // If Claude were actually working, we would have received heartbeats by now
+                return ProjectSessionState(
+                    state: .waiting,
+                    stateChangedAt: state.stateChangedAt,
+                    sessionId: state.sessionId,
+                    workingOn: state.workingOn,
+                    nextStep: state.nextStep,
+                    context: state.context,
+                    thinking: state.thinking,
+                    isLocked: state.isLocked
+                )
             }
         }
 

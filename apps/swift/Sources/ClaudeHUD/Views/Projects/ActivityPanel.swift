@@ -13,7 +13,8 @@ struct ActivityPanel: View {
             case .failed, .cancelled:
                 return creation.sessionId != nil
             case .completed:
-                return (creation.completedAt ?? creation.createdAt) > recent
+                let completionDate = creation.completedAtDate ?? creation.createdAtDate ?? Date.distantPast
+                return completionDate > recent
             }
         }
     }

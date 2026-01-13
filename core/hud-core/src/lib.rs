@@ -32,6 +32,7 @@ pub mod error;
 pub mod patterns;
 pub mod projects;
 pub mod sessions;
+pub mod state;
 pub mod stats;
 pub mod types;
 
