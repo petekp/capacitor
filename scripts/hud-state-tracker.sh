@@ -10,8 +10,208 @@ if [ "$HUD_SUMMARY_GEN" = "1" ]; then
   exit 0
 fi
 
+# CRITICAL: Capture Claude's PID at the very start, BEFORE any subshells
+# Inside subshells, $PPID refers to the hook script PID, not Claude's PID
+# This variable must be used for all state file PID writes
+CLAUDE_PID="$PPID"
+
 STATE_FILE="$HOME/.claude/hud-session-states-v2.json"
 LOG_FILE="$HOME/.claude/hud-hook-debug.log"
+STATE_LOCK_DIR="${STATE_FILE}.lock"
+
+# Normalize a path: strip all trailing slashes except for root "/"
+normalize_path() {
+  local path="$1"
+  # Strip all trailing slashes using pattern expansion
+  while [[ "$path" == */ && "$path" != "/" ]]; do
+    path="${path%/}"
+  done
+  # If we ended up with empty string (was all slashes), return root
+  if [ -z "$path" ]; then
+    echo "/"
+  else
+    echo "$path"
+  fi
+}
+
+# Get current time in milliseconds (portable across GNU/BSD date)
+# Returns milliseconds since epoch (13 digits)
+# Tries multiple approaches for maximum portability
+get_time_ms() {
+  local now_ms=""
+
+  # Try GNU date first (if gdate installed via brew)
+  if command -v gdate >/dev/null 2>&1; then
+    now_ms=$(gdate +%s%3N 2>/dev/null)
+  fi
+
+  # Try perl Time::HiRes (commonly present on macOS)
+  if [ -z "$now_ms" ] && command -v perl >/dev/null 2>&1; then
+    now_ms=$(perl -MTime::HiRes=time -e 'printf("%.0f\n", time()*1000)' 2>/dev/null)
+  fi
+
+  # Last fallback: seconds * 1000 (still numeric and monotonic)
+  if [ -z "$now_ms" ]; then
+    now_ms="$(( $(date +%s) * 1000 ))"
+  fi
+
+  # Validate numeric (safety check)
+  if ! [[ "$now_ms" =~ ^[0-9]+$ ]]; then
+    echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") | ERROR: timestamp not numeric: '$now_ms', using fallback" >> "$LOG_FILE"
+    now_ms="$(( $(date +%s) * 1000 ))"
+  fi
+
+  echo "$now_ms"
+}
+
+# Get process start time as Unix timestamp
+# Uses lstart (available on macOS/BSD) and converts to epoch seconds
+get_process_start_time() {
+  local pid="$1"
+
+  # BSD/macOS ps: lstart uses %c format (locale's preferred date/time representation)
+  # Force LC_ALL=C for consistent parsing
+  local lstart
+  lstart=$(LC_ALL=C ps -p "$pid" -o lstart= 2>/dev/null) || {
+    # If lstart fails, we can't reliably get start time
+    # Return empty (caller should handle as verification failure)
+    return 1
+  }
+
+  # Convert lstart to epoch seconds using date -j (BSD/macOS)
+  # Use %c format to match what ps lstart produces
+  local epoch
+  epoch=$(LC_ALL=C date -j -f "%c" "$lstart" +%s 2>/dev/null) || {
+    # Date parsing failed - return empty
+    return 1
+  }
+
+  echo "$epoch"
+}
+
+# Execute a command with state file lock held (subshell pattern)
+# Usage: with_state_lock <command> [args...]
+# The lock is held for the duration of the command execution
+with_state_lock() (
+  # Subshell ensures EXIT trap releases lock when command completes
+  local timeout=50  # 5 seconds max (50 * 0.1s)
+  local attempt=0
+
+  while ! mkdir "$STATE_LOCK_DIR" 2>/dev/null; do
+    ((attempt++))
+    if [ $attempt -ge $timeout ]; then
+      # Check if lock is stale and should be broken
+      if [ -d "$STATE_LOCK_DIR" ]; then
+        local owner_pid owner_proc_started should_break=false
+        owner_pid=$(cat "$STATE_LOCK_DIR/owner_pid" 2>/dev/null)
+
+        if [ -n "$owner_pid" ] && [[ "$owner_pid" =~ ^[0-9]+$ ]]; then
+          # Owner PID exists and is numeric - check liveness and identity
+          if ! kill -0 "$owner_pid" 2>/dev/null; then
+            # Owner is dead - break lock
+            should_break=true
+            echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") | WARNING: Breaking stale lock (owner PID $owner_pid dead)" >> "$LOG_FILE"
+          else
+            # Owner PID is alive - verify identity using start time
+            owner_proc_started=$(cat "$STATE_LOCK_DIR/owner_proc_started" 2>/dev/null)
+            if [ -n "$owner_proc_started" ]; then
+              actual_start=$(get_process_start_time "$owner_pid" 2>/dev/null)
+              if [ -n "$actual_start" ] && [ "$actual_start" != "$owner_proc_started" ]; then
+                # Start time mismatch - PID was reused
+                should_break=true
+                echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") | WARNING: Breaking stale lock (PID $owner_pid reused: expected start $owner_proc_started, got $actual_start)" >> "$LOG_FILE"
+              fi
+            fi
+          fi
+        else
+          # Owner PID missing or invalid - check lock directory age
+          if command -v stat >/dev/null 2>&1; then
+            local lock_mtime current_time lock_age
+            current_time=$(date +%s)
+            # macOS: stat -f %m gives mtime as Unix timestamp
+            lock_mtime=$(stat -f %m "$STATE_LOCK_DIR" 2>/dev/null || echo "$current_time")
+            lock_age=$((current_time - lock_mtime))
+
+            if [ $lock_age -gt 10 ]; then
+              # Lock is old and has no valid owner - break it
+              should_break=true
+              echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") | WARNING: Breaking stale lock (no valid owner, age: ${lock_age}s)" >> "$LOG_FILE"
+            fi
+          fi
+        fi
+
+        if [ "$should_break" = "true" ]; then
+          rm -rf "$STATE_LOCK_DIR" 2>/dev/null
+          if mkdir "$STATE_LOCK_DIR" 2>/dev/null; then
+            echo "$$" > "$STATE_LOCK_DIR/owner_pid"
+            get_process_start_time "$$" > "$STATE_LOCK_DIR/owner_proc_started" 2>/dev/null
+            trap 'rm -rf "$STATE_LOCK_DIR" 2>/dev/null' EXIT
+            "$@"
+            exit $?
+          fi
+        fi
+      fi
+      echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") | ERROR: Failed to acquire state lock after 5 seconds" >> "$LOG_FILE"
+      exit 1
+    fi
+    sleep 0.1
+  done
+
+  # Lock acquired - write owner PID, process start time, and set EXIT trap
+  echo "$$" > "$STATE_LOCK_DIR/owner_pid"
+  get_process_start_time "$$" > "$STATE_LOCK_DIR/owner_proc_started" 2>/dev/null
+  trap 'rm -rf "$STATE_LOCK_DIR" 2>/dev/null' EXIT
+
+  # Execute the command
+  "$@"
+)
+
+# Write lock meta.json with proper timestamps
+# Args: $1=output_file, $2=pid, $3=path, $4=handoff_from (optional)
+write_lock_metadata() {
+  local output_file="$1"
+  local pid="$2"
+  local path="$3"
+  local handoff_from="$4"
+
+  local proc_start_time created_time_ms
+  proc_start_time=$(get_process_start_time "$pid") || proc_start_time=""
+  # Use millisecond resolution for created timestamp to avoid same-second ties
+  # Portable across BSD/GNU date via get_time_ms helper
+  created_time_ms=$(get_time_ms)
+
+  if [ -n "$proc_start_time" ]; then
+    # Include proc_started for PID verification
+    if [ -n "$handoff_from" ]; then
+      jq -n --argjson pid "$pid" \
+            --argjson proc_started "$proc_start_time" \
+            --argjson created "$created_time_ms" \
+            --arg path "$path" \
+            --argjson handoff_from "$handoff_from" \
+            '{pid:$pid, proc_started:$proc_started, created:$created, path:$path, handoff_from:$handoff_from}' > "$output_file"
+    else
+      jq -n --argjson pid "$pid" \
+            --argjson proc_started "$proc_start_time" \
+            --argjson created "$created_time_ms" \
+            --arg path "$path" \
+            '{pid:$pid, proc_started:$proc_started, created:$created, path:$path}' > "$output_file"
+    fi
+  else
+    # Fallback: omit proc_started (Rust treats as legacy/unverified)
+    if [ -n "$handoff_from" ]; then
+      jq -n --argjson pid "$pid" \
+            --argjson created "$created_time_ms" \
+            --arg path "$path" \
+            --argjson handoff_from "$handoff_from" \
+            '{pid:$pid, created:$created, path:$path, handoff_from:$handoff_from}' > "$output_file"
+    else
+      jq -n --argjson pid "$pid" \
+            --argjson created "$created_time_ms" \
+            --arg path "$path" \
+            '{pid:$pid, created:$created, path:$path}' > "$output_file"
+    fi
+  fi
+}
 
 input=$(cat)
 
@@ -51,8 +251,8 @@ if [ ! -f "$STATE_FILE" ] || ! jq -e . "$STATE_FILE" &>/dev/null; then
   echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") | Initialized state file" >> "$LOG_FILE"
 fi
 
-# Opportunistic cleanup: remove dead sessions (non-blocking, best-effort)
-cleanup_dead_sessions() {
+# Inner function for cleanup (called within lock)
+_cleanup_dead_sessions_inner() {
   local tmp_file dead_sessions
 
   # Extract session IDs with PIDs, check if they're alive
@@ -66,7 +266,8 @@ cleanup_dead_sessions() {
 
   # If we found dead sessions, remove them
   if [ -n "$dead_sessions" ]; then
-    tmp_file=$(mktemp)
+    # Use co-located temp file
+    tmp_file=$(mktemp "${STATE_FILE}.tmp.XXXXXX")
     # Build jq delete expression for all dead sessions
     local delete_expr=""
     for sid in $dead_sessions; do
@@ -86,6 +287,14 @@ cleanup_dead_sessions() {
   fi
 }
 
+# Opportunistic cleanup: remove dead sessions (non-blocking, best-effort)
+cleanup_dead_sessions() {
+  # Execute cleanup with lock held
+  if ! with_state_lock _cleanup_dead_sessions_inner; then
+    echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") | WARNING: Failed to cleanup dead sessions (lock timeout)" >> "$LOG_FILE"
+  fi
+}
+
 case "$event" in
   "SessionStart")
     new_state="ready"
@@ -96,14 +305,19 @@ case "$event" in
     LOCK_DIR="$HOME/.claude/sessions"
     mkdir -p "$LOCK_DIR"
 
-    # Use md5 hash of cwd as lock file name
+    # Normalize path before hashing (strip trailing slashes except root)
+    # This ensures hash matches Rust's normalization in compute_lock_hash()
+    cwd_normalized=$(normalize_path "$cwd")
+
+    # Use md5 hash of normalized cwd as lock file name
+    # Use -q (quiet) to ensure we get just the hash, not "MD5 (stdin) = hash"
     if command -v md5 &>/dev/null; then
-      LOCK_HASH=$(echo -n "$cwd" | md5)
+      LOCK_HASH=$(md5 -q -s "$cwd_normalized")
     elif command -v md5sum &>/dev/null; then
-      LOCK_HASH=$(echo -n "$cwd" | md5sum | cut -d' ' -f1)
+      LOCK_HASH=$(echo -n "$cwd_normalized" | md5sum | cut -d' ' -f1)
     else
       # Fallback: simple hash using cksum
-      LOCK_HASH=$(echo -n "$cwd" | cksum | cut -d' ' -f1)
+      LOCK_HASH=$(echo -n "$cwd_normalized" | cksum | cut -d' ' -f1)
     fi
     LOCK_FILE="$LOCK_DIR/${LOCK_HASH}.lock"
     CLAUDE_PID=$PPID
@@ -135,7 +349,7 @@ case "$event" in
           if [ -n "$OLD_PID" ]; then
             if [ "$OLD_PID" = "$CLAUDE_PID" ]; then
               # FIX #2: Lock is ours (resume at same location) - just update timestamp
-              echo "{\"pid\": $CLAUDE_PID, \"started\": \"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\", \"path\": \"$cwd\"}" > "$LOCK_FILE/meta.json"
+              write_lock_metadata "$LOCK_FILE/meta.json" "$CLAUDE_PID" "$cwd"
               echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") | Reused existing lock for PID $CLAUDE_PID at $cwd" >> "$LOG_FILE"
               exit 0  # Lock exists and is valid
             elif kill -0 "$OLD_PID" 2>/dev/null; then
@@ -162,7 +376,7 @@ case "$event" in
 
       # We got the lock - write metadata
       echo "$CLAUDE_PID" > "$LOCK_FILE/pid"
-      echo "{\"pid\": $CLAUDE_PID, \"started\": \"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\", \"path\": \"$cwd\"}" > "$LOCK_FILE/meta.json"
+      write_lock_metadata "$LOCK_FILE/meta.json" "$CLAUDE_PID" "$cwd"
 
       # Monitor loop with handoff support
       # When current PID exits, try to hand off to another instance in same project
@@ -170,6 +384,8 @@ case "$event" in
       while true; do
         # Hold lock while current Claude runs
         while kill -0 $current_pid 2>/dev/null; do
+          # Self-terminate if lock was removed by another instance
+          [ -d "$LOCK_FILE" ] || exit 0
           sleep 1
         done
 
@@ -198,13 +414,23 @@ case "$event" in
 
           # Remove stale sessions
           if [ -n "$dead_sids" ]; then
-            tmp_file=$(mktemp)
-            jq_filter='.'
-            for sid in $dead_sids; do
-              jq_filter="$jq_filter | del(.sessions[\"$sid\"])"
-              echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") | Cleaned up stale session $sid for $cwd" >> "$LOG_FILE"
-            done
-            jq "$jq_filter" "$STATE_FILE" > "$tmp_file" && mv "$tmp_file" "$STATE_FILE"
+            # Inner function for cleanup (called within lock)
+            _cleanup_stale_inner() {
+              # Use co-located temp file
+              local tmp_file
+              tmp_file=$(mktemp "${STATE_FILE}.tmp.XXXXXX")
+              local jq_filter='.'
+              for sid in $dead_sids; do
+                jq_filter="$jq_filter | del(.sessions[\"$sid\"])"
+                echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") | Cleaned up stale session $sid for $cwd" >> "$LOG_FILE"
+              done
+              jq "$jq_filter" "$STATE_FILE" > "$tmp_file" && mv "$tmp_file" "$STATE_FILE"
+            }
+
+            # Execute cleanup with lock held
+            if ! with_state_lock _cleanup_stale_inner; then
+              echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") | WARNING: Failed to cleanup stale sessions (lock timeout)" >> "$LOG_FILE"
+            fi
           fi
 
           # Now find handoff candidates (sessions with alive PIDs, different from exiting PID)
@@ -225,7 +451,7 @@ case "$event" in
         if [ -n "$handoff_pid" ]; then
           # Handoff: update lock to new PID and continue monitoring
           echo "$handoff_pid" > "$LOCK_FILE/pid"
-          echo "{\"pid\": $handoff_pid, \"started\": \"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\", \"path\": \"$cwd\", \"handoff_from\": $current_pid}" > "$LOCK_FILE/meta.json"
+          write_lock_metadata "$LOCK_FILE/meta.json" "$handoff_pid" "$cwd" "$current_pid"
           echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") | Lock handoff: $current_pid -> $handoff_pid for $cwd" >> "$LOG_FILE"
           current_pid=$handoff_pid
           # Continue loop to monitor new PID
@@ -249,12 +475,16 @@ case "$event" in
     LOCK_DIR="$HOME/.claude/sessions"
     mkdir -p "$LOCK_DIR"
 
+    # Normalize path before hashing (must match Rust's normalization)
+    cwd_normalized=$(normalize_path "$cwd")
+
+    # Use -q (quiet) to ensure we get just the hash
     if command -v md5 &>/dev/null; then
-      LOCK_HASH=$(echo -n "$cwd" | md5)
+      LOCK_HASH=$(md5 -q -s "$cwd_normalized")
     elif command -v md5sum &>/dev/null; then
-      LOCK_HASH=$(echo -n "$cwd" | md5sum | cut -d' ' -f1)
+      LOCK_HASH=$(echo -n "$cwd_normalized" | md5sum | cut -d' ' -f1)
     else
-      LOCK_HASH=$(echo -n "$cwd" | cksum | cut -d' ' -f1)
+      LOCK_HASH=$(echo -n "$cwd_normalized" | cksum | cut -d' ' -f1)
     fi
     LOCK_FILE="$LOCK_DIR/${LOCK_HASH}.lock"
 
@@ -298,12 +528,14 @@ case "$event" in
 
         # Write lock metadata
         echo "$CLAUDE_PID" > "$LOCK_FILE/pid"
-        echo "{\"pid\": $CLAUDE_PID, \"started\": \"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\", \"path\": \"$cwd\"}" > "$LOCK_FILE/meta.json"
+        write_lock_metadata "$LOCK_FILE/meta.json" "$CLAUDE_PID" "$cwd"
 
         # Monitor loop (same as SessionStart)
         current_pid=$CLAUDE_PID
         while true; do
           while kill -0 $current_pid 2>/dev/null; do
+            # Self-terminate if lock was removed by another instance
+            [ -d "$LOCK_FILE" ] || exit 0
             sleep 1
           done
 
@@ -327,13 +559,23 @@ case "$event" in
             ' "$STATE_FILE" 2>/dev/null)
 
             if [ -n "$dead_sids" ]; then
-              tmp_file=$(mktemp)
-              jq_filter='.'
-              for sid in $dead_sids; do
-                jq_filter="$jq_filter | del(.sessions[\"$sid\"])"
-                echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") | Cleaned up stale session $sid for $cwd" >> "$LOG_FILE"
-              done
-              jq "$jq_filter" "$STATE_FILE" > "$tmp_file" && mv "$tmp_file" "$STATE_FILE"
+              # Inner function for cleanup (called within lock)
+              _cleanup_stale_inner_resumed() {
+                # Use co-located temp file
+                local tmp_file
+                tmp_file=$(mktemp "${STATE_FILE}.tmp.XXXXXX")
+                local jq_filter='.'
+                for sid in $dead_sids; do
+                  jq_filter="$jq_filter | del(.sessions[\"$sid\"])"
+                  echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") | Cleaned up stale session $sid for $cwd" >> "$LOG_FILE"
+                done
+                jq "$jq_filter" "$STATE_FILE" > "$tmp_file" && mv "$tmp_file" "$STATE_FILE"
+              }
+
+              # Execute cleanup with lock held
+              if ! with_state_lock _cleanup_stale_inner_resumed; then
+                echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") | WARNING: Failed to cleanup stale sessions (lock timeout)" >> "$LOG_FILE"
+              fi
             fi
 
             handoff_pid=$(jq -r --arg cwd "$cwd" --arg my_pid "$current_pid" '
@@ -352,7 +594,7 @@ case "$event" in
 
           if [ -n "$handoff_pid" ]; then
             echo "$handoff_pid" > "$LOCK_FILE/pid"
-            echo "{\"pid\": $handoff_pid, \"started\": \"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\", \"path\": \"$cwd\", \"handoff_from\": $current_pid}" > "$LOCK_FILE/meta.json"
+            write_lock_metadata "$LOCK_FILE/meta.json" "$handoff_pid" "$cwd" "$current_pid"
             echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") | Lock handoff: $current_pid -> $handoff_pid for $cwd" >> "$LOG_FILE"
             current_pid=$handoff_pid
           else
@@ -383,12 +625,17 @@ case "$event" in
       should_publish=true
       echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") | PostToolUse: compacting->working transition" >> "$LOG_FILE"
     elif [ "$current_state" = "working" ]; then
-      # Update heartbeat timestamp
+      # Update heartbeat timestamp (with lock to prevent concurrent writes)
       timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-      tmp_file=$(mktemp)
-      jq --arg sid "$session_id" \
-         --arg ts "$timestamp" \
-         '.sessions[$sid].updated_at = $ts' "$STATE_FILE" > "$tmp_file" && mv "$tmp_file" "$STATE_FILE"
+      _heartbeat_inner() {
+        local tmp_file
+        tmp_file=$(mktemp "${STATE_FILE}.tmp.XXXXXX")
+        jq --arg sid "$session_id" \
+           --arg ts "$timestamp" \
+           'if .sessions[$sid] then .sessions[$sid].updated_at = $ts else . end' \
+           "$STATE_FILE" > "$tmp_file" && mv "$tmp_file" "$STATE_FILE"
+      }
+      with_state_lock _heartbeat_inner
       exit 0
     elif [ "$current_state" = "ready" ] || [ "$current_state" = "idle" ] || [ "$current_state" = "blocked" ]; then
       # Tool use in non-working state means Claude is working
@@ -435,15 +682,11 @@ timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 # Log state transition for debugging
 echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") | State transition: event=$event, new_state=$new_state, session_id=$session_id, cwd=$cwd" >> "$LOG_FILE"
 
-update_state() {
-  # Skip if no session_id
-  if [ -z "$session_id" ]; then
-    echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") | WARNING: Skipping state update (no session_id), event=$event, cwd=$cwd" >> "$LOG_FILE"
-    return
-  fi
-
+# Inner function for state update (called within lock)
+_update_state_inner() {
+  # Use co-located temp file (same directory as state file)
   local tmp_file
-  tmp_file=$(mktemp)
+  tmp_file=$(mktemp "${STATE_FILE}.tmp.XXXXXX")
 
   if [ "$new_state" = "idle" ]; then
     # Remove session on SessionEnd
@@ -456,7 +699,7 @@ update_state() {
        --arg state "$new_state" \
        --arg cwd "$cwd" \
        --arg ts "$timestamp" \
-       --argjson pid "$PPID" \
+       --argjson pid "$CLAUDE_PID" \
        '.sessions[$sid] = ((.sessions[$sid] // {}) + {
          session_id: $sid,
          state: $state,
@@ -464,6 +707,19 @@ update_state() {
          updated_at: $ts,
          pid: $pid
        })' "$STATE_FILE" > "$tmp_file" && mv "$tmp_file" "$STATE_FILE"
+  fi
+}
+
+update_state() {
+  # Skip if no session_id
+  if [ -z "$session_id" ]; then
+    echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") | WARNING: Skipping state update (no session_id), event=$event, cwd=$cwd" >> "$LOG_FILE"
+    return
+  fi
+
+  # Execute state update with lock held
+  if ! with_state_lock _update_state_inner; then
+    echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") | ERROR: Failed to update state (lock timeout), event=$event, session=$session_id" >> "$LOG_FILE"
   fi
 }
 
@@ -518,11 +774,16 @@ if [ "$generate_description" = "true" ] && [ -n "$transcript_path" ] && [ -f "$t
     fi
 
     if [ -n "$working_on" ] && [ -n "$session_id" ]; then
-      tmp_file=$(mktemp)
-      jq --arg sid "$session_id" \
-         --arg working_on "$working_on" \
-         '.sessions[$sid].working_on = $working_on' \
-         "$STATE_FILE" > "$tmp_file" && mv "$tmp_file" "$STATE_FILE"
+      # Inner function for working_on update (called within lock)
+      _working_on_inner() {
+        local tmp_file
+        tmp_file=$(mktemp "${STATE_FILE}.tmp.XXXXXX")
+        jq --arg sid "$session_id" \
+           --arg working_on "$working_on" \
+           'if .sessions[$sid] then .sessions[$sid].working_on = $working_on else . end' \
+           "$STATE_FILE" > "$tmp_file" && mv "$tmp_file" "$STATE_FILE"
+      }
+      with_state_lock _working_on_inner
     fi
   ) &>/dev/null &
   disown 2>/dev/null

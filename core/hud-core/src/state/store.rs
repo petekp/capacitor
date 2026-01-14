@@ -8,6 +8,16 @@ use serde::{Deserialize, Serialize};
 use super::lock::is_pid_alive;
 use super::types::{ClaudeState, SessionRecord};
 
+/// Normalize a path for consistent comparison.
+/// Strips trailing slashes except for root "/".
+fn normalize_path(path: &str) -> String {
+    if path == "/" {
+        "/".to_string()
+    } else {
+        path.trim_end_matches('/').to_string()
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 struct StoreFile {
     version: u32,
@@ -129,9 +139,13 @@ impl StateStore {
     pub fn find_by_cwd(&self, cwd: &str) -> Option<&SessionRecord> {
         let mut best: Option<&SessionRecord> = None;
 
+        // Normalize query path for consistent comparison
+        let cwd_normalized = normalize_path(cwd);
+
         // 1. Exact match - collect all, don't return early
         for record in self.sessions.values() {
-            if record.cwd == cwd {
+            let record_cwd_normalized = normalize_path(&record.cwd);
+            if record_cwd_normalized == cwd_normalized {
                 match best {
                     None => best = Some(record),
                     Some(current) if record.updated_at > current.updated_at => best = Some(record),
@@ -143,14 +157,26 @@ impl StateStore {
         // 2. Session is in a CHILD directory of the query path
         // e.g., query="/project", session.cwd="/project/subdir"
         // Don't return early - child might be fresher than exact match
-        let cwd_with_slash = if cwd.ends_with('/') {
-            cwd.to_string()
+
+        // Special case for root: children of "/" are paths starting with "/" (not "//")
+        let is_root_query = cwd_normalized == "/";
+        let cwd_with_slash = if is_root_query {
+            "/".to_string()
         } else {
-            format!("{}/", cwd)
+            format!("{}/", cwd_normalized)
         };
 
         for record in self.sessions.values() {
-            if record.cwd.starts_with(&cwd_with_slash) {
+            let record_cwd_normalized = normalize_path(&record.cwd);
+
+            let is_child = if is_root_query {
+                // For root query, match any path except root itself
+                record_cwd_normalized != "/" && record_cwd_normalized.starts_with(&cwd_with_slash)
+            } else {
+                record_cwd_normalized.starts_with(&cwd_with_slash)
+            };
+
+            if is_child {
                 match best {
                     None => best = Some(record),
                     Some(current) if record.updated_at > current.updated_at => best = Some(record),
@@ -168,15 +194,17 @@ impl StateStore {
         // 3. Session is in a PARENT directory of the query path
         // e.g., query="/project/subdir", session.cwd="/project"
         // Only use parent as fallback if no exact/child found
-        let mut current_path = cwd;
+        let mut current_path = cwd_normalized.as_str();
         while let Some(parent) = Path::new(current_path).parent() {
             let parent_str = parent.to_string_lossy();
-            if parent_str.is_empty() || parent_str == "/" {
+            let parent_normalized = normalize_path(&parent_str);
+            if parent_normalized.is_empty() || parent_normalized == "/" {
                 break;
             }
 
             for record in self.sessions.values() {
-                if record.cwd == parent_str {
+                let record_cwd_normalized = normalize_path(&record.cwd);
+                if record_cwd_normalized == parent_normalized {
                     match best {
                         None => best = Some(record),
                         Some(current) if record.updated_at > current.updated_at => best = Some(record),

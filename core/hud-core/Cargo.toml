@@ -23,6 +23,7 @@ thiserror.workspace = true
 uniffi = { version = "0.28", features = ["cli"] }
 libc = "0.2"
 md5 = "0.7"
+sysinfo = "0.30"
 
 [build-dependencies]
 uniffi = { version = "0.28", features = ["build"] }

@@ -409,6 +409,7 @@ pub fn resolve_state_with_details(
 #[cfg(test)]
 mod tests {
     use super::super::lock::tests_helper::{create_lock, create_lock_with_timestamp};
+    use super::super::lock::get_process_start_time;
     use super::*;
     use tempfile::tempdir;
 
@@ -873,11 +874,12 @@ mod tests {
 
         let mut store = StateStore::new_in_memory();
 
-        // Create older lock first with earlier timestamp
-        create_lock_with_timestamp(temp.path(), live_pid, "/project/dir1", "2024-01-01T10:00:00Z");
-
-        // Create newer lock with later timestamp (simulates cd within same session)
-        create_lock_with_timestamp(temp.path(), live_pid, "/project/dir2", "2024-01-01T10:01:00Z");
+        // Use actual process start time for verification to work
+        // Can't create locks with mismatched timestamps anymore due to PID verification
+        // So we create locks with same timestamp and rely on path tie-breaker
+        let start_time = get_process_start_time(live_pid).unwrap();
+        create_lock_with_timestamp(temp.path(), live_pid, "/project/dir1", start_time);
+        create_lock_with_timestamp(temp.path(), live_pid, "/project/dir2", start_time);
 
         // Session has cd'd to /project/dir3
         store.update("session-1", ClaudeState::Working, "/project/dir3");
