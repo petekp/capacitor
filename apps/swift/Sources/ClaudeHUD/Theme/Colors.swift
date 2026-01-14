@@ -8,7 +8,7 @@ extension Color {
     static let hudBorder = Color.white.opacity(0.10)
 
     // Default status colors (used in RELEASE mode)
-    private static let defaultStatusReady = Color(hue: 0.294, saturation: 1.00, brightness: 0.90)
+    private static let defaultStatusReady = Color(hue: 0.329, saturation: 1.00, brightness: 1.00)
     private static let defaultStatusWorking = Color(hue: 0.103, saturation: 1.00, brightness: 1.00)
     private static let defaultStatusWaiting = Color(hue: 0.026, saturation: 0.58, brightness: 1.00)
     private static let defaultStatusCompacting = Color(hue: 0.670, saturation: 0.50, brightness: 1.00)

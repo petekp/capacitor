@@ -99,9 +99,9 @@ class GlassConfig: ObservableObject {
     @Published var materialType: Int = 0  // 0=hudWindow, 1=popover, 2=menu, 3=sidebar, 4=fullScreenUI
 
     // Status Colors - Ready (green)
-    @Published var statusReadyHue: Double = 0.294
+    @Published var statusReadyHue: Double = 0.329
     @Published var statusReadySaturation: Double = 1.00
-    @Published var statusReadyBrightness: Double = 0.90
+    @Published var statusReadyBrightness: Double = 1.00
 
     // Status Colors - Working (yellow/orange)
     @Published var statusWorkingHue: Double = 0.103
@@ -122,24 +122,24 @@ class GlassConfig: ObservableObject {
     @Published var statusIdleOpacity: Double = 0.40
 
     // Ready ripple effect (continuous)
-    @Published var rippleSpeed: Double = 4.8
+    @Published var rippleSpeed: Double = 4.9
     @Published var rippleCount: Int = 4
     @Published var rippleMaxOpacity: Double = 1.00
     @Published var rippleLineWidth: Double = 30.0
-    @Published var rippleBlurAmount: Double = 44.0
-    @Published var rippleOriginX: Double = 0.82
+    @Published var rippleBlurAmount: Double = 41.5
+    @Published var rippleOriginX: Double = 0.89
     @Published var rippleOriginY: Double = 0.00
-    @Published var rippleFadeInZone: Double = 0.09
-    @Published var rippleFadeOutPower: Double = 1.6
+    @Published var rippleFadeInZone: Double = 0.10
+    @Published var rippleFadeOutPower: Double = 4.0
 
     // Ready border glow effect
-    @Published var borderGlowInnerWidth: Double = 0.75
-    @Published var borderGlowOuterWidth: Double = 1.25
+    @Published var borderGlowInnerWidth: Double = 0.49
+    @Published var borderGlowOuterWidth: Double = 2.88
     @Published var borderGlowInnerBlur: Double = 0.5
-    @Published var borderGlowOuterBlur: Double = 2.0
-    @Published var borderGlowBaseOpacity: Double = 0.3
-    @Published var borderGlowPulseIntensity: Double = 0.5
-    @Published var borderGlowRotationMultiplier: Double = 0.5
+    @Published var borderGlowOuterBlur: Double = 1.5
+    @Published var borderGlowBaseOpacity: Double = 0.30
+    @Published var borderGlowPulseIntensity: Double = 0.50
+    @Published var borderGlowRotationMultiplier: Double = 0.50
 
     // Breathing dot
     @Published var breathingDotSize: Double = 12
@@ -223,9 +223,9 @@ class GlassConfig: ObservableObject {
         useEmphasizedMaterial = true
         materialType = 0
 
-        statusReadyHue = 0.294
+        statusReadyHue = 0.329
         statusReadySaturation = 1.00
-        statusReadyBrightness = 0.90
+        statusReadyBrightness = 1.00
 
         statusWorkingHue = 0.103
         statusWorkingSaturation = 1.00
@@ -241,23 +241,23 @@ class GlassConfig: ObservableObject {
 
         statusIdleOpacity = 0.40
 
-        rippleSpeed = 4.8
+        rippleSpeed = 4.9
         rippleCount = 4
         rippleMaxOpacity = 1.00
         rippleLineWidth = 30.0
-        rippleBlurAmount = 44.0
-        rippleOriginX = 0.82
+        rippleBlurAmount = 41.5
+        rippleOriginX = 0.89
         rippleOriginY = 0.00
-        rippleFadeInZone = 0.09
-        rippleFadeOutPower = 1.6
+        rippleFadeInZone = 0.10
+        rippleFadeOutPower = 4.0
 
-        borderGlowInnerWidth = 0.75
-        borderGlowOuterWidth = 1.25
+        borderGlowInnerWidth = 0.49
+        borderGlowOuterWidth = 2.88
         borderGlowInnerBlur = 0.5
-        borderGlowOuterBlur = 2.0
-        borderGlowBaseOpacity = 0.3
-        borderGlowPulseIntensity = 0.5
-        borderGlowRotationMultiplier = 0.5
+        borderGlowOuterBlur = 1.5
+        borderGlowBaseOpacity = 0.30
+        borderGlowPulseIntensity = 0.50
+        borderGlowRotationMultiplier = 0.50
 
         breathingDotSize = 12
         breathingDotShadowRadius = 0

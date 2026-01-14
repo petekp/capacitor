@@ -96,7 +96,7 @@ private struct BreathingDotContentRelease: View {
         let glowMaxOpacity: Double = 0.5
         let glowMinScale: Double = 0.80
         let glowMaxScale: Double = 1.46
-        let rippleSpeed: Double = 4.8
+        let rippleSpeed: Double = 4.9
 
         BreathingDotRenderer(
             color: color,

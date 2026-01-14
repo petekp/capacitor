@@ -1,13 +1,18 @@
 use std::cell::RefCell;
 use std::fs;
 use std::path::Path;
+use std::time::Instant;
 
 use super::types::LockInfo;
 
-// Thread-local cache for sysinfo System to avoid repeated creation
+// Thread-local cache for sysinfo System with last refresh timestamp
+// Avoids repeated process list refreshes which are expensive (~250ms each)
 thread_local! {
-    static SYSTEM_CACHE: RefCell<Option<sysinfo::System>> = RefCell::new(None);
+    static SYSTEM_CACHE: RefCell<Option<(sysinfo::System, Instant)>> = RefCell::new(None);
 }
+
+// Minimum interval between process list refreshes (in milliseconds)
+const REFRESH_INTERVAL_MS: u64 = 500;
 
 /// Normalize a path for consistent hashing and comparison.
 /// Strips trailing slashes except for root "/".
@@ -40,22 +45,32 @@ pub fn is_pid_alive(pid: u32) -> bool {
 
 /// Get the start time of a process (Unix timestamp).
 /// Returns None if the process doesn't exist or can't be queried.
-/// Uses thread-local cache to avoid recreating System on every call.
+/// Uses thread-local cache with staleness-based refresh to avoid expensive
+/// repeated process list refreshes (which take ~250ms each).
 pub fn get_process_start_time(pid: u32) -> Option<u64> {
     use sysinfo::{Pid, ProcessRefreshKind, RefreshKind, System};
+    use std::time::Duration;
 
     SYSTEM_CACHE.with(|cache| {
         let mut cache = cache.borrow_mut();
-        let sys = cache.get_or_insert_with(|| {
-            System::new_with_specifics(
-                RefreshKind::new().with_processes(ProcessRefreshKind::new()),
-            )
-        });
 
-        // Refresh process info (lightweight operation)
-        sys.refresh_processes_specifics(ProcessRefreshKind::new());
+        let needs_refresh = match &*cache {
+            None => true,
+            Some((_, last_refresh)) => last_refresh.elapsed() > Duration::from_millis(REFRESH_INTERVAL_MS),
+        };
 
-        sys.process(Pid::from(pid as usize))
+        if needs_refresh {
+            let sys = cache.get_or_insert_with(|| {
+                (System::new_with_specifics(
+                    RefreshKind::new().with_processes(ProcessRefreshKind::new()),
+                ), Instant::now())
+            });
+            sys.0.refresh_processes_specifics(ProcessRefreshKind::new());
+            sys.1 = Instant::now();
+        }
+
+        cache.as_ref()
+            .and_then(|(sys, _)| sys.process(Pid::from(pid as usize)))
             .map(|process| process.start_time())
     })
 }
@@ -81,6 +96,7 @@ fn normalize_to_ms(timestamp: u64) -> u64 {
 /// 2. Process name or command line verification (must contain "claude")
 fn is_pid_alive_with_legacy_checks(pid: u32) -> bool {
     use sysinfo::{Pid, ProcessRefreshKind, RefreshKind, System};
+    use std::time::Duration;
 
     // Basic PID check
     if !is_pid_alive(pid) {
@@ -92,13 +108,25 @@ fn is_pid_alive_with_legacy_checks(pid: u32) -> bool {
     // This reduces (but doesn't eliminate) PID reuse risk
     SYSTEM_CACHE.with(|cache| {
         let mut cache = cache.borrow_mut();
-        let sys = cache.get_or_insert_with(|| {
-            System::new_with_specifics(
-                RefreshKind::new().with_processes(ProcessRefreshKind::new()),
-            )
-        });
 
-        sys.refresh_processes_specifics(ProcessRefreshKind::new());
+        let needs_refresh = match &*cache {
+            None => true,
+            Some((_, last_refresh)) => last_refresh.elapsed() > Duration::from_millis(REFRESH_INTERVAL_MS),
+        };
+
+        if needs_refresh {
+            let sys = cache.get_or_insert_with(|| {
+                (System::new_with_specifics(
+                    RefreshKind::new().with_processes(ProcessRefreshKind::new()),
+                ), Instant::now())
+            });
+            sys.0.refresh_processes_specifics(ProcessRefreshKind::new());
+            sys.1 = Instant::now();
+        }
+
+        let Some((sys, _)) = cache.as_ref() else {
+            return false;
+        };
 
         if let Some(process) = sys.process(Pid::from(pid as usize)) {
             let name = process.name().to_lowercase();
