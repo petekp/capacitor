@@ -52,6 +52,7 @@ class AppState: ObservableObject {
 
     // Active project tracking (ephemeral, click-based)
     @Published var activeProjectPath: String?
+    private var ignoreTrackerUpdatesUntil: Date?
 
     // Dev Environment
     @Published var devServerPorts: [String: UInt16] = [:]
@@ -168,6 +169,18 @@ class AppState: ObservableObject {
             while !_Concurrency.Task.isCancelled {
                 guard let self = self else { break }
 
+                // Check if we should ignore tracker updates (during manual click pause window)
+                if let pauseUntil = self.ignoreTrackerUpdatesUntil {
+                    if Date() < pauseUntil {
+                        // Still in pause window, skip update this cycle
+                        try? await _Concurrency.Task.sleep(nanoseconds: 500_000_000)
+                        continue
+                    } else {
+                        // Pause expired, clear it
+                        self.ignoreTrackerUpdatesUntil = nil
+                    }
+                }
+
                 // Only update if terminal has a project focused
                 // If no terminal focused or no tmux session, keep existing active project (sticky behavior)
                 if let path = await self.terminalTracker.getActiveProjectPath() {
@@ -184,6 +197,64 @@ class AppState: ObservableObject {
     private func updateTerminalTracking() {
         _Concurrency.Task {
             await terminalTracker.updateProjectMapping(projects)
+        }
+    }
+
+    // MARK: - Terminal Activation
+
+    /// Activates the appropriate terminal app after launching/switching projects.
+    ///
+    /// Strategy: If a terminal is already frontmost (user likely just switched away),
+    /// reactivate it. Otherwise, activate the first running terminal in priority order.
+    private func activateTerminalApp() {
+        // Check if a terminal is already frontmost/recently active
+        if let frontmost = NSWorkspace.shared.frontmostApplication,
+           isTerminalApp(frontmost) {
+            // Terminal already frontmost, just reactivate it
+            frontmost.activate(options: [.activateIgnoringOtherApps])
+            return
+        }
+
+        // No terminal frontmost, activate first running terminal in priority order
+        activateTerminalInPriorityOrder()
+    }
+
+    /// Checks if the given app is a known terminal application.
+    private func isTerminalApp(_ app: NSRunningApplication) -> Bool {
+        guard let name = app.localizedName else { return false }
+        let terminals = ["Ghostty", "iTerm", "Terminal", "Alacritty", "kitty", "Warp"]
+        return terminals.contains(where: { name.contains($0) })
+    }
+
+    /// Activates the first running terminal found in priority order.
+    ///
+    /// Priority matches bash script order: Ghostty → iTerm → Alacritty → kitty → Warp → Terminal
+    private func activateTerminalInPriorityOrder() {
+        let terminalsInOrder: [(name: String, bundlePath: String?)] = [
+            ("Ghostty", "/Applications/Ghostty.app"),
+            ("iTerm", "/Applications/iTerm.app"),
+            ("Alacritty", "/Applications/Alacritty.app"),
+            ("kitty", nil), // CLI tool
+            ("Warp", "/Applications/Warp.app"),
+            ("Terminal", nil) // Built-in
+        ]
+
+        for (terminalName, bundlePath) in terminalsInOrder {
+            // If bundlePath specified, check if installed
+            if let path = bundlePath, !FileManager.default.fileExists(atPath: path) {
+                continue
+            }
+
+            // Look for running instance of this terminal
+            for app in NSWorkspace.shared.runningApplications {
+                guard let appName = app.localizedName else { continue }
+
+                // Match terminal name (case-insensitive, partial match)
+                if appName.lowercased().contains(terminalName.lowercased()) {
+                    app.activate(options: [.activateIgnoringOtherApps])
+                    return
+                }
+            }
         }
     }
 
@@ -734,6 +805,8 @@ class AppState: ObservableObject {
     func launchTerminal(for project: Project) {
         // Set active project when launching terminal
         activeProjectPath = project.path
+        // Pause tracker updates for 2 seconds to prevent flickering during tmux session switch
+        ignoreTrackerUpdatesUntil = Date().addingTimeInterval(2.0)
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/bash")
@@ -817,6 +890,11 @@ class AppState: ObservableObject {
             fi
         """]
         try? process.run()
+
+        // Activate terminal after launch/switch (with small delay for stability)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            self.activateTerminalApp()
+        }
     }
 
     func showProjectDetail(_ project: Project) {
