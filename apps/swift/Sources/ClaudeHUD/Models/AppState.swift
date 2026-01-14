@@ -89,6 +89,10 @@ class AppState: ObservableObject {
     // Plans manager
     @Published var plansManager = PlansManager()
 
+    // Terminal tracking (Phase 2: Live tracking)
+    private let terminalTracker = TerminalTracker()
+    private var trackerUpdateTask: _Concurrency.Task<Void, Never>?
+
     init() {
         loadDormantOverrides()
         loadProjectOrder()
@@ -100,6 +104,7 @@ class AppState: ObservableObject {
             loadDashboard()
             setupRelayObserver()
             setupStalenessTimer()
+            startTerminalTracking()
         } catch {
             self.error = error.localizedDescription
             self.isLoading = false
@@ -147,6 +152,39 @@ class AppState: ObservableObject {
                 self?.objectWillChange.send()
             }
             .store(in: &cancellables)
+    }
+
+    // MARK: - Terminal Tracking (Phase 2)
+
+    private func startTerminalTracking() {
+        _Concurrency.Task {
+            await terminalTracker.startTracking(projects: projects)
+            startTrackerPolling()
+        }
+    }
+
+    private func startTrackerPolling() {
+        trackerUpdateTask = _Concurrency.Task { @MainActor [weak self] in
+            while !_Concurrency.Task.isCancelled {
+                guard let self = self else { break }
+
+                // Only update if terminal has a project focused
+                // If no terminal focused or no tmux session, keep existing active project (sticky behavior)
+                if let path = await self.terminalTracker.getActiveProjectPath() {
+                    self.activeProjectPath = path
+                }
+                // Note: We intentionally DON'T clear activeProjectPath when nil
+                // This preserves the clicked project until a different one is focused
+
+                try? await _Concurrency.Task.sleep(nanoseconds: 500_000_000) // 500ms
+            }
+        }
+    }
+
+    private func updateTerminalTracking() {
+        _Concurrency.Task {
+            await terminalTracker.updateProjectMapping(projects)
+        }
     }
 
     private var cancellables = Set<AnyCancellable>()
@@ -398,6 +436,7 @@ class AppState: ObservableObject {
         do {
             dashboard = try engine.loadDashboard()
             projects = dashboard?.projects ?? []
+            updateTerminalTracking() // Update project mapping for live tracking
             artifacts = engine.listArtifacts()
             refreshSessionStates()
             refreshProjectStatuses()
