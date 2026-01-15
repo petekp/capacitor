@@ -9,7 +9,6 @@ struct ProjectCardView: View {
     let flashState: SessionState?
     let devServerPort: UInt16?
     let isStale: Bool
-    let todoStatus: (completed: Int, total: Int)?
     let isActive: Bool
     let onTap: () -> Void
     let onInfoTap: () -> Void
@@ -125,7 +124,6 @@ struct ProjectCardView: View {
             ProjectCardHeader(
                 project: project,
                 isStale: isStale,
-                todoStatus: todoStatus,
                 devServerPort: devServerPort,
                 currentState: currentState,
                 nameColor: nameColor,
@@ -232,7 +230,6 @@ struct ProjectCardView: View {
 private struct ProjectCardHeader: View {
     let project: Project
     let isStale: Bool
-    let todoStatus: (completed: Int, total: Int)?
     let devServerPort: UInt16?
     let currentState: SessionState?
     let nameColor: Color
@@ -257,10 +254,6 @@ private struct ProjectCardHeader: View {
 
             if isStale {
                 StaleBadge()
-            }
-
-            if let status = todoStatus, status.total > 0 {
-                TodoBadge(completed: status.completed, total: status.total)
             }
 
             InfoButton(
@@ -923,42 +916,6 @@ struct StatusIndicatorView: View {
             .foregroundColor(isActive ? statusColor : statusColor.opacity(0.55))
             .contentTransition(.numericText())
             .animation(.smooth(duration: 0.3), value: state)
-    }
-}
-
-// MARK: - Badge Components
-
-struct TodoBadge: View {
-    let completed: Int
-    let total: Int
-
-    private var isAllDone: Bool {
-        completed == total && total > 0
-    }
-
-    private var badgeColor: Color {
-        if isAllDone {
-            return Color(hue: 0.35, saturation: 0.6, brightness: 0.75)
-        } else if completed > 0 {
-            return Color(hue: 0.12, saturation: 0.5, brightness: 0.8)
-        } else {
-            return Color.white.opacity(0.4)
-        }
-    }
-
-    var body: some View {
-        HStack(spacing: 2) {
-            Image(systemName: isAllDone ? "checkmark.circle.fill" : "checklist")
-                .font(.system(size: 8))
-            Text("\(completed)/\(total)")
-                .font(.system(size: 8, weight: .medium, design: .monospaced))
-        }
-        .foregroundColor(badgeColor)
-        .padding(.horizontal, 5)
-        .padding(.vertical, 2)
-        .background(badgeColor.opacity(0.12))
-        .clipShape(Capsule())
-        .help("\(completed) of \(total) tasks completed")
     }
 }
 

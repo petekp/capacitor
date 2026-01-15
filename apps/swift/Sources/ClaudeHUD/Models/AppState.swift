@@ -123,11 +123,6 @@ class AppState: ObservableObject {
     @Published var relayClient = RelayClient()
     @Published var isRemoteMode = false
 
-    // Todos manager
-    @Published var todosManager = TodosManager()
-
-    // Plans manager
-    @Published var plansManager = PlansManager()
 
     // Ideas (Idea Capture feature)
     @Published var projectIdeas: [String: [Idea]] = [:]
@@ -137,6 +132,12 @@ class AppState: ObservableObject {
     private var ideaFileMtimes: [String: Date] = [:]
     private var lastIdeasCheck: Date = .distantPast
 
+    // Project Descriptions (AI-generated from CLAUDE.md)
+    @Published var projectDescriptions: [String: String] = [:]
+    @Published var generatingDescriptionFor: Set<String> = []
+    private let descriptionsFilePath = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent(".claude/hud-project-descriptions.json")
+
     // Terminal tracking (Phase 2: Live tracking)
     private let terminalTracker = TerminalTracker()
     private var trackerUpdateTask: _Concurrency.Task<Void, Never>?
@@ -145,8 +146,7 @@ class AppState: ObservableObject {
         loadDormantOverrides()
         loadProjectOrder()
         loadCreations()
-        todosManager.loadTodos()
-        plansManager.loadPlans()
+        loadProjectDescriptions()
         do {
             engine = try HudEngine()
             loadDashboard()
@@ -1617,6 +1617,126 @@ class AppState: ObservableObject {
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
             self.activateTerminalApp()
+        }
+    }
+
+    // MARK: - Project Descriptions
+
+    private func loadProjectDescriptions() {
+        guard FileManager.default.fileExists(atPath: descriptionsFilePath.path) else { return }
+
+        do {
+            let data = try Data(contentsOf: descriptionsFilePath)
+            projectDescriptions = try JSONDecoder().decode([String: String].self, from: data)
+        } catch {
+            // File corrupted or invalid - start fresh
+            projectDescriptions = [:]
+        }
+    }
+
+    private func saveProjectDescriptions() {
+        do {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = .prettyPrinted
+            let data = try encoder.encode(projectDescriptions)
+            try data.write(to: descriptionsFilePath)
+        } catch {
+            // Silently fail - descriptions will be regenerated next time
+        }
+    }
+
+    func getDescription(for project: Project) -> String? {
+        projectDescriptions[project.path]
+    }
+
+    func isGeneratingDescription(for project: Project) -> Bool {
+        generatingDescriptionFor.contains(project.path)
+    }
+
+    func generateDescription(for project: Project) {
+        guard !generatingDescriptionFor.contains(project.path) else { return }
+        generatingDescriptionFor.insert(project.path)
+
+        _Concurrency.Task {
+            do {
+                // Read CLAUDE.md from project
+                let claudeMdPath = "\(project.path)/CLAUDE.md"
+                let claudeMdContent: String
+
+                if FileManager.default.fileExists(atPath: claudeMdPath) {
+                    claudeMdContent = try String(contentsOfFile: claudeMdPath, encoding: .utf8)
+                } else {
+                    // No CLAUDE.md - use project name and path as context
+                    claudeMdContent = "Project: \(project.name)\nPath: \(project.path)"
+                }
+
+                let description = try await callHaikuForDescription(claudeMd: claudeMdContent, projectName: project.name)
+
+                await MainActor.run {
+                    projectDescriptions[project.path] = description
+                    saveProjectDescriptions()
+                    generatingDescriptionFor.remove(project.path)
+                }
+            } catch {
+                await MainActor.run {
+                    // On error, set a fallback description
+                    projectDescriptions[project.path] = "A project at \(project.path)"
+                    saveProjectDescriptions()
+                    generatingDescriptionFor.remove(project.path)
+                }
+            }
+        }
+    }
+
+    private func callHaikuForDescription(claudeMd: String, projectName: String) async throws -> String {
+        // Truncate CLAUDE.md to avoid overwhelming the model (first 3000 chars)
+        let truncatedContent = String(claudeMd.prefix(3000))
+
+        let prompt = """
+            Generate a concise 1-2 sentence description of this project based on its CLAUDE.md file.
+            Focus on WHAT the project does and its PURPOSE, not implementation details.
+            Return ONLY the description text, no quotes, no markdown formatting.
+
+            Project: \(projectName)
+
+            CLAUDE.md content:
+            \(truncatedContent)
+            """
+
+        let process = Process()
+        let outputPipe = Pipe()
+        let errorPipe = Pipe()
+
+        process.executableURL = URL(fileURLWithPath: "/opt/homebrew/bin/claude")
+        process.arguments = ["--print", "--model", "haiku", prompt]
+        process.standardOutput = outputPipe
+        process.standardError = errorPipe
+
+        try process.run()
+
+        return try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                process.waitUntilExit()
+
+                let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
+                var output = String(data: outputData, encoding: .utf8)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+                // Clean up potential quotes
+                if output.hasPrefix("\"") && output.hasSuffix("\"") && output.count > 2 {
+                    output = String(output.dropFirst().dropLast())
+                }
+
+                if process.terminationStatus == 0 && !output.isEmpty {
+                    continuation.resume(returning: output)
+                } else {
+                    continuation.resume(throwing: NSError(
+                        domain: "HUD",
+                        code: Int(process.terminationStatus),
+                        userInfo: [NSLocalizedDescriptionKey: "Description generation failed"]
+                    ))
+                }
+            }
         }
     }
 }

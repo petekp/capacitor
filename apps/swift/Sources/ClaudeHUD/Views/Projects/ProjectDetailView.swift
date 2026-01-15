@@ -5,13 +5,7 @@ struct ProjectDetailView: View {
     @Environment(\.floatingMode) private var floatingMode
     let project: Project
 
-    @State private var isLaunchHovered = false
-    @State private var isLaunchPressed = false
     @State private var appeared = false
-
-    private var devServerPort: UInt16? {
-        appState.getDevServerPort(for: project)
-    }
 
     var body: some View {
         ScrollView {
@@ -25,124 +19,28 @@ struct ProjectDetailView: View {
                     Spacer()
                 }
 
-                HStack(spacing: 10) {
-                    Text(project.name)
-                        .font(.system(size: 22, weight: .bold))
-                        .foregroundColor(.white)
-
-                    HealthBadge(project: project)
-                }
-                .opacity(appeared ? 1 : 0)
-                .offset(y: appeared ? 0 : 8)
-
-                if let sessionState = appState.getSessionState(for: project) {
-                    DetailCard {
-                        VStack(alignment: .leading, spacing: 10) {
-                            DetailSectionLabel(title: "STATUS")
-
-                            StatusIndicatorView(state: sessionState.state)
-
-                            if let workingOn = sessionState.workingOn {
-                                Text(workingOn)
-                                    .font(.system(size: 13))
-                                    .foregroundColor(.white.opacity(0.7))
-                                    .lineLimit(3)
-                            }
-                        }
-                    }
+                Text(project.name)
+                    .font(.system(size: 22, weight: .bold))
+                    .foregroundColor(.white)
                     .opacity(appeared ? 1 : 0)
-                    .offset(y: appeared ? 0 : 12)
-                }
+                    .offset(y: appeared ? 0 : 8)
 
-                DetailCard {
-                    VStack(alignment: .leading, spacing: 12) {
-                        DetailSectionLabel(title: "QUICK ACTIONS")
+                DescriptionCard(
+                    description: appState.getDescription(for: project),
+                    isGenerating: appState.isGeneratingDescription(for: project),
+                    onGenerate: { appState.generateDescription(for: project) }
+                )
+                .opacity(appeared ? 1 : 0)
+                .offset(y: appeared ? 0 : 12)
 
-                        HStack(spacing: 8) {
-                            ActionButton(icon: "terminal", title: "Terminal") {
-                                appState.launchTerminal(for: project)
-                            }
-
-                            if let port = devServerPort {
-                                ActionButton(icon: "globe", title: ":\(port)") {
-                                    appState.openInBrowser(project)
-                                }
-                            }
-                        }
-
-                        if devServerPort != nil {
-                            ActionButton(
-                                icon: "play.fill",
-                                title: "Launch Full Environment",
-                                isAccent: true,
-                                fullWidth: true
-                            ) {
-                                appState.launchFullEnvironment(for: project)
-                            }
-                            .help("Opens terminal and browser together")
-                        }
-                    }
-                }
+                IdeasListView(
+                    ideas: appState.getIdeas(for: project),
+                    isGeneratingTitle: { appState.isGeneratingTitle(for: $0) },
+                    onWorkOn: { idea in appState.workOnIdea(idea, for: project) },
+                    onDismiss: { idea in appState.dismissIdea(idea, for: project) }
+                )
                 .opacity(appeared ? 1 : 0)
                 .offset(y: appeared ? 0 : 16)
-
-                let todos = appState.todosManager.getTodos(for: project.path)
-                let todoFileId = appState.todosManager.getFileId(for: project.path)
-
-                if !todos.isEmpty || todoFileId != nil {
-                    DetailCard {
-                        TodosSection(
-                            todos: todos,
-                            fileId: todoFileId,
-                            onStatusChange: { fileId, todoId, newStatus in
-                                appState.todosManager.updateTodoStatus(fileId: fileId, todoId: todoId, newStatus: newStatus)
-                            },
-                            onAddTodo: { fileId, content in
-                                appState.todosManager.addTodo(fileId: fileId, content: content)
-                            }
-                        )
-                    }
-                    .opacity(appeared ? 1 : 0)
-                    .offset(y: appeared ? 0 : 20)
-                }
-
-                let plans = appState.plansManager.allPlans
-
-                if !plans.isEmpty {
-                    DetailCard {
-                        PlansSection(plans: plans)
-                    }
-                    .opacity(appeared ? 1 : 0)
-                    .offset(y: appeared ? 0 : 24)
-                }
-
-                let healthResult = ClaudeMdHealthScorer.score(content: project.claudeMdPreview)
-
-                if healthResult.grade != .none && !healthResult.details.filter({ !$0.passed }).isEmpty {
-                    DetailCard {
-                        HealthCoachingSection(healthResult: healthResult)
-                    }
-                    .opacity(appeared ? 1 : 0)
-                    .offset(y: appeared ? 0 : 28)
-                }
-
-                DetailCard {
-                    HooksSetupSection()
-                }
-                .opacity(appeared ? 1 : 0)
-                .offset(y: appeared ? 0 : 32)
-
-                DetailCard {
-                    PluginRecommendationSection(projectPath: project.path)
-                }
-                .opacity(appeared ? 1 : 0)
-                .offset(y: appeared ? 0 : 36)
-
-                DetailCard {
-                    UsageInsightsSection(projectPath: project.path)
-                }
-                .opacity(appeared ? 1 : 0)
-                .offset(y: appeared ? 0 : 40)
 
                 Spacer()
             }
@@ -243,6 +141,57 @@ struct DetailSectionLabel: View {
                 .font(.system(size: 10, weight: .bold))
                 .tracking(2)
                 .foregroundColor(.white.opacity(0.45))
+        }
+    }
+}
+
+struct DescriptionCard: View {
+    let description: String?
+    let isGenerating: Bool
+    let onGenerate: () -> Void
+
+    var body: some View {
+        DetailCard {
+            VStack(alignment: .leading, spacing: 10) {
+                DetailSectionLabel(title: "DESCRIPTION")
+
+                ZStack(alignment: .leading) {
+                    // Description text - fades in when ready
+                    if let description = description {
+                        Text(description)
+                            .font(.system(size: 13))
+                            .foregroundColor(.white.opacity(0.8))
+                            .lineLimit(4)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    // Loading shimmer - visible during generation
+                    if isGenerating {
+                        ShimmeringText(text: "Generating description...")
+                    }
+
+                    // Generate button - visible when no description and not generating
+                    if description == nil && !isGenerating {
+                        Button(action: onGenerate) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "sparkles")
+                                    .font(.system(size: 11))
+                                Text("Generate Description")
+                                    .font(.system(size: 12, weight: .medium))
+                            }
+                            .foregroundColor(.white.opacity(0.7))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(Color.white.opacity(0.1))
+                            .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .animation(.easeInOut(duration: 0.3), value: description != nil)
+                .animation(.easeInOut(duration: 0.3), value: isGenerating)
+            }
         }
     }
 }
