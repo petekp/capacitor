@@ -308,3 +308,31 @@ pub struct CreateProjectResult {
     pub session_id: Option<String>,
     pub error: Option<String>,
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Idea Capture Types
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// A captured idea stored in `.claude/ideas.local.md`.
+///
+/// Ideas are stored in markdown format with ULID identifiers for stable references.
+/// They can be in various states (open, in-progress, done) and have triage status.
+#[derive(Debug, Serialize, Deserialize, Clone, uniffi::Record)]
+pub struct Idea {
+    /// ULID identifier (26 chars, uppercase, sortable)
+    pub id: String,
+    /// Short title extracted from first line
+    pub title: String,
+    /// Full description text
+    pub description: String,
+    /// ISO8601 timestamp when added
+    pub added: String,
+    /// Effort estimate: unknown, small, medium, large, xl
+    pub effort: String,
+    /// Status: open, in-progress, done
+    pub status: String,
+    /// Triage status: pending, validated
+    pub triage: String,
+    /// Related project name (if associated with a specific project)
+    pub related: Option<String>,
+}

@@ -521,6 +521,16 @@ public protocol HudEngineProtocol: AnyObject {
     func addProject(path: String) throws
 
     /**
+     * Captures a new idea for a project.
+     *
+     * Appends the idea to `.claude/ideas.local.md` in the project's directory
+     * with default metadata (effort: unknown, status: open, triage: pending).
+     *
+     * Returns the generated ULID for the idea.
+     */
+    func captureIdea(projectPath: String, ideaText: String) throws -> String
+
+    /**
      * Returns the path to the Claude directory as a string.
      */
     func claudeDir() -> String
@@ -575,9 +585,45 @@ public protocol HudEngineProtocol: AnyObject {
     func loadDashboard() throws -> DashboardData
 
     /**
+     * Loads all ideas for a project.
+     *
+     * Returns an empty vector if the ideas file doesn't exist.
+     */
+    func loadIdeas(projectPath: String) throws -> [Idea]
+
+    /**
      * Removes a project from the pinned projects list.
      */
     func removeProject(path: String) throws
+
+    /**
+     * Updates the effort estimate of an idea.
+     *
+     * Valid efforts: unknown, small, medium, large, xl
+     */
+    func updateIdeaEffort(projectPath: String, ideaId: String, newEffort: String) throws
+
+    /**
+     * Updates the status of an idea.
+     *
+     * Valid statuses: open, in-progress, done
+     */
+    func updateIdeaStatus(projectPath: String, ideaId: String, newStatus: String) throws
+
+    /**
+     * Updates the title of an idea.
+     *
+     * Used for async title generation - the idea is initially saved with a placeholder,
+     * then this is called once the AI-generated title is ready.
+     */
+    func updateIdeaTitle(projectPath: String, ideaId: String, newTitle: String) throws
+
+    /**
+     * Updates the triage status of an idea.
+     *
+     * Valid triage statuses: pending, validated
+     */
+    func updateIdeaTriage(projectPath: String, ideaId: String, newTriage: String) throws
 }
 
 /**
@@ -654,6 +700,22 @@ open class HudEngine:
         uniffi_hud_core_fn_method_hudengine_add_project(self.uniffiClonePointer(),
                                                         FfiConverterString.lower(path), $0)
     }
+    }
+
+    /**
+     * Captures a new idea for a project.
+     *
+     * Appends the idea to `.claude/ideas.local.md` in the project's directory
+     * with default metadata (effort: unknown, status: open, triage: pending).
+     *
+     * Returns the generated ULID for the idea.
+     */
+    open func captureIdea(projectPath: String, ideaText: String) throws -> String {
+        return try FfiConverterString.lift(rustCallWithError(FfiConverterTypeHudFfiError.lift) {
+            uniffi_hud_core_fn_method_hudengine_capture_idea(self.uniffiClonePointer(),
+                                                             FfiConverterString.lower(projectPath),
+                                                             FfiConverterString.lower(ideaText), $0)
+        })
     }
 
     /**
@@ -754,11 +816,76 @@ open class HudEngine:
     }
 
     /**
+     * Loads all ideas for a project.
+     *
+     * Returns an empty vector if the ideas file doesn't exist.
+     */
+    open func loadIdeas(projectPath: String) throws -> [Idea] {
+        return try FfiConverterSequenceTypeIdea.lift(rustCallWithError(FfiConverterTypeHudFfiError.lift) {
+            uniffi_hud_core_fn_method_hudengine_load_ideas(self.uniffiClonePointer(),
+                                                           FfiConverterString.lower(projectPath), $0)
+        })
+    }
+
+    /**
      * Removes a project from the pinned projects list.
      */
     open func removeProject(path: String) throws { try rustCallWithError(FfiConverterTypeHudFfiError.lift) {
         uniffi_hud_core_fn_method_hudengine_remove_project(self.uniffiClonePointer(),
                                                            FfiConverterString.lower(path), $0)
+    }
+    }
+
+    /**
+     * Updates the effort estimate of an idea.
+     *
+     * Valid efforts: unknown, small, medium, large, xl
+     */
+    open func updateIdeaEffort(projectPath: String, ideaId: String, newEffort: String) throws { try rustCallWithError(FfiConverterTypeHudFfiError.lift) {
+        uniffi_hud_core_fn_method_hudengine_update_idea_effort(self.uniffiClonePointer(),
+                                                               FfiConverterString.lower(projectPath),
+                                                               FfiConverterString.lower(ideaId),
+                                                               FfiConverterString.lower(newEffort), $0)
+    }
+    }
+
+    /**
+     * Updates the status of an idea.
+     *
+     * Valid statuses: open, in-progress, done
+     */
+    open func updateIdeaStatus(projectPath: String, ideaId: String, newStatus: String) throws { try rustCallWithError(FfiConverterTypeHudFfiError.lift) {
+        uniffi_hud_core_fn_method_hudengine_update_idea_status(self.uniffiClonePointer(),
+                                                               FfiConverterString.lower(projectPath),
+                                                               FfiConverterString.lower(ideaId),
+                                                               FfiConverterString.lower(newStatus), $0)
+    }
+    }
+
+    /**
+     * Updates the title of an idea.
+     *
+     * Used for async title generation - the idea is initially saved with a placeholder,
+     * then this is called once the AI-generated title is ready.
+     */
+    open func updateIdeaTitle(projectPath: String, ideaId: String, newTitle: String) throws { try rustCallWithError(FfiConverterTypeHudFfiError.lift) {
+        uniffi_hud_core_fn_method_hudengine_update_idea_title(self.uniffiClonePointer(),
+                                                              FfiConverterString.lower(projectPath),
+                                                              FfiConverterString.lower(ideaId),
+                                                              FfiConverterString.lower(newTitle), $0)
+    }
+    }
+
+    /**
+     * Updates the triage status of an idea.
+     *
+     * Valid triage statuses: pending, validated
+     */
+    open func updateIdeaTriage(projectPath: String, ideaId: String, newTriage: String) throws { try rustCallWithError(FfiConverterTypeHudFfiError.lift) {
+        uniffi_hud_core_fn_method_hudengine_update_idea_triage(self.uniffiClonePointer(),
+                                                               FfiConverterString.lower(projectPath),
+                                                               FfiConverterString.lower(ideaId),
+                                                               FfiConverterString.lower(newTriage), $0)
     }
     }
 }
@@ -1512,6 +1639,170 @@ public func FfiConverterTypeHudConfig_lift(_ buf: RustBuffer) throws -> HudConfi
 #endif
 public func FfiConverterTypeHudConfig_lower(_ value: HudConfig) -> RustBuffer {
     return FfiConverterTypeHudConfig.lower(value)
+}
+
+/**
+ * A captured idea stored in `.claude/ideas.local.md`.
+ *
+ * Ideas are stored in markdown format with ULID identifiers for stable references.
+ * They can be in various states (open, in-progress, done) and have triage status.
+ */
+public struct Idea {
+    /**
+     * ULID identifier (26 chars, uppercase, sortable)
+     */
+    public var id: String
+    /**
+     * Short title extracted from first line
+     */
+    public var title: String
+    /**
+     * Full description text
+     */
+    public var description: String
+    /**
+     * ISO8601 timestamp when added
+     */
+    public var added: String
+    /**
+     * Effort estimate: unknown, small, medium, large, xl
+     */
+    public var effort: String
+    /**
+     * Status: open, in-progress, done
+     */
+    public var status: String
+    /**
+     * Triage status: pending, validated
+     */
+    public var triage: String
+    /**
+     * Related project name (if associated with a specific project)
+     */
+    public var related: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * ULID identifier (26 chars, uppercase, sortable)
+         */ id: String,
+        /**
+            * Short title extracted from first line
+            */ title: String,
+        /**
+            * Full description text
+            */ description: String,
+        /**
+            * ISO8601 timestamp when added
+            */ added: String,
+        /**
+            * Effort estimate: unknown, small, medium, large, xl
+            */ effort: String,
+        /**
+            * Status: open, in-progress, done
+            */ status: String,
+        /**
+            * Triage status: pending, validated
+            */ triage: String,
+        /**
+            * Related project name (if associated with a specific project)
+            */ related: String?
+    ) {
+        self.id = id
+        self.title = title
+        self.description = description
+        self.added = added
+        self.effort = effort
+        self.status = status
+        self.triage = triage
+        self.related = related
+    }
+}
+
+extension Idea: Equatable, Hashable {
+    public static func == (lhs: Idea, rhs: Idea) -> Bool {
+        if lhs.id != rhs.id {
+            return false
+        }
+        if lhs.title != rhs.title {
+            return false
+        }
+        if lhs.description != rhs.description {
+            return false
+        }
+        if lhs.added != rhs.added {
+            return false
+        }
+        if lhs.effort != rhs.effort {
+            return false
+        }
+        if lhs.status != rhs.status {
+            return false
+        }
+        if lhs.triage != rhs.triage {
+            return false
+        }
+        if lhs.related != rhs.related {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+        hasher.combine(title)
+        hasher.combine(description)
+        hasher.combine(added)
+        hasher.combine(effort)
+        hasher.combine(status)
+        hasher.combine(triage)
+        hasher.combine(related)
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeIdea: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Idea {
+        return
+            try Idea(
+                id: FfiConverterString.read(from: &buf),
+                title: FfiConverterString.read(from: &buf),
+                description: FfiConverterString.read(from: &buf),
+                added: FfiConverterString.read(from: &buf),
+                effort: FfiConverterString.read(from: &buf),
+                status: FfiConverterString.read(from: &buf),
+                triage: FfiConverterString.read(from: &buf),
+                related: FfiConverterOptionString.read(from: &buf)
+            )
+    }
+
+    public static func write(_ value: Idea, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterString.write(value.description, into: &buf)
+        FfiConverterString.write(value.added, into: &buf)
+        FfiConverterString.write(value.effort, into: &buf)
+        FfiConverterString.write(value.status, into: &buf)
+        FfiConverterString.write(value.triage, into: &buf)
+        FfiConverterOptionString.write(value.related, into: &buf)
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeIdea_lift(_ buf: RustBuffer) throws -> Idea {
+    return try FfiConverterTypeIdea.lift(buf)
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeIdea_lower(_ value: Idea) -> RustBuffer {
+    return FfiConverterTypeIdea.lower(value)
 }
 
 /**
@@ -3142,6 +3433,31 @@ private struct FfiConverterSequenceTypeArtifact: FfiConverterRustBuffer {
 #if swift(>=5.8)
     @_documentation(visibility: private)
 #endif
+private struct FfiConverterSequenceTypeIdea: FfiConverterRustBuffer {
+    typealias SwiftType = [Idea]
+
+    public static func write(_ value: [Idea], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeIdea.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [Idea] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [Idea]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            try seq.append(FfiConverterTypeIdea.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
 private struct FfiConverterSequenceTypePlugin: FfiConverterRustBuffer {
     typealias SwiftType = [Plugin]
 
@@ -3336,6 +3652,9 @@ private var initializationResult: InitializationResult = {
     if uniffi_hud_core_checksum_method_hudengine_add_project() != 20195 {
         return InitializationResult.apiChecksumMismatch
     }
+    if uniffi_hud_core_checksum_method_hudengine_capture_idea() != 22245 {
+        return InitializationResult.apiChecksumMismatch
+    }
     if uniffi_hud_core_checksum_method_hudengine_claude_dir() != 21224 {
         return InitializationResult.apiChecksumMismatch
     }
@@ -3366,7 +3685,22 @@ private var initializationResult: InitializationResult = {
     if uniffi_hud_core_checksum_method_hudengine_load_dashboard() != 23101 {
         return InitializationResult.apiChecksumMismatch
     }
+    if uniffi_hud_core_checksum_method_hudengine_load_ideas() != 23681 {
+        return InitializationResult.apiChecksumMismatch
+    }
     if uniffi_hud_core_checksum_method_hudengine_remove_project() != 46288 {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if uniffi_hud_core_checksum_method_hudengine_update_idea_effort() != 54859 {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if uniffi_hud_core_checksum_method_hudengine_update_idea_status() != 241 {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if uniffi_hud_core_checksum_method_hudengine_update_idea_title() != 28398 {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if uniffi_hud_core_checksum_method_hudengine_update_idea_triage() != 43321 {
         return InitializationResult.apiChecksumMismatch
     }
     if uniffi_hud_core_checksum_constructor_hudengine_new() != 38960 {

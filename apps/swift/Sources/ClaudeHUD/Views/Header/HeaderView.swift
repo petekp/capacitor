@@ -34,13 +34,13 @@ struct PinButton: View {
                 .frame(width: 28, height: 28)
                 .background(
                     Circle()
-                        .fill(isPinned ? Color.white.opacity(0.15) : Color.white.opacity(isHovered ? 0.1 : 0))
+                        .fill(Color.white.opacity(isHovered ? 0.1 : 0))
                 )
                 .overlay(
                     Circle()
                         .strokeBorder(
-                            isPinned ? Color.white.opacity(0.3) : Color.white.opacity(isHovered ? 0.15 : 0),
-                            lineWidth: isPinned ? 1 : 0.5
+                            Color.white.opacity(isHovered ? 0.15 : 0),
+                            lineWidth: 0.5
                         )
                 )
         }

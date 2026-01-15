@@ -129,6 +129,14 @@ class AppState: ObservableObject {
     // Plans manager
     @Published var plansManager = PlansManager()
 
+    // Ideas (Idea Capture feature)
+    @Published var projectIdeas: [String: [Idea]] = [:]
+    @Published var showCaptureModal = false
+    @Published var captureModalProject: Project?
+    @Published var generatingTitleForIdeas: Set<String> = []
+    private var ideaFileMtimes: [String: Date] = [:]
+    private var lastIdeasCheck: Date = .distantPast
+
     // Terminal tracking (Phase 2: Live tracking)
     private let terminalTracker = TerminalTracker()
     private var trackerUpdateTask: _Concurrency.Task<Void, Never>?
@@ -156,6 +164,7 @@ class AppState: ObservableObject {
         stalenessTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             DispatchQueue.main.async {
                 self?.refreshSessionStates()
+                self?.checkIdeasFileChanges()
             }
         }
     }
@@ -545,6 +554,7 @@ class AppState: ObservableObject {
             refreshSessionStates()
             refreshProjectStatuses()
             refreshDevServers()
+            loadAllIdeas()
             isLoading = false
         } catch {
             self.error = error.localizedDescription
@@ -844,8 +854,8 @@ class AppState: ObservableObject {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/bash")
         process.arguments = ["-c", """
-            SESSION="\(project.name)"
             PROJECT_PATH="\(project.path)"
+            PROJECT_NAME="\(project.name)"
 
             # Check if tmux is installed
             if ! command -v tmux &> /dev/null; then
@@ -869,6 +879,18 @@ class AppState: ObservableObject {
             fi
 
             # TMUX AVAILABLE: Use session management
+            # First, try to find existing session by path (handles name mismatches like "plink_com" for "plink.com")
+            EXISTING_SESSION=$(tmux list-windows -a -F '#{session_name}:#{pane_current_path}' 2>/dev/null | \
+                grep ":$PROJECT_PATH$" | cut -d: -f1 | head -1)
+
+            if [ -n "$EXISTING_SESSION" ]; then
+                # Found existing session with matching path - use it
+                SESSION="$EXISTING_SESSION"
+            else
+                # No existing session - will create with project name
+                SESSION="$PROJECT_NAME"
+            fi
+
             # Check if any tmux client is attached (i.e., a terminal is running tmux)
             HAS_ATTACHED_CLIENT=$(tmux list-clients 2>/dev/null | head -1)
 
@@ -1291,6 +1313,310 @@ class AppState: ObservableObject {
             } else {
                 DevEnvironment.openInBrowser(port: port)
             }
+        }
+    }
+
+    // MARK: - Idea Capture
+
+    func showIdeaCaptureModal(for project: Project) {
+        captureModalProject = project
+        showCaptureModal = true
+    }
+
+    func captureIdea(for project: Project, text: String) -> Result<Void, Error> {
+        guard let engine = engine else {
+            return .failure(NSError(domain: "HUD", code: 1, userInfo: [
+                NSLocalizedDescriptionKey: "Engine not initialized"
+            ]))
+        }
+
+        do {
+            let ideaId = try engine.captureIdea(projectPath: project.path, ideaText: text)
+            loadIdeas(for: project)
+
+            // Start async title generation
+            generateTitleForIdea(ideaId: ideaId, description: text, project: project)
+
+            return .success(())
+        } catch {
+            return .failure(error)
+        }
+    }
+
+    func loadIdeas(for project: Project) {
+        guard let engine = engine else { return }
+
+        do {
+            let ideas = try engine.loadIdeas(projectPath: project.path)
+            projectIdeas[project.path] = ideas
+
+            let ideasFilePath = "\(project.path)/.claude/ideas.local.md"
+            if let attrs = try? FileManager.default.attributesOfItem(atPath: ideasFilePath),
+               let mtime = attrs[.modificationDate] as? Date {
+                ideaFileMtimes[project.path] = mtime
+            }
+        } catch {
+            projectIdeas[project.path] = []
+        }
+    }
+
+    func loadAllIdeas() {
+        for project in projects {
+            loadIdeas(for: project)
+        }
+    }
+
+    func checkIdeasFileChanges() {
+        let now = Date()
+        guard now.timeIntervalSince(lastIdeasCheck) >= 2.0 else { return }
+        lastIdeasCheck = now
+
+        for project in projects {
+            let ideasFilePath = "\(project.path)/.claude/ideas.local.md"
+
+            guard let attrs = try? FileManager.default.attributesOfItem(atPath: ideasFilePath),
+                  let currentMtime = attrs[.modificationDate] as? Date else {
+                continue
+            }
+
+            if let lastKnownMtime = ideaFileMtimes[project.path] {
+                if currentMtime > lastKnownMtime {
+                    loadIdeas(for: project)
+                }
+            } else {
+                loadIdeas(for: project)
+            }
+        }
+    }
+
+    func getIdeas(for project: Project) -> [Idea] {
+        projectIdeas[project.path] ?? []
+    }
+
+    func isGeneratingTitle(for ideaId: String) -> Bool {
+        generatingTitleForIdeas.contains(ideaId)
+    }
+
+    private func generateTitleForIdea(ideaId: String, description: String, project: Project) {
+        generatingTitleForIdeas.insert(ideaId)
+
+        _Concurrency.Task {
+            do {
+                // Get existing idea titles for context
+                let existingTitles = await MainActor.run {
+                    getIdeas(for: project)
+                        .filter { $0.id != ideaId && $0.title != "..." }
+                        .prefix(10)
+                        .map { "- \($0.title)" }
+                        .joined(separator: "\n")
+                }
+
+                let title = try await callHaikuForTitle(description: description, existingIdeas: existingTitles)
+
+                await MainActor.run {
+                    do {
+                        try engine?.updateIdeaTitle(projectPath: project.path, ideaId: ideaId, newTitle: title)
+                        loadIdeas(for: project)
+                    } catch {
+                        // Silently fail - title stays as placeholder
+                    }
+                    generatingTitleForIdeas.remove(ideaId)
+                }
+            } catch {
+                await MainActor.run {
+                    // On error, use truncated description as fallback
+                    let fallbackTitle = String(description.prefix(50)).trimmingCharacters(in: .whitespacesAndNewlines)
+                    do {
+                        try engine?.updateIdeaTitle(projectPath: project.path, ideaId: ideaId, newTitle: fallbackTitle)
+                        loadIdeas(for: project)
+                    } catch {
+                        // Silently fail
+                    }
+                    generatingTitleForIdeas.remove(ideaId)
+                }
+            }
+        }
+    }
+
+    private func callHaikuForTitle(description: String, existingIdeas: String) async throws -> String {
+        let contextSection = existingIdeas.isEmpty ? "" : """
+
+            Other ideas in this project (for context/uniqueness):
+            \(existingIdeas)
+            """
+
+        let prompt = """
+            Generate a concise 3-8 word title for this idea. Return ONLY the title text, no quotes, no punctuation unless part of a name.
+
+            Idea: \(description)\(contextSection)
+            """
+
+        let process = Process()
+        let outputPipe = Pipe()
+        let errorPipe = Pipe()
+
+        process.executableURL = URL(fileURLWithPath: "/opt/homebrew/bin/claude")
+        process.arguments = ["--print", "--model", "haiku", prompt]
+        process.standardOutput = outputPipe
+        process.standardError = errorPipe
+
+        try process.run()
+
+        return try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                process.waitUntilExit()
+
+                let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
+                var output = String(data: outputData, encoding: .utf8)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+                // Clean up potential quotes
+                if output.hasPrefix("\"") && output.hasSuffix("\"") && output.count > 2 {
+                    output = String(output.dropFirst().dropLast())
+                }
+
+                // Remove any trailing punctuation except for names
+                while output.hasSuffix(".") || output.hasSuffix("!") || output.hasSuffix("?") {
+                    output = String(output.dropLast())
+                }
+
+                if process.terminationStatus == 0 && !output.isEmpty {
+                    continuation.resume(returning: output)
+                } else {
+                    continuation.resume(throwing: NSError(
+                        domain: "HUD",
+                        code: Int(process.terminationStatus),
+                        userInfo: [NSLocalizedDescriptionKey: "Haiku title generation failed"]
+                    ))
+                }
+            }
+        }
+    }
+
+    func workOnIdea(_ idea: Idea, for project: Project) {
+        guard let engine = engine else { return }
+
+        do {
+            try engine.updateIdeaStatus(
+                projectPath: project.path,
+                ideaId: idea.id,
+                newStatus: "in-progress"
+            )
+            loadIdeas(for: project)
+        } catch {
+            self.error = "Failed to update idea status: \(error.localizedDescription)"
+        }
+
+        launchTerminalWithIdea(idea, for: project)
+    }
+
+    func dismissIdea(_ idea: Idea, for project: Project) {
+        guard let engine = engine else { return }
+
+        do {
+            try engine.updateIdeaStatus(
+                projectPath: project.path,
+                ideaId: idea.id,
+                newStatus: "done"
+            )
+            loadIdeas(for: project)
+        } catch {
+            self.error = "Failed to dismiss idea: \(error.localizedDescription)"
+        }
+    }
+
+    private func launchTerminalWithIdea(_ idea: Idea, for project: Project) {
+        activeProjectPath = project.path
+        ignoreTrackerUpdatesUntil = Date().addingTimeInterval(2.0)
+
+        let prompt = """
+            I want to work on this idea:
+
+            \(idea.title)
+
+            \(idea.description)
+
+            The details are in .claude/ideas.local.md if you need to reference them.
+            When you're done, update the Status field to "done" in that file.
+            """
+
+        let escapedPrompt = prompt
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "$", with: "\\$")
+            .replacingOccurrences(of: "`", with: "\\`")
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/bash")
+        process.arguments = ["-c", """
+            PROJECT_PATH="\(project.path)"
+            PROJECT_NAME="\(project.name)"
+            IDEA_PROMPT="\(escapedPrompt)"
+
+            # Check if tmux is installed
+            if ! command -v tmux &> /dev/null; then
+                # NO TMUX: Open terminal with claude and prompt
+                if [ -d "/Applications/Ghostty.app" ]; then
+                    open -na "Ghostty.app" --args --working-directory="$PROJECT_PATH" -e bash -c "/opt/homebrew/bin/claude \\"$IDEA_PROMPT\\""
+                elif [ -d "/Applications/iTerm.app" ]; then
+                    osascript -e "tell application \\"iTerm\\" to create window with default profile command \\"cd '$PROJECT_PATH' && /opt/homebrew/bin/claude '$IDEA_PROMPT'\\""
+                    osascript -e 'tell application "iTerm" to activate'
+                else
+                    osascript -e "tell application \\"Terminal\\" to do script \\"cd '$PROJECT_PATH' && /opt/homebrew/bin/claude '$IDEA_PROMPT'\\""
+                    osascript -e 'tell application "Terminal" to activate'
+                fi
+                exit 0
+            fi
+
+            # TMUX AVAILABLE: Use session management
+            EXISTING_SESSION=$(tmux list-windows -a -F '#{session_name}:#{pane_current_path}' 2>/dev/null | \\
+                grep ":$PROJECT_PATH$" | cut -d: -f1 | head -1)
+
+            if [ -n "$EXISTING_SESSION" ]; then
+                SESSION="$EXISTING_SESSION"
+            else
+                SESSION="$PROJECT_NAME"
+            fi
+
+            HAS_ATTACHED_CLIENT=$(tmux list-clients 2>/dev/null | head -1)
+
+            if [ -n "$HAS_ATTACHED_CLIENT" ]; then
+                if tmux has-session -t "$SESSION" 2>/dev/null; then
+                    tmux switch-client -t "$SESSION" 2>/dev/null
+                    # Send the claude command with prompt to the session
+                    tmux send-keys -t "$SESSION" "/opt/homebrew/bin/claude \\"$IDEA_PROMPT\\"" Enter
+                else
+                    tmux new-session -d -s "$SESSION" -c "$PROJECT_PATH"
+                    tmux switch-client -t "$SESSION" 2>/dev/null
+                    tmux send-keys -t "$SESSION" "/opt/homebrew/bin/claude \\"$IDEA_PROMPT\\"" Enter
+                fi
+
+                # Activate terminal
+                if pgrep -xq "Ghostty"; then
+                    osascript -e 'tell application "Ghostty" to activate'
+                elif pgrep -xq "iTerm2"; then
+                    osascript -e 'tell application "iTerm" to activate'
+                elif pgrep -xq "Terminal"; then
+                    osascript -e 'tell application "Terminal" to activate'
+                fi
+            else
+                TMUX_CMD="tmux new-session -A -s '$SESSION' -c '$PROJECT_PATH'"
+
+                if [ -d "/Applications/Ghostty.app" ]; then
+                    open -na "Ghostty.app" --args -e sh -c "$TMUX_CMD && /opt/homebrew/bin/claude \\"$IDEA_PROMPT\\""
+                elif [ -d "/Applications/iTerm.app" ]; then
+                    osascript -e "tell application \\"iTerm\\" to create window with default profile command \\"$TMUX_CMD && /opt/homebrew/bin/claude '$IDEA_PROMPT'\\""
+                    osascript -e 'tell application "iTerm" to activate'
+                else
+                    osascript -e "tell application \\"Terminal\\" to do script \\"$TMUX_CMD && /opt/homebrew/bin/claude '$IDEA_PROMPT'\\""
+                    osascript -e 'tell application "Terminal" to activate'
+                fi
+            fi
+        """]
+        try? process.run()
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            self.activateTerminalApp()
         }
     }
 }

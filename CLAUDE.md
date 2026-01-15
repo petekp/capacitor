@@ -32,6 +32,38 @@ When starting a development session on this project:
 
 **Target use case:** You wake up, open Claude HUD, see all your projects with their current status, know exactly where each one stands, pick the one that makes sense to work on, and jump in with full context—in seconds, not minutes.
 
+## Core Architectural Principle: Sidecar, Not Standalone
+
+**Claude HUD is a sidecar that powers up your existing Claude Code workflow—not a standalone application.**
+
+This principle guides every architectural decision:
+
+### Leverage, Don't Duplicate
+- **Use the user's Claude Code installation** — Don't build our own API client, authentication, or context management
+- **Read from `~/.claude/`** — Session files, config, plugins, stats all live where Claude Code puts them
+- **Invoke the `claude` CLI** — For AI features, call the installed CLI rather than reimplementing API integration
+- **Respect existing workflows** — Terminal-based work stays in terminals; HUD observes and surfaces, doesn't replace
+
+### Why This Matters
+1. **Simplicity** — Reusing Claude Code's infrastructure means less code, fewer bugs, faster iteration
+2. **Unified experience** — User's API key, token usage, conversation history all in one place
+3. **Full context** — Claude CLI already has project context (CLAUDE.md, file tree, git history)—don't rebuild it
+4. **User trust** — Transparent about what we're doing (reading files they can inspect, calling CLI they control)
+
+### In Practice
+- ✅ Read session files from `~/.claude/projects/`
+- ✅ Parse `~/.claude/settings.json` for config
+- ✅ Launch terminals with `claude` command
+- ✅ Use hooks to write state files HUD can read
+- ❌ Don't maintain separate API keys
+- ❌ Don't call Anthropic API directly (use CLI)
+- ❌ Don't duplicate Claude Code's project context logic
+- ❌ Don't require users to configure HUD separately from Claude Code
+
+**When in doubt:** Ask "Can Claude Code already do this?" If yes, leverage it. If no, consider whether it belongs in Claude Code itself before building it in HUD.
+
+**See:** [ADR-003: Sidecar Architecture Pattern](docs/architecture-decisions/003-sidecar-architecture-pattern.md) for the full decision rationale.
+
 ## Project Overview
 
 **Architecture:**

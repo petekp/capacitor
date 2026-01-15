@@ -39,6 +39,11 @@ actor TerminalTracker {
     private var activeProjectPath: String?
     private var pollingTask: _Concurrency.Task<Void, Never>?
     private var projectsByName: [String: String] = [:]
+    private var projectsByPath: [String: String] = [:] // path → project path mapping
+
+    // Cache for session→path mappings (invalidated when session count changes)
+    private var sessionPathCache: [String: String] = [:]
+    private var cachedSessionCount: Int = 0
 
     // MARK: - Public API
 
@@ -58,6 +63,9 @@ actor TerminalTracker {
     func updateProjectMapping(_ projects: [Project]) {
         projectsByName = Dictionary(
             uniqueKeysWithValues: projects.map { ($0.name, $0.path) }
+        )
+        projectsByPath = Dictionary(
+            uniqueKeysWithValues: projects.map { ($0.path, $0.path) }
         )
     }
 
@@ -81,10 +89,12 @@ actor TerminalTracker {
 
     /// Detects the active project based on frontmost terminal and tmux session.
     ///
-    /// Detection flow:
+    /// Detection flow (hybrid matching with three tiers):
     /// 1. Check if a terminal app is frontmost
     /// 2. Query tmux for active session name
-    /// 3. Map session name to project path
+    /// 3. Tier 1: Try exact name match (fast path)
+    /// 4. Tier 2: Try path-based match (robust fallback)
+    /// 5. Tier 3: Try fuzzy name match (last resort)
     private func detectActiveProject() async {
         guard isFrontmostAppATerminal(),
               let sessionName = await getActiveTmuxSession() else {
@@ -92,7 +102,118 @@ actor TerminalTracker {
             return
         }
 
-        activeProjectPath = projectsByName[sessionName]
+        // Tier 1: Exact name match (fast path - no tmux query needed)
+        if let path = projectsByName[sessionName] {
+            activeProjectPath = path
+            return
+        }
+
+        // Tier 2: Path-based match (query tmux for working directory)
+        if let path = await matchSessionByPath(sessionName) {
+            activeProjectPath = path
+            return
+        }
+
+        // Tier 3: Fuzzy name match (handle common transformations)
+        if let path = fuzzyMatchSessionName(sessionName) {
+            activeProjectPath = path
+            return
+        }
+
+        // No match found
+        activeProjectPath = nil
+    }
+
+    // MARK: - Matching Strategies
+
+    /// Matches a tmux session to a project by comparing working directories.
+    ///
+    /// Uses cached session→path mappings, invalidated when session count changes.
+    /// This handles cases where session names don't match project names (e.g., "plink_com" vs "plink.com").
+    private func matchSessionByPath(_ sessionName: String) async -> String? {
+        // Refresh cache if session count changed
+        let currentSessions = await fetchAllSessionNames()
+        if currentSessions.count != cachedSessionCount {
+            await refreshSessionPathCache()
+            cachedSessionCount = currentSessions.count
+        }
+
+        // Lookup cached working directory for this session
+        guard let sessionPath = sessionPathCache[sessionName] else {
+            return nil
+        }
+
+        // Try exact path match first
+        if projectsByPath[sessionPath] != nil {
+            return sessionPath
+        }
+
+        // Try prefix match (session in subdirectory of project)
+        for projectPath in projectsByPath.keys {
+            if sessionPath.hasPrefix(projectPath + "/") || sessionPath == projectPath {
+                return projectPath
+            }
+        }
+
+        return nil
+    }
+
+    /// Fuzzy matches a session name to a project name using common transformations.
+    ///
+    /// Tries:
+    /// - Dot to underscore: "plink.com" → "plink_com"
+    /// - Underscore to dot: "plink_com" → "plink.com"
+    /// - Remove extension: "plink.com" → "plink"
+    private func fuzzyMatchSessionName(_ sessionName: String) -> String? {
+        let candidates = [
+            sessionName.replacingOccurrences(of: ".", with: "_"),  // plink.com → plink_com
+            sessionName.replacingOccurrences(of: "_", with: "."),  // plink_com → plink.com
+            sessionName.replacingOccurrences(of: "-", with: "_"),  // plink-com → plink_com
+            sessionName.replacingOccurrences(of: "-", with: "."),  // plink-com → plink.com
+            (sessionName as NSString).deletingPathExtension,       // plink.com → plink
+        ]
+
+        for candidate in candidates {
+            if let path = projectsByName[candidate] {
+                return path
+            }
+        }
+
+        return nil
+    }
+
+    /// Fetches all session names (for cache invalidation detection).
+    private func fetchAllSessionNames() async -> [String] {
+        guard let output = await runShellCommand("tmux list-sessions -F '#{session_name}' 2>/dev/null"),
+              !output.isEmpty else {
+            return []
+        }
+        return output.split(separator: "\n").map(String.init)
+    }
+
+    /// Refreshes the session→path cache by querying tmux for all session working directories.
+    private func refreshSessionPathCache() async {
+        guard let output = await runShellCommand("tmux list-windows -a -F '#{session_name}:#{pane_current_path}' 2>/dev/null"),
+              !output.isEmpty else {
+            sessionPathCache = [:]
+            return
+        }
+
+        var cache: [String: String] = [:]
+        for line in output.split(separator: "\n") {
+            let parts = line.split(separator: ":", maxSplits: 1)
+            guard parts.count == 2 else { continue }
+
+            let sessionName = String(parts[0])
+            let path = String(parts[1])
+
+            // Use first path seen for each session (should be consistent)
+            if cache[sessionName] == nil {
+                cache[sessionName] = path
+            }
+        }
+
+        sessionPathCache = cache
     }
 
     /// Checks if the frontmost application is a known terminal.

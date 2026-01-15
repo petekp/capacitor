@@ -15,6 +15,7 @@ struct ProjectCardView: View {
     let onInfoTap: () -> Void
     let onMoveToDormant: () -> Void
     let onOpenBrowser: () -> Void
+    var onCaptureIdea: (() -> Void)?
     var onRemove: (() -> Void)?
     var onDragStarted: (() -> NSItemProvider)?
 
@@ -29,6 +30,7 @@ struct ProjectCardView: View {
     @State private var isBrowserHovered = false
     @State private var previousState: SessionState?
     @State private var lastChimeTime: Date?
+    @State private var lastKnownSummary: String?
 
     private let chimeCooldown: TimeInterval = 3.0
 
@@ -57,6 +59,24 @@ struct ProjectCardView: View {
         project.isMissing ? .white.opacity(0.5) : .white.opacity(0.9)
     }
 
+    private var displaySummary: String? {
+        // If there's a current summary, use it. Otherwise fall back to last known summary.
+        if let current = sessionState?.workingOn, !current.isEmpty {
+            return current
+        }
+        return lastKnownSummary
+    }
+
+    #if DEBUG
+    private var glassConfigForHandlers: GlassConfig? {
+        glassConfig
+    }
+    #else
+    private var glassConfigForHandlers: Any? {
+        nil
+    }
+    #endif
+
     // MARK: - Body
 
     var body: some View {
@@ -70,7 +90,8 @@ struct ProjectCardView: View {
                     flashOpacity: flashOpacity,
                     floatingMode: floatingMode,
                     floatingCardBackground: floatingCardBackground,
-                    solidCardBackground: solidCardBackground
+                    solidCardBackground: solidCardBackground,
+                    animationSeed: project.path
                 )
                 .cardInteractions(
                     isHovered: $isHovered,
@@ -85,9 +106,15 @@ struct ProjectCardView: View {
                     lastChimeTime: $lastChimeTime,
                     flashOpacity: $flashOpacity,
                     chimeCooldown: chimeCooldown,
-                    glassConfig: glassConfig
+                    glassConfig: glassConfigForHandlers
                 )
                 .contextMenu { cardContextMenu }
+                .onChange(of: sessionState?.workingOn) { _, newValue in
+                    // Store the last known summary when it changes
+                    if let summary = newValue, !summary.isEmpty {
+                        lastKnownSummary = summary
+                    }
+                }
         }
     }
 
@@ -110,11 +137,14 @@ struct ProjectCardView: View {
             )
 
             ProjectCardContent(
-                workingOn: sessionState?.workingOn,
-                blocker: projectStatus?.blocker
+                workingOn: displaySummary,
+                blocker: projectStatus?.blocker,
+                isWorking: currentState == .working
             )
         }
         .padding(12)
+        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: displaySummary)
+        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: projectStatus?.blocker)
     }
 
     // MARK: - Context Menu
@@ -142,6 +172,11 @@ struct ProjectCardView: View {
             }
             Button(action: onInfoTap) {
                 Label("View Details", systemImage: "info.circle")
+            }
+            if let onCaptureIdea = onCaptureIdea {
+                Button(action: onCaptureIdea) {
+                    Label("Capture Idea...", systemImage: "lightbulb")
+                }
             }
             Divider()
             Button(action: onMoveToDormant) {
@@ -257,14 +292,12 @@ private struct ProjectCardHeader: View {
 private struct ProjectCardContent: View {
     let workingOn: String?
     let blocker: String?
+    let isWorking: Bool
 
     var body: some View {
-        Group {
+        VStack(alignment: .leading, spacing: 6) {
             if let workingOn = workingOn, !workingOn.isEmpty {
-                Text(workingOn)
-                    .font(.system(size: 12, weight: .regular))
-                    .foregroundColor(.white.opacity(0.6))
-                    .lineLimit(2)
+                TickerText(text: workingOn, isShimmering: isWorking)
             }
 
             if let blocker = blocker, !blocker.isEmpty {
@@ -276,6 +309,66 @@ private struct ProjectCardContent: View {
                         .lineLimit(1)
                 }
                 .foregroundColor(Color(hue: 0, saturation: 0.7, brightness: 0.85))
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+// MARK: - Ticker Text Component
+
+private struct TickerText: View {
+    let text: String
+    let isShimmering: Bool
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 12, weight: .regular))
+            .foregroundColor(.white.opacity(0.6))
+            .lineLimit(2)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .transition(.asymmetric(
+                insertion: .move(edge: .bottom).combined(with: .opacity),
+                removal: .move(edge: .top).combined(with: .opacity)
+            ))
+            .overlay {
+                if isShimmering {
+                    ShimmerEffect()
+                        .mask(
+                            Text(text)
+                                .font(.system(size: 12, weight: .regular))
+                                .lineLimit(2)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        )
+                }
+            }
+            .id(text)
+    }
+}
+
+// MARK: - Shimmer Effect
+
+private struct ShimmerEffect: View {
+    @State private var phase: CGFloat = 0
+
+    var body: some View {
+        GeometryReader { geometry in
+            LinearGradient(
+                gradient: Gradient(stops: [
+                    .init(color: .white.opacity(0), location: 0),
+                    .init(color: .white.opacity(0), location: phase - 0.2),
+                    .init(color: .white.opacity(0.4), location: phase),
+                    .init(color: .white.opacity(0), location: phase + 0.2),
+                    .init(color: .white.opacity(0), location: 1)
+                ]),
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+            .onAppear {
+                withAnimation(.linear(duration: 2.0).repeatForever(autoreverses: false)) {
+                    phase = 1.2
+                }
             }
         }
     }
@@ -364,7 +457,8 @@ extension View {
         flashOpacity: Double,
         floatingMode: Bool,
         floatingCardBackground: some View,
-        solidCardBackground: some View
+        solidCardBackground: some View,
+        animationSeed: String
     ) -> some View {
         self
             .background {
@@ -414,7 +508,7 @@ extension View {
             }
             .overlay {
                 if isReady {
-                    ReadyBorderGlow()
+                    ReadyBorderGlow(seed: animationSeed)
                         .transition(.opacity.animation(.easeInOut(duration: 0.4)))
                 }
             }
@@ -448,6 +542,7 @@ extension View {
             }
     }
 
+    #if DEBUG
     func cardLifecycleHandlers(
         flashState: SessionState?,
         sessionState: ProjectSessionState?,
@@ -470,9 +565,7 @@ extension View {
                 }
             }
             .onChange(of: sessionState?.state) { oldValue, newValue in
-                #if DEBUG
                 if glassConfig?.previewState != .none { return }
-                #endif
 
                 if newValue == .ready && oldValue != .ready && oldValue != nil {
                     let now = Date()
@@ -484,17 +577,53 @@ extension View {
                 }
                 previousState.wrappedValue = newValue
             }
-            #if DEBUG
             .onChange(of: glassConfig?.previewState) { oldValue, newValue in
                 if newValue == .ready && oldValue != .ready {
                     ReadyChime.shared.play()
                 }
             }
-            #endif
             .onAppear {
                 previousState.wrappedValue = sessionState?.state
             }
     }
+    #else
+    func cardLifecycleHandlers(
+        flashState: SessionState?,
+        sessionState: ProjectSessionState?,
+        currentState: SessionState?,
+        previousState: Binding<SessionState?>,
+        lastChimeTime: Binding<Date?>,
+        flashOpacity: Binding<Double>,
+        chimeCooldown: TimeInterval,
+        glassConfig: Any?
+    ) -> some View {
+        self
+            .animation(.easeInOut(duration: 0.4), value: sessionState?.state)
+            .onChange(of: flashState) { _, newValue in
+                guard newValue != nil else { return }
+                withAnimation(.easeOut(duration: 0.1)) {
+                    flashOpacity.wrappedValue = 1.0
+                }
+                withAnimation(.easeOut(duration: 1.3).delay(0.1)) {
+                    flashOpacity.wrappedValue = 0
+                }
+            }
+            .onChange(of: sessionState?.state) { oldValue, newValue in
+                if newValue == .ready && oldValue != .ready && oldValue != nil {
+                    let now = Date()
+                    let shouldPlayChime = lastChimeTime.wrappedValue.map { now.timeIntervalSince($0) >= chimeCooldown } ?? true
+                    if shouldPlayChime {
+                        lastChimeTime.wrappedValue = now
+                        ReadyChime.shared.play()
+                    }
+                }
+                previousState.wrappedValue = newValue
+            }
+            .onAppear {
+                previousState.wrappedValue = sessionState?.state
+            }
+    }
+    #endif
 }
 
 // MARK: - Ready State Glow Effects
@@ -596,16 +725,26 @@ private struct GlowParameters {
 }
 
 struct ReadyBorderGlow: View {
+    let seed: String
+
     #if DEBUG
     @ObservedObject private var config = GlassConfig.shared
     #endif
 
+    private var timeOffset: Double {
+        // Generate a stable random offset from the seed (0 to 10 seconds)
+        var hasher = Hasher()
+        hasher.combine(seed)
+        let hash = abs(hasher.finalize())
+        return Double(hash % 10000) / 1000.0
+    }
+
     var body: some View {
         TimelineView(.animation) { timeline in
             #if DEBUG
-            ReadyBorderGlowContent(date: timeline.date, config: config)
+            ReadyBorderGlowContent(date: timeline.date, config: config, timeOffset: timeOffset)
             #else
-            ReadyBorderGlowContent(date: timeline.date, config: nil)
+            ReadyBorderGlowContent(date: timeline.date, config: nil, timeOffset: timeOffset)
             #endif
         }
         .allowsHitTesting(false)
@@ -614,11 +753,26 @@ struct ReadyBorderGlow: View {
 
 private struct ReadyBorderGlowContent: View {
     let date: Date
+    let timeOffset: Double
+
+    #if DEBUG
     let config: GlassConfig?
+
+    init(date: Date, config: GlassConfig?, timeOffset: Double) {
+        self.date = date
+        self.config = config
+        self.timeOffset = timeOffset
+    }
+    #else
+    init(date: Date, config: Any?, timeOffset: Double) {
+        self.date = date
+        self.timeOffset = timeOffset
+    }
+    #endif
 
     var body: some View {
         let params = borderGlowParameters
-        let time = date.timeIntervalSinceReferenceDate
+        let time = date.timeIntervalSinceReferenceDate + timeOffset
         let phase = time.truncatingRemainder(dividingBy: params.speed) / params.speed
         let rotationPeriod = params.speed / params.rotationMult
         let rotationAngle = Angle(degrees: time.truncatingRemainder(dividingBy: rotationPeriod) / rotationPeriod * 360)

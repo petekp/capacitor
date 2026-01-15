@@ -380,4 +380,54 @@ impl HudEngine {
             projects,
         })
     }
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // Idea Capture API
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    /// Captures a new idea for a project.
+    ///
+    /// Appends the idea to `.claude/ideas.local.md` in the project's directory
+    /// with default metadata (effort: unknown, status: open, triage: pending).
+    ///
+    /// Returns the generated ULID for the idea.
+    pub fn capture_idea(&self, project_path: String, idea_text: String) -> Result<String, HudFfiError> {
+        crate::ideas::capture_idea(&project_path, &idea_text).map_err(HudFfiError::from)
+    }
+
+    /// Loads all ideas for a project.
+    ///
+    /// Returns an empty vector if the ideas file doesn't exist.
+    pub fn load_ideas(&self, project_path: String) -> Result<Vec<crate::types::Idea>, HudFfiError> {
+        crate::ideas::load_ideas(&project_path).map_err(HudFfiError::from)
+    }
+
+    /// Updates the status of an idea.
+    ///
+    /// Valid statuses: open, in-progress, done
+    pub fn update_idea_status(&self, project_path: String, idea_id: String, new_status: String) -> Result<(), HudFfiError> {
+        crate::ideas::update_idea_status(&project_path, &idea_id, &new_status).map_err(HudFfiError::from)
+    }
+
+    /// Updates the effort estimate of an idea.
+    ///
+    /// Valid efforts: unknown, small, medium, large, xl
+    pub fn update_idea_effort(&self, project_path: String, idea_id: String, new_effort: String) -> Result<(), HudFfiError> {
+        crate::ideas::update_idea_effort(&project_path, &idea_id, &new_effort).map_err(HudFfiError::from)
+    }
+
+    /// Updates the triage status of an idea.
+    ///
+    /// Valid triage statuses: pending, validated
+    pub fn update_idea_triage(&self, project_path: String, idea_id: String, new_triage: String) -> Result<(), HudFfiError> {
+        crate::ideas::update_idea_triage(&project_path, &idea_id, &new_triage).map_err(HudFfiError::from)
+    }
+
+    /// Updates the title of an idea.
+    ///
+    /// Used for async title generation - the idea is initially saved with a placeholder,
+    /// then this is called once the AI-generated title is ready.
+    pub fn update_idea_title(&self, project_path: String, idea_id: String, new_title: String) -> Result<(), HudFfiError> {
+        crate::ideas::update_idea_title(&project_path, &idea_id, &new_title).map_err(HudFfiError::from)
+    }
 }

@@ -90,19 +90,33 @@ struct FloatingWindowConfigurator: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView {
         let view = NSView()
         DispatchQueue.main.async {
-            self.configureWindow(view.window)
+            self.configureWindow(view.window, context: context)
         }
         return view
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
         DispatchQueue.main.async {
-            self.configureWindow(nsView.window)
+            self.configureWindow(nsView.window, context: context)
         }
     }
 
-    private func configureWindow(_ window: NSWindow?) {
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    class Coordinator {
+        var previousFloatingMode: Bool?
+    }
+
+    private func configureWindow(_ window: NSWindow?, context: Context) {
         guard let window = window else { return }
+
+        let coordinator = context.coordinator
+        // Only clear backgrounds when explicitly transitioning from non-floating to floating
+        // Not on initial setup (nil) or when staying in floating mode (true -> true)
+        let isTransitioningToFloating = coordinator.previousFloatingMode == false && enabled
+        coordinator.previousFloatingMode = enabled
 
         // Set window level based on alwaysOnTop preference
         if alwaysOnTop {
@@ -127,8 +141,9 @@ struct FloatingWindowConfigurator: NSViewRepresentable {
             window.standardWindowButton(.miniaturizeButton)?.isHidden = true
             window.standardWindowButton(.zoomButton)?.isHidden = true
 
-            // Clear the content view's background layer as well
-            if let contentView = window.contentView {
+            // Only clear backgrounds when transitioning INTO floating mode
+            // Not on every window reconfiguration (e.g., alwaysOnTop changes)
+            if isTransitioningToFloating, let contentView = window.contentView {
                 contentView.wantsLayer = true
                 contentView.layer?.backgroundColor = .clear
 

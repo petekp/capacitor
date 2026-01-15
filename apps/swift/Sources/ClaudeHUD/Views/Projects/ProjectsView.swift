@@ -22,6 +22,21 @@ struct ProjectsView: View {
         }
     }
 
+    private func filteredIdeas(for project: Project) -> ([Idea], Int) {
+        let allIdeas = appState.getIdeas(for: project)
+
+        // Filter to open + in-progress only
+        let activeIdeas = allIdeas.filter { idea in
+            idea.status == "open" || idea.status == "in-progress"
+        }
+
+        let displayLimit = 5
+        let displayed = Array(activeIdeas.prefix(displayLimit))
+        let remaining = max(0, activeIdeas.count - displayLimit)
+
+        return (displayed, remaining)
+    }
+
     private func isStale(_ project: Project) -> Bool {
         guard let state = appState.getSessionState(for: project),
               state.state == .ready,
@@ -81,6 +96,9 @@ struct ProjectsView: View {
                                 onOpenBrowser: {
                                     appState.openInBrowser(project)
                                 },
+                                onCaptureIdea: {
+                                    appState.showIdeaCaptureModal(for: project)
+                                },
                                 onRemove: {
                                     withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                                         appState.removeProject(project.path)
@@ -105,6 +123,25 @@ struct ProjectsView: View {
                                 insertion: .opacity.combined(with: .scale(scale: 0.95)).combined(with: .move(edge: .top)),
                                 removal: .opacity.combined(with: .scale(scale: 0.9))
                             ))
+
+                            let (ideas, remaining) = filteredIdeas(for: project)
+                            if !ideas.isEmpty {
+                                InlineIdeasList(
+                                    ideas: ideas,
+                                    remainingCount: remaining,
+                                    generatingTitleIds: appState.generatingTitleForIdeas,
+                                    onShowMore: { appState.showProjectDetail(project) },
+                                    onAddIdea: { appState.showIdeaCaptureModal(for: project) },
+                                    onWorkOnIdea: { idea in
+                                        appState.workOnIdea(idea, for: project)
+                                    },
+                                    onDismissIdea: { idea in
+                                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                            appState.dismissIdea(idea, for: project)
+                                        }
+                                    }
+                                )
+                            }
                         }
                     }
 
@@ -141,6 +178,25 @@ struct ProjectsView: View {
                                         insertion: .opacity.combined(with: .scale(scale: 0.95)),
                                         removal: .opacity.combined(with: .scale(scale: 0.9))
                                     ))
+
+                                    let (ideas, remaining) = filteredIdeas(for: project)
+                                    if !ideas.isEmpty {
+                                        InlineIdeasList(
+                                            ideas: ideas,
+                                            remainingCount: remaining,
+                                            generatingTitleIds: appState.generatingTitleForIdeas,
+                                            onShowMore: { appState.showProjectDetail(project) },
+                                            onAddIdea: { appState.showIdeaCaptureModal(for: project) },
+                                            onWorkOnIdea: { idea in
+                                                appState.workOnIdea(idea, for: project)
+                                            },
+                                            onDismissIdea: { idea in
+                                                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                                    appState.dismissIdea(idea, for: project)
+                                                }
+                                            }
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -156,6 +212,18 @@ struct ProjectsView: View {
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                     pausedCollapsed = false
                 }
+            }
+        }
+        .sheet(isPresented: $appState.showCaptureModal) {
+            if let project = appState.captureModalProject {
+                TextCaptureView(
+                    projectPath: project.path,
+                    projectName: project.name,
+                    onCapture: { text in
+                        appState.captureIdea(for: project, text: text)
+                    }
+                )
+                .presentationBackground(.ultraThinMaterial)
             }
         }
     }

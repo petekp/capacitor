@@ -77,6 +77,15 @@ pub enum HudError {
     InvalidProjectPath { path: String, reason: String },
 
     // ─────────────────────────────────────────────────────────────────────
+    // Idea Errors
+    // ─────────────────────────────────────────────────────────────────────
+    #[error("Idea not found: {id}")]
+    IdeaNotFound { id: String },
+
+    #[error("Idea field not found: {id}: {field}")]
+    IdeaFieldNotFound { id: String, field: String },
+
+    // ─────────────────────────────────────────────────────────────────────
     // I/O Errors
     // ─────────────────────────────────────────────────────────────────────
     #[error("File not found: {0}")]
