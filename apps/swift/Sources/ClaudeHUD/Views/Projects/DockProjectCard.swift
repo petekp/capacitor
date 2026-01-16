@@ -27,6 +27,7 @@ struct DockProjectCard: View {
     @State private var previousState: SessionState?
     @State private var lastChimeTime: Date?
     @State private var lastKnownSummary: String?
+    @State private var summaryHighlighted = false
 
     private let cornerRadius: CGFloat = 10
     private let chimeCooldown: TimeInterval = 3.0
@@ -58,7 +59,7 @@ struct DockProjectCard: View {
 
     var body: some View {
         cardContent
-            .frame(width: 140, height: 95)
+            .frame(width: 262, height: 126)
             .cardStyling(
                 isHovered: isHovered,
                 isReady: isReady,
@@ -91,55 +92,59 @@ struct DockProjectCard: View {
             .accessibilityElement(children: .combine)
             .accessibilityLabel(project.name)
             .accessibilityValue(statusDescription)
-            .onChange(of: sessionState?.workingOn) { _, newValue in
+            .onChange(of: sessionState?.workingOn) { oldValue, newValue in
                 if let summary = newValue, !summary.isEmpty {
                     lastKnownSummary = summary
+                    if oldValue != newValue {
+                        summaryHighlighted = true
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                            summaryHighlighted = false
+                        }
+                    }
                 }
             }
     }
 
     private var cardContent: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 4) {
-                Text(project.name)
-                    .font(AppTypography.labelMedium)
-                    .foregroundColor(.white.opacity(0.9))
-                    .lineLimit(1)
+        VStack(alignment: .leading, spacing: 0) {
+            Text(project.name)
+                .font(AppTypography.sectionTitle.monospaced())
+                .tracking(-0.5)
+                .foregroundColor(.white.opacity(0.9))
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
 
-                Spacer(minLength: 4)
-
-                if let state = currentState {
-                    DockStatusIndicator(state: state)
-                }
-            }
-
-            if let summary = displaySummary, !summary.isEmpty {
-                Text(summary)
-                    .font(AppTypography.caption)
-                    .foregroundColor(.white.opacity(0.5))
-                    .lineLimit(2)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            if let state = currentState {
+                DockStatusIndicator(state: state)
+                    .padding(.top, 4)
             }
 
             Spacer(minLength: 0)
 
-            HStack(spacing: 6) {
-                if let port = devServerPort {
-                    DockPortBadge(port: port, onTap: onOpenBrowser)
-                }
+            if let summary = displaySummary, !summary.isEmpty {
+                Text(summary)
+                    .font(AppTypography.body)
+                    .foregroundColor(.white.opacity(summaryHighlighted ? 0.9 : 0.55))
+                    .lineLimit(3)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentTransition(reduceMotion ? .identity : .interpolate)
+                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: displaySummary)
+                    .animation(reduceMotion ? nil : .easeOut(duration: 0.8), value: summaryHighlighted)
+            }
 
-                if let blocker = projectStatus?.blocker, !blocker.isEmpty {
-                    DockBlockerBadge()
-                }
-
-                Spacer()
-
-                if isStale {
-                    DockStaleBadge()
+            if projectStatus?.blocker != nil || isStale {
+                HStack(spacing: 6) {
+                    if let blocker = projectStatus?.blocker, !blocker.isEmpty {
+                        DockBlockerBadge()
+                    }
+                    if isStale {
+                        DockStaleBadge()
+                    }
                 }
             }
         }
-        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
     }
 
     private var floatingCardBackground: some View {
@@ -252,8 +257,9 @@ private struct DockStatusIndicator: View {
     }
 
     var body: some View {
-        Text(statusText)
-            .font(AppTypography.captionSmall)
+        Text(statusText.uppercased())
+            .font(.system(.callout, design: .monospaced).weight(.semibold))
+            .tracking(0.5)
             .foregroundColor(isActive ? statusColor : statusColor.opacity(0.55))
             .contentTransition(reduceMotion ? .identity : .numericText())
             .animation(reduceMotion ? AppMotion.reducedMotionFallback : .smooth(duration: 0.3), value: state)
@@ -269,10 +275,10 @@ private struct DockPortBadge: View {
     var body: some View {
         Button(action: onTap) {
             Text(":\(port)")
-                .font(AppTypography.monoCaption)
-                .foregroundColor(.white.opacity(isHovered ? 0.9 : 0.5))
-                .padding(.horizontal, 5)
-                .padding(.vertical, 2)
+                .font(AppTypography.mono)
+                .foregroundColor(.white.opacity(isHovered ? 0.9 : 0.6))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
                 .background(Color.white.opacity(isHovered ? 0.15 : 0.08))
                 .clipShape(Capsule())
         }
@@ -284,7 +290,7 @@ private struct DockPortBadge: View {
 private struct DockBlockerBadge: View {
     var body: some View {
         Image(systemName: "exclamationmark.triangle.fill")
-            .font(AppTypography.captionSmall)
+            .font(AppTypography.label)
             .foregroundColor(.orange)
     }
 }
@@ -292,10 +298,10 @@ private struct DockBlockerBadge: View {
 private struct DockStaleBadge: View {
     var body: some View {
         Text("stale")
-            .font(AppTypography.captionSmall)
+            .font(AppTypography.label)
             .foregroundColor(.white.opacity(0.4))
-            .padding(.horizontal, 4)
-            .padding(.vertical, 1)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
             .background(Color.white.opacity(0.06))
             .clipShape(Capsule())
     }

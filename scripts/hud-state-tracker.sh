@@ -879,30 +879,40 @@ if [ "$should_publish" = "true" ]; then
   disown 2>/dev/null
 fi
 
-# Generate real-time description for UserPromptSubmit and Stop events
-# This provides live context updates so users can glance at HUD to recall what's happening
-generate_description=false
-if [ "$event" = "Stop" ] || [ "$event" = "UserPromptSubmit" ]; then
-  generate_description=true
-fi
+# Generate summary on Stop events only (not every prompt submit)
+# Optimized: uses only last 3 user messages, truncated to 150 chars each (~300 tokens total)
+SUMMARY_COOLDOWN=60  # seconds between summary generations per session
+SUMMARY_CACHE_FILE="$HOME/.claude/hud-summary-times.json"
 
-if [ "$generate_description" = "true" ] && [ -n "$transcript_path" ] && [ -f "$transcript_path" ]; then
+if [ "$event" = "Stop" ] && [ -n "$transcript_path" ] && [ -f "$transcript_path" ]; then
   (
-    context=$(tail -100 "$transcript_path" | grep -E '"type":"(user|assistant)"' | tail -20)
+    # Check cooldown - skip if we generated recently for this session
+    if [ -f "$SUMMARY_CACHE_FILE" ]; then
+      last_gen=$(jq -r --arg sid "$session_id" '.[$sid] // 0' "$SUMMARY_CACHE_FILE" 2>/dev/null || echo "0")
+      now=$(date +%s)
+      if [ $((now - last_gen)) -lt $SUMMARY_COOLDOWN ]; then
+        exit 0
+      fi
+    fi
 
-    if [ -z "$context" ]; then
+    # Extract only user messages, last 3, truncated to 150 chars each
+    # This reduces context from ~25k tokens to ~300 tokens (50x reduction)
+    context=$(grep '"type":"user"' "$transcript_path" | tail -3 | \
+              jq -r '(.message // .content // empty) | .[0:150]' 2>/dev/null | \
+              tr '\n' ' ' | sed 's/  */ /g')
+
+    if [ -z "$context" ] || [ ${#context} -lt 10 ]; then
       exit 0
     fi
 
     claude_cmd=$(command -v claude || echo "/opt/homebrew/bin/claude")
 
     # Run from $HOME with HUD_SUMMARY_GEN=1 to prevent recursive hook triggers
-    # The hook will skip processing when this env var is set
     response=$(cd "$HOME" && HUD_SUMMARY_GEN=1 "$claude_cmd" -p \
       --no-session-persistence \
       --output-format json \
       --model haiku \
-      "Extract from this coding session context what the user is currently working on. Return ONLY valid JSON, no markdown: {\"working_on\": \"brief description\"}. Context: $context" 2>/dev/null)
+      "Task: 5-8 word summary. Context: $context" 2>/dev/null)
 
     if ! echo "$response" | jq -e . >/dev/null 2>&1; then
       exit 0
@@ -910,14 +920,15 @@ if [ "$generate_description" = "true" ] && [ -n "$transcript_path" ] && [ -f "$t
 
     result=$(echo "$response" | jq -r '.result // empty')
 
+    # Handle both JSON response and plain text
     working_on=$(echo "$result" | jq -r '.working_on // empty' 2>/dev/null)
-
     if [ -z "$working_on" ]; then
-      working_on=$(echo "$result" | sed -n 's/.*"working_on"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+      # Haiku might return plain text for such a simple prompt
+      working_on=$(echo "$result" | head -1 | cut -c1-80)
     fi
 
     if [ -n "$working_on" ] && [ -n "$session_id" ]; then
-      # Inner function for working_on update (called within lock)
+      # Update working_on in state file
       _working_on_inner() {
         local tmp_file
         tmp_file=$(mktemp "${STATE_FILE}.tmp.XXXXXX")
@@ -927,6 +938,16 @@ if [ "$generate_description" = "true" ] && [ -n "$transcript_path" ] && [ -f "$t
            "$STATE_FILE" > "$tmp_file" && mv "$tmp_file" "$STATE_FILE"
       }
       with_state_lock _working_on_inner
+
+      # Update cooldown timestamp
+      mkdir -p "$(dirname "$SUMMARY_CACHE_FILE")"
+      if [ -f "$SUMMARY_CACHE_FILE" ]; then
+        tmp_cache=$(mktemp)
+        jq --arg sid "$session_id" --arg ts "$(date +%s)" '.[$sid] = ($ts | tonumber)' \
+           "$SUMMARY_CACHE_FILE" > "$tmp_cache" && mv "$tmp_cache" "$SUMMARY_CACHE_FILE"
+      else
+        echo "{\"$session_id\": $(date +%s)}" > "$SUMMARY_CACHE_FILE"
+      fi
     fi
   ) &>/dev/null &
   disown 2>/dev/null

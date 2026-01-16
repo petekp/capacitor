@@ -6,6 +6,14 @@ Archive of completed features and improvements. See `TODO.md` for active work.
 
 ## January 2026
 
+### Dock Mode Polish Sprint (Round 1)
+- Restored mono font on project title (sectionTitle.monospaced)
+- Bumped all typography up one step in the type scale
+- Reduced card height by 20% (158→126px, dropped 4:3 ratio)
+- Moved port pill under title; session summary to bottom
+- Added elegant `.contentTransition(.interpolate)` when summary changes
+- Removed transition on active session outline (now instant)
+
 ### Visual Polish Sprint 🎨
 *Cohesive refinement pass for organic, flowing interface.*
 

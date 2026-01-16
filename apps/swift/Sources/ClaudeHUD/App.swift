@@ -230,8 +230,8 @@ struct LayoutModeFrameModifier: ViewModifier {
                        minHeight: 400, maxHeight: .infinity)
         case .dock:
             content
-                .frame(minWidth: 400, maxWidth: 1200,
-                       minHeight: 120, maxHeight: 180)
+                .frame(minWidth: 500, maxWidth: 1600,
+                       minHeight: 158, maxHeight: 195)
         }
     }
 }
@@ -308,8 +308,8 @@ struct WindowFrameConfigurator: NSViewRepresentable {
             let y = currentFrame.origin.y + currentFrame.height - height
             return NSRect(x: x, y: max(screenFrame.origin.y, y), width: width, height: height)
         case .dock:
-            let width: CGFloat = 800
-            let height: CGFloat = 150
+            let width: CGFloat = 960
+            let height: CGFloat = 175
             let x = screenFrame.origin.x + (screenFrame.width - width) / 2
             let y = screenFrame.origin.y + 20
             return NSRect(x: x, y: y, width: width, height: height)
@@ -346,7 +346,8 @@ struct WindowFrameConfigurator: NSViewRepresentable {
 
 private class WindowFrameTrackingView: NSView {
     weak var coordinator: WindowFrameConfigurator.Coordinator?
-    private var frameObserver: NSObjectProtocol?
+    private var resizeObserver: NSObjectProtocol?
+    private var moveObserver: NSObjectProtocol?
 
     init(coordinator: WindowFrameConfigurator.Coordinator) {
         self.coordinator = coordinator
@@ -360,13 +361,13 @@ private class WindowFrameTrackingView: NSView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
 
-        frameObserver.map { NotificationCenter.default.removeObserver($0) }
+        removeObservers()
 
         guard let window = window else { return }
 
         coordinator?.lastKnownFrame = window.frame
 
-        frameObserver = NotificationCenter.default.addObserver(
+        resizeObserver = NotificationCenter.default.addObserver(
             forName: NSWindow.didResizeNotification,
             object: window,
             queue: .main
@@ -375,7 +376,7 @@ private class WindowFrameTrackingView: NSView {
             self?.coordinator?.updateFrame(window.frame)
         }
 
-        NotificationCenter.default.addObserver(
+        moveObserver = NotificationCenter.default.addObserver(
             forName: NSWindow.didMoveNotification,
             object: window,
             queue: .main
@@ -385,8 +386,19 @@ private class WindowFrameTrackingView: NSView {
         }
     }
 
+    private func removeObservers() {
+        if let observer = resizeObserver {
+            NotificationCenter.default.removeObserver(observer)
+            resizeObserver = nil
+        }
+        if let observer = moveObserver {
+            NotificationCenter.default.removeObserver(observer)
+            moveObserver = nil
+        }
+    }
+
     deinit {
-        frameObserver.map { NotificationCenter.default.removeObserver($0) }
+        removeObservers()
     }
 }
 

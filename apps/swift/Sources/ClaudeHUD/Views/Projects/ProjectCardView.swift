@@ -90,48 +90,46 @@ struct ProjectCardView: View {
     }
 
     var body: some View {
-        WindowDragDisabled {
-            cardContent
-                .cardStyling(
-                    isHovered: isHovered,
-                    isReady: isReady,
-                    isActive: isActive,
-                    flashState: flashState,
-                    flashOpacity: flashOpacity,
-                    floatingMode: floatingMode,
-                    floatingCardBackground: floatingCardBackground,
-                    solidCardBackground: solidCardBackground,
-                    animationSeed: project.path
-                )
-                .cardInteractions(
-                    isHovered: $isHovered,
-                    onTap: onTap,
-                    onDragStarted: onDragStarted
-                )
-                .cardLifecycleHandlers(
-                    flashState: flashState,
-                    sessionState: sessionState,
-                    currentState: currentState,
-                    previousState: $previousState,
-                    lastChimeTime: $lastChimeTime,
-                    flashOpacity: $flashOpacity,
-                    chimeCooldown: chimeCooldown,
-                    glassConfig: glassConfigForHandlers
-                )
-                .contextMenu { cardContextMenu }
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel(project.name)
-                .accessibilityValue(accessibilityStatusDescription + (displaySummary.map { ". \($0)" } ?? ""))
-                .accessibilityHint("Double-tap to open in terminal. Use actions menu for more options.")
-                .accessibilityAction(named: "Open in Terminal", onTap)
-                .accessibilityAction(named: "View Details", onInfoTap)
-                .accessibilityAction(named: "Move to Paused", onMoveToDormant)
-                .onChange(of: sessionState?.workingOn) { _, newValue in
-                    if let summary = newValue, !summary.isEmpty {
-                        lastKnownSummary = summary
-                    }
+        cardContent
+            .cardStyling(
+                isHovered: isHovered,
+                isReady: isReady,
+                isActive: isActive,
+                flashState: flashState,
+                flashOpacity: flashOpacity,
+                floatingMode: floatingMode,
+                floatingCardBackground: floatingCardBackground,
+                solidCardBackground: solidCardBackground,
+                animationSeed: project.path
+            )
+            .cardInteractions(
+                isHovered: $isHovered,
+                onTap: onTap,
+                onDragStarted: onDragStarted
+            )
+            .cardLifecycleHandlers(
+                flashState: flashState,
+                sessionState: sessionState,
+                currentState: currentState,
+                previousState: $previousState,
+                lastChimeTime: $lastChimeTime,
+                flashOpacity: $flashOpacity,
+                chimeCooldown: chimeCooldown,
+                glassConfig: glassConfigForHandlers
+            )
+            .contextMenu { cardContextMenu }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(project.name)
+            .accessibilityValue(accessibilityStatusDescription + (displaySummary.map { ". \($0)" } ?? ""))
+            .accessibilityHint("Double-tap to open in terminal. Use actions menu for more options.")
+            .accessibilityAction(named: "Open in Terminal", onTap)
+            .accessibilityAction(named: "View Details", onInfoTap)
+            .accessibilityAction(named: "Move to Paused", onMoveToDormant)
+            .onChange(of: sessionState?.workingOn) { _, newValue in
+                if let summary = newValue, !summary.isEmpty {
+                    lastKnownSummary = summary
                 }
-        }
+            }
     }
 
     // MARK: - Card Content

@@ -5,8 +5,8 @@ struct DockLayoutView: View {
     @Environment(\.floatingMode) private var floatingMode
     @State private var scrolledID: String?
 
-    private let cardWidth: CGFloat = 140
-    private let cardSpacing: CGFloat = 12
+    private let cardWidth: CGFloat = 262
+    private let cardSpacing: CGFloat = 14
     private let horizontalPadding: CGFloat = 16
 
     private var activeProjects: [Project] {

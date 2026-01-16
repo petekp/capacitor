@@ -13,7 +13,13 @@
 
 *Currently in progress. Limit to 1-3 items.*
 
-*(No active items — Visual Polish Sprint completed!)*
+### Dock Mode Polish Sprint (Round 2)
+- [ ] Move status text underneath the title; hide dev server port
+- [ ] Bump up the status text font size
+- [ ] Tighten letter tracking on the title
+- [ ] Summary text becomes vivid on update, then settles back
+- [ ] Allow up to 3 lines of text for the summary
+- [ ] Make cards 25% wider
 
 ---
 

@@ -32,8 +32,8 @@ extension View {
                     .opacity(flashOpacity)
             )
             .overlay {
-                if isActive {
-                    ZStack {
+                ZStack {
+                    if isActive {
                         RoundedRectangle(cornerRadius: cornerRadius)
                             .strokeBorder(
                                 Color.white.opacity(0.3),
@@ -47,7 +47,6 @@ extension View {
                                 lineWidth: 1.5
                             )
                     }
-                    .transition(.opacity.animation(.easeOut(duration: 0.2)))
                 }
             }
             .overlay {
