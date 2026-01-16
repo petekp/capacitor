@@ -5,6 +5,7 @@ struct CompactProjectCardView: View {
     let onTap: () -> Void
     let onInfoTap: () -> Void
     let onMoveToRecent: () -> Void
+    let onRemove: () -> Void
     var showSeparator: Bool = true
 
     @State private var isHovered = false
@@ -32,7 +33,6 @@ struct CompactProjectCardView: View {
                         .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
-                .opacity(isHovered ? 1 : 0)
                 .onHover { hovering in
                     withAnimation(.easeOut(duration: 0.1)) {
                         isReviveHovered = hovering
@@ -66,6 +66,9 @@ struct CompactProjectCardView: View {
             Divider()
             Button(action: onMoveToRecent) {
                 Label("Move to In Progress", systemImage: "arrow.up.circle")
+            }
+            Button(role: .destructive, action: onRemove) {
+                Label("Remove from HUD", systemImage: "trash")
             }
         }
     }

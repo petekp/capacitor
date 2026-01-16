@@ -170,6 +170,11 @@ struct ProjectsView: View {
                                                 appState.moveToRecent(project)
                                             }
                                         },
+                                        onRemove: {
+                                            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                                appState.removeProject(project.path)
+                                            }
+                                        },
                                         showSeparator: index < pausedProjects.count - 1
                                     )
                                     .id("paused-\(project.path)")
