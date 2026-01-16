@@ -456,14 +456,42 @@ Architecture Decision Records documenting key technical decisions.
 - Add file/directory checks for new project type
 
 ### Regenerating Swift Bindings
+
+**IMPORTANT:** The project has two locations for `hud_core.swift`:
+1. `apps/swift/bindings/` - where UniFFI generates bindings
+2. `apps/swift/Sources/ClaudeHUD/Bridge/` - where Swift actually compiles from
+
+You must update **both** locations and clean build artifacts after Rust API changes.
+
 ```bash
-# First, build the release library
+# 1. Build the release library
 cargo build -p hud-core --release
 
-# Then generate bindings from the built library
+# 2. Generate bindings from the built library
 cd core/hud-core
 cargo run --bin uniffi-bindgen generate --library ../../target/release/libhud_core.dylib --language swift --out-dir ../../apps/swift/bindings/
+
+# 3. Copy bindings to where Swift compiles from
+cp ../../apps/swift/bindings/hud_core.swift ../../apps/swift/Sources/ClaudeHUD/Bridge/
+
+# 4. Clean Swift build artifacts (required to avoid checksum mismatch)
+cd ../../apps/swift
+rm -rf .build ClaudeHUD.app
+
+# 5. Rebuild
+swift build
 ```
+
+**Troubleshooting checksum mismatch:**
+
+If you see `UniFFI API checksum mismatch: try cleaning and rebuilding your project`:
+
+1. **Check for stale Bridge file:** The `Sources/ClaudeHUD/Bridge/hud_core.swift` may be outdated
+2. **Check for stale app bundle:** Remove `apps/swift/ClaudeHUD.app` if it exists
+3. **Check for stale .build cache:** Remove `apps/swift/.build` directory
+4. **Verify dylib is fresh:** `ls -la target/release/libhud_core.dylib` should show recent timestamp
+
+The checksums are embedded in both the dylib and Swift bindings. They must match exactly at runtime.
 
 ## Code Style & Conventions
 
