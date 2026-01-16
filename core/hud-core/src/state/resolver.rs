@@ -304,11 +304,16 @@ pub fn resolve_state_with_details(
                     Some(_) => {
                         // Different PID - search all sessions for one matching the lock by PID and path
                         find_session_for_lock_with_details(store, &lock_info)
-                            .or_else(|| Some(ResolvedState {
-                                state: ClaudeState::Ready,
-                                session_id: None,
-                                cwd: lock_info.path,
-                            }))
+                            .or_else(|| {
+                                // No session matches lock PID - likely an orphaned lock
+                                // Trust the state record we found (r) since it represents actual activity
+                                // at this cwd with a different (newer) PID
+                                Some(ResolvedState {
+                                    state: r.state,
+                                    session_id: Some(r.session_id.clone()),
+                                    cwd: r.cwd.clone(),
+                                })
+                            })
                     }
                     None => {
                         // No PID in record - verify path matches before trusting

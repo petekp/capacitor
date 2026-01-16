@@ -3,6 +3,7 @@ use std::fs;
 use std::path::Path;
 use std::time::Instant;
 
+use super::store::StateStore;
 use super::types::LockInfo;
 
 // Thread-local cache for sysinfo System
@@ -392,6 +393,56 @@ pub fn find_matching_child_lock(
     }
 
     best_match
+}
+
+/// Reconcile a potentially orphaned lock for a project path.
+///
+/// An orphaned lock is one where:
+/// - The lock exists and has an alive PID (verified with proc_started)
+/// - But no state record exists for that PID anywhere in the state file
+///
+/// This handles cases where multiple Claude sessions started at the same path
+/// and the newer session couldn't acquire the lock from the older one.
+///
+/// Returns `true` if an orphaned lock was removed, `false` otherwise.
+pub fn reconcile_orphaned_lock(
+    lock_base: &Path,
+    state_store: &StateStore,
+    project_path: &str,
+) -> bool {
+    let lock_hash = compute_lock_hash(project_path);
+    let lock_path = lock_base.join(format!("{}.lock", lock_hash));
+
+    // Check if lock directory exists
+    if !lock_path.is_dir() {
+        return false;
+    }
+
+    // Try to read lock info - if we can't, leave it alone
+    let Some(lock_info) = read_lock_info(&lock_path) else {
+        return false;
+    };
+
+    // Only reconcile if PID is verified alive
+    // Dead PIDs are handled by normal cleanup in the hook's monitor loop
+    if !is_pid_alive_verified(lock_info.pid, lock_info.proc_started) {
+        return false;
+    }
+
+    // Check if ANY state record has this PID
+    // If the PID has activity anywhere, the lock might be valid
+    let pid_has_any_state = state_store
+        .all_sessions()
+        .any(|r| r.pid == Some(lock_info.pid));
+
+    if pid_has_any_state {
+        return false; // Lock PID is active somewhere - don't touch
+    }
+
+    // Orphaned: PID alive but no state record anywhere → safe to remove
+    // The lock holder background process will notice (checks for lock existence)
+    // and exit gracefully
+    fs::remove_dir_all(&lock_path).is_ok()
 }
 
 #[cfg(test)]

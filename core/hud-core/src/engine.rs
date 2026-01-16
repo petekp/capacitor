@@ -22,6 +22,7 @@ use crate::config::{
 };
 use crate::error::HudFfiError;
 use crate::projects::{has_project_indicators, load_projects};
+use crate::state::{reconcile_orphaned_lock, StateStore};
 use crate::sessions::{detect_session_state, get_all_session_states, read_project_status, ProjectStatus};
 use crate::types::{
     Artifact, DashboardData, GlobalConfig, HudConfig, Plugin, PluginManifest, Project,
@@ -71,6 +72,8 @@ impl HudEngine {
     }
 
     /// Adds a project to the pinned projects list.
+    ///
+    /// Also reconciles any orphaned locks for this path to ensure correct state display.
     pub fn add_project(&self, path: String) -> Result<(), HudFfiError> {
         let mut config = load_hud_config();
 
@@ -80,6 +83,14 @@ impl HudEngine {
 
         if config.pinned_projects.contains(&path) {
             return Err(HudFfiError::from(format!("Project already pinned: {}", path)));
+        }
+
+        // Reconcile any orphaned locks for this path before adding
+        // This handles cases where a stale lock from an old session prevents correct state display
+        let lock_dir = self.claude_dir.join("sessions");
+        let state_file = self.claude_dir.join("hud-session-states-v2.json");
+        if let Ok(store) = StateStore::load(&state_file) {
+            let _ = reconcile_orphaned_lock(&lock_dir, &store, &path);
         }
 
         config.pinned_projects.push(path);
