@@ -1004,41 +1004,69 @@ fi
 SUMMARY_COOLDOWN=60  # seconds between summary generations per session
 SUMMARY_CACHE_FILE="$HOME/.claude/hud-summary-times.json"
 
+# Debug: log transcript_path status on Stop events
+if [ "$event" = "Stop" ]; then
+  echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") | SUMMARY_DEBUG: event=Stop, transcript_path='$transcript_path', exists=$([ -f "$transcript_path" ] && echo "yes" || echo "no")" >> "$LOG_FILE"
+fi
+
 if [ "$event" = "Stop" ] && [ -n "$transcript_path" ] && [ -f "$transcript_path" ]; then
   (
+    _log() { echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") | SUMMARY: $1" >> "$LOG_FILE"; }
+    _log "Starting summary generation for session=$session_id"
+
     # Check cooldown - skip if we generated recently for this session
     if [ -f "$SUMMARY_CACHE_FILE" ]; then
       last_gen=$(jq -r --arg sid "$session_id" '.[$sid] // 0' "$SUMMARY_CACHE_FILE" 2>/dev/null || echo "0")
       now=$(date +%s)
       if [ $((now - last_gen)) -lt $SUMMARY_COOLDOWN ]; then
+        _log "Skipping due to cooldown (last=$last_gen, now=$now, diff=$((now - last_gen))s)"
         exit 0
       fi
     fi
 
-    # Extract only user messages, last 3, truncated to 150 chars each
+    # Extract only user messages that contain actual text prompts, last 3, truncated to 150 chars each
     # This reduces context from ~25k tokens to ~300 tokens (50x reduction)
-    context=$(grep '"type":"user"' "$transcript_path" | tail -3 | \
-              jq -r '(.message // .content // empty) | .[0:150]' 2>/dev/null | \
+    # Handle both string content and array content formats
+    context=$(grep '"type":"user"' "$transcript_path" | \
+              jq -r '
+                .message.content as $c |
+                if ($c | type) == "string" then $c[0:150]
+                elif ($c | type) == "array" then
+                  ([$c[] | select(.type == "text")] | if length > 0 then .[0].text[0:150] else empty end)
+                else empty
+                end
+              ' 2>/dev/null | \
+              grep -v '^\[' | grep -v '^<' | tail -3 | \
               tr '\n' ' ' | sed 's/  */ /g')
 
     if [ -z "$context" ] || [ ${#context} -lt 10 ]; then
+      _log "Skipping: context too short (len=${#context})"
       exit 0
     fi
+    _log "Context extracted (len=${#context})"
 
     claude_cmd=$(command -v claude || echo "/opt/homebrew/bin/claude")
+    _log "Calling claude at $claude_cmd"
 
     # Run from $HOME with HUD_SUMMARY_GEN=1 to prevent recursive hook triggers
+    # Disable tools and frame as explicit summarization task
     response=$(cd "$HOME" && HUD_SUMMARY_GEN=1 "$claude_cmd" -p \
       --no-session-persistence \
       --output-format json \
       --model haiku \
-      "Task: 5-8 word summary. Context: $context" 2>/dev/null)
+      --tools "" \
+      --system-prompt "You extract task summaries. Given user messages, output ONLY a 5-8 word gerund phrase describing what they're working on. Examples: 'Fixing login button alignment', 'Adding dark mode toggle', 'Debugging API response errors'. Output the phrase only, nothing else." \
+      "Summarize this user's task: $context" 2>&1)
+
+    _log "Claude response received (len=${#response})"
 
     if ! echo "$response" | jq -e . >/dev/null 2>&1; then
+      _log "ERROR: Invalid JSON response: ${response:0:200}"
       exit 0
     fi
 
     result=$(echo "$response" | jq -r '.result // empty')
+    _log "Result extracted: ${result:0:100}"
 
     # Handle both JSON response and plain text
     working_on=$(echo "$result" | jq -r '.working_on // empty' 2>/dev/null)
@@ -1046,16 +1074,24 @@ if [ "$event" = "Stop" ] && [ -n "$transcript_path" ] && [ -f "$transcript_path"
       # Haiku might return plain text for such a simple prompt
       working_on=$(echo "$result" | head -1 | cut -c1-80)
     fi
+    _log "working_on='$working_on'"
 
     if [ -n "$working_on" ] && [ -n "$session_id" ]; then
       # Update working_on in state file
       _working_on_inner() {
         local tmp_file
         tmp_file=$(mktemp "${STATE_FILE}.tmp.XXXXXX")
-        jq --arg sid "$session_id" \
-           --arg working_on "$working_on" \
-           'if .sessions[$sid] then .sessions[$sid].working_on = $working_on else . end' \
-           "$STATE_FILE" > "$tmp_file" && mv "$tmp_file" "$STATE_FILE"
+        # Check if session still exists before update
+        if jq -e --arg sid "$session_id" '.sessions[$sid]' "$STATE_FILE" >/dev/null 2>&1; then
+          jq --arg sid "$session_id" \
+             --arg working_on "$working_on" \
+             '.sessions[$sid].working_on = $working_on' \
+             "$STATE_FILE" > "$tmp_file" && mv "$tmp_file" "$STATE_FILE"
+          echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") | SUMMARY: Updated working_on for session=$session_id" >> "$LOG_FILE"
+        else
+          echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") | SUMMARY: Session $session_id no longer exists, skipping update" >> "$LOG_FILE"
+          rm -f "$tmp_file"
+        fi
       }
       with_state_lock _working_on_inner
 
