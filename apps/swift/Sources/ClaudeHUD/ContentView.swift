@@ -93,18 +93,19 @@ struct BottomTab: View {
     let action: () -> Void
 
     @State private var isHovered = false
+    @Environment(\.prefersReducedMotion) private var reduceMotion
 
     var body: some View {
         Button(action: action) {
             VStack(spacing: 4) {
                 ZStack {
                     Image(systemName: icon)
-                        .font(.system(size: 20))
+                        .font(.title2)
                         .foregroundColor(isActive ? .white : .white.opacity(isHovered ? 0.6 : 0.4))
 
                     if count > 0 {
                         Text("\(count)")
-                            .font(.system(size: 9, weight: .bold, design: .rounded))
+                            .font(AppTypography.badge)
                             .foregroundColor(.white)
                             .padding(.horizontal, 4)
                             .padding(.vertical, 1)
@@ -117,15 +118,19 @@ struct BottomTab: View {
                 }
 
                 Text(title)
-                    .font(.system(size: 10, weight: isActive ? .semibold : .medium))
+                    .font(AppTypography.tabLabel.weight(isActive ? .semibold : .medium))
                     .foregroundColor(isActive ? .white : .white.opacity(isHovered ? 0.6 : 0.4))
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 4)
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("\(title) tab")
+        .accessibilityValue(count > 0 ? "\(count) items" : "No items")
+        .accessibilityAddTraits(isActive ? .isSelected : [])
+        .accessibilityHint(isActive ? "Currently selected" : "Double-tap to switch to \(title)")
         .onHover { hovering in
-            withAnimation(.easeOut(duration: 0.15)) {
+            withAnimation(reduceMotion ? AppMotion.reducedMotionFallback : .easeOut(duration: 0.15)) {
                 isHovered = hovering
             }
         }

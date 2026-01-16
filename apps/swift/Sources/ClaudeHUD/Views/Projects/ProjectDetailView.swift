@@ -20,7 +20,7 @@ struct ProjectDetailView: View {
                 }
 
                 Text(project.name)
-                    .font(.system(size: 22, weight: .bold))
+                    .font(AppTypography.pageTitle)
                     .foregroundColor(.white)
                     .opacity(appeared ? 1 : 0)
                     .offset(y: appeared ? 0 : 8)
@@ -138,7 +138,7 @@ struct DetailSectionLabel: View {
                 .frame(width: 4, height: 4)
 
             Text(title)
-                .font(.system(size: 10, weight: .bold))
+                .font(AppTypography.label.weight(.bold))
                 .tracking(2)
                 .foregroundColor(.white.opacity(0.45))
         }
@@ -159,7 +159,7 @@ struct DescriptionCard: View {
                     // Description text - fades in when ready
                     if let description = description {
                         Text(description)
-                            .font(.system(size: 13))
+                            .font(AppTypography.body)
                             .foregroundColor(.white.opacity(0.8))
                             .lineLimit(4)
                             .fixedSize(horizontal: false, vertical: true)
@@ -175,9 +175,9 @@ struct DescriptionCard: View {
                         Button(action: onGenerate) {
                             HStack(spacing: 6) {
                                 Image(systemName: "sparkles")
-                                    .font(.system(size: 11))
+                                    .font(AppTypography.caption)
                                 Text("Generate Description")
-                                    .font(.system(size: 12, weight: .medium))
+                                    .font(AppTypography.bodySecondary.weight(.medium))
                             }
                             .foregroundColor(.white.opacity(0.7))
                             .padding(.horizontal, 12)

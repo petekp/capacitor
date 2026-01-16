@@ -14,6 +14,7 @@ struct ClaudeHUDApp: App {
                 .environmentObject(appState)
                 .environment(\.floatingMode, floatingMode)
                 .environment(\.alwaysOnTop, alwaysOnTop)
+                .readReduceMotion()
                 .frame(minWidth: 280, idealWidth: 360, maxWidth: 500,
                        minHeight: 400, idealHeight: 700, maxHeight: .infinity)
                 .background(FloatingWindowConfigurator(enabled: floatingMode, alwaysOnTop: alwaysOnTop))
@@ -21,7 +22,9 @@ struct ClaudeHUDApp: App {
         .defaultSize(width: 360, height: 700)
         .windowResizability(.contentSize)
         .commands {
-            CommandGroup(after: .appSettings) {
+            CommandGroup(replacing: .newItem) { }
+
+            CommandMenu("View") {
                 Toggle("Floating Mode", isOn: $floatingMode)
                     .keyboardShortcut("T", modifiers: [.command, .shift])
 
@@ -33,6 +36,15 @@ struct ClaudeHUDApp: App {
                 TuningPanelMenuButton()
                 #endif
             }
+
+            CommandGroup(replacing: .help) {
+                Link("Claude HUD Help", destination: URL(string: "https://github.com/anthropics/claude-hud#readme")!)
+                    .keyboardShortcut("?", modifiers: [.command, .shift])
+            }
+        }
+
+        Settings {
+            SettingsView()
         }
 
         #if DEBUG

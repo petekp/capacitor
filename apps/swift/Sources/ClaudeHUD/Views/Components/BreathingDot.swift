@@ -5,32 +5,56 @@ struct BreathingDot: View {
     var showGlow: Bool = true
     var syncWithRipple: Bool = false
 
+    @Environment(\.prefersReducedMotion) private var reduceMotion
     #if DEBUG
     @ObservedObject private var config = GlassConfig.shared
     #endif
 
     var body: some View {
-        #if DEBUG
-        TimelineView(.animation) { context in
-            BreathingDotContentDebug(
-                color: color,
-                showGlow: showGlow,
-                syncWithRipple: syncWithRipple,
-                date: context.date,
-                config: config
-            )
+        if reduceMotion {
+            StaticDot(color: color, showGlow: showGlow)
+        } else {
+            #if DEBUG
+            TimelineView(.animation) { context in
+                BreathingDotContentDebug(
+                    color: color,
+                    showGlow: showGlow,
+                    syncWithRipple: syncWithRipple,
+                    date: context.date,
+                    config: config
+                )
+            }
+            .id(config.breathingConfigHash)
+            #else
+            TimelineView(.animation) { context in
+                BreathingDotContentRelease(
+                    color: color,
+                    showGlow: showGlow,
+                    syncWithRipple: syncWithRipple,
+                    date: context.date
+                )
+            }
+            #endif
         }
-        .id(config.breathingConfigHash)
-        #else
-        TimelineView(.animation) { context in
-            BreathingDotContentRelease(
-                color: color,
-                showGlow: showGlow,
-                syncWithRipple: syncWithRipple,
-                date: context.date
-            )
+    }
+}
+
+private struct StaticDot: View {
+    let color: Color
+    let showGlow: Bool
+
+    var body: some View {
+        ZStack {
+            if showGlow {
+                Circle()
+                    .fill(color.opacity(0.3))
+                    .frame(width: 8, height: 8)
+                    .blur(radius: 4)
+            }
+            Circle()
+                .fill(color)
+                .frame(width: 12, height: 12)
         }
-        #endif
     }
 }
 

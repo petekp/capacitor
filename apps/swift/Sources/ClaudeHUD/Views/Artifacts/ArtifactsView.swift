@@ -89,9 +89,9 @@ struct ArtifactTabBar: View {
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: tab.icon)
-                            .font(.system(size: 10))
+                            .font(AppTypography.label)
                         Text(tab.rawValue)
-                            .font(.system(size: 10, weight: .medium))
+                            .font(AppTypography.labelMedium)
                     }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
@@ -165,12 +165,12 @@ struct PlansTab: View {
             HStack(spacing: 8) {
                 HStack(spacing: 6) {
                     Image(systemName: "magnifyingglass")
-                        .font(.system(size: 10))
+                        .font(AppTypography.label)
                         .foregroundColor(.white.opacity(0.4))
 
                     TextField("Search plans...", text: $searchText)
                         .textFieldStyle(.plain)
-                        .font(.system(size: 11))
+                        .font(AppTypography.labelMedium)
                         .foregroundColor(.white.opacity(0.9))
                 }
                 .padding(.horizontal, 10)
@@ -194,9 +194,9 @@ struct PlansTab: View {
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "arrow.up.arrow.down")
-                            .font(.system(size: 9))
+                            .font(AppTypography.badge)
                         Text(sortOrder.rawValue)
-                            .font(.system(size: 10))
+                            .font(AppTypography.label)
                     }
                     .padding(.horizontal, 8)
                     .padding(.vertical, 6)
@@ -238,13 +238,13 @@ struct PlansTab: View {
             if plansManager.allPlans.isEmpty {
                 VStack(spacing: 8) {
                     Image(systemName: "doc.text")
-                        .font(.system(size: 24))
+                        .font(.title)
                         .foregroundColor(.white.opacity(0.3))
                     Text("No plans yet")
-                        .font(.system(size: 12))
+                        .font(AppTypography.bodySecondary)
                         .foregroundColor(.white.opacity(0.5))
                     Text("Create plans using Plan Mode (Shift+Tab)")
-                        .font(.system(size: 10))
+                        .font(AppTypography.label)
                         .foregroundColor(.white.opacity(0.3))
                 }
                 .frame(maxWidth: .infinity)
@@ -252,17 +252,17 @@ struct PlansTab: View {
             } else if filteredPlans.isEmpty {
                 VStack(spacing: 8) {
                     Image(systemName: "magnifyingglass")
-                        .font(.system(size: 24))
+                        .font(.title)
                         .foregroundColor(.white.opacity(0.3))
                     Text("No matching plans")
-                        .font(.system(size: 12))
+                        .font(AppTypography.bodySecondary)
                         .foregroundColor(.white.opacity(0.5))
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 40)
             } else {
                 Text("\(filteredPlans.count) plan\(filteredPlans.count == 1 ? "" : "s")")
-                    .font(.system(size: 9))
+                    .font(AppTypography.badge)
                     .foregroundColor(.white.opacity(0.4))
 
                 LazyVStack(spacing: 8) {
@@ -310,10 +310,10 @@ struct StatusFilterChip: View {
         Button(action: action) {
             HStack(spacing: 4) {
                 Text(label)
-                    .font(.system(size: 9, weight: .medium))
+                    .font(AppTypography.badge)
                 if count > 0 {
                     Text("\(count)")
-                        .font(.system(size: 8, weight: .semibold))
+                        .font(AppTypography.captionSmall.weight(.semibold))
                         .padding(.horizontal, 4)
                         .padding(.vertical, 1)
                         .background(isSelected ? color.opacity(0.3) : Color.white.opacity(0.1))
@@ -352,7 +352,7 @@ struct PlanCardView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text(plan.name)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(AppTypography.bodySecondary.weight(.semibold))
                     .foregroundColor(.white.opacity(0.85))
 
                 Menu {
@@ -372,9 +372,9 @@ struct PlanCardView: View {
                 } label: {
                     HStack(spacing: 3) {
                         Image(systemName: plan.status.icon)
-                            .font(.system(size: 8))
+                            .font(AppTypography.captionSmall)
                         Text(plan.status.rawValue)
-                            .font(.system(size: 8, weight: .medium))
+                            .font(AppTypography.captionSmall.weight(.medium))
                     }
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
@@ -388,23 +388,23 @@ struct PlanCardView: View {
 
                 HStack(spacing: 4) {
                     Image(systemName: "doc.text")
-                        .font(.system(size: 9))
+                        .font(AppTypography.badge)
                     Text("\(plan.wordCount) words")
-                        .font(.system(size: 9))
+                        .font(AppTypography.badge)
                 }
                 .foregroundColor(.white.opacity(0.4))
             }
 
             if !isSelected {
                 Text(plan.preview)
-                    .font(.system(size: 10))
+                    .font(AppTypography.label)
                     .foregroundColor(.white.opacity(0.5))
                     .lineLimit(2)
             }
 
             if let modifiedDate = plan.modifiedDate {
                 Text(formattedDate(modifiedDate))
-                    .font(.system(size: 9))
+                    .font(AppTypography.badge)
                     .foregroundColor(.white.opacity(0.3))
             }
 
@@ -414,7 +414,7 @@ struct PlanCardView: View {
 
                 ScrollView {
                     Text(plan.content)
-                        .font(.system(size: 10, design: .monospaced))
+                        .font(AppTypography.monoCaption)
                         .foregroundColor(.white.opacity(0.7))
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -428,9 +428,9 @@ struct PlanCardView: View {
                     } label: {
                         HStack(spacing: 4) {
                             Image(systemName: "doc.on.doc")
-                                .font(.system(size: 9))
+                                .font(AppTypography.badge)
                             Text("Copy")
-                                .font(.system(size: 9))
+                                .font(AppTypography.badge)
                         }
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
@@ -449,9 +449,9 @@ struct PlanCardView: View {
                     } label: {
                         HStack(spacing: 4) {
                             Image(systemName: "arrow.up.right.square")
-                                .font(.system(size: 9))
+                                .font(AppTypography.badge)
                             Text("Open")
-                                .font(.system(size: 9))
+                                .font(AppTypography.badge)
                         }
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
@@ -496,15 +496,15 @@ struct ComingSoonPlaceholder: View {
     var body: some View {
         VStack(spacing: 12) {
             Image(systemName: "hammer.fill")
-                .font(.system(size: 28))
+                .font(.title)
                 .foregroundColor(.white.opacity(0.2))
 
             Text("\(title) coming soon")
-                .font(.system(size: 14, weight: .semibold))
+                .font(AppTypography.body.weight(.semibold))
                 .foregroundColor(.white.opacity(0.6))
 
             Text(description)
-                .font(.system(size: 11))
+                .font(AppTypography.labelMedium)
                 .foregroundColor(.white.opacity(0.4))
                 .multilineTextAlignment(.center)
         }
@@ -580,12 +580,12 @@ struct ArtifactListTab: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 6) {
                 Image(systemName: "magnifyingglass")
-                    .font(.system(size: 10))
+                    .font(AppTypography.label)
                     .foregroundColor(.white.opacity(0.4))
 
                 TextField("Search \(artifactType.plural)...", text: $searchText)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 11))
+                    .font(AppTypography.labelMedium)
                     .foregroundColor(.white.opacity(0.9))
             }
             .padding(.horizontal, 10)
@@ -596,13 +596,13 @@ struct ArtifactListTab: View {
             if artifacts.isEmpty {
                 VStack(spacing: 8) {
                     Image(systemName: artifactType.icon)
-                        .font(.system(size: 24))
+                        .font(.title)
                         .foregroundColor(.white.opacity(0.3))
                     Text("No \(artifactType.plural) yet")
-                        .font(.system(size: 12))
+                        .font(AppTypography.bodySecondary)
                         .foregroundColor(.white.opacity(0.5))
                     Text(artifactType.emptyMessage)
-                        .font(.system(size: 10))
+                        .font(AppTypography.label)
                         .foregroundColor(.white.opacity(0.3))
                 }
                 .frame(maxWidth: .infinity)
@@ -610,17 +610,17 @@ struct ArtifactListTab: View {
             } else if filteredArtifacts.isEmpty {
                 VStack(spacing: 8) {
                     Image(systemName: "magnifyingglass")
-                        .font(.system(size: 24))
+                        .font(.title)
                         .foregroundColor(.white.opacity(0.3))
                     Text("No matching \(artifactType.plural)")
-                        .font(.system(size: 12))
+                        .font(AppTypography.bodySecondary)
                         .foregroundColor(.white.opacity(0.5))
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 40)
             } else {
                 Text("\(filteredArtifacts.count) \(filteredArtifacts.count == 1 ? artifactType.singular : artifactType.plural)")
-                    .font(.system(size: 9))
+                    .font(AppTypography.badge)
                     .foregroundColor(.white.opacity(0.4))
 
                 LazyVStack(spacing: 8) {
@@ -664,16 +664,16 @@ struct ArtifactCardView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Image(systemName: artifactType.icon)
-                    .font(.system(size: 11))
+                    .font(AppTypography.labelMedium)
                     .foregroundColor(artifactType.color.opacity(0.8))
 
                 Text(artifact.name)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(AppTypography.bodySecondary.weight(.semibold))
                     .foregroundColor(.white.opacity(0.85))
 
                 if isFromPlugin {
                     Text(sourceLabel)
-                        .font(.system(size: 8, weight: .medium))
+                        .font(AppTypography.captionSmall.weight(.medium))
                         .padding(.horizontal, 5)
                         .padding(.vertical, 2)
                         .background(Color.white.opacity(0.08))
@@ -686,7 +686,7 @@ struct ArtifactCardView: View {
 
             if !artifact.description.isEmpty {
                 Text(artifact.description)
-                    .font(.system(size: 10))
+                    .font(AppTypography.label)
                     .foregroundColor(.white.opacity(0.5))
                     .lineLimit(isSelected ? nil : 2)
             }
@@ -698,7 +698,7 @@ struct ArtifactCardView: View {
                 if let content = fileContent {
                     ScrollView {
                         Text(content)
-                            .font(.system(size: 10, design: .monospaced))
+                            .font(AppTypography.monoCaption)
                             .foregroundColor(.white.opacity(0.7))
                             .textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -709,7 +709,7 @@ struct ArtifactCardView: View {
                         ProgressView()
                             .scaleEffect(0.6)
                         Text("Loading content...")
-                            .font(.system(size: 10))
+                            .font(AppTypography.label)
                             .foregroundColor(.white.opacity(0.4))
                     }
                 }
@@ -723,9 +723,9 @@ struct ArtifactCardView: View {
                     } label: {
                         HStack(spacing: 4) {
                             Image(systemName: "doc.on.doc")
-                                .font(.system(size: 9))
+                                .font(AppTypography.badge)
                             Text("Copy")
-                                .font(.system(size: 9))
+                                .font(AppTypography.badge)
                         }
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
@@ -744,9 +744,9 @@ struct ArtifactCardView: View {
                     } label: {
                         HStack(spacing: 4) {
                             Image(systemName: "arrow.up.right.square")
-                                .font(.system(size: 9))
+                                .font(AppTypography.badge)
                             Text("Open")
-                                .font(.system(size: 9))
+                                .font(AppTypography.badge)
                         }
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
@@ -759,7 +759,7 @@ struct ArtifactCardView: View {
             }
 
             Text(artifact.path.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
-                .font(.system(size: 9, design: .monospaced))
+                .font(AppTypography.monoCaption)
                 .foregroundColor(.white.opacity(0.3))
                 .lineLimit(1)
         }

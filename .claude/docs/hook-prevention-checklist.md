@@ -138,15 +138,36 @@ grep -E "ERROR|WARNING|FAIL" ~/.claude/hud-hook-debug.log | tail -20
 
 ### Weekly Checks
 
-1. Check for orphaned lock files:
+1. Check for dead lock files (PID not running):
 ```bash
 for lock in ~/.claude/sessions/*.lock; do
   [ -f "$lock/pid" ] && pid=$(cat "$lock/pid") && \
-  ! kill -0 $pid 2>/dev/null && echo "Stale: $lock"
+  ! kill -0 $pid 2>/dev/null && echo "Dead PID lock: $lock"
 done
 ```
 
-2. Check for stale sessions:
+2. Check for orphaned locks (PID alive but no state record):
+```bash
+# Get all PIDs from state file
+state_pids=$(jq -r '.sessions[].pid // empty' ~/.claude/hud-session-states-v2.json 2>/dev/null | sort -u)
+
+for lock in ~/.claude/sessions/*.lock; do
+  [ -d "$lock" ] || continue
+  meta="$lock/meta.json"
+  [ -f "$meta" ] || continue
+  pid=$(jq -r '.pid' "$meta" 2>/dev/null)
+  [ -n "$pid" ] && kill -0 $pid 2>/dev/null && \
+  ! echo "$state_pids" | grep -q "^$pid$" && \
+  echo "Orphaned: $lock (PID $pid alive but no state)"
+done
+```
+
+**Note:** Orphaned locks are also handled automatically by the Rust core:
+- `reconcile_orphaned_lock()` is called when adding projects via HUD
+- The resolver falls back to trusting state records when lock PID has no session
+- See ADR-002 "Orphaned Lock Handling" for details
+
+3. Check for stale sessions (state record with dead PID):
 ```bash
 jq -r '.sessions | to_entries[] | select(.value.pid != null) | "\(.value.pid) \(.value.cwd)"' \
   ~/.claude/hud-session-states-v2.json | while read pid cwd; do

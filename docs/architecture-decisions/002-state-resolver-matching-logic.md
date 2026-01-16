@@ -116,6 +116,68 @@ let is_match = info_path_normalized == project_path_normalized ||
 - State record updates on every cd (hook unchanged)
 - HUD adapts interpretation, no workflow changes
 
+## Orphaned Lock Handling
+
+### The Problem
+
+When multiple Claude sessions start at the same path, a race condition can occur:
+
+1. Session A starts at `/path/project`, creates lock, background lock holder runs
+2. Session A ends but lock holder stays alive (zombie or cleanup delay)
+3. Session B starts at `/path/project`, sees live PID holding lock
+4. Session B updates state file but can't acquire lock (different PID)
+5. Resolver sees: lock PID ≠ state PID → fallback behavior needed
+
+**Result without fix:** HUD shows "Ready" instead of Session B's actual state.
+
+### The Solution (Two Layers)
+
+**Layer 1: Resolver Trust-State Fallback** (`resolver.rs`)
+
+When lock PID doesn't match state PID and no session exists for the lock PID, trust the state record:
+
+```rust
+// No session matches lock PID - likely an orphaned lock
+// Trust the state record we found since it represents actual activity
+// at this cwd with a different (newer) PID
+Some(ResolvedState {
+    state: r.state,
+    session_id: Some(r.session_id.clone()),
+    cwd: r.cwd.clone(),
+})
+```
+
+**Rationale:** If the lock's PID has no corresponding state record anywhere, that PID isn't actively using Claude Code—the lock is orphaned. The state record represents the real activity.
+
+**Layer 2: Proactive Reconciliation** (`lock.rs`, `engine.rs`)
+
+When a project is added via `add_project()`, reconcile any orphaned lock:
+
+```rust
+pub fn reconcile_orphaned_lock(lock_base, state_store, project_path) -> bool {
+    // Returns true if orphaned lock was removed
+    // Orphaned = lock PID is alive but has NO state record anywhere
+}
+```
+
+**Rationale:** Proactive cleanup when users add projects ensures correct state display immediately. The orphaned lock holder process will notice its lock directory is gone and exit gracefully.
+
+### Detection Criteria
+
+A lock is considered **orphaned** when ALL conditions are met:
+
+1. Lock directory exists at `~/.claude/sessions/{hash}.lock`
+2. Lock's PID is alive (verified with `proc_started` if available)
+3. **No state record exists** for that PID anywhere in the state file
+
+**Important:** We only reconcile when PID is verified alive. Dead PIDs are handled by the hook's normal cleanup in the background monitor loop.
+
+### Files Modified
+
+- `core/hud-core/src/state/resolver.rs` - Trust-state fallback when lock is orphaned
+- `core/hud-core/src/state/lock.rs` - `reconcile_orphaned_lock()` function
+- `core/hud-core/src/engine.rs` - Call reconciliation in `add_project()`
+
 ## Implementation
 
 ### Files Modified

@@ -517,6 +517,8 @@ private struct FfiConverterString: FfiConverter {
 public protocol HudEngineProtocol: AnyObject {
     /**
      * Adds a project to the pinned projects list.
+     *
+     * Also reconciles any orphaned locks for this path to ensure correct state display.
      */
     func addProject(path: String) throws
 
@@ -695,6 +697,8 @@ open class HudEngine:
 
     /**
      * Adds a project to the pinned projects list.
+     *
+     * Also reconciles any orphaned locks for this path to ensure correct state display.
      */
     open func addProject(path: String) throws { try rustCallWithError(FfiConverterTypeHudFfiError.lift) {
         uniffi_hud_core_fn_method_hudengine_add_project(self.uniffiClonePointer(),
@@ -3649,7 +3653,7 @@ private var initializationResult: InitializationResult = {
     if bindings_contract_version != scaffolding_contract_version {
         return InitializationResult.contractVersionMismatch
     }
-    if uniffi_hud_core_checksum_method_hudengine_add_project() != 20195 {
+    if uniffi_hud_core_checksum_method_hudengine_add_project() != 9786 {
         return InitializationResult.apiChecksumMismatch
     }
     if uniffi_hud_core_checksum_method_hudengine_capture_idea() != 22245 {

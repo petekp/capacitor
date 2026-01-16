@@ -25,130 +25,121 @@ enum ProjectView: Equatable {
     }
 }
 
-/// Terminal application configuration for launching and activation
-enum TerminalApp {
-    case ghostty
-    case iTerm
-    case alacritty
-    case kitty
-    case warp
-    case terminal
-
-    var displayName: String {
-        switch self {
-        case .ghostty: return "Ghostty"
-        case .iTerm: return "iTerm"
-        case .alacritty: return "Alacritty"
-        case .kitty: return "kitty"
-        case .warp: return "Warp"
-        case .terminal: return "Terminal"
-        }
-    }
-
-    var bundlePath: String? {
-        switch self {
-        case .ghostty: return "/Applications/Ghostty.app"
-        case .iTerm: return "/Applications/iTerm.app"
-        case .alacritty: return "/Applications/Alacritty.app"
-        case .warp: return "/Applications/Warp.app"
-        case .kitty, .terminal: return nil
-        }
-    }
-
-    /// Priority order for terminal activation (highest to lowest)
-    static let priorityOrder: [TerminalApp] = [
-        .ghostty,
-        .iTerm,
-        .alacritty,
-        .kitty,
-        .warp,
-        .terminal
-    ]
-}
-
 @MainActor
 class AppState: ObservableObject {
-    // Navigation
+    // MARK: - Navigation
+
     @Published var activeTab: Tab = .projects
     @Published var projectView: ProjectView = .list
     @Published var selectedProject: Project?
 
-    // Data
+    // MARK: - Data
+
     @Published var dashboard: DashboardData?
-    @Published var sessionStates: [String: ProjectSessionState] = [:]
-    @Published var projectStatuses: [String: ProjectStatus] = [:]
     @Published var artifacts: [Artifact] = []
     @Published var projects: [Project] = []
 
-    // Active project creations (Idea → V1)
+    // MARK: - Active project creations (Idea → V1)
+
     @Published var activeCreations: [ProjectCreation] = []
     private let creationsKey = "activeProjectCreations"
 
-    // UI State
+    // MARK: - UI State
+
     @Published var isLoading = true
     @Published var error: String?
-    @Published var flashingProjects: [String: SessionState] = [:]
 
-    // Active project tracking (ephemeral, click-based)
-    @Published var activeProjectPath: String?
-    private var ignoreTrackerUpdatesUntil: Date?
+    // MARK: - Dev Environment
 
-    // Dev Environment
     @Published var devServerPorts: [String: UInt16] = [:]
     @Published var devServerBrowsers: [String: String] = [:]
 
-    // Manual dormant overrides (persisted in UserDefaults)
+    // MARK: - Manual dormant overrides
+
     @Published var manuallyDormant: Set<String> = [] {
-        didSet {
-            saveDormantOverrides()
-        }
+        didSet { saveDormantOverrides() }
     }
 
-    // Custom project ordering (persisted in UserDefaults)
+    // MARK: - Custom project ordering
+
     @Published var customProjectOrder: [String] = [] {
-        didSet {
-            saveProjectOrder()
-        }
+        didSet { saveProjectOrder() }
     }
 
-    // Internal state tracking (non-published)
-    private var previousSessionStates: [String: SessionState] = [:]
-    private let dormantOverridesKey = "manuallyDormantProjects"
-    private let projectOrderKey = "customProjectOrder"
+    // MARK: - Relay client for remote state sync
 
-    // Rust bridge
-    private var engine: HudEngine?
-
-    // Relay client for remote state sync
     @Published var relayClient = RelayClient()
     @Published var isRemoteMode = false
 
+    // MARK: - Modal State for Idea Capture
 
-    // Ideas (Idea Capture feature)
-    @Published var projectIdeas: [String: [Idea]] = [:]
     @Published var showCaptureModal = false
     @Published var captureModalProject: Project?
-    @Published var generatingTitleForIdeas: Set<String> = []
-    private var ideaFileMtimes: [String: Date] = [:]
-    private var lastIdeasCheck: Date = .distantPast
 
-    // Project Descriptions (AI-generated from CLAUDE.md)
-    @Published var projectDescriptions: [String: String] = [:]
-    @Published var generatingDescriptionFor: Set<String> = []
-    private let descriptionsFilePath = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent(".claude/hud-project-descriptions.json")
+    // MARK: - Managers (extracted for cleaner architecture)
 
-    // Terminal tracking (Phase 2: Live tracking)
-    private let terminalTracker = TerminalTracker()
-    private var trackerUpdateTask: _Concurrency.Task<Void, Never>?
+    let terminalIntegration = TerminalIntegration()
+    let sessionStateManager = SessionStateManager()
+    let projectDetailsManager = ProjectDetailsManager()
+
+    // MARK: - Private State
+
+    private let dormantOverridesKey = "manuallyDormantProjects"
+    private let projectOrderKey = "customProjectOrder"
+    private var engine: HudEngine?
+    private var cancellables = Set<AnyCancellable>()
+    private var stalenessTimer: Timer?
+
+    // MARK: - Computed Properties (bridging to managers)
+
+    var sessionStates: [String: ProjectSessionState] {
+        sessionStateManager.sessionStates
+    }
+
+    var projectStatuses: [String: ProjectStatus] {
+        var statuses: [String: ProjectStatus] = [:]
+        for project in projects {
+            if let status = engine?.getProjectStatus(projectPath: project.path) {
+                statuses[project.path] = status
+            }
+        }
+        return statuses
+    }
+
+    var activeProjectPath: String? {
+        terminalIntegration.activeProjectPath
+    }
+
+    var flashingProjects: [String: SessionState] {
+        sessionStateManager.flashingProjects
+    }
+
+    var projectIdeas: [String: [Idea]] {
+        projectDetailsManager.projectIdeas
+    }
+
+    var generatingTitleForIdeas: Set<String> {
+        projectDetailsManager.generatingTitleForIdeas
+    }
+
+    var projectDescriptions: [String: String] {
+        projectDetailsManager.projectDescriptions
+    }
+
+    var generatingDescriptionFor: Set<String> {
+        projectDetailsManager.generatingDescriptionFor
+    }
+
+    // MARK: - Initialization
 
     init() {
         loadDormantOverrides()
         loadProjectOrder()
         loadCreations()
-        loadProjectDescriptions()
         do {
             engine = try HudEngine()
+            sessionStateManager.configure(engine: engine)
+            projectDetailsManager.configure(engine: engine)
             loadDashboard()
             setupRelayObserver()
             setupStalenessTimer()
@@ -159,8 +150,9 @@ class AppState: ObservableObject {
         }
     }
 
+    // MARK: - Setup
+
     private func setupStalenessTimer() {
-        // Poll every second for real-time "thinking" state updates
         stalenessTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             DispatchQueue.main.async {
                 self?.refreshSessionStates()
@@ -173,174 +165,129 @@ class AppState: ObservableObject {
         relayClient.$lastState
             .compactMap { $0 }
             .sink { [weak self] state in
-                self?.applyRelayState(state)
+                self?.sessionStateManager.applyRelayState(state)
+                self?.objectWillChange.send()
             }
             .store(in: &cancellables)
 
-        // Forward relayClient state changes to trigger SwiftUI updates
         relayClient.$isConnected
-            .sink { [weak self] _ in
-                self?.objectWillChange.send()
-            }
+            .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &cancellables)
 
         relayClient.$connectionError
-            .sink { [weak self] _ in
-                self?.objectWillChange.send()
-            }
+            .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &cancellables)
 
         relayClient.$projectHeartbeats
-            .sink { [weak self] _ in
-                self?.objectWillChange.send()
-            }
+            .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &cancellables)
 
         relayClient.$connectedAt
-            .sink { [weak self] _ in
-                self?.objectWillChange.send()
-            }
+            .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &cancellables)
     }
 
-    // MARK: - Terminal Tracking (Phase 2)
-
     private func startTerminalTracking() {
         _Concurrency.Task {
-            await terminalTracker.startTracking(projects: projects)
-            startTrackerPolling()
+            await terminalIntegration.startTracking(projects: projects)
         }
     }
 
-    private func startTrackerPolling() {
-        trackerUpdateTask = _Concurrency.Task { @MainActor [weak self] in
-            while !_Concurrency.Task.isCancelled {
-                guard let self = self else { break }
+    // MARK: - Data Loading
 
-                // Check if we should ignore tracker updates (during manual click pause window)
-                if let pauseUntil = self.ignoreTrackerUpdatesUntil {
-                    if Date() < pauseUntil {
-                        // Still in pause window, skip update this cycle
-                        try? await _Concurrency.Task.sleep(nanoseconds: 500_000_000)
-                        continue
-                    } else {
-                        // Pause expired, clear it
-                        self.ignoreTrackerUpdatesUntil = nil
-                    }
-                }
+    func loadDashboard() {
+        guard let engine = engine else { return }
+        isLoading = true
 
-                // Only update if terminal has a project focused
-                // If no terminal focused or no tmux session, keep existing active project (sticky behavior)
-                if let path = await self.terminalTracker.getActiveProjectPath() {
-                    self.activeProjectPath = path
-                }
-                // Note: We intentionally DON'T clear activeProjectPath when nil
-                // This preserves the clicked project until a different one is focused
-
-                try? await _Concurrency.Task.sleep(nanoseconds: 500_000_000) // 500ms
-            }
+        do {
+            dashboard = try engine.loadDashboard()
+            projects = dashboard?.projects ?? []
+            terminalIntegration.updateProjectMapping(projects)
+            artifacts = engine.listArtifacts()
+            refreshSessionStates()
+            refreshProjectStatuses()
+            refreshDevServers()
+            projectDetailsManager.loadAllIdeas(for: projects)
+            isLoading = false
+        } catch {
+            self.error = error.localizedDescription
+            isLoading = false
         }
     }
 
-    private func updateTerminalTracking() {
-        _Concurrency.Task {
-            await terminalTracker.updateProjectMapping(projects)
+    func refreshSessionStates() {
+        sessionStateManager.refreshSessionStates(for: projects)
+        objectWillChange.send()
+    }
+
+    func refreshProjectStatuses() {
+        objectWillChange.send()
+    }
+
+    // MARK: - Project Management
+
+    func addProject(_ path: String) {
+        guard let engine = engine else { return }
+        do {
+            try engine.addProject(path: path)
+            loadDashboard()
+        } catch {
+            self.error = error.localizedDescription
         }
     }
 
-    // MARK: - Terminal Activation
-
-    /// Activates the appropriate terminal app after launching/switching projects.
-    ///
-    /// Strategy: If a terminal is already frontmost (user likely just switched away),
-    /// reactivate it. Otherwise, activate the first running terminal in priority order.
-    private func activateTerminalApp() {
-        // Check if a terminal is already frontmost/recently active
-        if let frontmost = NSWorkspace.shared.frontmostApplication,
-           isTerminalApp(frontmost) {
-            // Terminal already frontmost, just reactivate it
-            frontmost.activate()
-            return
-        }
-
-        // No terminal frontmost, activate first running terminal in priority order
-        activateTerminalInPriorityOrder()
-    }
-
-    /// Checks if the given app is a known terminal application.
-    private func isTerminalApp(_ app: NSRunningApplication) -> Bool {
-        guard let name = app.localizedName else { return false }
-        return TerminalApp.priorityOrder.contains { terminal in
-            name.contains(terminal.displayName)
+    func removeProject(_ path: String) {
+        guard let engine = engine else { return }
+        do {
+            try engine.removeProject(path: path)
+            loadDashboard()
+        } catch {
+            self.error = error.localizedDescription
         }
     }
 
-    /// Activates the first running terminal found in priority order.
-    private func activateTerminalInPriorityOrder() {
-        for terminal in TerminalApp.priorityOrder {
-            // If bundlePath specified, check if installed
-            if let bundlePath = terminal.bundlePath,
-               !FileManager.default.fileExists(atPath: bundlePath) {
-                continue
-            }
+    // MARK: - Session State Access (delegating to manager)
 
-            // Look for running instance of this terminal
-            if let app = findRunningTerminal(terminal) {
-                app.activate()
-                return
-            }
-        }
+    func getSessionState(for project: Project) -> ProjectSessionState? {
+        sessionStateManager.getSessionState(for: project, relayClient: relayClient, isRemoteMode: isRemoteMode)
     }
 
-    /// Finds a running instance of the specified terminal app.
-    private func findRunningTerminal(_ terminal: TerminalApp) -> NSRunningApplication? {
-        NSWorkspace.shared.runningApplications.first { app in
-            guard let appName = app.localizedName else { return false }
-            return appName.lowercased().contains(terminal.displayName.lowercased())
-        }
+    func isFlashing(_ project: Project) -> SessionState? {
+        sessionStateManager.isFlashing(project)
     }
 
-    private var cancellables = Set<AnyCancellable>()
-    private var stalenessTimer: Timer?
-
-    private func applyRelayState(_ state: RelayHudState) {
-        for (path, projectState) in state.projects {
-            let sessionState = parseSessionState(projectState.state)
-
-            sessionStates[path] = ProjectSessionState(
-                state: sessionState,
-                stateChangedAt: projectState.lastUpdated,
-                sessionId: nil,
-                workingOn: projectState.workingOn,
-                context: nil,
-                thinking: nil,
-                isLocked: false
-            )
-
-            if let previous = previousSessionStates[path], previous != sessionState {
-                switch sessionState {
-                case .ready, .waiting, .compacting:
-                    flashingProjects[path] = sessionState
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) { [weak self] in
-                        self?.flashingProjects.removeValue(forKey: path)
-                    }
-                case .working, .idle:
-                    break
-                }
-            }
-            previousSessionStates[path] = sessionState
-        }
+    func getProjectStatus(for project: Project) -> ProjectStatus? {
+        engine?.getProjectStatus(projectPath: project.path)
     }
 
-    private func parseSessionState(_ raw: String) -> SessionState {
-        switch raw {
-        case "working": return .working
-        case "ready": return .ready
-        case "compacting": return .compacting
-        case "waiting": return .waiting
-        default: return .idle
-        }
+    // MARK: - Terminal Operations (delegating to TerminalIntegration)
+
+    func launchTerminal(for project: Project) {
+        terminalIntegration.launchTerminal(for: project)
+        objectWillChange.send()
     }
+
+    // MARK: - Navigation
+
+    func showProjectDetail(_ project: Project) {
+        selectedProject = project
+        projectView = .detail(project)
+    }
+
+    func showAddProject() {
+        projectView = .add
+    }
+
+    func showNewIdea() {
+        projectView = .newIdea
+    }
+
+    func showProjectList() {
+        selectedProject = nil
+        projectView = .list
+    }
+
+    // MARK: - Relay
 
     func connectRelay() {
         isRemoteMode = true
@@ -351,6 +298,8 @@ class AppState: ObservableObject {
         isRemoteMode = false
         relayClient.disconnect()
     }
+
+    // MARK: - Dormant/Order Persistence
 
     private func loadDormantOverrides() {
         if let paths = UserDefaults.standard.array(forKey: dormantOverridesKey) as? [String] {
@@ -371,6 +320,165 @@ class AppState: ObservableObject {
     private func saveProjectOrder() {
         UserDefaults.standard.set(customProjectOrder, forKey: projectOrderKey)
     }
+
+    func orderedProjects(_ projects: [Project]) -> [Project] {
+        guard !customProjectOrder.isEmpty else { return projects }
+
+        var result: [Project] = []
+        var remaining = projects
+
+        for path in customProjectOrder {
+            if let index = remaining.firstIndex(where: { $0.path == path }) {
+                result.append(remaining.remove(at: index))
+            }
+        }
+        result.append(contentsOf: remaining)
+        return result
+    }
+
+    func moveProject(from source: IndexSet, to destination: Int, in projectList: [Project]) {
+        var paths = projectList.map { $0.path }
+        paths.move(fromOffsets: source, toOffset: destination)
+        customProjectOrder = paths
+    }
+
+    func moveToDormant(_ project: Project) {
+        manuallyDormant.insert(project.path)
+    }
+
+    func moveToRecent(_ project: Project) {
+        manuallyDormant.remove(project.path)
+    }
+
+    func isManuallyDormant(_ project: Project) -> Bool {
+        manuallyDormant.contains(project.path)
+    }
+
+    // MARK: - Dev Environment
+
+    nonisolated func refreshDevServers() {
+        _Concurrency.Task { @MainActor [weak self] in
+            guard let self = self else { return }
+            let projectsCopy = self.projects
+
+            for project in projectsCopy {
+                let projectPath = project.path
+                let port = await DevEnvironment.findDevServerPort(for: projectPath)
+
+                if let port = port {
+                    self.devServerPorts[projectPath] = port
+                    let browser = await DevEnvironment.findBrowserWithLocalhost(port: port)
+                    if let browser = browser {
+                        self.devServerBrowsers[projectPath] = browser
+                    }
+                } else {
+                    self.devServerPorts.removeValue(forKey: projectPath)
+                    self.devServerBrowsers.removeValue(forKey: projectPath)
+                }
+            }
+        }
+    }
+
+    func getDevServerPort(for project: Project) -> UInt16? {
+        devServerPorts[project.path]
+    }
+
+    func hasDevServer(_ project: Project) -> Bool {
+        devServerPorts[project.path] != nil
+    }
+
+    func openInBrowser(_ project: Project) {
+        guard let port = devServerPorts[project.path] else { return }
+
+        if let browser = devServerBrowsers[project.path] {
+            DevEnvironment.focusBrowserTab(browser: browser, port: port)
+        } else {
+            DevEnvironment.openInBrowser(port: port)
+        }
+    }
+
+    func launchFullEnvironment(for project: Project) {
+        launchTerminal(for: project)
+
+        if let port = devServerPorts[project.path] {
+            if let browser = devServerBrowsers[project.path] {
+                DevEnvironment.focusBrowserTab(browser: browser, port: port)
+            } else {
+                DevEnvironment.openInBrowser(port: port)
+            }
+        }
+    }
+
+    // MARK: - Idea Capture (delegating to ProjectDetailsManager)
+
+    func showIdeaCaptureModal(for project: Project) {
+        captureModalProject = project
+        showCaptureModal = true
+    }
+
+    func captureIdea(for project: Project, text: String) -> Result<Void, Error> {
+        let result = projectDetailsManager.captureIdea(for: project, text: text)
+        objectWillChange.send()
+        return result
+    }
+
+    func loadIdeas(for project: Project) {
+        projectDetailsManager.loadIdeas(for: project)
+        objectWillChange.send()
+    }
+
+    func loadAllIdeas() {
+        projectDetailsManager.loadAllIdeas(for: projects)
+        objectWillChange.send()
+    }
+
+    func checkIdeasFileChanges() {
+        projectDetailsManager.checkIdeasFileChanges(for: projects)
+    }
+
+    func getIdeas(for project: Project) -> [Idea] {
+        projectDetailsManager.getIdeas(for: project)
+    }
+
+    func isGeneratingTitle(for ideaId: String) -> Bool {
+        projectDetailsManager.isGeneratingTitle(for: ideaId)
+    }
+
+    func workOnIdea(_ idea: Idea, for project: Project) {
+        do {
+            try projectDetailsManager.updateIdeaStatus(for: project, idea: idea, newStatus: "in-progress")
+        } catch {
+            self.error = "Failed to update idea status: \(error.localizedDescription)"
+        }
+
+        terminalIntegration.launchTerminalWithIdea(idea, for: project)
+        objectWillChange.send()
+    }
+
+    func dismissIdea(_ idea: Idea, for project: Project) {
+        do {
+            try projectDetailsManager.updateIdeaStatus(for: project, idea: idea, newStatus: "done")
+        } catch {
+            self.error = "Failed to dismiss idea: \(error.localizedDescription)"
+        }
+        objectWillChange.send()
+    }
+
+    // MARK: - Project Descriptions (delegating to ProjectDetailsManager)
+
+    func getDescription(for project: Project) -> String? {
+        projectDetailsManager.getDescription(for: project)
+    }
+
+    func isGeneratingDescription(for project: Project) -> Bool {
+        projectDetailsManager.isGeneratingDescription(for: project)
+    }
+
+    func generateDescription(for project: Project) {
+        projectDetailsManager.generateDescription(for: project)
+    }
+
+    // MARK: - Project Creation
 
     private func loadCreations() {
         let creationsPath = FileManager.default.homeDirectoryForCurrentUser
@@ -400,7 +508,7 @@ class AppState: ObservableObject {
             let data = try encoder.encode(activeCreations)
             try data.write(to: creationsPath)
         } catch {
-            // Silently fail - creations will be lost but app continues
+            // Silently fail
         }
     }
 
@@ -495,479 +603,6 @@ class AppState: ObservableObject {
 
     func getActiveCreationsCount() -> Int {
         activeCreations.filter { $0.status == .pending || $0.status == .inProgress }.count
-    }
-
-    private func launchClaudeResume(projectPath: String, sessionId: String, creationId: String) async throws {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/bash")
-        process.arguments = ["-c", """
-            PROJECT_PATH="\(projectPath)"
-            SESSION_ID="\(sessionId)"
-            CLAUDE_CMD="/opt/homebrew/bin/claude --resume $SESSION_ID"
-
-            if [ -d "/Applications/Ghostty.app" ]; then
-                open -na "Ghostty.app" --args --working-directory="$PROJECT_PATH" -e bash -c "$CLAUDE_CMD"
-            elif [ -d "/Applications/iTerm.app" ]; then
-                osascript -e "tell application \\"iTerm\\" to create window with default profile command \\"cd '$PROJECT_PATH' && $CLAUDE_CMD\\""
-                osascript -e 'tell application "iTerm" to activate'
-            else
-                osascript -e "tell application \\"Terminal\\" to do script \\"cd '$PROJECT_PATH' && $CLAUDE_CMD\\""
-                osascript -e 'tell application "Terminal" to activate'
-            fi
-        """]
-
-        try process.run()
-
-        startCompletionMonitor(projectPath: projectPath, creationId: creationId, sessionId: sessionId)
-    }
-
-    func orderedProjects(_ projects: [Project]) -> [Project] {
-        guard !customProjectOrder.isEmpty else { return projects }
-
-        var result: [Project] = []
-        var remaining = projects
-
-        for path in customProjectOrder {
-            if let index = remaining.firstIndex(where: { $0.path == path }) {
-                result.append(remaining.remove(at: index))
-            }
-        }
-        result.append(contentsOf: remaining)
-        return result
-    }
-
-    func moveProject(from source: IndexSet, to destination: Int, in projectList: [Project]) {
-        var paths = projectList.map { $0.path }
-        paths.move(fromOffsets: source, toOffset: destination)
-        customProjectOrder = paths
-    }
-
-    func loadDashboard() {
-        guard let engine = engine else { return }
-        isLoading = true
-
-        do {
-            dashboard = try engine.loadDashboard()
-            projects = dashboard?.projects ?? []
-            updateTerminalTracking() // Update project mapping for live tracking
-            artifacts = engine.listArtifacts()
-            refreshSessionStates()
-            refreshProjectStatuses()
-            refreshDevServers()
-            loadAllIdeas()
-            isLoading = false
-        } catch {
-            self.error = error.localizedDescription
-            isLoading = false
-        }
-    }
-
-    func refreshSessionStates() {
-        guard let engine = engine else { return }
-        var states = engine.getAllSessionStates(projects: projects)
-
-        // Cross-check: The lock file is the source of truth for whether Claude is running.
-        // The state file may be stale because hooks write to cwd, which can differ from
-        // the pinned project path (e.g., running from apps/swift but pinned at claude-hud).
-        for (path, state) in states {
-            if state.isLocked {
-                // Lock exists = Claude IS running for this project (or a related path)
-                if state.state == .idle {
-                    // State file says idle, but lock proves Claude is running
-                    // This happens when hooks write to a different cwd than the pinned project
-                    // Default to "ready" since we don't know if it's actively working
-                    states[path] = ProjectSessionState(
-                        state: .ready,
-                        stateChangedAt: nil,
-                        sessionId: state.sessionId,
-                        workingOn: state.workingOn,
-                                context: state.context,
-                        thinking: nil,
-                        isLocked: true
-                    )
-                }
-                // If state is "working" or "ready" and locked, that's valid - keep it
-            } else {
-                // No lock = Claude is definitely not running for this project
-                if state.state == .working || state.state == .compacting {
-                    // "working"/"compacting" without lock means Claude finished or terminated
-                    // Show as "ready" since user can resume the session
-                    states[path] = ProjectSessionState(
-                        state: .ready,
-                        stateChangedAt: state.stateChangedAt,
-                        sessionId: state.sessionId,
-                        workingOn: state.workingOn,
-                                context: state.context,
-                        thinking: false,
-                        isLocked: false
-                    )
-                } else if state.state == .ready {
-                    // "ready" without lock means session ended but SessionEnd hook didn't fire
-                    // Check staleness: if state is older than 2 minutes, mark as idle
-                    if let stateChangedAt = state.stateChangedAt,
-                       let changeDate = ISO8601DateFormatter().date(from: stateChangedAt),
-                       Date().timeIntervalSince(changeDate) > 120 {
-                        states[path] = ProjectSessionState(
-                            state: .idle,
-                            stateChangedAt: state.stateChangedAt,
-                            sessionId: state.sessionId,
-                            workingOn: state.workingOn,
-                                        context: state.context,
-                            thinking: false,
-                            isLocked: false
-                        )
-                    }
-                }
-            }
-        }
-
-        sessionStates = states
-        checkForStateChanges()
-    }
-
-    private func checkForStateChanges() {
-        for (path, sessionState) in sessionStates {
-            let current = sessionState.state
-            if let previous = previousSessionStates[path], previous != current {
-                switch current {
-                case .ready, .waiting, .compacting:
-                    flashingProjects[path] = current
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) { [weak self] in
-                        self?.flashingProjects.removeValue(forKey: path)
-                    }
-                case .working, .idle:
-                    break
-                }
-            }
-            previousSessionStates[path] = current
-        }
-    }
-
-    func isFlashing(_ project: Project) -> SessionState? {
-        flashingProjects[project.path]
-    }
-
-    func refreshProjectStatuses() {
-        guard let engine = engine else { return }
-        for project in projects {
-            if let status = engine.getProjectStatus(projectPath: project.path) {
-                projectStatuses[project.path] = status
-            }
-        }
-    }
-
-    func getProjectStatus(for project: Project) -> ProjectStatus? {
-        projectStatuses[project.path]
-    }
-
-    func addProject(_ path: String) {
-        guard let engine = engine else { return }
-        do {
-            try engine.addProject(path: path)
-            loadDashboard()
-        } catch {
-            self.error = error.localizedDescription
-        }
-    }
-
-    func removeProject(_ path: String) {
-        guard let engine = engine else { return }
-        do {
-            try engine.removeProject(path: path)
-            loadDashboard()
-        } catch {
-            self.error = error.localizedDescription
-        }
-    }
-
-    /// Finds the most relevant state for a project by checking both the pinned path
-    /// and any child paths (subdirectories). Returns the state with the most recent
-    /// `context.updated_at` timestamp.
-    ///
-    /// This is needed because Claude Code hooks write to the cwd, which may be a
-    /// subdirectory of the pinned project path. For example:
-    /// - Pinned project: `/Users/foo/claude-hud`
-    /// - Actual cwd: `/Users/foo/claude-hud/apps/swift`
-    ///
-    /// We want to show the freshest state data regardless of which path it's keyed under.
-    private func findMostRecentState(for projectPath: String) -> ProjectSessionState? {
-        var bestState: ProjectSessionState? = nil
-        var bestTimestamp: Date? = nil
-        let isoFormatter = ISO8601DateFormatter()
-
-        for (path, state) in sessionStates {
-            // Match exact path OR child paths (paths that start with project path + "/")
-            let isMatch = (path == projectPath) || path.hasPrefix(projectPath + "/")
-
-            if isMatch {
-                // Parse the timestamp from context.updated_at
-                var stateTimestamp: Date? = nil
-                if let updatedAt = state.context?.updatedAt {
-                    stateTimestamp = isoFormatter.date(from: updatedAt)
-                }
-
-                // If no timestamp, fall back to stateChangedAt
-                if stateTimestamp == nil, let stateChangedAt = state.stateChangedAt {
-                    stateTimestamp = isoFormatter.date(from: stateChangedAt)
-                }
-
-                // Compare timestamps to find the most recent
-                if let current = stateTimestamp {
-                    if bestTimestamp == nil || current > bestTimestamp! {
-                        bestState = state
-                        bestTimestamp = current
-                    }
-                } else if bestState == nil {
-                    // No timestamp but we have no state yet - use this one
-                    bestState = state
-                }
-            }
-        }
-
-        return bestState
-    }
-
-    func getSessionState(for project: Project) -> ProjectSessionState? {
-        // First, find the most relevant state for this project.
-        // Hooks write to the cwd, which may be a subdirectory of the pinned project.
-        // We need to check BOTH the pinned path AND any child paths, using the most recent.
-        guard var state = findMostRecentState(for: project.path) else {
-            return nil
-        }
-
-        // If we got state from a child path, it might have is_locked=false even though
-        // the parent project IS locked. Check if the parent is locked and inherit that.
-        if !state.isLocked {
-            if let parentState = sessionStates[project.path], parentState.isLocked {
-                state = ProjectSessionState(
-                    state: state.state,
-                    stateChangedAt: state.stateChangedAt,
-                    sessionId: state.sessionId,
-                    workingOn: state.workingOn,
-                        context: state.context,
-                    thinking: state.thinking,
-                    isLocked: true  // Inherit lock from parent
-                )
-            }
-        }
-
-        // Check if the "thinking" state is stale
-        // The thinking flag is updated by PostToolUse hooks. If it's been more than
-        // 30 seconds since the last update and thinking=true, Claude likely finished
-        // working and is waiting for input (Ready state).
-        let thinkingStalenessThreshold: TimeInterval = 30
-        var effectiveThinking = state.thinking
-
-        if let thinking = state.thinking, thinking {
-            // thinking=true, but check if it's stale
-            if let thinkingUpdatedAt = state.context?.updatedAt,
-               let updateDate = ISO8601DateFormatter().date(from: thinkingUpdatedAt),
-               Date().timeIntervalSince(updateDate) > thinkingStalenessThreshold {
-                // thinking=true is stale - treat as false
-                effectiveThinking = false
-            }
-        }
-
-        // Use the effective thinking state (after staleness check)
-        // But TRUST THE LOCK: if isLocked=true, Claude IS running - don't downgrade.
-        if let thinking = effectiveThinking {
-            if thinking {
-                // Claude is actively making API calls - definitely working
-                return ProjectSessionState(
-                    state: .working,
-                    stateChangedAt: state.stateChangedAt,
-                    sessionId: state.sessionId,
-                    workingOn: state.workingOn,
-                        context: state.context,
-                    thinking: true,
-                    isLocked: state.isLocked
-                )
-            } else if state.state == .working && !state.isLocked {
-                // thinking=false AND no lock means Claude actually finished
-                // The session ended but hooks were slow to update
-                return ProjectSessionState(
-                    state: .ready,
-                    stateChangedAt: state.stateChangedAt,
-                    sessionId: state.sessionId,
-                    workingOn: state.workingOn,
-                        context: state.context,
-                    thinking: false,
-                    isLocked: false
-                )
-            }
-            // If state=working AND isLocked=true, trust it - Claude is working
-            // (even if thinking is stale, Claude could be generating a long response)
-        }
-
-        // Staleness-based "Waiting" detection
-        // IMPORTANT: Only use in remote mode where we have reliable heartbeats.
-        // Local mode staleness detection is too unreliable - Claude can generate
-        // long text responses without tool use, causing false "Waiting" states.
-        if state.state == .working && isRemoteMode {
-            let stalenessThreshold: TimeInterval = 30
-
-            // Find the most recent heartbeat from any subdirectory of this project
-            // Heartbeats are keyed by cwd which may be a subdirectory of the pinned project path
-            let lastHeartbeat = relayClient.projectHeartbeats
-                .filter { $0.key.hasPrefix(project.path) }
-                .map { $0.value }
-                .max()
-
-            // If we have a heartbeat, check its staleness
-            if let heartbeat = lastHeartbeat {
-                if Date().timeIntervalSince(heartbeat) > stalenessThreshold {
-                    return ProjectSessionState(
-                        state: .waiting,
-                        stateChangedAt: state.stateChangedAt,
-                        sessionId: state.sessionId,
-                        workingOn: state.workingOn,
-                                context: state.context,
-                        thinking: state.thinking,
-                        isLocked: state.isLocked
-                    )
-                }
-            } else if let connectedAt = relayClient.connectedAt,
-                      Date().timeIntervalSince(connectedAt) > stalenessThreshold {
-                // No heartbeats received, but we've been connected long enough
-                // If Claude were actually working, we would have received heartbeats by now
-                return ProjectSessionState(
-                    state: .waiting,
-                    stateChangedAt: state.stateChangedAt,
-                    sessionId: state.sessionId,
-                    workingOn: state.workingOn,
-                        context: state.context,
-                    thinking: state.thinking,
-                    isLocked: state.isLocked
-                )
-            }
-        }
-
-        return state
-    }
-
-    func launchTerminal(for project: Project) {
-        // Set active project when launching terminal
-        activeProjectPath = project.path
-        // Pause tracker updates for 2 seconds to prevent flickering during tmux session switch
-        ignoreTrackerUpdatesUntil = Date().addingTimeInterval(2.0)
-
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/bash")
-        process.arguments = ["-c", """
-            PROJECT_PATH="\(project.path)"
-            PROJECT_NAME="\(project.name)"
-
-            # Check if tmux is installed
-            if ! command -v tmux &> /dev/null; then
-                # NO TMUX: Open terminal directly in project directory
-                if [ -d "/Applications/Ghostty.app" ]; then
-                    open -na "Ghostty.app" --args --working-directory="$PROJECT_PATH"
-                elif [ -d "/Applications/iTerm.app" ]; then
-                    osascript -e "tell application \\"iTerm\\" to create window with default profile command \\"cd '$PROJECT_PATH' && exec $SHELL\\""
-                    osascript -e 'tell application "iTerm" to activate'
-                elif [ -d "/Applications/Alacritty.app" ]; then
-                    open -na "Alacritty.app" --args --working-directory "$PROJECT_PATH"
-                elif command -v kitty &>/dev/null; then
-                    kitty --directory "$PROJECT_PATH" &
-                elif [ -d "/Applications/Warp.app" ]; then
-                    open -a "Warp" "$PROJECT_PATH"
-                else
-                    osascript -e "tell application \\"Terminal\\" to do script \\"cd '$PROJECT_PATH'\\""
-                    osascript -e 'tell application "Terminal" to activate'
-                fi
-                exit 0
-            fi
-
-            # TMUX AVAILABLE: Use session management
-            # First, try to find existing session by path (handles name mismatches like "plink_com" for "plink.com")
-            EXISTING_SESSION=$(tmux list-windows -a -F '#{session_name}:#{pane_current_path}' 2>/dev/null | \
-                grep ":$PROJECT_PATH$" | cut -d: -f1 | head -1)
-
-            if [ -n "$EXISTING_SESSION" ]; then
-                # Found existing session with matching path - use it
-                SESSION="$EXISTING_SESSION"
-            else
-                # No existing session - will create with project name
-                SESSION="$PROJECT_NAME"
-            fi
-
-            # Check if any tmux client is attached (i.e., a terminal is running tmux)
-            HAS_ATTACHED_CLIENT=$(tmux list-clients 2>/dev/null | head -1)
-
-            if [ -n "$HAS_ATTACHED_CLIENT" ]; then
-                # A tmux client exists - we can switch sessions
-                if tmux has-session -t "$SESSION" 2>/dev/null; then
-                    # Session exists, switch to it
-                    tmux switch-client -t "$SESSION" 2>/dev/null
-                else
-                    # Create session and switch
-                    tmux new-session -d -s "$SESSION" -c "$PROJECT_PATH"
-                    tmux switch-client -t "$SESSION" 2>/dev/null
-                fi
-
-                # Activate the terminal that has tmux
-                if pgrep -xq "Ghostty"; then
-                    osascript -e 'tell application "Ghostty" to activate'
-                elif pgrep -xq "iTerm2"; then
-                    osascript -e 'tell application "iTerm" to activate'
-                elif pgrep -xq "WarpTerminal"; then
-                    osascript -e 'tell application "Warp" to activate'
-                elif pgrep -xq "Alacritty"; then
-                    osascript -e 'tell application "Alacritty" to activate'
-                elif pgrep -xq "kitty"; then
-                    osascript -e 'tell application "kitty" to activate'
-                elif pgrep -xq "Terminal"; then
-                    osascript -e 'tell application "Terminal" to activate'
-                fi
-            else
-                # No tmux client attached - need to launch a new terminal
-                # Use tmux new-session -A which attaches if exists, creates if not
-                TMUX_CMD="tmux new-session -A -s '$SESSION' -c '$PROJECT_PATH'"
-
-                # Try to launch with preferred terminal (in order of preference)
-                if [ -d "/Applications/Ghostty.app" ]; then
-                    open -na "Ghostty.app" --args -e sh -c "$TMUX_CMD"
-                elif [ -d "/Applications/iTerm.app" ]; then
-                    osascript -e "tell application \\"iTerm\\" to create window with default profile command \\"$TMUX_CMD\\""
-                    osascript -e 'tell application "iTerm" to activate'
-                elif [ -d "/Applications/Alacritty.app" ]; then
-                    open -na "Alacritty.app" --args -e sh -c "$TMUX_CMD"
-                elif command -v kitty &>/dev/null; then
-                    kitty sh -c "$TMUX_CMD" &
-                elif [ -d "/Applications/Warp.app" ]; then
-                    # Warp has limited tmux support, just open directory
-                    open -a "Warp" "$PROJECT_PATH"
-                else
-                    # Fallback to Terminal.app
-                    osascript -e "tell application \\"Terminal\\" to do script \\"$TMUX_CMD\\""
-                    osascript -e 'tell application "Terminal" to activate'
-                fi
-            fi
-        """]
-        try? process.run()
-
-        // Activate terminal after launch/switch (with small delay for stability)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            self.activateTerminalApp()
-        }
-    }
-
-    func showProjectDetail(_ project: Project) {
-        selectedProject = project
-        projectView = .detail(project)
-    }
-
-    func showAddProject() {
-        projectView = .add
-    }
-
-    func showNewIdea() {
-        projectView = .newIdea
-    }
-
-    func showProjectList() {
-        selectedProject = nil
-        projectView = .list
     }
 
     func createProjectFromIdea(_ request: NewProjectRequest, completion: @escaping (CreateProjectResult) -> Void) {
@@ -1132,7 +767,6 @@ class AppState: ObservableObject {
             PROMPT_FILE="\(promptFile.path)"
             CLAUDE_CMD="/opt/homebrew/bin/claude \\"\\$(cat '$PROMPT_FILE')\\" ; rm -f '$PROMPT_FILE'"
 
-            # Try terminals in preference order
             if [ -d "/Applications/Ghostty.app" ]; then
                 open -na "Ghostty.app" --args --working-directory="$PROJECT_PATH" -e bash -c "$CLAUDE_CMD"
             elif [ -d "/Applications/iTerm.app" ]; then
@@ -1249,494 +883,27 @@ class AppState: ObservableObject {
         }
     }
 
-    func moveToDormant(_ project: Project) {
-        manuallyDormant.insert(project.path)
-    }
-
-    func moveToRecent(_ project: Project) {
-        manuallyDormant.remove(project.path)
-    }
-
-    func isManuallyDormant(_ project: Project) -> Bool {
-        manuallyDormant.contains(project.path)
-    }
-
-    nonisolated func refreshDevServers() {
-        _Concurrency.Task { @MainActor [weak self] in
-            guard let self = self else { return }
-            let projectsCopy = self.projects
-
-            for project in projectsCopy {
-                let projectPath = project.path
-
-                let port = await DevEnvironment.findDevServerPort(for: projectPath)
-
-                if let port = port {
-                    self.devServerPorts[projectPath] = port
-
-                    let browser = await DevEnvironment.findBrowserWithLocalhost(port: port)
-                    if let browser = browser {
-                        self.devServerBrowsers[projectPath] = browser
-                    }
-                } else {
-                    self.devServerPorts.removeValue(forKey: projectPath)
-                    self.devServerBrowsers.removeValue(forKey: projectPath)
-                }
-            }
-        }
-    }
-
-    func getDevServerPort(for project: Project) -> UInt16? {
-        devServerPorts[project.path]
-    }
-
-    func hasDevServer(_ project: Project) -> Bool {
-        devServerPorts[project.path] != nil
-    }
-
-    func openInBrowser(_ project: Project) {
-        guard let port = devServerPorts[project.path] else { return }
-
-        if let browser = devServerBrowsers[project.path] {
-            DevEnvironment.focusBrowserTab(browser: browser, port: port)
-        } else {
-            DevEnvironment.openInBrowser(port: port)
-        }
-    }
-
-    func launchFullEnvironment(for project: Project) {
-        launchTerminal(for: project)
-
-        if let port = devServerPorts[project.path] {
-            if let browser = devServerBrowsers[project.path] {
-                DevEnvironment.focusBrowserTab(browser: browser, port: port)
-            } else {
-                DevEnvironment.openInBrowser(port: port)
-            }
-        }
-    }
-
-    // MARK: - Idea Capture
-
-    func showIdeaCaptureModal(for project: Project) {
-        captureModalProject = project
-        showCaptureModal = true
-    }
-
-    func captureIdea(for project: Project, text: String) -> Result<Void, Error> {
-        guard let engine = engine else {
-            return .failure(NSError(domain: "HUD", code: 1, userInfo: [
-                NSLocalizedDescriptionKey: "Engine not initialized"
-            ]))
-        }
-
-        do {
-            let ideaId = try engine.captureIdea(projectPath: project.path, ideaText: text)
-            loadIdeas(for: project)
-
-            // Start async title generation
-            generateTitleForIdea(ideaId: ideaId, description: text, project: project)
-
-            return .success(())
-        } catch {
-            return .failure(error)
-        }
-    }
-
-    func loadIdeas(for project: Project) {
-        guard let engine = engine else { return }
-
-        do {
-            let ideas = try engine.loadIdeas(projectPath: project.path)
-            projectIdeas[project.path] = ideas
-
-            let ideasFilePath = "\(project.path)/.claude/ideas.local.md"
-            if let attrs = try? FileManager.default.attributesOfItem(atPath: ideasFilePath),
-               let mtime = attrs[.modificationDate] as? Date {
-                ideaFileMtimes[project.path] = mtime
-            }
-        } catch {
-            projectIdeas[project.path] = []
-        }
-    }
-
-    func loadAllIdeas() {
-        for project in projects {
-            loadIdeas(for: project)
-        }
-    }
-
-    func checkIdeasFileChanges() {
-        let now = Date()
-        guard now.timeIntervalSince(lastIdeasCheck) >= 2.0 else { return }
-        lastIdeasCheck = now
-
-        for project in projects {
-            let ideasFilePath = "\(project.path)/.claude/ideas.local.md"
-
-            guard let attrs = try? FileManager.default.attributesOfItem(atPath: ideasFilePath),
-                  let currentMtime = attrs[.modificationDate] as? Date else {
-                continue
-            }
-
-            if let lastKnownMtime = ideaFileMtimes[project.path] {
-                if currentMtime > lastKnownMtime {
-                    loadIdeas(for: project)
-                }
-            } else {
-                loadIdeas(for: project)
-            }
-        }
-    }
-
-    func getIdeas(for project: Project) -> [Idea] {
-        projectIdeas[project.path] ?? []
-    }
-
-    func isGeneratingTitle(for ideaId: String) -> Bool {
-        generatingTitleForIdeas.contains(ideaId)
-    }
-
-    private func generateTitleForIdea(ideaId: String, description: String, project: Project) {
-        generatingTitleForIdeas.insert(ideaId)
-
-        _Concurrency.Task {
-            do {
-                // Get existing idea titles for context
-                let existingTitles = await MainActor.run {
-                    getIdeas(for: project)
-                        .filter { $0.id != ideaId && $0.title != "..." }
-                        .prefix(10)
-                        .map { "- \($0.title)" }
-                        .joined(separator: "\n")
-                }
-
-                let title = try await callHaikuForTitle(description: description, existingIdeas: existingTitles)
-
-                await MainActor.run {
-                    do {
-                        try engine?.updateIdeaTitle(projectPath: project.path, ideaId: ideaId, newTitle: title)
-                        loadIdeas(for: project)
-                    } catch {
-                        // Silently fail - title stays as placeholder
-                    }
-                    generatingTitleForIdeas.remove(ideaId)
-                }
-            } catch {
-                await MainActor.run {
-                    // On error, use truncated description as fallback
-                    let fallbackTitle = String(description.prefix(50)).trimmingCharacters(in: .whitespacesAndNewlines)
-                    do {
-                        try engine?.updateIdeaTitle(projectPath: project.path, ideaId: ideaId, newTitle: fallbackTitle)
-                        loadIdeas(for: project)
-                    } catch {
-                        // Silently fail
-                    }
-                    generatingTitleForIdeas.remove(ideaId)
-                }
-            }
-        }
-    }
-
-    private func callHaikuForTitle(description: String, existingIdeas: String) async throws -> String {
-        let contextSection = existingIdeas.isEmpty ? "" : """
-
-            Other ideas in this project (for context/uniqueness):
-            \(existingIdeas)
-            """
-
-        let prompt = """
-            Generate a concise 3-8 word title for this idea. Return ONLY the title text, no quotes, no punctuation unless part of a name.
-
-            Idea: \(description)\(contextSection)
-            """
-
-        let process = Process()
-        let outputPipe = Pipe()
-        let errorPipe = Pipe()
-
-        process.executableURL = URL(fileURLWithPath: "/opt/homebrew/bin/claude")
-        process.arguments = ["--print", "--model", "haiku", prompt]
-        process.standardOutput = outputPipe
-        process.standardError = errorPipe
-
-        try process.run()
-
-        return try await withCheckedThrowingContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                process.waitUntilExit()
-
-                let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
-                var output = String(data: outputData, encoding: .utf8)?
-                    .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-
-                // Clean up potential quotes
-                if output.hasPrefix("\"") && output.hasSuffix("\"") && output.count > 2 {
-                    output = String(output.dropFirst().dropLast())
-                }
-
-                // Remove any trailing punctuation except for names
-                while output.hasSuffix(".") || output.hasSuffix("!") || output.hasSuffix("?") {
-                    output = String(output.dropLast())
-                }
-
-                if process.terminationStatus == 0 && !output.isEmpty {
-                    continuation.resume(returning: output)
-                } else {
-                    continuation.resume(throwing: NSError(
-                        domain: "HUD",
-                        code: Int(process.terminationStatus),
-                        userInfo: [NSLocalizedDescriptionKey: "Haiku title generation failed"]
-                    ))
-                }
-            }
-        }
-    }
-
-    func workOnIdea(_ idea: Idea, for project: Project) {
-        guard let engine = engine else { return }
-
-        do {
-            try engine.updateIdeaStatus(
-                projectPath: project.path,
-                ideaId: idea.id,
-                newStatus: "in-progress"
-            )
-            loadIdeas(for: project)
-        } catch {
-            self.error = "Failed to update idea status: \(error.localizedDescription)"
-        }
-
-        launchTerminalWithIdea(idea, for: project)
-    }
-
-    func dismissIdea(_ idea: Idea, for project: Project) {
-        guard let engine = engine else { return }
-
-        do {
-            try engine.updateIdeaStatus(
-                projectPath: project.path,
-                ideaId: idea.id,
-                newStatus: "done"
-            )
-            loadIdeas(for: project)
-        } catch {
-            self.error = "Failed to dismiss idea: \(error.localizedDescription)"
-        }
-    }
-
-    private func launchTerminalWithIdea(_ idea: Idea, for project: Project) {
-        activeProjectPath = project.path
-        ignoreTrackerUpdatesUntil = Date().addingTimeInterval(2.0)
-
-        let prompt = """
-            I want to work on this idea:
-
-            \(idea.title)
-
-            \(idea.description)
-
-            The details are in .claude/ideas.local.md if you need to reference them.
-            When you're done, update the Status field to "done" in that file.
-            """
-
-        let escapedPrompt = prompt
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-            .replacingOccurrences(of: "$", with: "\\$")
-            .replacingOccurrences(of: "`", with: "\\`")
-
+    private func launchClaudeResume(projectPath: String, sessionId: String, creationId: String) async throws {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/bash")
         process.arguments = ["-c", """
-            PROJECT_PATH="\(project.path)"
-            PROJECT_NAME="\(project.name)"
-            IDEA_PROMPT="\(escapedPrompt)"
+            PROJECT_PATH="\(projectPath)"
+            SESSION_ID="\(sessionId)"
+            CLAUDE_CMD="/opt/homebrew/bin/claude --resume $SESSION_ID"
 
-            # Check if tmux is installed
-            if ! command -v tmux &> /dev/null; then
-                # NO TMUX: Open terminal with claude and prompt
-                if [ -d "/Applications/Ghostty.app" ]; then
-                    open -na "Ghostty.app" --args --working-directory="$PROJECT_PATH" -e bash -c "/opt/homebrew/bin/claude \\"$IDEA_PROMPT\\""
-                elif [ -d "/Applications/iTerm.app" ]; then
-                    osascript -e "tell application \\"iTerm\\" to create window with default profile command \\"cd '$PROJECT_PATH' && /opt/homebrew/bin/claude '$IDEA_PROMPT'\\""
-                    osascript -e 'tell application "iTerm" to activate'
-                else
-                    osascript -e "tell application \\"Terminal\\" to do script \\"cd '$PROJECT_PATH' && /opt/homebrew/bin/claude '$IDEA_PROMPT'\\""
-                    osascript -e 'tell application "Terminal" to activate'
-                fi
-                exit 0
-            fi
-
-            # TMUX AVAILABLE: Use session management
-            EXISTING_SESSION=$(tmux list-windows -a -F '#{session_name}:#{pane_current_path}' 2>/dev/null | \\
-                grep ":$PROJECT_PATH$" | cut -d: -f1 | head -1)
-
-            if [ -n "$EXISTING_SESSION" ]; then
-                SESSION="$EXISTING_SESSION"
+            if [ -d "/Applications/Ghostty.app" ]; then
+                open -na "Ghostty.app" --args --working-directory="$PROJECT_PATH" -e bash -c "$CLAUDE_CMD"
+            elif [ -d "/Applications/iTerm.app" ]; then
+                osascript -e "tell application \\"iTerm\\" to create window with default profile command \\"cd '$PROJECT_PATH' && $CLAUDE_CMD\\""
+                osascript -e 'tell application "iTerm" to activate'
             else
-                SESSION="$PROJECT_NAME"
-            fi
-
-            HAS_ATTACHED_CLIENT=$(tmux list-clients 2>/dev/null | head -1)
-
-            if [ -n "$HAS_ATTACHED_CLIENT" ]; then
-                if tmux has-session -t "$SESSION" 2>/dev/null; then
-                    tmux switch-client -t "$SESSION" 2>/dev/null
-                    # Send the claude command with prompt to the session
-                    tmux send-keys -t "$SESSION" "/opt/homebrew/bin/claude \\"$IDEA_PROMPT\\"" Enter
-                else
-                    tmux new-session -d -s "$SESSION" -c "$PROJECT_PATH"
-                    tmux switch-client -t "$SESSION" 2>/dev/null
-                    tmux send-keys -t "$SESSION" "/opt/homebrew/bin/claude \\"$IDEA_PROMPT\\"" Enter
-                fi
-
-                # Activate terminal
-                if pgrep -xq "Ghostty"; then
-                    osascript -e 'tell application "Ghostty" to activate'
-                elif pgrep -xq "iTerm2"; then
-                    osascript -e 'tell application "iTerm" to activate'
-                elif pgrep -xq "Terminal"; then
-                    osascript -e 'tell application "Terminal" to activate'
-                fi
-            else
-                TMUX_CMD="tmux new-session -A -s '$SESSION' -c '$PROJECT_PATH'"
-
-                if [ -d "/Applications/Ghostty.app" ]; then
-                    open -na "Ghostty.app" --args -e sh -c "$TMUX_CMD && /opt/homebrew/bin/claude \\"$IDEA_PROMPT\\""
-                elif [ -d "/Applications/iTerm.app" ]; then
-                    osascript -e "tell application \\"iTerm\\" to create window with default profile command \\"$TMUX_CMD && /opt/homebrew/bin/claude '$IDEA_PROMPT'\\""
-                    osascript -e 'tell application "iTerm" to activate'
-                else
-                    osascript -e "tell application \\"Terminal\\" to do script \\"$TMUX_CMD && /opt/homebrew/bin/claude '$IDEA_PROMPT'\\""
-                    osascript -e 'tell application "Terminal" to activate'
-                fi
+                osascript -e "tell application \\"Terminal\\" to do script \\"cd '$PROJECT_PATH' && $CLAUDE_CMD\\""
+                osascript -e 'tell application "Terminal" to activate'
             fi
         """]
-        try? process.run()
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            self.activateTerminalApp()
-        }
-    }
-
-    // MARK: - Project Descriptions
-
-    private func loadProjectDescriptions() {
-        guard FileManager.default.fileExists(atPath: descriptionsFilePath.path) else { return }
-
-        do {
-            let data = try Data(contentsOf: descriptionsFilePath)
-            projectDescriptions = try JSONDecoder().decode([String: String].self, from: data)
-        } catch {
-            // File corrupted or invalid - start fresh
-            projectDescriptions = [:]
-        }
-    }
-
-    private func saveProjectDescriptions() {
-        do {
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = .prettyPrinted
-            let data = try encoder.encode(projectDescriptions)
-            try data.write(to: descriptionsFilePath)
-        } catch {
-            // Silently fail - descriptions will be regenerated next time
-        }
-    }
-
-    func getDescription(for project: Project) -> String? {
-        projectDescriptions[project.path]
-    }
-
-    func isGeneratingDescription(for project: Project) -> Bool {
-        generatingDescriptionFor.contains(project.path)
-    }
-
-    func generateDescription(for project: Project) {
-        guard !generatingDescriptionFor.contains(project.path) else { return }
-        generatingDescriptionFor.insert(project.path)
-
-        _Concurrency.Task {
-            do {
-                // Read CLAUDE.md from project
-                let claudeMdPath = "\(project.path)/CLAUDE.md"
-                let claudeMdContent: String
-
-                if FileManager.default.fileExists(atPath: claudeMdPath) {
-                    claudeMdContent = try String(contentsOfFile: claudeMdPath, encoding: .utf8)
-                } else {
-                    // No CLAUDE.md - use project name and path as context
-                    claudeMdContent = "Project: \(project.name)\nPath: \(project.path)"
-                }
-
-                let description = try await callHaikuForDescription(claudeMd: claudeMdContent, projectName: project.name)
-
-                await MainActor.run {
-                    projectDescriptions[project.path] = description
-                    saveProjectDescriptions()
-                    generatingDescriptionFor.remove(project.path)
-                }
-            } catch {
-                await MainActor.run {
-                    // On error, set a fallback description
-                    projectDescriptions[project.path] = "A project at \(project.path)"
-                    saveProjectDescriptions()
-                    generatingDescriptionFor.remove(project.path)
-                }
-            }
-        }
-    }
-
-    private func callHaikuForDescription(claudeMd: String, projectName: String) async throws -> String {
-        // Truncate CLAUDE.md to avoid overwhelming the model (first 3000 chars)
-        let truncatedContent = String(claudeMd.prefix(3000))
-
-        let prompt = """
-            Generate a concise 1-2 sentence description of this project based on its CLAUDE.md file.
-            Focus on WHAT the project does and its PURPOSE, not implementation details.
-            Return ONLY the description text, no quotes, no markdown formatting.
-
-            Project: \(projectName)
-
-            CLAUDE.md content:
-            \(truncatedContent)
-            """
-
-        let process = Process()
-        let outputPipe = Pipe()
-        let errorPipe = Pipe()
-
-        process.executableURL = URL(fileURLWithPath: "/opt/homebrew/bin/claude")
-        process.arguments = ["--print", "--model", "haiku", prompt]
-        process.standardOutput = outputPipe
-        process.standardError = errorPipe
 
         try process.run()
 
-        return try await withCheckedThrowingContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                process.waitUntilExit()
-
-                let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
-                var output = String(data: outputData, encoding: .utf8)?
-                    .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-
-                // Clean up potential quotes
-                if output.hasPrefix("\"") && output.hasSuffix("\"") && output.count > 2 {
-                    output = String(output.dropFirst().dropLast())
-                }
-
-                if process.terminationStatus == 0 && !output.isEmpty {
-                    continuation.resume(returning: output)
-                } else {
-                    continuation.resume(throwing: NSError(
-                        domain: "HUD",
-                        code: Int(process.terminationStatus),
-                        userInfo: [NSLocalizedDescriptionKey: "Description generation failed"]
-                    ))
-                }
-            }
-        }
+        startCompletionMonitor(projectPath: projectPath, creationId: creationId, sessionId: sessionId)
     }
 }

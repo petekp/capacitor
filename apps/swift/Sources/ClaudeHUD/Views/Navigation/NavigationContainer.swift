@@ -2,6 +2,7 @@ import SwiftUI
 
 struct NavigationContainer: View {
     @EnvironmentObject var appState: AppState
+    @Environment(\.prefersReducedMotion) private var reduceMotion
 
     @State private var listOffset: CGFloat = 0
     @State private var detailOffset: CGFloat = 1000
@@ -12,9 +13,18 @@ struct NavigationContainer: View {
     @State private var showAdd = false
     @State private var showNewIdea = false
 
+    @State private var listOpacity: Double = 1
+    @State private var detailOpacity: Double = 0
+    @State private var addOpacity: Double = 0
+    @State private var newIdeaOpacity: Double = 0
+
     private let animationDuration: Double = 0.35
     private let springResponse: Double = 0.35
     private let springDamping: Double = 0.86
+
+    private var navigationAnimation: Animation {
+        reduceMotion ? AppMotion.reducedMotionFallback : .spring(response: springResponse, dampingFraction: springDamping)
+    }
 
     var body: some View {
         GeometryReader { geometry in
@@ -23,24 +33,28 @@ struct NavigationContainer: View {
             ZStack {
                 ProjectsView()
                     .frame(width: width)
-                    .offset(x: listOffset)
+                    .offset(x: reduceMotion ? 0 : listOffset)
+                    .opacity(reduceMotion ? listOpacity : 1)
 
                 if showDetail, let project = currentDetail {
                     ProjectDetailView(project: project)
                         .frame(width: width)
-                        .offset(x: detailOffset)
+                        .offset(x: reduceMotion ? 0 : detailOffset)
+                        .opacity(reduceMotion ? detailOpacity : 1)
                 }
 
                 if showAdd {
                     AddProjectView()
                         .frame(width: width)
-                        .offset(x: addOffset)
+                        .offset(x: reduceMotion ? 0 : addOffset)
+                        .opacity(reduceMotion ? addOpacity : 1)
                 }
 
                 if showNewIdea {
                     NewIdeaView()
                         .frame(width: width)
-                        .offset(x: newIdeaOffset)
+                        .offset(x: reduceMotion ? 0 : newIdeaOffset)
+                        .opacity(reduceMotion ? newIdeaOpacity : 1)
                 }
             }
             .clipped()
@@ -53,14 +67,19 @@ struct NavigationContainer: View {
     private func handleNavigation(from oldValue: ProjectView, to newValue: ProjectView, width: CGFloat) {
         switch newValue {
         case .list:
-            // Animate back to list
-            withAnimation(.spring(response: springResponse, dampingFraction: springDamping)) {
-                listOffset = 0
-                detailOffset = width
-                addOffset = width
-                newIdeaOffset = width
+            withAnimation(navigationAnimation) {
+                if reduceMotion {
+                    listOpacity = 1
+                    detailOpacity = 0
+                    addOpacity = 0
+                    newIdeaOpacity = 0
+                } else {
+                    listOffset = 0
+                    detailOffset = width
+                    addOffset = width
+                    newIdeaOffset = width
+                }
             }
-            // Clean up after animation
             DispatchQueue.main.asyncAfter(deadline: .now() + animationDuration + 0.1) {
                 if case .list = appState.projectView {
                     showDetail = false
@@ -71,42 +90,63 @@ struct NavigationContainer: View {
             }
 
         case .detail(let project):
-            // Prepare detail view off-screen
             currentDetail = project
             showDetail = true
-            detailOffset = width
+            if reduceMotion {
+                detailOpacity = 0
+            } else {
+                detailOffset = width
+            }
 
-            // Animate in
             DispatchQueue.main.async {
-                withAnimation(.spring(response: springResponse, dampingFraction: springDamping)) {
-                    listOffset = -width
-                    detailOffset = 0
+                withAnimation(navigationAnimation) {
+                    if reduceMotion {
+                        listOpacity = 0
+                        detailOpacity = 1
+                    } else {
+                        listOffset = -width
+                        detailOffset = 0
+                    }
                 }
             }
 
         case .add:
-            // Prepare add view off-screen
             showAdd = true
-            addOffset = width
+            if reduceMotion {
+                addOpacity = 0
+            } else {
+                addOffset = width
+            }
 
-            // Animate in
             DispatchQueue.main.async {
-                withAnimation(.spring(response: springResponse, dampingFraction: springDamping)) {
-                    listOffset = -width
-                    addOffset = 0
+                withAnimation(navigationAnimation) {
+                    if reduceMotion {
+                        listOpacity = 0
+                        addOpacity = 1
+                    } else {
+                        listOffset = -width
+                        addOffset = 0
+                    }
                 }
             }
 
         case .newIdea:
-            // Prepare new idea view off-screen
             showNewIdea = true
-            newIdeaOffset = width
+            if reduceMotion {
+                newIdeaOpacity = 0
+            } else {
+                newIdeaOffset = width
+            }
 
-            // Animate in
             DispatchQueue.main.async {
-                withAnimation(.spring(response: springResponse, dampingFraction: springDamping)) {
-                    listOffset = -width
-                    newIdeaOffset = 0
+                withAnimation(navigationAnimation) {
+                    if reduceMotion {
+                        listOpacity = 0
+                        newIdeaOpacity = 1
+                    } else {
+                        listOffset = -width
+                        newIdeaOffset = 0
+                    }
                 }
             }
         }

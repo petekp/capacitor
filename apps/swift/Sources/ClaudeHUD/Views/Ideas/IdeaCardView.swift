@@ -15,7 +15,7 @@ struct IdeaCardView: View {
             ZStack(alignment: .leading) {
                 // Final title - always rendered, fades in when ready
                 Text(idea.title)
-                    .font(.system(size: 12))
+                    .font(AppTypography.bodySecondary)
                     .foregroundColor(.white.opacity(0.7))
                     .lineLimit(2)
                     .opacity(isGeneratingTitle ? 0 : 1)
@@ -48,7 +48,7 @@ struct IdeaCardView: View {
                         if let onWorkOnThis = onWorkOnThis {
                             Button(action: onWorkOnThis) {
                                 Text("Work On This")
-                                    .font(.system(size: 10, weight: .medium))
+                                    .font(AppTypography.labelMedium)
                                     .foregroundColor(.white)
                                     .padding(.horizontal, 10)
                                     .padding(.vertical, 5)
@@ -61,7 +61,7 @@ struct IdeaCardView: View {
                         if let onDismiss = onDismiss {
                             Button(action: onDismiss) {
                                 Image(systemName: "checkmark")
-                                    .font(.system(size: 10, weight: .bold))
+                                    .font(AppTypography.label.weight(.bold))
                                     .foregroundColor(.white)
                                     .frame(width: 22, height: 22)
                                     .background(Color.green.opacity(0.8))
@@ -92,7 +92,7 @@ struct ShimmeringText: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 12))
+            .font(AppTypography.bodySecondary)
             .foregroundColor(.white.opacity(0.4))
             .overlay {
                 GeometryReader { geometry in
@@ -109,7 +109,7 @@ struct ShimmeringText: View {
                     )
                     .mask(
                         Text(text)
-                            .font(.system(size: 12))
+                            .font(AppTypography.bodySecondary)
                     )
                 }
             }

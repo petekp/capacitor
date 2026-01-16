@@ -12,7 +12,7 @@ struct RelaySettingsView: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
                 Text("Remote Sync")
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(AppTypography.cardSubtitle.weight(.semibold))
 
                 Spacer()
 
@@ -21,7 +21,7 @@ struct RelaySettingsView: View {
                         .fill(appState.relayClient.isConnected ? Color.green : Color.orange)
                         .frame(width: 8, height: 8)
                     Text(appState.relayClient.isConnected ? "Connected" : "Disconnected")
-                        .font(.system(size: 11))
+                        .font(AppTypography.labelMedium)
                         .foregroundColor(.white.opacity(0.6))
                 }
             }
@@ -34,7 +34,7 @@ struct RelaySettingsView: View {
 
             if let error = scanError ?? appState.relayClient.connectionError {
                 Text(error)
-                    .font(.system(size: 11))
+                    .font(AppTypography.labelMedium)
                     .foregroundColor(.red.opacity(0.8))
                     .lineLimit(2)
             }
@@ -52,7 +52,7 @@ struct RelaySettingsView: View {
     private var configuredView: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Receive real-time updates from your desktop Claude Code sessions on this device.")
-                .font(.system(size: 12))
+                .font(AppTypography.bodySecondary)
                 .foregroundColor(.white.opacity(0.5))
 
             HStack(spacing: 8) {
@@ -79,7 +79,7 @@ struct RelaySettingsView: View {
     private var unconfiguredView: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Connect to a desktop computer to see Claude Code session states remotely.")
-                .font(.system(size: 12))
+                .font(AppTypography.bodySecondary)
                 .foregroundColor(.white.opacity(0.5))
 
             Button {
@@ -133,7 +133,7 @@ struct RelaySettingsView: View {
 struct PrimaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 12, weight: .medium))
+            .font(AppTypography.bodySecondary.weight(.medium))
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
             .background(Color.blue.opacity(configuration.isPressed ? 0.6 : 0.8))
@@ -145,7 +145,7 @@ struct PrimaryButtonStyle: ButtonStyle {
 struct SecondaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 12, weight: .medium))
+            .font(AppTypography.bodySecondary.weight(.medium))
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
             .background(Color.white.opacity(configuration.isPressed ? 0.08 : 0.05))
@@ -202,21 +202,21 @@ struct QRScannerView: View {
     private var macOSInstructions: some View {
         VStack(spacing: 16) {
             Image(systemName: "qrcode")
-                .font(.system(size: 48))
+                .font(.largeTitle)
                 .foregroundColor(.white.opacity(0.4))
 
             Text("On your desktop, run:")
-                .font(.system(size: 13))
+                .font(AppTypography.bodyMedium)
                 .foregroundColor(.white.opacity(0.6))
 
             Text("./apps/relay/scripts/pair-device.sh")
-                .font(.system(size: 12, design: .monospaced))
+                .font(AppTypography.monoCaption)
                 .padding(8)
                 .background(Color.black.opacity(0.3))
                 .cornerRadius(4)
 
             Text("Then paste the pairing data below")
-                .font(.system(size: 12))
+                .font(AppTypography.bodySecondary)
                 .foregroundColor(.white.opacity(0.5))
         }
     }
@@ -224,11 +224,11 @@ struct QRScannerView: View {
     private var manualEntryView: some View {
         VStack(spacing: 12) {
             Text("Paste the pairing JSON from your desktop")
-                .font(.system(size: 12))
+                .font(AppTypography.bodySecondary)
                 .foregroundColor(.white.opacity(0.6))
 
             TextEditor(text: $manualInput)
-                .font(.system(size: 11, design: .monospaced))
+                .font(AppTypography.monoCaption)
                 .frame(height: 100)
                 .scrollContentBackground(.hidden)
                 .background(Color.black.opacity(0.3))
@@ -245,11 +245,11 @@ struct QRScannerView: View {
     private var cameraPermissionView: some View {
         VStack(spacing: 12) {
             Image(systemName: "camera.fill")
-                .font(.system(size: 48))
+                .font(.largeTitle)
                 .foregroundColor(.white.opacity(0.4))
 
             Text("Camera access is required to scan QR codes")
-                .font(.system(size: 13))
+                .font(AppTypography.bodyMedium)
                 .foregroundColor(.white.opacity(0.6))
 
             Button("Open Settings") {

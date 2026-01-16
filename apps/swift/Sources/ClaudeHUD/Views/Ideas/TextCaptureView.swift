@@ -20,14 +20,14 @@ struct TextCaptureView: View {
         VStack(spacing: 20) {
             HStack {
                 Text("Capture Idea")
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(AppTypography.sectionTitle)
                     .foregroundColor(.white)
 
                 Spacer()
 
                 Button(action: { attemptDismiss() }) {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 20))
+                        .font(.title2)
                         .foregroundColor(.white.opacity(0.5))
                 }
                 .buttonStyle(.plain)
@@ -35,17 +35,17 @@ struct TextCaptureView: View {
 
             HStack {
                 Image(systemName: "folder.fill")
-                    .font(.system(size: 12))
+                    .font(AppTypography.bodySecondary)
                     .foregroundColor(.white.opacity(0.5))
                 Text(projectName)
-                    .font(.system(size: 12))
+                    .font(AppTypography.bodySecondary)
                     .foregroundColor(.white.opacity(0.7))
                 Spacer()
             }
 
             ZStack(alignment: .topLeading) {
                 TextEditor(text: $ideaText)
-                    .font(.system(size: 14))
+                    .font(AppTypography.body)
                     .foregroundColor(.white)
                     .scrollContentBackground(.hidden)
                     .background(Color.white.opacity(0.05))
@@ -63,7 +63,7 @@ struct TextCaptureView: View {
 
                 if ideaText.isEmpty {
                     Text("Type your idea here. Keep it brief - you can expand on it later with Claude.")
-                        .font(.system(size: 12))
+                        .font(AppTypography.bodySecondary)
                         .foregroundColor(.white.opacity(0.5))
                         .padding(.top, 8)
                         .padding(.leading, 5)
@@ -74,17 +74,17 @@ struct TextCaptureView: View {
             if let error = captureError {
                 HStack(spacing: 6) {
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.system(size: 12))
+                        .font(AppTypography.bodySecondary)
                         .foregroundColor(.red)
                     Text(error)
-                        .font(.system(size: 12))
+                        .font(AppTypography.bodySecondary)
                         .foregroundColor(.red.opacity(0.9))
                     Spacer()
                     Button("Dismiss") {
                         captureError = nil
                     }
                     .buttonStyle(.plain)
-                    .font(.system(size: 11))
+                    .font(AppTypography.labelMedium)
                     .foregroundColor(.white.opacity(0.5))
                 }
                 .padding(.horizontal, 12)

@@ -13,7 +13,7 @@ struct InlineIdeasList: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Text("Ideas")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(AppTypography.labelMedium)
                     .foregroundColor(.white.opacity(0.5))
 
                 Spacer()
@@ -22,9 +22,9 @@ struct InlineIdeasList: View {
                     Button(action: onAddIdea) {
                         HStack(spacing: 3) {
                             Image(systemName: "plus")
-                                .font(.system(size: 9, weight: .bold))
+                                .font(AppTypography.badge)
                             Text("Add")
-                                .font(.system(size: 10, weight: .medium))
+                                .font(AppTypography.labelMedium)
                         }
                         .foregroundColor(.white.opacity(0.5))
                     }
@@ -56,7 +56,7 @@ struct InlineIdeasList: View {
             if remainingCount > 0 {
                 Button(action: onShowMore) {
                     Text("+ \(remainingCount) more")
-                        .font(.system(size: 11))
+                        .font(AppTypography.labelMedium)
                         .foregroundColor(.white.opacity(0.4))
                 }
                 .buttonStyle(.plain)

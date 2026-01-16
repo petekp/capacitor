@@ -106,14 +106,14 @@ private struct CollapsibleIdeaSection: View {
                 Button(action: { withAnimation(.easeInOut(duration: 0.2)) { isCollapsed.toggle() } }) {
                     HStack(spacing: 6) {
                         Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
-                            .font(.system(size: 8, weight: .bold))
+                            .font(AppTypography.badge)
                             .foregroundColor(.white.opacity(0.45))
                             .frame(width: 10)
 
                         DetailSectionLabel(title: title)
 
                         Text("(\(count))")
-                            .font(.system(size: 10, weight: .medium))
+                            .font(AppTypography.labelMedium)
                             .foregroundColor(.white.opacity(0.35))
 
                         Spacer()
@@ -149,11 +149,11 @@ private struct EmptyIdeasView: View {
                 DetailSectionLabel(title: "IDEAS")
 
                 Text("No ideas captured yet")
-                    .font(.system(size: 13))
+                    .font(AppTypography.body)
                     .foregroundColor(.white.opacity(0.5))
 
                 Text("Use the lightbulb button on the project card to capture ideas")
-                    .font(.system(size: 11))
+                    .font(AppTypography.caption)
                     .foregroundColor(.white.opacity(0.35))
             }
         }

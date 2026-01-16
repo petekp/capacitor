@@ -148,3 +148,20 @@ for lock in ~/.claude/sessions/*.lock; do
   [ -d "$lock" ] && cat "$lock/meta.json"
 done | jq -s .
 ```
+
+## Lock/State Relationship
+
+### Normal Case
+
+Lock PID matches state record PID → Resolver uses state record directly.
+
+### Orphaned Lock Case
+
+Lock PID ≠ state record PID, and lock PID has no state record anywhere:
+
+1. **Resolver behavior:** Trusts the state record (newer session's actual state)
+2. **HUD `add_project`:** Calls `reconcile_orphaned_lock()` to clean up stale lock
+
+This handles multiple Claude sessions starting at the same path where the newer session couldn't acquire the lock from an older session's zombie lock holder.
+
+See **ADR-002 "Orphaned Lock Handling"** for implementation details.

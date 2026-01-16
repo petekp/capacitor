@@ -24,15 +24,15 @@ struct ActivityPanel: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 6) {
                     Image(systemName: "bolt.fill")
-                        .font(.system(size: 10))
+                        .font(AppTypography.label)
                         .foregroundColor(.hudAccent)
 
                     Text("Activity")
-                        .font(.system(size: 11, weight: .medium))
+                        .font(AppTypography.labelMedium)
                         .foregroundColor(.white.opacity(0.5))
 
                     Text("(\(visibleCreations.count))")
-                        .font(.system(size: 10, weight: .regular))
+                        .font(AppTypography.label)
                         .foregroundColor(.white.opacity(0.3))
 
                     Spacer()
@@ -70,24 +70,24 @@ struct CreationCard: View {
                     }
 
                     statusIcon
-                        .font(.system(size: 14))
+                        .font(AppTypography.body)
                         .foregroundColor(statusColor)
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(creation.name)
-                        .font(.system(size: 13, weight: .medium))
+                        .font(AppTypography.bodyMedium)
                         .foregroundColor(.white)
                         .lineLimit(1)
 
                     if let error = creation.error {
                         Text(error)
-                            .font(.system(size: 11))
+                            .font(AppTypography.labelMedium)
                             .foregroundColor(.red.opacity(0.7))
                             .lineLimit(1)
                     } else if let progress = creation.progress {
                         Text(progress.message)
-                            .font(.system(size: 11))
+                            .font(AppTypography.labelMedium)
                             .foregroundColor(.white.opacity(0.5))
                             .lineLimit(1)
                     }
@@ -136,7 +136,7 @@ struct CreationCard: View {
             case .inProgress, .pending:
                 Button(action: { appState.cancelCreation(creation.id) }) {
                     Image(systemName: "xmark")
-                        .font(.system(size: 10, weight: .medium))
+                        .font(AppTypography.labelMedium)
                         .foregroundColor(.white.opacity(isHovered ? 0.7 : 0.4))
                         .frame(width: 20, height: 20)
                         .background(Color.white.opacity(isHovered ? 0.1 : 0.05))
@@ -154,9 +154,9 @@ struct CreationCard: View {
                     Button(action: { appState.resumeCreation(creation.id) }) {
                         HStack(spacing: 4) {
                             Image(systemName: "arrow.clockwise")
-                                .font(.system(size: 10, weight: .medium))
+                                .font(AppTypography.labelMedium)
                             Text("Resume")
-                                .font(.system(size: 10, weight: .medium))
+                                .font(AppTypography.labelMedium)
                         }
                         .foregroundColor(.hudAccent)
                         .padding(.horizontal, 8)
@@ -171,9 +171,9 @@ struct CreationCard: View {
                 Button(action: { openProject() }) {
                     HStack(spacing: 4) {
                         Image(systemName: "terminal")
-                            .font(.system(size: 10, weight: .medium))
+                            .font(AppTypography.labelMedium)
                         Text("Open")
-                            .font(.system(size: 10, weight: .medium))
+                            .font(AppTypography.labelMedium)
                     }
                     .foregroundColor(.green)
                     .padding(.horizontal, 8)

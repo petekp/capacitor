@@ -16,7 +16,7 @@ struct CompactProjectCardView: View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
                 Text(project.name)
-                    .font(.system(size: 12, weight: .regular))
+                    .font(AppTypography.bodySecondary)
                     .foregroundColor(.white.opacity(isHovered ? 0.8 : 0.5))
                     .lineLimit(1)
 
@@ -24,7 +24,7 @@ struct CompactProjectCardView: View {
 
                 Button(action: onMoveToRecent) {
                     Text("Revive")
-                        .font(.system(size: 10, weight: .medium))
+                        .font(AppTypography.labelMedium)
                         .foregroundColor(.white.opacity(isReviveHovered ? 0.9 : 0.7))
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)

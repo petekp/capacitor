@@ -235,17 +235,18 @@ struct SectionHeader: View {
     var onNewIdea: (() -> Void)?
 
     @State private var isHovered = false
+    @Environment(\.prefersReducedMotion) private var reduceMotion
 
     var body: some View {
         HStack(spacing: 6) {
             Text(title.uppercased())
-                .font(.system(size: 10, weight: .medium))
+                .font(AppTypography.label.weight(.medium))
                 .tracking(0.8)
                 .foregroundColor(.white.opacity(0.45))
 
             if count > 1 {
                 Text("(\(count))")
-                    .font(.system(size: 9, weight: .medium))
+                    .font(AppTypography.badge)
                     .foregroundColor(.white.opacity(0.25))
             }
 
@@ -255,9 +256,9 @@ struct SectionHeader: View {
                 Button(action: { onNewIdea?() }) {
                     HStack(spacing: 4) {
                         Image(systemName: "lightbulb.fill")
-                            .font(.system(size: 10))
+                            .font(AppTypography.label)
                         Text("New Idea")
-                            .font(.system(size: 10, weight: .medium))
+                            .font(AppTypography.labelMedium)
                     }
                     .foregroundColor(isHovered ? .hudAccent : .white.opacity(0.5))
                     .padding(.horizontal, 8)
@@ -266,14 +267,18 @@ struct SectionHeader: View {
                     .cornerRadius(6)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("New idea")
+                .accessibilityHint("Capture a new idea for a project")
                 .onHover { hovering in
-                    withAnimation(.easeOut(duration: 0.15)) {
+                    withAnimation(reduceMotion ? AppMotion.reducedMotionFallback : .easeOut(duration: 0.15)) {
                         isHovered = hovering
                     }
                 }
             }
         }
         .padding(.horizontal, 4)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(title) section, \(count) \(count == 1 ? "project" : "projects")")
     }
 }
 
@@ -281,27 +286,28 @@ struct PausedSectionHeader: View {
     let count: Int
     @Binding var isCollapsed: Bool
     @State private var isHovered = false
+    @Environment(\.prefersReducedMotion) private var reduceMotion
 
     var body: some View {
         Button(action: {
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+            withAnimation(reduceMotion ? AppMotion.reducedMotionFallback : .spring(response: 0.3, dampingFraction: 0.8)) {
                 isCollapsed.toggle()
             }
         }) {
             HStack(spacing: 6) {
                 Text("PAUSED")
-                    .font(.system(size: 10, weight: .medium))
+                    .font(AppTypography.label.weight(.medium))
                     .tracking(0.8)
                     .foregroundColor(.white.opacity(0.45))
 
                 if count > 1 {
                     Text("(\(count))")
-                        .font(.system(size: 9, weight: .medium))
+                        .font(AppTypography.badge)
                         .foregroundColor(.white.opacity(0.25))
                 }
 
                 Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
-                    .font(.system(size: 8, weight: .semibold))
+                    .font(AppTypography.captionSmall.weight(.semibold))
                     .foregroundColor(.white.opacity(isHovered ? 0.45 : 0.25))
 
                 Spacer()
@@ -311,8 +317,11 @@ struct PausedSectionHeader: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("Paused projects section, \(count) \(count == 1 ? "project" : "projects")")
+        .accessibilityValue(isCollapsed ? "Collapsed" : "Expanded")
+        .accessibilityHint(isCollapsed ? "Double-tap to expand" : "Double-tap to collapse")
         .onHover { hovering in
-            withAnimation(.easeOut(duration: 0.15)) {
+            withAnimation(reduceMotion ? AppMotion.reducedMotionFallback : .easeOut(duration: 0.15)) {
                 isHovered = hovering
             }
         }
@@ -321,6 +330,7 @@ struct PausedSectionHeader: View {
 
 struct EmptyProjectsView: View {
     @EnvironmentObject var appState: AppState
+    @Environment(\.prefersReducedMotion) private var reduceMotion
     @State private var appeared = false
     @State private var isButtonHovered = false
 
@@ -331,8 +341,8 @@ struct EmptyProjectsView: View {
                     .fill(Color.hudAccent.opacity(0.1))
                     .frame(width: 80, height: 80)
                     .blur(radius: 20)
-                    .scaleEffect(appeared ? 1.0 : 0.5)
-                    .opacity(appeared ? 1 : 0)
+                    .scaleEffect(appeared || reduceMotion ? 1.0 : 0.5)
+                    .opacity(appeared || reduceMotion ? 1 : 0)
 
                 Image(systemName: "folder.badge.plus")
                     .font(.system(size: 44, weight: .light))
@@ -343,29 +353,31 @@ struct EmptyProjectsView: View {
                             endPoint: .bottom
                         )
                     )
-                    .scaleEffect(appeared ? 1.0 : 0.8)
-                    .opacity(appeared ? 1 : 0)
+                    .scaleEffect(appeared || reduceMotion ? 1.0 : 0.8)
+                    .opacity(appeared || reduceMotion ? 1 : 0)
+                    .accessibilityHidden(true)
             }
+            .accessibilityHidden(true)
 
             VStack(spacing: 6) {
                 Text("No projects yet")
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(AppTypography.cardSubtitle.weight(.semibold))
                     .foregroundColor(.white.opacity(0.7))
 
                 Text("Pin your first project to start tracking")
-                    .font(.system(size: 12))
+                    .font(AppTypography.bodySecondary)
                     .foregroundColor(.white.opacity(0.4))
                     .multilineTextAlignment(.center)
             }
-            .opacity(appeared ? 1 : 0)
-            .offset(y: appeared ? 0 : 10)
+            .opacity(appeared || reduceMotion ? 1 : 0)
+            .offset(y: appeared || reduceMotion ? 0 : 10)
 
             Button(action: { appState.showAddProject() }) {
                 HStack(spacing: 6) {
                     Image(systemName: "plus")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(AppTypography.labelMedium.weight(.semibold))
                     Text("Add Project")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(AppTypography.bodySecondary.weight(.semibold))
                 }
                 .foregroundColor(.white.opacity(isButtonHovered ? 1 : 0.9))
                 .padding(.horizontal, 16)
@@ -385,21 +397,29 @@ struct EmptyProjectsView: View {
                     RoundedRectangle(cornerRadius: 8)
                         .stroke(Color.white.opacity(isButtonHovered ? 0.2 : 0.1), lineWidth: 0.5)
                 )
-                .shadow(color: Color.hudAccent.opacity(isButtonHovered ? 0.4 : 0.2), radius: isButtonHovered ? 10 : 4, y: 2)
-                .scaleEffect(isButtonHovered ? 1.02 : 1.0)
+                .shadow(color: Color.hudAccent.opacity(isButtonHovered ? 0.4 : 0.2), radius: isButtonHovered && !reduceMotion ? 10 : 4, y: 2)
+                .scaleEffect(isButtonHovered && !reduceMotion ? 1.02 : 1.0)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Add project")
+            .accessibilityHint("Opens a folder picker to select a project directory to track")
             .onHover { hovering in
-                withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
+                withAnimation(reduceMotion ? AppMotion.reducedMotionFallback : .spring(response: 0.25, dampingFraction: 0.7)) {
                     isButtonHovered = hovering
                 }
             }
-            .opacity(appeared ? 1 : 0)
-            .offset(y: appeared ? 0 : 15)
+            .opacity(appeared || reduceMotion ? 1 : 0)
+            .offset(y: appeared || reduceMotion ? 0 : 15)
         }
         .padding(.top, 50)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Empty projects view")
         .onAppear {
-            withAnimation(.spring(response: 0.6, dampingFraction: 0.8).delay(0.1)) {
+            if !reduceMotion {
+                withAnimation(.spring(response: 0.6, dampingFraction: 0.8).delay(0.1)) {
+                    appeared = true
+                }
+            } else {
                 appeared = true
             }
         }
@@ -412,10 +432,10 @@ struct ProjectCardDragPreview: View {
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "line.3.horizontal")
-                .font(.system(size: 10, weight: .medium))
+                .font(AppTypography.labelMedium)
                 .foregroundColor(.white.opacity(0.5))
             Text(project.name)
-                .font(.system(size: 13, weight: .medium))
+                .font(AppTypography.bodyMedium)
                 .foregroundColor(.white)
         }
         .padding(.horizontal, 12)
