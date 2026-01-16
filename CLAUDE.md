@@ -1,577 +1,82 @@
-# Claude HUD - Project Development Guide
+# Claude HUD
 
-Claude HUD is a native macOS desktop application that serves as a dashboard for Claude Code, displaying project statistics, task tracking, plugin management, and global Claude Code configuration insights.
+Native macOS dashboard for Claude Code—displays project statistics, session states, and helps you context-switch between projects instantly.
 
-- **Swift App** (apps/swift) - Native macOS app with SwiftUI, 120Hz ProMotion animations
-- **Rust Core** (core/hud-core) - Shared business logic via UniFFI bindings
+## Stack
 
-> **Development Workflow:** Run `cd apps/swift && swift build && swift run`. Rebuild after changes.
+- **Swift App** (`apps/swift/`) — SwiftUI, macOS 14+, 120Hz ProMotion
+- **Rust Core** (`core/hud-core/`) — Business logic via UniFFI bindings
 
-## Session Startup Checklist
-
-When starting a development session on this project:
-
-1. **Install the state tracking hook (first time only):**
-   ```bash
-   mkdir -p ~/.claude/scripts
-   ln -sf ~/Code/claude-hud/scripts/hud-state-tracker.sh ~/.claude/scripts/hud-state-tracker.sh
-   ```
-   The hook is configured in `~/.claude/settings.json` and tracks session state automatically.
-
-2. **Run the Swift HUD in background:** `cd apps/swift && swift run &`
-3. **Rebuild after Swift changes:** If you modify Swift code or regenerate UniFFI bindings, rebuild with `cd apps/swift && swift build` then restart with `swift run &`
-4. **State tracking is automatic:** The hook script tracks all Claude sessions. Just run `claude` normally.
-
-## Product Vision
-
-**Claude HUD lets you develop and ship more projects in parallel by eliminating the cognitive overhead of context-switching.** Instead of remembering where you left off across a dozen projects, the HUD shows you—automatically, at a glance. Wake up, open the app, pick a project, and resume instantly.
-
-**The core problem:** When you have many Claude Code projects in flight simultaneously, context-switching is expensive. You lose track of what you were working on, what the next step was, and whether you're blocked. Without visibility, projects stall and momentum is lost. The cognitive load of "remembering where everything is at" limits how many projects you can realistically push forward.
-
-**The insight:** Claude already knows what you were doing in each project. The HUD surfaces that context automatically via hooks—so you don't have to maintain a separate system or hold it all in your head.
-
-**Target use case:** You wake up, open Claude HUD, see all your projects with their current status, know exactly where each one stands, pick the one that makes sense to work on, and jump in with full context—in seconds, not minutes.
-
-## Core Architectural Principle: Sidecar, Not Standalone
-
-**Claude HUD is a sidecar that powers up your existing Claude Code workflow—not a standalone application.**
-
-This principle guides every architectural decision:
-
-### Leverage, Don't Duplicate
-- **Use the user's Claude Code installation** — Don't build our own API client, authentication, or context management
-- **Read from `~/.claude/`** — Session files, config, plugins, stats all live where Claude Code puts them
-- **Invoke the `claude` CLI** — For AI features, call the installed CLI rather than reimplementing API integration
-- **Respect existing workflows** — Terminal-based work stays in terminals; HUD observes and surfaces, doesn't replace
-
-### Why This Matters
-1. **Simplicity** — Reusing Claude Code's infrastructure means less code, fewer bugs, faster iteration
-2. **Unified experience** — User's API key, token usage, conversation history all in one place
-3. **Full context** — Claude CLI already has project context (CLAUDE.md, file tree, git history)—don't rebuild it
-4. **User trust** — Transparent about what we're doing (reading files they can inspect, calling CLI they control)
-
-### In Practice
-- ✅ Read session files from `~/.claude/projects/`
-- ✅ Parse `~/.claude/settings.json` for config
-- ✅ Launch terminals with `claude` command
-- ✅ Use hooks to write state files HUD can read
-- ❌ Don't maintain separate API keys
-- ❌ Don't call Anthropic API directly (use CLI)
-- ❌ Don't duplicate Claude Code's project context logic
-- ❌ Don't require users to configure HUD separately from Claude Code
-
-**When in doubt:** Ask "Can Claude Code already do this?" If yes, leverage it. If no, consider whether it belongs in Claude Code itself before building it in HUD.
-
-**See:** [ADR-003: Sidecar Architecture Pattern](docs/architecture-decisions/003-sidecar-architecture-pattern.md) for the full decision rationale.
-
-## Project Overview
-
-**Architecture:**
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│               Swift App (apps/swift)                        │
-│               SwiftUI + 120Hz ProMotion                     │
-│               Native macOS 14+                              │
-└──────────────────────────┬──────────────────────────────────┘
-                           │ UniFFI
-                           ▼
-┌─────────────────────────────────────────────────────────────┐
-│                    hud-core (core/hud-core)                 │
-│  Shared Rust library: projects, sessions, stats, artifacts │
-└─────────────────────────────────────────────────────────────┘
-```
-
-**Swift App** (`apps/swift/`):
-- Native SwiftUI for macOS 14+
-- UniFFI bindings to hud-core
-- 120Hz ProMotion animations
-- Single-platform focus for optimal native experience
-
-**Shared Core** (`core/hud-core/`):
-- Pure Rust library with all business logic
-- Project scanning, session state, statistics, artifacts
-- Exports via UniFFI for Swift
-
-## Development Workflow
-
-### Quick Start
+## Commands
 
 ```bash
-cargo build -p hud-core --release  # Build Rust library first
-cd apps/swift
-swift build       # Debug build
-swift run         # Run the app
+# Build and run
+cargo build -p hud-core --release && cd apps/swift && swift build && swift run
+
+# Rust
+cargo fmt                         # Format (required before commits)
+cargo clippy -- -D warnings       # Lint
+cargo test                        # Test
+
+# Swift (from apps/swift/)
+swift build                       # Debug build
+swift run                         # Run app
 ```
 
-### Common Commands
-
-#### Rust Core (from root)
-```bash
-cargo check --workspace    # Check all crates
-cargo build --workspace    # Build all crates
-cargo build -p hud-core --release  # Build core for Swift
-cargo fmt                  # Format code (required before commits)
-cargo clippy -- -D warnings  # Lint
-cargo test                 # Run all tests
-```
-
-#### Swift App (from `apps/swift/`)
-```bash
-swift build             # Debug build
-swift build -c release  # Release build
-swift run               # Run the app
-```
-
-### Building for Distribution
-
-```bash
-cargo build -p hud-core --release
-cd apps/swift
-swift build -c release
-# Create .app bundle manually or use xcodebuild
-```
-
-## Project Structure
+## Structure
 
 ```
 claude-hud/
-├── CLAUDE.md                    # This file
-├── Cargo.toml                   # Workspace manifest
-├── core/
-│   └── hud-core/                # Shared Rust core library
-│       ├── Cargo.toml
-│       └── src/
-│           ├── lib.rs           # Re-exports + UniFFI scaffolding
-│           ├── engine.rs        # HudEngine facade
-│           ├── types.rs         # Shared types (UniFFI exported)
-│           ├── error.rs         # Error types (UniFFI exported)
-│           ├── patterns.rs      # Compiled regex patterns
-│           ├── config.rs        # Config and path utilities
-│           ├── stats.rs         # Statistics parsing and caching
-│           ├── projects.rs      # Project loading and discovery
-│           ├── sessions.rs      # Session state detection
-│           └── artifacts.rs     # Artifact discovery
-├── apps/
-│   ├── swift/                   # Native macOS app
-│   │   ├── Package.swift        # Swift Package Manager config
-│   │   ├── Sources/
-│   │   │   ├── ClaudeHUD/       # SwiftUI app
-│   │   │   │   ├── App.swift
-│   │   │   │   ├── ContentView.swift
-│   │   │   │   ├── Models/
-│   │   │   │   ├── Views/
-│   │   │   │   └── Theme/
-│   │   │   └── HudCoreFFI/      # FFI module wrapper
-│   │   └── bindings/            # Generated UniFFI bindings
-│   │       ├── hud_core.swift
-│   │       └── hud_coreFFI.h
-│   ├── daemon/                  # HUD daemon (TypeScript) - for future remote use
-│   ├── relay/                   # WebSocket relay server
-│   └── sdk-bridge/              # Agent SDK integration bridge
-├── target/                      # Shared Rust build output
-├── .claude/
-│   └── docs/                    # Project architecture documentation
-├── docs/
-│   ├── claude-code-artifacts.md # Claude Code disk artifacts reference
-│   ├── claude-code/             # Claude Code CLI documentation
-│   ├── agent-sdk/               # Claude Agent SDK documentation
-│   └── architecture-decisions/  # ADRs
-└── scripts/
-    ├── fetch-cc-docs.ts         # Fetch Claude Code docs from GitHub
-    └── fetch-agent-sdk-docs.ts  # Fetch Agent SDK docs (requires Playwright)
+├── core/hud-core/src/      # Rust: engine.rs, types.rs, stats.rs, projects.rs, sessions.rs
+├── apps/swift/Sources/     # Swift: App.swift, Models/, Views/, Theme/
+├── .claude/docs/           # Architecture docs, feature specs
+└── docs/                   # Claude Code CLI docs, Agent SDK docs, ADRs
 ```
 
-## Swift App Architecture
+## Core Principle: Sidecar Architecture
 
-The Swift app is a **native SwiftUI application** in `apps/swift/`. It communicates with the Rust core via UniFFI bindings.
+**Claude HUD is a sidecar that powers up your existing Claude Code workflow—not a standalone app.**
 
-### Key Files
+- Read from `~/.claude/` — session files, config, plugins, stats
+- Invoke the `claude` CLI — for AI features, call CLI rather than API directly
+- Respect existing workflows — HUD observes and surfaces, doesn't replace
 
-| File | Purpose |
-|------|---------|
-| `Sources/ClaudeHUD/App.swift` | SwiftUI app entry point |
-| `Sources/ClaudeHUD/ContentView.swift` | Main view with navigation |
-| `Sources/ClaudeHUD/Models/AppState.swift` | State management with HudEngine bridge |
-| `Sources/ClaudeHUD/Views/` | SwiftUI views (Projects, Artifacts, etc.) |
-| `Sources/ClaudeHUD/Theme/` | Design system and styling |
-| `bindings/hud_core.swift` | Generated UniFFI Swift bindings |
+See [ADR-003: Sidecar Architecture Pattern](docs/architecture-decisions/003-sidecar-architecture-pattern.md).
 
-### Architecture
+## Key Files
 
-- **State Management:** `@Observable` AppState class bridging to HudEngine
-- **FFI:** UniFFI-generated Swift bindings to hud-core
-- **UI Framework:** SwiftUI with 120Hz ProMotion support
-- **Styling:** Native macOS design language
-- **Navigation:** Tab-based with sidebar
+| Purpose | Location |
+|---------|----------|
+| HudEngine facade | `core/hud-core/src/engine.rs` |
+| Shared types | `core/hud-core/src/types.rs` |
+| Session state detection | `core/hud-core/src/sessions.rs` |
+| Swift app state | `apps/swift/Sources/ClaudeHUD/Models/AppState.swift` |
+| UniFFI bindings | `apps/swift/Sources/ClaudeHUD/Bridge/hud_core.swift` |
 
-### Adding a New View
+## State Tracking
 
-1. **Create view:** Add SwiftUI view in `apps/swift/Sources/ClaudeHUD/Views/`
-2. **Update state:** Add published properties to `AppState.swift` if needed
-3. **Wire up:** Add navigation in `ContentView.swift`
+Hooks track local Claude Code sessions → state file → HUD reads.
 
-## Rust Core Architecture
+- **State file:** `~/.claude/hud-session-states-v2.json`
+- **Hook script:** `~/.claude/scripts/hud-state-tracker.sh`
+- **State machine spec:** `.claude/docs/hook-state-machine.md`
 
-The `hud-core` library contains all business logic, exported via UniFFI for Swift consumption.
+## Documentation Index
 
-### hud-core Modules (in `core/hud-core/src/`)
+| Need | Document |
+|------|----------|
+| Development workflows | `.claude/docs/development-workflows.md` |
+| Detailed architecture | `.claude/docs/architecture-overview.md` |
+| Debugging procedures | `.claude/docs/debugging-guide.md` |
+| Hook state machine | `.claude/docs/hook-state-machine.md` |
+| Hook troubleshooting | `.claude/docs/hook-prevention-checklist.md` |
+| Claude Code CLI reference | `docs/claude-code/` |
+| Agent SDK reference | `docs/agent-sdk/` |
+| Architecture decisions | `docs/architecture-decisions/` |
 
-| Module | Purpose |
-|--------|---------|
-| `engine.rs` | `HudEngine` facade - unified API for Swift |
-| `types.rs` | Shared types: Project, Task, Artifact, Plugin, etc. |
-| `patterns.rs` | Pre-compiled regex patterns for JSONL parsing |
-| `config.rs` | Path resolution and config file operations |
-| `stats.rs` | Token usage parsing and mtime-based caching |
-| `projects.rs` | Project loading, discovery, and indicators |
-| `sessions.rs` | Session state detection and status reading |
-| `artifacts.rs` | Artifact discovery and frontmatter parsing |
-| `error.rs` | Error types and Result alias |
+## Notes
 
-### Data Structures (in `hud-core/types.rs`)
-- **GlobalConfig:** Claude Code global settings (skills, commands, agents directories)
-- **Project/ProjectDetails/Task:** Project tracking and session management
-- **ProjectStats:** Token usage analytics and caching
-- **Plugin:** Plugin registry with artifact counts
-- **HudConfig:** Pinned projects persistent state
-
-### Key Functions (in hud-core)
-
-**Configuration & Paths (`config.rs`):**
-- `get_claude_dir()` - Resolves `~/.claude` directory
-- `load_hud_config()` / `save_hud_config()` - Pinned projects persistence
-- `load_stats_cache()` / `save_stats_cache()` - Token stats caching
-
-**Statistics & Parsing (`stats.rs`):**
-- `parse_stats_from_content()` - Regex extraction from JSONL session files
-- `compute_project_stats()` - Intelligent caching with file mtime tracking
-- Tracks input/output tokens, cache tokens, model usage (Opus/Sonnet/Haiku)
-
-**Project Discovery (`projects.rs`):**
-- `has_project_indicators()` - Detects project types (.git, package.json, Cargo.toml, etc.)
-- `build_project_from_path()` - Constructs Project objects
-- `load_projects()` - Loads pinned projects sorted by activity
-
-**Session State (`sessions.rs`):**
-- `detect_session_state()` - Determines current state (working, ready, idle, etc.)
-- `read_project_status()` - Reads status from `~/.claude/hud-session-states.json`
-
-**HudEngine Facade (`engine.rs`):**
-- `HudEngine::new()` - Creates engine instance
-- `list_projects()`, `add_project()`, `remove_project()` - Project management
-- `list_artifacts()`, `list_plugins()` - Artifact discovery
-- `load_dashboard()` - All dashboard data in one call
-
-### Key Patterns
-
-**Error Handling:**
-- Functions return `Result<T, HudError>` with UniFFI error support
-- File operations gracefully degrade (return empty defaults on missing files)
-
-**Caching:**
-- Stats cache uses mtime-based invalidation
-- Summary cache persists generated summaries to avoid re-computation
-
-## State Tracking Architecture
-
-**Current approach:** Hooks for local sessions, daemon reserved for future remote/mobile use.
-
-See [ADR-001: State Tracking Approach](docs/architecture-decisions/001-state-tracking-approach.md) for the full decision rationale.
-
-### Local Sessions (Current)
-
-For interactive CLI sessions, we use Claude Code hooks:
-
-```
-User runs claude → Hooks fire → State file updated → Swift HUD reads
-```
-
-**Hooks configured:**
-- `SessionStart` → state: ready (creates lock file)
-- `UserPromptSubmit` → state: working (creates lock if missing for resumed sessions)
-- `PermissionRequest` → state: blocked
-- `PostToolUse` → state transitions + heartbeat updates
-- `Notification` (idle_prompt) → state: ready
-- `Stop` → state: ready
-- `PreCompact` → state: compacting
-- `SessionEnd` → removes session from state file
-
-**State file:** `~/.claude/hud-session-states-v2.json`
-
-**Hook script:** `~/.claude/scripts/hud-state-tracker.sh`
-
-**Testing & Documentation:**
-- **State machine reference:** `.claude/docs/hook-state-machine.md` - Complete behavior spec for all events
-- **Prevention checklist:** `.claude/docs/hook-prevention-checklist.md` - How to avoid hook failures
-- **Test suite:** `~/.claude/scripts/test-hud-hooks.sh` - Validates all 11 event handlers
-- Run tests before deploying hook changes: `~/.claude/scripts/test-hud-hooks.sh`
-
-### HUD Daemon (Future Remote Use)
-
-The daemon in `apps/daemon/` provides **precise state tracking** via `--output-format stream-json`. It's reserved for future mobile/remote client integration.
-
-**Why not use daemon for local?** Claude's `--output-format stream-json` replaces the TUI with JSON output. You can't have both Claude's interactive TUI and structured JSON from the same process.
-
-For detailed daemon design, see `docs/hud-daemon-design.md`.
-
-## Runtime Configuration
-
-The app reads from `~/.claude/` directory:
-
-```
-~/.claude/
-├── settings.json                  # Global Claude Code config
-├── hud.json                       # Pinned projects
-├── hud-stats-cache.json           # Cached token usage
-├── hud-summaries.json             # Session summaries cache
-├── hud-project-summaries.json     # Project overview bullets
-├── projects/                      # Session files ({encoded-path}/{sessionid}.jsonl)
-└── plugins/installed_plugins.json # Plugin registry
-```
-
-For a comprehensive reference of all Claude Code disk artifacts (file formats, data structures, retention policies), see **[docs/claude-code-artifacts.md](docs/claude-code-artifacts.md)**.
-
-## Documentation
-
-This project has comprehensive documentation organized by purpose.
-
-### Quick Reference: Where to Look
-
-| If you need to... | Look in |
-|-------------------|---------|
-| Implement hooks, plugins, MCP, or settings | `docs/claude-code/` |
-| Build programmatic SDK integrations | `docs/agent-sdk/` |
-| Understand HUD architecture decisions | `.claude/docs/` |
-| Review ADRs (Architecture Decision Records) | `docs/architecture-decisions/` |
-| Understand Claude Code disk artifacts | `docs/claude-code-artifacts.md` |
-
-### Claude Code CLI Documentation (`docs/claude-code/`)
-
-Official Claude Code documentation for integrating with hooks, plugins, settings, MCP, and sessions.
-
-| Topic | File | Use When |
-|-------|------|----------|
-| Hooks | `hooks.md` | Implementing hook-based features |
-| Plugins | `plugins.md` | Plugin management, discovery |
-| Settings | `settings.md` | Reading/displaying Claude Code config |
-| MCP | `mcp.md` | Model Context Protocol integration |
-| Sessions | `interactive-mode.md` | Session file parsing, history |
-| CLI | `cli-reference.md` | Invoking Claude Code programmatically |
-| Memory | `memory.md` | CLAUDE.md files, project context |
-| Sub-agents | `sub-agents.md` | Task tool, agent spawning |
-
-**Update:** `npx tsx scripts/fetch-cc-docs.ts`
-
-### Agent SDK Documentation (`docs/agent-sdk/`)
-
-TypeScript/Python SDK for programmatic Claude Code integration.
-
-| Topic | File | Use When |
-|-------|------|----------|
-| Overview | `overview.md` | Understanding SDK capabilities |
-| Sessions | `sessions.md` | Session management, resumption, forking |
-| Hooks | `hooks.md` | SDK hooks (PreToolUse, PostToolUse, etc.) |
-| Subagents | `subagents.md` | Creating and invoking subagents |
-| Permissions | `permissions.md` | Permission modes, tool access control |
-| Custom Tools | `custom-tools.md` | Creating custom MCP tools |
-| TypeScript | `typescript.md` | Full TypeScript API reference |
-| Python | `python.md` | Full Python API reference |
-| Migration | `migration-guide.md` | Migrating from CLI to SDK |
-
-**Update:** `npx tsx scripts/fetch-agent-sdk-docs.ts` (requires Playwright)
-
-### Project Architecture (`.claude/docs/`)
-
-HUD-specific architecture documents, design decisions, and feature specs.
-
-| Document | Purpose |
-|----------|---------|
-| `status-sync-architecture.md` | Real-time status sync between Claude sessions and HUD |
-| `agent-sdk-migration-guide.md` | Migration strategy from CLI to Agent SDK |
-| `feature-idea-to-v1-launcher.md` | TDD feature spec for "Idea → V1 Launcher" |
-| `hook-state-machine.md` | **Complete state machine reference** for all hook events |
-| `hook-prevention-checklist.md` | **Prevention procedures** to avoid hook failures |
-
-### ADRs (`docs/architecture-decisions/`)
-
-Architecture Decision Records documenting key technical decisions.
-
-| ADR | Decision |
-|-----|----------|
-| `001-state-tracking-approach.md` | Hooks for local sessions, daemon for remote/mobile |
-
-### Maintaining Documentation
-
-| Content Type | Location | When to Use |
-|--------------|----------|-------------|
-| Task list (what to do) | `TODO.md` | Adding/completing tasks |
-| Completed work | `DONE.md` | Archiving finished work |
-| Feature specs | `.claude/docs/feature-*.md` | Planning complex features |
-| Architecture docs | `.claude/docs/*-architecture.md` | Documenting system design |
-| Sprint plans | `.claude/plans/` | Planning milestones |
-| Decision records | `docs/architecture-decisions/` | Recording key decisions |
-
-**Rules for TODO.md:**
-- Keep it scannable (< 100 lines of active work)
-- Only unchecked `[ ]` items belong here
-- Move completed items to `DONE.md` promptly
-- Link to detailed specs rather than embedding them
-- Use sections: 🎯 Active → 📋 Next → 💡 Backlog
-
-## Common Development Scenarios
-
-### Modifying Hook State Tracking
-**IMPORTANT: Always test hooks before deploying changes!**
-
-1. **Read the docs first:**
-   - `.claude/docs/hook-state-machine.md` - Understand current behavior
-   - `.claude/docs/hook-prevention-checklist.md` - Follow prevention procedures
-   - `docs/claude-code/hooks.md` - Verify Claude Code event payloads
-
-2. **Make your changes** to `~/.claude/scripts/hud-state-tracker.sh`
-   - Add logging for all decision points
-   - Never exit silently without logging reason
-   - Don't assume fields exist - always validate
-
-3. **Run the test suite (mandatory):**
-   ```bash
-   ~/.claude/scripts/test-hud-hooks.sh
-   ```
-
-4. **Test manually** with a real Claude session:
-   - Trigger the specific event you modified
-   - Check debug log: `tail -20 ~/.claude/hud-hook-debug.log`
-   - Verify state in HUD app
-
-5. **Update documentation** if behavior changed
-
-### Modifying Statistics Parsing
-- Update regex patterns in `parse_stats_from_content()` (`core/hud-core/src/stats.rs`)
-- Update `ProjectStats` struct in `core/hud-core/src/types.rs`
-- Delete `~/.claude/hud-stats-cache.json` to force recomputation
-
-### Adding Project Type Detection
-- Modify `has_project_indicators()` (`core/hud-core/src/projects.rs`)
-- Add file/directory checks for new project type
-
-### Regenerating Swift Bindings
-
-**IMPORTANT:** The project has two locations for `hud_core.swift`:
-1. `apps/swift/bindings/` - where UniFFI generates bindings
-2. `apps/swift/Sources/ClaudeHUD/Bridge/` - where Swift actually compiles from
-
-You must update **both** locations and clean build artifacts after Rust API changes.
-
-```bash
-# 1. Build the release library
-cargo build -p hud-core --release
-
-# 2. Generate bindings from the built library
-cd core/hud-core
-cargo run --bin uniffi-bindgen generate --library ../../target/release/libhud_core.dylib --language swift --out-dir ../../apps/swift/bindings/
-
-# 3. Copy bindings to where Swift compiles from
-cp ../../apps/swift/bindings/hud_core.swift ../../apps/swift/Sources/ClaudeHUD/Bridge/
-
-# 4. Clean Swift build artifacts (required to avoid checksum mismatch)
-cd ../../apps/swift
-rm -rf .build ClaudeHUD.app
-
-# 5. Rebuild
-swift build
-```
-
-**Troubleshooting checksum mismatch:**
-
-If you see `UniFFI API checksum mismatch: try cleaning and rebuilding your project`:
-
-1. **Check for stale Bridge file:** The `Sources/ClaudeHUD/Bridge/hud_core.swift` may be outdated
-2. **Check for stale app bundle:** Remove `apps/swift/ClaudeHUD.app` if it exists
-3. **Check for stale .build cache:** Remove `apps/swift/.build` directory
-4. **Verify dylib is fresh:** `ls -la target/release/libhud_core.dylib` should show recent timestamp
-
-The checksums are embedded in both the dylib and Swift bindings. They must match exactly at runtime.
-
-## Code Style & Conventions
-
-**Rust:**
-- Use `cargo fmt` for formatting (required)
-- Run `cargo clippy -- -D warnings` for linting
-- Prefer easy-to-read code over clever code
-- No extraneous comments; code should be self-documenting
-
-**Swift:**
-- Follow Swift API Design Guidelines
-- Use SwiftUI idioms and patterns
-- Prefer easy-to-read code over clever code
-
-## Debugging
-
-### General Debugging
-
-```bash
-# Inspect cache files
-cat ~/.claude/hud-stats-cache.json | jq .
-
-# Enable Rust debug logging
-RUST_LOG=debug swift run
-
-# Test regex patterns
-echo '{"input_tokens":1234}' | rg 'input_tokens":(\d+)'
-```
-
-### Hook State Tracking Debugging
-
-```bash
-# Watch hook events in real-time
-tail -f ~/.claude/hud-hook-debug.log
-
-# Check recent state transitions
-grep "State transition" ~/.claude/hud-hook-debug.log | tail -20
-
-# Check for errors/warnings
-grep -E "ERROR|WARNING" ~/.claude/hud-hook-debug.log | tail -20
-
-# View current session states
-cat ~/.claude/hud-session-states-v2.json | jq .
-
-# Check active lock files
-for lock in ~/.claude/sessions/*.lock; do
-  [ -d "$lock" ] && cat "$lock/meta.json" 2>/dev/null
-done | jq -s .
-
-# Test hook event handlers
-~/.claude/scripts/test-hud-hooks.sh
-
-# Manually inject test event
-echo '{"hook_event_name":"PreCompact","session_id":"test","cwd":"/tmp","trigger":"manual"}' | \
-  bash ~/.claude/scripts/hud-state-tracker.sh
-```
-
-**Debugging Resources:**
-- Hook state machine: `.claude/docs/hook-state-machine.md`
-- Prevention checklist: `.claude/docs/hook-prevention-checklist.md`
-
-## Key Dependencies
-
-**Swift App:**
-- SwiftUI - Native UI framework
-- Foundation - Core utilities
-- AppKit - macOS integration
-
-**Rust Core:**
-- UniFFI - Swift/Kotlin/Python bindings
-- Serde - JSON serialization
-- Regex - Pattern matching in session files
-- Walkdir - Directory traversal
-- Dirs - Platform-specific paths
-
-## Important Notes
-
-- **Workspace Structure:** This is a Cargo workspace with `core/hud-core` (shared library). Use `cargo build --workspace` to build.
-- **UniFFI Bindings:** Swift app uses UniFFI-generated bindings in `apps/swift/bindings/`
-- **Path Encoding:** Project paths use `/` → `-` replacement (e.g., `/Users/peter/Code` → `-Users-peter-Code`)
-- **Caching Strategy:** Mtime-based invalidation; old cache entries are harmless
-- **Platform Support:** macOS 14+ (Apple Silicon and Intel)
-- **Claude CLI Path:** Summary generation uses `/opt/homebrew/bin/claude` (macOS Homebrew)
+- **Path encoding:** Project paths use `/` → `-` replacement (e.g., `/Users/peter/Code` → `-Users-peter-Code`)
+- **Caching:** Mtime-based invalidation in stats and summaries
+- **Platform:** macOS 14+ (Apple Silicon and Intel)
+- **UniFFI bindings:** Must update both `apps/swift/bindings/` and `apps/swift/Sources/ClaudeHUD/Bridge/` after Rust API changes (see development-workflows.md)
