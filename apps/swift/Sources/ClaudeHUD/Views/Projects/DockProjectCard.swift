@@ -15,6 +15,14 @@ struct DockProjectCard: View {
     var onCaptureIdea: (() -> Void)?
     let onRemove: () -> Void
 
+    // Ideas support (shared with ProjectCardView)
+    var ideas: [Idea] = []
+    var ideasRemainingCount: Int = 0
+    var generatingTitleIds: Set<String> = []
+    var onShowMoreIdeas: (() -> Void)?
+    var onWorkOnIdea: ((Idea) -> Void)?
+    var onDismissIdea: ((Idea) -> Void)?
+
     @Environment(\.floatingMode) private var floatingMode
     @Environment(\.prefersReducedMotion) private var reduceMotion
 
@@ -28,9 +36,14 @@ struct DockProjectCard: View {
     @State private var lastChimeTime: Date?
     @State private var lastKnownSummary: String?
     @State private var summaryHighlighted = false
+    @State private var showIdeasPopover = false
 
     private let cornerRadius: CGFloat = 10
     private let chimeCooldown: TimeInterval = 3.0
+
+    private var totalIdeasCount: Int {
+        ideas.count + ideasRemainingCount
+    }
 
     private var currentState: SessionState? {
         sessionState?.state
@@ -89,7 +102,18 @@ struct DockProjectCard: View {
                 chimeCooldown: chimeCooldown,
                 glassConfig: glassConfigForHandlers
             )
-            .contextMenu { contextMenuContent }
+            .contextMenu {
+                ProjectContextMenu(
+                    project: project,
+                    devServerPort: devServerPort,
+                    onTap: onTap,
+                    onInfoTap: onInfoTap,
+                    onMoveToDormant: onMoveToDormant,
+                    onOpenBrowser: onOpenBrowser,
+                    onCaptureIdea: onCaptureIdea,
+                    onRemove: onRemove
+                )
+            }
             .accessibilityElement(children: .combine)
             .accessibilityLabel(project.name)
             .accessibilityValue(statusDescription)
@@ -108,15 +132,37 @@ struct DockProjectCard: View {
 
     private var cardContent: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text(project.name)
-                .font(AppTypography.sectionTitle.monospaced())
-                .tracking(-0.5)
-                .foregroundColor(.white.opacity(0.9))
-                .lineLimit(1)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            HStack(spacing: 6) {
+                Text(project.name)
+                    .font(AppTypography.sectionTitle.monospaced())
+                    .tracking(-0.5)
+                    .foregroundColor(.white.opacity(0.9))
+                    .lineLimit(1)
+
+                if totalIdeasCount > 0 {
+                    IdeasBadge(
+                        count: totalIdeasCount,
+                        isCardHovered: isHovered,
+                        showPopover: $showIdeasPopover
+                    )
+                    .popover(isPresented: $showIdeasPopover, arrowEdge: .bottom) {
+                        IdeasPopoverContent(
+                            ideas: ideas,
+                            remainingCount: ideasRemainingCount,
+                            generatingTitleIds: generatingTitleIds,
+                            onAddIdea: onCaptureIdea,
+                            onShowMore: onShowMoreIdeas,
+                            onWorkOnIdea: onWorkOnIdea,
+                            onDismissIdea: onDismissIdea
+                        )
+                    }
+                }
+
+                Spacer(minLength: 0)
+            }
 
             if let state = currentState {
-                DockStatusIndicator(state: state)
+                StatusIndicator(state: state)
                     .padding(.top, 4)
             }
 
@@ -136,10 +182,10 @@ struct DockProjectCard: View {
             if projectStatus?.blocker != nil || isStale {
                 HStack(spacing: 6) {
                     if let blocker = projectStatus?.blocker, !blocker.isEmpty {
-                        DockBlockerBadge()
+                        BlockerBadge(style: .compact)
                     }
                     if isStale {
-                        DockStaleBadge()
+                        StaleBadge(style: .compact)
                     }
                 }
             }
@@ -187,43 +233,6 @@ struct DockProjectCard: View {
         }
     }
 
-    @ViewBuilder
-    private var contextMenuContent: some View {
-        if project.isMissing {
-            Button(action: onInfoTap) {
-                Label("View Details", systemImage: "info.circle")
-            }
-            Divider()
-            Button(role: .destructive, action: onRemove) {
-                Label("Remove from HUD", systemImage: "trash")
-            }
-        } else {
-            Button(action: onTap) {
-                Label("Open in Terminal", systemImage: "terminal")
-            }
-            if devServerPort != nil {
-                Button(action: onOpenBrowser) {
-                    Label("Open in Browser", systemImage: "globe")
-                }
-            }
-            Button(action: onInfoTap) {
-                Label("View Details", systemImage: "info.circle")
-            }
-            if let onCaptureIdea = onCaptureIdea {
-                Button(action: onCaptureIdea) {
-                    Label("Capture Idea...", systemImage: "lightbulb")
-                }
-            }
-            Divider()
-            Button(action: onMoveToDormant) {
-                Label("Move to Paused", systemImage: "moon.zzz")
-            }
-            Button(role: .destructive, action: onRemove) {
-                Label("Remove from HUD", systemImage: "trash")
-            }
-        }
-    }
-
     private var statusDescription: String {
         guard let state = currentState else { return "No active session" }
         switch state {
@@ -236,75 +245,8 @@ struct DockProjectCard: View {
     }
 }
 
-private struct DockStatusIndicator: View {
-    let state: SessionState
-    @Environment(\.prefersReducedMotion) private var reduceMotion
-
-    private var statusColor: Color {
-        Color.statusColor(for: state)
-    }
-
-    private var statusText: String {
-        switch state {
-        case .ready: return "Ready"
-        case .working: return "Working"
-        case .waiting: return "Waiting"
-        case .compacting: return "Compact"
-        case .idle: return "Idle"
-        }
-    }
-
-    private var isActive: Bool {
-        state != .idle
-    }
-
-    var body: some View {
-        Text(statusText.uppercased())
-            .font(.system(.callout, design: .monospaced).weight(.semibold))
-            .tracking(0.5)
-            .foregroundColor(isActive ? statusColor : statusColor.opacity(0.55))
-            .contentTransition(reduceMotion ? .identity : .numericText())
-            .animation(reduceMotion ? AppMotion.reducedMotionFallback : .smooth(duration: 0.3), value: state)
-    }
-}
-
-private struct DockPortBadge: View {
-    let port: UInt16
-    let onTap: () -> Void
-
-    @State private var isHovered = false
-
-    var body: some View {
-        Button(action: onTap) {
-            Text(":\(port)")
-                .font(AppTypography.mono)
-                .foregroundColor(.white.opacity(isHovered ? 0.9 : 0.6))
-                .padding(.horizontal, 8)
-                .padding(.vertical, 3)
-                .background(Color.white.opacity(isHovered ? 0.15 : 0.08))
-                .clipShape(Capsule())
-        }
-        .buttonStyle(.plain)
-        .onHover { isHovered = $0 }
-    }
-}
-
-private struct DockBlockerBadge: View {
-    var body: some View {
-        Image(systemName: "exclamationmark.triangle.fill")
-            .font(AppTypography.label)
-            .foregroundColor(.orange)
-    }
-}
-
-private struct DockStaleBadge: View {
-    var body: some View {
-        Text("stale")
-            .font(AppTypography.label)
-            .foregroundColor(.white.opacity(0.4))
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(Color.white.opacity(0.06))
-            .clipShape(Capsule())
-    }
-}
+// Note: DockStatusIndicator, DockBlockerBadge, DockStaleBadge have been replaced
+// with shared components from ProjectCardComponents.swift:
+// - StatusIndicator(state:, style: .compact)
+// - BlockerBadge(style: .compact)
+// - StaleBadge(style: .compact)

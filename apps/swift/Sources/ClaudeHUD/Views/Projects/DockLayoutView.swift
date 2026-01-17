@@ -16,6 +16,17 @@ struct DockLayoutView: View {
         }
     }
 
+    private func filteredIdeas(for project: Project) -> ([Idea], Int) {
+        let allIdeas = appState.getIdeas(for: project)
+        let activeIdeas = allIdeas.filter { idea in
+            idea.status == "open" || idea.status == "in-progress"
+        }
+        let displayLimit = 5
+        let displayed = Array(activeIdeas.prefix(displayLimit))
+        let remaining = max(0, activeIdeas.count - displayLimit)
+        return (displayed, remaining)
+    }
+
     var body: some View {
         GeometryReader { geometry in
             let cardsPerPage = calculateCardsPerPage(width: geometry.size.width)
@@ -82,6 +93,7 @@ struct DockLayoutView: View {
         let devServerPort = appState.getDevServerPort(for: project)
         let isStale = isProjectStale(project)
         let isActive = appState.activeProjectPath == project.path
+        let (ideas, remainingCount) = filteredIdeas(for: project)
 
         DockProjectCard(
             project: project,
@@ -96,7 +108,17 @@ struct DockLayoutView: View {
             onMoveToDormant: { appState.moveToDormant(project) },
             onOpenBrowser: { appState.openInBrowser(project) },
             onCaptureIdea: { appState.showIdeaCaptureModal(for: project) },
-            onRemove: { appState.removeProject(project.path) }
+            onRemove: { appState.removeProject(project.path) },
+            ideas: ideas,
+            ideasRemainingCount: remainingCount,
+            generatingTitleIds: appState.generatingTitleForIdeas,
+            onShowMoreIdeas: { appState.showProjectDetail(project) },
+            onWorkOnIdea: { idea in appState.workOnIdea(idea, for: project) },
+            onDismissIdea: { idea in
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                    appState.dismissIdea(idea, for: project)
+                }
+            }
         )
         .scrollTransition { content, phase in
             content
