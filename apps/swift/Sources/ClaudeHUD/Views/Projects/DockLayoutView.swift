@@ -4,6 +4,7 @@ struct DockLayoutView: View {
     @EnvironmentObject var appState: AppState
     @Environment(\.floatingMode) private var floatingMode
     @State private var scrolledID: String?
+    @State private var draggedProject: Project?
 
     private let cardWidth: CGFloat = 262
     private let cardSpacing: CGFloat = 14
@@ -62,17 +63,26 @@ struct DockLayoutView: View {
     }
 
     private var emptyState: some View {
-        HStack {
-            Spacer()
-            VStack(spacing: 8) {
-                Image(systemName: "folder.badge.plus")
-                    .font(.title2)
-                    .foregroundColor(.white.opacity(0.4))
-                Text("No active projects")
-                    .font(AppTypography.caption)
-                    .foregroundColor(.white.opacity(0.5))
+        ZStack {
+            if floatingMode {
+                Color.clear
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .contentShape(Rectangle())
+                    .windowDraggable()
             }
-            Spacer()
+
+            HStack {
+                Spacer()
+                VStack(spacing: 8) {
+                    Image(systemName: "folder.badge.plus")
+                        .font(.title2)
+                        .foregroundColor(.white.opacity(0.4))
+                    Text("No active projects")
+                        .font(AppTypography.caption)
+                        .foregroundColor(.white.opacity(0.5))
+                }
+                Spacer()
+            }
         }
         .frame(maxHeight: .infinity)
     }
@@ -109,6 +119,10 @@ struct DockLayoutView: View {
             onOpenBrowser: { appState.openInBrowser(project) },
             onCaptureIdea: { appState.showIdeaCaptureModal(for: project) },
             onRemove: { appState.removeProject(project.path) },
+            onDragStarted: {
+                draggedProject = project
+                return NSItemProvider(object: project.path as NSString)
+            },
             ideas: ideas,
             ideasRemainingCount: remainingCount,
             generatingTitleIds: appState.generatingTitleForIdeas,
@@ -119,6 +133,16 @@ struct DockLayoutView: View {
                     appState.dismissIdea(idea, for: project)
                 }
             }
+        )
+        .preventWindowDrag()
+        .onDrop(
+            of: [.text],
+            delegate: DockDropDelegate(
+                project: project,
+                activeProjects: activeProjects,
+                draggedProject: $draggedProject,
+                appState: appState
+            )
         )
         .scrollTransition { content, phase in
             content
@@ -163,6 +187,40 @@ private struct PageIndicator: View {
         .padding(.vertical, 4)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Page \(currentPage + 1) of \(totalPages)")
+    }
+}
+
+// MARK: - Drop Delegate
+
+struct DockDropDelegate: DropDelegate {
+    let project: Project
+    let activeProjects: [Project]
+    @Binding var draggedProject: Project?
+    let appState: AppState
+
+    func dropEntered(info: DropInfo) {
+        guard let draggedProject = draggedProject,
+              draggedProject.path != project.path,
+              let fromIndex = activeProjects.firstIndex(where: { $0.path == draggedProject.path }),
+              let toIndex = activeProjects.firstIndex(where: { $0.path == project.path })
+        else { return }
+
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+            appState.moveProject(
+                from: IndexSet(integer: fromIndex),
+                to: toIndex > fromIndex ? toIndex + 1 : toIndex,
+                in: activeProjects
+            )
+        }
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        draggedProject = nil
+        return true
     }
 }
 

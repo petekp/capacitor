@@ -185,4 +185,58 @@ extension View {
             }
     }
     #endif
+
+    func preventWindowDrag() -> some View {
+        WindowDragPreventer { self }
+    }
+
+    func windowDraggable() -> some View {
+        WindowDragHandle { self }
+    }
+}
+
+// MARK: - Window Drag Handling
+
+struct WindowDragPreventer<Content: View>: NSViewRepresentable {
+    let content: Content
+
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+
+    func makeNSView(context: Context) -> NonDraggableHostingView<Content> {
+        NonDraggableHostingView(rootView: content)
+    }
+
+    func updateNSView(_ nsView: NonDraggableHostingView<Content>, context: Context) {
+        nsView.rootView = content
+    }
+}
+
+struct WindowDragHandle<Content: View>: NSViewRepresentable {
+    let content: Content
+
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+
+    func makeNSView(context: Context) -> DraggableHostingView<Content> {
+        DraggableHostingView(rootView: content)
+    }
+
+    func updateNSView(_ nsView: DraggableHostingView<Content>, context: Context) {
+        nsView.rootView = content
+    }
+}
+
+final class NonDraggableHostingView<Content: View>: NSHostingView<Content> {
+    override var mouseDownCanMoveWindow: Bool { false }
+}
+
+final class DraggableHostingView<Content: View>: NSHostingView<Content> {
+    override var mouseDownCanMoveWindow: Bool { true }
+
+    override func mouseDown(with event: NSEvent) {
+        window?.performDrag(with: event)
+    }
 }

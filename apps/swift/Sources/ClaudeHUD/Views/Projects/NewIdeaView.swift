@@ -18,8 +18,8 @@ struct NewIdeaView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                BackButton(title: "Projects") {
-                    appState.showProjectList()
+                BackButton(title: "Add Project") {
+                    appState.showAddProject()
                 }
                 .keyboardShortcut("[", modifiers: .command)
 

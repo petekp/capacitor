@@ -65,7 +65,7 @@ struct AddProjectButton: View {
     @Environment(\.prefersReducedMotion) private var reduceMotion
 
     var body: some View {
-        Button(action: openFolderPicker) {
+        Button(action: { appState.showAddProject() }) {
             HStack(spacing: 6) {
                 Image(systemName: "plus.circle.fill")
                     .font(AppTypography.cardTitle)
@@ -87,26 +87,12 @@ struct AddProjectButton: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Add project")
-        .accessibilityHint("Opens a folder picker to select a project directory")
+        .accessibilityHint("Opens options to link an existing project or create a new one")
         .scaleEffect(isHovered && !reduceMotion ? 1.02 : 1.0)
         .onHover { hovering in
             withAnimation(reduceMotion ? AppMotion.reducedMotionFallback : .spring(response: 0.2, dampingFraction: 0.7)) {
                 isHovered = hovering
             }
-        }
-    }
-
-    private func openFolderPicker() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.allowsMultipleSelection = false
-        panel.message = "Select a project folder to add"
-        panel.prompt = "Select"
-
-        if panel.runModal() == .OK, let url = panel.url {
-            // Navigate to AddProjectView with the path for validation
-            appState.showAddProject(withPath: url.path)
         }
     }
 }

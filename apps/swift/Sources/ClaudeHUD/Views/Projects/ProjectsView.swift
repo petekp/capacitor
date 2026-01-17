@@ -65,9 +65,7 @@ struct ProjectsView: View {
                     if !activeProjects.isEmpty {
                         SectionHeader(
                             title: "In Progress",
-                            count: activeProjects.count,
-                            showNewIdea: true,
-                            onNewIdea: { appState.showNewIdea() }
+                            count: activeProjects.count
                         )
                             .padding(.top, 4)
                             .transition(.opacity)
@@ -121,6 +119,7 @@ struct ProjectsView: View {
                                     }
                                 }
                             )
+                            .preventWindowDrag()
                             .id("active-\(project.path)")
                             .onDrop(
                                 of: [.text],
@@ -211,11 +210,6 @@ struct ProjectsView: View {
 struct SectionHeader: View {
     let title: String
     let count: Int
-    var showNewIdea: Bool = false
-    var onNewIdea: (() -> Void)?
-
-    @State private var isHovered = false
-    @Environment(\.prefersReducedMotion) private var reduceMotion
 
     var body: some View {
         HStack(spacing: 6) {
@@ -231,30 +225,6 @@ struct SectionHeader: View {
             }
 
             Spacer()
-
-            if showNewIdea {
-                Button(action: { onNewIdea?() }) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "plus")
-                            .font(AppTypography.label)
-                        Text("New Project")
-                            .font(AppTypography.labelMedium)
-                    }
-                    .foregroundColor(isHovered ? .hudAccent : .white.opacity(0.5))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Color.white.opacity(isHovered ? 0.1 : 0.05))
-                    .cornerRadius(6)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("New project")
-                .accessibilityHint("Create a new project from an idea")
-                .onHover { hovering in
-                    withAnimation(reduceMotion ? AppMotion.reducedMotionFallback : .easeOut(duration: 0.15)) {
-                        isHovered = hovering
-                    }
-                }
-            }
         }
         .padding(.horizontal, 4)
         .accessibilityElement(children: .combine)
@@ -310,11 +280,25 @@ struct PausedSectionHeader: View {
 
 struct EmptyProjectsView: View {
     @EnvironmentObject var appState: AppState
+    @Environment(\.floatingMode) private var floatingMode
     @Environment(\.prefersReducedMotion) private var reduceMotion
     @State private var appeared = false
     @State private var isButtonHovered = false
 
     var body: some View {
+        ZStack {
+            if floatingMode {
+                Color.clear
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .contentShape(Rectangle())
+                    .windowDraggable()
+            }
+
+            contentView
+        }
+    }
+
+    private var contentView: some View {
         VStack(spacing: 20) {
             ZStack {
                 Circle()
@@ -428,27 +412,6 @@ struct ProjectCardDragPreview: View {
         )
         .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
     }
-}
-
-struct WindowDragDisabled<Content: View>: NSViewRepresentable {
-    let content: Content
-
-    init(@ViewBuilder content: () -> Content) {
-        self.content = content()
-    }
-
-    func makeNSView(context: Context) -> NSHostingView<Content> {
-        let hostingView = NonDraggableHostingView(rootView: content)
-        return hostingView
-    }
-
-    func updateNSView(_ nsView: NSHostingView<Content>, context: Context) {
-        nsView.rootView = content
-    }
-}
-
-private class NonDraggableHostingView<Content: View>: NSHostingView<Content> {
-    override var mouseDownCanMoveWindow: Bool { false }
 }
 
 struct ProjectDropDelegate: DropDelegate {

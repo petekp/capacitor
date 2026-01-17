@@ -14,6 +14,7 @@ struct DockProjectCard: View {
     let onOpenBrowser: () -> Void
     var onCaptureIdea: (() -> Void)?
     let onRemove: () -> Void
+    var onDragStarted: (() -> NSItemProvider)?
 
     // Ideas support (shared with ProjectCardView)
     var ideas: [Idea] = []
@@ -88,10 +89,20 @@ struct DockProjectCard: View {
             )
             .scaleEffect(isHovered && !reduceMotion ? 1.02 : 1.0)
             .animation(reduceMotion ? AppMotion.reducedMotionFallback : .spring(response: 0.3, dampingFraction: 0.7), value: isHovered)
+            .contentShape(Rectangle())
             .onHover { hovering in
                 isHovered = hovering
             }
             .onTapGesture(perform: onTap)
+            .onDrag {
+                onDragStarted?() ?? NSItemProvider(object: project.path as NSString)
+            } preview: {
+                Text(project.name)
+                    .font(AppTypography.sectionTitle.monospaced())
+                    .padding(8)
+                    .background(Color.hudCard.opacity(0.9))
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+            }
             .cardLifecycleHandlers(
                 flashState: flashState,
                 sessionState: sessionState,

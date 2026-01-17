@@ -72,3 +72,34 @@ See `.claude/docs/development-workflows.md` for the full regeneration procedure.
 2. Verify hook script is symlinked: `ls -la ~/.claude/scripts/hud-state-tracker.sh`
 3. Check debug log: `tail -50 ~/.claude/hud-hook-debug.log`
 4. Run test suite: `~/.claude/scripts/test-hud-hooks.sh`
+
+### SwiftUI Layout Broken (Gaps, Components Not Filling Space)
+
+**Symptoms:** Large gaps between header and content, tab bar floating in middle of window instead of bottom, scroll views not filling available space.
+
+**Root cause:** Window drag spacers using `Color.clear.frame(maxWidth: .infinity, maxHeight: .infinity)` in HStacks. The `maxHeight: .infinity` causes the HStack to expand vertically within its parent VStack, breaking the layout.
+
+**Solution:** For horizontal spacers that need to be draggable:
+- Use simple `Spacer()` (expands only horizontally in HStack)
+- Or use `Color.clear.frame(maxWidth: .infinity).frame(height: 28)` with a fixed height
+
+**Bad:**
+```swift
+// In an HStack - this breaks VStack parent layout!
+Color.clear
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .windowDraggable()
+```
+
+**Good:**
+```swift
+// Simple spacer - preferred
+Spacer()
+
+// Or fixed height if needed for hit testing
+Color.clear
+    .frame(maxWidth: .infinity)
+    .frame(height: 28)
+    .contentShape(Rectangle())
+    .windowDraggable()
+```
