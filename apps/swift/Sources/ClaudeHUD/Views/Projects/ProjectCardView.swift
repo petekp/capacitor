@@ -18,6 +18,14 @@ struct ProjectCardView: View {
     let onRemove: () -> Void
     var onDragStarted: (() -> NSItemProvider)?
 
+    // Ideas support
+    var ideas: [Idea] = []
+    var ideasRemainingCount: Int = 0
+    var generatingTitleIds: Set<String> = []
+    var onShowMoreIdeas: (() -> Void)?
+    var onWorkOnIdea: ((Idea) -> Void)?
+    var onDismissIdea: ((Idea) -> Void)?
+
     @Environment(\.floatingMode) private var floatingMode
     #if DEBUG
     @ObservedObject private var glassConfig = GlassConfig.shared
@@ -30,6 +38,7 @@ struct ProjectCardView: View {
     @State private var previousState: SessionState?
     @State private var lastChimeTime: Date?
     @State private var lastKnownSummary: String?
+    @State private var showIdeasPopover = false
 
     private let chimeCooldown: TimeInterval = 3.0
 
@@ -145,8 +154,16 @@ struct ProjectCardView: View {
                 isHovered: isHovered,
                 isInfoHovered: $isInfoHovered,
                 isBrowserHovered: $isBrowserHovered,
+                showIdeasPopover: $showIdeasPopover,
                 onInfoTap: onInfoTap,
-                onOpenBrowser: onOpenBrowser
+                onOpenBrowser: onOpenBrowser,
+                ideas: ideas,
+                ideasRemainingCount: ideasRemainingCount,
+                generatingTitleIds: generatingTitleIds,
+                onAddIdea: onCaptureIdea,
+                onShowMoreIdeas: onShowMoreIdeas,
+                onWorkOnIdea: onWorkOnIdea,
+                onDismissIdea: onDismissIdea
             )
 
             ProjectCardContent(
@@ -252,8 +269,22 @@ private struct ProjectCardHeader: View {
     let isHovered: Bool
     @Binding var isInfoHovered: Bool
     @Binding var isBrowserHovered: Bool
+    @Binding var showIdeasPopover: Bool
     let onInfoTap: () -> Void
     let onOpenBrowser: () -> Void
+
+    // Ideas support
+    var ideas: [Idea] = []
+    var ideasRemainingCount: Int = 0
+    var generatingTitleIds: Set<String> = []
+    var onAddIdea: (() -> Void)?
+    var onShowMoreIdeas: (() -> Void)?
+    var onWorkOnIdea: ((Idea) -> Void)?
+    var onDismissIdea: ((Idea) -> Void)?
+
+    private var totalIdeasCount: Int {
+        ideas.count + ideasRemainingCount
+    }
 
     var body: some View {
         HStack {
@@ -270,6 +301,25 @@ private struct ProjectCardHeader: View {
 
             if isStale {
                 StaleBadge()
+            }
+
+            if totalIdeasCount > 0 {
+                IdeasBadge(
+                    count: totalIdeasCount,
+                    isCardHovered: isHovered,
+                    showPopover: $showIdeasPopover
+                )
+                .popover(isPresented: $showIdeasPopover, arrowEdge: .bottom) {
+                    IdeasPopoverContent(
+                        ideas: ideas,
+                        remainingCount: ideasRemainingCount,
+                        generatingTitleIds: generatingTitleIds,
+                        onAddIdea: onAddIdea,
+                        onShowMore: onShowMoreIdeas,
+                        onWorkOnIdea: onWorkOnIdea,
+                        onDismissIdea: onDismissIdea
+                    )
+                }
             }
 
             InfoButton(
@@ -461,6 +511,238 @@ private struct StaleBadge: View {
             .clipShape(Capsule())
             .accessibilityLabel("Stale session")
             .accessibilityHint("This project has been ready for more than 24 hours without activity")
+    }
+}
+
+// MARK: - Ideas Badge
+
+private struct IdeasBadge: View {
+    let count: Int
+    let isCardHovered: Bool
+    @Binding var showPopover: Bool
+    @State private var isHovered = false
+    @Environment(\.prefersReducedMotion) private var reduceMotion
+
+    var body: some View {
+        Button(action: { showPopover.toggle() }) {
+            HStack(spacing: 3) {
+                Image(systemName: "lightbulb.fill")
+                    .font(AppTypography.captionSmall)
+                Text("\(count)")
+                    .font(AppTypography.captionSmall.weight(.medium))
+            }
+            .foregroundColor(.hudAccent.opacity(isHovered ? 1.0 : (isCardHovered ? 0.8 : 0.6)))
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(Color.hudAccent.opacity(isHovered ? 0.2 : (isCardHovered ? 0.12 : 0.08)))
+            .clipShape(Capsule())
+            .overlay(
+                Capsule()
+                    .strokeBorder(Color.hudAccent.opacity(isHovered ? 0.3 : 0), lineWidth: 0.5)
+            )
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            withAnimation(reduceMotion ? AppMotion.reducedMotionFallback : .easeOut(duration: 0.15)) {
+                isHovered = hovering
+            }
+        }
+        .help("\(count) idea\(count == 1 ? "" : "s") - Click to view")
+        .accessibilityLabel("\(count) idea\(count == 1 ? "" : "s")")
+        .accessibilityHint("Opens ideas panel")
+    }
+}
+
+// MARK: - Ideas Popover Content
+
+private struct IdeasPopoverContent: View {
+    let ideas: [Idea]
+    let remainingCount: Int
+    let generatingTitleIds: Set<String>
+    var onAddIdea: (() -> Void)?
+    var onShowMore: (() -> Void)?
+    var onWorkOnIdea: ((Idea) -> Void)?
+    var onDismissIdea: ((Idea) -> Void)?
+
+    private var totalCount: Int {
+        ideas.count + remainingCount
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Header
+            HStack {
+                Image(systemName: "lightbulb.fill")
+                    .font(AppTypography.label)
+                    .foregroundColor(.hudAccent.opacity(0.8))
+
+                Text("Ideas")
+                    .font(AppTypography.labelMedium)
+                    .foregroundColor(.primary)
+
+                Text("(\(totalCount))")
+                    .font(AppTypography.badge)
+                    .foregroundColor(.secondary)
+
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+
+            Divider()
+
+            // Ideas list
+            if ideas.isEmpty {
+                emptyState
+            } else {
+                ideasList
+            }
+
+            if remainingCount > 0 {
+                showMoreButton
+            }
+
+            Divider()
+
+            addIdeaButton
+        }
+        .frame(width: 280)
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 8) {
+            Text("No ideas yet")
+                .font(AppTypography.bodySecondary)
+                .foregroundColor(.secondary)
+            Text("Capture ideas as you work")
+                .font(AppTypography.caption)
+                .foregroundColor(.secondary.opacity(0.7))
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 20)
+    }
+
+    private var ideasList: some View {
+        VStack(spacing: 0) {
+            ForEach(Array(ideas.enumerated()), id: \.element.id) { index, idea in
+                PopoverIdeaRow(
+                    idea: idea,
+                    isGeneratingTitle: generatingTitleIds.contains(idea.id),
+                    onWorkOn: onWorkOnIdea.map { callback in { callback(idea) } },
+                    onDismiss: onDismissIdea.map { callback in { callback(idea) } }
+                )
+
+                if index < ideas.count - 1 {
+                    Divider()
+                        .padding(.leading, 12)
+                }
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    private var showMoreButton: some View {
+        Button(action: { onShowMore?() }) {
+            HStack {
+                Spacer()
+                Text("+ \(remainingCount) more ideas")
+                    .font(AppTypography.labelMedium)
+                    .foregroundColor(.secondary)
+                Spacer()
+            }
+            .padding(.vertical, 8)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var addIdeaButton: some View {
+        Button(action: { onAddIdea?() }) {
+            HStack(spacing: 6) {
+                Image(systemName: "plus")
+                    .font(AppTypography.label.weight(.medium))
+                Text("Add Idea")
+                    .font(AppTypography.labelMedium)
+            }
+            .foregroundColor(.hudAccent)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 10)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Add new idea")
+    }
+}
+
+// MARK: - Popover Idea Row
+
+private struct PopoverIdeaRow: View {
+    let idea: Idea
+    let isGeneratingTitle: Bool
+    var onWorkOn: (() -> Void)?
+    var onDismiss: (() -> Void)?
+
+    @State private var isHovered = false
+    @Environment(\.prefersReducedMotion) private var reduceMotion
+
+    var body: some View {
+        HStack(spacing: 8) {
+            // Title
+            ZStack(alignment: .leading) {
+                Text(idea.title)
+                    .font(AppTypography.bodySecondary)
+                    .foregroundColor(.primary.opacity(0.85))
+                    .lineLimit(2)
+                    .opacity(isGeneratingTitle ? 0 : 1)
+
+                if isGeneratingTitle {
+                    Text("Saving idea...")
+                        .font(AppTypography.bodySecondary)
+                        .foregroundColor(.secondary)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            // Hover actions
+            if isHovered && !isGeneratingTitle {
+                HStack(spacing: 4) {
+                    if let onWorkOn = onWorkOn {
+                        Button(action: onWorkOn) {
+                            Text("Work On")
+                                .font(AppTypography.captionSmall.weight(.medium))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 3)
+                                .background(Color.blue)
+                                .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                        }
+                        .buttonStyle(.plain)
+                    }
+
+                    if let onDismiss = onDismiss {
+                        Button(action: onDismiss) {
+                            Image(systemName: "checkmark")
+                                .font(AppTypography.captionSmall.weight(.bold))
+                                .foregroundColor(.white)
+                                .frame(width: 18, height: 18)
+                                .background(Color.green.opacity(0.8))
+                                .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Mark as done")
+                    }
+                }
+                .transition(.opacity.combined(with: .move(edge: .trailing)))
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .contentShape(Rectangle())
+        .onHover { hovering in
+            withAnimation(reduceMotion ? AppMotion.reducedMotionFallback : .easeOut(duration: 0.15)) {
+                isHovered = hovering
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(idea.title)
     }
 }
 

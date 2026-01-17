@@ -109,6 +109,12 @@ final class ProjectDetailsManager {
         loadIdeas(for: project)
     }
 
+    func reorderIdeas(for project: Project, from source: IndexSet, to destination: Int) {
+        guard var ideas = projectIdeas[project.path], !ideas.isEmpty else { return }
+        ideas.move(fromOffsets: source, toOffset: destination)
+        projectIdeas[project.path] = ideas
+    }
+
     private func generateTitleForIdea(ideaId: String, description: String, project: Project) {
         generatingTitleForIdeas.insert(ideaId)
 

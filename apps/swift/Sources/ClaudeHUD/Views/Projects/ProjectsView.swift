@@ -73,6 +73,7 @@ struct ProjectsView: View {
                             .transition(.opacity)
 
                         ForEach(activeProjects, id: \.path) { project in
+                            let (ideas, remaining) = filteredIdeas(for: project)
                             ProjectCardView(
                                 project: project,
                                 sessionState: appState.getSessionState(for: project),
@@ -106,6 +107,18 @@ struct ProjectsView: View {
                                 onDragStarted: {
                                     draggedProject = project
                                     return NSItemProvider(object: project.path as NSString)
+                                },
+                                ideas: ideas,
+                                ideasRemainingCount: remaining,
+                                generatingTitleIds: appState.generatingTitleForIdeas,
+                                onShowMoreIdeas: { appState.showProjectDetail(project) },
+                                onWorkOnIdea: { idea in
+                                    appState.workOnIdea(idea, for: project)
+                                },
+                                onDismissIdea: { idea in
+                                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                        appState.dismissIdea(idea, for: project)
+                                    }
                                 }
                             )
                             .id("active-\(project.path)")
@@ -122,25 +135,6 @@ struct ProjectsView: View {
                                 insertion: .opacity.combined(with: .scale(scale: 0.95)).combined(with: .move(edge: .top)),
                                 removal: .opacity.combined(with: .scale(scale: 0.9))
                             ))
-
-                            let (ideas, remaining) = filteredIdeas(for: project)
-                            if !ideas.isEmpty {
-                                InlineIdeasList(
-                                    ideas: ideas,
-                                    remainingCount: remaining,
-                                    generatingTitleIds: appState.generatingTitleForIdeas,
-                                    onShowMore: { appState.showProjectDetail(project) },
-                                    onAddIdea: { appState.showIdeaCaptureModal(for: project) },
-                                    onWorkOnIdea: { idea in
-                                        appState.workOnIdea(idea, for: project)
-                                    },
-                                    onDismissIdea: { idea in
-                                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                            appState.dismissIdea(idea, for: project)
-                                        }
-                                    }
-                                )
-                            }
                         }
                     }
 
@@ -182,25 +176,6 @@ struct ProjectsView: View {
                                         insertion: .opacity.combined(with: .scale(scale: 0.95)),
                                         removal: .opacity.combined(with: .scale(scale: 0.9))
                                     ))
-
-                                    let (ideas, remaining) = filteredIdeas(for: project)
-                                    if !ideas.isEmpty {
-                                        InlineIdeasList(
-                                            ideas: ideas,
-                                            remainingCount: remaining,
-                                            generatingTitleIds: appState.generatingTitleForIdeas,
-                                            onShowMore: { appState.showProjectDetail(project) },
-                                            onAddIdea: { appState.showIdeaCaptureModal(for: project) },
-                                            onWorkOnIdea: { idea in
-                                                appState.workOnIdea(idea, for: project)
-                                            },
-                                            onDismissIdea: { idea in
-                                                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                                    appState.dismissIdea(idea, for: project)
-                                                }
-                                            }
-                                        )
-                                    }
                                 }
                             }
                         }
@@ -260,9 +235,9 @@ struct SectionHeader: View {
             if showNewIdea {
                 Button(action: { onNewIdea?() }) {
                     HStack(spacing: 4) {
-                        Image(systemName: "lightbulb.fill")
+                        Image(systemName: "plus")
                             .font(AppTypography.label)
-                        Text("New Idea")
+                        Text("New Project")
                             .font(AppTypography.labelMedium)
                     }
                     .foregroundColor(isHovered ? .hudAccent : .white.opacity(0.5))
@@ -272,8 +247,8 @@ struct SectionHeader: View {
                     .cornerRadius(6)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("New idea")
-                .accessibilityHint("Capture a new idea for a project")
+                .accessibilityLabel("New project")
+                .accessibilityHint("Create a new project from an idea")
                 .onHover { hovering in
                     withAnimation(reduceMotion ? AppMotion.reducedMotionFallback : .easeOut(duration: 0.15)) {
                         isHovered = hovering
@@ -379,9 +354,9 @@ struct EmptyProjectsView: View {
 
             Button(action: { appState.showAddProject() }) {
                 HStack(spacing: 6) {
-                    Image(systemName: "plus")
+                    Image(systemName: "link")
                         .font(AppTypography.labelMedium.weight(.semibold))
-                    Text("Add Project")
+                    Text("Link Project")
                         .font(AppTypography.bodySecondary.weight(.semibold))
                 }
                 .foregroundColor(.white.opacity(isButtonHovered ? 1 : 0.9))
@@ -406,8 +381,8 @@ struct EmptyProjectsView: View {
                 .scaleEffect(isButtonHovered && !reduceMotion ? 1.02 : 1.0)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Add project")
-            .accessibilityHint("Opens a folder picker to select a project directory to track")
+            .accessibilityLabel("Link project")
+            .accessibilityHint("Opens a folder picker to link an existing project directory")
             .onHover { hovering in
                 withAnimation(reduceMotion ? AppMotion.reducedMotionFallback : .spring(response: 0.25, dampingFraction: 0.7)) {
                     isButtonHovered = hovering
