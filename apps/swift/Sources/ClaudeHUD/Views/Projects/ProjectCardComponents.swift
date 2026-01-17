@@ -27,14 +27,20 @@ struct StatusIndicator: View {
     }
 
     var body: some View {
-        Text(statusText.uppercased())
-            .font(.system(.callout, design: .monospaced).weight(.semibold))
-            .tracking(0.5)
-            .foregroundColor(isActive ? statusColor : statusColor.opacity(0.55))
-            .contentTransition(reduceMotion ? .identity : .numericText())
-            .animation(reduceMotion ? AppMotion.reducedMotionFallback : .smooth(duration: 0.3), value: state)
-            .accessibilityLabel("Status: \(statusText)")
-            .accessibilityValue(accessibilityDescription)
+        HStack(spacing: 0) {
+            Text(statusText.uppercased())
+                .font(.system(.callout, design: .monospaced).weight(.semibold))
+                .tracking(0.5)
+                .foregroundColor(isActive ? statusColor : statusColor.opacity(0.55))
+                .contentTransition(reduceMotion ? .identity : .numericText())
+
+            if state == .working {
+                AnimatedEllipsis(color: statusColor)
+            }
+        }
+        .animation(reduceMotion ? AppMotion.reducedMotionFallback : .smooth(duration: 0.3), value: state)
+        .accessibilityLabel("Status: \(statusText)")
+        .accessibilityValue(accessibilityDescription)
     }
 
     private var accessibilityDescription: String {
@@ -45,6 +51,36 @@ struct StatusIndicator: View {
         case .compacting: return "Compacting conversation history"
         case .idle: return "Session is idle"
         }
+    }
+}
+
+// MARK: - Animated Ellipsis
+
+/// Animated ellipsis that cycles through 0-3 dots with fixed width to prevent layout shift
+struct AnimatedEllipsis: View {
+    let color: Color
+
+    @State private var dotCount = 0
+    @Environment(\.prefersReducedMotion) private var reduceMotion
+
+    private let timer = Timer.publish(every: 0.4, on: .main, in: .common).autoconnect()
+
+    var body: some View {
+        Text(String(repeating: ".", count: dotCount))
+            .font(.system(.callout, design: .monospaced).weight(.semibold))
+            .tracking(-1)
+            .foregroundColor(color)
+            .frame(width: 24, alignment: .leading)
+            .onReceive(timer) { _ in
+                guard !reduceMotion else { return }
+                dotCount = (dotCount + 1) % 4
+            }
+            .onAppear {
+                if reduceMotion {
+                    dotCount = 3
+                }
+            }
+            .accessibilityHidden(true)
     }
 }
 
