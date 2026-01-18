@@ -184,7 +184,8 @@ struct ProjectsView: View {
                 }
             }
             .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(.top, floatingMode ? 52 : 8)
+            .padding(.bottom, floatingMode ? 16 : 8)
         }
         .background(floatingMode ? Color.clear : Color.hudBackground)
         .onChange(of: pausedProjects.count) { oldCount, newCount in

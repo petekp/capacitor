@@ -7,18 +7,53 @@ struct HeaderView: View {
     @Environment(\.alwaysOnTop) private var alwaysOnTop
     @AppStorage("alwaysOnTop") private var alwaysOnTopStorage = false
 
+    private let headerBlurHeight: CGFloat = 72
+
     var body: some View {
-        HStack(spacing: 16) {
-            PinButton(isPinned: $alwaysOnTopStorage)
+        VStack(spacing: 0) {
+            HStack(spacing: 16) {
+                PinButton(isPinned: $alwaysOnTopStorage)
 
-            Spacer()
+                Spacer()
 
-            AddProjectButton()
+                AddProjectButton()
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .padding(.top, floatingMode ? 8 : 0)
+
+            if floatingMode {
+                Spacer()
+                    .frame(height: headerBlurHeight - 52)
+            }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
-        .padding(.top, floatingMode ? 8 : 0)
-        .background(floatingMode ? Color.clear : Color.hudBackground)
+        .frame(height: floatingMode ? headerBlurHeight : nil)
+        .background {
+            if floatingMode {
+                VibrancyView(
+                    material: .hudWindow,
+                    blendingMode: .behindWindow,
+                    isEmphasized: true,
+                    forceDarkAppearance: true
+                )
+                .overlay(Color.black.opacity(0.15))
+                .mask(
+                    LinearGradient(
+                        stops: [
+                            .init(color: .white, location: 0),
+                            .init(color: .white, location: 0.55),
+                            .init(color: .white.opacity(0.8), location: 0.7),
+                            .init(color: .white.opacity(0.4), location: 0.85),
+                            .init(color: .clear, location: 1.0)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+            } else {
+                Color.hudBackground
+            }
+        }
     }
 }
 

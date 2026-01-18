@@ -4,7 +4,6 @@ import SwiftUI
 
 enum Tab: String, CaseIterable {
     case projects
-    case artifacts
 }
 
 enum LayoutMode: String, CaseIterable {
@@ -51,7 +50,6 @@ class AppState: ObservableObject {
     // MARK: - Data
 
     @Published var dashboard: DashboardData?
-    @Published var artifacts: [Artifact] = []
     @Published var projects: [Project] = []
 
     // MARK: - Active project creations (Idea → V1)
@@ -220,7 +218,6 @@ class AppState: ObservableObject {
             dashboard = try engine.loadDashboard()
             projects = dashboard?.projects ?? []
             terminalIntegration.updateProjectMapping(projects)
-            artifacts = engine.listArtifacts()
             refreshSessionStates()
             refreshProjectStatuses()
             refreshDevServers()
