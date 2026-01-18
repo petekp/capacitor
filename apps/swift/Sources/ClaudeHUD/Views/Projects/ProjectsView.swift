@@ -106,6 +106,7 @@ struct ProjectsView: View {
                                     draggedProject = project
                                     return NSItemProvider(object: project.path as NSString)
                                 },
+                                isDragging: draggedProject?.path == project.path,
                                 ideas: ideas,
                                 ideasRemainingCount: remaining,
                                 generatingTitleIds: appState.generatingTitleForIdeas,
@@ -120,6 +121,7 @@ struct ProjectsView: View {
                                 }
                             )
                             .preventWindowDrag()
+                            .zIndex(draggedProject?.path == project.path ? 999 : 0)
                             .id("active-\(project.path)")
                             .onDrop(
                                 of: [.text],

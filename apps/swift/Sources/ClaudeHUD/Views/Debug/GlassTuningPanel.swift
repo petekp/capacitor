@@ -141,28 +141,8 @@ class GlassConfig: ObservableObject {
     @Published var borderGlowPulseIntensity: Double = 0.50
     @Published var borderGlowRotationMultiplier: Double = 0.50
 
-    // MARK: - Dock Layout Effects
-    // Dock-specific ripple (tuned for compact cards)
-    @Published var dockRippleSpeed: Double = 7.2
-    @Published var dockRippleCount: Int = 6
-    @Published var dockRippleMaxOpacity: Double = 0.53
-    @Published var dockRippleLineWidth: Double = 30.0
-    @Published var dockRippleBlurAmount: Double = 29.3
-    @Published var dockRippleOriginX: Double = 0.20
-    @Published var dockRippleOriginY: Double = 0.00
-    @Published var dockRippleFadeInZone: Double = 0.17
-    @Published var dockRippleFadeOutPower: Double = 2.9
 
-    // Dock-specific border glow
-    @Published var dockBorderGlowInnerWidth: Double = 1.55
-    @Published var dockBorderGlowOuterWidth: Double = 1.93
-    @Published var dockBorderGlowInnerBlur: Double = 0.3
-    @Published var dockBorderGlowOuterBlur: Double = 3.1
-    @Published var dockBorderGlowBaseOpacity: Double = 0.48
-    @Published var dockBorderGlowPulseIntensity: Double = 0.38
-    @Published var dockBorderGlowRotationMultiplier: Double = 0.50
-
-    // MARK: - Waiting Pulse Effect (Vertical Layout)
+    // MARK: - Waiting Pulse Effect
     @Published var waitingCycleLength: Double = 1.68
     @Published var waitingFirstPulseDuration: Double = 0.17
     @Published var waitingFirstPulseFadeOut: Double = 0.17
@@ -187,30 +167,54 @@ class GlassConfig: ObservableObject {
     @Published var waitingBorderOuterWidth: Double = 1.86
     @Published var waitingBorderOuterBlur: Double = 0.8
 
-    // MARK: - Waiting Pulse Effect (Dock Layout)
-    @Published var dockWaitingCycleLength: Double = 2.4
-    @Published var dockWaitingFirstPulseDuration: Double = 0.15
-    @Published var dockWaitingFirstPulseFadeOut: Double = 0.25
-    @Published var dockWaitingSecondPulseDelay: Double = 0.12
-    @Published var dockWaitingSecondPulseDuration: Double = 0.12
-    @Published var dockWaitingSecondPulseFadeOut: Double = 0.20
-    @Published var dockWaitingFirstPulseIntensity: Double = 1.0
-    @Published var dockWaitingSecondPulseIntensity: Double = 0.6
-    @Published var dockWaitingMaxOpacity: Double = 0.5
-    @Published var dockWaitingBlurAmount: Double = 25.0
-    @Published var dockWaitingPulseScale: Double = 1.6
-    @Published var dockWaitingScaleAmount: Double = 0.4
-    @Published var dockWaitingSpringDamping: Double = 1.2
-    @Published var dockWaitingSpringOmega: Double = 8.0
-    @Published var dockWaitingOriginX: Double = 0.5
-    @Published var dockWaitingOriginY: Double = 0.5
+    // MARK: - Caustic Underglow Effect
+    @Published var causticEnabled: Bool = false
+    @Published var causticSpeed: Double = 0.3
+    @Published var causticBlur: Double = 20.0
+    @Published var causticOpacity: Double = 0.4
+    @Published var causticBlendMode: BlendMode = .plusLighter
+    @Published var causticCellSize: Double = 8.0
+    @Published var causticThreshold: Double = 0.5
+    @Published var causticPointScale: Double = 1.5
+    @Published var causticScale1: Double = 40.0
+    @Published var causticScale2: Double = 60.0
+    @Published var causticScale3: Double = 80.0
+    @Published var causticOriginX: Double = 0.5
+    @Published var causticOriginY: Double = 0.5
+    @Published var causticRadialFalloff: Double = 0.8
+    @Published var causticConcentration: Double = 2.0
+    @Published var causticColor: Color = .white
+    @Published var causticRingCount: Int = 8
+    @Published var causticWaveAmplitude: Double = 10.0
+    @Published var causticRingOpacity: Double = 0.3
+    @Published var causticRingWidth: Double = 2.0
+    @Published var causticBrightCount: Int = 12
+    @Published var causticBrightSize: Double = 30.0
+    @Published var causticUseRings: Bool = true
+    @Published var causticColorHue: Double = 0.0
 
-    // Dock waiting border glow
-    @Published var dockWaitingBorderBaseOpacity: Double = 0.2
-    @Published var dockWaitingBorderPulseOpacity: Double = 0.6
-    @Published var dockWaitingBorderInnerWidth: Double = 1.5
-    @Published var dockWaitingBorderOuterWidth: Double = 3.0
-    @Published var dockWaitingBorderOuterBlur: Double = 4.0
+    // MARK: - Card Interaction (Per-Pointer-Event)
+    // Idle state (default)
+    @Published var cardIdleScale: Double = 1.0
+    @Published var cardIdleShadowOpacity: Double = 0.08
+    @Published var cardIdleShadowRadius: Double = 4.0
+    @Published var cardIdleShadowY: Double = 2.0
+
+    // Hover state
+    @Published var cardHoverScale: Double = 0.99
+    @Published var cardHoverSpringResponse: Double = 0.2
+    @Published var cardHoverSpringDamping: Double = 0.8
+    @Published var cardHoverShadowOpacity: Double = 0.2
+    @Published var cardHoverShadowRadius: Double = 12.0
+    @Published var cardHoverShadowY: Double = 4.0
+
+    // Pressed state
+    @Published var cardPressedScale: Double = 0.97
+    @Published var cardPressedSpringResponse: Double = 0.12
+    @Published var cardPressedSpringDamping: Double = 0.6
+    @Published var cardPressedShadowOpacity: Double = 0.12
+    @Published var cardPressedShadowRadius: Double = 2.0
+    @Published var cardPressedShadowY: Double = 1.0
 
     // MARK: - Compacting Text Animation
     @Published var compactingCycleLength: Double = 1.8
@@ -257,121 +261,56 @@ class GlassConfig: ObservableObject {
         }
     }
 
-    // MARK: - Layout-Aware Accessors
-    func rippleSpeed(for layout: LayoutMode) -> Double {
-        layout == .dock ? dockRippleSpeed : rippleSpeed
-    }
-    func rippleCount(for layout: LayoutMode) -> Int {
-        layout == .dock ? dockRippleCount : rippleCount
-    }
-    func rippleMaxOpacity(for layout: LayoutMode) -> Double {
-        layout == .dock ? dockRippleMaxOpacity : rippleMaxOpacity
-    }
-    func rippleLineWidth(for layout: LayoutMode) -> Double {
-        layout == .dock ? dockRippleLineWidth : rippleLineWidth
-    }
-    func rippleBlurAmount(for layout: LayoutMode) -> Double {
-        layout == .dock ? dockRippleBlurAmount : rippleBlurAmount
-    }
-    func rippleOriginX(for layout: LayoutMode) -> Double {
-        layout == .dock ? dockRippleOriginX : rippleOriginX
-    }
-    func rippleOriginY(for layout: LayoutMode) -> Double {
-        layout == .dock ? dockRippleOriginY : rippleOriginY
-    }
-    func rippleFadeInZone(for layout: LayoutMode) -> Double {
-        layout == .dock ? dockRippleFadeInZone : rippleFadeInZone
-    }
-    func rippleFadeOutPower(for layout: LayoutMode) -> Double {
-        layout == .dock ? dockRippleFadeOutPower : rippleFadeOutPower
-    }
+    // MARK: - Layout-Aware Accessors (unified - layout param kept for API compatibility)
+    func rippleSpeed(for layout: LayoutMode) -> Double { rippleSpeed }
+    func rippleCount(for layout: LayoutMode) -> Int { rippleCount }
+    func rippleMaxOpacity(for layout: LayoutMode) -> Double { rippleMaxOpacity }
+    func rippleLineWidth(for layout: LayoutMode) -> Double { rippleLineWidth }
+    func rippleBlurAmount(for layout: LayoutMode) -> Double { rippleBlurAmount }
+    func rippleOriginX(for layout: LayoutMode) -> Double { rippleOriginX }
+    func rippleOriginY(for layout: LayoutMode) -> Double { rippleOriginY }
+    func rippleFadeInZone(for layout: LayoutMode) -> Double { rippleFadeInZone }
+    func rippleFadeOutPower(for layout: LayoutMode) -> Double { rippleFadeOutPower }
 
-    func borderGlowInnerWidth(for layout: LayoutMode) -> Double {
-        layout == .dock ? dockBorderGlowInnerWidth : borderGlowInnerWidth
-    }
-    func borderGlowOuterWidth(for layout: LayoutMode) -> Double {
-        layout == .dock ? dockBorderGlowOuterWidth : borderGlowOuterWidth
-    }
-    func borderGlowInnerBlur(for layout: LayoutMode) -> Double {
-        layout == .dock ? dockBorderGlowInnerBlur : borderGlowInnerBlur
-    }
-    func borderGlowOuterBlur(for layout: LayoutMode) -> Double {
-        layout == .dock ? dockBorderGlowOuterBlur : borderGlowOuterBlur
-    }
-    func borderGlowBaseOpacity(for layout: LayoutMode) -> Double {
-        layout == .dock ? dockBorderGlowBaseOpacity : borderGlowBaseOpacity
-    }
-    func borderGlowPulseIntensity(for layout: LayoutMode) -> Double {
-        layout == .dock ? dockBorderGlowPulseIntensity : borderGlowPulseIntensity
-    }
-    func borderGlowRotationMultiplier(for layout: LayoutMode) -> Double {
-        layout == .dock ? dockBorderGlowRotationMultiplier : borderGlowRotationMultiplier
-    }
+    func borderGlowInnerWidth(for layout: LayoutMode) -> Double { borderGlowInnerWidth }
+    func borderGlowOuterWidth(for layout: LayoutMode) -> Double { borderGlowOuterWidth }
+    func borderGlowInnerBlur(for layout: LayoutMode) -> Double { borderGlowInnerBlur }
+    func borderGlowOuterBlur(for layout: LayoutMode) -> Double { borderGlowOuterBlur }
+    func borderGlowBaseOpacity(for layout: LayoutMode) -> Double { borderGlowBaseOpacity }
+    func borderGlowPulseIntensity(for layout: LayoutMode) -> Double { borderGlowPulseIntensity }
+    func borderGlowRotationMultiplier(for layout: LayoutMode) -> Double { borderGlowRotationMultiplier }
 
-    // MARK: - Waiting Effect Accessors
-    func waitingCycleLength(for layout: LayoutMode) -> Double {
-        layout == .dock ? dockWaitingCycleLength : waitingCycleLength
-    }
-    func waitingFirstPulseDuration(for layout: LayoutMode) -> Double {
-        layout == .dock ? dockWaitingFirstPulseDuration : waitingFirstPulseDuration
-    }
-    func waitingFirstPulseFadeOut(for layout: LayoutMode) -> Double {
-        layout == .dock ? dockWaitingFirstPulseFadeOut : waitingFirstPulseFadeOut
-    }
-    func waitingSecondPulseDelay(for layout: LayoutMode) -> Double {
-        layout == .dock ? dockWaitingSecondPulseDelay : waitingSecondPulseDelay
-    }
-    func waitingSecondPulseDuration(for layout: LayoutMode) -> Double {
-        layout == .dock ? dockWaitingSecondPulseDuration : waitingSecondPulseDuration
-    }
-    func waitingSecondPulseFadeOut(for layout: LayoutMode) -> Double {
-        layout == .dock ? dockWaitingSecondPulseFadeOut : waitingSecondPulseFadeOut
-    }
-    func waitingFirstPulseIntensity(for layout: LayoutMode) -> Double {
-        layout == .dock ? dockWaitingFirstPulseIntensity : waitingFirstPulseIntensity
-    }
-    func waitingSecondPulseIntensity(for layout: LayoutMode) -> Double {
-        layout == .dock ? dockWaitingSecondPulseIntensity : waitingSecondPulseIntensity
-    }
-    func waitingMaxOpacity(for layout: LayoutMode) -> Double {
-        layout == .dock ? dockWaitingMaxOpacity : waitingMaxOpacity
-    }
-    func waitingBlurAmount(for layout: LayoutMode) -> Double {
-        layout == .dock ? dockWaitingBlurAmount : waitingBlurAmount
-    }
-    func waitingPulseScale(for layout: LayoutMode) -> Double {
-        layout == .dock ? dockWaitingPulseScale : waitingPulseScale
-    }
-    func waitingScaleAmount(for layout: LayoutMode) -> Double {
-        layout == .dock ? dockWaitingScaleAmount : waitingScaleAmount
-    }
-    func waitingSpringDamping(for layout: LayoutMode) -> Double {
-        layout == .dock ? dockWaitingSpringDamping : waitingSpringDamping
-    }
-    func waitingSpringOmega(for layout: LayoutMode) -> Double {
-        layout == .dock ? dockWaitingSpringOmega : waitingSpringOmega
-    }
-    func waitingBorderBaseOpacity(for layout: LayoutMode) -> Double {
-        layout == .dock ? dockWaitingBorderBaseOpacity : waitingBorderBaseOpacity
-    }
-    func waitingBorderPulseOpacity(for layout: LayoutMode) -> Double {
-        layout == .dock ? dockWaitingBorderPulseOpacity : waitingBorderPulseOpacity
-    }
-    func waitingBorderInnerWidth(for layout: LayoutMode) -> Double {
-        layout == .dock ? dockWaitingBorderInnerWidth : waitingBorderInnerWidth
-    }
-    func waitingBorderOuterWidth(for layout: LayoutMode) -> Double {
-        layout == .dock ? dockWaitingBorderOuterWidth : waitingBorderOuterWidth
-    }
-    func waitingBorderOuterBlur(for layout: LayoutMode) -> Double {
-        layout == .dock ? dockWaitingBorderOuterBlur : waitingBorderOuterBlur
-    }
-    func waitingOriginX(for layout: LayoutMode) -> Double {
-        layout == .dock ? dockWaitingOriginX : waitingOriginX
-    }
-    func waitingOriginY(for layout: LayoutMode) -> Double {
-        layout == .dock ? dockWaitingOriginY : waitingOriginY
-    }
+    // MARK: - Waiting Effect Accessors (unified)
+    func waitingCycleLength(for layout: LayoutMode) -> Double { waitingCycleLength }
+    func waitingFirstPulseDuration(for layout: LayoutMode) -> Double { waitingFirstPulseDuration }
+    func waitingFirstPulseFadeOut(for layout: LayoutMode) -> Double { waitingFirstPulseFadeOut }
+    func waitingSecondPulseDelay(for layout: LayoutMode) -> Double { waitingSecondPulseDelay }
+    func waitingSecondPulseDuration(for layout: LayoutMode) -> Double { waitingSecondPulseDuration }
+    func waitingSecondPulseFadeOut(for layout: LayoutMode) -> Double { waitingSecondPulseFadeOut }
+    func waitingFirstPulseIntensity(for layout: LayoutMode) -> Double { waitingFirstPulseIntensity }
+    func waitingSecondPulseIntensity(for layout: LayoutMode) -> Double { waitingSecondPulseIntensity }
+    func waitingMaxOpacity(for layout: LayoutMode) -> Double { waitingMaxOpacity }
+    func waitingBlurAmount(for layout: LayoutMode) -> Double { waitingBlurAmount }
+    func waitingPulseScale(for layout: LayoutMode) -> Double { waitingPulseScale }
+    func waitingScaleAmount(for layout: LayoutMode) -> Double { waitingScaleAmount }
+    func waitingSpringDamping(for layout: LayoutMode) -> Double { waitingSpringDamping }
+    func waitingSpringOmega(for layout: LayoutMode) -> Double { waitingSpringOmega }
+    func waitingBorderBaseOpacity(for layout: LayoutMode) -> Double { waitingBorderBaseOpacity }
+    func waitingBorderPulseOpacity(for layout: LayoutMode) -> Double { waitingBorderPulseOpacity }
+    func waitingBorderInnerWidth(for layout: LayoutMode) -> Double { waitingBorderInnerWidth }
+    func waitingBorderOuterWidth(for layout: LayoutMode) -> Double { waitingBorderOuterWidth }
+    func waitingBorderOuterBlur(for layout: LayoutMode) -> Double { waitingBorderOuterBlur }
+    func waitingOriginX(for layout: LayoutMode) -> Double { waitingOriginX }
+    func waitingOriginY(for layout: LayoutMode) -> Double { waitingOriginY }
+
+    // MARK: - Card Interaction Accessors (unified)
+    func cardIdleScale(for layout: LayoutMode) -> Double { cardIdleScale }
+    func cardHoverScale(for layout: LayoutMode) -> Double { cardHoverScale }
+    func cardHoverSpringResponse(for layout: LayoutMode) -> Double { cardHoverSpringResponse }
+    func cardHoverSpringDamping(for layout: LayoutMode) -> Double { cardHoverSpringDamping }
+    func cardPressedScale(for layout: LayoutMode) -> Double { cardPressedScale }
+    func cardPressedSpringResponse(for layout: LayoutMode) -> Double { cardPressedSpringResponse }
+    func cardPressedSpringDamping(for layout: LayoutMode) -> Double { cardPressedSpringDamping }
 
     func reset() {
         panelTintOpacity = 0.33
@@ -429,26 +368,7 @@ class GlassConfig: ObservableObject {
         borderGlowPulseIntensity = 0.50
         borderGlowRotationMultiplier = 0.50
 
-        // Dock-specific effects (tuned values)
-        dockRippleSpeed = 7.2
-        dockRippleCount = 6
-        dockRippleMaxOpacity = 0.53
-        dockRippleLineWidth = 30.0
-        dockRippleBlurAmount = 29.3
-        dockRippleOriginX = 0.20
-        dockRippleOriginY = 0.00
-        dockRippleFadeInZone = 0.17
-        dockRippleFadeOutPower = 2.9
-
-        dockBorderGlowInnerWidth = 1.55
-        dockBorderGlowOuterWidth = 1.93
-        dockBorderGlowInnerBlur = 0.3
-        dockBorderGlowOuterBlur = 3.1
-        dockBorderGlowBaseOpacity = 0.48
-        dockBorderGlowPulseIntensity = 0.38
-        dockBorderGlowRotationMultiplier = 0.50
-
-        // Waiting effect (vertical)
+        // Waiting effect
         waitingCycleLength = 1.68
         waitingFirstPulseDuration = 0.17
         waitingFirstPulseFadeOut = 0.17
@@ -471,28 +391,23 @@ class GlassConfig: ObservableObject {
         waitingBorderOuterWidth = 1.86
         waitingBorderOuterBlur = 0.8
 
-        // Waiting effect (dock)
-        dockWaitingCycleLength = 2.4
-        dockWaitingFirstPulseDuration = 0.15
-        dockWaitingFirstPulseFadeOut = 0.25
-        dockWaitingSecondPulseDelay = 0.12
-        dockWaitingSecondPulseDuration = 0.12
-        dockWaitingSecondPulseFadeOut = 0.20
-        dockWaitingFirstPulseIntensity = 1.0
-        dockWaitingSecondPulseIntensity = 0.6
-        dockWaitingMaxOpacity = 0.5
-        dockWaitingBlurAmount = 25.0
-        dockWaitingPulseScale = 1.6
-        dockWaitingScaleAmount = 0.4
-        dockWaitingSpringDamping = 1.2
-        dockWaitingSpringOmega = 8.0
-        dockWaitingOriginX = 0.5
-        dockWaitingOriginY = 0.5
-        dockWaitingBorderBaseOpacity = 0.2
-        dockWaitingBorderPulseOpacity = 0.6
-        dockWaitingBorderInnerWidth = 1.5
-        dockWaitingBorderOuterWidth = 3.0
-        dockWaitingBorderOuterBlur = 4.0
+        // Card interaction
+        cardIdleScale = 1.0
+        cardIdleShadowOpacity = 0.08
+        cardIdleShadowRadius = 4.0
+        cardIdleShadowY = 2.0
+        cardHoverScale = 0.99
+        cardHoverSpringResponse = 0.2
+        cardHoverSpringDamping = 0.8
+        cardHoverShadowOpacity = 0.2
+        cardHoverShadowRadius = 12.0
+        cardHoverShadowY = 4.0
+        cardPressedScale = 0.97
+        cardPressedSpringResponse = 0.12
+        cardPressedSpringDamping = 0.6
+        cardPressedShadowOpacity = 0.12
+        cardPressedShadowRadius = 2.0
+        cardPressedShadowY = 1.0
 
         // Compacting text animation
         compactingCycleLength = 1.8
@@ -510,169 +425,137 @@ class GlassConfig: ObservableObject {
     }
 
     func exportForLLM() -> String {
-        """
-        ## Tuned Visual Parameters for Claude HUD
+        let allParams: [(String, String, Double, Double)] = [
+            // Panel Background
+            ("Panel", "panelTintOpacity", 0.33, panelTintOpacity),
+            ("Panel", "panelCornerRadius", 22, panelCornerRadius),
+            ("Panel", "panelBorderOpacity", 0.36, panelBorderOpacity),
+            ("Panel", "panelHighlightOpacity", 0.07, panelHighlightOpacity),
+            ("Panel", "panelTopHighlightOpacity", 0.14, panelTopHighlightOpacity),
+            ("Panel", "panelShadowOpacity", 0.00, panelShadowOpacity),
+            ("Panel", "panelShadowRadius", 0, panelShadowRadius),
+            ("Panel", "panelShadowY", 0, panelShadowY),
+            // Card Background
+            ("Card", "cardTintOpacity", 0.58, cardTintOpacity),
+            ("Card", "cardCornerRadius", 13, cardCornerRadius),
+            ("Card", "cardBorderOpacity", 0.28, cardBorderOpacity),
+            ("Card", "cardHighlightOpacity", 0.14, cardHighlightOpacity),
+            ("Card", "cardHoverBorderOpacity", 0.37, cardHoverBorderOpacity),
+            ("Card", "cardHoverHighlightOpacity", 0.16, cardHoverHighlightOpacity),
+            // Status Colors - Ready
+            ("Status Ready", "statusReadyHue", 0.406, statusReadyHue),
+            ("Status Ready", "statusReadySaturation", 0.83, statusReadySaturation),
+            ("Status Ready", "statusReadyBrightness", 1.00, statusReadyBrightness),
+            // Status Colors - Working
+            ("Status Working", "statusWorkingHue", 0.103, statusWorkingHue),
+            ("Status Working", "statusWorkingSaturation", 1.00, statusWorkingSaturation),
+            ("Status Working", "statusWorkingBrightness", 1.00, statusWorkingBrightness),
+            // Status Colors - Waiting
+            ("Status Waiting", "statusWaitingHue", 0.026, statusWaitingHue),
+            ("Status Waiting", "statusWaitingSaturation", 0.58, statusWaitingSaturation),
+            ("Status Waiting", "statusWaitingBrightness", 1.00, statusWaitingBrightness),
+            // Status Colors - Compacting
+            ("Status Compacting", "statusCompactingHue", 0.670, statusCompactingHue),
+            ("Status Compacting", "statusCompactingSaturation", 0.50, statusCompactingSaturation),
+            ("Status Compacting", "statusCompactingBrightness", 1.00, statusCompactingBrightness),
+            // Status Colors - Idle
+            ("Status Idle", "statusIdleOpacity", 0.40, statusIdleOpacity),
+            // Ready Ripple
+            ("Ready Ripple", "rippleSpeed", 4.9, rippleSpeed),
+            ("Ready Ripple", "rippleCount", 4, Double(rippleCount)),
+            ("Ready Ripple", "rippleMaxOpacity", 1.00, rippleMaxOpacity),
+            ("Ready Ripple", "rippleLineWidth", 30.0, rippleLineWidth),
+            ("Ready Ripple", "rippleBlurAmount", 41.5, rippleBlurAmount),
+            ("Ready Ripple", "rippleOriginX", 0.89, rippleOriginX),
+            ("Ready Ripple", "rippleOriginY", 0.00, rippleOriginY),
+            ("Ready Ripple", "rippleFadeInZone", 0.10, rippleFadeInZone),
+            ("Ready Ripple", "rippleFadeOutPower", 4.0, rippleFadeOutPower),
+            // Border Glow
+            ("Border Glow", "borderGlowInnerWidth", 0.49, borderGlowInnerWidth),
+            ("Border Glow", "borderGlowOuterWidth", 2.88, borderGlowOuterWidth),
+            ("Border Glow", "borderGlowInnerBlur", 0.5, borderGlowInnerBlur),
+            ("Border Glow", "borderGlowOuterBlur", 1.5, borderGlowOuterBlur),
+            ("Border Glow", "borderGlowBaseOpacity", 0.30, borderGlowBaseOpacity),
+            ("Border Glow", "borderGlowPulseIntensity", 0.50, borderGlowPulseIntensity),
+            ("Border Glow", "borderGlowRotationMultiplier", 0.50, borderGlowRotationMultiplier),
+            // Waiting Pulse
+            ("Waiting Pulse", "waitingCycleLength", 1.68, waitingCycleLength),
+            ("Waiting Pulse", "waitingFirstPulseDuration", 0.17, waitingFirstPulseDuration),
+            ("Waiting Pulse", "waitingFirstPulseFadeOut", 0.17, waitingFirstPulseFadeOut),
+            ("Waiting Pulse", "waitingSecondPulseDelay", 0.00, waitingSecondPulseDelay),
+            ("Waiting Pulse", "waitingSecondPulseDuration", 0.17, waitingSecondPulseDuration),
+            ("Waiting Pulse", "waitingSecondPulseFadeOut", 0.48, waitingSecondPulseFadeOut),
+            ("Waiting Pulse", "waitingFirstPulseIntensity", 0.34, waitingFirstPulseIntensity),
+            ("Waiting Pulse", "waitingSecondPulseIntensity", 0.47, waitingSecondPulseIntensity),
+            ("Waiting Pulse", "waitingMaxOpacity", 0.34, waitingMaxOpacity),
+            ("Waiting Pulse", "waitingBlurAmount", 0.0, waitingBlurAmount),
+            ("Waiting Pulse", "waitingPulseScale", 2.22, waitingPulseScale),
+            ("Waiting Pulse", "waitingScaleAmount", 0.30, waitingScaleAmount),
+            ("Waiting Pulse", "waitingSpringDamping", 1.69, waitingSpringDamping),
+            ("Waiting Pulse", "waitingSpringOmega", 3.3, waitingSpringOmega),
+            ("Waiting Pulse", "waitingOriginX", 1.00, waitingOriginX),
+            ("Waiting Pulse", "waitingOriginY", 0.00, waitingOriginY),
+            // Waiting Border
+            ("Waiting Border", "waitingBorderBaseOpacity", 0.12, waitingBorderBaseOpacity),
+            ("Waiting Border", "waitingBorderPulseOpacity", 0.37, waitingBorderPulseOpacity),
+            ("Waiting Border", "waitingBorderInnerWidth", 0.50, waitingBorderInnerWidth),
+            ("Waiting Border", "waitingBorderOuterWidth", 1.86, waitingBorderOuterWidth),
+            ("Waiting Border", "waitingBorderOuterBlur", 0.8, waitingBorderOuterBlur),
+            // Compacting Text
+            ("Compacting Text", "compactingCycleLength", 1.8, compactingCycleLength),
+            ("Compacting Text", "compactingMinTracking", 0.0, compactingMinTracking),
+            ("Compacting Text", "compactingMaxTracking", 2.1, compactingMaxTracking),
+            ("Compacting Text", "compactingCompressDuration", 0.26, compactingCompressDuration),
+            ("Compacting Text", "compactingHoldDuration", 0.50, compactingHoldDuration),
+            ("Compacting Text", "compactingExpandDuration", 1.0, compactingExpandDuration),
+            ("Compacting Text", "compactingCompressDamping", 0.3, compactingCompressDamping),
+            ("Compacting Text", "compactingCompressOmega", 16.0, compactingCompressOmega),
+            ("Compacting Text", "compactingExpandDamping", 0.8, compactingExpandDamping),
+            ("Compacting Text", "compactingExpandOmega", 4.0, compactingExpandOmega),
+            // Card Interaction
+            ("Card Idle", "cardIdleScale", 1.0, cardIdleScale),
+            ("Card Idle", "cardIdleShadowOpacity", 0.08, cardIdleShadowOpacity),
+            ("Card Idle", "cardIdleShadowRadius", 4.0, cardIdleShadowRadius),
+            ("Card Idle", "cardIdleShadowY", 2.0, cardIdleShadowY),
+            ("Card Hover", "cardHoverScale", 0.99, cardHoverScale),
+            ("Card Hover", "cardHoverSpringResponse", 0.2, cardHoverSpringResponse),
+            ("Card Hover", "cardHoverSpringDamping", 0.8, cardHoverSpringDamping),
+            ("Card Hover", "cardHoverShadowOpacity", 0.2, cardHoverShadowOpacity),
+            ("Card Hover", "cardHoverShadowRadius", 12.0, cardHoverShadowRadius),
+            ("Card Hover", "cardHoverShadowY", 4.0, cardHoverShadowY),
+            ("Card Pressed", "cardPressedScale", 0.97, cardPressedScale),
+            ("Card Pressed", "cardPressedSpringResponse", 0.12, cardPressedSpringResponse),
+            ("Card Pressed", "cardPressedSpringDamping", 0.6, cardPressedSpringDamping),
+            ("Card Pressed", "cardPressedShadowOpacity", 0.12, cardPressedShadowOpacity),
+            ("Card Pressed", "cardPressedShadowRadius", 2.0, cardPressedShadowRadius),
+            ("Card Pressed", "cardPressedShadowY", 1.0, cardPressedShadowY),
+        ]
 
-        ### Panel (Main Window) Settings
-        ```swift
-        panelTintOpacity: \(String(format: "%.2f", panelTintOpacity))
-        panelCornerRadius: \(String(format: "%.0f", panelCornerRadius))
-        panelBorderOpacity: \(String(format: "%.2f", panelBorderOpacity))
-        panelHighlightOpacity: \(String(format: "%.2f", panelHighlightOpacity))
-        panelTopHighlightOpacity: \(String(format: "%.2f", panelTopHighlightOpacity))
-        panelShadowOpacity: \(String(format: "%.2f", panelShadowOpacity))
-        panelShadowRadius: \(String(format: "%.0f", panelShadowRadius))
-        panelShadowY: \(String(format: "%.0f", panelShadowY))
-        ```
+        let changed = allParams.filter { abs($0.2 - $0.3) > 0.001 }
 
-        ### Card Settings
-        ```swift
-        cardTintOpacity: \(String(format: "%.2f", cardTintOpacity))
-        cardCornerRadius: \(String(format: "%.0f", cardCornerRadius))
-        cardBorderOpacity: \(String(format: "%.2f", cardBorderOpacity))
-        cardHighlightOpacity: \(String(format: "%.2f", cardHighlightOpacity))
-        cardHoverBorderOpacity: \(String(format: "%.2f", cardHoverBorderOpacity))
-        cardHoverHighlightOpacity: \(String(format: "%.2f", cardHoverHighlightOpacity))
-        ```
+        if changed.isEmpty {
+            return "## Visual Parameters\n\nNo changes from defaults."
+        }
 
-        ### Status Colors
-        ```swift
-        // Ready (Green)
-        statusReady: Color(hue: \(String(format: "%.3f", statusReadyHue)), saturation: \(String(format: "%.2f", statusReadySaturation)), brightness: \(String(format: "%.2f", statusReadyBrightness)))
+        var groupedChanges: [String: [(String, Double, Double)]] = [:]
+        for (category, name, defaultVal, currentVal) in changed {
+            if groupedChanges[category] == nil {
+                groupedChanges[category] = []
+            }
+            groupedChanges[category]?.append((name, defaultVal, currentVal))
+        }
 
-        // Working (Yellow/Orange)
-        statusWorking: Color(hue: \(String(format: "%.3f", statusWorkingHue)), saturation: \(String(format: "%.2f", statusWorkingSaturation)), brightness: \(String(format: "%.2f", statusWorkingBrightness)))
+        var output = "## Visual Parameters\n\n### Changed Values\n```swift\n"
+        let sortedCategories = groupedChanges.keys.sorted()
+        for category in sortedCategories {
+            output += "// \(category)\n"
+            for (name, defaultVal, currentVal) in groupedChanges[category]! {
+                output += "\(name): \(String(format: "%.2f", defaultVal)) → \(String(format: "%.2f", currentVal))\n"
+            }
+        }
+        output += "```"
 
-        // Waiting (Lime)
-        statusWaiting: Color(hue: \(String(format: "%.3f", statusWaitingHue)), saturation: \(String(format: "%.2f", statusWaitingSaturation)), brightness: \(String(format: "%.2f", statusWaitingBrightness)))
-
-        // Compacting (Gold)
-        statusCompacting: Color(hue: \(String(format: "%.3f", statusCompactingHue)), saturation: \(String(format: "%.2f", statusCompactingSaturation)), brightness: \(String(format: "%.2f", statusCompactingBrightness)))
-
-        // Idle
-        statusIdle: Color.white.opacity(\(String(format: "%.2f", statusIdleOpacity)))
-        ```
-
-        ### Ready Ripple
-        ```swift
-        rippleSpeed: \(String(format: "%.1f", rippleSpeed))
-        rippleCount: \(rippleCount)
-        rippleMaxOpacity: \(String(format: "%.2f", rippleMaxOpacity))
-        rippleLineWidth: \(String(format: "%.1f", rippleLineWidth))
-        rippleBlurAmount: \(String(format: "%.1f", rippleBlurAmount))
-        rippleFadeInZone: \(String(format: "%.2f", rippleFadeInZone))
-        rippleFadeOutPower: \(String(format: "%.1f", rippleFadeOutPower))
-        rippleOriginX: \(String(format: "%.2f", rippleOriginX))
-        rippleOriginY: \(String(format: "%.2f", rippleOriginY))
-        ```
-
-        ### Border Glow
-        ```swift
-        borderGlowInnerWidth: \(String(format: "%.2f", borderGlowInnerWidth))
-        borderGlowOuterWidth: \(String(format: "%.2f", borderGlowOuterWidth))
-        borderGlowInnerBlur: \(String(format: "%.1f", borderGlowInnerBlur))
-        borderGlowOuterBlur: \(String(format: "%.1f", borderGlowOuterBlur))
-        borderGlowBaseOpacity: \(String(format: "%.2f", borderGlowBaseOpacity))
-        borderGlowPulseIntensity: \(String(format: "%.2f", borderGlowPulseIntensity))
-        borderGlowRotationMultiplier: \(String(format: "%.2f", borderGlowRotationMultiplier))
-        ```
-
-        ### Dock Ripple (Compact Layout)
-        ```swift
-        dockRippleSpeed: \(String(format: "%.1f", dockRippleSpeed))
-        dockRippleCount: \(dockRippleCount)
-        dockRippleMaxOpacity: \(String(format: "%.2f", dockRippleMaxOpacity))
-        dockRippleLineWidth: \(String(format: "%.1f", dockRippleLineWidth))
-        dockRippleBlurAmount: \(String(format: "%.1f", dockRippleBlurAmount))
-        dockRippleFadeInZone: \(String(format: "%.2f", dockRippleFadeInZone))
-        dockRippleFadeOutPower: \(String(format: "%.1f", dockRippleFadeOutPower))
-        dockRippleOriginX: \(String(format: "%.2f", dockRippleOriginX))
-        dockRippleOriginY: \(String(format: "%.2f", dockRippleOriginY))
-        ```
-
-        ### Dock Border Glow (Compact Layout)
-        ```swift
-        dockBorderGlowInnerWidth: \(String(format: "%.2f", dockBorderGlowInnerWidth))
-        dockBorderGlowOuterWidth: \(String(format: "%.2f", dockBorderGlowOuterWidth))
-        dockBorderGlowInnerBlur: \(String(format: "%.1f", dockBorderGlowInnerBlur))
-        dockBorderGlowOuterBlur: \(String(format: "%.1f", dockBorderGlowOuterBlur))
-        dockBorderGlowBaseOpacity: \(String(format: "%.2f", dockBorderGlowBaseOpacity))
-        dockBorderGlowPulseIntensity: \(String(format: "%.2f", dockBorderGlowPulseIntensity))
-        dockBorderGlowRotationMultiplier: \(String(format: "%.2f", dockBorderGlowRotationMultiplier))
-        ```
-
-        ### Waiting Pulse Effect
-        ```swift
-        waitingCycleLength: \(String(format: "%.2f", waitingCycleLength))
-        waitingFirstPulseDuration: \(String(format: "%.2f", waitingFirstPulseDuration))
-        waitingFirstPulseFadeOut: \(String(format: "%.2f", waitingFirstPulseFadeOut))
-        waitingSecondPulseDelay: \(String(format: "%.2f", waitingSecondPulseDelay))
-        waitingSecondPulseDuration: \(String(format: "%.2f", waitingSecondPulseDuration))
-        waitingSecondPulseFadeOut: \(String(format: "%.2f", waitingSecondPulseFadeOut))
-        waitingFirstPulseIntensity: \(String(format: "%.2f", waitingFirstPulseIntensity))
-        waitingSecondPulseIntensity: \(String(format: "%.2f", waitingSecondPulseIntensity))
-        waitingMaxOpacity: \(String(format: "%.2f", waitingMaxOpacity))
-        waitingBlurAmount: \(String(format: "%.1f", waitingBlurAmount))
-        waitingPulseScale: \(String(format: "%.2f", waitingPulseScale))
-        waitingScaleAmount: \(String(format: "%.2f", waitingScaleAmount))
-        waitingSpringDamping: \(String(format: "%.2f", waitingSpringDamping))
-        waitingSpringOmega: \(String(format: "%.1f", waitingSpringOmega))
-        waitingOriginX: \(String(format: "%.2f", waitingOriginX))
-        waitingOriginY: \(String(format: "%.2f", waitingOriginY))
-        ```
-
-        ### Waiting Border
-        ```swift
-        waitingBorderBaseOpacity: \(String(format: "%.2f", waitingBorderBaseOpacity))
-        waitingBorderPulseOpacity: \(String(format: "%.2f", waitingBorderPulseOpacity))
-        waitingBorderInnerWidth: \(String(format: "%.2f", waitingBorderInnerWidth))
-        waitingBorderOuterWidth: \(String(format: "%.2f", waitingBorderOuterWidth))
-        waitingBorderOuterBlur: \(String(format: "%.1f", waitingBorderOuterBlur))
-        ```
-
-        ### Dock Waiting Pulse Effect
-        ```swift
-        dockWaitingCycleLength: \(String(format: "%.2f", dockWaitingCycleLength))
-        dockWaitingFirstPulseDuration: \(String(format: "%.2f", dockWaitingFirstPulseDuration))
-        dockWaitingFirstPulseFadeOut: \(String(format: "%.2f", dockWaitingFirstPulseFadeOut))
-        dockWaitingSecondPulseDelay: \(String(format: "%.2f", dockWaitingSecondPulseDelay))
-        dockWaitingSecondPulseDuration: \(String(format: "%.2f", dockWaitingSecondPulseDuration))
-        dockWaitingSecondPulseFadeOut: \(String(format: "%.2f", dockWaitingSecondPulseFadeOut))
-        dockWaitingFirstPulseIntensity: \(String(format: "%.2f", dockWaitingFirstPulseIntensity))
-        dockWaitingSecondPulseIntensity: \(String(format: "%.2f", dockWaitingSecondPulseIntensity))
-        dockWaitingMaxOpacity: \(String(format: "%.2f", dockWaitingMaxOpacity))
-        dockWaitingBlurAmount: \(String(format: "%.1f", dockWaitingBlurAmount))
-        dockWaitingPulseScale: \(String(format: "%.2f", dockWaitingPulseScale))
-        dockWaitingScaleAmount: \(String(format: "%.2f", dockWaitingScaleAmount))
-        dockWaitingSpringDamping: \(String(format: "%.2f", dockWaitingSpringDamping))
-        dockWaitingSpringOmega: \(String(format: "%.1f", dockWaitingSpringOmega))
-        dockWaitingOriginX: \(String(format: "%.2f", dockWaitingOriginX))
-        dockWaitingOriginY: \(String(format: "%.2f", dockWaitingOriginY))
-        ```
-
-        ### Dock Waiting Border
-        ```swift
-        dockWaitingBorderBaseOpacity: \(String(format: "%.2f", dockWaitingBorderBaseOpacity))
-        dockWaitingBorderPulseOpacity: \(String(format: "%.2f", dockWaitingBorderPulseOpacity))
-        dockWaitingBorderInnerWidth: \(String(format: "%.2f", dockWaitingBorderInnerWidth))
-        dockWaitingBorderOuterWidth: \(String(format: "%.2f", dockWaitingBorderOuterWidth))
-        dockWaitingBorderOuterBlur: \(String(format: "%.1f", dockWaitingBorderOuterBlur))
-        ```
-
-        ### Compacting Text Animation
-        ```swift
-        compactingCycleLength: \(String(format: "%.2f", compactingCycleLength))
-        compactingMinTracking: \(String(format: "%.1f", compactingMinTracking))
-        compactingMaxTracking: \(String(format: "%.1f", compactingMaxTracking))
-        compactingCompressDuration: \(String(format: "%.2f", compactingCompressDuration))
-        compactingHoldDuration: \(String(format: "%.2f", compactingHoldDuration))
-        compactingExpandDuration: \(String(format: "%.2f", compactingExpandDuration))
-        compactingCompressDamping: \(String(format: "%.2f", compactingCompressDamping))
-        compactingCompressOmega: \(String(format: "%.1f", compactingCompressOmega))
-        compactingExpandDamping: \(String(format: "%.2f", compactingExpandDamping))
-        compactingExpandOmega: \(String(format: "%.1f", compactingExpandOmega))
-        ```
-        """
+        return output
     }
 }
 
@@ -681,7 +564,6 @@ struct GlassTuningPanel: View {
     @Binding var isPresented: Bool
     @State private var copiedToClipboard = false
     @State private var selectedTab = 0
-    @State private var effectsLayoutMode: LayoutMode = .vertical
 
     var body: some View {
         VStack(spacing: 0) {
@@ -857,117 +739,56 @@ struct GlassTuningPanel: View {
                 TuningSlider(label: "Expand Omega", value: $config.compactingExpandOmega, range: 2...20)
             }
 
-            Picker("Layout", selection: $effectsLayoutMode) {
-                Text("Vertical").tag(LayoutMode.vertical)
-                Text("Dock").tag(LayoutMode.dock)
+            TuningSection(title: "Ready Ripple") {
+                TuningSlider(label: "Speed (seconds)", value: $config.rippleSpeed, range: 1...10)
+                TuningSlider(label: "Ring Count", value: Binding(
+                    get: { Double(config.rippleCount) },
+                    set: { config.rippleCount = Int($0) }
+                ), range: 1...6)
+                TuningSlider(label: "Max Opacity", value: $config.rippleMaxOpacity, range: 0...1)
+                TuningSlider(label: "Line Width", value: $config.rippleLineWidth, range: 0.5...30)
+                TuningSlider(label: "Blur Amount", value: $config.rippleBlurAmount, range: 0...60)
+                TuningSlider(label: "Fade In Zone", value: $config.rippleFadeInZone, range: 0...0.5)
+                TuningSlider(label: "Fade Out Power", value: $config.rippleFadeOutPower, range: 0.5...4)
+                TuningSlider(label: "Origin X", value: $config.rippleOriginX, range: 0...1)
+                TuningSlider(label: "Origin Y", value: $config.rippleOriginY, range: 0...1)
             }
-            .pickerStyle(.segmented)
-            .padding(.horizontal, 4)
 
-            if effectsLayoutMode == .vertical {
-                TuningSection(title: "Ready Ripple") {
-                    TuningSlider(label: "Speed (seconds)", value: $config.rippleSpeed, range: 1...10)
-                    TuningSlider(label: "Ring Count", value: Binding(
-                        get: { Double(config.rippleCount) },
-                        set: { config.rippleCount = Int($0) }
-                    ), range: 1...6)
-                    TuningSlider(label: "Max Opacity", value: $config.rippleMaxOpacity, range: 0...1)
-                    TuningSlider(label: "Line Width", value: $config.rippleLineWidth, range: 0.5...30)
-                    TuningSlider(label: "Blur Amount", value: $config.rippleBlurAmount, range: 0...60)
-                    TuningSlider(label: "Fade In Zone", value: $config.rippleFadeInZone, range: 0...0.5)
-                    TuningSlider(label: "Fade Out Power", value: $config.rippleFadeOutPower, range: 0.5...4)
-                    TuningSlider(label: "Origin X", value: $config.rippleOriginX, range: 0...1)
-                    TuningSlider(label: "Origin Y", value: $config.rippleOriginY, range: 0...1)
-                }
+            TuningSection(title: "Border Glow") {
+                TuningSlider(label: "Inner Width", value: $config.borderGlowInnerWidth, range: 0.25...3)
+                TuningSlider(label: "Outer Width", value: $config.borderGlowOuterWidth, range: 0.5...5)
+                TuningSlider(label: "Inner Blur", value: $config.borderGlowInnerBlur, range: 0...3)
+                TuningSlider(label: "Outer Blur", value: $config.borderGlowOuterBlur, range: 0...8)
+                TuningSlider(label: "Base Opacity", value: $config.borderGlowBaseOpacity, range: 0...1)
+                TuningSlider(label: "Pulse Intensity", value: $config.borderGlowPulseIntensity, range: 0...1)
+                TuningSlider(label: "Rotation Speed", value: $config.borderGlowRotationMultiplier, range: 0...2)
+            }
 
-                TuningSection(title: "Border Glow") {
-                    TuningSlider(label: "Inner Width", value: $config.borderGlowInnerWidth, range: 0.25...3)
-                    TuningSlider(label: "Outer Width", value: $config.borderGlowOuterWidth, range: 0.5...5)
-                    TuningSlider(label: "Inner Blur", value: $config.borderGlowInnerBlur, range: 0...3)
-                    TuningSlider(label: "Outer Blur", value: $config.borderGlowOuterBlur, range: 0...8)
-                    TuningSlider(label: "Base Opacity", value: $config.borderGlowBaseOpacity, range: 0...1)
-                    TuningSlider(label: "Pulse Intensity", value: $config.borderGlowPulseIntensity, range: 0...1)
-                    TuningSlider(label: "Rotation Speed", value: $config.borderGlowRotationMultiplier, range: 0...2)
-                }
+            TuningSection(title: "Waiting Pulse", isExpanded: false) {
+                TuningSlider(label: "Cycle Length", value: $config.waitingCycleLength, range: 1...5)
+                TuningSlider(label: "1st Pulse Duration", value: $config.waitingFirstPulseDuration, range: 0.05...0.5)
+                TuningSlider(label: "1st Pulse Fade", value: $config.waitingFirstPulseFadeOut, range: 0.1...0.6)
+                TuningSlider(label: "2nd Pulse Delay", value: $config.waitingSecondPulseDelay, range: 0...0.5)
+                TuningSlider(label: "2nd Pulse Duration", value: $config.waitingSecondPulseDuration, range: 0.05...0.5)
+                TuningSlider(label: "2nd Pulse Fade", value: $config.waitingSecondPulseFadeOut, range: 0.1...0.6)
+                TuningSlider(label: "1st Pulse Intensity", value: $config.waitingFirstPulseIntensity, range: 0...1)
+                TuningSlider(label: "2nd Pulse Intensity", value: $config.waitingSecondPulseIntensity, range: 0...1)
+                TuningSlider(label: "Max Opacity", value: $config.waitingMaxOpacity, range: 0...1)
+                TuningSlider(label: "Blur Amount", value: $config.waitingBlurAmount, range: 0...60)
+                TuningSlider(label: "Pulse Scale", value: $config.waitingPulseScale, range: 1...3)
+                TuningSlider(label: "Scale Amount", value: $config.waitingScaleAmount, range: 0...1)
+                TuningSlider(label: "Spring Damping", value: $config.waitingSpringDamping, range: 0.5...2)
+                TuningSlider(label: "Spring Omega", value: $config.waitingSpringOmega, range: 2...20)
+                TuningSlider(label: "Origin X", value: $config.waitingOriginX, range: 0...1)
+                TuningSlider(label: "Origin Y", value: $config.waitingOriginY, range: 0...1)
+            }
 
-                TuningSection(title: "Waiting Pulse", isExpanded: false) {
-                    TuningSlider(label: "Cycle Length", value: $config.waitingCycleLength, range: 1...5)
-                    TuningSlider(label: "1st Pulse Duration", value: $config.waitingFirstPulseDuration, range: 0.05...0.5)
-                    TuningSlider(label: "1st Pulse Fade", value: $config.waitingFirstPulseFadeOut, range: 0.1...0.6)
-                    TuningSlider(label: "2nd Pulse Delay", value: $config.waitingSecondPulseDelay, range: 0...0.5)
-                    TuningSlider(label: "2nd Pulse Duration", value: $config.waitingSecondPulseDuration, range: 0.05...0.5)
-                    TuningSlider(label: "2nd Pulse Fade", value: $config.waitingSecondPulseFadeOut, range: 0.1...0.6)
-                    TuningSlider(label: "1st Pulse Intensity", value: $config.waitingFirstPulseIntensity, range: 0...1)
-                    TuningSlider(label: "2nd Pulse Intensity", value: $config.waitingSecondPulseIntensity, range: 0...1)
-                    TuningSlider(label: "Max Opacity", value: $config.waitingMaxOpacity, range: 0...1)
-                    TuningSlider(label: "Blur Amount", value: $config.waitingBlurAmount, range: 0...60)
-                    TuningSlider(label: "Pulse Scale", value: $config.waitingPulseScale, range: 1...3)
-                    TuningSlider(label: "Scale Amount", value: $config.waitingScaleAmount, range: 0...1)
-                    TuningSlider(label: "Spring Damping", value: $config.waitingSpringDamping, range: 0.5...2)
-                    TuningSlider(label: "Spring Omega", value: $config.waitingSpringOmega, range: 2...20)
-                    TuningSlider(label: "Origin X", value: $config.waitingOriginX, range: 0...1)
-                    TuningSlider(label: "Origin Y", value: $config.waitingOriginY, range: 0...1)
-                }
-
-                TuningSection(title: "Waiting Border", isExpanded: false) {
-                    TuningSlider(label: "Base Opacity", value: $config.waitingBorderBaseOpacity, range: 0...0.5)
-                    TuningSlider(label: "Pulse Opacity", value: $config.waitingBorderPulseOpacity, range: 0...1)
-                    TuningSlider(label: "Inner Width", value: $config.waitingBorderInnerWidth, range: 0.5...4)
-                    TuningSlider(label: "Outer Width", value: $config.waitingBorderOuterWidth, range: 1...8)
-                    TuningSlider(label: "Outer Blur", value: $config.waitingBorderOuterBlur, range: 0...12)
-                }
-            } else {
-                TuningSection(title: "Dock Ripple") {
-                    TuningSlider(label: "Speed (seconds)", value: $config.dockRippleSpeed, range: 1...10)
-                    TuningSlider(label: "Ring Count", value: Binding(
-                        get: { Double(config.dockRippleCount) },
-                        set: { config.dockRippleCount = Int($0) }
-                    ), range: 1...6)
-                    TuningSlider(label: "Max Opacity", value: $config.dockRippleMaxOpacity, range: 0...1)
-                    TuningSlider(label: "Line Width", value: $config.dockRippleLineWidth, range: 0.5...30)
-                    TuningSlider(label: "Blur Amount", value: $config.dockRippleBlurAmount, range: 0...60)
-                    TuningSlider(label: "Fade In Zone", value: $config.dockRippleFadeInZone, range: 0...0.5)
-                    TuningSlider(label: "Fade Out Power", value: $config.dockRippleFadeOutPower, range: 0.5...4)
-                    TuningSlider(label: "Origin X", value: $config.dockRippleOriginX, range: 0...1)
-                    TuningSlider(label: "Origin Y", value: $config.dockRippleOriginY, range: 0...1)
-                }
-
-                TuningSection(title: "Dock Border Glow") {
-                    TuningSlider(label: "Inner Width", value: $config.dockBorderGlowInnerWidth, range: 0.25...3)
-                    TuningSlider(label: "Outer Width", value: $config.dockBorderGlowOuterWidth, range: 0.5...5)
-                    TuningSlider(label: "Inner Blur", value: $config.dockBorderGlowInnerBlur, range: 0...3)
-                    TuningSlider(label: "Outer Blur", value: $config.dockBorderGlowOuterBlur, range: 0...8)
-                    TuningSlider(label: "Base Opacity", value: $config.dockBorderGlowBaseOpacity, range: 0...1)
-                    TuningSlider(label: "Pulse Intensity", value: $config.dockBorderGlowPulseIntensity, range: 0...1)
-                    TuningSlider(label: "Rotation Speed", value: $config.dockBorderGlowRotationMultiplier, range: 0...2)
-                }
-
-                TuningSection(title: "Dock Waiting Pulse", isExpanded: false) {
-                    TuningSlider(label: "Cycle Length", value: $config.dockWaitingCycleLength, range: 1...5)
-                    TuningSlider(label: "1st Pulse Duration", value: $config.dockWaitingFirstPulseDuration, range: 0.05...0.5)
-                    TuningSlider(label: "1st Pulse Fade", value: $config.dockWaitingFirstPulseFadeOut, range: 0.1...0.6)
-                    TuningSlider(label: "2nd Pulse Delay", value: $config.dockWaitingSecondPulseDelay, range: 0...0.5)
-                    TuningSlider(label: "2nd Pulse Duration", value: $config.dockWaitingSecondPulseDuration, range: 0.05...0.5)
-                    TuningSlider(label: "2nd Pulse Fade", value: $config.dockWaitingSecondPulseFadeOut, range: 0.1...0.6)
-                    TuningSlider(label: "1st Pulse Intensity", value: $config.dockWaitingFirstPulseIntensity, range: 0...1)
-                    TuningSlider(label: "2nd Pulse Intensity", value: $config.dockWaitingSecondPulseIntensity, range: 0...1)
-                    TuningSlider(label: "Max Opacity", value: $config.dockWaitingMaxOpacity, range: 0...1)
-                    TuningSlider(label: "Blur Amount", value: $config.dockWaitingBlurAmount, range: 0...60)
-                    TuningSlider(label: "Pulse Scale", value: $config.dockWaitingPulseScale, range: 1...3)
-                    TuningSlider(label: "Scale Amount", value: $config.dockWaitingScaleAmount, range: 0...1)
-                    TuningSlider(label: "Spring Damping", value: $config.dockWaitingSpringDamping, range: 0.5...2)
-                    TuningSlider(label: "Spring Omega", value: $config.dockWaitingSpringOmega, range: 2...20)
-                    TuningSlider(label: "Origin X", value: $config.dockWaitingOriginX, range: 0...1)
-                    TuningSlider(label: "Origin Y", value: $config.dockWaitingOriginY, range: 0...1)
-                }
-
-                TuningSection(title: "Dock Waiting Border", isExpanded: false) {
-                    TuningSlider(label: "Base Opacity", value: $config.dockWaitingBorderBaseOpacity, range: 0...0.5)
-                    TuningSlider(label: "Pulse Opacity", value: $config.dockWaitingBorderPulseOpacity, range: 0...1)
-                    TuningSlider(label: "Inner Width", value: $config.dockWaitingBorderInnerWidth, range: 0.5...4)
-                    TuningSlider(label: "Outer Width", value: $config.dockWaitingBorderOuterWidth, range: 1...8)
-                    TuningSlider(label: "Outer Blur", value: $config.dockWaitingBorderOuterBlur, range: 0...12)
-                }
+            TuningSection(title: "Waiting Border", isExpanded: false) {
+                TuningSlider(label: "Base Opacity", value: $config.waitingBorderBaseOpacity, range: 0...0.5)
+                TuningSlider(label: "Pulse Opacity", value: $config.waitingBorderPulseOpacity, range: 0...1)
+                TuningSlider(label: "Inner Width", value: $config.waitingBorderInnerWidth, range: 0.5...4)
+                TuningSlider(label: "Outer Width", value: $config.waitingBorderOuterWidth, range: 1...8)
+                TuningSlider(label: "Outer Blur", value: $config.waitingBorderOuterBlur, range: 0...12)
             }
         }
     }

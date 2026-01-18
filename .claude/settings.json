@@ -6,7 +6,8 @@
       "Bash(kill:*)",
       "Bash(swift build:*)",
       "Bash(swift run:*)",
-      "Bash(cargo build:*)"
+      "Bash(cargo build:*)",
+      "Bash(pkill -x ClaudeHUD 2>/dev/null; sleep 0.5; swift run 2>&1 &:*)"
     ]
   }
 }

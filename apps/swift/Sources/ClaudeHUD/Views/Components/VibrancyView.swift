@@ -223,6 +223,10 @@ extension GlassConfig {
     var panelConfigHash: String {
         "panel-\(refreshCounter)-\(materialType)-\(panelTintOpacity)-\(panelCornerRadius)-\(panelBorderOpacity)-\(useEmphasizedMaterial)"
     }
+
+    var solidCardConfigHash: String {
+        "solid-\(cardTintOpacity)-\(cardCornerRadius)-\(cardBorderOpacity)-\(cardHighlightOpacity)-\(cardHoverBorderOpacity)-\(cardHoverHighlightOpacity)"
+    }
 }
 #endif
 

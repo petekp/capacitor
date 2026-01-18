@@ -63,6 +63,7 @@ struct ClaudeHUDApp: App {
                 #if DEBUG
                 Divider()
                 TuningPanelMenuButton()
+                CardTuningPanelMenuButton()
                 #endif
             }
 
@@ -84,6 +85,14 @@ struct ClaudeHUDApp: App {
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)
         .defaultPosition(.topTrailing)
+
+        Window("Card Interaction", id: "card-tuning-panel") {
+            ProjectCardTuningPanel(isPresented: .constant(true))
+                .preferredColorScheme(.dark)
+        }
+        .windowStyle(.hiddenTitleBar)
+        .windowResizability(.contentSize)
+        .defaultPosition(.trailing)
         #endif
     }
 }
@@ -97,6 +106,17 @@ struct TuningPanelMenuButton: View {
             openWindow(id: "tuning-panel")
         }
         .keyboardShortcut("D", modifiers: [.command, .shift])
+    }
+}
+
+struct CardTuningPanelMenuButton: View {
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        Button("Card Interaction Panel") {
+            openWindow(id: "card-tuning-panel")
+        }
+        .keyboardShortcut("I", modifiers: [.command, .shift])
     }
 }
 #endif

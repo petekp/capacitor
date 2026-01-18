@@ -21,6 +21,9 @@ cargo test                        # Test
 # Swift (from apps/swift/)
 swift build                       # Debug build
 swift run                         # Run app
+
+# Restart app (use this script - pre-approved in permissions)
+/Users/petepetrash/Code/claude-hud/scripts/restart-app.sh
 ```
 
 ## Structure

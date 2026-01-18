@@ -14,7 +14,8 @@ extension View {
         solidCardBackground: some View,
         animationSeed: String,
         cornerRadius: CGFloat = 12,
-        layoutMode: LayoutMode = .vertical
+        layoutMode: LayoutMode = .vertical,
+        isPressed: Bool = false
     ) -> some View {
         self
             .background {
@@ -77,11 +78,19 @@ extension View {
                         .transition(.opacity.animation(.easeInOut(duration: 0.4)))
                 }
             }
+            #if DEBUG
+            .shadow(
+                color: .black.opacity(shadowOpacity(isHovered: isHovered, isPressed: isPressed, floatingMode: floatingMode, layoutMode: layoutMode)),
+                radius: shadowRadius(isHovered: isHovered, isPressed: isPressed, floatingMode: floatingMode, layoutMode: layoutMode),
+                y: shadowY(isHovered: isHovered, isPressed: isPressed, floatingMode: floatingMode, layoutMode: layoutMode)
+            )
+            #else
             .shadow(
                 color: floatingMode ? .black.opacity(0.25) : (isHovered ? .black.opacity(0.2) : .black.opacity(0.08)),
                 radius: floatingMode ? 8 : (isHovered ? 12 : 4),
                 y: floatingMode ? 3 : (isHovered ? 4 : 2)
             )
+            #endif
             .scaleEffect(isHovered ? 0.99 : 1.0)
             .animation(.easeOut(duration: 0.2), value: isHovered)
     }
@@ -208,6 +217,43 @@ extension View {
         WindowDragHandle { self }
     }
 }
+
+// MARK: - Shadow Helpers (DEBUG only)
+
+#if DEBUG
+private func shadowOpacity(isHovered: Bool, isPressed: Bool, floatingMode: Bool, layoutMode: LayoutMode) -> Double {
+    guard !floatingMode else { return 0.25 }
+    let config = GlassConfig.shared
+    if isPressed {
+        return config.cardPressedShadowOpacity
+    } else if isHovered {
+        return config.cardHoverShadowOpacity
+    }
+    return config.cardIdleShadowOpacity
+}
+
+private func shadowRadius(isHovered: Bool, isPressed: Bool, floatingMode: Bool, layoutMode: LayoutMode) -> CGFloat {
+    guard !floatingMode else { return 8 }
+    let config = GlassConfig.shared
+    if isPressed {
+        return config.cardPressedShadowRadius
+    } else if isHovered {
+        return config.cardHoverShadowRadius
+    }
+    return config.cardIdleShadowRadius
+}
+
+private func shadowY(isHovered: Bool, isPressed: Bool, floatingMode: Bool, layoutMode: LayoutMode) -> CGFloat {
+    guard !floatingMode else { return 3 }
+    let config = GlassConfig.shared
+    if isPressed {
+        return config.cardPressedShadowY
+    } else if isHovered {
+        return config.cardHoverShadowY
+    }
+    return config.cardIdleShadowY
+}
+#endif
 
 // MARK: - Window Drag Handling
 

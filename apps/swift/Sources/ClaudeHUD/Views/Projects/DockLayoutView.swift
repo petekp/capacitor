@@ -6,6 +6,10 @@ struct DockLayoutView: View {
     @State private var scrolledID: String?
     @State private var draggedProject: Project?
 
+    #if DEBUG
+    @ObservedObject private var glassConfig = GlassConfig.shared
+    #endif
+
     private let cardWidth: CGFloat = 262
     private let cardSpacing: CGFloat = 14
     private let horizontalPadding: CGFloat = 16
@@ -123,6 +127,7 @@ struct DockLayoutView: View {
                 draggedProject = project
                 return NSItemProvider(object: project.path as NSString)
             },
+            isDragging: draggedProject?.path == project.path,
             ideas: ideas,
             ideasRemainingCount: remainingCount,
             generatingTitleIds: appState.generatingTitleForIdeas,
@@ -135,6 +140,7 @@ struct DockLayoutView: View {
             }
         )
         .preventWindowDrag()
+        .zIndex(draggedProject?.path == project.path ? 999 : 0)
         .onDrop(
             of: [.text],
             delegate: DockDropDelegate(
