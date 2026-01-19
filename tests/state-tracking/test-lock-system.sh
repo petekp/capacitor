@@ -8,7 +8,7 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SESSIONS_DIR="$HOME/.claude/sessions"
 HOOK_SCRIPT="$HOME/.claude/scripts/hud-state-tracker.sh"
-STATE_FILE="$HOME/.claude/hud-session-states.json"
+STATE_FILE="$HOME/.claude/hud-session-states-v2.json"
 
 # Test colors
 RED='\033[0;31m'

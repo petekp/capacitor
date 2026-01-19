@@ -59,17 +59,19 @@ if lock_path_normalized == "/" {
 
 ### Timestamp-Based Lock Selection
 
-When multiple locks share a PID, select by `started` timestamp:
+When multiple locks share a PID, select by `created` timestamp:
 
 ```rust
-if info.started > current.started {
+if info.created > current.created {
     best_match = Some(info);
 }
 ```
 
+**Note:** The lock metadata uses `created` for lock selection and `proc_started` for PID verification. Legacy locks may have a `started` field (ISO string) which is parsed for backward compatibility.
+
 **Rationale:**
 - Locks accumulate when session cd's - newest represents current location
-- ISO timestamps can be compared lexicographically
+- Numeric timestamps enable direct comparison
 - Deterministic behavior prevents flaky tests
 
 ### Exact + Child Lock Scanning

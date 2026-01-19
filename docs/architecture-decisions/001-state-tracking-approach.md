@@ -72,7 +72,7 @@ For the current phase of Claude HUD development:
 ### What We're Doing
 
 1. **Local sessions**: Use regular `claude` command with hooks for state tracking
-2. **State file**: `~/.claude/hud-session-states.json` updated by hooks
+2. **State file**: `~/.claude/hud-session-states-v2.json` updated by hooks
 3. **Swift HUD**: Reads state file, displays thinking/ready status
 4. **Daemon**: Available as `hud-claude-daemon` for future remote/mobile use
 
@@ -101,8 +101,9 @@ When mobile client work begins:
 └── hud-state-tracker.sh    # Hook script that updates state file
 
 ~/.claude/
-├── hud-session-states.json # State file read by Swift HUD
-└── settings.json           # Contains hook configuration
+├── hud-session-states-v2.json  # State file read by Swift HUD (v2 format)
+├── sessions/                   # Lock directories ({hash}.lock/)
+└── settings.json               # Contains hook configuration
 
 apps/daemon/                # Daemon implementation (for future use)
 ├── src/sdk/                # Claude Code SDK (stream-json parsing)

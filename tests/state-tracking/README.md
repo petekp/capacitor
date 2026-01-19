@@ -57,7 +57,7 @@ cargo test -p hud-core sessions::tests          # Rust unit tests (14 tests)
 
 ## Test Isolation
 
-Tests use in-memory backup/restore to avoid corrupting the real `~/.claude/hud-session-states.json`. The original state is captured before tests and restored after, even if tests fail.
+Tests use in-memory backup/restore to avoid corrupting the real `~/.claude/hud-session-states-v2.json`. The original state is captured before tests and restored after, even if tests fail.
 
 ## Prerequisites
 
