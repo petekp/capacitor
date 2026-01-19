@@ -27,12 +27,12 @@ struct ProjectDetailView: View {
                     }
 
                     Text(project.name)
-                        .font(AppTypography.pageTitle)
+                        .font(AppTypography.pageTitle.monospaced())
                         .foregroundColor(.white)
                         .opacity(appeared ? 1 : 0)
                         .offset(y: appeared ? 0 : 8)
 
-                    DescriptionCard(
+                    DescriptionSection(
                         description: appState.getDescription(for: project),
                         isGenerating: appState.isGeneratingDescription(for: project),
                         onGenerate: { appState.generateDescription(for: project) }
@@ -81,7 +81,9 @@ struct ProjectDetailView: View {
 
                     Spacer()
                 }
-                .padding(16)
+                .padding(.horizontal, 16)
+                .padding(.top, floatingMode ? 64 : 16)
+                .padding(.bottom, 16)
             }
             .blur(radius: isModalOpen ? 8 : 0)
             .saturation(isModalOpen ? 0.8 : 1)
@@ -202,53 +204,59 @@ struct DetailSectionLabel: View {
     }
 }
 
-struct DescriptionCard: View {
+struct DescriptionSection: View {
     let description: String?
     let isGenerating: Bool
     let onGenerate: () -> Void
 
+    @State private var isHovered = false
+    @Environment(\.prefersReducedMotion) private var reduceMotion
+
     var body: some View {
-        DetailCard {
-            VStack(alignment: .leading, spacing: 10) {
-                DetailSectionLabel(title: "DESCRIPTION")
+        ZStack(alignment: .leading) {
+            if let description = description {
+                Text(description)
+                    .font(AppTypography.body)
+                    .foregroundColor(.white.opacity(0.6))
+                    .lineLimit(4)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
 
-                ZStack(alignment: .leading) {
-                    // Description text - fades in when ready
-                    if let description = description {
-                        Text(description)
-                            .font(AppTypography.body)
-                            .foregroundColor(.white.opacity(0.8))
-                            .lineLimit(4)
-                            .fixedSize(horizontal: false, vertical: true)
+            if isGenerating {
+                ShimmeringText(text: "Generating description...")
+            }
+
+            if description == nil && !isGenerating {
+                Button(action: onGenerate) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "sparkles")
+                            .font(AppTypography.cardTitle)
+                        Text("Generate Description")
+                            .font(AppTypography.bodySecondary.weight(.medium))
                     }
-
-                    // Loading shimmer - visible during generation
-                    if isGenerating {
-                        ShimmeringText(text: "Generating description...")
-                    }
-
-                    // Generate button - visible when no description and not generating
-                    if description == nil && !isGenerating {
-                        Button(action: onGenerate) {
-                            HStack(spacing: 6) {
-                                Image(systemName: "sparkles")
-                                    .font(AppTypography.caption)
-                                Text("Generate Description")
-                                    .font(AppTypography.bodySecondary.weight(.medium))
-                            }
-                            .foregroundColor(.white.opacity(0.7))
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
-                            .background(Color.white.opacity(0.1))
-                            .clipShape(Capsule())
-                        }
-                        .buttonStyle(.plain)
+                    .foregroundColor(.white.opacity(isHovered ? 0.9 : 0.5))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(Color.white.opacity(isHovered ? 0.1 : 0))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .strokeBorder(Color.white.opacity(isHovered ? 0.15 : 0), lineWidth: 0.5)
+                    )
+                }
+                .buttonStyle(.plain)
+                .scaleEffect(isHovered && !reduceMotion ? 1.02 : 1.0)
+                .onHover { hovering in
+                    withAnimation(reduceMotion ? AppMotion.reducedMotionFallback : .spring(response: 0.2, dampingFraction: 0.7)) {
+                        isHovered = hovering
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .animation(.easeInOut(duration: 0.3), value: description != nil)
-                .animation(.easeInOut(duration: 0.3), value: isGenerating)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .animation(.easeInOut(duration: 0.3), value: description != nil)
+        .animation(.easeInOut(duration: 0.3), value: isGenerating)
     }
 }

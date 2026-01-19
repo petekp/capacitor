@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct IdeaQueueView: View {
@@ -9,6 +10,16 @@ struct IdeaQueueView: View {
 
     @State private var localIdeas: [Idea] = []
     @State private var rowFrames: [String: CGRect] = [:]
+
+    // Drag state
+    @State private var draggingId: String?
+    @State private var dragTranslation: CGFloat = 0
+    @State private var isDragging = false
+
+    @Environment(\.prefersReducedMotion) private var reduceMotion
+
+    private let rowHeight: CGFloat = 44
+    private let rowSpacing: CGFloat = 2
 
     private var queuedIdeas: [Idea] {
         localIdeas.filter { $0.status != "done" }
@@ -28,15 +39,16 @@ struct IdeaQueueView: View {
         .onChange(of: ideas) { _, newValue in
             localIdeas = newValue
         }
-        .coordinateSpace(name: "ideaQueue")
     }
 
     private var queueList: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: rowSpacing) {
             ForEach(Array(queuedIdeas.enumerated()), id: \.element.id) { index, idea in
+                let isBeingDragged = draggingId == idea.id
+
                 IdeaQueueRow(
                     idea: idea,
-                    isFirst: index == 0,
+                    isFirst: index == 0 && !isBeingDragged,
                     isGeneratingTitle: isGeneratingTitle(idea.id),
                     onTap: {
                         if let frame = rowFrames[idea.id] {
@@ -45,6 +57,7 @@ struct IdeaQueueView: View {
                     },
                     onRemove: onRemove != nil ? { onRemove?(idea) } : nil
                 )
+                .background(NonMovableBackground())
                 .background(
                     GeometryReader { geo in
                         Color.clear
@@ -56,16 +69,86 @@ struct IdeaQueueView: View {
                             }
                     }
                 )
-                .onDrag {
-                    NSItemProvider(object: idea.id as NSString)
-                }
-                .onDrop(of: [.text], delegate: IdeaDropDelegate(
-                    item: idea,
-                    items: $localIdeas,
-                    onReorder: onReorder
-                ))
+                // Only the dragged item gets offset
+                .offset(y: isBeingDragged ? dragTranslation : 0)
+                .zIndex(isBeingDragged ? 100 : 0)
+                .scaleEffect(isBeingDragged ? 1.02 : 1.0)
+                .opacity(isBeingDragged ? 0.9 : 1.0)
+                .shadow(
+                    color: .black.opacity(isBeingDragged ? 0.25 : 0),
+                    radius: isBeingDragged ? 8 : 0,
+                    y: isBeingDragged ? 2 : 0
+                )
+                .gesture(
+                    DragGesture()
+                        .onChanged { value in
+                            handleDragChanged(idea: idea, currentIndex: index, translation: value.translation.height)
+                        }
+                        .onEnded { _ in
+                            handleDragEnded()
+                        }
+                )
             }
         }
+    }
+
+    private func handleDragChanged(idea: Idea, currentIndex: Int, translation: CGFloat) {
+        // Start dragging if not already
+        if draggingId == nil {
+            draggingId = idea.id
+            isDragging = true
+        }
+
+        dragTranslation = translation
+
+        // Calculate if we should swap with another item
+        let threshold = rowHeight / 2
+        let rowPlusSpacing = rowHeight + rowSpacing
+
+        // Find where in the list the dragged item currently appears
+        guard let currentArrayIndex = queuedIdeas.firstIndex(where: { $0.id == idea.id }) else { return }
+
+        // Check if we should move up
+        if translation < -threshold && currentArrayIndex > 0 {
+            let targetIndex = currentArrayIndex - 1
+            swapItems(from: currentArrayIndex, to: targetIndex)
+            // Adjust translation so item stays under cursor
+            dragTranslation += rowPlusSpacing
+        }
+        // Check if we should move down
+        else if translation > threshold && currentArrayIndex < queuedIdeas.count - 1 {
+            let targetIndex = currentArrayIndex + 1
+            swapItems(from: currentArrayIndex, to: targetIndex)
+            // Adjust translation so item stays under cursor
+            dragTranslation -= rowPlusSpacing
+        }
+    }
+
+    private func swapItems(from sourceIndex: Int, to targetIndex: Int) {
+        // Map queue indices to localIdeas indices
+        let sourceId = queuedIdeas[sourceIndex].id
+        let targetId = queuedIdeas[targetIndex].id
+
+        guard let sourceLocalIndex = localIdeas.firstIndex(where: { $0.id == sourceId }),
+              let targetLocalIndex = localIdeas.firstIndex(where: { $0.id == targetId }) else {
+            return
+        }
+
+        // Swap in the local array (no animation during drag to prevent jitter)
+        localIdeas.swapAt(sourceLocalIndex, targetLocalIndex)
+    }
+
+    private func handleDragEnded() {
+        // Animate the dragged item back to its layout position
+        withAnimation(.spring(response: 0.3, dampingFraction: 1.0)) {
+            dragTranslation = 0
+            draggingId = nil
+            isDragging = false
+        }
+
+        // Notify parent of final order
+        let reorderedQueue = localIdeas.filter { $0.status != "done" }
+        onReorder?(reorderedQueue)
     }
 
     private var emptyState: some View {
@@ -78,9 +161,9 @@ struct IdeaQueueView: View {
                 .font(AppTypography.caption)
                 .foregroundColor(.white.opacity(0.35))
         }
-        .padding(16)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(ideaRowBackground(isFirst: false, isHovered: false))
     }
 }
 
@@ -97,20 +180,24 @@ struct IdeaQueueRow: View {
     @Environment(\.prefersReducedMotion) private var reduceMotion
 
     var body: some View {
-        HStack(spacing: 12) {
-            dragHandle
+        HStack(spacing: 10) {
+            Image(systemName: "line.3.horizontal")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(.white.opacity(0.3))
+                .frame(width: 16)
 
             titleArea
                 .frame(maxWidth: .infinity, alignment: .leading)
-
-            if isHovered && !isGeneratingTitle {
-                hoverActions
-            }
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .background(ideaRowBackground(isFirst: isFirst, isHovered: isHovered))
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .padding(.vertical, 10)
+        .frame(height: 44)
+        .overlay(alignment: .trailing) {
+            if isHovered && !isGeneratingTitle {
+                hoverActions
+                    .padding(.trailing, 14)
+            }
+        }
         .contentShape(Rectangle())
         .onHover { hovering in
             withAnimation(reduceMotion ? AppMotion.reducedMotionFallback : .easeOut(duration: 0.15)) {
@@ -125,17 +212,10 @@ struct IdeaQueueRow: View {
         .accessibilityHint(isFirst ? "Top of queue - next to work on" : "Drag to reorder")
     }
 
-    private var dragHandle: some View {
-        Image(systemName: "line.3.horizontal")
-            .font(.system(size: 12, weight: .medium))
-            .foregroundColor(.white.opacity(isHovered ? 0.5 : 0.25))
-            .frame(width: 16)
-    }
-
     private var titleArea: some View {
         ZStack(alignment: .leading) {
             Text(idea.title)
-                .font(isFirst ? AppTypography.body.weight(.medium) : AppTypography.body)
+                .font(AppTypography.body)
                 .foregroundColor(.white.opacity(isFirst ? 0.9 : 0.7))
                 .lineLimit(2)
                 .opacity(isGeneratingTitle ? 0 : 1)
@@ -167,73 +247,18 @@ struct IdeaQueueRow: View {
     }
 }
 
-// MARK: - Row Background
+// MARK: - Non-Movable Background
 
-@ViewBuilder
-private func ideaRowBackground(isFirst: Bool, isHovered: Bool) -> some View {
-    ZStack {
-        RoundedRectangle(cornerRadius: 10, style: .continuous)
-            .fill(Color.hudCard.opacity(isFirst ? 1.0 : 0.7))
-
-        RoundedRectangle(cornerRadius: 10, style: .continuous)
-            .strokeBorder(
-                LinearGradient(
-                    colors: [
-                        .white.opacity(isHovered ? 0.15 : (isFirst ? 0.1 : 0.06)),
-                        .white.opacity(isHovered ? 0.08 : (isFirst ? 0.05 : 0.03))
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                ),
-                lineWidth: 0.5
-            )
-
-        if isFirst {
-            VStack(spacing: 0) {
-                LinearGradient(
-                    colors: [.white.opacity(0.06), .clear],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .frame(height: 1)
-                Spacer()
-            }
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        }
-    }
-}
-
-// MARK: - Drop Delegate
-
-private struct IdeaDropDelegate: DropDelegate {
-    let item: Idea
-    @Binding var items: [Idea]
-    var onReorder: (([Idea]) -> Void)?
-
-    func performDrop(info: DropInfo) -> Bool {
-        onReorder?(items)
-        return true
+private struct NonMovableBackground: NSViewRepresentable {
+    private class NonMovableNSView: NSView {
+        override var mouseDownCanMoveWindow: Bool { false }
     }
 
-    func dropEntered(info: DropInfo) {
-        guard let draggedId = info.itemProviders(for: [.text]).first else { return }
-
-        draggedId.loadObject(ofClass: NSString.self) { reading, _ in
-            guard let id = reading as? String else { return }
-
-            DispatchQueue.main.async {
-                guard let fromIndex = items.firstIndex(where: { $0.id == id }),
-                      let toIndex = items.firstIndex(where: { $0.id == item.id }),
-                      fromIndex != toIndex else { return }
-
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                    items.move(fromOffsets: IndexSet(integer: fromIndex), toOffset: toIndex > fromIndex ? toIndex + 1 : toIndex)
-                }
-            }
-        }
+    func makeNSView(context: Context) -> NSView {
+        let view = NonMovableNSView()
+        view.wantsLayer = true
+        return view
     }
 
-    func dropUpdated(info: DropInfo) -> DropProposal? {
-        DropProposal(operation: .move)
-    }
+    func updateNSView(_ nsView: NSView, context: Context) {}
 }
