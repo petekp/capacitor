@@ -5,6 +5,7 @@ import AppKit
 struct ClaudeHUDApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @StateObject private var appState = AppState()
+    @StateObject private var updaterController = UpdaterController()
     @AppStorage("floatingMode") private var floatingMode = false
     @AppStorage("alwaysOnTop") private var alwaysOnTop = false
     @AppStorage("layoutMode") private var layoutMode = "vertical"
@@ -34,6 +35,15 @@ struct ClaudeHUDApp: App {
         .windowResizability(.contentSize)
         .commands {
             CommandGroup(replacing: .newItem) { }
+
+            CommandGroup(after: .appInfo) {
+                if updaterController.isAvailable {
+                    Button("Check for Updates...") {
+                        updaterController.checkForUpdates()
+                    }
+                    .disabled(!updaterController.canCheckForUpdates)
+                }
+            }
 
             CommandMenu("View") {
                 Section("Layout") {
@@ -74,7 +84,7 @@ struct ClaudeHUDApp: App {
         }
 
         Settings {
-            SettingsView()
+            SettingsView(updaterController: updaterController)
         }
 
         #if DEBUG

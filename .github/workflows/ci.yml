@@ -1,0 +1,133 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test-scripts:
+    name: Test Release Scripts
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install bats
+        run: brew install bats-core
+
+      - name: Run version bump tests
+        run: bats tests/release-scripts/bump-version.bats
+
+  test-rust:
+    name: Test Rust
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-action@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Run cargo fmt check
+        run: cargo fmt --check
+
+      - name: Run cargo clippy
+        run: cargo clippy -- -D warnings
+
+      - name: Run cargo test
+        run: cargo test
+
+  test-swift:
+    name: Test Swift
+    runs-on: macos-14
+    needs: test-rust
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-action@stable
+
+      - name: Build Rust library
+        run: cargo build -p hud-core --release
+
+      - name: Fix dylib install_name
+        run: install_name_tool -id "@rpath/libhud_core.dylib" target/release/libhud_core.dylib
+
+      - name: Run Swift tests
+        working-directory: apps/swift
+        run: swift test
+
+  build-smoke-test:
+    name: Build Smoke Test
+    runs-on: macos-14
+    needs: [test-rust, test-swift]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-action@stable
+
+      - name: Build Rust library (release)
+        run: cargo build -p hud-core --release
+
+      - name: Fix dylib install_name
+        run: install_name_tool -id "@rpath/libhud_core.dylib" target/release/libhud_core.dylib
+
+      - name: Build Swift app (release)
+        working-directory: apps/swift
+        run: swift build -c release
+
+      - name: Verify VERSION file exists
+        run: |
+          if [ ! -f VERSION ]; then
+            echo "ERROR: VERSION file not found"
+            exit 1
+          fi
+          echo "Version: $(cat VERSION)"
+
+      - name: Test bump-version.sh (dry run)
+        run: |
+          # Save current version
+          ORIGINAL=$(cat VERSION)
+
+          # Test patch bump
+          ./scripts/bump-version.sh patch
+          NEW=$(cat VERSION)
+          echo "Bumped from $ORIGINAL to $NEW"
+
+          # Restore original version
+          echo "$ORIGINAL" > VERSION
+
+          # Verify Cargo.toml was updated and restore
+          git checkout Cargo.toml
+
+      - name: Test generate-appcast.sh (without signing)
+        run: |
+          # Create a mock ZIP for testing
+          mkdir -p dist
+          VERSION=$(cat VERSION)
+          ARCH=$(uname -m)
+          touch "dist/ClaudeHUD-v$VERSION-$ARCH.zip"
+
+          # Run without --sign since we don't have keys in CI
+          ./scripts/generate-appcast.sh
+
+          # Verify appcast was created
+          if [ ! -f dist/appcast.xml ]; then
+            echo "ERROR: appcast.xml not created"
+            exit 1
+          fi
+          echo "Appcast created successfully"
+          cat dist/appcast.xml

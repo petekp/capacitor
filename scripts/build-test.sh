@@ -14,6 +14,14 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 SWIFT_DIR="$PROJECT_ROOT/apps/swift"
 APP_BUNDLE="$SWIFT_DIR/ClaudeHUD.app"
 
+# Read version from VERSION file
+VERSION_FILE="$PROJECT_ROOT/VERSION"
+if [ -f "$VERSION_FILE" ]; then
+    VERSION=$(cat "$VERSION_FILE" | tr -d '[:space:]')-test
+else
+    VERSION="0.1.0-test"
+fi
+
 echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}ClaudeHUD Test Build${NC}"
 echo -e "${GREEN}========================================${NC}"
@@ -62,7 +70,7 @@ cp "$DYLIB_PATH" "$APP_BUNDLE/Contents/Frameworks/libhud_core.dylib"
 install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP_BUNDLE/Contents/MacOS/ClaudeHUD"
 
 # Create Info.plist
-cat > "$APP_BUNDLE/Contents/Info.plist" << 'EOF'
+cat > "$APP_BUNDLE/Contents/Info.plist" << EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -76,7 +84,7 @@ cat > "$APP_BUNDLE/Contents/Info.plist" << 'EOF'
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.1.0-test</string>
+    <string>$VERSION</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
     <key>NSHighResolutionCapable</key>

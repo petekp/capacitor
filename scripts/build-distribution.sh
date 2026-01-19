@@ -33,6 +33,16 @@ DIST_DIR="$PROJECT_ROOT/dist"
 APP_NAME="ClaudeHUD"
 BUNDLE_ID="com.claudehud.app"
 
+# Read version from VERSION file
+VERSION_FILE="$PROJECT_ROOT/VERSION"
+if [ ! -f "$VERSION_FILE" ]; then
+    echo -e "${RED}ERROR: VERSION file not found at $VERSION_FILE${NC}"
+    exit 1
+fi
+VERSION=$(cat "$VERSION_FILE" | tr -d '[:space:]')
+BUILD_NUMBER=$(date +%Y%m%d%H%M)
+echo -e "${GREEN}Version: $VERSION (build $BUILD_NUMBER)${NC}"
+
 # Parse arguments
 SKIP_NOTARIZATION=false
 if [ "$1" = "--skip-notarization" ]; then
@@ -107,8 +117,14 @@ cp "$DYLIB_PATH" "$APP_BUNDLE/Contents/Frameworks/libhud_core.dylib"
 # Add rpath to executable to find dylib in Frameworks
 install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP_BUNDLE/Contents/MacOS/ClaudeHUD"
 
-# Copy Info.plist
-cat > "$APP_BUNDLE/Contents/Info.plist" << 'EOF'
+# Copy app icon if it exists
+if [ -f "$PROJECT_ROOT/assets/AppIcon.icns" ]; then
+    cp "$PROJECT_ROOT/assets/AppIcon.icns" "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
+    echo -e "${GREEN}✓ App icon copied${NC}"
+fi
+
+# Copy Info.plist (using variables for version)
+cat > "$APP_BUNDLE/Contents/Info.plist" << EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -128,9 +144,9 @@ cat > "$APP_BUNDLE/Contents/Info.plist" << 'EOF'
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.1.0</string>
+    <string>$VERSION</string>
     <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>$BUILD_NUMBER</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
     <key>LSUIElement</key>
@@ -141,6 +157,12 @@ cat > "$APP_BUNDLE/Contents/Info.plist" << 'EOF'
     <true/>
     <key>NSSupportsSuddenTermination</key>
     <false/>
+    <key>SUFeedURL</key>
+    <string>https://github.com/petekp/claude-hud/releases/latest/download/appcast.xml</string>
+    <key>SUPublicEDKey</key>
+    <string>F9qGHLJ2ro5Q+mffrwkiQSGpkGD5+GCDnusHuRkXqrE=</string>
+    <key>SUEnableAutomaticChecks</key>
+    <true/>
 </dict>
 </plist>
 EOF
@@ -188,7 +210,7 @@ mkdir -p "$DIST_DIR"
 cd "$SWIFT_DIR"
 
 # Create zip for distribution
-ZIP_NAME="ClaudeHUD-v0.1.0-$(uname -m).zip"
+ZIP_NAME="ClaudeHUD-v$VERSION-$(uname -m).zip"
 ditto -c -k --keepParent "$APP_BUNDLE" "$DIST_DIR/$ZIP_NAME"
 
 echo -e "${GREEN}✓ Distribution package created: $DIST_DIR/$ZIP_NAME${NC}"
@@ -239,7 +261,7 @@ echo "To test locally:"
 echo "  open '$APP_BUNDLE'"
 echo ""
 echo "To upload to GitHub:"
-echo "  gh release create v0.1.0 '$DIST_DIR/$ZIP_NAME' --title 'Claude HUD v0.1.0' --notes 'Initial beta release'"
+echo "  gh release create v$VERSION '$DIST_DIR/$ZIP_NAME' --title 'Claude HUD v$VERSION' --notes 'Release v$VERSION'"
 echo ""
 
 if [ "$SKIP_NOTARIZATION" = true ]; then

@@ -1,9 +1,19 @@
 import SwiftUI
 
 struct SettingsView: View {
+    @ObservedObject var updaterController: UpdaterController
     @AppStorage("floatingMode") private var floatingMode = false
     @AppStorage("alwaysOnTop") private var alwaysOnTop = false
     @AppStorage("playReadyChime") private var playReadyChime = true
+
+    private var lastCheckString: String {
+        if let date = updaterController.lastUpdateCheckDate {
+            let formatter = RelativeDateTimeFormatter()
+            formatter.unitsStyle = .full
+            return formatter.localizedString(for: date, relativeTo: Date())
+        }
+        return "Never"
+    }
 
     var body: some View {
         Form {
@@ -23,6 +33,23 @@ struct SettingsView: View {
                     .accessibilityHint("Play a sound when Claude finishes a task and is ready for input")
             }
 
+            if updaterController.isAvailable {
+                Section("Updates") {
+                    Toggle("Check for updates automatically", isOn: $updaterController.automaticallyChecksForUpdates)
+                        .accessibilityLabel("Automatic update checks")
+                        .accessibilityHint("When enabled, Claude HUD will periodically check for new versions")
+
+                    HStack {
+                        LabeledContent("Last checked", value: lastCheckString)
+                        Spacer()
+                        Button("Check Now") {
+                            updaterController.checkForUpdates()
+                        }
+                        .disabled(!updaterController.canCheckForUpdates)
+                    }
+                }
+            }
+
             Section("About") {
                 LabeledContent("Version", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")
                     .accessibilityLabel("Version")
@@ -39,7 +66,7 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 400, height: 350)
+        .frame(width: 400, height: 420)
     }
 }
 
@@ -61,5 +88,5 @@ struct KeyboardShortcutRow: View {
 }
 
 #Preview {
-    SettingsView()
+    SettingsView(updaterController: UpdaterController())
 }
