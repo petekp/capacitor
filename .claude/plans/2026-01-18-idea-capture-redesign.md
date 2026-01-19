@@ -16,10 +16,24 @@ Separate **capture** (main view) from **management** (detail view). Ideas are fl
 
 ### Interaction
 
-**Trigger:** Click existing idea pill (already shows count like "3 ideas")
+**Trigger:** Click "+ Idea" button on project card
+
+### Entry Point: "+ Idea" Button
+
+**Location:** Project card, in the description line area
+
+**Behavior:**
+- **Default state:** Shows project description (LLM-generated "what's happening")
+- **On hover:** Description crossfades to "+ Idea" button (secondary/subtle styling)
+- **While generating:** Shows dimmed placeholder text, still swaps to button on hover
+
+**Transition:** Same crossfade used when description updates
+
+**Rationale:** The button is discoverable on hover without taking permanent space. The description line is the natural home since it's content that can afford to yield temporarily.
 
 **Popover contents:**
-- Text input field (auto-focused on open)
+- Text area (~80ch wide, 2-3 lines visible)
+- Auto-focused on open
 - Save / Cancel buttons
 
 **Keyboard shortcuts:**
@@ -33,7 +47,9 @@ Separate **capture** (main view) from **management** (detail view). Ideas are fl
 
 ### Rationale
 
-The pill already exists and communicates "ideas live here." Making it the entry point is discoverable without adding UI clutter. The popover is minimal — no title field, no effort picker, no project selector. Just dump the thought.
+The hover-swap pattern keeps the card clean at rest while making capture discoverable when engaged. The popover is minimal — no title field, no effort picker, no project selector. Just dump the thought.
+
+The constrained text area (~80ch, 2-3 lines) visually signals "quick jot, not essay" — the size itself discourages paragraph-long screeds.
 
 ---
 
@@ -47,17 +63,36 @@ The pill already exists and communicates "ideas live here." Making it the entry 
 
 - Flat list of ideas in priority order
 - Top idea is visually emphasized (first in queue)
-- Each idea shows: title, description preview (from sensemaking)
+- Each row shows title only (description revealed on click)
 - Drag handles for reordering
+
+### Row Visual Style
+
+**Toned-down project card material** — Same DNA as project cards (subtle gradients, borders, depth) but visually subordinate. Ideas shouldn't compete with the project card hierarchy.
+
+### Idea Detail Modal
+
+**Trigger:** Click an idea row
+
+**Appearance:**
+- Dark frosted glass aesthetic (matches app container)
+- Anchored to the clicked row (not centered)
+- Positioned so dismiss button lands under cursor on open
+
+**Contents:**
+- Full description (LLM-generated expansion)
+- Metadata (when captured, inferred files, related context)
+- Actions ("Work on this", "Remove")
 
 ### Interactions
 
 | Action | Behavior |
 |--------|----------|
-| Drag and drop | Reorder priority |
-| Click idea | Expand to see full description |
+| Drag and drop | Reorder priority (borrow animation from project cards) |
+| Click idea | Open detail modal anchored to row |
+| Dismiss modal | Click dismiss button (positioned under cursor) |
 | Start working | Future: explicit action to begin, agent tracks completion |
-| Complete | Future: agent auto-detects, idea disappears from queue |
+| Complete | Future: agent auto-detects, idea disappears (borrow exit animation from project cards) |
 
 ### What's Removed
 
@@ -163,30 +198,57 @@ These require the foundation above to be working first:
 
 ---
 
+## Visual Design Summary
+
+| Element | Specification |
+|---------|---------------|
+| **"+ Idea" button** | Hover-swap replaces description line; secondary/subtle styling; crossfade transition |
+| **Description placeholder** | Dimmed text while generating; always auto-generates on project add |
+| **Capture popover** | Text area ~80ch wide, 2-3 lines; uses existing popover component |
+| **Queue rows** | Toned-down project card material; title only; drag handles |
+| **Detail modal** | Dark frosted glass (app container aesthetic); anchored to row; dismiss under cursor |
+| **Reorder animation** | Borrow from project card reordering |
+| **Exit animation** | Borrow from project card removal |
+
+### Design Principles
+
+1. **Hierarchy matters** — Idea rows are subordinate to project cards
+2. **Reuse existing patterns** — Popover, transitions, animations from existing components
+3. **Progressive disclosure** — Title visible, detail on demand via modal
+4. **Cursor-aware positioning** — Modal dismiss button lands where user already is
+
+---
+
 ## Implementation Sequence
 
 ### Phase 1: Capture Flow
-1. Add popover to idea pill click
-2. Implement text input with keyboard shortcuts
+1. Add "+ Idea" button with hover-swap on project card description line
+2. Implement capture popover (text area, ~80ch, keyboard shortcuts)
 3. Wire up to existing `capture_idea()` Rust function
-4. Update pill count on save
+4. Add dimmed placeholder for generating state
 
 ### Phase 2: Detail View Simplification
-1. Replace `IdeasListView` status sections with flat queue
-2. Add drag-and-drop reordering
-3. Persist order (new field in ideas.local.md or separate ordering)
-4. Remove status UI, keep status in data model
+1. Restyle `IdeaCardView` with toned-down project card material
+2. Replace `IdeasListView` status sections with flat queue (title only)
+3. Add drag-and-drop reordering with project card animations
+4. Persist order (new field in ideas.local.md or separate ordering)
 
-### Phase 3: Background Sensemaking
+### Phase 3: Idea Detail Modal
+1. Create `IdeaDetailModal` with dark frosted glass styling
+2. Implement anchored positioning (dismiss button under cursor)
+3. Display description, metadata, and actions
+4. Wire up "Work on this" and "Remove" actions
+
+### Phase 4: Background Sensemaking
 1. Design prompt for signal assessment + adaptive expansion
 2. Implement async title/description generation after capture
 3. Add context gathering (recent files, session info)
 4. Handle errors gracefully
 
-### Phase 4: Polish
-1. Animate queue reordering
-2. Add "top idea" reminder on project cards (main view)
-3. Age indicators for stale ideas
+### Phase 5: Polish
+1. Ensure description always auto-generates on project add
+2. Tune transitions and animations for consistency
+3. Age indicators for stale ideas (future)
 
 ---
 
@@ -196,10 +258,12 @@ These require the foundation above to be working first:
 
 | Component | File | Changes |
 |-----------|------|---------|
-| Idea pill popover | `Views/Projects/ProjectCardView.swift` | Add popover trigger |
-| Capture popover | New: `Views/Ideas/IdeaCapturePopover.swift` | Text input + shortcuts |
-| Detail view queue | `Views/Ideas/IdeasListView.swift` | Replace with flat queue |
-| Drag reordering | `Views/Ideas/IdeasListView.swift` | Add `onMove` handler |
+| "+ Idea" hover swap | `Views/Projects/ProjectCardView.swift` | Description line swaps to button on hover |
+| Capture popover | New: `Views/Ideas/IdeaCapturePopover.swift` | Text area + keyboard shortcuts |
+| Queue rows | `Views/Ideas/IdeasListView.swift` | Replace status sections with flat queue |
+| Row styling | `Views/Ideas/IdeaCardView.swift` | Toned-down project card material |
+| Detail modal | New: `Views/Ideas/IdeaDetailModal.swift` | Frosted glass, anchored positioning |
+| Drag reordering | `Views/Ideas/IdeasListView.swift` | Add `onMove` handler + animation |
 | Order persistence | `core/hud-core/src/ideas.rs` | Add order field or separate file |
 | Sensemaking | `apps/sdk-bridge/` or new service | Async LLM calls |
 
