@@ -1,17 +1,22 @@
 use std::path::Path;
 
-use super::lock::{find_child_lock, find_matching_child_lock, get_lock_info, is_session_running};
+use super::lock::{
+    find_child_lock, find_matching_child_lock, get_lock_info, is_pid_alive, is_session_running,
+};
 use super::store::StateStore;
 use super::types::ClaudeState;
 
 /// Helper: Search all sessions for one matching the given lock by PID and path
 /// Allows record.cwd to be exact/child/parent of lock.path (handles cd within session)
-fn find_session_for_lock(store: &StateStore, lock_info: &super::types::LockInfo) -> Option<ClaudeState> {
+fn find_session_for_lock(
+    store: &StateStore,
+    lock_info: &super::types::LockInfo,
+) -> Option<ClaudeState> {
     #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
     enum MatchType {
-        Parent = 0,  // record.cwd is parent of lock (cd .. scenario)
-        Child = 1,   // record.cwd is child of lock (cd subdir scenario)
-        Exact = 2,   // exact match - highest priority
+        Parent = 0, // record.cwd is parent of lock (cd .. scenario)
+        Child = 1,  // record.cwd is child of lock (cd subdir scenario)
+        Exact = 2,  // exact match - highest priority
     }
 
     let mut best: Option<(&super::types::SessionRecord, MatchType)> = None;
@@ -37,21 +42,21 @@ fn find_session_for_lock(store: &StateStore, lock_info: &super::types::LockInfo)
             } else if lock_path_normalized == "/" {
                 // Special case: root lock matches any absolute path descendant
                 if record_cwd_normalized.starts_with("/") && record_cwd_normalized != "/" {
-                    Some(MatchType::Child)  // Any absolute path is descendant of /
+                    Some(MatchType::Child) // Any absolute path is descendant of /
                 } else {
                     None
                 }
             } else if record_cwd_normalized == "/" {
                 // Special case: record at root matches any absolute path descendant
                 if lock_path_normalized.starts_with("/") && lock_path_normalized != "/" {
-                    Some(MatchType::Parent)  // / is ancestor of any absolute path
+                    Some(MatchType::Parent) // / is ancestor of any absolute path
                 } else {
                     None
                 }
             } else if record_cwd_normalized.starts_with(&format!("{}/", lock_path_normalized)) {
-                Some(MatchType::Child)  // cd into subdir
+                Some(MatchType::Child) // cd into subdir
             } else if lock_path_normalized.starts_with(&format!("{}/", record_cwd_normalized)) {
-                Some(MatchType::Parent)  // cd .. to parent
+                Some(MatchType::Parent) // cd .. to parent
             } else {
                 // No match - different paths that aren't parent/child
                 None
@@ -62,10 +67,12 @@ fn find_session_for_lock(store: &StateStore, lock_info: &super::types::LockInfo)
                     None => best = Some((record, current_match_type)),
                     Some((current, current_type)) => {
                         // Priority: fresher timestamp first, then match type, then session_id
-                        let should_replace =
-                            record.updated_at > current.updated_at ||
-                            (record.updated_at == current.updated_at && current_match_type > current_type) ||
-                            (record.updated_at == current.updated_at && current_match_type == current_type && record.session_id > current.session_id);
+                        let should_replace = record.updated_at > current.updated_at
+                            || (record.updated_at == current.updated_at
+                                && current_match_type > current_type)
+                            || (record.updated_at == current.updated_at
+                                && current_match_type == current_type
+                                && record.session_id > current.session_id);
 
                         if should_replace {
                             best = Some((record, current_match_type));
@@ -79,7 +86,11 @@ fn find_session_for_lock(store: &StateStore, lock_info: &super::types::LockInfo)
     best.map(|(record, _)| record.state)
 }
 
-pub fn resolve_state(lock_dir: &Path, store: &StateStore, project_path: &str) -> Option<ClaudeState> {
+pub fn resolve_state(
+    lock_dir: &Path,
+    store: &StateStore,
+    project_path: &str,
+) -> Option<ClaudeState> {
     let is_running = is_session_running(lock_dir, project_path);
     let record = store.find_by_cwd(project_path);
 
@@ -104,13 +115,20 @@ pub fn resolve_state(lock_dir: &Path, store: &StateStore, project_path: &str) ->
                     Some(record_pid) if record_pid == lock_info.pid => {
                         // PIDs match - but there might be multiple sessions with same PID
                         // Use find_session_for_lock to apply tie-breaker logic (timestamp → match type → session_id)
-                        Some(find_session_for_lock(store, &lock_info)
-                            .unwrap_or(r.state))  // Fallback to current record if search finds nothing
+                        Some(find_session_for_lock(store, &lock_info).unwrap_or(r.state))
+                        // Fallback to current record if search finds nothing
                     }
-                    Some(_) => {
-                        // PIDs don't match - search all sessions for one matching the lock by PID and path
-                        find_session_for_lock(store, &lock_info)
-                            .or(Some(ClaudeState::Ready))
+                    Some(record_pid) => {
+                        // PIDs don't match - but the record might be a newer session without a lock
+                        // Check if record's PID is alive - if so, prefer it over lock-matching sessions
+                        if is_pid_alive(record_pid) {
+                            // Record's PID is alive - this is likely a new session without a lock file
+                            // Use the record's state since it's more current
+                            Some(r.state)
+                        } else {
+                            // Record's PID is dead - search for sessions matching the lock by PID
+                            find_session_for_lock(store, &lock_info).or(Some(ClaudeState::Ready))
+                        }
                     }
                     None => {
                         // No PID in record - verify path matches before trusting
@@ -118,8 +136,7 @@ pub fn resolve_state(lock_dir: &Path, store: &StateStore, project_path: &str) ->
                             Some(r.state)
                         } else {
                             // Path doesn't match - search for correct session
-                            find_session_for_lock(store, &lock_info)
-                                .or(Some(ClaudeState::Ready))
+                            find_session_for_lock(store, &lock_info).or(Some(ClaudeState::Ready))
                         }
                     }
                 }
@@ -132,7 +149,8 @@ pub fn resolve_state(lock_dir: &Path, store: &StateStore, project_path: &str) ->
         (false, Some(r)) => {
             // Session found but no lock for queried path
             // Try to find matching child lock first
-            let matching_lock = find_matching_child_lock(lock_dir, project_path, r.pid, Some(&r.cwd));
+            let matching_lock =
+                find_matching_child_lock(lock_dir, project_path, r.pid, Some(&r.cwd));
 
             if matching_lock.is_some() {
                 // Found matching child lock - use record's state
@@ -148,7 +166,6 @@ pub fn resolve_state(lock_dir: &Path, store: &StateStore, project_path: &str) ->
                     // Don't propagate parent state to child queries (violates lock semantics)
                     return None;
                 }
-
 
                 // Check if r.cwd has a lock, and verify it belongs to this session
                 if let Some(lock_info) = get_lock_info(lock_dir, &r.cwd) {
@@ -185,12 +202,15 @@ pub struct ResolvedState {
 
 /// Helper: Search all sessions for one matching the given lock by PID and path (with details)
 /// Allows record.cwd to be exact/child/parent of lock.path (handles cd within session)
-fn find_session_for_lock_with_details(store: &StateStore, lock_info: &super::types::LockInfo) -> Option<ResolvedState> {
+fn find_session_for_lock_with_details(
+    store: &StateStore,
+    lock_info: &super::types::LockInfo,
+) -> Option<ResolvedState> {
     #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
     enum MatchType {
-        Parent = 0,  // record.cwd is parent of lock (cd .. scenario)
-        Child = 1,   // record.cwd is child of lock (cd subdir scenario)
-        Exact = 2,   // exact match - highest priority
+        Parent = 0, // record.cwd is parent of lock (cd .. scenario)
+        Child = 1,  // record.cwd is child of lock (cd subdir scenario)
+        Exact = 2,  // exact match - highest priority
     }
 
     let mut best: Option<(&super::types::SessionRecord, MatchType)> = None;
@@ -216,21 +236,21 @@ fn find_session_for_lock_with_details(store: &StateStore, lock_info: &super::typ
             } else if lock_path_normalized == "/" {
                 // Special case: root lock matches any absolute path descendant
                 if record_cwd_normalized.starts_with("/") && record_cwd_normalized != "/" {
-                    Some(MatchType::Child)  // Any absolute path is descendant of /
+                    Some(MatchType::Child) // Any absolute path is descendant of /
                 } else {
                     None
                 }
             } else if record_cwd_normalized == "/" {
                 // Special case: record at root matches any absolute path descendant
                 if lock_path_normalized.starts_with("/") && lock_path_normalized != "/" {
-                    Some(MatchType::Parent)  // / is ancestor of any absolute path
+                    Some(MatchType::Parent) // / is ancestor of any absolute path
                 } else {
                     None
                 }
             } else if record_cwd_normalized.starts_with(&format!("{}/", lock_path_normalized)) {
-                Some(MatchType::Child)  // cd into subdir
+                Some(MatchType::Child) // cd into subdir
             } else if lock_path_normalized.starts_with(&format!("{}/", record_cwd_normalized)) {
-                Some(MatchType::Parent)  // cd .. to parent
+                Some(MatchType::Parent) // cd .. to parent
             } else {
                 // No match - different paths that aren't parent/child
                 None
@@ -241,10 +261,12 @@ fn find_session_for_lock_with_details(store: &StateStore, lock_info: &super::typ
                     None => best = Some((record, current_match_type)),
                     Some((current, current_type)) => {
                         // Priority: fresher timestamp first, then match type, then session_id
-                        let should_replace =
-                            record.updated_at > current.updated_at ||
-                            (record.updated_at == current.updated_at && current_match_type > current_type) ||
-                            (record.updated_at == current.updated_at && current_match_type == current_type && record.session_id > current.session_id);
+                        let should_replace = record.updated_at > current.updated_at
+                            || (record.updated_at == current.updated_at
+                                && current_match_type > current_type)
+                            || (record.updated_at == current.updated_at
+                                && current_match_type == current_type
+                                && record.session_id > current.session_id);
 
                         if should_replace {
                             best = Some((record, current_match_type));
@@ -291,29 +313,37 @@ pub fn resolve_state_with_details(
                     Some(record_pid) if record_pid == lock_info.pid => {
                         // PIDs match - but there might be multiple sessions with same PID
                         // Use find_session_for_lock_with_details to apply tie-breaker logic (timestamp → match type → session_id)
-                        find_session_for_lock_with_details(store, &lock_info)
-                            .or_else(|| {
-                                // Fallback to current record if search finds nothing
-                                Some(ResolvedState {
-                                    state: r.state,
-                                    session_id: Some(r.session_id.clone()),
-                                    cwd: lock_info.path,
-                                })
+                        find_session_for_lock_with_details(store, &lock_info).or_else(|| {
+                            // Fallback to current record if search finds nothing
+                            Some(ResolvedState {
+                                state: r.state,
+                                session_id: Some(r.session_id.clone()),
+                                cwd: lock_info.path,
                             })
+                        })
                     }
-                    Some(_) => {
-                        // Different PID - search all sessions for one matching the lock by PID and path
-                        find_session_for_lock_with_details(store, &lock_info)
-                            .or_else(|| {
+                    Some(record_pid) => {
+                        // Different PID - but the record might be a newer session without a lock
+                        // Check if record's PID is alive - if so, prefer it over lock-matching sessions
+                        if is_pid_alive(record_pid) {
+                            // Record's PID is alive - this is likely a new session without a lock file
+                            // Use the record's state since it's more current
+                            Some(ResolvedState {
+                                state: r.state,
+                                session_id: Some(r.session_id.clone()),
+                                cwd: r.cwd.clone(),
+                            })
+                        } else {
+                            // Record's PID is dead - search for sessions matching the lock by PID
+                            find_session_for_lock_with_details(store, &lock_info).or_else(|| {
                                 // No session matches lock PID - likely an orphaned lock
-                                // Trust the state record we found (r) since it represents actual activity
-                                // at this cwd with a different (newer) PID
                                 Some(ResolvedState {
                                     state: r.state,
                                     session_id: Some(r.session_id.clone()),
                                     cwd: r.cwd.clone(),
                                 })
                             })
+                        }
                     }
                     None => {
                         // No PID in record - verify path matches before trusting
@@ -325,12 +355,13 @@ pub fn resolve_state_with_details(
                             })
                         } else {
                             // Path doesn't match - search for correct session
-                            find_session_for_lock_with_details(store, &lock_info)
-                                .or_else(|| Some(ResolvedState {
+                            find_session_for_lock_with_details(store, &lock_info).or_else(|| {
+                                Some(ResolvedState {
                                     state: ClaudeState::Ready,
                                     session_id: None,
                                     cwd: lock_info.path,
-                                }))
+                                })
+                            })
                         }
                     }
                 }
@@ -351,7 +382,8 @@ pub fn resolve_state_with_details(
         (false, Some(r)) => {
             // Session found but no lock for queried path
             // First try to find a child lock that matches this record's PID or path
-            let matching_lock = find_matching_child_lock(lock_dir, project_path, r.pid, Some(&r.cwd));
+            let matching_lock =
+                find_matching_child_lock(lock_dir, project_path, r.pid, Some(&r.cwd));
 
             if let Some(lock_info) = matching_lock {
                 // Found a lock matching this record - use record's state
@@ -376,7 +408,6 @@ pub fn resolve_state_with_details(
                     // Don't propagate parent state to child queries (violates lock semantics)
                     return None;
                 }
-
 
                 // Check if r.cwd has a lock, and verify it belongs to this session
                 if let Some(lock_info) = get_lock_info(lock_dir, &r.cwd) {
@@ -413,8 +444,8 @@ pub fn resolve_state_with_details(
 
 #[cfg(test)]
 mod tests {
-    use super::super::lock::tests_helper::{create_lock, create_lock_with_timestamp};
     use super::super::lock::get_process_start_time;
+    use super::super::lock::tests_helper::{create_lock, create_lock_with_timestamp};
     use super::*;
     use tempfile::tempdir;
 
@@ -431,7 +462,10 @@ mod tests {
         create_lock(temp.path(), std::process::id(), "/project");
         let mut store = StateStore::new_in_memory();
         store.update("s1", ClaudeState::Working, "/project");
-        assert_eq!(resolve_state(temp.path(), &store, "/project"), Some(ClaudeState::Working));
+        assert_eq!(
+            resolve_state(temp.path(), &store, "/project"),
+            Some(ClaudeState::Working)
+        );
     }
 
     #[test]
@@ -447,7 +481,10 @@ mod tests {
         let temp = tempdir().unwrap();
         create_lock(temp.path(), std::process::id(), "/project");
         let store = StateStore::new_in_memory();
-        assert_eq!(resolve_state(temp.path(), &store, "/project"), Some(ClaudeState::Ready));
+        assert_eq!(
+            resolve_state(temp.path(), &store, "/project"),
+            Some(ClaudeState::Ready)
+        );
     }
 
     #[test]
@@ -821,7 +858,6 @@ mod tests {
         assert_eq!(res.session_id, Some("session".to_string()));
     }
 
-
     #[test]
     fn test_root_cd_into_child() {
         // cd from / to /foo should match correctly
@@ -868,7 +904,7 @@ mod tests {
         let res = resolved.expect("Should find session");
         assert_eq!(res.state, ClaudeState::Working);
         assert_eq!(res.session_id, Some("session".to_string()));
-        assert_eq!(res.cwd, "/foo");  // cwd from the child lock
+        assert_eq!(res.cwd, "/foo"); // cwd from the child lock
     }
 
     #[test]
@@ -921,7 +957,7 @@ mod tests {
         let res = resolved.expect("Should find session");
         assert_eq!(res.state, ClaudeState::Working);
         assert_eq!(res.session_id, Some("session".to_string()));
-        assert_eq!(res.cwd, "/");  // cwd from the lock at root
+        assert_eq!(res.cwd, "/"); // cwd from the lock at root
     }
 
     #[test]
@@ -945,9 +981,6 @@ mod tests {
         let res = resolved.expect("Should find session");
         assert_eq!(res.state, ClaudeState::Working);
         assert_eq!(res.session_id, Some("session".to_string()));
-        assert_eq!(res.cwd, "/foo/bar");  // cwd from the child lock
+        assert_eq!(res.cwd, "/foo/bar"); // cwd from the child lock
     }
-
 }
-
-

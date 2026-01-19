@@ -9,9 +9,9 @@ pub fn next_state(current: Option<ClaudeState>, event: HookEvent) -> Option<Clau
         HookEvent::PreCompact { ref trigger } if trigger == "auto" => Some(ClaudeState::Compacting),
         HookEvent::PreCompact { .. } => current,
         HookEvent::Stop => Some(ClaudeState::Ready),
-        HookEvent::Notification { ref notification_type } if notification_type == "idle_prompt" => {
-            Some(ClaudeState::Ready)
-        }
+        HookEvent::Notification {
+            ref notification_type,
+        } if notification_type == "idle_prompt" => Some(ClaudeState::Ready),
         HookEvent::Notification { .. } => current,
         HookEvent::SessionEnd => None,
     }
@@ -23,7 +23,10 @@ mod tests {
 
     #[test]
     fn test_session_start_yields_ready() {
-        assert_eq!(next_state(None, HookEvent::SessionStart), Some(ClaudeState::Ready));
+        assert_eq!(
+            next_state(None, HookEvent::SessionStart),
+            Some(ClaudeState::Ready)
+        );
     }
 
     #[test]
@@ -94,7 +97,10 @@ mod tests {
 
     #[test]
     fn test_stop_yields_ready() {
-        assert_eq!(next_state(Some(ClaudeState::Working), HookEvent::Stop), Some(ClaudeState::Ready));
+        assert_eq!(
+            next_state(Some(ClaudeState::Working), HookEvent::Stop),
+            Some(ClaudeState::Ready)
+        );
     }
 
     #[test]
@@ -125,16 +131,25 @@ mod tests {
 
     #[test]
     fn test_session_end_removes_state() {
-        assert_eq!(next_state(Some(ClaudeState::Ready), HookEvent::SessionEnd), None);
+        assert_eq!(
+            next_state(Some(ClaudeState::Ready), HookEvent::SessionEnd),
+            None
+        );
     }
 
     #[test]
     fn test_from_none_user_prompt_starts_working() {
-        assert_eq!(next_state(None, HookEvent::UserPromptSubmit), Some(ClaudeState::Working));
+        assert_eq!(
+            next_state(None, HookEvent::UserPromptSubmit),
+            Some(ClaudeState::Working)
+        );
     }
 
     #[test]
     fn test_from_none_post_tool_use_starts_working() {
-        assert_eq!(next_state(None, HookEvent::PostToolUse), Some(ClaudeState::Working));
+        assert_eq!(
+            next_state(None, HookEvent::PostToolUse),
+            Some(ClaudeState::Working)
+        );
     }
 }

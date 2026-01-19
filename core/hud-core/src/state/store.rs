@@ -58,7 +58,8 @@ impl StateStore {
             return Ok(StateStore::new(file_path));
         }
 
-        let content = fs::read_to_string(file_path).map_err(|e| format!("Failed to read state file: {}", e))?;
+        let content = fs::read_to_string(file_path)
+            .map_err(|e| format!("Failed to read state file: {}", e))?;
 
         // Defensive: Handle empty file
         if content.trim().is_empty() {
@@ -85,7 +86,10 @@ impl StateStore {
                 })
             }
             Err(e) => {
-                eprintln!("Warning: Failed to parse state file ({}), returning empty store", e);
+                eprintln!(
+                    "Warning: Failed to parse state file ({}), returning empty store",
+                    e
+                );
                 // Defensive: Corrupt JSON → empty store (don't crash)
                 Ok(StateStore::new(file_path))
             }
@@ -103,7 +107,8 @@ impl StateStore {
             sessions: self.sessions.clone(),
         };
 
-        let content = serde_json::to_string_pretty(&store_file).map_err(|e| format!("Failed to serialize: {}", e))?;
+        let content = serde_json::to_string_pretty(&store_file)
+            .map_err(|e| format!("Failed to serialize: {}", e))?;
 
         fs::write(file_path, content).map_err(|e| format!("Failed to write state file: {}", e))?;
 
@@ -207,7 +212,9 @@ impl StateStore {
                 if record_cwd_normalized == parent_normalized {
                     match best {
                         None => best = Some(record),
-                        Some(current) if record.updated_at > current.updated_at => best = Some(record),
+                        Some(current) if record.updated_at > current.updated_at => {
+                            best = Some(record)
+                        }
                         _ => {}
                     }
                 }
@@ -235,7 +242,11 @@ impl StateStore {
     }
 
     #[cfg(test)]
-    pub fn set_timestamp_for_test(&mut self, session_id: &str, timestamp: chrono::DateTime<chrono::Utc>) {
+    pub fn set_timestamp_for_test(
+        &mut self,
+        session_id: &str,
+        timestamp: chrono::DateTime<chrono::Utc>,
+    ) {
         if let Some(record) = self.sessions.get_mut(session_id) {
             record.updated_at = timestamp;
         }
@@ -269,7 +280,10 @@ mod tests {
         let mut store = StateStore::new_in_memory();
         store.update("session-1", ClaudeState::Working, "/project");
         store.update("session-1", ClaudeState::Ready, "/project");
-        assert_eq!(store.get_by_session_id("session-1").unwrap().state, ClaudeState::Ready);
+        assert_eq!(
+            store.get_by_session_id("session-1").unwrap().state,
+            ClaudeState::Ready
+        );
     }
 
     #[test]
@@ -329,7 +343,10 @@ mod tests {
         }
 
         let store = StateStore::load(&file).unwrap();
-        assert_eq!(store.get_by_session_id("s1").unwrap().state, ClaudeState::Working);
+        assert_eq!(
+            store.get_by_session_id("s1").unwrap().state,
+            ClaudeState::Working
+        );
     }
 
     #[test]

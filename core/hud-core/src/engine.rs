@@ -16,24 +16,24 @@
 //! let states = engine.get_all_session_states(&projects);
 //! ```
 
+use crate::agents::{AgentConfig, AgentRegistry, AgentSession};
 use crate::artifacts::{collect_artifacts_from_dir, count_artifacts_in_dir, count_hooks_in_dir};
-use crate::config::{
-    get_claude_dir, load_hud_config, resolve_symlink, save_hud_config,
-};
+use crate::config::{get_claude_dir, load_hud_config, resolve_symlink, save_hud_config};
 use crate::error::HudFfiError;
 use crate::projects::{has_project_indicators, load_projects};
+use crate::sessions::{
+    detect_session_state, get_all_session_states, read_project_status, ProjectStatus,
+};
 use crate::state::{reconcile_orphaned_lock, StateStore};
-use crate::sessions::{detect_session_state, get_all_session_states, read_project_status, ProjectStatus};
 use crate::types::{
     Artifact, DashboardData, GlobalConfig, HudConfig, Plugin, PluginManifest, Project,
     ProjectSessionState, SuggestedProject,
 };
-use crate::validation::{
-    create_claude_md, validate_project_path, ValidationResultFfi,
-};
+use crate::validation::{create_claude_md, validate_project_path, ValidationResultFfi};
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 /// The main engine for Claude HUD operations.
 ///
@@ -42,6 +42,7 @@ use std::path::PathBuf;
 #[derive(uniffi::Object)]
 pub struct HudEngine {
     claude_dir: PathBuf,
+    agent_registry: Arc<AgentRegistry>,
 }
 
 #[uniffi::export]
@@ -51,8 +52,17 @@ impl HudEngine {
     /// Returns an error if the Claude directory (~/.claude) cannot be found.
     #[uniffi::constructor]
     pub fn new() -> Result<Self, HudFfiError> {
-        let claude_dir = get_claude_dir().ok_or_else(|| HudFfiError::from("Could not find Claude directory"))?;
-        Ok(Self { claude_dir })
+        let claude_dir =
+            get_claude_dir().ok_or_else(|| HudFfiError::from("Could not find Claude directory"))?;
+
+        let agent_config = AgentConfig::default();
+        let agent_registry = Arc::new(AgentRegistry::new(agent_config));
+        agent_registry.initialize_all();
+
+        Ok(Self {
+            claude_dir,
+            agent_registry,
+        })
     }
 
     /// Returns the path to the Claude directory as a string.
@@ -85,7 +95,10 @@ impl HudEngine {
         }
 
         if config.pinned_projects.contains(&path) {
-            return Err(HudFfiError::from(format!("Project already pinned: {}", path)));
+            return Err(HudFfiError::from(format!(
+                "Project already pinned: {}",
+                path
+            )));
         }
 
         // Reconcile any orphaned locks for this path before adding
@@ -141,9 +154,7 @@ impl HudEngine {
                         .map(|entries| {
                             entries
                                 .filter_map(|e| e.ok())
-                                .filter(|e| {
-                                    e.path().extension().is_some_and(|ext| ext == "jsonl")
-                                })
+                                .filter(|e| e.path().extension().is_some_and(|ext| ext == "jsonl"))
                                 .count() as u32
                         })
                         .unwrap_or(0);
@@ -196,7 +207,10 @@ impl HudEngine {
     /// Uses session-ID keyed state and lock detection for reliable state.
     ///
     /// Takes a Vec instead of slice for FFI compatibility.
-    pub fn get_all_session_states(&self, projects: Vec<Project>) -> HashMap<String, ProjectSessionState> {
+    pub fn get_all_session_states(
+        &self,
+        projects: Vec<Project>,
+    ) -> HashMap<String, ProjectSessionState> {
         let paths: Vec<String> = projects.iter().map(|p| p.path.clone()).collect();
         get_all_session_states(&paths)
     }
@@ -204,6 +218,53 @@ impl HudEngine {
     /// Gets project status from .claude/hud-status.json.
     pub fn get_project_status(&self, project_path: String) -> Option<ProjectStatus> {
         read_project_status(&project_path)
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // Multi-Agent API
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    /// Detects all agent sessions for a project path.
+    ///
+    /// Returns sessions from all installed agents (Claude, Codex, Aider, etc.)
+    /// that have active sessions at the given path or its children.
+    pub fn get_agent_sessions(&self, project_path: String) -> Vec<AgentSession> {
+        self.agent_registry.detect_all_sessions(&project_path)
+    }
+
+    /// Detects the primary agent session for a project path.
+    ///
+    /// Returns the first session found based on user preference order.
+    /// Use this when you only need to display one agent's state.
+    pub fn get_primary_agent_session(&self, project_path: String) -> Option<AgentSession> {
+        self.agent_registry.detect_primary_session(&project_path)
+    }
+
+    /// Gets all agent sessions across all projects (cached).
+    ///
+    /// Uses mtime-based caching for efficient repeated calls.
+    /// Call `invalidate_agent_cache()` to force a refresh.
+    pub fn get_all_agent_sessions(&self) -> Vec<AgentSession> {
+        self.agent_registry.all_sessions_cached()
+    }
+
+    /// Invalidates the agent session cache.
+    ///
+    /// Call this when you know the underlying state has changed
+    /// and want to force a fresh read on the next call.
+    pub fn invalidate_agent_cache(&self) {
+        self.agent_registry.invalidate_all_caches();
+    }
+
+    /// Returns the list of installed agent IDs.
+    ///
+    /// Useful for debugging and UI display of which agents are available.
+    pub fn list_installed_agents(&self) -> Vec<String> {
+        self.agent_registry
+            .installed_agents()
+            .iter()
+            .map(|a| a.id().to_string())
+            .collect()
     }
 
     // ─────────────────────────────────────────────────────────────────────────────
@@ -219,7 +280,11 @@ impl HudEngine {
             artifacts.extend(collect_artifacts_from_dir(&skills_dir, "skill", "Global"));
         }
         if let Some(commands_dir) = resolve_symlink(&self.claude_dir.join("commands")) {
-            artifacts.extend(collect_artifacts_from_dir(&commands_dir, "command", "Global"));
+            artifacts.extend(collect_artifacts_from_dir(
+                &commands_dir,
+                "command",
+                "Global",
+            ));
         }
         if let Some(agents_dir) = resolve_symlink(&self.claude_dir.join("agents")) {
             artifacts.extend(collect_artifacts_from_dir(&agents_dir, "agent", "Global"));
@@ -267,7 +332,10 @@ impl HudEngine {
 
     /// Lists all installed plugins.
     pub fn list_plugins(&self) -> Result<Vec<Plugin>, HudFfiError> {
-        let registry_path = self.claude_dir.join("plugins").join("installed_plugins.json");
+        let registry_path = self
+            .claude_dir
+            .join("plugins")
+            .join("installed_plugins.json");
         if !registry_path.exists() {
             return Ok(Vec::new());
         }
@@ -336,7 +404,10 @@ impl HudEngine {
                     enabled,
                     path: install.install_path.clone(),
                     skill_count: count_artifacts_in_dir(&plugin_path.join("skills"), "skills"),
-                    command_count: count_artifacts_in_dir(&plugin_path.join("commands"), "commands"),
+                    command_count: count_artifacts_in_dir(
+                        &plugin_path.join("commands"),
+                        "commands",
+                    ),
                     agent_count: count_artifacts_in_dir(&plugin_path.join("agents"), "agents"),
                     hook_count: count_hooks_in_dir(&plugin_path),
                 });
@@ -369,7 +440,9 @@ impl HudEngine {
                 None
             },
             skills_dir: skills_dir.as_ref().map(|p| p.to_string_lossy().to_string()),
-            commands_dir: commands_dir.as_ref().map(|p| p.to_string_lossy().to_string()),
+            commands_dir: commands_dir
+                .as_ref()
+                .map(|p| p.to_string_lossy().to_string()),
             agents_dir: agents_dir.as_ref().map(|p| p.to_string_lossy().to_string()),
             skill_count: skills_dir
                 .as_ref()
@@ -405,7 +478,11 @@ impl HudEngine {
     /// with default metadata (effort: unknown, status: open, triage: pending).
     ///
     /// Returns the generated ULID for the idea.
-    pub fn capture_idea(&self, project_path: String, idea_text: String) -> Result<String, HudFfiError> {
+    pub fn capture_idea(
+        &self,
+        project_path: String,
+        idea_text: String,
+    ) -> Result<String, HudFfiError> {
         crate::ideas::capture_idea(&project_path, &idea_text).map_err(HudFfiError::from)
     }
 
@@ -419,30 +496,54 @@ impl HudEngine {
     /// Updates the status of an idea.
     ///
     /// Valid statuses: open, in-progress, done
-    pub fn update_idea_status(&self, project_path: String, idea_id: String, new_status: String) -> Result<(), HudFfiError> {
-        crate::ideas::update_idea_status(&project_path, &idea_id, &new_status).map_err(HudFfiError::from)
+    pub fn update_idea_status(
+        &self,
+        project_path: String,
+        idea_id: String,
+        new_status: String,
+    ) -> Result<(), HudFfiError> {
+        crate::ideas::update_idea_status(&project_path, &idea_id, &new_status)
+            .map_err(HudFfiError::from)
     }
 
     /// Updates the effort estimate of an idea.
     ///
     /// Valid efforts: unknown, small, medium, large, xl
-    pub fn update_idea_effort(&self, project_path: String, idea_id: String, new_effort: String) -> Result<(), HudFfiError> {
-        crate::ideas::update_idea_effort(&project_path, &idea_id, &new_effort).map_err(HudFfiError::from)
+    pub fn update_idea_effort(
+        &self,
+        project_path: String,
+        idea_id: String,
+        new_effort: String,
+    ) -> Result<(), HudFfiError> {
+        crate::ideas::update_idea_effort(&project_path, &idea_id, &new_effort)
+            .map_err(HudFfiError::from)
     }
 
     /// Updates the triage status of an idea.
     ///
     /// Valid triage statuses: pending, validated
-    pub fn update_idea_triage(&self, project_path: String, idea_id: String, new_triage: String) -> Result<(), HudFfiError> {
-        crate::ideas::update_idea_triage(&project_path, &idea_id, &new_triage).map_err(HudFfiError::from)
+    pub fn update_idea_triage(
+        &self,
+        project_path: String,
+        idea_id: String,
+        new_triage: String,
+    ) -> Result<(), HudFfiError> {
+        crate::ideas::update_idea_triage(&project_path, &idea_id, &new_triage)
+            .map_err(HudFfiError::from)
     }
 
     /// Updates the title of an idea.
     ///
     /// Used for async title generation - the idea is initially saved with a placeholder,
     /// then this is called once the AI-generated title is ready.
-    pub fn update_idea_title(&self, project_path: String, idea_id: String, new_title: String) -> Result<(), HudFfiError> {
-        crate::ideas::update_idea_title(&project_path, &idea_id, &new_title).map_err(HudFfiError::from)
+    pub fn update_idea_title(
+        &self,
+        project_path: String,
+        idea_id: String,
+        new_title: String,
+    ) -> Result<(), HudFfiError> {
+        crate::ideas::update_idea_title(&project_path, &idea_id, &new_title)
+            .map_err(HudFfiError::from)
     }
 
     // ─────────────────────────────────────────────────────────────────────────────

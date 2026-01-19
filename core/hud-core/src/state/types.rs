@@ -34,7 +34,11 @@ pub enum HookEvent {
 }
 
 impl HookEvent {
-    pub fn from_name(name: &str, trigger: Option<&str>, notification_type: Option<&str>) -> Option<Self> {
+    pub fn from_name(
+        name: &str,
+        trigger: Option<&str>,
+        notification_type: Option<&str>,
+    ) -> Option<Self> {
         match name {
             "SessionStart" => Some(HookEvent::SessionStart),
             "UserPromptSubmit" => Some(HookEvent::UserPromptSubmit),
@@ -103,20 +107,42 @@ mod tests {
 
     #[test]
     fn test_hook_event_from_name() {
-        assert_eq!(HookEvent::from_name("SessionStart", None, None), Some(HookEvent::SessionStart));
-        assert_eq!(HookEvent::from_name("UserPromptSubmit", None, None), Some(HookEvent::UserPromptSubmit));
-        assert_eq!(HookEvent::from_name("PostToolUse", None, None), Some(HookEvent::PostToolUse));
-        assert_eq!(HookEvent::from_name("PermissionRequest", None, None), Some(HookEvent::PermissionRequest));
+        assert_eq!(
+            HookEvent::from_name("SessionStart", None, None),
+            Some(HookEvent::SessionStart)
+        );
+        assert_eq!(
+            HookEvent::from_name("UserPromptSubmit", None, None),
+            Some(HookEvent::UserPromptSubmit)
+        );
+        assert_eq!(
+            HookEvent::from_name("PostToolUse", None, None),
+            Some(HookEvent::PostToolUse)
+        );
+        assert_eq!(
+            HookEvent::from_name("PermissionRequest", None, None),
+            Some(HookEvent::PermissionRequest)
+        );
         assert_eq!(
             HookEvent::from_name("PreCompact", Some("auto"), None),
-            Some(HookEvent::PreCompact { trigger: "auto".to_string() })
+            Some(HookEvent::PreCompact {
+                trigger: "auto".to_string()
+            })
         );
-        assert_eq!(HookEvent::from_name("Stop", None, None), Some(HookEvent::Stop));
+        assert_eq!(
+            HookEvent::from_name("Stop", None, None),
+            Some(HookEvent::Stop)
+        );
         assert_eq!(
             HookEvent::from_name("Notification", None, Some("idle_prompt")),
-            Some(HookEvent::Notification { notification_type: "idle_prompt".to_string() })
+            Some(HookEvent::Notification {
+                notification_type: "idle_prompt".to_string()
+            })
         );
-        assert_eq!(HookEvent::from_name("SessionEnd", None, None), Some(HookEvent::SessionEnd));
+        assert_eq!(
+            HookEvent::from_name("SessionEnd", None, None),
+            Some(HookEvent::SessionEnd)
+        );
         assert_eq!(HookEvent::from_name("Unknown", None, None), None);
     }
 }

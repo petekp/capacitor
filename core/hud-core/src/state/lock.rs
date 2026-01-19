@@ -51,16 +51,13 @@ pub fn get_process_start_time(pid: u32) -> Option<u64> {
         let mut cache = cache.borrow_mut();
 
         // Initialize System if needed (empty, no initial process scan)
-        let (sys, _) = cache.get_or_insert_with(|| {
-            (System::new(), Instant::now())
-        });
+        let (sys, _) = cache.get_or_insert_with(|| (System::new(), Instant::now()));
 
         // Refresh ONLY this specific PID - O(1) instead of O(all_processes)
         let sysinfo_pid = Pid::from(pid as usize);
         sys.refresh_process_specifics(sysinfo_pid, ProcessRefreshKind::new());
 
-        sys.process(sysinfo_pid)
-            .map(|process| process.start_time())
+        sys.process(sysinfo_pid).map(|process| process.start_time())
     })
 }
 
@@ -97,9 +94,7 @@ fn is_pid_alive_with_legacy_checks(pid: u32) -> bool {
     SYSTEM_CACHE.with(|cache| {
         let mut cache = cache.borrow_mut();
 
-        let (sys, _) = cache.get_or_insert_with(|| {
-            (System::new(), Instant::now())
-        });
+        let (sys, _) = cache.get_or_insert_with(|| (System::new(), Instant::now()));
 
         // Refresh ONLY this specific PID with cmd info for legacy verification
         let sysinfo_pid = Pid::from(pid as usize);
@@ -171,22 +166,24 @@ fn read_lock_info(lock_dir: &Path) -> Option<LockInfo> {
     let path = meta.get("path")?.as_str()?.to_string();
 
     // Handle proc_started (PID verification)
-    let proc_started = meta.get("proc_started")
-        .and_then(|v| v.as_u64());
+    let proc_started = meta.get("proc_started").and_then(|v| v.as_u64());
 
     // Handle created (lock selection) - check both new and legacy fields
-    let created = meta.get("created")
-        .and_then(|v| v.as_u64())
-        .or_else(|| {
-            // Fallback to old "started" field for backward compatibility
-            meta.get("started").and_then(|v| match v {
-                serde_json::Value::Number(n) => n.as_u64(),
-                serde_json::Value::String(_) => None, // ISO string - ignore
-                _ => None,
-            })
-        });
+    let created = meta.get("created").and_then(|v| v.as_u64()).or_else(|| {
+        // Fallback to old "started" field for backward compatibility
+        meta.get("started").and_then(|v| match v {
+            serde_json::Value::Number(n) => n.as_u64(),
+            serde_json::Value::String(_) => None, // ISO string - ignore
+            _ => None,
+        })
+    });
 
-    let info = LockInfo { pid, path, proc_started, created };
+    let info = LockInfo {
+        pid,
+        path,
+        proc_started,
+        created,
+    };
 
     // Age-based expiry for legacy locks (no proc_started)
     // Reject locks older than 24 hours to mitigate PID reuse risk
@@ -215,7 +212,10 @@ fn read_lock_info(lock_dir: &Path) -> Option<LockInfo> {
                     // Can't parse - use lock dir mtime as fallback
                     if let Ok(metadata) = fs::metadata(lock_dir) {
                         if let Ok(modified) = metadata.modified() {
-                            let mtime_ms = modified.duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as u64;
+                            let mtime_ms = modified
+                                .duration_since(UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_millis() as u64;
                             now_ms.saturating_sub(mtime_ms)
                         } else {
                             // Can't get mtime - assume very old
@@ -229,7 +229,10 @@ fn read_lock_info(lock_dir: &Path) -> Option<LockInfo> {
                 // No started field at all - use lock dir mtime
                 if let Ok(metadata) = fs::metadata(lock_dir) {
                     if let Ok(modified) = metadata.modified() {
-                        let mtime_ms = modified.duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as u64;
+                        let mtime_ms = modified
+                            .duration_since(UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_millis() as u64;
                         now_ms.saturating_sub(mtime_ms)
                     } else {
                         86_400_001
@@ -240,7 +243,8 @@ fn read_lock_info(lock_dir: &Path) -> Option<LockInfo> {
             }
         };
 
-        if lock_age_ms > 86_400_000 { // 24 hours in milliseconds
+        if lock_age_ms > 86_400_000 {
+            // 24 hours in milliseconds
             // Too old - treat as stale
             return None;
         }
@@ -466,14 +470,23 @@ pub mod tests_helper {
         create_lock_with_timestamps(lock_base, pid, path, proc_started, created);
     }
 
-    pub fn create_lock_with_timestamps(lock_base: &Path, pid: u32, path: &str, proc_started: u64, created: u64) {
+    pub fn create_lock_with_timestamps(
+        lock_base: &Path,
+        pid: u32,
+        path: &str,
+        proc_started: u64,
+        created: u64,
+    ) {
         let hash = compute_lock_hash(path);
         let lock_dir = lock_base.join(format!("{}.lock", hash));
         fs::create_dir_all(&lock_dir).unwrap();
         fs::write(lock_dir.join("pid"), pid.to_string()).unwrap();
         fs::write(
             lock_dir.join("meta.json"),
-            format!(r#"{{"pid": {}, "path": "{}", "proc_started": {}, "created": {}}}"#, pid, path, proc_started, created),
+            format!(
+                r#"{{"pid": {}, "path": "{}", "proc_started": {}, "created": {}}}"#,
+                pid, path, proc_started, created
+            ),
         )
         .unwrap();
     }

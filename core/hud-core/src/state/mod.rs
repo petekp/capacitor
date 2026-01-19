@@ -1,8 +1,8 @@
-mod lock;
+pub(crate) mod lock;
 mod resolver;
 mod store;
 mod transition;
-mod types;
+pub(crate) mod types;
 
 #[cfg(test)]
 mod integration_tests;

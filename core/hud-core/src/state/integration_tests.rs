@@ -23,19 +23,34 @@ fn test_full_session_lifecycle() {
     create_lock(temp.path(), std::process::id(), cwd);
 
     apply_event(&mut store, session_id, cwd, HookEvent::SessionStart);
-    assert_eq!(resolve_state(temp.path(), &store, cwd), Some(ClaudeState::Ready));
+    assert_eq!(
+        resolve_state(temp.path(), &store, cwd),
+        Some(ClaudeState::Ready)
+    );
 
     apply_event(&mut store, session_id, cwd, HookEvent::UserPromptSubmit);
-    assert_eq!(resolve_state(temp.path(), &store, cwd), Some(ClaudeState::Working));
+    assert_eq!(
+        resolve_state(temp.path(), &store, cwd),
+        Some(ClaudeState::Working)
+    );
 
     apply_event(&mut store, session_id, cwd, HookEvent::PostToolUse);
-    assert_eq!(resolve_state(temp.path(), &store, cwd), Some(ClaudeState::Working));
+    assert_eq!(
+        resolve_state(temp.path(), &store, cwd),
+        Some(ClaudeState::Working)
+    );
 
     apply_event(&mut store, session_id, cwd, HookEvent::PostToolUse);
-    assert_eq!(resolve_state(temp.path(), &store, cwd), Some(ClaudeState::Working));
+    assert_eq!(
+        resolve_state(temp.path(), &store, cwd),
+        Some(ClaudeState::Working)
+    );
 
     apply_event(&mut store, session_id, cwd, HookEvent::Stop);
-    assert_eq!(resolve_state(temp.path(), &store, cwd), Some(ClaudeState::Ready));
+    assert_eq!(
+        resolve_state(temp.path(), &store, cwd),
+        Some(ClaudeState::Ready)
+    );
 
     apply_event(&mut store, session_id, cwd, HookEvent::SessionEnd);
     assert_eq!(store.get_by_session_id(session_id), None);
@@ -52,13 +67,22 @@ fn test_permission_blocked_flow() {
 
     apply_event(&mut store, session_id, cwd, HookEvent::SessionStart);
     apply_event(&mut store, session_id, cwd, HookEvent::UserPromptSubmit);
-    assert_eq!(resolve_state(temp.path(), &store, cwd), Some(ClaudeState::Working));
+    assert_eq!(
+        resolve_state(temp.path(), &store, cwd),
+        Some(ClaudeState::Working)
+    );
 
     apply_event(&mut store, session_id, cwd, HookEvent::PermissionRequest);
-    assert_eq!(resolve_state(temp.path(), &store, cwd), Some(ClaudeState::Blocked));
+    assert_eq!(
+        resolve_state(temp.path(), &store, cwd),
+        Some(ClaudeState::Blocked)
+    );
 
     apply_event(&mut store, session_id, cwd, HookEvent::PostToolUse);
-    assert_eq!(resolve_state(temp.path(), &store, cwd), Some(ClaudeState::Working));
+    assert_eq!(
+        resolve_state(temp.path(), &store, cwd),
+        Some(ClaudeState::Working)
+    );
 }
 
 #[test]
@@ -72,7 +96,10 @@ fn test_auto_compaction_flow() {
 
     apply_event(&mut store, session_id, cwd, HookEvent::SessionStart);
     apply_event(&mut store, session_id, cwd, HookEvent::UserPromptSubmit);
-    assert_eq!(resolve_state(temp.path(), &store, cwd), Some(ClaudeState::Working));
+    assert_eq!(
+        resolve_state(temp.path(), &store, cwd),
+        Some(ClaudeState::Working)
+    );
 
     apply_event(
         &mut store,
@@ -82,10 +109,16 @@ fn test_auto_compaction_flow() {
             trigger: "auto".to_string(),
         },
     );
-    assert_eq!(resolve_state(temp.path(), &store, cwd), Some(ClaudeState::Compacting));
+    assert_eq!(
+        resolve_state(temp.path(), &store, cwd),
+        Some(ClaudeState::Compacting)
+    );
 
     apply_event(&mut store, session_id, cwd, HookEvent::PostToolUse);
-    assert_eq!(resolve_state(temp.path(), &store, cwd), Some(ClaudeState::Working));
+    assert_eq!(
+        resolve_state(temp.path(), &store, cwd),
+        Some(ClaudeState::Working)
+    );
 }
 
 #[test]
@@ -99,7 +132,10 @@ fn test_interrupt_with_idle_prompt() {
 
     apply_event(&mut store, session_id, cwd, HookEvent::SessionStart);
     apply_event(&mut store, session_id, cwd, HookEvent::UserPromptSubmit);
-    assert_eq!(resolve_state(temp.path(), &store, cwd), Some(ClaudeState::Working));
+    assert_eq!(
+        resolve_state(temp.path(), &store, cwd),
+        Some(ClaudeState::Working)
+    );
 
     apply_event(
         &mut store,
@@ -109,7 +145,10 @@ fn test_interrupt_with_idle_prompt() {
             notification_type: "idle_prompt".to_string(),
         },
     );
-    assert_eq!(resolve_state(temp.path(), &store, cwd), Some(ClaudeState::Ready));
+    assert_eq!(
+        resolve_state(temp.path(), &store, cwd),
+        Some(ClaudeState::Ready)
+    );
 }
 
 #[test]
@@ -137,7 +176,10 @@ fn test_multiple_sessions_same_project() {
     store.update("new-session", ClaudeState::Working, cwd);
 
     create_lock(temp.path(), std::process::id(), cwd);
-    assert_eq!(resolve_state(temp.path(), &store, cwd), Some(ClaudeState::Working));
+    assert_eq!(
+        resolve_state(temp.path(), &store, cwd),
+        Some(ClaudeState::Working)
+    );
 }
 
 #[test]
@@ -152,9 +194,17 @@ fn test_cd_scenario_child_does_not_inherit_parent() {
     create_lock(temp.path(), std::process::id(), parent_cwd);
 
     apply_event(&mut store, session_id, parent_cwd, HookEvent::SessionStart);
-    apply_event(&mut store, session_id, parent_cwd, HookEvent::UserPromptSubmit);
+    apply_event(
+        &mut store,
+        session_id,
+        parent_cwd,
+        HookEvent::UserPromptSubmit,
+    );
 
-    assert_eq!(resolve_state(temp.path(), &store, parent_cwd), Some(ClaudeState::Working));
+    assert_eq!(
+        resolve_state(temp.path(), &store, parent_cwd),
+        Some(ClaudeState::Working)
+    );
     // Child query should return None (parent lock doesn't propagate down)
     assert_eq!(resolve_state(temp.path(), &store, child_cwd), None);
 }
@@ -192,5 +242,8 @@ fn test_rapid_state_transitions() {
         apply_event(&mut store, session_id, cwd, HookEvent::PostToolUse);
     }
 
-    assert_eq!(resolve_state(temp.path(), &store, cwd), Some(ClaudeState::Working));
+    assert_eq!(
+        resolve_state(temp.path(), &store, cwd),
+        Some(ClaudeState::Working)
+    );
 }

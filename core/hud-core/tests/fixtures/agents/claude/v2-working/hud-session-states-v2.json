@@ -1,0 +1,12 @@
+{
+  "version": 2,
+  "sessions": {
+    "test-session-123": {
+      "session_id": "test-session-123",
+      "state": "working",
+      "cwd": "/Users/test/project",
+      "updated_at": "2024-01-15T10:30:00Z",
+      "working_on": "Implementing multi-agent support"
+    }
+  }
+}
