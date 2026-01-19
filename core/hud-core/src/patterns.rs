@@ -19,8 +19,7 @@ pub static RE_CACHE_READ: Lazy<Regex> =
     Lazy::new(|| Regex::new(r#""cache_read_input_tokens":(\d+)"#).unwrap());
 pub static RE_CACHE_CREATE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r#""cache_creation_input_tokens":(\d+)"#).unwrap());
-pub static RE_MODEL: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r#""model":"claude-([^"]+)"#).unwrap());
+pub static RE_MODEL: Lazy<Regex> = Lazy::new(|| Regex::new(r#""model":"claude-([^"]+)"#).unwrap());
 pub static RE_SUMMARY: Lazy<Regex> =
     Lazy::new(|| Regex::new(r#""type":"summary","summary":"([^"]+)""#).unwrap());
 pub static RE_TIMESTAMP: Lazy<Regex> =
@@ -41,14 +40,10 @@ pub static RE_FRONTMATTER_DESC: Lazy<Regex> =
 // Markdown Stripping Regexes
 // ═══════════════════════════════════════════════════════════════════════════════
 
-pub static RE_MD_BOLD_ASTERISK: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"\*\*([^*]+)\*\*").unwrap());
-pub static RE_MD_ITALIC_ASTERISK: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"\*([^*]+)\*").unwrap());
-pub static RE_MD_BOLD_UNDERSCORE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"__([^_]+)__").unwrap());
-pub static RE_MD_ITALIC_UNDERSCORE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"_([^_]+)_").unwrap());
+pub static RE_MD_BOLD_ASTERISK: Lazy<Regex> = Lazy::new(|| Regex::new(r"\*\*([^*]+)\*\*").unwrap());
+pub static RE_MD_ITALIC_ASTERISK: Lazy<Regex> = Lazy::new(|| Regex::new(r"\*([^*]+)\*").unwrap());
+pub static RE_MD_BOLD_UNDERSCORE: Lazy<Regex> = Lazy::new(|| Regex::new(r"__([^_]+)__").unwrap());
+pub static RE_MD_ITALIC_UNDERSCORE: Lazy<Regex> = Lazy::new(|| Regex::new(r"_([^_]+)_").unwrap());
 pub static RE_MD_CODE: Lazy<Regex> = Lazy::new(|| Regex::new(r"`([^`]+)`").unwrap());
 pub static RE_MD_HEADING: Lazy<Regex> = Lazy::new(|| Regex::new(r"^#+\s*").unwrap());
 pub static RE_MD_LINK: Lazy<Regex> = Lazy::new(|| Regex::new(r"\[([^\]]+)\]\([^)]+\)").unwrap());

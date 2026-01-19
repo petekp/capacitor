@@ -132,8 +132,7 @@ impl ActivityStore {
             // - Empty store (no sessions or no activity) is treated as native
             let is_native = store.sessions.is_empty()
                 || store.sessions.values().all(|s| {
-                    s.activity.is_empty()
-                        || s.activity.iter().any(|a| !a.project_path.is_empty())
+                    s.activity.is_empty() || s.activity.iter().any(|a| !a.project_path.is_empty())
                 });
 
             if is_native {
@@ -220,10 +219,11 @@ impl ActivityStore {
             source: e,
         })?;
 
-        tmp.write_all(content.as_bytes()).map_err(|e| HudError::Io {
-            context: "Failed to write temp file".to_string(),
-            source: e,
-        })?;
+        tmp.write_all(content.as_bytes())
+            .map_err(|e| HudError::Io {
+                context: "Failed to write temp file".to_string(),
+                source: e,
+            })?;
 
         tmp.flush().map_err(|e| HudError::Io {
             context: "Failed to flush temp file".to_string(),
@@ -263,13 +263,14 @@ impl ActivityStore {
         };
 
         // Get or create session entry
-        let session = self.sessions.entry(session_id.to_string()).or_insert_with(|| {
-            SessionActivity {
+        let session = self
+            .sessions
+            .entry(session_id.to_string())
+            .or_insert_with(|| SessionActivity {
                 cwd: cwd.to_string(),
                 pid: None,
                 activity: Vec::new(),
-            }
-        });
+            });
 
         // Add activity (newest first)
         session.activity.insert(0, activity);
@@ -457,7 +458,7 @@ mod tests {
         store.record_activity(
             "session-1",
             tmp.path().to_str().unwrap(), // Running from monorepo root
-            file.to_str().unwrap(),        // Editing auth package file
+            file.to_str().unwrap(),       // Editing auth package file
             "Edit",
             &timestamp,
         );
@@ -494,13 +495,29 @@ mod tests {
         let ts = recent_timestamp();
 
         // Edit files in both packages
-        store.record_activity("session-1", tmp.path().to_str().unwrap(), auth_file.to_str().unwrap(), "Edit", &ts);
-        store.record_activity("session-1", tmp.path().to_str().unwrap(), api_file.to_str().unwrap(), "Write", &ts);
+        store.record_activity(
+            "session-1",
+            tmp.path().to_str().unwrap(),
+            auth_file.to_str().unwrap(),
+            "Edit",
+            &ts,
+        );
+        store.record_activity(
+            "session-1",
+            tmp.path().to_str().unwrap(),
+            api_file.to_str().unwrap(),
+            "Write",
+            &ts,
+        );
 
         let session = store.sessions.get("session-1").unwrap();
         assert_eq!(session.activity.len(), 2, "Should have two activities");
 
-        let projects: Vec<&str> = session.activity.iter().map(|a| a.project_path.as_str()).collect();
+        let projects: Vec<&str> = session
+            .activity
+            .iter()
+            .map(|a| a.project_path.as_str())
+            .collect();
         assert!(projects.contains(&auth.to_str().unwrap()));
         assert!(projects.contains(&api.to_str().unwrap()));
     }
@@ -549,7 +566,13 @@ mod tests {
         let file = tmp.path().join("file.txt");
         let timestamp = recent_timestamp();
 
-        store.record_activity("session-1", tmp.path().to_str().unwrap(), file.to_str().unwrap(), "Edit", &timestamp);
+        store.record_activity(
+            "session-1",
+            tmp.path().to_str().unwrap(),
+            file.to_str().unwrap(),
+            "Edit",
+            &timestamp,
+        );
 
         assert!(
             store.has_recent_activity(tmp.path().to_str().unwrap(), ACTIVITY_THRESHOLD),
@@ -568,7 +591,13 @@ mod tests {
         let file = tmp.path().join("file.txt");
         let timestamp = stale_timestamp(); // 6 minutes ago
 
-        store.record_activity("session-1", tmp.path().to_str().unwrap(), file.to_str().unwrap(), "Edit", &timestamp);
+        store.record_activity(
+            "session-1",
+            tmp.path().to_str().unwrap(),
+            file.to_str().unwrap(),
+            "Edit",
+            &timestamp,
+        );
 
         assert!(
             !store.has_recent_activity(tmp.path().to_str().unwrap(), ACTIVITY_THRESHOLD),
@@ -587,10 +616,22 @@ mod tests {
         let file = tmp.path().join("file.txt");
 
         // Add an old activity
-        store.record_activity("session-1", tmp.path().to_str().unwrap(), file.to_str().unwrap(), "Edit", &old_timestamp());
+        store.record_activity(
+            "session-1",
+            tmp.path().to_str().unwrap(),
+            file.to_str().unwrap(),
+            "Edit",
+            &old_timestamp(),
+        );
 
         // Add a recent activity
-        store.record_activity("session-1", tmp.path().to_str().unwrap(), file.to_str().unwrap(), "Write", &recent_timestamp());
+        store.record_activity(
+            "session-1",
+            tmp.path().to_str().unwrap(),
+            file.to_str().unwrap(),
+            "Write",
+            &recent_timestamp(),
+        );
 
         let initial_count = store.sessions.get("session-1").unwrap().activity.len();
         assert_eq!(initial_count, 2);
@@ -621,8 +662,20 @@ mod tests {
 
         let ts = recent_timestamp();
 
-        store.record_activity("session-1", tmp.path().to_str().unwrap(), pkg1.join("file.txt").to_str().unwrap(), "Edit", &ts);
-        store.record_activity("session-1", tmp.path().to_str().unwrap(), pkg2.join("file.txt").to_str().unwrap(), "Edit", &ts);
+        store.record_activity(
+            "session-1",
+            tmp.path().to_str().unwrap(),
+            pkg1.join("file.txt").to_str().unwrap(),
+            "Edit",
+            &ts,
+        );
+        store.record_activity(
+            "session-1",
+            tmp.path().to_str().unwrap(),
+            pkg2.join("file.txt").to_str().unwrap(),
+            "Edit",
+            &ts,
+        );
 
         let active = store.active_projects_for_session("session-1", ACTIVITY_THRESHOLD);
 

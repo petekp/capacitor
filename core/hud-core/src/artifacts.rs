@@ -89,12 +89,8 @@ pub fn parse_frontmatter(content: &str) -> Option<(String, String)> {
 pub fn strip_markdown(text: &str) -> String {
     let mut result = text.to_string();
     result = RE_MD_BOLD_ASTERISK.replace_all(&result, "$1").to_string();
-    result = RE_MD_ITALIC_ASTERISK
-        .replace_all(&result, "$1")
-        .to_string();
-    result = RE_MD_BOLD_UNDERSCORE
-        .replace_all(&result, "$1")
-        .to_string();
+    result = RE_MD_ITALIC_ASTERISK.replace_all(&result, "$1").to_string();
+    result = RE_MD_BOLD_UNDERSCORE.replace_all(&result, "$1").to_string();
     result = RE_MD_ITALIC_UNDERSCORE
         .replace_all(&result, "$1")
         .to_string();
@@ -134,12 +130,13 @@ pub fn collect_artifacts_from_dir(dir: &Path, artifact_type: &str, source: &str)
                     };
 
                     if let Ok(content) = fs::read_to_string(&skill_path) {
-                        let (name, description) = parse_frontmatter(&content).unwrap_or_else(|| {
-                            (
-                                entry.file_name().to_string_lossy().to_string(),
-                                String::new(),
-                            )
-                        });
+                        let (name, description) =
+                            parse_frontmatter(&content).unwrap_or_else(|| {
+                                (
+                                    entry.file_name().to_string_lossy().to_string(),
+                                    String::new(),
+                                )
+                            });
                         artifacts.push(Artifact {
                             artifact_type: "skill".to_string(),
                             name: if name.is_empty() {
@@ -164,14 +161,15 @@ pub fn collect_artifacts_from_dir(dir: &Path, artifact_type: &str, source: &str)
             {
                 if entry.path().extension().is_some_and(|ext| ext == "md") {
                     if let Ok(content) = fs::read_to_string(entry.path()) {
-                        let (name, description) = parse_frontmatter(&content).unwrap_or_else(|| {
-                            let file_stem = entry
-                                .path()
-                                .file_stem()
-                                .map(|s| s.to_string_lossy().to_string())
-                                .unwrap_or_default();
-                            (file_stem, String::new())
-                        });
+                        let (name, description) =
+                            parse_frontmatter(&content).unwrap_or_else(|| {
+                                let file_stem = entry
+                                    .path()
+                                    .file_stem()
+                                    .map(|s| s.to_string_lossy().to_string())
+                                    .unwrap_or_default();
+                                (file_stem, String::new())
+                            });
                         artifacts.push(Artifact {
                             artifact_type: artifact_type.to_string(),
                             name: if name.is_empty() {

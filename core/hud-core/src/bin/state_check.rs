@@ -31,7 +31,8 @@ fn main() {
 
                     if let Ok(meta_content) = std::fs::read_to_string(&meta_file) {
                         if let Ok(meta) = serde_json::from_str::<serde_json::Value>(&meta_content) {
-                            let project_path = meta.get("path").and_then(|v| v.as_str()).unwrap_or("?");
+                            let project_path =
+                                meta.get("path").and_then(|v| v.as_str()).unwrap_or("?");
                             let status = if alive { "✓ ALIVE" } else { "✗ DEAD" };
                             println!("  {} PID {} → {}", status, pid, project_path);
                         }
@@ -61,7 +62,11 @@ fn main() {
     println!("── Lock Detection Tests ──────────────────────────────────");
     for path in &test_paths {
         let running = is_session_running(&lock_dir, path);
-        let status = if running { "🟢 RUNNING" } else { "⚫ NOT RUNNING" };
+        let status = if running {
+            "🟢 RUNNING"
+        } else {
+            "⚫ NOT RUNNING"
+        };
         println!("  {} {}", status, path);
 
         if let Some(info) = get_lock_info(&lock_dir, path) {

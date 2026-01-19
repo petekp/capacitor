@@ -65,7 +65,8 @@ pub fn detect_session_state(project_path: &str) -> ProjectSessionState {
             let activity_file = claude_dir.join("hud-file-activity.json");
             let activity_store = ActivityStore::load(&activity_file);
 
-            if activity_store.has_recent_activity(project_path, crate::activity::ACTIVITY_THRESHOLD) {
+            if activity_store.has_recent_activity(project_path, crate::activity::ACTIVITY_THRESHOLD)
+            {
                 // Recent file edits in this project from a session elsewhere
                 ProjectSessionState {
                     state: SessionState::Working,
@@ -482,7 +483,10 @@ mod tests {
         let json = serde_json::to_string(&status).unwrap();
         let deserialized: ProjectStatus = serde_json::from_str(&json).unwrap();
 
-        assert_eq!(deserialized.working_on, Some("Building feature X".to_string()));
+        assert_eq!(
+            deserialized.working_on,
+            Some("Building feature X".to_string())
+        );
         assert_eq!(deserialized.next_step, Some("Write tests".to_string()));
         assert!(deserialized.blocker.is_none());
     }
@@ -621,7 +625,10 @@ mod tests {
 
         cleanup_test_lock(&sessions_dir, path_a);
 
-        assert!(!result, "Unrelated path should not be affected by other locks");
+        assert!(
+            !result,
+            "Unrelated path should not be affected by other locks"
+        );
     }
 
     /// Test: Similar path prefixes don't false-match
