@@ -45,52 +45,177 @@ The Swift app is a **native SwiftUI application** in `apps/swift/`. It communica
 
 The `hud-core` library contains all business logic, exported via UniFFI for Swift consumption.
 
+### Module Overview
+
+The crate is organized into three layers:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      engine.rs (Facade)                     │
+│              Unified API for Swift via UniFFI               │
+└──────────────────────────┬──────────────────────────────────┘
+                           │
+┌──────────────────────────┼──────────────────────────────────┐
+│  Domain Modules          │                                  │
+│  ┌──────────┐ ┌──────────┴───┐ ┌──────────┐ ┌──────────┐   │
+│  │projects.rs│ │ sessions.rs │ │artifacts │ │ ideas.rs │   │
+│  └──────────┘ └──────────────┘ └──────────┘ └──────────┘   │
+│  ┌──────────┐                                              │
+│  │ agents/  │ (multi-agent support)                        │
+│  └──────────┘                                              │
+└──────────────────────────┬──────────────────────────────────┘
+                           │
+┌──────────────────────────┼──────────────────────────────────┐
+│  Infrastructure          │                                  │
+│  ┌──────────┐ ┌──────────┴───┐ ┌──────────┐ ┌──────────┐   │
+│  │ state/   │ │ activity.rs  │ │boundaries│ │ config   │   │
+│  │ (module) │ │              │ │          │ │          │   │
+│  └──────────┘ └──────────────┘ └──────────┘ └──────────┘   │
+└─────────────────────────────────────────────────────────────┘
+```
+
 ### Modules (in `core/hud-core/src/`)
 
 | Module | Purpose |
 |--------|---------|
-| `engine.rs` | `HudEngine` facade - unified API for Swift |
-| `types.rs` | Shared types: Project, Task, Artifact, Plugin, etc. |
+| `engine.rs` | `HudEngine` facade - unified API for Swift via UniFFI |
+| `types.rs` | Shared FFI types: Project, SessionState, Artifact, Plugin, Idea |
+| `error.rs` | Error types (`HudError`, `HudFfiError`) and Result alias |
+
+**Domain Modules:**
+
+| Module | Purpose |
+|--------|---------|
+| `projects.rs` | Project loading, discovery, path encoding, indicators |
+| `sessions.rs` | High-level session state detection (wraps `state/` module) |
+| `artifacts.rs` | Skill/command/agent discovery and frontmatter parsing |
+| `ideas.rs` | Idea capture, status tracking, effort estimation |
+| `stats.rs` | Token usage parsing from JSONL, mtime-based caching |
+| `agents/` | **Multi-agent subsystem** - AgentAdapter trait, registry, CLI adapters |
+
+**Infrastructure Modules:**
+
+| Module | Purpose |
+|--------|---------|
+| `state/` | **Session state subsystem** - lock detection, state resolution, persistence |
+| `activity.rs` | File activity tracking for monorepo project attribution |
+| `boundaries.rs` | Project boundary detection (CLAUDE.md, .git, package.json, etc.) |
+| `validation.rs` | Path validation, dangerous path detection |
+| `config.rs` | Path resolution (`~/.claude`), config file I/O |
 | `patterns.rs` | Pre-compiled regex patterns for JSONL parsing |
-| `config.rs` | Path resolution and config file operations |
-| `stats.rs` | Token usage parsing and mtime-based caching |
-| `projects.rs` | Project loading, discovery, and indicators |
-| `sessions.rs` | Session state detection and status reading |
-| `artifacts.rs` | Artifact discovery and frontmatter parsing |
-| `error.rs` | Error types and Result alias |
 
-### Data Structures (in `types.rs`)
+### The `state/` Subsystem
 
-- **GlobalConfig:** Claude Code global settings (skills, commands, agents directories)
-- **Project/ProjectDetails/Task:** Project tracking and session management
-- **ProjectStats:** Token usage analytics and caching
-- **Plugin:** Plugin registry with artifact counts
-- **HudConfig:** Pinned projects persistent state
+The most complex part of the core. Handles detecting whether Claude is running and what it's doing.
+
+```
+state/
+├── mod.rs        # Public exports
+├── types.rs      # ClaudeState, SessionRecord, LockInfo, HookEvent
+├── store.rs      # StateStore - persists session states to JSON
+├── lock.rs       # Lock file detection, PID verification, orphan cleanup
+├── resolver.rs   # Fuses lock + state data to answer queries
+├── transition.rs # State machine: HookEvent → ClaudeState
+└── integration_tests.rs
+```
+
+**Key Types:**
+
+```rust
+pub enum ClaudeState { Ready, Working, Compacting, Blocked }
+
+pub struct SessionRecord {
+    pub session_id: String,
+    pub state: ClaudeState,
+    pub cwd: String,
+    pub updated_at: DateTime<Utc>,
+    pub working_on: Option<String>,
+    pub pid: Option<u32>,
+}
+```
+
+**Resolution Algorithm** (simplified):
+1. Check for lock at project path (or child paths)
+2. Verify lock's PID is alive with start-time matching
+3. Find matching state record by cwd path
+4. If record exists with different PID than lock:
+   - If record's PID is alive → use record's state (newer session without lock)
+   - Otherwise → search for sessions matching lock's PID
+5. Apply tie-breakers: freshness → match type → session ID
+
+See [ADR-002: State Resolver Matching Logic](../../docs/architecture-decisions/002-state-resolver-matching-logic.md) for full details.
+
+### The `agents/` Subsystem
+
+Multi-agent support enables HUD to track sessions from different coding assistant CLIs (Claude Code, Codex, Aider, etc.).
+
+```
+agents/
+├── mod.rs        # AgentAdapter trait, AgentRegistry, test utilities
+├── types.rs      # AgentSession, AgentState, AgentConfig, AgentType
+├── claude.rs     # ClaudeAdapter - fully implemented for Claude Code
+├── registry.rs   # AgentRegistry with mtime-based caching
+└── stubs.rs      # Stub adapters for other CLIs (Codex, Aider, Amp, etc.)
+```
+
+**Key Types:**
+
+```rust
+pub trait AgentAdapter: Send + Sync {
+    fn id(&self) -> &'static str;
+    fn display_name(&self) -> &'static str;
+    fn is_installed(&self) -> bool;
+    fn detect_session(&self, project_path: &str) -> Option<AgentSession>;
+    fn all_sessions(&self) -> Vec<AgentSession>;
+    fn state_mtime(&self) -> Option<SystemTime>;
+}
+
+pub enum AgentState { Ready, Working, Waiting, Error }
+
+pub struct AgentSession {
+    pub agent_type: AgentType,
+    pub state: AgentState,
+    pub session_id: Option<String>,
+    pub cwd: String,
+    pub working_on: Option<String>,
+    // ...
+}
+```
+
+**Starship-style pattern:** Each CLI gets an adapter that knows how to detect installation and parse session state from that tool's specific files.
+
+See [Adding a New CLI Agent Guide](adding-new-cli-agent-guide.md) for implementation details.
 
 ### Key Functions
 
-**Configuration & Paths (`config.rs`):**
+**Session Detection (`sessions.rs`):**
+- `detect_session_state()` - Main entry point for Swift; returns `ProjectSessionState`
+
+**State Resolution (`state/resolver.rs`):**
+- `resolve_state()` - Returns `Option<ClaudeState>` for a project path
+- `resolve_state_with_details()` - Returns `ResolvedState` with session ID and cwd
+
+**Lock Management (`state/lock.rs`):**
+- `is_session_running()` - Checks if a lock exists for path (or children)
+- `get_lock_info()` - Returns lock metadata (PID, path, timestamps)
+- `reconcile_orphaned_lock()` - Cleans up locks with no matching state record
+
+**Project Boundary (`boundaries.rs`):**
+- `find_project_boundary()` - Walks up to find nearest CLAUDE.md, .git, etc.
+- `is_dangerous_path()` - Rejects `/`, `/Users`, `/home`, etc.
+
+**Activity Tracking (`activity.rs`):**
+- `ActivityStore::record_activity()` - Records file edit with project attribution
+- `ActivityStore::has_recent_activity()` - Checks for activity within threshold
+
+**Configuration (`config.rs`):**
 - `get_claude_dir()` - Resolves `~/.claude` directory
 - `load_hud_config()` / `save_hud_config()` - Pinned projects persistence
-- `load_stats_cache()` / `save_stats_cache()` - Token stats caching
-
-**Statistics & Parsing (`stats.rs`):**
-- `parse_stats_from_content()` - Regex extraction from JSONL session files
-- `compute_project_stats()` - Intelligent caching with file mtime tracking
-- Tracks input/output tokens, cache tokens, model usage (Opus/Sonnet/Haiku)
-
-**Project Discovery (`projects.rs`):**
-- `has_project_indicators()` - Detects project types (.git, package.json, Cargo.toml, etc.)
-- `build_project_from_path()` - Constructs Project objects
-- `load_projects()` - Loads pinned projects sorted by activity
-
-**Session State (`sessions.rs`):**
-- `detect_session_state()` - Determines current state (working, ready, idle, etc.)
-- `read_project_status()` - Reads status from `~/.claude/hud-session-states.json`
 
 **HudEngine Facade (`engine.rs`):**
 - `HudEngine::new()` - Creates engine instance
 - `list_projects()`, `add_project()`, `remove_project()` - Project management
+- `get_session_state()`, `get_all_session_states()` - Session queries
 - `list_artifacts()`, `list_plugins()` - Artifact discovery
 - `load_dashboard()` - All dashboard data in one call
 
@@ -103,6 +228,9 @@ The `hud-core` library contains all business logic, exported via UniFFI for Swif
 **Caching:**
 - Stats cache uses mtime-based invalidation
 - Summary cache persists generated summaries to avoid re-computation
+
+**Atomic Writes:**
+- All state files use temp file + rename for crash safety
 
 ## State Tracking Architecture
 
@@ -130,6 +258,8 @@ User runs claude → Hooks fire → State file updated → Swift HUD reads
 
 **State file:** `~/.claude/hud-session-states-v2.json`
 
+**Lock directory:** `~/.claude/sessions/{md5-hash}.lock/`
+
 **Hook script:** `~/.claude/scripts/hud-state-tracker.sh`
 
 **Testing & Documentation:**
@@ -153,9 +283,12 @@ The app reads from `~/.claude/` directory:
 ~/.claude/
 ├── settings.json                  # Global Claude Code config
 ├── hud.json                       # Pinned projects
+├── hud-session-states-v2.json     # Session states (v2 format)
+├── hud-file-activity.json         # File activity for project attribution
 ├── hud-stats-cache.json           # Cached token usage
 ├── hud-summaries.json             # Session summaries cache
 ├── hud-project-summaries.json     # Project overview bullets
+├── sessions/                      # Lock directories ({hash}.lock/)
 ├── projects/                      # Session files ({encoded-path}/{sessionid}.jsonl)
 └── plugins/installed_plugins.json # Plugin registry
 ```
@@ -175,3 +308,5 @@ For a comprehensive reference of all Claude Code disk artifacts (file formats, d
 - Regex - Pattern matching in session files
 - Walkdir - Directory traversal
 - Dirs - Platform-specific paths
+- Chrono - Date/time handling
+- Sysinfo - Process verification (PID alive checks)

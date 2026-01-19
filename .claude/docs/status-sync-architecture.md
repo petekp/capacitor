@@ -12,7 +12,7 @@ The status sync system enables real-time visibility into Claude Code session sta
 │  ┌─────────────┐    ┌──────────────────────┐    ┌─────────────────────┐    │
 │  │   Hooks     │───▶│ hud-state-tracker.sh │───▶│ State File (JSON)   │    │
 │  │ (7 events)  │    │ (state transitions)  │    │ ~/.claude/hud-      │    │
-│  └─────────────┘    └──────────────────────┘    │ session-states.json │    │
+│  └─────────────┘    └──────────────────────┘    │ session-states-v2   │    │
 │                              │                   └─────────────────────┘    │
 │                              ▼ (triggers)                                    │
 │                     ┌──────────────────────┐                                │
@@ -132,7 +132,7 @@ lastHeartbeat = relayClient.projectHeartbeats
 
 | File | Purpose |
 |------|---------|
-| `hud-session-states.json` | Current state for all projects |
+| `hud-session-states-v2.json` | Current state for all projects |
 | `hud-relay.json` | Relay config (url, deviceId, secretKey) |
 | `hud-last-heartbeat` | Unix timestamp of last heartbeat sent |
 | `hud-publish-debug.log` | Debug log for publish-state.sh |
@@ -184,7 +184,7 @@ lastHeartbeat = relayClient.projectHeartbeats
 
 ### Check current state
 ```bash
-cat ~/.claude/hud-session-states.json | jq .
+cat ~/.claude/hud-session-states-v2.json | jq .
 ```
 
 ### Watch hook activity

@@ -155,13 +155,18 @@ done | jq -s .
 
 Lock PID matches state record PID → Resolver uses state record directly.
 
-### Orphaned Lock Case
+### Mismatched PID Case
 
-Lock PID ≠ state record PID, and lock PID has no state record anywhere:
+Lock PID ≠ state record PID:
 
-1. **Resolver behavior:** Trusts the state record (newer session's actual state)
-2. **HUD `add_project`:** Calls `reconcile_orphaned_lock()` to clean up stale lock
+1. **If record's PID is alive:** Resolver prefers the state record (newer session without lock file)
+2. **If record's PID is dead:** Resolver searches for sessions matching the lock's PID
+3. **If no matching session found:** Falls back to state record
 
-This handles multiple Claude sessions starting at the same path where the newer session couldn't acquire the lock from an older session's zombie lock holder.
+This handles scenarios where Claude Code starts a session without creating a lock file, as well as cases where a newer session couldn't acquire the lock from an older session.
+
+### Orphaned Lock Cleanup
+
+When `add_project` is called, `reconcile_orphaned_lock()` cleans up stale locks from dead PIDs.
 
 See **ADR-002 "Orphaned Lock Handling"** for implementation details.
