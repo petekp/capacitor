@@ -13,28 +13,35 @@ struct ContentView: View {
     }
 
     var body: some View {
-        ZStack {
-            Group {
-                switch appState.layoutMode {
-                case .vertical:
-                    verticalLayout
-                case .dock:
-                    dockLayout
+        GeometryReader { geometry in
+            let containerSize = geometry.size
+
+            ZStack {
+                Group {
+                    switch appState.layoutMode {
+                    case .vertical:
+                        verticalLayout
+                    case .dock:
+                        dockLayout
+                    }
+                }
+                .blur(radius: isCaptureModalOpen ? 8 : 0)
+                .saturation(isCaptureModalOpen ? 0.8 : 1)
+                .animation(.easeInOut(duration: 0.25), value: isCaptureModalOpen)
+
+                if let project = appState.captureModalProject {
+                    IdeaCaptureModalOverlay(
+                        isPresented: $appState.showCaptureModal,
+                        projectName: project.name,
+                        originFrame: appState.captureModalOrigin,
+                        containerSize: containerSize,
+                        onCapture: { text in
+                            appState.captureIdea(for: project, text: text)
+                        }
+                    )
                 }
             }
-            .blur(radius: isCaptureModalOpen ? 8 : 0)
-            .saturation(isCaptureModalOpen ? 0.8 : 1)
-            .animation(.easeInOut(duration: 0.25), value: isCaptureModalOpen)
-
-            if let project = appState.captureModalProject {
-                IdeaCaptureModalOverlay(
-                    isPresented: $appState.showCaptureModal,
-                    projectName: project.name,
-                    onCapture: { text in
-                        appState.captureIdea(for: project, text: text)
-                    }
-                )
-            }
+            .coordinateSpace(name: "contentView")
         }
         .background {
             if floatingMode {

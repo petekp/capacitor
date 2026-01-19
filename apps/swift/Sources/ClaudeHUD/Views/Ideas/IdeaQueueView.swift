@@ -20,7 +20,7 @@ struct IdeaQueueView: View {
 
     @Environment(\.prefersReducedMotion) private var reduceMotion
 
-    private let rowHeight: CGFloat = 44
+    private let rowHeight: CGFloat = 48
     private let rowSpacing: CGFloat = 2
 
     private var queuedIdeas: [Idea] {
@@ -256,8 +256,8 @@ struct IdeaQueueRow: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .frame(height: 44)
+        .padding(.vertical, 8)
+        .frame(minHeight: 48)
         .overlay(alignment: .trailing) {
             if isHovered && !isGeneratingTitle {
                 hoverActions

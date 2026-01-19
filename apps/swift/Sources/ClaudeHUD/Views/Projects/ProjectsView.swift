@@ -94,8 +94,8 @@ struct ProjectsView: View {
                                 onOpenBrowser: {
                                     appState.openInBrowser(project)
                                 },
-                                onCaptureIdea: {
-                                    appState.showIdeaCaptureModal(for: project)
+                                onCaptureIdea: { frame in
+                                    appState.showIdeaCaptureModal(for: project, from: frame)
                                 },
                                 onRemove: {
                                     withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
@@ -184,7 +184,7 @@ struct ProjectsView: View {
                 }
             }
             .padding(.horizontal, 12)
-            .padding(.top, floatingMode ? 52 : 8)
+            .padding(.top, floatingMode ? 64 : 8)
             .padding(.bottom, floatingMode ? 16 : 8)
         }
         .background(floatingMode ? Color.clear : Color.hudBackground)

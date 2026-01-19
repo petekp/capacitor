@@ -1,5 +1,14 @@
 import SwiftUI
 
+// MARK: - Preference Key for Frame Tracking
+
+private struct FramePreferenceKey: PreferenceKey {
+    static var defaultValue: CGRect = .zero
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
+        value = nextValue()
+    }
+}
+
 // MARK: - Main Card View
 
 struct ProjectCardView: View {
@@ -14,8 +23,7 @@ struct ProjectCardView: View {
     let onInfoTap: () -> Void
     let onMoveToDormant: () -> Void
     let onOpenBrowser: () -> Void
-    var onCaptureIdea: (() -> Void)?
-    var onCaptureIdeaText: ((String) -> Result<Void, Error>)?
+    var onCaptureIdea: ((CGRect) -> Void)?
     let onRemove: () -> Void
     var onDragStarted: (() -> NSItemProvider)?
     var isDragging: Bool = false
@@ -199,7 +207,7 @@ struct ProjectCardView: View {
                 ideas: ideas,
                 ideasRemainingCount: ideasRemainingCount,
                 generatingTitleIds: generatingTitleIds,
-                onAddIdea: onCaptureIdea,
+                onAddIdea: onCaptureIdea.map { action in { action(.zero) } },
                 onShowMoreIdeas: onShowMoreIdeas,
                 onWorkOnIdea: onWorkOnIdea,
                 onDismissIdea: onDismissIdea
@@ -208,14 +216,19 @@ struct ProjectCardView: View {
             ProjectCardContent(
                 workingOn: displaySummary,
                 blocker: projectStatus?.blocker,
-                isWorking: currentState == .working,
-                isCardHovered: isHovered,
-                onCaptureIdea: onCaptureIdeaText
+                isWorking: currentState == .working
             )
         }
         .padding(12)
         .animation(.spring(response: 0.4, dampingFraction: 0.8), value: displaySummary)
         .animation(.spring(response: 0.4, dampingFraction: 0.8), value: projectStatus?.blocker)
+        .overlay(alignment: .bottomTrailing) {
+            if let onCaptureIdea = onCaptureIdea {
+                PeekCaptureButton(isCardHovered: isHovered, action: onCaptureIdea)
+                    .padding(.trailing, 4)
+                    .padding(.bottom, 4)
+            }
+        }
     }
 
     // MARK: - Context Menu
@@ -243,7 +256,7 @@ struct ProjectCardView: View {
                 Label("View Details", systemImage: "info.circle")
             }
             if let onCaptureIdea = onCaptureIdea {
-                Button(action: onCaptureIdea) {
+                Button(action: { onCaptureIdea(.zero) }) {
                     Label("Capture Idea...", systemImage: "lightbulb")
                 }
             }
@@ -388,20 +401,17 @@ private struct ProjectCardContent: View {
     let workingOn: String?
     let blocker: String?
     let isWorking: Bool
-    let isCardHovered: Bool
-    var onCaptureIdea: ((String) -> Result<Void, Error>)?
-
-    @State private var isContentHovered = false
-    @State private var showCapturePopover = false
-    @Environment(\.prefersReducedMotion) private var reduceMotion
-
-    private var showAddButton: Bool {
-        isCardHovered || isContentHovered
-    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            descriptionOrAddButton
+            // Description - always visible
+            if let workingOn = workingOn, !workingOn.isEmpty {
+                TickerText(text: workingOn, isShimmering: isWorking)
+            } else {
+                Text("No recent activity")
+                    .font(AppTypography.body)
+                    .foregroundColor(.white.opacity(0.35))
+            }
 
             if let blocker = blocker, !blocker.isEmpty {
                 HStack(spacing: 4) {
@@ -417,60 +427,85 @@ private struct ProjectCardContent: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
+}
 
-    @ViewBuilder
-    private var descriptionOrAddButton: some View {
-        ZStack(alignment: .leading) {
-            // Description text - visible when not hovered
-            if let workingOn = workingOn, !workingOn.isEmpty {
-                TickerText(text: workingOn, isShimmering: isWorking)
-                    .opacity(showAddButton ? 0 : 1)
-            } else {
-                // Dimmed placeholder when no description
-                Text("Generating summary...")
-                    .font(AppTypography.bodySecondary)
-                    .foregroundColor(.white.opacity(0.35))
-                    .opacity(showAddButton ? 0 : 1)
-            }
+// MARK: - Peek Capture Button
 
-            // "+ Idea" button - visible on hover
-            if onCaptureIdea != nil {
-                Button(action: { showCapturePopover = true }) {
-                    HStack(spacing: 5) {
-                        Image(systemName: "plus")
-                            .font(AppTypography.bodySecondary.weight(.medium))
-                        Text("Idea")
-                            .font(AppTypography.bodySecondary.weight(.medium))
+private struct PeekCaptureButton: View {
+    let isCardHovered: Bool
+    let action: (CGRect) -> Void
+
+    @State private var isButtonHovered = false
+    @State private var buttonFrame: CGRect = .zero
+    @Environment(\.prefersReducedMotion) private var reduceMotion
+
+    private var isVisible: Bool {
+        isCardHovered || isButtonHovered
+    }
+
+    var body: some View {
+        Button(action: { action(buttonFrame) }) {
+            buttonLabel
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(.ultraThinMaterial)
+
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(Color.black.opacity(0.2))
                     }
-                    .foregroundColor(.white.opacity(isContentHovered ? 0.9 : 0.6))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(Color.white.opacity(isContentHovered ? 0.15 : 0.08))
-                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .strokeBorder(Color.white.opacity(isContentHovered ? 0.2 : 0.1), lineWidth: 0.5)
-                    )
-                }
-                .buttonStyle(.plain)
-                .opacity(showAddButton ? 1 : 0)
-                .onHover { hovering in
-                    withAnimation(reduceMotion ? AppMotion.reducedMotionFallback : .easeOut(duration: 0.15)) {
-                        isContentHovered = hovering
-                    }
-                }
-                .popover(isPresented: $showCapturePopover, arrowEdge: .bottom) {
-                    IdeaCapturePopover(
-                        isPresented: $showCapturePopover,
-                        onCapture: { text in
-                            onCaptureIdea?(text) ?? .success(())
-                        }
-                    )
-                }
-                .accessibilityLabel("Add idea to this project")
-            }
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .strokeBorder(
+                            LinearGradient(
+                                colors: [
+                                    .white.opacity(isButtonHovered ? 0.4 : 0.25),
+                                    .white.opacity(isButtonHovered ? 0.2 : 0.1)
+                                ],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            ),
+                            lineWidth: 1
+                        )
+                )
+                .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
         }
-        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: showAddButton)
+        .buttonStyle(.plain)
+        .background(
+            GeometryReader { geo in
+                Color.clear.preference(
+                    key: FramePreferenceKey.self,
+                    value: geo.frame(in: .named("contentView"))
+                )
+            }
+        )
+        .onPreferenceChange(FramePreferenceKey.self) { frame in
+            buttonFrame = frame
+        }
+        .offset(y: isVisible ? 0 : 20)
+        .opacity(isVisible ? 1 : 0)
+        .animation(
+            reduceMotion ? AppMotion.reducedMotionFallback : .spring(response: 0.35, dampingFraction: 0.75),
+            value: isVisible
+        )
+        .onHover { hovering in
+            isButtonHovered = hovering
+        }
+        .accessibilityLabel("Capture idea for this project")
+    }
+
+    // Separate view to prevent content from animating independently
+    private var buttonLabel: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "lightbulb")
+                .font(.system(size: 11, weight: .medium))
+            Text("Capture idea")
+                .font(AppTypography.caption.weight(.medium))
+        }
+        .foregroundColor(.white.opacity(0.9))
     }
 }
 
@@ -482,7 +517,7 @@ private struct TickerText: View {
 
     var body: some View {
         Text(text)
-            .font(AppTypography.bodySecondary)
+            .font(AppTypography.body)
             .foregroundColor(.white.opacity(0.6))
             .lineLimit(2)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -495,7 +530,7 @@ private struct TickerText: View {
                     ShimmerEffect()
                         .mask(
                             Text(text)
-                                .font(AppTypography.bodySecondary)
+                                .font(AppTypography.body)
                                 .lineLimit(2)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         )

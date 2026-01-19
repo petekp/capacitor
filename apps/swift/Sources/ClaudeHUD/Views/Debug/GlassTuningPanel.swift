@@ -196,22 +196,22 @@ class GlassConfig: ObservableObject {
     // MARK: - Card Interaction (Per-Pointer-Event)
     // Idle state (default)
     @Published var cardIdleScale: Double = 1.0
-    @Published var cardIdleShadowOpacity: Double = 0.08
-    @Published var cardIdleShadowRadius: Double = 4.0
-    @Published var cardIdleShadowY: Double = 2.0
+    @Published var cardIdleShadowOpacity: Double = 0.17
+    @Published var cardIdleShadowRadius: Double = 8.07
+    @Published var cardIdleShadowY: Double = 3.89
 
     // Hover state
-    @Published var cardHoverScale: Double = 0.99
-    @Published var cardHoverSpringResponse: Double = 0.2
-    @Published var cardHoverSpringDamping: Double = 0.8
+    @Published var cardHoverScale: Double = 1.01
+    @Published var cardHoverSpringResponse: Double = 0.26
+    @Published var cardHoverSpringDamping: Double = 0.90
     @Published var cardHoverShadowOpacity: Double = 0.2
     @Published var cardHoverShadowRadius: Double = 12.0
     @Published var cardHoverShadowY: Double = 4.0
 
     // Pressed state
-    @Published var cardPressedScale: Double = 0.97
-    @Published var cardPressedSpringResponse: Double = 0.12
-    @Published var cardPressedSpringDamping: Double = 0.6
+    @Published var cardPressedScale: Double = 1.00
+    @Published var cardPressedSpringResponse: Double = 0.06
+    @Published var cardPressedSpringDamping: Double = 0.48
     @Published var cardPressedShadowOpacity: Double = 0.12
     @Published var cardPressedShadowRadius: Double = 2.0
     @Published var cardPressedShadowY: Double = 1.0
@@ -393,18 +393,18 @@ class GlassConfig: ObservableObject {
 
         // Card interaction
         cardIdleScale = 1.0
-        cardIdleShadowOpacity = 0.08
-        cardIdleShadowRadius = 4.0
-        cardIdleShadowY = 2.0
-        cardHoverScale = 0.99
-        cardHoverSpringResponse = 0.2
-        cardHoverSpringDamping = 0.8
+        cardIdleShadowOpacity = 0.17
+        cardIdleShadowRadius = 8.07
+        cardIdleShadowY = 3.89
+        cardHoverScale = 1.01
+        cardHoverSpringResponse = 0.26
+        cardHoverSpringDamping = 0.90
         cardHoverShadowOpacity = 0.2
         cardHoverShadowRadius = 12.0
         cardHoverShadowY = 4.0
-        cardPressedScale = 0.97
-        cardPressedSpringResponse = 0.12
-        cardPressedSpringDamping = 0.6
+        cardPressedScale = 1.00
+        cardPressedSpringResponse = 0.06
+        cardPressedSpringDamping = 0.48
         cardPressedShadowOpacity = 0.12
         cardPressedShadowRadius = 2.0
         cardPressedShadowY = 1.0

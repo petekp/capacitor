@@ -12,7 +12,16 @@ struct IdeaCaptureOverlay: View {
     @State private var appeared = false
     @State private var returnMonitor: Any?
     @State private var showingSuccess = false
+    @State private var placeholder: String = placeholders.randomElement()!
     @FocusState private var isTextFieldFocused: Bool
+
+    private static let placeholders = [
+        "What's your idea?",
+        "Dream big...",
+        "I'm all ears",
+        "What's next?",
+        "Make something happen"
+    ]
 
     private enum Layout {
         static let maxTextWidth: CGFloat = 500
@@ -96,12 +105,7 @@ struct IdeaCaptureOverlay: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .scaleEffect(appeared ? 1 : 0.96)
-        .opacity(appeared ? 1 : 0)
         .onAppear {
-            withAnimation(.spring(response: 0.25, dampingFraction: 0.9)) {
-                appeared = true
-            }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
                 isTextFieldFocused = true
             }
@@ -149,7 +153,7 @@ struct IdeaCaptureOverlay: View {
                 .disabled(isCapturing)
 
             if ideaText.isEmpty {
-                Text("What's on your mind?")
+                Text(placeholder)
                     .font(.system(size: 28, weight: .regular))
                     .foregroundColor(.white.opacity(0.3))
                     .frame(maxWidth: .infinity)
@@ -228,14 +232,39 @@ struct IdeaCaptureOverlay: View {
 struct IdeaCaptureModalOverlay: View {
     @Binding var isPresented: Bool
     let projectName: String
+    var originFrame: CGRect?
+    var containerSize: CGSize
     let onCapture: (String) -> Result<Void, Error>
 
+    @Environment(\.floatingMode) private var floatingMode
     @State private var escapeMonitor: Any?
+    @State private var isVisible = false
+    @State private var animatedIn = false
+
+    private var cornerRadius: CGFloat {
+        floatingMode ? 22 : 0
+    }
+
+    private var anchorPoint: UnitPoint {
+        guard let origin = originFrame, origin != .zero, containerSize.width > 0, containerSize.height > 0 else {
+            return .center
+        }
+
+        // origin is already in contentView coordinate space
+        let unitX = origin.midX / containerSize.width
+        let unitY = origin.midY / containerSize.height
+
+        return UnitPoint(
+            x: max(0, min(1, unitX)),
+            y: max(0, min(1, unitY))
+        )
+    }
 
     var body: some View {
         ZStack {
-            if isPresented {
+            if isVisible {
                 scrimBackground
+                    .opacity(animatedIn ? 1 : 0)
                     .onTapGesture {
                         isPresented = false
                     }
@@ -245,14 +274,39 @@ struct IdeaCaptureModalOverlay: View {
                     projectName: projectName,
                     onCapture: onCapture
                 )
+                .scaleEffect(animatedIn ? 1 : 0.3, anchor: anchorPoint)
+                .opacity(animatedIn ? 1 : 0)
             }
         }
-        .animation(.spring(response: 0.22, dampingFraction: 0.92), value: isPresented)
+        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        .onAppear {
+            // Handle case where isPresented is already true on mount
+            if isPresented {
+                isVisible = true
+                installKeyboardMonitors()
+                DispatchQueue.main.async {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                        animatedIn = true
+                    }
+                }
+            }
+        }
         .onChange(of: isPresented) { _, newValue in
             if newValue {
+                // Show view, then animate in
+                isVisible = true
                 installKeyboardMonitors()
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                    animatedIn = true
+                }
             } else {
+                // Animate out, then hide view
                 removeKeyboardMonitors()
+                withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) {
+                    animatedIn = false
+                } completion: {
+                    isVisible = false
+                }
             }
         }
         .onDisappear {

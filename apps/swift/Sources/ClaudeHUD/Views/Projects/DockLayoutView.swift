@@ -121,7 +121,7 @@ struct DockLayoutView: View {
             onInfoTap: { appState.showProjectDetail(project) },
             onMoveToDormant: { appState.moveToDormant(project) },
             onOpenBrowser: { appState.openInBrowser(project) },
-            onCaptureIdea: { appState.showIdeaCaptureModal(for: project) },
+            onCaptureIdea: { frame in appState.showIdeaCaptureModal(for: project, from: frame) },
             onRemove: { appState.removeProject(project.path) },
             onDragStarted: {
                 draggedProject = project

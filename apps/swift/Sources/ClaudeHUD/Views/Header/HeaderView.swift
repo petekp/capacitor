@@ -30,13 +30,26 @@ struct HeaderView: View {
         .frame(height: floatingMode ? headerBlurHeight : nil)
         .background {
             if floatingMode {
-                VibrancyView(
-                    material: .hudWindow,
-                    blendingMode: .behindWindow,
-                    isEmphasized: true,
-                    forceDarkAppearance: true
-                )
-                .overlay(Color.black.opacity(0.15))
+                ZStack {
+                    // Within-window blur - blurs the content scrolling underneath
+                    VibrancyView(
+                        material: .hudWindow,
+                        blendingMode: .withinWindow,
+                        isEmphasized: true,
+                        forceDarkAppearance: true
+                    )
+
+                    // Behind-window blur - blurs the desktop/apps behind
+                    VibrancyView(
+                        material: .hudWindow,
+                        blendingMode: .behindWindow,
+                        isEmphasized: true,
+                        forceDarkAppearance: true
+                    )
+                    .opacity(0.5)
+
+                    Color.black.opacity(0.15)
+                }
                 .mask(
                     LinearGradient(
                         stops: [
@@ -109,16 +122,16 @@ struct AddProjectButton: View {
                 Text("Add Project")
                     .font(AppTypography.bodySecondary.weight(.medium))
             }
-            .foregroundColor(.white.opacity(isHovered ? 0.9 : 0.6))
+            .foregroundColor(.white.opacity(isHovered ? 0.9 : 0.5))
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
             .background(
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(Color.white.opacity(isHovered ? 0.12 : 0.06))
+                    .fill(Color.white.opacity(isHovered ? 0.1 : 0))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
-                    .strokeBorder(Color.white.opacity(isHovered ? 0.15 : 0.08), lineWidth: 0.5)
+                    .strokeBorder(Color.white.opacity(isHovered ? 0.15 : 0), lineWidth: 0.5)
             )
         }
         .buttonStyle(.plain)

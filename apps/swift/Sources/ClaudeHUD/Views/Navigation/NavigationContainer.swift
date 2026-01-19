@@ -3,6 +3,7 @@ import SwiftUI
 struct NavigationContainer: View {
     @EnvironmentObject var appState: AppState
     @Environment(\.prefersReducedMotion) private var reduceMotion
+    @Environment(\.floatingMode) private var floatingMode
 
     @State private var listOffset: CGFloat = 0
     @State private var detailOffset: CGFloat = 1000

@@ -12,7 +12,7 @@ struct DockProjectCard: View {
     let onInfoTap: () -> Void
     let onMoveToDormant: () -> Void
     let onOpenBrowser: () -> Void
-    var onCaptureIdea: (() -> Void)?
+    var onCaptureIdea: ((CGRect) -> Void)?
     let onRemove: () -> Void
     var onDragStarted: (() -> NSItemProvider)?
     var isDragging: Bool = false
@@ -161,7 +161,7 @@ struct DockProjectCard: View {
                     onInfoTap: onInfoTap,
                     onMoveToDormant: onMoveToDormant,
                     onOpenBrowser: onOpenBrowser,
-                    onCaptureIdea: onCaptureIdea,
+                    onCaptureIdea: onCaptureIdea.map { action in { action(.zero) } },
                     onRemove: onRemove
                 )
             }
@@ -204,7 +204,7 @@ struct DockProjectCard: View {
                             ideas: ideas,
                             remainingCount: ideasRemainingCount,
                             generatingTitleIds: generatingTitleIds,
-                            onAddIdea: onCaptureIdea,
+                            onAddIdea: onCaptureIdea.map { action in { action(.zero) } },
                             onShowMore: onShowMoreIdeas,
                             onWorkOnIdea: onWorkOnIdea,
                             onDismissIdea: onDismissIdea

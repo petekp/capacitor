@@ -216,18 +216,18 @@ struct ProjectCardTuningPanel: View {
 
     private func resetInteractionValues() {
         glassConfig.cardIdleScale = 1.0
-        glassConfig.cardIdleShadowOpacity = 0.08
-        glassConfig.cardIdleShadowRadius = 4.0
-        glassConfig.cardIdleShadowY = 2.0
-        glassConfig.cardHoverScale = 0.99
-        glassConfig.cardHoverSpringResponse = 0.2
-        glassConfig.cardHoverSpringDamping = 0.8
+        glassConfig.cardIdleShadowOpacity = 0.17
+        glassConfig.cardIdleShadowRadius = 8.07
+        glassConfig.cardIdleShadowY = 3.89
+        glassConfig.cardHoverScale = 1.01
+        glassConfig.cardHoverSpringResponse = 0.26
+        glassConfig.cardHoverSpringDamping = 0.90
         glassConfig.cardHoverShadowOpacity = 0.2
         glassConfig.cardHoverShadowRadius = 12.0
         glassConfig.cardHoverShadowY = 4.0
-        glassConfig.cardPressedScale = 0.97
-        glassConfig.cardPressedSpringResponse = 0.12
-        glassConfig.cardPressedSpringDamping = 0.6
+        glassConfig.cardPressedScale = 1.00
+        glassConfig.cardPressedSpringResponse = 0.06
+        glassConfig.cardPressedSpringDamping = 0.48
         glassConfig.cardPressedShadowOpacity = 0.12
         glassConfig.cardPressedShadowRadius = 2.0
         glassConfig.cardPressedShadowY = 1.0

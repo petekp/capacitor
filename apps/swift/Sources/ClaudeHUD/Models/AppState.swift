@@ -88,6 +88,7 @@ class AppState: ObservableObject {
 
     @Published var showCaptureModal = false
     @Published var captureModalProject: Project?
+    @Published var captureModalOrigin: CGRect?
 
     // MARK: - Managers (extracted for cleaner architecture)
 
@@ -169,9 +170,10 @@ class AppState: ObservableObject {
 
     private func setupStalenessTimer() {
         stalenessTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            guard let self else { return }
             DispatchQueue.main.async {
-                self?.refreshSessionStates()
-                self?.checkIdeasFileChanges()
+                self.refreshSessionStates()
+                self.checkIdeasFileChanges()
             }
         }
     }
@@ -464,8 +466,9 @@ class AppState: ObservableObject {
 
     // MARK: - Idea Capture (delegating to ProjectDetailsManager)
 
-    func showIdeaCaptureModal(for project: Project) {
+    func showIdeaCaptureModal(for project: Project, from origin: CGRect? = nil) {
         captureModalProject = project
+        captureModalOrigin = origin
         showCaptureModal = true
     }
 
