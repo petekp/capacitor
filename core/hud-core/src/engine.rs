@@ -18,13 +18,14 @@
 
 use crate::agents::{AgentConfig, AgentRegistry, AgentSession};
 use crate::artifacts::{collect_artifacts_from_dir, count_artifacts_in_dir, count_hooks_in_dir};
-use crate::config::{get_claude_dir, load_hud_config, resolve_symlink, save_hud_config};
+use crate::config::{load_hud_config, resolve_symlink, save_hud_config};
 use crate::error::HudFfiError;
 use crate::projects::{has_project_indicators, load_projects};
 use crate::sessions::{
     detect_session_state, get_all_session_states, read_project_status, ProjectStatus,
 };
 use crate::state::{reconcile_orphaned_lock, StateStore};
+use crate::storage::StorageConfig;
 use crate::types::{
     Artifact, DashboardData, GlobalConfig, HudConfig, Plugin, PluginManifest, Project,
     ProjectSessionState, SuggestedProject,
@@ -41,33 +42,53 @@ use std::sync::Arc;
 /// This is the primary FFI interface for Swift/Kotlin/Python clients.
 #[derive(uniffi::Object)]
 pub struct HudEngine {
-    claude_dir: PathBuf,
+    storage: StorageConfig,
     agent_registry: Arc<AgentRegistry>,
 }
 
-#[uniffi::export]
 impl HudEngine {
-    /// Creates a new HudEngine instance.
+    /// Creates a new HudEngine instance with custom storage configuration.
     ///
-    /// Returns an error if the Claude directory (~/.claude) cannot be found.
-    #[uniffi::constructor]
-    pub fn new() -> Result<Self, HudFfiError> {
-        let claude_dir =
-            get_claude_dir().ok_or_else(|| HudFfiError::from("Could not find Claude directory"))?;
-
+    /// Used for testing with temp directories or custom storage locations.
+    /// Not exposed to FFI - use `new()` for external clients.
+    pub fn with_storage(storage: StorageConfig) -> Result<Self, HudFfiError> {
         let agent_config = AgentConfig::default();
         let agent_registry = Arc::new(AgentRegistry::new(agent_config));
         agent_registry.initialize_all();
 
         Ok(Self {
-            claude_dir,
+            storage,
             agent_registry,
         })
     }
 
+    /// Returns the StorageConfig for this engine.
+    /// Useful for accessing path configuration.
+    pub fn storage(&self) -> &StorageConfig {
+        &self.storage
+    }
+}
+
+#[uniffi::export]
+impl HudEngine {
+    /// Creates a new HudEngine instance with default storage configuration.
+    ///
+    /// Uses `~/.capacitor/` for Capacitor data and `~/.claude/` for Claude data.
+    #[uniffi::constructor]
+    pub fn new() -> Result<Self, HudFfiError> {
+        Self::with_storage(StorageConfig::default())
+    }
+
     /// Returns the path to the Claude directory as a string.
+    /// This is the Claude Code data directory (~/.claude by default).
     pub fn claude_dir(&self) -> String {
-        self.claude_dir.to_string_lossy().to_string()
+        self.storage.claude_root().to_string_lossy().to_string()
+    }
+
+    /// Returns the path to the Capacitor data directory as a string.
+    /// This is where Capacitor stores its own data (~/.capacitor by default).
+    pub fn capacitor_dir(&self) -> String {
+        self.storage.root().to_string_lossy().to_string()
     }
 
     // ─────────────────────────────────────────────────────────────────────────────
@@ -103,8 +124,11 @@ impl HudEngine {
 
         // Reconcile any orphaned locks for this path before adding
         // This handles cases where a stale lock from an old session prevents correct state display
-        let lock_dir = self.claude_dir.join("sessions");
-        let state_file = self.claude_dir.join("hud-session-states-v2.json");
+        let lock_dir = self.storage.claude_root().join("sessions");
+        let state_file = self
+            .storage
+            .claude_root()
+            .join("hud-session-states-v2.json");
         if let Ok(store) = StateStore::load(&state_file) {
             let _ = reconcile_orphaned_lock(&lock_dir, &store, &path);
         }
@@ -122,7 +146,7 @@ impl HudEngine {
 
     /// Discovers suggested projects based on activity in ~/.claude/projects.
     pub fn get_suggested_projects(&self) -> Result<Vec<SuggestedProject>, HudFfiError> {
-        let projects_dir = self.claude_dir.join("projects");
+        let projects_dir = self.storage.claude_root().join("projects");
         if !projects_dir.exists() {
             return Ok(Vec::new());
         }
@@ -276,17 +300,17 @@ impl HudEngine {
         let mut artifacts = Vec::new();
 
         // Global artifacts
-        if let Some(skills_dir) = resolve_symlink(&self.claude_dir.join("skills")) {
+        if let Some(skills_dir) = resolve_symlink(&self.storage.claude_root().join("skills")) {
             artifacts.extend(collect_artifacts_from_dir(&skills_dir, "skill", "Global"));
         }
-        if let Some(commands_dir) = resolve_symlink(&self.claude_dir.join("commands")) {
+        if let Some(commands_dir) = resolve_symlink(&self.storage.claude_root().join("commands")) {
             artifacts.extend(collect_artifacts_from_dir(
                 &commands_dir,
                 "command",
                 "Global",
             ));
         }
-        if let Some(agents_dir) = resolve_symlink(&self.claude_dir.join("agents")) {
+        if let Some(agents_dir) = resolve_symlink(&self.storage.claude_root().join("agents")) {
             artifacts.extend(collect_artifacts_from_dir(&agents_dir, "agent", "Global"));
         }
 
@@ -333,7 +357,8 @@ impl HudEngine {
     /// Lists all installed plugins.
     pub fn list_plugins(&self) -> Result<Vec<Plugin>, HudFfiError> {
         let registry_path = self
-            .claude_dir
+            .storage
+            .claude_root()
             .join("plugins")
             .join("installed_plugins.json");
         if !registry_path.exists() {
@@ -358,7 +383,7 @@ impl HudEngine {
             .map_err(|e| HudFfiError::from(format!("Failed to parse plugin registry: {}", e)))?;
 
         // Load settings to check enabled status
-        let settings_path = self.claude_dir.join("settings.json");
+        let settings_path = self.storage.claude_root().join("settings.json");
         let enabled_plugins: HashMap<String, bool> = if settings_path.exists() {
             #[derive(serde::Deserialize)]
             #[serde(rename_all = "camelCase")]
@@ -424,12 +449,12 @@ impl HudEngine {
 
     /// Loads all dashboard data in one call.
     pub fn load_dashboard(&self) -> Result<DashboardData, HudFfiError> {
-        let settings_path = self.claude_dir.join("settings.json");
-        let instructions_path = self.claude_dir.join("CLAUDE.md");
+        let settings_path = self.storage.claude_root().join("settings.json");
+        let instructions_path = self.storage.claude_root().join("CLAUDE.md");
 
-        let skills_dir = resolve_symlink(&self.claude_dir.join("skills"));
-        let commands_dir = resolve_symlink(&self.claude_dir.join("commands"));
-        let agents_dir = resolve_symlink(&self.claude_dir.join("agents"));
+        let skills_dir = resolve_symlink(&self.storage.claude_root().join("skills"));
+        let commands_dir = resolve_symlink(&self.storage.claude_root().join("commands"));
+        let agents_dir = resolve_symlink(&self.storage.claude_root().join("agents"));
 
         let global = GlobalConfig {
             settings_path: settings_path.to_string_lossy().to_string(),

@@ -1,8 +1,13 @@
 #!/bin/bash
 
-# Claude HUD State Tracker
-# Tracks session state for all Claude Code projects in a centralized file
+# Capacitor State Tracker (formerly Claude HUD)
+# Tracks session state for all Claude Code projects in ~/.capacitor/sessions.json
 # Handles: SessionStart, UserPromptSubmit, PermissionRequest, PostToolUse, Stop, SessionEnd, PreCompact
+#
+# Storage locations:
+#   ~/.capacitor/sessions.json     - Session state (Capacitor namespace)
+#   ~/.capacitor/file-activity.json - File activity tracking
+#   ~/.claude/sessions/            - Lock directories (Claude Code namespace)
 
 # Skip if this is a summary generation subprocess (prevents recursive hook pollution)
 if [ "$HUD_SUMMARY_GEN" = "1" ]; then
@@ -15,9 +20,13 @@ fi
 # This variable must be used for all state file PID writes
 CLAUDE_PID="$PPID"
 
-STATE_FILE="$HOME/.claude/hud-session-states-v2.json"
-ACTIVITY_FILE="$HOME/.claude/hud-file-activity.json"
-LOG_FILE="$HOME/.claude/hud-hook-debug.log"
+# Capacitor data directory (where Capacitor stores its own data)
+CAPACITOR_DIR="$HOME/.capacitor"
+mkdir -p "$CAPACITOR_DIR"
+
+STATE_FILE="$CAPACITOR_DIR/sessions.json"
+ACTIVITY_FILE="$CAPACITOR_DIR/file-activity.json"
+LOG_FILE="$HOME/.claude/hud-hook-debug.log"  # Stays in .claude (debug log for Claude hooks)
 STATE_LOCK_DIR="${STATE_FILE}.lock"
 ACTIVITY_LOCK_DIR="${ACTIVITY_FILE}.lock"
 
@@ -1002,7 +1011,7 @@ fi
 # Generate summary on Stop events only (not every prompt submit)
 # Optimized: uses only last 3 user messages, truncated to 150 chars each (~300 tokens total)
 SUMMARY_COOLDOWN=60  # seconds between summary generations per session
-SUMMARY_CACHE_FILE="$HOME/.claude/hud-summary-times.json"
+SUMMARY_CACHE_FILE="$CAPACITOR_DIR/summary-times.json"
 
 # Debug: log transcript_path status on Stop events
 if [ "$event" = "Stop" ]; then

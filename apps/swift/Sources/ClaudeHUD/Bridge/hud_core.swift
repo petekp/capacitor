@@ -523,6 +523,12 @@ public protocol HudEngineProtocol: AnyObject {
     func addProject(path: String) throws
 
     /**
+     * Returns the path to the Capacitor data directory as a string.
+     * This is where Capacitor stores its own data (~/.capacitor by default).
+     */
+    func capacitorDir() -> String
+
+    /**
      * Captures a new idea for a project.
      *
      * Appends the idea to `.claude/ideas.local.md` in the project's directory
@@ -534,6 +540,7 @@ public protocol HudEngineProtocol: AnyObject {
 
     /**
      * Returns the path to the Claude directory as a string.
+     * This is the Claude Code data directory (~/.claude by default).
      */
     func claudeDir() -> String
 
@@ -759,9 +766,9 @@ open class HudEngine:
     }
 
     /**
-     * Creates a new HudEngine instance.
+     * Creates a new HudEngine instance with default storage configuration.
      *
-     * Returns an error if the Claude directory (~/.claude) cannot be found.
+     * Uses `~/.capacitor/` for Capacitor data and `~/.claude/` for Claude data.
      */
     public convenience init() throws {
         let pointer =
@@ -792,6 +799,16 @@ open class HudEngine:
     }
 
     /**
+     * Returns the path to the Capacitor data directory as a string.
+     * This is where Capacitor stores its own data (~/.capacitor by default).
+     */
+    open func capacitorDir() -> String {
+        return try! FfiConverterString.lift(try! rustCall {
+            uniffi_hud_core_fn_method_hudengine_capacitor_dir(self.uniffiClonePointer(), $0)
+        })
+    }
+
+    /**
      * Captures a new idea for a project.
      *
      * Appends the idea to `.claude/ideas.local.md` in the project's directory
@@ -809,6 +826,7 @@ open class HudEngine:
 
     /**
      * Returns the path to the Claude directory as a string.
+     * This is the Claude Code data directory (~/.claude by default).
      */
     open func claudeDir() -> String {
         return try! FfiConverterString.lift(try! rustCall {
@@ -4323,10 +4341,13 @@ private var initializationResult: InitializationResult = {
     if uniffi_hud_core_checksum_method_hudengine_add_project() != 9786 {
         return InitializationResult.apiChecksumMismatch
     }
+    if uniffi_hud_core_checksum_method_hudengine_capacitor_dir() != 14668 {
+        return InitializationResult.apiChecksumMismatch
+    }
     if uniffi_hud_core_checksum_method_hudengine_capture_idea() != 22245 {
         return InitializationResult.apiChecksumMismatch
     }
-    if uniffi_hud_core_checksum_method_hudengine_claude_dir() != 21224 {
+    if uniffi_hud_core_checksum_method_hudengine_claude_dir() != 58851 {
         return InitializationResult.apiChecksumMismatch
     }
     if uniffi_hud_core_checksum_method_hudengine_create_project_claude_md() != 43265 {
@@ -4404,7 +4425,7 @@ private var initializationResult: InitializationResult = {
     if uniffi_hud_core_checksum_method_hudengine_validate_project() != 446 {
         return InitializationResult.apiChecksumMismatch
     }
-    if uniffi_hud_core_checksum_constructor_hudengine_new() != 38960 {
+    if uniffi_hud_core_checksum_constructor_hudengine_new() != 11939 {
         return InitializationResult.apiChecksumMismatch
     }
 

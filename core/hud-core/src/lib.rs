@@ -38,6 +38,7 @@ pub mod projects;
 pub mod sessions;
 pub mod state;
 pub mod stats;
+pub mod storage;
 pub mod types;
 pub mod validation;
 
@@ -54,5 +55,6 @@ pub use patterns::*;
 pub use projects::*;
 pub use sessions::*;
 pub use stats::*;
+pub use storage::*;
 pub use types::*;
 pub use validation::*;

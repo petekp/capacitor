@@ -272,6 +272,11 @@ void*_Nonnull uniffi_hud_core_fn_constructor_hudengine_new(RustCallStatus *_Nonn
 void uniffi_hud_core_fn_method_hudengine_add_project(void*_Nonnull ptr, RustBuffer path, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_HUD_CORE_FN_METHOD_HUDENGINE_CAPACITOR_DIR
+#define UNIFFI_FFIDEF_UNIFFI_HUD_CORE_FN_METHOD_HUDENGINE_CAPACITOR_DIR
+RustBuffer uniffi_hud_core_fn_method_hudengine_capacitor_dir(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_HUD_CORE_FN_METHOD_HUDENGINE_CAPTURE_IDEA
 #define UNIFFI_FFIDEF_UNIFFI_HUD_CORE_FN_METHOD_HUDENGINE_CAPTURE_IDEA
 RustBuffer uniffi_hud_core_fn_method_hudengine_capture_idea(void*_Nonnull ptr, RustBuffer project_path, RustBuffer idea_text, RustCallStatus *_Nonnull out_status
@@ -690,6 +695,12 @@ void ffi_hud_core_rust_future_complete_void(uint64_t handle, RustCallStatus *_No
 #ifndef UNIFFI_FFIDEF_UNIFFI_HUD_CORE_CHECKSUM_METHOD_HUDENGINE_ADD_PROJECT
 #define UNIFFI_FFIDEF_UNIFFI_HUD_CORE_CHECKSUM_METHOD_HUDENGINE_ADD_PROJECT
 uint16_t uniffi_hud_core_checksum_method_hudengine_add_project(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_HUD_CORE_CHECKSUM_METHOD_HUDENGINE_CAPACITOR_DIR
+#define UNIFFI_FFIDEF_UNIFFI_HUD_CORE_CHECKSUM_METHOD_HUDENGINE_CAPACITOR_DIR
+uint16_t uniffi_hud_core_checksum_method_hudengine_capacitor_dir(void
     
 );
 #endif

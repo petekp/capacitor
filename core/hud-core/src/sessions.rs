@@ -2,10 +2,13 @@
 //!
 //! Handles reading session states from the v2 state store and
 //! detecting the current state of Claude Code sessions.
+//!
+//! Note: Session state files are stored in `~/.capacitor/` (Capacitor's namespace),
+//! while lock directories remain in `~/.claude/` (Claude Code's namespace).
 
 use crate::activity::ActivityStore;
-use crate::config::get_claude_dir;
 use crate::state::{resolve_state_with_details, ClaudeState, StateStore};
+use crate::storage::StorageConfig;
 use crate::types::{ProjectSessionState, SessionState};
 use std::fs;
 use std::path::Path;
@@ -13,20 +16,12 @@ use std::path::Path;
 /// Detects session state using the v2 state module.
 /// Uses session-ID keyed state file and lock detection for reliable state.
 pub fn detect_session_state(project_path: &str) -> ProjectSessionState {
-    let Some(claude_dir) = get_claude_dir() else {
-        return ProjectSessionState {
-            state: SessionState::Idle,
-            state_changed_at: None,
-            session_id: None,
-            working_on: None,
-            context: None,
-            thinking: None,
-            is_locked: false,
-        };
-    };
+    let storage = StorageConfig::default();
 
-    let lock_dir = claude_dir.join("sessions");
-    let state_file = claude_dir.join("hud-session-states-v2.json");
+    // Lock directories are in ~/.claude/sessions/ (Claude Code writes them)
+    let lock_dir = storage.claude_root().join("sessions");
+    // State file is in ~/.capacitor/sessions.json (Capacitor's namespace)
+    let state_file = storage.sessions_file();
 
     let store = StateStore::load(&state_file).unwrap_or_else(|_| StateStore::new(&state_file));
 
@@ -62,7 +57,7 @@ pub fn detect_session_state(project_path: &str) -> ProjectSessionState {
         None => {
             // No direct session found - check for file activity in this project
             // This enables monorepo package tracking where cwd != project_path
-            let activity_file = claude_dir.join("hud-file-activity.json");
+            let activity_file = storage.file_activity_file();
             let activity_store = ActivityStore::load(&activity_file);
 
             if activity_store.has_recent_activity(project_path, crate::activity::ACTIVITY_THRESHOLD)
@@ -142,12 +137,11 @@ pub fn read_project_status(project_path: &str) -> Option<ProjectStatus> {
 /// subdirectory of the pinned project. This function checks both:
 /// 1. Exact path match (lock created at project root)
 /// 2. Subdirectory match (lock created in a subdirectory of the project)
+///
+/// Note: Lock directories are in `~/.claude/sessions/` (Claude Code's namespace).
 pub fn is_session_active(project_path: &str) -> bool {
-    let Some(claude_dir) = get_claude_dir() else {
-        return false;
-    };
-
-    let sessions_dir = claude_dir.join("sessions");
+    let storage = StorageConfig::default();
+    let sessions_dir = storage.claude_root().join("sessions");
     if !sessions_dir.exists() {
         return false;
     }
@@ -230,6 +224,7 @@ fn read_pid_from_lock(lock_dir: &Path) -> Option<i32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::get_claude_dir;
     use std::io::Write;
 
     /// Helper to create a test sessions directory with a lock (old format: pid file)

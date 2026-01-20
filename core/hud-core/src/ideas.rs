@@ -1,7 +1,7 @@
 //! Idea Capture - Markdown-based idea storage and management.
 //!
 //! This module implements the Idea Capture feature which stores ideas in
-//! per-project `.claude/ideas.local.md` files using a structured markdown format.
+//! global storage at `~/.capacitor/projects/{encoded-path}/ideas.md`.
 //!
 //! ## Design Principles
 //!
@@ -9,8 +9,10 @@
 //! - **ULID identifiers**: 26-character sortable IDs for stable references
 //! - **Graceful degradation**: Missing files are created, missing fields use defaults
 //! - **Bidirectional sync**: HUD writes, Claude updates, HUD detects changes via file watcher
+//! - **Global storage**: All Capacitor data lives in `~/.capacitor/` for separation of concerns
 
 use crate::error::{HudError, Result};
+use crate::storage::StorageConfig;
 use crate::types::Idea;
 use chrono::Utc;
 use regex::Regex;
@@ -321,14 +323,18 @@ pub fn load_ideas_order(project_path: &str) -> Result<Vec<String>> {
 // Internal Helper Functions
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Returns the path to the project's ideas file.
+/// Returns the path to the project's ideas file in global storage.
+///
+/// Ideas are stored at `~/.capacitor/projects/{encoded-path}/ideas.md`.
 fn get_ideas_file_path(project_path: &str) -> PathBuf {
-    Path::new(project_path).join(".claude/ideas.local.md")
+    StorageConfig::default().project_ideas_file(project_path)
 }
 
-/// Returns the path to the project's ideas order file.
+/// Returns the path to the project's ideas order file in global storage.
+///
+/// Order is stored at `~/.capacitor/projects/{encoded-path}/order.json`.
 fn get_order_file_path(project_path: &str) -> PathBuf {
-    Path::new(project_path).join(".claude/ideas-order.json")
+    StorageConfig::default().project_order_file(project_path)
 }
 
 /// Ensures the ideas file exists with proper structure.
