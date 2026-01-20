@@ -587,7 +587,7 @@ impl HudEngine {
 
     /// Saves the display order of ideas for a project.
     ///
-    /// The order is stored separately from idea content in `.claude/ideas-order.json`.
+    /// The order is stored separately from idea content in `~/.capacitor/projects/{encoded}/order.json`.
     /// This prevents churning the ideas markdown file on every drag-reorder.
     pub fn save_ideas_order(
         &self,

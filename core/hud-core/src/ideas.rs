@@ -269,7 +269,7 @@ pub fn update_idea_description(
 
 /// Saves the display order of ideas for a project.
 ///
-/// The order is stored separately from idea content in `.claude/ideas-order.json`.
+/// The order is stored separately from idea content in `~/.capacitor/projects/{encoded}/order.json`.
 /// This prevents churning the ideas markdown file on every reorder.
 ///
 /// Ideas not in the order list will be appended at the end when loading.

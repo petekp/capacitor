@@ -663,7 +663,7 @@ public protocol HudEngineProtocol: AnyObject {
     /**
      * Saves the display order of ideas for a project.
      *
-     * The order is stored separately from idea content in `.claude/ideas-order.json`.
+     * The order is stored separately from idea content in `~/.capacitor/projects/{encoded}/order.json`.
      * This prevents churning the ideas markdown file on every drag-reorder.
      */
     func saveIdeasOrder(projectPath: String, ideaIds: [String]) throws
@@ -1031,7 +1031,7 @@ open class HudEngine:
     /**
      * Saves the display order of ideas for a project.
      *
-     * The order is stored separately from idea content in `.claude/ideas-order.json`.
+     * The order is stored separately from idea content in `~/.capacitor/projects/{encoded}/order.json`.
      * This prevents churning the ideas markdown file on every drag-reorder.
      */
     open func saveIdeasOrder(projectPath: String, ideaIds: [String]) throws { try rustCallWithError(FfiConverterTypeHudFfiError.lift) {
@@ -4404,7 +4404,7 @@ private var initializationResult: InitializationResult = {
     if uniffi_hud_core_checksum_method_hudengine_remove_project() != 46288 {
         return InitializationResult.apiChecksumMismatch
     }
-    if uniffi_hud_core_checksum_method_hudengine_save_ideas_order() != 53397 {
+    if uniffi_hud_core_checksum_method_hudengine_save_ideas_order() != 24320 {
         return InitializationResult.apiChecksumMismatch
     }
     if uniffi_hud_core_checksum_method_hudengine_update_idea_description() != 28488 {
