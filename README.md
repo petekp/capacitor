@@ -170,8 +170,8 @@ cd apps/swift && swift run
 ## How Session Tracking Works
 
 1. **Hooks** — Claude Code fires events (SessionStart, Stop, etc.) that run a shell script
-2. **State file** — The script writes JSON to `~/.claude/hud-session-states-v2.json`
-3. **Lock files** — Active sessions create locks at `~/.claude/sessions/{hash}.lock/`
+2. **State file** — The script writes JSON to `~/.capacitor/sessions.json`
+3. **Lock files** — Claude Code creates locks at `~/.claude/sessions/{hash}.lock/`
 4. **HUD reads** — The app polls these files and resolves the current state
 
 The state resolver handles edge cases like:
@@ -181,19 +181,24 @@ The state resolver handles edge cases like:
 
 ## Data Storage
 
-All HUD data lives in `~/.claude/`:
+Capacitor uses two namespaces:
 
+**`~/.capacitor/`** — owned by Capacitor:
+```
+~/.capacitor/
+├── config.json                 # Pinned projects
+├── sessions.json               # Current session states
+├── stats-cache.json            # Token usage cache
+├── summaries.json              # Session summaries
+└── projects/{encoded-path}/    # Per-project data (ideas, order)
+```
+
+**`~/.claude/`** — owned by Claude Code CLI (read-only for Capacitor):
 ```
 ~/.claude/
-├── hud.json                    # Pinned projects
-├── hud-session-states-v2.json  # Current states
-├── hud-stats-cache.json        # Token usage cache
-├── hud-summaries.json          # Session summaries
-├── hud-ideas/                  # Global idea inbox
-└── sessions/                   # Lock directories
+├── sessions/                   # Lock directories (created by Claude)
+└── projects/                   # Session transcripts
 ```
-
-Project-specific ideas are stored in `{project}/.claude/ideas.local.md`.
 
 ## Contributing
 

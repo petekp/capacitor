@@ -109,7 +109,7 @@ The checksums are embedded in both the dylib and Swift bindings. They must match
 
 - Update regex patterns in `parse_stats_from_content()` (`core/hud-core/src/stats.rs`)
 - Update `ProjectStats` struct in `core/hud-core/src/types.rs`
-- Delete `~/.claude/hud-stats-cache.json` to force recomputation
+- Delete `~/.capacitor/stats-cache.json` to force recomputation
 
 ## Adding Project Type Detection
 

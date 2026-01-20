@@ -60,9 +60,13 @@ See [ADR-003: Sidecar Architecture Pattern](docs/architecture-decisions/003-side
 
 Hooks track local Claude Code sessions → state file → HUD reads.
 
-- **State file:** `~/.claude/hud-session-states-v2.json`
+**Paths:**
+- **State file:** `~/.capacitor/sessions.json` (written by hook script)
+- **Lock directory:** `~/.claude/sessions/` (created by Claude Code CLI)
 - **Hook script:** `~/.claude/scripts/hud-state-tracker.sh`
 - **Hook reference:** `.claude/docs/hook-operations.md`
+
+**Ownership:** Lock files are created by Claude Code CLI (not Capacitor). Capacitor only *reads* them to detect active sessions—following the sidecar principle of observe-don't-modify.
 
 ## Documentation Index
 

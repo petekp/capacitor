@@ -1241,7 +1241,7 @@ apps/sdk-bridge/
 6. **Creation State Management**
    - Full state machine: Pending → InProgress → Completed/Failed
    - Tracks session ID for resumption
-   - Persists state to disk (`~/.claude/hud-creations.json`)
+   - Persists state to disk (`~/.capacitor/creations.json`)
    - Lists active (non-completed) creations
 
 ### Completed Work

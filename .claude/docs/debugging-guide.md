@@ -6,7 +6,7 @@ Procedures for debugging Claude HUD components.
 
 ```bash
 # Inspect cache files
-cat ~/.claude/hud-stats-cache.json | jq .
+cat ~/.capacitor/stats-cache.json | jq .
 
 # Enable Rust debug logging
 RUST_LOG=debug swift run
@@ -21,9 +21,9 @@ See `.claude/docs/hook-operations.md` for complete hook debugging and troublesho
 
 Quick commands:
 ```bash
-tail -f ~/.claude/hud-hook-debug.log          # Watch events
+tail -f ~/.claude/hud-hook-debug.log           # Watch events
 ~/.claude/scripts/test-hud-hooks.sh            # Run test suite
-cat ~/.claude/hud-session-states-v2.json | jq . # View states
+cat ~/.capacitor/sessions.json | jq .          # View states
 ```
 
 ## Common Issues
@@ -41,8 +41,8 @@ See `.claude/docs/development-workflows.md` for the full regeneration procedure.
 
 ### Stats Not Updating
 
-1. Check if cache is stale: `cat ~/.claude/hud-stats-cache.json | jq '.entries | keys'`
-2. Delete cache to force recomputation: `rm ~/.claude/hud-stats-cache.json`
+1. Check if cache is stale: `cat ~/.capacitor/stats-cache.json | jq '.entries | keys'`
+2. Delete cache to force recomputation: `rm ~/.capacitor/stats-cache.json`
 3. Verify session files exist: `ls ~/.claude/projects/`
 
 ### SwiftUI Layout Broken (Gaps, Components Not Filling Space)

@@ -72,43 +72,24 @@ For the current phase of Claude HUD development:
 ### What We're Doing
 
 1. **Local sessions**: Use regular `claude` command with hooks for state tracking
-2. **State file**: `~/.claude/hud-session-states-v2.json` updated by hooks
-3. **Swift HUD**: Reads state file, displays thinking/ready status
-4. **Daemon**: Available as `hud-claude-daemon` for future remote/mobile use
-
-### What We're NOT Doing (Yet)
-
-1. Mode-switching loop (like Happy)
-2. Custom terminal UI for remote mode
-3. Automatic relay to mobile clients
-4. Real-time streaming to remote clients
-
-### Future Migration Path
-
-When mobile client work begins:
-
-1. **Implement relay server** - WebSocket server that receives state from daemon
-2. **Use daemon for remote sessions** - Mobile app connects to relay
-3. **Consider mode-switching** - If users want seamless local/remote, implement Happy's pattern
-4. **Or keep separate** - Local users use TUI, remote users use daemon
+2. **State file**: `~/.capacitor/sessions.json` updated by hooks
+3. **Lock files**: `~/.claude/sessions/{hash}.lock/` created by Claude Code CLI
+4. **Swift HUD**: Reads both to resolve current state
 
 ## File Structure
 
 ```
-~/.claude/scripts/
-├── hud-claude              # Runs regular Claude (aliases to /opt/homebrew/bin/claude)
-├── hud-claude-daemon       # Runs daemon with stream-json (for future remote use)
-└── hud-state-tracker.sh    # Hook script that updates state file
+~/.capacitor/               # Capacitor namespace (we own this)
+├── sessions.json           # State file written by hooks
+├── config.json             # Pinned projects, settings
+└── projects/{encoded}/     # Per-project ideas, order
 
-~/.claude/
-├── hud-session-states-v2.json  # State file read by Swift HUD (v2 format)
-├── sessions/                   # Lock directories ({hash}.lock/)
-└── settings.json               # Contains hook configuration
-
-apps/daemon/                # Daemon implementation (for future use)
-├── src/sdk/                # Claude Code SDK (stream-json parsing)
-├── src/daemon/             # State tracker, relay client
-└── src/cli/                # hud-claude-daemon entry point
+~/.claude/                  # Claude Code namespace (read-only for Capacitor)
+├── sessions/               # Lock directories ({hash}.lock/)
+├── projects/               # Session transcripts
+├── settings.json           # Contains hook configuration
+└── scripts/
+    └── hud-state-tracker.sh  # Hook script that updates state file
 ```
 
 ## References

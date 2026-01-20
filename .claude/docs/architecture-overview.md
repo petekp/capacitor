@@ -234,11 +234,11 @@ See [Adding a New CLI Agent Guide](adding-new-cli-agent-guide.md) for implementa
 
 ## State Tracking Architecture
 
-**Current approach:** Hooks for local sessions, daemon reserved for future remote/mobile use.
+**Current approach:** Hooks track local Claude Code sessions, write state to Capacitor namespace.
 
 See [ADR-001: State Tracking Approach](../../docs/architecture-decisions/001-state-tracking-approach.md) for the full decision rationale.
 
-### Local Sessions (Current)
+### Local Sessions
 
 For interactive CLI sessions, we use Claude Code hooks:
 
@@ -256,9 +256,9 @@ User runs claude → Hooks fire → State file updated → Swift HUD reads
 - `PreCompact` → state: compacting
 - `SessionEnd` → removes session from state file
 
-**State file:** `~/.claude/hud-session-states-v2.json`
+**State file:** `~/.capacitor/sessions.json` (written by hook script)
 
-**Lock directory:** `~/.claude/sessions/{md5-hash}.lock/`
+**Lock directory:** `~/.claude/sessions/{hash}.lock/` (created by Claude Code CLI)
 
 **Hook script:** `~/.claude/scripts/hud-state-tracker.sh`
 
@@ -267,27 +267,28 @@ User runs claude → Hooks fire → State file updated → Swift HUD reads
 - **Prevention checklist:** `.claude/docs/hook-prevention-checklist.md`
 - **Test suite:** `~/.claude/scripts/test-hud-hooks.sh`
 
-### HUD Daemon (Future Remote Use)
-
-The daemon in `apps/daemon/` provides **precise state tracking** via `--output-format stream-json`. It's reserved for future mobile/remote client integration.
-
-**Why not use daemon for local?** Claude's `--output-format stream-json` replaces the TUI with JSON output. You can't have both Claude's interactive TUI and structured JSON from the same process.
-
-For detailed daemon design, see `docs/hud-daemon-design.md`.
-
 ## Runtime Configuration
 
-The app reads from `~/.claude/` directory:
+The app uses two namespaces:
 
+**Capacitor namespace** (`~/.capacitor/`) — owned by Capacitor:
+```
+~/.capacitor/
+├── config.json                    # Pinned projects, settings
+├── sessions.json                  # Session states (written by hooks)
+├── stats-cache.json               # Cached token usage
+├── summaries.json                 # Session summaries cache
+├── project-summaries.json         # Project overview bullets
+├── creations.json                 # Project creation progress
+└── projects/{encoded-path}/       # Per-project data
+    ├── ideas.md                   # Ideas for this project
+    └── ideas-order.json           # Display order
+```
+
+**Claude namespace** (`~/.claude/`) — owned by Claude Code CLI, read-only for Capacitor:
 ```
 ~/.claude/
 ├── settings.json                  # Global Claude Code config
-├── hud.json                       # Pinned projects
-├── hud-session-states-v2.json     # Session states (v2 format)
-├── hud-file-activity.json         # File activity for project attribution
-├── hud-stats-cache.json           # Cached token usage
-├── hud-summaries.json             # Session summaries cache
-├── hud-project-summaries.json     # Project overview bullets
 ├── sessions/                      # Lock directories ({hash}.lock/)
 ├── projects/                      # Session files ({encoded-path}/{sessionid}.jsonl)
 └── plugins/installed_plugins.json # Plugin registry

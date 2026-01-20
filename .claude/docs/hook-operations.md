@@ -65,7 +65,7 @@ grep "State transition" ~/.claude/hud-hook-debug.log | tail -20
 grep -E "ERROR|WARNING" ~/.claude/hud-hook-debug.log | tail -20
 
 # View current session states
-cat ~/.claude/hud-session-states-v2.json | jq .
+cat ~/.capacitor/sessions.json | jq .
 
 # Check active lock files
 for lock in ~/.claude/sessions/*.lock; do
@@ -93,7 +93,7 @@ done
 **Check for stale sessions:**
 ```bash
 jq -r '.sessions | to_entries[] | select(.value.pid != null) | "\(.value.pid) \(.value.cwd)"' \
-  ~/.claude/hud-session-states-v2.json | while read pid cwd; do
+  ~/.capacitor/sessions.json | while read pid cwd; do
   kill -0 $pid 2>/dev/null || echo "Dead PID: $pid ($cwd)"
 done
 ```
@@ -116,7 +116,7 @@ done
 **Diagnosis:**
 ```bash
 # Check state file for working sessions
-cat ~/.claude/hud-session-states-v2.json | jq '.sessions | to_entries[] | select(.value.state == "working")'
+cat ~/.capacitor/sessions.json | jq '.sessions | to_entries[] | select(.value.state == "working")'
 
 # Check lock for your project
 echo -n "/path/to/project" | md5
@@ -131,7 +131,7 @@ cat ~/.claude/sessions/<hash>.lock/pid
 ### Hooks Stop Working Entirely
 
 1. Check jq is installed: `which jq || brew install jq`
-2. Check state file is valid: `jq . ~/.claude/hud-session-states-v2.json`
+2. Check state file is valid: `jq . ~/.capacitor/sessions.json`
 3. Check hook is executable: `ls -l ~/.claude/scripts/hud-state-tracker.sh`
 4. Check hook is registered: `jq '.hooks' ~/.claude/settings.json`
 
@@ -167,6 +167,6 @@ cat ~/.claude/sessions/<hash>.lock/pid
 - Hook script: `~/.claude/scripts/hud-state-tracker.sh`
 - Test suite: `~/.claude/scripts/test-hud-hooks.sh`
 - Debug log: `~/.claude/hud-hook-debug.log`
-- State file: `~/.claude/hud-session-states-v2.json`
+- State file: `~/.capacitor/sessions.json`
 - Claude Code hook docs: `docs/claude-code/hooks.md`
 - ADR-002: Lock handling architecture

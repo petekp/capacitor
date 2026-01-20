@@ -8,8 +8,8 @@
 ## Quick Reference
 
 ### File Locations
-- **Per-project:** `{project}/.claude/ideas.local.md`
-- **Inbox (global):** `~/.claude/hud/inbox-ideas.md`
+- **Per-project:** `~/.capacitor/projects/{encoded-path}/ideas.md`
+- **Order file:** `~/.capacitor/projects/{encoded-path}/ideas-order.json`
 
 ### ULID Format
 26 chars, uppercase, base32 (e.g., `01JQXYZ8K6TQFH2M5NWQR9SV7X`)
@@ -89,7 +89,7 @@ HUD relies on these patterns:
 ```markdown
 ## Idea Capture Conventions
 
-When editing `.claude/ideas.local.md`:
+When editing ideas files (`~/.capacitor/projects/{encoded-path}/ideas.md`):
 
 **Never modify:**
 - ID tokens: `[#idea-...]` must stay exactly as-is

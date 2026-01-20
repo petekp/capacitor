@@ -54,7 +54,7 @@ This decision affects:
 - Launch terminals with `claude` command
 - Use hooks to write state files HUD reads
 - Invoke CLI for AI features (triage, summaries, etc.)
-- Store HUD-specific state in `~/.claude/hud-*.json` files
+- Store Capacitor state in `~/.capacitor/` (separate namespace from Claude)
 
 ❌ **Don't:**
 - Maintain separate API keys or authentication
@@ -157,7 +157,7 @@ When designing a new feature, ask:
 
 2. **Where should this data live?**
    - If Claude Code cares about it → `~/.claude/` in a format Claude can read
-   - If HUD-only → `~/.claude/hud-*.json` with clear naming
+   - If Capacitor-only → `~/.capacitor/*.json` (separate namespace)
 
 3. **How should AI be involved?**
    - Invoke `claude` CLI with a well-crafted prompt
@@ -169,7 +169,7 @@ When designing a new feature, ask:
 Review current features against sidecar principles:
 
 - ✅ **Project stats** — Read from `~/.claude/projects/` (aligned)
-- ✅ **Session state** — Hooks write to `~/.claude/hud-session-states-v2.json` (aligned)
+- ✅ **Session state** — Hooks write to `~/.capacitor/sessions.json` (aligned)
 - ✅ **Project creation** — Launches terminal with `claude` (aligned)
 - ⚠️ **Summaries** — Currently uses subprocess to call CLI, could be more elegant (improve)
 - ❌ **Idea capture (proposed)** — Original spec called Anthropic API directly (needs revision)

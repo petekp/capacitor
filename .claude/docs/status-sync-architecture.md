@@ -11,8 +11,8 @@ The status sync system enables real-time visibility into Claude Code session sta
 │                           CLAUDE CODE HOST                                   │
 │  ┌─────────────┐    ┌──────────────────────┐    ┌─────────────────────┐    │
 │  │   Hooks     │───▶│ hud-state-tracker.sh │───▶│ State File (JSON)   │    │
-│  │ (7 events)  │    │ (state transitions)  │    │ ~/.claude/hud-      │    │
-│  └─────────────┘    └──────────────────────┘    │ session-states-v2   │    │
+│  │ (7 events)  │    │ (state transitions)  │    │ ~/.capacitor/       │    │
+│  └─────────────┘    └──────────────────────┘    │ sessions.json       │    │
 │                              │                   └─────────────────────┘    │
 │                              ▼ (triggers)                                    │
 │                     ┌──────────────────────┐                                │
@@ -126,13 +126,27 @@ lastHeartbeat = relayClient.projectHeartbeats
 
 **Solution:** SessionEnd just exits without changing state, preserving the "ready" state from Stop.
 
+### 7. Why Lock Files Live in Claude's Namespace
+
+**Problem:** How do we know if Claude Code is running for a project? The state file alone isn't reliable—it could be stale.
+
+**Solution:** Claude Code CLI creates lock directories at `~/.claude/sessions/{hash}.lock/` containing `pid` and `meta.json`. Capacitor only *reads* these—never writes them. This follows the sidecar principle: observe Claude Code's artifacts, don't modify them. The `create_lock()` function in Capacitor's codebase is a test helper that simulates Claude Code's behavior for unit testing.
+
 ## File Locations
 
-### Host Machine (~/.claude/)
+### Host Machine
+
+**Capacitor namespace (`~/.capacitor/`)** — owned by Capacitor, written by hook scripts:
 
 | File | Purpose |
 |------|---------|
-| `hud-session-states-v2.json` | Current state for all projects |
+| `sessions.json` | Current state for all projects |
+
+**Claude namespace (`~/.claude/`)** — owned by Claude Code CLI, read-only for Capacitor:
+
+| File | Purpose |
+|------|---------|
+| `sessions/*.lock/` | Lock directories (created by Claude Code CLI, read by Capacitor) |
 | `hud-relay.json` | Relay config (url, deviceId, secretKey) |
 | `hud-last-heartbeat` | Unix timestamp of last heartbeat sent |
 | `hud-publish-debug.log` | Debug log for publish-state.sh |
@@ -184,7 +198,7 @@ lastHeartbeat = relayClient.projectHeartbeats
 
 ### Check current state
 ```bash
-cat ~/.claude/hud-session-states-v2.json | jq .
+cat ~/.capacitor/sessions.json | jq .
 ```
 
 ### Watch hook activity
