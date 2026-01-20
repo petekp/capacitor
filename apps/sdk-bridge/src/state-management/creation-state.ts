@@ -24,7 +24,7 @@ export class CreationStateManager {
   private stateDir: string;
 
   constructor(stateDir?: string) {
-    this.stateDir = stateDir || join(process.env.HOME || '~', '.claude');
+    this.stateDir = stateDir || join(process.env.HOME || '~', '.capacitor');
   }
 
   startCreation(projectInfo: ProjectInfo): ProjectCreation {
@@ -84,7 +84,7 @@ export class CreationStateManager {
 
   async persist(): Promise<void> {
     await mkdir(this.stateDir, { recursive: true });
-    const statePath = join(this.stateDir, 'hud-creations.json');
+    const statePath = join(this.stateDir, 'creations.json');
 
     const data: PersistedCreation[] = Array.from(this.creations.values()).map(c => ({
       id: c.id,
@@ -103,7 +103,7 @@ export class CreationStateManager {
   }
 
   async load(): Promise<void> {
-    const statePath = join(this.stateDir, 'hud-creations.json');
+    const statePath = join(this.stateDir, 'creations.json');
 
     try {
       const content = await readFile(statePath, 'utf-8');

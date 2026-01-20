@@ -548,7 +548,7 @@ class AppState: ObservableObject {
 
     private func loadCreations() {
         let creationsPath = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".claude/hud-creations.json")
+            .appendingPathComponent(".capacitor/creations.json")
 
         guard FileManager.default.fileExists(atPath: creationsPath.path) else { return }
 
@@ -565,7 +565,7 @@ class AppState: ObservableObject {
 
     private func saveCreations() {
         let creationsPath = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".claude/hud-creations.json")
+            .appendingPathComponent(".capacitor/creations.json")
 
         do {
             let encoder = JSONEncoder()
