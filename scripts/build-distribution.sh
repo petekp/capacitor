@@ -114,6 +114,16 @@ cp "$SWIFT_DIR/.build/release/ClaudeHUD" "$APP_BUNDLE/Contents/MacOS/ClaudeHUD"
 # Copy dylib to Frameworks
 cp "$DYLIB_PATH" "$APP_BUNDLE/Contents/Frameworks/libhud_core.dylib"
 
+# Copy Sparkle.framework to Frameworks
+SPARKLE_FRAMEWORK="$SWIFT_DIR/.build/arm64-apple-macosx/release/Sparkle.framework"
+if [ -d "$SPARKLE_FRAMEWORK" ]; then
+    cp -R "$SPARKLE_FRAMEWORK" "$APP_BUNDLE/Contents/Frameworks/"
+    echo -e "${GREEN}✓ Sparkle.framework copied${NC}"
+else
+    echo -e "${RED}ERROR: Sparkle.framework not found at $SPARKLE_FRAMEWORK${NC}"
+    exit 1
+fi
+
 # Add rpath to executable to find dylib in Frameworks
 install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP_BUNDLE/Contents/MacOS/ClaudeHUD"
 
@@ -178,6 +188,13 @@ codesign --force --sign "$SIGNING_IDENTITY" \
     --options runtime \
     --timestamp \
     "$APP_BUNDLE/Contents/Frameworks/libhud_core.dylib"
+
+# Sign Sparkle.framework (must sign before the app bundle)
+codesign --force --sign "$SIGNING_IDENTITY" \
+    --options runtime \
+    --timestamp \
+    --deep \
+    "$APP_BUNDLE/Contents/Frameworks/Sparkle.framework"
 
 # Sign the app bundle
 ENTITLEMENTS_FILE="$SWIFT_DIR/.build/arm64-apple-macosx/release/ClaudeHUD-entitlement.plist"
