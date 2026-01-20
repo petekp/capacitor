@@ -66,6 +66,10 @@ struct ProjectCardView: View {
         currentState == .waiting
     }
 
+    private var isWorking: Bool {
+        currentState == .working
+    }
+
     private var nameColor: Color {
         project.isMissing ? .white.opacity(0.5) : .white.opacity(0.9)
     }
@@ -131,6 +135,7 @@ struct ProjectCardView: View {
                 isHovered: isHovered,
                 isReady: isReady,
                 isWaiting: isWaiting,
+                isWorking: isWorking,
                 isActive: isActive,
                 flashState: flashState,
                 flashOpacity: flashOpacity,

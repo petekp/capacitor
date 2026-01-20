@@ -10,6 +10,8 @@ struct HeaderView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 16) {
+                CapacitorLogo()
+
                 Spacer()
 
                 AddProjectButton()
@@ -178,6 +180,135 @@ struct AddProjectPopover: View {
         .padding(8)
         .focusable(false)
         .allowsHitTesting(true)
+    }
+}
+
+struct CapacitorLogo: View {
+    private let logoText = "CAPACITOR"
+
+    #if DEBUG
+    @ObservedObject private var config = GlassConfig.shared
+    #endif
+
+    private var fontSize: CGFloat {
+        #if DEBUG
+        CGFloat(config.logoFontSize)
+        #else
+        13.0
+        #endif
+    }
+
+    private var tracking: CGFloat {
+        #if DEBUG
+        CGFloat(config.logoTracking)
+        #else
+        1.5
+        #endif
+    }
+
+    private var baseOpacity: Double {
+        #if DEBUG
+        config.logoBaseOpacity
+        #else
+        0.25
+        #endif
+    }
+
+    private var shadowOpacity: Double {
+        #if DEBUG
+        config.logoShadowOpacity
+        #else
+        0.6
+        #endif
+    }
+
+    private var shadowOffset: CGSize {
+        #if DEBUG
+        CGSize(width: config.logoShadowOffsetX, height: config.logoShadowOffsetY)
+        #else
+        CGSize(width: 0.8, height: 0.8)
+        #endif
+    }
+
+    private var shadowBlur: CGFloat {
+        #if DEBUG
+        CGFloat(config.logoShadowBlur)
+        #else
+        0.8
+        #endif
+    }
+
+    private var highlightOpacity: Double {
+        #if DEBUG
+        config.logoHighlightOpacity
+        #else
+        0.3
+        #endif
+    }
+
+    private var highlightOffset: CGSize {
+        #if DEBUG
+        CGSize(width: config.logoHighlightOffsetX, height: config.logoHighlightOffsetY)
+        #else
+        CGSize(width: -0.5, height: -0.5)
+        #endif
+    }
+
+    private var highlightBlur: CGFloat {
+        #if DEBUG
+        CGFloat(config.logoHighlightBlur)
+        #else
+        0.5
+        #endif
+    }
+
+    private var shadowBlendMode: BlendMode {
+        #if DEBUG
+        config.logoShadowBlendMode
+        #else
+        .multiply
+        #endif
+    }
+
+    private var highlightBlendMode: BlendMode {
+        #if DEBUG
+        config.logoHighlightBlendMode
+        #else
+        .plusLighter
+        #endif
+    }
+
+    private var logoFont: Font {
+        .system(size: fontSize, weight: .black, design: .monospaced)
+    }
+
+    private func baseText(_ color: Color = .white) -> some View {
+        Text(logoText)
+            .font(logoFont)
+            .tracking(tracking)
+            .foregroundColor(color)
+    }
+
+    var body: some View {
+        baseText(.white.opacity(baseOpacity))
+            .overlay {
+                // Inner shadow - masked to letter shapes
+                baseText(.black)
+                    .blur(radius: shadowBlur)
+                    .offset(x: shadowOffset.width, y: shadowOffset.height)
+                    .mask(baseText(.white))
+                    .opacity(shadowOpacity)
+                    .blendMode(shadowBlendMode)
+            }
+            .overlay {
+                // Inner highlight - masked to letter shapes
+                baseText(.white)
+                    .blur(radius: highlightBlur)
+                    .offset(x: highlightOffset.width, y: highlightOffset.height)
+                    .mask(baseText(.white))
+                    .opacity(highlightOpacity)
+                    .blendMode(highlightBlendMode)
+            }
     }
 }
 

@@ -637,3 +637,333 @@ struct WaitingPulseParameters {
     var originXPercent: Double = 0.5
     var originYPercent: Double = 0.5
 }
+
+// MARK: - Working State Effects
+
+struct WorkingStripeParameters {
+    let stripeWidth: Double
+    let stripeSpacing: Double
+    let stripeAngle: Double
+    let scrollSpeed: Double
+    let stripeOpacity: Double
+    let darkStripeOpacity: Double
+    // Emissive glow parameters
+    let glowIntensity: Double
+    let glowBlurRadius: Double
+    let coreBrightness: Double
+    let gradientFalloff: Double
+    // Vignette mask parameters
+    let vignetteInnerRadius: Double
+    let vignetteOuterRadius: Double
+    let vignetteCenterOpacity: Double
+    // Vignette color tint
+    let vignetteColor: Color
+    let vignetteColorIntensity: Double
+    let vignetteBlendMode: BlendMode
+}
+
+struct WorkingStripeOverlay: View {
+    var layoutMode: LayoutMode = .vertical
+    @Environment(\.prefersReducedMotion) private var reduceMotion
+
+    #if DEBUG
+    @ObservedObject private var config = GlassConfig.shared
+    #endif
+
+    var body: some View {
+        if reduceMotion {
+            staticStripes
+        } else {
+            animatedStripes
+        }
+    }
+
+    private var staticStripes: some View {
+        let params = stripeParameters
+        return ZStack {
+            // Colored background that shows through in the center
+            vignetteBackground(params: params)
+
+            // Stripe layers masked to show at edges
+            ZStack {
+                GeometryReader { _ in
+                    Canvas { context, size in
+                        drawGlowStripes(context: context, size: size, phase: 0, params: params)
+                    }
+                }
+                .blur(radius: params.glowBlurRadius)
+                .opacity(params.glowIntensity)
+                .blendMode(.plusLighter)
+
+                GeometryReader { _ in
+                    Canvas { context, size in
+                        drawCoreStripes(context: context, size: size, phase: 0, params: params)
+                    }
+                }
+                .blendMode(.plusLighter)
+            }
+            .mask(vignetteMask(params: params))
+        }
+        .allowsHitTesting(false)
+    }
+
+    private var animatedStripes: some View {
+        TimelineView(.animation) { timeline in
+            let params = stripeParameters
+            let time = timeline.date.timeIntervalSinceReferenceDate
+            let phase = time.truncatingRemainder(dividingBy: params.scrollSpeed) / params.scrollSpeed
+
+            ZStack {
+                // Colored background that shows through in the center
+                vignetteBackground(params: params)
+
+                // Stripe layers masked to show at edges
+                ZStack {
+                    GeometryReader { _ in
+                        Canvas { context, size in
+                            drawGlowStripes(context: context, size: size, phase: phase, params: params)
+                        }
+                    }
+                    .blur(radius: params.glowBlurRadius)
+                    .opacity(params.glowIntensity)
+                    .blendMode(.plusLighter)
+
+                    GeometryReader { _ in
+                        Canvas { context, size in
+                            drawCoreStripes(context: context, size: size, phase: phase, params: params)
+                        }
+                    }
+                    .blendMode(.plusLighter)
+                }
+                .mask(vignetteMask(params: params))
+            }
+        }
+        .allowsHitTesting(false)
+    }
+
+    private func vignetteMask(params: WorkingStripeParameters) -> some View {
+        GeometryReader { geometry in
+            let cornerRadius: CGFloat = layoutMode == .dock ? 10 : 12
+            let frameWidth = params.vignetteInnerRadius * min(geometry.size.width, geometry.size.height)
+            let blurAmount = frameWidth * params.vignetteOuterRadius
+
+            ZStack {
+                // Low opacity center (stripes barely visible here)
+                RoundedRectangle(cornerRadius: cornerRadius)
+                    .fill(.white.opacity(params.vignetteCenterOpacity))
+
+                // Bright frame at edges (stripes fully visible here)
+                RoundedRectangle(cornerRadius: cornerRadius)
+                    .strokeBorder(.white, lineWidth: frameWidth)
+                    .blur(radius: blurAmount)
+
+                RoundedRectangle(cornerRadius: cornerRadius)
+                    .strokeBorder(.white, lineWidth: frameWidth * 0.5)
+            }
+            .compositingGroup()
+        }
+    }
+
+    private func vignetteBackground(params: WorkingStripeParameters) -> some View {
+        GeometryReader { geometry in
+            let cornerRadius: CGFloat = layoutMode == .dock ? 10 : 12
+
+            RoundedRectangle(cornerRadius: cornerRadius)
+                .fill(params.vignetteColor)
+                .opacity(params.vignetteColorIntensity)
+                .blendMode(params.vignetteBlendMode)
+        }
+    }
+
+    private func drawGlowStripes(context: GraphicsContext, size: CGSize, phase: Double, params: WorkingStripeParameters) {
+        let stripeWidth = params.stripeWidth * 1.5
+        let patternWidth = params.stripeSpacing
+        let angle = params.stripeAngle * .pi / 180
+
+        let diagonal = sqrt(size.width * size.width + size.height * size.height)
+        let offset = phase * patternWidth
+
+        var stripeContext = context
+        stripeContext.translateBy(x: size.width / 2, y: size.height / 2)
+        stripeContext.rotate(by: Angle(radians: angle))
+        stripeContext.translateBy(x: -diagonal / 2 - offset, y: -diagonal / 2)
+
+        let stripeCount = Int(ceil(diagonal * 2 / patternWidth)) + 2
+        let glowColor = Color.statusWorking
+
+        for i in 0..<stripeCount {
+            let x = Double(i) * patternWidth
+            let stripeRect = CGRect(x: x, y: 0, width: stripeWidth, height: diagonal * 2)
+            let stripePath = Path(stripeRect)
+            stripeContext.fill(stripePath, with: .color(glowColor.opacity(params.stripeOpacity * 1.5)))
+        }
+    }
+
+    private func drawCoreStripes(context: GraphicsContext, size: CGSize, phase: Double, params: WorkingStripeParameters) {
+        let stripeWidth = params.stripeWidth
+        let patternWidth = params.stripeSpacing
+        let angle = params.stripeAngle * .pi / 180
+
+        let diagonal = sqrt(size.width * size.width + size.height * size.height)
+        let offset = phase * patternWidth
+
+        var stripeContext = context
+        stripeContext.translateBy(x: size.width / 2, y: size.height / 2)
+        stripeContext.rotate(by: Angle(radians: angle))
+        stripeContext.translateBy(x: -diagonal / 2 - offset, y: -diagonal / 2)
+
+        let stripeCount = Int(ceil(diagonal * 2 / patternWidth)) + 2
+
+        for i in 0..<stripeCount {
+            let x = Double(i) * patternWidth
+
+            // Gradient stripe: bright core fading to edges (neon tube effect)
+            let gradientRect = CGRect(x: x, y: 0, width: stripeWidth, height: diagonal * 2)
+
+            let gradient = Gradient(stops: [
+                .init(color: Color.statusWorking.opacity(params.stripeOpacity * 0.3), location: 0.0),
+                .init(color: Color.white.opacity(params.coreBrightness), location: 0.5 - params.gradientFalloff),
+                .init(color: Color.white.opacity(params.coreBrightness), location: 0.5 + params.gradientFalloff),
+                .init(color: Color.statusWorking.opacity(params.stripeOpacity * 0.3), location: 1.0)
+            ])
+
+            let stripePath = Path(gradientRect)
+            stripeContext.fill(
+                stripePath,
+                with: .linearGradient(
+                    gradient,
+                    startPoint: CGPoint(x: x, y: 0),
+                    endPoint: CGPoint(x: x + stripeWidth, y: 0)
+                )
+            )
+        }
+    }
+
+    private var stripeParameters: WorkingStripeParameters {
+        #if DEBUG
+        WorkingStripeParameters(
+            stripeWidth: config.workingStripeWidth(for: layoutMode),
+            stripeSpacing: config.workingStripeSpacing(for: layoutMode),
+            stripeAngle: config.workingStripeAngle(for: layoutMode),
+            scrollSpeed: config.workingScrollSpeed(for: layoutMode),
+            stripeOpacity: config.workingStripeOpacity(for: layoutMode),
+            darkStripeOpacity: config.workingDarkStripeOpacity(for: layoutMode),
+            glowIntensity: config.workingGlowIntensity(for: layoutMode),
+            glowBlurRadius: config.workingGlowBlurRadius(for: layoutMode),
+            coreBrightness: config.workingCoreBrightness(for: layoutMode),
+            gradientFalloff: config.workingGradientFalloff(for: layoutMode),
+            vignetteInnerRadius: config.workingVignetteInnerRadius(for: layoutMode),
+            vignetteOuterRadius: config.workingVignetteOuterRadius(for: layoutMode),
+            vignetteCenterOpacity: config.workingVignetteCenterOpacity(for: layoutMode),
+            vignetteColor: config.workingVignetteColor,
+            vignetteColorIntensity: config.workingVignetteColorIntensity(for: layoutMode),
+            vignetteBlendMode: config.workingVignetteBlendMode
+        )
+        #else
+        WorkingStripeParameters(
+            stripeWidth: 24.0,
+            stripeSpacing: 38.49,
+            stripeAngle: 41.30,
+            scrollSpeed: 4.81,
+            stripeOpacity: 0.50,
+            darkStripeOpacity: 0.0,
+            glowIntensity: 1.50,
+            glowBlurRadius: 11.46,
+            coreBrightness: 0.71,
+            gradientFalloff: 0.32,
+            vignetteInnerRadius: 0.02,
+            vignetteOuterRadius: 0.48,
+            vignetteCenterOpacity: 0.03,
+            vignetteColor: Color(hue: 0.05, saturation: 0.67, brightness: 0.39),
+            vignetteColorIntensity: 0.47,
+            vignetteBlendMode: .plusLighter
+        )
+        #endif
+    }
+}
+
+struct WorkingBorderGlow: View {
+    let seed: String
+    var cornerRadius: CGFloat = 12
+    var layoutMode: LayoutMode = .vertical
+    @Environment(\.prefersReducedMotion) private var reduceMotion
+
+    #if DEBUG
+    @ObservedObject private var config = GlassConfig.shared
+    #endif
+
+    private var timeOffset: Double {
+        var hasher = Hasher()
+        hasher.combine(seed)
+        let hash = abs(hasher.finalize())
+        return Double(hash % 10000) / 1000.0
+    }
+
+    var body: some View {
+        if reduceMotion {
+            staticBorder
+        } else {
+            animatedBorder
+        }
+    }
+
+    private var staticBorder: some View {
+        RoundedRectangle(cornerRadius: cornerRadius)
+            .strokeBorder(Color.statusWorking.opacity(0.4), lineWidth: 1.5)
+            .allowsHitTesting(false)
+    }
+
+    private var animatedBorder: some View {
+        TimelineView(.animation) { timeline in
+            let params = borderParameters
+            let time = timeline.date.timeIntervalSinceReferenceDate + timeOffset
+            let phase = sin(time * 2 * .pi / params.pulseSpeed)
+            let opacity = params.baseOpacity + (phase + 1) / 2 * params.pulseIntensity
+
+            ZStack {
+                RoundedRectangle(cornerRadius: cornerRadius)
+                    .strokeBorder(
+                        Color.statusWorking.opacity(opacity),
+                        lineWidth: params.borderWidth
+                    )
+
+                RoundedRectangle(cornerRadius: cornerRadius)
+                    .strokeBorder(
+                        Color.statusWorking.opacity(opacity * 0.5),
+                        lineWidth: params.borderWidth * 2
+                    )
+                    .blur(radius: params.blurAmount)
+            }
+            .blendMode(.plusLighter)
+        }
+        .allowsHitTesting(false)
+    }
+
+    private var borderParameters: WorkingBorderParameters {
+        #if DEBUG
+        WorkingBorderParameters(
+            borderWidth: config.workingBorderWidth(for: layoutMode),
+            baseOpacity: config.workingBorderBaseOpacity(for: layoutMode),
+            pulseIntensity: config.workingBorderPulseIntensity(for: layoutMode),
+            pulseSpeed: config.workingBorderPulseSpeed(for: layoutMode),
+            blurAmount: config.workingBorderBlurAmount(for: layoutMode)
+        )
+        #else
+        WorkingBorderParameters(
+            borderWidth: 1.0,
+            baseOpacity: 0.35,
+            pulseIntensity: 0.50,
+            pulseSpeed: 2.21,
+            blurAmount: 8.0
+        )
+        #endif
+    }
+}
+
+struct WorkingBorderParameters {
+    let borderWidth: Double
+    let baseOpacity: Double
+    let pulseIntensity: Double
+    let pulseSpeed: Double
+    let blurAmount: Double
+}

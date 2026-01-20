@@ -45,6 +45,10 @@ struct DockProjectCard: View {
         currentState == .waiting
     }
 
+    private var isWorking: Bool {
+        currentState == .working
+    }
+
     private var displaySummary: String? {
         if let current = sessionState?.workingOn, !current.isEmpty {
             return current
@@ -93,6 +97,7 @@ struct DockProjectCard: View {
                 isHovered: isHovered,
                 isReady: isReady,
                 isWaiting: isWaiting,
+                isWorking: isWorking,
                 isActive: isActive,
                 flashState: flashState,
                 flashOpacity: flashOpacity,

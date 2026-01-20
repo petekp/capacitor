@@ -76,6 +76,21 @@ class GlassConfig: ObservableObject {
         return hasher.finalize()
     }
 
+    // Logo letterpress effect
+    @Published var logoFontSize: Double = 13.0
+    @Published var logoTracking: Double = 0.5
+    @Published var logoBaseOpacity: Double = 0.9
+    @Published var logoShadowOpacity: Double = 0.6
+    @Published var logoShadowOffsetX: Double = 0.0
+    @Published var logoShadowOffsetY: Double = 1.0
+    @Published var logoShadowBlur: Double = 1.0
+    @Published var logoHighlightOpacity: Double = 0.15
+    @Published var logoHighlightOffsetX: Double = 0.0
+    @Published var logoHighlightOffsetY: Double = -0.5
+    @Published var logoHighlightBlur: Double = 0.0
+    @Published var logoShadowBlendMode: BlendMode = .multiply
+    @Published var logoHighlightBlendMode: BlendMode = .plusLighter
+
     // Panel background
     @Published var panelTintOpacity: Double = 0.33
     @Published var panelCornerRadius: Double = 22
@@ -141,7 +156,6 @@ class GlassConfig: ObservableObject {
     @Published var borderGlowPulseIntensity: Double = 0.50
     @Published var borderGlowRotationMultiplier: Double = 0.50
 
-
     // MARK: - Waiting Pulse Effect
     @Published var waitingCycleLength: Double = 1.68
     @Published var waitingFirstPulseDuration: Double = 0.17
@@ -166,6 +180,35 @@ class GlassConfig: ObservableObject {
     @Published var waitingBorderInnerWidth: Double = 0.50
     @Published var waitingBorderOuterWidth: Double = 1.86
     @Published var waitingBorderOuterBlur: Double = 0.8
+
+    // MARK: - Working Stripe Effect (tuned defaults)
+    @Published var workingStripeWidth: Double = 24.0
+    @Published var workingStripeSpacing: Double = 38.49
+    @Published var workingStripeAngle: Double = 41.30
+    @Published var workingScrollSpeed: Double = 4.81
+    @Published var workingStripeOpacity: Double = 0.50
+    @Published var workingDarkStripeOpacity: Double = 0.15
+    @Published var workingGlowIntensity: Double = 1.50
+    @Published var workingGlowBlurRadius: Double = 11.46
+    @Published var workingCoreBrightness: Double = 0.71
+    @Published var workingGradientFalloff: Double = 0.32
+    @Published var workingVignetteInnerRadius: Double = 0.02
+    @Published var workingVignetteOuterRadius: Double = 0.48
+    @Published var workingVignetteCenterOpacity: Double = 0.03
+    // Note: Cannot use .statusWorking here as it would cause circular initialization
+    @Published var workingVignetteColor: Color = Color(hue: 0.05, saturation: 0.67, brightness: 0.39)
+    @Published var workingVignetteColorIntensity: Double = 0.47
+    @Published var workingVignetteBlendMode: BlendMode = .plusLighter
+    @Published var workingVignetteColorHue: Double = 0.05
+    @Published var workingVignetteColorSaturation: Double = 0.67
+    @Published var workingVignetteColorBrightness: Double = 0.39
+
+    // Working border glow (tuned defaults)
+    @Published var workingBorderWidth: Double = 1.0
+    @Published var workingBorderBaseOpacity: Double = 0.35
+    @Published var workingBorderPulseIntensity: Double = 0.50
+    @Published var workingBorderPulseSpeed: Double = 2.21
+    @Published var workingBorderBlurAmount: Double = 8.0
 
     // MARK: - Caustic Underglow Effect
     @Published var causticEnabled: Bool = false
@@ -302,6 +345,27 @@ class GlassConfig: ObservableObject {
     func waitingBorderOuterBlur(for layout: LayoutMode) -> Double { waitingBorderOuterBlur }
     func waitingOriginX(for layout: LayoutMode) -> Double { waitingOriginX }
     func waitingOriginY(for layout: LayoutMode) -> Double { waitingOriginY }
+
+    // MARK: - Working Effect Accessors (unified)
+    func workingStripeWidth(for layout: LayoutMode) -> Double { workingStripeWidth }
+    func workingStripeSpacing(for layout: LayoutMode) -> Double { workingStripeSpacing }
+    func workingStripeAngle(for layout: LayoutMode) -> Double { workingStripeAngle }
+    func workingScrollSpeed(for layout: LayoutMode) -> Double { workingScrollSpeed }
+    func workingStripeOpacity(for layout: LayoutMode) -> Double { workingStripeOpacity }
+    func workingDarkStripeOpacity(for layout: LayoutMode) -> Double { workingDarkStripeOpacity }
+    func workingGlowIntensity(for layout: LayoutMode) -> Double { workingGlowIntensity }
+    func workingGlowBlurRadius(for layout: LayoutMode) -> Double { workingGlowBlurRadius }
+    func workingCoreBrightness(for layout: LayoutMode) -> Double { workingCoreBrightness }
+    func workingGradientFalloff(for layout: LayoutMode) -> Double { workingGradientFalloff }
+    func workingVignetteInnerRadius(for layout: LayoutMode) -> Double { workingVignetteInnerRadius }
+    func workingVignetteOuterRadius(for layout: LayoutMode) -> Double { workingVignetteOuterRadius }
+    func workingVignetteCenterOpacity(for layout: LayoutMode) -> Double { workingVignetteCenterOpacity }
+    func workingVignetteColorIntensity(for layout: LayoutMode) -> Double { workingVignetteColorIntensity }
+    func workingBorderWidth(for layout: LayoutMode) -> Double { workingBorderWidth }
+    func workingBorderBaseOpacity(for layout: LayoutMode) -> Double { workingBorderBaseOpacity }
+    func workingBorderPulseIntensity(for layout: LayoutMode) -> Double { workingBorderPulseIntensity }
+    func workingBorderPulseSpeed(for layout: LayoutMode) -> Double { workingBorderPulseSpeed }
+    func workingBorderBlurAmount(for layout: LayoutMode) -> Double { workingBorderBlurAmount }
 
     // MARK: - Card Interaction Accessors (unified)
     func cardIdleScale(for layout: LayoutMode) -> Double { cardIdleScale }
@@ -556,518 +620,6 @@ class GlassConfig: ObservableObject {
         output += "```"
 
         return output
-    }
-}
-
-struct GlassTuningPanel: View {
-    @ObservedObject var config = GlassConfig.shared
-    @Binding var isPresented: Bool
-    @State private var copiedToClipboard = false
-    @State private var selectedTab = 0
-
-    var body: some View {
-        VStack(spacing: 0) {
-            header
-            tabBar
-            ScrollView {
-                VStack(spacing: 10) {
-                    switch selectedTab {
-                    case 0: glassContent
-                    case 1: statusColorsContent
-                    case 2: effectsContent
-                    case 3: previewContent
-                    default: glassContent
-                    }
-                }
-                .padding(10)
-            }
-            .scrollIndicators(.hidden)
-            actionsSection
-                .padding(10)
-        }
-        .frame(width: 300, height: 580)
-        .background(Color.hudBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .strokeBorder(Color.hudBorder, lineWidth: 0.5)
-        )
-    }
-
-    private var header: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "slider.horizontal.3")
-                .font(AppTypography.labelMedium)
-                .foregroundColor(.hudAccent)
-
-            Text("Visual Tuning")
-                .font(AppTypography.cardTitle)
-                .foregroundColor(.white.opacity(0.9))
-
-            Spacer()
-
-            Text("DEBUG")
-                .font(AppTypography.badge)
-                .foregroundColor(.hudAccent)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(Color.hudAccent.opacity(0.15))
-                .clipShape(Capsule())
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .background(Color.hudCard.opacity(0.6))
-    }
-
-    private var tabBar: some View {
-        HStack(spacing: 4) {
-            TuningTab(title: "Glass", icon: "square.on.square", isSelected: selectedTab == 0) {
-                selectedTab = 0
-            }
-            TuningTab(title: "Colors", icon: "paintpalette", isSelected: selectedTab == 1) {
-                selectedTab = 1
-            }
-            TuningTab(title: "Effects", icon: "sparkles", isSelected: selectedTab == 2) {
-                selectedTab = 2
-            }
-            TuningTab(title: "Preview", icon: "play.circle", isSelected: selectedTab == 3) {
-                selectedTab = 3
-            }
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(Color.black.opacity(0.25))
-    }
-
-    private var glassContent: some View {
-        VStack(spacing: 12) {
-            TuningSection(title: "Panel Background") {
-                TuningSlider(label: "Tint Opacity", value: $config.panelTintOpacity, range: 0...1)
-                TuningSlider(label: "Corner Radius", value: $config.panelCornerRadius, range: 0...30)
-                TuningSlider(label: "Border Opacity", value: $config.panelBorderOpacity, range: 0...1)
-                TuningSlider(label: "Highlight", value: $config.panelHighlightOpacity, range: 0...0.3)
-                TuningSlider(label: "Top Highlight", value: $config.panelTopHighlightOpacity, range: 0...0.5)
-                TuningSlider(label: "Shadow Opacity", value: $config.panelShadowOpacity, range: 0...1)
-                TuningSlider(label: "Shadow Radius", value: $config.panelShadowRadius, range: 0...50)
-                TuningSlider(label: "Shadow Y", value: $config.panelShadowY, range: 0...30)
-            }
-
-            TuningSection(title: "Card Background") {
-                TuningSlider(label: "Tint Opacity", value: $config.cardTintOpacity, range: 0...1)
-                TuningSlider(label: "Corner Radius", value: $config.cardCornerRadius, range: 0...24)
-                TuningSlider(label: "Border Opacity", value: $config.cardBorderOpacity, range: 0...1)
-                TuningSlider(label: "Highlight", value: $config.cardHighlightOpacity, range: 0...0.3)
-                TuningSlider(label: "Hover Border", value: $config.cardHoverBorderOpacity, range: 0...1)
-                TuningSlider(label: "Hover Highlight", value: $config.cardHoverHighlightOpacity, range: 0...0.5)
-            }
-
-            TuningSection(title: "Material", isExpanded: false) {
-                Picker("Material", selection: $config.materialType) {
-                    ForEach(0..<GlassConfig.materialNames.count, id: \.self) { index in
-                        Text(GlassConfig.materialNames[index]).tag(index)
-                    }
-                }
-                .pickerStyle(.menu)
-                .font(AppTypography.label)
-
-                Text("isEmphasized only affects .selection material (for sidebars)")
-                    .font(AppTypography.captionSmall)
-                    .foregroundColor(.white.opacity(0.4))
-                    .italic()
-            }
-        }
-    }
-
-    private var statusColorsContent: some View {
-        VStack(spacing: 12) {
-            StatusColorSection(
-                title: "Ready",
-                hue: $config.statusReadyHue,
-                saturation: $config.statusReadySaturation,
-                brightness: $config.statusReadyBrightness,
-                color: config.statusReadyColor
-            )
-
-            StatusColorSection(
-                title: "Working",
-                hue: $config.statusWorkingHue,
-                saturation: $config.statusWorkingSaturation,
-                brightness: $config.statusWorkingBrightness,
-                color: config.statusWorkingColor
-            )
-
-            StatusColorSection(
-                title: "Waiting",
-                hue: $config.statusWaitingHue,
-                saturation: $config.statusWaitingSaturation,
-                brightness: $config.statusWaitingBrightness,
-                color: config.statusWaitingColor
-            )
-
-            StatusColorSection(
-                title: "Compacting",
-                hue: $config.statusCompactingHue,
-                saturation: $config.statusCompactingSaturation,
-                brightness: $config.statusCompactingBrightness,
-                color: config.statusCompactingColor
-            )
-
-            TuningSection(title: "Idle") {
-                HStack {
-                    Circle()
-                        .fill(config.statusIdleColor)
-                        .frame(width: 12, height: 12)
-                    Spacer()
-                }
-                TuningSlider(label: "Opacity", value: $config.statusIdleOpacity, range: 0...1)
-            }
-        }
-    }
-
-    private var effectsContent: some View {
-        VStack(spacing: 12) {
-            TuningSection(title: "Compacting Text") {
-                TuningSlider(label: "Cycle Length", value: $config.compactingCycleLength, range: 0.5...4)
-                TuningSlider(label: "Min Tracking", value: $config.compactingMinTracking, range: -6...3)
-                TuningSlider(label: "Max Tracking", value: $config.compactingMaxTracking, range: -3...6)
-                TuningSlider(label: "Compress Time", value: $config.compactingCompressDuration, range: 0.1...1)
-                TuningSlider(label: "Compress Damping", value: $config.compactingCompressDamping, range: 0.3...2)
-                TuningSlider(label: "Compress Omega", value: $config.compactingCompressOmega, range: 2...20)
-                TuningSlider(label: "Hold Time", value: $config.compactingHoldDuration, range: 0...1)
-                TuningSlider(label: "Expand Time", value: $config.compactingExpandDuration, range: 0.1...2)
-                TuningSlider(label: "Expand Damping", value: $config.compactingExpandDamping, range: 0.3...2)
-                TuningSlider(label: "Expand Omega", value: $config.compactingExpandOmega, range: 2...20)
-            }
-
-            TuningSection(title: "Ready Ripple") {
-                TuningSlider(label: "Speed (seconds)", value: $config.rippleSpeed, range: 1...10)
-                TuningSlider(label: "Ring Count", value: Binding(
-                    get: { Double(config.rippleCount) },
-                    set: { config.rippleCount = Int($0) }
-                ), range: 1...6)
-                TuningSlider(label: "Max Opacity", value: $config.rippleMaxOpacity, range: 0...1)
-                TuningSlider(label: "Line Width", value: $config.rippleLineWidth, range: 0.5...30)
-                TuningSlider(label: "Blur Amount", value: $config.rippleBlurAmount, range: 0...60)
-                TuningSlider(label: "Fade In Zone", value: $config.rippleFadeInZone, range: 0...0.5)
-                TuningSlider(label: "Fade Out Power", value: $config.rippleFadeOutPower, range: 0.5...4)
-                TuningSlider(label: "Origin X", value: $config.rippleOriginX, range: 0...1)
-                TuningSlider(label: "Origin Y", value: $config.rippleOriginY, range: 0...1)
-            }
-
-            TuningSection(title: "Border Glow") {
-                TuningSlider(label: "Inner Width", value: $config.borderGlowInnerWidth, range: 0.25...3)
-                TuningSlider(label: "Outer Width", value: $config.borderGlowOuterWidth, range: 0.5...5)
-                TuningSlider(label: "Inner Blur", value: $config.borderGlowInnerBlur, range: 0...3)
-                TuningSlider(label: "Outer Blur", value: $config.borderGlowOuterBlur, range: 0...8)
-                TuningSlider(label: "Base Opacity", value: $config.borderGlowBaseOpacity, range: 0...1)
-                TuningSlider(label: "Pulse Intensity", value: $config.borderGlowPulseIntensity, range: 0...1)
-                TuningSlider(label: "Rotation Speed", value: $config.borderGlowRotationMultiplier, range: 0...2)
-            }
-
-            TuningSection(title: "Waiting Pulse", isExpanded: false) {
-                TuningSlider(label: "Cycle Length", value: $config.waitingCycleLength, range: 1...5)
-                TuningSlider(label: "1st Pulse Duration", value: $config.waitingFirstPulseDuration, range: 0.05...0.5)
-                TuningSlider(label: "1st Pulse Fade", value: $config.waitingFirstPulseFadeOut, range: 0.1...0.6)
-                TuningSlider(label: "2nd Pulse Delay", value: $config.waitingSecondPulseDelay, range: 0...0.5)
-                TuningSlider(label: "2nd Pulse Duration", value: $config.waitingSecondPulseDuration, range: 0.05...0.5)
-                TuningSlider(label: "2nd Pulse Fade", value: $config.waitingSecondPulseFadeOut, range: 0.1...0.6)
-                TuningSlider(label: "1st Pulse Intensity", value: $config.waitingFirstPulseIntensity, range: 0...1)
-                TuningSlider(label: "2nd Pulse Intensity", value: $config.waitingSecondPulseIntensity, range: 0...1)
-                TuningSlider(label: "Max Opacity", value: $config.waitingMaxOpacity, range: 0...1)
-                TuningSlider(label: "Blur Amount", value: $config.waitingBlurAmount, range: 0...60)
-                TuningSlider(label: "Pulse Scale", value: $config.waitingPulseScale, range: 1...3)
-                TuningSlider(label: "Scale Amount", value: $config.waitingScaleAmount, range: 0...1)
-                TuningSlider(label: "Spring Damping", value: $config.waitingSpringDamping, range: 0.5...2)
-                TuningSlider(label: "Spring Omega", value: $config.waitingSpringOmega, range: 2...20)
-                TuningSlider(label: "Origin X", value: $config.waitingOriginX, range: 0...1)
-                TuningSlider(label: "Origin Y", value: $config.waitingOriginY, range: 0...1)
-            }
-
-            TuningSection(title: "Waiting Border", isExpanded: false) {
-                TuningSlider(label: "Base Opacity", value: $config.waitingBorderBaseOpacity, range: 0...0.5)
-                TuningSlider(label: "Pulse Opacity", value: $config.waitingBorderPulseOpacity, range: 0...1)
-                TuningSlider(label: "Inner Width", value: $config.waitingBorderInnerWidth, range: 0.5...4)
-                TuningSlider(label: "Outer Width", value: $config.waitingBorderOuterWidth, range: 1...8)
-                TuningSlider(label: "Outer Blur", value: $config.waitingBorderOuterBlur, range: 0...12)
-            }
-        }
-    }
-
-    private var previewContent: some View {
-        VStack(spacing: 16) {
-            TuningSection(title: "Trigger State Preview") {
-                Text("Click a state to preview it on all project cards")
-                    .font(AppTypography.captionSmall)
-                    .foregroundColor(.white.opacity(0.5))
-                    .padding(.bottom, 4)
-
-                ForEach(PreviewState.allCases, id: \.self) { state in
-                    StatePreviewButton(
-                        state: state,
-                        isSelected: config.previewState == state,
-                        color: config.colorForState(state)
-                    ) {
-                        withAnimation(.spring(response: 0.3)) {
-                            config.previewState = state
-                        }
-                    }
-                }
-            }
-
-            TuningSection(title: "Live Preview") {
-                VStack(spacing: 12) {
-                    ForEach([PreviewState.ready, .working, .waiting, .compacting, .idle], id: \.self) { state in
-                        HStack(spacing: 8) {
-                            Circle()
-                                .fill(config.colorForState(state))
-                                .frame(width: 10, height: 10)
-                                .shadow(color: config.colorForState(state).opacity(0.6), radius: 4)
-                            Text(state.rawValue)
-                                .font(AppTypography.labelMedium)
-                                .foregroundColor(.white.opacity(0.8))
-                            Spacer()
-                        }
-                        .padding(.vertical, 4)
-                    }
-                }
-            }
-        }
-    }
-
-    private var actionsSection: some View {
-        HStack(spacing: 8) {
-            Button(action: { config.reset() }) {
-                HStack(spacing: 4) {
-                    Image(systemName: "arrow.counterclockwise")
-                        .font(AppTypography.label.weight(.semibold))
-                    Text("Reset")
-                        .font(AppTypography.labelMedium)
-                }
-                .foregroundColor(.white.opacity(0.7))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 7)
-                .background(Color.hudCard)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .strokeBorder(Color.white.opacity(0.1), lineWidth: 0.5)
-                )
-            }
-            .buttonStyle(.plain)
-
-            Spacer()
-
-            Button(action: copyToClipboard) {
-                HStack(spacing: 4) {
-                    Image(systemName: copiedToClipboard ? "checkmark" : "doc.on.doc")
-                        .font(AppTypography.label.weight(.semibold))
-                    Text(copiedToClipboard ? "Copied!" : "Export")
-                        .font(AppTypography.labelMedium)
-                }
-                .foregroundColor(.white)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 7)
-                .background(
-                    LinearGradient(
-                        colors: [Color.hudAccent, Color.hudAccentDark],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-            }
-            .buttonStyle(.plain)
-        }
-    }
-
-    private func copyToClipboard() {
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString(config.exportForLLM(), forType: .string)
-
-        withAnimation(.spring(response: 0.3)) {
-            copiedToClipboard = true
-        }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            withAnimation(.spring(response: 0.3)) {
-                copiedToClipboard = false
-            }
-        }
-    }
-}
-
-struct TuningTab: View {
-    let title: String
-    let icon: String
-    let isSelected: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            VStack(spacing: 3) {
-                Image(systemName: icon)
-                    .font(AppTypography.caption)
-                Text(title)
-                    .font(AppTypography.captionSmall.weight(.medium))
-            }
-            .foregroundColor(isSelected ? .hudAccent : .white.opacity(0.45))
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 7)
-            .background(isSelected ? Color.hudAccent.opacity(0.12) : Color.clear)
-            .clipShape(RoundedRectangle(cornerRadius: 6))
-        }
-        .buttonStyle(.plain)
-        .animation(.easeOut(duration: 0.15), value: isSelected)
-    }
-}
-
-struct StatusColorSection: View {
-    let title: String
-    @Binding var hue: Double
-    @Binding var saturation: Double
-    @Binding var brightness: Double
-    let color: Color
-
-    var body: some View {
-        TuningSection(title: title) {
-            HStack {
-                Circle()
-                    .fill(color)
-                    .frame(width: 14, height: 14)
-                    .shadow(color: color.opacity(0.5), radius: 4)
-                Text(title)
-                    .font(AppTypography.captionSmall)
-                    .foregroundColor(.white.opacity(0.5))
-                Spacer()
-            }
-            TuningSlider(label: "Hue", value: $hue, range: 0...1)
-            TuningSlider(label: "Saturation", value: $saturation, range: 0...1)
-            TuningSlider(label: "Brightness", value: $brightness, range: 0...1)
-        }
-    }
-}
-
-struct StatePreviewButton: View {
-    let state: PreviewState
-    let isSelected: Bool
-    let color: Color
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 8) {
-                if state != .none {
-                    Circle()
-                        .fill(color)
-                        .frame(width: 10, height: 10)
-                        .shadow(color: color.opacity(0.4), radius: 3)
-                }
-                Text(state.rawValue)
-                    .font(isSelected ? AppTypography.labelMedium : AppTypography.label)
-                Spacer()
-                if isSelected {
-                    Image(systemName: "checkmark")
-                        .font(AppTypography.captionSmall.weight(.bold))
-                        .foregroundColor(.hudAccent)
-                }
-            }
-            .foregroundColor(isSelected ? .white : .white.opacity(0.6))
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .background(isSelected ? Color.hudAccent.opacity(0.15) : Color.hudCard.opacity(0.3))
-            .clipShape(RoundedRectangle(cornerRadius: 6))
-            .overlay(
-                RoundedRectangle(cornerRadius: 6)
-                    .strokeBorder(isSelected ? Color.hudAccent.opacity(0.3) : Color.clear, lineWidth: 0.5)
-            )
-        }
-        .buttonStyle(.plain)
-        .animation(.easeOut(duration: 0.15), value: isSelected)
-    }
-}
-
-struct TuningSection<Content: View>: View {
-    let title: String
-    let content: () -> Content
-    @State private var isExpanded: Bool
-
-    init(title: String, isExpanded: Bool = true, @ViewBuilder content: @escaping () -> Content) {
-        self.title = title
-        self._isExpanded = State(initialValue: isExpanded)
-        self.content = content
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Button(action: { withAnimation(.spring(response: 0.25)) { isExpanded.toggle() } }) {
-                HStack {
-                    Text(title.uppercased())
-                        .font(AppTypography.captionSmall.weight(.bold))
-                        .tracking(0.8)
-                        .foregroundColor(.white.opacity(0.4))
-
-                    Spacer()
-
-                    Image(systemName: "chevron.right")
-                        .font(AppTypography.captionSmall.weight(.semibold))
-                        .foregroundColor(.white.opacity(0.25))
-                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                }
-            }
-            .buttonStyle(.plain)
-
-            if isExpanded {
-                VStack(spacing: 8) {
-                    content()
-                }
-                .padding(.top, 2)
-                .transition(.opacity.combined(with: .move(edge: .top)))
-            }
-        }
-        .padding(10)
-        .background(Color.hudCard.opacity(0.5))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-        .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .strokeBorder(Color.white.opacity(0.04), lineWidth: 0.5)
-        )
-    }
-}
-
-struct TuningSlider: View {
-    let label: String
-    @Binding var value: Double
-    let range: ClosedRange<Double>
-
-    private var displayValue: String {
-        if range.upperBound <= 1 {
-            return String(format: "%.2f", value)
-        } else if range.upperBound <= 10 {
-            return String(format: "%.1f", value)
-        } else {
-            return String(format: "%.0f", value)
-        }
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack {
-                Text(label)
-                    .font(AppTypography.captionSmall)
-                    .foregroundColor(.white.opacity(0.55))
-
-                Spacer()
-
-                Text(displayValue)
-                    .font(AppTypography.monoSmall.weight(.medium))
-                    .foregroundColor(.hudAccent)
-            }
-
-            Slider(value: $value, in: range)
-                .controlSize(.mini)
-                .tint(.hudAccent)
-        }
     }
 }
 

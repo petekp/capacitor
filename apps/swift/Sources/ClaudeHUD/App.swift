@@ -72,8 +72,7 @@ struct ClaudeHUDApp: App {
 
                 #if DEBUG
                 Divider()
-                TuningPanelMenuButton()
-                CardTuningPanelMenuButton()
+                UITuningPanelMenuButton()
                 #endif
             }
 
@@ -88,47 +87,30 @@ struct ClaudeHUDApp: App {
         }
 
         #if DEBUG
-        Window("Glass Tuning", id: "tuning-panel") {
-            GlassTuningPanel(isPresented: .constant(true))
+        Window("UI Tuning", id: "ui-tuning-panel") {
+            UITuningPanel(isPresented: .constant(true))
                 .preferredColorScheme(.dark)
         }
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)
         .defaultPosition(.topTrailing)
-
-        Window("Card Interaction", id: "card-tuning-panel") {
-            ProjectCardTuningPanel(isPresented: .constant(true))
-                .preferredColorScheme(.dark)
-        }
-        .windowStyle(.hiddenTitleBar)
-        .windowResizability(.contentSize)
-        .defaultPosition(.trailing)
+        .defaultSize(width: 580, height: 720)
         #endif
     }
 }
 
 #if DEBUG
-struct TuningPanelMenuButton: View {
+struct UITuningPanelMenuButton: View {
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
-        Button("Glass Tuning Panel") {
-            openWindow(id: "tuning-panel")
+        Button("UI Tuning Panel") {
+            openWindow(id: "ui-tuning-panel")
         }
-        .keyboardShortcut("D", modifiers: [.command, .shift])
+        .keyboardShortcut("U", modifiers: [.command, .shift])
     }
 }
 
-struct CardTuningPanelMenuButton: View {
-    @Environment(\.openWindow) private var openWindow
-
-    var body: some View {
-        Button("Card Interaction Panel") {
-            openWindow(id: "card-tuning-panel")
-        }
-        .keyboardShortcut("I", modifiers: [.command, .shift])
-    }
-}
 #endif
 
 class AppDelegate: NSObject, NSApplicationDelegate {

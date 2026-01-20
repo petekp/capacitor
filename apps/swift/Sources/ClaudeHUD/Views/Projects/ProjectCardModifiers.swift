@@ -6,6 +6,7 @@ extension View {
         isHovered: Bool,
         isReady: Bool,
         isWaiting: Bool = false,
+        isWorking: Bool = false,
         isActive: Bool,
         flashState: SessionState?,
         flashOpacity: Double,
@@ -19,13 +20,20 @@ extension View {
     ) -> some View {
         self
             .background {
-                if floatingMode {
-                    floatingCardBackground
-                        #if DEBUG
-                        .id(GlassConfig.shared.cardConfigHash)
-                        #endif
-                } else {
-                    solidCardBackground
+                ZStack {
+                    if floatingMode {
+                        floatingCardBackground
+                            #if DEBUG
+                            .id(GlassConfig.shared.cardConfigHash)
+                            #endif
+                    } else {
+                        solidCardBackground
+                    }
+
+                    if isWorking {
+                        WorkingStripeOverlay(layoutMode: layoutMode)
+                            .transition(.opacity.animation(.easeInOut(duration: 0.4)))
+                    }
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
@@ -75,6 +83,12 @@ extension View {
             .overlay {
                 if isWaiting {
                     WaitingBorderPulse(seed: animationSeed, cornerRadius: cornerRadius, layoutMode: layoutMode)
+                        .transition(.opacity.animation(.easeInOut(duration: 0.4)))
+                }
+            }
+            .overlay {
+                if isWorking {
+                    WorkingBorderGlow(seed: animationSeed, cornerRadius: cornerRadius, layoutMode: layoutMode)
                         .transition(.opacity.animation(.easeInOut(duration: 0.4)))
                 }
             }
