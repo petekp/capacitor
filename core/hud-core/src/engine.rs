@@ -609,7 +609,10 @@ impl HudEngine {
     /// This is useful for mtime-based change detection in the UI.
     /// Path: `~/.capacitor/projects/{encoded-path}/ideas.md`
     pub fn get_ideas_file_path(&self, project_path: String) -> String {
-        self.storage.project_ideas_file(&project_path).to_string_lossy().to_string()
+        self.storage
+            .project_ideas_file(&project_path)
+            .to_string_lossy()
+            .to_string()
     }
 
     // ─────────────────────────────────────────────────────────────────────────────
