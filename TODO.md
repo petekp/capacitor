@@ -30,7 +30,7 @@
 ### Agent SDK - Phase 2: Session Management
 - [ ] Add `sessionId` field to Project/ProjectSession data model
 - [ ] Capture session IDs from SDK init messages
-- [ ] Store sessions in `~/.claude/hud-sessions.json`
+- [ ] Store sessions in `~/.capacitor/sessions.json`
 - [ ] Add "Resume Last Session" button in ProjectDetailView
 - [ ] Implement session resumption via `resume: sessionId`
 
@@ -86,9 +86,6 @@ Flagship feature: go from project idea to working v1 with minimal friction.
 
 ### State Tracking Migration to SDK
 Analysis complete: SDK hooks cannot replace shell hooks for CLI sessions (SDK isn't running during CLI usage). The current shell-based system (~246 lines of bash) works reliably. See `.claude/docs/agent-sdk-migration-guide.md` § "State Tracking Migration: Why Not to Do It".
-
-### Legacy Daemon Approach
-The `apps/daemon/` implementation is deprecated in favor of official SDK. Keep for reference but don't invest further.
 
 ---
 
