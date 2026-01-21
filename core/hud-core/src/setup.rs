@@ -635,7 +635,15 @@ mod tests {
         fs::create_dir_all(&scripts_dir).unwrap();
 
         let old_script = "#!/bin/bash\n# Claude HUD State Tracker Hook v1.0.0\n";
-        fs::write(scripts_dir.join("hud-state-tracker.sh"), old_script).unwrap();
+        let script_path = scripts_dir.join("hud-state-tracker.sh");
+        fs::write(&script_path, old_script).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = fs::metadata(&script_path).unwrap().permissions();
+            perms.set_mode(0o755);
+            fs::set_permissions(&script_path, perms).unwrap();
+        }
 
         let checker = SetupChecker::new(storage);
         let status = checker.check_hooks_status();

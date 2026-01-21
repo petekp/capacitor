@@ -249,16 +249,16 @@ else
 fi
 
 # Test 16: Missing cwd with fallback
-echo "Test 16: Missing cwd uses CLAUDE_PROJECT_DIR fallback"
+echo "Test 16: Missing cwd uses PWD fallback"
 export CLAUDE_PROJECT_DIR="/fallback/project"
 send_event '{"hook_event_name":"SessionStart","session_id":"fallback-test"}'
 SESSION=$(get_session "fallback-test")
 CWD=$(echo "$SESSION" | jq -r '.cwd')
 unset CLAUDE_PROJECT_DIR
-if [ "$CWD" = "/fallback/project" ]; then
-    pass "CLAUDE_PROJECT_DIR fallback works"
+if [ "$CWD" = "$PWD" ]; then
+    pass "PWD fallback works"
 else
-    fail "CLAUDE_PROJECT_DIR fallback" "/fallback/project" "$CWD"
+    fail "PWD fallback" "$PWD" "$CWD"
 fi
 
 echo ""
