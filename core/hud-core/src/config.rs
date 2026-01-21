@@ -8,6 +8,7 @@
 //! with custom paths, use the `StorageConfig` struct directly.
 //! Reads are best-effort; malformed files return defaults to keep the app usable.
 
+use crate::storage::StorageConfig;
 use crate::types::{HudConfig, StatsCache};
 use std::fs;
 use std::path::PathBuf;
@@ -35,6 +36,11 @@ pub fn get_projects_config_path() -> Option<PathBuf> {
     get_capacitor_dir().map(|d| d.join("projects.json"))
 }
 
+/// Returns the path to the projects configuration file for a specific storage root.
+pub fn get_projects_config_path_for(storage: &StorageConfig) -> PathBuf {
+    storage.projects_file()
+}
+
 /// Returns the path to the HUD configuration file.
 ///
 /// Deprecated: Use `get_projects_config_path()` instead.
@@ -46,15 +52,29 @@ pub fn get_hud_config_path() -> Option<PathBuf> {
 
 /// Loads the HUD configuration, returning defaults if file doesn't exist.
 pub fn load_hud_config() -> HudConfig {
-    get_projects_config_path()
-        .and_then(|p| fs::read_to_string(&p).ok())
+    load_hud_config_with_storage(&StorageConfig::default())
+}
+
+/// Loads the HUD configuration from a specific storage root.
+pub fn load_hud_config_with_storage(storage: &StorageConfig) -> HudConfig {
+    let path = get_projects_config_path_for(storage);
+    fs::read_to_string(&path)
+        .ok()
         .and_then(|c| serde_json::from_str(&c).ok())
         .unwrap_or_default()
 }
 
 /// Saves the HUD configuration to disk.
 pub fn save_hud_config(config: &HudConfig) -> Result<(), String> {
-    let path = get_projects_config_path().ok_or("Could not find config path")?;
+    save_hud_config_with_storage(&StorageConfig::default(), config)
+}
+
+/// Saves the HUD configuration to disk for a specific storage root.
+pub fn save_hud_config_with_storage(
+    storage: &StorageConfig,
+    config: &HudConfig,
+) -> Result<(), String> {
+    let path = get_projects_config_path_for(storage);
 
     // Ensure parent directory exists
     if let Some(parent) = path.parent() {
@@ -74,17 +94,36 @@ pub fn get_stats_cache_path() -> Option<PathBuf> {
     get_capacitor_dir().map(|d| d.join("stats-cache.json"))
 }
 
+/// Returns the path to the statistics cache file for a specific storage root.
+pub fn get_stats_cache_path_for(storage: &StorageConfig) -> PathBuf {
+    storage.stats_cache_file()
+}
+
 /// Loads the statistics cache, returning empty cache if file doesn't exist.
 pub fn load_stats_cache() -> StatsCache {
-    get_stats_cache_path()
-        .and_then(|p| fs::read_to_string(&p).ok())
+    load_stats_cache_with_storage(&StorageConfig::default())
+}
+
+/// Loads the statistics cache for a specific storage root.
+pub fn load_stats_cache_with_storage(storage: &StorageConfig) -> StatsCache {
+    let path = get_stats_cache_path_for(storage);
+    fs::read_to_string(&path)
+        .ok()
         .and_then(|c| serde_json::from_str(&c).ok())
         .unwrap_or_default()
 }
 
 /// Saves the statistics cache to disk.
 pub fn save_stats_cache(cache: &StatsCache) -> Result<(), String> {
-    let path = get_stats_cache_path().ok_or("Could not find cache path")?;
+    save_stats_cache_with_storage(&StorageConfig::default(), cache)
+}
+
+/// Saves the statistics cache to disk for a specific storage root.
+pub fn save_stats_cache_with_storage(
+    storage: &StorageConfig,
+    cache: &StatsCache,
+) -> Result<(), String> {
+    let path = get_stats_cache_path_for(storage);
 
     // Ensure parent directory exists
     if let Some(parent) = path.parent() {

@@ -31,7 +31,7 @@ pub struct StorageConfig {
 
 impl Default for StorageConfig {
     fn default() -> Self {
-        let home = dirs::home_dir().expect("Could not find home directory");
+        let home = dirs::home_dir().unwrap_or_else(std::env::temp_dir);
         Self {
             root: home.join(".capacitor"),
             claude_root: home.join(".claude"),
@@ -130,20 +130,29 @@ impl StorageConfig {
     // ─────────────────────────────────────────────────────────────────────────────
 
     /// Path to a project's data directory.
-    /// Example: ~/.capacitor/projects/-Users-pete-Code-my-project/
+    /// Example: ~/.capacitor/projects/p2_%2FUsers%2Fpete%2FCode%2Fmy-project/
     pub fn project_data_dir(&self, project_path: &str) -> PathBuf {
         let encoded = Self::encode_path(project_path);
-        self.root.join("projects").join(encoded)
+        let new_path = self.root.join("projects").join(&encoded);
+
+        let legacy_encoded = Self::encode_path_legacy(project_path);
+        let legacy_path = self.root.join("projects").join(legacy_encoded);
+
+        if legacy_path.exists() && !new_path.exists() {
+            legacy_path
+        } else {
+            new_path
+        }
     }
 
     /// Path to a project's ideas file.
-    /// Example: ~/.capacitor/projects/-Users-pete-Code-my-project/ideas.md
+    /// Example: ~/.capacitor/projects/p2_%2FUsers%2Fpete%2FCode%2Fmy-project/ideas.md
     pub fn project_ideas_file(&self, project_path: &str) -> PathBuf {
         self.project_data_dir(project_path).join("ideas.md")
     }
 
     /// Path to a project's idea order file.
-    /// Example: ~/.capacitor/projects/-Users-pete-Code-my-project/ideas-order.json
+    /// Example: ~/.capacitor/projects/p2_%2FUsers%2Fpete%2FCode%2Fmy-project/ideas-order.json
     pub fn project_order_file(&self, project_path: &str) -> PathBuf {
         self.project_data_dir(project_path).join("ideas-order.json")
     }
@@ -173,28 +182,45 @@ impl StorageConfig {
     // ─────────────────────────────────────────────────────────────────────────────
 
     /// Encodes a filesystem path for use as a directory name.
-    /// Replaces `/` with `-`.
-    /// Example: `/Users/pete/Code/my-project` -> `-Users-pete-Code-my-project`
+    /// Uses a lossless, percent-encoded scheme with a versioned prefix.
+    /// Example: `/Users/pete/Code/my-project` -> `p2_%2FUsers%2Fpete%2FCode%2Fmy-project`
     pub fn encode_path(path: &str) -> String {
-        path.replace('/', "-")
+        Self::encode_path_v2(path)
     }
 
     /// Decodes an encoded path back to the original filesystem path.
-    /// This is a best-effort reversal - ambiguous cases may not resolve correctly.
+    /// Supports both v2 (lossless) and legacy (lossy) encodings.
     /// For reliable resolution, use `try_resolve_encoded_path` which checks filesystem.
     pub fn decode_path(encoded: &str) -> String {
+        if let Some(stripped) = encoded.strip_prefix(Self::ENCODED_PREFIX) {
+            return decode_percent(stripped);
+        }
+
         if encoded.is_empty() || !encoded.starts_with('-') {
             return encoded.to_string();
         }
-        // Simple reversal: replace leading `-` and subsequent `-` with `/`
-        // Note: This is lossy if original path contained `-`
+
+        // Legacy reversal: replace leading `-` and subsequent `-` with `/`.
+        // This is lossy if the original path contained `-`.
         format!("/{}", &encoded[1..].replace('-', "/"))
     }
 
     /// Attempts to resolve an encoded path to a real filesystem path.
     /// Checks the filesystem to handle ambiguous cases (paths with `-` in names).
     pub fn try_resolve_encoded_path(encoded: &str) -> Option<String> {
-        if encoded.is_empty() || !encoded.starts_with('-') {
+        if encoded.is_empty() {
+            return None;
+        }
+
+        if let Some(stripped) = encoded.strip_prefix(Self::ENCODED_PREFIX) {
+            let decoded = decode_percent(stripped);
+            if PathBuf::from(&decoded).exists() {
+                return Some(decoded);
+            }
+            return None;
+        }
+
+        if !encoded.starts_with('-') {
             return None;
         }
 
@@ -223,6 +249,30 @@ impl StorageConfig {
         None
     }
 
+    const ENCODED_PREFIX: &'static str = "p2_";
+
+    fn encode_path_v2(path: &str) -> String {
+        let mut out = String::with_capacity(path.len() + Self::ENCODED_PREFIX.len());
+        out.push_str(Self::ENCODED_PREFIX);
+        for &b in path.as_bytes() {
+            match b {
+                b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'.' | b'_' | b'-' => {
+                    out.push(b as char);
+                }
+                _ => {
+                    out.push('%');
+                    out.push(to_hex((b >> 4) & 0x0f));
+                    out.push(to_hex(b & 0x0f));
+                }
+            }
+        }
+        out
+    }
+
+    fn encode_path_legacy(path: &str) -> String {
+        path.replace('/', "-")
+    }
+
     // ─────────────────────────────────────────────────────────────────────────────
     // Directory Creation
     // ─────────────────────────────────────────────────────────────────────────────
@@ -242,9 +292,45 @@ impl StorageConfig {
     }
 }
 
+fn decode_percent(encoded: &str) -> String {
+    let bytes = encoded.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let (Some(high), Some(low)) = (from_hex(bytes[i + 1]), from_hex(bytes[i + 2])) {
+                out.push((high << 4) | low);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).to_string()
+}
+
+fn from_hex(b: u8) -> Option<u8> {
+    match b {
+        b'0'..=b'9' => Some(b - b'0'),
+        b'a'..=b'f' => Some(b - b'a' + 10),
+        b'A'..=b'F' => Some(b - b'A' + 10),
+        _ => None,
+    }
+}
+
+fn to_hex(n: u8) -> char {
+    match n {
+        0..=9 => (b'0' + n) as char,
+        10..=15 => (b'A' + (n - 10)) as char,
+        _ => '0',
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
     use tempfile::TempDir;
 
     // ─────────────────────────────────────────────────────────────────────────────
@@ -385,28 +471,48 @@ mod tests {
     #[test]
     fn test_project_data_dir_path() {
         let config = StorageConfig::with_root(PathBuf::from("/tmp/capacitor"));
+        let encoded = StorageConfig::encode_path("/Users/pete/Code/my-project");
         assert_eq!(
             config.project_data_dir("/Users/pete/Code/my-project"),
-            PathBuf::from("/tmp/capacitor/projects/-Users-pete-Code-my-project")
+            PathBuf::from("/tmp/capacitor/projects").join(encoded)
         );
     }
 
     #[test]
     fn test_project_ideas_file_path() {
         let config = StorageConfig::with_root(PathBuf::from("/tmp/capacitor"));
+        let encoded = StorageConfig::encode_path("/Users/pete/Code/my-project");
         assert_eq!(
             config.project_ideas_file("/Users/pete/Code/my-project"),
-            PathBuf::from("/tmp/capacitor/projects/-Users-pete-Code-my-project/ideas.md")
+            PathBuf::from("/tmp/capacitor/projects")
+                .join(encoded)
+                .join("ideas.md")
         );
     }
 
     #[test]
     fn test_project_order_file_path() {
         let config = StorageConfig::with_root(PathBuf::from("/tmp/capacitor"));
+        let encoded = StorageConfig::encode_path("/Users/pete/Code/my-project");
         assert_eq!(
             config.project_order_file("/Users/pete/Code/my-project"),
-            PathBuf::from("/tmp/capacitor/projects/-Users-pete-Code-my-project/ideas-order.json")
+            PathBuf::from("/tmp/capacitor/projects")
+                .join(encoded)
+                .join("ideas-order.json")
         );
+    }
+
+    #[test]
+    fn test_project_data_dir_prefers_legacy_when_present() {
+        let temp = TempDir::new().unwrap();
+        let config = StorageConfig::with_root(temp.path().to_path_buf());
+
+        let project_path = "/Users/pete/Code/my-project";
+        let legacy_encoded = StorageConfig::encode_path_legacy(project_path);
+        let legacy_dir = temp.path().join("projects").join(&legacy_encoded);
+        fs::create_dir_all(&legacy_dir).unwrap();
+
+        assert_eq!(config.project_data_dir(project_path), legacy_dir);
     }
 
     // ─────────────────────────────────────────────────────────────────────────────
@@ -457,17 +563,25 @@ mod tests {
     fn test_encode_path_replaces_slashes() {
         assert_eq!(
             StorageConfig::encode_path("/Users/pete/Code/my-project"),
-            "-Users-pete-Code-my-project"
+            "p2_%2FUsers%2Fpete%2FCode%2Fmy-project"
         );
     }
 
     #[test]
     fn test_encode_path_root() {
-        assert_eq!(StorageConfig::encode_path("/"), "-");
+        assert_eq!(StorageConfig::encode_path("/"), "p2_%2F");
     }
 
     #[test]
     fn test_decode_path_restores_slashes() {
+        assert_eq!(
+            StorageConfig::decode_path("p2_%2FUsers%2Fpete%2FCode%2Ffoo"),
+            "/Users/pete/Code/foo"
+        );
+    }
+
+    #[test]
+    fn test_decode_path_legacy() {
         assert_eq!(
             StorageConfig::decode_path("-Users-pete-Code-foo"),
             "/Users/pete/Code/foo"
@@ -494,14 +608,11 @@ mod tests {
     }
 
     #[test]
-    fn test_encode_path_with_hyphens_is_lossy() {
-        // Paths with hyphens cannot be perfectly decoded without filesystem check
+    fn test_encode_path_with_hyphens_is_lossless() {
         let original = "/Users/pete/my-project";
         let encoded = StorageConfig::encode_path(original);
-        assert_eq!(encoded, "-Users-pete-my-project");
-        // decode_path doesn't know where the hyphen was original vs separator
         let decoded = StorageConfig::decode_path(&encoded);
-        assert_eq!(decoded, "/Users/pete/my/project"); // lossy!
+        assert_eq!(decoded, original);
     }
 
     // ─────────────────────────────────────────────────────────────────────────────
@@ -552,7 +663,7 @@ mod tests {
 
     #[test]
     fn test_try_resolve_encoded_path_nonexistent() {
-        let result = StorageConfig::try_resolve_encoded_path("-nonexistent-path-xyz");
+        let result = StorageConfig::try_resolve_encoded_path("p2_%2Fnonexistent-path-xyz");
         assert!(result.is_none());
     }
 

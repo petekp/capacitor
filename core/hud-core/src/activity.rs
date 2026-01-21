@@ -297,6 +297,44 @@ impl ActivityStore {
         false
     }
 
+    /// Checks if a project has recent activity with file paths inside the project.
+    ///
+    /// This is stricter than `has_recent_activity`, guarding against
+    /// misattributed project paths by verifying the file path as well.
+    pub fn has_recent_activity_in_path(&self, project_path: &str, threshold: Duration) -> bool {
+        let normalized_query = normalize_path(project_path);
+        let prefix = if normalized_query == "/" {
+            "/".to_string()
+        } else {
+            format!("{}/", normalized_query)
+        };
+
+        for session in self.sessions.values() {
+            for activity in &session.activity {
+                if normalize_path(&activity.project_path) != normalized_query {
+                    continue;
+                }
+
+                if !is_within_threshold(&activity.timestamp, threshold) {
+                    continue;
+                }
+
+                let activity_path = normalize_path(&activity.file_path);
+                let matches_path = if normalized_query == "/" {
+                    activity_path.starts_with('/')
+                } else {
+                    activity_path == normalized_query || activity_path.starts_with(&prefix)
+                };
+
+                if matches_path {
+                    return true;
+                }
+            }
+        }
+
+        false
+    }
+
     /// Gets all projects with recent activity for a session.
     pub fn active_projects_for_session(
         &self,
@@ -709,6 +747,60 @@ mod tests {
 
         assert!(store.has_recent_activity(active_pkg.to_str().unwrap(), ACTIVITY_THRESHOLD));
         assert!(!store.has_recent_activity(inactive_pkg.to_str().unwrap(), ACTIVITY_THRESHOLD));
+    }
+
+    #[test]
+    fn recent_activity_requires_file_path_within_project() {
+        let mut store = ActivityStore::new();
+
+        let project_path = "/tmp/hud-activity-project";
+        let other_path = "/tmp/hud-activity-other/file.txt";
+
+        store.sessions.insert(
+            "session-1".to_string(),
+            SessionActivity {
+                cwd: project_path.to_string(),
+                pid: None,
+                activity: vec![FileActivity {
+                    project_path: project_path.to_string(),
+                    file_path: other_path.to_string(),
+                    tool: "Edit".to_string(),
+                    timestamp: recent_timestamp(),
+                }],
+            },
+        );
+
+        assert!(
+            !store.has_recent_activity_in_path(project_path, ACTIVITY_THRESHOLD),
+            "Activity outside the project path should not count"
+        );
+    }
+
+    #[test]
+    fn recent_activity_within_project_is_detected() {
+        let mut store = ActivityStore::new();
+
+        let project_path = "/tmp/hud-activity-project";
+        let file_path = "/tmp/hud-activity-project/src/file.txt";
+
+        store.sessions.insert(
+            "session-1".to_string(),
+            SessionActivity {
+                cwd: project_path.to_string(),
+                pid: None,
+                activity: vec![FileActivity {
+                    project_path: project_path.to_string(),
+                    file_path: file_path.to_string(),
+                    tool: "Edit".to_string(),
+                    timestamp: recent_timestamp(),
+                }],
+            },
+        );
+
+        assert!(
+            store.has_recent_activity_in_path(project_path, ACTIVITY_THRESHOLD),
+            "Activity inside the project path should count"
+        );
     }
 
     #[test]

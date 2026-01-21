@@ -19,11 +19,14 @@
 
 use crate::agents::{AgentConfig, AgentRegistry, AgentSession};
 use crate::artifacts::{collect_artifacts_from_dir, count_artifacts_in_dir, count_hooks_in_dir};
-use crate::config::{load_hud_config, resolve_symlink, save_hud_config};
+use crate::config::{
+    load_hud_config_with_storage, resolve_symlink, save_hud_config_with_storage,
+};
 use crate::error::HudFfiError;
-use crate::projects::{has_project_indicators, load_projects};
+use crate::projects::{has_project_indicators, load_projects_with_storage};
 use crate::sessions::{
-    detect_session_state, get_all_session_states, read_project_status, ProjectStatus,
+    detect_session_state_with_storage, get_all_session_states_with_storage, read_project_status,
+    ProjectStatus,
 };
 use crate::setup::{DependencyStatus, HookStatus, InstallResult, SetupChecker, SetupStatus};
 use crate::state::{reconcile_orphaned_lock, StateStore};
@@ -99,19 +102,19 @@ impl HudEngine {
 
     /// Lists all pinned projects, sorted by most recent activity.
     pub fn list_projects(&self) -> Result<Vec<Project>, HudFfiError> {
-        load_projects().map_err(HudFfiError::from)
+        load_projects_with_storage(&self.storage).map_err(HudFfiError::from)
     }
 
     /// Gets the HUD configuration (pinned projects, terminal app, etc.)
     pub fn get_config(&self) -> HudConfig {
-        load_hud_config()
+        load_hud_config_with_storage(&self.storage)
     }
 
     /// Adds a project to the pinned projects list.
     ///
     /// Also reconciles any orphaned locks for this path to ensure correct state display.
     pub fn add_project(&self, path: String) -> Result<(), HudFfiError> {
-        let mut config = load_hud_config();
+        let mut config = load_hud_config_with_storage(&self.storage);
 
         if !std::path::Path::new(&path).exists() {
             return Err(HudFfiError::from(format!("Path does not exist: {}", path)));
@@ -135,14 +138,14 @@ impl HudEngine {
         }
 
         config.pinned_projects.push(path);
-        save_hud_config(&config).map_err(HudFfiError::from)
+        save_hud_config_with_storage(&self.storage, &config).map_err(HudFfiError::from)
     }
 
     /// Removes a project from the pinned projects list.
     pub fn remove_project(&self, path: String) -> Result<(), HudFfiError> {
-        let mut config = load_hud_config();
+        let mut config = load_hud_config_with_storage(&self.storage);
         config.pinned_projects.retain(|p| p != &path);
-        save_hud_config(&config).map_err(HudFfiError::from)
+        save_hud_config_with_storage(&self.storage, &config).map_err(HudFfiError::from)
     }
 
     /// Discovers suggested projects based on activity in ~/.claude/projects.
@@ -152,7 +155,7 @@ impl HudEngine {
             return Ok(Vec::new());
         }
 
-        let config = load_hud_config();
+        let config = load_hud_config_with_storage(&self.storage);
         let pinned_set: std::collections::HashSet<_> = config.pinned_projects.iter().collect();
 
         let mut suggestions: Vec<(SuggestedProject, u32)> = Vec::new();
@@ -225,7 +228,7 @@ impl HudEngine {
     /// Gets the session state for a single project.
     /// Uses session-ID keyed state and lock detection for reliable state.
     pub fn get_session_state(&self, project_path: String) -> ProjectSessionState {
-        detect_session_state(&project_path)
+        detect_session_state_with_storage(&self.storage, &project_path)
     }
 
     /// Gets session states for multiple projects.
@@ -237,7 +240,7 @@ impl HudEngine {
         projects: Vec<Project>,
     ) -> HashMap<String, ProjectSessionState> {
         let paths: Vec<String> = projects.iter().map(|p| p.path.clone()).collect();
-        get_all_session_states(&paths)
+        get_all_session_states_with_storage(&self.storage, &paths)
     }
 
     /// Gets project status from .claude/hud-status.json.
@@ -509,14 +512,16 @@ impl HudEngine {
         project_path: String,
         idea_text: String,
     ) -> Result<String, HudFfiError> {
-        crate::ideas::capture_idea(&project_path, &idea_text).map_err(HudFfiError::from)
+        crate::ideas::capture_idea_with_storage(&self.storage, &project_path, &idea_text)
+            .map_err(HudFfiError::from)
     }
 
     /// Loads all ideas for a project.
     ///
     /// Returns an empty vector if the ideas file doesn't exist.
     pub fn load_ideas(&self, project_path: String) -> Result<Vec<crate::types::Idea>, HudFfiError> {
-        crate::ideas::load_ideas(&project_path).map_err(HudFfiError::from)
+        crate::ideas::load_ideas_with_storage(&self.storage, &project_path)
+            .map_err(HudFfiError::from)
     }
 
     /// Updates the status of an idea.
@@ -528,8 +533,13 @@ impl HudEngine {
         idea_id: String,
         new_status: String,
     ) -> Result<(), HudFfiError> {
-        crate::ideas::update_idea_status(&project_path, &idea_id, &new_status)
-            .map_err(HudFfiError::from)
+        crate::ideas::update_idea_status_with_storage(
+            &self.storage,
+            &project_path,
+            &idea_id,
+            &new_status,
+        )
+        .map_err(HudFfiError::from)
     }
 
     /// Updates the effort estimate of an idea.
@@ -541,8 +551,13 @@ impl HudEngine {
         idea_id: String,
         new_effort: String,
     ) -> Result<(), HudFfiError> {
-        crate::ideas::update_idea_effort(&project_path, &idea_id, &new_effort)
-            .map_err(HudFfiError::from)
+        crate::ideas::update_idea_effort_with_storage(
+            &self.storage,
+            &project_path,
+            &idea_id,
+            &new_effort,
+        )
+        .map_err(HudFfiError::from)
     }
 
     /// Updates the triage status of an idea.
@@ -554,8 +569,13 @@ impl HudEngine {
         idea_id: String,
         new_triage: String,
     ) -> Result<(), HudFfiError> {
-        crate::ideas::update_idea_triage(&project_path, &idea_id, &new_triage)
-            .map_err(HudFfiError::from)
+        crate::ideas::update_idea_triage_with_storage(
+            &self.storage,
+            &project_path,
+            &idea_id,
+            &new_triage,
+        )
+        .map_err(HudFfiError::from)
     }
 
     /// Updates the title of an idea.
@@ -568,8 +588,13 @@ impl HudEngine {
         idea_id: String,
         new_title: String,
     ) -> Result<(), HudFfiError> {
-        crate::ideas::update_idea_title(&project_path, &idea_id, &new_title)
-            .map_err(HudFfiError::from)
+        crate::ideas::update_idea_title_with_storage(
+            &self.storage,
+            &project_path,
+            &idea_id,
+            &new_title,
+        )
+        .map_err(HudFfiError::from)
     }
 
     /// Updates the description of an idea.
@@ -582,8 +607,13 @@ impl HudEngine {
         idea_id: String,
         new_description: String,
     ) -> Result<(), HudFfiError> {
-        crate::ideas::update_idea_description(&project_path, &idea_id, &new_description)
-            .map_err(HudFfiError::from)
+        crate::ideas::update_idea_description_with_storage(
+            &self.storage,
+            &project_path,
+            &idea_id,
+            &new_description,
+        )
+        .map_err(HudFfiError::from)
     }
 
     /// Saves the display order of ideas for a project.
@@ -595,7 +625,8 @@ impl HudEngine {
         project_path: String,
         idea_ids: Vec<String>,
     ) -> Result<(), HudFfiError> {
-        crate::ideas::save_ideas_order(&project_path, idea_ids).map_err(HudFfiError::from)
+        crate::ideas::save_ideas_order_with_storage(&self.storage, &project_path, idea_ids)
+            .map_err(HudFfiError::from)
     }
 
     /// Loads the display order of ideas for a project.
@@ -603,7 +634,8 @@ impl HudEngine {
     /// Returns an empty vector if no order file exists (graceful degradation).
     /// The caller should merge this with loaded ideas: ordered first, unordered appended.
     pub fn load_ideas_order(&self, project_path: String) -> Result<Vec<String>, HudFfiError> {
-        crate::ideas::load_ideas_order(&project_path).map_err(HudFfiError::from)
+        crate::ideas::load_ideas_order_with_storage(&self.storage, &project_path)
+            .map_err(HudFfiError::from)
     }
 
     /// Returns the file path where ideas are stored for a project.
@@ -632,7 +664,7 @@ impl HudEngine {
     /// - Offering to create CLAUDE.md when missing
     /// - Detecting if the project is already tracked
     pub fn validate_project(&self, path: String) -> ValidationResultFfi {
-        let config = load_hud_config();
+        let config = load_hud_config_with_storage(&self.storage);
         validate_project_path(&path, &config.pinned_projects).into()
     }
 

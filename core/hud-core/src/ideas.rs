@@ -113,7 +113,15 @@ fn atomic_write(path: &Path, contents: &str) -> Result<()> {
 ///
 /// Returns the generated ULID for the idea.
 pub fn capture_idea(project_path: &str, idea_text: &str) -> Result<String> {
-    let ideas_file = get_ideas_file_path(project_path);
+    capture_idea_with_storage(&StorageConfig::default(), project_path, idea_text)
+}
+
+pub(crate) fn capture_idea_with_storage(
+    storage: &StorageConfig,
+    project_path: &str,
+    idea_text: &str,
+) -> Result<String> {
+    let ideas_file = get_ideas_file_path_with_storage(storage, project_path);
     ensure_ideas_file_exists(&ideas_file)?;
 
     // Generate ULID (26 chars, uppercase, sortable)
@@ -149,7 +157,14 @@ pub fn capture_idea(project_path: &str, idea_text: &str) -> Result<String> {
 /// Returns an empty vector if the file doesn't exist or has no ideas.
 /// Uses graceful defaults for missing metadata fields.
 pub fn load_ideas(project_path: &str) -> Result<Vec<Idea>> {
-    let ideas_file = get_ideas_file_path(project_path);
+    load_ideas_with_storage(&StorageConfig::default(), project_path)
+}
+
+pub(crate) fn load_ideas_with_storage(
+    storage: &StorageConfig,
+    project_path: &str,
+) -> Result<Vec<Idea>> {
+    let ideas_file = get_ideas_file_path_with_storage(storage, project_path);
 
     if !ideas_file.exists() {
         return Ok(Vec::new());
@@ -166,7 +181,16 @@ pub fn load_ideas(project_path: &str) -> Result<Vec<Idea>> {
 ///
 /// Finds the idea block by its ULID and updates the `- **Status:** ` line.
 pub fn update_idea_status(project_path: &str, idea_id: &str, new_status: &str) -> Result<()> {
-    let ideas_file = get_ideas_file_path(project_path);
+    update_idea_status_with_storage(&StorageConfig::default(), project_path, idea_id, new_status)
+}
+
+pub(crate) fn update_idea_status_with_storage(
+    storage: &StorageConfig,
+    project_path: &str,
+    idea_id: &str,
+    new_status: &str,
+) -> Result<()> {
+    let ideas_file = get_ideas_file_path_with_storage(storage, project_path);
 
     if !ideas_file.exists() {
         return Err(HudError::FileNotFound(ideas_file));
@@ -184,7 +208,16 @@ pub fn update_idea_status(project_path: &str, idea_id: &str, new_status: &str) -
 
 /// Updates the effort estimate of an idea by ID.
 pub fn update_idea_effort(project_path: &str, idea_id: &str, new_effort: &str) -> Result<()> {
-    let ideas_file = get_ideas_file_path(project_path);
+    update_idea_effort_with_storage(&StorageConfig::default(), project_path, idea_id, new_effort)
+}
+
+pub(crate) fn update_idea_effort_with_storage(
+    storage: &StorageConfig,
+    project_path: &str,
+    idea_id: &str,
+    new_effort: &str,
+) -> Result<()> {
+    let ideas_file = get_ideas_file_path_with_storage(storage, project_path);
 
     if !ideas_file.exists() {
         return Err(HudError::FileNotFound(ideas_file));
@@ -202,7 +235,16 @@ pub fn update_idea_effort(project_path: &str, idea_id: &str, new_effort: &str) -
 
 /// Updates the triage status of an idea by ID.
 pub fn update_idea_triage(project_path: &str, idea_id: &str, new_triage: &str) -> Result<()> {
-    let ideas_file = get_ideas_file_path(project_path);
+    update_idea_triage_with_storage(&StorageConfig::default(), project_path, idea_id, new_triage)
+}
+
+pub(crate) fn update_idea_triage_with_storage(
+    storage: &StorageConfig,
+    project_path: &str,
+    idea_id: &str,
+    new_triage: &str,
+) -> Result<()> {
+    let ideas_file = get_ideas_file_path_with_storage(storage, project_path);
 
     if !ideas_file.exists() {
         return Err(HudError::FileNotFound(ideas_file));
@@ -224,7 +266,16 @@ pub fn update_idea_triage(project_path: &str, idea_id: &str, new_triage: &str) -
 /// a placeholder title, then updated once the AI-generated title is ready.
 /// The title is sanitized to prevent file corruption from malformed input.
 pub fn update_idea_title(project_path: &str, idea_id: &str, new_title: &str) -> Result<()> {
-    let ideas_file = get_ideas_file_path(project_path);
+    update_idea_title_with_storage(&StorageConfig::default(), project_path, idea_id, new_title)
+}
+
+pub(crate) fn update_idea_title_with_storage(
+    storage: &StorageConfig,
+    project_path: &str,
+    idea_id: &str,
+    new_title: &str,
+) -> Result<()> {
+    let ideas_file = get_ideas_file_path_with_storage(storage, project_path);
 
     if !ideas_file.exists() {
         return Err(HudError::FileNotFound(ideas_file));
@@ -252,7 +303,21 @@ pub fn update_idea_description(
     idea_id: &str,
     new_description: &str,
 ) -> Result<()> {
-    let ideas_file = get_ideas_file_path(project_path);
+    update_idea_description_with_storage(
+        &StorageConfig::default(),
+        project_path,
+        idea_id,
+        new_description,
+    )
+}
+
+pub(crate) fn update_idea_description_with_storage(
+    storage: &StorageConfig,
+    project_path: &str,
+    idea_id: &str,
+    new_description: &str,
+) -> Result<()> {
+    let ideas_file = get_ideas_file_path_with_storage(storage, project_path);
 
     if !ideas_file.exists() {
         return Err(HudError::FileNotFound(ideas_file));
@@ -276,7 +341,15 @@ pub fn update_idea_description(
 /// Ideas not in the order list will be appended at the end when loading.
 /// IDs in the order list that don't exist will be ignored when loading.
 pub fn save_ideas_order(project_path: &str, idea_ids: Vec<String>) -> Result<()> {
-    let order_file = get_order_file_path(project_path);
+    save_ideas_order_with_storage(&StorageConfig::default(), project_path, idea_ids)
+}
+
+pub(crate) fn save_ideas_order_with_storage(
+    storage: &StorageConfig,
+    project_path: &str,
+    idea_ids: Vec<String>,
+) -> Result<()> {
+    let order_file = get_order_file_path_with_storage(storage, project_path);
 
     // Ensure .claude directory exists
     if let Some(parent) = order_file.parent() {
@@ -301,7 +374,14 @@ pub fn save_ideas_order(project_path: &str, idea_ids: Vec<String>) -> Result<()>
 /// Returns an empty vector if the order file doesn't exist (graceful degradation).
 /// The caller should sort ideas by this order, appending any ideas not in the list.
 pub fn load_ideas_order(project_path: &str) -> Result<Vec<String>> {
-    let order_file = get_order_file_path(project_path);
+    load_ideas_order_with_storage(&StorageConfig::default(), project_path)
+}
+
+pub(crate) fn load_ideas_order_with_storage(
+    storage: &StorageConfig,
+    project_path: &str,
+) -> Result<Vec<String>> {
+    let order_file = get_order_file_path_with_storage(storage, project_path);
 
     if !order_file.exists() {
         return Ok(Vec::new());
@@ -324,18 +404,12 @@ pub fn load_ideas_order(project_path: &str) -> Result<Vec<String>> {
 // Internal Helper Functions
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Returns the path to the project's ideas file in global storage.
-///
-/// Ideas are stored at `~/.capacitor/projects/{encoded-path}/ideas.md`.
-fn get_ideas_file_path(project_path: &str) -> PathBuf {
-    StorageConfig::default().project_ideas_file(project_path)
+fn get_ideas_file_path_with_storage(storage: &StorageConfig, project_path: &str) -> PathBuf {
+    storage.project_ideas_file(project_path)
 }
 
-/// Returns the path to the project's ideas order file in global storage.
-///
-/// Order is stored at `~/.capacitor/projects/{encoded-path}/ideas-order.json`.
-fn get_order_file_path(project_path: &str) -> PathBuf {
-    StorageConfig::default().project_order_file(project_path)
+fn get_order_file_path_with_storage(storage: &StorageConfig, project_path: &str) -> PathBuf {
+    storage.project_order_file(project_path)
 }
 
 /// Ensures the ideas file exists with proper structure.

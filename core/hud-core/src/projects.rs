@@ -5,7 +5,10 @@
 //! - Building project metadata from paths
 //! - Loading pinned projects with statistics
 
-use crate::config::{get_claude_dir, load_hud_config, load_stats_cache, save_stats_cache};
+use crate::config::{
+    load_hud_config_with_storage, load_stats_cache_with_storage, save_stats_cache_with_storage,
+};
+use crate::storage::StorageConfig;
 use crate::stats::compute_project_stats;
 use crate::types::{Project, StatsCache};
 use std::fs;
@@ -255,15 +258,20 @@ fn build_missing_project(path: &str) -> Project {
 /// Missing projects (where the directory no longer exists) are included
 /// with is_missing=true so they can be displayed with a warning indicator.
 pub fn load_projects() -> Result<Vec<Project>, String> {
-    let claude_dir = get_claude_dir().ok_or("Could not find home directory")?;
-    let config = load_hud_config();
+    load_projects_with_storage(&StorageConfig::default())
+}
+
+pub fn load_projects_with_storage(storage: &StorageConfig) -> Result<Vec<Project>, String> {
+    let claude_dir = storage.claude_root();
+    let config = load_hud_config_with_storage(storage);
     let projects_dir = claude_dir.join("projects");
-    let mut stats_cache = load_stats_cache();
+    let mut stats_cache = load_stats_cache_with_storage(storage);
 
     let mut projects: Vec<(Project, SystemTime)> = Vec::new();
 
     for path in &config.pinned_projects {
-        let project = if let Some(p) = build_project_from_path(path, &claude_dir, &mut stats_cache)
+        let project =
+            if let Some(p) = build_project_from_path(path, claude_dir, &mut stats_cache)
         {
             p
         } else {
@@ -280,7 +288,7 @@ pub fn load_projects() -> Result<Vec<Project>, String> {
         projects.push((project, sort_time));
     }
 
-    let _ = save_stats_cache(&stats_cache);
+    let _ = save_stats_cache_with_storage(storage, &stats_cache);
 
     projects.sort_by(|a, b| b.1.cmp(&a.1));
 
