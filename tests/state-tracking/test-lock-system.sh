@@ -246,8 +246,12 @@ test_concurrent_lock_attempt() {
 
     rm -rf "$lock_dir"
 
-    # Start first "session"
-    sleep 300 &
+    # Start first "session" with a process name that includes "claude"
+    local sleep_bin
+    sleep_bin=$(command -v sleep 2>/dev/null || echo "/bin/sleep")
+    local claude_sleep="$TEST_CWD/claude-sleep"
+    ln -sf "$sleep_bin" "$claude_sleep"
+    "$claude_sleep" 300 &
     local first_pid=$!
 
     mkdir -p "$lock_dir"
@@ -268,6 +272,7 @@ test_concurrent_lock_attempt() {
 
     kill $first_pid 2>/dev/null || true
     wait $first_pid 2>/dev/null || true
+    rm -f "$claude_sleep"
     rm -rf "$lock_dir"
 }
 
