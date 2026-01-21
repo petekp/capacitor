@@ -1,6 +1,15 @@
 {
   "pins" : [
     {
+      "identity" : "metalcompilerplugin",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/schwa/MetalCompilerPlugin.git",
+      "state" : {
+        "branch" : "main",
+        "revision" : "355c6a482d2b64b8695c00df2baaaa833d1c66e1"
+      }
+    },
+    {
       "identity" : "sparkle",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/sparkle-project/Sparkle.git",

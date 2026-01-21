@@ -76,20 +76,44 @@ class GlassConfig: ObservableObject {
         return hasher.finalize()
     }
 
-    // Logo letterpress effect
-    @Published var logoFontSize: Double = 13.0
-    @Published var logoTracking: Double = 0.5
+    // Logo letterpress effect (tuned)
+    @Published var logoFontSize: Double = 14.55
+    @Published var logoTracking: Double = 2.61
     @Published var logoBaseOpacity: Double = 0.9
-    @Published var logoShadowOpacity: Double = 0.6
-    @Published var logoShadowOffsetX: Double = 0.0
-    @Published var logoShadowOffsetY: Double = 1.0
-    @Published var logoShadowBlur: Double = 1.0
-    @Published var logoHighlightOpacity: Double = 0.15
-    @Published var logoHighlightOffsetX: Double = 0.0
-    @Published var logoHighlightOffsetY: Double = -0.5
+    @Published var logoShadowOpacity: Double = 0.01
+    @Published var logoShadowOffsetX: Double = -2.96
+    @Published var logoShadowOffsetY: Double = -2.93
+    @Published var logoShadowBlur: Double = 0.04
+    @Published var logoHighlightOpacity: Double = 0.01
+    @Published var logoHighlightOffsetX: Double = -2.95
+    @Published var logoHighlightOffsetY: Double = -2.95
     @Published var logoHighlightBlur: Double = 0.0
-    @Published var logoShadowBlendMode: BlendMode = .multiply
-    @Published var logoHighlightBlendMode: BlendMode = .plusLighter
+    @Published var logoShadowBlendMode: BlendMode = .colorBurn
+    @Published var logoHighlightBlendMode: BlendMode = .softLight
+
+    // Logo Glass Shader (tuned)
+    @Published var logoShaderEnabled: Bool = true
+    @Published var logoShaderMaskToText: Bool = true
+    @Published var logoGlassFresnelPower: Double = 4.02
+    @Published var logoGlassFresnelIntensity: Double = 1.88
+    @Published var logoGlassChromaticAmount: Double = 1.32
+    @Published var logoGlassCausticScale: Double = 1.24
+    @Published var logoGlassCausticSpeed: Double = 1.30
+    @Published var logoGlassCausticIntensity: Double = 0.99
+    @Published var logoGlassCausticAngle: Double = 81.31
+    @Published var logoGlassClarity: Double = 0.34
+    @Published var logoGlassHighlightSharpness: Double = 7.91
+    @Published var logoGlassHighlightAngle: Double = 355.43
+    @Published var logoGlassInternalReflection: Double = 0.44
+    @Published var logoGlassInternalAngle: Double = 75.18
+    @Published var logoGlassPrismaticEnabled: Bool = true
+    @Published var logoGlassPrismAmount: Double = 0.12
+
+    // Logo Shader Compositing (tuned)
+    @Published var logoShaderOpacity: Double = 0.63
+    @Published var logoShaderBlendMode: BlendMode = .overlay
+    @Published var logoShaderVibrancyEnabled: Bool = true
+    @Published var logoShaderVibrancyBlur: Double = 0.03
 
     // Panel background
     @Published var panelTintOpacity: Double = 0.33
@@ -236,8 +260,8 @@ class GlassConfig: ObservableObject {
     @Published var causticUseRings: Bool = true
     @Published var causticColorHue: Double = 0.0
 
-    // MARK: - Card Interaction (Per-Pointer-Event)
-    // Idle state (default)
+    // MARK: - Card Interaction (Per-Pointer-Event, tuned)
+    // Idle state
     @Published var cardIdleScale: Double = 1.0
     @Published var cardIdleShadowOpacity: Double = 0.17
     @Published var cardIdleShadowRadius: Double = 8.07
@@ -377,6 +401,45 @@ class GlassConfig: ObservableObject {
     func cardPressedSpringDamping(for layout: LayoutMode) -> Double { cardPressedSpringDamping }
 
     func reset() {
+        // Logo letterpress (tuned)
+        logoFontSize = 14.55
+        logoTracking = 2.61
+        logoBaseOpacity = 0.9
+        logoShadowOpacity = 0.01
+        logoShadowOffsetX = -2.96
+        logoShadowOffsetY = -2.93
+        logoShadowBlur = 0.04
+        logoHighlightOpacity = 0.01
+        logoHighlightOffsetX = -2.95
+        logoHighlightOffsetY = -2.95
+        logoHighlightBlur = 0.0
+        logoShadowBlendMode = .colorBurn
+        logoHighlightBlendMode = .softLight
+
+        // Logo glass shader (tuned)
+        logoShaderEnabled = true
+        logoShaderMaskToText = true
+        logoGlassFresnelPower = 4.02
+        logoGlassFresnelIntensity = 1.88
+        logoGlassChromaticAmount = 1.32
+        logoGlassCausticScale = 1.24
+        logoGlassCausticSpeed = 1.30
+        logoGlassCausticIntensity = 0.99
+        logoGlassCausticAngle = 81.31
+        logoGlassClarity = 0.34
+        logoGlassHighlightSharpness = 7.91
+        logoGlassHighlightAngle = 355.43
+        logoGlassInternalReflection = 0.44
+        logoGlassInternalAngle = 75.18
+        logoGlassPrismaticEnabled = true
+        logoGlassPrismAmount = 0.12
+
+        // Logo shader compositing (tuned)
+        logoShaderOpacity = 0.63
+        logoShaderBlendMode = .overlay
+        logoShaderVibrancyEnabled = true
+        logoShaderVibrancyBlur = 0.03
+
         panelTintOpacity = 0.33
         panelCornerRadius = 22
         panelBorderOpacity = 0.36
@@ -499,6 +562,35 @@ class GlassConfig: ObservableObject {
             ("Panel", "panelShadowOpacity", 0.00, panelShadowOpacity),
             ("Panel", "panelShadowRadius", 0, panelShadowRadius),
             ("Panel", "panelShadowY", 0, panelShadowY),
+            // Logo Letterpress (tuned)
+            ("Logo Letterpress", "logoFontSize", 14.55, logoFontSize),
+            ("Logo Letterpress", "logoTracking", 2.61, logoTracking),
+            ("Logo Letterpress", "logoBaseOpacity", 0.9, logoBaseOpacity),
+            ("Logo Letterpress", "logoShadowOpacity", 0.01, logoShadowOpacity),
+            ("Logo Letterpress", "logoShadowOffsetX", -2.96, logoShadowOffsetX),
+            ("Logo Letterpress", "logoShadowOffsetY", -2.93, logoShadowOffsetY),
+            ("Logo Letterpress", "logoShadowBlur", 0.04, logoShadowBlur),
+            ("Logo Letterpress", "logoHighlightOpacity", 0.01, logoHighlightOpacity),
+            ("Logo Letterpress", "logoHighlightOffsetX", -2.95, logoHighlightOffsetX),
+            ("Logo Letterpress", "logoHighlightOffsetY", -2.95, logoHighlightOffsetY),
+            ("Logo Letterpress", "logoHighlightBlur", 0.0, logoHighlightBlur),
+            // Logo Glass Shader (tuned defaults)
+            ("Logo Glass", "logoGlassFresnelPower", 4.02, logoGlassFresnelPower),
+            ("Logo Glass", "logoGlassFresnelIntensity", 1.88, logoGlassFresnelIntensity),
+            ("Logo Glass", "logoGlassChromaticAmount", 1.32, logoGlassChromaticAmount),
+            ("Logo Glass", "logoGlassCausticScale", 1.24, logoGlassCausticScale),
+            ("Logo Glass", "logoGlassCausticSpeed", 1.30, logoGlassCausticSpeed),
+            ("Logo Glass", "logoGlassCausticIntensity", 0.99, logoGlassCausticIntensity),
+            ("Logo Glass", "logoGlassCausticAngle", 81.31, logoGlassCausticAngle),
+            ("Logo Glass", "logoGlassClarity", 0.34, logoGlassClarity),
+            ("Logo Glass", "logoGlassHighlightSharpness", 7.91, logoGlassHighlightSharpness),
+            ("Logo Glass", "logoGlassHighlightAngle", 355.43, logoGlassHighlightAngle),
+            ("Logo Glass", "logoGlassInternalReflection", 0.44, logoGlassInternalReflection),
+            ("Logo Glass", "logoGlassInternalAngle", 75.18, logoGlassInternalAngle),
+            ("Logo Glass", "logoGlassPrismAmount", 0.12, logoGlassPrismAmount),
+            // Logo Compositing (tuned defaults)
+            ("Logo Compositing", "logoShaderOpacity", 0.63, logoShaderOpacity),
+            ("Logo Compositing", "logoShaderVibrancyBlur", 0.03, logoShaderVibrancyBlur),
             // Card Background
             ("Card", "cardTintOpacity", 0.58, cardTintOpacity),
             ("Card", "cardCornerRadius", 13, cardCornerRadius),
@@ -576,20 +668,20 @@ class GlassConfig: ObservableObject {
             ("Compacting Text", "compactingCompressOmega", 16.0, compactingCompressOmega),
             ("Compacting Text", "compactingExpandDamping", 0.8, compactingExpandDamping),
             ("Compacting Text", "compactingExpandOmega", 4.0, compactingExpandOmega),
-            // Card Interaction
+            // Card Interaction (tuned defaults)
             ("Card Idle", "cardIdleScale", 1.0, cardIdleScale),
-            ("Card Idle", "cardIdleShadowOpacity", 0.08, cardIdleShadowOpacity),
-            ("Card Idle", "cardIdleShadowRadius", 4.0, cardIdleShadowRadius),
-            ("Card Idle", "cardIdleShadowY", 2.0, cardIdleShadowY),
-            ("Card Hover", "cardHoverScale", 0.99, cardHoverScale),
-            ("Card Hover", "cardHoverSpringResponse", 0.2, cardHoverSpringResponse),
-            ("Card Hover", "cardHoverSpringDamping", 0.8, cardHoverSpringDamping),
+            ("Card Idle", "cardIdleShadowOpacity", 0.17, cardIdleShadowOpacity),
+            ("Card Idle", "cardIdleShadowRadius", 8.07, cardIdleShadowRadius),
+            ("Card Idle", "cardIdleShadowY", 3.89, cardIdleShadowY),
+            ("Card Hover", "cardHoverScale", 1.01, cardHoverScale),
+            ("Card Hover", "cardHoverSpringResponse", 0.26, cardHoverSpringResponse),
+            ("Card Hover", "cardHoverSpringDamping", 0.90, cardHoverSpringDamping),
             ("Card Hover", "cardHoverShadowOpacity", 0.2, cardHoverShadowOpacity),
             ("Card Hover", "cardHoverShadowRadius", 12.0, cardHoverShadowRadius),
             ("Card Hover", "cardHoverShadowY", 4.0, cardHoverShadowY),
-            ("Card Pressed", "cardPressedScale", 0.97, cardPressedScale),
-            ("Card Pressed", "cardPressedSpringResponse", 0.12, cardPressedSpringResponse),
-            ("Card Pressed", "cardPressedSpringDamping", 0.6, cardPressedSpringDamping),
+            ("Card Pressed", "cardPressedScale", 1.00, cardPressedScale),
+            ("Card Pressed", "cardPressedSpringResponse", 0.06, cardPressedSpringResponse),
+            ("Card Pressed", "cardPressedSpringDamping", 0.48, cardPressedSpringDamping),
             ("Card Pressed", "cardPressedShadowOpacity", 0.12, cardPressedShadowOpacity),
             ("Card Pressed", "cardPressedShadowRadius", 2.0, cardPressedShadowRadius),
             ("Card Pressed", "cardPressedShadowY", 1.0, cardPressedShadowY),
@@ -597,7 +689,24 @@ class GlassConfig: ObservableObject {
 
         let changed = allParams.filter { abs($0.2 - $0.3) > 0.001 }
 
-        if changed.isEmpty {
+        // Blend mode params: (category, name, default, current) - tuned defaults
+        let blendModeParams: [(String, String, BlendMode, BlendMode)] = [
+            ("Logo Letterpress", "logoShadowBlendMode", .colorBurn, logoShadowBlendMode),
+            ("Logo Letterpress", "logoHighlightBlendMode", .softLight, logoHighlightBlendMode),
+            ("Logo Compositing", "logoShaderBlendMode", .overlay, logoShaderBlendMode),
+        ]
+        let changedBlendModes = blendModeParams.filter { $0.2 != $0.3 }
+
+        // Boolean params: (category, name, default, current)
+        let boolParams: [(String, String, Bool, Bool)] = [
+            ("Logo Glass", "logoShaderEnabled", true, logoShaderEnabled),
+            ("Logo Glass", "logoShaderMaskToText", true, logoShaderMaskToText),
+            ("Logo Glass", "logoGlassPrismaticEnabled", true, logoGlassPrismaticEnabled),
+            ("Logo Compositing", "logoShaderVibrancyEnabled", true, logoShaderVibrancyEnabled),
+        ]
+        let changedBools = boolParams.filter { $0.2 != $0.3 }
+
+        if changed.isEmpty && changedBlendModes.isEmpty && changedBools.isEmpty {
             return "## Visual Parameters\n\nNo changes from defaults."
         }
 
@@ -617,9 +726,42 @@ class GlassConfig: ObservableObject {
                 output += "\(name): \(String(format: "%.2f", defaultVal)) → \(String(format: "%.2f", currentVal))\n"
             }
         }
+
+        // Add blend mode changes
+        if !changedBlendModes.isEmpty {
+            output += "// Blend Modes\n"
+            for (_, name, defaultVal, currentVal) in changedBlendModes {
+                output += "\(name): .\(blendModeName(defaultVal)) → .\(blendModeName(currentVal))\n"
+            }
+        }
+
+        // Add boolean changes
+        if !changedBools.isEmpty {
+            output += "// Toggles\n"
+            for (_, name, defaultVal, currentVal) in changedBools {
+                output += "\(name): \(defaultVal) → \(currentVal)\n"
+            }
+        }
+
         output += "```"
 
         return output
+    }
+
+    private func blendModeName(_ mode: BlendMode) -> String {
+        switch mode {
+        case .normal: return "normal"
+        case .multiply: return "multiply"
+        case .screen: return "screen"
+        case .overlay: return "overlay"
+        case .plusLighter: return "plusLighter"
+        case .softLight: return "softLight"
+        case .hardLight: return "hardLight"
+        case .colorBurn: return "colorBurn"
+        case .colorDodge: return "colorDodge"
+        case .luminosity: return "luminosity"
+        default: return "unknown"
+        }
     }
 }
 

@@ -309,6 +309,15 @@ extension BlendModeOption {
         BlendModeOption(mode: .softLight, icon: "sun.min", tooltip: "Soft Light"),
         BlendModeOption(mode: .colorDodge, icon: "bolt", tooltip: "Color Dodge"),
     ]
+
+    static let compositingModes: [BlendModeOption] = [
+        BlendModeOption(mode: .normal, icon: "circle", tooltip: "Normal"),
+        BlendModeOption(mode: .plusLighter, icon: "plus", tooltip: "Plus Lighter"),
+        BlendModeOption(mode: .screen, icon: "rectangle.on.rectangle", tooltip: "Screen"),
+        BlendModeOption(mode: .overlay, icon: "square.on.square", tooltip: "Overlay"),
+        BlendModeOption(mode: .multiply, icon: "multiply", tooltip: "Multiply"),
+        BlendModeOption(mode: .luminosity, icon: "sun.max", tooltip: "Luminosity"),
+    ]
 }
 
 struct TuningToggleRow: View {

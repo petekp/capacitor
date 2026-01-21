@@ -23,7 +23,7 @@ enum TuningCategory: String, CaseIterable, Identifiable {
     var subcategories: [TuningSubcategory] {
         switch self {
         case .logo:
-            return [.letterpress]
+            return [.letterpress, .metalShader]
         case .projectCard:
             return [.appearance, .interactions, .stateEffects]
         case .panel:
@@ -36,6 +36,7 @@ enum TuningCategory: String, CaseIterable, Identifiable {
 
 enum TuningSubcategory: String, CaseIterable, Identifiable {
     case letterpress = "Letterpress"
+    case metalShader = "Glass Shader"
     case appearance = "Appearance"
     case interactions = "Interactions"
     case stateEffects = "State Effects"
@@ -48,6 +49,7 @@ enum TuningSubcategory: String, CaseIterable, Identifiable {
     var icon: String {
         switch self {
         case .letterpress: return "a.square"
+        case .metalShader: return "cube.transparent"
         case .appearance: return "paintbrush"
         case .interactions: return "hand.tap"
         case .stateEffects: return "sparkles"
@@ -59,7 +61,7 @@ enum TuningSubcategory: String, CaseIterable, Identifiable {
 
     var parent: TuningCategory {
         switch self {
-        case .letterpress: return .logo
+        case .letterpress, .metalShader: return .logo
         case .appearance, .interactions, .stateEffects: return .projectCard
         case .panelBackground, .panelMaterial: return .panel
         case .allStates: return .statusColors
@@ -208,6 +210,8 @@ struct UITuningPanel: View {
         switch selectedSubcategory {
         case .letterpress:
             LogoLetterpressSection(config: config)
+        case .metalShader:
+            LogoMetalShaderSection(config: config)
         case .appearance:
             CardAppearanceSection(config: config)
         case .interactions:

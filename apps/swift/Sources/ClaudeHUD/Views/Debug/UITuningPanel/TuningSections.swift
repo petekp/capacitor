@@ -53,25 +53,189 @@ struct LogoLetterpressSection: View {
     }
 
     private func resetTypography() {
-        config.logoFontSize = 13.0
-        config.logoTracking = 1.5
-        config.logoBaseOpacity = 0.25
+        config.logoFontSize = 14.55
+        config.logoTracking = 2.61
+        config.logoBaseOpacity = 0.9
     }
 
     private func resetShadow() {
-        config.logoShadowOpacity = 0.6
-        config.logoShadowOffsetX = 0.8
-        config.logoShadowOffsetY = 0.8
-        config.logoShadowBlur = 0.8
-        config.logoShadowBlendMode = .multiply
+        config.logoShadowOpacity = 0.01
+        config.logoShadowOffsetX = -2.96
+        config.logoShadowOffsetY = -2.93
+        config.logoShadowBlur = 0.04
+        config.logoShadowBlendMode = .colorBurn
     }
 
     private func resetHighlight() {
-        config.logoHighlightOpacity = 0.3
-        config.logoHighlightOffsetX = -0.5
-        config.logoHighlightOffsetY = -0.5
-        config.logoHighlightBlur = 0.5
-        config.logoHighlightBlendMode = .plusLighter
+        config.logoHighlightOpacity = 0.01
+        config.logoHighlightOffsetX = -2.95
+        config.logoHighlightOffsetY = -2.95
+        config.logoHighlightBlur = 0.0
+        config.logoHighlightBlendMode = .softLight
+    }
+}
+
+// MARK: - Logo Glass Shader
+
+struct LogoMetalShaderSection: View {
+    @ObservedObject var config: GlassConfig
+    @State private var animationTime: Double = 0
+    private let timer = Timer.publish(every: 1/60, on: .main, in: .common).autoconnect()
+
+    private var metalStatus: (loaded: Bool, message: String) {
+        if MetalShaders.library != nil {
+            return (true, "Metal shader loaded")
+        } else {
+            return (false, "Using SwiftUI fallback")
+        }
+    }
+
+    init(config: GlassConfig) {
+        self.config = config
+        MetalShaders.initialize()
+    }
+
+    var body: some View {
+        Group {
+            StickySection(title: "Preview", onReset: nil) {
+                VStack(alignment: .leading, spacing: 8) {
+                    GlassShaderLogoPreview(config: config, time: animationTime)
+                        .frame(height: 40)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .onReceive(timer) { _ in
+                            if config.logoShaderEnabled {
+                                animationTime += 1/60
+                            }
+                        }
+
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(metalStatus.loaded ? Color.green : Color.orange)
+                            .frame(width: 8, height: 8)
+                        Text(metalStatus.message)
+                            .font(.system(size: 10))
+                            .foregroundColor(.white.opacity(0.5))
+                    }
+
+                    TuningToggleRow(label: "Enable Shader", isOn: $config.logoShaderEnabled)
+                    TuningToggleRow(label: "Mask to Text", isOn: $config.logoShaderMaskToText)
+                }
+            }
+
+            StickySection(title: "Fresnel & Edges", onReset: resetFresnel) {
+                TuningRow(label: "Fresnel Power", value: $config.logoGlassFresnelPower, range: 0.5...5.0)
+                TuningRow(label: "Fresnel Intensity", value: $config.logoGlassFresnelIntensity, range: 0...2.0)
+                TuningRow(label: "Chromatic Aberration", value: $config.logoGlassChromaticAmount, range: 0...2.0)
+            }
+
+            StickySection(title: "Caustics", onReset: resetCaustics) {
+                TuningRow(label: "Scale", value: $config.logoGlassCausticScale, range: 1.0...10.0)
+                TuningRow(label: "Speed", value: $config.logoGlassCausticSpeed, range: 0.1...3.0)
+                TuningRow(label: "Intensity", value: $config.logoGlassCausticIntensity, range: 0...1.0)
+                TuningRow(label: "Angle", value: $config.logoGlassCausticAngle, range: 0...360, format: "%.0f°")
+            }
+
+            StickySection(title: "Specular Highlight", onReset: resetHighlight) {
+                TuningRow(label: "Sharpness", value: $config.logoGlassHighlightSharpness, range: 1.0...8.0)
+                TuningRow(label: "Angle", value: $config.logoGlassHighlightAngle, range: 0...360, format: "%.0f°")
+            }
+
+            StickySection(title: "Glass Properties", onReset: resetGlass) {
+                TuningRow(label: "Clarity", value: $config.logoGlassClarity, range: 0.2...1.0)
+                TuningRow(label: "Internal Reflection", value: $config.logoGlassInternalReflection, range: 0...1.0)
+                TuningRow(label: "Internal Angle", value: $config.logoGlassInternalAngle, range: 0...360, format: "%.0f°")
+            }
+
+            StickySection(title: "Prismatic Effect", onReset: resetPrismatic) {
+                TuningToggleRow(label: "Enable Prismatic", isOn: $config.logoGlassPrismaticEnabled)
+                TuningRow(label: "Prism Amount", value: $config.logoGlassPrismAmount, range: 0...1.0)
+            }
+
+            StickySection(title: "Compositing", onReset: resetCompositing) {
+                TuningRow(label: "Opacity", value: $config.logoShaderOpacity, range: 0...1.0)
+
+                TuningBlendModeRow(
+                    label: "Blend Mode",
+                    selection: $config.logoShaderBlendMode,
+                    options: BlendModeOption.compositingModes
+                )
+
+                SectionDivider()
+
+                TuningToggleRow(label: "Enable Vibrancy", isOn: $config.logoShaderVibrancyEnabled)
+                TuningRow(label: "Vibrancy Blur", value: $config.logoShaderVibrancyBlur, range: 0...20)
+            }
+        }
+    }
+
+    private func resetFresnel() {
+        config.logoGlassFresnelPower = 4.02
+        config.logoGlassFresnelIntensity = 1.88
+        config.logoGlassChromaticAmount = 1.32
+    }
+
+    private func resetCaustics() {
+        config.logoGlassCausticScale = 1.24
+        config.logoGlassCausticSpeed = 1.30
+        config.logoGlassCausticIntensity = 0.99
+        config.logoGlassCausticAngle = 81.31
+    }
+
+    private func resetHighlight() {
+        config.logoGlassHighlightSharpness = 7.91
+        config.logoGlassHighlightAngle = 355.43
+    }
+
+    private func resetGlass() {
+        config.logoGlassClarity = 0.34
+        config.logoGlassInternalReflection = 0.44
+        config.logoGlassInternalAngle = 75.18
+    }
+
+    private func resetPrismatic() {
+        config.logoGlassPrismaticEnabled = true
+        config.logoGlassPrismAmount = 0.12
+    }
+
+    private func resetCompositing() {
+        config.logoShaderOpacity = 0.63
+        config.logoShaderBlendMode = .overlay
+        config.logoShaderVibrancyEnabled = true
+        config.logoShaderVibrancyBlur = 0.03
+    }
+}
+
+struct GlassShaderLogoPreview: View {
+    @ObservedObject var config: GlassConfig
+    let time: Double
+
+    private let logoText = "CAPACITOR"
+
+    var body: some View {
+        let baseView = Text(logoText)
+            .font(.system(size: 13, weight: .black, design: .monospaced))
+            .tracking(0.5)
+            .foregroundColor(.white)
+
+        if config.logoShaderEnabled {
+            let shaderContent: some View = Group {
+                if config.logoShaderMaskToText {
+                    GlassShaderView(config: config, time: time)
+                        .mask(baseView)
+                } else {
+                    baseView
+                        .background {
+                            GlassShaderView(config: config, time: time)
+                        }
+                }
+            }
+
+            shaderContent
+                .opacity(config.logoShaderOpacity)
+                .blendMode(config.logoShaderBlendMode)
+        } else {
+            baseView.opacity(0.5)
+        }
     }
 }
 
