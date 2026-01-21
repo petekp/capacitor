@@ -9,27 +9,56 @@ struct ClaudeHUDApp: App {
     @AppStorage("floatingMode") private var floatingMode = false
     @AppStorage("alwaysOnTop") private var alwaysOnTop = false
     @AppStorage("layoutMode") private var layoutMode = "vertical"
+    @AppStorage("setupComplete") private var setupComplete = false
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
-                .environmentObject(appState)
-                .environment(\.floatingMode, floatingMode)
-                .environment(\.alwaysOnTop, alwaysOnTop)
-                .readReduceMotion()
-                .modifier(LayoutModeFrameModifier(layoutMode: appState.layoutMode))
-                .background(FloatingWindowConfigurator(enabled: floatingMode, alwaysOnTop: alwaysOnTop))
-                .background(WindowFrameConfigurator(layoutMode: appState.layoutMode))
-                .onAppear {
-                    if let mode = LayoutMode(rawValue: layoutMode) {
-                        appState.layoutMode = mode
+            ZStack {
+                if setupComplete {
+                    ContentView()
+                        .environmentObject(appState)
+                        .environment(\.floatingMode, floatingMode)
+                        .environment(\.alwaysOnTop, alwaysOnTop)
+                        .readReduceMotion()
+                        .modifier(LayoutModeFrameModifier(layoutMode: appState.layoutMode))
+                        .background(FloatingWindowConfigurator(enabled: floatingMode, alwaysOnTop: alwaysOnTop))
+                        .background(WindowFrameConfigurator(layoutMode: appState.layoutMode))
+                        .onAppear {
+                            if let mode = LayoutMode(rawValue: layoutMode) {
+                                appState.layoutMode = mode
+                            }
+                        }
+                        .onChange(of: layoutMode) { _, newValue in
+                            if let mode = LayoutMode(rawValue: newValue) {
+                                appState.layoutMode = mode
+                            }
+                        }
+                        .transition(.asymmetric(
+                            insertion: .move(edge: .trailing).combined(with: .opacity),
+                            removal: .identity
+                        ))
+                } else {
+                    WelcomeView(onComplete: {
+                        withAnimation(.easeInOut(duration: 0.4)) {
+                            setupComplete = true
+                        }
+                    })
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background {
+                        if floatingMode {
+                            DarkFrostedGlass()
+                        } else {
+                            Color.hudBackground
+                        }
                     }
+                    .clipShape(RoundedRectangle(cornerRadius: floatingMode ? 22 : 0))
+                    .background(FloatingWindowConfigurator(enabled: floatingMode, alwaysOnTop: alwaysOnTop))
+                    .transition(.asymmetric(
+                        insertion: .identity,
+                        removal: .move(edge: .leading).combined(with: .opacity)
+                    ))
                 }
-                .onChange(of: layoutMode) { _, newValue in
-                    if let mode = LayoutMode(rawValue: newValue) {
-                        appState.layoutMode = mode
-                    }
-                }
+            }
         }
         .defaultSize(width: 360, height: 700)
         .windowResizability(.contentSize)
@@ -73,6 +102,18 @@ struct ClaudeHUDApp: App {
                 #if DEBUG
                 Divider()
                 UITuningPanelMenuButton()
+
+                Button("Show Welcome Screen") {
+                    withAnimation(.easeInOut(duration: 0.4)) {
+                        setupComplete = false
+                    }
+                }
+                .keyboardShortcut("W", modifiers: [.command, .shift, .option])
+
+                Button("Reset Onboarding (Full)") {
+                    resetOnboardingFully()
+                }
+                .keyboardShortcut("R", modifiers: [.command, .shift, .option])
                 #endif
             }
 
@@ -97,6 +138,116 @@ struct ClaudeHUDApp: App {
         .defaultSize(width: 580, height: 720)
         #endif
     }
+
+    #if DEBUG
+    private static let onboardingBackupPath = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent(".capacitor-onboarding-backup")
+
+    private func resetOnboardingFully() {
+        _Concurrency.Task {
+            let fm = FileManager.default
+            let home = fm.homeDirectoryForCurrentUser
+            let capacitorPath = home.appendingPathComponent(".capacitor")
+            let backupPath = Self.onboardingBackupPath
+
+            // 1. Preserve user data to temporary backup location
+            let userDataFiles = ["projects.json", "creations.json"]
+            try? fm.removeItem(at: backupPath)
+            try? fm.createDirectory(at: backupPath, withIntermediateDirectories: true)
+
+            for filename in userDataFiles {
+                let sourcePath = capacitorPath.appendingPathComponent(filename)
+                let destPath = backupPath.appendingPathComponent(filename)
+                if fm.fileExists(atPath: sourcePath.path) {
+                    try? fm.copyItem(at: sourcePath, to: destPath)
+                    print("[Debug] Backed up \(filename)")
+                }
+            }
+
+            // 2. Remove entire ~/.capacitor directory (truly empty now)
+            try? fm.removeItem(at: capacitorPath)
+            print("[Debug] Removed ~/.capacitor/")
+
+            // 3. Remove hook script
+            let hookScriptPath = home.appendingPathComponent(".claude/scripts/hud-state-tracker.sh")
+            try? fm.removeItem(at: hookScriptPath)
+
+            // 4. Remove hooks from settings.json (best effort)
+            await removeHooksFromSettings()
+
+            // 5. Reset the setup complete flag and show welcome screen
+            await MainActor.run {
+                withAnimation(.easeInOut(duration: 0.4)) {
+                    setupComplete = false
+                }
+            }
+
+            print("[Debug] Onboarding reset complete (user data backed up to ~/.capacitor-onboarding-backup/)")
+        }
+    }
+
+    static func restoreOnboardingBackup() {
+        let fm = FileManager.default
+        let capacitorPath = fm.homeDirectoryForCurrentUser.appendingPathComponent(".capacitor")
+        let backupPath = onboardingBackupPath
+
+        guard fm.fileExists(atPath: backupPath.path) else { return }
+
+        let userDataFiles = ["projects.json", "creations.json"]
+        for filename in userDataFiles {
+            let sourcePath = backupPath.appendingPathComponent(filename)
+            let destPath = capacitorPath.appendingPathComponent(filename)
+            if fm.fileExists(atPath: sourcePath.path) {
+                try? fm.copyItem(at: sourcePath, to: destPath)
+                print("[Debug] Restored \(filename) from backup")
+            }
+        }
+
+        // Clean up backup directory
+        try? fm.removeItem(at: backupPath)
+        print("[Debug] Cleaned up onboarding backup")
+    }
+
+    private func removeHooksFromSettings() async {
+        let settingsPath = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".claude/settings.json")
+
+        guard FileManager.default.fileExists(atPath: settingsPath.path) else { return }
+
+        do {
+            let data = try Data(contentsOf: settingsPath)
+            guard var json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  var hooks = json["hooks"] as? [String: Any] else { return }
+
+            // Remove any hook configs that contain our hud-state-tracker
+            for (eventType, eventHooks) in hooks {
+                guard var hookArray = eventHooks as? [[String: Any]] else { continue }
+
+                hookArray.removeAll { hookConfig in
+                    guard let innerHooks = hookConfig["hooks"] as? [[String: Any]] else { return false }
+                    return innerHooks.contains { hook in
+                        guard let command = hook["command"] as? String else { return false }
+                        return command.contains("hud-state-tracker")
+                    }
+                }
+
+                if hookArray.isEmpty {
+                    hooks.removeValue(forKey: eventType)
+                } else {
+                    hooks[eventType] = hookArray
+                }
+            }
+
+            json["hooks"] = hooks.isEmpty ? nil : hooks
+
+            let updatedData = try JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys])
+            try updatedData.write(to: settingsPath)
+            print("[Debug] Removed HUD hooks from settings.json")
+        } catch {
+            print("[Debug] Failed to remove hooks: \(error)")
+        }
+    }
+    #endif
 }
 
 #if DEBUG

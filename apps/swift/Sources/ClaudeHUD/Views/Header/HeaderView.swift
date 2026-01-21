@@ -284,6 +284,9 @@ struct AddProjectPopover: View {
 }
 
 struct CapacitorLogo: View {
+    @EnvironmentObject var appState: AppState
+    @State private var isHovered = false
+
     private let logoText = "CAPACITOR"
 
     #if DEBUG
@@ -392,6 +395,25 @@ struct CapacitorLogo: View {
     }
 
     var body: some View {
+        Button {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                appState.showProjectList()
+            }
+        } label: {
+            logoContent
+        }
+        .buttonStyle(.plain)
+        .opacity(isHovered ? 1.0 : 0.85)
+        .scaleEffect(isHovered ? 1.02 : 1.0)
+        .animation(.easeOut(duration: 0.15), value: isHovered)
+        .onHover { hovering in
+            isHovered = hovering
+        }
+        .help("Return to project list")
+    }
+
+    @ViewBuilder
+    private var logoContent: some View {
         #if DEBUG
         if config.logoShaderEnabled {
             shaderLogo
@@ -429,14 +451,38 @@ struct CapacitorLogo: View {
     #if DEBUG
     @ViewBuilder
     private var shaderLogo: some View {
-        if config.logoShaderMaskToText {
-            ShinyMetalView(config: config, time: shaderTime)
-                .mask(baseText(.white))
+        let shaderContent: some View = baseText(.white)
+            .hidden()
+            .overlay {
+                GlassShaderView(config: config, time: shaderTime)
+                    .mask(baseText(.white))
+            }
+
+        if config.logoShaderVibrancyEnabled {
+            ZStack {
+                // Vibrancy glow layer - extends slightly beyond text
+                VibrancyView(
+                    material: .hudWindow,
+                    blendingMode: .withinWindow,
+                    isEmphasized: true,
+                    forceDarkAppearance: true
+                )
+                .mask(
+                    baseText(.white)
+                        .blur(radius: config.logoShaderVibrancyBlur)
+                )
+                .blendMode(.plusLighter)
+
+                // Shader content on top
+                shaderContent
+                    .opacity(config.logoShaderOpacity)
+                    .blendMode(config.logoShaderBlendMode)
+            }
+            .fixedSize()
         } else {
-            baseText(.white)
-                .background {
-                    ShinyMetalView(config: config, time: shaderTime)
-                }
+            shaderContent
+                .opacity(config.logoShaderOpacity)
+                .blendMode(config.logoShaderBlendMode)
         }
     }
     #endif

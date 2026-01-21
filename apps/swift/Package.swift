@@ -27,6 +27,10 @@ let package = Package(
                 .product(name: "Sparkle", package: "Sparkle")
             ],
             path: "Sources/ClaudeHUD",
+            resources: [
+                .process("Resources/Assets.xcassets"),
+                .process("Resources/logomark.pdf")
+            ],
             linkerSettings: [
                 .linkedLibrary("hud_core"),
                 .unsafeFlags(["-L", "../../target/release"])

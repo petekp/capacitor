@@ -136,15 +136,28 @@ final class TerminalIntegration {
 
     func launchTerminal(for project: Project) {
         setActiveProject(project.path)
-        runBashScript(TerminalScripts.launch(project: project))
-        scheduleTerminalActivation()
+        _Concurrency.Task {
+            let claudePath = await getClaudePath()
+            runBashScript(TerminalScripts.launch(project: project, claudePath: claudePath))
+            scheduleTerminalActivation()
+        }
     }
 
     func launchTerminalWithIdea(_ idea: Idea, for project: Project) {
         setActiveProject(project.path)
         let escapedPrompt = escapeForShell(buildIdeaPrompt(idea))
-        runBashScript(TerminalScripts.launchWithIdea(project: project, escapedPrompt: escapedPrompt))
-        scheduleTerminalActivation()
+        _Concurrency.Task {
+            let claudePath = await getClaudePath()
+            runBashScript(TerminalScripts.launchWithIdea(project: project, escapedPrompt: escapedPrompt, claudePath: claudePath))
+            scheduleTerminalActivation()
+        }
+    }
+
+    private func getClaudePath() async -> String {
+        if let path = await CapacitorConfig.shared.getClaudePath() {
+            return path
+        }
+        return "/opt/homebrew/bin/claude"
     }
 
     private func runBashScript(_ script: String) {
@@ -184,10 +197,11 @@ final class TerminalIntegration {
 // MARK: - Terminal Scripts
 
 private enum TerminalScripts {
-    static func launch(project: Project) -> String {
+    static func launch(project: Project, claudePath: String) -> String {
         """
         PROJECT_PATH="\(project.path)"
         PROJECT_NAME="\(project.name)"
+        CLAUDE_PATH="\(claudePath)"
 
         \(tmuxCheckAndFallback)
 
@@ -205,11 +219,12 @@ private enum TerminalScripts {
         """
     }
 
-    static func launchWithIdea(project: Project, escapedPrompt: String) -> String {
+    static func launchWithIdea(project: Project, escapedPrompt: String, claudePath: String) -> String {
         """
         PROJECT_PATH="\(project.path)"
         PROJECT_NAME="\(project.name)"
         IDEA_PROMPT="\(escapedPrompt)"
+        CLAUDE_PATH="\(claudePath)"
 
         \(tmuxCheckAndFallbackWithIdea)
 
@@ -254,12 +269,12 @@ private enum TerminalScripts {
         """
         if ! command -v tmux &> /dev/null; then
             if [ -d "/Applications/Ghostty.app" ]; then
-                open -na "Ghostty.app" --args --working-directory="$PROJECT_PATH" -e bash -c "/opt/homebrew/bin/claude \\"$IDEA_PROMPT\\""
+                open -na "Ghostty.app" --args --working-directory="$PROJECT_PATH" -e bash -c "$CLAUDE_PATH \\"$IDEA_PROMPT\\""
             elif [ -d "/Applications/iTerm.app" ]; then
-                osascript -e "tell application \\"iTerm\\" to create window with default profile command \\"cd '$PROJECT_PATH' && /opt/homebrew/bin/claude '$IDEA_PROMPT'\\""
+                osascript -e "tell application \\"iTerm\\" to create window with default profile command \\"cd '$PROJECT_PATH' && $CLAUDE_PATH '$IDEA_PROMPT'\\""
                 osascript -e 'tell application "iTerm" to activate'
             else
-                osascript -e "tell application \\"Terminal\\" to do script \\"cd '$PROJECT_PATH' && /opt/homebrew/bin/claude '$IDEA_PROMPT'\\""
+                osascript -e "tell application \\"Terminal\\" to do script \\"cd '$PROJECT_PATH' && $CLAUDE_PATH '$IDEA_PROMPT'\\""
                 osascript -e 'tell application "Terminal" to activate'
             fi
             exit 0
@@ -295,11 +310,11 @@ private enum TerminalScripts {
         """
         if tmux has-session -t "$SESSION" 2>/dev/null; then
             tmux switch-client -t "$SESSION" 2>/dev/null
-            tmux send-keys -t "$SESSION" "/opt/homebrew/bin/claude \\"$IDEA_PROMPT\\"" Enter
+            tmux send-keys -t "$SESSION" "$CLAUDE_PATH \\"$IDEA_PROMPT\\"" Enter
         else
             tmux new-session -d -s "$SESSION" -c "$PROJECT_PATH"
             tmux switch-client -t "$SESSION" 2>/dev/null
-            tmux send-keys -t "$SESSION" "/opt/homebrew/bin/claude \\"$IDEA_PROMPT\\"" Enter
+            tmux send-keys -t "$SESSION" "$CLAUDE_PATH \\"$IDEA_PROMPT\\"" Enter
         fi
         """
     }
@@ -357,12 +372,12 @@ private enum TerminalScripts {
     private static var launchTerminalWithTmuxAndIdea: String {
         """
         if [ -d "/Applications/Ghostty.app" ]; then
-            open -na "Ghostty.app" --args -e sh -c "$TMUX_CMD && /opt/homebrew/bin/claude \\"$IDEA_PROMPT\\""
+            open -na "Ghostty.app" --args -e sh -c "$TMUX_CMD && $CLAUDE_PATH \\"$IDEA_PROMPT\\""
         elif [ -d "/Applications/iTerm.app" ]; then
-            osascript -e "tell application \\"iTerm\\" to create window with default profile command \\"$TMUX_CMD && /opt/homebrew/bin/claude '$IDEA_PROMPT'\\""
+            osascript -e "tell application \\"iTerm\\" to create window with default profile command \\"$TMUX_CMD && $CLAUDE_PATH '$IDEA_PROMPT'\\""
             osascript -e 'tell application "iTerm" to activate'
         else
-            osascript -e "tell application \\"Terminal\\" to do script \\"$TMUX_CMD && /opt/homebrew/bin/claude '$IDEA_PROMPT'\\""
+            osascript -e "tell application \\"Terminal\\" to do script \\"$TMUX_CMD && $CLAUDE_PATH '$IDEA_PROMPT'\\""
             osascript -e 'tell application "Terminal" to activate'
         fi
         """
