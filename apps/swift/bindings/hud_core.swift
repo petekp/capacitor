@@ -4228,6 +4228,8 @@ public enum HookStatus {
     )
     case policyBlocked(reason: String
     )
+    case binaryBroken(reason: String
+    )
 }
 
 #if swift(>=5.8)
@@ -4247,6 +4249,9 @@ public struct FfiConverterTypeHookStatus: FfiConverterRustBuffer {
             )
 
         case 4: return try .policyBlocked(reason: FfiConverterString.read(from: &buf)
+            )
+
+        case 5: return try .binaryBroken(reason: FfiConverterString.read(from: &buf)
             )
 
         default: throw UniffiInternalError.unexpectedEnumCase
@@ -4269,6 +4274,10 @@ public struct FfiConverterTypeHookStatus: FfiConverterRustBuffer {
 
         case let .policyBlocked(reason):
             writeInt(&buf, Int32(4))
+            FfiConverterString.write(reason, into: &buf)
+
+        case let .binaryBroken(reason):
+            writeInt(&buf, Int32(5))
             FfiConverterString.write(reason, into: &buf)
         }
     }

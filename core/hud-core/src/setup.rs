@@ -52,6 +52,7 @@ pub enum HookStatus {
     Outdated { current: String, latest: String },
     Installed { version: String },
     PolicyBlocked { reason: String },
+    BinaryBroken { reason: String },
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
@@ -96,12 +97,10 @@ impl SetupChecker {
 
         let blocking_reason = if let Some(dep) = missing_required_dep {
             Some(format!("{} is required but not installed", dep.name))
-        } else if matches!(hooks, HookStatus::PolicyBlocked { .. }) {
-            if let HookStatus::PolicyBlocked { ref reason } = hooks {
-                Some(reason.clone())
-            } else {
-                None
-            }
+        } else if let HookStatus::PolicyBlocked { ref reason } = hooks {
+            Some(reason.clone())
+        } else if let HookStatus::BinaryBroken { ref reason } = hooks {
+            Some(format!("Hook binary broken: {}", reason))
         } else if !hooks_ok {
             Some("Hooks not installed".to_string())
         } else if !storage_ready {
@@ -221,6 +220,10 @@ impl SetupChecker {
         match current_version {
             Some(version) if version == HOOK_SCRIPT_VERSION => {
                 if self.hooks_registered_in_settings() {
+                    // Verify binary actually works (catches macOS codesigning issues)
+                    if let Err(reason) = self.verify_hook_binary() {
+                        return HookStatus::BinaryBroken { reason };
+                    }
                     HookStatus::Installed { version }
                 } else {
                     HookStatus::NotInstalled
@@ -275,6 +278,55 @@ impl SetupChecker {
         self.storage
             .claude_root()
             .join("scripts/hud-state-tracker.sh")
+    }
+
+    fn get_hook_binary_path(&self) -> PathBuf {
+        dirs::home_dir()
+            .map(|h| h.join(".local/bin/hud-hook"))
+            .unwrap_or_else(|| PathBuf::from("/usr/local/bin/hud-hook"))
+    }
+
+    /// Verifies the hook binary actually runs (not just exists).
+    ///
+    /// Returns Ok(()) if the binary works, Err(reason) if broken.
+    /// This catches macOS code signing issues (SIGKILL = exit 137).
+    fn verify_hook_binary(&self) -> Result<(), String> {
+        let binary_path = self.get_hook_binary_path();
+
+        if !binary_path.exists() {
+            return Err("Binary not found".to_string());
+        }
+
+        // Try to run the binary with empty input
+        let output = Command::new(&binary_path)
+            .arg("handle")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .and_then(|mut child| {
+                // Write empty JSON to stdin
+                if let Some(stdin) = child.stdin.as_mut() {
+                    use std::io::Write;
+                    let _ = stdin.write_all(b"{}");
+                }
+                child.wait_with_output()
+            });
+
+        match output {
+            Ok(output) => {
+                let code = output.status.code().unwrap_or(-1);
+                if code == 137 {
+                    // SIGKILL - macOS killed unsigned binary
+                    Err("Binary killed by macOS (needs codesigning). Run: codesign -s - -f ~/.local/bin/hud-hook".to_string())
+                } else {
+                    // Exit code 0 or other non-fatal codes are OK
+                    // (binary may exit non-zero for empty input, that's fine)
+                    Ok(())
+                }
+            }
+            Err(e) => Err(format!("Failed to run binary: {}", e)),
+        }
     }
 
     fn get_installed_hook_version(&self, script_path: &Path) -> Option<String> {

@@ -14,6 +14,31 @@ get_version() {
     grep -m1 "^# Claude HUD State Tracker Hook v" "$1" 2>/dev/null | sed 's/.*v//' | sed 's/ .*//' || echo "unknown"
 }
 
+# Verify binary actually runs (not just exists)
+# Returns: 0 = works, 1 = needs codesign, 2 = fatal
+verify_binary() {
+    local binary="$1"
+
+    if [[ ! -x "$binary" ]]; then
+        return 2
+    fi
+
+    # Send empty JSON and check exit code
+    local exit_code
+    echo '{}' | "$binary" handle 2>/dev/null
+    exit_code=$?
+
+    if [[ $exit_code -eq 137 ]]; then
+        # SIGKILL - macOS killed unsigned binary
+        return 1
+    elif [[ $exit_code -eq 0 ]]; then
+        return 0
+    else
+        # Other error - might still work for real events
+        return 0
+    fi
+}
+
 if [[ ! -f "$REPO_HOOK" ]]; then
     echo "Error: Repo hook not found at $REPO_HOOK"
     exit 1
@@ -67,6 +92,32 @@ else
     codesign -s - -f "$INSTALLED_BINARY" 2>/dev/null || true
     echo "  ✓ Binary installed to $INSTALLED_BINARY"
 fi
+
+# Verify binary actually works
+echo ""
+echo "Verifying binary..."
+verify_binary "$INSTALLED_BINARY"
+case $? in
+    0)
+        echo "  ✓ Binary health check passed"
+        ;;
+    1)
+        echo "  ⚠ Binary killed by macOS (SIGKILL) - re-codesigning..."
+        codesign -s - -f "$INSTALLED_BINARY" 2>/dev/null
+        verify_binary "$INSTALLED_BINARY"
+        if [[ $? -eq 0 ]]; then
+            echo "  ✓ Binary health check passed after codesign"
+        else
+            echo "  ✗ FATAL: Binary still fails after codesign"
+            echo "    Try: xattr -c $INSTALLED_BINARY"
+            exit 1
+        fi
+        ;;
+    2)
+        echo "  ✗ FATAL: Binary not executable"
+        exit 1
+        ;;
+esac
 
 # Install/update wrapper script
 echo ""

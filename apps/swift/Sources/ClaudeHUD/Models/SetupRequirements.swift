@@ -149,6 +149,9 @@ final class SetupRequirementsManager {
 
         case .policyBlocked(let reason):
             updateStep("hooks", status: .error(message: reason))
+
+        case .binaryBroken(let reason):
+            updateStep("hooks", status: .error(message: "Binary broken: \(reason)"))
         }
     }
 
