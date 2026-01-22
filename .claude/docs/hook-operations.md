@@ -37,16 +37,16 @@ SessionEnd           → REMOVED (session deleted from state file)
 | **PreCompact** | Before compaction | state=compacting only when trigger="auto" | session_id, cwd |
 | **SessionEnd** | Session ends | Remove session (lock released when process exits) | session_id, cwd |
 
-## Lock/State Relationship
+## Lock/State Relationship (v3)
 
-**Normal case:** Lock PID matches state record PID → Resolver uses state record directly.
+The resolver uses **two-layer detection**:
 
-**Mismatched PID case:**
-1. If record's PID is alive → Resolver prefers state record (newer session without lock)
-2. If record's PID is dead → Resolver searches for sessions matching lock's PID
-3. If no match found → Falls back to state record
+1. **Primary (locks):** Check for lock file → use matching record's state (or Ready if no record)
+2. **Fallback (fresh records):** Trust records updated within 30 seconds even without locks
 
-**Orphaned lock cleanup:** `reconcile_orphaned_lock()` cleans up stale locks when `add_project` is called.
+This handles edge cases like session startup where the hook writes the record before the lock holder spawns.
+
+**Lock ownership:** The hook script creates locks via `spawn_lock_holder()`. Locks include PID verification to detect stale locks from crashed processes.
 
 ---
 
@@ -90,11 +90,11 @@ for lock in ~/.claude/sessions/*.lock; do
 done
 ```
 
-**Check for stale sessions:**
+**Check for stale sessions (by age):**
 ```bash
-jq -r '.sessions | to_entries[] | select(.value.pid != null) | "\(.value.pid) \(.value.cwd)"' \
-  ~/.capacitor/sessions.json | while read pid cwd; do
-  kill -0 $pid 2>/dev/null || echo "Dead PID: $pid ($cwd)"
+jq -r '.sessions | to_entries[] | "\(.value.updated_at) \(.value.cwd)"' \
+  ~/.capacitor/sessions.json | while read ts cwd; do
+  echo "Session at $cwd last updated: $ts"
 done
 ```
 

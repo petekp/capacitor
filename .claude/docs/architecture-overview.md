@@ -106,44 +106,41 @@ The crate is organized into three layers:
 
 ### The `state/` Subsystem
 
-The most complex part of the core. Handles detecting whether Claude is running and what it's doing.
+Session state detection following the **sidecar philosophy**: the hook script is authoritative for state transitions, Rust is a passive reader.
 
 ```
 state/
-├── mod.rs        # Public exports
-├── types.rs      # ClaudeState, SessionRecord, LockInfo, HookEvent
-├── store.rs      # StateStore - persists session states to JSON
-├── lock.rs       # Lock file detection, PID verification, orphan cleanup
-├── resolver.rs   # Fuses lock + state data to answer queries
-├── transition.rs # State machine: HookEvent → ClaudeState
-└── integration_tests.rs
+├── mod.rs        # Module overview, architecture diagram
+├── types.rs      # SessionRecord, LockInfo, LastEvent
+├── store.rs      # StateStore - reads session states from JSON
+├── lock.rs       # Lock detection, PID verification
+└── resolver.rs   # Two-layer resolution algorithm
 ```
 
 **Key Types:**
 
 ```rust
-pub enum ClaudeState { Ready, Working, Compacting, Blocked }
+pub enum SessionState { Ready, Working, Waiting, Compacting, Idle }
 
 pub struct SessionRecord {
     pub session_id: String,
-    pub state: ClaudeState,
+    pub state: SessionState,
     pub cwd: String,
-    pub updated_at: DateTime<Utc>,
-    pub working_on: Option<String>,
-    pub pid: Option<u32>,
+    pub updated_at: DateTime<Utc>,        // Any update (including heartbeats)
+    pub state_changed_at: DateTime<Utc>,  // When state actually changed
+    pub project_dir: Option<String>,      // Stable project root
+    pub last_event: Option<LastEvent>,    // For debugging
+    // ...
 }
 ```
 
-**Resolution Algorithm** (simplified):
-1. Check for lock at project path (or child paths)
-2. Verify lock's PID is alive with start-time matching
-3. Find matching state record by cwd path
-4. If record exists with different PID than lock:
-   - If record's PID is alive → use record's state (newer session without lock)
-   - Otherwise → search for sessions matching lock's PID
-5. Apply tie-breakers: freshness → match type → session ID
+**Two-Layer Resolution:**
+1. **Primary (locks):** Check for lock at project path → use matching record's state
+2. **Fallback (fresh records):** Trust records updated within 30 seconds even without locks
 
-See [ADR-002: State Resolver Matching Logic](../../docs/architecture-decisions/002-state-resolver-matching-logic.md) for full details.
+This handles edge cases like session startup race conditions where the hook fires before the lock holder spawns.
+
+For complete documentation, see the inline doc comments in each module file, or run `cargo doc -p hud-core --open`.
 
 ### The `agents/` Subsystem
 
@@ -247,18 +244,18 @@ User runs claude → Hooks fire → State file updated → Swift HUD reads
 ```
 
 **Hooks configured:**
-- `SessionStart` → state: ready (creates lock file)
+- `SessionStart` → state: ready (creates lock via `spawn_lock_holder`)
 - `UserPromptSubmit` → state: working (creates lock if missing for resumed sessions)
-- `PermissionRequest` → state: blocked
+- `PermissionRequest` → state: waiting
 - `PostToolUse` → state transitions + heartbeat updates
 - `Notification` (idle_prompt) → state: ready
 - `Stop` → state: ready
-- `PreCompact` → state: compacting
+- `PreCompact` → state: compacting (only when `trigger=auto`)
 - `SessionEnd` → removes session from state file
 
-**State file:** `~/.capacitor/sessions.json` (written by hook script)
+**State file:** `~/.capacitor/sessions.json` (written by hook script, version 3)
 
-**Lock directory:** `~/.claude/sessions/{hash}.lock/` (created by Claude Code CLI)
+**Lock directory:** `~/.claude/sessions/{hash}.lock/` (created by hook script via `spawn_lock_holder`)
 
 **Hook script:** `~/.claude/scripts/hud-state-tracker.sh`
 
