@@ -786,7 +786,8 @@ mod tests {
         let project_path = "/test/project";
 
         // Capture an idea
-        let id = capture_idea_with_storage(&storage, project_path, "Test idea for feature X").unwrap();
+        let id =
+            capture_idea_with_storage(&storage, project_path, "Test idea for feature X").unwrap();
         assert_eq!(id.len(), 26); // ULID length
 
         // Load ideas

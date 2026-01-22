@@ -89,13 +89,14 @@ impl SessionRecord {
     }
 
     /// Returns true if this record is in an "active" state that hasn't been updated recently.
-    /// Active states (Working, Waiting, Compacting) should have frequent hook updates.
+    /// Active states (Working, Waiting) should have frequent hook updates from tool use events.
     /// If stale, the user likely interrupted (Escape key, cancel) and we should show Ready.
+    ///
+    /// Note: Compacting is NOT included here because it receives no heartbeat updates after
+    /// PreCompact fires. Compaction can take 30+ seconds, so it uses the general staleness
+    /// threshold instead of this aggressive 5-second check.
     pub fn is_active_state_stale(&self) -> bool {
-        let is_active = matches!(
-            self.state,
-            SessionState::Working | SessionState::Waiting | SessionState::Compacting
-        );
+        let is_active = matches!(self.state, SessionState::Working | SessionState::Waiting);
         if !is_active {
             return false;
         }
@@ -183,8 +184,7 @@ mod tests {
 
     #[test]
     fn test_active_state_stale_working_fresh() {
-        let record =
-            make_record_with_state(Utc::now(), crate::types::SessionState::Working);
+        let record = make_record_with_state(Utc::now(), crate::types::SessionState::Working);
         assert!(!record.is_active_state_stale());
     }
 
@@ -203,11 +203,12 @@ mod tests {
     }
 
     #[test]
-    fn test_active_state_stale_compacting_old() {
+    fn test_active_state_stale_compacting_not_affected() {
+        // Compacting is NOT subject to active staleness because it receives no heartbeat
+        // updates after PreCompact fires, and compaction can take 30+ seconds
         let old_time = Utc::now() - Duration::seconds(ACTIVE_STATE_STALE_SECS + 1);
-        let record =
-            make_record_with_state(old_time, crate::types::SessionState::Compacting);
-        assert!(record.is_active_state_stale());
+        let record = make_record_with_state(old_time, crate::types::SessionState::Compacting);
+        assert!(!record.is_active_state_stale());
     }
 
     #[test]

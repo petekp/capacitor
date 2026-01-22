@@ -118,8 +118,6 @@ final class SessionStateManager {
 
         if effectiveThinking {
             return state.with(state: .working, thinking: true)
-        } else if state.state == .working && !state.isLocked {
-            return state.with(state: .ready, thinking: false, isLocked: false)
         }
 
         return state
