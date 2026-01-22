@@ -239,9 +239,13 @@ enum CLIError: Error {
 
 ## Hook Integration (SessionEnd)
 
-**Location:** `~/.claude/scripts/hud-enrich-ideas.sh`
+> **Status:** Planned — not yet implemented
 
-**Configuration:** In `~/.claude/settings.local.json`:
+This section describes a planned feature for automatic idea enrichment when sessions end.
+
+**Planned location:** `~/.claude/scripts/hud-enrich-ideas.sh`
+
+**Planned configuration:** In `~/.claude/settings.local.json`:
 ```json
 {
   "hooks": {
@@ -252,7 +256,7 @@ enum CLIError: Error {
 }
 ```
 
-**Key points:**
+**Design notes (for future implementation):**
 - Prevent nested invocation with `HUD_HOOK_RUNNING` env var
 - Check for pending ideas before invoking Claude
 - Use `--settings <(echo '{"hooks":{}}')` to isolate hook invocation
