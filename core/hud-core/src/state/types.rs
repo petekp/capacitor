@@ -1,75 +1,77 @@
 //! Serialized state types used by the hook/state pipeline.
-//! Keep changes backward-compatible to avoid breaking stored sessions.
+//!
+//! **Breaking changes are allowed** (single-user project). Current on-disk format is v3.
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum ClaudeState {
-    Ready,
-    Working,
-    Compacting,
-    Blocked,
-}
+use crate::types::SessionState;
 
-impl std::fmt::Display for ClaudeState {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ClaudeState::Ready => write!(f, "ready"),
-            ClaudeState::Working => write!(f, "working"),
-            ClaudeState::Compacting => write!(f, "compacting"),
-            ClaudeState::Blocked => write!(f, "blocked"),
-        }
-    }
-}
+// -----------------------------------------------------------------------------
+// Canonical hook→state mapping (implemented in scripts/hud-state-tracker.sh)
+//
+// SessionStart                -> ready
+// UserPromptSubmit            -> working
+// PreToolUse                  -> working
+// PostToolUse                 -> working
+// PermissionRequest           -> waiting
+// Notification idle_prompt    -> ready
+// Notification permission_prompt|elicitation_dialog -> waiting
+// PreCompact (trigger=auto|manual|missing) -> compacting
+// Stop (stop_hook_active=true) -> no state change (metadata only)
+// Stop (otherwise)            -> ready
+// SessionEnd                  -> remove session record
+// SubagentStop                -> no state change (metadata only)
+// -----------------------------------------------------------------------------
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum HookEvent {
-    SessionStart,
-    UserPromptSubmit,
-    PostToolUse,
-    PermissionRequest,
-    PreCompact { trigger: String },
-    Stop,
-    Notification { notification_type: String },
-    SessionEnd,
-}
+/// Most recent hook event observed for this session (captured for debugging + future features).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct LastEvent {
+    #[serde(default)]
+    pub hook_event_name: Option<String>,
+    #[serde(default)]
+    pub at: Option<DateTime<Utc>>,
 
-impl HookEvent {
-    pub fn from_name(
-        name: &str,
-        trigger: Option<&str>,
-        notification_type: Option<&str>,
-    ) -> Option<Self> {
-        match name {
-            "SessionStart" => Some(HookEvent::SessionStart),
-            "UserPromptSubmit" => Some(HookEvent::UserPromptSubmit),
-            "PostToolUse" => Some(HookEvent::PostToolUse),
-            "PermissionRequest" => Some(HookEvent::PermissionRequest),
-            "PreCompact" => Some(HookEvent::PreCompact {
-                trigger: trigger.unwrap_or("manual").to_string(),
-            }),
-            "Stop" => Some(HookEvent::Stop),
-            "Notification" => Some(HookEvent::Notification {
-                notification_type: notification_type.unwrap_or("").to_string(),
-            }),
-            "SessionEnd" => Some(HookEvent::SessionEnd),
-            _ => None,
-        }
-    }
+    // Common event-specific fields (all optional)
+    #[serde(default)]
+    pub tool_name: Option<String>,
+    #[serde(default)]
+    pub tool_use_id: Option<String>,
+    #[serde(default)]
+    pub notification_type: Option<String>,
+    #[serde(default)]
+    pub trigger: Option<String>,
+    #[serde(default)]
+    pub source: Option<String>,
+    #[serde(default)]
+    pub reason: Option<String>,
+    #[serde(default)]
+    pub stop_hook_active: Option<bool>,
+    #[serde(default)]
+    pub agent_id: Option<String>,
+    #[serde(default)]
+    pub agent_transcript_path: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SessionRecord {
     pub session_id: String,
-    pub state: ClaudeState,
+    pub state: SessionState,
     pub cwd: String,
     pub updated_at: DateTime<Utc>,
+    pub state_changed_at: DateTime<Utc>,
     #[serde(default)]
     pub working_on: Option<String>,
     #[serde(default)]
-    pub pid: Option<u32>,
+    pub transcript_path: Option<String>,
+    #[serde(default)]
+    pub permission_mode: Option<String>,
+    #[serde(default)]
+    pub project_dir: Option<String>,
+    #[serde(default)]
+    pub last_event: Option<LastEvent>,
+    #[serde(default)]
+    pub active_subagent_count: u32,
 }
 
 impl SessionRecord {
@@ -98,54 +100,6 @@ pub struct LockInfo {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
-    #[test]
-    fn test_claude_state_display() {
-        assert_eq!(ClaudeState::Ready.to_string(), "ready");
-        assert_eq!(ClaudeState::Working.to_string(), "working");
-        assert_eq!(ClaudeState::Compacting.to_string(), "compacting");
-        assert_eq!(ClaudeState::Blocked.to_string(), "blocked");
-    }
-
-    #[test]
-    fn test_hook_event_from_name() {
-        assert_eq!(
-            HookEvent::from_name("SessionStart", None, None),
-            Some(HookEvent::SessionStart)
-        );
-        assert_eq!(
-            HookEvent::from_name("UserPromptSubmit", None, None),
-            Some(HookEvent::UserPromptSubmit)
-        );
-        assert_eq!(
-            HookEvent::from_name("PostToolUse", None, None),
-            Some(HookEvent::PostToolUse)
-        );
-        assert_eq!(
-            HookEvent::from_name("PermissionRequest", None, None),
-            Some(HookEvent::PermissionRequest)
-        );
-        assert_eq!(
-            HookEvent::from_name("PreCompact", Some("auto"), None),
-            Some(HookEvent::PreCompact {
-                trigger: "auto".to_string()
-            })
-        );
-        assert_eq!(
-            HookEvent::from_name("Stop", None, None),
-            Some(HookEvent::Stop)
-        );
-        assert_eq!(
-            HookEvent::from_name("Notification", None, Some("idle_prompt")),
-            Some(HookEvent::Notification {
-                notification_type: "idle_prompt".to_string()
-            })
-        );
-        assert_eq!(
-            HookEvent::from_name("SessionEnd", None, None),
-            Some(HookEvent::SessionEnd)
-        );
-        assert_eq!(HookEvent::from_name("Unknown", None, None), None);
-    }
+    // Intentionally empty: state machine logic lives in hook scripts and is validated via
+    // shell-based integration tests in scripts/test-hook-events.sh.
 }

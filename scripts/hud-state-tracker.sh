@@ -1,5 +1,5 @@
 #!/bin/bash
-# Claude HUD State Tracker Hook v2.2.0
+# Claude HUD State Tracker Hook v3.0.0
 # Writes session state to ~/.capacitor/sessions.json
 # Manages lock directories in ~/.claude/sessions
 # Records file activity to ~/.capacitor/file-activity.json
@@ -369,11 +369,11 @@ with_state_lock() (
 
 ensure_state_file() {
   if [ ! -f "$STATE_FILE" ]; then
-    echo '{"version":2,"sessions":{}}' > "$STATE_FILE"
+    echo '{"version":3,"sessions":{}}' > "$STATE_FILE"
     return 0
   fi
   if [ -n "$HAVE_JQ" ]; then
-    jq -e . "$STATE_FILE" >/dev/null 2>&1 || echo '{"version":2,"sessions":{}}' > "$STATE_FILE"
+    jq -e . "$STATE_FILE" >/dev/null 2>&1 || echo '{"version":3,"sessions":{}}' > "$STATE_FILE"
   else
     python3 - "$STATE_FILE" <<'PY'
 import json
@@ -385,7 +385,7 @@ try:
         json.load(fh)
 except Exception:
     with open(path, "w", encoding="utf-8") as fh:
-        json.dump({"version": 2, "sessions": {}}, fh)
+        json.dump({"version": 3, "sessions": {}}, fh)
 PY
   fi
 }
@@ -424,17 +424,18 @@ update_state() {
   local new_state="$3"
   local cwd="$4"
   local timestamp="$5"
-  local pid="$6"
+  local event_name="$6"
+  local tool_name="$7"
 
   _update_state_inner() {
     if [ -n "$HAVE_PY" ]; then
-      python3 - "$STATE_FILE" "$sid" "$action" "$new_state" "$cwd" "$timestamp" "$pid" <<'PY'
+      python3 - "$STATE_FILE" "$sid" "$action" "$new_state" "$cwd" "$timestamp" "$event_name" "$tool_name" <<'PY'
 import json
 import sys
 
-state_file, sid, action, new_state, cwd, ts, pid = sys.argv[1:8]
+state_file, sid, action, new_state, cwd, ts, event_name, tool_name = sys.argv[1:9]
 
-base = {"version": 2, "sessions": {}}
+base = {"version": 3, "sessions": {}}
 try:
     with open(state_file, "r", encoding="utf-8") as fh:
         data = json.load(fh)
@@ -455,12 +456,17 @@ else:
     if not isinstance(rec, dict):
         rec = {}
 
+    old_state = rec.get("state")
+    state_changed = False
+
     if action == "heartbeat":
         if "state" not in rec and new_state:
             rec["state"] = new_state
+            state_changed = True
     else:
-        if new_state:
+        if new_state and new_state != old_state:
             rec["state"] = new_state
+            state_changed = True
 
     if cwd:
         rec["cwd"] = cwd
@@ -470,15 +476,20 @@ else:
     rec["session_id"] = sid
     rec["updated_at"] = ts
 
-    if pid:
-        try:
-            rec["pid"] = int(pid)
-        except Exception:
-            pass
+    # v3: Track when state actually changed
+    if state_changed or "state_changed_at" not in rec:
+        rec["state_changed_at"] = ts
+
+    # v3: Record the last event for debugging
+    if event_name:
+        last_event = {"event": event_name, "timestamp": ts}
+        if tool_name:
+            last_event["tool"] = tool_name
+        rec["last_event"] = last_event
 
     sessions[sid] = rec
 
-base["version"] = 2
+base["version"] = 3
 
 with open(state_file, "w", encoding="utf-8") as fh:
     json.dump(base, fh, indent=2)
@@ -492,25 +503,27 @@ PY
         if [ "$action" = "heartbeat" ]; then
           jq --arg sid "$sid" \
              --arg ts "$timestamp" \
-             --arg pid "$pid" \
-             '.version = 2
+             --arg event "$event_name" \
+             --arg tool "$tool_name" \
+             '.version = 3
               | .sessions = (.sessions // {})
               | if .sessions[$sid] then
                   .sessions[$sid].updated_at = $ts
-                else . end
-              | if $pid != "" then .sessions[$sid].pid = ($pid | tonumber) else . end' \
+                  | .sessions[$sid].last_event = (if $event != "" then {event: $event, timestamp: $ts} + (if $tool != "" then {tool: $tool} else {} end) else .sessions[$sid].last_event end)
+                else . end' \
              "$STATE_FILE" > "$tmp_file" && mv "$tmp_file" "$STATE_FILE"
         else
           jq --arg sid "$sid" \
              --arg state "$new_state" \
              --arg cwd "$cwd" \
              --arg ts "$timestamp" \
-             --arg pid "$pid" \
-             '.version = 2
+             --arg event "$event_name" \
+             --arg tool "$tool_name" \
+             '.version = 3
               | .sessions = (.sessions // {})
-              | .sessions[$sid] = ((.sessions[$sid] // {}) + {session_id: $sid, state: $state, updated_at: $ts})
+              | .sessions[$sid] = ((.sessions[$sid] // {}) + {session_id: $sid, state: $state, updated_at: $ts, state_changed_at: $ts})
               | if $cwd != "" then .sessions[$sid].cwd = $cwd else . end
-              | if $pid != "" then .sessions[$sid].pid = ($pid | tonumber) else . end' \
+              | if $event != "" then .sessions[$sid].last_event = ({event: $event, timestamp: $ts} + (if $tool != "" then {tool: $tool} else {} end)) else . end' \
              "$STATE_FILE" > "$tmp_file" && mv "$tmp_file" "$STATE_FILE"
         fi
       fi
@@ -810,7 +823,7 @@ NEW_STATE=""
 
 case "$EVENT" in
   "SessionStart")
-    if [ "$CURRENT_STATE" = "working" ] || [ "$CURRENT_STATE" = "blocked" ] || [ "$CURRENT_STATE" = "compacting" ]; then
+    if [ "$CURRENT_STATE" = "working" ] || [ "$CURRENT_STATE" = "waiting" ] || [ "$CURRENT_STATE" = "compacting" ]; then
       log "SessionStart ignored (current_state=$CURRENT_STATE)"
       exit 0
     fi
@@ -849,7 +862,7 @@ case "$EVENT" in
     fi
     ;;
   "PermissionRequest")
-    NEW_STATE="blocked"
+    NEW_STATE="waiting"
     ;;
   "PreCompact")
     if [ "$TRIGGER" = "auto" ]; then
@@ -899,7 +912,7 @@ fi
 log "State update: action=$ACTION new_state=$NEW_STATE session_id=$SESSION_ID cwd=$CWD"
 
 if [ "$ACTION" = "delete" ]; then
-  update_state "$SESSION_ID" "delete" "" "" "$TIMESTAMP" ""
+  update_state "$SESSION_ID" "delete" "" "" "$TIMESTAMP" "$EVENT" ""
 
   if [ -f "$ACTIVITY_FILE" ]; then
     (
@@ -943,5 +956,5 @@ PY
     disown 2>/dev/null
   fi
 else
-  update_state "$SESSION_ID" "$ACTION" "$NEW_STATE" "$CWD" "$TIMESTAMP" "$CLAUDE_PID"
+  update_state "$SESSION_ID" "$ACTION" "$NEW_STATE" "$CWD" "$TIMESTAMP" "$EVENT" "$TOOL_NAME"
 fi

@@ -203,7 +203,7 @@ impl Default for HudConfig {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /// The current state of a Claude Code session.
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default, uniffi::Enum)]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Default, uniffi::Enum)]
 #[serde(rename_all = "lowercase")]
 pub enum SessionState {
     Working,

@@ -27,7 +27,6 @@ use crate::sessions::{
     ProjectStatus,
 };
 use crate::setup::{DependencyStatus, HookStatus, InstallResult, SetupChecker, SetupStatus};
-use crate::state::{reconcile_orphaned_lock, StateStore};
 use crate::storage::StorageConfig;
 use crate::types::{
     Artifact, DashboardData, GlobalConfig, HudConfig, Plugin, PluginManifest, Project,
@@ -123,16 +122,6 @@ impl HudEngine {
                 "Project already pinned: {}",
                 path
             )));
-        }
-
-        // Reconcile any orphaned locks for this path before adding
-        // This handles cases where a stale lock from an old session prevents correct state display
-        // Lock dir is in Claude namespace (Claude Code creates these)
-        // State file is in Capacitor namespace (we own this)
-        let lock_dir = self.storage.claude_root().join("sessions");
-        let state_file = self.storage.sessions_file();
-        if let Ok(store) = StateStore::load(&state_file) {
-            let _ = reconcile_orphaned_lock(&lock_dir, &store, &path);
         }
 
         config.pinned_projects.push(path);

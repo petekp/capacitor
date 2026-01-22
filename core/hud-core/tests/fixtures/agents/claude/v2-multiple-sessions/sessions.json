@@ -1,24 +1,27 @@
 {
-  "version": 2,
+  "version": 3,
   "sessions": {
     "session-alpha": {
       "session_id": "session-alpha",
       "state": "working",
       "cwd": "/Users/test/project-a",
       "updated_at": "2024-01-15T10:30:00Z",
+      "state_changed_at": "2024-01-15T10:30:00Z",
       "working_on": "Building feature A"
     },
     "session-beta": {
       "session_id": "session-beta",
       "state": "ready",
       "cwd": "/Users/test/project-b",
-      "updated_at": "2024-01-15T10:35:00Z"
+      "updated_at": "2024-01-15T10:35:00Z",
+      "state_changed_at": "2024-01-15T10:35:00Z"
     },
     "session-gamma": {
       "session_id": "session-gamma",
-      "state": "blocked",
+      "state": "waiting",
       "cwd": "/Users/test/project-c",
       "updated_at": "2024-01-15T10:40:00Z",
+      "state_changed_at": "2024-01-15T10:40:00Z",
       "working_on": "Waiting for permission"
     }
   }

@@ -1,6 +1,6 @@
 #!/bin/bash
 # Test script for hud-state-tracker.sh
-# Exercises all hook events and verifies v2 format output
+# Exercises all hook events and verifies v3 format output
 #
 # Usage: ./scripts/test-hook-events.sh
 
@@ -181,13 +181,13 @@ else
     fi
 fi
 
-# Test 2: Version is 2
+# Test 2: Version is 3
 echo "Test 2: State file version"
 VERSION=$(check_version)
-if [ "$VERSION" = "2" ]; then
-    pass "Version is 2"
+if [ "$VERSION" = "3" ]; then
+    pass "Version is 3"
 else
-    fail "Version is 2" "2" "$VERSION"
+    fail "Version is 3" "3" "$VERSION"
 fi
 
 # Test 3: UserPromptSubmit → working
@@ -220,14 +220,14 @@ else
     fail "PostToolUse → working" "working" "$STATE"
 fi
 
-# Test 6: PermissionRequest → blocked
+# Test 6: PermissionRequest → waiting
 echo "Test 6: PermissionRequest event"
 send_event '{"hook_event_name":"PermissionRequest","session_id":"test-1","cwd":"/test/project"}'
 STATE=$(get_state "test-1")
-if [ "$STATE" = "blocked" ]; then
-    pass "PermissionRequest → blocked"
+if [ "$STATE" = "waiting" ]; then
+    pass "PermissionRequest → waiting"
 else
-    fail "PermissionRequest → blocked" "blocked" "$STATE"
+    fail "PermissionRequest → waiting" "waiting" "$STATE"
 fi
 
 # Test 7: Stop → ready
@@ -305,14 +305,15 @@ else
     fail "Multiple sessions tracked independently" "session-a=working, session-b=ready" "session-a=$STATE_A, session-b=$STATE_B"
 fi
 
-# Test 14: PID present in session record
-echo "Test 14: PID field present in session record"
+# Test 14: v3 fields present in session record (state_changed_at, last_event)
+echo "Test 14: v3 fields present in session record"
 SESSION=$(get_session "session-a")
-PID=$(echo "$SESSION" | jq -r '.pid // empty')
-if [ -n "$PID" ] && echo "$PID" | grep -E '^[0-9]+$' >/dev/null 2>&1; then
-    pass "PID field present"
+STATE_CHANGED_AT=$(echo "$SESSION" | jq -r '.state_changed_at // empty')
+LAST_EVENT=$(echo "$SESSION" | jq -r '.last_event.event // empty')
+if [ -n "$STATE_CHANGED_AT" ] && [ -n "$LAST_EVENT" ]; then
+    pass "v3 fields present (state_changed_at, last_event)"
 else
-    fail "PID field present" "numeric pid" "$PID"
+    fail "v3 fields present" "state_changed_at and last_event" "state_changed_at=$STATE_CHANGED_AT, last_event=$LAST_EVENT"
 fi
 
 # Test 15: Missing session_id - should exit gracefully
