@@ -25,7 +25,7 @@ version = "1.2.3"
 EOF
 
     # Patch the script to use TEST_DIR as PROJECT_ROOT
-    sed -i '' "s|PROJECT_ROOT=\"\$(dirname \"\$SCRIPT_DIR\")\"|PROJECT_ROOT=\"$TEST_DIR\"|" "$TEST_DIR/scripts/bump-version.sh"
+    sed -i '' "s|PROJECT_ROOT=\"\$(cd \"\$SCRIPT_DIR/../..\" && pwd)\"|PROJECT_ROOT=\"$TEST_DIR\"|" "$TEST_DIR/scripts/bump-version.sh"
 }
 
 teardown() {
