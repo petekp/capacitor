@@ -28,7 +28,7 @@
 //! When users interrupt Claude (Escape key, cancel), no hook event fires. To recover:
 //! - Active states (Working, Waiting, Compacting) fall back to Ready after
 //!   [`types::ACTIVE_STATE_STALE_SECS`] without updates.
-//! - This is aggressive (5 sec) for fast UX; false positives self-correct on next hook.
+//! - Aggressive threshold for fast UX; false positives self-correct on next hook event.
 //!
 //! # Module Structure
 //!

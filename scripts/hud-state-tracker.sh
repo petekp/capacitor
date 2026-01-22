@@ -1,5 +1,5 @@
 #!/bin/bash
-# Claude HUD State Tracker Hook v3.1.1
+# Claude HUD State Tracker Hook v3.1.2
 #
 # Tracks Claude Code session state for the HUD app. This script is the
 # authoritative source for state transitions—Rust just reads what we write.
@@ -8,7 +8,7 @@
 #   ~/.capacitor/sessions.json      State file (session records)
 #   ~/.capacitor/sessions/          Lock directories (liveness detection)
 #   ~/.capacitor/file-activity.json File activity tracking
-#   ~/.capacitor/hud-hook-debug.log Debug log
+#   ~/.capacitor/hud-hook-debug.log Debug log (auto-rotated, see MAX_LOG_SIZE)
 #
 # STATE MACHINE:
 #   SessionStart           → ready    (+ creates lock)
@@ -50,6 +50,19 @@ STATE_LOCK_DIR="${STATE_FILE}.lock"
 ACTIVITY_LOCK_DIR="${ACTIVITY_FILE}.lock"
 
 mkdir -p "$STATE_DIR" "$ACTIVITY_DIR" "$LOCK_DIR" "$(dirname "$LOG_FILE")"
+
+# Log rotation: truncate to KEEP_LINES when log exceeds MAX_LOG_SIZE
+# Runs on every invocation but is fast (stat check + conditional tail)
+MAX_LOG_SIZE=1048576  # 1MB in bytes
+KEEP_LINES=10000
+if [ -f "$LOG_FILE" ]; then
+  log_size=$(stat -f%z "$LOG_FILE" 2>/dev/null || stat -c%s "$LOG_FILE" 2>/dev/null || echo 0)
+  if [ "$log_size" -gt "$MAX_LOG_SIZE" ]; then
+    # Rotate: keep backup, truncate to last N lines
+    cp "$LOG_FILE" "${LOG_FILE}.1" 2>/dev/null
+    tail -n "$KEEP_LINES" "$LOG_FILE" > "${LOG_FILE}.tmp" && mv "${LOG_FILE}.tmp" "$LOG_FILE"
+  fi
+fi
 
 INPUT=$(cat)
 [ -z "$INPUT" ] && exit 0

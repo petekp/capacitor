@@ -12,8 +12,8 @@ pub const STALE_THRESHOLD_SECS: i64 = 300; // 5 minutes
 
 /// Active states (Working, Waiting, Compacting) fall back to Ready after this threshold.
 /// This handles user interruptions (Escape key, cancel) where no hook event fires.
-/// Aggressive (5 sec) to provide fast recovery; false positives self-correct on next hook.
-pub const ACTIVE_STATE_STALE_SECS: i64 = 10;
+/// Aggressive threshold for fast recovery; false positives self-correct on next hook event.
+pub const ACTIVE_STATE_STALE_SECS: i64 = 5;
 
 // -----------------------------------------------------------------------------
 // Canonical hook→state mapping (implemented in scripts/hud-state-tracker.sh)
@@ -81,7 +81,7 @@ pub struct SessionRecord {
 }
 
 impl SessionRecord {
-    /// Returns true if this record is stale (not updated in last 5 minutes)
+    /// Returns true if this record is stale (not updated within [`STALE_THRESHOLD_SECS`]).
     pub fn is_stale(&self) -> bool {
         let now = Utc::now();
         let age = now.signed_duration_since(self.updated_at);

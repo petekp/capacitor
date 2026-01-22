@@ -775,19 +775,22 @@ impl IdeaBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::storage::StorageConfig;
     use tempfile::TempDir;
 
     #[test]
     fn test_capture_and_load_idea() {
-        let temp_dir = TempDir::new().unwrap();
-        let project_path = temp_dir.path().to_str().unwrap();
+        // Use isolated storage to avoid polluting ~/.capacitor/projects/
+        let temp_root = TempDir::new().unwrap();
+        let storage = StorageConfig::with_root(temp_root.path().to_path_buf());
+        let project_path = "/test/project";
 
         // Capture an idea
-        let id = capture_idea(project_path, "Test idea for feature X").unwrap();
+        let id = capture_idea_with_storage(&storage, project_path, "Test idea for feature X").unwrap();
         assert_eq!(id.len(), 26); // ULID length
 
         // Load ideas
-        let ideas = load_ideas(project_path).unwrap();
+        let ideas = load_ideas_with_storage(&storage, project_path).unwrap();
         assert_eq!(ideas.len(), 1);
         assert_eq!(ideas[0].id, id);
         // Title is initially a placeholder "..." (replaced async by AI-generated title)
@@ -798,13 +801,15 @@ mod tests {
 
     #[test]
     fn test_update_idea_status() {
-        let temp_dir = TempDir::new().unwrap();
-        let project_path = temp_dir.path().to_str().unwrap();
+        // Use isolated storage to avoid polluting ~/.capacitor/projects/
+        let temp_root = TempDir::new().unwrap();
+        let storage = StorageConfig::with_root(temp_root.path().to_path_buf());
+        let project_path = "/test/project";
 
-        let id = capture_idea(project_path, "Another test").unwrap();
-        update_idea_status(project_path, &id, "in-progress").unwrap();
+        let id = capture_idea_with_storage(&storage, project_path, "Another test").unwrap();
+        update_idea_status_with_storage(&storage, project_path, &id, "in-progress").unwrap();
 
-        let ideas = load_ideas(project_path).unwrap();
+        let ideas = load_ideas_with_storage(&storage, project_path).unwrap();
         assert_eq!(ideas[0].status, "in-progress");
     }
 

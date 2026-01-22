@@ -580,7 +580,7 @@ mod tests {
         assert!(script_path.exists());
 
         let content = fs::read_to_string(&script_path).unwrap();
-        assert!(content.contains("Claude HUD State Tracker Hook v3.1.1"));
+        assert!(content.contains("Claude HUD State Tracker Hook v3.1.2"));
     }
 
     #[test]
