@@ -1,0 +1,27 @@
+#!/bin/bash
+
+# Pre-commit hook: fast checks before each commit
+# Install: ln -sf ../../scripts/dev/pre-commit .git/hooks/pre-commit
+
+set -e
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+NC='\033[0m'
+
+echo "Running pre-commit checks..."
+
+# 1. Rust formatting (fast, catches most issues)
+if ! cargo fmt --check --quiet 2>/dev/null; then
+    echo -e "${RED}✗ Rust formatting issues found${NC}"
+    echo "  Run: cargo fmt"
+    exit 1
+fi
+
+# 2. Rust tests (the main value - catches broken tests)
+if ! cargo test --quiet 2>/dev/null; then
+    echo -e "${RED}✗ Rust tests failed${NC}"
+    exit 1
+fi
+
+echo -e "${GREEN}✓ Pre-commit checks passed${NC}"

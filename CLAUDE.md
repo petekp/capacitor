@@ -18,6 +18,9 @@ cargo fmt                         # Format (required before commits)
 cargo clippy -- -D warnings       # Lint
 cargo test                        # Test
 
+# Pre-commit hook (one-time setup)
+ln -sf ../../scripts/dev/pre-commit .git/hooks/pre-commit
+
 # Swift (from apps/swift/)
 swift build                       # Debug build
 swift run                         # Run app
