@@ -26,9 +26,7 @@ cargo test -p hud-core sessions::tests          # Rust unit tests (14 tests)
 |----------|------|------|------|
 | SessionStart → ready | ✓ | | |
 | UserPromptSubmit → working | ✓ | | |
-| UserPromptSubmit → thinking=true | ✓ | | |
 | Stop → ready | ✓ | | |
-| Stop → thinking=false | ✓ | | |
 | SessionEnd → idle | ✓ | | |
 | PreCompact (auto) → compacting | ✓ | | |
 | PreCompact (manual) → no change | ✓ | | |

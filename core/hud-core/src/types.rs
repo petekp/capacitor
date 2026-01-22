@@ -243,9 +243,6 @@ pub struct ProjectSessionState {
     pub session_id: Option<String>,
     pub working_on: Option<String>,
     pub context: Option<ContextInfo>,
-    /// Whether Claude is currently "thinking" (API call in flight).
-    /// This provides real-time status when using the fetch-intercepting launcher.
-    pub thinking: Option<bool>,
     /// Whether a lock file is held for this project (indicates Claude is running).
     /// This is checked via advisory file locks and is more reliable than state file alone.
     #[serde(default)]

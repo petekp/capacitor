@@ -13,7 +13,6 @@ final class SessionStateManagerTests: XCTestCase {
             sessionId: "s1",
             workingOn: nil,
             context: nil,
-            thinking: nil,
             isLocked: false
         )
 
@@ -33,7 +32,6 @@ final class SessionStateManagerTests: XCTestCase {
             sessionId: "s1",
             workingOn: nil,
             context: nil,
-            thinking: nil,
             isLocked: false
         )
 
@@ -42,4 +40,3 @@ final class SessionStateManagerTests: XCTestCase {
         XCTAssertFalse(reconciled.isLocked)
     }
 }
-

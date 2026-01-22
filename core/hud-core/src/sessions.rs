@@ -186,10 +186,6 @@ pub fn detect_session_state_with_storage(
                 session_id: details.session_id,
                 working_on,
                 context: None,
-                // `thinking` is reserved for the (future) fetch-intercepting launcher.
-                // Do not derive it from hook state: Swift currently treats thinking=true as "force Working",
-                // which would hide legitimate states like Compacting.
-                thinking: None,
                 is_locked: true,
             }
         }
@@ -218,7 +214,6 @@ pub fn detect_session_state_with_storage(
                     session_id: Some(record.session_id.clone()),
                     working_on: record.working_on.clone(),
                     context: None,
-                    thinking: None,
                     is_locked: false,
                 };
             }
@@ -238,7 +233,6 @@ pub fn detect_session_state_with_storage(
                     session_id: None, // We don't know which session (could track in activity)
                     working_on: None,
                     context: None,
-                    thinking: None,
                     is_locked: false, // No lock at this path, but still working
                 }
             } else {
@@ -248,7 +242,6 @@ pub fn detect_session_state_with_storage(
                     session_id: None,
                     working_on: None,
                     context: None,
-                    thinking: None,
                     is_locked: false,
                 }
             }
@@ -643,46 +636,6 @@ mod tests {
         assert_eq!(state.state, SessionState::Working);
         assert!(state.is_locked);
         assert_eq!(state.state_changed_at, Some(expected.to_rfc3339()));
-    }
-
-    #[test]
-    fn test_detect_session_state_does_not_set_thinking_for_compacting() {
-        use crate::state::lock::tests_helper::create_lock;
-
-        let (_temp, storage, sessions_dir) = setup_storage_with_sessions_dir();
-        let project_path = "/tmp/hud-core-test-compacting-thinking";
-        create_lock(&sessions_dir, std::process::id(), project_path);
-
-        let mut store = StateStore::new(&storage.sessions_file());
-        store.update("session-1", SessionState::Compacting, project_path);
-        store.save().unwrap();
-
-        let state = detect_session_state_with_storage(&storage, project_path);
-
-        assert_eq!(state.state, SessionState::Compacting);
-        assert!(state.is_locked);
-        // Regression guard: Swift treats thinking=true as "force Working", which would hide Compacting.
-        assert!(state.thinking.is_none());
-    }
-
-    #[test]
-    fn test_detect_session_state_does_not_set_thinking_for_working() {
-        use crate::state::lock::tests_helper::create_lock;
-
-        let (_temp, storage, sessions_dir) = setup_storage_with_sessions_dir();
-        let project_path = "/tmp/hud-core-test-working-thinking";
-        create_lock(&sessions_dir, std::process::id(), project_path);
-
-        let mut store = StateStore::new(&storage.sessions_file());
-        store.update("session-1", SessionState::Working, project_path);
-        store.save().unwrap();
-
-        let state = detect_session_state_with_storage(&storage, project_path);
-
-        assert_eq!(state.state, SessionState::Working);
-        assert!(state.is_locked);
-        // `thinking` is reserved for the fetch-intercepting launcher, not hook-derived state.
-        assert!(state.thinking.is_none());
     }
 
     #[test]

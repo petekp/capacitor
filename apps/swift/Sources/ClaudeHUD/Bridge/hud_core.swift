@@ -3055,11 +3055,6 @@ public struct ProjectSessionState {
     public var workingOn: String?
     public var context: ContextInfo?
     /**
-     * Whether Claude is currently "thinking" (API call in flight).
-     * This provides real-time status when using the fetch-intercepting launcher.
-     */
-    public var thinking: Bool?
-    /**
      * Whether a lock file is held for this project (indicates Claude is running).
      * This is checked via advisory file locks and is more reliable than state file alone.
      */
@@ -3068,10 +3063,6 @@ public struct ProjectSessionState {
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
     public init(state: SessionState, stateChangedAt: String?, sessionId: String?, workingOn: String?, context: ContextInfo?,
-                /**
-                    * Whether Claude is currently "thinking" (API call in flight).
-                    * This provides real-time status when using the fetch-intercepting launcher.
-                    */ thinking: Bool?,
                 /**
                     * Whether a lock file is held for this project (indicates Claude is running).
                     * This is checked via advisory file locks and is more reliable than state file alone.
@@ -3082,7 +3073,6 @@ public struct ProjectSessionState {
         self.sessionId = sessionId
         self.workingOn = workingOn
         self.context = context
-        self.thinking = thinking
         self.isLocked = isLocked
     }
 }
@@ -3104,9 +3094,6 @@ extension ProjectSessionState: Equatable, Hashable {
         if lhs.context != rhs.context {
             return false
         }
-        if lhs.thinking != rhs.thinking {
-            return false
-        }
         if lhs.isLocked != rhs.isLocked {
             return false
         }
@@ -3119,7 +3106,6 @@ extension ProjectSessionState: Equatable, Hashable {
         hasher.combine(sessionId)
         hasher.combine(workingOn)
         hasher.combine(context)
-        hasher.combine(thinking)
         hasher.combine(isLocked)
     }
 }
@@ -3136,7 +3122,6 @@ public struct FfiConverterTypeProjectSessionState: FfiConverterRustBuffer {
                 sessionId: FfiConverterOptionString.read(from: &buf),
                 workingOn: FfiConverterOptionString.read(from: &buf),
                 context: FfiConverterOptionTypeContextInfo.read(from: &buf),
-                thinking: FfiConverterOptionBool.read(from: &buf),
                 isLocked: FfiConverterBool.read(from: &buf)
             )
     }
@@ -3147,7 +3132,6 @@ public struct FfiConverterTypeProjectSessionState: FfiConverterRustBuffer {
         FfiConverterOptionString.write(value.sessionId, into: &buf)
         FfiConverterOptionString.write(value.workingOn, into: &buf)
         FfiConverterOptionTypeContextInfo.write(value.context, into: &buf)
-        FfiConverterOptionBool.write(value.thinking, into: &buf)
         FfiConverterBool.write(value.isLocked, into: &buf)
     }
 }
@@ -4292,30 +4276,6 @@ private struct FfiConverterOptionUInt8: FfiConverterRustBuffer {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterUInt8.read(from: &buf)
-        default: throw UniffiInternalError.unexpectedOptionalTag
-        }
-    }
-}
-
-#if swift(>=5.8)
-    @_documentation(visibility: private)
-#endif
-private struct FfiConverterOptionBool: FfiConverterRustBuffer {
-    typealias SwiftType = Bool?
-
-    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
-        guard let value = value else {
-            writeInt(&buf, Int8(0))
-            return
-        }
-        writeInt(&buf, Int8(1))
-        FfiConverterBool.write(value, into: &buf)
-    }
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
-        switch try readInt(&buf) as Int8 {
-        case 0: return nil
-        case 1: return try FfiConverterBool.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }

@@ -5,7 +5,6 @@ final class SessionStateManager {
     private enum Constants {
         static let flashDurationSeconds: TimeInterval = 1.4
         static let readyStalenessThresholdSeconds: TimeInterval = 120
-        static let thinkingStalenessThresholdSeconds: TimeInterval = 30
     }
 
     private(set) var sessionStates: [String: ProjectSessionState] = [:]
@@ -37,7 +36,7 @@ final class SessionStateManager {
     func reconcileStateWithLock(_ state: ProjectSessionState, at path: String) -> ProjectSessionState {
         if state.isLocked {
             if state.state == .idle {
-                return state.with(state: .ready, thinking: nil, isLocked: true)
+                return state.with(state: .ready, isLocked: true)
             }
         } else {
             // Important: We intentionally allow .working/.compacting without a lock.
@@ -46,7 +45,7 @@ final class SessionStateManager {
             // (e.g. when lock files are missing or unavailable).
             if state.state == .ready {
                 if isStale(state.stateChangedAt, threshold: Constants.readyStalenessThresholdSeconds) {
-                    return state.with(state: .idle, thinking: false, isLocked: false)
+                    return state.with(state: .idle, isLocked: false)
                 }
             }
         }
@@ -97,7 +96,6 @@ final class SessionStateManager {
         }
 
         state = inheritLockIfNeeded(state, projectPath: project.path)
-        state = applyThinkingStateLogic(state)
 
         return state
     }
@@ -108,24 +106,6 @@ final class SessionStateManager {
         if let parentState = sessionStates[projectPath], parentState.isLocked {
             return state.with(isLocked: true)
         }
-        return state
-    }
-
-    private func applyThinkingStateLogic(_ state: ProjectSessionState) -> ProjectSessionState {
-        guard let thinking = state.thinking else { return state }
-
-        let isThinkingStale = state.context?.updatedAt.flatMap { timestamp in
-            isStale(timestamp, threshold: Constants.thinkingStalenessThresholdSeconds)
-        } ?? false
-
-        let effectiveThinking = isThinkingStale ? false : thinking
-
-        if effectiveThinking {
-            return state.with(state: .working, thinking: true)
-        } else if state.state == .working && !state.isLocked {
-            return state.with(state: .ready, thinking: false, isLocked: false)
-        }
-
         return state
     }
 
@@ -159,7 +139,6 @@ final class SessionStateManager {
 private extension ProjectSessionState {
     func with(
         state: SessionState? = nil,
-        thinking: Bool?? = .none,
         isLocked: Bool? = nil
     ) -> ProjectSessionState {
         ProjectSessionState(
@@ -168,7 +147,6 @@ private extension ProjectSessionState {
             sessionId: sessionId,
             workingOn: workingOn,
             context: context,
-            thinking: thinking == .none ? self.thinking : thinking!,
             isLocked: isLocked ?? self.isLocked
         )
     }

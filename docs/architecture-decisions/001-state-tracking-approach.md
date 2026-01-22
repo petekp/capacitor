@@ -8,6 +8,10 @@
 
 **Use hooks for local TUI sessions, reserve daemon for future remote/mobile use.**
 
+**Update:** The fetch-intercepting launcher/daemon experiments were deprecated
+and removed. Claude HUD is now a sidecar-only model that can coexist with other
+clients (including Happy).
+
 ## Context
 
 We investigated multiple approaches to track Claude's thinking state:
