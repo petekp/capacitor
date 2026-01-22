@@ -125,6 +125,16 @@ Hooks track local Claude Code sessions → state file → HUD reads.
 | Claude Code CLI reference | `docs/claude-code/` |
 | Architecture decisions | `docs/architecture-decisions/` |
 
+## Plans
+
+Implementation plans live in `.claude/plans/`. Files are prefixed by status:
+
+- **`ACTIVE-`** — Ready for implementation. Use these.
+- **`DRAFT-`** — Work in progress, not ready.
+- **`REFERENCE-`** — Vision docs, checklists—not implementation plans.
+
+See `.claude/plans/README.md` for the full index.
+
 ## Notes
 
 - **Path encoding:** Project paths use `/` → `-` replacement (e.g., `/Users/peter/Code` → `-Users-peter-Code`)
