@@ -56,7 +56,6 @@ echo ""
 
 # Make test scripts executable
 chmod +x "$SCRIPT_DIR/test-hook-events.sh" 2>/dev/null || true
-chmod +x "$SCRIPT_DIR/test-lock-system.sh" 2>/dev/null || true
 
 # Check prerequisites
 echo "Checking prerequisites..."
@@ -72,11 +71,6 @@ if ! command -v cargo &> /dev/null; then
     exit 1
 fi
 
-if [ ! -f "$HOME/.claude/scripts/hud-state-tracker.sh" ]; then
-    echo -e "${YELLOW}WARNING:${NC} Hook script not found at ~/.claude/scripts/hud-state-tracker.sh"
-    echo "Lock system tests will be skipped"
-fi
-
 echo "Prerequisites OK"
 echo ""
 
@@ -89,15 +83,8 @@ log_header "Shell Script Tests"
 if [ -f "$SCRIPT_DIR/test-hook-events.sh" ]; then
     run_suite "Hook Event Tests" "$SCRIPT_DIR/test-hook-events.sh"
 fi
-
-if [ -f "$HOME/.claude/scripts/hud-state-tracker.sh" ]; then
-    if [ -f "$SCRIPT_DIR/test-lock-system.sh" ]; then
-        run_suite "Lock System Tests" "$SCRIPT_DIR/test-lock-system.sh"
-    fi
-else
-    echo -e "${YELLOW}Skipping lock system tests - hook script not found${NC}"
-    echo ""
-fi
+echo -e "${YELLOW}Note:${NC} Lock directories are owned by Claude Code; HUD validates lock parsing via Rust unit tests."
+echo ""
 
 log_header "Rust Unit Tests"
 

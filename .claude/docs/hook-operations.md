@@ -11,16 +11,18 @@ Complete reference for the HUD state tracking hook system: state machine, debugg
 
 SessionStart         → ready
 UserPromptSubmit     → working
-PermissionRequest    → blocked
-PostToolUse          → depends on current state:
-                       - compacting → working (returns from compaction)
-                       - working    → working (heartbeat update only)
-                       - ready      → working (session resumed)
-                       - idle       → working (session resumed)
-                       - blocked    → working (permission granted)
-Notification         → ready (only if notification_type="idle_prompt")
-Stop                 → ready
-PreCompact           → compacting (only when trigger="auto")
+PreToolUse           → working
+PostToolUse          → working
+PermissionRequest    → waiting
+Notification         → depends on notification_type:
+                       - idle_prompt                         → ready
+                       - permission_prompt|elicitation_dialog → waiting
+                       - other                               → no state change (metadata only)
+Stop                 → depends on stop_hook_active:
+                       - stop_hook_active=true  → no state change (metadata only)
+                       - stop_hook_active=false → ready
+PreCompact           → compacting (for ALL trigger values: manual/auto/missing)
+SubagentStop         → no state change (metadata only)
 SessionEnd           → REMOVED (session deleted from state file)
 ```
 
@@ -28,25 +30,48 @@ SessionEnd           → REMOVED (session deleted from state file)
 
 | Event | Triggers | Action | Requirements |
 |-------|----------|--------|--------------|
-| **SessionStart** | Session launch/resume | Create lock, state=ready | session_id, cwd |
-| **UserPromptSubmit** | User submits prompt | state=working, create lock if missing | session_id, cwd |
-| **PermissionRequest** | Claude needs permission | state=blocked | session_id, cwd |
-| **PostToolUse** | After tool execution | Update state based on current | session_id |
-| **Notification** | Claude notification | state=ready (only if idle_prompt) | session_id, cwd, notification_type |
-| **Stop** | Claude finishes responding | state=ready | session_id, cwd, stop_hook_active=false |
-| **PreCompact** | Before compaction | state=compacting only when trigger="auto" | session_id, cwd |
-| **SessionEnd** | Session ends | Remove session (lock released when process exits) | session_id, cwd |
+| **SessionStart** | Session launch/resume | state=ready | session_id, cwd |
+| **UserPromptSubmit** | User submits prompt | state=working | session_id, cwd |
+| **PreToolUse** | Before tool execution | state=working | session_id, cwd |
+| **PostToolUse** | After tool execution | state=working | session_id, cwd |
+| **PermissionRequest** | Claude needs permission | state=waiting | session_id |
+| **Notification** | Claude notification | see state machine above | session_id, notification_type |
+| **Stop** | Claude finishes responding | state=ready unless stop_hook_active=true | session_id, stop_hook_active |
+| **PreCompact** | Before compaction | state=compacting | session_id |
+| **SubagentStop** | Subagent finished | metadata only (no state change) | session_id |
+| **SessionEnd** | Session ends | Remove session | session_id |
+
+## sessions.json schema (v3)
+
+`hud-state-tracker.sh` writes to `~/.capacitor/sessions.json`:
+
+- **version**: `3`
+- **sessions**: map keyed by `session_id`
+
+Each session record contains:
+
+- **Core**: `session_id`, `state`, `cwd`, `updated_at`, `state_changed_at`
+- **Metadata** (optional): `transcript_path`, `permission_mode`, `project_dir`, `active_subagent_count`
+- **last_event** (optional): `hook_event_name`, `at`, plus safe per-event fields like `tool_name`, `tool_use_id`, `notification_type`, `trigger`, `source`, `reason`, `stop_hook_active`
+
+### Persistence denylist (privacy)
+
+We intentionally do **not** persist sensitive/large fields into `sessions.json`, including:
+
+- `prompt`
+- `tool_input` / `tool_response`
+- notification `message`
+- transcript contents, file contents, or inline diffs
+- shell command arguments
 
 ## Lock/State Relationship
 
-**Normal case:** Lock PID matches state record PID → Resolver uses state record directly.
+Claude Code owns lock directories in `~/.claude/sessions/*.lock/`. HUD only **reads** them.
 
-**Mismatched PID case:**
-1. If record's PID is alive → Resolver prefers state record (newer session without lock)
-2. If record's PID is dead → Resolver searches for sessions matching lock's PID
-3. If no match found → Falls back to state record
+- **Locks indicate liveness** (session is running).
+- **sessions.json indicates last known state** and captures hook-derived signals (especially “needs user input”).
 
-**Orphaned lock cleanup:** `reconcile_orphaned_lock()` cleans up stale locks when `add_project` is called.
+When a lock exists but no matching state record is available, HUD defaults to **Ready** for that running session.
 
 ---
 
@@ -55,15 +80,6 @@ SessionEnd           → REMOVED (session deleted from state file)
 ### Quick Commands
 
 ```bash
-# Watch hook events in real-time
-tail -f ~/.claude/hud-hook-debug.log
-
-# Check recent state transitions
-grep "State transition" ~/.claude/hud-hook-debug.log | tail -20
-
-# Check for errors/warnings
-grep -E "ERROR|WARNING" ~/.claude/hud-hook-debug.log | tail -20
-
 # View current session states
 cat ~/.capacitor/sessions.json | jq .
 
@@ -73,7 +89,7 @@ for lock in ~/.claude/sessions/*.lock; do
 done | jq -s .
 
 # Run test suite
-~/.claude/scripts/test-hud-hooks.sh
+./scripts/test-hook-events.sh
 
 # Manually inject test event
 echo '{"hook_event_name":"PreCompact","session_id":"test","cwd":"/tmp","trigger":"manual"}' | \
@@ -90,12 +106,10 @@ for lock in ~/.claude/sessions/*.lock; do
 done
 ```
 
-**Check for stale sessions:**
+**Check for stale sessions (no recent hook updates):**
 ```bash
-jq -r '.sessions | to_entries[] | select(.value.pid != null) | "\(.value.pid) \(.value.cwd)"' \
-  ~/.capacitor/sessions.json | while read pid cwd; do
-  kill -0 $pid 2>/dev/null || echo "Dead PID: $pid ($cwd)"
-done
+jq -r '.sessions | to_entries[] | "\(.key)\t\(.value.state)\t\(.value.updated_at)\t\(.value.cwd)"' \
+  ~/.capacitor/sessions.json
 ```
 
 ---
@@ -106,8 +120,7 @@ done
 
 1. Check hook configuration: `jq '.hooks' ~/.claude/settings.json`
 2. Verify hook script exists: `ls -la ~/.claude/scripts/hud-state-tracker.sh`
-3. Check debug log: `tail -50 ~/.claude/hud-hook-debug.log`
-4. Run test suite: `~/.claude/scripts/test-hud-hooks.sh`
+3. Run test suite (from repo): `./scripts/test-hook-events.sh`
 
 ### Session States Stuck on Ready
 
@@ -126,7 +139,10 @@ ls -la ~/.claude/sessions/<hash>.lock/
 cat ~/.claude/sessions/<hash>.lock/pid
 ```
 
-**Root cause:** Resolver prioritizing stale lock files over fresh state entries when PIDs differ.
+**Common root causes:**
+- hooks not registered in `~/.claude/settings.json`
+- hook script not executable
+- state file version mismatch/corruption (delete `~/.capacitor/sessions.json` and retry)
 
 ### Hooks Stop Working Entirely
 
@@ -143,20 +159,18 @@ cat ~/.claude/sessions/<hash>.lock/pid
 
 1. Read this document and understand current behavior
 2. Check `docs/claude-code/hooks.md` for event payload fields
-3. Never filter events silently—always log skip reasons
+3. Do not persist sensitive fields into `sessions.json` (see denylist above)
 4. Test with real data, not assumptions
 
 ### Warning Signs
 
-🚨 **Silent exits:** Every `exit 0` must log why it's exiting
-🚨 **Assumed fields:** Don't assume trigger/notification_type exist
-🚨 **No validation logging:** Always log state transitions
+🚨 **Assumed fields:** Don't assume trigger/notification_type/cwd exist
+🚨 **Schema drift:** Hook script and Rust store must agree on sessions.json v3 schema
 
 ### After Modifying Hooks
 
-- [ ] Run test suite: `~/.claude/scripts/test-hud-hooks.sh`
+- [ ] Run test suite: `./scripts/test-hook-events.sh`
 - [ ] Test manually with real Claude session
-- [ ] Check debug log: `tail -20 ~/.claude/hud-hook-debug.log`
 - [ ] Verify in HUD app
 - [ ] Update this document if behavior changed
 
@@ -165,8 +179,7 @@ cat ~/.claude/sessions/<hash>.lock/pid
 ## References
 
 - Hook script: `~/.claude/scripts/hud-state-tracker.sh`
-- Test suite: `~/.claude/scripts/test-hud-hooks.sh`
-- Debug log: `~/.claude/hud-hook-debug.log`
+- Hook tests (repo): `./scripts/test-hook-events.sh`
 - State file: `~/.capacitor/sessions.json`
 - Claude Code hook docs: `docs/claude-code/hooks.md`
 - ADR-002: Lock handling architecture

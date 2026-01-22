@@ -43,6 +43,7 @@ let package = Package(
         .testTarget(
             name: "ClaudeHUDTests",
             dependencies: [
+                "ClaudeHUD",
                 .product(name: "Sparkle", package: "Sparkle")
             ],
             path: "Tests/ClaudeHUDTests"

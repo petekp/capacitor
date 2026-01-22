@@ -21,11 +21,11 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use tempfile::NamedTempFile;
 
-const HOOK_SCRIPT_VERSION: &str = "2.2.0";
+const HOOK_SCRIPT_VERSION: &str = "3.0.2";
 const HOOK_COMMAND: &str = "$HOME/.claude/scripts/hud-state-tracker.sh";
 const HOOK_SCRIPT: &str = include_str!("../../../scripts/hud-state-tracker.sh");
 
-const HUD_HOOK_EVENTS: [(&str, bool); 9] = [
+const HUD_HOOK_EVENTS: [(&str, bool); 10] = [
     ("SessionStart", false),
     ("SessionEnd", false),
     ("UserPromptSubmit", false),
@@ -33,6 +33,7 @@ const HUD_HOOK_EVENTS: [(&str, bool); 9] = [
     ("PostToolUse", true),
     ("PermissionRequest", true),
     ("Stop", false),
+    ("SubagentStop", false),
     ("PreCompact", false),
     ("Notification", false),
 ];
@@ -580,7 +581,10 @@ mod tests {
         assert!(script_path.exists());
 
         let content = fs::read_to_string(&script_path).unwrap();
-        assert!(content.contains("Claude HUD State Tracker Hook v2.2.0"));
+        assert!(content.contains(&format!(
+            "Claude HUD State Tracker Hook v{}",
+            HOOK_SCRIPT_VERSION
+        )));
     }
 
     #[test]

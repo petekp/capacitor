@@ -33,15 +33,18 @@ final class SessionStateManager {
         checkForStateChanges()
     }
 
-    private func reconcileStateWithLock(_ state: ProjectSessionState, at path: String) -> ProjectSessionState {
+    // Internal for unit testing (the UI relies on this to avoid stale/incorrect statuses).
+    func reconcileStateWithLock(_ state: ProjectSessionState, at path: String) -> ProjectSessionState {
         if state.isLocked {
             if state.state == .idle {
                 return state.with(state: .ready, thinking: nil, isLocked: true)
             }
         } else {
-            if state.state == .working || state.state == .compacting {
-                return state.with(state: .ready, thinking: false, isLocked: false)
-            } else if state.state == .ready {
+            // Important: We intentionally allow .working/.compacting without a lock.
+            // Core already applies staleness / TTL when no lock exists; if we forcibly
+            // downshift here, "Working" will never be visible for hook-only sessions
+            // (e.g. when lock files are missing or unavailable).
+            if state.state == .ready {
                 if isStale(state.stateChangedAt, threshold: Constants.readyStalenessThresholdSeconds) {
                     return state.with(state: .idle, thinking: false, isLocked: false)
                 }

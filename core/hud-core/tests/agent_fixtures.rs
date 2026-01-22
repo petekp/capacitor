@@ -21,8 +21,8 @@ fn adapter_for_fixture(name: &str) -> ClaudeAdapter {
 }
 
 #[test]
-fn test_parse_v2_state_file_working() {
-    let adapter = adapter_for_fixture("v2-working");
+fn test_parse_v3_state_file_working() {
+    let adapter = adapter_for_fixture("v3-working");
     let sessions = adapter.all_sessions();
 
     assert_eq!(sessions.len(), 1);
@@ -38,8 +38,8 @@ fn test_parse_v2_state_file_working() {
 }
 
 #[test]
-fn test_parse_v2_multiple_sessions() {
-    let adapter = adapter_for_fixture("v2-multiple-sessions");
+fn test_parse_v3_multiple_sessions() {
+    let adapter = adapter_for_fixture("v3-multiple-sessions");
     let sessions = adapter.all_sessions();
 
     assert_eq!(sessions.len(), 3);
@@ -89,7 +89,7 @@ fn test_nonexistent_fixture_returns_empty() {
 
 #[test]
 fn test_adapter_id_is_lowercase_no_spaces() {
-    let adapter = adapter_for_fixture("v2-working");
+    let adapter = adapter_for_fixture("v3-working");
 
     let id = adapter.id();
     assert_eq!(id, id.to_lowercase());
@@ -98,7 +98,7 @@ fn test_adapter_id_is_lowercase_no_spaces() {
 
 #[test]
 fn test_is_installed_does_not_panic() {
-    let adapter = adapter_for_fixture("v2-working");
+    let adapter = adapter_for_fixture("v3-working");
     let _ = adapter.is_installed();
 
     let adapter_missing = adapter_for_fixture("does-not-exist");
@@ -107,6 +107,6 @@ fn test_is_installed_does_not_panic() {
 
 #[test]
 fn test_detect_session_with_nonexistent_path_returns_none() {
-    let adapter = adapter_for_fixture("v2-working");
+    let adapter = adapter_for_fixture("v3-working");
     assert!(adapter.detect_session("/nonexistent/path/12345").is_none());
 }

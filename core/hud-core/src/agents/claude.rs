@@ -4,9 +4,9 @@ use std::path::PathBuf;
 use std::time::SystemTime;
 
 use crate::sessions::{recent_session_record_for_project, NO_LOCK_STATE_TTL};
-use crate::state::types::ClaudeState;
 use crate::state::{resolve_state_with_details, StateStore};
 use crate::storage::StorageConfig;
+use crate::types::SessionState;
 
 use super::types::{AdapterError, AgentSession, AgentState, AgentType};
 use super::AgentAdapter;
@@ -33,19 +33,20 @@ impl ClaudeAdapter {
         Self { storage }
     }
 
-    fn map_state(claude_state: ClaudeState) -> AgentState {
-        match claude_state {
-            ClaudeState::Ready => AgentState::Ready,
-            ClaudeState::Working => AgentState::Working,
-            ClaudeState::Compacting => AgentState::Working,
-            ClaudeState::Blocked => AgentState::Waiting,
+    fn map_state(state: SessionState) -> AgentState {
+        match state {
+            SessionState::Idle => AgentState::Idle,
+            SessionState::Ready => AgentState::Ready,
+            SessionState::Working => AgentState::Working,
+            SessionState::Compacting => AgentState::Working,
+            SessionState::Waiting => AgentState::Waiting,
         }
     }
 
-    fn state_detail(claude_state: ClaudeState) -> Option<String> {
-        match claude_state {
-            ClaudeState::Compacting => Some("compacting context".to_string()),
-            ClaudeState::Blocked => Some("waiting for permission".to_string()),
+    fn state_detail(state: SessionState) -> Option<String> {
+        match state {
+            SessionState::Compacting => Some("compacting context".to_string()),
+            SessionState::Waiting => Some("waiting for input".to_string()),
             _ => None,
         }
     }
@@ -261,7 +262,7 @@ mod tests {
         // Create state file in Capacitor namespace
         let state_file = capacitor_root.join("sessions.json");
         let mut store = StateStore::new(&state_file);
-        store.update("test-session", ClaudeState::Working, "/project");
+        store.update("test-session", SessionState::Working, "/project");
         store.save().unwrap();
 
         let storage = StorageConfig::with_roots(capacitor_root, claude_root);
@@ -279,7 +280,7 @@ mod tests {
     #[test]
     fn test_state_mapping_ready() {
         assert_eq!(
-            ClaudeAdapter::map_state(ClaudeState::Ready),
+            ClaudeAdapter::map_state(SessionState::Ready),
             AgentState::Ready
         );
     }
@@ -287,7 +288,7 @@ mod tests {
     #[test]
     fn test_state_mapping_working() {
         assert_eq!(
-            ClaudeAdapter::map_state(ClaudeState::Working),
+            ClaudeAdapter::map_state(SessionState::Working),
             AgentState::Working
         );
     }
@@ -295,24 +296,24 @@ mod tests {
     #[test]
     fn test_state_mapping_compacting_is_working_with_detail() {
         assert_eq!(
-            ClaudeAdapter::map_state(ClaudeState::Compacting),
+            ClaudeAdapter::map_state(SessionState::Compacting),
             AgentState::Working
         );
         assert_eq!(
-            ClaudeAdapter::state_detail(ClaudeState::Compacting),
+            ClaudeAdapter::state_detail(SessionState::Compacting),
             Some("compacting context".to_string())
         );
     }
 
     #[test]
-    fn test_state_mapping_blocked_is_waiting_with_detail() {
+    fn test_state_mapping_waiting_has_detail() {
         assert_eq!(
-            ClaudeAdapter::map_state(ClaudeState::Blocked),
+            ClaudeAdapter::map_state(SessionState::Waiting),
             AgentState::Waiting
         );
         assert_eq!(
-            ClaudeAdapter::state_detail(ClaudeState::Blocked),
-            Some("waiting for permission".to_string())
+            ClaudeAdapter::state_detail(SessionState::Waiting),
+            Some("waiting for input".to_string())
         );
     }
 
@@ -375,7 +376,7 @@ mod tests {
 
         // State file in Capacitor namespace
         let mut store = StateStore::new(&capacitor_root.join("sessions.json"));
-        store.update("test-session", ClaudeState::Working, "/project");
+        store.update("test-session", SessionState::Working, "/project");
         store.save().unwrap();
 
         let storage = StorageConfig::with_roots(capacitor_root, claude_root);
@@ -396,7 +397,7 @@ mod tests {
         std::fs::create_dir_all(&claude_root).unwrap();
 
         let mut store = StateStore::new(&capacitor_root.join("sessions.json"));
-        store.update("session-1", ClaudeState::Ready, "/project");
+        store.update("session-1", SessionState::Ready, "/project");
         store.save().unwrap();
 
         let storage = StorageConfig::with_roots(capacitor_root, claude_root);
@@ -417,7 +418,7 @@ mod tests {
         std::fs::create_dir_all(&claude_root).unwrap();
 
         let mut store = StateStore::new(&capacitor_root.join("sessions.json"));
-        store.update("session-1", ClaudeState::Ready, "/project");
+        store.update("session-1", SessionState::Ready, "/project");
         store.set_timestamp_for_test("session-1", Utc::now() - ChronoDuration::minutes(10));
         store.save().unwrap();
 
@@ -444,8 +445,8 @@ mod tests {
 
         // State file in Capacitor namespace
         let mut store = StateStore::new(&capacitor_root.join("sessions.json"));
-        store.update("session-1", ClaudeState::Working, "/project1");
-        store.update("session-2", ClaudeState::Ready, "/project2");
+        store.update("session-1", SessionState::Working, "/project1");
+        store.update("session-2", SessionState::Ready, "/project2");
         store.save().unwrap();
 
         let storage = StorageConfig::with_roots(capacitor_root, claude_root);
@@ -485,7 +486,7 @@ mod tests {
 
         // Create state file in Capacitor namespace
         let state_file = capacitor_root.join("sessions.json");
-        std::fs::write(&state_file, r#"{"version": 2, "sessions": {}}"#).unwrap();
+        std::fs::write(&state_file, r#"{"version": 3, "sessions": {}}"#).unwrap();
 
         let storage = StorageConfig::with_roots(capacitor_root, claude_root);
         let adapter = ClaudeAdapter::with_storage(storage);

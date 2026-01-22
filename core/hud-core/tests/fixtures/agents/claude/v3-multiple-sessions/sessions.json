@@ -1,0 +1,30 @@
+{
+  "version": 3,
+  "sessions": {
+    "session-working": {
+      "session_id": "session-working",
+      "state": "working",
+      "cwd": "/Users/test/project-a",
+      "updated_at": "2024-01-01T00:00:03Z",
+      "state_changed_at": "2024-01-01T00:00:03Z",
+      "active_subagent_count": 0
+    },
+    "session-ready": {
+      "session_id": "session-ready",
+      "state": "ready",
+      "cwd": "/Users/test/project-b",
+      "updated_at": "2024-01-01T00:00:02Z",
+      "state_changed_at": "2024-01-01T00:00:02Z",
+      "active_subagent_count": 0
+    },
+    "session-waiting": {
+      "session_id": "session-waiting",
+      "state": "waiting",
+      "cwd": "/Users/test/project-c",
+      "updated_at": "2024-01-01T00:00:01Z",
+      "state_changed_at": "2024-01-01T00:00:01Z",
+      "active_subagent_count": 0
+    }
+  }
+}
+

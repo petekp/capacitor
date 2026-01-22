@@ -119,11 +119,6 @@ struct WelcomeView: View {
     private func completeSetup() {
         _Concurrency.Task {
             await CapacitorConfig.shared.markSetupComplete()
-
-            #if DEBUG
-            ClaudeHUDApp.restoreOnboardingBackup()
-            #endif
-
             onComplete()
         }
     }

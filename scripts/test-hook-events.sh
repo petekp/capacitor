@@ -1,18 +1,19 @@
 #!/bin/bash
 # Test script for hud-state-tracker.sh
-# Exercises all hook events and verifies v2 format output
+# Exercises all hook events and verifies v3 format output
 #
 # Usage: ./scripts/test-hook-events.sh
 
-set -e
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 HOOK_SCRIPT="$SCRIPT_DIR/hud-state-tracker.sh"
 
-HAVE_JQ=""
-HAVE_PY=""
-command -v jq >/dev/null 2>&1 && HAVE_JQ="1"
-command -v python3 >/dev/null 2>&1 && HAVE_PY="1"
+if ! command -v jq >/dev/null 2>&1; then
+    echo "Error: jq is required for this test script"
+    echo "Install with: brew install jq"
+    exit 1
+fi
 
 # Colors for output
 RED='\033[0;31m'
@@ -20,7 +21,7 @@ GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
 NC='\033[0m' # No Color
 
-# Override HOME for testing
+# Override HOME for testing (so we don't touch real ~/.capacitor)
 export HOME="/tmp/test-capacitor-$$"
 mkdir -p "$HOME/.capacitor"
 
@@ -44,122 +45,65 @@ fail() {
     FAILED=$((FAILED + 1))
 }
 
-check_json_parser() {
-    if [ -z "$HAVE_JQ" ] && [ -z "$HAVE_PY" ]; then
-        echo -e "${RED}Error: jq or python3 is required but not installed${NC}"
-        echo "Install with: brew install jq (or ensure python3 is available)"
-        exit 1
-    fi
-}
-
-hash_path() {
-    local path="$1"
-    if command -v md5 >/dev/null 2>&1; then
-        md5 -q -s "$path"
-        return 0
-    fi
-    if command -v md5sum >/dev/null 2>&1; then
-        echo -n "$path" | md5sum | cut -d' ' -f1
-        return 0
-    fi
-    echo ""
-}
-
-wait_for_lock() {
-    local lock_path="$1"
-    local attempts=20
-    local i=0
-    while [ $i -lt $attempts ]; do
-        if [ -d "$lock_path" ]; then
-            return 0
-        fi
-        sleep 0.05
-        i=$((i + 1))
-    done
-    return 1
-}
-
 send_event() {
     local json="$1"
-    echo "$json" | "$HOOK_SCRIPT"
+    echo "$json" | "$HOOK_SCRIPT" >/dev/null 2>&1
+}
+
+state_file() {
+    echo "$HOME/.capacitor/sessions.json"
+}
+
+get_version() {
+    local file
+    file="$(state_file)"
+    [ -f "$file" ] || return 0
+    jq -r ".version // empty" "$file"
 }
 
 get_state() {
     local session_id="$1"
-    local state_file="$HOME/.capacitor/sessions.json"
-    if [ -f "$state_file" ]; then
-        if [ -n "$HAVE_JQ" ]; then
-            jq -r ".sessions[\"$session_id\"].state // empty" "$state_file"
-        else
-            python3 - "$state_file" "$session_id" <<'PY'
-import json
-import sys
-
-path, sid = sys.argv[1], sys.argv[2]
-try:
-    data = json.load(open(path, "r", encoding="utf-8"))
-except Exception:
-    sys.exit(0)
-print(data.get("sessions", {}).get(sid, {}).get("state", ""))
-PY
-        fi
-    fi
+    local file
+    file="$(state_file)"
+    [ -f "$file" ] || return 0
+    jq -r ".sessions[\"$session_id\"].state // empty" "$file"
 }
 
-get_session() {
+get_field() {
     local session_id="$1"
-    local state_file="$HOME/.capacitor/sessions.json"
-    if [ -f "$state_file" ]; then
-        if [ -n "$HAVE_JQ" ]; then
-            jq ".sessions[\"$session_id\"] // null" "$state_file"
-        else
-            python3 - "$state_file" "$session_id" <<'PY'
-import json
-import sys
+    local field_path="$2" # e.g. "state_changed_at", "last_event.hook_event_name"
+    local file
+    file="$(state_file)"
+    [ -f "$file" ] || return 0
+    jq -r ".sessions[\"$session_id\"].${field_path} // empty" "$file"
+}
 
-path, sid = sys.argv[1], sys.argv[2]
-try:
-    data = json.load(open(path, "r", encoding="utf-8"))
-except Exception:
-    print("null")
-    sys.exit(0)
-session = data.get("sessions", {}).get(sid)
-if session is None:
-    print("null")
-else:
-    print(json.dumps(session))
-PY
-        fi
-    fi
+has_key() {
+    local session_id="$1"
+    local key="$2"
+    local file
+    file="$(state_file)"
+    [ -f "$file" ] || {
+        echo "false"
+        return 0
+    }
+    jq -r ".sessions[\"$session_id\"] | has(\"$key\")" "$file"
 }
 
 session_exists() {
     local session_id="$1"
-    local state_file="$HOME/.capacitor/sessions.json"
-    if [ -f "$state_file" ]; then
-        local result
-        result=$(get_session "$session_id")
-        [ "$result" != "null" ]
-    else
-        return 1
-    fi
+    local file
+    file="$(state_file)"
+    [ -f "$file" ] || return 1
+    jq -e ".sessions[\"$session_id\"] != null" "$file" >/dev/null 2>&1
 }
 
-check_version() {
-    local state_file="$HOME/.capacitor/sessions.json"
-    if [ -f "$state_file" ]; then
-        jq -r ".version" "$state_file"
-    fi
-}
-
-echo "=== Claude HUD Hook Event Tests ==="
+echo "=== Claude HUD Hook Event Tests (v3) ==="
 echo ""
-
-check_json_parser
 
 # Test 1: SessionStart → ready
 echo "Test 1: SessionStart event"
-send_event '{"hook_event_name":"SessionStart","session_id":"test-1","cwd":"/test/project"}'
+send_event '{"hook_event_name":"SessionStart","session_id":"test-1","cwd":"/test/project","transcript_path":"~/.claude/test.jsonl","permission_mode":"default","source":"startup"}'
 STATE=$(get_state "test-1")
 if [ "$STATE" = "ready" ]; then
     pass "SessionStart → ready"
@@ -167,83 +111,64 @@ else
     fail "SessionStart → ready" "ready" "$STATE"
 fi
 
-# Test 1b: SessionStart creates lock
-echo "Test 1b: SessionStart lock creation"
-LOCK_HASH=$(hash_path "/test/project")
-if [ -z "$LOCK_HASH" ]; then
-    echo -e "${YELLOW}Skipping lock test: md5 not available${NC}"
-else
-    LOCK_PATH="$HOME/.claude/sessions/${LOCK_HASH}.lock"
-    if wait_for_lock "$LOCK_PATH"; then
-        pass "SessionStart → lock created"
-    else
-        fail "SessionStart → lock created" "$LOCK_PATH exists" "missing"
-    fi
-fi
-
-# Test 2: Version is 2
+# Test 2: Version is 3
 echo "Test 2: State file version"
-VERSION=$(check_version)
-if [ "$VERSION" = "2" ]; then
-    pass "Version is 2"
+VERSION=$(get_version)
+if [ "$VERSION" = "3" ]; then
+    pass "Version is 3"
 else
-    fail "Version is 2" "2" "$VERSION"
+    fail "Version is 3" "3" "$VERSION"
 fi
 
-# Test 3: UserPromptSubmit → working
-echo "Test 3: UserPromptSubmit event"
-send_event '{"hook_event_name":"UserPromptSubmit","session_id":"test-1","cwd":"/test/project"}'
+# Test 3: v3 schema fields present
+echo "Test 3: v3 schema fields present"
+UPDATED_AT=$(get_field "test-1" "updated_at")
+STATE_CHANGED_AT=$(get_field "test-1" "state_changed_at")
+LAST_EVENT=$(get_field "test-1" "last_event.hook_event_name")
+if [ -n "$UPDATED_AT" ] && [ -n "$STATE_CHANGED_AT" ] && [ "$LAST_EVENT" = "SessionStart" ]; then
+    pass "Record includes updated_at, state_changed_at, last_event"
+else
+    fail "Record includes updated_at, state_changed_at, last_event" "non-empty fields + last_event=SessionStart" "updated_at=$UPDATED_AT state_changed_at=$STATE_CHANGED_AT last_event=$LAST_EVENT"
+fi
+
+# Test 4: UserPromptSubmit → working (and denylist: prompt is not persisted)
+echo "Test 4: UserPromptSubmit event"
+send_event '{"hook_event_name":"UserPromptSubmit","session_id":"test-1","cwd":"/test/project","prompt":"SECRET-PROMPT"}'
 STATE=$(get_state "test-1")
-if [ "$STATE" = "working" ]; then
-    pass "UserPromptSubmit → working"
+HAS_PROMPT=$(has_key "test-1" "prompt")
+if [ "$STATE" = "working" ] && [ "$HAS_PROMPT" = "false" ]; then
+    pass "UserPromptSubmit → working (prompt not persisted)"
 else
-    fail "UserPromptSubmit → working" "working" "$STATE"
+    fail "UserPromptSubmit → working (prompt not persisted)" "state=working and no prompt key" "state=$STATE prompt_key=$HAS_PROMPT"
 fi
 
-# Test 4: PreToolUse → working
-echo "Test 4: PreToolUse event"
-send_event '{"hook_event_name":"PreToolUse","session_id":"test-1","cwd":"/test/project"}'
+# Test 5: PreToolUse → working (captures tool metadata)
+echo "Test 5: PreToolUse event"
+send_event '{"hook_event_name":"PreToolUse","session_id":"test-1","cwd":"/test/project","tool_name":"Bash","tool_use_id":"toolu_123","tool_input":{"cmd":"echo hi"}}'
 STATE=$(get_state "test-1")
-if [ "$STATE" = "working" ]; then
-    pass "PreToolUse → working"
+TOOL_NAME=$(get_field "test-1" "last_event.tool_name")
+TOOL_USE_ID=$(get_field "test-1" "last_event.tool_use_id")
+HAS_TOOL_INPUT=$(has_key "test-1" "tool_input")
+if [ "$STATE" = "working" ] && [ "$TOOL_NAME" = "Bash" ] && [ "$TOOL_USE_ID" = "toolu_123" ] && [ "$HAS_TOOL_INPUT" = "false" ]; then
+    pass "PreToolUse → working (tool metadata captured; tool_input not persisted)"
 else
-    fail "PreToolUse → working" "working" "$STATE"
+    fail "PreToolUse → working (tool metadata captured; tool_input not persisted)" "state=working tool_name=Bash tool_use_id=toolu_123 no tool_input key" "state=$STATE tool_name=$TOOL_NAME tool_use_id=$TOOL_USE_ID tool_input_key=$HAS_TOOL_INPUT"
 fi
 
-# Test 5: PostToolUse → working
-echo "Test 5: PostToolUse event"
-send_event '{"hook_event_name":"PostToolUse","session_id":"test-1","cwd":"/test/project"}'
-STATE=$(get_state "test-1")
-if [ "$STATE" = "working" ]; then
-    pass "PostToolUse → working"
-else
-    fail "PostToolUse → working" "working" "$STATE"
-fi
-
-# Test 6: PermissionRequest → blocked
+# Test 6: PermissionRequest → waiting
 echo "Test 6: PermissionRequest event"
-send_event '{"hook_event_name":"PermissionRequest","session_id":"test-1","cwd":"/test/project"}'
+send_event '{"hook_event_name":"PermissionRequest","session_id":"test-1","cwd":"/test/project","tool_name":"Bash"}'
 STATE=$(get_state "test-1")
-if [ "$STATE" = "blocked" ]; then
-    pass "PermissionRequest → blocked"
+if [ "$STATE" = "waiting" ]; then
+    pass "PermissionRequest → waiting"
 else
-    fail "PermissionRequest → blocked" "blocked" "$STATE"
+    fail "PermissionRequest → waiting" "waiting" "$STATE"
 fi
 
-# Test 7: Stop → ready
-echo "Test 7: Stop event"
-send_event '{"hook_event_name":"Stop","session_id":"test-1","cwd":"/test/project"}'
-STATE=$(get_state "test-1")
-if [ "$STATE" = "ready" ]; then
-    pass "Stop → ready"
-else
-    fail "Stop → ready" "ready" "$STATE"
-fi
-
-# Test 8: Notification (idle_prompt) → ready
-echo "Test 8: Notification (idle_prompt) event"
+# Test 7: Notification (idle_prompt) → ready
+echo "Test 7: Notification (idle_prompt) event"
 send_event '{"hook_event_name":"UserPromptSubmit","session_id":"test-1","cwd":"/test/project"}'  # Set to working first
-send_event '{"hook_event_name":"Notification","session_id":"test-1","cwd":"/test/project","notification_type":"idle_prompt"}'
+send_event '{"hook_event_name":"Notification","session_id":"test-1","cwd":"/test/project","notification_type":"idle_prompt","message":"ignored"}'
 STATE=$(get_state "test-1")
 if [ "$STATE" = "ready" ]; then
     pass "Notification (idle_prompt) → ready"
@@ -251,19 +176,63 @@ else
     fail "Notification (idle_prompt) → ready" "ready" "$STATE"
 fi
 
-# Test 9: Notification (other) → no change
-echo "Test 9: Notification (other) event - should not change state"
-send_event '{"hook_event_name":"UserPromptSubmit","session_id":"test-1","cwd":"/test/project"}'  # Set to working
-send_event '{"hook_event_name":"Notification","session_id":"test-1","cwd":"/test/project","notification_type":"task_complete"}'
+# Test 8: Notification (permission_prompt) → waiting
+echo "Test 8: Notification (permission_prompt) event"
+send_event '{"hook_event_name":"Notification","session_id":"test-1","cwd":"/test/project","notification_type":"permission_prompt"}'
 STATE=$(get_state "test-1")
-if [ "$STATE" = "working" ]; then
-    pass "Notification (other) → no change"
+if [ "$STATE" = "waiting" ]; then
+    pass "Notification (permission_prompt) → waiting"
 else
-    fail "Notification (other) → no change" "working" "$STATE"
+    fail "Notification (permission_prompt) → waiting" "waiting" "$STATE"
 fi
 
-# Test 10: PreCompact (auto) → compacting
-echo "Test 10: PreCompact (auto) event"
+# Test 9: Notification (elicitation_dialog) → waiting
+echo "Test 9: Notification (elicitation_dialog) event"
+send_event '{"hook_event_name":"Notification","session_id":"test-1","cwd":"/test/project","notification_type":"elicitation_dialog"}'
+STATE=$(get_state "test-1")
+if [ "$STATE" = "waiting" ]; then
+    pass "Notification (elicitation_dialog) → waiting"
+else
+    fail "Notification (elicitation_dialog) → waiting" "waiting" "$STATE"
+fi
+
+# Test 10: Notification (other) → no state change, but last_event updates
+echo "Test 10: Notification (other) event - should not change state"
+send_event '{"hook_event_name":"UserPromptSubmit","session_id":"test-1","cwd":"/test/project"}'  # Set to working
+send_event '{"hook_event_name":"Notification","session_id":"test-1","cwd":"/test/project","notification_type":"task_complete","message":"ignored"}'
+STATE=$(get_state "test-1")
+NOTIF=$(get_field "test-1" "last_event.notification_type")
+HAS_MESSAGE=$(has_key "test-1" "message")
+if [ "$STATE" = "working" ] && [ "$NOTIF" = "task_complete" ] && [ "$HAS_MESSAGE" = "false" ]; then
+    pass "Notification (other) → no change (metadata captured; message not persisted)"
+else
+    fail "Notification (other) → no change (metadata captured; message not persisted)" "state=working last_event.notification_type=task_complete no message key" "state=$STATE notif=$NOTIF message_key=$HAS_MESSAGE"
+fi
+
+# Test 11: Stop (stop_hook_active=true) → no state change
+echo "Test 11: Stop (stop_hook_active=true) - should not force ready"
+send_event '{"hook_event_name":"UserPromptSubmit","session_id":"test-1","cwd":"/test/project"}'  # working
+send_event '{"hook_event_name":"Stop","session_id":"test-1","stop_hook_active":true}'
+STATE=$(get_state "test-1")
+STOP_ACTIVE=$(get_field "test-1" "last_event.stop_hook_active")
+if [ "$STATE" = "working" ] && [ "$STOP_ACTIVE" = "true" ]; then
+    pass "Stop(stop_hook_active=true) → no change"
+else
+    fail "Stop(stop_hook_active=true) → no change" "state=working stop_hook_active=true" "state=$STATE stop_hook_active=$STOP_ACTIVE"
+fi
+
+# Test 12: Stop (stop_hook_active=false) → ready
+echo "Test 12: Stop (stop_hook_active=false) event"
+send_event '{"hook_event_name":"Stop","session_id":"test-1","cwd":"/test/project","stop_hook_active":false}'
+STATE=$(get_state "test-1")
+if [ "$STATE" = "ready" ]; then
+    pass "Stop → ready"
+else
+    fail "Stop → ready" "ready" "$STATE"
+fi
+
+# Test 13: PreCompact (auto) → compacting
+echo "Test 13: PreCompact (auto) event"
 send_event '{"hook_event_name":"PreCompact","session_id":"test-1","cwd":"/test/project","trigger":"auto"}'
 STATE=$(get_state "test-1")
 if [ "$STATE" = "compacting" ]; then
@@ -272,19 +241,42 @@ else
     fail "PreCompact (auto) → compacting" "compacting" "$STATE"
 fi
 
-# Test 11: PreCompact (manual) → no change
-echo "Test 11: PreCompact (manual) event - should not change state"
-send_event '{"hook_event_name":"UserPromptSubmit","session_id":"test-1","cwd":"/test/project"}'
+# Test 14: PreCompact (manual) → compacting
+echo "Test 14: PreCompact (manual) event"
 send_event '{"hook_event_name":"PreCompact","session_id":"test-1","cwd":"/test/project","trigger":"manual"}'
 STATE=$(get_state "test-1")
-if [ "$STATE" = "working" ]; then
-    pass "PreCompact (manual) → no change"
+if [ "$STATE" = "compacting" ]; then
+    pass "PreCompact (manual) → compacting"
 else
-    fail "PreCompact (manual) → no change" "working" "$STATE"
+    fail "PreCompact (manual) → compacting" "compacting" "$STATE"
 fi
 
-# Test 12: SessionEnd → session deleted
-echo "Test 12: SessionEnd event - should delete session"
+# Test 15: PreCompact (missing trigger) → compacting
+echo "Test 15: PreCompact (missing trigger) event"
+send_event '{"hook_event_name":"PreCompact","session_id":"test-1","cwd":"/test/project"}'
+STATE=$(get_state "test-1")
+if [ "$STATE" = "compacting" ]; then
+    pass "PreCompact (missing trigger) → compacting"
+else
+    fail "PreCompact (missing trigger) → compacting" "compacting" "$STATE"
+fi
+
+# Test 16: Task tool subagent count best-effort (PreToolUse +1, PostToolUse -1)
+echo "Test 16: Task tool increments/decrements active_subagent_count (best-effort)"
+send_event '{"hook_event_name":"SessionStart","session_id":"subagent-test","cwd":"/test/project"}'
+send_event '{"hook_event_name":"PreToolUse","session_id":"subagent-test","cwd":"/test/project","tool_name":"Task","tool_use_id":"task_1"}'
+COUNT_BEFORE=$(get_field "subagent-test" "active_subagent_count")
+send_event '{"hook_event_name":"PostToolUse","session_id":"subagent-test","cwd":"/test/project","tool_name":"Task","tool_use_id":"task_1"}'
+COUNT_AFTER=$(get_field "subagent-test" "active_subagent_count")
+STATE=$(get_state "subagent-test")
+if [ "$COUNT_BEFORE" = "1" ] && [ "$COUNT_AFTER" = "0" ] && [ "$STATE" = "working" ]; then
+    pass "Task tool count returns to 0 (and state remains working)"
+else
+    fail "Task tool count returns to 0 (and state remains working)" "count 1→0 and state=working" "count_before=$COUNT_BEFORE count_after=$COUNT_AFTER state=$STATE"
+fi
+
+# Test 17: SessionEnd → session deleted
+echo "Test 17: SessionEnd event - should delete session"
 send_event '{"hook_event_name":"SessionEnd","session_id":"test-1","cwd":"/test/project"}'
 if ! session_exists "test-1"; then
     pass "SessionEnd → session deleted"
@@ -292,8 +284,8 @@ else
     fail "SessionEnd → session deleted" "session removed" "session still exists"
 fi
 
-# Test 13: Multiple sessions
-echo "Test 13: Multiple concurrent sessions"
+# Test 18: Multiple sessions
+echo "Test 18: Multiple concurrent sessions"
 send_event '{"hook_event_name":"SessionStart","session_id":"session-a","cwd":"/project/a"}'
 send_event '{"hook_event_name":"SessionStart","session_id":"session-b","cwd":"/project/b"}'
 send_event '{"hook_event_name":"UserPromptSubmit","session_id":"session-a","cwd":"/project/a"}'
@@ -305,21 +297,19 @@ else
     fail "Multiple sessions tracked independently" "session-a=working, session-b=ready" "session-a=$STATE_A, session-b=$STATE_B"
 fi
 
-# Test 14: PID present in session record
-echo "Test 14: PID field present in session record"
-SESSION=$(get_session "session-a")
-PID=$(echo "$SESSION" | jq -r '.pid // empty')
-if [ -n "$PID" ] && echo "$PID" | grep -E '^[0-9]+$' >/dev/null 2>&1; then
-    pass "PID field present"
+# Test 19: No PID in output
+echo "Test 19: No PID field in session record"
+HAS_PID=$(has_key "session-a" "pid")
+if [ "$HAS_PID" = "false" ]; then
+    pass "No PID field"
 else
-    fail "PID field present" "numeric pid" "$PID"
+    fail "No PID field" "no pid field" "pid field present"
 fi
 
-# Test 15: Missing session_id - should exit gracefully
-echo "Test 15: Missing session_id - graceful exit"
-# Temporarily disable set -e for this test
+# Test 20: Missing session_id - should exit gracefully
+echo "Test 20: Missing session_id - graceful exit"
 set +e
-send_event '{"hook_event_name":"SessionStart","cwd":"/test/project"}' 2>/dev/null
+echo '{"hook_event_name":"SessionStart","cwd":"/test/project"}' | "$HOOK_SCRIPT" >/dev/null 2>&1
 EXIT_CODE=$?
 set -e
 if [ $EXIT_CODE -eq 0 ]; then
@@ -328,28 +318,17 @@ else
     fail "Missing session_id handled gracefully" "exit 0" "exit $EXIT_CODE"
 fi
 
-# Test 16: Missing cwd uses CLAUDE_PROJECT_DIR fallback
-echo "Test 16: Missing cwd uses CLAUDE_PROJECT_DIR fallback"
+# Test 21: Missing cwd with fallback (PWD)
+echo "Test 21: Missing cwd uses CLAUDE_PROJECT_DIR fallback"
 export CLAUDE_PROJECT_DIR="/fallback/project"
 send_event '{"hook_event_name":"SessionStart","session_id":"fallback-test"}'
-SESSION=$(get_session "fallback-test")
-CWD=$(echo "$SESSION" | jq -r '.cwd')
+CWD=$(get_field "fallback-test" "cwd")
+PROJECT_DIR=$(get_field "fallback-test" "project_dir")
 unset CLAUDE_PROJECT_DIR
-if [ "$CWD" = "/fallback/project" ]; then
-    pass "CLAUDE_PROJECT_DIR fallback works"
+if [ "$CWD" = "/fallback/project" ] && [ "$PROJECT_DIR" = "/fallback/project" ]; then
+    pass "CLAUDE_PROJECT_DIR fallback works (cwd + project_dir)"
 else
-    fail "CLAUDE_PROJECT_DIR fallback" "/fallback/project" "$CWD"
-fi
-
-# Test 17: Missing cwd falls back to PWD when env is unset
-echo "Test 17: Missing cwd uses PWD fallback"
-send_event '{"hook_event_name":"SessionStart","session_id":"pwd-fallback"}'
-SESSION=$(get_session "pwd-fallback")
-CWD=$(echo "$SESSION" | jq -r '.cwd')
-if [ "$CWD" = "$PWD" ]; then
-    pass "PWD fallback works"
-else
-    fail "PWD fallback" "$PWD" "$CWD"
+    fail "CLAUDE_PROJECT_DIR fallback" "cwd=/fallback/project project_dir=/fallback/project" "cwd=$CWD project_dir=$PROJECT_DIR"
 fi
 
 echo ""
@@ -362,3 +341,4 @@ if [ $FAILED -eq 0 ]; then
 else
     exit 1
 fi
+

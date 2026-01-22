@@ -9,22 +9,62 @@
 
 use crate::activity::ActivityStore;
 use crate::boundaries::normalize_path;
-use crate::state::{resolve_state_with_details, ClaudeState, SessionRecord, StateStore};
+use crate::state::{resolve_state_with_details, SessionRecord, StateStore};
 use crate::storage::StorageConfig;
 use crate::types::{ProjectSessionState, SessionState};
 use chrono::Utc;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
+use std::time::SystemTime;
 
 pub(crate) const NO_LOCK_STATE_TTL: Duration = Duration::from_secs(120);
+pub(crate) const ACTIVE_TRANSCRIPT_ACTIVITY_TTL: Duration = Duration::from_secs(5);
 
-fn map_claude_state(state: ClaudeState) -> SessionState {
-    match state {
-        ClaudeState::Working => SessionState::Working,
-        ClaudeState::Ready => SessionState::Ready,
-        ClaudeState::Compacting => SessionState::Compacting,
-        ClaudeState::Blocked => SessionState::Waiting, // Map Blocked → Waiting
+fn transcript_is_recent(transcript_path: &Path, threshold: Duration) -> Option<bool> {
+    let meta = fs::metadata(transcript_path).ok()?;
+    let modified = meta.modified().ok()?;
+    let age = SystemTime::now().duration_since(modified).ok()?;
+    Some(age <= threshold)
+}
+
+fn effective_transcript_path(storage: &StorageConfig, record: &SessionRecord) -> Option<PathBuf> {
+    if let Some(tp) = record.transcript_path.as_deref() {
+        return Some(PathBuf::from(tp));
+    }
+
+    // Best-effort: derive transcript path from the Claude project dir + session_id.
+    // This matches Claude Code's encoding scheme (lossy '/' -> '-') and is sufficient for local use.
+    let base = record.project_dir.as_deref().unwrap_or(&record.cwd);
+    let base = normalize_path(base);
+    if base.is_empty() {
+        return None;
+    }
+
+    let encoded = base.replace('/', "-");
+    Some(
+        storage
+            .claude_projects_dir()
+            .join(encoded)
+            .join(format!("{}.jsonl", record.session_id)),
+    )
+}
+
+fn downshift_busy_if_transcript_quiet(
+    storage: &StorageConfig,
+    record: &SessionRecord,
+    state: SessionState,
+    threshold: Duration,
+) -> Option<SessionState> {
+    if !matches!(state, SessionState::Working | SessionState::Compacting) {
+        return None;
+    }
+
+    let tp = effective_transcript_path(storage, record)?;
+    match transcript_is_recent(&tp, threshold) {
+        Some(true) => None,
+        Some(false) => Some(SessionState::Ready),
+        None => None,
     }
 }
 
@@ -57,7 +97,8 @@ pub(crate) fn recent_session_record_for_project<'a>(
     threshold: Duration,
 ) -> Option<&'a SessionRecord> {
     let record = store.find_by_cwd(project_path)?;
-    if is_parent_fallback(&record.cwd, project_path) {
+    let record_path_for_fallback = record.project_dir.as_deref().unwrap_or(&record.cwd);
+    if is_parent_fallback(record_path_for_fallback, project_path) {
         return None;
     }
     if !record_is_recent(record, threshold) {
@@ -76,7 +117,7 @@ pub fn detect_session_state_with_storage(
     storage: &StorageConfig,
     project_path: &str,
 ) -> ProjectSessionState {
-    // Lock directories are in ~/.claude/sessions/ (created by our hook script).
+    // Lock directories are in ~/.claude/sessions/ (Claude Code writes them)
     let lock_dir = storage.claude_root().join("sessions");
     // State file is in ~/.capacitor/sessions.json (Capacitor's namespace)
     let state_file = storage.sessions_file();
@@ -87,14 +128,28 @@ pub fn detect_session_state_with_storage(
 
     match resolved {
         Some(details) => {
-            let is_working = details.state == ClaudeState::Working;
-            let state = map_claude_state(details.state);
             let record = details
                 .session_id
                 .as_ref()
                 .and_then(|sid| store.get_by_session_id(sid));
             let working_on = record.and_then(|r| r.working_on.clone());
-            let state_changed_at = record.map(|r| r.updated_at.to_rfc3339());
+            let mut state = details.state;
+            let mut state_changed_at = record.map(|r| r.state_changed_at.to_rfc3339());
+
+            // If Claude is running (lock exists) but we never receive a Stop event
+            // (e.g. user interrupt/cancel), the state can get stuck in Working.
+            // Use transcript activity as a lightweight, read-only signal of "still producing output".
+            if let Some(r) = record {
+                if let Some(new_state) = downshift_busy_if_transcript_quiet(
+                    storage,
+                    r,
+                    state,
+                    ACTIVE_TRANSCRIPT_ACTIVITY_TTL,
+                ) {
+                    state = new_state;
+                    state_changed_at = Some(Utc::now().to_rfc3339());
+                }
+            }
 
             ProjectSessionState {
                 state,
@@ -102,7 +157,10 @@ pub fn detect_session_state_with_storage(
                 session_id: details.session_id,
                 working_on,
                 context: None,
-                thinking: Some(is_working),
+                // `thinking` is reserved for the (future) fetch-intercepting launcher.
+                // Do not derive it from hook state: Swift currently treats thinking=true as "force Working",
+                // which would hide legitimate states like Compacting.
+                thinking: None,
                 is_locked: true,
             }
         }
@@ -110,14 +168,28 @@ pub fn detect_session_state_with_storage(
             if let Some(record) =
                 recent_session_record_for_project(&store, project_path, NO_LOCK_STATE_TTL)
             {
-                let is_working = record.state == ClaudeState::Working;
+                let mut state = record.state;
+                let mut state_changed_at = Some(record.state_changed_at.to_rfc3339());
+
+                // Even without a lock, avoid "stuck Working" after user interrupts:
+                // if the transcript is quiet, treat the session as Ready (awaiting input).
+                if let Some(new_state) = downshift_busy_if_transcript_quiet(
+                    storage,
+                    record,
+                    state,
+                    ACTIVE_TRANSCRIPT_ACTIVITY_TTL,
+                ) {
+                    state = new_state;
+                    state_changed_at = Some(Utc::now().to_rfc3339());
+                }
+
                 return ProjectSessionState {
-                    state: map_claude_state(record.state),
-                    state_changed_at: Some(record.updated_at.to_rfc3339()),
+                    state,
+                    state_changed_at,
                     session_id: Some(record.session_id.clone()),
                     working_on: record.working_on.clone(),
                     context: None,
-                    thinking: Some(is_working),
+                    thinking: None,
                     is_locked: false,
                 };
             }
@@ -137,7 +209,7 @@ pub fn detect_session_state_with_storage(
                     session_id: None, // We don't know which session (could track in activity)
                     working_on: None,
                     context: None,
-                    thinking: Some(true),
+                    thinking: None,
                     is_locked: false, // No lock at this path, but still working
                 }
             } else {
@@ -205,115 +277,12 @@ pub fn read_project_status(project_path: &str) -> Option<ProjectStatus> {
     }
 }
 
-/// Checks if a Claude session is actively running for the given project path.
-///
-/// This uses directory-based locking (mkdir is atomic) to reliably detect running sessions.
-/// A background process spawned by the hooks (SessionStart/UserPromptSubmit) holds the lock directory
-/// while Claude is running, and removes it when Claude exits.
-///
-/// IMPORTANT: The lock is created for the cwd where Claude runs, which may be a
-/// subdirectory of the pinned project. This function checks both:
-/// 1. Exact path match (lock created at project root)
-/// 2. Subdirectory match (lock created in a subdirectory of the project)
-///
-/// Note: Lock directories are in `~/.claude/sessions/` (Claude Code's namespace).
-pub fn is_session_active(project_path: &str) -> bool {
-    let storage = StorageConfig::default();
-    is_session_active_with_storage(&storage, project_path)
-}
-
-pub fn is_session_active_with_storage(storage: &StorageConfig, project_path: &str) -> bool {
-    let sessions_dir = storage.claude_root().join("sessions");
-    is_session_active_with_lock_dir(&sessions_dir, project_path)
-}
-
-fn is_session_active_with_lock_dir(sessions_dir: &Path, project_path: &str) -> bool {
-    if !sessions_dir.exists() {
-        return false;
-    }
-
-    let normalized_project = normalize_path(project_path);
-
-    // First, try exact path match (most common case)
-    let hash = md5::compute(&normalized_project);
-    let lock_dir = sessions_dir.join(format!("{:x}.lock", hash));
-
-    if lock_dir.exists() && lock_dir.is_dir() {
-        if let Some(pid) = read_pid_from_lock(&lock_dir) {
-            if crate::state::lock::is_pid_alive(pid) {
-                return true;
-            }
-        }
-    }
-
-    // Second, scan all locks to find child paths
-    // If Claude runs from a subdirectory (e.g., apps/swift), the parent project (claude-hud) is locked.
-    // But NOT the reverse: a lock in a parent directory does NOT lock child projects.
-    if let Ok(entries) = fs::read_dir(sessions_dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if !path.is_dir() || !path.extension().map(|e| e == "lock").unwrap_or(false) {
-                continue;
-            }
-
-            // Read the lock's path from meta.json
-            let meta_file = path.join("meta.json");
-            if let Ok(meta_str) = fs::read_to_string(&meta_file) {
-                if let Ok(meta) = serde_json::from_str::<serde_json::Value>(&meta_str) {
-                    if let Some(lock_path) = meta.get("path").and_then(|v| v.as_str()) {
-                        let normalized_lock = normalize_path(lock_path);
-                        let is_child_lock = if normalized_project == "/" {
-                            normalized_lock != "/" && normalized_lock.starts_with('/')
-                        } else {
-                            let prefix = format!("{}/", normalized_project);
-                            normalized_lock.starts_with(&prefix)
-                        };
-
-                        if is_child_lock {
-                            // Found a child lock - check if PID is alive
-                            if let Some(pid) = read_pid_from_lock(&path) {
-                                if crate::state::lock::is_pid_alive(pid) {
-                                    return true;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    false
-}
-
-/// Reads PID from lock directory, supporting both old (pid file) and new (meta.json) formats
-fn read_pid_from_lock(lock_dir: &Path) -> Option<u32> {
-    // Try old format: direct pid file
-    let pid_file = lock_dir.join("pid");
-    if let Ok(pid_str) = fs::read_to_string(&pid_file) {
-        if let Ok(pid) = pid_str.trim().parse::<u32>() {
-            return Some(pid);
-        }
-    }
-
-    // Try new format: meta.json with {"pid": N, ...}
-    let meta_file = lock_dir.join("meta.json");
-    if let Ok(meta_str) = fs::read_to_string(&meta_file) {
-        if let Ok(meta) = serde_json::from_str::<serde_json::Value>(&meta_str) {
-            if let Some(pid) = meta.get("pid").and_then(|v| v.as_u64()) {
-                return Some(pid as u32);
-            }
-        }
-    }
-
-    None
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use chrono::{Duration as ChronoDuration, Utc};
-    use std::io::Write;
+    #[cfg(unix)]
+    use std::os::unix::ffi::OsStrExt;
     use std::path::PathBuf;
     use tempfile::TempDir;
 
@@ -327,160 +296,142 @@ mod tests {
         (temp, storage)
     }
 
-    fn setup_storage_with_sessions() -> (TempDir, StorageConfig, PathBuf) {
+    fn setup_storage_with_sessions_dir() -> (TempDir, StorageConfig, PathBuf) {
         let (temp, storage) = setup_storage();
         let sessions_dir = storage.claude_root().join("sessions");
         fs::create_dir_all(&sessions_dir).unwrap();
         (temp, storage, sessions_dir)
     }
 
-    /// Helper to create a test sessions directory with a lock (old format: pid file)
-    fn create_test_lock(sessions_dir: &Path, project_path: &str, pid: u32) {
-        let normalized = normalize_path(project_path);
-        let hash = md5::compute(normalized.as_bytes());
-        let lock_dir = sessions_dir.join(format!("{:x}.lock", hash));
-        fs::create_dir_all(&lock_dir).unwrap();
+    #[cfg(unix)]
+    fn set_mtime_seconds_ago(path: &Path, seconds_ago: u64) {
+        use libc::timeval;
+        use std::ffi::CString;
+        use std::time::{SystemTime, UNIX_EPOCH};
 
-        let pid_file = lock_dir.join("pid");
-        let mut file = fs::File::create(&pid_file).unwrap();
-        writeln!(file, "{}", pid).unwrap();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let target = now.saturating_sub(seconds_ago) as i64;
+
+        let times = [
+            timeval {
+                tv_sec: target,
+                tv_usec: 0,
+            },
+            timeval {
+                tv_sec: target,
+                tv_usec: 0,
+            },
+        ];
+
+        let c_path = CString::new(path.as_os_str().as_bytes()).unwrap();
+        let rc = unsafe { libc::utimes(c_path.as_ptr(), times.as_ptr()) };
+        assert_eq!(rc, 0, "utimes failed for {}", path.display());
     }
 
-    /// Helper to create a lock with meta.json (new format, includes path for relationship checks)
-    fn create_test_lock_with_meta(sessions_dir: &Path, project_path: &str, pid: u32) {
-        let normalized = normalize_path(project_path);
-        let hash = md5::compute(normalized.as_bytes());
-        let lock_dir = sessions_dir.join(format!("{:x}.lock", hash));
-        fs::create_dir_all(&lock_dir).unwrap();
+    #[test]
+    fn test_detect_session_state_downshifts_stale_working_when_transcript_quiet() {
+        let (_temp, storage, sessions_dir) = setup_storage_with_sessions_dir();
+        let project_path = "/tmp/hud-core-test-transcript-quiet";
 
-        let meta = format!(
-            r#"{{"pid": {}, "started": "2024-01-01T00:00:00Z", "path": "{}"}}"#,
-            pid, project_path
+        // Create an active lock for this project
+        crate::state::lock::tests_helper::create_lock(
+            &sessions_dir,
+            std::process::id(),
+            project_path,
         );
-        fs::write(lock_dir.join("meta.json"), meta).unwrap();
-    }
 
-    /// Helper to clean up a test lock
-    fn cleanup_test_lock(sessions_dir: &Path, project_path: &str) {
-        let normalized = normalize_path(project_path);
-        let hash = md5::compute(normalized.as_bytes());
-        let lock_dir = sessions_dir.join(format!("{:x}.lock", hash));
-        let _ = fs::remove_dir_all(&lock_dir);
+        // Write a transcript file and make it "old" by setting mtime into the past
+        let transcript_path = storage
+            .claude_root()
+            .join("projects/-tmp-hud-core-test-transcript-quiet/s1.jsonl");
+        fs::create_dir_all(transcript_path.parent().unwrap()).unwrap();
+        fs::write(&transcript_path, "hello\n").unwrap();
+
+        #[cfg(unix)]
+        {
+            set_mtime_seconds_ago(
+                &transcript_path,
+                ACTIVE_TRANSCRIPT_ACTIVITY_TTL.as_secs() + 5,
+            );
+        }
+
+        // Create a working record with transcript_path (v3 schema)
+        let now = Utc::now().to_rfc3339();
+        let state_json = format!(
+            r#"{{
+  "version": 3,
+  "sessions": {{
+    "s1": {{
+      "session_id": "s1",
+      "cwd": "{cwd}",
+      "state": "working",
+      "updated_at": "{now}",
+      "state_changed_at": "{now}",
+      "transcript_path": "{tp}",
+      "project_dir": "{cwd}"
+    }}
+  }}
+}}"#,
+            cwd = project_path,
+            now = now,
+            tp = transcript_path.to_string_lossy()
+        );
+        fs::write(storage.sessions_file(), state_json).unwrap();
+
+        let state = detect_session_state_with_storage(&storage, project_path);
+        assert_eq!(state.state, SessionState::Ready);
+        assert!(state.is_locked);
     }
 
     #[test]
-    fn test_md5_hash_consistency() {
-        let path = "/Users/test/project";
-        let hash1 = format!("{:x}", md5::compute(path));
-        let hash2 = format!("{:x}", md5::compute(path));
-        assert_eq!(hash1, hash2, "MD5 hash should be consistent for same input");
-    }
-
-    #[test]
-    fn test_md5_hash_uniqueness() {
-        let hash1 = format!("{:x}", md5::compute("/path/one"));
-        let hash2 = format!("{:x}", md5::compute("/path/two"));
-        assert_ne!(hash1, hash2, "Different paths should have different hashes");
-    }
-
-    #[test]
-    fn test_is_session_active_no_sessions_dir() {
+    fn test_detect_session_state_downshifts_stale_working_without_lock_when_transcript_quiet() {
         let (_temp, storage) = setup_storage();
-        let result =
-            is_session_active_with_storage(&storage, "/nonexistent/path/that/surely/doesnt/exist");
-        assert!(!result, "Missing sessions dir should be inactive");
-    }
+        let project_path = "/tmp/hud-core-test-transcript-quiet-unlocked";
 
-    #[test]
-    fn test_is_session_active_with_dead_pid() {
-        let (_temp, storage, sessions_dir) = setup_storage_with_sessions();
+        // Write a transcript file and make it "old"
+        let transcript_path = storage
+            .claude_root()
+            .join("projects/-tmp-hud-core-test-transcript-quiet-unlocked/s1.jsonl");
+        fs::create_dir_all(transcript_path.parent().unwrap()).unwrap();
+        fs::write(&transcript_path, "hello\n").unwrap();
 
-        // Use a test path that won't conflict with real projects
-        let test_path = "/tmp/hud-core-test-dead-pid-project";
+        #[cfg(unix)]
+        {
+            set_mtime_seconds_ago(
+                &transcript_path,
+                ACTIVE_TRANSCRIPT_ACTIVITY_TTL.as_secs() + 5,
+            );
+        }
 
-        // Create lock with definitely-dead PID
-        create_test_lock(&sessions_dir, test_path, 999999999);
+        // Create a working record with transcript_path (v3 schema)
+        let now = Utc::now().to_rfc3339();
+        let state_json = format!(
+            r#"{{
+  "version": 3,
+  "sessions": {{
+    "s1": {{
+      "session_id": "s1",
+      "cwd": "{cwd}",
+      "state": "working",
+      "updated_at": "{now}",
+      "state_changed_at": "{now}",
+      "transcript_path": "{tp}",
+      "project_dir": "{cwd}"
+    }}
+  }}
+}}"#,
+            cwd = project_path,
+            now = now,
+            tp = transcript_path.to_string_lossy()
+        );
+        fs::write(storage.sessions_file(), state_json).unwrap();
 
-        let result = is_session_active_with_storage(&storage, test_path);
-
-        // Clean up
-        cleanup_test_lock(&sessions_dir, test_path);
-
-        assert!(!result, "Dead PID should not be considered active");
-    }
-
-    #[test]
-    fn test_is_session_active_with_current_pid() {
-        let (_temp, storage, sessions_dir) = setup_storage_with_sessions();
-
-        let test_path = "/tmp/hud-core-test-current-pid-project";
-
-        // Create lock with our own PID (definitely alive)
-        let current_pid = std::process::id();
-        create_test_lock(&sessions_dir, test_path, current_pid);
-
-        let result = is_session_active_with_storage(&storage, test_path);
-
-        // Clean up
-        cleanup_test_lock(&sessions_dir, test_path);
-
-        assert!(result, "Current process PID should be considered active");
-    }
-
-    #[test]
-    fn test_is_session_active_no_lock_dir() {
-        let (_temp, storage, sessions_dir) = setup_storage_with_sessions();
-
-        // Use a path that definitely won't have a lock
-        let test_path = "/tmp/hud-core-test-no-lock-dir-unique-12345";
-
-        // Ensure no lock exists
-        cleanup_test_lock(&sessions_dir, test_path);
-
-        let result = is_session_active_with_storage(&storage, test_path);
-        assert!(!result, "Missing lock dir should not be considered active");
-    }
-
-    #[test]
-    fn test_is_session_active_empty_pid_file() {
-        let (_temp, storage, sessions_dir) = setup_storage_with_sessions();
-
-        let test_path = "/tmp/hud-core-test-empty-pid-file";
-        let normalized = normalize_path(test_path);
-        let hash = md5::compute(normalized.as_bytes());
-        let lock_dir = sessions_dir.join(format!("{:x}.lock", hash));
-
-        // Create lock dir with empty pid file
-        fs::create_dir_all(&lock_dir).unwrap();
-        fs::write(lock_dir.join("pid"), "").unwrap();
-
-        let result = is_session_active_with_storage(&storage, test_path);
-
-        // Clean up
-        let _ = fs::remove_dir_all(&lock_dir);
-
-        assert!(!result, "Empty PID file should not be considered active");
-    }
-
-    #[test]
-    fn test_is_session_active_invalid_pid() {
-        let (_temp, storage, sessions_dir) = setup_storage_with_sessions();
-
-        let test_path = "/tmp/hud-core-test-invalid-pid";
-        let normalized = normalize_path(test_path);
-        let hash = md5::compute(normalized.as_bytes());
-        let lock_dir = sessions_dir.join(format!("{:x}.lock", hash));
-
-        // Create lock dir with invalid pid
-        fs::create_dir_all(&lock_dir).unwrap();
-        fs::write(lock_dir.join("pid"), "not-a-number").unwrap();
-
-        let result = is_session_active_with_storage(&storage, test_path);
-
-        // Clean up
-        let _ = fs::remove_dir_all(&lock_dir);
-
-        assert!(!result, "Invalid PID should not be considered active");
+        let state = detect_session_state_with_storage(&storage, project_path);
+        assert_eq!(state.state, SessionState::Ready);
+        assert!(!state.is_locked);
     }
 
     #[test]
@@ -501,7 +452,7 @@ mod tests {
         let project_path = "/tmp/hud-core-test-recent-ready";
 
         let mut store = StateStore::new(&storage.sessions_file());
-        store.update("session-1", ClaudeState::Ready, project_path);
+        store.update("session-1", SessionState::Ready, project_path);
         store.save().unwrap();
 
         let state = detect_session_state_with_storage(&storage, project_path);
@@ -518,7 +469,7 @@ mod tests {
         let project_path = "/tmp/hud-core-test-stale-ready";
 
         let mut store = StateStore::new(&storage.sessions_file());
-        store.update("session-1", ClaudeState::Ready, project_path);
+        store.update("session-1", SessionState::Ready, project_path);
         store.set_timestamp_for_test("session-1", Utc::now() - ChronoDuration::minutes(10));
         store.save().unwrap();
 
@@ -535,7 +486,7 @@ mod tests {
         let child_path = "/tmp/hud-core-test-parent/child";
 
         let mut store = StateStore::new(&storage.sessions_file());
-        store.update("session-1", ClaudeState::Ready, parent_path);
+        store.update("session-1", SessionState::Ready, parent_path);
         store.save().unwrap();
 
         let state = detect_session_state_with_storage(&storage, child_path);
@@ -548,14 +499,15 @@ mod tests {
     fn test_detect_session_state_sets_state_changed_at_for_lock() {
         use crate::state::lock::tests_helper::create_lock;
 
-        let (_temp, storage, sessions_dir) = setup_storage_with_sessions();
+        let (_temp, storage, sessions_dir) = setup_storage_with_sessions_dir();
         let project_path = "/tmp/hud-core-test-locked-ready";
         create_lock(&sessions_dir, std::process::id(), project_path);
 
         let mut store = StateStore::new(&storage.sessions_file());
-        store.update("session-1", ClaudeState::Working, project_path);
+        store.update("session-1", SessionState::Working, project_path);
         let expected = Utc::now() - ChronoDuration::minutes(2);
         store.set_timestamp_for_test("session-1", expected);
+        store.set_state_changed_at_for_test("session-1", expected);
         store.save().unwrap();
 
         let state = detect_session_state_with_storage(&storage, project_path);
@@ -563,6 +515,46 @@ mod tests {
         assert_eq!(state.state, SessionState::Working);
         assert!(state.is_locked);
         assert_eq!(state.state_changed_at, Some(expected.to_rfc3339()));
+    }
+
+    #[test]
+    fn test_detect_session_state_does_not_set_thinking_for_compacting() {
+        use crate::state::lock::tests_helper::create_lock;
+
+        let (_temp, storage, sessions_dir) = setup_storage_with_sessions_dir();
+        let project_path = "/tmp/hud-core-test-compacting-thinking";
+        create_lock(&sessions_dir, std::process::id(), project_path);
+
+        let mut store = StateStore::new(&storage.sessions_file());
+        store.update("session-1", SessionState::Compacting, project_path);
+        store.save().unwrap();
+
+        let state = detect_session_state_with_storage(&storage, project_path);
+
+        assert_eq!(state.state, SessionState::Compacting);
+        assert!(state.is_locked);
+        // Regression guard: Swift treats thinking=true as "force Working", which would hide Compacting.
+        assert!(state.thinking.is_none());
+    }
+
+    #[test]
+    fn test_detect_session_state_does_not_set_thinking_for_working() {
+        use crate::state::lock::tests_helper::create_lock;
+
+        let (_temp, storage, sessions_dir) = setup_storage_with_sessions_dir();
+        let project_path = "/tmp/hud-core-test-working-thinking";
+        create_lock(&sessions_dir, std::process::id(), project_path);
+
+        let mut store = StateStore::new(&storage.sessions_file());
+        store.update("session-1", SessionState::Working, project_path);
+        store.save().unwrap();
+
+        let state = detect_session_state_with_storage(&storage, project_path);
+
+        assert_eq!(state.state, SessionState::Working);
+        assert!(state.is_locked);
+        // `thinking` is reserved for the fetch-intercepting launcher, not hook-derived state.
+        assert!(state.thinking.is_none());
     }
 
     #[test]
@@ -624,134 +616,5 @@ mod tests {
     fn test_read_project_status_missing_file() {
         let result = read_project_status("/definitely/not/a/real/path/xyz");
         assert!(result.is_none());
-    }
-
-    // ============================================================
-    // CRITICAL EDGE CASE TESTS
-    // These test the specific bugs we discovered and fixed
-    // ============================================================
-
-    /// Test: Lock in child directory makes parent project active
-    /// Scenario: Claude runs from /project/apps/swift, pinned project is /project
-    /// Expected: is_session_active("/project") returns true
-    #[test]
-    fn test_child_lock_makes_parent_active() {
-        let (_temp, storage, sessions_dir) = setup_storage_with_sessions();
-
-        let parent_path = "/tmp/hud-test-parent-project";
-        let child_path = "/tmp/hud-test-parent-project/apps/swift";
-        let current_pid = std::process::id();
-
-        // Create lock for CHILD path (simulating Claude running from subdirectory)
-        create_test_lock_with_meta(&sessions_dir, child_path, current_pid);
-
-        // Check if PARENT is considered active
-        let result = is_session_active_with_storage(&storage, parent_path);
-
-        // Clean up
-        cleanup_test_lock(&sessions_dir, child_path);
-
-        assert!(
-            result,
-            "Parent project should be active when child has a lock"
-        );
-    }
-
-    /// Test: Lock in parent directory does NOT make child project active
-    /// Scenario: Claude runs from /project, child project is /project/packages/foo
-    /// Expected: is_session_active("/project/packages/foo") returns false
-    /// This was a bug we fixed - locks should NOT propagate downward
-    #[test]
-    fn test_parent_lock_does_not_make_child_active() {
-        let (_temp, storage, sessions_dir) = setup_storage_with_sessions();
-
-        let parent_path = "/tmp/hud-test-parent-only";
-        let child_path = "/tmp/hud-test-parent-only/packages/child";
-        let current_pid = std::process::id();
-
-        // Create lock for PARENT path only
-        create_test_lock_with_meta(&sessions_dir, parent_path, current_pid);
-
-        // Check if CHILD is considered active (should be FALSE)
-        let result = is_session_active_with_storage(&storage, child_path);
-
-        // Clean up
-        cleanup_test_lock(&sessions_dir, parent_path);
-
-        assert!(
-            !result,
-            "Child project should NOT be active when only parent has a lock"
-        );
-    }
-
-    /// Test: Exact path match works correctly
-    #[test]
-    fn test_exact_path_lock_is_active() {
-        let (_temp, storage, sessions_dir) = setup_storage_with_sessions();
-
-        let project_path = "/tmp/hud-test-exact-match";
-        let query_path = format!("{}/", project_path);
-        let current_pid = std::process::id();
-
-        create_test_lock_with_meta(&sessions_dir, project_path, current_pid);
-
-        let result = is_session_active_with_storage(&storage, &query_path);
-
-        cleanup_test_lock(&sessions_dir, project_path);
-
-        assert!(result, "Exact path match should be active");
-    }
-
-    /// Test: Unrelated paths don't affect each other
-    #[test]
-    fn test_unrelated_paths_independent() {
-        let (_temp, storage, sessions_dir) = setup_storage_with_sessions();
-
-        let path_a = "/tmp/hud-test-project-a";
-        let path_b = "/tmp/hud-test-project-b";
-        let current_pid = std::process::id();
-
-        // Create lock for path A only
-        create_test_lock_with_meta(&sessions_dir, path_a, current_pid);
-
-        // Check path B (should NOT be active)
-        let result = is_session_active_with_storage(&storage, path_b);
-
-        cleanup_test_lock(&sessions_dir, path_a);
-
-        assert!(
-            !result,
-            "Unrelated path should not be affected by other locks"
-        );
-    }
-
-    /// Test: Similar path prefixes don't false-match
-    /// e.g., /project-foo should not match /project
-    #[test]
-    fn test_similar_prefix_no_false_match() {
-        let (_temp, storage, sessions_dir) = setup_storage_with_sessions();
-
-        let path_short = "/tmp/hud-test-prefix-short";
-        let path_long = "/tmp/hud-test-prefix-shorter"; // Different project, similar prefix
-        let current_pid = std::process::id();
-
-        // Clean up any leftover state first
-        cleanup_test_lock(&sessions_dir, path_short);
-        cleanup_test_lock(&sessions_dir, path_long);
-
-        // Create lock for long path only
-        create_test_lock_with_meta(&sessions_dir, path_long, current_pid);
-
-        // Short path should NOT be active (it's not a parent, just similar name)
-        let result = is_session_active_with_storage(&storage, path_short);
-
-        // Clean up
-        cleanup_test_lock(&sessions_dir, path_short);
-        cleanup_test_lock(&sessions_dir, path_long);
-
-        assert!(
-            !result,
-            "Similar prefix should not cause false match (must be actual subdirectory)"
-        );
     }
 }

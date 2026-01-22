@@ -9,8 +9,9 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use tempfile::NamedTempFile;
 
-use super::lock::is_pid_alive;
-use super::types::{ClaudeState, SessionRecord};
+use crate::types::SessionState;
+
+use super::types::SessionRecord;
 
 /// Normalize a path for consistent comparison.
 /// Strips trailing slashes except for root "/".
@@ -22,6 +23,12 @@ fn normalize_path(path: &str) -> String {
     }
 }
 
+fn record_match_paths<'a>(record: &'a SessionRecord) -> impl Iterator<Item = &'a str> {
+    [Some(record.cwd.as_str()), record.project_dir.as_deref()]
+        .into_iter()
+        .flatten()
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 struct StoreFile {
     version: u32,
@@ -31,7 +38,7 @@ struct StoreFile {
 impl Default for StoreFile {
     fn default() -> Self {
         StoreFile {
-            version: 2,
+            version: 3,
             sessions: HashMap::new(),
         }
     }
@@ -73,21 +80,16 @@ impl StateStore {
 
         // Defensive: Handle JSON parse errors
         match serde_json::from_str::<StoreFile>(&content) {
+            Ok(store_file) if store_file.version == 3 => Ok(StateStore {
+                sessions: store_file.sessions,
+                file_path: Some(file_path.to_path_buf()),
+            }),
             Ok(store_file) => {
-                // Opportunistic cleanup: Remove sessions with dead PIDs
-                let cleaned_sessions: HashMap<String, SessionRecord> = store_file
-                    .sessions
-                    .into_iter()
-                    .filter(|(_, record)| match record.pid {
-                        Some(pid) => is_pid_alive(pid),
-                        None => true, // Keep sessions without PID (legacy)
-                    })
-                    .collect();
-
-                Ok(StateStore {
-                    sessions: cleaned_sessions,
-                    file_path: Some(file_path.to_path_buf()),
-                })
+                eprintln!(
+                    "Warning: Unsupported state file version {} (expected 3), returning empty store",
+                    store_file.version
+                );
+                Ok(StateStore::new(file_path))
             }
             Err(e) => {
                 eprintln!(
@@ -107,7 +109,7 @@ impl StateStore {
             .ok_or_else(|| "No file path set for in-memory store".to_string())?;
 
         let store_file = StoreFile {
-            version: 2,
+            version: 3,
             sessions: self.sessions.clone(),
         };
 
@@ -132,10 +134,15 @@ impl StateStore {
         Ok(())
     }
 
-    pub fn update(&mut self, session_id: &str, state: ClaudeState, cwd: &str) {
+    pub fn update(&mut self, session_id: &str, state: SessionState, cwd: &str) {
+        let now = Utc::now();
+
         let existing = self.sessions.get(session_id);
-        let working_on = existing.and_then(|r| r.working_on.clone());
-        let pid = existing.and_then(|r| r.pid);
+
+        let state_changed_at = match existing {
+            Some(r) if r.state == state => r.state_changed_at,
+            _ => now,
+        };
 
         self.sessions.insert(
             session_id.to_string(),
@@ -143,9 +150,14 @@ impl StateStore {
                 session_id: session_id.to_string(),
                 state,
                 cwd: cwd.to_string(),
-                updated_at: Utc::now(),
-                working_on,
-                pid,
+                updated_at: now,
+                state_changed_at,
+                working_on: existing.and_then(|r| r.working_on.clone()),
+                transcript_path: existing.and_then(|r| r.transcript_path.clone()),
+                permission_mode: existing.and_then(|r| r.permission_mode.clone()),
+                project_dir: existing.and_then(|r| r.project_dir.clone()),
+                last_event: existing.and_then(|r| r.last_event.clone()),
+                active_subagent_count: existing.map_or(0, |r| r.active_subagent_count),
             },
         );
     }
@@ -166,13 +178,14 @@ impl StateStore {
 
         // 1. Exact match - collect all, don't return early
         for record in self.sessions.values() {
-            let record_cwd_normalized = normalize_path(&record.cwd);
-            if record_cwd_normalized == cwd_normalized {
-                match best {
-                    None => best = Some(record),
-                    Some(current) if record.updated_at > current.updated_at => best = Some(record),
-                    _ => {}
-                }
+            let is_exact = record_match_paths(record).any(|p| normalize_path(p) == cwd_normalized);
+            if !is_exact {
+                continue;
+            }
+            match best {
+                None => best = Some(record),
+                Some(current) if record.updated_at > current.updated_at => best = Some(record),
+                _ => {}
             }
         }
 
@@ -189,14 +202,16 @@ impl StateStore {
         };
 
         for record in self.sessions.values() {
-            let record_cwd_normalized = normalize_path(&record.cwd);
-
-            let is_child = if is_root_query {
-                // For root query, match any path except root itself
-                record_cwd_normalized != "/" && record_cwd_normalized.starts_with(&cwd_with_slash)
-            } else {
-                record_cwd_normalized.starts_with(&cwd_with_slash)
-            };
+            let is_child = record_match_paths(record).any(|p| {
+                let record_path_normalized = normalize_path(p);
+                if is_root_query {
+                    // For root query, match any path except root itself
+                    record_path_normalized != "/"
+                        && record_path_normalized.starts_with(&cwd_with_slash)
+                } else {
+                    record_path_normalized.starts_with(&cwd_with_slash)
+                }
+            });
 
             if is_child {
                 match best {
@@ -225,15 +240,15 @@ impl StateStore {
             }
 
             for record in self.sessions.values() {
-                let record_cwd_normalized = normalize_path(&record.cwd);
-                if record_cwd_normalized == parent_normalized {
-                    match best {
-                        None => best = Some(record),
-                        Some(current) if record.updated_at > current.updated_at => {
-                            best = Some(record)
-                        }
-                        _ => {}
-                    }
+                let is_exact_parent =
+                    record_match_paths(record).any(|p| normalize_path(p) == parent_normalized);
+                if !is_exact_parent {
+                    continue;
+                }
+                match best {
+                    None => best = Some(record),
+                    Some(current) if record.updated_at > current.updated_at => best = Some(record),
+                    _ => {}
                 }
             }
 
@@ -252,13 +267,6 @@ impl StateStore {
     }
 
     #[cfg(test)]
-    pub fn set_pid_for_test(&mut self, session_id: &str, pid: u32) {
-        if let Some(record) = self.sessions.get_mut(session_id) {
-            record.pid = Some(pid);
-        }
-    }
-
-    #[cfg(test)]
     pub fn set_timestamp_for_test(
         &mut self,
         session_id: &str,
@@ -266,6 +274,24 @@ impl StateStore {
     ) {
         if let Some(record) = self.sessions.get_mut(session_id) {
             record.updated_at = timestamp;
+        }
+    }
+
+    #[cfg(test)]
+    pub fn set_state_changed_at_for_test(
+        &mut self,
+        session_id: &str,
+        timestamp: chrono::DateTime<chrono::Utc>,
+    ) {
+        if let Some(record) = self.sessions.get_mut(session_id) {
+            record.state_changed_at = timestamp;
+        }
+    }
+
+    #[cfg(test)]
+    pub fn set_project_dir_for_test(&mut self, session_id: &str, project_dir: Option<&str>) {
+        if let Some(record) = self.sessions.get_mut(session_id) {
+            record.project_dir = project_dir.map(|s| s.to_string());
         }
     }
 }
@@ -286,27 +312,27 @@ mod tests {
     #[test]
     fn test_update_creates_session() {
         let mut store = StateStore::new_in_memory();
-        store.update("session-1", ClaudeState::Working, "/project");
+        store.update("session-1", SessionState::Working, "/project");
         let record = store.get_by_session_id("session-1").unwrap();
-        assert_eq!(record.state, ClaudeState::Working);
+        assert_eq!(record.state, SessionState::Working);
         assert_eq!(record.cwd, "/project");
     }
 
     #[test]
     fn test_update_overwrites_session() {
         let mut store = StateStore::new_in_memory();
-        store.update("session-1", ClaudeState::Working, "/project");
-        store.update("session-1", ClaudeState::Ready, "/project");
+        store.update("session-1", SessionState::Working, "/project");
+        store.update("session-1", SessionState::Ready, "/project");
         assert_eq!(
             store.get_by_session_id("session-1").unwrap().state,
-            ClaudeState::Ready
+            SessionState::Ready
         );
     }
 
     #[test]
     fn test_remove_deletes_session() {
         let mut store = StateStore::new_in_memory();
-        store.update("session-1", ClaudeState::Ready, "/project");
+        store.update("session-1", SessionState::Ready, "/project");
         store.remove("session-1");
         assert!(store.get_by_session_id("session-1").is_none());
     }
@@ -314,9 +340,9 @@ mod tests {
     #[test]
     fn test_find_by_cwd_returns_most_recent() {
         let mut store = StateStore::new_in_memory();
-        store.update("old", ClaudeState::Ready, "/project");
+        store.update("old", SessionState::Ready, "/project");
         thread::sleep(Duration::from_millis(10));
-        store.update("new", ClaudeState::Working, "/project");
+        store.update("new", SessionState::Working, "/project");
         let record = store.find_by_cwd("/project").unwrap();
         assert_eq!(record.session_id, "new");
     }
@@ -324,7 +350,7 @@ mod tests {
     #[test]
     fn test_find_by_cwd_checks_parent_paths() {
         let mut store = StateStore::new_in_memory();
-        store.update("parent-session", ClaudeState::Working, "/parent");
+        store.update("parent-session", SessionState::Working, "/parent");
         let record = store.find_by_cwd("/parent/child").unwrap();
         assert_eq!(record.session_id, "parent-session");
     }
@@ -332,8 +358,8 @@ mod tests {
     #[test]
     fn test_find_by_cwd_prefers_exact_match_over_parent() {
         let mut store = StateStore::new_in_memory();
-        store.update("parent-session", ClaudeState::Working, "/parent");
-        store.update("child-session", ClaudeState::Ready, "/parent/child");
+        store.update("parent-session", SessionState::Working, "/parent");
+        store.update("child-session", SessionState::Ready, "/parent/child");
         let record = store.find_by_cwd("/parent/child").unwrap();
         assert_eq!(record.session_id, "child-session");
     }
@@ -342,7 +368,11 @@ mod tests {
     fn test_find_by_cwd_finds_child_session_from_parent_query() {
         // This is the critical case: pinned project is /project but session runs from /project/subdir
         let mut store = StateStore::new_in_memory();
-        store.update("child-session", ClaudeState::Working, "/project/apps/swift");
+        store.update(
+            "child-session",
+            SessionState::Working,
+            "/project/apps/swift",
+        );
         let record = store.find_by_cwd("/project").unwrap();
         assert_eq!(record.session_id, "child-session");
         assert_eq!(record.cwd, "/project/apps/swift");
@@ -355,14 +385,14 @@ mod tests {
 
         {
             let mut store = StateStore::new(&file);
-            store.update("s1", ClaudeState::Working, "/proj");
+            store.update("s1", SessionState::Working, "/proj");
             store.save().unwrap();
         }
 
         let store = StateStore::load(&file).unwrap();
         assert_eq!(
             store.get_by_session_id("s1").unwrap().state,
-            ClaudeState::Working
+            SessionState::Working
         );
     }
 
@@ -377,8 +407,8 @@ mod tests {
     #[test]
     fn test_all_sessions_returns_all() {
         let mut store = StateStore::new_in_memory();
-        store.update("s1", ClaudeState::Working, "/proj1");
-        store.update("s2", ClaudeState::Ready, "/proj2");
+        store.update("s1", SessionState::Working, "/proj1");
+        store.update("s2", SessionState::Ready, "/proj2");
         let sessions: Vec<_> = store.all_sessions().collect();
         assert_eq!(sessions.len(), 2);
     }
@@ -388,14 +418,12 @@ mod tests {
         let mut store = StateStore::new_in_memory();
 
         // Create session-1 at /project
-        store.update("session-1", ClaudeState::Working, "/project");
-        store.set_pid_for_test("session-1", 1234);
+        store.update("session-1", SessionState::Working, "/project");
 
         thread::sleep(Duration::from_millis(10));
 
         // Create session-2 at /project (more recent)
-        store.update("session-2", ClaudeState::Ready, "/project");
-        store.set_pid_for_test("session-2", 5678);
+        store.update("session-2", SessionState::Ready, "/project");
 
         // Query for /project should return the more recent session (session-2)
         // Timestamp-based selection, no PID tie-breaking
@@ -403,6 +431,16 @@ mod tests {
 
         // Should get the fresher one (session-2) since both have same cwd
         assert_eq!(record.session_id, "session-2");
+    }
+
+    #[test]
+    fn test_find_by_cwd_matches_project_dir_when_cwd_is_unrelated() {
+        let mut store = StateStore::new_in_memory();
+        store.update("s1", SessionState::Working, "/wrong");
+        store.set_project_dir_for_test("s1", Some("/project"));
+
+        let record = store.find_by_cwd("/project").unwrap();
+        assert_eq!(record.session_id, "s1");
     }
 
     #[test]
@@ -428,72 +466,12 @@ mod tests {
     }
 
     #[test]
-    fn test_load_cleans_up_dead_pids() {
+    fn test_load_unsupported_version_returns_empty_store() {
         let temp = tempdir().unwrap();
-        let file = temp.path().join("with_dead_pid.json");
-
-        // Create a state file with one live PID and one dead PID
-        let live_pid = std::process::id();
-        let dead_pid = 99999999u32; // Unlikely to be alive
-
-        let content = format!(
-            r#"{{
-                "version": 2,
-                "sessions": {{
-                    "live-session": {{
-                        "session_id": "live-session",
-                        "state": "working",
-                        "cwd": "/project1",
-                        "updated_at": "2024-01-01T00:00:00Z",
-                        "pid": {}
-                    }},
-                    "dead-session": {{
-                        "session_id": "dead-session",
-                        "state": "working",
-                        "cwd": "/project2",
-                        "updated_at": "2024-01-01T00:00:00Z",
-                        "pid": {}
-                    }}
-                }}
-            }}"#,
-            live_pid, dead_pid
-        );
-        fs::write(&file, content).unwrap();
+        let file = temp.path().join("v2.json");
+        fs::write(&file, r#"{"version":2,"sessions":{}}"#).unwrap();
 
         let store = StateStore::load(&file).unwrap();
-
-        // Live session should be kept
-        assert!(store.get_by_session_id("live-session").is_some());
-
-        // Dead session should be removed
-        assert!(store.get_by_session_id("dead-session").is_none());
-
-        // Should have exactly 1 session
-        assert_eq!(store.all_sessions().count(), 1);
-    }
-
-    #[test]
-    fn test_load_keeps_sessions_without_pid() {
-        let temp = tempdir().unwrap();
-        let file = temp.path().join("no_pid.json");
-
-        let content = r#"{
-            "version": 2,
-            "sessions": {
-                "legacy-session": {
-                    "session_id": "legacy-session",
-                    "state": "working",
-                    "cwd": "/project",
-                    "updated_at": "2024-01-01T00:00:00Z"
-                }
-            }
-        }"#;
-        fs::write(&file, content).unwrap();
-
-        let store = StateStore::load(&file).unwrap();
-
-        // Legacy session without PID should be kept
-        assert!(store.get_by_session_id("legacy-session").is_some());
-        assert_eq!(store.all_sessions().count(), 1);
+        assert_eq!(store.all_sessions().count(), 0);
     }
 }

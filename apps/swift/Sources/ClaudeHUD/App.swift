@@ -39,6 +39,10 @@ struct ClaudeHUDApp: App {
                         ))
                 } else {
                     WelcomeView(onComplete: {
+                        // Important: when testing onboarding resets, disk state may have changed
+                        // (e.g. ~/.capacitor/projects.json deleted). Reload before entering the app
+                        // so we don't show stale in-memory projects.
+                        appState.loadDashboard()
                         withAnimation(.easeInOut(duration: 0.4)) {
                             setupComplete = true
                         }
@@ -140,29 +144,15 @@ struct ClaudeHUDApp: App {
     }
 
     #if DEBUG
-    private static let onboardingBackupPath = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent(".capacitor-onboarding-backup")
-
     private func resetOnboardingFully() {
         _Concurrency.Task {
             let fm = FileManager.default
             let home = fm.homeDirectoryForCurrentUser
             let capacitorPath = home.appendingPathComponent(".capacitor")
-            let backupPath = Self.onboardingBackupPath
+            let backupPath = home.appendingPathComponent(".capacitor-onboarding-backup")
 
-            // 1. Preserve user data to temporary backup location
-            let userDataFiles = ["projects.json", "creations.json"]
+            // 1. Remove any prior backup (we want a truly fresh onboarding flow)
             try? fm.removeItem(at: backupPath)
-            try? fm.createDirectory(at: backupPath, withIntermediateDirectories: true)
-
-            for filename in userDataFiles {
-                let sourcePath = capacitorPath.appendingPathComponent(filename)
-                let destPath = backupPath.appendingPathComponent(filename)
-                if fm.fileExists(atPath: sourcePath.path) {
-                    try? fm.copyItem(at: sourcePath, to: destPath)
-                    print("[Debug] Backed up \(filename)")
-                }
-            }
 
             // 2. Remove entire ~/.capacitor directory (truly empty now)
             try? fm.removeItem(at: capacitorPath)
@@ -175,37 +165,22 @@ struct ClaudeHUDApp: App {
             // 4. Remove hooks from settings.json (best effort)
             await removeHooksFromSettings()
 
-            // 5. Reset the setup complete flag and show welcome screen
+            // 5. Reset app preferences (fresh UX)
+            await MainActor.run {
+                floatingMode = false
+                alwaysOnTop = false
+                layoutMode = "vertical"
+            }
+
+            // 6. Reset the setup complete flag and show welcome screen
             await MainActor.run {
                 withAnimation(.easeInOut(duration: 0.4)) {
                     setupComplete = false
                 }
             }
 
-            print("[Debug] Onboarding reset complete (user data backed up to ~/.capacitor-onboarding-backup/)")
+            print("[Debug] Onboarding reset complete (fresh)")
         }
-    }
-
-    static func restoreOnboardingBackup() {
-        let fm = FileManager.default
-        let capacitorPath = fm.homeDirectoryForCurrentUser.appendingPathComponent(".capacitor")
-        let backupPath = onboardingBackupPath
-
-        guard fm.fileExists(atPath: backupPath.path) else { return }
-
-        let userDataFiles = ["projects.json", "creations.json"]
-        for filename in userDataFiles {
-            let sourcePath = backupPath.appendingPathComponent(filename)
-            let destPath = capacitorPath.appendingPathComponent(filename)
-            if fm.fileExists(atPath: sourcePath.path) {
-                try? fm.copyItem(at: sourcePath, to: destPath)
-                print("[Debug] Restored \(filename) from backup")
-            }
-        }
-
-        // Clean up backup directory
-        try? fm.removeItem(at: backupPath)
-        print("[Debug] Cleaned up onboarding backup")
     }
 
     private func removeHooksFromSettings() async {
