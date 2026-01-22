@@ -78,12 +78,21 @@ pub fn run() -> Result<(), String> {
 
     // Check if this session has already ended (tombstone exists)
     // This prevents race conditions where events arrive after SessionEnd
-    if event != HookEvent::SessionEnd && has_tombstone(&tombstones_dir, &session_id) {
+    // SessionStart is exempt - it can start a new session with the same ID
+    if event != HookEvent::SessionEnd
+        && event != HookEvent::SessionStart
+        && has_tombstone(&tombstones_dir, &session_id)
+    {
         log(&format!(
             "Skipping event for ended session: {:?} session={}",
             hook_input.hook_event_name, session_id
         ));
         return Ok(());
+    }
+
+    // If SessionStart arrives for a tombstoned session, clear the tombstone
+    if event == HookEvent::SessionStart && has_tombstone(&tombstones_dir, &session_id) {
+        remove_tombstone(&tombstones_dir, &session_id);
     }
 
     // Get remaining paths
@@ -456,6 +465,20 @@ fn create_tombstone(tombstones_dir: &Path, session_id: &str) {
         log(&format!("Failed to create tombstone: {}", e));
     } else {
         log(&format!("Created tombstone for session {}", session_id));
+    }
+}
+
+fn remove_tombstone(tombstones_dir: &Path, session_id: &str) {
+    let tombstone_path = tombstones_dir.join(session_id);
+    if tombstone_path.exists() {
+        if let Err(e) = std::fs::remove_file(&tombstone_path) {
+            log(&format!("Failed to remove tombstone: {}", e));
+        } else {
+            log(&format!(
+                "Cleared tombstone for session {} (new SessionStart)",
+                session_id
+            ));
+        }
     }
 }
 
