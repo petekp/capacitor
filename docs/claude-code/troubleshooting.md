@@ -153,6 +153,8 @@ If you're experiencing authentication problems:
 2. Close Claude Code
 3. Restart with `claude` and complete the authentication process again
 
+If the browser doesn't open automatically during login, press `c` to copy the OAuth URL to your clipboard, then paste it into your browser manually.
+
 If problems persist, try:
 
 ```bash  theme={null}
@@ -223,7 +225,7 @@ If Claude Code seems unresponsive:
 
 ### Search and discovery issues
 
-If Search tool, `@file` mentions, custom agents, and custom slash commands aren't working, install system `ripgrep`:
+If Search tool, `@file` mentions, custom agents, and custom skills aren't working, install system `ripgrep`:
 
 ```bash  theme={null}
 # macOS (Homebrew)  
@@ -387,7 +389,14 @@ If you're experiencing issues not covered here:
 
 1. Use the `/bug` command within Claude Code to report problems directly to Anthropic
 2. Check the [GitHub repository](https://github.com/anthropics/claude-code) for known issues
-3. Run `/doctor` to check the health of your Claude Code installation
+3. Run `/doctor` to diagnose issues. It checks:
+   * Installation type, version, and search functionality
+   * Auto-update status and available versions
+   * Invalid settings files (malformed JSON, incorrect types)
+   * MCP server configuration errors
+   * Keybinding configuration problems
+   * Context usage warnings (large CLAUDE.md files, high MCP token usage, unreachable permission rules)
+   * Plugin and agent loading errors
 4. Ask Claude directly about its capabilities and features - Claude has built-in access to its documentation
 
 

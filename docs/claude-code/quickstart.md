@@ -10,7 +10,7 @@ Make sure you have:
 
 * A terminal or command prompt open
 * A code project to work with
-* A [Claude.ai](https://claude.ai) (recommended) or [Claude Console](https://console.anthropic.com/) account
+* A [Claude subscription](https://claude.com/pricing) (Pro, Max, Teams, or Enterprise) or [Claude Console](https://console.anthropic.com/) account
 
 ## Step 1: Install Claude Code
 
@@ -20,35 +20,45 @@ To install Claude Code, use one of the following methods:
   <Tab title="Native Install (Recommended)">
     **macOS, Linux, WSL:**
 
-    ```bash theme={null} theme={null}
+    ```bash  theme={null}
     curl -fsSL https://claude.ai/install.sh | bash
     ```
 
     **Windows PowerShell:**
 
-    ```powershell theme={null} theme={null}
+    ```powershell  theme={null}
     irm https://claude.ai/install.ps1 | iex
     ```
 
     **Windows CMD:**
 
-    ```batch theme={null} theme={null}
+    ```batch  theme={null}
     curl -fsSL https://claude.ai/install.cmd -o install.cmd && install.cmd && del install.cmd
     ```
+
+    <Info>
+      Native installations automatically update in the background to keep you on the latest version.
+    </Info>
   </Tab>
 
   <Tab title="Homebrew">
-    ```sh theme={null} theme={null}
+    ```sh  theme={null}
     brew install --cask claude-code
     ```
+
+    <Info>
+      Homebrew installations do not auto-update. Run `brew upgrade claude-code` periodically to get the latest features and security fixes.
+    </Info>
   </Tab>
 
-  <Tab title="NPM">
-    If you have [Node.js 18 or newer installed](https://nodejs.org/en/download/):
-
-    ```sh theme={null} theme={null}
-    npm install -g @anthropic-ai/claude-code
+  <Tab title="WinGet">
+    ```powershell  theme={null}
+    winget install Anthropic.ClaudeCode
     ```
+
+    <Info>
+      WinGet installations do not auto-update. Run `winget upgrade Anthropic.ClaudeCode` periodically to get the latest features and security fixes.
+    </Info>
   </Tab>
 </Tabs>
 
@@ -66,9 +76,9 @@ claude
 # Follow the prompts to log in with your account
 ```
 
-You can log in using either account type:
+You can log in using any of these account types:
 
-* [Claude.ai](https://claude.ai) (subscription plans - recommended)
+* [Claude Pro, Max, Teams, or Enterprise](https://claude.com/pricing) (recommended)
 * [Claude Console](https://console.anthropic.com/) (API access with pre-paid credits)
 
 Once logged in, your credentials are stored and you won't need to log in again.
@@ -125,7 +135,7 @@ You can also ask Claude about its own capabilities:
 ```
 
 ```
-> how do I use slash commands in Claude Code?
+> how do I create custom skills in Claude Code?
 ```
 
 ```
@@ -295,7 +305,7 @@ See the [CLI reference](/en/cli-reference) for a complete list of commands.
     * Press `?` to see all available keyboard shortcuts
     * Use Tab for command completion
     * Press ↑ for command history
-    * Type `/` to see all slash commands
+    * Type `/` to see all commands and skills
   </Accordion>
 </AccordionGroup>
 

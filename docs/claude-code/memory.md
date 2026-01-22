@@ -10,7 +10,7 @@ Claude Code offers four memory locations in a hierarchical structure, each servi
 
 | Memory Type                | Location                                                                                                                                                        | Purpose                                             | Use Case Examples                                                    | Shared With                     |
 | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- | -------------------------------------------------------------------- | ------------------------------- |
-| **Enterprise policy**      | • macOS: `/Library/Application Support/ClaudeCode/CLAUDE.md`<br />• Linux: `/etc/claude-code/CLAUDE.md`<br />• Windows: `C:\Program Files\ClaudeCode\CLAUDE.md` | Organization-wide instructions managed by IT/DevOps | Company coding standards, security policies, compliance requirements | All users in organization       |
+| **Managed policy**         | • macOS: `/Library/Application Support/ClaudeCode/CLAUDE.md`<br />• Linux: `/etc/claude-code/CLAUDE.md`<br />• Windows: `C:\Program Files\ClaudeCode\CLAUDE.md` | Organization-wide instructions managed by IT/DevOps | Company coding standards, security policies, compliance requirements | All users in organization       |
 | **Project memory**         | `./CLAUDE.md` or `./.claude/CLAUDE.md`                                                                                                                          | Team-shared instructions for the project            | Project architecture, coding standards, common workflows             | Team members via source control |
 | **Project rules**          | `./.claude/rules/*.md`                                                                                                                                          | Modular, topic-specific project instructions        | Language-specific guidelines, testing conventions, API standards     | Team members via source control |
 | **User memory**            | `~/.claude/CLAUDE.md`                                                                                                                                           | Personal preferences for all projects               | Code styling preferences, personal tooling shortcuts                 | Just you (all projects)         |
@@ -56,7 +56,7 @@ Claude will also discover CLAUDE.md nested in subtrees under your current workin
 
 ## Directly edit memories with `/memory`
 
-Use the `/memory` slash command during a session to open any memory file in your system editor for more extensive additions or organization.
+Use the `/memory` command during a session to open any memory file in your system editor for more extensive additions or organization.
 
 ## Set up project memory
 
@@ -103,7 +103,8 @@ Rules can be scoped to specific files using YAML frontmatter with the `paths` fi
 
 ```markdown  theme={null}
 ---
-paths: src/api/**/*.ts
+paths:
+  - "src/api/**/*.ts"
 ---
 
 # API Development Rules
@@ -126,23 +127,30 @@ The `paths` field supports standard glob patterns:
 | `*.md`                 | Markdown files in the project root       |
 | `src/components/*.tsx` | React components in a specific directory |
 
-You can use braces to match multiple patterns efficiently:
+You can specify multiple patterns:
 
 ```markdown  theme={null}
 ---
-paths: src/**/*.{ts,tsx}
+paths:
+  - "src/**/*.ts"
+  - "lib/**/*.ts"
+  - "tests/**/*.test.ts"
+---
+```
+
+Brace expansion is supported for matching multiple extensions or directories:
+
+```markdown  theme={null}
+---
+paths:
+  - "src/**/*.{ts,tsx}"
+  - "{src,lib}/**/*.ts"
 ---
 
 # TypeScript/React Rules
 ```
 
-This expands to match both `src/**/*.ts` and `src/**/*.tsx`. You can also combine multiple patterns with commas:
-
-```markdown  theme={null}
----
-paths: {src,lib}/**/*.ts, tests/**/*.test.ts
----
-```
+This expands `src/**/*.{ts,tsx}` to match both `.ts` and `.tsx` files.
 
 ### Subdirectories
 

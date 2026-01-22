@@ -37,8 +37,12 @@ export const MCPServersTable = ({platform = "all"}) => {
             mcpConnector: worksWith.includes('claude-api'),
             claudeDesktop: worksWith.includes('claude-desktop')
           };
-          const remoteUrl = server.remotes?.[0]?.url || meta.url;
-          const remoteType = server.remotes?.[0]?.type;
+          const remotes = server.remotes || [];
+          const httpRemote = remotes.find(r => r.type === 'streamable-http');
+          const sseRemote = remotes.find(r => r.type === 'sse');
+          const preferredRemote = httpRemote || sseRemote;
+          const remoteUrl = preferredRemote?.url || meta.url;
+          const remoteType = preferredRemote?.type;
           const isTemplatedUrl = remoteUrl?.includes('{');
           let setupUrl;
           if (isTemplatedUrl && meta.requiredFields) {
@@ -314,6 +318,10 @@ claude mcp remove github
 # (within Claude Code) Check server status
 /mcp
 ```
+
+### Dynamic tool updates
+
+Claude Code supports MCP `list_changed` notifications, allowing MCP servers to dynamically update their available tools, prompts, and resources without requiring you to disconnect and reconnect. When an MCP server sends a `list_changed` notification, Claude Code automatically refreshes the available capabilities from that server.
 
 <Tip>
   Tips:
@@ -793,9 +801,65 @@ MCP servers can expose resources that you can reference using @ mentions, simila
   * Resources can contain any type of content that the MCP server provides (text, JSON, structured data, etc.)
 </Tip>
 
-## Use MCP prompts as slash commands
+## Scale with MCP Tool Search
 
-MCP servers can expose prompts that become available as slash commands in Claude Code.
+When you have many MCP servers configured, tool definitions can consume a significant portion of your context window. MCP Tool Search solves this by dynamically loading tools on-demand instead of preloading all of them.
+
+### How it works
+
+Claude Code automatically enables Tool Search when your MCP tool descriptions would consume more than 10% of the context window. You can [adjust this threshold](#configure-tool-search) or disable tool search entirely. When triggered:
+
+1. MCP tools are deferred rather than loaded into context upfront
+2. Claude uses a search tool to discover relevant MCP tools when needed
+3. Only the tools Claude actually needs are loaded into context
+4. MCP tools continue to work exactly as before from your perspective
+
+### For MCP server authors
+
+If you're building an MCP server, the server instructions field becomes more useful with Tool Search enabled. Server instructions help Claude understand when to search for your tools, similar to how [skills](/en/skills) work.
+
+Add clear, descriptive server instructions that explain:
+
+* What category of tasks your tools handle
+* When Claude should search for your tools
+* Key capabilities your server provides
+
+### Configure tool search
+
+Tool search runs in auto mode by default, meaning it activates only when your MCP tool definitions exceed the context threshold. If you have few tools, they load normally without tool search. This feature requires models that support `tool_reference` blocks: Sonnet 4 and later, or Opus 4 and later. Haiku models do not support tool search.
+
+Control tool search behavior with the `ENABLE_TOOL_SEARCH` environment variable:
+
+| Value      | Behavior                                                                           |
+| :--------- | :--------------------------------------------------------------------------------- |
+| `auto`     | Activates when MCP tools exceed 10% of context (default)                           |
+| `auto:<N>` | Activates at custom threshold, where `<N>` is a percentage (e.g., `auto:5` for 5%) |
+| `true`     | Always enabled                                                                     |
+| `false`    | Disabled, all MCP tools loaded upfront                                             |
+
+```bash  theme={null}
+# Use a custom 5% threshold
+ENABLE_TOOL_SEARCH=auto:5 claude
+
+# Disable tool search entirely
+ENABLE_TOOL_SEARCH=false claude
+```
+
+Or set the value in your [settings.json `env` field](/en/settings#available-settings).
+
+You can also disable the MCPSearch tool specifically using the `disallowedTools` setting:
+
+```json  theme={null}
+{
+  "permissions": {
+    "deny": ["MCPSearch"]
+  }
+}
+```
+
+## Use MCP prompts as commands
+
+MCP servers can expose prompts that become available as commands in Claude Code.
 
 ### Execute MCP prompts
 

@@ -4,21 +4,37 @@
 
 ## Authentication methods
 
-Setting up Claude Code requires access to Anthropic models. For teams, you can set up Claude Code access in one of four ways:
+Setting up Claude Code requires access to Anthropic models. For teams, you can set up Claude Code access in one of these ways:
 
-* Claude API via the Claude Console
-* Amazon Bedrock
-* Microsoft Foundry
-* Google Vertex AI
+* [Claude for Teams or Enterprise](/en/setup#for-teams-and-organizations) (recommended)
+* [Claude Console with team billing](/en/setup#for-teams-and-organizations)
+* [Amazon Bedrock](/en/amazon-bedrock)
+* [Google Vertex AI](/en/google-vertex-ai)
+* [Microsoft Foundry](/en/microsoft-foundry)
 
-### Claude API authentication
+### Claude for Teams or Enterprise (recommended)
 
-**To set up Claude Code access for your team via Claude API:**
+[Claude for Teams](https://claude.com/pricing#team-&-enterprise) and [Claude for Enterprise](https://anthropic.com/contact-sales) provide the best experience for organizations using Claude Code. Team members get access to both Claude Code and Claude on the web with centralized billing and team management.
+
+* **Claude for Teams**: Self-service plan with collaboration features, admin tools, and billing management. Best for smaller teams.
+* **Claude for Enterprise**: Adds SSO, domain capture, role-based permissions, compliance API, and managed policy settings for organization-wide Claude Code configurations. Best for larger organizations with security and compliance requirements.
+
+**To set up Claude Code access:**
+
+1. Subscribe to [Claude for Teams](https://claude.com/pricing#team-&-enterprise) or contact sales for [Claude for Enterprise](https://anthropic.com/contact-sales)
+2. Invite team members from the admin dashboard
+3. Team members install Claude Code and log in with their Claude.ai accounts
+
+### Claude Console authentication
+
+For organizations that prefer API-based billing, you can set up access through the Claude Console.
+
+**To set up Claude Code access for your team via Claude Console:**
 
 1. Use your existing Claude Console account or create a new Claude Console account
 2. You can add users through either method below:
    * Bulk invite users from within the Console (Console -> Settings -> Members -> Invite)
-   * [Set up SSO](https://support.claude.com/en/articles/10280258-setting-up-single-sign-on-on-the-api-console)
+   * [Set up SSO](https://support.claude.com/en/articles/13132885-setting-up-single-sign-on-sso)
 3. When inviting users, they need one of the following roles:
    * "Claude Code" role means users can only create Claude Code API keys
    * "Developer" role means users can create any kind of API key
@@ -44,25 +60,32 @@ We support fine-grained permissions so that you're able to specify exactly what 
 
 Claude Code uses a tiered permission system to balance power and safety:
 
-| Tool Type         | Example              | Approval Required | "Yes, don't ask again" Behavior               |
-| :---------------- | :------------------- | :---------------- | :-------------------------------------------- |
-| Read-only         | File reads, LS, Grep | No                | N/A                                           |
-| Bash Commands     | Shell execution      | Yes               | Permanently per project directory and command |
-| File Modification | Edit/write files     | Yes               | Until session end                             |
+| Tool Type         | Example          | Approval Required | "Yes, don't ask again" Behavior               |
+| :---------------- | :--------------- | :---------------- | :-------------------------------------------- |
+| Read-only         | File reads, Grep | No                | N/A                                           |
+| Bash Commands     | Shell execution  | Yes               | Permanently per project directory and command |
+| File Modification | Edit/write files | Yes               | Until session end                             |
 
 ### Configuring permissions
 
 You can view & manage Claude Code's tool permissions with `/permissions`. This UI lists all permission rules and the settings.json file they are sourced from.
 
-* **Allow** rules will allow Claude Code to use the specified tool without further manual approval.
-* **Ask** rules will ask the user for confirmation whenever Claude Code tries to use the specified tool. Ask rules take precedence over allow rules.
-* **Deny** rules will prevent Claude Code from using the specified tool. Deny rules take precedence over allow and ask rules.
+* **Allow** rules let Claude Code use the specified tool without manual approval.
+* **Ask** rules prompt for confirmation whenever Claude Code tries to use the specified tool.
+* **Deny** rules prevent Claude Code from using the specified tool.
+
+Rules are evaluated in order: **deny → ask → allow**. The first matching rule wins, so deny rules always take precedence.
+
 * **Additional directories** extend Claude's file access to directories beyond the initial working directory.
 * **Default mode** controls Claude's permission behavior when encountering new requests.
 
 Permission rules use the format: `Tool` or `Tool(optional-specifier)`
 
-A rule that is just the tool name matches any use of that tool. For example, adding `Bash` to the list of allow rules would allow Claude Code to use the Bash tool without requiring user approval.
+A rule that is just the tool name matches any use of that tool. For example, adding `Bash` to the allow list allows Claude Code to use the Bash tool without requiring user approval. Note that `Bash(*)` does **not** match all Bash commands. Use `Bash` without parentheses to match all uses.
+
+<Note>
+  For a quick reference on permission rule syntax including wildcards, see [Permission rule syntax](/en/settings#permission-rule-syntax) in the settings documentation.
+</Note>
 
 #### Permission modes
 
@@ -81,7 +104,7 @@ Claude Code supports several permission modes that can be set as the `defaultMod
 By default, Claude has access to files in the directory where it was launched. You can extend this access:
 
 * **During startup**: Use `--add-dir <path>` CLI argument
-* **During session**: Use `/add-dir` slash command
+* **During session**: Use `/add-dir` command
 * **Persistent configuration**: Add to `additionalDirectories` in [settings files](/en/settings#settings-files)
 
 Files in additional directories follow the same permission rules as the original working directory - they become readable without prompts, and file editing permissions follow the current permission mode.
@@ -92,9 +115,15 @@ Some tools support more fine-grained permission controls:
 
 **Bash**
 
+Bash permission rules support both prefix matching with `:*` and wildcard matching with `*`:
+
 * `Bash(npm run build)` Matches the exact Bash command `npm run build`
 * `Bash(npm run test:*)` Matches Bash commands starting with `npm run test`
-* `Bash(curl http://site.com/:*)` Matches curl commands that start with exactly `curl http://site.com/`
+* `Bash(npm *)` Matches any command starting with `npm ` (e.g., `npm install`, `npm run build`)
+* `Bash(* install)` Matches any command ending with ` install` (e.g., `npm install`, `yarn install`)
+* `Bash(git * main)` Matches commands like `git checkout main`, `git merge main`
+
+The key difference between `:*` and `*`: the `:*` suffix enforces a word boundary, requiring the prefix to be followed by a space or end-of-string. For example, `Bash(ls:*)` matches `ls -la` but not `lsof`. In contrast, `Bash(ls*)` with a bare `*` matches both `ls -la` and `lsof` because `*` has no word boundary constraint.
 
 <Tip>
   Claude Code is aware of shell operators (like `&&`) so a prefix match rule like `Bash(safe-cmd:*)` won't give it permission to run the command `safe-cmd && other-cmd`
@@ -103,8 +132,8 @@ Some tools support more fine-grained permission controls:
 <Warning>
   Important limitations of Bash permission patterns:
 
-  1. This tool uses **prefix matches**, not regex or glob patterns
-  2. The wildcard `:*` only works at the end of a pattern to match any continuation
+  1. The `:*` wildcard only works at the end of a pattern for prefix matching
+  2. The `*` wildcard can appear at any position and matches any sequence of characters
   3. Patterns like `Bash(curl http://github.com/:*)` can be bypassed in many ways:
      * Options before URL: `curl -X GET http://github.com/...` won't match
      * Different protocol: `curl https://github.com/...` won't match
@@ -114,14 +143,16 @@ Some tools support more fine-grained permission controls:
 
   For more reliable URL filtering, consider:
 
-  * Using the WebFetch tool with `WebFetch(domain:github.com)` permission
+  * **Restrict Bash network tools**: Use deny rules to block `curl`, `wget`, and similar commands, then use the WebFetch tool with `WebFetch(domain:github.com)` permission for allowed domains
+  * **Use PreToolUse hooks**: Implement a hook that validates URLs in Bash commands and blocks disallowed domains
   * Instructing Claude Code about your allowed curl patterns via CLAUDE.md
-  * Using hooks for custom permission validation
+
+  Note that using WebFetch alone does not prevent network access. If Bash is allowed, Claude can still use `curl`, `wget`, or other tools to reach any URL.
 </Warning>
 
 **Read & Edit**
 
-`Edit` rules apply to all built-in tools that edit files. Claude will make a best-effort attempt to apply `Read` rules to all built-in tools that read files like Grep, Glob, and LS.
+`Edit` rules apply to all built-in tools that edit files. Claude will make a best-effort attempt to apply `Read` rules to all built-in tools that read files like Grep and Glob.
 
 Read & Edit rules both follow the [gitignore](https://git-scm.com/docs/gitignore) specification with four distinct pattern types:
 
@@ -150,6 +181,24 @@ Read & Edit rules both follow the [gitignore](https://git-scm.com/docs/gitignore
 * `mcp__puppeteer` Matches any tool provided by the `puppeteer` server (name configured in Claude Code)
 * `mcp__puppeteer__*` Wildcard syntax that also matches all tools from the `puppeteer` server
 * `mcp__puppeteer__puppeteer_navigate` Matches the `puppeteer_navigate` tool provided by the `puppeteer` server
+
+**Task (Subagents)**
+
+Use `Task(AgentName)` rules to control which [subagents](/en/sub-agents) Claude can use:
+
+* `Task(Explore)` Matches the Explore subagent
+* `Task(Plan)` Matches the Plan subagent
+* `Task(Verify)` Matches the Verify subagent
+
+Add these rules to the `deny` array in your [settings](/en/settings#permission-settings) or use the `--disallowedTools` CLI flag to disable specific agents. For example, to disable the Explore agent:
+
+```json  theme={null}
+{
+  "permissions": {
+    "deny": ["Task(Explore)"]
+  }
+}
+```
 
 ### Additional permission control with hooks
 

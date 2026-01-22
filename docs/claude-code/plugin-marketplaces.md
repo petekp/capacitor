@@ -19,21 +19,26 @@ Once your marketplace is live, you can update it by pushing changes to your repo
 
 ## Walkthrough: create a local marketplace
 
-This example creates a marketplace with one plugin: a `/review` command for code reviews. You'll create the directory structure, add a slash command, create the plugin manifest and marketplace catalog, then install and test it.
+This example creates a marketplace with one plugin: a `/review` skill for code reviews. You'll create the directory structure, add a skill, create the plugin manifest and marketplace catalog, then install and test it.
 
 <Steps>
   <Step title="Create the directory structure">
     ```bash  theme={null}
     mkdir -p my-marketplace/.claude-plugin
     mkdir -p my-marketplace/plugins/review-plugin/.claude-plugin
-    mkdir -p my-marketplace/plugins/review-plugin/commands
+    mkdir -p my-marketplace/plugins/review-plugin/skills/review
     ```
   </Step>
 
-  <Step title="Create the plugin command">
-    Create a Markdown file that defines what the `/review` command does.
+  <Step title="Create the skill">
+    Create a `SKILL.md` file that defines what the `/review` skill does.
 
-    ```markdown my-marketplace/plugins/review-plugin/commands/review.md theme={null}
+    ```markdown my-marketplace/plugins/review-plugin/skills/review/SKILL.md theme={null}
+    ---
+    description: Review code for bugs, security, and performance
+    disable-model-invocation: true
+    ---
+
     Review the code I've selected or the recent changes for:
     - Potential bugs or edge cases
     - Security concerns
@@ -50,7 +55,7 @@ This example creates a marketplace with one plugin: a `/review` command for code
     ```json my-marketplace/plugins/review-plugin/.claude-plugin/plugin.json theme={null}
     {
       "name": "review-plugin",
-      "description": "Adds a /review command for quick code reviews",
+      "description": "Adds a /review skill for quick code reviews",
       "version": "1.0.0"
     }
     ```
@@ -69,7 +74,7 @@ This example creates a marketplace with one plugin: a `/review` command for code
         {
           "name": "review-plugin",
           "source": "./plugins/review-plugin",
-          "description": "Adds a /review command for quick code reviews"
+          "description": "Adds a /review skill for quick code reviews"
         }
       ]
     }
@@ -217,6 +222,10 @@ For plugins in the same repository:
 }
 ```
 
+<Note>
+  Relative paths only work when users add your marketplace via Git (GitHub, GitLab, or git URL). If users add your marketplace via a direct URL to the `marketplace.json` file, relative paths will not resolve correctly. For URL-based distribution, use GitHub, npm, or git URL sources instead. See [Troubleshooting](#plugins-with-relative-paths-fail-in-url-based-marketplaces) for details.
+</Note>
+
 ### GitHub repositories
 
 ```json  theme={null}
@@ -229,6 +238,26 @@ For plugins in the same repository:
 }
 ```
 
+You can pin to a specific branch, tag, or commit:
+
+```json  theme={null}
+{
+  "name": "github-plugin",
+  "source": {
+    "source": "github",
+    "repo": "owner/plugin-repo",
+    "ref": "v2.0.0",
+    "sha": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0"
+  }
+}
+```
+
+| Field  | Type   | Description                                                           |
+| :----- | :----- | :-------------------------------------------------------------------- |
+| `repo` | string | Required. GitHub repository in `owner/repo` format                    |
+| `ref`  | string | Optional. Git branch or tag (defaults to repository default branch)   |
+| `sha`  | string | Optional. Full 40-character git commit SHA to pin to an exact version |
+
 ### Git repositories
 
 ```json  theme={null}
@@ -240,6 +269,26 @@ For plugins in the same repository:
   }
 }
 ```
+
+You can pin to a specific branch, tag, or commit:
+
+```json  theme={null}
+{
+  "name": "git-plugin",
+  "source": {
+    "source": "url",
+    "url": "https://gitlab.com/team/plugin.git",
+    "ref": "main",
+    "sha": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0"
+  }
+}
+```
+
+| Field | Type   | Description                                                           |
+| :---- | :----- | :-------------------------------------------------------------------- |
+| `url` | string | Required. Full git repository URL (must end with `.git`)              |
+| `ref` | string | Optional. Git branch or tag (defaults to repository default branch)   |
+| `sha` | string | Optional. Full 40-character git commit SHA to pin to an exact version |
 
 ### Advanced plugin entries
 
@@ -317,6 +366,28 @@ Any git hosting service works, such as GitLab, Bitbucket, and self-hosted server
 ```shell  theme={null}
 /plugin marketplace add https://gitlab.com/company/plugins.git
 ```
+
+### Private repositories
+
+Claude Code supports installing plugins from private repositories. Set the appropriate authentication token in your environment, and Claude Code will use it when authentication is required.
+
+| Provider  | Environment variables        | Notes                                     |
+| :-------- | :--------------------------- | :---------------------------------------- |
+| GitHub    | `GITHUB_TOKEN` or `GH_TOKEN` | Personal access token or GitHub App token |
+| GitLab    | `GITLAB_TOKEN` or `GL_TOKEN` | Personal access token or project token    |
+| Bitbucket | `BITBUCKET_TOKEN`            | App password or repository access token   |
+
+Set the token in your shell configuration (for example, `.bashrc`, `.zshrc`) or pass it when running Claude Code:
+
+```bash  theme={null}
+export GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxx
+```
+
+Authentication tokens are only used when a repository requires authentication. Public repositories work without any tokens configured, even if tokens are present in your environment.
+
+<Note>
+  For CI/CD environments, configure the token as a secret environment variable. GitHub Actions automatically provides `GITHUB_TOKEN` for repositories in the same organization.
+</Note>
 
 ### Test locally before distribution
 
@@ -412,7 +483,7 @@ The allowlist uses exact matching. For a marketplace to be allowed, all specifie
 * For GitHub sources: `repo` is required, and `ref` or `path` must also match if specified in the allowlist
 * For URL sources: the full URL must match exactly
 
-Because `strictKnownMarketplaces` is set in [managed settings](/en/settings#settings-file-locations), individual users and project configurations cannot override these restrictions.
+Because `strictKnownMarketplaces` is set in [managed settings](/en/settings#settings-files), individual users and project configurations cannot override these restrictions.
 
 For complete configuration details including all supported source types and comparison with `extraKnownMarketplaces`, see the [strictKnownMarketplaces reference](/en/settings#strictknownmarketplaces).
 
@@ -486,6 +557,33 @@ Run `claude plugin validate .` or `/plugin validate .` from your marketplace dir
 * Check that plugin directories contain required files
 * For GitHub sources, ensure repositories are public or you have access
 * Test plugin sources manually by cloning/downloading
+
+### Private repository authentication fails
+
+**Symptoms**: Authentication errors when installing plugins from private repositories, even with tokens configured
+
+**Solutions**:
+
+* Verify your token is set in the current shell session: `echo $GITHUB_TOKEN`
+* Check that the token has the required permissions (read access to the repository)
+* For GitHub, ensure the token has the `repo` scope for private repositories
+* For GitLab, ensure the token has at least `read_repository` scope
+* Verify the token hasn't expired
+* If using multiple git providers, ensure you've set the token for the correct provider
+
+### Plugins with relative paths fail in URL-based marketplaces
+
+**Symptoms**: Added a marketplace via URL (such as `https://example.com/marketplace.json`), but plugins with relative path sources like `"./plugins/my-plugin"` fail to install with "path not found" errors.
+
+**Cause**: URL-based marketplaces only download the `marketplace.json` file itself. They do not download plugin files from the server. Relative paths in the marketplace entry reference files on the remote server that were not downloaded.
+
+**Solutions**:
+
+* **Use external sources**: Change plugin entries to use GitHub, npm, or git URL sources instead of relative paths:
+  ```json  theme={null}
+  { "name": "my-plugin", "source": { "source": "github", "repo": "owner/repo" } }
+  ```
+* **Use a Git-based marketplace**: Host your marketplace in a Git repository and add it with the git URL. Git-based marketplaces clone the entire repository, making relative paths work correctly.
 
 ### Files not found after installation
 
