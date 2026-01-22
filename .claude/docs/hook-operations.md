@@ -11,13 +11,13 @@ Complete reference for the HUD state tracking hook system: state machine, debugg
 
 SessionStart         → ready
 UserPromptSubmit     → working
-PermissionRequest    → blocked
+PermissionRequest    → waiting
 PostToolUse          → depends on current state:
                        - compacting → working (returns from compaction)
                        - working    → working (heartbeat update only)
                        - ready      → working (session resumed)
                        - idle       → working (session resumed)
-                       - blocked    → working (permission granted)
+                       - waiting    → working (permission granted)
 Notification         → ready (only if notification_type="idle_prompt")
 Stop                 → ready
 PreCompact           → compacting (only when trigger="auto")
@@ -30,7 +30,7 @@ SessionEnd           → REMOVED (session deleted from state file)
 |-------|----------|--------|--------------|
 | **SessionStart** | Session launch/resume | Create lock, state=ready | session_id, cwd |
 | **UserPromptSubmit** | User submits prompt | state=working, create lock if missing | session_id, cwd |
-| **PermissionRequest** | Claude needs permission | state=blocked | session_id, cwd |
+| **PermissionRequest** | Claude needs permission | state=waiting | session_id, cwd |
 | **PostToolUse** | After tool execution | Update state based on current | session_id |
 | **Notification** | Claude notification | state=ready (only if idle_prompt) | session_id, cwd, notification_type |
 | **Stop** | Claude finishes responding | state=ready | session_id, cwd, stop_hook_active=false |
