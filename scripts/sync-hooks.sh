@@ -56,11 +56,15 @@ if [[ -f "$INSTALLED_BINARY" ]]; then
     else
         cp "$REPO_ROOT/target/release/hud-hook" "$INSTALLED_BINARY"
         chmod +x "$INSTALLED_BINARY"
+        # Ad-hoc codesign required for macOS to allow execution
+        codesign -s - -f "$INSTALLED_BINARY" 2>/dev/null || true
         echo "  ✓ Binary updated"
     fi
 else
     cp "$REPO_ROOT/target/release/hud-hook" "$INSTALLED_BINARY"
     chmod +x "$INSTALLED_BINARY"
+    # Ad-hoc codesign required for macOS to allow execution
+    codesign -s - -f "$INSTALLED_BINARY" 2>/dev/null || true
     echo "  ✓ Binary installed to $INSTALLED_BINARY"
 fi
 
