@@ -1,8 +1,11 @@
 #!/bin/bash
-# Claude HUD State Tracker Hook v3.0.0
-# Writes session state to ~/.capacitor/sessions.json
-# Manages lock directories in ~/.claude/sessions
-# Records file activity to ~/.capacitor/file-activity.json
+# Claude HUD State Tracker Hook v3.1.0
+# All session data lives in ~/.capacitor/ (sidecar purity):
+# - State file: ~/.capacitor/sessions.json
+# - Lock directories: ~/.capacitor/sessions/
+# - File activity: ~/.capacitor/file-activity.json
+#
+# We never write to ~/.claude/ (Claude's namespace).
 #
 # Requires jq or python3.
 
@@ -18,8 +21,8 @@ STATE_FILE="$HOME/.capacitor/sessions.json"
 ACTIVITY_FILE="$HOME/.capacitor/file-activity.json"
 STATE_DIR="$(dirname "$STATE_FILE")"
 ACTIVITY_DIR="$(dirname "$ACTIVITY_FILE")"
-LOG_FILE="$HOME/.claude/hud-hook-debug.log"
-LOCK_DIR="$HOME/.claude/sessions"
+LOG_FILE="$HOME/.capacitor/hud-hook-debug.log"
+LOCK_DIR="$HOME/.capacitor/sessions"
 STATE_LOCK_DIR="${STATE_FILE}.lock"
 ACTIVITY_LOCK_DIR="${ACTIVITY_FILE}.lock"
 

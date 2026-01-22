@@ -173,7 +173,7 @@ LOCK_HASH=$(hash_path "/test/project")
 if [ -z "$LOCK_HASH" ]; then
     echo -e "${YELLOW}Skipping lock test: md5 not available${NC}"
 else
-    LOCK_PATH="$HOME/.claude/sessions/${LOCK_HASH}.lock"
+    LOCK_PATH="$HOME/.capacitor/sessions/${LOCK_HASH}.lock"
     if wait_for_lock "$LOCK_PATH"; then
         pass "SessionStart → lock created"
     else

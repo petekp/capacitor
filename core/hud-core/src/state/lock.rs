@@ -6,7 +6,8 @@
 //!
 //! # Lock Directory Structure
 //!
-//! Location: `~/.claude/sessions/{hash}.lock/` where `{hash}` is MD5 of the project path.
+//! Location: `~/.capacitor/sessions/{hash}.lock/` where `{hash}` is MD5 of the project path.
+//! (Locks are in our namespace for sidecar purity—we never write to `~/.claude/`)
 //!
 //! ```text
 //! {hash}.lock/

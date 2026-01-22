@@ -12,9 +12,11 @@ use super::AgentAdapter;
 
 /// Adapter for Claude Code CLI sessions.
 ///
-/// Uses split namespaces following the sidecar architecture:
-/// - State file: `~/.capacitor/sessions.json` (Capacitor owns this)
-/// - Lock directories: `~/.claude/sessions/` (Claude Code creates these)
+/// All session data lives in `~/.capacitor/` (sidecar purity):
+/// - State file: `~/.capacitor/sessions.json`
+/// - Lock directories: `~/.capacitor/sessions/`
+///
+/// We never write to `~/.claude/`.
 pub struct ClaudeAdapter {
     storage: StorageConfig,
 }
@@ -57,10 +59,10 @@ impl ClaudeAdapter {
     }
 
     /// Returns path to the lock directory.
-    /// Located in Claude namespace: `~/.claude/sessions/`
-    /// (Claude Code creates these, we only read them)
+    /// Located in Capacitor namespace: `~/.capacitor/sessions/`
+    /// (We own these - sidecar purity)
     fn lock_dir_path(&self) -> Option<PathBuf> {
-        Some(self.storage.claude_root().join("sessions"))
+        Some(self.storage.sessions_dir())
     }
 }
 
@@ -209,8 +211,8 @@ mod tests {
     }
 
     #[test]
-    fn test_lock_dir_uses_claude_namespace() {
-        // Lock dir should be in ~/.claude/sessions/ (Claude Code writes these)
+    fn test_lock_dir_uses_capacitor_namespace() {
+        // Lock dir should be in ~/.capacitor/sessions/ (sidecar purity)
         let temp = tempdir().unwrap();
         let capacitor_root = temp.path().join("capacitor");
         let claude_root = temp.path().join("claude");
@@ -220,27 +222,27 @@ mod tests {
         let storage = StorageConfig::with_roots(capacitor_root.clone(), claude_root.clone());
         let adapter = ClaudeAdapter::with_storage(storage);
 
-        // Lock dir should be in Claude namespace
+        // Lock dir should be in Capacitor namespace (we own these)
         let lock_path = adapter.lock_dir_path().unwrap();
         assert!(
-            lock_path.starts_with(&claude_root),
-            "Lock dir should be in claude dir, got: {}",
+            lock_path.starts_with(&capacitor_root),
+            "Lock dir should be in capacitor dir, got: {}",
             lock_path.display()
         );
-        assert_eq!(lock_path, claude_root.join("sessions"));
+        assert_eq!(lock_path, capacitor_root.join("sessions"));
     }
 
     #[test]
-    fn test_detect_session_with_split_namespaces() {
-        // Sessions file in capacitor, locks in claude
+    fn test_detect_session_with_capacitor_namespace() {
+        // Both locks and state file in capacitor namespace (sidecar purity)
         let temp = tempdir().unwrap();
         let capacitor_root = temp.path().join("capacitor");
         let claude_root = temp.path().join("claude");
-        let sessions_dir = claude_root.join("sessions");
-        std::fs::create_dir_all(&capacitor_root).unwrap();
+        let sessions_dir = capacitor_root.join("sessions");
         std::fs::create_dir_all(&sessions_dir).unwrap();
+        std::fs::create_dir_all(&claude_root).unwrap();
 
-        // Create lock in Claude namespace
+        // Create lock in Capacitor namespace
         create_lock(&sessions_dir, std::process::id(), "/project");
 
         // Create state file in Capacitor namespace
@@ -351,11 +353,11 @@ mod tests {
         let temp = tempdir().unwrap();
         let capacitor_root = temp.path().join("capacitor");
         let claude_root = temp.path().join("claude");
-        let sessions_dir = claude_root.join("sessions");
-        std::fs::create_dir_all(&capacitor_root).unwrap();
+        let sessions_dir = capacitor_root.join("sessions"); // Capacitor namespace
         std::fs::create_dir_all(&sessions_dir).unwrap();
+        std::fs::create_dir_all(&claude_root).unwrap();
 
-        // Lock in Claude namespace
+        // Lock in Capacitor namespace (sidecar purity)
         create_lock(&sessions_dir, std::process::id(), "/project");
 
         // State file in Capacitor namespace

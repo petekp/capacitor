@@ -3,9 +3,11 @@
 //! Handles reading session states from the v3 state store and
 //! detecting the current state of Claude Code sessions.
 //!
-//! Note: Session state files are stored in `~/.capacitor/` (Capacitor's namespace),
-//! while lock directories remain in `~/.claude/` (Claude Code's namespace).
-//! Locks indicate liveness; state records provide the last known state.
+//! All session data lives in `~/.capacitor/` (our namespace):
+//! - Lock directories: `~/.capacitor/sessions/{hash}.lock/`
+//! - State file: `~/.capacitor/sessions.json`
+//!
+//! We never write to `~/.claude/` (sidecar purity).
 
 use crate::activity::ActivityStore;
 use crate::boundaries::normalize_path;
@@ -26,9 +28,8 @@ pub fn detect_session_state_with_storage(
     storage: &StorageConfig,
     project_path: &str,
 ) -> ProjectSessionState {
-    // Lock directories are in ~/.claude/sessions/ (created by our hook script).
-    let lock_dir = storage.claude_root().join("sessions");
-    // State file is in ~/.capacitor/sessions.json (Capacitor's namespace)
+    // Both locks and state file are in ~/.capacitor/ (our namespace, sidecar purity)
+    let lock_dir = storage.sessions_dir();
     let state_file = storage.sessions_file();
 
     let store = StateStore::load(&state_file).unwrap_or_else(|_| StateStore::new(&state_file));
@@ -151,14 +152,14 @@ pub fn read_project_status(project_path: &str) -> Option<ProjectStatus> {
 /// 1. Exact path match (lock created at project root)
 /// 2. Subdirectory match (lock created in a subdirectory of the project)
 ///
-/// Note: Lock directories are in `~/.claude/sessions/` (Claude Code's namespace).
+/// Lock directories are in `~/.capacitor/sessions/` (our namespace, sidecar purity).
 pub fn is_session_active(project_path: &str) -> bool {
     let storage = StorageConfig::default();
     is_session_active_with_storage(&storage, project_path)
 }
 
 pub fn is_session_active_with_storage(storage: &StorageConfig, project_path: &str) -> bool {
-    let sessions_dir = storage.claude_root().join("sessions");
+    let sessions_dir = storage.sessions_dir();
     is_session_active_with_lock_dir(&sessions_dir, project_path)
 }
 
@@ -262,8 +263,17 @@ mod tests {
         (temp, storage)
     }
 
+    /// Sets up storage with sessions dir in CAPACITOR namespace (correct location).
     fn setup_storage_with_sessions() -> (TempDir, StorageConfig, PathBuf) {
-        let (temp, storage) = setup_storage();
+        let (_temp, storage) = setup_storage();
+        let sessions_dir = storage.sessions_dir(); // ~/.capacitor/sessions/
+        fs::create_dir_all(&sessions_dir).unwrap();
+        (temp, storage, sessions_dir)
+    }
+
+    /// Sets up storage with sessions dir in CLAUDE namespace (for testing we ignore it).
+    fn setup_storage_with_claude_sessions() -> (TempDir, StorageConfig, PathBuf) {
+        let (_temp, storage) = setup_storage();
         let sessions_dir = storage.claude_root().join("sessions");
         fs::create_dir_all(&sessions_dir).unwrap();
         (temp, storage, sessions_dir)
@@ -689,6 +699,123 @@ mod tests {
         assert!(
             !result,
             "Similar prefix should not cause false match (must be actual subdirectory)"
+        );
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // Phase 1: Lock Namespace Tests
+    // These tests verify locks are in ~/.capacitor/sessions/ (our namespace),
+    // NOT in ~/.claude/sessions/ (Claude's namespace - sidecar violation!)
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    /// Helper to create a lock in the CAPACITOR namespace (correct location)
+    fn create_capacitor_lock(storage: &StorageConfig, project_path: &str, pid: u32) {
+        let sessions_dir = storage.sessions_dir(); // ~/.capacitor/sessions/
+        fs::create_dir_all(&sessions_dir).unwrap();
+
+        let normalized = normalize_path(project_path);
+        let hash = md5::compute(normalized.as_bytes());
+        let lock_dir = sessions_dir.join(format!("{:x}.lock", hash));
+        fs::create_dir_all(&lock_dir).unwrap();
+
+        // Write pid file
+        fs::write(lock_dir.join("pid"), pid.to_string()).unwrap();
+
+        // Write meta.json with proc_started for PID verification
+        let proc_started = crate::state::lock::get_process_start_time(pid).unwrap_or(0);
+        let created = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let meta = format!(
+            r#"{{"pid": {}, "path": "{}", "proc_started": {}, "created": {}}}"#,
+            pid, project_path, proc_started, created
+        );
+        fs::write(lock_dir.join("meta.json"), meta).unwrap();
+    }
+
+    #[test]
+    fn test_locks_should_be_in_capacitor_namespace() {
+        // This test verifies that session detection looks for locks in
+        // ~/.capacitor/sessions/, NOT ~/.claude/sessions/
+        let (_temp, storage) = setup_storage();
+        let test_path = "/test/capacitor/namespace";
+        let current_pid = std::process::id();
+
+        // Create lock in CAPACITOR namespace (the correct location)
+        create_capacitor_lock(&storage, test_path, current_pid);
+
+        // Session should be detected as active
+        let result = is_session_active_with_storage(&storage, test_path);
+
+        assert!(
+            result,
+            "Locks in ~/.capacitor/sessions/ should be detected (sidecar purity)"
+        );
+    }
+
+    #[test]
+    fn test_locks_in_claude_namespace_should_be_ignored() {
+        // This test verifies we DON'T look for locks in ~/.claude/sessions/
+        // (that would pollute Claude's namespace - sidecar violation!)
+        let (_temp, storage, claude_sessions_dir) = setup_storage_with_claude_sessions();
+        let test_path = "/test/claude/namespace";
+        let current_pid = std::process::id();
+
+        // Create lock in CLAUDE namespace (the WRONG location)
+        create_test_lock_with_meta(&claude_sessions_dir, test_path, current_pid);
+
+        // Session should NOT be detected (we shouldn't look there)
+        let result = is_session_active_with_storage(&storage, test_path);
+
+        // Clean up
+        cleanup_test_lock(&claude_sessions_dir, test_path);
+
+        assert!(
+            !result,
+            "Locks in ~/.claude/sessions/ should be ignored (sidecar purity)"
+        );
+    }
+
+    #[test]
+    fn test_detect_session_state_uses_capacitor_locks() {
+        // Verify that detect_session_state uses capacitor namespace for locks
+        let (_temp, storage) = setup_storage();
+        let test_path = "/test/session/state";
+        let current_pid = std::process::id();
+
+        // Create lock in capacitor namespace
+        create_capacitor_lock(&storage, test_path, current_pid);
+
+        // Create a state record with proper v3 format and recent timestamp
+        let state_file = storage.sessions_file();
+        let now = chrono::Utc::now().to_rfc3339();
+        let state_content = format!(
+            r#"{{
+                "version": 3,
+                "sessions": {{
+                    "test-session-123": {{
+                        "session_id": "test-session-123",
+                        "state": "working",
+                        "cwd": "{}",
+                        "project_dir": "{}",
+                        "updated_at": "{}",
+                        "state_changed_at": "{}"
+                    }}
+                }}
+            }}"#,
+            test_path, test_path, now, now
+        );
+        fs::create_dir_all(state_file.parent().unwrap()).unwrap();
+        fs::write(&state_file, state_content).unwrap();
+
+        let state = detect_session_state_with_storage(&storage, test_path);
+
+        // With a lock present and matching state record, should return the recorded state
+        assert_eq!(
+            state.state,
+            SessionState::Working,
+            "Session with lock in capacitor namespace should be detected"
         );
     }
 }
