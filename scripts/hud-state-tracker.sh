@@ -13,6 +13,155 @@ set -o pipefail
 STATE_FILE="$HOME/.capacitor/sessions.json"
 STATE_DIR="$(dirname "$STATE_FILE")"
 mkdir -p "$STATE_DIR"
+EVENT_LOG_FILE="${HUD_HOOK_LOG_FILE:-$HOME/.capacitor/hud-hook-events.jsonl}"
+EVENT_LOG_MAX_BYTES="${HUD_HOOK_LOG_MAX_BYTES:-5242880}"
+
+log_rotate_if_needed() {
+    [ -z "$EVENT_LOG_FILE" ] && return
+    [ ! -f "$EVENT_LOG_FILE" ] && return
+    local size=""
+    size=$(stat -f%z "$EVENT_LOG_FILE" 2>/dev/null || stat -c%s "$EVENT_LOG_FILE" 2>/dev/null || echo "0")
+    if [ -n "$EVENT_LOG_MAX_BYTES" ] && [ "$size" -gt "$EVENT_LOG_MAX_BYTES" ]; then
+        mv "$EVENT_LOG_FILE" "${EVENT_LOG_FILE}.1" 2>/dev/null || true
+        : > "$EVENT_LOG_FILE" 2>/dev/null || true
+    fi
+}
+
+append_event_log() {
+    [ -z "$EVENT_LOG_FILE" ] && return
+    log_rotate_if_needed
+
+    local log_line=""
+    if [ -n "$HAVE_JQ" ]; then
+        log_line=$(jq -n \
+            --arg ts "$TIMESTAMP" \
+            --arg sid "$SESSION_ID" \
+            --arg event "$EVENT" \
+            --arg action "$ACTION" \
+            --arg state "$STATE" \
+            --arg cwd "$CWD" \
+            --arg project_dir "$PROJECT_DIR" \
+            --arg trigger "$TRIGGER" \
+            --arg notification_type "$NOTIFICATION_TYPE" \
+            --arg stop_hook_active "$STOP_HOOK_ACTIVE" \
+            --arg tool_name "$TOOL_NAME" \
+            --arg tool_use_id "$TOOL_USE_ID" \
+            --arg source "$SOURCE" \
+            --arg reason "$REASON" \
+            --arg transcript_path "$TRANSCRIPT_PATH" \
+            --arg permission_mode "$PERMISSION_MODE" \
+            --arg agent_id "$AGENT_ID" \
+            --arg agent_transcript_path "$AGENT_TRANSCRIPT_PATH" \
+            --arg write_status "$WRITE_STATUS" \
+            --arg skip_reason "$SKIP_REASON" \
+            --argjson subagent_delta "$SUBAGENT_DELTA" \
+            '
+            def nonempty($s): ($s|type=="string") and (($s|length) > 0);
+            def optstr($s): if nonempty($s) then $s else null end;
+            def optbool($s):
+              if $s == "true" then true
+              elif $s == "false" then false
+              else null end;
+
+            {
+              ts: $ts,
+              session_id: $sid,
+              event: $event,
+              action: $action,
+              state: (if $action == "upsert" then $state else null end),
+              cwd: optstr($cwd),
+              project_dir: optstr($project_dir),
+              trigger: optstr($trigger),
+              notification_type: optstr($notification_type),
+              stop_hook_active: optbool($stop_hook_active),
+              tool_name: optstr($tool_name),
+              tool_use_id: optstr($tool_use_id),
+              source: optstr($source),
+              reason: optstr($reason),
+              transcript_path: optstr($transcript_path),
+              permission_mode: optstr($permission_mode),
+              agent_id: optstr($agent_id),
+              agent_transcript_path: optstr($agent_transcript_path),
+              subagent_delta: $subagent_delta,
+              write_status: optstr($write_status),
+              skip_reason: optstr($skip_reason)
+            }'
+        )
+    elif [ -n "$HAVE_PY" ]; then
+        log_line=$(TIMESTAMP="$TIMESTAMP" \
+            SESSION_ID="$SESSION_ID" \
+            EVENT="$EVENT" \
+            ACTION="$ACTION" \
+            STATE="$STATE" \
+            CWD="$CWD" \
+            PROJECT_DIR="$PROJECT_DIR" \
+            TRIGGER="$TRIGGER" \
+            NOTIFICATION_TYPE="$NOTIFICATION_TYPE" \
+            STOP_HOOK_ACTIVE="$STOP_HOOK_ACTIVE" \
+            TOOL_NAME="$TOOL_NAME" \
+            TOOL_USE_ID="$TOOL_USE_ID" \
+            SOURCE="$SOURCE" \
+            REASON="$REASON" \
+            TRANSCRIPT_PATH="$TRANSCRIPT_PATH" \
+            PERMISSION_MODE="$PERMISSION_MODE" \
+            AGENT_ID="$AGENT_ID" \
+            AGENT_TRANSCRIPT_PATH="$AGENT_TRANSCRIPT_PATH" \
+            SUBAGENT_DELTA="$SUBAGENT_DELTA" \
+            WRITE_STATUS="$WRITE_STATUS" \
+            SKIP_REASON="$SKIP_REASON" \
+            python3 - <<'PY'
+import json
+import os
+import sys
+
+def optstr(value):
+    if isinstance(value, str) and value:
+        return value
+    return None
+
+def optbool(value):
+    if value == "true":
+        return True
+    if value == "false":
+        return False
+    return None
+
+ts = os.environ.get("TIMESTAMP", "")
+action = os.environ.get("ACTION", "")
+state = os.environ.get("STATE", "")
+
+payload = {
+    "ts": ts,
+    "session_id": os.environ.get("SESSION_ID", ""),
+    "event": os.environ.get("EVENT", ""),
+    "action": action,
+    "state": state if action == "upsert" else None,
+    "cwd": optstr(os.environ.get("CWD", "")),
+    "project_dir": optstr(os.environ.get("PROJECT_DIR", "")),
+    "trigger": optstr(os.environ.get("TRIGGER", "")),
+    "notification_type": optstr(os.environ.get("NOTIFICATION_TYPE", "")),
+    "stop_hook_active": optbool(os.environ.get("STOP_HOOK_ACTIVE", "")),
+    "tool_name": optstr(os.environ.get("TOOL_NAME", "")),
+    "tool_use_id": optstr(os.environ.get("TOOL_USE_ID", "")),
+    "source": optstr(os.environ.get("SOURCE", "")),
+    "reason": optstr(os.environ.get("REASON", "")),
+    "transcript_path": optstr(os.environ.get("TRANSCRIPT_PATH", "")),
+    "permission_mode": optstr(os.environ.get("PERMISSION_MODE", "")),
+    "agent_id": optstr(os.environ.get("AGENT_ID", "")),
+    "agent_transcript_path": optstr(os.environ.get("AGENT_TRANSCRIPT_PATH", "")),
+    "subagent_delta": int(os.environ.get("SUBAGENT_DELTA", "0") or "0"),
+    "write_status": optstr(os.environ.get("WRITE_STATUS", "")),
+    "skip_reason": optstr(os.environ.get("SKIP_REASON", "")),
+}
+
+sys.stdout.write(json.dumps(payload))
+PY
+        )
+    fi
+
+    [ -z "$log_line" ] && return
+    printf '%s\n' "$log_line" >> "$EVENT_LOG_FILE" 2>/dev/null || true
+}
 
 # Read JSON from stdin (Claude Code hook format)
 INPUT=$(cat)
@@ -225,14 +374,24 @@ PY
 )
         fi
         if [ "$EXISTS" != "true" ]; then
+            SKIP_REASON="missing_cwd_no_record"
+            WRITE_STATUS="skipped"
+            TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+            append_event_log
             exit 0
         fi
     else
+        SKIP_REASON="missing_cwd_no_state_file"
+        WRITE_STATUS="skipped"
+        TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+        append_event_log
         exit 0
     fi
 fi
 
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+WRITE_STATUS="skipped"
+SKIP_REASON=""
 
 # Initialize or reset state file (no backward compatibility; enforce v3)
 if [ ! -f "$STATE_FILE" ]; then
@@ -504,13 +663,27 @@ PY
 if [ -n "$HAVE_JQ" ]; then
     if ! write_with_jq; then
         if [ -n "$HAVE_PY" ]; then
-            write_with_python || exit 0
+            if write_with_python; then
+                WRITE_STATUS="ok"
+            else
+                WRITE_STATUS="failed"
+            fi
         else
-            exit 0
+            WRITE_STATUS="failed"
         fi
+    else
+        WRITE_STATUS="ok"
     fi
 else
-    write_with_python || exit 0
+    if write_with_python; then
+        WRITE_STATUS="ok"
+    else
+        WRITE_STATUS="failed"
+    fi
 fi
 
-mv "$TEMP_FILE" "$STATE_FILE" 2>/dev/null || true
+if [ "$WRITE_STATUS" = "ok" ]; then
+    mv "$TEMP_FILE" "$STATE_FILE" 2>/dev/null || true
+fi
+
+append_event_log

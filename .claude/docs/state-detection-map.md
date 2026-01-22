@@ -207,7 +207,23 @@ N         | other | X            | unchanged
 Removed. The `thinking` field and UI override were excised as part of the
 fetch-intercepting launcher deprecation.
 
-## 7) Open questions (recorded for follow-up)
+## 7) Diagnostics (durable)
+
+Hook event log:
+- File: `~/.capacitor/hud-hook-events.jsonl` (JSONL, sanitized metadata only).
+- Rotation: default 5 MB (override via `HUD_HOOK_LOG_MAX_BYTES`).
+- Path override: `HUD_HOOK_LOG_FILE`.
+- Captures: ts, session_id, event, action, state, cwd/project_dir, triggers, notification type,
+  tool metadata, last-event metadata, and write status/skip reason (no prompt/tool IO bodies).
+
+Snapshot script:
+- Run: `scripts/state-snapshot.sh <project-path>`
+- Output: `~/.capacitor/hud-state-snapshots/state-snapshot-<timestamp>-<path>.txt`
+  (override via `HUD_STATE_SNAPSHOT_DIR`)
+- Includes: matching `sessions.json` records, lock meta from `~/.claude/sessions`,
+  transcript mtimes, and recent hook log entries.
+
+## 8) Open questions (recorded for follow-up)
 
 These questions capture intended behavior decisions. The list should be updated
 as new context emerges.
