@@ -27,6 +27,7 @@ const LOG_FILE: &str = ".capacitor/hud-hook-debug.log";
 const STATE_FILE: &str = ".capacitor/sessions.json";
 const LOCK_DIR: &str = ".capacitor/sessions";
 const ACTIVITY_FILE: &str = ".capacitor/file-activity.json";
+const TOMBSTONES_DIR: &str = ".capacitor/ended-sessions";
 
 pub fn run() -> Result<(), String> {
     // Skip if this is a summary generation subprocess
@@ -73,6 +74,19 @@ pub fn run() -> Result<(), String> {
 
     // Get paths
     let home = dirs::home_dir().ok_or("Cannot determine home directory")?;
+    let tombstones_dir = home.join(TOMBSTONES_DIR);
+
+    // Check if this session has already ended (tombstone exists)
+    // This prevents race conditions where events arrive after SessionEnd
+    if event != HookEvent::SessionEnd && has_tombstone(&tombstones_dir, &session_id) {
+        log(&format!(
+            "Skipping event for ended session: {:?} session={}",
+            hook_input.hook_event_name, session_id
+        ));
+        return Ok(());
+    }
+
+    // Get remaining paths
     let state_file = home.join(STATE_FILE);
     let lock_base = home.join(LOCK_DIR);
     let activity_file = home.join(ACTIVITY_FILE);
@@ -127,6 +141,10 @@ pub fn run() -> Result<(), String> {
     // Apply the state change
     match action {
         Action::Delete => {
+            // Create tombstone BEFORE deleting to prevent race conditions
+            // where other events arrive after SessionEnd
+            create_tombstone(&tombstones_dir, &session_id);
+
             store.remove(&session_id);
             store
                 .save()
@@ -420,6 +438,24 @@ fn remove_session_activity(activity_file: &PathBuf, session_id: &str) {
 
     if let Ok(content) = serde_json::to_string_pretty(&activity) {
         let _ = fs::write(activity_file, content);
+    }
+}
+
+fn has_tombstone(tombstones_dir: &Path, session_id: &str) -> bool {
+    tombstones_dir.join(session_id).exists()
+}
+
+fn create_tombstone(tombstones_dir: &Path, session_id: &str) {
+    if let Err(e) = std::fs::create_dir_all(tombstones_dir) {
+        log(&format!("Failed to create tombstones dir: {}", e));
+        return;
+    }
+
+    let tombstone_path = tombstones_dir.join(session_id);
+    if let Err(e) = std::fs::write(&tombstone_path, "") {
+        log(&format!("Failed to create tombstone: {}", e));
+    } else {
+        log(&format!("Created tombstone for session {}", session_id));
     }
 }
 

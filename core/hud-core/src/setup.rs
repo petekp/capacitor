@@ -22,7 +22,7 @@ use std::process::Command;
 use tempfile::NamedTempFile;
 
 const HOOK_SCRIPT_VERSION: &str = "4.0.0";
-const HOOK_COMMAND: &str = "$HOME/.claude/scripts/hud-state-tracker.sh";
+const HOOK_COMMAND: &str = "$HOME/.local/bin/hud-hook handle";
 const HOOK_SCRIPT: &str = include_str!("../../../scripts/hud-state-tracker.sh");
 
 const HUD_HOOK_EVENTS: [(&str, bool); 9] = [
@@ -329,17 +329,14 @@ impl SetupChecker {
 
     fn has_hud_hook_with_matcher(&self, hooks: &[HookConfig], needs_matcher: bool) -> bool {
         for hook_config in hooks {
-            // Check if this config has our hook
+            // Check if this config has our hook (wrapper script OR binary)
             let has_hud_hook = hook_config
                 .hooks
                 .as_ref()
                 .map(|inner| {
-                    inner.iter().any(|h| {
-                        h.command
-                            .as_ref()
-                            .map(|cmd| cmd.contains("hud-state-tracker.sh"))
-                            .unwrap_or(false)
-                    })
+                    inner
+                        .iter()
+                        .any(|h| is_hud_hook_command(h.command.as_deref()))
                 })
                 .unwrap_or(false);
 
@@ -368,15 +365,13 @@ impl SetupChecker {
 
         if let Some(inner_hooks) = hook_config.hooks.as_mut() {
             for hook in inner_hooks.iter_mut() {
-                if let Some(command) = hook.command.as_ref() {
-                    if command.contains("hud-state-tracker.sh") {
-                        // Normalize the command to the canonical path
-                        hook.command = Some(HOOK_COMMAND.to_string());
-                        if hook.hook_type.is_none() {
-                            hook.hook_type = Some("command".to_string());
-                        }
-                        has_hud_hook = true;
+                if is_hud_hook_command(hook.command.as_deref()) {
+                    // Normalize the command to the canonical path (binary)
+                    hook.command = Some(HOOK_COMMAND.to_string());
+                    if hook.hook_type.is_none() {
+                        hook.hook_type = Some("command".to_string());
                     }
+                    has_hud_hook = true;
                 }
             }
         }
@@ -541,6 +536,12 @@ fn which(binary: &str) -> Option<String> {
         }
     }
     None
+}
+
+/// Check if a command is a HUD hook (wrapper script or binary).
+fn is_hud_hook_command(cmd: Option<&str>) -> bool {
+    cmd.map(|c| c.contains("hud-state-tracker.sh") || c.contains("hud-hook"))
+        .unwrap_or(false)
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]

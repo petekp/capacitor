@@ -1659,6 +1659,10 @@ public struct CleanupStats {
      */
     public var sessionsRemoved: UInt32
     /**
+     * Number of old tombstone files removed.
+     */
+    public var tombstonesRemoved: UInt32
+    /**
      * Errors encountered during cleanup.
      */
     public var errors: [String]
@@ -1673,11 +1677,15 @@ public struct CleanupStats {
             * Number of old session records removed.
             */ sessionsRemoved: UInt32,
         /**
+            * Number of old tombstone files removed.
+            */ tombstonesRemoved: UInt32,
+        /**
             * Errors encountered during cleanup.
             */ errors: [String]
     ) {
         self.locksRemoved = locksRemoved
         self.sessionsRemoved = sessionsRemoved
+        self.tombstonesRemoved = tombstonesRemoved
         self.errors = errors
     }
 }
@@ -1690,6 +1698,9 @@ extension CleanupStats: Equatable, Hashable {
         if lhs.sessionsRemoved != rhs.sessionsRemoved {
             return false
         }
+        if lhs.tombstonesRemoved != rhs.tombstonesRemoved {
+            return false
+        }
         if lhs.errors != rhs.errors {
             return false
         }
@@ -1699,6 +1710,7 @@ extension CleanupStats: Equatable, Hashable {
     public func hash(into hasher: inout Hasher) {
         hasher.combine(locksRemoved)
         hasher.combine(sessionsRemoved)
+        hasher.combine(tombstonesRemoved)
         hasher.combine(errors)
     }
 }
@@ -1712,6 +1724,7 @@ public struct FfiConverterTypeCleanupStats: FfiConverterRustBuffer {
             try CleanupStats(
                 locksRemoved: FfiConverterUInt32.read(from: &buf),
                 sessionsRemoved: FfiConverterUInt32.read(from: &buf),
+                tombstonesRemoved: FfiConverterUInt32.read(from: &buf),
                 errors: FfiConverterSequenceString.read(from: &buf)
             )
     }
@@ -1719,6 +1732,7 @@ public struct FfiConverterTypeCleanupStats: FfiConverterRustBuffer {
     public static func write(_ value: CleanupStats, into buf: inout [UInt8]) {
         FfiConverterUInt32.write(value.locksRemoved, into: &buf)
         FfiConverterUInt32.write(value.sessionsRemoved, into: &buf)
+        FfiConverterUInt32.write(value.tombstonesRemoved, into: &buf)
         FfiConverterSequenceString.write(value.errors, into: &buf)
     }
 }

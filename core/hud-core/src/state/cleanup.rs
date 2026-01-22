@@ -18,6 +18,10 @@ use super::store::StateStore;
 /// Maximum age for session records (24 hours).
 const SESSION_MAX_AGE_HOURS: i64 = 24;
 
+/// Maximum age for tombstones (1 minute).
+/// Tombstones only need to survive race conditions, not long-term.
+const TOMBSTONE_MAX_AGE_SECS: u64 = 60;
+
 /// Results from a cleanup operation.
 #[derive(Debug, Default, Clone, uniffi::Record)]
 pub struct CleanupStats {
@@ -25,6 +29,8 @@ pub struct CleanupStats {
     pub locks_removed: u32,
     /// Number of old session records removed.
     pub sessions_removed: u32,
+    /// Number of old tombstone files removed.
+    pub tombstones_removed: u32,
     /// Errors encountered during cleanup.
     pub errors: Vec<String>,
 }
@@ -44,6 +50,15 @@ pub fn run_startup_cleanup(lock_base: &Path, state_file: &Path) -> CleanupStats 
     let session_stats = cleanup_old_sessions(state_file);
     stats.sessions_removed = session_stats.sessions_removed;
     stats.errors.extend(session_stats.errors);
+
+    // 3. Clean up old tombstones
+    // Tombstones dir is sibling to lock_base: ~/.capacitor/ended-sessions/
+    if let Some(capacitor_dir) = lock_base.parent() {
+        let tombstones_dir = capacitor_dir.join("ended-sessions");
+        let tombstone_stats = cleanup_old_tombstones(&tombstones_dir);
+        stats.tombstones_removed = tombstone_stats.tombstones_removed;
+        stats.errors.extend(tombstone_stats.errors);
+    }
 
     stats
 }
@@ -88,6 +103,57 @@ fn cleanup_stale_locks(lock_base: &Path) -> CleanupStats {
                 ));
             } else {
                 stats.locks_removed += 1;
+            }
+        }
+    }
+
+    stats
+}
+
+/// Removes tombstone files older than 1 minute.
+///
+/// Tombstones are used to prevent race conditions where events arrive after
+/// SessionEnd. They only need to live long enough to block stray events.
+fn cleanup_old_tombstones(tombstones_dir: &Path) -> CleanupStats {
+    let mut stats = CleanupStats::default();
+
+    let entries = match fs::read_dir(tombstones_dir) {
+        Ok(e) => e,
+        Err(e) => {
+            if e.kind() != std::io::ErrorKind::NotFound {
+                stats
+                    .errors
+                    .push(format!("Failed to read tombstones directory: {}", e));
+            }
+            return stats;
+        }
+    };
+
+    let now = std::time::SystemTime::now();
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+
+        let should_remove = match path.metadata().and_then(|m| m.modified()) {
+            Ok(modified) => now
+                .duration_since(modified)
+                .map(|d| d.as_secs() > TOMBSTONE_MAX_AGE_SECS)
+                .unwrap_or(true),
+            Err(_) => true, // Can't read metadata — remove it
+        };
+
+        if should_remove {
+            if let Err(e) = fs::remove_file(&path) {
+                stats.errors.push(format!(
+                    "Failed to remove tombstone {}: {}",
+                    path.display(),
+                    e
+                ));
+            } else {
+                stats.tombstones_removed += 1;
             }
         }
     }

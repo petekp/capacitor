@@ -50,7 +50,7 @@ pub struct ToolResponse {
 }
 
 /// Parsed hook event with associated data.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum HookEvent {
     SessionStart,
     SessionEnd,
