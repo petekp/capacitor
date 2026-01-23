@@ -670,7 +670,7 @@ impl HudEngine {
     /// Checks the overall setup status including dependencies and hooks.
     ///
     /// Returns a comprehensive status object indicating:
-    /// - Which dependencies are installed (jq, tmux, claude)
+    /// - Which dependencies are installed (tmux, claude)
     /// - Whether hooks are installed and up-to-date
     /// - Whether storage is ready
     /// - Any blocking issues preventing operation
@@ -681,7 +681,7 @@ impl HudEngine {
 
     /// Checks the status of a specific dependency.
     ///
-    /// Supported dependencies: "jq", "tmux", "claude"
+    /// Supported dependencies: "tmux", "claude"
     pub fn check_dependency(&self, name: String) -> DependencyStatus {
         let checker = SetupChecker::new(self.storage.clone());
         checker.check_dependency(&name)

@@ -72,12 +72,6 @@ final class SetupRequirementsManager {
     private func setupSteps() {
         steps = [
             SetupStep(
-                id: "jq",
-                title: "jq",
-                description: "JSON parsing (jq or python3)",
-                status: .pending
-            ),
-            SetupStep(
                 id: "claude",
                 title: "Claude CLI",
                 description: "Required for session tracking",
@@ -166,7 +160,7 @@ final class SetupRequirementsManager {
 
     func retryStep(_ stepId: String) async {
         switch stepId {
-        case "jq", "claude", "tmux":
+        case "claude":
             let dep = engine.checkDependency(name: stepId)
             await updateDependencyStatus(dep)
         case "hooks":

@@ -1,7 +1,7 @@
 //! Setup validation and hook installation for Claude HUD.
 //!
 //! This module handles:
-//! - Checking dependencies (jq, tmux, claude CLI)
+//! - Checking dependencies (tmux, claude CLI)
 //! - Validating and installing session tracking hooks
 //! - Checking for policy flags that might block hooks
 //!
@@ -120,7 +120,6 @@ impl SetupChecker {
 
     pub fn check_dependency(&self, name: &str) -> DependencyStatus {
         match name {
-            "jq" => self.check_jq(),
             "tmux" => self.check_tmux(),
             "claude" => self.check_claude(),
             _ => DependencyStatus {
@@ -136,7 +135,6 @@ impl SetupChecker {
     fn check_all_dependencies(&self) -> Vec<DependencyStatus> {
         vec![
             self.check_hud_hook(),
-            self.check_jq(),
             self.check_tmux(),
             self.check_claude(),
         ]
@@ -158,18 +156,6 @@ impl SetupChecker {
             found: path.is_some(),
             path,
             install_hint: Some("Run: ./scripts/sync-hooks.sh".to_string()),
-        }
-    }
-
-    fn check_jq(&self) -> DependencyStatus {
-        // jq is no longer required - the Rust binary (hud-hook) handles all JSON processing
-        let path = which("jq");
-        DependencyStatus {
-            name: "jq".to_string(),
-            required: false,
-            found: path.is_some(),
-            path,
-            install_hint: Some("brew install jq (optional, for debugging)".to_string()),
         }
     }
 
