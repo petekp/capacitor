@@ -143,16 +143,6 @@ final class TerminalIntegration {
         }
     }
 
-    func launchTerminalWithIdea(_ idea: Idea, for project: Project) {
-        setActiveProject(project.path)
-        let escapedPrompt = escapeForShell(buildIdeaPrompt(idea))
-        _Concurrency.Task {
-            let claudePath = await getClaudePath()
-            runBashScript(TerminalScripts.launchWithIdea(project: project, escapedPrompt: escapedPrompt, claudePath: claudePath))
-            scheduleTerminalActivation()
-        }
-    }
-
     private func getClaudePath() async -> String {
         if let path = await CapacitorConfig.shared.getClaudePath() {
             return path
@@ -183,26 +173,6 @@ final class TerminalIntegration {
             self?.activateTerminalApp()
         }
     }
-
-    private func buildIdeaPrompt(_ idea: Idea) -> String {
-        """
-        I want to work on this idea:
-
-        \(idea.title)
-
-        \(idea.description)
-
-        When you're done, mark this idea as complete.
-        """
-    }
-
-    private func escapeForShell(_ text: String) -> String {
-        text
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-            .replacingOccurrences(of: "$", with: "\\$")
-            .replacingOccurrences(of: "`", with: "\\`")
-    }
 }
 
 // MARK: - Terminal Scripts
@@ -230,29 +200,6 @@ private enum TerminalScripts {
         """
     }
 
-    static func launchWithIdea(project: Project, escapedPrompt: String, claudePath: String) -> String {
-        """
-        PROJECT_PATH="\(project.path)"
-        PROJECT_NAME="\(project.name)"
-        IDEA_PROMPT="\(escapedPrompt)"
-        CLAUDE_PATH="\(claudePath)"
-
-        \(tmuxCheckAndFallbackWithIdea)
-
-        \(findOrCreateSession)
-
-        HAS_ATTACHED_CLIENT=$(tmux list-clients 2>/dev/null | head -1)
-
-        if [ -n "$HAS_ATTACHED_CLIENT" ]; then
-            \(switchAndSendIdea)
-            \(activateTerminalAppSubset)
-        else
-            TMUX_CMD="tmux new-session -A -s '$SESSION' -c '$PROJECT_PATH'"
-            \(launchTerminalWithTmuxAndIdea)
-        fi
-        """
-    }
-
     private static var tmuxCheckAndFallback: String {
         """
         if ! command -v tmux &> /dev/null; then
@@ -269,23 +216,6 @@ private enum TerminalScripts {
                 open -a "Warp" "$PROJECT_PATH"
             else
                 osascript -e "tell application \\"Terminal\\" to do script \\"cd '$PROJECT_PATH'\\""
-                osascript -e 'tell application "Terminal" to activate'
-            fi
-            exit 0
-        fi
-        """
-    }
-
-    private static var tmuxCheckAndFallbackWithIdea: String {
-        """
-        if ! command -v tmux &> /dev/null; then
-            if [ -d "/Applications/Ghostty.app" ]; then
-                open -na "Ghostty.app" --args --working-directory="$PROJECT_PATH" -e bash -c "$CLAUDE_PATH \\"$IDEA_PROMPT\\""
-            elif [ -d "/Applications/iTerm.app" ]; then
-                osascript -e "tell application \\"iTerm\\" to create window with default profile command \\"cd '$PROJECT_PATH' && $CLAUDE_PATH '$IDEA_PROMPT'\\""
-                osascript -e 'tell application "iTerm" to activate'
-            else
-                osascript -e "tell application \\"Terminal\\" to do script \\"cd '$PROJECT_PATH' && $CLAUDE_PATH '$IDEA_PROMPT'\\""
                 osascript -e 'tell application "Terminal" to activate'
             fi
             exit 0
@@ -317,19 +247,6 @@ private enum TerminalScripts {
         """
     }
 
-    private static var switchAndSendIdea: String {
-        """
-        if tmux has-session -t "$SESSION" 2>/dev/null; then
-            tmux switch-client -t "$SESSION" 2>/dev/null
-            tmux send-keys -t "$SESSION" "$CLAUDE_PATH \\"$IDEA_PROMPT\\"" Enter
-        else
-            tmux new-session -d -s "$SESSION" -c "$PROJECT_PATH"
-            tmux switch-client -t "$SESSION" 2>/dev/null
-            tmux send-keys -t "$SESSION" "$CLAUDE_PATH \\"$IDEA_PROMPT\\"" Enter
-        fi
-        """
-    }
-
     private static var activateTerminalApp: String {
         """
         if pgrep -xq "Ghostty"; then
@@ -342,18 +259,6 @@ private enum TerminalScripts {
             osascript -e 'tell application "Alacritty" to activate'
         elif pgrep -xq "kitty"; then
             osascript -e 'tell application "kitty" to activate'
-        elif pgrep -xq "Terminal"; then
-            osascript -e 'tell application "Terminal" to activate'
-        fi
-        """
-    }
-
-    private static var activateTerminalAppSubset: String {
-        """
-        if pgrep -xq "Ghostty"; then
-            osascript -e 'tell application "Ghostty" to activate'
-        elif pgrep -xq "iTerm2"; then
-            osascript -e 'tell application "iTerm" to activate'
         elif pgrep -xq "Terminal"; then
             osascript -e 'tell application "Terminal" to activate'
         fi
@@ -375,20 +280,6 @@ private enum TerminalScripts {
             open -a "Warp" "$PROJECT_PATH"
         else
             osascript -e "tell application \\"Terminal\\" to do script \\"$TMUX_CMD\\""
-            osascript -e 'tell application "Terminal" to activate'
-        fi
-        """
-    }
-
-    private static var launchTerminalWithTmuxAndIdea: String {
-        """
-        if [ -d "/Applications/Ghostty.app" ]; then
-            open -na "Ghostty.app" --args -e sh -c "$TMUX_CMD && $CLAUDE_PATH \\"$IDEA_PROMPT\\""
-        elif [ -d "/Applications/iTerm.app" ]; then
-            osascript -e "tell application \\"iTerm\\" to create window with default profile command \\"$TMUX_CMD && $CLAUDE_PATH '$IDEA_PROMPT'\\""
-            osascript -e 'tell application "iTerm" to activate'
-        else
-            osascript -e "tell application \\"Terminal\\" to do script \\"$TMUX_CMD && $CLAUDE_PATH '$IDEA_PROMPT'\\""
             osascript -e 'tell application "Terminal" to activate'
         fi
         """

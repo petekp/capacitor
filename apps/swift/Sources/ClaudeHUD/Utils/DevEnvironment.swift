@@ -2,13 +2,7 @@ import AppKit
 import Foundation
 
 struct DevEnvironment {
-    static let devServerPorts: [UInt16] = [3000, 5173, 8080, 4200, 3001, 8000, 4000]
     static let supportedBrowsers = ["Arc", "Google Chrome", "Safari"]
-
-    struct DevServerInfo {
-        let port: UInt16
-        let browser: String?
-    }
 
     static func findDevServerPort(for projectPath: String) async -> UInt16? {
         guard let expectedPort = getExpectedPort(for: projectPath) else {
@@ -148,69 +142,6 @@ struct DevEnvironment {
 
         guard let output = runAppleScript(script) else { return false }
         return output.contains("localhost:\(port)") || output.contains("127.0.0.1:\(port)")
-    }
-
-    static func focusBrowserTab(browser: String, port: UInt16) {
-        let script: String
-
-        switch browser {
-        case "Safari":
-            script = """
-                tell application "Safari"
-                    repeat with w in windows
-                        set tabIndex to 1
-                        repeat with t in tabs of w
-                            if URL of t contains "localhost:\(port)" or URL of t contains "127.0.0.1:\(port)" then
-                                set current tab of w to t
-                                set index of w to 1
-                                activate
-                                return
-                            end if
-                            set tabIndex to tabIndex + 1
-                        end repeat
-                    end repeat
-                end tell
-            """
-        case "Arc":
-            script = """
-                tell application "Arc"
-                    repeat with w in windows
-                        repeat with t in tabs of w
-                            if URL of t contains "localhost:\(port)" or URL of t contains "127.0.0.1:\(port)" then
-                                tell w to set active tab index to index of t
-                                set index of w to 1
-                                activate
-                                return
-                            end if
-                        end repeat
-                    end repeat
-                end tell
-            """
-        default:
-            script = """
-                tell application "\(browser)"
-                    repeat with w in windows
-                        set tabIndex to 1
-                        repeat with t in tabs of w
-                            if URL of t contains "localhost:\(port)" or URL of t contains "127.0.0.1:\(port)" then
-                                set active tab index of w to tabIndex
-                                set index of w to 1
-                                activate
-                                return
-                            end if
-                            set tabIndex to tabIndex + 1
-                        end repeat
-                    end repeat
-                end tell
-            """
-        }
-
-        _ = runAppleScript(script)
-    }
-
-    static func openInBrowser(port: UInt16) {
-        let url = URL(string: "http://localhost:\(port)")!
-        NSWorkspace.shared.open(url)
     }
 
     private static func runAppleScript(_ script: String) -> String? {

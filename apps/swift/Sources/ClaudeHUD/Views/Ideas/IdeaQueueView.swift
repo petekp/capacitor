@@ -339,3 +339,42 @@ private struct NonMovableBackground: NSViewRepresentable {
 
     func updateNSView(_ nsView: NSView, context: Context) {}
 }
+
+// MARK: - Shimmering Text
+
+struct ShimmeringText: View {
+    let text: String
+    @State private var phase: CGFloat = -0.3
+
+    var body: some View {
+        Text(text)
+            .font(AppTypography.bodySecondary)
+            .foregroundColor(.white.opacity(0.4))
+            .overlay {
+                GeometryReader { _ in
+                    LinearGradient(
+                        gradient: Gradient(stops: [
+                            .init(color: .clear, location: clampedLocation(phase - 0.15)),
+                            .init(color: .white.opacity(0.5), location: clampedLocation(phase)),
+                            .init(color: .clear, location: clampedLocation(phase + 0.15))
+                        ]),
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                    .mask(
+                        Text(text)
+                            .font(AppTypography.bodySecondary)
+                    )
+                }
+            }
+            .onAppear {
+                withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: false)) {
+                    phase = 1.3
+                }
+            }
+    }
+
+    private func clampedLocation(_ value: CGFloat) -> CGFloat {
+        min(1.0, max(0.0, value))
+    }
+}

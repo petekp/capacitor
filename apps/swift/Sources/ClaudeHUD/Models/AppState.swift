@@ -1,10 +1,6 @@
 import Foundation
 import SwiftUI
 
-enum Tab: String, CaseIterable {
-    case projects
-}
-
 enum LayoutMode: String, CaseIterable {
     case vertical
     case dock
@@ -38,9 +34,7 @@ class AppState: ObservableObject {
 
     // MARK: - Navigation
 
-    @Published var activeTab: Tab = .projects
     @Published var projectView: ProjectView = .list
-    @Published var selectedProject: Project?
 
     /// Path pending validation when navigating to AddProjectView
     /// Set by HeaderView's folder picker, consumed by AddProjectView on appear
@@ -54,7 +48,6 @@ class AppState: ObservableObject {
     // MARK: - Active project creations (Idea → V1)
 
     @Published var activeCreations: [ProjectCreation] = []
-    private let creationsKey = "activeProjectCreations"
 
     // MARK: - UI State
 
@@ -104,42 +97,8 @@ class AppState: ObservableObject {
 
     // MARK: - Computed Properties (bridging to managers)
 
-    var sessionStates: [String: ProjectSessionState] {
-        sessionStateManager.sessionStates
-    }
-
-    var projectStatuses: [String: ProjectStatus] {
-        var statuses: [String: ProjectStatus] = [:]
-        for project in projects {
-            if let status = engine?.getProjectStatus(projectPath: project.path) {
-                statuses[project.path] = status
-            }
-        }
-        return statuses
-    }
-
     var activeProjectPath: String? {
         terminalIntegration.activeProjectPath
-    }
-
-    var flashingProjects: [String: SessionState] {
-        sessionStateManager.flashingProjects
-    }
-
-    var projectIdeas: [String: [Idea]] {
-        projectDetailsManager.projectIdeas
-    }
-
-    var generatingTitleForIdeas: Set<String> {
-        projectDetailsManager.generatingTitleForIdeas
-    }
-
-    var projectDescriptions: [String: String] {
-        projectDetailsManager.projectDescriptions
-    }
-
-    var generatingDescriptionFor: Set<String> {
-        projectDetailsManager.generatingDescriptionFor
     }
 
     // MARK: - Initialization
@@ -229,12 +188,6 @@ class AppState: ObservableObject {
 
     // MARK: - Hook Diagnostic
 
-    var hasActiveSessions: Bool {
-        sessionStates.values.contains { state in
-            state.state == .working || state.state == .waiting || state.state == .compacting
-        }
-    }
-
     func checkHookDiagnostic() {
         guard let engine = engine else { return }
         hookDiagnostic = engine.getHookDiagnostic()
@@ -319,7 +272,6 @@ class AppState: ObservableObject {
     // MARK: - Navigation
 
     func showProjectDetail(_ project: Project) {
-        selectedProject = project
         projectView = .detail(project)
     }
 
@@ -339,7 +291,6 @@ class AppState: ObservableObject {
     }
 
     func showProjectList() {
-        selectedProject = nil
         projectView = .list
     }
 
@@ -436,36 +387,6 @@ class AppState: ObservableObject {
         }
     }
 
-    func getDevServerPort(for project: Project) -> UInt16? {
-        devServerPorts[project.path]
-    }
-
-    func hasDevServer(_ project: Project) -> Bool {
-        devServerPorts[project.path] != nil
-    }
-
-    func openInBrowser(_ project: Project) {
-        guard let port = devServerPorts[project.path] else { return }
-
-        if let browser = devServerBrowsers[project.path] {
-            DevEnvironment.focusBrowserTab(browser: browser, port: port)
-        } else {
-            DevEnvironment.openInBrowser(port: port)
-        }
-    }
-
-    func launchFullEnvironment(for project: Project) {
-        launchTerminal(for: project)
-
-        if let port = devServerPorts[project.path] {
-            if let browser = devServerBrowsers[project.path] {
-                DevEnvironment.focusBrowserTab(browser: browser, port: port)
-            } else {
-                DevEnvironment.openInBrowser(port: port)
-            }
-        }
-    }
-
     // MARK: - Idea Capture (delegating to ProjectDetailsManager)
 
     func showIdeaCaptureModal(for project: Project, from origin: CGRect? = nil) {
@@ -480,16 +401,6 @@ class AppState: ObservableObject {
         return result
     }
 
-    func loadIdeas(for project: Project) {
-        projectDetailsManager.loadIdeas(for: project)
-        objectWillChange.send()
-    }
-
-    func loadAllIdeas() {
-        projectDetailsManager.loadAllIdeas(for: projects)
-        objectWillChange.send()
-    }
-
     func checkIdeasFileChanges() {
         projectDetailsManager.checkIdeasFileChanges(for: projects)
     }
@@ -502,28 +413,12 @@ class AppState: ObservableObject {
         projectDetailsManager.isGeneratingTitle(for: ideaId)
     }
 
-    func workOnIdea(_ idea: Idea, for project: Project) {
-        do {
-            try projectDetailsManager.updateIdeaStatus(for: project, idea: idea, newStatus: "in-progress")
-        } catch {
-            self.error = "Failed to update idea status: \(error.localizedDescription)"
-        }
-
-        terminalIntegration.launchTerminalWithIdea(idea, for: project)
-        objectWillChange.send()
-    }
-
     func dismissIdea(_ idea: Idea, for project: Project) {
         do {
             try projectDetailsManager.updateIdeaStatus(for: project, idea: idea, newStatus: "done")
         } catch {
             self.error = "Failed to dismiss idea: \(error.localizedDescription)"
         }
-        objectWillChange.send()
-    }
-
-    func reorderIdeas(for project: Project, from source: IndexSet, to destination: Int) {
-        projectDetailsManager.reorderIdeas(for: project, from: source, to: destination)
         objectWillChange.send()
     }
 
@@ -667,10 +562,6 @@ class AppState: ObservableObject {
         }
         return creation.sessionId != nil &&
                (creation.status == .failed || creation.status == .cancelled)
-    }
-
-    func getActiveCreationsCount() -> Int {
-        activeCreations.filter { $0.status == .pending || $0.status == .inProgress }.count
     }
 
     func createProjectFromIdea(_ request: NewProjectRequest, completion: @escaping (CreateProjectResult) -> Void) {

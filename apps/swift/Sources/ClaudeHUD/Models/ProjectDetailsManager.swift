@@ -152,12 +152,6 @@ final class ProjectDetailsManager {
         loadIdeas(for: project)
     }
 
-    func reorderIdeas(for project: Project, from source: IndexSet, to destination: Int) {
-        guard var ideas = projectIdeas[project.path], !ideas.isEmpty else { return }
-        ideas.move(fromOffsets: source, toOffset: destination)
-        projectIdeas[project.path] = ideas
-    }
-
     func reorderIdeas(_ reorderedIdeas: [Idea], for project: Project) {
         projectIdeas[project.path] = reorderedIdeas
 

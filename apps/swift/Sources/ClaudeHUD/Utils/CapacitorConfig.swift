@@ -83,33 +83,10 @@ actor CapacitorConfig {
         await save(config)
     }
 
-    func getTmuxPath() async -> String? {
-        await load().tmuxPath
-    }
-
-    func setTmuxPath(_ path: String) async {
-        var config = await load()
-        config.tmuxPath = path
-        await save(config)
-    }
-
-    func isSetupComplete() async -> Bool {
-        await load().setupCompletedAt != nil
-    }
-
     func markSetupComplete() async {
         var config = await load()
         config.setupCompletedAt = Date()
         await save(config)
     }
 
-    func getHooksVersion() async -> String? {
-        await load().hooksVersion
-    }
-
-    func setHooksVersion(_ version: String) async {
-        var config = await load()
-        config.hooksVersion = version
-        await save(config)
-    }
 }

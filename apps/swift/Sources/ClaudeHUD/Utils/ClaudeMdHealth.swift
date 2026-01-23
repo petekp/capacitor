@@ -33,15 +33,6 @@ struct HealthCheck {
     let template: String?
 }
 
-struct HealthCoachingTip {
-    let id: String
-    let category: String
-    let title: String
-    let description: String
-    let template: String
-    let impact: String
-}
-
 struct ClaudeMdHealthScorer {
     static func score(content: String?) -> HealthScoreResult {
         guard let content = content, !content.isEmpty else {

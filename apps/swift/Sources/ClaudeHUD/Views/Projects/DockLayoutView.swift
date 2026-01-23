@@ -21,17 +21,6 @@ struct DockLayoutView: View {
         }
     }
 
-    private func filteredIdeas(for project: Project) -> ([Idea], Int) {
-        let allIdeas = appState.getIdeas(for: project)
-        let activeIdeas = allIdeas.filter { idea in
-            idea.status == "open" || idea.status == "in-progress"
-        }
-        let displayLimit = 5
-        let displayed = Array(activeIdeas.prefix(displayLimit))
-        let remaining = max(0, activeIdeas.count - displayLimit)
-        return (displayed, remaining)
-    }
-
     var body: some View {
         GeometryReader { geometry in
             let cardsPerPage = calculateCardsPerPage(width: geometry.size.width)
