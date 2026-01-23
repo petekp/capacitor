@@ -726,4 +726,65 @@ impl HudEngine {
             &self.storage.sessions_file(),
         )
     }
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // Hook Health API
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    /// Checks the health of the hook binary by examining its heartbeat file.
+    ///
+    /// The hook binary touches `~/.capacitor/hud-hook-heartbeat` on every event.
+    /// If the file's mtime is older than 60 seconds while sessions are active,
+    /// the hooks have likely stopped firing (binary crash, SIGKILL, etc.).
+    ///
+    /// Returns a health report with:
+    /// - `Healthy`: Heartbeat is fresh (within threshold)
+    /// - `Unknown`: No heartbeat file (hooks never fired)
+    /// - `Stale`: Heartbeat is old (hooks stopped firing)
+    /// - `Unreadable`: Can't read heartbeat file
+    pub fn check_hook_health(&self) -> crate::types::HookHealthReport {
+        use crate::types::{HookHealthReport, HookHealthStatus};
+
+        const HOOK_HEALTH_THRESHOLD_SECS: u64 = 60;
+
+        let heartbeat_path = self.storage.root().join("hud-hook-heartbeat");
+        let threshold_secs = HOOK_HEALTH_THRESHOLD_SECS;
+
+        let (status, age) = match std::fs::metadata(&heartbeat_path) {
+            Ok(meta) => match meta.modified() {
+                Ok(mtime) => {
+                    let age_secs = mtime.elapsed().map(|d| d.as_secs()).unwrap_or(0);
+
+                    let status = if age_secs <= threshold_secs {
+                        HookHealthStatus::Healthy
+                    } else {
+                        HookHealthStatus::Stale {
+                            last_seen_secs: age_secs,
+                        }
+                    };
+                    (status, Some(age_secs))
+                }
+                Err(e) => (
+                    HookHealthStatus::Unreadable {
+                        reason: e.to_string(),
+                    },
+                    None,
+                ),
+            },
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => (HookHealthStatus::Unknown, None),
+            Err(e) => (
+                HookHealthStatus::Unreadable {
+                    reason: e.to_string(),
+                },
+                None,
+            ),
+        };
+
+        HookHealthReport {
+            status,
+            heartbeat_path: heartbeat_path.display().to_string(),
+            threshold_secs,
+            last_heartbeat_age_secs: age,
+        }
+    }
 }

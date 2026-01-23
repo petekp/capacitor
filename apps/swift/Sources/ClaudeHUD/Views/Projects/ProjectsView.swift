@@ -60,6 +60,16 @@ struct ProjectsView: View {
                 } else if appState.projects.isEmpty && appState.activeCreations.isEmpty {
                     EmptyProjectsView()
                 } else {
+                    // Hook health banner when hooks stop responding
+                    if let health = appState.hookHealth,
+                       case .stale = health.status {
+                        HookHealthBanner(health: health) {
+                            appState.checkHookHealth()
+                            appState.refreshSessionStates()
+                        }
+                        .padding(.bottom, 4)
+                    }
+
                     ActivityPanel()
 
                     if !activeProjects.isEmpty {

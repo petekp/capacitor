@@ -66,6 +66,10 @@ class AppState: ObservableObject {
     @Published var devServerPorts: [String: UInt16] = [:]
     @Published var devServerBrowsers: [String: String] = [:]
 
+    // MARK: - Hook Health
+
+    @Published var hookHealth: HookHealthReport?
+
     // MARK: - Manual dormant overrides
 
     @Published var manuallyDormant: Set<String> = [] {
@@ -167,12 +171,23 @@ class AppState: ObservableObject {
 
     // MARK: - Setup
 
+    private var hookHealthCheckCounter = 0
+
     private func setupStalenessTimer() {
         stalenessTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             guard let self else { return }
             DispatchQueue.main.async {
                 self.refreshSessionStates()
                 self.checkIdeasFileChanges()
+
+                // Check hook health every 10 seconds when there are active sessions
+                self.hookHealthCheckCounter += 1
+                if self.hookHealthCheckCounter >= 10 {
+                    self.hookHealthCheckCounter = 0
+                    if self.hasActiveSessions {
+                        self.checkHookHealth()
+                    }
+                }
             }
         }
     }
@@ -211,6 +226,19 @@ class AppState: ObservableObject {
 
     func refreshProjectStatuses() {
         objectWillChange.send()
+    }
+
+    // MARK: - Hook Health
+
+    var hasActiveSessions: Bool {
+        sessionStates.values.contains { state in
+            state.state == .working || state.state == .waiting || state.state == .compacting
+        }
+    }
+
+    func checkHookHealth() {
+        guard let engine = engine else { return }
+        hookHealth = engine.checkHookHealth()
     }
 
     // MARK: - Project Management

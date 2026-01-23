@@ -287,6 +287,11 @@ RustBuffer uniffi_hud_core_fn_method_hudengine_capture_idea(void*_Nonnull ptr, R
 RustBuffer uniffi_hud_core_fn_method_hudengine_check_dependency(void*_Nonnull ptr, RustBuffer name, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_HUD_CORE_FN_METHOD_HUDENGINE_CHECK_HOOK_HEALTH
+#define UNIFFI_FFIDEF_UNIFFI_HUD_CORE_FN_METHOD_HUDENGINE_CHECK_HOOK_HEALTH
+RustBuffer uniffi_hud_core_fn_method_hudengine_check_hook_health(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_HUD_CORE_FN_METHOD_HUDENGINE_CHECK_SETUP_STATUS
 #define UNIFFI_FFIDEF_UNIFFI_HUD_CORE_FN_METHOD_HUDENGINE_CHECK_SETUP_STATUS
 RustBuffer uniffi_hud_core_fn_method_hudengine_check_setup_status(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
@@ -743,6 +748,12 @@ uint16_t uniffi_hud_core_checksum_method_hudengine_capture_idea(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_HUD_CORE_CHECKSUM_METHOD_HUDENGINE_CHECK_DEPENDENCY
 #define UNIFFI_FFIDEF_UNIFFI_HUD_CORE_CHECKSUM_METHOD_HUDENGINE_CHECK_DEPENDENCY
 uint16_t uniffi_hud_core_checksum_method_hudengine_check_dependency(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_HUD_CORE_CHECKSUM_METHOD_HUDENGINE_CHECK_HOOK_HEALTH
+#define UNIFFI_FFIDEF_UNIFFI_HUD_CORE_CHECKSUM_METHOD_HUDENGINE_CHECK_HOOK_HEALTH
+uint16_t uniffi_hud_core_checksum_method_hudengine_check_hook_health(void
     
 );
 #endif

@@ -314,6 +314,36 @@ pub struct CreateProjectResult {
 // Idea Capture Types
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// Hook Health Types
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// The health status of the hook binary based on heartbeat freshness.
+#[derive(Debug, Clone, PartialEq, uniffi::Enum)]
+pub enum HookHealthStatus {
+    /// Hooks are firing normally (heartbeat within threshold)
+    Healthy,
+    /// No heartbeat file exists (hooks never fired or file deleted)
+    Unknown,
+    /// Heartbeat is stale (hooks stopped firing)
+    Stale { last_seen_secs: u64 },
+    /// Heartbeat file exists but can't be read
+    Unreadable { reason: String },
+}
+
+/// Full health report for the hook binary.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct HookHealthReport {
+    pub status: HookHealthStatus,
+    pub heartbeat_path: String,
+    pub threshold_secs: u64,
+    pub last_heartbeat_age_secs: Option<u64>,
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Idea Capture Types
+// ═══════════════════════════════════════════════════════════════════════════════
+
 /// A captured idea stored in `~/.capacitor/projects/{encoded}/ideas.md`.
 ///
 /// Ideas are stored in markdown format with ULID identifiers for stable references.

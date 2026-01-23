@@ -546,6 +546,21 @@ public protocol HudEngineProtocol: AnyObject {
     func checkDependency(name: String) -> DependencyStatus
 
     /**
+     * Checks the health of the hook binary by examining its heartbeat file.
+     *
+     * The hook binary touches `~/.capacitor/hud-hook-heartbeat` on every event.
+     * If the file's mtime is older than 60 seconds while sessions are active,
+     * the hooks have likely stopped firing (binary crash, SIGKILL, etc.).
+     *
+     * Returns a health report with:
+     * - `Healthy`: Heartbeat is fresh (within threshold)
+     * - `Unknown`: No heartbeat file (hooks never fired)
+     * - `Stale`: Heartbeat is old (hooks stopped firing)
+     * - `Unreadable`: Can't read heartbeat file
+     */
+    func checkHookHealth() -> HookHealthReport
+
+    /**
      * Checks the overall setup status including dependencies and hooks.
      *
      * Returns a comprehensive status object indicating:
@@ -890,6 +905,25 @@ open class HudEngine:
         return try! FfiConverterTypeDependencyStatus.lift(try! rustCall {
             uniffi_hud_core_fn_method_hudengine_check_dependency(self.uniffiClonePointer(),
                                                                  FfiConverterString.lower(name), $0)
+        })
+    }
+
+    /**
+     * Checks the health of the hook binary by examining its heartbeat file.
+     *
+     * The hook binary touches `~/.capacitor/hud-hook-heartbeat` on every event.
+     * If the file's mtime is older than 60 seconds while sessions are active,
+     * the hooks have likely stopped firing (binary crash, SIGKILL, etc.).
+     *
+     * Returns a health report with:
+     * - `Healthy`: Heartbeat is fresh (within threshold)
+     * - `Unknown`: No heartbeat file (hooks never fired)
+     * - `Stale`: Heartbeat is old (hooks stopped firing)
+     * - `Unreadable`: Can't read heartbeat file
+     */
+    open func checkHookHealth() -> HookHealthReport {
+        return try! FfiConverterTypeHookHealthReport.lift(try! rustCall {
+            uniffi_hud_core_fn_method_hudengine_check_hook_health(self.uniffiClonePointer(), $0)
         })
     }
 
@@ -2258,6 +2292,86 @@ public func FfiConverterTypeGlobalConfig_lift(_ buf: RustBuffer) throws -> Globa
 #endif
 public func FfiConverterTypeGlobalConfig_lower(_ value: GlobalConfig) -> RustBuffer {
     return FfiConverterTypeGlobalConfig.lower(value)
+}
+
+/**
+ * Full health report for the hook binary.
+ */
+public struct HookHealthReport {
+    public var status: HookHealthStatus
+    public var heartbeatPath: String
+    public var thresholdSecs: UInt64
+    public var lastHeartbeatAgeSecs: UInt64?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(status: HookHealthStatus, heartbeatPath: String, thresholdSecs: UInt64, lastHeartbeatAgeSecs: UInt64?) {
+        self.status = status
+        self.heartbeatPath = heartbeatPath
+        self.thresholdSecs = thresholdSecs
+        self.lastHeartbeatAgeSecs = lastHeartbeatAgeSecs
+    }
+}
+
+extension HookHealthReport: Equatable, Hashable {
+    public static func == (lhs: HookHealthReport, rhs: HookHealthReport) -> Bool {
+        if lhs.status != rhs.status {
+            return false
+        }
+        if lhs.heartbeatPath != rhs.heartbeatPath {
+            return false
+        }
+        if lhs.thresholdSecs != rhs.thresholdSecs {
+            return false
+        }
+        if lhs.lastHeartbeatAgeSecs != rhs.lastHeartbeatAgeSecs {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(status)
+        hasher.combine(heartbeatPath)
+        hasher.combine(thresholdSecs)
+        hasher.combine(lastHeartbeatAgeSecs)
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeHookHealthReport: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> HookHealthReport {
+        return
+            try HookHealthReport(
+                status: FfiConverterTypeHookHealthStatus.read(from: &buf),
+                heartbeatPath: FfiConverterString.read(from: &buf),
+                thresholdSecs: FfiConverterUInt64.read(from: &buf),
+                lastHeartbeatAgeSecs: FfiConverterOptionUInt64.read(from: &buf)
+            )
+    }
+
+    public static func write(_ value: HookHealthReport, into buf: inout [UInt8]) {
+        FfiConverterTypeHookHealthStatus.write(value.status, into: &buf)
+        FfiConverterString.write(value.heartbeatPath, into: &buf)
+        FfiConverterUInt64.write(value.thresholdSecs, into: &buf)
+        FfiConverterOptionUInt64.write(value.lastHeartbeatAgeSecs, into: &buf)
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeHookHealthReport_lift(_ buf: RustBuffer) throws -> HookHealthReport {
+    return try FfiConverterTypeHookHealthReport.lift(buf)
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeHookHealthReport_lower(_ value: HookHealthReport) -> RustBuffer {
+    return FfiConverterTypeHookHealthReport.lower(value)
 }
 
 /**
@@ -4220,6 +4334,91 @@ extension CreationStatus: Equatable, Hashable {}
 
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * The health status of the hook binary based on heartbeat freshness.
+ */
+
+public enum HookHealthStatus {
+    /**
+     * Hooks are firing normally (heartbeat within threshold)
+     */
+    case healthy
+    /**
+     * No heartbeat file exists (hooks never fired or file deleted)
+     */
+    case unknown
+    /**
+     * Heartbeat is stale (hooks stopped firing)
+     */
+    case stale(lastSeenSecs: UInt64
+    )
+    /**
+     * Heartbeat file exists but can't be read
+     */
+    case unreadable(reason: String
+    )
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeHookHealthStatus: FfiConverterRustBuffer {
+    typealias SwiftType = HookHealthStatus
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> HookHealthStatus {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        case 1: return .healthy
+
+        case 2: return .unknown
+
+        case 3: return try .stale(lastSeenSecs: FfiConverterUInt64.read(from: &buf)
+            )
+
+        case 4: return try .unreadable(reason: FfiConverterString.read(from: &buf)
+            )
+
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: HookHealthStatus, into buf: inout [UInt8]) {
+        switch value {
+        case .healthy:
+            writeInt(&buf, Int32(1))
+
+        case .unknown:
+            writeInt(&buf, Int32(2))
+
+        case let .stale(lastSeenSecs):
+            writeInt(&buf, Int32(3))
+            FfiConverterUInt64.write(lastSeenSecs, into: &buf)
+
+        case let .unreadable(reason):
+            writeInt(&buf, Int32(4))
+            FfiConverterString.write(reason, into: &buf)
+        }
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeHookHealthStatus_lift(_ buf: RustBuffer) throws -> HookHealthStatus {
+    return try FfiConverterTypeHookHealthStatus.lift(buf)
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeHookHealthStatus_lower(_ value: HookHealthStatus) -> RustBuffer {
+    return FfiConverterTypeHookHealthStatus.lower(value)
+}
+
+extension HookHealthStatus: Equatable, Hashable {}
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 
 public enum HookStatus {
     case notInstalled
@@ -4436,6 +4635,30 @@ private struct FfiConverterOptionUInt8: FfiConverterRustBuffer {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterUInt8.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+private struct FfiConverterOptionUInt64: FfiConverterRustBuffer {
+    typealias SwiftType = UInt64?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterUInt64.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterUInt64.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -4938,6 +5161,9 @@ private var initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if uniffi_hud_core_checksum_method_hudengine_check_dependency() != 2911 {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if uniffi_hud_core_checksum_method_hudengine_check_hook_health() != 9175 {
         return InitializationResult.apiChecksumMismatch
     }
     if uniffi_hud_core_checksum_method_hudengine_check_setup_status() != 13902 {

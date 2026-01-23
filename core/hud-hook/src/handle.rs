@@ -28,6 +28,7 @@ const STATE_FILE: &str = ".capacitor/sessions.json";
 const LOCK_DIR: &str = ".capacitor/sessions";
 const ACTIVITY_FILE: &str = ".capacitor/file-activity.json";
 const TOMBSTONES_DIR: &str = ".capacitor/ended-sessions";
+const HEARTBEAT_FILE: &str = ".capacitor/hud-hook-heartbeat";
 
 pub fn run() -> Result<(), String> {
     // Skip if this is a summary generation subprocess
@@ -39,6 +40,9 @@ pub fn run() -> Result<(), String> {
         let _ = io::stdin().read_to_end(&mut Vec::new());
         return Ok(());
     }
+
+    // Touch heartbeat file immediately to prove hooks are firing
+    touch_heartbeat();
 
     // Read JSON from stdin
     let mut input = String::new();
@@ -323,6 +327,30 @@ fn get_ppid() -> Option<u32> {
     #[cfg(not(unix))]
     {
         None
+    }
+}
+
+fn touch_heartbeat() {
+    let home = match dirs::home_dir() {
+        Some(h) => h,
+        None => return,
+    };
+    let heartbeat_path = home.join(HEARTBEAT_FILE);
+
+    if let Some(parent) = heartbeat_path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+
+    use std::fs::OpenOptions;
+    use std::io::Write as _;
+
+    if let Ok(mut file) = OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(&heartbeat_path)
+    {
+        let _ = writeln!(file, "{}", Utc::now().timestamp());
     }
 }
 
