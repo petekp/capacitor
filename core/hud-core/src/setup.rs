@@ -185,7 +185,14 @@ impl SetupChecker {
     }
 
     fn check_claude(&self) -> DependencyStatus {
-        let path = which("claude");
+        // GUI apps don't inherit shell PATH, so check common locations directly
+        let path = which_with_fallback(
+            "claude",
+            &[
+                "/opt/homebrew/bin/claude", // Homebrew (Apple Silicon)
+                "/usr/local/bin/claude",    // Homebrew (Intel) or manual install
+            ],
+        );
         DependencyStatus {
             name: "claude".to_string(),
             required: true,
@@ -587,6 +594,31 @@ fn which(binary: &str) -> Option<String> {
             return Some(path);
         }
     }
+    None
+}
+
+fn which_with_fallback(binary: &str, fallback_paths: &[&str]) -> Option<String> {
+    // Try `which` first (works in Terminal, may fail in GUI apps)
+    if let Some(path) = which(binary) {
+        return Some(path);
+    }
+
+    // Check fallback paths directly (GUI apps don't inherit shell PATH)
+    for path in fallback_paths {
+        let p = std::path::Path::new(path);
+        if p.exists() && p.is_file() {
+            return Some(path.to_string());
+        }
+    }
+
+    // Also check ~/.local/bin which is common for npm/pip installs
+    if let Some(home) = dirs::home_dir() {
+        let local_bin = home.join(".local/bin").join(binary);
+        if local_bin.exists() {
+            return Some(local_bin.to_string_lossy().to_string());
+        }
+    }
+
     None
 }
 
