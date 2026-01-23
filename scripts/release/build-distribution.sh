@@ -83,22 +83,36 @@ cargo build -p hud-core --release
 echo -e "${GREEN}✓ Rust library built${NC}"
 echo ""
 
-# Step 2: Fix dylib install_name to use @rpath
-echo -e "${YELLOW}Step 2/7: Fixing dylib install_name...${NC}"
+# Step 2: Regenerate UniFFI Swift bindings
+echo -e "${YELLOW}Step 2/8: Regenerating UniFFI Swift bindings...${NC}"
 DYLIB_PATH="$PROJECT_ROOT/target/release/libhud_core.dylib"
+BINDINGS_DIR="$SWIFT_DIR/bindings"
+BRIDGE_DIR="$SWIFT_DIR/Sources/ClaudeHUD/Bridge"
+
+cd "$PROJECT_ROOT/core/hud-core"
+cargo run --bin uniffi-bindgen generate --library "$DYLIB_PATH" --language swift --out-dir "$BINDINGS_DIR" 2>&1
+
+# Copy bindings to where Swift compiles from
+cp "$BINDINGS_DIR/hud_core.swift" "$BRIDGE_DIR/"
+echo -e "${GREEN}✓ UniFFI bindings regenerated and copied${NC}"
+echo ""
+
+# Step 3: Fix dylib install_name to use @rpath
+echo -e "${YELLOW}Step 3/8: Fixing dylib install_name...${NC}"
 install_name_tool -id "@rpath/libhud_core.dylib" "$DYLIB_PATH"
 echo -e "${GREEN}✓ Dylib install_name updated to @rpath${NC}"
 echo ""
 
-# Step 3: Build Swift app (release mode)
-echo -e "${YELLOW}Step 3/7: Building Swift app...${NC}"
+# Step 4: Clean and build Swift app (release mode)
+echo -e "${YELLOW}Step 4/8: Building Swift app...${NC}"
 cd "$SWIFT_DIR"
+rm -rf .build ClaudeHUD.app 2>/dev/null || true
 swift build -c release
 echo -e "${GREEN}✓ Swift app built${NC}"
 echo ""
 
-# Step 4: Create app bundle structure
-echo -e "${YELLOW}Step 4/7: Creating app bundle...${NC}"
+# Step 5: Create app bundle structure
+echo -e "${YELLOW}Step 5/8: Creating app bundle...${NC}"
 
 # Clean old bundle
 rm -rf "$APP_BUNDLE"
@@ -131,6 +145,15 @@ install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP_BUNDLE/Conte
 if [ -f "$PROJECT_ROOT/assets/AppIcon.icns" ]; then
     cp "$PROJECT_ROOT/assets/AppIcon.icns" "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
     echo -e "${GREEN}✓ App icon copied${NC}"
+fi
+
+# Copy SPM resource bundle (contains logomark.pdf and other assets)
+RESOURCE_BUNDLE="$SWIFT_DIR/.build/arm64-apple-macosx/release/ClaudeHUD_ClaudeHUD.bundle"
+if [ -d "$RESOURCE_BUNDLE" ]; then
+    cp -R "$RESOURCE_BUNDLE" "$APP_BUNDLE/Contents/Resources/"
+    echo -e "${GREEN}✓ Resource bundle copied${NC}"
+else
+    echo -e "${YELLOW}Warning: Resource bundle not found at $RESOURCE_BUNDLE${NC}"
 fi
 
 # Copy Info.plist (using variables for version)
@@ -180,8 +203,8 @@ EOF
 echo -e "${GREEN}✓ App bundle created${NC}"
 echo ""
 
-# Step 5: Code sign
-echo -e "${YELLOW}Step 5/7: Code signing...${NC}"
+# Step 6: Code sign
+echo -e "${YELLOW}Step 6/8: Code signing...${NC}"
 
 # Sign the dylib first
 codesign --force --sign "$SIGNING_IDENTITY" \
@@ -221,24 +244,33 @@ codesign -dvvv "$APP_BUNDLE" 2>&1 | grep "Authority"
 echo -e "${GREEN}✓ Signature verified${NC}"
 echo ""
 
-# Step 6: Create distribution package
-echo -e "${YELLOW}Step 6/7: Creating distribution package...${NC}"
+# Step 7: Create distribution package
+echo -e "${YELLOW}Step 7/8: Creating distribution package...${NC}"
 mkdir -p "$DIST_DIR"
 cd "$SWIFT_DIR"
 
+# Remove extended attributes that would break code signature on extraction
+# (._* AppleDouble files appear when extracting if these aren't stripped)
+xattr -cr "$APP_BUNDLE"
+
+# Also strip from Sparkle.framework which has deeply nested resource forks
+find "$APP_BUNDLE" -name "._*" -delete 2>/dev/null || true
+echo -e "${GREEN}✓ Extended attributes and AppleDouble files stripped${NC}"
+
 # Create zip for distribution
+# --norsrc and --noextattr prevent resource forks/extended attributes from being archived
 ZIP_NAME="ClaudeHUD-v$VERSION-$(uname -m).zip"
-ditto -c -k --keepParent "$APP_BUNDLE" "$DIST_DIR/$ZIP_NAME"
+ditto -c -k --norsrc --noextattr --keepParent "$APP_BUNDLE" "$DIST_DIR/$ZIP_NAME"
 
 echo -e "${GREEN}✓ Distribution package created: $DIST_DIR/$ZIP_NAME${NC}"
 echo ""
 
-# Step 7: Notarization
+# Step 8: Notarization
 if [ "$SKIP_NOTARIZATION" = true ]; then
     echo -e "${YELLOW}Skipping notarization (--skip-notarization flag)${NC}"
     echo ""
 else
-    echo -e "${YELLOW}Step 7/7: Notarizing...${NC}"
+    echo -e "${YELLOW}Step 8/8: Notarizing...${NC}"
     echo ""
     echo "This will submit to Apple for notarization (takes 5-15 minutes)."
     echo ""

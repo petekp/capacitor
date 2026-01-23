@@ -7,7 +7,7 @@ struct WelcomeView: View {
     var onComplete: () -> Void
 
     private var logomarkImage: NSImage? {
-        guard let url = Bundle.module.url(forResource: "logomark", withExtension: "pdf") else {
+        guard let url = ResourceBundle.url(forResource: "logomark", withExtension: "pdf") else {
             return nil
         }
         return NSImage(contentsOf: url)

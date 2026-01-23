@@ -541,7 +541,7 @@ public protocol HudEngineProtocol: AnyObject {
     /**
      * Checks the status of a specific dependency.
      *
-     * Supported dependencies: "jq", "tmux", "claude"
+     * Supported dependencies: "tmux", "claude"
      */
     func checkDependency(name: String) -> DependencyStatus
 
@@ -564,7 +564,7 @@ public protocol HudEngineProtocol: AnyObject {
      * Checks the overall setup status including dependencies and hooks.
      *
      * Returns a comprehensive status object indicating:
-     * - Which dependencies are installed (jq, tmux, claude)
+     * - Which dependencies are installed (tmux, claude)
      * - Whether hooks are installed and up-to-date
      * - Whether storage is ready
      * - Any blocking issues preventing operation
@@ -899,7 +899,7 @@ open class HudEngine:
     /**
      * Checks the status of a specific dependency.
      *
-     * Supported dependencies: "jq", "tmux", "claude"
+     * Supported dependencies: "tmux", "claude"
      */
     open func checkDependency(name: String) -> DependencyStatus {
         return try! FfiConverterTypeDependencyStatus.lift(try! rustCall {
@@ -931,7 +931,7 @@ open class HudEngine:
      * Checks the overall setup status including dependencies and hooks.
      *
      * Returns a comprehensive status object indicating:
-     * - Which dependencies are installed (jq, tmux, claude)
+     * - Which dependencies are installed (tmux, claude)
      * - Whether hooks are installed and up-to-date
      * - Whether storage is ready
      * - Any blocking issues preventing operation
@@ -5160,13 +5160,13 @@ private var initializationResult: InitializationResult = {
     if uniffi_hud_core_checksum_method_hudengine_capture_idea() != 29080 {
         return InitializationResult.apiChecksumMismatch
     }
-    if uniffi_hud_core_checksum_method_hudengine_check_dependency() != 2911 {
+    if uniffi_hud_core_checksum_method_hudengine_check_dependency() != 39610 {
         return InitializationResult.apiChecksumMismatch
     }
     if uniffi_hud_core_checksum_method_hudengine_check_hook_health() != 9175 {
         return InitializationResult.apiChecksumMismatch
     }
-    if uniffi_hud_core_checksum_method_hudengine_check_setup_status() != 13902 {
+    if uniffi_hud_core_checksum_method_hudengine_check_setup_status() != 11613 {
         return InitializationResult.apiChecksumMismatch
     }
     if uniffi_hud_core_checksum_method_hudengine_claude_dir() != 58851 {
