@@ -743,11 +743,13 @@ impl HudEngine {
     /// - `Stale`: Heartbeat is old (hooks stopped firing)
     /// - `Unreadable`: Can't read heartbeat file
     pub fn check_hook_health(&self) -> crate::types::HookHealthReport {
+        use crate::state::lock::has_any_active_lock;
         use crate::types::{HookHealthReport, HookHealthStatus};
 
         const HOOK_HEALTH_THRESHOLD_SECS: u64 = 60;
 
         let heartbeat_path = self.storage.root().join("hud-hook-heartbeat");
+        let sessions_dir = self.storage.sessions_dir();
         let threshold_secs = HOOK_HEALTH_THRESHOLD_SECS;
 
         let (status, age) = match std::fs::metadata(&heartbeat_path) {
@@ -756,6 +758,10 @@ impl HudEngine {
                     let age_secs = mtime.elapsed().map(|d| d.as_secs()).unwrap_or(0);
 
                     let status = if age_secs <= threshold_secs {
+                        HookHealthStatus::Healthy
+                    } else if has_any_active_lock(&sessions_dir) {
+                        // Heartbeat is stale but a session lock exists—Claude is running,
+                        // just generating a long response without tool calls. Treat as healthy.
                         HookHealthStatus::Healthy
                     } else {
                         HookHealthStatus::Stale {

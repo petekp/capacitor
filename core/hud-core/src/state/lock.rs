@@ -303,6 +303,30 @@ fn check_lock_for_path(lock_base: &Path, project_path: &str) -> Option<LockInfo>
     Some(info)
 }
 
+/// Returns true if ANY active session lock exists.
+///
+/// Used to suppress hook health warnings during long responses—if a lock exists,
+/// Claude is definitely running even if the heartbeat is stale.
+pub fn has_any_active_lock(lock_base: &Path) -> bool {
+    let entries = match fs::read_dir(lock_base) {
+        Ok(e) => e,
+        Err(_) => return false,
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() && path.extension().is_some_and(|e| e == "lock") {
+            if let Some(info) = read_lock_info(&path) {
+                if is_pid_alive_verified(info.pid, info.proc_started) {
+                    return true;
+                }
+            }
+        }
+    }
+
+    false
+}
+
 /// Returns true if there's an active lock at or under the given path.
 ///
 /// Checks:
@@ -735,5 +759,36 @@ mod tests {
 
         // Lock should still be valid
         assert!(is_session_running(temp.path(), "/project"));
+    }
+
+    #[test]
+    fn test_has_any_active_lock_empty_dir() {
+        let temp = tempdir().unwrap();
+        assert!(!has_any_active_lock(temp.path()));
+    }
+
+    #[test]
+    fn test_has_any_active_lock_with_live_lock() {
+        let temp = tempdir().unwrap();
+        create_lock(temp.path(), std::process::id(), "/project");
+        assert!(has_any_active_lock(temp.path()));
+    }
+
+    #[test]
+    fn test_has_any_active_lock_with_dead_lock() {
+        let temp = tempdir().unwrap();
+        create_lock_with_timestamp(temp.path(), 99999999, "/project", 1704067200);
+        assert!(!has_any_active_lock(temp.path()));
+    }
+
+    #[test]
+    fn test_has_any_active_lock_mixed_live_and_dead() {
+        let temp = tempdir().unwrap();
+        // Create one dead lock
+        create_lock_with_timestamp(temp.path(), 99999999, "/dead-project", 1704067200);
+        // Create one live lock
+        create_lock(temp.path(), std::process::id(), "/live-project");
+        // Should return true because there's at least one live lock
+        assert!(has_any_active_lock(temp.path()));
     }
 }
