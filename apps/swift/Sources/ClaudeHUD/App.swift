@@ -76,22 +76,22 @@ struct ClaudeHUDApp: App {
                 }
             }
 
-            CommandMenu("View") {
-                Section("Layout") {
-                    Button("Vertical Layout") {
-                        layoutMode = "vertical"
-                        appState.layoutMode = .vertical
-                    }
-                    .keyboardShortcut("1", modifiers: .command)
-                    .disabled(layoutMode == "vertical")
+            CommandGroup(after: .toolbar) {
+                Divider()
 
-                    Button("Dock Layout") {
-                        layoutMode = "dock"
-                        appState.layoutMode = .dock
-                    }
-                    .keyboardShortcut("2", modifiers: .command)
-                    .disabled(layoutMode == "dock")
+                Button("Vertical Layout") {
+                    layoutMode = "vertical"
+                    appState.layoutMode = .vertical
                 }
+                .keyboardShortcut("1", modifiers: .command)
+                .disabled(layoutMode == "vertical")
+
+                Button("Dock Layout") {
+                    layoutMode = "dock"
+                    appState.layoutMode = .dock
+                }
+                .keyboardShortcut("2", modifiers: .command)
+                .disabled(layoutMode == "dock")
 
                 Divider()
 
