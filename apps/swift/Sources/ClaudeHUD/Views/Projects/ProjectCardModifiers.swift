@@ -23,9 +23,7 @@ extension View {
                 ZStack {
                     if floatingMode {
                         floatingCardBackground
-                            #if DEBUG
                             .id(GlassConfig.shared.cardConfigHash)
-                            #endif
                     } else {
                         solidCardBackground
                     }
@@ -92,21 +90,11 @@ extension View {
                         .transition(.opacity.animation(.easeInOut(duration: 0.4)))
                 }
             }
-            #if DEBUG
             .shadow(
                 color: .black.opacity(shadowOpacity(isHovered: isHovered, isPressed: isPressed, floatingMode: floatingMode, layoutMode: layoutMode)),
                 radius: shadowRadius(isHovered: isHovered, isPressed: isPressed, floatingMode: floatingMode, layoutMode: layoutMode),
                 y: shadowY(isHovered: isHovered, isPressed: isPressed, floatingMode: floatingMode, layoutMode: layoutMode)
             )
-            #else
-            .shadow(
-                color: floatingMode ? .black.opacity(0.25) : (isHovered ? .black.opacity(0.2) : .black.opacity(0.08)),
-                radius: floatingMode ? 8 : (isHovered ? 12 : 4),
-                y: floatingMode ? 3 : (isHovered ? 4 : 2)
-            )
-            #endif
-            .scaleEffect(isHovered ? 0.99 : 1.0)
-            .animation(.easeOut(duration: 0.2), value: isHovered)
     }
 
     func cardInteractions(
@@ -140,7 +128,6 @@ extension View {
             }
     }
 
-    #if DEBUG
     func cardLifecycleHandlers(
         flashState: SessionState?,
         sessionState: ProjectSessionState?,
@@ -184,44 +171,6 @@ extension View {
                 previousState.wrappedValue = sessionState?.state
             }
     }
-    #else
-    func cardLifecycleHandlers(
-        flashState: SessionState?,
-        sessionState: ProjectSessionState?,
-        currentState: SessionState?,
-        previousState: Binding<SessionState?>,
-        lastChimeTime: Binding<Date?>,
-        flashOpacity: Binding<Double>,
-        chimeCooldown: TimeInterval,
-        glassConfig: Any?
-    ) -> some View {
-        self
-            .animation(.easeInOut(duration: 0.4), value: sessionState?.state)
-            .onChange(of: flashState) { _, newValue in
-                guard newValue != nil else { return }
-                withAnimation(.easeOut(duration: 0.1)) {
-                    flashOpacity.wrappedValue = 1.0
-                }
-                withAnimation(.easeOut(duration: 1.3).delay(0.1)) {
-                    flashOpacity.wrappedValue = 0
-                }
-            }
-            .onChange(of: sessionState?.state) { oldValue, newValue in
-                if newValue == .ready && oldValue != .ready && oldValue != nil {
-                    let now = Date()
-                    let shouldPlayChime = lastChimeTime.wrappedValue.map { now.timeIntervalSince($0) >= chimeCooldown } ?? true
-                    if shouldPlayChime {
-                        lastChimeTime.wrappedValue = now
-                        ReadyChime.shared.play()
-                    }
-                }
-                previousState.wrappedValue = newValue
-            }
-            .onAppear {
-                previousState.wrappedValue = sessionState?.state
-            }
-    }
-    #endif
 
     func preventWindowDrag() -> some View {
         WindowDragPreventer { self }
@@ -232,9 +181,8 @@ extension View {
     }
 }
 
-// MARK: - Shadow Helpers (DEBUG only)
+// MARK: - Shadow Helpers
 
-#if DEBUG
 private func shadowOpacity(isHovered: Bool, isPressed: Bool, floatingMode: Bool, layoutMode: LayoutMode) -> Double {
     guard !floatingMode else { return 0.25 }
     let config = GlassConfig.shared
@@ -267,7 +215,6 @@ private func shadowY(isHovered: Bool, isPressed: Bool, floatingMode: Bool, layou
     }
     return config.cardIdleShadowY
 }
-#endif
 
 // MARK: - Window Drag Handling
 

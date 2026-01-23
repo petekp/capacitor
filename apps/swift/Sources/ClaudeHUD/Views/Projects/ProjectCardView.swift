@@ -28,9 +28,7 @@ struct ProjectCardView: View {
 
     @Environment(\.floatingMode) private var floatingMode
     @Environment(\.prefersReducedMotion) private var reduceMotion
-    #if DEBUG
     @ObservedObject private var glassConfig = GlassConfig.shared
-    #endif
 
     @State private var isHovered = false
     @State private var isPressed = false
@@ -44,7 +42,6 @@ struct ProjectCardView: View {
     // MARK: - Computed Properties
 
     private var currentState: SessionState? {
-        #if DEBUG
         switch glassConfig.previewState {
         case .none: return sessionState?.state
         case .ready: return .ready
@@ -53,9 +50,6 @@ struct ProjectCardView: View {
         case .compacting: return .compacting
         case .idle: return .idle
         }
-        #else
-        return sessionState?.state
-        #endif
     }
 
     private var isReady: Bool {
@@ -82,7 +76,6 @@ struct ProjectCardView: View {
         return lastKnownSummary
     }
 
-    #if DEBUG
     private var glassConfigForHandlers: GlassConfig? {
         glassConfig
     }
@@ -110,11 +103,6 @@ struct ProjectCardView: View {
             dampingFraction: glassConfig.cardHoverSpringDamping(for: .vertical)
         )
     }
-    #else
-    private var glassConfigForHandlers: Any? {
-        nil
-    }
-    #endif
 
     // MARK: - Body
 
@@ -145,13 +133,11 @@ struct ProjectCardView: View {
                 animationSeed: project.path,
                 isPressed: isPressed
             )
-            #if DEBUG
             .scaleEffect(cardScale)
             .animation(cardAnimation, value: cardScale)
             .onLongPressGesture(minimumDuration: .infinity, pressing: { pressing in
                 isPressed = pressing
             }, perform: {})
-            #endif
             .cardInteractions(
                 isHovered: $isHovered,
                 onTap: onTap,
@@ -250,11 +236,7 @@ struct ProjectCardView: View {
     // MARK: - Background Styles
 
     private var floatingCardBackground: some View {
-        #if DEBUG
         DarkFrostedCard(isHovered: isHovered, config: glassConfig)
-        #else
-        DarkFrostedCard(isHovered: isHovered)
-        #endif
     }
 
     private var solidCardBackground: some View {

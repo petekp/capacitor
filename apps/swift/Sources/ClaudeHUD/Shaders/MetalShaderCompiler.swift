@@ -1,7 +1,5 @@
 import SwiftUI
 
-#if DEBUG
-
 enum MetalShaders {
     static func initialize() {
         _ = library
@@ -211,5 +209,3 @@ struct SwiftUIGlassFallback: View {
         .blendMode(.overlay)
     }
 }
-
-#endif

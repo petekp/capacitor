@@ -1,8 +1,6 @@
 import SwiftUI
 import Combine
 
-#if DEBUG
-
 private struct GlassConfigKey: EnvironmentKey {
     static let defaultValue = GlassConfig.shared
 }
@@ -731,5 +729,3 @@ class GlassConfig: ObservableObject {
         }
     }
 }
-
-#endif

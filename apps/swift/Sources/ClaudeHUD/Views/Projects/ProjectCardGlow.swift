@@ -3,9 +3,7 @@ import SwiftUI
 struct ReadyAmbientGlow: View {
     var layoutMode: LayoutMode = .vertical
     @Environment(\.prefersReducedMotion) private var reduceMotion
-    #if DEBUG
     @ObservedObject private var config = GlassConfig.shared
-    #endif
 
     var body: some View {
         if reduceMotion {
@@ -75,7 +73,6 @@ struct ReadyAmbientGlow: View {
     }
 
     private var glowParameters: GlowParameters {
-        #if DEBUG
         GlowParameters(
             speed: config.rippleSpeed(for: layoutMode),
             count: config.rippleCount(for: layoutMode),
@@ -87,19 +84,6 @@ struct ReadyAmbientGlow: View {
             fadeInZone: config.rippleFadeInZone(for: layoutMode),
             fadeOutPower: config.rippleFadeOutPower(for: layoutMode)
         )
-        #else
-        GlowParameters(
-            speed: layoutMode == .dock ? 7.2 : 4.9,
-            count: layoutMode == .dock ? 6 : 4,
-            maxOpacity: layoutMode == .dock ? 0.53 : 1.0,
-            lineWidth: 30.0,
-            blurAmount: layoutMode == .dock ? 29.3 : 41.5,
-            originXPercent: layoutMode == .dock ? 0.20 : 0.89,
-            originYPercent: 0.0,
-            fadeInZone: layoutMode == .dock ? 0.17 : 0.10,
-            fadeOutPower: layoutMode == .dock ? 2.9 : 4.0
-        )
-        #endif
     }
 
     private func smoothstep(_ t: Double) -> Double {
@@ -125,10 +109,7 @@ struct ReadyBorderGlow: View {
     var cornerRadius: CGFloat = 12
     var layoutMode: LayoutMode = .vertical
     @Environment(\.prefersReducedMotion) private var reduceMotion
-
-    #if DEBUG
     @ObservedObject private var config = GlassConfig.shared
-    #endif
 
     private var timeOffset: Double {
         var hasher = Hasher()
@@ -153,11 +134,7 @@ struct ReadyBorderGlow: View {
 
     private var animatedBorderGlow: some View {
         TimelineView(.animation) { timeline in
-            #if DEBUG
             ReadyBorderGlowContent(date: timeline.date, config: config, timeOffset: timeOffset, cornerRadius: cornerRadius, layoutMode: layoutMode)
-            #else
-            ReadyBorderGlowContent(date: timeline.date, config: nil, timeOffset: timeOffset, cornerRadius: cornerRadius, layoutMode: layoutMode)
-            #endif
         }
         .allowsHitTesting(false)
     }
@@ -168,8 +145,6 @@ struct ReadyBorderGlowContent: View {
     let timeOffset: Double
     let cornerRadius: CGFloat
     let layoutMode: LayoutMode
-
-    #if DEBUG
     let config: GlassConfig?
 
     init(date: Date, config: GlassConfig?, timeOffset: Double, cornerRadius: CGFloat = 12, layoutMode: LayoutMode = .vertical) {
@@ -179,14 +154,6 @@ struct ReadyBorderGlowContent: View {
         self.cornerRadius = cornerRadius
         self.layoutMode = layoutMode
     }
-    #else
-    init(date: Date, config: Any?, timeOffset: Double, cornerRadius: CGFloat = 12, layoutMode: LayoutMode = .vertical) {
-        self.date = date
-        self.timeOffset = timeOffset
-        self.cornerRadius = cornerRadius
-        self.layoutMode = layoutMode
-    }
-    #endif
 
     var body: some View {
         let params = borderGlowParameters
@@ -208,7 +175,6 @@ struct ReadyBorderGlowContent: View {
     }
 
     private var borderGlowParameters: BorderGlowParameters {
-        #if DEBUG
         if let config = config {
             return BorderGlowParameters(
                 speed: config.rippleSpeed(for: layoutMode),
@@ -224,7 +190,6 @@ struct ReadyBorderGlowContent: View {
                 outerBlur: config.borderGlowOuterBlur(for: layoutMode)
             )
         }
-        #endif
         return BorderGlowParameters(
             speed: layoutMode == .dock ? 7.2 : 4.9,
             count: layoutMode == .dock ? 6 : 4,
@@ -318,10 +283,7 @@ struct BorderGlowParameters {
 struct WaitingAmbientPulse: View {
     var layoutMode: LayoutMode = .vertical
     @Environment(\.prefersReducedMotion) private var reduceMotion
-
-    #if DEBUG
     @ObservedObject private var config = GlassConfig.shared
-    #endif
 
     var body: some View {
         if reduceMotion {
@@ -385,7 +347,6 @@ struct WaitingAmbientPulse: View {
     }
 
     private var pulseParameters: WaitingPulseParameters {
-        #if DEBUG
         WaitingPulseParameters(
             cycleLength: config.waitingCycleLength(for: layoutMode),
             firstPulseDuration: config.waitingFirstPulseDuration(for: layoutMode),
@@ -404,26 +365,6 @@ struct WaitingAmbientPulse: View {
             originXPercent: config.waitingOriginX(for: layoutMode),
             originYPercent: config.waitingOriginY(for: layoutMode)
         )
-        #else
-        WaitingPulseParameters(
-            cycleLength: layoutMode == .dock ? 2.4 : 1.68,
-            firstPulseDuration: layoutMode == .dock ? 0.15 : 0.17,
-            firstPulseFadeOut: layoutMode == .dock ? 0.25 : 0.17,
-            secondPulseDelay: layoutMode == .dock ? 0.12 : 0.00,
-            secondPulseDuration: layoutMode == .dock ? 0.12 : 0.17,
-            secondPulseFadeOut: layoutMode == .dock ? 0.20 : 0.48,
-            maxOpacity: layoutMode == .dock ? 0.5 : 0.34,
-            blurAmount: layoutMode == .dock ? 25 : 0.0,
-            pulseScale: layoutMode == .dock ? 1.6 : 2.22,
-            scaleAmount: layoutMode == .dock ? 0.4 : 0.30,
-            springDamping: layoutMode == .dock ? 1.2 : 1.69,
-            springOmega: layoutMode == .dock ? 8.0 : 3.3,
-            firstPulseIntensity: layoutMode == .dock ? 1.0 : 0.34,
-            secondPulseIntensity: layoutMode == .dock ? 0.6 : 0.47,
-            originXPercent: layoutMode == .dock ? 0.5 : 1.00,
-            originYPercent: layoutMode == .dock ? 0.5 : 0.00
-        )
-        #endif
     }
 
     private func springPulseValues(phase: Double, params: WaitingPulseParameters) -> (intensity: Double, scale: Double) {
@@ -483,10 +424,7 @@ struct WaitingBorderPulse: View {
     var cornerRadius: CGFloat = 12
     var layoutMode: LayoutMode = .vertical
     @Environment(\.prefersReducedMotion) private var reduceMotion
-
-    #if DEBUG
     @ObservedObject private var config = GlassConfig.shared
-    #endif
 
     var body: some View {
         if reduceMotion {
@@ -529,7 +467,6 @@ struct WaitingBorderPulse: View {
     }
 
     private var pulseParameters: WaitingPulseParameters {
-        #if DEBUG
         WaitingPulseParameters(
             cycleLength: config.waitingCycleLength(for: layoutMode),
             firstPulseDuration: config.waitingFirstPulseDuration(for: layoutMode),
@@ -550,28 +487,6 @@ struct WaitingBorderPulse: View {
             innerBlur: 0,
             outerBlur: config.waitingBorderOuterBlur(for: layoutMode)
         )
-        #else
-        WaitingPulseParameters(
-            cycleLength: layoutMode == .dock ? 2.4 : 1.68,
-            firstPulseDuration: layoutMode == .dock ? 0.15 : 0.17,
-            firstPulseFadeOut: layoutMode == .dock ? 0.25 : 0.17,
-            secondPulseDelay: layoutMode == .dock ? 0.12 : 0.00,
-            secondPulseDuration: layoutMode == .dock ? 0.12 : 0.17,
-            secondPulseFadeOut: layoutMode == .dock ? 0.20 : 0.48,
-            maxOpacity: layoutMode == .dock ? 0.5 : 0.34,
-            blurAmount: 0,
-            springDamping: layoutMode == .dock ? 1.2 : 1.69,
-            springOmega: layoutMode == .dock ? 8.0 : 3.3,
-            firstPulseIntensity: layoutMode == .dock ? 1.0 : 0.34,
-            secondPulseIntensity: layoutMode == .dock ? 0.6 : 0.47,
-            baseOpacity: layoutMode == .dock ? 0.2 : 0.12,
-            pulseOpacity: layoutMode == .dock ? 0.6 : 0.37,
-            innerWidth: layoutMode == .dock ? 1.5 : 0.50,
-            outerWidth: layoutMode == .dock ? 3.0 : 1.86,
-            innerBlur: 0,
-            outerBlur: layoutMode == .dock ? 4.0 : 0.8
-        )
-        #endif
     }
 
     private func springPulseIntensity(phase: Double, params: WaitingPulseParameters) -> Double {
@@ -664,10 +579,7 @@ struct WorkingStripeParameters {
 struct WorkingStripeOverlay: View {
     var layoutMode: LayoutMode = .vertical
     @Environment(\.prefersReducedMotion) private var reduceMotion
-
-    #if DEBUG
     @ObservedObject private var config = GlassConfig.shared
-    #endif
 
     var body: some View {
         if reduceMotion {
@@ -839,7 +751,6 @@ struct WorkingStripeOverlay: View {
     }
 
     private var stripeParameters: WorkingStripeParameters {
-        #if DEBUG
         WorkingStripeParameters(
             stripeWidth: config.workingStripeWidth(for: layoutMode),
             stripeSpacing: config.workingStripeSpacing(for: layoutMode),
@@ -857,25 +768,6 @@ struct WorkingStripeOverlay: View {
             vignetteColorIntensity: config.workingVignetteColorIntensity(for: layoutMode),
             vignetteBlendMode: config.workingVignetteBlendMode
         )
-        #else
-        WorkingStripeParameters(
-            stripeWidth: 24.0,
-            stripeSpacing: 38.49,
-            stripeAngle: 41.30,
-            scrollSpeed: 4.81,
-            stripeOpacity: 0.50,
-            glowIntensity: 1.50,
-            glowBlurRadius: 11.46,
-            coreBrightness: 0.71,
-            gradientFalloff: 0.32,
-            vignetteInnerRadius: 0.02,
-            vignetteOuterRadius: 0.48,
-            vignetteCenterOpacity: 0.03,
-            vignetteColor: Color(hue: 0.05, saturation: 0.67, brightness: 0.39),
-            vignetteColorIntensity: 0.47,
-            vignetteBlendMode: .plusLighter
-        )
-        #endif
     }
 }
 
@@ -884,10 +776,7 @@ struct WorkingBorderGlow: View {
     var cornerRadius: CGFloat = 12
     var layoutMode: LayoutMode = .vertical
     @Environment(\.prefersReducedMotion) private var reduceMotion
-
-    #if DEBUG
     @ObservedObject private var config = GlassConfig.shared
-    #endif
 
     private var timeOffset: Double {
         var hasher = Hasher()
@@ -937,7 +826,6 @@ struct WorkingBorderGlow: View {
     }
 
     private var borderParameters: WorkingBorderParameters {
-        #if DEBUG
         WorkingBorderParameters(
             borderWidth: config.workingBorderWidth(for: layoutMode),
             baseOpacity: config.workingBorderBaseOpacity(for: layoutMode),
@@ -945,15 +833,6 @@ struct WorkingBorderGlow: View {
             pulseSpeed: config.workingBorderPulseSpeed(for: layoutMode),
             blurAmount: config.workingBorderBlurAmount(for: layoutMode)
         )
-        #else
-        WorkingBorderParameters(
-            borderWidth: 1.0,
-            baseOpacity: 0.35,
-            pulseIntensity: 0.50,
-            pulseSpeed: 2.21,
-            blurAmount: 8.0
-        )
-        #endif
     }
 }
 

@@ -122,11 +122,8 @@ extension View {
 }
 
 struct DarkFrostedGlass: View {
-    #if DEBUG
     @ObservedObject private var config = GlassConfig.shared
-    #endif
 
-    #if DEBUG
     private var selectedMaterial: NSVisualEffectView.Material {
         switch config.materialType {
         case 0: return .hudWindow
@@ -137,10 +134,8 @@ struct DarkFrostedGlass: View {
         default: return .hudWindow
         }
     }
-    #endif
 
     var body: some View {
-        #if DEBUG
         let cornerRadius = config.panelCornerRadius
         let tintOpacity = config.panelTintOpacity
         let borderOpacity = config.panelBorderOpacity
@@ -151,18 +146,6 @@ struct DarkFrostedGlass: View {
         let shadowY = config.panelShadowY
         let isEmphasized = config.useEmphasizedMaterial
         let material = selectedMaterial
-        #else
-        let cornerRadius: CGFloat = 22
-        let tintOpacity: Double = 0.33
-        let borderOpacity: Double = 0.36
-        let highlightOpacity: Double = 0.07
-        let topHighlightOpacity: Double = 0.14
-        let shadowOpacity: Double = 0.00
-        let shadowRadius: CGFloat = 0
-        let shadowY: CGFloat = 0
-        let isEmphasized = true
-        let material: NSVisualEffectView.Material = .hudWindow
-        #endif
 
         ZStack {
             VibrancyView(
@@ -171,9 +154,7 @@ struct DarkFrostedGlass: View {
                 isEmphasized: isEmphasized,
                 forceDarkAppearance: true
             )
-            #if DEBUG
             .id("vibrancy-\(config.materialType)-\(isEmphasized)-\(config.refreshCounter)")
-            #endif
 
             Color.black.opacity(tintOpacity)
 
@@ -218,7 +199,6 @@ struct DarkFrostedGlass: View {
     }
 }
 
-#if DEBUG
 extension GlassConfig {
     var panelConfigHash: String {
         "panel-\(refreshCounter)-\(materialType)-\(panelTintOpacity)-\(panelCornerRadius)-\(panelBorderOpacity)-\(useEmphasizedMaterial)"
@@ -228,29 +208,18 @@ extension GlassConfig {
         "solid-\(cardTintOpacity)-\(cardCornerRadius)-\(cardBorderOpacity)-\(cardHighlightOpacity)-\(cardHoverBorderOpacity)-\(cardHoverHighlightOpacity)"
     }
 }
-#endif
 
 struct DarkFrostedCard: View {
     var isHovered: Bool = false
     var tintOpacity: Double? = nil
-
-    #if DEBUG
     var config: GlassConfig? = nil
     private var effectiveConfig: GlassConfig { config ?? GlassConfig.shared }
-    #endif
 
     var body: some View {
-        #if DEBUG
         let cornerRadius = effectiveConfig.cardCornerRadius
         let baseTintOpacity = tintOpacity ?? effectiveConfig.cardTintOpacity
         let borderOpacity = isHovered ? effectiveConfig.cardHoverBorderOpacity : effectiveConfig.cardBorderOpacity
         let highlightOpacity = isHovered ? effectiveConfig.cardHoverHighlightOpacity : effectiveConfig.cardHighlightOpacity
-        #else
-        let cornerRadius: CGFloat = 13
-        let baseTintOpacity = tintOpacity ?? 0.58
-        let borderOpacity = isHovered ? 0.37 : 0.28
-        let highlightOpacity = isHovered ? 0.16 : 0.14
-        #endif
 
         let effectiveTintOpacity = isHovered ? baseTintOpacity * 0.8 : baseTintOpacity
 

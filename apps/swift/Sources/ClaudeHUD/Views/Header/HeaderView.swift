@@ -289,98 +289,52 @@ struct CapacitorLogo: View {
 
     private let logoText = "CAPACITOR"
 
-    #if DEBUG
     @ObservedObject private var config = GlassConfig.shared
     @State private var shaderTime: Double = 0
     private let timer = Timer.publish(every: 1/60, on: .main, in: .common).autoconnect()
-    #endif
 
     private var fontSize: CGFloat {
-        #if DEBUG
         CGFloat(config.logoFontSize)
-        #else
-        13.0
-        #endif
     }
 
     private var tracking: CGFloat {
-        #if DEBUG
         CGFloat(config.logoTracking)
-        #else
-        1.5
-        #endif
     }
 
     private var baseOpacity: Double {
-        #if DEBUG
         config.logoBaseOpacity
-        #else
-        0.25
-        #endif
     }
 
     private var shadowOpacity: Double {
-        #if DEBUG
         config.logoShadowOpacity
-        #else
-        0.6
-        #endif
     }
 
     private var shadowOffset: CGSize {
-        #if DEBUG
         CGSize(width: config.logoShadowOffsetX, height: config.logoShadowOffsetY)
-        #else
-        CGSize(width: 0.8, height: 0.8)
-        #endif
     }
 
     private var shadowBlur: CGFloat {
-        #if DEBUG
         CGFloat(config.logoShadowBlur)
-        #else
-        0.8
-        #endif
     }
 
     private var highlightOpacity: Double {
-        #if DEBUG
         config.logoHighlightOpacity
-        #else
-        0.3
-        #endif
     }
 
     private var highlightOffset: CGSize {
-        #if DEBUG
         CGSize(width: config.logoHighlightOffsetX, height: config.logoHighlightOffsetY)
-        #else
-        CGSize(width: -0.5, height: -0.5)
-        #endif
     }
 
     private var highlightBlur: CGFloat {
-        #if DEBUG
         CGFloat(config.logoHighlightBlur)
-        #else
-        0.5
-        #endif
     }
 
     private var shadowBlendMode: BlendMode {
-        #if DEBUG
         config.logoShadowBlendMode
-        #else
-        .multiply
-        #endif
     }
 
     private var highlightBlendMode: BlendMode {
-        #if DEBUG
         config.logoHighlightBlendMode
-        #else
-        .plusLighter
-        #endif
     }
 
     private var logoFont: Font {
@@ -414,7 +368,6 @@ struct CapacitorLogo: View {
 
     @ViewBuilder
     private var logoContent: some View {
-        #if DEBUG
         if config.logoShaderEnabled {
             shaderLogo
                 .onReceive(timer) { _ in
@@ -423,9 +376,6 @@ struct CapacitorLogo: View {
         } else {
             letterpressLogo
         }
-        #else
-        letterpressLogo
-        #endif
     }
 
     private var letterpressLogo: some View {
@@ -448,7 +398,6 @@ struct CapacitorLogo: View {
             }
     }
 
-    #if DEBUG
     @ViewBuilder
     private var shaderLogo: some View {
         let shaderContent: some View = baseText(.white)
@@ -485,7 +434,6 @@ struct CapacitorLogo: View {
                 .blendMode(config.logoShaderBlendMode)
         }
     }
-    #endif
 }
 
 private struct PopoverOptionButton: View {

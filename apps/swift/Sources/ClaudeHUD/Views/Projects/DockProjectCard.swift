@@ -17,10 +17,7 @@ struct DockProjectCard: View {
 
     @Environment(\.floatingMode) private var floatingMode
     @Environment(\.prefersReducedMotion) private var reduceMotion
-
-    #if DEBUG
     @ObservedObject private var glassConfig = GlassConfig.shared
-    #endif
 
     @State private var isHovered = false
     @State private var isPressed = false
@@ -56,7 +53,6 @@ struct DockProjectCard: View {
         return lastKnownSummary
     }
 
-    #if DEBUG
     private var glassConfigForHandlers: GlassConfig? {
         glassConfig
     }
@@ -84,11 +80,6 @@ struct DockProjectCard: View {
             dampingFraction: glassConfig.cardHoverSpringDamping(for: .dock)
         )
     }
-    #else
-    private var glassConfigForHandlers: Any? {
-        nil
-    }
-    #endif
 
     var body: some View {
         cardContent
@@ -109,16 +100,11 @@ struct DockProjectCard: View {
                 layoutMode: .dock,
                 isPressed: isPressed
             )
-            #if DEBUG
             .scaleEffect(cardScale)
             .animation(cardAnimation, value: cardScale)
             .onLongPressGesture(minimumDuration: .infinity, pressing: { pressing in
                 isPressed = pressing
             }, perform: {})
-            #else
-            .scaleEffect(isHovered && !reduceMotion ? 1.02 : 1.0)
-            .animation(reduceMotion ? AppMotion.reducedMotionFallback : .spring(response: 0.3, dampingFraction: 0.7), value: isHovered)
-            #endif
             .contentShape(Rectangle())
             .onHover { hovering in
                 isHovered = hovering
@@ -218,11 +204,7 @@ struct DockProjectCard: View {
     }
 
     private var floatingCardBackground: some View {
-        #if DEBUG
         DarkFrostedCard(isHovered: isHovered, config: glassConfig)
-        #else
-        DarkFrostedCard(isHovered: isHovered)
-        #endif
     }
 
     private var solidCardBackground: some View {
