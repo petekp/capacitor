@@ -422,11 +422,17 @@ impl SetupChecker {
 
         let dest_path = dest_dir.join("hud-hook");
 
-        // Skip if already exists and is executable
+        // Minimum expected size for the real Rust binary (~1.5MB)
+        // Small shell scripts or corrupted files should be replaced
+        const MIN_BINARY_SIZE: u64 = 100_000;
+
+        // Check if already exists, is executable, AND is a real binary (not a script)
         if dest_path.exists() {
             if let Ok(metadata) = fs::metadata(&dest_path) {
                 let perms = metadata.permissions();
-                if perms.mode() & 0o111 != 0 {
+                let size = metadata.len();
+
+                if perms.mode() & 0o111 != 0 && size >= MIN_BINARY_SIZE {
                     return Ok(InstallResult {
                         success: true,
                         message: "Binary already installed".to_string(),
@@ -434,7 +440,7 @@ impl SetupChecker {
                     });
                 }
             }
-            // Exists but not executable - remove and reinstall
+            // Exists but either not executable or too small (likely a script/corrupted) - remove
             fs::remove_file(&dest_path).map_err(|e| HudFfiError::General {
                 message: format!("Failed to remove existing binary: {}", e),
             })?;
@@ -840,42 +846,11 @@ mod tests {
         assert!(result.message.contains("not found"));
     }
 
-    #[test]
-    fn test_install_binary_success() {
-        let (temp, storage) = setup_test_env();
-        let checker = SetupChecker::new(storage);
-
-        // Create a fake source binary
-        let source_path = temp.path().join("fake-hud-hook");
-        fs::write(&source_path, b"#!/bin/bash\necho test").unwrap();
-
-        // Note: This test would install to the real ~/.local/bin/hud-hook
-        // which we don't want in unit tests. The function uses dirs::home_dir()
-        // which we can't easily mock. So we just test that it doesn't panic
-        // and returns a result when given a valid source.
-
-        let result = checker.install_binary_from_path(source_path.to_str().unwrap());
-
-        // Should succeed or fail gracefully (depending on filesystem permissions)
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_install_binary_returns_path_on_success() {
-        let (temp, storage) = setup_test_env();
-        let checker = SetupChecker::new(storage);
-
-        let source_path = temp.path().join("fake-hud-hook");
-        fs::write(&source_path, b"#!/bin/bash\necho test").unwrap();
-
-        let result = checker
-            .install_binary_from_path(source_path.to_str().unwrap())
-            .unwrap();
-
-        // If successful, script_path should be set
-        if result.success {
-            assert!(result.script_path.is_some());
-            assert!(result.script_path.unwrap().contains("hud-hook"));
-        }
-    }
+    // NOTE: test_install_binary_success and test_install_binary_returns_path_on_success
+    // have been removed because they MODIFY THE REAL ~/.local/bin/hud-hook file.
+    // This caused production bugs where the real hook binary was replaced with a dummy
+    // test script, breaking session tracking for all users.
+    //
+    // If install_binary_from_path() needs testing, use integration tests that run
+    // in an isolated environment, not unit tests that affect the developer's machine.
 }
