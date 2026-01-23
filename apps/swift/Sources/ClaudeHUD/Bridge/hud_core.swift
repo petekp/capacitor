@@ -671,10 +671,11 @@ public protocol HudEngineProtocol: AnyObject {
      * Installs the session tracking hooks.
      *
      * This will:
-     * 1. Create the hook script at ~/.claude/scripts/hud-state-tracker.sh
+     * 1. Verify the hook binary exists at ~/.local/bin/hud-hook
      * 2. Register the hooks in ~/.claude/settings.json
      *
      * Returns an error if:
+     * - Hook binary is missing or broken
      * - Hooks are disabled by policy (disableAllHooks or allowManagedHooksOnly)
      * - File system operations fail
      */
@@ -1114,10 +1115,11 @@ open class HudEngine:
      * Installs the session tracking hooks.
      *
      * This will:
-     * 1. Create the hook script at ~/.claude/scripts/hud-state-tracker.sh
+     * 1. Verify the hook binary exists at ~/.local/bin/hud-hook
      * 2. Register the hooks in ~/.claude/settings.json
      *
      * Returns an error if:
+     * - Hook binary is missing or broken
      * - Hooks are disabled by policy (disableAllHooks or allowManagedHooksOnly)
      * - File system operations fail
      */
@@ -5513,7 +5515,7 @@ private var initializationResult: InitializationResult = {
     if uniffi_hud_core_checksum_method_hudengine_get_suggested_projects() != 38527 {
         return InitializationResult.apiChecksumMismatch
     }
-    if uniffi_hud_core_checksum_method_hudengine_install_hooks() != 49055 {
+    if uniffi_hud_core_checksum_method_hudengine_install_hooks() != 3648 {
         return InitializationResult.apiChecksumMismatch
     }
     if uniffi_hud_core_checksum_method_hudengine_invalidate_agent_cache() != 27475 {
