@@ -27,6 +27,8 @@ struct ClaudeHUDApp: App {
                             if let mode = LayoutMode(rawValue: layoutMode) {
                                 appState.layoutMode = mode
                             }
+                            // Refresh diagnostic after WelcomeView completes (hooks may have just been installed)
+                            appState.checkHookDiagnostic()
                         }
                         .onChange(of: layoutMode) { _, newValue in
                             if let mode = LayoutMode(rawValue: newValue) {
