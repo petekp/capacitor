@@ -431,7 +431,6 @@ dependencies = [
  "dirs",
  "hud-core",
  "libc",
- "serde",
  "serde_json",
 ]
 

@@ -25,11 +25,6 @@ pub const ACTIVITY_THRESHOLD: Duration = Duration::from_secs(5 * 60); // 5 minut
 /// Entries older than this are cleaned up.
 pub const CLEANUP_THRESHOLD: Duration = Duration::from_secs(60 * 60); // 1 hour
 
-/// State file name.
-/// Note: Activity data is stored in `~/.capacitor/file-activity.json` (via StorageConfig).
-#[deprecated(note = "Use StorageConfig::file_activity_file() instead")]
-pub const ACTIVITY_STATE_FILE: &str = "file-activity.json";
-
 /// Current version of the activity store format.
 pub const ACTIVITY_STORE_VERSION: u32 = 1;
 

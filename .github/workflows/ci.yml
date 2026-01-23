@@ -44,7 +44,13 @@ jobs:
         run: cargo fmt --check
 
       - name: Run cargo clippy
-        run: cargo clippy -- -D warnings
+        run: cargo clippy -- -D warnings -W dead_code
+
+      - name: Install cargo-machete
+        run: cargo install cargo-machete
+
+      - name: Check for unused dependencies
+        run: cargo machete
 
       - name: Run cargo test
         run: cargo test
@@ -68,6 +74,14 @@ jobs:
       - name: Run Swift tests
         working-directory: apps/swift
         run: swift test
+
+      - name: Install Periphery
+        run: brew install peripheryapp/periphery/periphery
+
+      - name: Check for unused Swift code
+        working-directory: apps/swift
+        run: periphery scan
+        continue-on-error: true
 
   build-smoke-test:
     name: Build Smoke Test

@@ -1,0 +1,10 @@
+targets:
+  - ClaudeHUD
+
+# UniFFI auto-generated bindings - contains complete API surface
+# whether or not all functions are used
+report_exclude:
+  - "*/Bridge/hud_core.swift"
+  - "*/bindings/hud_core.swift"
+
+retain_public: false

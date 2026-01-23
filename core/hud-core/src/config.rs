@@ -41,15 +41,6 @@ pub fn get_projects_config_path_for(storage: &StorageConfig) -> PathBuf {
     storage.projects_file()
 }
 
-/// Returns the path to the HUD configuration file.
-///
-/// Deprecated: Use `get_projects_config_path()` instead.
-/// This function remains for backward compatibility during migration.
-#[deprecated(note = "Use get_projects_config_path() instead")]
-pub fn get_hud_config_path() -> Option<PathBuf> {
-    get_projects_config_path()
-}
-
 /// Loads the HUD configuration, returning defaults if file doesn't exist.
 pub fn load_hud_config() -> HudConfig {
     load_hud_config_with_storage(&StorageConfig::default())
