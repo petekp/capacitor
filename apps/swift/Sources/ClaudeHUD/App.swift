@@ -76,7 +76,7 @@ struct ClaudeHUDApp: App {
                 }
             }
 
-            CommandMenu("Window") {
+            CommandGroup(before: .windowSize) {
                 Button("Vertical Layout") {
                     layoutMode = "vertical"
                     appState.layoutMode = .vertical
@@ -115,6 +115,8 @@ struct ClaudeHUDApp: App {
                 }
                 .keyboardShortcut("R", modifiers: [.command, .shift, .option])
                 #endif
+
+                Divider()
             }
 
             CommandGroup(replacing: .help) {
