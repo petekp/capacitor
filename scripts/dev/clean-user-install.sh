@@ -126,6 +126,16 @@ for item in "${ITEMS_TO_CLEAN[@]}"; do
             fi
             echo -e "${GREEN}done${NC}"
             ;;
+        */Library/Preferences/*.plist)
+            # UserDefaults are cached by cfprefsd - must use defaults delete, not rm
+            BUNDLE_ID=$(basename "$item" .plist)
+            echo -n "Clearing UserDefaults for $BUNDLE_ID... "
+            if [[ "$DRY_RUN" == "false" ]]; then
+                defaults delete "$BUNDLE_ID" 2>/dev/null || true
+                rm -f "$item" 2>/dev/null || true
+            fi
+            echo -e "${GREEN}done${NC}"
+            ;;
         *)
             echo -n "Removing $item... "
             if [[ "$DRY_RUN" == "false" ]]; then
@@ -135,6 +145,14 @@ for item in "${ITEMS_TO_CLEAN[@]}"; do
             ;;
     esac
 done
+
+# Restart cfprefsd to flush UserDefaults cache (it auto-restarts)
+if [[ "$DRY_RUN" == "false" ]]; then
+    echo -n "Flushing UserDefaults cache... "
+    killall cfprefsd 2>/dev/null || true
+    sleep 1
+    echo -e "${GREEN}done${NC}"
+fi
 
 echo ""
 echo -e "${GREEN}========================================${NC}"
