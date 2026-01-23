@@ -1,7 +1,7 @@
 //! hud-hook: CLI hook handler for Claude HUD session state tracking.
 //!
-//! Replaces the bash script (`hud-state-tracker.sh`) with a fast Rust binary
-//! that handles Claude Code hook events and updates session state.
+//! Rust binary that handles Claude Code hook events and updates session state.
+//! Called directly by Claude Code hooks configured in ~/.claude/settings.json.
 //!
 //! ## Subcommands
 //!

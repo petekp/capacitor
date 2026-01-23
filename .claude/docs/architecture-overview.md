@@ -253,13 +253,13 @@ User runs claude → Hooks fire → State file updated → Swift HUD reads
 - `PreCompact` → state: compacting
 - `SessionEnd` → removes session from state file
 
-**State file:** `~/.capacitor/sessions.json` (written by hook script, version 3)
+**State file:** `~/.capacitor/sessions.json` (written by hook binary, version 3)
 
-**Lock directory:** `~/.capacitor/sessions/{hash}.lock/` (created by hook script via `spawn_lock_holder`)
+**Lock directory:** `~/.capacitor/sessions/{hash}.lock/` (created by hook binary via `spawn_lock_holder`)
 
-**Hook script:** `~/.claude/scripts/hud-state-tracker.sh`
+**Hook binary:** `~/.local/bin/hud-hook`
 
-**Docs live in code:** See hook script header for state machine and debugging. See `core/hud-core/src/state/types.rs` for canonical mapping.
+**Architecture:** See `core/hud-hook/src/main.rs` for the hook implementation and `core/hud-core/src/state/types.rs` for canonical state mapping.
 
 ## Runtime Configuration
 

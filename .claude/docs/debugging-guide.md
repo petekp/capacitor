@@ -17,7 +17,7 @@ echo '{"input_tokens":1234}' | rg 'input_tokens":(\d+)'
 
 ## Hook State Tracking
 
-See `scripts/hud-state-tracker.sh` header for state machine, debugging, and troubleshooting.
+The hook binary (`~/.local/bin/hud-hook`) handles Claude Code hook events and tracks session state.
 
 Quick commands:
 ```bash

@@ -1,18 +1,12 @@
 #!/bin/bash
-# Sync hook scripts and binary from repo to installed location
-# Prevents version mismatches between repo and installed hooks
+# Sync hud-hook binary from repo to installed location
+# The binary is called directly by Claude Code hooks (no wrapper script needed)
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-REPO_HOOK="$SCRIPT_DIR/hud-state-tracker.sh"
-INSTALLED_HOOK="$HOME/.claude/scripts/hud-state-tracker.sh"
 INSTALLED_BINARY="$HOME/.local/bin/hud-hook"
-
-get_version() {
-    grep -m1 "^# Claude HUD State Tracker Hook v" "$1" 2>/dev/null | sed 's/.*v//' | sed 's/ .*//' || echo "unknown"
-}
 
 # Verify binary actually runs (not just exists)
 # Returns: 0 = works, 1 = needs codesign, 2 = fatal
@@ -39,14 +33,7 @@ verify_binary() {
     fi
 }
 
-if [[ ! -f "$REPO_HOOK" ]]; then
-    echo "Error: Repo hook not found at $REPO_HOOK"
-    exit 1
-fi
-
-REPO_VERSION=$(get_version "$REPO_HOOK")
-
-echo "=== Claude HUD Hook Sync (v$REPO_VERSION) ==="
+echo "=== Claude HUD Hook Binary Sync ==="
 echo ""
 
 # Check/build binary
@@ -119,45 +106,9 @@ case $? in
         ;;
 esac
 
-# Install/update wrapper script
 echo ""
-echo "Installing wrapper script..."
-mkdir -p "$(dirname "$INSTALLED_HOOK")"
-
-if [[ ! -f "$INSTALLED_HOOK" ]]; then
-    cp "$REPO_HOOK" "$INSTALLED_HOOK"
-    chmod +x "$INSTALLED_HOOK"
-    echo "  ✓ Wrapper script installed"
-else
-    INSTALLED_VERSION=$(get_version "$INSTALLED_HOOK")
-
-    if [[ "$REPO_VERSION" == "$INSTALLED_VERSION" ]]; then
-        REPO_HASH=$(shasum -a 256 "$REPO_HOOK" | cut -d' ' -f1)
-        INSTALLED_HASH=$(shasum -a 256 "$INSTALLED_HOOK" | cut -d' ' -f1)
-
-        if [[ "$REPO_HASH" == "$INSTALLED_HASH" ]]; then
-            echo "  ✓ Wrapper script v$REPO_VERSION is current"
-        else
-            echo "  ⚠ Wrapper script v$REPO_VERSION content differs"
-            if [[ "$1" == "--force" ]] || [[ "$1" == "-f" ]]; then
-                cp "$REPO_HOOK" "$INSTALLED_HOOK"
-                chmod +x "$INSTALLED_HOOK"
-                echo "  ✓ Wrapper script updated"
-            else
-                echo "  Run with --force to update"
-            fi
-        fi
-    else
-        echo "  ⚠ Wrapper script version mismatch (installed: v$INSTALLED_VERSION)"
-        if [[ "$1" == "--force" ]] || [[ "$1" == "-f" ]]; then
-            cp "$REPO_HOOK" "$INSTALLED_HOOK"
-            chmod +x "$INSTALLED_HOOK"
-            echo "  ✓ Wrapper script updated to v$REPO_VERSION"
-        else
-            echo "  Run with --force to update"
-        fi
-    fi
-fi
-
+echo "Done! The hud-hook binary is ready."
 echo ""
-echo "Done!"
+echo "To configure Claude Code hooks, run the app and use the 'Fix All' button,"
+echo "or manually add hooks to ~/.claude/settings.json pointing to:"
+echo "  $INSTALLED_BINARY handle"

@@ -17,13 +17,11 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
 use tempfile::NamedTempFile;
 
-const HOOK_SCRIPT_VERSION: &str = "4.0.0";
 const HOOK_COMMAND: &str = "$HOME/.local/bin/hud-hook handle";
-const HOOK_SCRIPT: &str = include_str!("../../../scripts/hud-state-tracker.sh");
 
 const HUD_HOOK_EVENTS: [(&str, bool); 9] = [
     ("SessionStart", false),
@@ -201,46 +199,24 @@ impl SetupChecker {
             return HookStatus::PolicyBlocked { reason };
         }
 
-        let script_path = self.get_hook_script_path();
-        if !script_path.exists() {
-            return HookStatus::NotInstalled;
-        }
-        if !self.is_script_executable(&script_path) {
+        // Check if binary exists
+        let binary_path = self.get_hook_binary_path();
+        if !binary_path.exists() {
             return HookStatus::NotInstalled;
         }
 
-        let current_version = self.get_installed_hook_version(&script_path);
-        match current_version {
-            Some(version) if version == HOOK_SCRIPT_VERSION => {
-                if self.hooks_registered_in_settings() {
-                    // Verify binary actually works (catches macOS codesigning issues)
-                    if let Err(reason) = self.verify_hook_binary() {
-                        return HookStatus::BinaryBroken { reason };
-                    }
-                    HookStatus::Installed { version }
-                } else {
-                    HookStatus::NotInstalled
-                }
-            }
-            Some(version) => HookStatus::Outdated {
-                current: version,
-                latest: HOOK_SCRIPT_VERSION.to_string(),
-            },
-            None => HookStatus::NotInstalled,
+        // Verify binary actually works (catches macOS codesigning issues)
+        if let Err(reason) = self.verify_hook_binary() {
+            return HookStatus::BinaryBroken { reason };
         }
-    }
 
-    fn is_script_executable(&self, script_path: &Path) -> bool {
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            fs::metadata(script_path)
-                .map(|meta| meta.permissions().mode() & 0o111 != 0)
-                .unwrap_or(false)
+        // Check if hooks are registered in settings
+        if !self.hooks_registered_in_settings() {
+            return HookStatus::NotInstalled;
         }
-        #[cfg(not(unix))]
-        {
-            script_path.exists()
+
+        HookStatus::Installed {
+            version: "binary".to_string(),
         }
     }
 
@@ -265,12 +241,6 @@ impl SetupChecker {
             }
         }
         None
-    }
-
-    fn get_hook_script_path(&self) -> PathBuf {
-        self.storage
-            .claude_root()
-            .join("scripts/hud-state-tracker.sh")
     }
 
     fn get_hook_binary_path(&self) -> PathBuf {
@@ -320,21 +290,6 @@ impl SetupChecker {
             }
             Err(e) => Err(format!("Failed to run binary: {}", e)),
         }
-    }
-
-    fn get_installed_hook_version(&self, script_path: &Path) -> Option<String> {
-        let content = fs::read_to_string(script_path).ok()?;
-        for line in content.lines().take(5) {
-            if line.starts_with("# Claude HUD State Tracker Hook v") {
-                let version_str = line
-                    .strip_prefix("# Claude HUD State Tracker Hook v")?
-                    .trim();
-                // Extract just the semver portion (e.g., "4.0.0" from "4.0.0 (Rust)")
-                let version = version_str.split_whitespace().next().unwrap_or(version_str);
-                return Some(version.to_string());
-            }
-        }
-        None
     }
 
     fn hooks_registered_in_settings(&self) -> bool {
@@ -444,54 +399,38 @@ impl SetupChecker {
             });
         }
 
-        let scripts_dir = self.storage.claude_root().join("scripts");
-        fs::create_dir_all(&scripts_dir).map_err(|e| HudFfiError::General {
-            message: format!("Failed to create scripts directory: {}", e),
-        })?;
+        // Verify binary exists before registering hooks
+        let binary_path = self.get_hook_binary_path();
+        if !binary_path.exists() {
+            return Ok(InstallResult {
+                success: false,
+                message: format!(
+                    "Hook binary not found at {}. Run: ./scripts/sync-hooks.sh",
+                    binary_path.display()
+                ),
+                script_path: None,
+            });
+        }
 
-        let script_path = scripts_dir.join("hud-state-tracker.sh");
-        let mut temp_script =
-            NamedTempFile::new_in(&scripts_dir).map_err(|e| HudFfiError::General {
-                message: format!("Failed to create temp script file: {}", e),
-            })?;
-        temp_script
-            .write_all(HOOK_SCRIPT.as_bytes())
-            .map_err(|e| HudFfiError::General {
-                message: format!("Failed to write hook script: {}", e),
-            })?;
-        temp_script.flush().map_err(|e| HudFfiError::General {
-            message: format!("Failed to flush hook script: {}", e),
-        })?;
-        temp_script
-            .persist(&script_path)
-            .map_err(|e| HudFfiError::General {
-                message: format!("Failed to persist hook script: {}", e.error),
-            })?;
-
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let mut perms = fs::metadata(&script_path)
-                .map_err(|e| HudFfiError::General {
-                    message: format!("Failed to get script permissions: {}", e),
-                })?
-                .permissions();
-            perms.set_mode(0o755);
-            fs::set_permissions(&script_path, perms).map_err(|e| HudFfiError::General {
-                message: format!("Failed to set script permissions: {}", e),
-            })?;
+        // Verify binary works (catches codesigning issues)
+        if let Err(reason) = self.verify_hook_binary() {
+            return Ok(InstallResult {
+                success: false,
+                message: format!("Hook binary broken: {}", reason),
+                script_path: None,
+            });
         }
 
         self.register_hooks_in_settings()?;
 
         Ok(InstallResult {
             success: true,
-            message: format!("Hooks installed successfully (v{})", HOOK_SCRIPT_VERSION),
-            script_path: Some(script_path.to_string_lossy().to_string()),
+            message: "Hooks configured successfully".to_string(),
+            script_path: Some(binary_path.to_string_lossy().to_string()),
         })
     }
 
-    fn register_hooks_in_settings(&self) -> Result<(), HudFfiError> {
+    pub(crate) fn register_hooks_in_settings(&self) -> Result<(), HudFfiError> {
         let settings_path = self.storage.claude_settings_file();
 
         let mut settings: SettingsFile = if settings_path.exists() {
@@ -608,10 +547,9 @@ fn which_with_fallback(binary: &str, fallback_paths: &[&str]) -> Option<String> 
     None
 }
 
-/// Check if a command is a HUD hook (wrapper script or binary).
+/// Check if a command is the HUD hook binary.
 fn is_hud_hook_command(cmd: Option<&str>) -> bool {
-    cmd.map(|c| c.contains("hud-state-tracker.sh") || c.contains("hud-hook"))
-        .unwrap_or(false)
+    cmd.map(|c| c.contains("hud-hook")).unwrap_or(false)
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -666,26 +604,12 @@ mod tests {
     }
 
     #[test]
-    fn test_install_hooks_creates_script() {
+    fn test_register_hooks_in_settings() {
         let (_temp, storage) = setup_test_env();
         let checker = SetupChecker::new(storage.clone());
 
-        let result = checker.install_hooks().unwrap();
-        assert!(result.success);
-
-        let script_path = storage.claude_root().join("scripts/hud-state-tracker.sh");
-        assert!(script_path.exists());
-
-        let content = fs::read_to_string(&script_path).unwrap();
-        assert!(content.contains("Claude HUD State Tracker Hook v4.0.0"));
-    }
-
-    #[test]
-    fn test_install_hooks_registers_in_settings() {
-        let (_temp, storage) = setup_test_env();
-        let checker = SetupChecker::new(storage.clone());
-
-        checker.install_hooks().unwrap();
+        // Directly call register_hooks_in_settings (bypasses binary check)
+        checker.register_hooks_in_settings().unwrap();
 
         let settings_content = fs::read_to_string(storage.claude_settings_file()).unwrap();
         let settings: serde_json::Value = serde_json::from_str(&settings_content).unwrap();
@@ -724,66 +648,27 @@ mod tests {
     }
 
     #[test]
-    fn test_hooks_outdated_detection() {
+    fn test_install_hooks_checks_binary() {
         let (_temp, storage) = setup_test_env();
-
-        let scripts_dir = storage.claude_root().join("scripts");
-        fs::create_dir_all(&scripts_dir).unwrap();
-
-        let old_script = "#!/bin/bash\n# Claude HUD State Tracker Hook v1.0.0\n";
-        let script_path = scripts_dir.join("hud-state-tracker.sh");
-        fs::write(&script_path, old_script).unwrap();
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let mut perms = fs::metadata(&script_path).unwrap().permissions();
-            perms.set_mode(0o755);
-            fs::set_permissions(&script_path, perms).unwrap();
-        }
-
         let checker = SetupChecker::new(storage);
-        let status = checker.check_hooks_status();
 
-        match status {
-            HookStatus::Outdated { current, latest } => {
-                assert_eq!(current, "1.0.0");
-                assert_eq!(latest, HOOK_SCRIPT_VERSION);
-            }
-            _ => panic!("Expected Outdated status"),
+        let result = checker.install_hooks().unwrap();
+
+        // Binary check happens before settings registration
+        // If binary exists on system, it will succeed; if not, it fails gracefully
+        let binary_path = dirs::home_dir()
+            .map(|h| h.join(".local/bin/hud-hook"))
+            .unwrap_or_else(|| PathBuf::from("/usr/local/bin/hud-hook"));
+
+        if binary_path.exists() {
+            // Binary exists, should succeed (or fail on verification)
+            // Just verify it doesn't panic and returns a result
+            assert!(result.success || result.message.contains("broken"));
+        } else {
+            // Binary missing, should fail gracefully with helpful message
+            assert!(!result.success);
+            assert!(result.message.contains("not found"));
         }
-    }
-
-    #[test]
-    fn test_version_parsing_ignores_suffix() {
-        let (_temp, storage) = setup_test_env();
-
-        let scripts_dir = storage.claude_root().join("scripts");
-        fs::create_dir_all(&scripts_dir).unwrap();
-
-        // Version with suffix like "(Rust)" should be parsed as just the semver
-        let script_with_suffix = format!(
-            "#!/bin/bash\n# Claude HUD State Tracker Hook v{} (Rust)\n",
-            HOOK_SCRIPT_VERSION
-        );
-        let script_path = scripts_dir.join("hud-state-tracker.sh");
-        fs::write(&script_path, script_with_suffix).unwrap();
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let mut perms = fs::metadata(&script_path).unwrap().permissions();
-            perms.set_mode(0o755);
-            fs::set_permissions(&script_path, perms).unwrap();
-        }
-
-        let checker = SetupChecker::new(storage.clone());
-
-        // Should extract "4.0.0" from "4.0.0 (Rust)" and match HOOK_SCRIPT_VERSION
-        // (Will still show NotInstalled because hooks aren't registered, but shouldn't show Outdated)
-        let status = checker.check_hooks_status();
-        assert!(
-            !matches!(status, HookStatus::Outdated { .. }),
-            "Should not be Outdated when version matches (ignoring suffix)"
-        );
     }
 
     #[test]
@@ -799,7 +684,7 @@ mod tests {
         fs::write(storage.claude_settings_file(), existing).unwrap();
 
         let checker = SetupChecker::new(storage.clone());
-        checker.install_hooks().unwrap();
+        checker.register_hooks_in_settings().unwrap();
 
         let settings_content = fs::read_to_string(storage.claude_settings_file()).unwrap();
         let settings: serde_json::Value = serde_json::from_str(&settings_content).unwrap();
@@ -810,7 +695,7 @@ mod tests {
     }
 
     #[test]
-    fn test_install_hooks_fails_on_corrupt_json() {
+    fn test_register_hooks_fails_on_corrupt_json() {
         let (_temp, storage) = setup_test_env();
 
         // Write corrupt JSON
@@ -818,7 +703,7 @@ mod tests {
         fs::write(storage.claude_settings_file(), corrupt).unwrap();
 
         let checker = SetupChecker::new(storage.clone());
-        let result = checker.install_hooks();
+        let result = checker.register_hooks_in_settings();
 
         // Should return an error, not silently clobber
         assert!(result.is_err());
@@ -831,59 +716,37 @@ mod tests {
     #[test]
     fn test_hooks_registered_checks_all_critical_events() {
         let (_temp, storage) = setup_test_env();
+        let checker = SetupChecker::new(storage.clone());
 
         // Write settings with only SessionStart (missing others)
         let partial = r#"{
             "hooks": {
-                "SessionStart": [{"hooks": [{"type": "command", "command": "hud-state-tracker.sh"}]}]
+                "SessionStart": [{"hooks": [{"type": "command", "command": "hud-hook handle"}]}]
             }
         }"#;
         fs::write(storage.claude_settings_file(), partial).unwrap();
 
-        // Also need the script to exist
-        let scripts_dir = storage.claude_root().join("scripts");
-        fs::create_dir_all(&scripts_dir).unwrap();
-        fs::write(
-            scripts_dir.join("hud-state-tracker.sh"),
-            "#!/bin/bash\n# Claude HUD State Tracker Hook v2.1.0\n",
-        )
-        .unwrap();
-
-        let checker = SetupChecker::new(storage);
-        let status = checker.check_hooks_status();
-
-        // Should NOT be marked as installed since PostToolUse is missing
-        assert!(matches!(status, HookStatus::NotInstalled));
+        // hooks_registered_in_settings should return false since PostToolUse is missing
+        assert!(!checker.hooks_registered_in_settings());
     }
 
     #[test]
     fn test_hooks_registered_checks_matchers() {
         let (_temp, storage) = setup_test_env();
+        let checker = SetupChecker::new(storage.clone());
 
         // Write settings with PostToolUse but missing matcher
         let missing_matcher = r#"{
             "hooks": {
-                "SessionStart": [{"hooks": [{"type": "command", "command": "hud-state-tracker.sh"}]}],
-                "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "hud-state-tracker.sh"}]}],
-                "PostToolUse": [{"hooks": [{"type": "command", "command": "hud-state-tracker.sh"}]}],
-                "Stop": [{"hooks": [{"type": "command", "command": "hud-state-tracker.sh"}]}]
+                "SessionStart": [{"hooks": [{"type": "command", "command": "hud-hook handle"}]}],
+                "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "hud-hook handle"}]}],
+                "PostToolUse": [{"hooks": [{"type": "command", "command": "hud-hook handle"}]}],
+                "Stop": [{"hooks": [{"type": "command", "command": "hud-hook handle"}]}]
             }
         }"#;
         fs::write(storage.claude_settings_file(), missing_matcher).unwrap();
 
-        // Also need the script to exist
-        let scripts_dir = storage.claude_root().join("scripts");
-        fs::create_dir_all(&scripts_dir).unwrap();
-        fs::write(
-            scripts_dir.join("hud-state-tracker.sh"),
-            "#!/bin/bash\n# Claude HUD State Tracker Hook v2.1.0\n",
-        )
-        .unwrap();
-
-        let checker = SetupChecker::new(storage);
-        let status = checker.check_hooks_status();
-
-        // Should NOT be marked as installed since PostToolUse is missing matcher
-        assert!(matches!(status, HookStatus::NotInstalled));
+        // hooks_registered_in_settings should return false since PostToolUse missing matcher
+        assert!(!checker.hooks_registered_in_settings());
     }
 }

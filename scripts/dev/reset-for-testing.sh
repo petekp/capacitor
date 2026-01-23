@@ -8,11 +8,11 @@
 # What gets cleared:
 #   - App UserDefaults (setupComplete, layout preferences, etc.)
 #   - ~/.capacitor/ (session state, locks, file activity)
-#   - HUD hook script (~/.claude/scripts/hud-state-tracker.sh)
 #   - HUD hook registrations in ~/.claude/settings.json
 #
 # What stays intact:
 #   - Other ~/.claude/ config (Claude Code's own settings, other hooks)
+#   - HUD hook binary (~/.local/bin/hud-hook)
 #   - Source code and git state
 #
 # Usage: ./scripts/dev/reset-for-testing.sh
@@ -74,29 +74,21 @@ else
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Step 4: Remove HUD hooks completely
+# Step 4: Remove HUD hook registrations
 #
-# For a true fresh-install test, we remove:
-#   1. The hook script from ~/.claude/scripts/
-#   2. HUD's hook registrations from ~/.claude/settings.json
+# For a true fresh-install test, we remove HUD's hook registrations from
+# ~/.claude/settings.json. This filters out both:
+#   - Legacy wrapper script references (hud-state-tracker.sh)
+#   - Current binary references (hud-hook)
 #
-# We do NOT reinstall here—the app's onboarding flow should handle that.
+# We do NOT uninstall the binary here—the app's onboarding flow will
+# detect that hooks aren't configured and offer to add them.
 # ─────────────────────────────────────────────────────────────────────────────
-echo "→ Removing HUD hook script..."
-if [[ -f "$HOME/.claude/scripts/hud-state-tracker.sh" ]]; then
-    rm -f "$HOME/.claude/scripts/hud-state-tracker.sh"
-    echo "  ✓ Removed hook script"
-else
-    echo "  ✓ No hook script to remove"
-fi
-
 echo "→ Removing HUD hook registrations from settings.json..."
 SETTINGS_FILE="$HOME/.claude/settings.json"
 if [[ -f "$SETTINGS_FILE" ]]; then
-    # Use jq to filter out hook configs containing "hud-state-tracker.sh"
-    # For each event in hooks, keep only configs that don't reference our script
     if command -v jq &>/dev/null; then
-        # Filter out hook configs that contain "hud-state-tracker.sh" in any command
+        # Filter out hook configs that contain "hud-hook" or "hud-state-tracker" in any command
         # Then remove any hook events that become empty arrays
         jq '
             if .hooks then
@@ -104,7 +96,7 @@ if [[ -f "$SETTINGS_FILE" ]]; then
                     .value |= map(
                         select(
                             .hooks == null or
-                            (.hooks | map(.command // "" | contains("hud-state-tracker.sh")) | any | not)
+                            (.hooks | map(.command // "" | (contains("hud-hook") or contains("hud-state-tracker"))) | any | not)
                         )
                     ) |
                     select(.value | length > 0)
@@ -116,7 +108,7 @@ if [[ -f "$SETTINGS_FILE" ]]; then
         echo "  ✓ Removed HUD hook registrations"
     else
         echo "  ⚠ jq not available, skipping settings.json cleanup"
-        echo "    (HUD hooks will remain registered but script is gone)"
+        echo "    (HUD hooks will remain registered)"
     fi
 else
     echo "  ✓ No settings.json to clean"

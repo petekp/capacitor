@@ -168,14 +168,11 @@ struct ClaudeHUDApp: App {
             try? fm.removeItem(at: capacitorPath)
             print("[Debug] Removed ~/.capacitor/")
 
-            // 3. Remove hook script
-            let hookScriptPath = home.appendingPathComponent(".claude/scripts/hud-state-tracker.sh")
-            try? fm.removeItem(at: hookScriptPath)
-
-            // 4. Remove hooks from settings.json (best effort)
+            // 3. Remove hooks from settings.json (best effort)
+            // Note: We don't remove the binary (~/.local/bin/hud-hook) - user may want it
             await removeHooksFromSettings()
 
-            // 5. Reset the setup complete flag and show welcome screen
+            // 4. Reset the setup complete flag and show welcome screen
             await MainActor.run {
                 withAnimation(.easeInOut(duration: 0.4)) {
                     setupComplete = false
@@ -219,7 +216,7 @@ struct ClaudeHUDApp: App {
             guard var json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
                   var hooks = json["hooks"] as? [String: Any] else { return }
 
-            // Remove any hook configs that contain our hud-state-tracker
+            // Remove any hook configs that contain our hud-hook (binary) or hud-state-tracker (legacy)
             for (eventType, eventHooks) in hooks {
                 guard var hookArray = eventHooks as? [[String: Any]] else { continue }
 
@@ -227,7 +224,7 @@ struct ClaudeHUDApp: App {
                     guard let innerHooks = hookConfig["hooks"] as? [[String: Any]] else { return false }
                     return innerHooks.contains { hook in
                         guard let command = hook["command"] as? String else { return false }
-                        return command.contains("hud-state-tracker")
+                        return command.contains("hud-hook") || command.contains("hud-state-tracker")
                     }
                 }
 

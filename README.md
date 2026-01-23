@@ -73,26 +73,26 @@ swift run
 
 Claude HUD tracks session state via Claude Code hooks. To enable:
 
-1. Copy the hook script:
+1. Install the hook binary:
    ```bash
-   mkdir -p ~/.claude/scripts
-   cp scripts/hud-state-tracker.sh ~/.claude/scripts/
-   chmod +x ~/.claude/scripts/hud-state-tracker.sh
+   ./scripts/sync-hooks.sh
    ```
 
-2. Add hooks to your Claude Code settings (`~/.claude/settings.json`):
+2. Launch the app. If hooks aren't configured, you'll see a setup card with a "Fix All" button that automatically configures your `~/.claude/settings.json`.
+
+   **Or manually** add hooks to your Claude Code settings (`~/.claude/settings.json`):
    ```json
    {
      "hooks": {
-       "SessionStart": [{ "hooks": [{ "type": "command", "command": "$HOME/.claude/scripts/hud-state-tracker.sh" }] }],
-       "SessionEnd": [{ "hooks": [{ "type": "command", "command": "$HOME/.claude/scripts/hud-state-tracker.sh" }] }],
-       "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "$HOME/.claude/scripts/hud-state-tracker.sh" }] }],
-       "PreToolUse": [{ "matcher": "*", "hooks": [{ "type": "command", "command": "$HOME/.claude/scripts/hud-state-tracker.sh" }] }],
-       "PostToolUse": [{ "matcher": "*", "hooks": [{ "type": "command", "command": "$HOME/.claude/scripts/hud-state-tracker.sh" }] }],
-       "PermissionRequest": [{ "matcher": "*", "hooks": [{ "type": "command", "command": "$HOME/.claude/scripts/hud-state-tracker.sh" }] }],
-       "Stop": [{ "hooks": [{ "type": "command", "command": "$HOME/.claude/scripts/hud-state-tracker.sh" }] }],
-       "PreCompact": [{ "hooks": [{ "type": "command", "command": "$HOME/.claude/scripts/hud-state-tracker.sh" }] }],
-       "Notification": [{ "hooks": [{ "type": "command", "command": "$HOME/.claude/scripts/hud-state-tracker.sh" }] }]
+       "SessionStart": [{ "hooks": [{ "type": "command", "command": "$HOME/.local/bin/hud-hook handle" }] }],
+       "SessionEnd": [{ "hooks": [{ "type": "command", "command": "$HOME/.local/bin/hud-hook handle" }] }],
+       "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "$HOME/.local/bin/hud-hook handle" }] }],
+       "PreToolUse": [{ "matcher": "*", "hooks": [{ "type": "command", "command": "$HOME/.local/bin/hud-hook handle" }] }],
+       "PostToolUse": [{ "matcher": "*", "hooks": [{ "type": "command", "command": "$HOME/.local/bin/hud-hook handle" }] }],
+       "PermissionRequest": [{ "matcher": "*", "hooks": [{ "type": "command", "command": "$HOME/.local/bin/hud-hook handle" }] }],
+       "Stop": [{ "hooks": [{ "type": "command", "command": "$HOME/.local/bin/hud-hook handle" }] }],
+       "PreCompact": [{ "hooks": [{ "type": "command", "command": "$HOME/.local/bin/hud-hook handle" }] }],
+       "Notification": [{ "hooks": [{ "type": "command", "command": "$HOME/.local/bin/hud-hook handle" }] }]
      }
    }
    ```

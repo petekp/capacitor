@@ -81,10 +81,10 @@ The checksums are embedded in both the dylib and Swift bindings. They must match
 
 ## Modifying Hook State Tracking
 
-Hook handling is implemented in Rust (`core/hud-hook/`) with a thin bash wrapper.
+Hook handling is implemented entirely in Rust (`core/hud-hook/`).
 
 **Architecture:**
-- `scripts/hud-state-tracker.sh` — Thin wrapper that delegates to Rust binary
+- `core/hud-hook/src/main.rs` — Entry point for hook binary
 - `core/hud-hook/src/handle.rs` — Main hook handler (state transitions)
 - `core/hud-hook/src/lock_holder.rs` — Lock management daemon
 - `core/hud-core/src/state/` — Shared state types and resolution logic
@@ -92,7 +92,6 @@ Hook handling is implemented in Rust (`core/hud-hook/`) with a thin bash wrapper
 **To modify hook behavior:**
 
 1. **Read the docs first:**
-   - `scripts/hud-state-tracker.sh` header — State machine overview
    - `core/hud-core/src/state/types.rs` — Canonical hook→state mapping
    - `docs/claude-code/hooks.md` — Claude Code event payloads
 

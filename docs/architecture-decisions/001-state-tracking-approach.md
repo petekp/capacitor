@@ -85,9 +85,7 @@ For the current phase of Claude HUD development:
 
 ~/.claude/                  # Claude Code namespace (read-only for Capacitor)
 ├── projects/               # Session transcripts
-├── settings.json           # Contains hook configuration
-└── scripts/
-    └── hud-state-tracker.sh  # Hook script that updates state file
+└── settings.json           # Contains hook configuration pointing to ~/.local/bin/hud-hook
 ```
 
 ## References

@@ -131,13 +131,13 @@ Hooks track local Claude Code sessions → state file → HUD reads.
 **Paths:**
 - **State file:** `~/.capacitor/sessions.json`
 - **Lock directory:** `~/.capacitor/sessions/`
-- **Hook script:** `~/.claude/scripts/hud-state-tracker.sh`
+- **Hook binary:** `~/.local/bin/hud-hook`
 
 **Resolution principle:** Lock existence is authoritative. When a lock exists with a live PID, trust the recorded state regardless of timestamp freshness. This handles tool-free text generation where no hook events fire for extended periods.
 
-**Docs live in code:** See `scripts/hud-state-tracker.sh` header for state machine, debugging commands, and troubleshooting. See `core/hud-core/src/state/` for architecture.
+**Architecture:** See `core/hud-hook/src/main.rs` for the hook binary implementation and `core/hud-core/src/state/` for state architecture.
 
-**Hook Sync:** The installed hook must match the repo version. Use `./scripts/sync-hooks.sh` to check/update. The `restart-app.sh` script warns about mismatches.
+**Hook Setup:** Use `./scripts/sync-hooks.sh` to install the binary, then run the app and click "Fix All" in the setup card to configure hooks in `~/.claude/settings.json`.
 
 ## Documentation Index
 
