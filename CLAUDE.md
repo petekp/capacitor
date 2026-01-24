@@ -84,6 +84,7 @@ See `docs/NOTARIZATION_SETUP.md` for full guide.
 
 ### Gotchas
 
+- **SwiftUI view reuse breaks re-triggering** — When showing the same content repeatedly (toasts, alerts), use `.id(uniqueValue)` to force SwiftUI to create a fresh view instance. Without this, `onAppear` won't re-fire and animations won't replay.
 - **Dev builds need dylib copied** — After bootstrap or Rust rebuilds, run `cp target/release/libhud_core.dylib apps/swift/.build/arm64-apple-macosx/debug/`. Without this, the app crashes with "Library not loaded: @rpath/libhud_core.dylib". The bootstrap script handles this automatically.
 - **Sparkle.framework must be bundled** — Swift Package Manager links but doesn't embed frameworks. The build script copies it to `Contents/Frameworks/` and signs it.
 - **Private repos break auto-updates** — Sparkle fetches appcast.xml anonymously; private GitHub repos return 404. Repo must be public for updates to work.
