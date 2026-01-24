@@ -17,14 +17,18 @@
 
 use std::collections::HashMap;
 use std::fs::{self, OpenOptions};
-use std::io::{BufWriter, Write};
+use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::Path;
 use std::process::Command;
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 use tempfile::NamedTempFile;
 use thiserror::Error;
+
+const HISTORY_RETENTION_DAYS: i64 = 30;
+const CLEANUP_PROBABILITY: f64 = 0.01;
 
 #[derive(Error, Debug)]
 pub enum CwdError {
@@ -109,6 +113,8 @@ pub fn run(path: &str, pid: u32, tty: &str) -> Result<(), CwdError> {
         )?;
     }
 
+    maybe_cleanup_history(&history_path);
+
     Ok(())
 }
 
@@ -182,6 +188,72 @@ fn append_history(
     writer.flush()?;
 
     Ok(())
+}
+
+fn maybe_cleanup_history(path: &Path) {
+    if rand::thread_rng().gen::<f64>() > CLEANUP_PROBABILITY {
+        return;
+    }
+
+    if let Err(e) = cleanup_history(path, HISTORY_RETENTION_DAYS) {
+        eprintln!("Warning: Failed to cleanup history: {}", e);
+    }
+}
+
+fn cleanup_history(path: &Path, retention_days: i64) -> Result<(), CwdError> {
+    if !path.exists() {
+        return Ok(());
+    }
+
+    let cutoff = Utc::now() - Duration::days(retention_days);
+
+    let file = fs::File::open(path)?;
+    let reader = BufReader::new(file);
+
+    let mut kept_lines = Vec::new();
+    let mut removed_count = 0;
+
+    for line in reader.lines() {
+        let line = line?;
+        if line.trim().is_empty() {
+            continue;
+        }
+
+        if let Ok(entry) = serde_json::from_str::<HistoryEntry>(&line) {
+            if entry.timestamp >= cutoff {
+                kept_lines.push(line);
+            } else {
+                removed_count += 1;
+            }
+        } else {
+            kept_lines.push(line);
+        }
+    }
+
+    if removed_count == 0 {
+        return Ok(());
+    }
+
+    let parent_dir = path
+        .parent()
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "No parent directory"))?;
+
+    let temp_file = NamedTempFile::new_in(parent_dir)?;
+    {
+        let mut writer = BufWriter::new(&temp_file);
+        for line in kept_lines {
+            writeln!(writer, "{}", line)?;
+        }
+        writer.flush()?;
+    }
+    temp_file.persist(path)?;
+
+    Ok(())
+}
+
+#[derive(Debug, Deserialize)]
+struct HistoryEntry {
+    timestamp: DateTime<Utc>,
 }
 
 const KNOWN_APPS: &[(&str, &str)] = &[
@@ -414,5 +486,49 @@ mod tests {
             loaded.shells["12345"].parent_app,
             original.shells["12345"].parent_app
         );
+    }
+
+    #[test]
+    fn test_cleanup_history_removes_old_entries() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("history.jsonl");
+
+        let now = Utc::now();
+        let old_time = now - chrono::Duration::days(60);
+        let recent_time = now - chrono::Duration::days(10);
+
+        let mut content = String::new();
+        content.push_str(&format!(
+            "{{\"cwd\":\"/old\",\"pid\":1,\"tty\":\"/dev/ttys000\",\"parent_app\":null,\"timestamp\":\"{}\"}}\n",
+            old_time.to_rfc3339()
+        ));
+        content.push_str(&format!(
+            "{{\"cwd\":\"/recent\",\"pid\":2,\"tty\":\"/dev/ttys001\",\"parent_app\":null,\"timestamp\":\"{}\"}}\n",
+            recent_time.to_rfc3339()
+        ));
+        content.push_str(&format!(
+            "{{\"cwd\":\"/new\",\"pid\":3,\"tty\":\"/dev/ttys002\",\"parent_app\":null,\"timestamp\":\"{}\"}}\n",
+            now.to_rfc3339()
+        ));
+
+        fs::write(&path, content).unwrap();
+
+        cleanup_history(&path, 30).unwrap();
+
+        let result = fs::read_to_string(&path).unwrap();
+        let lines: Vec<&str> = result.lines().collect();
+
+        assert_eq!(lines.len(), 2);
+        assert!(lines[0].contains("/recent"));
+        assert!(lines[1].contains("/new"));
+    }
+
+    #[test]
+    fn test_cleanup_history_handles_missing_file() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("nonexistent.jsonl");
+
+        let result = cleanup_history(&path, 30);
+        assert!(result.is_ok());
     }
 }

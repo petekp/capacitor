@@ -19,5 +19,6 @@ serde_json.workspace = true
 chrono.workspace = true
 dirs.workspace = true
 libc = "0.2"
+rand = "0.8"
 tempfile = "3.14"
 thiserror.workspace = true

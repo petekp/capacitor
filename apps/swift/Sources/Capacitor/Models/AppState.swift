@@ -81,6 +81,7 @@ class AppState: ObservableObject {
     // MARK: - Managers (extracted for cleaner architecture)
 
     let shellStateStore = ShellStateStore()
+    let shellHistoryStore = ShellHistoryStore()
     let terminalLauncher = TerminalLauncher()
     let sessionStateManager = SessionStateManager()
     let projectDetailsManager = ProjectDetailsManager()
@@ -161,7 +162,21 @@ class AppState: ObservableObject {
 
     private func startShellTracking() {
         shellStateStore.startPolling()
+        shellHistoryStore.load()
         activeProjectResolver.updateProjects(projects)
+    }
+
+    func recentlyVisitedProjects(limit: Int = 10) -> [String] {
+        let projectPaths = projects.map { $0.path }
+        return shellHistoryStore.recentlyVisitedProjects(matching: projectPaths, limit: limit)
+    }
+
+    func lastVisited(_ project: Project) -> Date? {
+        shellHistoryStore.lastVisited(project.path)
+    }
+
+    func visitCount(for project: Project) -> Int {
+        shellHistoryStore.visits(for: project.path)
     }
 
     // MARK: - Data Loading
