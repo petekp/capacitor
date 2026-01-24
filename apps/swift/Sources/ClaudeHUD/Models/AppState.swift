@@ -56,11 +56,6 @@ class AppState: ObservableObject {
     @Published var toast: ToastMessage?
     @Published var pendingDragDropTip = false
 
-    // MARK: - Dev Environment
-
-    @Published var devServerPorts: [String: UInt16] = [:]
-    @Published var devServerBrowsers: [String: String] = [:]
-
     // MARK: - Hook Diagnostic
 
     @Published var hookDiagnostic: HookDiagnosticReport?
@@ -170,7 +165,6 @@ class AppState: ObservableObject {
             terminalIntegration.updateProjectMapping(projects)
             refreshSessionStates()
             refreshProjectStatuses()
-            refreshDevServers()
             projectDetailsManager.loadAllIdeas(for: projects)
             isLoading = false
         } catch {
@@ -474,31 +468,6 @@ class AppState: ObservableObject {
 
     func isManuallyDormant(_ project: Project) -> Bool {
         manuallyDormant.contains(project.path)
-    }
-
-    // MARK: - Dev Environment
-
-    nonisolated func refreshDevServers() {
-        _Concurrency.Task { @MainActor [weak self] in
-            guard let self = self else { return }
-            let projectsCopy = self.projects
-
-            for project in projectsCopy {
-                let projectPath = project.path
-                let port = await DevEnvironment.findDevServerPort(for: projectPath)
-
-                if let port = port {
-                    self.devServerPorts[projectPath] = port
-                    let browser = await DevEnvironment.findBrowserWithLocalhost(port: port)
-                    if let browser = browser {
-                        self.devServerBrowsers[projectPath] = browser
-                    }
-                } else {
-                    self.devServerPorts.removeValue(forKey: projectPath)
-                    self.devServerBrowsers.removeValue(forKey: projectPath)
-                }
-            }
-        }
     }
 
     // MARK: - Idea Capture (delegating to ProjectDetailsManager)

@@ -45,55 +45,6 @@ struct VibrancyView: NSViewRepresentable {
     }
 }
 
-class VibrantHostingView<Content: View>: NSHostingView<Content> {
-    override var allowsVibrancy: Bool { true }
-}
-
-struct VibrantContentView<Content: View>: NSViewRepresentable {
-    let material: NSVisualEffectView.Material
-    let blendingMode: NSVisualEffectView.BlendingMode
-    let content: Content
-
-    init(
-        material: NSVisualEffectView.Material = .hudWindow,
-        blendingMode: NSVisualEffectView.BlendingMode = .behindWindow,
-        @ViewBuilder content: () -> Content
-    ) {
-        self.material = material
-        self.blendingMode = blendingMode
-        self.content = content()
-    }
-
-    func makeNSView(context: Context) -> NSVisualEffectView {
-        let effectView = NSVisualEffectView()
-        effectView.material = material
-        effectView.blendingMode = blendingMode
-        effectView.state = .active
-
-        let hostingView = VibrantHostingView(rootView: content)
-        hostingView.translatesAutoresizingMaskIntoConstraints = false
-
-        effectView.addSubview(hostingView)
-        NSLayoutConstraint.activate([
-            hostingView.leadingAnchor.constraint(equalTo: effectView.leadingAnchor),
-            hostingView.trailingAnchor.constraint(equalTo: effectView.trailingAnchor),
-            hostingView.topAnchor.constraint(equalTo: effectView.topAnchor),
-            hostingView.bottomAnchor.constraint(equalTo: effectView.bottomAnchor)
-        ])
-
-        return effectView
-    }
-
-    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
-        nsView.material = material
-        nsView.blendingMode = blendingMode
-
-        if let hostingView = nsView.subviews.first as? VibrantHostingView<Content> {
-            hostingView.rootView = content
-        }
-    }
-}
-
 extension View {
     func vibrancy(
         material: NSVisualEffectView.Material = .hudWindow,
@@ -109,15 +60,6 @@ extension View {
                 forceDarkAppearance: forceDarkAppearance
             )
         )
-    }
-
-    func vibrantContent(
-        material: NSVisualEffectView.Material = .hudWindow,
-        blendingMode: NSVisualEffectView.BlendingMode = .behindWindow
-    ) -> some View {
-        VibrantContentView(material: material, blendingMode: blendingMode) {
-            self
-        }
     }
 }
 
