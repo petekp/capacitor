@@ -223,7 +223,13 @@ class AppState: ObservableObject {
     }
 
     /// Adds multiple projects from a drag-and-drop operation.
-    /// Shows error-first toast with truncation for mixed results.
+    ///
+    /// Toast priority: errors first, then success. For mixed results, shows
+    /// "project-a, project-b and X more failed (Y added)" to surface failures
+    /// prominently while still acknowledging successes.
+    ///
+    /// Already-tracked projects are silently moved from Paused to In Progress
+    /// if applicable, showing "Moved to In Progress" rather than an error.
     func addProjectsFromDrop(_ urls: [URL]) {
         guard let engine = engine else { return }
 

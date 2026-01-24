@@ -1,3 +1,13 @@
+// ToastView.swift
+//
+// Auto-dismissing notification toasts that appear at the bottom of the window.
+// Used for confirmations ("Added!") and errors ("project-x failed").
+//
+// Key design decision: Each ToastMessage has a unique ID so we can use .id()
+// to force SwiftUI to create fresh view instances. Without this, rapidly
+// triggering the same toast wouldn't re-animate because SwiftUI reuses the
+// existing view and onAppear doesn't re-fire.
+
 import SwiftUI
 
 struct ToastMessage: Equatable, Identifiable {
@@ -78,6 +88,7 @@ struct ToastContainer: View {
                 ToastView(toast: toast) {
                     self.toast = nil
                 }
+                // Force new view instance per toast so onAppear re-triggers animation
                 .id(toast.id)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
                 .padding(.bottom, 20)

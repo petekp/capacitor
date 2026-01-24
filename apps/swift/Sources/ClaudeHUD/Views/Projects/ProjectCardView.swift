@@ -68,8 +68,11 @@ struct ProjectCardView: View {
         project.isMissing ? .white.opacity(0.5) : .white.opacity(0.9)
     }
 
+    /// Three-tier fallback ensures cards always show meaningful context:
+    /// 1. Live session summary (workingOn) — updated by hooks during active sessions
+    /// 2. Cached summary (lastKnownSummary) — retained after session ends, before next refresh
+    /// 3. Stats summary (latestSummary) — parsed from JSONL transcript history
     private var displaySummary: String? {
-        // Priority: live session summary > cached summary > stats summary from JSONL
         if let current = sessionState?.workingOn, !current.isEmpty {
             return current
         }

@@ -1,3 +1,13 @@
+// TipTooltipView.swift
+//
+// One-time educational tooltip for feature discoverability.
+// Shown once after a user's first "Link Project" button click to hint
+// that drag-and-drop is also available. Uses @AppStorage to persist
+// the "has seen" flag across launches.
+//
+// Timing: Appears after the toast dismisses (if any) to avoid overlap.
+// Auto-dismisses after 4 seconds, or on tap.
+
 import SwiftUI
 
 struct TipTooltipView: View {

@@ -1,3 +1,16 @@
+// VibrancyView.swift
+//
+// Bridges AppKit's NSVisualEffectView into SwiftUI for frosted glass effects.
+// Used as a background layer under SwiftUI content via the .vibrancy() modifier.
+//
+// The key components:
+// - VibrancyView: Raw NSViewRepresentable wrapper
+// - .vibrancy() modifier: Applies VibrancyView as background
+// - DarkFrostedGlass: Panel background with configurable material + overlays
+// - DarkFrostedCard: Card background, lighter weight than panel version
+//
+// forceDarkAppearance ensures consistent look regardless of system theme.
+
 import SwiftUI
 import AppKit
 
