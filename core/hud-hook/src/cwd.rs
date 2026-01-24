@@ -19,7 +19,6 @@ use std::collections::HashMap;
 use std::fs::{self, OpenOptions};
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::Path;
-use std::process::Command;
 
 use chrono::{DateTime, Duration, Utc};
 use rand::Rng;
@@ -103,14 +102,17 @@ pub fn run(path: &str, pid: u32, tty: &str) -> Result<(), CwdError> {
 
     write_state_atomic(&cwd_path, &state)?;
 
+    // History append is non-critical - log errors but don't fail the operation
     if cwd_changed {
-        append_history(
+        if let Err(e) = append_history(
             &history_path,
             &normalized_path,
             pid,
             tty,
             parent_app.as_deref(),
-        )?;
+        ) {
+            eprintln!("Warning: Failed to append history: {}", e);
+        }
     }
 
     maybe_cleanup_history(&history_path);
@@ -151,6 +153,7 @@ fn write_state_atomic(path: &Path, state: &ShellCwdState) -> Result<(), CwdError
 
     let temp_file = NamedTempFile::new_in(parent_dir)?;
     serde_json::to_writer_pretty(&temp_file, state)?;
+    temp_file.as_file().sync_all()?;
     temp_file.persist(path)?;
 
     Ok(())
@@ -246,6 +249,7 @@ fn cleanup_history(path: &Path, retention_days: i64) -> Result<(), CwdError> {
         }
         writer.flush()?;
     }
+    temp_file.as_file().sync_all()?;
     temp_file.persist(path)?;
 
     Ok(())
@@ -300,22 +304,76 @@ fn detect_parent_app(pid: u32) -> Option<String> {
 }
 
 fn get_parent_pid(pid: u32) -> Result<u32, std::io::Error> {
-    let output = Command::new("ps")
-        .args(["-o", "ppid=", "-p", &pid.to_string()])
-        .output()?;
+    #[repr(C)]
+    struct ProcBsdInfo {
+        pbi_flags: u32,
+        pbi_status: u32,
+        pbi_xstatus: u32,
+        pbi_pid: u32,
+        pbi_ppid: u32,
+        // ... more fields we don't need
+        _padding: [u8; 120],
+    }
 
-    String::from_utf8_lossy(&output.stdout)
-        .trim()
-        .parse()
-        .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidData, "Failed to parse PPID"))
+    const PROC_PIDTBSDINFO: i32 = 3;
+
+    extern "C" {
+        fn proc_pidinfo(
+            pid: i32,
+            flavor: i32,
+            arg: u64,
+            buffer: *mut libc::c_void,
+            buffersize: i32,
+        ) -> i32;
+    }
+
+    let mut info: ProcBsdInfo = unsafe { std::mem::zeroed() };
+    let size = std::mem::size_of::<ProcBsdInfo>() as i32;
+
+    let result = unsafe {
+        proc_pidinfo(
+            pid as i32,
+            PROC_PIDTBSDINFO,
+            0,
+            &mut info as *mut _ as *mut libc::c_void,
+            size,
+        )
+    };
+
+    if result <= 0 {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "Failed to get process info",
+        ));
+    }
+
+    Ok(info.pbi_ppid)
 }
 
 fn get_process_name(pid: u32) -> Result<String, std::io::Error> {
-    let output = Command::new("ps")
-        .args(["-o", "comm=", "-p", &pid.to_string()])
-        .output()?;
+    const PROC_PIDPATHINFO_MAXSIZE: usize = 4096;
 
-    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    extern "C" {
+        fn proc_name(pid: i32, buffer: *mut libc::c_char, buffersize: u32) -> i32;
+    }
+
+    let mut buffer = vec![0i8; PROC_PIDPATHINFO_MAXSIZE];
+    let result = unsafe { proc_name(pid as i32, buffer.as_mut_ptr(), buffer.len() as u32) };
+
+    if result <= 0 {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "Failed to get process name",
+        ));
+    }
+
+    let name = unsafe {
+        std::ffi::CStr::from_ptr(buffer.as_ptr())
+            .to_string_lossy()
+            .into_owned()
+    };
+
+    Ok(name)
 }
 
 #[cfg(test)]
@@ -530,5 +588,98 @@ mod tests {
 
         let result = cleanup_history(&path, 30);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_paths_with_spaces() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("state.json");
+
+        let mut state = ShellCwdState::default();
+        state.shells.insert(
+            "12345".to_string(),
+            ShellEntry {
+                cwd: "/Users/test/My Documents/Project Name".to_string(),
+                tty: "/dev/ttys000".to_string(),
+                parent_app: None,
+                updated_at: Utc::now(),
+            },
+        );
+
+        write_state_atomic(&path, &state).unwrap();
+        let loaded = load_state(&path).unwrap();
+
+        assert_eq!(
+            loaded.shells["12345"].cwd,
+            "/Users/test/My Documents/Project Name"
+        );
+    }
+
+    #[test]
+    fn test_paths_with_special_characters() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("state.json");
+
+        let mut state = ShellCwdState::default();
+        state.shells.insert(
+            "12345".to_string(),
+            ShellEntry {
+                cwd: r#"/path/with "quotes" and \backslashes\ and $dollars"#.to_string(),
+                tty: "/dev/ttys000".to_string(),
+                parent_app: None,
+                updated_at: Utc::now(),
+            },
+        );
+
+        write_state_atomic(&path, &state).unwrap();
+        let loaded = load_state(&path).unwrap();
+
+        assert_eq!(
+            loaded.shells["12345"].cwd,
+            r#"/path/with "quotes" and \backslashes\ and $dollars"#
+        );
+    }
+
+    #[test]
+    fn test_paths_with_unicode() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("state.json");
+
+        let mut state = ShellCwdState::default();
+        state.shells.insert(
+            "12345".to_string(),
+            ShellEntry {
+                cwd: "/Users/日本語/项目/مشروع/🚀".to_string(),
+                tty: "/dev/ttys000".to_string(),
+                parent_app: None,
+                updated_at: Utc::now(),
+            },
+        );
+
+        write_state_atomic(&path, &state).unwrap();
+        let loaded = load_state(&path).unwrap();
+
+        assert_eq!(loaded.shells["12345"].cwd, "/Users/日本語/项目/مشروع/🚀");
+    }
+
+    #[test]
+    fn test_history_with_special_paths() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("history.jsonl");
+
+        let special_path = r#"/path/with "quotes" and spaces/日本語"#;
+        append_history(&path, special_path, 12345, "/dev/ttys000", None).unwrap();
+
+        let content = fs::read_to_string(&path).unwrap();
+        let entry: serde_json::Value = serde_json::from_str(content.trim()).unwrap();
+
+        assert_eq!(entry["cwd"], special_path);
+    }
+
+    #[test]
+    fn test_normalize_path_preserves_special_chars() {
+        assert_eq!(normalize_path("/path/with spaces/"), "/path/with spaces");
+        assert_eq!(normalize_path("/path/日本語/"), "/path/日本語");
+        assert_eq!(normalize_path(r#"/path/"quotes"/"#), r#"/path/"quotes""#);
     }
 }

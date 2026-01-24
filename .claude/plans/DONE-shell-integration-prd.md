@@ -1,6 +1,6 @@
 # Shell Integration: Ambient Development Awareness
 
-**Status:** ACTIVE
+**Status:** DONE
 **Companion Doc:** [Shell Integration Engineering](./ACTIVE-shell-integration-engineering.md)
 **Created:** 2025-01-23
 **Last Updated:** 2025-01-24

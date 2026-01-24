@@ -124,7 +124,10 @@ See [ADR-003: Sidecar Architecture Pattern](docs/architecture-decisions/003-side
 | HudEngine facade | `core/hud-core/src/engine.rs` |
 | Shared types | `core/hud-core/src/types.rs` |
 | Session state detection | `core/hud-core/src/sessions.rs` |
+| Shell CWD tracking | `core/hud-hook/src/cwd.rs` |
 | Swift app state | `apps/swift/Sources/Capacitor/Models/AppState.swift` |
+| Shell state store | `apps/swift/Sources/Capacitor/Models/ShellStateStore.swift` |
+| Active project resolver | `apps/swift/Sources/Capacitor/Services/ActiveProjectResolver.swift` |
 | UniFFI bindings | `apps/swift/Sources/Capacitor/Bridge/hud_core.swift` |
 
 ## State Tracking
@@ -141,6 +144,20 @@ Hooks track local Claude Code sessions → state file → Capacitor reads.
 **Architecture:** See `core/hud-hook/src/main.rs` for the hook binary implementation and `core/hud-core/src/state/` for state architecture.
 
 **Hook Setup:** Use `./scripts/sync-hooks.sh` to install the binary, then run the app and click "Fix All" in the setup card to configure hooks in `~/.claude/settings.json`.
+
+### Shell Integration
+
+Shell precmd hooks push CWD changes to Capacitor for ambient project awareness.
+
+**Paths:**
+- **Current state:** `~/.capacitor/shell-cwd.json` — Active shell sessions and their CWD
+- **History log:** `~/.capacitor/shell-history.jsonl` — Append-only CWD change history (30-day retention)
+
+**How it works:** Shell hooks call `hud-hook cwd "$PWD" "$$" "$TTY"` on every prompt. The hook updates state atomically, cleans up dead PIDs, and detects parent app (Cursor/VSCode/terminal). Swift's `ActiveProjectResolver` combines Claude sessions and shell CWD to determine the active project.
+
+**Performance:** Target <15ms execution. Uses native macOS `libproc` APIs instead of subprocess calls for process tree walking.
+
+**Shell setup:** See the Setup card in the app, which provides shell-specific snippets for zsh, bash, and fish.
 
 ## Documentation Index
 

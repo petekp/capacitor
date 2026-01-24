@@ -1,6 +1,6 @@
 # Shell Integration: Engineering Specification
 
-**Status:** ACTIVE
+**Status:** DONE
 **Companion Doc:** [Shell Integration PRD](./ACTIVE-shell-integration-prd.md)
 **Created:** 2025-01-23
 **Last Updated:** 2025-01-24

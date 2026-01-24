@@ -72,9 +72,9 @@ fn main() {
             }
         }
         Commands::Cwd { path, pid, tty } => {
+            // CWD tracking is non-critical - log errors but exit 0 to not disrupt shell
             if let Err(e) = cwd::run(&path, pid, &tty) {
                 eprintln!("hud-hook cwd error: {}", e);
-                std::process::exit(1);
             }
         }
         Commands::LockHolder {
