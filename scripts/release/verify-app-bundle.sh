@@ -4,7 +4,7 @@
 # Run this AFTER build-distribution.sh --skip-notarization to catch issues early
 #
 # Usage: ./verify-app-bundle.sh [path-to-app]
-#        Defaults to apps/swift/ClaudeHUD.app
+#        Defaults to apps/swift/Capacitor.app
 
 set -e
 
@@ -25,7 +25,7 @@ if [ "$(uname -m)" != "arm64" ]; then
     fi
     exit 1
 fi
-APP_BUNDLE="${1:-$PROJECT_ROOT/apps/swift/ClaudeHUD.app}"
+APP_BUNDLE="${1:-$PROJECT_ROOT/apps/swift/Capacitor.app}"
 
 echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}Pre-Release App Bundle Verification${NC}"
@@ -48,7 +48,7 @@ warn() { echo -e "${YELLOW}!${NC} $1"; ((WARNINGS++)); }
 echo -e "${YELLOW}[1/6] Checking bundle structure...${NC}"
 
 [ -d "$APP_BUNDLE" ] && pass "App bundle exists" || fail "App bundle not found"
-[ -f "$APP_BUNDLE/Contents/MacOS/ClaudeHUD" ] && pass "Executable exists" || fail "Executable missing"
+[ -f "$APP_BUNDLE/Contents/MacOS/Capacitor" ] && pass "Executable exists" || fail "Executable missing"
 [ -f "$APP_BUNDLE/Contents/Info.plist" ] && pass "Info.plist exists" || fail "Info.plist missing"
 [ -d "$APP_BUNDLE/Contents/Frameworks" ] && pass "Frameworks directory exists" || fail "Frameworks directory missing"
 [ -d "$APP_BUNDLE/Contents/Resources" ] && pass "Resources directory exists" || fail "Resources directory missing"
@@ -74,8 +74,8 @@ if [ -f "$APP_BUNDLE/Contents/Frameworks/libhud_core.dylib" ]; then
 fi
 
 # Check executable rpath
-if [ -f "$APP_BUNDLE/Contents/MacOS/ClaudeHUD" ]; then
-    RPATHS=$(otool -l "$APP_BUNDLE/Contents/MacOS/ClaudeHUD" | grep -A2 "LC_RPATH" | grep "path" | awk '{print $2}')
+if [ -f "$APP_BUNDLE/Contents/MacOS/Capacitor" ]; then
+    RPATHS=$(otool -l "$APP_BUNDLE/Contents/MacOS/Capacitor" | grep -A2 "LC_RPATH" | grep "path" | awk '{print $2}')
     if echo "$RPATHS" | grep -q "@executable_path/../Frameworks"; then
         pass "Executable has correct rpath"
     else
@@ -90,7 +90,7 @@ echo ""
 # ============================================
 echo -e "${YELLOW}[3/6] Checking resource bundle...${NC}"
 
-RESOURCE_BUNDLE="$APP_BUNDLE/Contents/Resources/ClaudeHUD_ClaudeHUD.bundle"
+RESOURCE_BUNDLE="$APP_BUNDLE/Contents/Resources/Capacitor_Capacitor.bundle"
 if [ -d "$RESOURCE_BUNDLE" ]; then
     pass "SPM resource bundle present"
 
@@ -162,7 +162,7 @@ echo ""
 echo -e "${YELLOW}[5/6] Testing app launch...${NC}"
 
 # Kill any existing instance
-pkill -f "ClaudeHUD.app/Contents/MacOS/ClaudeHUD" 2>/dev/null || true
+pkill -f "Capacitor.app/Contents/MacOS/Capacitor" 2>/dev/null || true
 sleep 0.5
 
 # Launch the app and capture any immediate crash
@@ -180,7 +180,7 @@ APP_PID=""
 
 while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
     sleep 1
-    APP_PID=$(pgrep -f "ClaudeHUD.app/Contents/MacOS/ClaudeHUD" || echo "")
+    APP_PID=$(pgrep -f "Capacitor.app/Contents/MacOS/Capacitor" || echo "")
     if [ -n "$APP_PID" ]; then
         break
     fi
@@ -195,7 +195,7 @@ if [ -n "$APP_PID" ]; then
     kill "$APP_PID" 2>/dev/null || true
 else
     # Check for crash reports
-    CRASH_REPORT=$(ls -t "$HOME/Library/Logs/DiagnosticReports/"*"ClaudeHUD"* 2>/dev/null | head -1 || echo "")
+    CRASH_REPORT=$(ls -t "$HOME/Library/Logs/DiagnosticReports/"*"Capacitor"* 2>/dev/null | head -1 || echo "")
     if [ -n "$CRASH_REPORT" ]; then
         fail "App CRASHED on launch! Check: $CRASH_REPORT"
     else
@@ -215,7 +215,7 @@ echo ""
 echo -e "${YELLOW}[6/6] Checking binary dependencies...${NC}"
 
 # Check that all dylib dependencies can be resolved
-MISSING_LIBS=$(otool -L "$APP_BUNDLE/Contents/MacOS/ClaudeHUD" 2>/dev/null | grep "not found" || echo "")
+MISSING_LIBS=$(otool -L "$APP_BUNDLE/Contents/MacOS/Capacitor" 2>/dev/null | grep "not found" || echo "")
 if [ -z "$MISSING_LIBS" ]; then
     pass "All executable dependencies resolvable"
 else

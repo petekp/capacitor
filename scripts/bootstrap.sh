@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # bootstrap.sh
 #
-# One-command setup for Claude HUD development environment. Validates macOS,
+# One-command setup for Capacitor development environment. Validates macOS,
 # installs missing toolchains, builds the Rust core with proper linking,
 # generates Swift bindings, and builds the app.
 #
@@ -15,7 +15,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-echo "=== Claude HUD Bootstrap ==="
+echo "=== Capacitor Bootstrap ==="
 
 # -----------------------------------------------------------------------------
 # Architecture validation
@@ -90,14 +90,14 @@ install_name_tool -id "@rpath/libhud_core.dylib" target/release/libhud_core.dyli
 # Generates Swift code from the compiled Rust library. Must regenerate after
 # any Rust API changes to avoid "UniFFI API checksum mismatch" crashes.
 # The bindings go to two places: where uniffi writes them (bindings/) and
-# where SPM expects them (Sources/ClaudeHUD/Bridge/).
+# where SPM expects them (Sources/Capacitor/Bridge/).
 # -----------------------------------------------------------------------------
 
 echo "Generating UniFFI bindings..."
 cargo run --bin uniffi-bindgen generate \
     --library target/release/libhud_core.dylib \
     --language swift --out-dir apps/swift/bindings
-cp apps/swift/bindings/hud_core.swift apps/swift/Sources/ClaudeHUD/Bridge/
+cp apps/swift/bindings/hud_core.swift apps/swift/Sources/Capacitor/Bridge/
 
 # -----------------------------------------------------------------------------
 # Build Swift app

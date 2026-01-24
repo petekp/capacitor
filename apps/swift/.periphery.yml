@@ -1,5 +1,5 @@
 targets:
-  - ClaudeHUD
+  - Capacitor
 
 # UniFFI auto-generated bindings - contains complete API surface
 # whether or not all functions are used

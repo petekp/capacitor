@@ -1,13 +1,13 @@
 import Foundation
 import os.log
 
-private let logger = Logger(subsystem: "com.claudehud.app", category: "ResourceBundle")
+private let logger = Logger(subsystem: "com.capacitor.app", category: "ResourceBundle")
 
 enum ResourceBundle {
     /// The bundle containing app resources (logomark, assets, etc.)
     /// Works in both SPM dev builds and distributed app bundles.
     static let bundle: Bundle? = {
-        let bundleName = "ClaudeHUD_ClaudeHUD"
+        let bundleName = "Capacitor_Capacitor"
 
         logger.debug("Looking for resource bundle '\(bundleName)'")
         logger.debug("  Bundle.main.bundlePath: \(Bundle.main.bundlePath)")

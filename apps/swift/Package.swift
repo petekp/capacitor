@@ -13,10 +13,10 @@
 import PackageDescription
 
 let package = Package(
-    name: "ClaudeHUD",
+    name: "Capacitor",
     platforms: [.macOS(.v14)],
     products: [
-        .executable(name: "ClaudeHUD", targets: ["ClaudeHUD"])
+        .executable(name: "Capacitor", targets: ["Capacitor"])
     ],
     dependencies: [
         .package(url: "https://github.com/daprice/Variablur.git", from: "1.0.0"),
@@ -31,13 +31,13 @@ let package = Package(
         ),
         // Main Swift app
         .executableTarget(
-            name: "ClaudeHUD",
+            name: "Capacitor",
             dependencies: [
                 "hud_coreFFI",
                 .product(name: "Variablur", package: "Variablur"),
                 .product(name: "Sparkle", package: "Sparkle")
             ],
-            path: "Sources/ClaudeHUD",
+            path: "Sources/Capacitor",
             resources: [
                 .process("Resources/Assets.xcassets"),
                 .process("Resources/logomark.pdf")
@@ -52,11 +52,11 @@ let package = Package(
         ),
         // Unit tests
         .testTarget(
-            name: "ClaudeHUDTests",
+            name: "CapacitorTests",
             dependencies: [
                 .product(name: "Sparkle", package: "Sparkle")
             ],
-            path: "Tests/ClaudeHUDTests"
+            path: "Tests/CapacitorTests"
         )
     ]
 )

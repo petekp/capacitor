@@ -37,7 +37,7 @@ struct SettingsView: View {
                 Section("Updates") {
                     Toggle("Check for updates automatically", isOn: $updaterController.automaticallyChecksForUpdates)
                         .accessibilityLabel("Automatic update checks")
-                        .accessibilityHint("When enabled, Claude HUD will periodically check for new versions")
+                        .accessibilityHint("When enabled, Capacitor will periodically check for new versions")
 
                     HStack {
                         LabeledContent("Last checked", value: lastCheckString)
@@ -55,8 +55,8 @@ struct SettingsView: View {
                     .accessibilityLabel("Version")
                     .accessibilityValue(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")
 
-                Link("Claude HUD on GitHub", destination: URL(string: "https://github.com/anthropics/claude-hud")!)
-                    .accessibilityLabel("Open Claude HUD on GitHub")
+                Link("Capacitor on GitHub", destination: URL(string: "https://github.com/petekp/capacitor")!)
+                    .accessibilityLabel("Open Capacitor on GitHub")
             }
 
             Section("Keyboard Shortcuts") {

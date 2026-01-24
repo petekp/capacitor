@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 
 @main
-struct ClaudeHUDApp: App {
+struct CapacitorApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @StateObject private var appState = AppState()
     @StateObject private var updaterController = UpdaterController()
@@ -120,7 +120,7 @@ struct ClaudeHUDApp: App {
             }
 
             CommandGroup(replacing: .help) {
-                Link("Claude HUD Help", destination: URL(string: "https://github.com/anthropics/claude-hud#readme")!)
+                Link("Capacitor Help", destination: URL(string: "https://github.com/petekp/capacitor#readme")!)
                     .keyboardShortcut("?", modifiers: [.command, .shift])
             }
 

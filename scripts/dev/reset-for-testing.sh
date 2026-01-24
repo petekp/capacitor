@@ -1,7 +1,7 @@
 #!/bin/bash
 # reset-for-testing.sh
 #
-# Resets Claude HUD to a completely clean state for manual testing.
+# Resets Capacitor to a completely clean state for manual testing.
 # Use this when you need to test onboarding, first-run experience,
 # or verify behavior from a fresh install.
 #
@@ -23,15 +23,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 echo "╔══════════════════════════════════════════════════════════════╗"
-echo "║           Claude HUD - Complete Reset for Testing            ║"
+echo "║           Capacitor - Complete Reset for Testing             ║"
 echo "╚══════════════════════════════════════════════════════════════╝"
 echo ""
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Step 1: Stop the app
 # ─────────────────────────────────────────────────────────────────────────────
-echo "→ Stopping ClaudeHUD if running..."
-pkill -f "ClaudeHUD" 2>/dev/null && echo "  ✓ Killed running instance" || echo "  ✓ No instance running"
+echo "→ Stopping Capacitor if running..."
+pkill -f "Capacitor" 2>/dev/null && echo "  ✓ Killed running instance" || echo "  ✓ No instance running"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Step 2: Clear UserDefaults
@@ -43,15 +43,16 @@ pkill -f "ClaudeHUD" 2>/dev/null && echo "  ✓ Killed running instance" || echo
 #   2. Kill cfprefsd to flush the cache (it auto-restarts)
 #
 # Different plist files exist depending on how the app was launched:
-#   - ClaudeHUD.plist         → `swift run` (uses executable name)
-#   - com.claudehud.app.plist → Release build (uses bundle identifier)
-#   - com.claudehud.app.debug.plist → Debug build
+#   - Capacitor.plist         → `swift run` (uses executable name)
+#   - com.capacitor.app.plist → Release build (uses bundle identifier)
+#   - com.capacitor.app.debug.plist → Debug build
 # ─────────────────────────────────────────────────────────────────────────────
 echo "→ Clearing app UserDefaults..."
-rm -f ~/Library/Preferences/ClaudeHUD.plist && echo "  ✓ Removed ClaudeHUD.plist (swift run)" || true
-rm -f ~/Library/Preferences/com.claudehud.app.plist && echo "  ✓ Removed com.claudehud.app.plist (release)" || true
-rm -f ~/Library/Preferences/com.claudehud.app.debug.plist && echo "  ✓ Removed com.claudehud.app.debug.plist (debug)" || true
-rm -f ~/Library/Preferences/claude-hud.plist && echo "  ✓ Removed claude-hud.plist (legacy)" || true
+rm -f ~/Library/Preferences/Capacitor.plist && echo "  ✓ Removed Capacitor.plist (swift run)" || true
+rm -f ~/Library/Preferences/com.capacitor.app.plist && echo "  ✓ Removed com.capacitor.app.plist (release)" || true
+rm -f ~/Library/Preferences/com.capacitor.app.debug.plist && echo "  ✓ Removed com.capacitor.app.debug.plist (debug)" || true
+rm -f ~/Library/Preferences/ClaudeHUD.plist && echo "  ✓ Removed ClaudeHUD.plist (legacy)" || true
+rm -f ~/Library/Preferences/com.claudehud.app.plist && echo "  ✓ Removed com.claudehud.app.plist (legacy)" || true
 
 # Force cfprefsd to drop its cache. Without this, deleted prefs may reappear.
 killall cfprefsd 2>/dev/null && echo "  ✓ Refreshed preferences cache" || true
@@ -143,7 +144,7 @@ echo "╔═══════════════════════�
 echo "║                    Reset Complete!                           ║"
 echo "╚══════════════════════════════════════════════════════════════╝"
 echo ""
-echo "Launching ClaudeHUD..."
+echo "Launching Capacitor..."
 echo ""
 
 cd "$REPO_ROOT/apps/swift"

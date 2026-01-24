@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Generate Sparkle appcast.xml for Claude HUD
+# Generate Sparkle appcast.xml for Capacitor
 # Usage: ./generate-appcast.sh [--sign]
 #
 # The --sign flag will sign the appcast with EdDSA.
@@ -46,7 +46,7 @@ echo -e "${GREEN}========================================${NC}"
 echo ""
 
 ARCH=$(uname -m)
-ZIP_NAME="ClaudeHUD-v$VERSION-$ARCH.zip"
+ZIP_NAME="Capacitor-v$VERSION-$ARCH.zip"
 ZIP_PATH="$DIST_DIR/$ZIP_NAME"
 
 if [ ! -f "$ZIP_PATH" ]; then
@@ -55,7 +55,7 @@ if [ ! -f "$ZIP_PATH" ]; then
     exit 1
 fi
 
-GITHUB_REPO="petekp/claude-hud"
+GITHUB_REPO="petekp/capacitor"
 DOWNLOAD_URL="https://github.com/$GITHUB_REPO/releases/download/v$VERSION/$ZIP_NAME"
 
 FILE_SIZE=$(stat -f%z "$ZIP_PATH")
@@ -95,9 +95,9 @@ cat > "$DIST_DIR/appcast.xml" << EOF
 <?xml version="1.0" encoding="utf-8"?>
 <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" xmlns:dc="http://purl.org/dc/elements/1.1/">
     <channel>
-        <title>Claude HUD Updates</title>
+        <title>Capacitor Updates</title>
         <link>https://github.com/$GITHUB_REPO</link>
-        <description>Most recent updates to Claude HUD</description>
+        <description>Most recent updates to Capacitor</description>
         <language>en</language>
         <item>
             <title>Version $VERSION</title>
@@ -112,7 +112,7 @@ cat > "$DIST_DIR/appcast.xml" << EOF
                 $SIGNATURE_ATTR
             />
             <description><![CDATA[
-                <h2>Claude HUD v$VERSION</h2>
+                <h2>Capacitor v$VERSION</h2>
                 <p>See <a href="https://github.com/$GITHUB_REPO/releases/tag/v$VERSION">release notes</a> for details.</p>
             ]]></description>
         </item>

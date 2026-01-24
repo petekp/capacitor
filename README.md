@@ -1,12 +1,12 @@
-# Claude HUD
+# Capacitor
 
 A native macOS dashboard for [Claude Code](https://claude.ai/claude-code) — see what Claude is doing across all your projects at a glance.
 
-## What is Claude HUD?
+## What is Capacitor?
 
-Claude HUD is a **sidecar app** that gives you real-time visibility into your Claude Code sessions. Instead of switching between terminal windows to check if Claude is done thinking, HUD shows you the state of every project in one place.
+Capacitor is a **sidecar app** that gives you real-time visibility into your Claude Code sessions. Instead of switching between terminal windows to check if Claude is done thinking, Capacitor shows you the state of every project in one place.
 
-**Key idea:** HUD reads from your existing Claude Code installation (`~/.claude/`) and invokes the CLI for AI features. No separate API key needed.
+**Key idea:** Capacitor reads from your existing Claude Code installation (`~/.claude/`) and invokes the CLI for AI features. No separate API key needed.
 
 ## Features
 
@@ -50,7 +50,7 @@ Capture ideas without breaking your flow:
 
 ### From Release (Recommended)
 
-Download the latest DMG from [Releases](https://github.com/petekp/claude-hud/releases), open it, and drag Claude HUD to Applications.
+Download the latest DMG from [Releases](https://github.com/petekp/capacitor/releases), open it, and drag Capacitor to Applications.
 
 The app includes Sparkle for automatic updates.
 
@@ -58,8 +58,8 @@ The app includes Sparkle for automatic updates.
 
 ```bash
 # Clone and setup (installs toolchains, builds everything, configures hooks)
-git clone https://github.com/petekp/claude-hud.git
-cd claude-hud
+git clone https://github.com/petekp/capacitor.git
+cd capacitor
 ./scripts/dev/setup.sh
 
 # Run the app
@@ -70,7 +70,7 @@ cd claude-hud
 
 ### Enable Session Tracking
 
-Claude HUD tracks session state via Claude Code hooks. To enable:
+Capacitor tracks session state via Claude Code hooks. To enable:
 
 1. Install the hook binary:
    ```bash
@@ -100,7 +100,7 @@ Claude HUD tracks session state via Claude Code hooks. To enable:
 
 ### Add Projects
 
-Click the **+** button in HUD to add project folders. HUD will detect Claude Code projects by looking for:
+Click the **+** button in Capacitor to add project folders. Capacitor will detect Claude Code projects by looking for:
 - `CLAUDE.md` file
 - `.claude/` directory
 - `.git/` directory
@@ -119,7 +119,7 @@ claude-hud/
 │       └── stats.rs     # Token usage parsing
 │
 ├── apps/swift/          # SwiftUI macOS app
-│   └── Sources/ClaudeHUD/
+│   └── Sources/Capacitor/
 │       ├── Models/      # AppState, managers
 │       ├── Views/       # UI components
 │       └── Bridge/      # UniFFI bindings
@@ -127,7 +127,7 @@ claude-hud/
 └── scripts/             # Build and release tools
 ```
 
-**Design principle:** HUD is a sidecar, not a replacement. It leverages Claude Code's existing infrastructure rather than duplicating it.
+**Design principle:** Capacitor is a sidecar, not a replacement. It leverages Claude Code's existing infrastructure rather than duplicating it.
 
 ## Development
 
@@ -185,7 +185,7 @@ cd apps/swift && swift run
 1. **Hooks** — Claude Code fires events (SessionStart, Stop, etc.) that run a shell script
 2. **State file** — The script writes JSON to `~/.capacitor/sessions.json`
 3. **Lock files** — The script creates locks at `~/.capacitor/sessions/{hash}.lock/`
-4. **HUD reads** — The app polls these files and resolves the current state
+4. **Capacitor reads** — The app polls these files and resolves the current state
 
 The state resolver handles edge cases like:
 - Multiple sessions in the same project
@@ -206,7 +206,7 @@ Capacitor uses two namespaces:
 └── projects/{encoded-path}/    # Per-project data (ideas, order)
 ```
 
-**`~/.claude/`** — owned by Claude Code CLI (read-only for Capacitor):
+**`~/.claude/`** — owned by Claude Code CLI (read-only for Capacitor, we never write here):
 ```
 ~/.claude/
 ├── sessions/                   # Lock directories (created by Claude)
@@ -237,4 +237,4 @@ Built with:
 
 ---
 
-*Claude HUD is an independent project and is not affiliated with Anthropic.*
+*Capacitor is an independent project and is not affiliated with Anthropic.*

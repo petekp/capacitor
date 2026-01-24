@@ -121,7 +121,7 @@ struct WelcomeView: View {
             await CapacitorConfig.shared.markSetupComplete()
 
             #if DEBUG
-            ClaudeHUDApp.restoreOnboardingBackup()
+            CapacitorApp.restoreOnboardingBackup()
             #endif
 
             onComplete()

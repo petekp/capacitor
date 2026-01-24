@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Full release workflow for Claude HUD
+# Full release workflow for Capacitor
 # Usage: ./release.sh [version] [--skip-notarization] [--dry-run]
 #
 # Examples:
@@ -40,7 +40,7 @@ for arg in "$@"; do
 done
 
 echo -e "${CYAN}========================================${NC}"
-echo -e "${CYAN}Claude HUD Release Workflow${NC}"
+echo -e "${CYAN}Capacitor Release Workflow${NC}"
 echo -e "${CYAN}========================================${NC}"
 echo ""
 
@@ -96,8 +96,8 @@ echo ""
 
 DIST_DIR="$PROJECT_ROOT/dist"
 ARCH=$(uname -m)
-ZIP_PATH="$DIST_DIR/ClaudeHUD-v$VERSION-$ARCH.zip"
-DMG_PATH="$DIST_DIR/ClaudeHUD-v$VERSION-$ARCH.dmg"
+ZIP_PATH="$DIST_DIR/Capacitor-v$VERSION-$ARCH.zip"
+DMG_PATH="$DIST_DIR/Capacitor-v$VERSION-$ARCH.dmg"
 APPCAST_PATH="$DIST_DIR/appcast.xml"
 
 if [ "$DRY_RUN" = true ]; then
@@ -114,7 +114,7 @@ if [ "$DRY_RUN" = true ]; then
     echo "    '$ZIP_PATH' \\"
     echo "    '$DMG_PATH' \\"
     echo "    '$APPCAST_PATH' \\"
-    echo "    --title 'Claude HUD v$VERSION' \\"
+    echo "    --title 'Capacitor v$VERSION' \\"
     echo "    --generate-notes"
     echo ""
 else
@@ -142,7 +142,7 @@ else
 
     gh release create "v$VERSION" \
         "${RELEASE_FILES[@]}" \
-        --title "Claude HUD v$VERSION" \
+        --title "Capacitor v$VERSION" \
         --generate-notes
 
     echo -e "${GREEN}✓ GitHub release created${NC}"
@@ -162,7 +162,7 @@ echo "  - Appcast: $APPCAST_PATH"
 echo ""
 
 if [ "$DRY_RUN" = false ]; then
-    echo "Release URL: https://github.com/petekp/claude-hud/releases/tag/v$VERSION"
+    echo "Release URL: https://github.com/petekp/capacitor/releases/tag/v$VERSION"
     echo ""
 fi
 

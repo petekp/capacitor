@@ -38,11 +38,11 @@ Run the verification script:
 ```
 
 Or manually check:
-- [ ] `ls apps/swift/ClaudeHUD.app/Contents/MacOS/ClaudeHUD` — executable exists
-- [ ] `ls apps/swift/ClaudeHUD.app/Contents/Frameworks/libhud_core.dylib` — Rust dylib exists
-- [ ] `ls apps/swift/ClaudeHUD.app/Contents/Frameworks/Sparkle.framework` — Sparkle exists
-- [ ] `ls apps/swift/ClaudeHUD.app/Contents/Resources/ClaudeHUD_ClaudeHUD.bundle` — SPM resource bundle exists
-- [ ] `ls apps/swift/ClaudeHUD.app/Contents/Resources/ClaudeHUD_ClaudeHUD.bundle/logomark.pdf` — critical resource exists
+- [ ] `ls apps/swift/Capacitor.app/Contents/MacOS/Capacitor` — executable exists
+- [ ] `ls apps/swift/Capacitor.app/Contents/Frameworks/libhud_core.dylib` — Rust dylib exists
+- [ ] `ls apps/swift/Capacitor.app/Contents/Frameworks/Sparkle.framework` — Sparkle exists
+- [ ] `ls apps/swift/Capacitor.app/Contents/Resources/Capacitor_Capacitor.bundle` — SPM resource bundle exists
+- [ ] `ls apps/swift/Capacitor.app/Contents/Resources/Capacitor_Capacitor.bundle/logomark.pdf` — critical resource exists
 
 ### 4. Isolated Launch Test (CRITICAL)
 
@@ -50,12 +50,12 @@ Or manually check:
 
 ```bash
 # Extract to a clean location outside the source tree
-TEST_DIR="/tmp/ClaudeHUD-test-$(date +%s)"
+TEST_DIR="/tmp/Capacitor-test-$(date +%s)"
 mkdir -p "$TEST_DIR"
-unzip -q dist/ClaudeHUD-*.zip -d "$TEST_DIR"
+unzip -q dist/Capacitor-*.zip -d "$TEST_DIR"
 
 # Launch from isolated location
-open "$TEST_DIR/ClaudeHUD.app"
+open "$TEST_DIR/Capacitor.app"
 ```
 
 - [ ] App launches without crash
@@ -69,7 +69,7 @@ If the app launched but something seems off:
 
 ```bash
 # View recent logs
-log show --predicate 'subsystem == "com.claudehud.app"' --last 5m
+log show --predicate 'subsystem == "com.capacitor.app"' --last 5m
 ```
 
 - [ ] No "Resource not found" warnings
@@ -89,8 +89,8 @@ Only after all above checks pass:
 
 ```bash
 # Mount the DMG and test from there (simulates user experience)
-hdiutil attach dist/ClaudeHUD-*.dmg
-open /Volumes/ClaudeHUD/ClaudeHUD.app
+hdiutil attach dist/Capacitor-*.dmg
+open /Volumes/Capacitor/Capacitor.app
 ```
 
 - [ ] App launches from mounted DMG
@@ -103,7 +103,7 @@ open /Volumes/ClaudeHUD/ClaudeHUD.app
 1. **Check crash report**:
    ```bash
    ls -lt ~/Library/Logs/DiagnosticReports/ | head -5
-   open ~/Library/Logs/DiagnosticReports/ClaudeHUD-*.crash
+   open ~/Library/Logs/DiagnosticReports/Capacitor-*.crash
    ```
 
 2. **Look for these patterns**:
@@ -113,7 +113,7 @@ open /Volumes/ClaudeHUD/ClaudeHUD.app
 
 3. **Check resource bundle loading logs**:
    ```bash
-   log show --predicate 'subsystem == "com.claudehud.app" AND category == "ResourceBundle"' --last 5m
+   log show --predicate 'subsystem == "com.capacitor.app" AND category == "ResourceBundle"' --last 5m
    ```
 
 ### If crash only happens on other machines

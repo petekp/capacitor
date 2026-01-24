@@ -133,7 +133,7 @@ jobs:
           mkdir -p dist
           VERSION=$(cat VERSION)
           ARCH=$(uname -m)
-          touch "dist/ClaudeHUD-v$VERSION-$ARCH.zip"
+          touch "dist/Capacitor-v$VERSION-$ARCH.zip"
 
           # Run without --sign since we don't have keys in CI
           ./scripts/release/generate-appcast.sh

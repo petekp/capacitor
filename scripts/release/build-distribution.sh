@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Build ClaudeHUD for distribution with code signing and notarization
+# Build Capacitor for distribution with code signing and notarization
 # Usage: ./build-distribution.sh [--skip-notarization]
 #
 # Prerequisites:
@@ -11,7 +11,7 @@
 # First-time setup for notarization:
 # 1. Generate app-specific password at appleid.apple.com
 # 2. Store in Keychain:
-#    xcrun notarytool store-credentials "ClaudeHUD" \
+#    xcrun notarytool store-credentials "Capacitor" \
 #      --apple-id "your@email.com" \
 #      --team-id "YOUR_TEAM_ID" \
 #      --password "app-specific-password"
@@ -38,10 +38,10 @@ if [ "$(uname -m)" != "arm64" ]; then
     exit 1
 fi
 SWIFT_DIR="$PROJECT_ROOT/apps/swift"
-APP_BUNDLE="$SWIFT_DIR/ClaudeHUD.app"
+APP_BUNDLE="$SWIFT_DIR/Capacitor.app"
 DIST_DIR="$PROJECT_ROOT/dist"
-APP_NAME="ClaudeHUD"
-BUNDLE_ID="com.claudehud.app"
+APP_NAME="Capacitor"
+BUNDLE_ID="com.capacitor.app"
 
 # Read version from VERSION file
 VERSION_FILE="$PROJECT_ROOT/VERSION"
@@ -60,7 +60,7 @@ if [ "$1" = "--skip-notarization" ]; then
 fi
 
 echo -e "${GREEN}========================================${NC}"
-echo -e "${GREEN}ClaudeHUD Distribution Build${NC}"
+echo -e "${GREEN}Capacitor Distribution Build${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo ""
 
@@ -97,7 +97,7 @@ echo ""
 echo -e "${YELLOW}Step 2/8: Regenerating UniFFI Swift bindings...${NC}"
 DYLIB_PATH="$PROJECT_ROOT/target/release/libhud_core.dylib"
 BINDINGS_DIR="$SWIFT_DIR/bindings"
-BRIDGE_DIR="$SWIFT_DIR/Sources/ClaudeHUD/Bridge"
+BRIDGE_DIR="$SWIFT_DIR/Sources/Capacitor/Bridge"
 
 cd "$PROJECT_ROOT/core/hud-core"
 cargo run --bin uniffi-bindgen generate --library "$DYLIB_PATH" --language swift --out-dir "$BINDINGS_DIR" 2>&1
@@ -116,7 +116,7 @@ echo ""
 # Step 4: Clean and build Swift app (release mode)
 echo -e "${YELLOW}Step 4/8: Building Swift app...${NC}"
 cd "$SWIFT_DIR"
-rm -rf .build ClaudeHUD.app 2>/dev/null || true
+rm -rf .build Capacitor.app 2>/dev/null || true
 swift build -c release
 
 # Get the actual build directory (portable across toolchain/layout changes)
@@ -136,7 +136,7 @@ mkdir -p "$APP_BUNDLE/Contents/Frameworks"
 mkdir -p "$APP_BUNDLE/Contents/Resources"
 
 # Copy executable
-cp "$SWIFT_BUILD_DIR/ClaudeHUD" "$APP_BUNDLE/Contents/MacOS/ClaudeHUD"
+cp "$SWIFT_BUILD_DIR/Capacitor" "$APP_BUNDLE/Contents/MacOS/Capacitor"
 
 # Copy dylib to Frameworks
 cp "$DYLIB_PATH" "$APP_BUNDLE/Contents/Frameworks/libhud_core.dylib"
@@ -152,7 +152,7 @@ else
 fi
 
 # Add rpath to executable to find dylib in Frameworks
-install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP_BUNDLE/Contents/MacOS/ClaudeHUD"
+install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP_BUNDLE/Contents/MacOS/Capacitor"
 
 # Copy app icon if it exists
 if [ -f "$PROJECT_ROOT/assets/AppIcon.icns" ]; then
@@ -161,7 +161,7 @@ if [ -f "$PROJECT_ROOT/assets/AppIcon.icns" ]; then
 fi
 
 # Copy SPM resource bundle (contains logomark.pdf and other assets)
-RESOURCE_BUNDLE="$SWIFT_BUILD_DIR/ClaudeHUD_ClaudeHUD.bundle"
+RESOURCE_BUNDLE="$SWIFT_BUILD_DIR/Capacitor_Capacitor.bundle"
 if [ -d "$RESOURCE_BUNDLE" ]; then
     cp -R "$RESOURCE_BUNDLE" "$APP_BUNDLE/Contents/Resources/"
     echo -e "${GREEN}✓ Resource bundle copied${NC}"
@@ -188,15 +188,15 @@ cat > "$APP_BUNDLE/Contents/Info.plist" << EOF
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
     <key>CFBundleExecutable</key>
-    <string>ClaudeHUD</string>
+    <string>Capacitor</string>
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
     <key>CFBundleIdentifier</key>
-    <string>com.claudehud.app</string>
+    <string>com.capacitor.app</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
-    <string>Claude HUD</string>
+    <string>Capacitor</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
@@ -214,7 +214,7 @@ cat > "$APP_BUNDLE/Contents/Info.plist" << EOF
     <key>NSSupportsSuddenTermination</key>
     <false/>
     <key>SUFeedURL</key>
-    <string>https://github.com/petekp/claude-hud/releases/latest/download/appcast.xml</string>
+    <string>https://github.com/petekp/capacitor/releases/latest/download/appcast.xml</string>
     <key>SUPublicEDKey</key>
     <string>F9qGHLJ2ro5Q+mffrwkiQSGpkGD5+GCDnusHuRkXqrE=</string>
     <key>SUEnableAutomaticChecks</key>
@@ -249,7 +249,7 @@ codesign --force --sign "$SIGNING_IDENTITY" \
     "$APP_BUNDLE/Contents/Frameworks/Sparkle.framework"
 
 # Sign the app bundle
-ENTITLEMENTS_FILE="$SWIFT_BUILD_DIR/ClaudeHUD-entitlement.plist"
+ENTITLEMENTS_FILE="$SWIFT_BUILD_DIR/Capacitor-entitlement.plist"
 if [ -f "$ENTITLEMENTS_FILE" ]; then
     codesign --force --sign "$SIGNING_IDENTITY" \
         --options runtime \
@@ -288,7 +288,7 @@ echo -e "${GREEN}✓ Extended attributes and AppleDouble files stripped${NC}"
 
 # Create zip for distribution
 # --norsrc and --noextattr prevent resource forks/extended attributes from being archived
-ZIP_NAME="ClaudeHUD-v$VERSION-$(uname -m).zip"
+ZIP_NAME="Capacitor-v$VERSION-$(uname -m).zip"
 ditto -c -k --norsrc --noextattr --keepParent "$APP_BUNDLE" "$DIST_DIR/$ZIP_NAME"
 
 echo -e "${GREEN}✓ Distribution package created: $DIST_DIR/$ZIP_NAME${NC}"
@@ -304,7 +304,7 @@ else
     echo "This will submit to Apple for notarization (takes 5-15 minutes)."
     echo ""
     echo "If this is your first time, you need to set up credentials:"
-    echo "  xcrun notarytool store-credentials \"ClaudeHUD\" \\"
+    echo "  xcrun notarytool store-credentials \"Capacitor\" \\"
     echo "    --apple-id \"your@email.com\" \\"
     echo "    --team-id \"YOUR_TEAM_ID\" \\"
     echo "    --password \"app-specific-password\""
@@ -312,7 +312,7 @@ else
 
     # Submit for notarization
     xcrun notarytool submit "$DIST_DIR/$ZIP_NAME" \
-        --keychain-profile "ClaudeHUD" \
+        --keychain-profile "Capacitor" \
         --wait
 
     # Staple the notarization ticket
@@ -339,7 +339,7 @@ echo "To test locally:"
 echo "  open '$APP_BUNDLE'"
 echo ""
 echo "To upload to GitHub:"
-echo "  gh release create v$VERSION '$DIST_DIR/$ZIP_NAME' --title 'Claude HUD v$VERSION' --notes 'Release v$VERSION'"
+echo "  gh release create v$VERSION '$DIST_DIR/$ZIP_NAME' --title 'Capacitor v$VERSION' --notes 'Release v$VERSION'"
 echo ""
 
 if [ "$SKIP_NOTARIZATION" = true ]; then

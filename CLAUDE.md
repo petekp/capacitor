@@ -1,4 +1,4 @@
-# Claude HUD
+# Capacitor
 
 Native macOS dashboard for Claude Code—displays project statistics, session states, and helps you context-switch between projects instantly.
 
@@ -57,10 +57,10 @@ Release builds require notarization for Gatekeeper approval. Scripts handle the 
 ./scripts/release/generate-appcast.sh            # Update Sparkle feed
 
 gh release create v0.x.x \
-  dist/ClaudeHUD-v0.x.x-arm64.dmg \
-  dist/ClaudeHUD-v0.x.x-arm64.zip \
+  dist/Capacitor-v0.x.x-arm64.dmg \
+  dist/Capacitor-v0.x.x-arm64.zip \
   dist/appcast.xml \
-  --title "Claude HUD v0.x.x" \
+  --title "Capacitor v0.x.x" \
   --notes "Release notes"
 ```
 
@@ -74,7 +74,7 @@ gh release create v0.x.x \
 
 Notarization credentials:
 ```bash
-xcrun notarytool store-credentials "ClaudeHUD" \
+xcrun notarytool store-credentials "Capacitor" \
   --apple-id "your@email.com" \
   --team-id "YOUR_TEAM_ID" \
   --password "app-specific-password"
@@ -89,8 +89,8 @@ See `docs/NOTARIZATION_SETUP.md` for full guide.
 - **Sparkle.framework must be bundled** — Swift Package Manager links but doesn't embed frameworks. The build script copies it to `Contents/Frameworks/` and signs it.
 - **Private repos break auto-updates** — Sparkle fetches appcast.xml anonymously; private GitHub repos return 404. Repo must be public for updates to work.
 - **Always run `cargo fmt`** — CI enforces formatting; commit will fail otherwise.
-- **UniFFI bindings must be regenerated for releases** — The build script auto-regenerates Swift bindings from the Rust dylib. If you see "UniFFI API checksum mismatch" crashes, the bindings are stale. The script handles this, but manual builds need: `cargo run --bin uniffi-bindgen generate --library target/release/libhud_core.dylib --language swift --out-dir apps/swift/bindings/` then copy to `Sources/ClaudeHUD/Bridge/`.
-- **SPM resource bundle must be copied** — `Bundle.module` only works when running via SPM. The build script copies `ClaudeHUD_ClaudeHUD.bundle` to `Contents/Resources/` so resources load correctly in distributed builds.
+- **UniFFI bindings must be regenerated for releases** — The build script auto-regenerates Swift bindings from the Rust dylib. If you see "UniFFI API checksum mismatch" crashes, the bindings are stale. The script handles this, but manual builds need: `cargo run --bin uniffi-bindgen generate --library target/release/libhud_core.dylib --language swift --out-dir apps/swift/bindings/` then copy to `Sources/Capacitor/Bridge/`.
+- **SPM resource bundle must be copied** — `Bundle.module` only works when running via SPM. The build script copies `Capacitor_Capacitor.bundle` to `Contents/Resources/` so resources load correctly in distributed builds.
 - **Never use `Bundle.module` directly** — Use `ResourceBundle.url(forResource:withExtension:)` instead. `Bundle.module` is SPM-generated code that crashes in distributed builds. The `ResourceBundle` helper finds resources in both dev and release contexts.
 - **ZIP archives must exclude AppleDouble files** — macOS extended attributes create `._*` files that break code signatures. The build script uses `ditto --norsrc --noextattr` to prevent this. If users see "app is damaged", check for `._*` files in the extracted ZIP.
 
@@ -107,12 +107,12 @@ claude-hud/
 
 ## Core Principle: Sidecar Architecture
 
-**Claude HUD is a sidecar that powers up your existing Claude Code workflow—not a standalone app.**
+**Capacitor is a sidecar that powers up your existing Claude Code workflow—not a standalone app.**
 
 - Read from `~/.claude/` — config, plugins, transcripts (Claude's namespace)
-- Write to `~/.capacitor/` — session state, file activity (HUD's namespace)
+- Write to `~/.capacitor/` — session state, file activity (Capacitor's namespace)
 - Invoke the `claude` CLI — for AI features, call CLI rather than API directly
-- Respect existing workflows — HUD observes and surfaces, doesn't replace
+- Respect existing workflows — Capacitor observes and surfaces, doesn't replace
 
 See [ADR-003: Sidecar Architecture Pattern](docs/architecture-decisions/003-sidecar-architecture-pattern.md).
 
@@ -123,12 +123,12 @@ See [ADR-003: Sidecar Architecture Pattern](docs/architecture-decisions/003-side
 | HudEngine facade | `core/hud-core/src/engine.rs` |
 | Shared types | `core/hud-core/src/types.rs` |
 | Session state detection | `core/hud-core/src/sessions.rs` |
-| Swift app state | `apps/swift/Sources/ClaudeHUD/Models/AppState.swift` |
-| UniFFI bindings | `apps/swift/Sources/ClaudeHUD/Bridge/hud_core.swift` |
+| Swift app state | `apps/swift/Sources/Capacitor/Models/AppState.swift` |
+| UniFFI bindings | `apps/swift/Sources/Capacitor/Bridge/hud_core.swift` |
 
 ## State Tracking
 
-Hooks track local Claude Code sessions → state file → HUD reads.
+Hooks track local Claude Code sessions → state file → Capacitor reads.
 
 **Paths:**
 - **State file:** `~/.capacitor/sessions.json`
@@ -168,4 +168,4 @@ See `.claude/plans/README.md` for the full index.
 - **Path encoding:** Project paths use `/` → `-` replacement (e.g., `/Users/peter/Code` → `-Users-peter-Code`)
 - **Caching:** Mtime-based invalidation in stats and summaries
 - **Platform:** macOS 14+ (Apple Silicon and Intel)
-- **UniFFI bindings:** Must update both `apps/swift/bindings/` and `apps/swift/Sources/ClaudeHUD/Bridge/` after Rust API changes (see development-workflows.md)
+- **UniFFI bindings:** Must update both `apps/swift/bindings/` and `apps/swift/Sources/Capacitor/Bridge/` after Rust API changes (see development-workflows.md)

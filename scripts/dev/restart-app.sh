@@ -17,7 +17,7 @@ fi
 # Verify hook is in sync (warn only, don't block)
 "$PROJECT_ROOT/scripts/sync-hooks.sh" 2>/dev/null || true
 
-pkill -x ClaudeHUD 2>/dev/null || true
+pkill -x Capacitor 2>/dev/null || true
 sleep 0.3
 
 cd "$PROJECT_ROOT"
@@ -34,7 +34,7 @@ cargo run --bin uniffi-bindgen generate \
     --out-dir apps/swift/bindings/
 
 # Copy bindings to Bridge directory
-cp apps/swift/bindings/hud_core.swift apps/swift/Sources/ClaudeHUD/Bridge/
+cp apps/swift/bindings/hud_core.swift apps/swift/Sources/Capacitor/Bridge/
 
 cd "$PROJECT_ROOT/apps/swift"
 
@@ -46,4 +46,4 @@ cp "$PROJECT_ROOT/target/release/libhud_core.dylib" "$SWIFT_DEBUG_DIR/"
 swift build || { echo "Swift build failed"; exit 1; }
 
 swift run 2>&1 &
-echo "ClaudeHUD started (PID: $!)"
+echo "Capacitor started (PID: $!)"

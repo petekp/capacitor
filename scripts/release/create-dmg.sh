@@ -1,10 +1,10 @@
 #!/bin/bash
 
-# Create DMG installer for Claude HUD
+# Create DMG installer for Capacitor
 # Usage: ./create-dmg.sh [--skip-notarization]
 #
 # Prerequisites:
-# - App bundle must exist at apps/swift/ClaudeHUD.app
+# - App bundle must exist at apps/swift/Capacitor.app
 # - Developer ID Application certificate for signing
 # - Notarization credentials (unless --skip-notarization)
 
@@ -28,7 +28,7 @@ if [ "$(uname -m)" != "arm64" ]; then
     exit 1
 fi
 SWIFT_DIR="$PROJECT_ROOT/apps/swift"
-APP_BUNDLE="$SWIFT_DIR/ClaudeHUD.app"
+APP_BUNDLE="$SWIFT_DIR/Capacitor.app"
 DIST_DIR="$PROJECT_ROOT/dist"
 
 SKIP_NOTARIZATION=false
@@ -44,7 +44,7 @@ fi
 VERSION=$(cat "$VERSION_FILE" | tr -d '[:space:]')
 
 echo -e "${GREEN}========================================${NC}"
-echo -e "${GREEN}Creating DMG for Claude HUD v$VERSION${NC}"
+echo -e "${GREEN}Creating DMG for Capacitor v$VERSION${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo ""
 
@@ -65,9 +65,9 @@ echo ""
 
 mkdir -p "$DIST_DIR"
 
-DMG_NAME="ClaudeHUD-v$VERSION-$(uname -m).dmg"
+DMG_NAME="Capacitor-v$VERSION-$(uname -m).dmg"
 DMG_PATH="$DIST_DIR/$DMG_NAME"
-VOLUME_NAME="Claude HUD"
+VOLUME_NAME="Capacitor"
 TEMP_DIR=$(mktemp -d)
 
 echo -e "${YELLOW}Step 1/4: Preparing DMG contents...${NC}"
@@ -102,7 +102,7 @@ if [ -f "$PROJECT_ROOT/assets/dmg-background.png" ]; then
            set arrangement of viewOptions to not arranged
            set icon size of viewOptions to 128
            set background picture of viewOptions to file ".background:background.png"
-           set position of item "ClaudeHUD.app" of container window to {180, 170}
+           set position of item "Capacitor.app" of container window to {180, 170}
            set position of item "Applications" of container window to {480, 170}
            close
            open
@@ -140,7 +140,7 @@ if [ "$SKIP_NOTARIZATION" = true ]; then
 else
     echo -e "${YELLOW}Step 4/4: Notarizing DMG...${NC}"
     xcrun notarytool submit "$DMG_PATH" \
-        --keychain-profile "ClaudeHUD" \
+        --keychain-profile "Capacitor" \
         --wait
 
     echo ""
