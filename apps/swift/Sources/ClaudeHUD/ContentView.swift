@@ -1,9 +1,14 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ContentView: View {
     @EnvironmentObject var appState: AppState
     @Environment(\.floatingMode) private var floatingMode
     @AppStorage("alwaysOnTop") private var alwaysOnTopStorage = false
+    @AppStorage("hasSeenDragDropTip") private var hasSeenDragDropTip = false
+
+    @State private var isDragHovered = false
+    @State private var showDragDropTip = false
 
     #if DEBUG
     @ObservedObject private var glassConfig = GlassConfig.shared
@@ -41,8 +46,40 @@ struct ContentView: View {
                         }
                     )
                 }
+
+                ToastContainer(toast: $appState.toast)
+
+                TipTooltipContainer(
+                    showTip: $showDragDropTip,
+                    message: "Tip: Drag folders anywhere to add faster"
+                )
+
+                if isDragHovered {
+                    dropOverlay
+                }
             }
             .coordinateSpace(name: "contentView")
+        }
+        .onChange(of: appState.pendingDragDropTip) { _, pending in
+            guard pending, !hasSeenDragDropTip else {
+                appState.pendingDragDropTip = false
+                return
+            }
+            // Wait for toast to dismiss, then show tip
+            if appState.toast != nil {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+                    showDragDropTip = true
+                    hasSeenDragDropTip = true
+                    appState.pendingDragDropTip = false
+                }
+            } else {
+                showDragDropTip = true
+                hasSeenDragDropTip = true
+                appState.pendingDragDropTip = false
+            }
+        }
+        .onDrop(of: [UTType.fileURL], isTargeted: $isDragHovered) { providers in
+            handleDrop(providers)
         }
         .background {
             if floatingMode {
@@ -75,6 +112,64 @@ struct ContentView: View {
 
     private var dockLayout: some View {
         DockLayoutView()
+    }
+
+    private var dropOverlay: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: floatingMode ? 22 : 0)
+                .fill(Color.hudAccent.opacity(0.15))
+
+            RoundedRectangle(cornerRadius: floatingMode ? 20 : 0)
+                .strokeBorder(
+                    style: StrokeStyle(lineWidth: 2, dash: [8, 6])
+                )
+                .foregroundColor(Color.hudAccent.opacity(0.6))
+                .padding(4)
+
+            VStack(spacing: 12) {
+                Image(systemName: "folder.badge.plus")
+                    .font(.system(size: 40, weight: .light))
+                    .foregroundColor(.hudAccent.opacity(0.8))
+
+                Text("Drop to add projects")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(.white.opacity(0.8))
+            }
+        }
+        .allowsHitTesting(false)
+        .transition(.opacity)
+        .animation(.easeOut(duration: 0.15), value: isDragHovered)
+    }
+
+    private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
+        var urls: [URL] = []
+        let group = DispatchGroup()
+
+        for provider in providers {
+            guard provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) else {
+                continue
+            }
+
+            group.enter()
+            provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { data, _ in
+                defer { group.leave() }
+                guard let data = data as? Data,
+                      let url = URL(dataRepresentation: data, relativeTo: nil) else {
+                    return
+                }
+                DispatchQueue.main.async {
+                    urls.append(url)
+                }
+            }
+        }
+
+        group.notify(queue: .main) {
+            if !urls.isEmpty {
+                appState.addProjectsFromDrop(urls)
+            }
+        }
+
+        return true
     }
 }
 

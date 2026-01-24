@@ -322,11 +322,13 @@ struct AddProjectView: View {
 
     private func addProjectAndReturn(_ path: String) {
         appState.addProject(path)
+        appState.pendingDragDropTip = true
         appState.showProjectList()
     }
 
     private func forceAdd(_ path: String) {
         appState.addProject(path)
+        appState.pendingDragDropTip = true
         appState.showProjectList()
     }
 

@@ -123,6 +123,52 @@ struct ClaudeHUDApp: App {
                 Link("Claude HUD Help", destination: URL(string: "https://github.com/anthropics/claude-hud#readme")!)
                     .keyboardShortcut("?", modifiers: [.command, .shift])
             }
+
+            #if DEBUG
+            CommandMenu("Debug") {
+                Section("Toast Testing") {
+                    Button("Toast: 1 failed") {
+                        appState.toast = .error("project-a failed")
+                    }
+                    Button("Toast: 2 failed, 1 added") {
+                        appState.toast = .error("project-a, project-b failed (1 added)")
+                    }
+                    Button("Toast: 5 failed, 3 added") {
+                        appState.toast = .error("project-a, project-b and 3 more failed (3 added)")
+                    }
+                    Button("Toast: Already linked") {
+                        appState.toast = ToastMessage("Already linked!")
+                    }
+                    Button("Toast: Moved to In Progress") {
+                        appState.toast = ToastMessage("Moved to In Progress")
+                    }
+                }
+
+                Divider()
+
+                Section("Tooltip Testing") {
+                    Button("Show Drag-Drop Tip Now") {
+                        appState.pendingDragDropTip = true
+                    }
+                    Button("Reset Tip Flag (hasSeenDragDropTip)") {
+                        UserDefaults.standard.removeObject(forKey: "hasSeenDragDropTip")
+                    }
+                }
+
+                Divider()
+
+                Section("State Testing") {
+                    Button("Clear All Projects (Empty State)") {
+                        for project in appState.projects {
+                            appState.removeProject(project.path)
+                        }
+                    }
+                    Button("Navigate to Add Project View") {
+                        appState.showAddProject()
+                    }
+                }
+            }
+            #endif
         }
 
         Settings {

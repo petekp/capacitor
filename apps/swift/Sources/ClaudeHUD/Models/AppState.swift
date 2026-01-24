@@ -53,6 +53,8 @@ class AppState: ObservableObject {
 
     @Published var isLoading = true
     @Published var error: String?
+    @Published var toast: ToastMessage?
+    @Published var pendingDragDropTip = false
 
     // MARK: - Dev Environment
 
@@ -223,6 +225,111 @@ class AppState: ObservableObject {
             loadDashboard()
         } catch {
             self.error = error.localizedDescription
+        }
+    }
+
+    /// Adds multiple projects from a drag-and-drop operation.
+    /// Shows error-first toast with truncation for mixed results.
+    func addProjectsFromDrop(_ urls: [URL]) {
+        guard let engine = engine else { return }
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            let fm = FileManager.default
+            var addedCount = 0
+            var alreadyTrackedPaths: [String] = []
+            var failedNames: [String] = []
+
+            for url in urls {
+                var isDirectory: ObjCBool = false
+                guard fm.fileExists(atPath: url.path, isDirectory: &isDirectory),
+                      isDirectory.boolValue else {
+                    continue
+                }
+
+                let result = engine.validateProject(path: url.path)
+
+                switch result.resultType {
+                case "valid", "missing_claude_md", "suggest_parent", "not_a_project":
+                    do {
+                        try engine.addProject(path: url.path)
+                        addedCount += 1
+                    } catch {
+                        failedNames.append(url.lastPathComponent)
+                    }
+                case "already_tracked":
+                    alreadyTrackedPaths.append(result.path)
+                case "path_not_found", "dangerous_path":
+                    failedNames.append(url.lastPathComponent)
+                default:
+                    failedNames.append(url.lastPathComponent)
+                }
+            }
+
+            DispatchQueue.main.async {
+                // Separate already-tracked projects into paused vs already in progress
+                var movedCount = 0
+                var alreadyInProgressCount = 0
+
+                if !alreadyTrackedPaths.isEmpty {
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
+                        for path in alreadyTrackedPaths {
+                            if self.manuallyDormant.contains(path) {
+                                self.manuallyDormant.remove(path)
+                                movedCount += 1
+                            } else {
+                                alreadyInProgressCount += 1
+                            }
+                        }
+                    }
+                }
+
+                if addedCount > 0 {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                        self.loadDashboard()
+                    }
+                }
+
+                // Show appropriate toast with error-first formatting
+                if !failedNames.isEmpty {
+                    let message = Self.formatMixedResultsToast(
+                        failedNames: failedNames,
+                        addedCount: addedCount
+                    )
+                    self.toast = .error(message)
+                } else if addedCount == 0 {
+                    if movedCount > 0 {
+                        self.toast = ToastMessage(
+                            movedCount == 1 ? "Moved to In Progress" : "Moved \(movedCount) projects to In Progress"
+                        )
+                    } else if alreadyInProgressCount > 0 {
+                        self.toast = ToastMessage("Already linked!")
+                    }
+                }
+            }
+        }
+    }
+
+    /// Formats a mixed results toast with truncation.
+    /// Examples: "project-a failed (2 added)", "project-a, project-b and 3 more failed (1 added)"
+    private static func formatMixedResultsToast(failedNames: [String], addedCount: Int) -> String {
+        let failedCount = failedNames.count
+
+        // Build the failed portion with truncation (max 2 names shown)
+        let failedPortion: String
+        if failedCount == 1 {
+            failedPortion = "\(failedNames[0]) failed"
+        } else if failedCount == 2 {
+            failedPortion = "\(failedNames[0]), \(failedNames[1]) failed"
+        } else {
+            let remainder = failedCount - 2
+            failedPortion = "\(failedNames[0]), \(failedNames[1]) and \(remainder) more failed"
+        }
+
+        // Add success suffix if any were added
+        if addedCount > 0 {
+            return "\(failedPortion) (\(addedCount) added)"
+        } else {
+            return failedPortion
         }
     }
 

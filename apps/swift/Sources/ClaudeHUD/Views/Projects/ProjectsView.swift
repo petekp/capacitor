@@ -296,11 +296,11 @@ struct EmptyProjectsView: View {
             .accessibilityHidden(true)
 
             VStack(spacing: 6) {
-                Text("No projects yet")
+                Text("Drag folders here")
                     .font(AppTypography.cardSubtitle.weight(.semibold))
                     .foregroundColor(.white.opacity(0.7))
 
-                Text("Pin your first project to start tracking")
+                Text("or use the button below to get started")
                     .font(AppTypography.bodySecondary)
                     .foregroundColor(.white.opacity(0.4))
                     .multilineTextAlignment(.center)
@@ -347,9 +347,22 @@ struct EmptyProjectsView: View {
             .opacity(appeared || reduceMotion ? 1 : 0)
             .offset(y: appeared || reduceMotion ? 0 : 15)
         }
+        .padding(32)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color.hudAccent.opacity(0.03))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .strokeBorder(
+                    style: StrokeStyle(lineWidth: 2, dash: [8, 6])
+                )
+                .foregroundColor(Color.hudAccent.opacity(0.25))
+        )
+        .padding(.horizontal, 24)
         .padding(.top, 50)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Empty projects view")
+        .accessibilityLabel("Drop zone for project folders")
         .onAppear {
             if !reduceMotion {
                 withAnimation(.spring(response: 0.6, dampingFraction: 0.8).delay(0.1)) {
