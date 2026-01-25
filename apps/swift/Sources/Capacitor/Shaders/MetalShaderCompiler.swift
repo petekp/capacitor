@@ -6,11 +6,9 @@ enum MetalShaders {
     }
 
     static var library: ShaderLibrary? = {
-        print("🔍 MetalShaders: Bundle.module path = \(Bundle.module.bundlePath)")
-
-        guard let url = Bundle.module.url(forResource: "debug", withExtension: "metallib") else {
+        // Use ResourceBundle instead of Bundle.module - Bundle.module crashes in distributed builds
+        guard let url = ResourceBundle.url(forResource: "debug", withExtension: "metallib") else {
             print("⚠️ MetalShaders: Could not find debug.metallib in bundle")
-            print("   Available resources: \((try? FileManager.default.contentsOfDirectory(atPath: Bundle.module.bundlePath)) ?? [])")
             return nil
         }
 
