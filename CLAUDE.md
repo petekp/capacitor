@@ -166,10 +166,9 @@ Shell precmd hooks push CWD changes to Capacitor for ambient project awareness.
 | Development workflows | `.claude/docs/development-workflows.md` |
 | Detailed architecture | `.claude/docs/architecture-overview.md` |
 | Debugging procedures | `.claude/docs/debugging-guide.md` |
-| Adding CLI agents | `.claude/docs/adding-new-cli-agent-guide.md` |
 | Idea capture specs | `.claude/docs/idea-capture-specs.md` |
-| Claude Code CLI reference | `docs/claude-code/` |
 | Architecture decisions | `docs/architecture-decisions/` |
+| Project evolution | `AGENT_CHANGELOG.md` |
 
 ## Plans
 
