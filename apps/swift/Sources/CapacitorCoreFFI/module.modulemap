@@ -1,0 +1,5 @@
+module capacitor_coreFFI {
+    header "../../bindings/capacitor_coreFFI.h"
+    link "capacitor_core"
+    export *
+}

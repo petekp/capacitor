@@ -1,0 +1,392 @@
+import AppKit
+import SwiftUI
+
+struct IdeaQueueView: View {
+    let ideas: [Idea]
+    let isGeneratingTitle: (String) -> Bool
+    var onTapIdea: ((Idea, CGRect) -> Void)?
+    var onReorder: (([Idea]) -> Void)?
+    var onRemove: ((Idea) -> Void)?
+
+    @State private var localIdeas: [Idea] = []
+    @State private var rowFrames: [String: CGRect] = [:]
+
+    // Drag state
+    @State private var draggingId: String?
+    @State private var dragPosition: CGPoint = .zero
+    @State private var dragStartPosition: CGPoint = .zero
+    @State private var containerFrame: CGRect = .zero
+    @State private var isAnimatingRelease = false
+    @State private var shouldTrackFrames = false
+
+    @Environment(\.prefersReducedMotion) private var reduceMotion
+
+    private var queuedIdeas: [Idea] {
+        localIdeas.filter { $0.status != "done" }
+    }
+
+    private var draggingIdea: Idea? {
+        guard let draggingId else { return nil }
+        return queuedIdeas.first { $0.id == draggingId }
+    }
+
+    private var draggingItemHeight: CGFloat {
+        guard let draggingId, let frame = rowFrames[draggingId] else { return 44 }
+        return frame.height
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if queuedIdeas.isEmpty {
+                emptyState
+            } else {
+                queueListWithOverlay
+            }
+        }
+        .onAppear {
+            localIdeas = ideas
+        }
+        .onChange(of: ideas) { _, newValue in
+            localIdeas = newValue
+        }
+    }
+
+    private var queueListWithOverlay: some View {
+        ZStack(alignment: .topLeading) {
+            // Layer 1: The list (items animate freely here)
+            queueList
+                .background(
+                    GeometryReader { geo in
+                        Color.clear
+                            .onAppear {
+                                if shouldTrackFrames || containerFrame == .zero {
+                                    containerFrame = geo.frame(in: .global)
+                                }
+                            }
+                            .onChange(of: geo.frame(in: .global)) { _, newFrame in
+                                if shouldTrackFrames {
+                                    containerFrame = newFrame
+                                }
+                            }
+                    },
+                )
+
+            // Layer 2: The dragged item overlay
+            if let idea = draggingIdea {
+                IdeaQueueRow(
+                    idea: idea,
+                    isFirst: false,
+                    isGeneratingTitle: isGeneratingTitle(idea.id),
+                    onTap: nil,
+                    onRemove: nil,
+                )
+                .frame(height: draggingItemHeight)
+                .scaleEffect(isAnimatingRelease ? 1.0 : 1.03)
+                .shadow(
+                    color: .black.opacity(isAnimatingRelease ? 0 : 0.3),
+                    radius: isAnimatingRelease ? 0 : 12,
+                    y: isAnimatingRelease ? 0 : 4,
+                )
+                .position(
+                    x: containerFrame.width / 2,
+                    y: dragPosition.y - containerFrame.minY,
+                )
+                .animation(.spring(response: 0.3, dampingFraction: 1.0), value: dragPosition)
+                .animation(.spring(response: 0.3, dampingFraction: 1.0), value: isAnimatingRelease)
+                .zIndex(1000)
+                .allowsHitTesting(false)
+            }
+        }
+        .coordinateSpace(name: "queueContainer")
+    }
+
+    private var queueList: some View {
+        VStack(spacing: 4) {
+            ForEach(Array(queuedIdeas.enumerated()), id: \.element.id) { index, idea in
+                let isBeingDragged = draggingId == idea.id
+
+                IdeaQueueRow(
+                    idea: idea,
+                    isFirst: index == 0 && !isBeingDragged,
+                    isGeneratingTitle: isGeneratingTitle(idea.id),
+                    onTap: {
+                        if let frame = rowFrames[idea.id] {
+                            onTapIdea?(idea, frame)
+                        }
+                    },
+                    onRemove: onRemove != nil ? { onRemove?(idea) } : nil,
+                )
+                .background(NonMovableBackground())
+                .background(
+                    GeometryReader { geo in
+                        Color.clear
+                            .onAppear {
+                                if shouldTrackFrames || rowFrames[idea.id] == nil {
+                                    rowFrames[idea.id] = geo.frame(in: .global)
+                                }
+                            }
+                            .onChange(of: geo.frame(in: .global)) { _, newFrame in
+                                if shouldTrackFrames {
+                                    rowFrames[idea.id] = newFrame
+                                }
+                            }
+                    },
+                )
+                // Hide the original when dragging (the overlay shows the dragged copy)
+                .opacity(isBeingDragged ? 0 : 1)
+                .gesture(
+                    DragGesture(coordinateSpace: .global)
+                        .onChanged { value in
+                            handleDragChanged(idea: idea, globalPosition: value.location)
+                        }
+                        .onEnded { _ in
+                            handleDragEnded()
+                        },
+                )
+            }
+        }
+        // Now safe to animate - dragged item is in overlay, not here
+        .animation(reduceMotion ? .none : .spring(response: 0.3, dampingFraction: 0.9), value: queuedIdeas.map(\.id))
+    }
+
+    private func handleDragChanged(idea: Idea, globalPosition: CGPoint) {
+        // Start dragging if not already
+        if draggingId == nil {
+            draggingId = idea.id
+            shouldTrackFrames = true
+            // Record where the drag started (center of the row)
+            if let frame = rowFrames[idea.id] {
+                dragStartPosition = CGPoint(x: frame.midX, y: frame.midY)
+            }
+        }
+
+        // Update drag position to follow cursor
+        dragPosition = globalPosition
+
+        // Calculate which slot the dragged item should move to
+        let currentIndex = queuedIdeas.firstIndex { $0.id == idea.id } ?? 0
+        let targetIndex = calculateTargetIndex(for: globalPosition)
+
+        if targetIndex != currentIndex {
+            moveItem(from: currentIndex, to: targetIndex)
+        }
+    }
+
+    private func calculateTargetIndex(for position: CGPoint) -> Int {
+        // Find which row the position falls within using actual frames
+        for (index, idea) in queuedIdeas.enumerated() {
+            guard let frame = rowFrames[idea.id] else { continue }
+
+            // Check if position is above the midpoint of this row
+            if position.y < frame.midY {
+                return index
+            }
+        }
+
+        // If below all rows, return last index
+        return max(0, queuedIdeas.count - 1)
+    }
+
+    private func moveItem(from sourceIndex: Int, to targetIndex: Int) {
+        guard sourceIndex != targetIndex,
+              sourceIndex >= 0, sourceIndex < queuedIdeas.count,
+              targetIndex >= 0, targetIndex < queuedIdeas.count
+        else {
+            return
+        }
+
+        // Map queue indices to localIdeas indices
+        let sourceId = queuedIdeas[sourceIndex].id
+        let targetId = queuedIdeas[targetIndex].id
+
+        guard let sourceLocalIndex = localIdeas.firstIndex(where: { $0.id == sourceId }),
+              let targetLocalIndex = localIdeas.firstIndex(where: { $0.id == targetId })
+        else {
+            return
+        }
+
+        // Move in the local array
+        let destinationIndex = targetIndex > sourceIndex ? targetLocalIndex + 1 : targetLocalIndex
+        localIdeas.move(fromOffsets: IndexSet(integer: sourceLocalIndex), toOffset: destinationIndex)
+    }
+
+    private func handleDragEnded() {
+        guard let draggingId else { return }
+
+        // Find the target position using actual row frame
+        let targetIndex = queuedIdeas.firstIndex { $0.id == draggingId } ?? 0
+        let targetIdea = queuedIdeas[targetIndex]
+        let targetY: CGFloat = if let frame = rowFrames[targetIdea.id] {
+            frame.midY
+        } else {
+            // Fallback: estimate based on other frames
+            containerFrame.minY + 22
+        }
+
+        // Start release animation
+        isAnimatingRelease = true
+        dragPosition = CGPoint(x: dragPosition.x, y: targetY)
+
+        // After animation completes, clean up
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            self.draggingId = nil
+            dragPosition = .zero
+            isAnimatingRelease = false
+            shouldTrackFrames = false
+
+            // Notify parent of final order
+            let reorderedQueue = localIdeas.filter { $0.status != "done" }
+            onReorder?(reorderedQueue)
+        }
+    }
+
+    private var emptyState: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("No ideas in queue")
+                .font(AppTypography.body)
+                .foregroundColor(.white.opacity(0.5))
+
+            Text("Hover over the project card and click \"+ Idea\" to add one")
+                .font(AppTypography.caption)
+                .foregroundColor(.white.opacity(0.35))
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+// MARK: - Queue Row
+
+struct IdeaQueueRow: View {
+    let idea: Idea
+    let isFirst: Bool
+    let isGeneratingTitle: Bool
+    var onTap: (() -> Void)?
+    var onRemove: (() -> Void)?
+
+    @State private var isHovered = false
+    @Environment(\.prefersReducedMotion) private var reduceMotion
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "line.3.horizontal")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(.white.opacity(0.3))
+                .frame(width: 16)
+
+            titleArea
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .overlay(alignment: .trailing) {
+            if isHovered, !isGeneratingTitle {
+                hoverActions
+                    .padding(.trailing, 14)
+            }
+        }
+        .contentShape(Rectangle())
+        .onHover { hovering in
+            withAnimation(reduceMotion ? AppMotion.reducedMotionFallback : .easeOut(duration: 0.15)) {
+                isHovered = hovering
+            }
+        }
+        .onTapGesture {
+            onTap?()
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(idea.title)
+        .accessibilityHint(isFirst ? "Top of queue - next to work on" : "Drag to reorder")
+    }
+
+    private var titleArea: some View {
+        ZStack(alignment: .leading) {
+            Text(idea.title)
+                .font(AppTypography.body)
+                .foregroundColor(.white.opacity(isFirst ? 0.9 : 0.7))
+                .lineLimit(2)
+                .opacity(isGeneratingTitle ? 0 : 1)
+
+            if isGeneratingTitle {
+                ShimmeringText(text: "Processing...")
+            }
+        }
+        .animation(.easeInOut(duration: 0.3), value: isGeneratingTitle)
+    }
+
+    private var hoverActions: some View {
+        HStack(spacing: 6) {
+            if let onRemove {
+                Button(action: onRemove) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(.white.opacity(0.6))
+                        .frame(width: 22, height: 22)
+                        .background(Color.white.opacity(0.1))
+                        .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .help("Remove idea")
+            }
+        }
+        .transition(.opacity.combined(with: .scale(scale: 0.9)))
+    }
+}
+
+// MARK: - Non-Movable Background
+
+private struct NonMovableBackground: NSViewRepresentable {
+    private class NonMovableNSView: NSView {
+        override var mouseDownCanMoveWindow: Bool {
+            false
+        }
+    }
+
+    func makeNSView(context _: Context) -> NSView {
+        let view = NonMovableNSView()
+        view.wantsLayer = true
+        return view
+    }
+
+    func updateNSView(_: NSView, context _: Context) {}
+}
+
+// MARK: - Shimmering Text
+
+struct ShimmeringText: View {
+    let text: String
+    @State private var phase: CGFloat = -0.3
+
+    var body: some View {
+        Text(text)
+            .font(AppTypography.bodySecondary)
+            .foregroundColor(.white.opacity(0.4))
+            .overlay {
+                GeometryReader { _ in
+                    LinearGradient(
+                        gradient: Gradient(stops: [
+                            .init(color: .clear, location: clampedLocation(phase - 0.15)),
+                            .init(color: .white.opacity(0.5), location: clampedLocation(phase)),
+                            .init(color: .clear, location: clampedLocation(phase + 0.15)),
+                        ]),
+                        startPoint: .leading,
+                        endPoint: .trailing,
+                    )
+                    .mask(
+                        Text(text)
+                            .font(AppTypography.bodySecondary),
+                    )
+                }
+            }
+            .onAppear {
+                withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: false)) {
+                    phase = 1.3
+                }
+            }
+    }
+
+    private func clampedLocation(_ value: CGFloat) -> CGFloat {
+        min(1.0, max(0.0, value))
+    }
+}

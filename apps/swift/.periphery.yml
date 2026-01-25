@@ -1,0 +1,10 @@
+targets:
+  - Capacitor
+
+# UniFFI auto-generated bindings - contains complete API surface
+# whether or not all functions are used
+report_exclude:
+  - "*/Bridge/capacitor_core.swift"
+  - "*/bindings/capacitor_core.swift"
+
+retain_public: false
