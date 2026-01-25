@@ -1,39 +1,45 @@
 # Plans Directory
 
-Implementation plans for Claude HUD. Files are prefixed by status:
+Implementation plans for Capacitor. Files are prefixed by status.
 
 ## Prefixes
 
 | Prefix | Meaning |
 |--------|---------|
-| `ACTIVE-` | Ready for implementation. Use these. |
-| `DRAFT-` | Work in progress, not ready yet. |
-| `REFERENCE-` | Checklists, vision docs, bootstrap prompts. Not implementation plans. |
+| `ACTIVE-` | Ready for implementation |
+| `DONE-` | Completed (compacted summaries for reference) |
+| `DRAFT-` | Work in progress |
+| `REFERENCE-` | Vision docs, checklists, prompts |
 
 ## Active Plans
 
 | Plan | Description |
 |------|-------------|
-| `ACTIVE-multi-agent-cli-support.md` | Adapter pattern for Claude/Codex/Amp/Aider detection |
-| `ACTIVE-idea-capture-redesign.md` | Capture/management separation, morphing pill UI |
-| `ACTIVE-activity-based-project-tracking.md` | File activity tracking for monorepo support |
-| `ACTIVE-capacitor-global-storage.md` | Migrate storage to `~/.capacitor/` namespace |
-| `ACTIVE-state-detection-simplification.md` | Simplify state detection, co-locate locks with state |
+| `ACTIVE-state-detection-simplification.md` | Simplify state detection architecture. Phase 1 done (locks in `~/.capacitor/`), Phases 2-4 pending (eliminate sessions.json, add flock, unify binaries). |
 
-## Reference
+## Done
 
-| Plan | Description |
-|------|-------------|
-| `REFERENCE-hud-vision-jan-2026.md` | Long-term product vision |
-| `REFERENCE-app-renaming-checklist.md` | Checklist for app rename (ClaudeHUD → Capacitor) |
-| `REFERENCE-idea-capture-bootstrap-prompt.md` | Bootstrap prompt for idea capture implementation |
+| Plan | Summary |
+|------|---------|
+| `DONE-activity-based-project-tracking.md` | Monorepo support via file activity tracking. Attributes edits to project boundaries. |
+| `DONE-capacitor-global-storage.md` | Storage migration from `~/.claude/` to `~/.capacitor/` namespace. |
+| `DONE-heartbeat-health-monitoring.md` | Detects when hooks stop firing mid-session via heartbeat file. |
+| `DONE-idea-capture-redesign.md` | Fast capture flow with LLM-powered "sensemaking" for idea expansion. |
+| `DONE-multi-agent-cli-support.md` | Starship-style adapter pattern for Claude, Codex, Aider, Amp, etc. |
+| `DONE-shell-integration-engineering.md` | Shell precmd hooks push CWD for ambient project awareness. |
+| `DONE-shell-integration-prd.md` | Product requirements for shell integration. |
+| `DONE-ui-tuning-panel-rework.md` | Consolidated debug panels into unified UITuningPanel with sidebar. |
 
-## Drafts
+## Reference Documents
 
-| Plan | Description |
-|------|-------------|
-| `DRAFT-ui-tuning-panel-rework.md` | Consolidate tuning panels (not prioritized) |
+| Document | Purpose |
+|----------|---------|
+| `REFERENCE-app-renaming-checklist.md` | Checklist for ClaudeHUD → Capacitor rename |
+| `REFERENCE-hud-vision-jan-2026.md` | Vision document for Capacitor direction |
+| `REFERENCE-idea-capture-bootstrap-prompt.md` | Bootstrap prompt for idea capture sessions |
 
-## Archived Plans
+## Notes
 
-Completed and superseded plans have been deleted. They remain in git history if needed for reference.
+- DONE plans are compacted summaries (not full implementation specs)
+- Git history preserves original detailed versions
+- New plans should start as `DRAFT-` until ready for implementation
