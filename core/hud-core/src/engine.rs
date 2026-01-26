@@ -845,9 +845,13 @@ impl HudEngine {
         // Determine if this is first-run (no heartbeat file ever created)
         let is_first_run = matches!(health.status, crate::types::HookHealthStatus::Unknown);
 
-        // Prioritize issues: policy > binary > config > firing
+        // Prioritize issues: policy > symlink > binary > config > firing
         let primary_issue: Option<HookIssue> = match &setup_status.hooks {
             HookStatus::PolicyBlocked { reason } => Some(HookIssue::PolicyBlocked {
+                reason: reason.clone(),
+            }),
+            HookStatus::SymlinkBroken { target, reason } => Some(HookIssue::SymlinkBroken {
+                target: target.clone(),
                 reason: reason.clone(),
             }),
             HookStatus::BinaryBroken { reason } => Some(HookIssue::BinaryBroken {

@@ -53,10 +53,24 @@ pub struct DependencyStatus {
 #[derive(Debug, Clone, uniffi::Enum)]
 pub enum HookStatus {
     NotInstalled,
-    Outdated { current: String, latest: String },
-    Installed { version: String },
-    PolicyBlocked { reason: String },
-    BinaryBroken { reason: String },
+    Outdated {
+        current: String,
+        latest: String,
+    },
+    Installed {
+        version: String,
+    },
+    PolicyBlocked {
+        reason: String,
+    },
+    BinaryBroken {
+        reason: String,
+    },
+    /// Symlink exists but target is missing (e.g., app moved or repo cleaned)
+    SymlinkBroken {
+        target: String,
+        reason: String,
+    },
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
@@ -103,6 +117,15 @@ impl SetupChecker {
             Some(format!("{} is required but not installed", dep.name))
         } else if let HookStatus::PolicyBlocked { ref reason } = hooks {
             Some(reason.clone())
+        } else if let HookStatus::SymlinkBroken {
+            ref target,
+            ref reason,
+        } = hooks
+        {
+            Some(format!(
+                "Hook symlink broken (target: {}): {}",
+                target, reason
+            ))
         } else if let HookStatus::BinaryBroken { ref reason } = hooks {
             Some(format!("Hook binary broken: {}", reason))
         } else if !hooks_ok {
@@ -205,14 +228,39 @@ impl SetupChecker {
             return HookStatus::PolicyBlocked { reason };
         }
 
-        // Check if binary exists
+        // Check if binary exists (or is a symlink)
         let binary_path = self.get_hook_binary_path();
-        if !binary_path.exists() {
+        let is_symlink = binary_path.is_symlink();
+
+        // For symlinks, check if target exists before checking binary_path.exists()
+        // (exists() returns false for broken symlinks)
+        if is_symlink {
+            if let Ok(target) = fs::read_link(&binary_path) {
+                if !target.exists() {
+                    return HookStatus::SymlinkBroken {
+                        target: target.to_string_lossy().to_string(),
+                        reason: "Symlink target no longer exists. The app may have moved or `cargo clean` was run.".to_string(),
+                    };
+                }
+            }
+        }
+
+        if !binary_path.exists() && !is_symlink {
             return HookStatus::NotInstalled;
         }
 
         // Verify binary actually works (catches macOS codesigning issues)
         if let Err(reason) = self.verify_hook_binary() {
+            // Check if it's a symlink-specific error
+            if reason.starts_with("SYMLINK_BROKEN:") {
+                let parts: Vec<&str> = reason.splitn(3, ':').collect();
+                if parts.len() >= 3 {
+                    return HookStatus::SymlinkBroken {
+                        target: parts[1].to_string(),
+                        reason: parts[2].to_string(),
+                    };
+                }
+            }
             return HookStatus::BinaryBroken { reason };
         }
 
@@ -258,9 +306,29 @@ impl SetupChecker {
     /// Verifies the hook binary actually runs (not just exists).
     ///
     /// Returns Ok(()) if the binary works, Err(reason) if broken.
-    /// This catches macOS code signing issues (SIGKILL = exit 137).
+    /// This catches:
+    /// - Broken symlinks (target moved/deleted)
+    /// - macOS code signing issues (SIGKILL = exit 137)
     fn verify_hook_binary(&self) -> Result<(), String> {
         let binary_path = self.get_hook_binary_path();
+
+        // Check if it's a symlink with a broken target
+        if binary_path.is_symlink() {
+            match fs::read_link(&binary_path) {
+                Ok(target) => {
+                    if !target.exists() {
+                        return Err(format!(
+                            "SYMLINK_BROKEN:{}:Symlink target no longer exists. \
+                             The app may have moved or `cargo clean` was run.",
+                            target.display()
+                        ));
+                    }
+                }
+                Err(e) => {
+                    return Err(format!("Cannot read symlink: {}", e));
+                }
+            }
+        }
 
         if !binary_path.exists() {
             return Err("Binary not found".to_string());
@@ -287,7 +355,8 @@ impl SetupChecker {
                 let code = output.status.code().unwrap_or(-1);
                 if code == 137 {
                     // SIGKILL - macOS killed unsigned binary
-                    Err("Binary killed by macOS (needs codesigning). Run: codesign -s - -f ~/.local/bin/hud-hook".to_string())
+                    // This shouldn't happen with symlinks, but catch it anyway
+                    Err("Binary killed by macOS (exit 137). Try reinstalling the app.".to_string())
                 } else {
                     // Exit code 0 or other non-fatal codes are OK
                     // (binary may exit non-zero for empty input, that's fine)
@@ -426,8 +495,12 @@ impl SetupChecker {
     ///
     /// This is the "core" side of binary installation - it handles:
     /// - Creating ~/.local/bin if needed
-    /// - Copying the binary
-    /// - Setting executable permissions (0755)
+    /// - Creating a SYMLINK to the source binary (not copying!)
+    ///
+    /// IMPORTANT: We use symlinks instead of copying because:
+    /// - Copied adhoc-signed binaries get SIGKILL'd by macOS Gatekeeper
+    /// - Symlinks preserve the original binary's code signature
+    /// - If the app moves, the symlink breaks obviously (not silently)
     ///
     /// The client is responsible for finding the source binary (e.g., from app bundle).
     /// Returns success if installed, error if any step fails.
@@ -435,7 +508,7 @@ impl SetupChecker {
         &self,
         source_path: &str,
     ) -> Result<InstallResult, HudFfiError> {
-        use std::os::unix::fs::PermissionsExt;
+        use std::os::unix::fs::symlink;
 
         let source = std::path::Path::new(source_path);
         if !source.exists() {
@@ -446,6 +519,11 @@ impl SetupChecker {
             });
         }
 
+        // Canonicalize source path to get absolute path for symlink
+        let source_abs = source.canonicalize().map_err(|e| HudFfiError::General {
+            message: format!("Failed to resolve source path: {}", e),
+        })?;
+
         let dest_dir = dirs::home_dir()
             .ok_or_else(|| HudFfiError::General {
                 message: "Could not determine home directory".to_string(),
@@ -454,28 +532,17 @@ impl SetupChecker {
 
         let dest_path = dest_dir.join("hud-hook");
 
-        // Minimum expected size for the real Rust binary (~1.5MB)
-        // Small shell scripts or corrupted files should be replaced
-        const MIN_BINARY_SIZE: u64 = 100_000;
-
-        // Check if already exists, is executable, AND is a real binary (not a script)
-        if dest_path.exists() {
-            if let Ok(metadata) = fs::metadata(&dest_path) {
-                let perms = metadata.permissions();
-                let size = metadata.len();
-
-                if perms.mode() & 0o111 != 0 && size >= MIN_BINARY_SIZE {
+        // Check if symlink already points to the correct target
+        if dest_path.is_symlink() {
+            if let Ok(current_target) = fs::read_link(&dest_path) {
+                if current_target == source_abs {
                     return Ok(InstallResult {
                         success: true,
-                        message: "Binary already installed".to_string(),
+                        message: "Hook binary symlink already correct".to_string(),
                         script_path: Some(dest_path.to_string_lossy().to_string()),
                     });
                 }
             }
-            // Exists but either not executable or too small (likely a script/corrupted) - remove
-            fs::remove_file(&dest_path).map_err(|e| HudFfiError::General {
-                message: format!("Failed to remove existing binary: {}", e),
-            })?;
         }
 
         // Create ~/.local/bin if needed
@@ -483,20 +550,25 @@ impl SetupChecker {
             message: format!("Failed to create ~/.local/bin: {}", e),
         })?;
 
-        // Copy the binary
-        fs::copy(source, &dest_path).map_err(|e| HudFfiError::General {
-            message: format!("Failed to copy hook binary: {}", e),
-        })?;
+        // Remove existing file/symlink before creating new one
+        if dest_path.exists() || dest_path.is_symlink() {
+            fs::remove_file(&dest_path).map_err(|e| HudFfiError::General {
+                message: format!("Failed to remove existing binary/symlink: {}", e),
+            })?;
+        }
 
-        // Set executable permissions (0755)
-        let perms = fs::Permissions::from_mode(0o755);
-        fs::set_permissions(&dest_path, perms).map_err(|e| HudFfiError::General {
-            message: format!("Failed to set binary permissions: {}", e),
+        // Create symlink (not copy!) to preserve code signature
+        symlink(&source_abs, &dest_path).map_err(|e| HudFfiError::General {
+            message: format!("Failed to create symlink: {}", e),
         })?;
 
         Ok(InstallResult {
             success: true,
-            message: "Hook binary installed successfully".to_string(),
+            message: format!(
+                "Hook binary symlinked: {} -> {}",
+                dest_path.display(),
+                source_abs.display()
+            ),
             script_path: Some(dest_path.to_string_lossy().to_string()),
         })
     }

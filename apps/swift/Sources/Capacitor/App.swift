@@ -344,9 +344,44 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         guard let engine = try? HudEngine() else { return }
 
         let hookStatus = engine.getHookStatus()
-        if case .notInstalled = hookStatus {
+
+        switch hookStatus {
+        case .installed:
+            return
+
+        case .symlinkBroken, .binaryBroken, .notInstalled:
+            if attemptAutoRepair(engine: engine) {
+                print("[Startup] Hook auto-repair succeeded")
+                return
+            }
+            print("[Startup] Hook auto-repair failed, showing WelcomeView")
+            UserDefaults.standard.set(false, forKey: "setupComplete")
+
+        case .outdated, .policyBlocked:
             UserDefaults.standard.set(false, forKey: "setupComplete")
         }
+    }
+
+    private func attemptAutoRepair(engine: HudEngine) -> Bool {
+        if let installError = HookInstaller.installBundledBinary(using: engine) {
+            print("[Startup] Hook binary install failed: \(installError)")
+            return false
+        }
+
+        do {
+            let result = try engine.installHooks()
+            if result.success {
+                let newStatus = engine.getHookStatus()
+                if case .installed = newStatus {
+                    return true
+                }
+            }
+            print("[Startup] Hook config install failed: \(result.message)")
+        } catch {
+            print("[Startup] Hook install threw: \(error)")
+        }
+
+        return false
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {

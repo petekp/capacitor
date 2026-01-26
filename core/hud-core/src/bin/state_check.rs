@@ -6,8 +6,8 @@ use hud_core::storage::StorageConfig;
 fn main() {
     let storage = StorageConfig::default();
 
-    // Lock dir is in Claude namespace (Claude Code creates these)
-    let lock_dir = storage.claude_root().join("sessions");
+    // Lock dir is in Capacitor namespace (hooks create these)
+    let lock_dir = storage.sessions_dir();
     // State file is in Capacitor namespace (we own this)
     let state_file = storage.sessions_file();
 

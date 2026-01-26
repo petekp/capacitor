@@ -352,6 +352,8 @@ pub enum HookIssue {
     BinaryMissing,
     /// The hud-hook binary exists but crashes (e.g., macOS codesigning)
     BinaryBroken { reason: String },
+    /// The hud-hook symlink exists but points to a missing target (app moved, cargo clean, etc.)
+    SymlinkBroken { target: String, reason: String },
     /// Hook configuration missing or incomplete in settings.json
     ConfigMissing,
     /// Hook script/binary version is outdated

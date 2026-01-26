@@ -76,6 +76,9 @@ Hooks → `~/.capacitor/sessions.json` → Capacitor reads
 - **SwiftUI view reuse** — Use `.id(uniqueValue)` to force fresh instances for toasts/alerts
 - **Swift 6 concurrency** — Views initializing `@MainActor` types need `@MainActor` on the view struct
 - **Rust↔Swift timestamps** — Use custom decoder with `.withFractionalSeconds` (see `ShellStateStore.swift`)
+- **Hierarchical matching: specificity > freshness** — When matching paths (locks or session records), exact matches must beat child matches regardless of timestamp. Priority order: (1) match type (exact > child > parent), (2) timestamp, (3) path tie-breaker. See `find_matching_child_lock` in `lock.rs` and comparison logic in `resolver.rs`.
+- **Lock takeover: most recent wins** — When multiple Claude sessions exist in the same directory, the most recent session takes over the lock. The lock system uses path-based hashing (one lock per path), so `create_lock()` will update an existing lock's metadata to point to the new PID, recording `handoff_from` for debugging. Old lock holders detect takeover via PID mismatch and exit gracefully. See `create_lock()` in `lock.rs` and takeover detection in `lock_holder.rs`.
+- **Hook binary must be symlinked, not copied** — Copying adhoc-signed Rust binaries to `~/.local/bin/` triggers macOS Gatekeeper SIGKILL (exit 137). The binary works fine when run from `target/release/` but dies when copied. Fix: use symlink (`ln -s target/release/hud-hook ~/.local/bin/hud-hook`). See `scripts/sync-hooks.sh`.
 
 ## Documentation
 

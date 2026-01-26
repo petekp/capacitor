@@ -36,6 +36,18 @@ pub fn run(cwd: &str, initial_pid: u32, lock_dir: &Path) {
                 ));
                 return;
             }
+
+            // Check if lock was taken over by another process
+            if let Some(lock_pid) = read_lock_pid(lock_dir) {
+                if lock_pid != current_pid {
+                    log(&format!(
+                        "Lock taken over by PID {} (was {}), exiting holder for {}",
+                        lock_pid, current_pid, cwd
+                    ));
+                    return;
+                }
+            }
+
             thread::sleep(Duration::from_secs(1));
         }
 
@@ -92,6 +104,12 @@ fn is_pid_alive(pid: u32) -> bool {
     {
         false
     }
+}
+
+fn read_lock_pid(lock_dir: &Path) -> Option<u32> {
+    let pid_path = lock_dir.join("pid");
+    let pid_str = fs::read_to_string(pid_path).ok()?;
+    pid_str.trim().parse().ok()
 }
 
 fn find_handoff_pid(state_file: &Path, cwd: &str, _exclude_pid: u32) -> Option<u32> {

@@ -4653,6 +4653,10 @@ public enum HookIssue {
     case binaryBroken(reason: String
     )
     /**
+     * The hud-hook symlink exists but points to a missing target (app moved, cargo clean, etc.)
+     */
+    case symlinkBroken(target: String, reason: String)
+    /**
      * Hook configuration missing or incomplete in settings.json
      */
     case configMissing
@@ -4684,11 +4688,13 @@ public struct FfiConverterTypeHookIssue: FfiConverterRustBuffer {
         case 3: return try .binaryBroken(reason: FfiConverterString.read(from: &buf)
             )
 
-        case 4: return .configMissing
+        case 4: return try .symlinkBroken(target: FfiConverterString.read(from: &buf), reason: FfiConverterString.read(from: &buf))
 
-        case 5: return try .configOutdated(current: FfiConverterString.read(from: &buf), latest: FfiConverterString.read(from: &buf))
+        case 5: return .configMissing
 
-        case 6: return try .notFiring(lastSeenSecs: FfiConverterOptionUInt64.read(from: &buf)
+        case 6: return try .configOutdated(current: FfiConverterString.read(from: &buf), latest: FfiConverterString.read(from: &buf))
+
+        case 7: return try .notFiring(lastSeenSecs: FfiConverterOptionUInt64.read(from: &buf)
             )
 
         default: throw UniffiInternalError.unexpectedEnumCase
@@ -4708,16 +4714,21 @@ public struct FfiConverterTypeHookIssue: FfiConverterRustBuffer {
             writeInt(&buf, Int32(3))
             FfiConverterString.write(reason, into: &buf)
 
-        case .configMissing:
+        case let .symlinkBroken(target, reason):
             writeInt(&buf, Int32(4))
+            FfiConverterString.write(target, into: &buf)
+            FfiConverterString.write(reason, into: &buf)
+
+        case .configMissing:
+            writeInt(&buf, Int32(5))
 
         case let .configOutdated(current, latest):
-            writeInt(&buf, Int32(5))
+            writeInt(&buf, Int32(6))
             FfiConverterString.write(current, into: &buf)
             FfiConverterString.write(latest, into: &buf)
 
         case let .notFiring(lastSeenSecs):
-            writeInt(&buf, Int32(6))
+            writeInt(&buf, Int32(7))
             FfiConverterOptionUInt64.write(lastSeenSecs, into: &buf)
         }
     }
@@ -4751,6 +4762,10 @@ public enum HookStatus {
     )
     case binaryBroken(reason: String
     )
+    /**
+     * Symlink exists but target is missing (e.g., app moved or repo cleaned)
+     */
+    case symlinkBroken(target: String, reason: String)
 }
 
 #if swift(>=5.8)
@@ -4774,6 +4789,8 @@ public struct FfiConverterTypeHookStatus: FfiConverterRustBuffer {
 
         case 5: return try .binaryBroken(reason: FfiConverterString.read(from: &buf)
             )
+
+        case 6: return try .symlinkBroken(target: FfiConverterString.read(from: &buf), reason: FfiConverterString.read(from: &buf))
 
         default: throw UniffiInternalError.unexpectedEnumCase
         }
@@ -4799,6 +4816,11 @@ public struct FfiConverterTypeHookStatus: FfiConverterRustBuffer {
 
         case let .binaryBroken(reason):
             writeInt(&buf, Int32(5))
+            FfiConverterString.write(reason, into: &buf)
+
+        case let .symlinkBroken(target, reason):
+            writeInt(&buf, Int32(6))
+            FfiConverterString.write(target, into: &buf)
             FfiConverterString.write(reason, into: &buf)
         }
     }

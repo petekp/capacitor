@@ -176,6 +176,9 @@ final class SetupRequirementsManager {
 
         case .binaryBroken(let reason):
             updateStep("hooks", status: .error(message: "Binary broken: \(reason)"))
+
+        case .symlinkBroken(let target, let reason):
+            updateStep("hooks", status: .error(message: "Symlink broken: \(reason) (target: \(target))"))
         }
     }
 
