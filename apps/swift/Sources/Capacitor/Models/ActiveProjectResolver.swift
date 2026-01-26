@@ -1,10 +1,14 @@
 import Foundation
 
+// MARK: - Active Source
+
 enum ActiveSource: Equatable {
     case claude(sessionId: String)
     case shell(pid: String, app: String?)
     case none
 }
+
+// MARK: - Active Project Resolver
 
 @MainActor
 @Observable
@@ -16,17 +20,43 @@ final class ActiveProjectResolver {
     private(set) var activeSource: ActiveSource = .none
 
     private var projects: [Project] = []
+    private var manualOverride: Project?
+    private var overrideExpiry: Date?
+
+    private enum Constants {
+        static let overrideDurationSeconds: TimeInterval = 10
+    }
 
     init(sessionStateManager: SessionStateManager, shellStateStore: ShellStateStore) {
         self.sessionStateManager = sessionStateManager
         self.shellStateStore = shellStateStore
     }
 
+    // MARK: - Public API
+
     func updateProjects(_ projects: [Project]) {
         self.projects = projects
     }
 
+    func setManualOverride(_ project: Project) {
+        manualOverride = project
+        overrideExpiry = Date().addingTimeInterval(Constants.overrideDurationSeconds)
+    }
+
     func resolve() {
+        // Priority 0: Manual override (from clicking a project, expires after 10s)
+        if let override = manualOverride,
+           let expiry = overrideExpiry,
+           Date() < expiry
+        {
+            activeProject = override
+            activeSource = .none
+            return
+        } else {
+            manualOverride = nil
+            overrideExpiry = nil
+        }
+
         // Priority 1: Shell CWD (terminal navigation is most immediate signal)
         if let (project, pid, app) = findActiveShellProject() {
             activeProject = project
@@ -44,6 +74,8 @@ final class ActiveProjectResolver {
         activeProject = nil
         activeSource = .none
     }
+
+    // MARK: - Private Resolution
 
     private func findActiveClaudeSession() -> (Project, String)? {
         var mostRecent: (Project, String, Date)?

@@ -406,7 +406,9 @@ class AppState: ObservableObject {
     // MARK: - Terminal Operations
 
     func launchTerminal(for project: Project) {
-        terminalLauncher.launchTerminal(for: project)
+        activeProjectResolver.setManualOverride(project)
+        activeProjectResolver.resolve()
+        terminalLauncher.launchTerminal(for: project, shellState: shellStateStore.state)
         objectWillChange.send()
     }
 

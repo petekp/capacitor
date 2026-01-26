@@ -1,6 +1,8 @@
 import AppKit
 import Foundation
 
+// MARK: - Terminal App Definition
+
 enum TerminalApp: CaseIterable {
     case ghostty
     case iTerm
@@ -38,9 +40,11 @@ enum TerminalApp: CaseIterable {
     }
 
     static let priorityOrder: [TerminalApp] = [
-        .ghostty, .iTerm, .alacritty, .kitty, .warp, .terminal
+        .ghostty, .iTerm, .alacritty, .kitty, .warp, .terminal,
     ]
 }
+
+// MARK: - Terminal Launcher
 
 @MainActor
 final class TerminalLauncher {
@@ -48,7 +52,166 @@ final class TerminalLauncher {
         static let activationDelaySeconds: Double = 0.3
     }
 
-    func launchTerminal(for project: Project) {
+    // MARK: - Public API
+
+    func launchTerminal(for project: Project, shellState: ShellCwdState? = nil) {
+        if let shell = findExistingShell(for: project, in: shellState) {
+            activateExistingTerminal(tty: shell.tty, parentApp: shell.parentApp)
+        } else {
+            launchNewTerminal(for: project)
+        }
+    }
+
+    func activateTerminalApp() {
+        if let frontmost = NSWorkspace.shared.frontmostApplication,
+           isTerminalApp(frontmost)
+        {
+            frontmost.activate()
+            return
+        }
+        activateFirstRunningTerminal()
+    }
+
+    // MARK: - Shell Lookup
+
+    private func findExistingShell(for project: Project, in state: ShellCwdState?) -> ShellEntry? {
+        guard let shells = state?.shells else { return nil }
+
+        let liveShells = shells.filter { isLiveNonTmuxShell($0) }
+
+        // Prefer exact CWD match
+        if let match = liveShells.first(where: { $0.value.cwd == project.path }) {
+            return match.value
+        }
+
+        // Fall back to subdirectory match
+        let prefix = project.path.hasSuffix("/") ? project.path : project.path + "/"
+        if let match = liveShells.first(where: { $0.value.cwd.hasPrefix(prefix) }) {
+            return match.value
+        }
+
+        return nil
+    }
+
+    private func isLiveNonTmuxShell(_ entry: (key: String, value: ShellEntry)) -> Bool {
+        guard let pid = Int32(entry.key) else { return false }
+        let isAlive = kill(pid, 0) == 0
+        let isTmux = entry.value.parentApp?.lowercased() == "tmux"
+        return isAlive && !isTmux
+    }
+
+    // MARK: - Terminal Activation
+
+    private func activateExistingTerminal(tty: String, parentApp: String?) {
+        if let app = parentApp?.lowercased() {
+            activateKnownTerminal(app: app, tty: tty)
+        } else {
+            activateDetectedTerminal(tty: tty)
+        }
+    }
+
+    private func activateKnownTerminal(app: String, tty: String) {
+        if app.contains("iterm") {
+            activateITermSession(tty: tty)
+        } else if app == "terminal" {
+            activateTerminalAppSession(tty: tty)
+        } else if app.contains("ghostty") {
+            activateAppByName("Ghostty")
+        } else {
+            activateAppByName(app)
+        }
+    }
+
+    private func activateDetectedTerminal(tty: String) {
+        // When parent_app is unknown, try terminals that support TTY-based tab selection
+        if findRunningApp(.iTerm) != nil {
+            activateITermSession(tty: tty)
+        } else if findRunningApp(.terminal) != nil {
+            activateTerminalAppSession(tty: tty)
+        } else {
+            activateFirstRunningTerminal()
+        }
+    }
+
+    // MARK: - TTY-Based Tab Selection (AppleScript)
+
+    private func activateITermSession(tty: String) {
+        let script = """
+            tell application "iTerm"
+                activate
+                repeat with w in windows
+                    repeat with t in tabs of w
+                        repeat with s in sessions of t
+                            if tty of s is "\(tty)" then
+                                select t
+                                select s
+                                set index of w to 1
+                                return
+                            end if
+                        end repeat
+                    end repeat
+                end repeat
+            end tell
+            """
+        runAppleScript(script)
+    }
+
+    private func activateTerminalAppSession(tty: String) {
+        let script = """
+            tell application "Terminal"
+                activate
+                repeat with w in windows
+                    repeat with t in tabs of w
+                        if tty of t is "\(tty)" then
+                            set selected tab of w to t
+                            set frontmost of w to true
+                            return
+                        end if
+                    end repeat
+                end repeat
+            end tell
+            """
+        runAppleScript(script)
+    }
+
+    // MARK: - App Activation Helpers
+
+    private func activateAppByName(_ name: String?) {
+        guard let name = name,
+              let app = NSWorkspace.shared.runningApplications.first(where: {
+                  $0.localizedName?.lowercased().contains(name.lowercased()) == true
+              })
+        else {
+            activateFirstRunningTerminal()
+            return
+        }
+        app.activate()
+    }
+
+    private func activateFirstRunningTerminal() {
+        for terminal in TerminalApp.priorityOrder where terminal.isInstalled {
+            if let app = findRunningApp(terminal) {
+                app.activate()
+                return
+            }
+        }
+    }
+
+    private func findRunningApp(_ terminal: TerminalApp) -> NSRunningApplication? {
+        let name = terminal.displayName.lowercased()
+        return NSWorkspace.shared.runningApplications.first {
+            $0.localizedName?.lowercased().contains(name) == true
+        }
+    }
+
+    private func isTerminalApp(_ app: NSRunningApplication) -> Bool {
+        guard let name = app.localizedName else { return false }
+        return TerminalApp.priorityOrder.contains { name.contains($0.displayName) }
+    }
+
+    // MARK: - New Terminal Launch
+
+    private func launchNewTerminal(for project: Project) {
         _Concurrency.Task {
             let claudePath = await getClaudePath()
             runBashScript(TerminalScripts.launch(project: project, claudePath: claudePath))
@@ -56,45 +219,24 @@ final class TerminalLauncher {
         }
     }
 
-    func activateTerminalApp() {
-        if let frontmost = NSWorkspace.shared.frontmostApplication,
-           isTerminalApp(frontmost) {
-            frontmost.activate()
-            return
-        }
-        activateTerminalInPriorityOrder()
-    }
-
     private func getClaudePath() async -> String {
-        if let path = await CapacitorConfig.shared.getClaudePath() {
-            return path
-        }
-        return "/opt/homebrew/bin/claude"
+        await CapacitorConfig.shared.getClaudePath() ?? "/opt/homebrew/bin/claude"
     }
 
-    private func isTerminalApp(_ app: NSRunningApplication) -> Bool {
-        guard let name = app.localizedName else { return false }
-        return TerminalApp.priorityOrder.contains { terminal in
-            name.contains(terminal.displayName)
+    private func scheduleTerminalActivation() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + Constants.activationDelaySeconds) { [weak self] in
+            self?.activateTerminalApp()
         }
     }
 
-    private func activateTerminalInPriorityOrder() {
-        for terminal in TerminalApp.priorityOrder {
-            guard terminal.isInstalled else { continue }
+    // MARK: - Script Execution
 
-            if let app = findRunningTerminal(terminal) {
-                app.activate()
-                return
-            }
-        }
-    }
-
-    private func findRunningTerminal(_ terminal: TerminalApp) -> NSRunningApplication? {
-        let targetName = terminal.displayName.lowercased()
-        return NSWorkspace.shared.runningApplications.first { app in
-            app.localizedName?.lowercased().contains(targetName) == true
-        }
+    private func runAppleScript(_ script: String) {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        process.arguments = ["-e", script]
+        try? process.run()
+        process.waitUntilExit()
     }
 
     private func runBashScript(_ script: String) {
@@ -104,22 +246,14 @@ final class TerminalLauncher {
 
         var env = ProcessInfo.processInfo.environment
         let homebrewPaths = "/opt/homebrew/bin:/usr/local/bin"
-        if let existingPath = env["PATH"] {
-            env["PATH"] = "\(homebrewPaths):\(existingPath)"
-        } else {
-            env["PATH"] = homebrewPaths
-        }
+        env["PATH"] = homebrewPaths + ":" + (env["PATH"] ?? "")
         process.environment = env
 
         try? process.run()
     }
-
-    private func scheduleTerminalActivation() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + Constants.activationDelaySeconds) { [weak self] in
-            self?.activateTerminalApp()
-        }
-    }
 }
+
+// MARK: - Terminal Launch Scripts
 
 private enum TerminalScripts {
     static func launch(project: Project, claudePath: String) -> String {
