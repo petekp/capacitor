@@ -300,14 +300,18 @@ class AppState: ObservableObject {
                 }
             }
 
+            let finalAddedCount = addedCount
+            let finalAlreadyTrackedPaths = alreadyTrackedPaths
+            let finalFailedNames = failedNames
+
             DispatchQueue.main.async {
                 // Separate already-tracked projects into paused vs already in progress
                 var movedCount = 0
                 var alreadyInProgressCount = 0
 
-                if !alreadyTrackedPaths.isEmpty {
+                if !finalAlreadyTrackedPaths.isEmpty {
                     withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
-                        for path in alreadyTrackedPaths {
+                        for path in finalAlreadyTrackedPaths {
                             if self.manuallyDormant.contains(path) {
                                 self.manuallyDormant.remove(path)
                                 movedCount += 1
@@ -318,20 +322,20 @@ class AppState: ObservableObject {
                     }
                 }
 
-                if addedCount > 0 {
+                if finalAddedCount > 0 {
                     withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                         self.loadDashboard()
                     }
                 }
 
                 // Show appropriate toast with error-first formatting
-                if !failedNames.isEmpty {
+                if !finalFailedNames.isEmpty {
                     let message = Self.formatMixedResultsToast(
-                        failedNames: failedNames,
-                        addedCount: addedCount
+                        failedNames: finalFailedNames,
+                        addedCount: finalAddedCount
                     )
                     self.toast = .error(message)
-                } else if addedCount == 0 {
+                } else if finalAddedCount == 0 {
                     if movedCount > 0 {
                         self.toast = ToastMessage(
                             movedCount == 1 ? "Moved to In Progress" : "Moved \(movedCount) projects to In Progress"

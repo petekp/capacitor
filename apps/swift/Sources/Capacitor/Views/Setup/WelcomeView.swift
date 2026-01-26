@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 
+@MainActor
 struct WelcomeView: View {
     @State private var manager = SetupRequirementsManager()
     @State private var checkID = UUID()

@@ -39,6 +39,8 @@ jobs:
             ~/.cargo/git
             target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
 
       - name: Run cargo fmt check
         run: cargo fmt --check
@@ -55,6 +57,35 @@ jobs:
       - name: Run cargo test
         run: cargo test
 
+  test-hook:
+    name: Test Hook Binary
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Build hud-hook (release)
+        run: cargo build -p hud-hook --release
+
+      - name: Install bats
+        run: brew install bats-core
+
+      - name: Run tombstone tests
+        run: bats tests/hud-hook/tombstone.bats
+
   test-swift:
     name: Test Swift
     runs-on: macos-14
@@ -64,6 +95,25 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Cache Swift packages
+        uses: actions/cache@v4
+        with:
+          path: apps/swift/.build
+          key: ${{ runner.os }}-spm-${{ hashFiles('apps/swift/Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-spm-
 
       - name: Build Rust library
         run: cargo build -p hud-core --release
@@ -75,14 +125,6 @@ jobs:
         working-directory: apps/swift
         run: swift test
 
-      - name: Install Periphery
-        run: brew install peripheryapp/periphery/periphery
-
-      - name: Check for unused Swift code
-        working-directory: apps/swift
-        run: periphery scan
-        continue-on-error: true
-
   build-smoke-test:
     name: Build Smoke Test
     runs-on: macos-14
@@ -92,6 +134,25 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Cache Swift packages
+        uses: actions/cache@v4
+        with:
+          path: apps/swift/.build
+          key: ${{ runner.os }}-spm-${{ hashFiles('apps/swift/Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-spm-
 
       - name: Build Rust library (release)
         run: cargo build -p hud-core --release
