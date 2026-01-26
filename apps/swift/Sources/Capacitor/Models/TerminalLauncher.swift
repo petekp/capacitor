@@ -135,10 +135,28 @@ final class TerminalLauncher {
     // MARK: - Public API
 
     func launchTerminal(for project: Project, shellState: ShellCwdState? = nil) {
+        // First, check if there's a tmux session for this project path.
+        // This is more reliable than shell-cwd.json since it queries tmux directly.
+        if let tmuxSession = findTmuxSessionForPath(project.path) {
+            switchToTmuxSessionAndActivate(session: tmuxSession)
+            return
+        }
+
+        // Fallback to shell-cwd.json based matching
         if let match = findExistingShell(for: project, in: shellState) {
             activateExistingTerminal(shell: match.shell, pid: match.pid, projectPath: project.path, shellState: shellState)
         } else {
             launchNewTerminal(for: project)
+        }
+    }
+
+    private func switchToTmuxSessionAndActivate(session: String) {
+        // Switch tmux to the target session
+        runBashScript("tmux switch-client -t '\(session)' 2>/dev/null")
+
+        // Activate the terminal app (whichever one is running the tmux client)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            self?.activateTerminalApp()
         }
     }
 
@@ -162,8 +180,46 @@ final class TerminalLauncher {
 
         let projectPrefix = project.path.hasSuffix("/") ? project.path : project.path + "/"
 
-        return findMatchingShell(in: nonTmuxShells, projectPath: project.path, projectPrefix: projectPrefix)
-            ?? findMatchingShell(in: tmuxShells, projectPath: project.path, projectPrefix: projectPrefix)
+        // Prefer tmux shells over non-tmux shells since tmux session switching is more reliable
+        // than TTY-based activation (which often fails for tmux client TTYs)
+        return findMatchingShell(in: tmuxShells, projectPath: project.path, projectPrefix: projectPrefix)
+            ?? findMatchingShell(in: nonTmuxShells, projectPath: project.path, projectPrefix: projectPrefix)
+    }
+
+    /// Query tmux directly for a session matching the project path.
+    /// Returns the session name if found.
+    private func findTmuxSessionForPath(_ projectPath: String) -> String? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = ["tmux", "list-windows", "-a", "-F", "#{session_name}\t#{pane_current_path}"]
+
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = FileHandle.nullDevice
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+
+            guard process.terminationStatus == 0 else { return nil }
+
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            guard let output = String(data: data, encoding: .utf8) else { return nil }
+
+            // Parse tab-separated lines: "session_name\tpath"
+            for line in output.split(separator: "\n") {
+                let parts = line.split(separator: "\t", maxSplits: 1)
+                guard parts.count == 2 else { continue }
+                let sessionName = String(parts[0])
+                let panePath = String(parts[1])
+                if panePath == projectPath {
+                    return sessionName
+                }
+            }
+            return nil
+        } catch {
+            return nil
+        }
     }
 
     private func partitionByTmux(_ shells: [String: ShellEntry]) -> (nonTmux: [String: ShellEntry], tmux: [String: ShellEntry]) {

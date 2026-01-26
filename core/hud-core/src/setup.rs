@@ -350,12 +350,11 @@ impl SetupChecker {
                             return false;
                         }
                         // Verify async configuration matches expected
-                        let async_ok = if expected_async {
+                        if expected_async {
                             h.async_hook == Some(true) && h.timeout == Some(HOOK_TIMEOUT_SECONDS)
                         } else {
                             h.async_hook.is_none() && h.timeout.is_none()
-                        };
-                        async_ok
+                        }
                     })
                 })
                 .unwrap_or(false);

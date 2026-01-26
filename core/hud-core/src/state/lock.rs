@@ -171,6 +171,11 @@ fn is_pid_alive_with_legacy_checks(pid: u32) -> bool {
 /// If expected_start is None (legacy lock), applies additional verification checks.
 /// If expected_start is Some, verifies the process start time matches (within ±2 seconds tolerance).
 fn is_pid_alive_verified(pid: u32, expected_start: Option<u64>) -> bool {
+    // Basic PID check first - if the process doesn't exist at all, return early
+    if !is_pid_alive(pid) {
+        return false;
+    }
+
     // If no expected start time, use legacy checks (PID + process name)
     let Some(expected_start_time) = expected_start else {
         return is_pid_alive_with_legacy_checks(pid);
@@ -181,8 +186,10 @@ fn is_pid_alive_verified(pid: u32, expected_start: Option<u64>) -> bool {
         // Allow ±2 second tolerance for timing differences between bash calculation and sysinfo
         actual_start.abs_diff(expected_start_time) <= 2
     } else {
-        // Process doesn't exist or can't be queried
-        false
+        // Process exists (passed is_pid_alive) but sysinfo couldn't query start time.
+        // This can happen during transient OS races when reading the process table.
+        // Trust the basic PID check to avoid false negatives that cause state flipping.
+        true
     }
 }
 
