@@ -2,6 +2,7 @@ import SwiftUI
 
 #if DEBUG
 
+@MainActor
 struct LiveStateSection: View {
     @Bindable var shellStateStore: ShellStateStore
 
@@ -130,6 +131,7 @@ struct LiveStateSection: View {
     }
 }
 
+@MainActor
 struct ScenarioListSection: View {
     let parentApp: ParentAppType
     @Bindable var config: ShellMatrixConfig
@@ -186,6 +188,7 @@ struct ScenarioListSection: View {
     }
 }
 
+@MainActor
 struct ScenarioRow: View {
     let scenario: ShellScenario
     @Bindable var config: ShellMatrixConfig
