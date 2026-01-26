@@ -42,6 +42,32 @@ enum TerminalApp: CaseIterable {
     static let priorityOrder: [TerminalApp] = [
         .ghostty, .iTerm, .alacritty, .kitty, .warp, .terminal,
     ]
+
+    init?(fromParentApp app: String) {
+        let lowercased = app.lowercased()
+        if lowercased.contains("iterm") {
+            self = .iTerm
+        } else if lowercased == "terminal" {
+            self = .terminal
+        } else if lowercased.contains("ghostty") {
+            self = .ghostty
+        } else if lowercased.contains("kitty") {
+            self = .kitty
+        } else if lowercased.contains("alacritty") {
+            self = .alacritty
+        } else if lowercased.contains("warp") {
+            self = .warp
+        } else {
+            return nil
+        }
+    }
+}
+
+// MARK: - Shell Match Result
+
+private struct ShellMatch {
+    let pid: String
+    let shell: ShellEntry
 }
 
 // MARK: - Terminal Launcher
@@ -50,13 +76,14 @@ enum TerminalApp: CaseIterable {
 final class TerminalLauncher {
     private enum Constants {
         static let activationDelaySeconds: Double = 0.3
+        static let homebrewPaths = "/opt/homebrew/bin:/usr/local/bin"
     }
 
     // MARK: - Public API
 
     func launchTerminal(for project: Project, shellState: ShellCwdState? = nil) {
-        if let shell = findExistingShell(for: project, in: shellState) {
-            activateExistingTerminal(tty: shell.tty, parentApp: shell.parentApp)
+        if let match = findExistingShell(for: project, in: shellState) {
+            activateExistingTerminal(shell: match.shell, pid: match.pid)
         } else {
             launchNewTerminal(for: project)
         }
@@ -74,63 +101,166 @@ final class TerminalLauncher {
 
     // MARK: - Shell Lookup
 
-    private func findExistingShell(for project: Project, in state: ShellCwdState?) -> ShellEntry? {
+    /// Finds a shell whose CWD matches the project path.
+    /// Prefers non-tmux shells over tmux shells—direct terminal sessions are
+    /// easier to activate (no session switching required).
+    private func findExistingShell(for project: Project, in state: ShellCwdState?) -> ShellMatch? {
         guard let shells = state?.shells else { return nil }
 
-        let liveShells = shells.filter { isLiveNonTmuxShell($0) }
+        let liveShells = shells.filter { isLiveShell($0) }
+        let (nonTmuxShells, tmuxShells) = partitionByTmux(liveShells)
 
-        // Prefer exact CWD match
-        if let match = liveShells.first(where: { $0.value.cwd == project.path }) {
-            return match.value
+        let projectPrefix = project.path.hasSuffix("/") ? project.path : project.path + "/"
+
+        return findMatchingShell(in: nonTmuxShells, projectPath: project.path, projectPrefix: projectPrefix)
+            ?? findMatchingShell(in: tmuxShells, projectPath: project.path, projectPrefix: projectPrefix)
+    }
+
+    private func partitionByTmux(_ shells: [String: ShellEntry]) -> (nonTmux: [String: ShellEntry], tmux: [String: ShellEntry]) {
+        var nonTmux: [String: ShellEntry] = [:]
+        var tmux: [String: ShellEntry] = [:]
+
+        for (pid, shell) in shells {
+            if isTmuxShell(shell) {
+                tmux[pid] = shell
+            } else {
+                nonTmux[pid] = shell
+            }
         }
 
-        // Fall back to subdirectory match
-        let prefix = project.path.hasSuffix("/") ? project.path : project.path + "/"
-        if let match = liveShells.first(where: { $0.value.cwd.hasPrefix(prefix) }) {
-            return match.value
+        return (nonTmux, tmux)
+    }
+
+    private func findMatchingShell(
+        in shells: [String: ShellEntry],
+        projectPath: String,
+        projectPrefix: String
+    ) -> ShellMatch? {
+        if let match = shells.first(where: { $0.value.cwd == projectPath }) {
+            return ShellMatch(pid: match.key, shell: match.value)
+        }
+
+        if let match = shells.first(where: { $0.value.cwd.hasPrefix(projectPrefix) }) {
+            return ShellMatch(pid: match.key, shell: match.value)
         }
 
         return nil
     }
 
-    private func isLiveNonTmuxShell(_ entry: (key: String, value: ShellEntry)) -> Bool {
+    private func isLiveShell(_ entry: (key: String, value: ShellEntry)) -> Bool {
         guard let pid = Int32(entry.key) else { return false }
-        let isAlive = kill(pid, 0) == 0
-        let isTmux = entry.value.parentApp?.lowercased() == "tmux"
-        return isAlive && !isTmux
+        return kill(pid, 0) == 0
+    }
+
+    private func isTmuxShell(_ shell: ShellEntry) -> Bool {
+        shell.parentApp?.lowercased() == "tmux"
     }
 
     // MARK: - Terminal Activation
 
-    private func activateExistingTerminal(tty: String, parentApp: String?) {
-        if let app = parentApp?.lowercased() {
-            activateKnownTerminal(app: app, tty: tty)
+    private func activateExistingTerminal(shell: ShellEntry, pid: String) {
+        if isTmuxShell(shell), let session = shell.tmuxSession {
+            activateTmuxSession(shell: shell, session: session)
+            return
+        }
+
+        if let parentApp = shell.parentApp, let terminal = TerminalApp(fromParentApp: parentApp) {
+            activateTerminal(terminal, tty: shell.tty, pid: pid)
         } else {
-            activateDetectedTerminal(tty: tty)
+            activateTerminalByTTYDiscovery(tty: shell.tty)
         }
     }
 
-    private func activateKnownTerminal(app: String, tty: String) {
-        if app.contains("iterm") {
+    private func activateTerminal(_ terminal: TerminalApp, tty: String, pid: String) {
+        switch terminal {
+        case .iTerm:
             activateITermSession(tty: tty)
-        } else if app == "terminal" {
+        case .terminal:
             activateTerminalAppSession(tty: tty)
-        } else if app.contains("ghostty") {
-            activateAppByName("Ghostty")
-        } else {
-            activateAppByName(app)
+        case .kitty:
+            activateKittyWindow(shellPid: pid)
+        case .ghostty, .alacritty, .warp:
+            activateAppByName(terminal.displayName)
         }
     }
 
-    private func activateDetectedTerminal(tty: String) {
-        // When parent_app is unknown, try terminals that support TTY-based tab selection
-        if findRunningApp(.iTerm) != nil {
-            activateITermSession(tty: tty)
-        } else if findRunningApp(.terminal) != nil {
-            activateTerminalAppSession(tty: tty)
+    // MARK: - Tmux Activation
+
+    /// Activates the terminal hosting a tmux session, then switches to that session.
+    /// Uses tmux_client_tty (the host terminal's TTY) rather than the shell's TTY,
+    /// since the shell runs inside a tmux pseudo-terminal.
+    private func activateTmuxSession(shell: ShellEntry, session: String) {
+        let hostTTY = shell.tmuxClientTty ?? shell.tty
+        activateTerminalByTTYDiscovery(tty: hostTTY)
+        switchTmuxSession(to: session)
+    }
+
+    private func switchTmuxSession(to session: String) {
+        runBashScript("tmux switch-client -t '\(session)' 2>/dev/null")
+    }
+
+    // MARK: - TTY Discovery
+
+    /// Finds which terminal owns a TTY by querying each running terminal via AppleScript.
+    /// Used when parent_app is unknown—asks iTerm and Terminal.app which one owns
+    /// the TTY, rather than guessing based on which terminals are running.
+    private func activateTerminalByTTYDiscovery(tty: String) {
+        if let owningTerminal = discoverTerminalOwningTTY(tty: tty) {
+            switch owningTerminal {
+            case .iTerm:
+                activateITermSession(tty: tty)
+            case .terminal:
+                activateTerminalAppSession(tty: tty)
+            default:
+                activateAppByName(owningTerminal.displayName)
+            }
         } else {
             activateFirstRunningTerminal()
         }
+    }
+
+    private func discoverTerminalOwningTTY(tty: String) -> TerminalApp? {
+        if findRunningApp(.iTerm) != nil, queryITermForTTY(tty) {
+            return .iTerm
+        }
+        if findRunningApp(.terminal) != nil, queryTerminalAppForTTY(tty) {
+            return .terminal
+        }
+        return nil
+    }
+
+    private func queryITermForTTY(_ tty: String) -> Bool {
+        let script = """
+            tell application "iTerm"
+                repeat with w in windows
+                    repeat with t in tabs of w
+                        repeat with s in sessions of t
+                            if tty of s is "\(tty)" then
+                                return "found"
+                            end if
+                        end repeat
+                    end repeat
+                end repeat
+            end tell
+            return "not found"
+            """
+        return runAppleScriptWithResult(script) == "found"
+    }
+
+    private func queryTerminalAppForTTY(_ tty: String) -> Bool {
+        let script = """
+            tell application "Terminal"
+                repeat with w in windows
+                    repeat with t in tabs of w
+                        if tty of t is "\(tty)" then
+                            return "found"
+                        end if
+                    end repeat
+                end repeat
+            end tell
+            return "not found"
+            """
+        return runAppleScriptWithResult(script) == "found"
     }
 
     // MARK: - TTY-Based Tab Selection (AppleScript)
@@ -172,6 +302,15 @@ final class TerminalLauncher {
             end tell
             """
         runAppleScript(script)
+    }
+
+    // MARK: - kitty Remote Control
+
+    /// Uses kitty's remote control API to focus the window containing a specific shell.
+    /// Requires `allow_remote_control yes` in the user's kitty.conf.
+    private func activateKittyWindow(shellPid: String) {
+        activateAppByName("kitty")
+        runBashScript("kitty @ focus-window --match pid:\(shellPid) 2>/dev/null")
     }
 
     // MARK: - App Activation Helpers
@@ -239,14 +378,31 @@ final class TerminalLauncher {
         process.waitUntilExit()
     }
 
+    private func runAppleScriptWithResult(_ script: String) -> String? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        process.arguments = ["-e", script]
+
+        let pipe = Pipe()
+        process.standardOutput = pipe
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            return String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        } catch {
+            return nil
+        }
+    }
+
     private func runBashScript(_ script: String) {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/bash")
         process.arguments = ["-c", script]
 
         var env = ProcessInfo.processInfo.environment
-        let homebrewPaths = "/opt/homebrew/bin:/usr/local/bin"
-        env["PATH"] = homebrewPaths + ":" + (env["PATH"] ?? "")
+        env["PATH"] = Constants.homebrewPaths + ":" + (env["PATH"] ?? "")
         process.environment = env
 
         try? process.run()

@@ -4,11 +4,15 @@ struct ShellEntry: Codable, Equatable {
     let cwd: String
     let tty: String
     let parentApp: String?
+    let tmuxSession: String?
+    let tmuxClientTty: String?
     let updatedAt: Date
 
     enum CodingKeys: String, CodingKey {
         case cwd, tty
         case parentApp = "parent_app"
+        case tmuxSession = "tmux_session"
+        case tmuxClientTty = "tmux_client_tty"
         case updatedAt = "updated_at"
     }
 }

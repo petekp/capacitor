@@ -28,6 +28,7 @@ use thiserror::Error;
 
 const HISTORY_RETENTION_DAYS: i64 = 30;
 const CLEANUP_PROBABILITY: f64 = 0.01;
+const MAX_PARENT_CHAIN_DEPTH: usize = 20;
 
 #[derive(Error, Debug)]
 pub enum CwdError {
@@ -65,60 +66,78 @@ pub struct ShellEntry {
     pub tty: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parent_app: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tmux_session: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tmux_client_tty: Option<String>,
     pub updated_at: DateTime<Utc>,
 }
 
-pub fn run(path: &str, pid: u32, tty: &str) -> Result<(), CwdError> {
-    let state_dir = dirs::home_dir()
-        .ok_or(CwdError::NoHomeDir)?
-        .join(".capacitor");
+impl ShellEntry {
+    fn new(cwd: String, tty: String, parent_app: Option<String>) -> Self {
+        let (tmux_session, tmux_client_tty) = if parent_app.as_deref() == Some("tmux") {
+            detect_tmux_context().map_or((None, None), |(s, t)| (Some(s), Some(t)))
+        } else {
+            (None, None)
+        };
 
+        Self {
+            cwd,
+            tty,
+            parent_app,
+            tmux_session,
+            tmux_client_tty,
+            updated_at: Utc::now(),
+        }
+    }
+}
+
+// MARK: - Public API
+
+pub fn run(path: &str, pid: u32, tty: &str) -> Result<(), CwdError> {
+    let state_dir = get_state_dir()?;
     fs::create_dir_all(&state_dir)?;
 
     let cwd_path = state_dir.join("shell-cwd.json");
     let history_path = state_dir.join("shell-history.jsonl");
 
-    // Normalize path: strip trailing slashes (except for root "/")
     let normalized_path = normalize_path(path);
-
     let mut state = load_state(&cwd_path)?;
 
-    let previous_cwd = state.shells.get(&pid.to_string()).map(|e| e.cwd.clone());
-    let cwd_changed = previous_cwd.as_deref() != Some(&normalized_path);
-
+    let cwd_changed = has_cwd_changed(&state, pid, &normalized_path);
     let parent_app = detect_parent_app(pid);
 
     state.shells.insert(
         pid.to_string(),
-        ShellEntry {
-            cwd: normalized_path.clone(),
-            tty: tty.to_string(),
-            parent_app: parent_app.clone(),
-            updated_at: Utc::now(),
-        },
+        ShellEntry::new(normalized_path.clone(), tty.to_string(), parent_app.clone()),
     );
 
     cleanup_dead_pids(&mut state);
-
     write_state_atomic(&cwd_path, &state)?;
 
-    // History append is non-critical - log errors but don't fail the operation
     if cwd_changed {
-        if let Err(e) = append_history(
+        log_history_append_error(append_history(
             &history_path,
             &normalized_path,
             pid,
             tty,
             parent_app.as_deref(),
-        ) {
-            eprintln!("Warning: Failed to append history: {}", e);
-        }
+        ));
     }
 
     maybe_cleanup_history(&history_path);
-
     Ok(())
 }
+
+// MARK: - State Directory
+
+fn get_state_dir() -> Result<std::path::PathBuf, CwdError> {
+    dirs::home_dir()
+        .ok_or(CwdError::NoHomeDir)
+        .map(|h| h.join(".capacitor"))
+}
+
+// MARK: - Path Normalization
 
 fn normalize_path(path: &str) -> String {
     if path == "/" {
@@ -128,22 +147,26 @@ fn normalize_path(path: &str) -> String {
     }
 }
 
+// MARK: - State Management
+
+fn has_cwd_changed(state: &ShellCwdState, pid: u32, new_cwd: &str) -> bool {
+    state.shells.get(&pid.to_string()).map(|e| e.cwd.as_str()) != Some(new_cwd)
+}
+
 fn load_state(path: &Path) -> Result<ShellCwdState, CwdError> {
     if !path.exists() {
         return Ok(ShellCwdState::default());
     }
 
     let content = fs::read_to_string(path)?;
-
     if content.trim().is_empty() {
         return Ok(ShellCwdState::default());
     }
 
-    match serde_json::from_str::<ShellCwdState>(&content) {
-        Ok(state) if state.version == 1 => Ok(state),
-        Ok(_) => Ok(ShellCwdState::default()),
-        Err(_) => Ok(ShellCwdState::default()),
-    }
+    Ok(serde_json::from_str::<ShellCwdState>(&content)
+        .ok()
+        .filter(|s| s.version == 1)
+        .unwrap_or_default())
 }
 
 fn write_state_atomic(path: &Path, state: &ShellCwdState) -> Result<(), CwdError> {
@@ -155,7 +178,6 @@ fn write_state_atomic(path: &Path, state: &ShellCwdState) -> Result<(), CwdError
     serde_json::to_writer_pretty(&temp_file, state)?;
     temp_file.as_file().sync_all()?;
     temp_file.persist(path)?;
-
     Ok(())
 }
 
@@ -168,6 +190,8 @@ fn cleanup_dead_pids(state: &mut ShellCwdState) {
 fn process_exists(pid: u32) -> bool {
     unsafe { libc::kill(pid as i32, 0) == 0 }
 }
+
+// MARK: - History Management
 
 fn append_history(
     path: &Path,
@@ -185,12 +209,16 @@ fn append_history(
     });
 
     let file = OpenOptions::new().create(true).append(true).open(path)?;
-
     let mut writer = BufWriter::new(file);
     writeln!(writer, "{}", entry)?;
     writer.flush()?;
-
     Ok(())
+}
+
+fn log_history_append_error(result: Result<(), CwdError>) {
+    if let Err(e) = result {
+        eprintln!("Warning: Failed to append history: {}", e);
+    }
 }
 
 fn maybe_cleanup_history(path: &Path) {
@@ -209,7 +237,19 @@ fn cleanup_history(path: &Path, retention_days: i64) -> Result<(), CwdError> {
     }
 
     let cutoff = Utc::now() - Duration::days(retention_days);
+    let (kept_lines, removed_count) = filter_history_entries(path, cutoff)?;
 
+    if removed_count == 0 {
+        return Ok(());
+    }
+
+    write_history_atomic(path, &kept_lines)
+}
+
+fn filter_history_entries(
+    path: &Path,
+    cutoff: DateTime<Utc>,
+) -> Result<(Vec<String>, usize), CwdError> {
     let file = fs::File::open(path)?;
     let reader = BufReader::new(file);
 
@@ -222,21 +262,21 @@ fn cleanup_history(path: &Path, retention_days: i64) -> Result<(), CwdError> {
             continue;
         }
 
-        if let Ok(entry) = serde_json::from_str::<HistoryEntry>(&line) {
-            if entry.timestamp >= cutoff {
-                kept_lines.push(line);
-            } else {
-                removed_count += 1;
-            }
-        } else {
+        let should_keep = serde_json::from_str::<HistoryEntry>(&line)
+            .map(|e| e.timestamp >= cutoff)
+            .unwrap_or(true);
+
+        if should_keep {
             kept_lines.push(line);
+        } else {
+            removed_count += 1;
         }
     }
 
-    if removed_count == 0 {
-        return Ok(());
-    }
+    Ok((kept_lines, removed_count))
+}
 
+fn write_history_atomic(path: &Path, lines: &[String]) -> Result<(), CwdError> {
     let parent_dir = path
         .parent()
         .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "No parent directory"))?;
@@ -244,14 +284,13 @@ fn cleanup_history(path: &Path, retention_days: i64) -> Result<(), CwdError> {
     let temp_file = NamedTempFile::new_in(parent_dir)?;
     {
         let mut writer = BufWriter::new(&temp_file);
-        for line in kept_lines {
+        for line in lines {
             writeln!(writer, "{}", line)?;
         }
         writer.flush()?;
     }
     temp_file.as_file().sync_all()?;
     temp_file.persist(path)?;
-
     Ok(())
 }
 
@@ -259,6 +298,45 @@ fn cleanup_history(path: &Path, retention_days: i64) -> Result<(), CwdError> {
 struct HistoryEntry {
     timestamp: DateTime<Utc>,
 }
+
+// MARK: - Tmux Context Detection
+
+/// Captures the tmux session name and the TTY of the terminal hosting tmux.
+/// The host TTY is needed because the shell's TTY is a tmux pseudo-terminal,
+/// not the actual terminal window we need to activate.
+fn detect_tmux_context() -> Option<(String, String)> {
+    let session_name = run_tmux_command(&["display-message", "-p", "#S"])?;
+    if session_name.is_empty() {
+        return None;
+    }
+
+    let client_tty = run_tmux_command(&["list-clients", "-F", "#{client_tty}"])?
+        .lines()
+        .next()?
+        .to_string();
+
+    if client_tty.is_empty() {
+        return None;
+    }
+
+    Some((session_name, client_tty))
+}
+
+fn run_tmux_command(args: &[&str]) -> Option<String> {
+    use std::process::Command;
+
+    let output = Command::new("tmux").args(args).output().ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    String::from_utf8(output.stdout)
+        .ok()
+        .map(|s| s.trim().to_string())
+}
+
+// MARK: - Parent App Detection
 
 const KNOWN_APPS: &[(&str, &str)] = &[
     // IDEs (check first - they spawn terminal processes)
@@ -282,19 +360,14 @@ const KNOWN_APPS: &[(&str, &str)] = &[
 fn detect_parent_app(pid: u32) -> Option<String> {
     let mut current_pid = pid;
 
-    for _ in 0..20 {
+    for _ in 0..MAX_PARENT_CHAIN_DEPTH {
         let ppid = get_parent_pid(current_pid).ok()?;
-
         if ppid <= 1 {
             return None;
         }
 
-        let name = get_process_name(ppid).ok()?;
-
-        for (pattern, app_id) in KNOWN_APPS {
-            if name.contains(pattern) {
-                return Some(app_id.to_string());
-            }
+        if let Some(app_id) = identify_app_from_pid(ppid) {
+            return Some(app_id);
         }
 
         current_pid = ppid;
@@ -302,6 +375,17 @@ fn detect_parent_app(pid: u32) -> Option<String> {
 
     None
 }
+
+fn identify_app_from_pid(pid: u32) -> Option<String> {
+    let name = get_process_name(pid).ok()?;
+
+    KNOWN_APPS
+        .iter()
+        .find(|(pattern, _)| name.contains(pattern))
+        .map(|(_, app_id)| app_id.to_string())
+}
+
+// MARK: - macOS Process APIs
 
 fn get_parent_pid(pid: u32) -> Result<u32, std::io::Error> {
     #[repr(C)]
@@ -311,7 +395,6 @@ fn get_parent_pid(pid: u32) -> Result<u32, std::io::Error> {
         pbi_xstatus: u32,
         pbi_pid: u32,
         pbi_ppid: u32,
-        // ... more fields we don't need
         _padding: [u8; 120],
     }
 
@@ -376,10 +459,23 @@ fn get_process_name(pid: u32) -> Result<String, std::io::Error> {
     Ok(name)
 }
 
+// MARK: - Tests
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use tempfile::TempDir;
+
+    fn make_shell_entry(cwd: &str, tty: &str, parent_app: Option<&str>) -> ShellEntry {
+        ShellEntry {
+            cwd: cwd.to_string(),
+            tty: tty.to_string(),
+            parent_app: parent_app.map(String::from),
+            tmux_session: None,
+            tmux_client_tty: None,
+            updated_at: Utc::now(),
+        }
+    }
 
     #[test]
     fn test_load_state_creates_default_for_missing_file() {
@@ -424,12 +520,7 @@ mod tests {
         let mut state = ShellCwdState::default();
         state.shells.insert(
             "12345".to_string(),
-            ShellEntry {
-                cwd: "/test/path".to_string(),
-                tty: "/dev/ttys000".to_string(),
-                parent_app: Some("cursor".to_string()),
-                updated_at: Utc::now(),
-            },
+            make_shell_entry("/test/path", "/dev/ttys000", Some("cursor")),
         );
 
         write_state_atomic(&path, &state).unwrap();
@@ -485,23 +576,13 @@ mod tests {
 
         state.shells.insert(
             "999999999".to_string(),
-            ShellEntry {
-                cwd: "/old".to_string(),
-                tty: "/dev/ttys999".to_string(),
-                parent_app: None,
-                updated_at: Utc::now(),
-            },
+            make_shell_entry("/old", "/dev/ttys999", None),
         );
 
         let current_pid = std::process::id().to_string();
         state.shells.insert(
             current_pid.clone(),
-            ShellEntry {
-                cwd: "/current".to_string(),
-                tty: "/dev/ttys000".to_string(),
-                parent_app: None,
-                updated_at: Utc::now(),
-            },
+            make_shell_entry("/current", "/dev/ttys000", None),
         );
 
         cleanup_dead_pids(&mut state);
@@ -526,12 +607,7 @@ mod tests {
         let mut original = ShellCwdState::default();
         original.shells.insert(
             "12345".to_string(),
-            ShellEntry {
-                cwd: "/test".to_string(),
-                tty: "/dev/ttys000".to_string(),
-                parent_app: Some("iterm2".to_string()),
-                updated_at: Utc::now(),
-            },
+            make_shell_entry("/test", "/dev/ttys000", Some("iterm2")),
         );
 
         write_state_atomic(&path, &original).unwrap();
@@ -598,12 +674,11 @@ mod tests {
         let mut state = ShellCwdState::default();
         state.shells.insert(
             "12345".to_string(),
-            ShellEntry {
-                cwd: "/Users/test/My Documents/Project Name".to_string(),
-                tty: "/dev/ttys000".to_string(),
-                parent_app: None,
-                updated_at: Utc::now(),
-            },
+            make_shell_entry(
+                "/Users/test/My Documents/Project Name",
+                "/dev/ttys000",
+                None,
+            ),
         );
 
         write_state_atomic(&path, &state).unwrap();
@@ -623,12 +698,11 @@ mod tests {
         let mut state = ShellCwdState::default();
         state.shells.insert(
             "12345".to_string(),
-            ShellEntry {
-                cwd: r#"/path/with "quotes" and \backslashes\ and $dollars"#.to_string(),
-                tty: "/dev/ttys000".to_string(),
-                parent_app: None,
-                updated_at: Utc::now(),
-            },
+            make_shell_entry(
+                r#"/path/with "quotes" and \backslashes\ and $dollars"#,
+                "/dev/ttys000",
+                None,
+            ),
         );
 
         write_state_atomic(&path, &state).unwrap();
@@ -648,12 +722,7 @@ mod tests {
         let mut state = ShellCwdState::default();
         state.shells.insert(
             "12345".to_string(),
-            ShellEntry {
-                cwd: "/Users/日本語/项目/مشروع/🚀".to_string(),
-                tty: "/dev/ttys000".to_string(),
-                parent_app: None,
-                updated_at: Utc::now(),
-            },
+            make_shell_entry("/Users/日本語/项目/مشروع/🚀", "/dev/ttys000", None),
         );
 
         write_state_atomic(&path, &state).unwrap();
@@ -681,5 +750,18 @@ mod tests {
         assert_eq!(normalize_path("/path/with spaces/"), "/path/with spaces");
         assert_eq!(normalize_path("/path/日本語/"), "/path/日本語");
         assert_eq!(normalize_path(r#"/path/"quotes"/"#), r#"/path/"quotes""#);
+    }
+
+    #[test]
+    fn test_has_cwd_changed_detects_changes() {
+        let mut state = ShellCwdState::default();
+        state.shells.insert(
+            "12345".to_string(),
+            make_shell_entry("/old/path", "/dev/ttys000", None),
+        );
+
+        assert!(has_cwd_changed(&state, 12345, "/new/path"));
+        assert!(!has_cwd_changed(&state, 12345, "/old/path"));
+        assert!(has_cwd_changed(&state, 99999, "/any/path"));
     }
 }
