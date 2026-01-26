@@ -40,6 +40,17 @@ if [ ! -f "$VERSION_FILE" ]; then
 fi
 VERSION=$(cat "$VERSION_FILE" | tr -d '[:space:]')
 
+# Get build number from the built app (Sparkle compares sparkle:version against CFBundleVersion)
+APP_PATH="$SWIFT_DIR/Capacitor.app"
+if [ -f "$APP_PATH/Contents/Info.plist" ]; then
+    BUILD_NUMBER=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$APP_PATH/Contents/Info.plist" 2>/dev/null)
+fi
+if [ -z "$BUILD_NUMBER" ]; then
+    echo -e "${RED}ERROR: Could not extract CFBundleVersion from $APP_PATH${NC}"
+    echo "Make sure the app is built first: ./scripts/release/build-distribution.sh"
+    exit 1
+fi
+
 echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}Generating Appcast for v$VERSION${NC}"
 echo -e "${GREEN}========================================${NC}"
@@ -102,7 +113,7 @@ cat > "$DIST_DIR/appcast.xml" << EOF
         <item>
             <title>Version $VERSION</title>
             <pubDate>$PUB_DATE</pubDate>
-            <sparkle:version>$VERSION</sparkle:version>
+            <sparkle:version>$BUILD_NUMBER</sparkle:version>
             <sparkle:shortVersionString>$VERSION</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <enclosure
@@ -129,7 +140,7 @@ echo -e "${GREEN}========================================${NC}"
 echo ""
 echo "Appcast: $DIST_DIR/appcast.xml"
 echo "Download URL: $DOWNLOAD_URL"
-echo "Version: $VERSION"
+echo "Version: $VERSION (build $BUILD_NUMBER)"
 echo "File size: $FILE_SIZE bytes"
 if [ -n "$ED_SIGNATURE" ]; then
     echo "Signed: Yes (EdDSA)"
