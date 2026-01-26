@@ -1,17 +1,54 @@
 # Agent Changelog
 
 > This file helps coding agents understand project evolution, key decisions,
-> and deprecated patterns. Updated: 2026-01-24
+> and deprecated patterns. Updated: 2026-01-25
 
 ## Current State Summary
 
-Capacitor is a native macOS SwiftUI app (Apple Silicon, macOS 14+) that acts as a sidecar dashboard for Claude Code. The architecture uses a Rust core (`hud-core`) with UniFFI bindings to Swift. State tracking relies on Claude Code hooks that write to `~/.capacitor/`, with shell integration providing ambient project awareness via precmd hooks.
+Capacitor is a native macOS SwiftUI app (Apple Silicon, macOS 14+) that acts as a sidecar dashboard for Claude Code. The architecture uses a Rust core (`hud-core`) with UniFFI bindings to Swift. State tracking relies on Claude Code hooks that write to `~/.capacitor/`, with shell integration providing ambient project awareness via precmd hooks. Hooks now run asynchronously to avoid blocking Claude Code execution.
 
 ## Stale Information Detected
 
-None currently. Last audit: 2026-01-24.
+None currently. Last audit: 2026-01-25.
 
 ## Timeline
+
+### 2026-01-25 — Async Hooks and IDE Terminal Activation
+
+**What changed:**
+1. Hooks now use Claude Code's `async: true` feature to run in background
+2. Setup card detects missing async configuration and prompts to fix
+3. Clicking projects with shells in Cursor/VS Code activates the correct IDE window
+
+**Why:**
+- Async hooks eliminate latency impact on Claude Code (sidecar philosophy: observe without interfering)
+- IDE support handles growing use case of integrated terminals vs standalone terminal apps
+
+**Agent impact:**
+- Hook config now includes `async: true` and `timeout: 30` for most events
+- `SessionEnd` stays synchronous to ensure cleanup completes
+- New `IDEApp` enum in `TerminalLauncher.swift` handles Cursor, VS Code, VS Code Insiders
+- Setup card validation checks async config, not just hook existence
+
+**Commits:** `24622a4`, `225a0d7`, `8c8debc`
+
+---
+
+### 2026-01-24 — Terminal Window Reuse and Tmux Support
+
+**What changed:** Clicking a project reuses existing terminal windows instead of always launching new ones. Added tmux session switching and TTY-based tab selection.
+
+**Why:** Avoid terminal window proliferation. Users typically want to switch to existing sessions, not create new ones.
+
+**Agent impact:**
+- `TerminalLauncher` now searches `shell-cwd.json` for matching shells before launching new terminals
+- Supports iTerm, Terminal.app tab selection via AppleScript
+- Supports kitty remote control for window focus
+- Tmux sessions are switched via `tmux switch-client -t <session>`
+
+**Commits:** `5c58d3d`, `bcfc5f9`
+
+---
 
 ### 2026-01-24 — Shell Integration Performance Optimization
 

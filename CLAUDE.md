@@ -27,7 +27,7 @@ swift build                       # Debug build
 swift run                         # Run app
 
 # Restart app (use this script - pre-approved in permissions)
-/Users/petepetrash/Code/claude-hud/scripts/dev/restart-app.sh
+/Users/petepetrash/Code/capacitor/scripts/dev/restart-app.sh
 ```
 
 ## First-Time Setup
@@ -98,7 +98,7 @@ See `docs/NOTARIZATION_SETUP.md` for full guide.
 ## Structure
 
 ```
-claude-hud/
+capacitor/
 ├── core/hud-core/src/      # Rust: engine.rs, types.rs, stats.rs, projects.rs, sessions.rs
 ├── core/hud-hook/src/      # Rust: CLI hook handler binary (replaces bash script logic)
 ├── apps/swift/Sources/     # Swift: App.swift, Models/, Views/, Theme/
