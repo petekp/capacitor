@@ -54,7 +54,7 @@ Release builds require notarization for Gatekeeper approval. Scripts handle the 
 ./scripts/release/verify-app-bundle.sh           # VERIFY before release!
 ./scripts/release/build-distribution.sh          # Full build + notarize
 ./scripts/release/create-dmg.sh                  # Create + notarize DMG
-./scripts/release/generate-appcast.sh            # Update Sparkle feed
+./scripts/release/generate-appcast.sh --sign     # Update Sparkle feed (must sign!)
 
 gh release create v0.x.x \
   dist/Capacitor-v0.x.x-arm64.dmg \
