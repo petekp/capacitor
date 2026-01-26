@@ -23,17 +23,23 @@ use tempfile::NamedTempFile;
 
 const HOOK_COMMAND: &str = "$HOME/.local/bin/hud-hook handle";
 
-const HUD_HOOK_EVENTS: [(&str, bool); 9] = [
-    ("SessionStart", false),
-    ("SessionEnd", false),
-    ("UserPromptSubmit", false),
-    ("PreToolUse", true),
-    ("PostToolUse", true),
-    ("PermissionRequest", true),
-    ("Stop", false),
-    ("PreCompact", false),
-    ("Notification", false),
+/// Hook event configuration: (event_name, needs_matcher, is_async)
+/// - `needs_matcher`: Events like PreToolUse need `matcher: "*"` to fire for all tools
+/// - `is_async`: If true, hook runs in background without blocking Claude Code
+///   SessionEnd is sync to ensure cleanup completes before session exits
+const HUD_HOOK_EVENTS: [(&str, bool, bool); 9] = [
+    ("SessionStart", false, true),
+    ("SessionEnd", false, false), // Keep sync for guaranteed cleanup
+    ("UserPromptSubmit", false, true),
+    ("PreToolUse", true, true),
+    ("PostToolUse", true, true),
+    ("PermissionRequest", true, true),
+    ("Stop", false, true),
+    ("PreCompact", false, true),
+    ("Notification", false, true),
 ];
+
+const HOOK_TIMEOUT_SECONDS: u32 = 30;
 
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct DependencyStatus {
@@ -313,7 +319,7 @@ impl SetupChecker {
             None => return false,
         };
 
-        for (event, needs_matcher) in HUD_HOOK_EVENTS {
+        for (event, needs_matcher, _is_async) in HUD_HOOK_EVENTS {
             let has_hook = hooks
                 .get(event)
                 .map(|h| self.has_hud_hook_with_matcher(h, needs_matcher))
@@ -360,7 +366,12 @@ impl SetupChecker {
         false
     }
 
-    fn normalize_hud_hook_config(&self, hook_config: &mut HookConfig, needs_matcher: bool) -> bool {
+    fn normalize_hud_hook_config(
+        &self,
+        hook_config: &mut HookConfig,
+        needs_matcher: bool,
+        is_async: bool,
+    ) -> bool {
         let mut has_hud_hook = false;
 
         if let Some(inner_hooks) = hook_config.hooks.as_mut() {
@@ -370,6 +381,14 @@ impl SetupChecker {
                     hook.command = Some(HOOK_COMMAND.to_string());
                     if hook.hook_type.is_none() {
                         hook.hook_type = Some("command".to_string());
+                    }
+                    // Update async/timeout settings
+                    if is_async {
+                        hook.async_hook = Some(true);
+                        hook.timeout = Some(HOOK_TIMEOUT_SECONDS);
+                    } else {
+                        hook.async_hook = None;
+                        hook.timeout = None;
                     }
                     has_hud_hook = true;
                 }
@@ -529,13 +548,13 @@ impl SetupChecker {
 
         let hooks = settings.hooks.get_or_insert_with(HashMap::new);
 
-        for (event, needs_matcher) in HUD_HOOK_EVENTS {
+        for (event, needs_matcher, is_async) in HUD_HOOK_EVENTS {
             let event_hooks = hooks.entry(event.to_string()).or_default();
 
             // Normalize any existing HUD hook entries, then check if we already have one
             let mut already_has_hud_hook = false;
             for hook_config in event_hooks.iter_mut() {
-                if self.normalize_hud_hook_config(hook_config, needs_matcher) {
+                if self.normalize_hud_hook_config(hook_config, needs_matcher, is_async) {
                     already_has_hud_hook = true;
                 }
             }
@@ -550,6 +569,12 @@ impl SetupChecker {
                     hooks: Some(vec![InnerHook {
                         hook_type: Some("command".to_string()),
                         command: Some(HOOK_COMMAND.to_string()),
+                        async_hook: if is_async { Some(true) } else { None },
+                        timeout: if is_async {
+                            Some(HOOK_TIMEOUT_SECONDS)
+                        } else {
+                            None
+                        },
                         other: HashMap::new(),
                     }]),
                     other: HashMap::new(),
@@ -655,6 +680,10 @@ struct InnerHook {
     hook_type: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     command: Option<String>,
+    #[serde(rename = "async", skip_serializing_if = "Option::is_none")]
+    async_hook: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    timeout: Option<u32>,
     #[serde(flatten)]
     other: HashMap<String, serde_json::Value>,
 }

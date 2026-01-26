@@ -145,6 +145,8 @@ Hooks track local Claude Code sessions → state file → Capacitor reads.
 
 **Hook Setup:** Use `./scripts/sync-hooks.sh` to install the binary, then run the app and click "Fix All" in the setup card to configure hooks in `~/.claude/settings.json`.
 
+**Async Hooks:** Most hooks run with `async: true` so they don't block Claude Code execution. Only `SessionEnd` is synchronous to ensure cleanup completes before exit. Hooks have a 30-second timeout.
+
 ### Shell Integration
 
 Shell precmd hooks push CWD changes to Capacitor for ambient project awareness.
