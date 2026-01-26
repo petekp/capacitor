@@ -92,16 +92,30 @@ fn find_record_for_lock_path<'a>(
             match best {
                 None => best = Some((record, current_match_type, record_is_stale)),
                 Some((current, current_type, current_is_stale)) => {
-                    let should_replace = if current_is_stale && !record_is_stale {
+                    // Priority order:
+                    // 1. Match type (Exact > Child > Parent) - most important
+                    // 2. Staleness (non-stale > stale)
+                    // 3. Timestamp (fresher > older)
+                    // 4. Session ID (lexicographic tiebreaker)
+                    //
+                    // Variable naming:
+                    // - current_match_type = NEW record's match type (from this iteration)
+                    // - current_type = EXISTING best record's match type
+                    let should_replace = if current_match_type > current_type {
+                        // New record has better match type (Exact > Child > Parent) - replace
+                        true
+                    } else if current_match_type < current_type {
+                        // Existing best has better match type - don't replace
+                        false
+                    } else if current_is_stale && !record_is_stale {
+                        // Same match type, prefer non-stale
                         true
                     } else if !current_is_stale && record_is_stale {
                         false
                     } else {
+                        // Same match type and staleness, prefer fresher timestamp
                         record.updated_at > current.updated_at
                             || (record.updated_at == current.updated_at
-                                && current_match_type > current_type)
-                            || (record.updated_at == current.updated_at
-                                && current_match_type == current_type
                                 && record.session_id > current.session_id)
                     };
 
@@ -448,5 +462,85 @@ mod tests {
         // Lock exists and Working state is fresh = Working
         let resolved = resolve_state_with_details(temp.path(), &store, "/project").unwrap();
         assert_eq!(resolved.state, SessionState::Working);
+    }
+
+    #[test]
+    fn exact_match_beats_parent_match_regardless_of_timestamp() {
+        // Regression test: a fresh parent-path record should NOT beat a stale exact-match record.
+        // This bug caused child projects to show "Working" when an unrelated session
+        // in a parent directory (e.g., ~/) was active.
+        let temp = tempdir().unwrap();
+
+        // Lock exists for child project
+        create_lock(temp.path(), std::process::id(), "/Users/pete/Code/project");
+
+        let mut store = StateStore::new_in_memory();
+
+        // Exact match record (stale) - this should win
+        store.update(
+            "exact-session",
+            SessionState::Ready,
+            "/Users/pete/Code/project",
+        );
+        let stale_time = Utc::now() - Duration::minutes(10);
+        store.set_timestamp_for_test("exact-session", stale_time);
+
+        // Parent match record (fresh) - this should NOT win despite fresher timestamp
+        store.update("parent-session", SessionState::Working, "/Users/pete");
+        // parent-session has default "now" timestamp, so it's fresher
+
+        let resolved =
+            resolve_state_with_details(temp.path(), &store, "/Users/pete/Code/project").unwrap();
+
+        // The exact match should be selected, not the fresher parent match
+        assert_eq!(
+            resolved.session_id.as_deref(),
+            Some("exact-session"),
+            "Exact match should beat parent match regardless of timestamp"
+        );
+        assert_eq!(
+            resolved.state,
+            SessionState::Ready,
+            "State should be from exact-match record"
+        );
+    }
+
+    #[test]
+    fn child_match_beats_parent_match_regardless_of_timestamp() {
+        // Similar to exact_match test but for child matches
+        let temp = tempdir().unwrap();
+
+        // Lock exists for parent project (querying from parent)
+        create_lock(
+            temp.path(),
+            std::process::id(),
+            "/Users/pete/Code/project/apps",
+        );
+
+        let mut store = StateStore::new_in_memory();
+
+        // Child match record (stale) - this should win
+        store.update(
+            "child-session",
+            SessionState::Ready,
+            "/Users/pete/Code/project/apps",
+        );
+        let stale_time = Utc::now() - Duration::minutes(10);
+        store.set_timestamp_for_test("child-session", stale_time);
+
+        // Parent match record (fresh) - should NOT win
+        store.update("parent-session", SessionState::Working, "/Users/pete");
+        // parent-session has default "now" timestamp, so it's fresher
+
+        // Query from parent path
+        let resolved =
+            resolve_state_with_details(temp.path(), &store, "/Users/pete/Code/project").unwrap();
+
+        // The child match should be selected (child of the query path), not the parent match
+        assert_eq!(
+            resolved.session_id.as_deref(),
+            Some("child-session"),
+            "Child match should beat parent match regardless of timestamp"
+        );
     }
 }
