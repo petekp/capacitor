@@ -136,6 +136,8 @@ See [ADR-003: Sidecar Architecture Pattern](docs/architecture-decisions/003-side
 | Shell state store | `apps/swift/Sources/Capacitor/Models/ShellStateStore.swift` |
 | Active project resolver | `apps/swift/Sources/Capacitor/Services/ActiveProjectResolver.swift` |
 | UniFFI bindings | `apps/swift/Sources/Capacitor/Bridge/hud_core.swift` |
+| Terminal activation | `apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift` |
+| Hook event config | `core/hud-core/src/setup.rs` (HUD_HOOK_EVENTS constant) |
 
 ## State Tracking
 
@@ -193,5 +195,5 @@ See `.claude/plans/README.md` for the full index.
 
 - **Path encoding:** Project paths use `/` → `-` replacement (e.g., `/Users/peter/Code` → `-Users-peter-Code`)
 - **Caching:** Mtime-based invalidation in stats and summaries
-- **Platform:** macOS 14+ (Apple Silicon and Intel)
+- **Platform:** macOS 14+ (Apple Silicon only)
 - **UniFFI bindings:** Must update both `apps/swift/bindings/` and `apps/swift/Sources/Capacitor/Bridge/` after Rust API changes (see development-workflows.md)
