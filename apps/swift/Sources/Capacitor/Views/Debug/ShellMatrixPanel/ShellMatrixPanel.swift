@@ -3,6 +3,7 @@ import AppKit
 
 #if DEBUG
 
+@MainActor
 struct ShellMatrixPanel: View {
     @Environment(\.dismissWindow) private var dismissWindow
     @State private var shellStateStore = ShellStateStore()
