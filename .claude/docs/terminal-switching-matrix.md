@@ -96,6 +96,56 @@ This document maps out all scenarios for the "click project → activate termina
 
 ---
 
+## IDE Integrated Terminal Scenarios
+
+IDEs like Cursor and VS Code have integrated terminals. When `parent_app` is detected as an IDE, we need different activation logic than standalone terminal apps.
+
+### Cursor
+
+| # | Context | Windows | parent_app | Expected | Current | Notes |
+|---|---------|---------|------------|----------|---------|-------|
+| 41 | Integrated terminal | 1 window | "cursor" | Activate Cursor | ❌ | Falls through, activates random terminal |
+| 42 | Integrated terminal | 2+ windows | "cursor" | Activate correct Cursor window | ❌ | No window selection |
+| 43 | Integrated + tmux | 1 window | "cursor" | Activate Cursor, switch tmux | ⚠️ | tmux switches, but Cursor not activated |
+| 44 | Integrated + tmux | 2+ windows | "cursor" | Activate correct window, switch tmux | ❌ | Neither works |
+| 45 | Integrated terminal | any | "cursor" | Focus terminal panel | ❌ | No terminal focus support |
+
+### VS Code
+
+| # | Context | Windows | parent_app | Expected | Current | Notes |
+|---|---------|---------|------------|----------|---------|-------|
+| 46 | Integrated terminal | 1 window | "vscode" | Activate VS Code | ❌ | Falls through, activates random terminal |
+| 47 | Integrated terminal | 2+ windows | "vscode" | Activate correct VS Code window | ❌ | No window selection |
+| 48 | Integrated + tmux | 1 window | "vscode" | Activate VS Code, switch tmux | ⚠️ | tmux switches, but VS Code not activated |
+| 49 | Integrated + tmux | 2+ windows | "vscode" | Activate correct window, switch tmux | ❌ | Neither works |
+| 50 | Integrated terminal | any | "vscode" | Focus terminal panel | ❌ | No terminal focus support |
+
+### IDE + External Terminal
+
+| # | Scenario | parent_app | Expected | Current | Notes |
+|---|----------|------------|----------|---------|-------|
+| 51 | User has Cursor open + iTerm shell for same project | "iterm2" | Activate iTerm (not Cursor) | ✅ | Correctly uses parent_app |
+| 52 | User has Cursor open + iTerm shell for same project | nil | Activate iTerm (TTY discovery) | 🔄 | Phase 1 handles this |
+| 53 | Cursor for Project A, iTerm for Project B | varies | Activate correct app per project | ✅ | parent_app per shell |
+
+### Implementation Notes
+
+**CLI-based window activation:**
+- `cursor /path/to/project` — Opens or focuses window for that project
+- `code /path/to/project` — Same for VS Code
+- This handles multi-window scenarios (#42, #44, #47, #49)
+
+**Terminal panel focus options:**
+1. AppleScript keystroke `Ctrl+\`` — Toggles terminal (risky: might close)
+2. No external API to run `workbench.action.terminal.focus`
+3. User could bind custom key, but we can't assume this
+
+**Detection already works:**
+- `parent_app="cursor"` detected via process tree (cwd.rs lines 343-344)
+- `parent_app="vscode"` detected similarly (lines 345-347)
+
+---
+
 ## Edge Cases
 
 | # | Scenario | Expected | Current | Notes |
@@ -105,8 +155,8 @@ This document maps out all scenarios for the "click project → activate termina
 | 34 | Multiple shells same project | Activate most recent? | ❓ | Uses first match |
 | 35 | Stale shell entry (process dead) | Skip, find live shell | ✅ | kill(pid,0) check |
 | 36 | TTY reused by different shell | Don't match wrong session | ✅ | PID check handles this |
-| 37 | IDE integrated terminal (Cursor) | Activate Cursor? | ⚠️ | parent_app="cursor" |
-| 38 | VS Code integrated terminal | Activate VS Code? | ⚠️ | parent_app detection? |
+| 37 | IDE integrated terminal (Cursor) | See IDE section (#41-45) | — | Moved to dedicated section |
+| 38 | VS Code integrated terminal | See IDE section (#46-50) | — | Moved to dedicated section |
 | 39 | SSH session | Don't try to activate | ❓ | How to detect? |
 | 40 | Screen session (not tmux) | Similar to tmux | ❌ | Not handled |
 
@@ -136,9 +186,15 @@ Based on matrix analysis:
    - Fix: Phase 3 — `kitty @ focus-window --match pid:<shell_pid>`
    - Status: **Implemented** — Needs manual testing (requires `allow_remote_control yes`)
 
+### Medium-High Impact (Growing use case)
+5. ⏳ **IDE integrated terminal support** (#41-50)
+   - Root cause: `TerminalApp(fromParentApp:)` returns nil for "cursor"/"vscode"
+   - Fix: Phase 4 — Use IDE CLI to activate correct window (`cursor /path/to/project`)
+   - Optional: Send keystroke to focus terminal panel (toggle risk)
+   - Status: **Not started** — Detection works, activation doesn't
+
 ### Low Impact (Rare scenarios)
-5. **Handle screen sessions** (#40)
-6. **IDE terminal handling** (#37, 38)
+6. **Handle screen sessions** (#40)
 
 ---
 
@@ -159,6 +215,19 @@ Based on matrix analysis:
 - Added `activateKittyWindow(shellPid:)` in `TerminalLauncher.swift`
 - Uses `kitty @ focus-window --match pid:<pid>` for tab selection
 - Requires user to have `allow_remote_control yes` in kitty config
+
+**Phase 4: IDE Integrated Terminal Support** — ⏳ Not Started
+- Goal: Activate correct IDE window when `parent_app` is "cursor" or "vscode"
+- Approach:
+  1. Detect IDE via existing `parent_app` field (already works)
+  2. Run `cursor /path/to/project` or `code /path/to/project` to focus correct window
+  3. (Optional) Send keystroke to focus terminal panel
+- Challenges:
+  - Terminal focus: `Ctrl+\`` toggles (might close terminal)
+  - No external API for `workbench.action.terminal.focus`
+- Files to modify:
+  - `TerminalLauncher.swift` — Add IDE case handling in `activateExistingTerminal()`
+  - Possibly add `IDEApp` enum or extend `TerminalApp`
 
 ---
 

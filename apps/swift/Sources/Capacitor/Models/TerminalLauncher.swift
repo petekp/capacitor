@@ -63,6 +63,47 @@ enum TerminalApp: CaseIterable {
     }
 }
 
+// MARK: - IDE App Definition
+
+enum IDEApp {
+    case cursor
+    case vscode
+    case vscodeInsiders
+
+    var displayName: String {
+        switch self {
+        case .cursor: return "Cursor"
+        case .vscode: return "Visual Studio Code"
+        case .vscodeInsiders: return "Visual Studio Code - Insiders"
+        }
+    }
+
+    var processName: String {
+        switch self {
+        case .cursor: return "Cursor"
+        case .vscode: return "Code"
+        case .vscodeInsiders: return "Code - Insiders"
+        }
+    }
+
+    var cliBinary: String {
+        switch self {
+        case .cursor: return "cursor"
+        case .vscode: return "code"
+        case .vscodeInsiders: return "code-insiders"
+        }
+    }
+
+    init?(fromParentApp app: String) {
+        switch app.lowercased() {
+        case "cursor": self = .cursor
+        case "vscode": self = .vscode
+        case "vscode-insiders": self = .vscodeInsiders
+        default: return nil
+        }
+    }
+}
+
 // MARK: - Shell Match Result
 
 private struct ShellMatch {
@@ -83,7 +124,7 @@ final class TerminalLauncher {
 
     func launchTerminal(for project: Project, shellState: ShellCwdState? = nil) {
         if let match = findExistingShell(for: project, in: shellState) {
-            activateExistingTerminal(shell: match.shell, pid: match.pid)
+            activateExistingTerminal(shell: match.shell, pid: match.pid, projectPath: project.path)
         } else {
             launchNewTerminal(for: project)
         }
@@ -156,9 +197,43 @@ final class TerminalLauncher {
         shell.parentApp?.lowercased() == "tmux"
     }
 
+    // MARK: - IDE Activation
+
+    private func findRunningIDE(_ ide: IDEApp) -> NSRunningApplication? {
+        NSWorkspace.shared.runningApplications.first {
+            $0.localizedName == ide.processName
+        }
+    }
+
+    private func activateIDEWindow(ide: IDEApp, projectPath: String) {
+        guard let app = findRunningIDE(ide) else { return }
+
+        app.activate()
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = [ide.cliBinary, projectPath]
+
+        var env = ProcessInfo.processInfo.environment
+        env["PATH"] = Constants.homebrewPaths + ":" + (env["PATH"] ?? "")
+        process.environment = env
+
+        try? process.run()
+    }
+
     // MARK: - Terminal Activation
 
-    private func activateExistingTerminal(shell: ShellEntry, pid: String) {
+    private func activateExistingTerminal(shell: ShellEntry, pid: String, projectPath: String) {
+        if let parentApp = shell.parentApp, let ide = IDEApp(fromParentApp: parentApp) {
+            if findRunningIDE(ide) != nil {
+                activateIDEWindow(ide: ide, projectPath: projectPath)
+                if isTmuxShell(shell), let session = shell.tmuxSession {
+                    switchTmuxSession(to: session)
+                }
+                return
+            }
+        }
+
         if isTmuxShell(shell), let session = shell.tmuxSession {
             activateTmuxSession(shell: shell, session: session)
             return
