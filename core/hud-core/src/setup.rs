@@ -319,10 +319,10 @@ impl SetupChecker {
             None => return false,
         };
 
-        for (event, needs_matcher, _is_async) in HUD_HOOK_EVENTS {
+        for (event, needs_matcher, is_async) in HUD_HOOK_EVENTS {
             let has_hook = hooks
                 .get(event)
-                .map(|h| self.has_hud_hook_with_matcher(h, needs_matcher))
+                .map(|h| self.has_hud_hook_with_correct_config(h, needs_matcher, is_async))
                 .unwrap_or(false);
 
             if !has_hook {
@@ -333,20 +333,34 @@ impl SetupChecker {
         true
     }
 
-    fn has_hud_hook_with_matcher(&self, hooks: &[HookConfig], needs_matcher: bool) -> bool {
+    fn has_hud_hook_with_correct_config(
+        &self,
+        hooks: &[HookConfig],
+        needs_matcher: bool,
+        expected_async: bool,
+    ) -> bool {
         for hook_config in hooks {
-            // Check if this config has our hook (wrapper script OR binary)
-            let has_hud_hook = hook_config
+            // Check if this config has our hook with correct async setting
+            let has_correct_hud_hook = hook_config
                 .hooks
                 .as_ref()
                 .map(|inner| {
-                    inner
-                        .iter()
-                        .any(|h| is_hud_hook_command(h.command.as_deref()))
+                    inner.iter().any(|h| {
+                        if !is_hud_hook_command(h.command.as_deref()) {
+                            return false;
+                        }
+                        // Verify async configuration matches expected
+                        let async_ok = if expected_async {
+                            h.async_hook == Some(true) && h.timeout == Some(HOOK_TIMEOUT_SECONDS)
+                        } else {
+                            h.async_hook.is_none() && h.timeout.is_none()
+                        };
+                        async_ok
+                    })
                 })
                 .unwrap_or(false);
 
-            if has_hud_hook {
+            if has_correct_hud_hook {
                 // If this event needs a matcher, verify it has one
                 if needs_matcher {
                     let matcher_ok = hook_config
