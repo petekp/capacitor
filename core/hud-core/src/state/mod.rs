@@ -59,3 +59,7 @@ pub use store::StateStore;
 pub use types::{
     HookEvent, HookInput, LastEvent, LockInfo, SessionRecord, ToolInput, ToolResponse,
 };
+
+/// Test helpers for creating locks - only available with test-helpers feature.
+#[cfg(any(test, feature = "test-helpers"))]
+pub use lock::tests_helper;

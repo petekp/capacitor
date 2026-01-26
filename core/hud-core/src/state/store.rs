@@ -335,7 +335,9 @@ impl StateStore {
         self.sessions.values()
     }
 
-    #[cfg(test)]
+    /// Test helper: Set timestamp for a session record.
+    /// Only available with the `test-helpers` feature or in tests.
+    #[cfg(any(test, feature = "test-helpers"))]
     pub fn set_timestamp_for_test(
         &mut self,
         session_id: &str,
@@ -346,7 +348,9 @@ impl StateStore {
         }
     }
 
-    #[cfg(test)]
+    /// Test helper: Set state_changed_at for a session record.
+    /// Only available with the `test-helpers` feature or in tests.
+    #[cfg(any(test, feature = "test-helpers"))]
     pub fn set_state_changed_at_for_test(
         &mut self,
         session_id: &str,
@@ -357,7 +361,9 @@ impl StateStore {
         }
     }
 
-    #[cfg(test)]
+    /// Test helper: Set project_dir for a session record.
+    /// Only available with the `test-helpers` feature or in tests.
+    #[cfg(any(test, feature = "test-helpers"))]
     pub fn set_project_dir_for_test(&mut self, session_id: &str, project_dir: Option<&str>) {
         if let Some(record) = self.sessions.get_mut(session_id) {
             record.project_dir = project_dir.map(|s| s.to_string());

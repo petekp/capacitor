@@ -30,8 +30,13 @@ tempfile = "3.14"
 [build-dependencies]
 uniffi = { version = "0.28", features = ["build"] }
 
+[features]
+# Enables test helper methods for integration tests
+test-helpers = []
+
 [dev-dependencies]
 tempfile = "3.14"
+chrono = { workspace = true }
 
 [[bin]]
 name = "uniffi-bindgen"

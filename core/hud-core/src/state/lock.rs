@@ -621,12 +621,16 @@ pub fn get_lock_dir_path(lock_base: &Path, project_path: &str) -> std::path::Pat
     lock_base.join(format!("{}.lock", hash))
 }
 
-#[cfg(test)]
+/// Test helpers for creating lock files.
+/// Available with the `test-helpers` feature or in tests.
+#[cfg(any(test, feature = "test-helpers"))]
 pub mod tests_helper {
     use super::compute_lock_hash;
     use std::fs;
     use std::path::Path;
 
+    /// Creates a valid lock for the current process.
+    /// Uses the real process start time for verification to pass.
     pub fn create_lock(lock_base: &Path, pid: u32, path: &str) {
         // Get the actual start time of the process for tests to pass verification
         let proc_started = super::get_process_start_time(pid)

@@ -88,39 +88,35 @@ fn find_record_for_lock_path<'a>(
             }
         }
 
-        if let Some(current_match_type) = best_match_for_record {
+        if let Some(new_match_type) = best_match_for_record {
             match best {
-                None => best = Some((record, current_match_type, record_is_stale)),
-                Some((current, current_type, current_is_stale)) => {
+                None => best = Some((record, new_match_type, record_is_stale)),
+                Some((best_record, best_match_type, best_is_stale)) => {
                     // Priority order:
                     // 1. Match type (Exact > Child > Parent) - most important
                     // 2. Staleness (non-stale > stale)
                     // 3. Timestamp (fresher > older)
                     // 4. Session ID (lexicographic tiebreaker)
-                    //
-                    // Variable naming:
-                    // - current_match_type = NEW record's match type (from this iteration)
-                    // - current_type = EXISTING best record's match type
-                    let should_replace = if current_match_type > current_type {
+                    let should_replace = if new_match_type > best_match_type {
                         // New record has better match type (Exact > Child > Parent) - replace
                         true
-                    } else if current_match_type < current_type {
+                    } else if new_match_type < best_match_type {
                         // Existing best has better match type - don't replace
                         false
-                    } else if current_is_stale && !record_is_stale {
+                    } else if best_is_stale && !record_is_stale {
                         // Same match type, prefer non-stale
                         true
-                    } else if !current_is_stale && record_is_stale {
+                    } else if !best_is_stale && record_is_stale {
                         false
                     } else {
                         // Same match type and staleness, prefer fresher timestamp
-                        record.updated_at > current.updated_at
-                            || (record.updated_at == current.updated_at
-                                && record.session_id > current.session_id)
+                        record.updated_at > best_record.updated_at
+                            || (record.updated_at == best_record.updated_at
+                                && record.session_id > best_record.session_id)
                     };
 
                     if should_replace {
-                        best = Some((record, current_match_type, record_is_stale));
+                        best = Some((record, new_match_type, record_is_stale));
                     }
                 }
             }
