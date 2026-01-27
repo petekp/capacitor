@@ -679,10 +679,27 @@ pub fn create_lock(lock_base: &Path, project_path: &str, pid: u32) -> Option<std
 ///
 /// This is used to determine if there are other processes sharing the same
 /// session_id before deleting the session record from sessions.json.
+///
+/// Returns:
+/// - 0 if no other locks exist (safe to delete session record)
+/// - N > 0 if N other locks exist (preserve session record)
+/// - `usize::MAX` if we can't read the lock directory (preserve session record to be safe)
 pub fn count_other_session_locks(lock_base: &Path, session_id: &str, exclude_pid: u32) -> usize {
     let entries = match fs::read_dir(lock_base) {
         Ok(e) => e,
-        Err(_) => return 0,
+        Err(e) => {
+            // ENOENT = directory doesn't exist = genuinely no locks
+            if e.kind() == std::io::ErrorKind::NotFound {
+                return 0;
+            }
+            // Other errors (permission, I/O) = unknown state = preserve session
+            tracing::warn!(
+                path = %lock_base.display(),
+                error = %e,
+                "Failed to read lock directory, preserving session record"
+            );
+            return usize::MAX;
+        }
     };
 
     let prefix = format!("{}-", session_id);
@@ -1290,5 +1307,38 @@ mod tests {
         let locks = find_all_locks_for_path(temp.path(), "/project/src");
         assert_eq!(locks.len(), 1, "Should find only exact match");
         assert_eq!(locks[0].path, "/project/src");
+    }
+
+    #[test]
+    fn test_count_other_session_locks_nonexistent_dir() {
+        // When the lock directory doesn't exist (ENOENT), return 0 (no locks)
+        let temp = tempdir().unwrap();
+        let nonexistent = temp.path().join("does_not_exist");
+        let count = count_other_session_locks(&nonexistent, "session", 123);
+        assert_eq!(count, 0, "Non-existent directory means no locks");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_count_other_session_locks_unreadable_dir() {
+        // When the lock directory can't be read (permission error), return usize::MAX
+        // to preserve the session record (fail-safe behavior)
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp = tempdir().unwrap();
+        let lock_dir = temp.path().join("unreadable");
+        fs::create_dir(&lock_dir).unwrap();
+        std::fs::set_permissions(&lock_dir, std::fs::Permissions::from_mode(0o000)).unwrap();
+
+        let count = count_other_session_locks(&lock_dir, "session", 123);
+
+        // Restore permissions before asserting (cleanup)
+        std::fs::set_permissions(&lock_dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        assert_eq!(
+            count,
+            usize::MAX,
+            "Unreadable directory should return MAX to preserve session"
+        );
     }
 }

@@ -7,10 +7,11 @@
 
 use fs_err as fs;
 use std::path::PathBuf;
+use tracing_appender::non_blocking::WorkerGuard;
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
-pub fn init() {
+pub fn init() -> Option<WorkerGuard> {
     let capacitor_dir = dirs::home_dir()
         .map(|h| h.join(".capacitor"))
         .unwrap_or_else(|| PathBuf::from("."));
@@ -22,12 +23,7 @@ pub fn init() {
 
     match create_file_appender(&capacitor_dir) {
         Ok(file_appender) => {
-            let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
-
-            // Leak the guard to keep it alive for program duration.
-            // This is intentional - the hook is a short-lived process and we want
-            // logs to flush before exit.
-            std::mem::forget(_guard);
+            let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
 
             tracing_subscriber::registry()
                 .with(env_filter)
@@ -38,6 +34,8 @@ pub fn init() {
                         .with_ansi(false),
                 )
                 .init();
+
+            Some(guard)
         }
         Err(_) => {
             // Fall back to stderr logging if file appender fails
@@ -50,6 +48,8 @@ pub fn init() {
                         .with_ansi(true),
                 )
                 .init();
+
+            None
         }
     }
 }

@@ -67,7 +67,7 @@ enum Commands {
 }
 
 fn main() {
-    logging::init();
+    let _logging_guard = logging::init();
     let cli = Cli::parse();
 
     match cli.command {
