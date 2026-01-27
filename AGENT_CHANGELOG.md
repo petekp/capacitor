@@ -5,13 +5,78 @@
 
 ## Current State Summary
 
-Capacitor is a native macOS SwiftUI app (Apple Silicon, macOS 14+) that acts as a sidecar dashboard for Claude Code. The architecture uses a Rust core (`hud-core`) with UniFFI bindings to Swift. State tracking relies on Claude Code hooks that write to `~/.capacitor/`, with session-based locks (`{session_id}-{pid}.lock`) as the authoritative signal for active sessions. Shell integration provides ambient project awareness via precmd hooks. Hooks run asynchronously to avoid blocking Claude Code execution.
+Capacitor is a native macOS SwiftUI app (Apple Silicon, macOS 14+) that acts as a sidecar dashboard for Claude Code. The architecture uses a Rust core (`hud-core`) with UniFFI bindings to Swift. State tracking relies on Claude Code hooks that write to `~/.capacitor/`, with session-based locks (`{session_id}-{pid}.lock`) as the authoritative signal for active sessions. Shell integration provides ambient project awareness via precmd hooks. Hooks run asynchronously to avoid blocking Claude Code execution. **New:** All file I/O uses `fs_err` for enriched error messages, and structured logging via `tracing` writes to `~/.capacitor/hud-hook-debug.{date}.log`.
 
 ## Stale Information Detected
 
 None currently. Last audit: 2026-01-26.
 
 ## Timeline
+
+### 2026-01-26 — fs_err and tracing for Improved Debugging
+
+**What changed:**
+1. Replaced `std::fs` with `fs_err` in all production code (20 files)
+2. Added `tracing` infrastructure with daily log rotation (7 days retention)
+3. Migrated custom `log()` functions to structured `tracing` macros
+4. Replaced `eprintln!` with `tracing::warn!/error!` throughout
+5. Consolidated duplicate `is_pid_alive` into single export from `hud_core::state`
+6. Added graceful stderr fallback if file appender creation fails
+
+**Why:** Debugging hooks was difficult—errors like "Permission denied" lacked file path context. Custom `log()` functions were scattered and inconsistent. The `fs_err` crate enriches error messages with the file path, and `tracing` provides structured, configurable logging with automatic rotation.
+
+**Agent impact:**
+- Logs written to `~/.capacitor/hud-hook-debug.{date}.log` (daily rotation, 7 days)
+- Log level configurable via `RUST_LOG` env var (default: `hud_hook=debug,hud_core=warn`)
+- Use `fs_err as fs` import pattern in all new Rust files (see existing files for examples)
+- `is_pid_alive` is now exported from `hud_core::state` — don't duplicate it
+- Use structured fields with tracing: `tracing::debug!(session = %id, "message")`
+
+**Files changed:** 23 files across `hud-core` and `hud-hook`, new `logging.rs` module
+
+**Commit:** `f1ce260`
+
+---
+
+### 2026-01-26 — Rust Best Practices Audit
+
+**What changed:**
+1. Added `#[must_use]` to 18 boolean query functions to prevent ignored return values
+2. Fixed `needless_collect` lint (use `count()` directly instead of collecting to Vec)
+3. Removed unused `Instant` from thread-local sysinfo cache
+4. Extracted helper functions in `handle.rs` for clearer event processing
+5. Fixed ignored return value in `lock_holder.rs` (now logs success/failure)
+
+**Why:** Code review identified patterns that could lead to bugs (ignored boolean returns) and unnecessary allocations (collecting iterators just to count).
+
+**Agent impact:**
+- Functions like `is_session_running()`, `has_any_active_lock()` are marked `#[must_use]`—compiler warns if return value is ignored
+- When counting matches, use `.filter().count()` not `.filter().collect::<Vec<_>>().len()`
+- Helper functions `is_active_state()`, `extract_file_activity()`, `tool_use_action()` in `handle.rs` encapsulate event processing logic
+
+**Commit:** `35dfc56`
+
+---
+
+### 2026-01-26 — Security Audit: Unsafe Code and Error Recovery
+
+**What changed:**
+1. Added SAFETY comments to all `unsafe` blocks documenting invariants
+2. `RwLock` poisoning in session cache now recovers gracefully instead of panicking
+3. Added `#![allow(clippy::unwrap_used)]` to `patterns.rs` for static regex (documented)
+4. Documented intentional regex capture group expects in `ideas.rs`
+
+**Why:** Unsafe code needs clear documentation of safety invariants. Lock poisoning shouldn't crash the app—it should recover and continue.
+
+**Agent impact:**
+- All `unsafe` blocks must have `// SAFETY:` comments explaining why the operation is safe
+- Use `unwrap_or_else(|_| cache.write().unwrap_or_else(...))` pattern for RwLock recovery
+- Static regex compilation can use `expect()` with `#![allow(clippy::unwrap_used)]` at module level
+- See `cwd.rs`, `lock_holder.rs`, `handle.rs` for canonical `// SAFETY:` comment format
+
+**Commit:** `a28eee5`
+
+---
 
 ### 2026-01-26 — Self-Healing Lock Management
 
@@ -219,6 +284,7 @@ None currently. Last audit: 2026-01-26.
 - `~/.capacitor/sessions.json` — Session state
 - `~/.capacitor/sessions/` — Lock directory
 - `~/.capacitor/shell-cwd.json` — Active shell sessions
+- `~/.capacitor/hud-hook-debug.{date}.log` — Debug logs (NEW)
 
 **Commits:** `1d6c4ae`, `1edae7d`
 
@@ -312,6 +378,10 @@ None currently. Last audit: 2026-01-26.
 
 | Don't | Do Instead | Deprecated Since |
 |-------|------------|------------------|
+| Use `std::fs` directly | Use `fs_err as fs` import | 2026-01-26 |
+| Duplicate `is_pid_alive` function | Import from `hud_core::state` | 2026-01-26 |
+| Use custom `log()` functions | Use `tracing::debug!/info!/warn!/error!` | 2026-01-26 |
+| Use `eprintln!` for errors | Use `tracing::warn!` or `tracing::error!` | 2026-01-26 |
 | Write to `~/.claude/` | Write to `~/.capacitor/` | 2026-01-16 |
 | Use bash for hook handling | Use Rust `hud-hook` binary | 2026-01-20 |
 | Use wrapper scripts for hooks | Use binary-only architecture | 2026-01-21 |
@@ -326,6 +396,9 @@ None currently. Last audit: 2026-01-26.
 | Inherit child lock state to parent path | Use exact-match-only path comparison | 2026-01-26 |
 | Copy hook binary to `~/.local/bin/` | Symlink to `target/release/hud-hook` | 2026-01-26 |
 | Rely on stale Ready record fallback | Trust lock existence as authoritative | 2026-01-26 |
+| Ignore `#[must_use]` function return values | Always handle return values from query functions | 2026-01-26 |
+| Use `.collect().len()` for counting | Use `.count()` directly on iterator | 2026-01-26 |
+| Write unsafe code without SAFETY comments | Document safety invariants with `// SAFETY:` | 2026-01-26 |
 
 ## Trajectory
 
@@ -346,4 +419,9 @@ The project is moving toward:
 5. **Self-healing lock management** — ✅ Implemented (2026-01-26)
    - Orphaned process cleanup, legacy lock cleanup, 24h safety timeout, version tracking
 
-The core sidecar architecture is stable. Recent focus: lock reliability (session-based, self-healing), exact-match path resolution for monorepos, and terminal integration.
+6. **Improved debugging** — ✅ Implemented (2026-01-26)
+   - `fs_err` for file path context in errors
+   - `tracing` for structured logging with daily rotation
+   - Consolidated shared utilities (e.g., `is_pid_alive`)
+
+The core sidecar architecture is stable. Recent focus: lock reliability (session-based, self-healing), exact-match path resolution for monorepos, terminal integration, and developer experience (better debugging and error messages).
