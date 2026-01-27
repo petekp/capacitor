@@ -357,7 +357,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             print("[Startup] Hook auto-repair failed, showing WelcomeView")
             UserDefaults.standard.set(false, forKey: "setupComplete")
 
-        case .outdated, .policyBlocked:
+        case .policyBlocked:
             UserDefaults.standard.set(false, forKey: "setupComplete")
         }
     }

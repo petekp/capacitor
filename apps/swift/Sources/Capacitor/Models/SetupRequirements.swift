@@ -168,9 +168,6 @@ final class SetupRequirementsManager {
         case .notInstalled:
             updateStep("hooks", status: .actionNeeded(message: "Not installed yet"))
 
-        case .outdated(let current, let latest):
-            updateStep("hooks", status: .actionNeeded(message: "Update available: v\(current) → v\(latest)"))
-
         case .policyBlocked(let reason):
             updateStep("hooks", status: .error(message: reason))
 

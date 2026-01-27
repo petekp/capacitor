@@ -10,15 +10,15 @@
 
 ### Priority Matrix
 
-| Gap | Risk | Impact | Frequency | Priority |
-|-----|------|--------|-----------|----------|
-| **Tmux client in different terminal app** | Medium | User confusion | Common | **P1** |
-| **Multiple tmux clients attached** | Low | Wrong terminal activates | Rare | P3 |
-| **IDE CLI not in PATH (silent fail)** | Medium | No feedback | Common | **P1** |
-| **kitty @ returns true unconditionally** | Low | Misleading | Rare | P3 |
-| **IDE terminal after window close** | Medium | Falls through | Common | **P2** |
-| **SSH sessions not detected** | Low | No tracking | Moderate | P3 |
-| **Screen sessions (not tmux)** | Low | Not supported | Rare | P4 |
+| Gap                                       | Risk   | Impact                   | Frequency | Priority |
+| ----------------------------------------- | ------ | ------------------------ | --------- | -------- |
+| **Tmux client in different terminal app** | Medium | User confusion           | Common    | **P1**   |
+| **Multiple tmux clients attached**        | Low    | Wrong terminal activates | Rare      | P3       |
+| **IDE CLI not in PATH (silent fail)**     | Medium | No feedback              | Common    | **P1**   |
+| **kitty @ returns true unconditionally**  | Low    | Misleading               | Rare      | P3       |
+| **IDE terminal after window close**       | Medium | Falls through            | Common    | **P2**   |
+| **SSH sessions not detected**             | Low    | No tracking              | Moderate  | P3       |
+| **Screen sessions (not tmux)**            | Low    | Not supported            | Rare      | P4       |
 
 ### P1 Gaps — Recommend Immediate Fix
 
@@ -33,6 +33,7 @@
 **Fix location:** `TerminalLauncher.swift:switchToTmuxSessionAndActivate`
 
 **Proposed fix:**
+
 ```swift
 private func switchToTmuxSessionAndActivate(session: String) {
     if hasTmuxClientAttached() {
@@ -247,11 +248,11 @@ final class ActiveProjectResolverTests: XCTestCase {
 
 ### Verdict: **Hybrid Approach**
 
-| Test Type | Coverage | Rationale |
-|-----------|----------|-----------|
-| **Rust unit tests** | Core logic | Lock management, state resolution, staleness |
-| **Swift unit tests** | UI integration | Shell filtering, activation strategies |
-| **Manual test matrix** | End-to-end | Real terminal apps, tmux interactions |
+| Test Type              | Coverage       | Rationale                                    |
+| ---------------------- | -------------- | -------------------------------------------- |
+| **Rust unit tests**    | Core logic     | Lock management, state resolution, staleness |
+| **Swift unit tests**   | UI integration | Shell filtering, activation strategies       |
+| **Manual test matrix** | End-to-end     | Real terminal apps, tmux interactions        |
 
 ### Why Not Full Automation?
 
@@ -262,6 +263,7 @@ final class ActiveProjectResolverTests: XCTestCase {
 ### Recommended Test Matrix (Manual)
 
 Maintain a manual test matrix in `.claude/docs/terminal-test-matrix.md` for:
+
 - Terminal app combinations (Ghostty, iTerm, Terminal, Warp, kitty)
 - Tmux scenarios (attached, detached, multiple clients)
 - IDE terminal scenarios (Cursor, VS Code)
@@ -273,21 +275,25 @@ Run before releases.
 ## 4. IMPLEMENTATION CHECKLIST
 
 ### Phase 1: Add Rust Tests (1-2 hours)
+
 - [ ] Add `concurrent_sessions_different_states` test
 - [ ] Add `session_end_releases_only_own_lock` test
 - [ ] Run `cargo test` to verify
 
 ### Phase 2: Add Swift Tests (2-3 hours)
+
 - [ ] Create `TerminalLauncherTests.swift`
 - [ ] Create `ActiveProjectResolverTests.swift`
 - [ ] Run `swift test` to verify
 
 ### Phase 3: Fix P1 Gaps (2-3 hours)
+
 - [ ] Fix tmux client TTY discovery in `switchToTmuxSessionAndActivate`
 - [ ] Add error handling to `activateIDEWindowInternal`
 - [ ] Update strategy fallback behavior
 
 ### Phase 4: Document Manual Test Matrix (1 hour)
+
 - [ ] Create `.claude/docs/terminal-test-matrix.md`
 - [ ] Document pre-release test procedures
 

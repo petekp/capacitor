@@ -1,17 +1,64 @@
 # Agent Changelog
 
 > This file helps coding agents understand project evolution, key decisions,
-> and deprecated patterns. Updated: 2026-01-27 (Session 2)
+> and deprecated patterns. Updated: 2026-01-27 (Session 3)
 
 ## Current State Summary
 
-Capacitor is a native macOS SwiftUI app (Apple Silicon, macOS 14+) that acts as a sidecar dashboard for Claude Code. The architecture uses a Rust core (`hud-core`) with UniFFI bindings to Swift. State tracking relies on Claude Code hooks that write to `~/.capacitor/`, with session-based locks (`{session_id}-{pid}.lock`) as the authoritative signal for active sessions. Shell integration provides ambient project awareness via precmd hooks. Hooks run asynchronously to avoid blocking Claude Code execution. All file I/O uses `fs_err` for enriched error messages, and structured logging via `tracing` writes to `~/.capacitor/hud-hook-debug.{date}.log`. **Audit complete:** A comprehensive 12-session side-effects analysis validated all major subsystems—Session 12 (hud-hook) identified 3 findings, 2 fixed (lock dir error handling, logging guard), 1 skipped (activity format is intentional design).
+Capacitor is a native macOS SwiftUI app (Apple Silicon, macOS 14+) that acts as a sidecar dashboard for Claude Code. The architecture uses a Rust core (`hud-core`) with UniFFI bindings to Swift. State tracking relies on Claude Code hooks that write to `~/.capacitor/`, with session-based locks (`{session_id}-{pid}.lock`) as the authoritative signal for active sessions. Shell integration provides ambient project awareness via precmd hooks. Hooks run asynchronously to avoid blocking Claude Code execution. All file I/O uses `fs_err` for enriched error messages, and structured logging via `tracing` writes to `~/.capacitor/hud-hook-debug.{date}.log`. **Bulletproof Hooks complete:** Phase 4 Test Hooks button added for manual verification. **Audit complete:** A comprehensive 12-session side-effects analysis validated all major subsystems.
 
 ## Stale Information Detected
 
 None currently. Last audit: 2026-01-27 (fixed v3→v4 documentation in state modules, hud-hook audit remediation).
 
 ## Timeline
+
+### 2026-01-27 — Test Hooks Button (Bulletproof Hooks Phase 4)
+
+**What changed:**
+1. Added `HookTestResult` struct to Rust types with UniFFI export
+2. Added `run_hook_test()` method to HudEngine (FFI-exported)
+3. Added "Test Hooks" button to SetupStatusCard UI
+4. Button verifies hooks via heartbeat + state file I/O verification
+
+**Test approach:**
+- Heartbeat check: Is the heartbeat file recent (< 60s)?
+- State file I/O: Can we write/read/delete a test record in sessions.json?
+
+**Why:** Gives users confidence that the hook system is working. No subprocess spawn needed—tests what actually matters (file I/O, not binary execution).
+
+**Agent impact:**
+- `run_hook_test()` in engine.rs returns `HookTestResult` (success, heartbeat_ok, state_file_ok, message)
+- SetupStatusCard now has callback pattern: `onTest: () -> HookTestResult`
+- Test result auto-clears after 5 seconds
+- Use PID + timestamp for unique test IDs (no rand crate needed)
+
+**Files changed:** `types.rs`, `engine.rs`, `SetupStatusCard.swift`, `AppState.swift`, `ProjectsView.swift`
+
+**Commit:** `5c58b17`
+
+**Plan doc:** `.claude/plans/ACTIVE-bulletproof-hooks.md` (Phase 4 complete)
+
+---
+
+### 2026-01-27 — CLAUDE.md Optimization
+
+**What changed:**
+1. Reduced CLAUDE.md from 107 lines to 95 lines
+2. Moved 16+ detailed gotchas to `.claude/docs/gotchas.md`
+3. Kept only 4 most common gotchas in CLAUDE.md
+4. Added gotchas.md to documentation table
+
+**Why:** Following claude-md-author principles—keep CLAUDE.md lean with high-frequency essentials, use `.claude/docs/` for deeper reference material.
+
+**Agent impact:**
+- Common gotchas (cargo fmt, dylib copy, hook symlink, UniFFI Task) remain in CLAUDE.md
+- Detailed gotchas (session locks, state resolution, testing hooks, etc.) moved to `.claude/docs/gotchas.md`
+- Progressive disclosure: Claude/developers get detailed reference when they need it
+
+**Files changed:** `CLAUDE.md`, `.claude/docs/gotchas.md` (new)
+
+---
 
 ### 2026-01-27 — Dead Code Cleanup: Swift Terminal System
 
@@ -567,5 +614,15 @@ The project is moving toward:
    - Fixed lock dir read errors (fail-safe sentinel pattern)
    - Fixed logging guard leak (proper ownership, not `forget()`)
    - Activity format duplication kept as intentional design
+
+10. **Bulletproof Hooks** — ✅ Complete (2026-01-27)
+    - Phase 1-3: Symlink-based installation, auto-repair, observability (2026-01-26)
+    - Phase 4: Test Hooks button for manual round-trip verification (2026-01-27)
+    - Plan doc: `.claude/plans/ACTIVE-bulletproof-hooks.md`
+
+11. **Documentation optimization** — ✅ Complete (2026-01-27)
+    - CLAUDE.md optimized (107→95 lines)
+    - Detailed gotchas moved to `.claude/docs/gotchas.md`
+    - Progressive disclosure pattern for reference material
 
 The core sidecar architecture is stable and validated. The 12-session side-effects audit confirmed all major subsystems work correctly; the few issues found have been remediated. Focus areas: lock reliability (session-based, self-healing, fail-safe error handling), exact-match path resolution for monorepos, terminal integration, and codebase hygiene (dead code removal, documentation accuracy).
