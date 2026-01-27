@@ -5,13 +5,40 @@
 
 ## Current State Summary
 
-Capacitor is a native macOS SwiftUI app (Apple Silicon, macOS 14+) that acts as a sidecar dashboard for Claude Code. The architecture uses a Rust core (`hud-core`) with UniFFI bindings to Swift. State tracking relies on Claude Code hooks that write to `~/.capacitor/`, with session-based locks (`{session_id}-{pid}.lock`) as the authoritative signal for active sessions. Shell integration provides ambient project awareness via precmd hooks. Hooks run asynchronously to avoid blocking Claude Code execution. All file I/O uses `fs_err` for enriched error messages, and structured logging via `tracing` writes to `~/.capacitor/hud-hook-debug.{date}.log`. **Audit complete:** A comprehensive 11-session side-effects analysis validated all major subsystems—no critical bugs found, all documentation accurate.
+Capacitor is a native macOS SwiftUI app (Apple Silicon, macOS 14+) that acts as a sidecar dashboard for Claude Code. The architecture uses a Rust core (`hud-core`) with UniFFI bindings to Swift. State tracking relies on Claude Code hooks that write to `~/.capacitor/`, with session-based locks (`{session_id}-{pid}.lock`) as the authoritative signal for active sessions. Shell integration provides ambient project awareness via precmd hooks. Hooks run asynchronously to avoid blocking Claude Code execution. All file I/O uses `fs_err` for enriched error messages, and structured logging via `tracing` writes to `~/.capacitor/hud-hook-debug.{date}.log`. **Audit complete:** A comprehensive 12-session side-effects analysis validated all major subsystems—Session 12 (hud-hook) identified 3 findings, 2 fixed (lock dir error handling, logging guard), 1 skipped (activity format is intentional design).
 
 ## Stale Information Detected
 
-None currently. Last audit: 2026-01-27 (fixed v3→v4 documentation in state modules).
+None currently. Last audit: 2026-01-27 (fixed v3→v4 documentation in state modules, hud-hook audit remediation).
 
 ## Timeline
+
+### 2026-01-27 — hud-hook Audit Remediation
+
+**What changed:** Fixed 2 of 3 findings from Session 12 (hud-hook system audit):
+
+1. **Lock dir read errors now use fail-safe sentinel** — `count_other_session_locks()` returns `usize::MAX` (not 0) when `read_dir` fails for non-ENOENT errors. Callers treat any non-zero count as "preserve session record." This prevents transient FS errors from tombstoning active sessions.
+
+2. **Logging guard properly held, not forgotten** — `logging::init()` now returns `Option<WorkerGuard>` which is held in `main()` scope. The guard's `Drop` implementation flushes buffered logs. Previously `std::mem::forget()` prevented final log entries from being written.
+
+**Finding skipped:** Activity format duplication between `hud-hook` and `hud-core` (Finding 1) was intentionally skipped as a design decision—the conversion overhead is acceptable.
+
+**Why:**
+- Lock dir errors could incorrectly tombstone active sessions during transient FS issues
+- `std::mem::forget()` on `WorkerGuard` contradicts the Rust ownership model—`Drop` has important side effects (flushing)
+
+**Agent impact:**
+- Error handling in `count_other_session_locks()` demonstrates fail-safe sentinel pattern—return `usize::MAX` when uncertain
+- When `Drop` has side effects, hold values in scope rather than `forget()`ing them
+- New CLAUDE.md gotchas document both patterns
+
+**Files changed:** `core/hud-core/src/state/lock.rs`, `core/hud-hook/src/logging.rs`, `core/hud-hook/src/main.rs`
+
+**Tests added:** `test_count_other_session_locks_nonexistent_dir`, `test_count_other_session_locks_unreadable_dir`
+
+**Audit doc:** `.claude/docs/audit/12-hud-hook-system.md`
+
+---
 
 ### 2026-01-27 — Side Effects Analysis Audit Complete
 
@@ -432,6 +459,8 @@ None currently. Last audit: 2026-01-27 (fixed v3→v4 documentation in state mod
 
 | Don't | Do Instead | Deprecated Since |
 |-------|------------|------------------|
+| Return 0 from query functions on read errors | Return fail-safe sentinel (`usize::MAX`) to preserve state | 2026-01-27 |
+| Use `std::mem::forget()` on guards with important `Drop` | Hold guard in scope, let it drop naturally | 2026-01-27 |
 | Use `is_session_active()` or path-based session checks | Use lock existence via `find_all_locks_for_path()` | 2026-01-27 |
 | Use `find_by_cwd()` for path→session lookup | Use `get_by_session_id()` with exact session ID | 2026-01-27 |
 | Use `boundaries::normalize_path()` | Use `normalize_path_for_hashing()` or `normalize_path_for_comparison()` | 2026-01-27 |
@@ -487,9 +516,14 @@ The project is moving toward:
    - Updated stale documentation across state modules
 
 8. **Side effects analysis** — ✅ Complete (2026-01-27)
-   - 11-session comprehensive audit of all side-effect subsystems
-   - All subsystems passed (no critical bugs)
+   - 12-session comprehensive audit of all side-effect subsystems
+   - Session 12 (hud-hook) identified 3 findings; 2 fixed, 1 skipped (intentional design)
    - Design decisions validated and documented in `.claude/docs/audit/`
    - Confirmed: shell child-path matching differs from lock exact-match by design
 
-The core sidecar architecture is stable and validated. The recent side-effects audit confirmed all major subsystems work correctly. Focus areas: lock reliability (session-based, self-healing, timeout fix), exact-match path resolution for monorepos, terminal integration, and codebase hygiene (dead code removal, documentation accuracy).
+9. **hud-hook audit remediation** — ✅ Complete (2026-01-27)
+   - Fixed lock dir read errors (fail-safe sentinel pattern)
+   - Fixed logging guard leak (proper ownership, not `forget()`)
+   - Activity format duplication kept as intentional design
+
+The core sidecar architecture is stable and validated. The 12-session side-effects audit confirmed all major subsystems work correctly; the few issues found have been remediated. Focus areas: lock reliability (session-based, self-healing, fail-safe error handling), exact-match path resolution for monorepos, terminal integration, and codebase hygiene (dead code removal, documentation accuracy).

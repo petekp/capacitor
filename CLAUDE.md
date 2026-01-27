@@ -84,6 +84,8 @@ Hooks → `~/.capacitor/sessions.json` → Capacitor reads
 - **Hook binary must be symlinked, not copied** — Copying adhoc-signed Rust binaries to `~/.local/bin/` triggers macOS Gatekeeper SIGKILL (exit 137). The binary works fine when run from `target/release/` but dies when copied. Fix: use symlink (`ln -s target/release/hud-hook ~/.local/bin/hud-hook`). See `scripts/sync-hooks.sh`.
 - **Async hooks require both fields** — Claude Code's hook validation requires async hooks to have BOTH `"async": true` AND `"timeout": 30`. Missing either field causes "Settings configured" to show red. If hooks stop working after an upgrade, check `~/.claude/settings.json` for malformed hook entries. See `setup.rs:422-426`.
 - **Cleanup race condition (accepted)** — `run_startup_cleanup()` follows read-modify-write on `sessions.json` without file locking. Concurrent hook events arriving during cleanup could be lost. This risk is accepted because: (1) cleanup runs only at app launch (low frequency), (2) the window is small (milliseconds), (3) lost events self-heal on next hook event. See `cleanup.rs`.
+- **Lock dir read errors use fail-safe sentinel** — `count_other_session_locks()` returns `usize::MAX` (not 0) when `read_dir` fails for reasons other than `NotFound`. The caller treats any non-zero count as "preserve session record." Returning 0 on I/O errors would incorrectly tombstone active sessions. See `lock.rs:682-697`.
+- **hud-hook logging guard must be held, not forgotten** — `logging::init()` returns `Option<WorkerGuard>` which must be held in `main()` scope. The guard's `Drop` implementation flushes buffered logs. Using `std::mem::forget()` prevents final log entries from being written. See `logging.rs` and `main.rs:70`.
 
 ## Documentation
 
