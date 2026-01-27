@@ -160,18 +160,13 @@ pub fn run() -> Result<(), String> {
             // Check if OTHER processes are still using this session_id
             // (can happen when Claude resumes the same session in multiple terminals)
             let other_locks = count_other_session_locks(&lock_base, &session_id, ppid);
-            if other_locks > 0 {
+            let preserve_record = other_locks > 0;
+
+            if preserve_record {
                 log(&format!(
                     "Session {} has {} other active locks, preserving session record",
                     session_id, other_locks
                 ));
-                // Release this process's lock but preserve the session record
-                if release_lock_by_session(&lock_base, &session_id, ppid) {
-                    log(&format!(
-                        "Released lock for session {} (PID {})",
-                        session_id, ppid
-                    ));
-                }
             } else {
                 // No other locks - clean up completely
                 // Order matters: remove record BEFORE lock to prevent race condition
@@ -188,14 +183,14 @@ pub fn run() -> Result<(), String> {
 
                 // 3. Remove from activity file
                 remove_session_activity(&activity_file, &session_id);
+            }
 
-                // 4. Release lock LAST - UI will see no record AND no lock atomically
-                if release_lock_by_session(&lock_base, &session_id, ppid) {
-                    log(&format!(
-                        "Released lock for session {} (PID {})",
-                        session_id, ppid
-                    ));
-                }
+            // 4. Release lock LAST - UI will see no record AND no lock atomically
+            if release_lock_by_session(&lock_base, &session_id, ppid) {
+                log(&format!(
+                    "Released lock for session {} (PID {})",
+                    session_id, ppid
+                ));
             }
         }
         Action::Upsert | Action::Heartbeat => {
@@ -489,8 +484,15 @@ fn record_file_activity(
     session["cwd"] = json!(cwd);
 
     // Write back
-    if let Ok(content) = serde_json::to_string_pretty(&activity) {
-        let _ = fs::write(activity_file, content);
+    match serde_json::to_string_pretty(&activity) {
+        Ok(content) => {
+            if let Err(e) = fs::write(activity_file, content) {
+                log(&format!("Failed to write activity file: {}", e));
+            }
+        }
+        Err(e) => {
+            log(&format!("Failed to serialize activity: {}", e));
+        }
     }
 }
 
@@ -498,20 +500,40 @@ fn remove_session_activity(activity_file: &PathBuf, session_id: &str) {
     use serde_json::Value;
     use std::fs;
 
-    let mut activity: Value = match fs::read_to_string(activity_file)
-        .ok()
-        .and_then(|s| serde_json::from_str(&s).ok())
-    {
-        Some(v) => v,
-        None => return,
+    let mut activity: Value = match fs::read_to_string(activity_file) {
+        Ok(content) => match serde_json::from_str(&content) {
+            Ok(v) => v,
+            Err(e) => {
+                log(&format!(
+                    "Failed to parse activity file, skipping cleanup: {}",
+                    e
+                ));
+                return;
+            }
+        },
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return,
+        Err(e) => {
+            log(&format!(
+                "Failed to read activity file, skipping cleanup: {}",
+                e
+            ));
+            return;
+        }
     };
 
     if let Some(sessions) = activity.get_mut("sessions").and_then(|s| s.as_object_mut()) {
         sessions.remove(session_id);
     }
 
-    if let Ok(content) = serde_json::to_string_pretty(&activity) {
-        let _ = fs::write(activity_file, content);
+    match serde_json::to_string_pretty(&activity) {
+        Ok(content) => {
+            if let Err(e) = fs::write(activity_file, content) {
+                log(&format!("Failed to write activity file: {}", e));
+            }
+        }
+        Err(e) => {
+            log(&format!("Failed to serialize activity: {}", e));
+        }
     }
 }
 
