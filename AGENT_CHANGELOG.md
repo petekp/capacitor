@@ -5,13 +5,43 @@
 
 ## Current State Summary
 
-Capacitor is a native macOS SwiftUI app (Apple Silicon, macOS 14+) that acts as a sidecar dashboard for Claude Code. The architecture uses a Rust core (`hud-core`) with UniFFI bindings to Swift. State tracking relies on Claude Code hooks that write to `~/.capacitor/`, with session-based locks (`{session_id}-{pid}.lock`) as the authoritative signal for active sessions. Shell integration provides ambient project awareness via precmd hooks. Hooks run asynchronously to avoid blocking Claude Code execution. **New:** All file I/O uses `fs_err` for enriched error messages, and structured logging via `tracing` writes to `~/.capacitor/hud-hook-debug.{date}.log`.
+Capacitor is a native macOS SwiftUI app (Apple Silicon, macOS 14+) that acts as a sidecar dashboard for Claude Code. The architecture uses a Rust core (`hud-core`) with UniFFI bindings to Swift. State tracking relies on Claude Code hooks that write to `~/.capacitor/`, with session-based locks (`{session_id}-{pid}.lock`) as the authoritative signal for active sessions. Shell integration provides ambient project awareness via precmd hooks. Hooks run asynchronously to avoid blocking Claude Code execution. All file I/O uses `fs_err` for enriched error messages, and structured logging via `tracing` writes to `~/.capacitor/hud-hook-debug.{date}.log`. **Audit complete:** A comprehensive 11-session side-effects analysis validated all major subsystems—no critical bugs found, all documentation accurate.
 
 ## Stale Information Detected
 
 None currently. Last audit: 2026-01-27 (fixed v3→v4 documentation in state modules).
 
 ## Timeline
+
+### 2026-01-27 — Side Effects Analysis Audit Complete
+
+**What changed:** Completed comprehensive 11-session audit of all side-effect subsystems across Rust and Swift codebases.
+
+**Scope:**
+- **Phase 1 (State Detection Core):** Lock System, Lock Holder, Session Store, Cleanup, Tombstone
+- **Phase 2 (Shell Integration):** Shell CWD Tracking, Shell State Store, Terminal Launcher
+- **Phase 3 (Supporting Systems):** Activity Files, Hook Configuration, Project Resolution
+
+**Why:** Systematic verification that code matches documentation, with focus on atomicity, race conditions, cleanup, error handling, and dead code detection.
+
+**Key findings:**
+1. **All 11 subsystems passed** — No critical bugs or design flaws found
+2. **1 doc fix applied** — `lock.rs` exact-match-only documentation (commit `3d78b1b`)
+3. **1 low-priority item** — Vestigial function name `find_matching_child_lock` (optional rename)
+4. **All 6 CLAUDE.md gotchas verified accurate** — Session-based locks, exact-match-only, hud-hook symlink, async hooks, Swift timestamp decoder, focus override
+5. **Shell vs Lock path matching is intentionally different:**
+   - Locks: exact-match-only (Claude sessions are specific to launch directory)
+   - Shell: child-path matching (shell in `/project/src` matches project `/project`)
+
+**Agent impact:**
+- Audit artifacts in `.claude/docs/audit/01-*.md` through `11-*.md`
+- Design decisions documented and validated—don't second-guess these patterns
+- `ActiveProjectResolver` focus override mechanism is intentionally implicit (no clearManualOverride method)
+- Active sessions (Working/Waiting/Compacting) always beat passive sessions (Ready) in priority
+
+**Plan doc:** `.claude/plans/COMPLETE-side-effects-analysis.md`
+
+---
 
 ### 2026-01-27 — Lock Holder Timeout Fix and Dead Code Removal
 
@@ -456,4 +486,10 @@ The project is moving toward:
    - Fixed lock holder 24h timeout bug (no longer releases active sessions)
    - Updated stale documentation across state modules
 
-The core sidecar architecture is stable. Recent focus: lock reliability (session-based, self-healing, timeout fix), exact-match path resolution for monorepos, terminal integration, and codebase hygiene (dead code removal, documentation accuracy).
+8. **Side effects analysis** — ✅ Complete (2026-01-27)
+   - 11-session comprehensive audit of all side-effect subsystems
+   - All subsystems passed (no critical bugs)
+   - Design decisions validated and documented in `.claude/docs/audit/`
+   - Confirmed: shell child-path matching differs from lock exact-match by design
+
+The core sidecar architecture is stable and validated. The recent side-effects audit confirmed all major subsystems work correctly. Focus areas: lock reliability (session-based, self-healing, timeout fix), exact-match path resolution for monorepos, terminal integration, and codebase hygiene (dead code removal, documentation accuracy).

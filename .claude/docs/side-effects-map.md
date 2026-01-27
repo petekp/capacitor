@@ -8,13 +8,18 @@ In-depth side effect documentation for specific subsystems:
 
 | Subsystem | Side Effects | Audit | Status |
 |-----------|--------------|-------|--------|
+| Current system map | *(This document)* | [audit/00-current-system-map.md](audit/00-current-system-map.md) | ✅ Complete |
 | Lock System | [side-effects/lock-system.md](side-effects/lock-system.md) | [audit/01-lock-system.md](audit/01-lock-system.md) | ✅ Complete |
 | Lock Holder | [side-effects/lock-holder.md](side-effects/lock-holder.md) | [audit/02-lock-holder.md](audit/02-lock-holder.md) | ✅ Complete |
-| Session State | *Pending* | *Pending* | |
-| Cleanup | *Pending* | *Pending* | |
-| Tombstone | *Pending* | *Pending* | |
-| Shell Tracking | *Pending* | *Pending* | |
-| Hook Setup | *Pending* | *Pending* | |
+| Session store | *(Folded into this map)* | [audit/03-session-store.md](audit/03-session-store.md) | ✅ Complete |
+| Cleanup system | *(Folded into this map)* | [audit/04-cleanup-system.md](audit/04-cleanup-system.md) | ✅ Complete |
+| Tombstone system | *(Folded into this map)* | [audit/05-tombstone-system.md](audit/05-tombstone-system.md) | ✅ Complete |
+| Shell CWD tracking | *(Folded into this map)* | [audit/06-shell-cwd-tracking.md](audit/06-shell-cwd-tracking.md) | ✅ Complete |
+| Shell state store (Swift) | *(Read-only)* | [audit/07-shell-state-store.md](audit/07-shell-state-store.md) | ✅ Complete |
+| Terminal launcher (Swift) | *(Activation only)* | [audit/08-terminal-launcher.md](audit/08-terminal-launcher.md) | ✅ Complete |
+| Activity files | *(Folded into this map)* | [audit/09-activity-files.md](audit/09-activity-files.md) | ✅ Complete |
+| Hook configuration | *(Folded into this map)* | [audit/10-hook-configuration.md](audit/10-hook-configuration.md) | ✅ Complete |
+| Project resolution (Swift) | *(No side effects)* | [audit/11-project-resolution.md](audit/11-project-resolution.md) | ✅ Complete |
 
 ---
 
@@ -24,8 +29,10 @@ In-depth side effect documentation for specific subsystems:
 |----------|-----------------|----------------|
 | Session State | `~/.capacitor/sessions.json` | Same |
 | Locks | `~/.capacitor/sessions/*.lock/` | Same |
-| Shell Tracking | `~/.capacitor/shell-cwd.json`, `shell-history.jsonl` | Same |
-| Activity | `~/.capacitor/activities/{hash}.json` | Same |
+| Tombstones | `~/.capacitor/ended-sessions/*` | Same |
+| Shell Tracking | `~/.capacitor/shell-cwd.json`, `~/.capacitor/shell-history.jsonl` | Same |
+| Activity | `~/.capacitor/file-activity.json` | Same |
+| Hook Heartbeat | `~/.capacitor/hud-hook-heartbeat` | Same |
 | User Config | `~/.capacitor/config.json`, `projects.json` | Same |
 | Claude Config | `~/.claude/settings.json` (hooks only) | `~/.claude/settings.json`, `~/.claude/projects/` |
 | Logs | `~/.capacitor/hud-hook-debug.*.log` | N/A |
@@ -42,11 +49,11 @@ In-depth side effect documentation for specific subsystems:
 - **Writer:** `store.rs` via `StateStore::save()`
 - **Trigger:** Hook events (SessionStart, ToolUse, etc.)
 - **Atomicity:** Uses `tempfile` + `persist()` for atomic writes
-- **Content:** JSON map of session records keyed by path hash
+- **Content:** JSON map of session records keyed by **session ID**
 
 ```rust
 // core/hud-core/src/state/store.rs
-pub fn save(&self, state: &HashMap<String, SessionRecord>) -> Result<(), StateError>
+pub fn save(&self) -> Result<(), String>
 ```
 
 #### Lock Directories (`~/.capacitor/sessions/{session_id}-{pid}.lock/`)
@@ -66,19 +73,19 @@ pub fn create_session_lock(session_id: &str, pid: u32, path: &str) -> io::Result
 ```
 
 #### Shell CWD State (`~/.capacitor/shell-cwd.json`)
-- **Writer:** `cwd.rs` via `update_shell_cwd()`
-- **Trigger:** `cd` command from shell hook
+- **Writer:** `cwd.rs` via `run(path,pid,tty)`
+- **Trigger:** shell precmd hook (runs on prompt display; updates when CWD changes)
 - **Atomicity:** Uses `tempfile` + `persist()` for atomic writes
-- **Content:** JSON with `shells` map (PID → shell entry) and `updated_at`
+- **Content:** JSON with `shells` map (PID → shell entry)
 
 ```rust
 // core/hud-hook/src/cwd.rs
-pub fn update_shell_cwd(path: &Path, pid: &str, cwd: &str, ...) -> Result<(), CwdError>
+pub fn run(path: &str, pid: u32, tty: &str) -> Result<(), CwdError>
 ```
 
 #### Shell History (`~/.capacitor/shell-history.jsonl`)
 - **Writer:** `cwd.rs` via `append_to_history()`
-- **Trigger:** Each `cd` event
+- **Trigger:** When a shell’s CWD changes (detected during precmd execution)
 - **Format:** JSON Lines (append-only)
 - **Content:** Historical shell CWD changes
 
@@ -87,15 +94,17 @@ pub fn update_shell_cwd(path: &Path, pid: &str, cwd: &str, ...) -> Result<(), Cw
 pub fn append_to_history(path: &Path, event: &HistoryEvent) -> Result<(), CwdError>
 ```
 
-#### Activity Files (`~/.capacitor/activities/{hash}.json`)
-- **Writer:** `handle.rs` via `write_activity_file()`
-- **Trigger:** Hook events (ToolUse, SessionStart, etc.)
-- **Content:** JSON with last activity timestamp and hook event type
+#### Activity File (`~/.capacitor/file-activity.json`)
+- **Writer:** `hud-hook` (`handle.rs`) via `record_file_activity()` / `remove_session_activity()`
+- **Trigger:** PostToolUse events for file-touching tools (Edit/Write/Read/NotebookEdit)
+- **Purpose:** Secondary signal to mark a project as Working when no lock/record exists at that exact path (monorepo package tracking)
+- **Atomicity:** ⚠️ Currently written via a read-modify-write pattern in `hud-hook` (see audit/09)
 
-```rust
-// core/hud-hook/src/handle.rs
-fn write_activity_file(path: &str, event: &HookEvent) { ... }
-```
+#### Hook Heartbeat (`~/.capacitor/hud-hook-heartbeat`)
+- **Writer:** `hud-hook` (`handle.rs`) via `touch_heartbeat()`
+- **Trigger:** Every hook invocation (runs before parsing stdin)
+- **Purpose:** Proof-of-life for the hook system (“hooks are firing”)
+- **Content:** Single line UNIX timestamp (file is truncated each write)
 
 #### Tombstones (`~/.capacitor/ended-sessions/{session_id}`)
 - **Writer:** `handle.rs` via `create_tombstone()` / `remove_tombstone()`
@@ -144,14 +153,13 @@ RollingFileAppender::builder()
 ```
 
 #### Hook Binary (`~/.local/bin/hud-hook`)
-- **Writer:** `setup.rs` via `install_hook_binary_from_path()`
+- **Writer:** `setup.rs` via `install_binary_from_path()`
 - **Trigger:** App startup, "Install Hooks" button
-- **Atomicity:** Copy to temp, then rename
-- **Permissions:** Sets executable bit (0o755)
+- **Installation strategy:** Symlink to preserve code signature (copy can trigger Gatekeeper SIGKILL in dev)
 
 ```rust
 // core/hud-core/src/setup.rs
-pub fn install_hook_binary_from_path(&self, source_path: String) -> Result<InstallResult, HudFfiError>
+pub fn install_binary_from_path(&self, source_path: &str) -> Result<InstallResult, HudFfiError>
 ```
 
 #### Claude Settings (`~/.claude/settings.json`)
@@ -172,7 +180,9 @@ pub fn configure_hooks(&self) -> Result<ConfigResult, HudFfiError>
 | `~/.capacitor/sessions.json` | `store.rs` | Load session state |
 | `~/.capacitor/sessions/*.lock/` | `lock.rs` | Check for active locks |
 | `~/.capacitor/shell-cwd.json` | `cwd.rs`, Swift | Shell state for activation |
-| `~/.capacitor/activities/*.json` | `activity.rs` | Activity timestamps |
+| `~/.capacitor/file-activity.json` | `activity.rs`, `sessions.rs` | Monorepo activity fallback |
+| `~/.capacitor/ended-sessions/*` | `handle.rs`, `cleanup.rs` | Tombstones |
+| `~/.capacitor/hud-hook-heartbeat` | Swift UI | Hook health proof |
 | `~/.capacitor/config.json` | `config.rs` | User preferences |
 | `~/.capacitor/projects.json` | `projects.rs` | Cached projects |
 | `~/.claude/settings.json` | `setup.rs`, `agents/claude.rs` | Hook validation, agent config |
@@ -329,9 +339,9 @@ osascript -e "tell application \"iTerm\" to create window with default profile c
 | **SessionStart Hook** | Create lock dir, spawn lock-holder, write state, write activity |
 | **ToolUse Hook** | Update state, write activity |
 | **SessionEnd Hook** | Create tombstone, remove session record, release lock |
-| **cd Command** | Update shell-cwd.json, append to shell-history.jsonl |
+| **Shell precmd** | Update shell-cwd.json, append to shell-history.jsonl (when CWD changes) |
 | **Project Click** | AppleScript/osascript, tmux commands, app activation |
-| **Install Hooks** | Copy binary, modify ~/.claude/settings.json |
+| **Install Hooks** | Symlink binary, modify ~/.claude/settings.json |
 | **Window Move** | UserDefaults write |
 | **Settings Change** | config.json write, UserDefaults write |
 
@@ -357,10 +367,14 @@ osascript -e "tell application \"iTerm\" to create window with default profile c
 ## 5. Cleanup & Self-Healing
 
 ### Startup Cleanup (`cleanup.rs`)
-1. Find all lock directories in `~/.capacitor/sessions/`
-2. Check if lock-holder PID is alive
-3. If dead: SIGTERM any stale processes, remove lock directory
-4. Remove tombstone files older than 60 seconds
+Runs once per app launch via `run_startup_cleanup()`:
+
+1. Kill orphaned lock-holder processes (monitored PID dead)
+2. Remove legacy MD5-hash locks with dead PIDs
+3. Remove session-based locks with dead PIDs
+4. Remove orphaned session records (no active lock)
+5. Remove old session records (>24h)
+6. Remove old tombstones (>60s)
 
 ### Session End Cleanup (`lock_holder.rs`)
 1. Catch SIGTERM or detect parent death
