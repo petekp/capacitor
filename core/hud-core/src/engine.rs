@@ -858,10 +858,6 @@ impl HudEngine {
                 reason: reason.clone(),
             }),
             _ if !binary_ok => Some(HookIssue::BinaryMissing),
-            HookStatus::Outdated { current, latest } => Some(HookIssue::ConfigOutdated {
-                current: current.clone(),
-                latest: latest.clone(),
-            }),
             HookStatus::NotInstalled => Some(HookIssue::ConfigMissing),
             HookStatus::Installed { .. } => {
                 // Hooks are installed, check if they're firing

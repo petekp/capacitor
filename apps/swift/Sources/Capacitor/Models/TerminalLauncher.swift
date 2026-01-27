@@ -1,5 +1,8 @@
 import AppKit
 import Foundation
+import os.log
+
+private let logger = Logger(subsystem: "com.capacitor.app", category: "TerminalLauncher")
 
 // MARK: - ParentApp Terminal Extensions
 
@@ -79,57 +82,44 @@ final class TerminalLauncher {
     // MARK: - Public API
 
     func launchTerminal(for project: Project, shellState: ShellCwdState? = nil) {
+        Task {
+            await launchTerminalAsync(for: project, shellState: shellState)
+        }
+    }
+
+    private func launchTerminalAsync(for project: Project, shellState: ShellCwdState? = nil) async {
         // First, check if there's a tmux session for this project path.
         // This is more reliable than shell-cwd.json since it queries tmux directly.
-        if let tmuxSession = findTmuxSessionForPath(project.path) {
-            switchToTmuxSessionAndActivate(session: tmuxSession)
+        if let tmuxSession = await findTmuxSessionForPath(project.path) {
+            await switchToTmuxSessionAndActivate(session: tmuxSession)
             return
         }
 
         // Fallback to shell-cwd.json based matching
         if let match = findExistingShell(for: project, in: shellState) {
-            activateExistingTerminal(shell: match.shell, pid: match.pid, projectPath: project.path, shellState: shellState)
+            await activateExistingTerminal(shell: match.shell, pid: match.pid, projectPath: project.path, shellState: shellState)
         } else {
             launchNewTerminal(for: project)
         }
     }
 
-    private func switchToTmuxSessionAndActivate(session: String) {
+    private func switchToTmuxSessionAndActivate(session: String) async {
         // Check if there's an attached tmux client
-        if hasTmuxClientAttached() {
+        if await hasTmuxClientAttached() {
             // Switch the existing client to the target session
             runBashScript("tmux switch-client -t '\(session)' 2>/dev/null")
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-                self?.activateTerminalApp()
-            }
+            try? await Task.sleep(nanoseconds: 100_000_000)
+            activateTerminalApp()
         } else {
             // No client attached - launch a new terminal window that attaches to the session
             launchTerminalWithTmuxSession(session)
         }
     }
 
-    private func hasTmuxClientAttached() -> Bool {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = ["tmux", "list-clients"]
-
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = FileHandle.nullDevice
-
-        do {
-            try process.run()
-            process.waitUntilExit()
-
-            guard process.terminationStatus == 0 else { return false }
-
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            guard let output = String(data: data, encoding: .utf8) else { return false }
-
-            return !output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        } catch {
-            return false
-        }
+    private func hasTmuxClientAttached() async -> Bool {
+        let result = await runBashScriptWithResultAsync("tmux list-clients 2>/dev/null")
+        guard result.exitCode == 0, let output = result.output else { return false }
+        return !output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private func launchTerminalWithTmuxSession(_ session: String) {
@@ -183,38 +173,21 @@ final class TerminalLauncher {
 
     /// Query tmux directly for a session matching the project path.
     /// Returns the session name if found.
-    private func findTmuxSessionForPath(_ projectPath: String) -> String? {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = ["tmux", "list-windows", "-a", "-F", "#{session_name}\t#{pane_current_path}"]
+    private func findTmuxSessionForPath(_ projectPath: String) async -> String? {
+        let result = await runBashScriptWithResultAsync("tmux list-windows -a -F '#{session_name}\t#{pane_current_path}' 2>/dev/null")
+        guard result.exitCode == 0, let output = result.output else { return nil }
 
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = FileHandle.nullDevice
-
-        do {
-            try process.run()
-            process.waitUntilExit()
-
-            guard process.terminationStatus == 0 else { return nil }
-
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            guard let output = String(data: data, encoding: .utf8) else { return nil }
-
-            // Parse tab-separated lines: "session_name\tpath"
-            for line in output.split(separator: "\n") {
-                let parts = line.split(separator: "\t", maxSplits: 1)
-                guard parts.count == 2 else { continue }
-                let sessionName = String(parts[0])
-                let panePath = String(parts[1])
-                if panePath == projectPath {
-                    return sessionName
-                }
+        // Parse tab-separated lines: "session_name\tpath"
+        for line in output.split(separator: "\n") {
+            let parts = line.split(separator: "\t", maxSplits: 1)
+            guard parts.count == 2 else { continue }
+            let sessionName = String(parts[0])
+            let panePath = String(parts[1])
+            if panePath == projectPath {
+                return sessionName
             }
-            return nil
-        } catch {
-            return nil
         }
+        return nil
     }
 
     private func partitionByTmux(_ shells: [String: ShellEntry]) -> (nonTmux: [String: ShellEntry], tmux: [String: ShellEntry]) {
@@ -256,7 +229,7 @@ final class TerminalLauncher {
 
     // MARK: - Strategy-Based Activation
 
-    private func activateExistingTerminal(shell: ShellEntry, pid: String, projectPath: String, shellState: ShellCwdState?) {
+    private func activateExistingTerminal(shell: ShellEntry, pid: String, projectPath: String, shellState: ShellCwdState?) async {
         let shellCount = shellState?.shells.count ?? 1
         let scenario = ShellScenario(
             parentApp: ParentApp(fromString: shell.parentApp),
@@ -273,18 +246,19 @@ final class TerminalLauncher {
             shellState: shellState
         )
 
-        let primarySuccess = executeStrategy(behavior.primaryStrategy, context: context)
+        let primarySuccess = await executeStrategy(behavior.primaryStrategy, context: context)
 
         if !primarySuccess, let fallback = behavior.fallbackStrategy {
-            _ = executeStrategy(fallback, context: context)
+            logger.info("Primary strategy \(String(describing: behavior.primaryStrategy)) failed, trying fallback: \(String(describing: fallback))")
+            _ = await executeStrategy(fallback, context: context)
         }
     }
 
     @discardableResult
-    private func executeStrategy(_ strategy: ActivationStrategy, context: ActivationContext) -> Bool {
+    private func executeStrategy(_ strategy: ActivationStrategy, context: ActivationContext) async -> Bool {
         switch strategy {
         case .activateByTTY:
-            return activateByTTY(context: context)
+            return await activateByTTY(context: context)
         case .activateByApp:
             return activateByApp(context: context)
         case .activateKittyRemote:
@@ -294,7 +268,7 @@ final class TerminalLauncher {
         case .switchTmuxSession:
             return switchTmuxSession(context: context)
         case .activateHostFirst:
-            return activateHostFirst(context: context)
+            return await activateHostFirst(context: context)
         case .launchNewTerminal:
             launchNewTerminalForContext(context: context)
             return true
@@ -307,7 +281,7 @@ final class TerminalLauncher {
 
     // MARK: - Strategy Implementations
 
-    private func activateByTTY(context: ActivationContext) -> Bool {
+    private func activateByTTY(context: ActivationContext) async -> Bool {
         let tty = context.shell.tty
         let parentApp = ParentApp(fromString: context.shell.parentApp)
 
@@ -324,7 +298,7 @@ final class TerminalLauncher {
             }
         }
 
-        if let owningTerminal = discoverTerminalOwningTTY(tty: tty) {
+        if let owningTerminal = await discoverTerminalOwningTTY(tty: tty) {
             switch owningTerminal {
             case .iTerm:
                 activateITermSession(tty: tty)
@@ -388,10 +362,10 @@ final class TerminalLauncher {
         return true
     }
 
-    private func activateHostFirst(context: ActivationContext) -> Bool {
+    private func activateHostFirst(context: ActivationContext) async -> Bool {
         let hostTTY = context.shell.tmuxClientTty ?? context.shell.tty
 
-        let ttyActivated = activateTerminalByTTYDiscovery(tty: hostTTY)
+        let ttyActivated = await activateTerminalByTTYDiscovery(tty: hostTTY)
 
         if let session = context.shell.tmuxSession {
             runBashScript("tmux switch-client -t '\(session)' 2>/dev/null")
@@ -418,6 +392,7 @@ final class TerminalLauncher {
     }
 
     private func activatePriorityFallback(context: ActivationContext) -> Bool {
+        logger.info("Using priority fallback: activating first running terminal (no specific terminal found for project)")
         activateFirstRunningTerminal()
         return true
     }
@@ -452,8 +427,9 @@ final class TerminalLauncher {
     // MARK: - TTY Discovery
 
     @discardableResult
-    private func activateTerminalByTTYDiscovery(tty: String) -> Bool {
-        if let owningTerminal = discoverTerminalOwningTTY(tty: tty) {
+    private func activateTerminalByTTYDiscovery(tty: String) async -> Bool {
+        if let owningTerminal = await discoverTerminalOwningTTY(tty: tty) {
+            logger.debug("TTY discovery found terminal: \(owningTerminal.displayName) for tty: \(tty)")
             switch owningTerminal {
             case .iTerm:
                 activateITermSession(tty: tty)
@@ -464,22 +440,23 @@ final class TerminalLauncher {
             }
             return true
         } else {
+            logger.info("TTY discovery failed for tty: \(tty) - falling back to first running terminal")
             activateFirstRunningTerminal()
             return false
         }
     }
 
-    private func discoverTerminalOwningTTY(tty: String) -> ParentApp? {
-        if findRunningApp(.iTerm) != nil, queryITermForTTY(tty) {
+    private func discoverTerminalOwningTTY(tty: String) async -> ParentApp? {
+        if findRunningApp(.iTerm) != nil, await queryITermForTTY(tty) {
             return .iTerm
         }
-        if findRunningApp(.terminal) != nil, queryTerminalAppForTTY(tty) {
+        if findRunningApp(.terminal) != nil, await queryTerminalAppForTTY(tty) {
             return .terminal
         }
         return nil
     }
 
-    private func queryITermForTTY(_ tty: String) -> Bool {
+    private func queryITermForTTY(_ tty: String) async -> Bool {
         let script = """
             tell application "iTerm"
                 repeat with w in windows
@@ -494,10 +471,10 @@ final class TerminalLauncher {
             end tell
             return "not found"
             """
-        return runAppleScriptWithResult(script) == "found"
+        return await runAppleScriptWithResultAsync(script) == "found"
     }
 
-    private func queryTerminalAppForTTY(_ tty: String) -> Bool {
+    private func queryTerminalAppForTTY(_ tty: String) async -> Bool {
         let script = """
             tell application "Terminal"
                 repeat with w in windows
@@ -510,7 +487,7 @@ final class TerminalLauncher {
             end tell
             return "not found"
             """
-        return runAppleScriptWithResult(script) == "found"
+        return await runAppleScriptWithResultAsync(script) == "found"
     }
 
     // MARK: - TTY-Based Tab Selection (AppleScript)
@@ -605,8 +582,9 @@ final class TerminalLauncher {
     }
 
     private func scheduleTerminalActivation() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + Constants.activationDelaySeconds) { [weak self] in
-            self?.activateTerminalApp()
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: UInt64(Constants.activationDelaySeconds * 1_000_000_000))
+            activateTerminalApp()
         }
     }
 
@@ -617,24 +595,51 @@ final class TerminalLauncher {
         process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
         process.arguments = ["-e", script]
         try? process.run()
-        process.waitUntilExit()
     }
 
-    private func runAppleScriptWithResult(_ script: String) -> String? {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        process.arguments = ["-e", script]
+    private func runAppleScriptAsync(_ script: String) async {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+                process.arguments = ["-e", script]
+                try? process.run()
+                process.waitUntilExit()
+                continuation.resume()
+            }
+        }
+    }
 
-        let pipe = Pipe()
-        process.standardOutput = pipe
+    private func runAppleScriptWithResultAsync(_ script: String) async -> String? {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+                process.arguments = ["-e", script]
 
-        do {
-            try process.run()
-            process.waitUntilExit()
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            return String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
-        } catch {
-            return nil
+                let pipe = Pipe()
+                let errorPipe = Pipe()
+                process.standardOutput = pipe
+                process.standardError = errorPipe
+
+                do {
+                    try process.run()
+                    process.waitUntilExit()
+
+                    if process.terminationStatus != 0 {
+                        let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+                        let errorMsg = String(data: errorData, encoding: .utf8) ?? "unknown"
+                        logger.warning("AppleScript failed (exit \(process.terminationStatus)): \(errorMsg)")
+                    }
+
+                    let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                    let result = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+                    continuation.resume(returning: result)
+                } catch {
+                    logger.error("AppleScript launch failed: \(error.localizedDescription)")
+                    continuation.resume(returning: nil)
+                }
+            }
         }
     }
 
@@ -648,6 +653,34 @@ final class TerminalLauncher {
         process.environment = env
 
         try? process.run()
+    }
+
+    private func runBashScriptWithResultAsync(_ script: String) async -> (exitCode: Int32, output: String?) {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: "/bin/bash")
+                process.arguments = ["-c", script]
+
+                var env = ProcessInfo.processInfo.environment
+                env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:" + (env["PATH"] ?? "")
+                process.environment = env
+
+                let pipe = Pipe()
+                process.standardOutput = pipe
+                process.standardError = FileHandle.nullDevice
+
+                do {
+                    try process.run()
+                    process.waitUntilExit()
+                    let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                    let output = String(data: data, encoding: .utf8)
+                    continuation.resume(returning: (process.terminationStatus, output))
+                } catch {
+                    continuation.resume(returning: (-1, nil))
+                }
+            }
+        }
     }
 }
 

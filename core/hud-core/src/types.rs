@@ -361,8 +361,6 @@ pub enum HookIssue {
     SymlinkBroken { target: String, reason: String },
     /// Hook configuration missing or incomplete in settings.json
     ConfigMissing,
-    /// Hook script/binary version is outdated
-    ConfigOutdated { current: String, latest: String },
     /// Hooks are installed but not firing (heartbeat stale or missing)
     NotFiring { last_seen_secs: Option<u64> },
 }

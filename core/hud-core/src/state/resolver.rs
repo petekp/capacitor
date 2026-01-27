@@ -7,7 +7,7 @@ use std::path::Path;
 
 use crate::types::SessionState;
 
-use super::lock::{find_all_locks_for_path, find_matching_child_lock};
+use super::lock::{find_all_locks_for_path, find_lock_for_path};
 use super::path_utils::normalize_path_for_comparison;
 use super::store::StateStore;
 use super::types::SessionRecord;
@@ -160,7 +160,7 @@ pub fn resolve_state_with_details(
         // Lock(s) exist - find the best matching one
         // The lock proves Claude is running (lock holder monitors PID), so we trust the
         // recorded state even if the timestamp is stale.
-        let lock = find_matching_child_lock(lock_dir, project_path, None, None)?;
+        let lock = find_lock_for_path(lock_dir, project_path)?;
         let record = find_record_for_lock_path(store, &lock.path);
         let (state, session_id) = match record {
             Some(r) => (r.state, Some(r.session_id.clone())),

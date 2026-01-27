@@ -431,12 +431,7 @@ pub fn find_all_locks_for_path(lock_base: &Path, project_path: &str) -> Vec<Lock
 /// When multiple locks match (concurrent sessions), returns the newest by `created` timestamp.
 ///
 /// This is used by the resolver to associate a lock with a state record.
-pub fn find_matching_child_lock(
-    lock_base: &Path,
-    project_path: &str,
-    target_pid: Option<u32>,
-    target_cwd: Option<&str>,
-) -> Option<LockInfo> {
+pub fn find_lock_for_path(lock_base: &Path, project_path: &str) -> Option<LockInfo> {
     let project_path_normalized = normalize_path(project_path);
     let entries = fs::read_dir(lock_base).ok()?;
 
@@ -455,25 +450,19 @@ pub fn find_matching_child_lock(
                         continue;
                     }
 
-                    // Check if this lock matches the target criteria
-                    let pid_matches = target_pid.map_or(true, |pid| pid == info.pid);
-                    let path_matches = target_cwd.map_or(true, |cwd| cwd == info.path);
+                    // Multiple exact matches (concurrent sessions): prefer newest
+                    match &best_match {
+                        None => {
+                            best_match = Some(info);
+                        }
+                        Some(current) => {
+                            let info_created = info.created.unwrap_or(0);
+                            let current_created = current.created.unwrap_or(0);
 
-                    if pid_matches && path_matches {
-                        // Multiple exact matches (concurrent sessions): prefer newest
-                        match &best_match {
-                            None => {
+                            if info_created > current_created
+                                || (info_created == current_created && info.path > current.path)
+                            {
                                 best_match = Some(info);
-                            }
-                            Some(current) => {
-                                let info_created = info.created.unwrap_or(0);
-                                let current_created = current.created.unwrap_or(0);
-
-                                if info_created > current_created
-                                    || (info_created == current_created && info.path > current.path)
-                                {
-                                    best_match = Some(info);
-                                }
                             }
                         }
                     }
@@ -1071,7 +1060,7 @@ mod tests {
     }
 
     #[test]
-    fn test_find_matching_child_lock_prefers_exact_over_newer_child() {
+    fn test_find_lock_for_path_prefers_exact_over_newer_child() {
         // Regression test for the bug where a newer child lock beat an older exact lock
         use super::tests_helper::create_lock_with_timestamps;
 
@@ -1087,7 +1076,7 @@ mod tests {
         create_lock_with_timestamps(temp.path(), pid, "/project/src", proc_started, 2000);
 
         // When querying /project, should find the EXACT match, not the newer child
-        let result = find_matching_child_lock(temp.path(), "/project", None, None).unwrap();
+        let result = find_lock_for_path(temp.path(), "/project").unwrap();
 
         assert_eq!(
             result.path, "/project",
@@ -1097,7 +1086,7 @@ mod tests {
 
     #[test]
     fn test_find_matching_lock_exact_match_only() {
-        // With exact-match-only policy, find_matching_child_lock only
+        // With exact-match-only policy, find_lock_for_path only
         // returns locks at the exact queried path.
         use super::tests_helper::create_lock_with_timestamps;
 
@@ -1110,14 +1099,14 @@ mod tests {
         create_lock_with_timestamps(temp.path(), pid, "/project/src", proc_started, 1000);
 
         // Query /project should return None (no exact match, no child inheritance)
-        let result = find_matching_child_lock(temp.path(), "/project", None, None);
+        let result = find_lock_for_path(temp.path(), "/project");
         assert!(
             result.is_none(),
             "Should not find child lock when querying parent path"
         );
 
         // Query /project/src should work (exact match)
-        let result = find_matching_child_lock(temp.path(), "/project/src", None, None);
+        let result = find_lock_for_path(temp.path(), "/project/src");
         assert!(result.is_some());
         assert_eq!(result.unwrap().path, "/project/src");
     }
@@ -1139,7 +1128,7 @@ mod tests {
         // Note: create_lock_with_timestamps uses path-based naming, so this
         // creates a separate lock. For this test, we verify the newer timestamp wins.
 
-        let result = find_matching_child_lock(temp.path(), "/project", None, None);
+        let result = find_lock_for_path(temp.path(), "/project");
         assert!(result.is_some(), "Should find exact match");
     }
 

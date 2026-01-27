@@ -1,9 +1,20 @@
-//! Startup cleanup for stale artifacts.
+//! Startup cleanup for old and orphaned artifacts.
+//!
+//! ## Terminology
+//!
+//! - **Stale**: Record not updated in 5 minutes (may still be valid, just quiet)
+//! - **Expired**: Record older than 24 hours (definitely old, should be removed)
+//! - **Orphaned**: Lock/process whose monitored PID is dead
+//!
+//! ## Cleanup Operations
 //!
 //! Performs housekeeping when the HUD app launches:
-//! 1. **Lock cleanup**: Removes locks with dead PIDs
-//! 2. **Orphaned session cleanup**: Removes session records without active locks
-//! 3. **Session cleanup**: Removes records older than 24 hours
+//! 1. **Orphaned lock holders**: Kills lock-holder processes monitoring dead PIDs
+//! 2. **Orphaned locks**: Removes lock directories with dead PIDs
+//! 3. **Orphaned sessions**: Removes stale session records without active locks
+//! 4. **Expired sessions**: Removes session records older than 24 hours
+//! 5. **Old tombstones**: Removes tombstone files older than 1 minute
+//! 6. **Old activity**: Removes file activity entries older than 24 hours
 //!
 //! This runs once per app launch — frequent enough to prevent cruft accumulation,
 //! infrequent enough to not impact performance.
@@ -16,6 +27,7 @@ use chrono::{Duration, Utc};
 
 use super::lock::{is_pid_alive, read_lock_info};
 use super::store::StateStore;
+use crate::activity::{ActivityStore, CLEANUP_THRESHOLD};
 
 use sysinfo::{ProcessRefreshKind, System, UpdateKind};
 
@@ -120,18 +132,20 @@ fn parse_monitored_pid(cmd: &[String]) -> Option<u32> {
 /// Results from a cleanup operation.
 #[derive(Debug, Default, Clone, uniffi::Record)]
 pub struct CleanupStats {
-    /// Number of stale lock directories removed.
+    /// Number of orphaned lock directories removed (dead PIDs).
     pub locks_removed: u32,
-    /// Number of legacy MD5-hash locks removed.
+    /// Number of legacy MD5-hash locks removed (dead PIDs).
     pub legacy_locks_removed: u32,
-    /// Number of orphaned lock-holder processes killed.
+    /// Number of orphaned lock-holder processes killed (monitoring dead PIDs).
     pub orphaned_processes_killed: u32,
-    /// Number of orphaned session records removed (no active lock).
+    /// Number of orphaned session records removed (stale + no active lock).
     pub orphaned_sessions_removed: u32,
-    /// Number of old session records removed (> 24 hours).
+    /// Number of expired session records removed (> 24 hours old).
     pub sessions_removed: u32,
-    /// Number of old tombstone files removed.
+    /// Number of old tombstone files removed (> 1 minute old).
     pub tombstones_removed: u32,
+    /// Number of old file activity entries cleaned up (> 24 hours old).
+    pub activity_entries_removed: u32,
     /// Errors encountered during cleanup.
     pub errors: Vec<String>,
 }
@@ -139,6 +153,18 @@ pub struct CleanupStats {
 /// Performs startup cleanup on all artifacts.
 ///
 /// This is the main entry point called on app launch.
+///
+/// # Race Condition (Accepted)
+///
+/// This function follows a read-modify-write pattern on `sessions.json` without
+/// file locking. If a hook event fires during cleanup, the hook's write could be
+/// lost when cleanup saves its modified state. This risk is accepted because:
+///
+/// 1. Cleanup runs only at app launch (very low frequency)
+/// 2. The race window is small (milliseconds)
+/// 3. Lost events self-heal on next hook event (state is refreshed)
+///
+/// Adding file locking would add complexity for marginal benefit.
 pub fn run_startup_cleanup(lock_base: &Path, state_file: &Path) -> CleanupStats {
     let mut stats = CleanupStats::default();
 
@@ -180,14 +206,41 @@ pub fn run_startup_cleanup(lock_base: &Path, state_file: &Path) -> CleanupStats 
         stats.errors.extend(tombstone_stats.errors);
     }
 
+    // 6. Clean up old file activity entries
+    // Activity file is sibling to state file: ~/.capacitor/file-activity.json
+    let activity_file = state_file.with_file_name("file-activity.json");
+    if activity_file.exists() {
+        let mut activity_store = ActivityStore::load(&activity_file);
+        let entries_before: u32 = activity_store
+            .sessions
+            .values()
+            .map(|s| s.activity.len() as u32)
+            .sum();
+        activity_store.cleanup_old_entries(CLEANUP_THRESHOLD);
+        let entries_after: u32 = activity_store
+            .sessions
+            .values()
+            .map(|s| s.activity.len() as u32)
+            .sum();
+        stats.activity_entries_removed = entries_before.saturating_sub(entries_after);
+
+        if let Err(e) = activity_store.save(&activity_file) {
+            stats
+                .errors
+                .push(format!("Failed to save activity file: {}", e));
+        }
+    }
+
     stats
 }
 
-/// Removes lock directories with dead PIDs.
+/// Removes orphaned lock directories (dead PIDs or corrupt metadata).
 ///
 /// Scans all `.lock` directories in the lock base and removes any where:
-/// - The PID no longer exists
+/// - The PID no longer exists (orphaned - the process has exited)
 /// - The lock metadata is corrupt/unreadable
+///
+/// Note: Despite the name, this checks PID liveness, not timestamp staleness.
 fn cleanup_stale_locks(lock_base: &Path) -> CleanupStats {
     let mut stats = CleanupStats::default();
 
@@ -439,10 +492,13 @@ fn cleanup_old_tombstones(tombstones_dir: &Path) -> CleanupStats {
     stats
 }
 
-/// Removes session records older than 24 hours.
+/// Removes expired session records (older than 24 hours).
 ///
 /// Uses `state_changed_at` as the age reference — this is when the session
 /// last transitioned states, which is more meaningful than `updated_at`.
+///
+/// "Expired" means beyond the 24-hour retention threshold, regardless of
+/// whether the session has an active lock or recent updates.
 fn cleanup_old_sessions(state_file: &Path) -> CleanupStats {
     let mut stats = CleanupStats::default();
 

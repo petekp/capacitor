@@ -4,6 +4,21 @@
 //! that activity to projects using boundary detection. This enables
 //! accurate project state even in monorepo scenarios.
 //!
+//! ## Two Activity Implementations
+//!
+//! There are two activity implementations in the codebase:
+//!
+//! 1. **Hook handler** (`hud-hook/src/handle.rs`): Lightweight JSON manipulation
+//!    that runs on every tool use event. Writes raw file paths without boundary
+//!    detection to keep the hook fast (<5ms latency target).
+//!
+//! 2. **ActivityStore** (this module): Full-featured store used by the engine.
+//!    Performs project boundary detection on load, converting hook format to
+//!    native format with attributed project paths.
+//!
+//! The formats are compatible—`ActivityStore::load()` handles both and converts
+//! hook format to native format automatically.
+//!
 //! ## Design Principles (from Rust Engineering guide)
 //!
 //! - **Durable-first**: Write to disk before returning

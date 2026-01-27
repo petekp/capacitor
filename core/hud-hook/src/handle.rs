@@ -23,9 +23,10 @@ use hud_core::state::{
 };
 use hud_core::types::SessionState;
 use std::env;
-use std::io::{self, Read};
+use std::io::{self, Read, Write as _};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use tempfile::NamedTempFile;
 
 const STATE_FILE: &str = ".capacitor/sessions.json";
 const LOCK_DIR: &str = ".capacitor/sessions";
@@ -252,6 +253,22 @@ fn is_active_state(state: Option<SessionState>) -> bool {
 }
 
 /// Extracts file activity info from file-modifying tools.
+///
+/// ## Tool Filtering (Intentional)
+///
+/// Only these tools are tracked:
+/// - `Edit` - Modifies existing file content
+/// - `Write` - Creates or overwrites files
+/// - `Read` - Reads file content (important for context)
+/// - `NotebookEdit` - Modifies Jupyter notebooks
+///
+/// Intentionally **NOT** tracked:
+/// - `Glob`, `Grep` - File discovery tools (too noisy, many matches)
+/// - `Bash` - Indirect file access (complex to parse which files)
+/// - `Task`, `WebFetch`, etc. - Not file-focused
+///
+/// The goal is to show meaningful file modifications in the HUD activity feed,
+/// not every file the agent happens to search through.
 fn extract_file_activity(
     tool_name: &Option<String>,
     file_path: &Option<String>,
@@ -410,6 +427,25 @@ fn touch_heartbeat() {
     }
 }
 
+/// Records file activity to the activity file atomically.
+///
+/// # Architecture Note
+///
+/// This is a lightweight activity implementation separate from `ActivityStore` in
+/// `hud-core/src/activity.rs`. The separation exists because:
+///
+/// 1. **Hook must stay fast**: This code runs on every tool use event. Direct JSON
+///    manipulation is faster than loading the full `ActivityStore` with boundary detection.
+///
+/// 2. **Different write patterns**: The hook writes raw file paths; the engine's
+///    `ActivityStore` performs project boundary detection on load. This keeps the
+///    hook binary small and fast.
+///
+/// 3. **Atomicity**: Both implementations use atomic writes, but through different means.
+///    This implementation uses `write_file_atomic()` with tempfile.
+///
+/// The activity file format is compatible between both implementations—`ActivityStore::load()`
+/// can parse the hook's format and convert it to native format with boundary detection.
 fn record_file_activity(
     activity_file: &PathBuf,
     session_id: &str,
@@ -472,10 +508,10 @@ fn record_file_activity(
     // Update cwd
     session["cwd"] = json!(cwd);
 
-    // Write back
+    // Write back atomically to prevent corruption on crash
     match serde_json::to_string_pretty(&activity) {
         Ok(content) => {
-            if let Err(e) = fs::write(activity_file, content) {
+            if let Err(e) = write_file_atomic(activity_file, &content) {
                 tracing::warn!(error = %e, "Failed to write activity file");
             }
         }
@@ -507,9 +543,10 @@ fn remove_session_activity(activity_file: &PathBuf, session_id: &str) {
         sessions.remove(session_id);
     }
 
+    // Write back atomically to prevent corruption on crash
     match serde_json::to_string_pretty(&activity) {
         Ok(content) => {
-            if let Err(e) = fs::write(activity_file, content) {
+            if let Err(e) = write_file_atomic(activity_file, &content) {
                 tracing::warn!(error = %e, "Failed to write activity file");
             }
         }
@@ -546,6 +583,17 @@ fn remove_tombstone(tombstones_dir: &Path, session_id: &str) {
             tracing::debug!(session = %session_id, "Cleared tombstone (new SessionStart)");
         }
     }
+}
+
+/// Writes content to a file atomically using a temporary file and rename.
+/// This prevents data corruption if the process crashes mid-write.
+fn write_file_atomic(path: &Path, content: &str) -> std::io::Result<()> {
+    let dir = path.parent().unwrap_or_else(|| Path::new("."));
+    let mut tmp = NamedTempFile::new_in(dir)?;
+    tmp.write_all(content.as_bytes())?;
+    tmp.flush()?;
+    tmp.persist(path)?;
+    Ok(())
 }
 
 #[cfg(test)]

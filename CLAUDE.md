@@ -83,6 +83,7 @@ Hooks → `~/.capacitor/sessions.json` → Capacitor reads
 - **Focus override clears only for active sessions** — When user clicks a project, the manual override persists until they click a different project OR navigate to a directory with an active Claude session. Navigating to a project without a session keeps focus on the override (prevents timestamp racing). See `ActiveProjectResolver.swift`.
 - **Hook binary must be symlinked, not copied** — Copying adhoc-signed Rust binaries to `~/.local/bin/` triggers macOS Gatekeeper SIGKILL (exit 137). The binary works fine when run from `target/release/` but dies when copied. Fix: use symlink (`ln -s target/release/hud-hook ~/.local/bin/hud-hook`). See `scripts/sync-hooks.sh`.
 - **Async hooks require both fields** — Claude Code's hook validation requires async hooks to have BOTH `"async": true` AND `"timeout": 30`. Missing either field causes "Settings configured" to show red. If hooks stop working after an upgrade, check `~/.claude/settings.json` for malformed hook entries. See `setup.rs:422-426`.
+- **Cleanup race condition (accepted)** — `run_startup_cleanup()` follows read-modify-write on `sessions.json` without file locking. Concurrent hook events arriving during cleanup could be lost. This risk is accepted because: (1) cleanup runs only at app launch (low frequency), (2) the window is small (milliseconds), (3) lost events self-heal on next hook event. See `cleanup.rs`.
 
 ## Documentation
 

@@ -2,6 +2,20 @@
 
 This document maps out all scenarios for the "click project → activate terminal" feature.
 
+## Quick Reference: Tab Selection Support
+
+| Terminal | Tab Selection | Method | Notes |
+|----------|--------------|--------|-------|
+| iTerm2 | ✅ Full | AppleScript | Query sessions by TTY, select window/tab |
+| Terminal.app | ✅ Full | AppleScript | Query by TTY, select tab |
+| kitty | ✅ Full | `kitty @` | Requires `allow_remote_control yes` |
+| Ghostty | ❌ None | — | No external API (as of 2024) |
+| Warp | ❌ None | — | No AppleScript/CLI API |
+| Alacritty | N/A | — | No tabs, windows only |
+| Cursor/VS Code | ⚠️ Window only | CLI | `cursor /path` activates window, no terminal panel focus |
+
+**Fallback behavior:** When tab selection isn't available, we activate the app (brings all windows forward) but can't select the specific tab containing the project.
+
 ## Dimensions
 
 | Dimension | Values |

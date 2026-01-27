@@ -53,10 +53,6 @@ pub struct DependencyStatus {
 #[derive(Debug, Clone, uniffi::Enum)]
 pub enum HookStatus {
     NotInstalled,
-    Outdated {
-        current: String,
-        latest: String,
-    },
     Installed {
         version: String,
     },
