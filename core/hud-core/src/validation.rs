@@ -267,11 +267,13 @@ pub fn validate_project_path(path: &str, pinned_projects: &[String]) -> Validati
 }
 
 /// Checks if a path has a CLAUDE.md file.
+#[must_use]
 pub fn has_claude_md(path: &str) -> bool {
     Path::new(path).join("CLAUDE.md").exists()
 }
 
 /// Checks if a path has any project markers (.git, package.json, etc.)
+#[must_use]
 pub fn has_any_project_marker(path: &str) -> bool {
     let dir = Path::new(path);
     PROJECT_MARKERS

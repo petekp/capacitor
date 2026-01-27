@@ -45,18 +45,17 @@
 //! Why? Common scenario: user pins `/project` but runs Claude from `/project/src`.
 //! We want the HUD to show activity for the pinned project.
 
+use super::path_utils::{normalize_path_for_comparison, normalize_path_for_hashing};
+use super::types::LockInfo;
 use std::cell::RefCell;
 use std::fs;
 use std::path::Path;
-use std::time::Instant;
-
-use super::path_utils::{normalize_path_for_comparison, normalize_path_for_hashing};
-use super::types::LockInfo;
 
 // Thread-local sysinfo cache. We use per-PID refresh (O(1)) instead of scanning
 // all processes (O(n)). This matters because lock checks happen on every UI refresh.
+// No TTL needed: refresh_process_specifics always fetches fresh data for the specific PID.
 thread_local! {
-    static SYSTEM_CACHE: RefCell<Option<(sysinfo::System, Instant)>> = const { RefCell::new(None) };
+    static SYSTEM_CACHE: RefCell<Option<sysinfo::System>> = const { RefCell::new(None) };
 }
 
 /// Normalize a path for consistent comparison.
@@ -79,6 +78,7 @@ fn compute_lock_hash(path: &str) -> String {
     format!("{:x}", md5::compute(normalized))
 }
 
+#[must_use]
 pub fn is_pid_alive(pid: u32) -> bool {
     #[cfg(unix)]
     {
@@ -106,7 +106,7 @@ pub fn get_process_start_time(pid: u32) -> Option<u64> {
         let mut cache = cache.borrow_mut();
 
         // Initialize System if needed (empty, no initial process scan)
-        let (sys, _) = cache.get_or_insert_with(|| (System::new(), Instant::now()));
+        let sys = cache.get_or_insert_with(System::new);
 
         // Refresh ONLY this specific PID - O(1) instead of O(all_processes)
         let sysinfo_pid = Pid::from(pid as usize);
@@ -149,7 +149,7 @@ fn is_pid_alive_with_legacy_checks(pid: u32) -> bool {
     SYSTEM_CACHE.with(|cache| {
         let mut cache = cache.borrow_mut();
 
-        let (sys, _) = cache.get_or_insert_with(|| (System::new(), Instant::now()));
+        let sys = cache.get_or_insert_with(System::new);
 
         // Refresh ONLY this specific PID with cmd info for legacy verification
         let sysinfo_pid = Pid::from(pid as usize);
@@ -159,7 +159,7 @@ fn is_pid_alive_with_legacy_checks(pid: u32) -> bool {
         );
 
         if let Some(process) = sys.process(sysinfo_pid) {
-            let name = process.name().to_lowercase();
+            let name = process.name().to_string().to_lowercase();
 
             // Check process name for "claude"
             if name.contains("claude") {
@@ -342,6 +342,7 @@ fn check_lock_for_path(lock_base: &Path, project_path: &str) -> Option<LockInfo>
 ///
 /// Used to suppress hook health warnings during long responses—if a lock exists,
 /// Claude is definitely running even if the heartbeat is stale.
+#[must_use]
 pub fn has_any_active_lock(lock_base: &Path) -> bool {
     let entries = match fs::read_dir(lock_base) {
         Ok(e) => e,
@@ -369,6 +370,7 @@ pub fn has_any_active_lock(lock_base: &Path) -> bool {
 /// 2. Child locks (e.g., `/project/src` lock makes `/project` active)
 ///
 /// Does NOT check parent paths. A lock at `/project` doesn't make `/project/src` active.
+#[must_use]
 pub fn is_session_running(lock_base: &Path, project_path: &str) -> bool {
     // Only exact matches - no child inheritance.
     // Each project shows only sessions started at that exact path.
@@ -712,6 +714,7 @@ pub fn count_other_session_locks(lock_base: &Path, session_id: &str, exclude_pid
 ///
 /// This is the preferred method for releasing locks as it directly targets
 /// the specific process's lock without affecting other concurrent processes.
+#[must_use]
 pub fn release_lock_by_session(lock_base: &Path, session_id: &str, pid: u32) -> bool {
     let lock_dir = lock_base.join(format!("{}-{}.lock", session_id, pid));
 
@@ -726,6 +729,7 @@ pub fn release_lock_by_session(lock_base: &Path, session_id: &str, pid: u32) -> 
 ///
 /// **Note:** This only releases legacy path-based locks. For session-based locks,
 /// use `release_lock_by_session` instead.
+#[must_use]
 pub fn release_lock(lock_base: &Path, project_path: &str) -> bool {
     let hash = compute_lock_hash(project_path);
     let lock_dir = lock_base.join(format!("{}.lock", hash));

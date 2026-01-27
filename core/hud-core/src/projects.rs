@@ -37,6 +37,7 @@ const PROJECT_INDICATORS: &[&str] = &[
 ];
 
 /// Checks if a directory contains project indicators.
+#[must_use]
 pub fn has_project_indicators(project_path: &Path) -> bool {
     PROJECT_INDICATORS
         .iter()

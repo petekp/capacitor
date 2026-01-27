@@ -216,6 +216,7 @@ pub struct SessionRecord {
 
 impl SessionRecord {
     /// Returns true if this record is stale (not updated within [`STALE_THRESHOLD_SECS`]).
+    #[must_use]
     pub fn is_stale(&self) -> bool {
         let now = Utc::now();
         let age = now.signed_duration_since(self.updated_at);
@@ -229,6 +230,7 @@ impl SessionRecord {
     /// Note: Compacting is NOT included here because it receives no heartbeat updates after
     /// PreCompact fires. Compaction can take 30+ seconds, so it uses the general staleness
     /// threshold instead of this aggressive 5-second check.
+    #[must_use]
     pub fn is_active_state_stale(&self) -> bool {
         let is_active = matches!(self.state, SessionState::Working | SessionState::Waiting);
         if !is_active {

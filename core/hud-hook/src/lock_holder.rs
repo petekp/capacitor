@@ -82,11 +82,17 @@ pub fn run(session_id: &str, cwd: &str, pid: u32, lock_dir: &Path) {
     };
 
     let lock_base = home.join(".capacitor/sessions");
-    release_lock_by_session(&lock_base, session_id, pid);
-    log(&format!(
-        "Lock released for session {}-{} at {} (PID exited)",
-        session_id, pid, cwd
-    ));
+    if release_lock_by_session(&lock_base, session_id, pid) {
+        log(&format!(
+            "Lock released for session {}-{} at {} (PID exited)",
+            session_id, pid, cwd
+        ));
+    } else {
+        log(&format!(
+            "Failed to release lock for session {}-{} at {} (PID exited)",
+            session_id, pid, cwd
+        ));
+    }
 }
 
 fn is_pid_alive(pid: u32) -> bool {

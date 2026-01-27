@@ -216,11 +216,13 @@ pub enum SessionState {
 
 impl SessionState {
     /// Whether this state indicates Claude needs attention.
+    #[must_use]
     pub fn needs_attention(&self) -> bool {
         matches!(self, Self::Ready | Self::Waiting)
     }
 
     /// Whether this state indicates Claude is busy.
+    #[must_use]
     pub fn is_busy(&self) -> bool {
         matches!(self, Self::Working | Self::Compacting)
     }
@@ -448,6 +450,7 @@ impl ParentApp {
     }
 
     /// Whether this app is a native terminal emulator.
+    #[must_use]
     pub fn is_terminal(&self) -> bool {
         matches!(
             self,
@@ -461,6 +464,7 @@ impl ParentApp {
     }
 
     /// Whether this app is an IDE with an integrated terminal.
+    #[must_use]
     pub fn is_ide(&self) -> bool {
         matches!(
             self,
@@ -469,6 +473,7 @@ impl ParentApp {
     }
 
     /// Whether this app is a terminal multiplexer.
+    #[must_use]
     pub fn is_multiplexer(&self) -> bool {
         matches!(self, Self::Tmux)
     }

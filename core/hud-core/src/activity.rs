@@ -278,6 +278,7 @@ impl ActivityStore {
     ///
     /// Returns true if any session has recent activity attributed to this project.
     /// Uses normalized path comparison to handle trailing slash inconsistencies.
+    #[must_use]
     pub fn has_recent_activity(&self, project_path: &str, threshold: Duration) -> bool {
         let normalized_query = normalize_path(project_path);
         for session in self.sessions.values() {
@@ -296,6 +297,7 @@ impl ActivityStore {
     ///
     /// This is stricter than `has_recent_activity`, guarding against
     /// misattributed project paths by verifying the file path as well.
+    #[must_use]
     pub fn has_recent_activity_in_path(&self, project_path: &str, threshold: Duration) -> bool {
         let normalized_query = normalize_path(project_path);
         let prefix = if normalized_query == "/" {

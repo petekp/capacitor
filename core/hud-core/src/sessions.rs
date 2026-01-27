@@ -182,11 +182,13 @@ pub fn read_project_status(project_path: &str) -> Option<ProjectStatus> {
 /// 2. Subdirectory match (lock created in a subdirectory of the project)
 ///
 /// Lock directories are in `~/.capacitor/sessions/` (our namespace, sidecar purity).
+#[must_use]
 pub fn is_session_active(project_path: &str) -> bool {
     let storage = StorageConfig::default();
     is_session_active_with_storage(&storage, project_path)
 }
 
+#[must_use]
 pub fn is_session_active_with_storage(storage: &StorageConfig, project_path: &str) -> bool {
     let sessions_dir = storage.sessions_dir();
     is_session_active_with_lock_dir(&sessions_dir, project_path)

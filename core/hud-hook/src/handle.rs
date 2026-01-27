@@ -233,6 +233,39 @@ enum Action {
     Skip,
 }
 
+/// Returns true if the session is in an active state that shouldn't be overridden.
+fn is_active_state(state: Option<SessionState>) -> bool {
+    matches!(
+        state,
+        Some(SessionState::Working) | Some(SessionState::Waiting) | Some(SessionState::Compacting)
+    )
+}
+
+/// Extracts file activity info from file-modifying tools.
+fn extract_file_activity(
+    tool_name: &Option<String>,
+    file_path: &Option<String>,
+) -> Option<(String, String)> {
+    match tool_name.as_deref() {
+        Some("Edit" | "Write" | "Read" | "NotebookEdit") => {
+            file_path.clone().zip(tool_name.clone())
+        }
+        _ => None,
+    }
+}
+
+/// Returns the appropriate action for a tool use event.
+fn tool_use_action(
+    current_state: Option<SessionState>,
+    file_activity: Option<(String, String)>,
+) -> (Action, Option<SessionState>, Option<(String, String)>) {
+    if current_state == Some(SessionState::Working) {
+        (Action::Heartbeat, None, file_activity)
+    } else {
+        (Action::Upsert, Some(SessionState::Working), file_activity)
+    }
+}
+
 fn process_event(
     event: &HookEvent,
     current_state: Option<SessionState>,
@@ -240,45 +273,21 @@ fn process_event(
 ) -> (Action, Option<SessionState>, Option<(String, String)>) {
     match event {
         HookEvent::SessionStart => {
-            // Don't override active states
-            if matches!(
-                current_state,
-                Some(SessionState::Working)
-                    | Some(SessionState::Waiting)
-                    | Some(SessionState::Compacting)
-            ) {
-                return (Action::Skip, None, None);
+            if is_active_state(current_state) {
+                (Action::Skip, None, None)
+            } else {
+                (Action::Upsert, Some(SessionState::Ready), None)
             }
-            (Action::Upsert, Some(SessionState::Ready), None)
         }
 
         HookEvent::UserPromptSubmit => (Action::Upsert, Some(SessionState::Working), None),
 
-        HookEvent::PreToolUse { .. } => {
-            if current_state == Some(SessionState::Working) {
-                (Action::Heartbeat, None, None)
-            } else {
-                (Action::Upsert, Some(SessionState::Working), None)
-            }
-        }
+        HookEvent::PreToolUse { .. } => tool_use_action(current_state, None),
 
         HookEvent::PostToolUse {
             tool_name,
             file_path,
-        } => {
-            let file_activity = match tool_name.as_deref() {
-                Some("Edit" | "Write" | "Read" | "NotebookEdit") => file_path
-                    .clone()
-                    .and_then(|fp| tool_name.clone().map(|tn| (fp, tn))),
-                _ => None,
-            };
-
-            if current_state == Some(SessionState::Working) {
-                (Action::Heartbeat, None, file_activity)
-            } else {
-                (Action::Upsert, Some(SessionState::Working), file_activity)
-            }
-        }
+        } => tool_use_action(current_state, extract_file_activity(tool_name, file_path)),
 
         HookEvent::PermissionRequest => (Action::Upsert, Some(SessionState::Waiting), None),
 

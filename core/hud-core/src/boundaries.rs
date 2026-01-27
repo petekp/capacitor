@@ -170,6 +170,7 @@ pub fn find_project_boundary(file_path: &str) -> Option<ProjectBoundary> {
 }
 
 /// Checks if a directory name should be skipped during boundary detection.
+#[must_use]
 pub fn is_ignored_directory(name: &str) -> bool {
     IGNORED_DIRECTORIES.contains(&name)
 }
@@ -203,8 +204,8 @@ pub fn is_dangerous_path(path: &str) -> Option<String> {
 
     // Check if it's directly under /Users or /home (a user's root)
     if normalized.starts_with("/Users/") || normalized.starts_with("/home/") {
-        let parts: Vec<&str> = normalized.split('/').filter(|s| !s.is_empty()).collect();
-        if parts.len() == 2 {
+        let part_count = normalized.split('/').filter(|s| !s.is_empty()).count();
+        if part_count == 2 {
             return Some(format!("User home directory '{}' is too broad", path));
         }
     }
