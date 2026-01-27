@@ -1,8 +1,26 @@
 # Dead Code Cleanup Plan
 
-**Status:** ACTIVE
+**Status:** ACTIVE (Partially Complete)
 **Created:** 2026-01-26
+**Updated:** 2026-01-27
 **Purpose:** Clean up dead, vestigial, and suspicious code identified in the audit
+
+## Progress (2026-01-27)
+
+**Completed:**
+- ✅ Removed `is_session_active()` and `is_session_active_with_storage()` from sessions.rs
+- ✅ Removed `find_by_cwd()` from store.rs (~100 lines)
+- ✅ Removed `boundaries::normalize_path()` (redundant with path_utils)
+- ✅ Fixed lock holder 24h timeout bug (lock_holder.rs)
+- ✅ Updated stale v3→v4 documentation across state modules
+
+**Remaining:**
+- ❌ Section 3.1: `release_lock()` in lock.rs (dead - only `release_lock_by_session` used)
+- ❌ Section 3.2: `get_lock_dir_path()` in lock.rs (dead - only `get_session_lock_dir_path` used)
+- ❌ Section 1-2: Swift items (TerminalLauncher, ActivationConfig)
+- ❌ Section 4: Vestigial patterns
+
+---
 
 ---
 
