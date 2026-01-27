@@ -99,13 +99,10 @@ enum TerminalMultiplicity: String, CaseIterable, Codable {
     case single
     case multipleTabs = "tabs"
     case multipleWindows = "windows"
-    case multipleApps = "apps"
 
-    init(shellCount: Int, windowCount: Int = 1) {
-        if shellCount <= 1 && windowCount <= 1 {
+    init(shellCount: Int) {
+        if shellCount <= 1 {
             self = .single
-        } else if windowCount > 1 {
-            self = .multipleWindows
         } else {
             self = .multipleTabs
         }
@@ -191,11 +188,11 @@ struct ScenarioBehavior: Codable, Equatable {
         switch (scenario.context, scenario.multiplicity) {
         case (.direct, .single), (.direct, .multipleTabs):
             return ScenarioBehavior(primaryStrategy: .activateIDEWindow, fallbackStrategy: nil)
-        case (.direct, .multipleWindows), (.direct, .multipleApps):
+        case (.direct, .multipleWindows):
             return ScenarioBehavior(primaryStrategy: .activateIDEWindow, fallbackStrategy: .priorityFallback)
         case (.tmux, .single), (.tmux, .multipleTabs):
             return ScenarioBehavior(primaryStrategy: .activateIDEWindow, fallbackStrategy: .switchTmuxSession)
-        case (.tmux, .multipleWindows), (.tmux, .multipleApps):
+        case (.tmux, .multipleWindows):
             return ScenarioBehavior(primaryStrategy: .activateIDEWindow, fallbackStrategy: .activateHostFirst)
         }
     }
@@ -219,7 +216,7 @@ struct ScenarioBehavior: Codable, Equatable {
             return ScenarioBehavior(primaryStrategy: .activateByTTY, fallbackStrategy: nil)
         case (.tmux, .single), (.tmux, .multipleTabs):
             return ScenarioBehavior(primaryStrategy: .activateHostFirst, fallbackStrategy: nil)
-        case (.tmux, .multipleWindows), (.tmux, .multipleApps):
+        case (.tmux, .multipleWindows):
             return ScenarioBehavior(primaryStrategy: .activateHostFirst, fallbackStrategy: .priorityFallback)
         }
     }
@@ -230,7 +227,7 @@ struct ScenarioBehavior: Codable, Equatable {
             return ScenarioBehavior(primaryStrategy: .activateKittyRemote, fallbackStrategy: .activateByApp)
         case (.tmux, .single), (.tmux, .multipleTabs):
             return ScenarioBehavior(primaryStrategy: .activateKittyRemote, fallbackStrategy: .switchTmuxSession)
-        case (.tmux, .multipleWindows), (.tmux, .multipleApps):
+        case (.tmux, .multipleWindows):
             return ScenarioBehavior(primaryStrategy: .activateKittyRemote, fallbackStrategy: .activateHostFirst)
         }
     }
@@ -239,7 +236,7 @@ struct ScenarioBehavior: Codable, Equatable {
         switch (scenario.context, scenario.multiplicity) {
         case (.direct, .single):
             return ScenarioBehavior(primaryStrategy: .activateByApp, fallbackStrategy: nil)
-        case (.direct, .multipleTabs), (.direct, .multipleWindows), (.direct, .multipleApps):
+        case (.direct, .multipleTabs), (.direct, .multipleWindows):
             return ScenarioBehavior(primaryStrategy: .activateByApp, fallbackStrategy: .priorityFallback)
         case (.tmux, _):
             return ScenarioBehavior(primaryStrategy: .activateHostFirst, fallbackStrategy: nil)
@@ -250,7 +247,7 @@ struct ScenarioBehavior: Codable, Equatable {
         switch scenario.multiplicity {
         case .single, .multipleTabs:
             return ScenarioBehavior(primaryStrategy: .activateHostFirst, fallbackStrategy: nil)
-        case .multipleWindows, .multipleApps:
+        case .multipleWindows:
             return ScenarioBehavior(primaryStrategy: .activateHostFirst, fallbackStrategy: .priorityFallback)
         }
     }

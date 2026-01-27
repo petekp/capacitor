@@ -742,22 +742,6 @@ pub fn release_lock_by_session(lock_base: &Path, session_id: &str, pid: u32) -> 
     }
 }
 
-/// Release a lock directory by path (legacy path-based).
-///
-/// **Note:** This only releases legacy path-based locks. For session-based locks,
-/// use `release_lock_by_session` instead.
-#[must_use]
-pub fn release_lock(lock_base: &Path, project_path: &str) -> bool {
-    let hash = compute_lock_hash(project_path);
-    let lock_dir = lock_base.join(format!("{}.lock", hash));
-
-    if lock_dir.exists() {
-        fs::remove_dir_all(&lock_dir).is_ok()
-    } else {
-        true // Already released
-    }
-}
-
 /// Update lock metadata to a new PID (for handoff).
 pub fn update_lock_pid(
     lock_dir: &Path,
@@ -833,12 +817,6 @@ pub fn get_session_lock_dir_path(
     pid: u32,
 ) -> std::path::PathBuf {
     lock_base.join(format!("{}-{}.lock", session_id, pid))
-}
-
-/// Get the lock directory path for a project (legacy path-based, without checking if it exists).
-pub fn get_lock_dir_path(lock_base: &Path, project_path: &str) -> std::path::PathBuf {
-    let hash = compute_lock_hash(project_path);
-    lock_base.join(format!("{}.lock", hash))
 }
 
 /// Test helpers for creating lock files.

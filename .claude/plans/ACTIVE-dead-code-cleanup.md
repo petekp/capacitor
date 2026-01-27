@@ -15,10 +15,12 @@
 - ✅ Updated stale v3→v4 documentation across state modules
 
 **Remaining:**
-- ❌ Section 3.1: `release_lock()` in lock.rs (dead - only `release_lock_by_session` used)
-- ❌ Section 3.2: `get_lock_dir_path()` in lock.rs (dead - only `get_session_lock_dir_path` used)
-- ❌ Section 1-2: Swift items (TerminalLauncher, ActivationConfig)
-- ❌ Section 4: Vestigial patterns
+- ✅ Section 3.1: `release_lock()` in lock.rs (removed 2026-01-27)
+- ✅ Section 3.2: `get_lock_dir_path()` in lock.rs (removed 2026-01-27)
+- ✅ Section 2.1: `windowCount` dead parameter (removed 2026-01-27)
+- ✅ Section 2.2: `.multipleApps` unreachable case (removed 2026-01-27)
+- ❌ Section 1: Swift TerminalLauncher items (duplicate logic, overly complicated project reconstruction, activateKittyRemote always returns true)
+- ❌ Section 4: Vestigial patterns (type system inconsistencies)
 
 ---
 
@@ -215,10 +217,10 @@ The default `windowCount: Int = 1` suggests multi-window detection was planned b
 
 ### High Priority (Actual Dead Code)
 
-- [ ] Remove `release_lock()` from `lock.rs`
-- [ ] Remove `get_lock_dir_path()` from `lock.rs`
-- [ ] Remove `windowCount` parameter from `TerminalMultiplicity.init`
-- [ ] Remove or implement `.multipleApps` case
+- [x] Remove `release_lock()` from `lock.rs` (done 2026-01-27)
+- [x] Remove `get_lock_dir_path()` from `lock.rs` (done 2026-01-27)
+- [x] Remove `windowCount` parameter from `TerminalMultiplicity.init` (done 2026-01-27)
+- [x] Remove `.multipleApps` case (done 2026-01-27 - removed enum case and all switch references)
 
 ### Medium Priority (Code Duplication)
 

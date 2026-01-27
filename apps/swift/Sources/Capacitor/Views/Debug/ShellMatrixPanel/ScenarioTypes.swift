@@ -58,7 +58,6 @@ extension TerminalMultiplicity {
         case .single: return "Single"
         case .multipleTabs: return "Multiple Tabs"
         case .multipleWindows: return "Multiple Windows"
-        case .multipleApps: return "Multiple Apps"
         }
     }
 
@@ -67,7 +66,6 @@ extension TerminalMultiplicity {
         case .single: return "1 window"
         case .multipleTabs: return "multi-tab"
         case .multipleWindows: return "multi-window"
-        case .multipleApps: return "multi-app"
         }
     }
 
@@ -76,7 +74,6 @@ extension TerminalMultiplicity {
         case .single: return 3
         case .multipleTabs: return 2
         case .multipleWindows: return 2
-        case .multipleApps: return 1
         }
     }
 }
@@ -101,8 +98,6 @@ extension ShellScenario {
             parts.append("multiple tabs")
         case .multipleWindows:
             parts.append("multiple windows")
-        case .multipleApps:
-            parts.append("multiple apps")
         }
 
         return parts.joined(separator: ", ")
