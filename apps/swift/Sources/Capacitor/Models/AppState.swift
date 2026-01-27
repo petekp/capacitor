@@ -123,8 +123,9 @@ class AppState: ObservableObject {
             engine = try HudEngine()
 
             let cleanupStats = engine!.runStartupCleanup()
-            if cleanupStats.locksRemoved > 0 || cleanupStats.sessionsRemoved > 0 {
-                print("[Startup] Cleaned up \(cleanupStats.locksRemoved) stale locks, \(cleanupStats.sessionsRemoved) old sessions")
+            let totalCleaned = cleanupStats.locksRemoved + cleanupStats.legacyLocksRemoved + cleanupStats.orphanedProcessesKilled + cleanupStats.sessionsRemoved
+            if totalCleaned > 0 {
+                print("[Startup] Cleanup: \(cleanupStats.locksRemoved) locks, \(cleanupStats.legacyLocksRemoved) legacy locks, \(cleanupStats.orphanedProcessesKilled) orphaned processes, \(cleanupStats.sessionsRemoved) old sessions")
             }
 
             sessionStateManager.configure(engine: engine)

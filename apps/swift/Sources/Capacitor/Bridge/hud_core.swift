@@ -1762,6 +1762,14 @@ public struct CleanupStats {
      */
     public var locksRemoved: UInt32
     /**
+     * Number of legacy MD5-hash locks removed.
+     */
+    public var legacyLocksRemoved: UInt32
+    /**
+     * Number of orphaned lock-holder processes killed.
+     */
+    public var orphanedProcessesKilled: UInt32
+    /**
      * Number of orphaned session records removed (no active lock).
      */
     public var orphanedSessionsRemoved: UInt32
@@ -1785,6 +1793,12 @@ public struct CleanupStats {
          * Number of stale lock directories removed.
          */ locksRemoved: UInt32,
         /**
+            * Number of legacy MD5-hash locks removed.
+            */ legacyLocksRemoved: UInt32,
+        /**
+            * Number of orphaned lock-holder processes killed.
+            */ orphanedProcessesKilled: UInt32,
+        /**
             * Number of orphaned session records removed (no active lock).
             */ orphanedSessionsRemoved: UInt32,
         /**
@@ -1798,6 +1812,8 @@ public struct CleanupStats {
             */ errors: [String]
     ) {
         self.locksRemoved = locksRemoved
+        self.legacyLocksRemoved = legacyLocksRemoved
+        self.orphanedProcessesKilled = orphanedProcessesKilled
         self.orphanedSessionsRemoved = orphanedSessionsRemoved
         self.sessionsRemoved = sessionsRemoved
         self.tombstonesRemoved = tombstonesRemoved
@@ -1808,6 +1824,12 @@ public struct CleanupStats {
 extension CleanupStats: Equatable, Hashable {
     public static func == (lhs: CleanupStats, rhs: CleanupStats) -> Bool {
         if lhs.locksRemoved != rhs.locksRemoved {
+            return false
+        }
+        if lhs.legacyLocksRemoved != rhs.legacyLocksRemoved {
+            return false
+        }
+        if lhs.orphanedProcessesKilled != rhs.orphanedProcessesKilled {
             return false
         }
         if lhs.orphanedSessionsRemoved != rhs.orphanedSessionsRemoved {
@@ -1827,6 +1849,8 @@ extension CleanupStats: Equatable, Hashable {
 
     public func hash(into hasher: inout Hasher) {
         hasher.combine(locksRemoved)
+        hasher.combine(legacyLocksRemoved)
+        hasher.combine(orphanedProcessesKilled)
         hasher.combine(orphanedSessionsRemoved)
         hasher.combine(sessionsRemoved)
         hasher.combine(tombstonesRemoved)
@@ -1842,6 +1866,8 @@ public struct FfiConverterTypeCleanupStats: FfiConverterRustBuffer {
         return
             try CleanupStats(
                 locksRemoved: FfiConverterUInt32.read(from: &buf),
+                legacyLocksRemoved: FfiConverterUInt32.read(from: &buf),
+                orphanedProcessesKilled: FfiConverterUInt32.read(from: &buf),
                 orphanedSessionsRemoved: FfiConverterUInt32.read(from: &buf),
                 sessionsRemoved: FfiConverterUInt32.read(from: &buf),
                 tombstonesRemoved: FfiConverterUInt32.read(from: &buf),
@@ -1851,6 +1877,8 @@ public struct FfiConverterTypeCleanupStats: FfiConverterRustBuffer {
 
     public static func write(_ value: CleanupStats, into buf: inout [UInt8]) {
         FfiConverterUInt32.write(value.locksRemoved, into: &buf)
+        FfiConverterUInt32.write(value.legacyLocksRemoved, into: &buf)
+        FfiConverterUInt32.write(value.orphanedProcessesKilled, into: &buf)
         FfiConverterUInt32.write(value.orphanedSessionsRemoved, into: &buf)
         FfiConverterUInt32.write(value.sessionsRemoved, into: &buf)
         FfiConverterUInt32.write(value.tombstonesRemoved, into: &buf)
