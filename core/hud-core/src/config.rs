@@ -10,7 +10,7 @@
 
 use crate::storage::StorageConfig;
 use crate::types::{HudConfig, StatsCache};
-use std::fs;
+use fs_err as fs;
 use std::path::PathBuf;
 
 /// Returns the path to the Claude directory (~/.claude).

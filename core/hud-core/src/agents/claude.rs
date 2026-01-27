@@ -92,10 +92,10 @@ impl AgentAdapter for ClaudeAdapter {
         if let Some(state_file) = self.state_file_path() {
             if state_file.exists() {
                 if let Err(e) = std::fs::read_to_string(&state_file) {
-                    eprintln!(
-                        "Warning: Claude state file unreadable at {}: {}",
-                        state_file.display(),
-                        e
+                    tracing::warn!(
+                        path = %state_file.display(),
+                        error = %e,
+                        "Claude state file unreadable"
                     );
                 }
             }
@@ -110,9 +110,10 @@ impl AgentAdapter for ClaudeAdapter {
         let store = match StateStore::load(&state_file) {
             Ok(s) => s,
             Err(e) => {
-                eprintln!(
-                    "Warning: Failed to load state store for {}: {}",
-                    project_path, e
+                tracing::warn!(
+                    project_path = %project_path,
+                    error = %e,
+                    "Failed to load state store"
                 );
                 return None;
             }
@@ -163,9 +164,9 @@ impl AgentAdapter for ClaudeAdapter {
         let store = match StateStore::load(&state_file) {
             Ok(s) => s,
             Err(e) => {
-                eprintln!(
-                    "Warning: Failed to load state store for all_sessions: {}",
-                    e
+                tracing::warn!(
+                    error = %e,
+                    "Failed to load state store for all_sessions"
                 );
                 return vec![];
             }

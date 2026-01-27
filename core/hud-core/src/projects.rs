@@ -11,7 +11,7 @@ use crate::config::{
 use crate::stats::compute_project_stats;
 use crate::storage::StorageConfig;
 use crate::types::{Project, StatsCache};
-use std::fs;
+use fs_err as fs;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 

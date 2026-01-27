@@ -12,7 +12,7 @@ use crate::patterns::{
     RE_MD_ITALIC_UNDERSCORE, RE_MD_LINK,
 };
 use crate::types::Artifact;
-use std::fs;
+use fs_err as fs;
 use std::path::Path;
 use walkdir::WalkDir;
 

@@ -15,7 +15,7 @@ use crate::state::{resolve_state_with_details, StateStore};
 use crate::storage::StorageConfig;
 use crate::types::{ProjectSessionState, SessionState};
 use chrono::Utc;
-use std::fs;
+use fs_err as fs;
 use std::path::Path;
 
 /// Ready state becomes Idle after this many seconds without a lock.

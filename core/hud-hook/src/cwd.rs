@@ -15,8 +15,9 @@
 //! Target: < 15ms total execution time.
 //! The shell spawns this in the background, so users never wait.
 
+use fs_err as fs;
+use fs_err::OpenOptions;
 use std::collections::HashMap;
-use std::fs::{self, OpenOptions};
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::Path;
 
@@ -223,7 +224,7 @@ fn append_history(
 
 fn log_history_append_error(result: Result<(), CwdError>) {
     if let Err(e) = result {
-        eprintln!("Warning: Failed to append history: {}", e);
+        tracing::warn!(error = %e, "Failed to append history");
     }
 }
 
@@ -233,7 +234,7 @@ fn maybe_cleanup_history(path: &Path) {
     }
 
     if let Err(e) = cleanup_history(path, HISTORY_RETENTION_DAYS) {
-        eprintln!("Warning: Failed to cleanup history: {}", e);
+        tracing::warn!(error = %e, "Failed to cleanup history");
     }
 }
 

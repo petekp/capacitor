@@ -22,3 +22,7 @@ libc = "0.2"
 rand = "0.8"
 tempfile = "3.14"
 thiserror.workspace = true
+fs-err.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+tracing-appender.workspace = true

@@ -8,8 +8,8 @@
 //! This runs once per app launch — frequent enough to prevent cruft accumulation,
 //! infrequent enough to not impact performance.
 
+use fs_err as fs;
 use std::collections::HashSet;
-use std::fs;
 use std::path::Path;
 
 use chrono::{Duration, Utc};

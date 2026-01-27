@@ -38,8 +38,8 @@
 //!
 //! Uses temp file + rename to prevent partial writes from crashing the app.
 
+use fs_err as fs;
 use std::collections::HashMap;
-use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
@@ -121,7 +121,7 @@ impl StateStore {
 
         // Defensive: Handle empty file
         if content.trim().is_empty() {
-            eprintln!("Warning: Empty state file, returning empty store");
+            tracing::warn!("Empty state file, returning empty store");
             return Ok(StateStore::new(file_path));
         }
 
@@ -132,16 +132,16 @@ impl StateStore {
                 file_path: Some(file_path.to_path_buf()),
             }),
             Ok(store_file) => {
-                eprintln!(
-                    "Warning: Unsupported state file version {} (expected 3), returning empty store",
-                    store_file.version
+                tracing::warn!(
+                    version = store_file.version,
+                    "Unsupported state file version (expected 3), returning empty store"
                 );
                 Ok(StateStore::new(file_path))
             }
             Err(e) => {
-                eprintln!(
-                    "Warning: Failed to parse state file ({}), returning empty store",
-                    e
+                tracing::warn!(
+                    error = %e,
+                    "Failed to parse state file, returning empty store"
                 );
                 // Defensive: Corrupt JSON → empty store (don't crash)
                 Ok(StateStore::new(file_path))

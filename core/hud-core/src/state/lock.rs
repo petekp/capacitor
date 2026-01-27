@@ -47,8 +47,8 @@
 
 use super::path_utils::{normalize_path_for_comparison, normalize_path_for_hashing};
 use super::types::LockInfo;
+use fs_err as fs;
 use std::cell::RefCell;
-use std::fs;
 use std::path::Path;
 
 // Thread-local sysinfo cache. We use per-PID refresh (O(1)) instead of scanning
@@ -508,7 +508,7 @@ pub fn create_session_lock(
     // Ensure the parent lock directory exists
     if !lock_base.exists() {
         if let Err(e) = fs::create_dir_all(lock_base) {
-            eprintln!("Warning: Failed to create lock base directory: {}", e);
+            tracing::warn!(error = %e, "Failed to create lock base directory");
             return None;
         }
     }
@@ -520,9 +520,11 @@ pub fn create_session_lock(
             if let Err(e) =
                 write_lock_metadata(&lock_dir, pid, project_path, Some(session_id), None)
             {
-                eprintln!(
-                    "Warning: Failed to write lock metadata for session {} at {}: {}",
-                    session_id, project_path, e
+                tracing::warn!(
+                    session = %session_id,
+                    path = %project_path,
+                    error = %e,
+                    "Failed to write lock metadata"
                 );
                 // Clean up on metadata write failure
                 let _ = fs::remove_dir_all(&lock_dir);
@@ -551,14 +553,18 @@ pub fn create_session_lock(
                     {
                         return Some(lock_dir);
                     }
-                    eprintln!(
-                        "Warning: Failed to take over stale lock for session {} at {}",
-                        session_id, project_path
+                    tracing::warn!(
+                        session = %session_id,
+                        path = %project_path,
+                        "Failed to take over stale lock"
                     );
                 } else {
-                    eprintln!(
-                        "Warning: Lock collision for session {}-{} at {} - lock held by live PID {}",
-                        session_id, pid, project_path, info.pid
+                    tracing::warn!(
+                        session = %session_id,
+                        pid = pid,
+                        path = %project_path,
+                        holder_pid = info.pid,
+                        "Lock collision - held by live PID"
                     );
                 }
             } else {
@@ -570,17 +576,20 @@ pub fn create_session_lock(
                 {
                     return Some(lock_dir);
                 }
-                eprintln!(
-                    "Warning: Failed to take over unreadable lock for session {} at {}",
-                    session_id, project_path
+                tracing::warn!(
+                    session = %session_id,
+                    path = %project_path,
+                    "Failed to take over unreadable lock"
                 );
             }
             None
         }
         Err(e) => {
-            eprintln!(
-                "Warning: Failed to create lock directory for session {} at {}: {}",
-                session_id, project_path, e
+            tracing::warn!(
+                session = %session_id,
+                path = %project_path,
+                error = %e,
+                "Failed to create lock directory"
             );
             None
         }
@@ -601,7 +610,7 @@ pub fn create_lock(lock_base: &Path, project_path: &str, pid: u32) -> Option<std
     // Ensure the parent lock directory exists
     if !lock_base.exists() {
         if let Err(e) = fs::create_dir_all(lock_base) {
-            eprintln!("Warning: Failed to create lock base directory: {}", e);
+            tracing::warn!(error = %e, "Failed to create lock base directory");
             return None;
         }
     }
@@ -638,17 +647,20 @@ pub fn create_lock(lock_base: &Path, project_path: &str, pid: u32) -> Option<std
                     if write_lock_metadata(&lock_dir, pid, project_path, None, Some(info.pid))
                         .is_ok()
                     {
-                        eprintln!(
-                            "Lock takeover: {} now owned by PID {} (was PID {})",
-                            project_path, pid, info.pid
+                        tracing::info!(
+                            path = %project_path,
+                            new_pid = pid,
+                            old_pid = info.pid,
+                            "Lock takeover"
                         );
                         return Some(lock_dir);
                     }
                     // If metadata update fails, don't fall through - we don't want to
                     // remove a lock that's still in use
-                    eprintln!(
-                        "Warning: Failed to take over lock for {} from PID {}",
-                        project_path, info.pid
+                    tracing::warn!(
+                        path = %project_path,
+                        holder_pid = info.pid,
+                        "Failed to take over lock"
                     );
                     return None;
                 }

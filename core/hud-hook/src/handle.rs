@@ -16,6 +16,7 @@
 //! ```
 
 use chrono::Utc;
+use fs_err as fs;
 use hud_core::state::{
     count_other_session_locks, create_session_lock, release_lock_by_session, HookEvent, HookInput,
     StateStore,
@@ -26,7 +27,6 @@ use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-const LOG_FILE: &str = ".capacitor/hud-hook-debug.log";
 const STATE_FILE: &str = ".capacitor/sessions.json";
 const LOCK_DIR: &str = ".capacitor/sessions";
 const ACTIVITY_FILE: &str = ".capacitor/file-activity.json";
@@ -71,10 +71,10 @@ pub fn run() -> Result<(), String> {
     let session_id = match &hook_input.session_id {
         Some(id) => id.clone(),
         None => {
-            log(&format!(
-                "Skipping event (missing session_id): {:?}",
-                hook_input.hook_event_name
-            ));
+            tracing::debug!(
+                event = ?hook_input.hook_event_name,
+                "Skipping event (missing session_id)"
+            );
             return Ok(());
         }
     };
@@ -90,10 +90,11 @@ pub fn run() -> Result<(), String> {
         && event != HookEvent::SessionStart
         && has_tombstone(&tombstones_dir, &session_id)
     {
-        log(&format!(
-            "Skipping event for ended session: {:?} session={}",
-            hook_input.hook_event_name, session_id
-        ));
+        tracing::debug!(
+            event = ?hook_input.hook_event_name,
+            session = %session_id,
+            "Skipping event for ended session"
+        );
         return Ok(());
     }
 
@@ -109,9 +110,9 @@ pub fn run() -> Result<(), String> {
 
     // Ensure directories exist
     if let Some(parent) = state_file.parent() {
-        std::fs::create_dir_all(parent).ok();
+        fs::create_dir_all(parent).ok();
     }
-    std::fs::create_dir_all(&lock_base).ok();
+    fs::create_dir_all(&lock_base).ok();
 
     // Load current state
     let mut store = StateStore::load(&state_file).unwrap_or_else(|_| StateStore::new(&state_file));
@@ -129,30 +130,37 @@ pub fn run() -> Result<(), String> {
     let ppid = get_ppid().unwrap_or(claude_pid);
 
     // Log the event
-    log(&format!(
-        "Hook: event={:?} session={} cwd={:?} current_state={:?}",
-        hook_input.hook_event_name, session_id, cwd, current_state
-    ));
+    tracing::debug!(
+        event = ?hook_input.hook_event_name,
+        session = %session_id,
+        cwd = ?cwd,
+        current_state = ?current_state,
+        "Processing hook"
+    );
 
     // Process the event
     let (action, new_state, file_activity) = process_event(&event, current_state, &hook_input);
 
     // Skip if no CWD and not deleting
     if cwd.is_none() && action != Action::Delete {
-        log(&format!(
-            "Skipping event (missing cwd): {:?} session={}",
-            hook_input.hook_event_name, session_id
-        ));
+        tracing::debug!(
+            event = ?hook_input.hook_event_name,
+            session = %session_id,
+            "Skipping event (missing cwd)"
+        );
         return Ok(());
     }
 
     let cwd = cwd.unwrap_or_default();
 
     // Log the action
-    log(&format!(
-        "State update: action={:?} new_state={:?} session={} cwd={}",
-        action, new_state, session_id, cwd
-    ));
+    tracing::info!(
+        action = ?action,
+        new_state = ?new_state,
+        session = %session_id,
+        cwd = %cwd,
+        "State update"
+    );
 
     // Apply the state change
     match action {
@@ -163,10 +171,11 @@ pub fn run() -> Result<(), String> {
             let preserve_record = other_locks > 0;
 
             if preserve_record {
-                log(&format!(
-                    "Session {} has {} other active locks, preserving session record",
-                    session_id, other_locks
-                ));
+                tracing::debug!(
+                    session = %session_id,
+                    other_locks = other_locks,
+                    "Session has other active locks, preserving session record"
+                );
             } else {
                 // No other locks - clean up completely
                 // Order matters: remove record BEFORE lock to prevent race condition
@@ -187,10 +196,11 @@ pub fn run() -> Result<(), String> {
 
             // 4. Release lock LAST - UI will see no record AND no lock atomically
             if release_lock_by_session(&lock_base, &session_id, ppid) {
-                log(&format!(
-                    "Released lock for session {} (PID {})",
-                    session_id, ppid
-                ));
+                tracing::info!(
+                    session = %session_id,
+                    pid = ppid,
+                    "Released lock"
+                );
             }
         }
         Action::Upsert | Action::Heartbeat => {
@@ -312,7 +322,7 @@ fn process_event(
         HookEvent::SessionEnd => (Action::Delete, None, None),
 
         HookEvent::Unknown { event_name } => {
-            log(&format!("Unhandled event: {}", event_name));
+            tracing::debug!(event_name = %event_name, "Unhandled event");
             (Action::Skip, None, None)
         }
     }
@@ -352,11 +362,13 @@ fn spawn_lock_holder(lock_base: &Path, session_id: &str, cwd: &str, pid: u32) {
         .spawn();
 
     match result {
-        Ok(_) => log(&format!(
-            "Lock holder spawned for session {} at {} (PID {})",
-            session_id, cwd, pid
-        )),
-        Err(e) => log(&format!("Failed to spawn lock holder: {}", e)),
+        Ok(_) => tracing::debug!(
+            session = %session_id,
+            cwd = %cwd,
+            pid = pid,
+            "Lock holder spawned"
+        ),
+        Err(e) => tracing::warn!(error = %e, "Failed to spawn lock holder"),
     }
 }
 
@@ -382,10 +394,10 @@ fn touch_heartbeat() {
     let heartbeat_path = home.join(HEARTBEAT_FILE);
 
     if let Some(parent) = heartbeat_path.parent() {
-        let _ = std::fs::create_dir_all(parent);
+        let _ = fs::create_dir_all(parent);
     }
 
-    use std::fs::OpenOptions;
+    use fs_err::OpenOptions;
     use std::io::Write as _;
 
     if let Ok(mut file) = OpenOptions::new()
@@ -398,40 +410,6 @@ fn touch_heartbeat() {
     }
 }
 
-fn log(message: &str) {
-    let home = match dirs::home_dir() {
-        Some(h) => h,
-        None => return,
-    };
-    let log_file = home.join(LOG_FILE);
-
-    // Ensure log directory exists
-    if let Some(parent) = log_file.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-
-    // Rotate if needed (simple size check)
-    if let Ok(meta) = std::fs::metadata(&log_file) {
-        if meta.len() > 1_048_576 {
-            // 1MB
-            // Simple rotation: backup and truncate
-            let backup = home.join(".capacitor/hud-hook-debug.log.1");
-            let _ = std::fs::copy(&log_file, &backup);
-            let _ = std::fs::write(&log_file, "");
-        }
-    }
-
-    let timestamp = Utc::now().format("%Y-%m-%dT%H:%M:%SZ");
-    let line = format!("{} | {}\n", timestamp, message);
-
-    use std::fs::OpenOptions;
-    use std::io::Write;
-
-    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&log_file) {
-        let _ = file.write_all(line.as_bytes());
-    }
-}
-
 fn record_file_activity(
     activity_file: &PathBuf,
     session_id: &str,
@@ -440,7 +418,6 @@ fn record_file_activity(
     tool_name: &str,
 ) {
     use serde_json::{json, Value};
-    use std::fs;
 
     // Resolve file path
     let resolved_path = if file_path.starts_with('/') {
@@ -499,36 +476,29 @@ fn record_file_activity(
     match serde_json::to_string_pretty(&activity) {
         Ok(content) => {
             if let Err(e) = fs::write(activity_file, content) {
-                log(&format!("Failed to write activity file: {}", e));
+                tracing::warn!(error = %e, "Failed to write activity file");
             }
         }
         Err(e) => {
-            log(&format!("Failed to serialize activity: {}", e));
+            tracing::warn!(error = %e, "Failed to serialize activity");
         }
     }
 }
 
 fn remove_session_activity(activity_file: &PathBuf, session_id: &str) {
     use serde_json::Value;
-    use std::fs;
 
     let mut activity: Value = match fs::read_to_string(activity_file) {
         Ok(content) => match serde_json::from_str(&content) {
             Ok(v) => v,
             Err(e) => {
-                log(&format!(
-                    "Failed to parse activity file, skipping cleanup: {}",
-                    e
-                ));
+                tracing::warn!(error = %e, "Failed to parse activity file, skipping cleanup");
                 return;
             }
         },
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return,
         Err(e) => {
-            log(&format!(
-                "Failed to read activity file, skipping cleanup: {}",
-                e
-            ));
+            tracing::warn!(error = %e, "Failed to read activity file, skipping cleanup");
             return;
         }
     };
@@ -540,11 +510,11 @@ fn remove_session_activity(activity_file: &PathBuf, session_id: &str) {
     match serde_json::to_string_pretty(&activity) {
         Ok(content) => {
             if let Err(e) = fs::write(activity_file, content) {
-                log(&format!("Failed to write activity file: {}", e));
+                tracing::warn!(error = %e, "Failed to write activity file");
             }
         }
         Err(e) => {
-            log(&format!("Failed to serialize activity: {}", e));
+            tracing::warn!(error = %e, "Failed to serialize activity");
         }
     }
 }
@@ -554,29 +524,26 @@ fn has_tombstone(tombstones_dir: &Path, session_id: &str) -> bool {
 }
 
 fn create_tombstone(tombstones_dir: &Path, session_id: &str) {
-    if let Err(e) = std::fs::create_dir_all(tombstones_dir) {
-        log(&format!("Failed to create tombstones dir: {}", e));
+    if let Err(e) = fs::create_dir_all(tombstones_dir) {
+        tracing::warn!(error = %e, "Failed to create tombstones dir");
         return;
     }
 
     let tombstone_path = tombstones_dir.join(session_id);
-    if let Err(e) = std::fs::write(&tombstone_path, "") {
-        log(&format!("Failed to create tombstone: {}", e));
+    if let Err(e) = fs::write(&tombstone_path, "") {
+        tracing::warn!(error = %e, session = %session_id, "Failed to create tombstone");
     } else {
-        log(&format!("Created tombstone for session {}", session_id));
+        tracing::debug!(session = %session_id, "Created tombstone");
     }
 }
 
 fn remove_tombstone(tombstones_dir: &Path, session_id: &str) {
     let tombstone_path = tombstones_dir.join(session_id);
     if tombstone_path.exists() {
-        if let Err(e) = std::fs::remove_file(&tombstone_path) {
-            log(&format!("Failed to remove tombstone: {}", e));
+        if let Err(e) = fs::remove_file(&tombstone_path) {
+            tracing::warn!(error = %e, session = %session_id, "Failed to remove tombstone");
         } else {
-            log(&format!(
-                "Cleared tombstone for session {} (new SessionStart)",
-                session_id
-            ));
+            tracing::debug!(session = %session_id, "Cleared tombstone (new SessionStart)");
         }
     }
 }

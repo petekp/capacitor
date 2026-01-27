@@ -13,9 +13,9 @@
 
 use crate::error::HudFfiError;
 use crate::storage::StorageConfig;
+use fs_err as fs;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::Command;

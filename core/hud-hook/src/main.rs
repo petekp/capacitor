@@ -12,6 +12,7 @@
 mod cwd;
 mod handle;
 mod lock_holder;
+mod logging;
 
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
@@ -66,19 +67,20 @@ enum Commands {
 }
 
 fn main() {
+    logging::init();
     let cli = Cli::parse();
 
     match cli.command {
         Commands::Handle => {
             if let Err(e) = handle::run() {
-                eprintln!("hud-hook error: {}", e);
+                tracing::error!(error = %e, "hud-hook handle failed");
                 std::process::exit(1);
             }
         }
         Commands::Cwd { path, pid, tty } => {
             // CWD tracking is non-critical - log errors but exit 0 to not disrupt shell
             if let Err(e) = cwd::run(&path, pid, &tty) {
-                eprintln!("hud-hook cwd error: {}", e);
+                tracing::warn!(error = %e, "hud-hook cwd failed");
             }
         }
         Commands::LockHolder {

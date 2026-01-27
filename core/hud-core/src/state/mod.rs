@@ -58,8 +58,8 @@ pub use path_utils::{
 pub use cleanup::{run_startup_cleanup, CleanupStats};
 pub use lock::{
     count_other_session_locks, create_lock, create_session_lock, find_all_locks_for_path,
-    get_lock_dir_path, get_lock_info, get_session_lock_dir_path, is_session_running, release_lock,
-    release_lock_by_session, update_lock_pid,
+    get_lock_dir_path, get_lock_info, get_session_lock_dir_path, is_pid_alive, is_session_running,
+    release_lock, release_lock_by_session, update_lock_pid,
 };
 pub use resolver::{resolve_state, resolve_state_with_details, ResolvedState};
 pub use store::StateStore;

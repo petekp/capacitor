@@ -33,8 +33,8 @@ use crate::types::{
     PluginManifest, Project, ProjectSessionState, SuggestedProject,
 };
 use crate::validation::{create_claude_md, validate_project_path, ValidationResultFfi};
+use fs_err as fs;
 use std::collections::HashMap;
-use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
 

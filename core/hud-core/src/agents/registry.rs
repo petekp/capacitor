@@ -48,10 +48,10 @@ impl AgentRegistry {
     pub fn initialize_all(&self) {
         for adapter in &self.adapters {
             if let Err(e) = adapter.initialize() {
-                eprintln!(
-                    "Warning: Adapter {} initialization failed: {}",
-                    adapter.id(),
-                    e
+                tracing::warn!(
+                    adapter_id = %adapter.id(),
+                    error = %e,
+                    "Adapter initialization failed"
                 );
             }
         }
