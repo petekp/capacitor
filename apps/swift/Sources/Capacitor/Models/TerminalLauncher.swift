@@ -82,7 +82,7 @@ final class TerminalLauncher {
     // MARK: - Public API
 
     func launchTerminal(for project: Project, shellState: ShellCwdState? = nil) {
-        Task {
+        _Concurrency.Task {
             await launchTerminalAsync(for: project, shellState: shellState)
         }
     }
@@ -108,7 +108,7 @@ final class TerminalLauncher {
         if await hasTmuxClientAttached() {
             // Switch the existing client to the target session
             runBashScript("tmux switch-client -t '\(session)' 2>/dev/null")
-            try? await Task.sleep(nanoseconds: 100_000_000)
+            try? await _Concurrency.Task.sleep(nanoseconds: 100_000_000)
             activateTerminalApp()
         } else {
             // No client attached - launch a new terminal window that attaches to the session
@@ -341,9 +341,11 @@ final class TerminalLauncher {
     }
 
     private func activateKittyRemote(context: ActivationContext) -> Bool {
-        activateAppByName("kitty")
-        runBashScript("kitty @ focus-window --match pid:\(context.pid) 2>/dev/null")
-        return true
+        let activated = activateAppByName("kitty")
+        if activated {
+            runBashScript("kitty @ focus-window --match pid:\(context.pid) 2>/dev/null")
+        }
+        return activated
     }
 
     private func activateIDEWindow(context: ActivationContext) -> Bool {
@@ -375,20 +377,8 @@ final class TerminalLauncher {
     }
 
     private func launchNewTerminalForContext(context: ActivationContext) {
-        let projectName = URL(fileURLWithPath: context.projectPath).lastPathComponent
-        let project = Project(
-            name: projectName,
-            path: context.projectPath,
-            displayPath: context.projectPath,
-            lastActive: nil,
-            claudeMdPath: nil,
-            claudeMdPreview: nil,
-            hasLocalSettings: false,
-            taskCount: 0,
-            stats: nil,
-            isMissing: false
-        )
-        launchNewTerminal(for: project)
+        let name = URL(fileURLWithPath: context.projectPath).lastPathComponent
+        launchNewTerminal(forPath: context.projectPath, name: name)
     }
 
     private func activatePriorityFallback(context: ActivationContext) -> Bool {
@@ -570,9 +560,13 @@ final class TerminalLauncher {
     // MARK: - New Terminal Launch
 
     private func launchNewTerminal(for project: Project) {
+        launchNewTerminal(forPath: project.path, name: project.name)
+    }
+
+    private func launchNewTerminal(forPath path: String, name: String) {
         _Concurrency.Task {
             let claudePath = await getClaudePath()
-            runBashScript(TerminalScripts.launch(project: project, claudePath: claudePath))
+            runBashScript(TerminalScripts.launch(projectPath: path, projectName: name, claudePath: claudePath))
             scheduleTerminalActivation()
         }
     }
@@ -582,8 +576,8 @@ final class TerminalLauncher {
     }
 
     private func scheduleTerminalActivation() {
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: UInt64(Constants.activationDelaySeconds * 1_000_000_000))
+        _Concurrency.Task { @MainActor in
+            try? await _Concurrency.Task.sleep(nanoseconds: UInt64(Constants.activationDelaySeconds * 1_000_000_000))
             activateTerminalApp()
         }
     }
@@ -687,10 +681,10 @@ final class TerminalLauncher {
 // MARK: - Terminal Launch Scripts
 
 private enum TerminalScripts {
-    static func launch(project: Project, claudePath: String) -> String {
+    static func launch(projectPath: String, projectName: String, claudePath: String) -> String {
         """
-        PROJECT_PATH="\(project.path)"
-        PROJECT_NAME="\(project.name)"
+        PROJECT_PATH="\(projectPath)"
+        PROJECT_NAME="\(projectName)"
         CLAUDE_PATH="\(claudePath)"
 
         \(tmuxCheckAndFallback)

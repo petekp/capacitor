@@ -1,7 +1,7 @@
 # Agent Changelog
 
 > This file helps coding agents understand project evolution, key decisions,
-> and deprecated patterns. Updated: 2026-01-27
+> and deprecated patterns. Updated: 2026-01-27 (Session 2)
 
 ## Current State Summary
 
@@ -12,6 +12,42 @@ Capacitor is a native macOS SwiftUI app (Apple Silicon, macOS 14+) that acts as 
 None currently. Last audit: 2026-01-27 (fixed v3→v4 documentation in state modules, hud-hook audit remediation).
 
 ## Timeline
+
+### 2026-01-27 — Dead Code Cleanup: Swift Terminal System
+
+**What changed:**
+
+1. **Fixed `activateKittyRemote` fallback chain** — Now returns actual `activateAppByName()` result instead of unconditional `true`. Enables fallback strategies when kitty isn't running.
+
+2. **Simplified `launchNewTerminalForContext`** — Added `launchNewTerminal(forPath:name:)` overload. No longer reconstructs a fake 11-field `Project` object just to extract path and name.
+
+3. **Updated `TerminalScripts.launch` signature** — Now accepts `projectPath` and `projectName` directly instead of a `Project` object.
+
+4. **Made `normalize_path_simple` test-only** — Changed to `#[cfg(test)]` since only used in tests. Removed from public exports in `mod.rs`.
+
+5. **Fixed UniFFI `Task` type shadowing** — Discovered and fixed pre-existing build failure where UniFFI-generated `Task` type shadows Swift's `_Concurrency.Task`. All async code now uses `_Concurrency.Task` explicitly.
+
+**Why:**
+- Strategy pattern methods must return actual success/failure for fallback chains to work correctly
+- Creating fake objects to extract 2 fields is a code smell
+- Test-only functions should be `#[cfg(test)]` not `pub`
+- UniFFI type shadowing causes confusing "cannot specialize non-generic type 'Task'" errors
+
+**Agent impact:**
+- When implementing strategy pattern methods, always return actual success status
+- Use `_Concurrency.Task` (not `Task`) in Swift files that import UniFFI bindings
+- Prefer direct parameters over object reconstruction when only a few fields are needed
+- Use `#[cfg(test)]` for Rust functions only used in tests
+
+**New CLAUDE.md gotchas:**
+- UniFFI `Task` shadows Swift concurrency `Task`
+- Activation strategy methods must return actual success
+
+**Files changed:** `TerminalLauncher.swift`, `ShellStateStore.swift`, `path_utils.rs`, `state/mod.rs`
+
+**Plan doc:** `.claude/plans/ACTIVE-dead-code-cleanup.md` (updated status)
+
+---
 
 ### 2026-01-27 — hud-hook Audit Remediation
 
@@ -459,6 +495,9 @@ None currently. Last audit: 2026-01-27 (fixed v3→v4 documentation in state mod
 
 | Don't | Do Instead | Deprecated Since |
 |-------|------------|------------------|
+| Use `Task` in Swift files with UniFFI imports | Use `_Concurrency.Task` to avoid shadowing | 2026-01-27 |
+| Return `true` unconditionally from strategy methods | Return actual success status for fallback chains | 2026-01-27 |
+| Create fake objects to extract few fields | Add overloads that accept the needed fields directly | 2026-01-27 |
 | Return 0 from query functions on read errors | Return fail-safe sentinel (`usize::MAX`) to preserve state | 2026-01-27 |
 | Use `std::mem::forget()` on guards with important `Drop` | Hold guard in scope, let it drop naturally | 2026-01-27 |
 | Use `is_session_active()` or path-based session checks | Use lock existence via `find_all_locks_for_path()` | 2026-01-27 |
@@ -510,10 +549,13 @@ The project is moving toward:
    - `tracing` for structured logging with daily rotation
    - Consolidated shared utilities (e.g., `is_pid_alive`)
 
-7. **Codebase cleanup** — ✅ Implemented (2026-01-27)
-   - Removed ~650 lines of dead code from v3→v4 evolution
+7. **Codebase cleanup** — ✅ Nearly Complete (2026-01-27)
+   - Removed ~650 lines of dead code from v3→v4 evolution (Rust)
    - Fixed lock holder 24h timeout bug (no longer releases active sessions)
    - Updated stale documentation across state modules
+   - Swift cleanup: simplified `TerminalLauncher`, fixed `activateKittyRemote` fallback, `#[cfg(test)]` for test-only Rust functions
+   - Fixed UniFFI `Task` type shadowing in Swift
+   - Remaining: vestigial type system inconsistencies (low priority)
 
 8. **Side effects analysis** — ✅ Complete (2026-01-27)
    - 12-session comprehensive audit of all side-effect subsystems

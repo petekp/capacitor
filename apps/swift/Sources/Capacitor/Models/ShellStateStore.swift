@@ -33,7 +33,7 @@ final class ShellStateStore {
     }
 
     private let stateURL: URL
-    private var pollTask: Task<Void, Never>?
+    private var pollTask: _Concurrency.Task<Void, Never>?
 
     private(set) var state: ShellCwdState?
 
@@ -43,10 +43,10 @@ final class ShellStateStore {
     }
 
     func startPolling() {
-        pollTask = Task { @MainActor [weak self] in
-            while !Task.isCancelled {
+        pollTask = _Concurrency.Task { @MainActor [weak self] in
+            while !_Concurrency.Task.isCancelled {
                 self?.loadState()
-                try? await Task.sleep(nanoseconds: Constants.pollingIntervalNanoseconds)
+                try? await _Concurrency.Task.sleep(nanoseconds: Constants.pollingIntervalNanoseconds)
             }
         }
     }

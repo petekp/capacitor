@@ -1,6 +1,6 @@
 # Dead Code Cleanup Plan
 
-**Status:** ACTIVE (Partially Complete)
+**Status:** ACTIVE (Nearly Complete)
 **Created:** 2026-01-26
 **Updated:** 2026-01-27
 **Purpose:** Clean up dead, vestigial, and suspicious code identified in the audit
@@ -19,7 +19,10 @@
 - ✅ Section 3.2: `get_lock_dir_path()` in lock.rs (removed 2026-01-27)
 - ✅ Section 2.1: `windowCount` dead parameter (removed 2026-01-27)
 - ✅ Section 2.2: `.multipleApps` unreachable case (removed 2026-01-27)
-- ❌ Section 1: Swift TerminalLauncher items (duplicate logic, overly complicated project reconstruction, activateKittyRemote always returns true)
+- ✅ Section 1.2: `launchNewTerminalForContext` simplified (2026-01-27)
+- ✅ Section 1.3: `activateKittyRemote` now returns actual success status (2026-01-27)
+- ✅ Section 3.3: `normalize_path_simple` made `#[cfg(test)]` only (2026-01-27)
+- ⏸️ Section 1.1: tmux script consolidation (deferred - semantic differences)
 - ❌ Section 4: Vestigial patterns (type system inconsistencies)
 
 ---
@@ -48,6 +51,11 @@ The terminal/shell state detection system has accumulated **significant dead cod
 Both contain identical terminal priority logic (Ghostty → iTerm → Alacritty → kitty → Warp → Terminal).
 
 **Recommendation:** Delete `TerminalScripts.launchTerminalWithTmux` and consolidate into the instance method, OR refactor to share implementation.
+
+**Update (2026-01-27):** Deferred. Investigation revealed these are semantically different:
+- Instance method (`launchTerminalWithTmuxSession`): Attaches to an *existing* tmux session
+- Static script (`TerminalScripts.launchTerminalWithTmux`): Creates a *new* terminal with tmux session setup
+The scripts look similar but serve different purposes. Consolidation would require careful testing across 6 terminal apps.
 
 ### 1.2 Overly Complicated Project Reconstruction
 
@@ -224,13 +232,13 @@ The default `windowCount: Int = 1` suggests multi-window detection was planned b
 
 ### Medium Priority (Code Duplication)
 
-- [ ] Consolidate `launchTerminalWithTmuxSession` and `TerminalScripts.launchTerminalWithTmux`
-- [ ] Simplify `launchNewTerminalForContext` to not create fake Project
+- [ ] Consolidate `launchTerminalWithTmuxSession` and `TerminalScripts.launchTerminalWithTmux` (DEFERRED - semantic differences between "attach existing" vs "create new with tmux setup")
+- [x] Simplify `launchNewTerminalForContext` to not create fake Project (done 2026-01-27 - added `launchNewTerminal(forPath:name:)` overload)
 
 ### Low Priority (Code Quality)
 
-- [ ] Fix `activateKittyRemote` to return actual success status
-- [ ] Make `normalize_path_simple()` `pub(crate)` or remove
+- [x] Fix `activateKittyRemote` to return actual success status (done 2026-01-27)
+- [x] Make `normalize_path_simple()` `#[cfg(test)]` only (done 2026-01-27)
 - [ ] Unify `TerminalApp`/`IDEApp` with `ParentAppType`
 
 ---

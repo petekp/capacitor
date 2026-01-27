@@ -67,7 +67,8 @@ pub fn normalize_path_for_hashing(path: &str) -> String {
 /// - Performance is critical (no filesystem calls)
 ///
 /// Still applies case normalization on macOS and trailing slash removal.
-pub fn normalize_path_simple(path: &str) -> String {
+#[cfg(test)]
+fn normalize_path_simple(path: &str) -> String {
     let trimmed = strip_trailing_slashes(path);
     apply_case_normalization(&trimmed)
 }

@@ -51,9 +51,7 @@ mod store;
 pub(crate) mod types;
 
 // Re-export path utilities for use across the crate
-pub use path_utils::{
-    normalize_path_for_comparison, normalize_path_for_hashing, normalize_path_simple,
-};
+pub use path_utils::{normalize_path_for_comparison, normalize_path_for_hashing};
 
 pub use cleanup::{run_startup_cleanup, CleanupStats};
 pub use lock::{
