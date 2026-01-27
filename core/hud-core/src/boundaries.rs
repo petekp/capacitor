@@ -244,21 +244,6 @@ pub fn canonicalize_path(path: &str) -> std::io::Result<String> {
     Ok(result.trim_end_matches('/').to_string())
 }
 
-/// Normalizes a path string for comparison.
-/// - Removes trailing slashes (except for root "/")
-/// - Does NOT resolve symlinks or check filesystem
-///
-/// Use this for comparing paths that may come from different sources
-/// with inconsistent formatting.
-pub fn normalize_path(path: &str) -> String {
-    let trimmed = path.trim_end_matches('/');
-    if trimmed.is_empty() {
-        "/".to_string()
-    } else {
-        trimmed.to_string()
-    }
-}
-
 /// Checks if a path has a specific marker file or directory.
 fn has_marker(dir: &Path, marker: &str) -> bool {
     dir.join(marker).exists()
@@ -717,41 +702,6 @@ mod tests {
     fn canonicalize_handles_nonexistent_path() {
         let result = canonicalize_path("/this/path/definitely/does/not/exist");
         assert!(result.is_err());
-    }
-
-    // ========================================
-    // Path normalization tests
-    // ========================================
-
-    #[test]
-    fn normalize_path_removes_trailing_slash() {
-        assert_eq!(
-            normalize_path("/Users/pete/Code/project/"),
-            "/Users/pete/Code/project"
-        );
-    }
-
-    #[test]
-    fn normalize_path_removes_multiple_trailing_slashes() {
-        assert_eq!(
-            normalize_path("/Users/pete/Code/project///"),
-            "/Users/pete/Code/project"
-        );
-    }
-
-    #[test]
-    fn normalize_path_preserves_root() {
-        assert_eq!(normalize_path("/"), "/");
-    }
-
-    #[test]
-    fn normalize_path_handles_only_slashes() {
-        assert_eq!(normalize_path("///"), "/");
-    }
-
-    #[test]
-    fn normalize_path_preserves_normal_path() {
-        assert_eq!(normalize_path("/Users/pete/Code"), "/Users/pete/Code");
     }
 
     // ========================================

@@ -39,11 +39,10 @@
 //!
 //! # Path Matching
 //!
-//! A lock at `/project/src` makes `/project` appear active (child → parent inheritance).
-//! But a lock at `/project` does NOT make `/project/src` appear active.
+//! Exact match only. A lock at `/project/src` makes only `/project/src` appear active.
+//! No child→parent inheritance: locks don't propagate up or down the directory tree.
 //!
-//! Why? Common scenario: user pins `/project` but runs Claude from `/project/src`.
-//! We want the HUD to show activity for the pinned project.
+//! This ensures monorepo packages track state independently from their parent.
 
 use super::path_utils::{normalize_path_for_comparison, normalize_path_for_hashing};
 use super::types::LockInfo;

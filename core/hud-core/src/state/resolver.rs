@@ -1,6 +1,6 @@
 //! Resolves session state by combining lock liveness with stored records.
 //!
-//! v3: the state store is the source of truth for the last known state, and Claude Code lock
+//! The state store is the source of truth for the last known state, and Claude Code lock
 //! directories indicate liveness. We do **not** rely on PIDs in the state store.
 
 use std::path::Path;

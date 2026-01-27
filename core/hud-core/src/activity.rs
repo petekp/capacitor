@@ -12,8 +12,9 @@
 //! - **Conservative**: Prefer false negatives over false positives
 //! - **Secondary signal**: Activity is a secondary signal; lock/state data takes precedence when present.
 
-use crate::boundaries::{find_project_boundary, normalize_path};
+use crate::boundaries::find_project_boundary;
 use crate::error::{HudError, Result};
+use crate::state::normalize_path_for_comparison;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
@@ -280,10 +281,10 @@ impl ActivityStore {
     /// Uses normalized path comparison to handle trailing slash inconsistencies.
     #[must_use]
     pub fn has_recent_activity(&self, project_path: &str, threshold: Duration) -> bool {
-        let normalized_query = normalize_path(project_path);
+        let normalized_query = normalize_path_for_comparison(project_path);
         for session in self.sessions.values() {
             for activity in &session.activity {
-                if normalize_path(&activity.project_path) == normalized_query
+                if normalize_path_for_comparison(&activity.project_path) == normalized_query
                     && is_within_threshold(&activity.timestamp, threshold)
                 {
                     return true;
@@ -299,7 +300,7 @@ impl ActivityStore {
     /// misattributed project paths by verifying the file path as well.
     #[must_use]
     pub fn has_recent_activity_in_path(&self, project_path: &str, threshold: Duration) -> bool {
-        let normalized_query = normalize_path(project_path);
+        let normalized_query = normalize_path_for_comparison(project_path);
         let prefix = if normalized_query == "/" {
             "/".to_string()
         } else {
@@ -308,7 +309,7 @@ impl ActivityStore {
 
         for session in self.sessions.values() {
             for activity in &session.activity {
-                if normalize_path(&activity.project_path) != normalized_query {
+                if normalize_path_for_comparison(&activity.project_path) != normalized_query {
                     continue;
                 }
 
@@ -316,7 +317,7 @@ impl ActivityStore {
                     continue;
                 }
 
-                let activity_path = normalize_path(&activity.file_path);
+                let activity_path = normalize_path_for_comparison(&activity.file_path);
                 let matches_path = if normalized_query == "/" {
                     activity_path.starts_with('/')
                 } else {

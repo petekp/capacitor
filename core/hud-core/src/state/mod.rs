@@ -1,4 +1,4 @@
-//! Session State Detection (v3)
+//! Session State Detection (v4)
 //!
 //! Determines whether Claude Code is running and what it's doing for a given project.
 //!
@@ -17,7 +17,7 @@
 //!
 //! We use two signals to determine if a session is active:
 //!
-//! 1. **Lock files** (primary): Directories in `~/.capacitor/sessions/{hash}.lock/`
+//! 1. **Lock files** (primary): Directories in `~/.capacitor/sessions/{session_id}-{pid}.lock/`
 //!    indicate a running session. Created by `spawn_lock_holder()` in the hook handler.
 //!
 //! 2. **Fresh record fallback**: If no lock exists but a state record is fresh
@@ -39,7 +39,7 @@
 //!
 //! # Key Entry Points
 //!
-//! - [`is_session_running`]: Quick check for any active session at/under a path
+//! - [`is_session_running`]: Quick check for any active session at a path
 //! - [`resolve_state_with_details`]: Full resolution with session ID and cwd
 //! - [`StateStore`]: Low-level access to session records
 

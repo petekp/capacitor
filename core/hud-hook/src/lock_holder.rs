@@ -29,16 +29,21 @@ const MAX_LIFETIME_SECS: u64 = 24 * 60 * 60;
 pub fn run(session_id: &str, cwd: &str, pid: u32, lock_dir: &Path) {
     let start = Instant::now();
 
-    // Monitor the PID until it exits
-    while is_pid_alive(pid) {
+    // Monitor the PID until it exits, tracking whether it actually died
+    let pid_exited = loop {
+        if !is_pid_alive(pid) {
+            break true; // PID actually exited
+        }
+
         // Safety timeout: exit after 24 hours to prevent perpetually running lock holders
+        // IMPORTANT: Don't release the lock on timeout - PID is still alive!
         if start.elapsed().as_secs() > MAX_LIFETIME_SECS {
             tracing::info!(
                 session = %session_id,
                 cwd = %cwd,
-                "Lock holder exceeded max lifetime (24h), exiting"
+                "Lock holder exceeded max lifetime (24h), exiting without releasing lock (PID still alive)"
             );
-            break;
+            break false; // Timeout, PID still alive - don't release lock
         }
 
         // Check if lock directory still exists
@@ -66,6 +71,11 @@ pub fn run(session_id: &str, cwd: &str, pid: u32, lock_dir: &Path) {
         }
 
         thread::sleep(Duration::from_secs(1));
+    };
+
+    // Only release lock if PID actually exited (not on timeout)
+    if !pid_exited {
+        return;
     }
 
     // PID has exited - release this session's lock

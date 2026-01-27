@@ -1,7 +1,7 @@
 //! File-backed session state persistence.
 //!
-//! Reads session records from `~/.capacitor/sessions.json` (written by the hook script).
-//! The hook script is the authoritative writer; this module only reads.
+//! Stores session records in `~/.capacitor/sessions.json`. Both the hook script
+//! and the engine can read and write this file.
 //!
 //! # File Format
 //!
@@ -14,17 +14,9 @@
 //! }
 //! ```
 //!
-//! # Path Matching
+//! # Session Lookup
 //!
-//! When looking up sessions by path, we check three relationship types:
-//!
-//! 1. **Exact match**: Query path equals session's `cwd` or `project_dir`
-//! 2. **Child match**: Session is in a subdirectory of the query path
-//!    (e.g., query="/project", session.cwd="/project/src")
-//! 3. **Parent match**: Session is in a parent directory of the query path
-//!    (e.g., query="/project/src", session.cwd="/project")
-//!
-//! Priority: Exact/Child (prefer fresher) > Parent
+//! Sessions are looked up by exact session ID only. Use `get_by_session_id()`.
 //!
 //! # Defensive Design
 //!
@@ -49,25 +41,7 @@ use tempfile::NamedTempFile;
 
 use crate::types::SessionState;
 
-use super::path_utils::normalize_path_for_comparison;
 use super::types::SessionRecord;
-
-/// Normalizes a path for consistent comparison.
-/// Handles trailing slashes, case sensitivity (macOS), and symlinks.
-fn normalize_path(path: &str) -> String {
-    normalize_path_for_comparison(path)
-}
-
-/// Returns paths that should be considered for matching this record.
-///
-/// A session can match on either `cwd` (where Claude is running) or `project_dir`
-/// (the stable project root). This handles cases where the user cd'd into a subdirectory
-/// but the pinned project is the parent.
-fn record_match_paths(record: &SessionRecord) -> impl Iterator<Item = &str> {
-    [Some(record.cwd.as_str()), record.project_dir.as_deref()]
-        .into_iter()
-        .flatten()
-}
 
 /// The on-disk JSON structure for the state file.
 #[derive(Debug, Serialize, Deserialize)]
@@ -222,110 +196,6 @@ impl StateStore {
         self.sessions.values()
     }
 
-    /// Finds a session record matching the given path.
-    ///
-    /// Searches in priority order:
-    /// 1. Exact match (cwd or project_dir equals query path)
-    /// 2. Child match (session is in a subdirectory of query path)
-    /// 3. Parent match (session is in a parent directory of query path)
-    ///
-    /// Within each priority level, returns the most recently updated record.
-    ///
-    /// # Why Child Matches Matter
-    ///
-    /// Common scenario: Project is pinned at `/project` but user cd'd to `/project/src`
-    /// before running Claude. We want the HUD to show that session for `/project`.
-    pub fn find_by_cwd(&self, cwd: &str) -> Option<&SessionRecord> {
-        let mut best: Option<&SessionRecord> = None;
-
-        let cwd_normalized = normalize_path(cwd);
-
-        // Priority 1: Exact match on cwd or project_dir
-        for record in self.sessions.values() {
-            let is_exact = record_match_paths(record).any(|p| normalize_path(p) == cwd_normalized);
-            if !is_exact {
-                continue;
-            }
-            match best {
-                None => best = Some(record),
-                Some(current) if record.updated_at > current.updated_at => best = Some(record),
-                _ => {}
-            }
-        }
-
-        // 2. Session is in a CHILD directory of the query path
-        // e.g., query="/project", session.cwd="/project/subdir"
-        // Don't return early - child might be fresher than exact match
-
-        // Special case for root: children of "/" are paths starting with "/" (not "//")
-        let is_root_query = cwd_normalized == "/";
-        let cwd_with_slash = if is_root_query {
-            "/".to_string()
-        } else {
-            format!("{}/", cwd_normalized)
-        };
-
-        for record in self.sessions.values() {
-            let is_child = record_match_paths(record).any(|p| {
-                let record_path_normalized = normalize_path(p);
-                if is_root_query {
-                    // For root query, match any path except root itself
-                    record_path_normalized != "/"
-                        && record_path_normalized.starts_with(&cwd_with_slash)
-                } else {
-                    record_path_normalized.starts_with(&cwd_with_slash)
-                }
-            });
-
-            if is_child {
-                match best {
-                    None => best = Some(record),
-                    Some(current) if record.updated_at > current.updated_at => best = Some(record),
-                    _ => {}
-                }
-            }
-        }
-
-        // If we found exact or child match, return it
-        // Child sessions take precedence over parent fallbacks
-        if best.is_some() {
-            return best;
-        }
-
-        // 3. Session is in a PARENT directory of the query path
-        // e.g., query="/project/subdir", session.cwd="/project"
-        // Only use parent as fallback if no exact/child found
-        let mut current_path = cwd_normalized.as_str();
-        while let Some(parent) = Path::new(current_path).parent() {
-            let parent_str = parent.to_string_lossy();
-            let parent_normalized = normalize_path(&parent_str);
-            if parent_normalized.is_empty() || parent_normalized == "/" {
-                break;
-            }
-
-            for record in self.sessions.values() {
-                let is_exact_parent =
-                    record_match_paths(record).any(|p| normalize_path(p) == parent_normalized);
-                if !is_exact_parent {
-                    continue;
-                }
-                match best {
-                    None => best = Some(record),
-                    Some(current) if record.updated_at > current.updated_at => best = Some(record),
-                    _ => {}
-                }
-            }
-
-            if best.is_some() {
-                return best;
-            }
-
-            current_path = parent.to_str().unwrap_or("");
-        }
-
-        None
-    }
-
     pub fn all_sessions(&self) -> impl Iterator<Item = &SessionRecord> {
         self.sessions.values()
     }
@@ -369,8 +239,6 @@ impl StateStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::thread;
-    use std::time::Duration;
     use tempfile::tempdir;
 
     #[test]
@@ -408,47 +276,6 @@ mod tests {
     }
 
     #[test]
-    fn test_find_by_cwd_returns_most_recent() {
-        let mut store = StateStore::new_in_memory();
-        store.update("old", SessionState::Ready, "/project");
-        thread::sleep(Duration::from_millis(10));
-        store.update("new", SessionState::Working, "/project");
-        let record = store.find_by_cwd("/project").unwrap();
-        assert_eq!(record.session_id, "new");
-    }
-
-    #[test]
-    fn test_find_by_cwd_checks_parent_paths() {
-        let mut store = StateStore::new_in_memory();
-        store.update("parent-session", SessionState::Working, "/parent");
-        let record = store.find_by_cwd("/parent/child").unwrap();
-        assert_eq!(record.session_id, "parent-session");
-    }
-
-    #[test]
-    fn test_find_by_cwd_prefers_exact_match_over_parent() {
-        let mut store = StateStore::new_in_memory();
-        store.update("parent-session", SessionState::Working, "/parent");
-        store.update("child-session", SessionState::Ready, "/parent/child");
-        let record = store.find_by_cwd("/parent/child").unwrap();
-        assert_eq!(record.session_id, "child-session");
-    }
-
-    #[test]
-    fn test_find_by_cwd_finds_child_session_from_parent_query() {
-        // This is the critical case: pinned project is /project but session runs from /project/subdir
-        let mut store = StateStore::new_in_memory();
-        store.update(
-            "child-session",
-            SessionState::Working,
-            "/project/apps/swift",
-        );
-        let record = store.find_by_cwd("/project").unwrap();
-        assert_eq!(record.session_id, "child-session");
-        assert_eq!(record.cwd, "/project/apps/swift");
-    }
-
-    #[test]
     fn test_persistence_round_trip() {
         let temp = tempdir().unwrap();
         let file = temp.path().join("state.json");
@@ -481,36 +308,6 @@ mod tests {
         store.update("s2", SessionState::Ready, "/proj2");
         let sessions: Vec<_> = store.all_sessions().collect();
         assert_eq!(sessions.len(), 2);
-    }
-
-    #[test]
-    fn test_find_by_cwd_returns_most_recent_when_multiple_at_same_path() {
-        let mut store = StateStore::new_in_memory();
-
-        // Create session-1 at /project
-        store.update("session-1", SessionState::Working, "/project");
-
-        thread::sleep(Duration::from_millis(10));
-
-        // Create session-2 at /project (more recent)
-        store.update("session-2", SessionState::Ready, "/project");
-
-        // Query for /project should return the more recent session (session-2)
-        // Timestamp-based selection, no PID tie-breaking
-        let record = store.find_by_cwd("/project").unwrap();
-
-        // Should get the fresher one (session-2) since both have same cwd
-        assert_eq!(record.session_id, "session-2");
-    }
-
-    #[test]
-    fn test_find_by_cwd_matches_project_dir_when_cwd_is_unrelated() {
-        let mut store = StateStore::new_in_memory();
-        store.update("s1", SessionState::Working, "/wrong");
-        store.set_project_dir_for_test("s1", Some("/project"));
-
-        let record = store.find_by_cwd("/project").unwrap();
-        assert_eq!(record.session_id, "s1");
     }
 
     #[test]

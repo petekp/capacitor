@@ -2,6 +2,22 @@
 
 Comprehensive audit of all external side effects produced by Capacitor, organized by component and type.
 
+## Detailed Analyses
+
+In-depth side effect documentation for specific subsystems:
+
+| Subsystem | Side Effects | Audit | Status |
+|-----------|--------------|-------|--------|
+| Lock System | [side-effects/lock-system.md](side-effects/lock-system.md) | [audit/01-lock-system.md](audit/01-lock-system.md) | ✅ Complete |
+| Lock Holder | [side-effects/lock-holder.md](side-effects/lock-holder.md) | [audit/02-lock-holder.md](audit/02-lock-holder.md) | ✅ Complete |
+| Session State | *Pending* | *Pending* | |
+| Cleanup | *Pending* | *Pending* | |
+| Tombstone | *Pending* | *Pending* | |
+| Shell Tracking | *Pending* | *Pending* | |
+| Hook Setup | *Pending* | *Pending* | |
+
+---
+
 ## Quick Reference
 
 | Category | Write Locations | Read Locations |
@@ -34,11 +50,14 @@ pub fn save(&self, state: &HashMap<String, SessionRecord>) -> Result<(), StateEr
 ```
 
 #### Lock Directories (`~/.capacitor/sessions/{session_id}-{pid}.lock/`)
+
+> **Deep dive:** [Lock System Side Effects](side-effects/lock-system.md)
+
 - **Writers:**
   - `lock.rs:create_session_lock()` - creates lock directories
   - `lock_holder.rs` - maintains lock presence via background process
 - **Trigger:** SessionStart event
-- **Content:** Directory with `holder.pid` file containing PID
+- **Content:** Directory with `pid` and `meta.json` files
 - **Cleanup:** Automatic via `cleanup.rs` on startup, `lock_holder.rs` on exit
 
 ```rust
@@ -78,16 +97,16 @@ pub fn append_to_history(path: &Path, event: &HistoryEvent) -> Result<(), CwdErr
 fn write_activity_file(path: &str, event: &HookEvent) { ... }
 ```
 
-#### Tombstones (`~/.capacitor/sessions/{session_id}.tombstone`)
-- **Writer:** `handle.rs` via `write_tombstone()` / `clear_tombstone()`
-- **Trigger:** SessionEnd (write), Warmup (clear)
-- **Purpose:** Marks session as ended before cleanup runs
+#### Tombstones (`~/.capacitor/ended-sessions/{session_id}`)
+- **Writer:** `handle.rs` via `create_tombstone()` / `remove_tombstone()`
+- **Trigger:** SessionEnd (create), SessionStart (clear for reuse), cleanup after 60s (clear)
+- **Purpose:** Prevents race conditions where late-arriving events could recreate deleted sessions
 - **Content:** Empty file (existence is the signal)
 
 ```rust
 // core/hud-hook/src/handle.rs
-fn write_tombstone(tombstones_dir: &Path, session_id: &str) { ... }
-fn clear_tombstone(tombstones_dir: &Path, session_id: &str) { ... }
+fn create_tombstone(tombstones_dir: &Path, session_id: &str) { ... }
+fn remove_tombstone(tombstones_dir: &Path, session_id: &str) { ... }
 ```
 
 #### User Config (`~/.capacitor/config.json`)
@@ -309,7 +328,7 @@ osascript -e "tell application \"iTerm\" to create window with default profile c
 | **App Launch** | Read all state files, cleanup stale locks (SIGTERM), verify hooks |
 | **SessionStart Hook** | Create lock dir, spawn lock-holder, write state, write activity |
 | **ToolUse Hook** | Update state, write activity |
-| **SessionEnd Hook** | Write tombstone, update state |
+| **SessionEnd Hook** | Create tombstone, remove session record, release lock |
 | **cd Command** | Update shell-cwd.json, append to shell-history.jsonl |
 | **Project Click** | AppleScript/osascript, tmux commands, app activation |
 | **Install Hooks** | Copy binary, modify ~/.claude/settings.json |
@@ -341,7 +360,7 @@ osascript -e "tell application \"iTerm\" to create window with default profile c
 1. Find all lock directories in `~/.capacitor/sessions/`
 2. Check if lock-holder PID is alive
 3. If dead: SIGTERM any stale processes, remove lock directory
-4. Remove tombstone files for cleaned sessions
+4. Remove tombstone files older than 60 seconds
 
 ### Session End Cleanup (`lock_holder.rs`)
 1. Catch SIGTERM or detect parent death

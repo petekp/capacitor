@@ -10,7 +10,6 @@
 //! We never write to `~/.claude/` (sidecar purity).
 
 use crate::activity::ActivityStore;
-use crate::boundaries::normalize_path;
 use crate::state::{resolve_state_with_details, StateStore};
 use crate::storage::StorageConfig;
 use crate::types::{ProjectSessionState, SessionState};
@@ -170,117 +169,11 @@ pub fn read_project_status(project_path: &str) -> Option<ProjectStatus> {
     }
 }
 
-/// Checks if a Claude session is actively running for the given project path.
-///
-/// This uses directory-based locking (mkdir is atomic) to reliably detect running sessions.
-/// A background process spawned by the hooks (SessionStart/UserPromptSubmit) holds the lock directory
-/// while Claude is running, and removes it when Claude exits.
-///
-/// IMPORTANT: The lock is created for the cwd where Claude runs, which may be a
-/// subdirectory of the pinned project. This function checks both:
-/// 1. Exact path match (lock created at project root)
-/// 2. Subdirectory match (lock created in a subdirectory of the project)
-///
-/// Lock directories are in `~/.capacitor/sessions/` (our namespace, sidecar purity).
-#[must_use]
-pub fn is_session_active(project_path: &str) -> bool {
-    let storage = StorageConfig::default();
-    is_session_active_with_storage(&storage, project_path)
-}
-
-#[must_use]
-pub fn is_session_active_with_storage(storage: &StorageConfig, project_path: &str) -> bool {
-    let sessions_dir = storage.sessions_dir();
-    is_session_active_with_lock_dir(&sessions_dir, project_path)
-}
-
-fn is_session_active_with_lock_dir(sessions_dir: &Path, project_path: &str) -> bool {
-    if !sessions_dir.exists() {
-        return false;
-    }
-
-    let normalized_project = normalize_path(project_path);
-
-    // First, try exact path match (most common case)
-    let hash = md5::compute(&normalized_project);
-    let lock_dir = sessions_dir.join(format!("{:x}.lock", hash));
-
-    if lock_dir.exists() && lock_dir.is_dir() {
-        if let Some(pid) = read_pid_from_lock(&lock_dir) {
-            if crate::state::lock::is_pid_alive(pid) {
-                return true;
-            }
-        }
-    }
-
-    // Second, scan all locks to find child paths
-    // If Claude runs from a subdirectory (e.g., apps/swift), the parent project (claude-hud) is locked.
-    // But NOT the reverse: a lock in a parent directory does NOT lock child projects.
-    if let Ok(entries) = fs::read_dir(sessions_dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if !path.is_dir() || !path.extension().map(|e| e == "lock").unwrap_or(false) {
-                continue;
-            }
-
-            // Read the lock's path from meta.json
-            let meta_file = path.join("meta.json");
-            if let Ok(meta_str) = fs::read_to_string(&meta_file) {
-                if let Ok(meta) = serde_json::from_str::<serde_json::Value>(&meta_str) {
-                    if let Some(lock_path) = meta.get("path").and_then(|v| v.as_str()) {
-                        let normalized_lock = normalize_path(lock_path);
-                        let is_child_lock = if normalized_project == "/" {
-                            normalized_lock != "/" && normalized_lock.starts_with('/')
-                        } else {
-                            let prefix = format!("{}/", normalized_project);
-                            normalized_lock.starts_with(&prefix)
-                        };
-
-                        if is_child_lock {
-                            // Found a child lock - check if PID is alive
-                            if let Some(pid) = read_pid_from_lock(&path) {
-                                if crate::state::lock::is_pid_alive(pid) {
-                                    return true;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    false
-}
-
-/// Reads PID from lock directory, supporting both old (pid file) and new (meta.json) formats
-fn read_pid_from_lock(lock_dir: &Path) -> Option<u32> {
-    // Try old format: direct pid file
-    let pid_file = lock_dir.join("pid");
-    if let Ok(pid_str) = fs::read_to_string(&pid_file) {
-        if let Ok(pid) = pid_str.trim().parse::<u32>() {
-            return Some(pid);
-        }
-    }
-
-    // Try new format: meta.json with {"pid": N, ...}
-    let meta_file = lock_dir.join("meta.json");
-    if let Ok(meta_str) = fs::read_to_string(&meta_file) {
-        if let Ok(meta) = serde_json::from_str::<serde_json::Value>(&meta_str) {
-            if let Some(pid) = meta.get("pid").and_then(|v| v.as_u64()) {
-                return Some(pid as u32);
-            }
-        }
-    }
-
-    None
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::state::normalize_path_for_hashing;
     use chrono::{Duration as ChronoDuration, Utc};
-    use std::io::Write;
     use std::path::PathBuf;
     use tempfile::TempDir;
 
@@ -302,48 +195,6 @@ mod tests {
         (temp, storage, sessions_dir)
     }
 
-    /// Sets up storage with sessions dir in CLAUDE namespace (for testing we ignore it).
-    fn setup_storage_with_claude_sessions() -> (TempDir, StorageConfig, PathBuf) {
-        let (temp, storage) = setup_storage();
-        let sessions_dir = storage.claude_root().join("sessions");
-        fs::create_dir_all(&sessions_dir).unwrap();
-        (temp, storage, sessions_dir)
-    }
-
-    /// Helper to create a test sessions directory with a lock (old format: pid file)
-    fn create_test_lock(sessions_dir: &Path, project_path: &str, pid: u32) {
-        let normalized = normalize_path(project_path);
-        let hash = md5::compute(normalized.as_bytes());
-        let lock_dir = sessions_dir.join(format!("{:x}.lock", hash));
-        fs::create_dir_all(&lock_dir).unwrap();
-
-        let pid_file = lock_dir.join("pid");
-        let mut file = fs::File::create(&pid_file).unwrap();
-        writeln!(file, "{}", pid).unwrap();
-    }
-
-    /// Helper to create a lock with meta.json (new format, includes path for relationship checks)
-    fn create_test_lock_with_meta(sessions_dir: &Path, project_path: &str, pid: u32) {
-        let normalized = normalize_path(project_path);
-        let hash = md5::compute(normalized.as_bytes());
-        let lock_dir = sessions_dir.join(format!("{:x}.lock", hash));
-        fs::create_dir_all(&lock_dir).unwrap();
-
-        let meta = format!(
-            r#"{{"pid": {}, "started": "2024-01-01T00:00:00Z", "path": "{}"}}"#,
-            pid, project_path
-        );
-        fs::write(lock_dir.join("meta.json"), meta).unwrap();
-    }
-
-    /// Helper to clean up a test lock
-    fn cleanup_test_lock(sessions_dir: &Path, project_path: &str) {
-        let normalized = normalize_path(project_path);
-        let hash = md5::compute(normalized.as_bytes());
-        let lock_dir = sessions_dir.join(format!("{:x}.lock", hash));
-        let _ = fs::remove_dir_all(&lock_dir);
-    }
-
     #[test]
     fn test_md5_hash_consistency() {
         let path = "/Users/test/project";
@@ -357,106 +208,6 @@ mod tests {
         let hash1 = format!("{:x}", md5::compute("/path/one"));
         let hash2 = format!("{:x}", md5::compute("/path/two"));
         assert_ne!(hash1, hash2, "Different paths should have different hashes");
-    }
-
-    #[test]
-    fn test_is_session_active_no_sessions_dir() {
-        let (_temp, storage) = setup_storage();
-        let result =
-            is_session_active_with_storage(&storage, "/nonexistent/path/that/surely/doesnt/exist");
-        assert!(!result, "Missing sessions dir should be inactive");
-    }
-
-    #[test]
-    fn test_is_session_active_with_dead_pid() {
-        let (_temp, storage, sessions_dir) = setup_storage_with_sessions();
-
-        // Use a test path that won't conflict with real projects
-        let test_path = "/tmp/hud-core-test-dead-pid-project";
-
-        // Create lock with definitely-dead PID
-        create_test_lock(&sessions_dir, test_path, 999999999);
-
-        let result = is_session_active_with_storage(&storage, test_path);
-
-        // Clean up
-        cleanup_test_lock(&sessions_dir, test_path);
-
-        assert!(!result, "Dead PID should not be considered active");
-    }
-
-    #[test]
-    fn test_is_session_active_with_current_pid() {
-        let (_temp, storage, sessions_dir) = setup_storage_with_sessions();
-
-        let test_path = "/tmp/hud-core-test-current-pid-project";
-
-        // Create lock with our own PID (definitely alive)
-        let current_pid = std::process::id();
-        create_test_lock(&sessions_dir, test_path, current_pid);
-
-        let result = is_session_active_with_storage(&storage, test_path);
-
-        // Clean up
-        cleanup_test_lock(&sessions_dir, test_path);
-
-        assert!(result, "Current process PID should be considered active");
-    }
-
-    #[test]
-    fn test_is_session_active_no_lock_dir() {
-        let (_temp, storage, sessions_dir) = setup_storage_with_sessions();
-
-        // Use a path that definitely won't have a lock
-        let test_path = "/tmp/hud-core-test-no-lock-dir-unique-12345";
-
-        // Ensure no lock exists
-        cleanup_test_lock(&sessions_dir, test_path);
-
-        let result = is_session_active_with_storage(&storage, test_path);
-        assert!(!result, "Missing lock dir should not be considered active");
-    }
-
-    #[test]
-    fn test_is_session_active_empty_pid_file() {
-        let (_temp, storage, sessions_dir) = setup_storage_with_sessions();
-
-        let test_path = "/tmp/hud-core-test-empty-pid-file";
-        let normalized = normalize_path(test_path);
-        let hash = md5::compute(normalized.as_bytes());
-        let lock_dir = sessions_dir.join(format!("{:x}.lock", hash));
-
-        // Create lock dir with empty pid file
-        fs::create_dir_all(&lock_dir).unwrap();
-        fs::write(lock_dir.join("pid"), "").unwrap();
-
-        let result = is_session_active_with_storage(&storage, test_path);
-
-        // Clean up
-        let _ = fs::remove_dir_all(&lock_dir);
-
-        assert!(!result, "Empty PID file should not be considered active");
-    }
-
-    #[test]
-    fn test_is_session_active_invalid_pid() {
-        let (_temp, storage, sessions_dir) = setup_storage_with_sessions();
-
-        let test_path = "/tmp/hud-core-test-invalid-pid";
-        let normalized = normalize_path(test_path);
-        let hash = md5::compute(normalized.as_bytes());
-        let lock_dir = sessions_dir.join(format!("{:x}.lock", hash));
-
-        // Create lock dir with invalid pid
-        fs::create_dir_all(&lock_dir).unwrap();
-        fs::write(lock_dir.join("pid"), "not-a-number").unwrap();
-
-        let result = is_session_active_with_storage(&storage, test_path);
-
-        // Clean up
-        let _ = fs::remove_dir_all(&lock_dir);
-
-        assert!(!result, "Invalid PID should not be considered active");
     }
 
     #[test]
@@ -633,137 +384,8 @@ mod tests {
         assert!(result.is_none());
     }
 
-    // ============================================================
-    // CRITICAL EDGE CASE TESTS
-    // These test the specific bugs we discovered and fixed
-    // ============================================================
-
-    /// Test: Lock in child directory makes parent project active
-    /// Scenario: Claude runs from /project/apps/swift, pinned project is /project
-    /// Expected: is_session_active("/project") returns true
-    #[test]
-    fn test_child_lock_makes_parent_active() {
-        let (_temp, storage, sessions_dir) = setup_storage_with_sessions();
-
-        let parent_path = "/tmp/hud-test-parent-project";
-        let child_path = "/tmp/hud-test-parent-project/apps/swift";
-        let current_pid = std::process::id();
-
-        // Create lock for CHILD path (simulating Claude running from subdirectory)
-        create_test_lock_with_meta(&sessions_dir, child_path, current_pid);
-
-        // Check if PARENT is considered active
-        let result = is_session_active_with_storage(&storage, parent_path);
-
-        // Clean up
-        cleanup_test_lock(&sessions_dir, child_path);
-
-        assert!(
-            result,
-            "Parent project should be active when child has a lock"
-        );
-    }
-
-    /// Test: Lock in parent directory does NOT make child project active
-    /// Scenario: Claude runs from /project, child project is /project/packages/foo
-    /// Expected: is_session_active("/project/packages/foo") returns false
-    /// This was a bug we fixed - locks should NOT propagate downward
-    #[test]
-    fn test_parent_lock_does_not_make_child_active() {
-        let (_temp, storage, sessions_dir) = setup_storage_with_sessions();
-
-        let parent_path = "/tmp/hud-test-parent-only";
-        let child_path = "/tmp/hud-test-parent-only/packages/child";
-        let current_pid = std::process::id();
-
-        // Create lock for PARENT path only
-        create_test_lock_with_meta(&sessions_dir, parent_path, current_pid);
-
-        // Check if CHILD is considered active (should be FALSE)
-        let result = is_session_active_with_storage(&storage, child_path);
-
-        // Clean up
-        cleanup_test_lock(&sessions_dir, parent_path);
-
-        assert!(
-            !result,
-            "Child project should NOT be active when only parent has a lock"
-        );
-    }
-
-    /// Test: Exact path match works correctly
-    #[test]
-    fn test_exact_path_lock_is_active() {
-        let (_temp, storage, sessions_dir) = setup_storage_with_sessions();
-
-        let project_path = "/tmp/hud-test-exact-match";
-        let query_path = format!("{}/", project_path);
-        let current_pid = std::process::id();
-
-        create_test_lock_with_meta(&sessions_dir, project_path, current_pid);
-
-        let result = is_session_active_with_storage(&storage, &query_path);
-
-        cleanup_test_lock(&sessions_dir, project_path);
-
-        assert!(result, "Exact path match should be active");
-    }
-
-    /// Test: Unrelated paths don't affect each other
-    #[test]
-    fn test_unrelated_paths_independent() {
-        let (_temp, storage, sessions_dir) = setup_storage_with_sessions();
-
-        let path_a = "/tmp/hud-test-project-a";
-        let path_b = "/tmp/hud-test-project-b";
-        let current_pid = std::process::id();
-
-        // Create lock for path A only
-        create_test_lock_with_meta(&sessions_dir, path_a, current_pid);
-
-        // Check path B (should NOT be active)
-        let result = is_session_active_with_storage(&storage, path_b);
-
-        cleanup_test_lock(&sessions_dir, path_a);
-
-        assert!(
-            !result,
-            "Unrelated path should not be affected by other locks"
-        );
-    }
-
-    /// Test: Similar path prefixes don't false-match
-    /// e.g., /project-foo should not match /project
-    #[test]
-    fn test_similar_prefix_no_false_match() {
-        let (_temp, storage, sessions_dir) = setup_storage_with_sessions();
-
-        let path_short = "/tmp/hud-test-prefix-short";
-        let path_long = "/tmp/hud-test-prefix-shorter"; // Different project, similar prefix
-        let current_pid = std::process::id();
-
-        // Clean up any leftover state first
-        cleanup_test_lock(&sessions_dir, path_short);
-        cleanup_test_lock(&sessions_dir, path_long);
-
-        // Create lock for long path only
-        create_test_lock_with_meta(&sessions_dir, path_long, current_pid);
-
-        // Short path should NOT be active (it's not a parent, just similar name)
-        let result = is_session_active_with_storage(&storage, path_short);
-
-        // Clean up
-        cleanup_test_lock(&sessions_dir, path_short);
-        cleanup_test_lock(&sessions_dir, path_long);
-
-        assert!(
-            !result,
-            "Similar prefix should not cause false match (must be actual subdirectory)"
-        );
-    }
-
     // ─────────────────────────────────────────────────────────────────────────────
-    // Phase 1: Lock Namespace Tests
+    // Lock Namespace Tests
     // These tests verify locks are in ~/.capacitor/sessions/ (our namespace),
     // NOT in ~/.claude/sessions/ (Claude's namespace - sidecar violation!)
     // ─────────────────────────────────────────────────────────────────────────────
@@ -773,7 +395,7 @@ mod tests {
         let sessions_dir = storage.sessions_dir(); // ~/.capacitor/sessions/
         fs::create_dir_all(&sessions_dir).unwrap();
 
-        let normalized = normalize_path(project_path);
+        let normalized = normalize_path_for_hashing(project_path);
         let hash = md5::compute(normalized.as_bytes());
         let lock_dir = sessions_dir.join(format!("{:x}.lock", hash));
         fs::create_dir_all(&lock_dir).unwrap();
@@ -792,49 +414,6 @@ mod tests {
             pid, project_path, proc_started, created
         );
         fs::write(lock_dir.join("meta.json"), meta).unwrap();
-    }
-
-    #[test]
-    fn test_locks_should_be_in_capacitor_namespace() {
-        // This test verifies that session detection looks for locks in
-        // ~/.capacitor/sessions/, NOT ~/.claude/sessions/
-        let (_temp, storage) = setup_storage();
-        let test_path = "/test/capacitor/namespace";
-        let current_pid = std::process::id();
-
-        // Create lock in CAPACITOR namespace (the correct location)
-        create_capacitor_lock(&storage, test_path, current_pid);
-
-        // Session should be detected as active
-        let result = is_session_active_with_storage(&storage, test_path);
-
-        assert!(
-            result,
-            "Locks in ~/.capacitor/sessions/ should be detected (sidecar purity)"
-        );
-    }
-
-    #[test]
-    fn test_locks_in_claude_namespace_should_be_ignored() {
-        // This test verifies we DON'T look for locks in ~/.claude/sessions/
-        // (that would pollute Claude's namespace - sidecar violation!)
-        let (_temp, storage, claude_sessions_dir) = setup_storage_with_claude_sessions();
-        let test_path = "/test/claude/namespace";
-        let current_pid = std::process::id();
-
-        // Create lock in CLAUDE namespace (the WRONG location)
-        create_test_lock_with_meta(&claude_sessions_dir, test_path, current_pid);
-
-        // Session should NOT be detected (we shouldn't look there)
-        let result = is_session_active_with_storage(&storage, test_path);
-
-        // Clean up
-        cleanup_test_lock(&claude_sessions_dir, test_path);
-
-        assert!(
-            !result,
-            "Locks in ~/.claude/sessions/ should be ignored (sidecar purity)"
-        );
     }
 
     #[test]

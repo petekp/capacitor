@@ -122,8 +122,8 @@ impl AgentAdapter for ClaudeAdapter {
         // v3 resolver handles both lock-based detection and fresh record fallback
         let details = resolve_state_with_details(&lock_dir, &store, project_path)?;
 
-        // Use the resolved session_id to look up metadata, NOT find_by_cwd.
-        // Using find_by_cwd could return a different session in multi-session scenarios.
+        // Use the resolved session_id for metadata lookup (exact-match-only policy).
+        // Path-based lookup could return a different session in multi-session scenarios.
         let record = details
             .session_id
             .as_deref()
