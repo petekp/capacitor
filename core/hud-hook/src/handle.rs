@@ -157,15 +157,6 @@ pub fn run() -> Result<(), String> {
     // Apply the state change
     match action {
         Action::Delete => {
-            // Release the session-based lock FIRST
-            // This directly removes the lock for this specific session/PID
-            if release_lock_by_session(&lock_base, &session_id, ppid) {
-                log(&format!(
-                    "Released lock for session {} (PID {})",
-                    session_id, ppid
-                ));
-            }
-
             // Check if OTHER processes are still using this session_id
             // (can happen when Claude resumes the same session in multiple terminals)
             let other_locks = count_other_session_locks(&lock_base, &session_id, ppid);
@@ -174,18 +165,37 @@ pub fn run() -> Result<(), String> {
                     "Session {} has {} other active locks, preserving session record",
                     session_id, other_locks
                 ));
-                // Don't create tombstone or delete session record - other processes need it
+                // Release this process's lock but preserve the session record
+                if release_lock_by_session(&lock_base, &session_id, ppid) {
+                    log(&format!(
+                        "Released lock for session {} (PID {})",
+                        session_id, ppid
+                    ));
+                }
             } else {
-                // Create tombstone to prevent race conditions with late-arriving events
+                // No other locks - clean up completely
+                // Order matters: remove record BEFORE lock to prevent race condition
+                // where UI sees no lock + fresh record → shows Ready briefly before Idle
+
+                // 1. Create tombstone to prevent late-arriving events
                 create_tombstone(&tombstones_dir, &session_id);
 
+                // 2. Remove session record and save to disk
                 store.remove(&session_id);
                 store
                     .save()
                     .map_err(|e| format!("Failed to save state: {}", e))?;
 
-                // Also remove from activity file
+                // 3. Remove from activity file
                 remove_session_activity(&activity_file, &session_id);
+
+                // 4. Release lock LAST - UI will see no record AND no lock atomically
+                if release_lock_by_session(&lock_base, &session_id, ppid) {
+                    log(&format!(
+                        "Released lock for session {} (PID {})",
+                        session_id, ppid
+                    ));
+                }
             }
         }
         Action::Upsert | Action::Heartbeat => {
