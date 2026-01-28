@@ -1,17 +1,55 @@
 # Agent Changelog
 
 > This file helps coding agents understand project evolution, key decisions,
-> and deprecated patterns. Updated: 2026-01-27 (Session 6)
+> and deprecated patterns. Updated: 2026-01-27 (Session 7)
 
 ## Current State Summary
 
-Capacitor is a native macOS SwiftUI app (Apple Silicon, macOS 14+) that acts as a sidecar dashboard for Claude Code. The architecture uses a Rust core (`hud-core`) with UniFFI bindings to Swift. State tracking relies on Claude Code hooks that write to `~/.capacitor/`, with session-based locks (`{session_id}-{pid}.lock`) as the authoritative signal for active sessions. Shell integration provides ambient project awareness via precmd hooks. Hooks run asynchronously to avoid blocking Claude Code execution. All file I/O uses `fs_err` for enriched error messages, and structured logging via `tracing` writes to `~/.capacitor/hud-hook-debug.{date}.log`. **Terminal activation now uses Rust-only path:** The legacy Swift decision logic was removed (~277 lines); Rust decides (`activation.rs`), Swift executes (macOS APIs). **Terminal activation hardened:** Phase 1-2 security/reliability fixes complete (shell injection prevention, exit code checking, `is_live` shell tracking, TTY-first Ghostty detection). **Bulletproof Hooks complete:** Phase 4 Test Hooks button added for manual verification. **Audit complete:** A comprehensive 12-session side-effects analysis validated all major subsystems.
+Capacitor is a native macOS SwiftUI app (Apple Silicon, macOS 14+) that acts as a sidecar dashboard for Claude Code. The architecture uses a Rust core (`hud-core`) with UniFFI bindings to Swift. State tracking relies on Claude Code hooks that write to `~/.capacitor/`, with session-based locks (`{session_id}-{pid}.lock`) as the authoritative signal for active sessions. Shell integration provides ambient project awareness via precmd hooks. Hooks run asynchronously to avoid blocking Claude Code execution. All file I/O uses `fs_err` for enriched error messages, and structured logging via `tracing` writes to `~/.capacitor/hud-hook-debug.{date}.log`. **Terminal activation now uses Rust-only path:** The legacy Swift decision logic was removed (~277 lines); Rust decides (`activation.rs`), Swift executes (macOS APIs). **Terminal activation fully hardened:** All three phases complete—Phase 1 (security), Phase 2 (reliability), Phase 3 (polish: chrono timestamps, Ghostty cache limit, `pathsMatch` UniFFI export). **Bulletproof Hooks complete:** Phase 4 Test Hooks button added for manual verification. **Audit complete:** A comprehensive 12-session side-effects analysis validated all major subsystems.
 
 ## Stale Information Detected
 
 None currently. Last audit: 2026-01-27 (terminal activation migration, Rust-only path).
 
 ## Timeline
+
+### 2026-01-27 — Terminal Activation: Phase 3 Polish
+
+**What changed:**
+Nice-to-have improvements completing the terminal activation hardening work.
+
+1. **Proper timestamp parsing with chrono**
+   - Added `parse_timestamp()` to parse RFC3339 strings into `DateTime<Utc>`
+   - Added `is_timestamp_older_or_equal()` to handle comparison with malformed timestamps
+   - Unparseable timestamps lose to parseable ones; both unparseable treats as dominated
+
+2. **Ghostty cache size limit**
+   - `cleanupExpiredGhosttyCache()` now caps at 100 entries
+   - When exceeded, trims to 50 most recent entries
+   - Prevents unbounded memory growth in edge cases
+
+3. **Export `paths_match` via UniFFI**
+   - Added `#[uniffi::export]` to `paths_match()` function
+   - Swift can now call `pathsMatch(a:b:)` directly
+   - Enables consistent path matching logic across Rust/Swift
+
+**Why:**
+- RFC3339 strings are lexicographically sortable, but chrono adds validation and timezone handling
+- Ghostty cache could theoretically grow unbounded without size limit
+- Swift had to duplicate path matching logic; now it can call Rust directly
+
+**Agent impact:**
+- Timestamps are now properly parsed; malformed ones don't crash, just lose comparisons
+- Ghostty session cache is self-limiting; no manual cleanup needed
+- Use `pathsMatch(a:b:)` in Swift instead of duplicating path matching logic
+
+**Files changed:** `activation.rs`, `TerminalLauncher.swift`, UniFFI bindings
+
+**Commit:** `fb35347`
+
+**Plan doc:** `.claude/plans/DONE-terminal-activation-fixes.md` (ALL PHASES COMPLETE)
+
+---
 
 ### 2026-01-27 — Terminal Activation: Security & Reliability Hardening (Phase 1-2)
 
@@ -54,7 +92,7 @@ Comprehensive security and reliability fixes to terminal activation system, base
 
 **Commits:** `8f72606`, `83d3608`, `38a0dd9`
 
-**Plan doc:** `.claude/plans/ACTIVE-terminal-activation-fixes.md` (Phases 1-2 complete, Phase 3 remaining)
+**Plan doc:** `.claude/plans/DONE-terminal-activation-fixes.md`
 
 **Documentation updated:**
 - `.claude/docs/gotchas.md` — Shell escaping utilities, TTY-first strategy, tmux multi-client detection
@@ -801,10 +839,10 @@ The project is moving toward:
     - Shell-cwd.json now checked before tmux sessions
     - Fixes issue where clicking project opened new tmux window instead of focusing existing terminal
 
-14. **Terminal activation security/reliability** — ✅ Phase 1-2 Complete (2026-01-27)
+14. **Terminal activation security/reliability** — ✅ All Phases Complete (2026-01-27)
     - Phase 1: Shell injection prevention, tmux exit codes, IDE CLI errors, multi-client tmux fix
     - Phase 2: Tmux re-verification, AppleScript error checking, subdirectory matching, `is_live` flag, TTY-first Ghostty
-    - Phase 3 remaining: chrono timestamps, Ghostty cache limit, paths_match UniFFI export (nice-to-have)
-    - Plan doc: `.claude/plans/ACTIVE-terminal-activation-fixes.md`
+    - Phase 3: Chrono timestamp parsing, Ghostty cache size limit, `pathsMatch` UniFFI export
+    - Plan doc: `.claude/plans/DONE-terminal-activation-fixes.md`
 
 The core sidecar architecture is stable and validated. The 12-session side-effects audit confirmed all major subsystems work correctly; the few issues found have been remediated. Focus areas: lock reliability (session-based, self-healing, fail-safe error handling), exact-match path resolution for monorepos, terminal integration, and codebase hygiene (dead code removal, documentation accuracy).
