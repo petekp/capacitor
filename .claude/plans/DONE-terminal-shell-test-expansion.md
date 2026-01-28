@@ -1,8 +1,20 @@
 # Terminal/Shell State Detection: Test Expansion Plan
 
-**Status:** ACTIVE
+**Status:** DONE
 **Created:** 2026-01-26
+**Completed:** 2026-01-27
 **Purpose:** Address gaps identified in the audit and expand test coverage
+
+## Completion Summary
+
+**P1 gaps fixed** in terminal activation hardening (Phase 1-2):
+- Tmux client TTY discovery: `display-message -p "#{client_tty}"` in `cwd.rs`
+- IDE CLI error handling: `terminationStatus` checks in `TerminalLauncher.swift`
+- Tmux switch-client exit codes: proper error propagation
+
+**Manual test matrix** documented: `.claude/docs/terminal-test-matrix.md`
+
+**Deferred:** Additional Rust/Swift unit tests (optional—341 tests + manual matrix provide sufficient coverage)
 
 ---
 
