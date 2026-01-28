@@ -311,17 +311,18 @@ struct HistoryEntry {
 /// Captures the tmux session name and the TTY of the terminal hosting tmux.
 /// The host TTY is needed because the shell's TTY is a tmux pseudo-terminal,
 /// not the actual terminal window we need to activate.
+///
+/// Uses `display-message` for both session name and client TTY to ensure we get
+/// the context of the CURRENT client (the one running this hook), not just the
+/// first client from `list-clients` which would be wrong with multiple attached clients.
 fn detect_tmux_context() -> Option<(String, String)> {
     let session_name = run_tmux_command(&["display-message", "-p", "#S"])?;
     if session_name.is_empty() {
         return None;
     }
 
-    let client_tty = run_tmux_command(&["list-clients", "-F", "#{client_tty}"])?
-        .lines()
-        .next()?
-        .to_string();
-
+    // Use display-message for CURRENT client's TTY (not list-clients which returns all clients)
+    let client_tty = run_tmux_command(&["display-message", "-p", "#{client_tty}"])?;
     if client_tty.is_empty() {
         return None;
     }

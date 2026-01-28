@@ -67,6 +67,25 @@ extension TerminalType {
     }
 }
 
+// MARK: - Shell Escape Utilities
+
+/// Escapes a string for safe use in single-quoted shell arguments.
+/// Handles single quotes by ending the quote, adding an escaped quote, and starting a new quote.
+/// Example: "foo'bar" becomes "'foo'\''bar'"
+private func shellEscape(_ s: String) -> String {
+    "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'"
+}
+
+/// Escapes a string for safe interpolation into a bash double-quoted string.
+/// Escapes: backslash, double quote, dollar sign, and backticks.
+/// Example: "foo$bar" becomes "foo\$bar"
+private func bashDoubleQuoteEscape(_ s: String) -> String {
+    s.replacingOccurrences(of: "\\", with: "\\\\")
+        .replacingOccurrences(of: "\"", with: "\\\"")
+        .replacingOccurrences(of: "$", with: "\\$")
+        .replacingOccurrences(of: "`", with: "\\`")
+}
+
 // MARK: - Terminal Launcher
 //
 // Handles "click project → focus terminal" activation. The goal is to bring the user
@@ -199,7 +218,13 @@ final class TerminalLauncher {
             return activateIdeWindowAction(ideType: ideType, projectPath: path)
 
         case let .switchTmuxSession(sessionName):
-            runBashScript("tmux switch-client -t '\(sessionName)' 2>/dev/null")
+            let result = await runBashScriptWithResultAsync(
+                "tmux switch-client -t \(shellEscape(sessionName)) 2>&1"
+            )
+            if result.exitCode != 0 {
+                logger.warning("tmux switch-client failed (exit \(result.exitCode)): \(result.output ?? "")")
+                return false
+            }
             return true
 
         case let .activateHostThenSwitchTmux(hostTty, sessionName):
@@ -215,7 +240,13 @@ final class TerminalLauncher {
                 {
                     logger.debug("Cache hit: Ghostty window recently launched for '\(sessionName)'")
                     runAppleScript("tell application \"Ghostty\" to activate")
-                    runBashScript("tmux switch-client -t '\(sessionName)' 2>/dev/null")
+                    let result = await runBashScriptWithResultAsync(
+                        "tmux switch-client -t \(shellEscape(sessionName)) 2>&1"
+                    )
+                    if result.exitCode != 0 {
+                        logger.warning("tmux switch-client failed (exit \(result.exitCode)): \(result.output ?? "")")
+                        return false
+                    }
                     return true
                 }
 
@@ -229,7 +260,13 @@ final class TerminalLauncher {
                     // Use AppleScript for reliable activation (NSRunningApplication.activate
                     // can silently fail when SwiftUI windows steal focus back).
                     runAppleScript("tell application \"Ghostty\" to activate")
-                    runBashScript("tmux switch-client -t '\(sessionName)' 2>/dev/null")
+                    let result = await runBashScriptWithResultAsync(
+                        "tmux switch-client -t \(shellEscape(sessionName)) 2>&1"
+                    )
+                    if result.exitCode != 0 {
+                        logger.warning("tmux switch-client failed (exit \(result.exitCode)): \(result.output ?? "")")
+                        return false
+                    }
                     return true
                 } else {
                     // 0 or multiple windows - launch new terminal to attach.
@@ -243,7 +280,13 @@ final class TerminalLauncher {
 
             // For other terminals (iTerm, Terminal.app), use TTY discovery
             let ttyActivated = await activateTerminalByTTYDiscovery(tty: hostTty)
-            runBashScript("tmux switch-client -t '\(sessionName)' 2>/dev/null")
+            let result = await runBashScriptWithResultAsync(
+                "tmux switch-client -t \(shellEscape(sessionName)) 2>&1"
+            )
+            if result.exitCode != 0 {
+                logger.warning("tmux switch-client failed (exit \(result.exitCode)): \(result.output ?? "")")
+                return false
+            }
             return ttyActivated
 
         case let .launchTerminalWithTmux(sessionName, _):
@@ -301,8 +344,7 @@ final class TerminalLauncher {
         }
 
         guard findRunningIDE(parentApp) != nil else { return false }
-        activateIDEWindowInternal(app: parentApp, projectPath: projectPath)
-        return true
+        return activateIDEWindowInternal(app: parentApp, projectPath: projectPath)
     }
 
     // MARK: - Tmux Helpers
@@ -315,7 +357,8 @@ final class TerminalLauncher {
 
     private func launchTerminalWithTmuxSession(_ session: String) {
         logger.debug("Launching terminal with tmux attach for session '\(session)'")
-        let tmuxCmd = "tmux attach-session -t '\(session)'"
+        let escapedSession = shellEscape(session)
+        let tmuxCmd = "tmux attach-session -t \(escapedSession)"
 
         // Launch terminal with tmux attach command
         let script = """
@@ -380,10 +423,10 @@ final class TerminalLauncher {
         }
     }
 
-    private func activateIDEWindowInternal(app: ParentApp, projectPath: String) {
+    private func activateIDEWindowInternal(app: ParentApp, projectPath: String) -> Bool {
         guard let runningApp = findRunningIDE(app),
               let cliBinary = app.cliBinary
-        else { return }
+        else { return false }
 
         runningApp.activate()
 
@@ -395,7 +438,18 @@ final class TerminalLauncher {
         env["PATH"] = Constants.homebrewPaths + ":" + (env["PATH"] ?? "")
         process.environment = env
 
-        try? process.run()
+        do {
+            try process.run()
+            process.waitUntilExit()
+            if process.terminationStatus != 0 {
+                logger.warning("IDE CLI '\(cliBinary)' exited with status \(process.terminationStatus)")
+                return false
+            }
+            return true
+        } catch {
+            logger.error("Failed to launch IDE CLI '\(cliBinary)': \(error.localizedDescription)")
+            return false
+        }
     }
 
     // MARK: - Ghostty Window Detection
@@ -707,10 +761,20 @@ final class TerminalLauncher {
 
 private enum TerminalScripts {
     static func launch(projectPath: String, projectName: String, claudePath: String) -> String {
-        """
-        PROJECT_PATH="\(projectPath)"
-        PROJECT_NAME="\(projectName)"
-        CLAUDE_PATH="\(claudePath)"
+        // Escape values for safe interpolation into bash double-quoted strings
+        let escapedPath = bashDoubleQuoteEscape(projectPath)
+        let escapedName = bashDoubleQuoteEscape(projectName)
+        let escapedClaude = bashDoubleQuoteEscape(claudePath)
+
+        return """
+        PROJECT_PATH="\(escapedPath)"
+        PROJECT_NAME="\(escapedName)"
+        CLAUDE_PATH="\(escapedClaude)"
+
+        # Helper function to escape strings for single-quoted shell arguments
+        shell_escape_single() {
+            printf '%s' "$1" | sed "s/'/'\\\\''/g"
+        }
 
         \(tmuxCheckAndFallback)
 
@@ -722,7 +786,10 @@ private enum TerminalScripts {
             \(switchToExistingSession)
             \(activateTerminalApp)
         else
-            TMUX_CMD="tmux new-session -A -s '$SESSION' -c '$PROJECT_PATH'"
+            # Escape session name and path for single-quoted tmux arguments
+            SESSION_ESC=$(shell_escape_single "$SESSION")
+            PATH_ESC=$(shell_escape_single "$PROJECT_PATH")
+            TMUX_CMD="tmux new-session -A -s '$SESSION_ESC' -c '$PATH_ESC'"
             \(launchTerminalWithTmux)
         fi
         """
@@ -731,10 +798,12 @@ private enum TerminalScripts {
     private static var tmuxCheckAndFallback: String {
         """
         if ! command -v tmux &> /dev/null; then
+            # Escape path for single-quoted arguments in osascript commands
+            PATH_ESC=$(shell_escape_single "$PROJECT_PATH")
             if [ -d "/Applications/Ghostty.app" ]; then
                 open -na "Ghostty.app" --args --working-directory="$PROJECT_PATH"
             elif [ -d "/Applications/iTerm.app" ]; then
-                osascript -e "tell application \\"iTerm\\" to create window with default profile command \\"cd '$PROJECT_PATH' && exec $SHELL\\""
+                osascript -e "tell application \\"iTerm\\" to create window with default profile command \\"cd '$PATH_ESC' && exec \\$SHELL\\""
                 osascript -e 'tell application "iTerm" to activate'
             elif [ -d "/Applications/Alacritty.app" ]; then
                 open -na "Alacritty.app" --args --working-directory "$PROJECT_PATH"
@@ -743,7 +812,7 @@ private enum TerminalScripts {
             elif [ -d "/Applications/Warp.app" ]; then
                 open -a "Warp" "$PROJECT_PATH"
             else
-                osascript -e "tell application \\"Terminal\\" to do script \\"cd '$PROJECT_PATH'\\""
+                osascript -e "tell application \\"Terminal\\" to do script \\"cd '$PATH_ESC'\\""
                 osascript -e 'tell application "Terminal" to activate'
             fi
             exit 0
@@ -766,11 +835,14 @@ private enum TerminalScripts {
 
     private static var switchToExistingSession: String {
         """
-        if tmux has-session -t "$SESSION" 2>/dev/null; then
-            tmux switch-client -t "$SESSION" 2>/dev/null
+        # Escape session and path for tmux arguments
+        SESSION_ESC=$(shell_escape_single "$SESSION")
+        PATH_ESC=$(shell_escape_single "$PROJECT_PATH")
+        if tmux has-session -t "'$SESSION_ESC'" 2>/dev/null; then
+            tmux switch-client -t "'$SESSION_ESC'" 2>/dev/null
         else
-            tmux new-session -d -s "$SESSION" -c "$PROJECT_PATH"
-            tmux switch-client -t "$SESSION" 2>/dev/null
+            tmux new-session -d -s "'$SESSION_ESC'" -c "'$PATH_ESC'"
+            tmux switch-client -t "'$SESSION_ESC'" 2>/dev/null
         fi
         """
     }
