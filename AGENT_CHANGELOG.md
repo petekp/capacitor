@@ -1,17 +1,57 @@
 # Agent Changelog
 
 > This file helps coding agents understand project evolution, key decisions,
-> and deprecated patterns. Updated: 2026-01-28 (Session 8)
+> and deprecated patterns. Updated: 2026-01-28 (v0.1.25 release)
 
 ## Current State Summary
 
-Capacitor is a native macOS SwiftUI app (Apple Silicon, macOS 14+) that acts as a sidecar dashboard for Claude Code. The architecture uses a Rust core (`hud-core`) with UniFFI bindings to Swift. State tracking relies on Claude Code hooks that write to `~/.capacitor/`, with session-based locks (`{session_id}-{pid}.lock`) as the authoritative signal for active sessions. Shell integration provides ambient project awareness via precmd hooks. Hooks run asynchronously to avoid blocking Claude Code execution. All file I/O uses `fs_err` for enriched error messages, and structured logging via `tracing` writes to `~/.capacitor/hud-hook-debug.{date}.log`. **Terminal activation now uses Rust-only path:** The legacy Swift decision logic was removed (~277 lines); Rust decides (`activation.rs`), Swift executes (macOS APIs). **Terminal activation fully hardened:** All three phases complete—Phase 1 (security), Phase 2 (reliability), Phase 3 (polish: chrono timestamps, Ghostty cache limit, `pathsMatch` UniFFI export). **Bulletproof Hooks complete:** Phase 4 Test Hooks button added for manual verification. **Audit complete:** A comprehensive 12-session side-effects analysis validated all major subsystems.
+Capacitor is a native macOS SwiftUI app (Apple Silicon, macOS 14+) that acts as a sidecar dashboard for Claude Code. The architecture uses a Rust core (`hud-core`) with UniFFI bindings to Swift. State tracking relies on Claude Code hooks that write to `~/.capacitor/`, with session-based locks (`{session_id}-{pid}.lock`) as the authoritative signal for active sessions. Shell integration provides ambient project awareness via precmd hooks. Hooks run asynchronously to avoid blocking Claude Code execution. All file I/O uses `fs_err` for enriched error messages, and structured logging via `tracing` writes to `~/.capacitor/hud-hook-debug.{date}.log`. **Terminal activation now uses Rust-only path:** The legacy Swift decision logic was removed (~277 lines); Rust decides (`activation.rs`), Swift executes (macOS APIs). **Terminal activation fully hardened and validated:** v0.1.25 fixes two critical bugs—tmux shell priority when client attached (`activation.rs`) and ANY-client detection (`TerminalLauncher.swift`). Test matrix validated 15 scenarios (A1-A4, B1-B3, C1, D1-D3, E1, E3). **Bulletproof Hooks complete:** Phase 4 Test Hooks button added for manual verification. **Audit complete:** A comprehensive 12-session side-effects analysis validated all major subsystems.
 
 ## Stale Information Detected
 
 None currently. Last audit: 2026-01-27 (terminal activation migration, Rust-only path).
 
 ## Timeline
+
+### 2026-01-28 — v0.1.25: Terminal Activation Hardening Validated
+
+**What changed:**
+Released v0.1.25 with two critical bug fixes for terminal activation, then validated all scenarios via manual test matrix.
+
+**Bug fixes:**
+1. **Shell selection: Tmux priority when client attached** (`activation.rs:find_shell_at_path`)
+   - When multiple shells exist at the same path (e.g., 1 tmux, 2 direct shells), tmux shells are now preferred when a client is attached
+   - Fixes: Clicking project would use recent non-tmux shell → `ActivateByTty` instead of `ActivateHostThenSwitchTmux` → session switch failed
+
+2. **Client detection: ANY client, not session-specific** (`TerminalLauncher.swift:hasTmuxClientAttached`)
+   - Changed from checking if client is attached to *target* session to checking if *any* tmux client exists
+   - Fixes: Viewing session A, click project B → old code reported "no client" → spawned unnecessary new windows
+
+**Test matrix validated:**
+- A1-A4: Single Ghostty window with tmux ✅
+- B1-B3: Multiple Ghostty windows ✅
+- C1: No client, sessions exist → spawns window ✅
+- D1: Client attached → switches session, no new window ✅
+- D2-D3: Detach/no clients → spawns window to attach ✅
+- E1, E3: Multiple shells same path → prefers tmux ✅
+
+**Why:**
+- Shell selection bug caused incorrect terminal behavior when users had both tmux and direct shells at same project path
+- Client detection bug caused unnecessary window spawning because "no client on THIS session" ≠ "no client anywhere"
+- Semantic clarification: "has attached client" answers "can we use `tmux switch-client`?" — if ANY client exists, we can switch it
+
+**Agent impact:**
+- Gotchas documented: "Shell Selection: Tmux Priority When Client Attached" and "Tmux Context: Has Client Means ANY Client"
+- Test matrix at `.claude/docs/terminal-activation-test-matrix.md` — run this after terminal activation changes
+- Key invariant: **Never spawn new windows when any tmux client is attached**
+
+**Files changed:** `activation.rs`, `TerminalLauncher.swift`
+
+**Commits:** `fc9071e`, `fb76352`
+
+**Release:** v0.1.25 (GitHub, notarized DMG + ZIP)
+
+---
 
 ### 2026-01-27 — Terminal Activation: Phase 3 Polish
 
@@ -739,6 +779,8 @@ Fixed terminal activation to check shell-cwd.json BEFORE tmux sessions.
 
 | Don't | Do Instead | Deprecated Since |
 |-------|------------|------------------|
+| Check if client attached to *specific* tmux session | Check if *any* tmux client exists (`hasTmuxClientAttached()`) | 2026-01-28 |
+| Select shells by timestamp alone when tmux client attached | Prefer tmux shells via `is_preferred_tmux` sort key | 2026-01-28 |
 | Interpolate user input into shell commands without escaping | Use `shellEscape()` or `bashDoubleQuoteEscape()` | 2026-01-27 |
 | Use `tmux list-clients` first line for multi-client detection | Use `tmux display-message -p "#{client_tty}"` | 2026-01-27 |
 | Check Ghostty running before TTY discovery | Try TTY discovery first, Ghostty fallback second | 2026-01-27 |
@@ -851,4 +893,10 @@ The project is moving toward:
     - Manual test matrix already documented at `.claude/docs/terminal-test-matrix.md`
     - Only DRAFT plan remaining: `activation-config-rust-migration.md` (deferred until second client needed)
 
-The core sidecar architecture is stable and validated. The 12-session side-effects audit confirmed all major subsystems work correctly; the few issues found have been remediated. **All implementation plans are now complete.** Focus areas: lock reliability (session-based, self-healing, fail-safe error handling), exact-match path resolution for monorepos, terminal integration, and codebase hygiene (dead code removal, documentation accuracy).
+16. **Terminal activation hardening validated** — ✅ Complete (2026-01-28)
+    - v0.1.25 released with shell selection and client detection fixes
+    - Test matrix validated: 15 scenarios pass (A1-A4, B1-B3, C1, D1-D3, E1, E3)
+    - Test matrix doc: `.claude/docs/terminal-activation-test-matrix.md` (status columns updated)
+    - Gotchas added: tmux priority, ANY-client detection
+
+The core sidecar architecture is stable and validated. The 12-session side-effects audit confirmed all major subsystems work correctly; the few issues found have been remediated. **All implementation plans are now complete.** Terminal activation has been hardened with comprehensive test coverage (15 scenarios validated). Focus areas: lock reliability (session-based, self-healing, fail-safe error handling), exact-match path resolution for monorepos, terminal integration, and codebase hygiene (dead code removal, documentation accuracy).

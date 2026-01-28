@@ -27,18 +27,18 @@ Each scenario defines:
 
 | ID | Precondition | Action | Expected Outcome | Status |
 |----|--------------|--------|------------------|--------|
-| A1 | 1 Ghostty window, tmux attached, viewing `capacitor` session | Click `capacitor` | Ghostty activates, stays on capacitor | ⬜ |
-| A2 | 1 Ghostty window, tmux attached, viewing `hapax` session | Click `capacitor` | Ghostty activates, tmux switches to capacitor | ⬜ |
-| A3 | 1 Ghostty window, tmux attached, viewing `capacitor` session | Click `hapax` | Ghostty activates, tmux switches to hapax | ⬜ |
-| A4 | 1 Ghostty window, tmux attached, viewing `hapax` session | Click `hapax` | Ghostty activates, stays on hapax | ⬜ |
+| A1 | 1 Ghostty window, tmux attached, viewing `capacitor` session | Click `capacitor` | Ghostty activates, stays on capacitor | ✅ |
+| A2 | 1 Ghostty window, tmux attached, viewing `hapax` session | Click `capacitor` | Ghostty activates, tmux switches to capacitor | ✅ |
+| A3 | 1 Ghostty window, tmux attached, viewing `capacitor` session | Click `hapax` | Ghostty activates, tmux switches to hapax | ✅ |
+| A4 | 1 Ghostty window, tmux attached, viewing `hapax` session | Click `hapax` | Ghostty activates, stays on hapax | ✅ |
 
 ### Category B: Multiple Ghostty Windows with Tmux
 
 | ID | Precondition | Action | Expected Outcome | Status |
 |----|--------------|--------|------------------|--------|
-| B1 | 2 Ghostty windows, tmux in window 1, viewing `capacitor` | Click `capacitor` | Ghostty activates, tmux stays on capacitor | ⬜ |
-| B2 | 2 Ghostty windows, tmux in window 1, viewing `hapax` | Click `capacitor` | Ghostty activates, tmux switches to capacitor | ⬜ |
-| B3 | 2 Ghostty windows, tmux in window 1, viewing `capacitor` | Click `hapax` | Ghostty activates, tmux switches to hapax | ⬜ |
+| B1 | 2 Ghostty windows, tmux in window 1, viewing `capacitor` | Click `capacitor` | Ghostty activates, tmux stays on capacitor | ✅ |
+| B2 | 2 Ghostty windows, tmux in window 1, viewing `hapax` | Click `capacitor` | Ghostty activates, tmux switches to capacitor | ✅ |
+| B3 | 2 Ghostty windows, tmux in window 1, viewing `capacitor` | Click `hapax` | Ghostty activates, tmux switches to hapax | ✅ |
 
 **Known Limitation**: Ghostty has no API to focus a specific window. User may need to manually switch Ghostty windows after tmux switches.
 
@@ -46,7 +46,7 @@ Each scenario defines:
 
 | ID | Precondition | Action | Expected Outcome | Status |
 |----|--------------|--------|------------------|--------|
-| C1 | Ghostty not running, tmux session `capacitor` exists | Click `capacitor` | New Ghostty window opens, attaches to capacitor | ⬜ |
+| C1 | Ghostty not running, tmux session `capacitor` exists | Click `capacitor` | New Ghostty window opens, attaches to capacitor | ✅ |
 | C2 | No terminal running, no tmux | Click `capacitor` | New terminal opens at capacitor path | ⬜ |
 | C3 | Ghostty running but 0 windows (edge case) | Click `capacitor` | New Ghostty window opens | ⬜ |
 
@@ -54,17 +54,17 @@ Each scenario defines:
 
 | ID | Precondition | Action | Expected Outcome | Status |
 |----|--------------|--------|------------------|--------|
-| D1 | Tmux client attached (any session), click project | Click different project | Tmux switches session, NO new window | ⬜ |
-| D2 | Tmux client was attached, then detached | Click project | New terminal window opens to attach | ⬜ |
-| D3 | Tmux server running, no clients attached | Click project with session | New terminal window opens to attach | ⬜ |
+| D1 | Tmux client attached (any session), click project | Click different project | Tmux switches session, NO new window | ✅ |
+| D2 | Tmux client was attached, then detached | Click project | New terminal window opens to attach | ✅ |
+| D3 | Tmux server running, no clients attached | Click project with session | New terminal window opens to attach | ✅ |
 
 ### Category E: Multiple Shells at Same Path
 
 | ID | Precondition | Action | Expected Outcome | Status |
 |----|--------------|--------|------------------|--------|
-| E1 | 3 shells for `capacitor`: 1 tmux, 2 direct; tmux client attached | Click `capacitor` | Uses tmux shell, switches session | ⬜ |
+| E1 | 3 shells for `capacitor`: 1 tmux, 2 direct; tmux client attached | Click `capacitor` | Uses tmux shell, switches session | ✅ |
 | E2 | 3 shells for `capacitor`: 1 tmux, 2 direct; no tmux client | Click `capacitor` | Launches new terminal (or uses most recent?) | ⬜ |
-| E3 | 2 shells: recent non-tmux, old tmux; tmux client attached | Click project | Uses tmux shell (despite being older) | ⬜ |
+| E3 | 2 shells: recent non-tmux, old tmux; tmux client attached | Click project | Uses tmux shell (despite being older) | ✅ |
 
 ### Category F: Non-Ghostty Terminals
 
@@ -129,11 +129,11 @@ These must ALWAYS be true:
 
 Before merging any terminal activation change:
 
-- [ ] A1-A4 pass (single Ghostty window scenarios)
-- [ ] B1-B3 pass (multiple Ghostty windows)
-- [ ] D1 passes (NO new windows when client attached)
-- [ ] E3 passes (tmux shell preferred when client attached)
-- [ ] F3 passes (TTY discovery over Ghostty heuristics)
+- [x] A1-A4 pass (single Ghostty window scenarios) — v0.1.25
+- [x] B1-B3 pass (multiple Ghostty windows) — v0.1.25
+- [x] D1 passes (NO new windows when client attached) — v0.1.25
+- [x] E3 passes (tmux shell preferred when client attached) — v0.1.25
+- [ ] F3 passes (TTY discovery over Ghostty heuristics) — requires iTerm
 
 ---
 
@@ -160,3 +160,4 @@ Before merging any terminal activation change:
 | Date | Change | Tested Scenarios | Result |
 |------|--------|------------------|--------|
 | 2026-01-28 | Initial matrix creation | — | — |
+| 2026-01-28 | v0.1.25: shell selection + client detection fixes | A1-A4, B1-B3, C1, D1-D3, E1, E3 | All pass ✅ |
