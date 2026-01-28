@@ -84,6 +84,23 @@ When multiple shells exist at the same path in `shell-cwd.json` (e.g., one tmux 
 
 **Key insight:** "Tmux client attached" is a strong signal the user is actively using tmux and wants session switching. See `activation.rs:find_shell_at_path()` and test `test_prefers_tmux_shell_when_client_attached_even_if_older`.
 
+### Tmux Context: "Has Client" Means ANY Client
+When building `TmuxContextFfi` for Rust, `hasAttachedClient` must mean "any tmux client exists anywhere" NOT "client attached to this specific session."
+
+**Wrong:**
+```swift
+hasTmuxClientAttachedToSession(targetSession)  // ❌ Returns false if viewing different session
+```
+
+**Right:**
+```swift
+hasTmuxClientAttached()  // ✅ Returns true if ANY client exists
+```
+
+**Why this matters:** If you're viewing session A and click project B, the old code reported "no client" (because no client was on B's session). Rust then decided `LaunchTerminalWithTmux` → spawned new windows.
+
+**Semantic:** "Has attached client" answers "can we use `tmux switch-client`?" If ANY client exists, we can switch it to the target session. Only launch new terminal when NO clients exist at all.
+
 ### Shell Escaping Utilities
 `TerminalLauncher.swift` provides two escaping functions for shell injection prevention:
 - `shellEscape()` — Single-quote escaping for shell arguments (e.g., `foo'bar` → `'foo'\''bar'`)
