@@ -1,17 +1,67 @@
 # Agent Changelog
 
 > This file helps coding agents understand project evolution, key decisions,
-> and deprecated patterns. Updated: 2026-01-27 (Session 5)
+> and deprecated patterns. Updated: 2026-01-27 (Session 6)
 
 ## Current State Summary
 
-Capacitor is a native macOS SwiftUI app (Apple Silicon, macOS 14+) that acts as a sidecar dashboard for Claude Code. The architecture uses a Rust core (`hud-core`) with UniFFI bindings to Swift. State tracking relies on Claude Code hooks that write to `~/.capacitor/`, with session-based locks (`{session_id}-{pid}.lock`) as the authoritative signal for active sessions. Shell integration provides ambient project awareness via precmd hooks. Hooks run asynchronously to avoid blocking Claude Code execution. All file I/O uses `fs_err` for enriched error messages, and structured logging via `tracing` writes to `~/.capacitor/hud-hook-debug.{date}.log`. **Terminal activation now uses Rust-only path:** The legacy Swift decision logic was removed (~277 lines); Rust decides (`activation.rs`), Swift executes (macOS APIs). **Bulletproof Hooks complete:** Phase 4 Test Hooks button added for manual verification. **Audit complete:** A comprehensive 12-session side-effects analysis validated all major subsystems.
+Capacitor is a native macOS SwiftUI app (Apple Silicon, macOS 14+) that acts as a sidecar dashboard for Claude Code. The architecture uses a Rust core (`hud-core`) with UniFFI bindings to Swift. State tracking relies on Claude Code hooks that write to `~/.capacitor/`, with session-based locks (`{session_id}-{pid}.lock`) as the authoritative signal for active sessions. Shell integration provides ambient project awareness via precmd hooks. Hooks run asynchronously to avoid blocking Claude Code execution. All file I/O uses `fs_err` for enriched error messages, and structured logging via `tracing` writes to `~/.capacitor/hud-hook-debug.{date}.log`. **Terminal activation now uses Rust-only path:** The legacy Swift decision logic was removed (~277 lines); Rust decides (`activation.rs`), Swift executes (macOS APIs). **Terminal activation hardened:** Phase 1-2 security/reliability fixes complete (shell injection prevention, exit code checking, `is_live` shell tracking, TTY-first Ghostty detection). **Bulletproof Hooks complete:** Phase 4 Test Hooks button added for manual verification. **Audit complete:** A comprehensive 12-session side-effects analysis validated all major subsystems.
 
 ## Stale Information Detected
 
 None currently. Last audit: 2026-01-27 (terminal activation migration, Rust-only path).
 
 ## Timeline
+
+### 2026-01-27 — Terminal Activation: Security & Reliability Hardening (Phase 1-2)
+
+**What changed:**
+Comprehensive security and reliability fixes to terminal activation system, based on 5-model code review synthesis.
+
+**Phase 1 (Security & Critical):**
+1. **Shell injection prevention** — Added `shellEscape()` and `bashDoubleQuoteEscape()` utilities. All tmux session names now properly escaped before interpolation into shell commands.
+2. **Tmux switch-client exit codes** — Now checks exit code and returns `false` on failure, enabling fallback mechanisms.
+3. **IDE CLI error handling** — `activateIDEWindowInternal()` now waits for process and checks `terminationStatus`.
+4. **Multi-client tmux hook fix** — Changed from `list-clients` (arbitrary order) to `display-message -p "#S\t#{client_tty}"` (current client's TTY).
+
+**Phase 2 (Reliability):**
+1. **Tmux client re-verification** — Re-checks `hasTmuxClientAttached()` before executing switch.
+2. **AppleScript error checking** — Added `runAppleScriptChecked()` that captures stderr and returns success/failure.
+3. **Subdirectory matching** — `findTmuxSessionForPath()` now matches subdirectories (aligns with Rust `paths_match`).
+4. **`is_live` flag** — Added to `ShellEntryFfi` so Rust prefers live shells over dead ones.
+5. **TTY-first Ghostty detection** — Try TTY discovery before Ghostty-specific handling to prevent activating wrong terminal.
+
+**Code refinements:**
+- Used `is_some_and()` instead of `map_or(false, ...)` (idiomatic Rust 1.70+)
+- Combined two tmux subprocess calls into one (`display-message -p "#S\t#{client_tty}"`)
+- Removed dead code in `paths_match` (`rest.is_empty()` was unreachable)
+
+**Why:**
+- Shell injection was a real security vulnerability
+- Silent failures in tmux/IDE/AppleScript calls defeated fallback mechanisms
+- Multi-client tmux activation was non-deterministic
+- Dead shells being preferred over live ones caused incorrect activations
+- Ghostty running in background caused wrong terminal to activate
+
+**Agent impact:**
+- Use `shellEscape()` for single-quoted shell arguments, `bashDoubleQuoteEscape()` for double-quoted strings
+- All functions that can fail must return actual success/failure for fallback chains
+- Tmux multi-client: always use `display-message` (not `list-clients`) to get current client's TTY
+- Rust now receives `is_live` flag via FFI — live shells always beat dead shells at same path
+- TTY-first strategy: try TTY discovery → Ghostty fallback → launch new terminal
+
+**Files changed:** `TerminalLauncher.swift`, `cwd.rs`, `activation.rs`
+
+**Commits:** `8f72606`, `83d3608`, `38a0dd9`
+
+**Plan doc:** `.claude/plans/ACTIVE-terminal-activation-fixes.md` (Phases 1-2 complete, Phase 3 remaining)
+
+**Documentation updated:**
+- `.claude/docs/gotchas.md` — Shell escaping utilities, TTY-first strategy, tmux multi-client detection
+- `.claude/docs/debugging-guide.md` — Tmux multi-client, Ghostty/iTerm priority, shell injection testing, dead shells, UniFFI debugging
+- `CLAUDE.md` — Added UniFFI binding regeneration command
+
+---
 
 ### 2026-01-27 — Terminal Activation: Rust-Only Path Migration
 
@@ -651,6 +701,12 @@ Fixed terminal activation to check shell-cwd.json BEFORE tmux sessions.
 
 | Don't | Do Instead | Deprecated Since |
 |-------|------------|------------------|
+| Interpolate user input into shell commands without escaping | Use `shellEscape()` or `bashDoubleQuoteEscape()` | 2026-01-27 |
+| Use `tmux list-clients` first line for multi-client detection | Use `tmux display-message -p "#{client_tty}"` | 2026-01-27 |
+| Check Ghostty running before TTY discovery | Try TTY discovery first, Ghostty fallback second | 2026-01-27 |
+| Use `map_or(false, \|x\| ...)` in Rust | Use `is_some_and(\|x\| ...)` (Rust 1.70+) | 2026-01-27 |
+| Make multiple tmux subprocess calls for related data | Combine into single call with tab separator | 2026-01-27 |
+| Filter dead shells before passing to Rust | Pass `is_live` flag, let Rust prefer live shells | 2026-01-27 |
 | Rely on `serde(default)` to distinguish file formats | Check raw JSON for format-specific keys | 2026-01-27 |
 | Check tmux before shell-cwd.json in terminal activation | Check shell-cwd.json first (active > exists) | 2026-01-27 |
 | Use `Task` in Swift files with UniFFI imports | Use `_Concurrency.Task` to avoid shadowing | 2026-01-27 |
@@ -744,5 +800,11 @@ The project is moving toward:
 13. **Terminal activation priority** — ✅ Fixed (2026-01-27)
     - Shell-cwd.json now checked before tmux sessions
     - Fixes issue where clicking project opened new tmux window instead of focusing existing terminal
+
+14. **Terminal activation security/reliability** — ✅ Phase 1-2 Complete (2026-01-27)
+    - Phase 1: Shell injection prevention, tmux exit codes, IDE CLI errors, multi-client tmux fix
+    - Phase 2: Tmux re-verification, AppleScript error checking, subdirectory matching, `is_live` flag, TTY-first Ghostty
+    - Phase 3 remaining: chrono timestamps, Ghostty cache limit, paths_match UniFFI export (nice-to-have)
+    - Plan doc: `.claude/plans/ACTIVE-terminal-activation-fixes.md`
 
 The core sidecar architecture is stable and validated. The 12-session side-effects audit confirmed all major subsystems work correctly; the few issues found have been remediated. Focus areas: lock reliability (session-based, self-healing, fail-safe error handling), exact-match path resolution for monorepos, terminal integration, and codebase hygiene (dead code removal, documentation accuracy).
