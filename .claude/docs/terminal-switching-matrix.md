@@ -53,13 +53,18 @@ This document maps out all scenarios for the "click project → activate termina
 
 ### Ghostty
 
-| # | Context | Tabs | parent_app | Expected | Current | Notes |
-|---|---------|------|------------|----------|---------|-------|
-| 7 | Direct shell | 1 tab | nil | Activate Ghostty | 🔄 | Phase 1: TTY discovery queries terminals |
-| 8 | Direct shell | 1 tab | "Ghostty" | Activate Ghostty | ✅ | |
-| 9 | Direct shell | 2+ tabs | nil | Activate Ghostty, select tab | ⚠️ | No tab selection API |
-| 10 | Direct shell | 2+ tabs | "Ghostty" | Activate Ghostty, select tab | ⚠️ | No tab selection API |
-| 11 | tmux session | any | "tmux" | Activate Ghostty w/ tmux | 🔄 | Phase 2: Uses tmux_client_tty + TTY discovery |
+**Note:** Ghostty has no external API for window/tab selection (as of 2025). We use a window-count strategy:
+- **1 window:** Activate app (it's the only one)
+- **0 or multiple windows:** Launch new terminal (can't pick the right one)
+
+| # | Context | Windows | parent_app | Expected | Current | Notes |
+|---|---------|---------|------------|----------|---------|-------|
+| 7 | Direct shell | 1 | nil | Activate Ghostty | ✅ | Window count = 1, safe to activate |
+| 8 | Direct shell | 1 | "Ghostty" | Activate Ghostty | ✅ | |
+| 9 | Direct shell | 2+ | nil | Activate Ghostty | ⚠️ | No window selection - activates app, may be wrong window |
+| 10 | Direct shell | 2+ | "Ghostty" | Activate Ghostty | ⚠️ | No window selection - activates app, may be wrong window |
+| 11 | tmux session | 1 | "tmux" | Activate Ghostty, switch session | ✅ | Window count = 1, activate + tmux switch-client |
+| 11b | tmux session | 2+ | "tmux" | Launch new terminal | ✅ | Window count > 1, launch new to guarantee correct session |
 
 ### Terminal.app
 
@@ -229,6 +234,21 @@ Based on matrix analysis:
 - Added `activateKittyWindow(shellPid:)` in `TerminalLauncher.swift`
 - Uses `kitty @ focus-window --match pid:<pid>` for tab selection
 - Requires user to have `allow_remote_control yes` in kitty config
+
+**Phase 3b: Ghostty Window-Count Strategy** — ✅ Complete
+- Ghostty has no API for window/tab selection (confirmed as of Jan 2025)
+- Added `countGhosttyWindows()` using Accessibility API (AXUIElement)
+- For tmux activation with Ghostty:
+  - 1 window: Activate app + `tmux switch-client` (safe, it's the only window)
+  - 0 or 2+ windows: Launch new terminal with tmux attach (guarantees correct session)
+- **Session launch cache** (prevents duplicate windows on rapid clicks):
+  - `recentlyLaunchedGhosttySessions` tracks launches for 30 seconds
+  - If clicked again within 30s, just activates Ghostty + switches tmux client
+  - Cache auto-cleans expired entries on each activation check
+- **AppleScript activation** (critical fix):
+  - `NSRunningApplication.activate()` can silently fail when SwiftUI windows steal focus
+  - Use AppleScript `tell application "Ghostty" to activate` instead for reliable activation
+- Documented decision: Reliable activation > avoiding duplicate windows
 
 **Phase 4: IDE Integrated Terminal Support** — ⏳ Not Started
 - Goal: Activate correct IDE window when `parent_app` is "cursor" or "vscode"

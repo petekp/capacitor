@@ -103,7 +103,9 @@ struct DockLayoutView: View {
             flashState: flashState,
             isStale: isStale,
             isActive: isActive,
-            onTap: { appState.launchTerminal(for: project) },
+            onTap: {
+                appState.launchTerminal(for: project)
+            },
             onInfoTap: { appState.showProjectDetail(project) },
             onMoveToDormant: { appState.moveToDormant(project) },
             onCaptureIdea: { frame in appState.showIdeaCaptureModal(for: project, from: frame) },

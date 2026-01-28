@@ -51,21 +51,20 @@ extension ParentApp {
     }
 }
 
-// MARK: - Shell Match Result
+// MARK: - TerminalType Display Name Extension
 
-private struct ShellMatch {
-    let pid: String
-    let shell: ShellEntry
-}
-
-// MARK: - Strategy Execution Context
-
-private struct ActivationContext {
-    let shell: ShellEntry
-    let pid: String
-    let projectPath: String
-    let scenario: ShellScenario
-    let shellState: ShellCwdState?
+extension TerminalType {
+    var appName: String {
+        switch self {
+        case .iTerm: return "iTerm"
+        case .terminalApp: return "Terminal"
+        case .ghostty: return "Ghostty"
+        case .alacritty: return "Alacritty"
+        case .kitty: return "kitty"
+        case .warp: return "Warp"
+        case .unknown: return ""
+        }
+    }
 }
 
 // MARK: - Terminal Launcher
@@ -94,9 +93,14 @@ final class TerminalLauncher {
     private enum Constants {
         static let activationDelaySeconds: Double = 0.3
         static let homebrewPaths = "/opt/homebrew/bin:/usr/local/bin"
+        static let ghosttySessionCacheDuration: TimeInterval = 30.0
     }
 
     private let configStore = ActivationConfigStore.shared
+
+    // Cache: tracks tmux sessions where we recently launched a Ghostty window.
+    // Prevents re-launching on rapid clicks when window count > 1.
+    private static var recentlyLaunchedGhosttySessions: [String: Date] = [:]
 
     // MARK: - Public API
 
@@ -107,38 +111,201 @@ final class TerminalLauncher {
     }
 
     private func launchTerminalAsync(for project: Project, shellState: ShellCwdState? = nil) async {
-        // Priority 1: Active shell with verified-live PID.
-        // shell-cwd.json contains entries from shell precmd hooks—if a shell is here
-        // with a live PID, the user has a terminal window open for this project.
-        if let match = findExistingShell(for: project, in: shellState) {
-            await activateExistingTerminal(shell: match.shell, pid: match.pid, projectPath: project.path, shellState: shellState)
+        await launchTerminalWithRustResolver(for: project, shellState: shellState)
+    }
+
+    // MARK: - Rust Resolver Path
+
+    private func launchTerminalWithRustResolver(for project: Project, shellState: ShellCwdState? = nil) async {
+        let ffiShellState = shellState.map { convertToFfi($0) }
+        let tmuxContext = await queryTmuxContext(projectPath: project.path)
+
+        guard let engine = try? HudEngine() else {
+            logger.warning("Failed to create HudEngine, launching new terminal as fallback")
+            launchNewTerminal(for: project)
             return
         }
 
-        // Priority 2: Tmux session exists but no active shell was tracked.
-        // This catches cases where: tmux session exists but shell hook hasn't fired
-        // recently, or user created session outside of hook-tracked terminals.
-        if let tmuxSession = await findTmuxSessionForPath(project.path) {
-            await switchToTmuxSessionAndActivate(session: tmuxSession)
-            return
-        }
+        let decision = engine.resolveActivation(
+            projectPath: project.path,
+            shellState: ffiShellState,
+            tmuxContext: tmuxContext
+        )
 
-        // Priority 3: No existing terminal—launch a new one.
-        launchNewTerminal(for: project)
-    }
+        logger.debug("Activation decision: \(decision.reason)")
 
-    private func switchToTmuxSessionAndActivate(session: String) async {
-        // Check if there's an attached tmux client
-        if await hasTmuxClientAttached() {
-            // Switch the existing client to the target session
-            runBashScript("tmux switch-client -t '\(session)' 2>/dev/null")
-            try? await _Concurrency.Task.sleep(nanoseconds: 100_000_000)
-            activateTerminalApp()
-        } else {
-            // No client attached - launch a new terminal window that attaches to the session
-            launchTerminalWithTmuxSession(session)
+        let primarySuccess = await executeActivationAction(decision.primary, projectPath: project.path, projectName: project.name)
+
+        if !primarySuccess, let fallback = decision.fallback {
+            logger.info("Primary action failed, trying fallback")
+            _ = await executeActivationAction(fallback, projectPath: project.path, projectName: project.name)
         }
     }
+
+    // MARK: - Type Conversion to FFI
+
+    private func convertToFfi(_ state: ShellCwdState) -> ShellCwdStateFfi {
+        var ffiShells: [String: ShellEntryFfi] = [:]
+
+        for (pid, entry) in state.shells {
+            guard isLiveShell((pid, entry)) else { continue }
+
+            let parentApp = ParentApp(fromString: entry.parentApp)
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+
+            ffiShells[pid] = ShellEntryFfi(
+                cwd: entry.cwd,
+                tty: entry.tty,
+                parentApp: parentApp,
+                tmuxSession: entry.tmuxSession,
+                tmuxClientTty: entry.tmuxClientTty,
+                updatedAt: formatter.string(from: entry.updatedAt)
+            )
+        }
+
+        return ShellCwdStateFfi(version: UInt32(state.version), shells: ffiShells)
+    }
+
+    private func queryTmuxContext(projectPath: String) async -> TmuxContextFfi {
+        async let sessionAtPath = findTmuxSessionForPath(projectPath)
+        async let hasAttached = hasTmuxClientAttached()
+
+        return TmuxContextFfi(
+            sessionAtPath: await sessionAtPath,
+            hasAttachedClient: await hasAttached
+        )
+    }
+
+    // MARK: - Action Execution
+
+    private func executeActivationAction(_ action: ActivationAction, projectPath: String, projectName: String) async -> Bool {
+        logger.debug("Executing activation action: \(String(describing: action))")
+        switch action {
+        case let .activateByTty(tty, terminalType):
+            return await activateByTtyAction(tty: tty, terminalType: terminalType)
+
+        case let .activateApp(appName):
+            return activateAppByName(appName)
+
+        case let .activateKittyWindow(shellPid):
+            let activated = activateAppByName("kitty")
+            if activated {
+                runBashScript("kitty @ focus-window --match pid:\(shellPid) 2>/dev/null")
+            }
+            return activated
+
+        case let .activateIdeWindow(ideType, path):
+            return activateIdeWindowAction(ideType: ideType, projectPath: path)
+
+        case let .switchTmuxSession(sessionName):
+            runBashScript("tmux switch-client -t '\(sessionName)' 2>/dev/null")
+            return true
+
+        case let .activateHostThenSwitchTmux(hostTty, sessionName):
+            // Special handling for Ghostty: it has no API to focus a specific window by TTY.
+            // If Ghostty is running, use window-count strategy instead of TTY discovery.
+            if isGhosttyRunning() {
+                cleanupExpiredGhosttyCache()
+
+                // Check if we recently launched a window for this session.
+                // If so, just activate + switch-client instead of launching another.
+                if let launchTime = Self.recentlyLaunchedGhosttySessions[sessionName],
+                   Date().timeIntervalSince(launchTime) < Constants.ghosttySessionCacheDuration
+                {
+                    logger.debug("Cache hit: Ghostty window recently launched for '\(sessionName)'")
+                    runAppleScript("tell application \"Ghostty\" to activate")
+                    runBashScript("tmux switch-client -t '\(sessionName)' 2>/dev/null")
+                    return true
+                }
+
+                logger.debug("Cache miss for Ghostty session '\(sessionName)'")
+
+                let windowCount = countGhosttyWindows()
+                logger.debug("Ghostty has \(windowCount) window(s) for tmux session '\(sessionName)'")
+
+                if windowCount == 1 {
+                    // Single window - safe to activate the app and switch tmux session.
+                    // Use AppleScript for reliable activation (NSRunningApplication.activate
+                    // can silently fail when SwiftUI windows steal focus back).
+                    runAppleScript("tell application \"Ghostty\" to activate")
+                    runBashScript("tmux switch-client -t '\(sessionName)' 2>/dev/null")
+                    return true
+                } else {
+                    // 0 or multiple windows - launch new terminal to attach.
+                    // Record this launch so subsequent clicks within 30s just activate + switch.
+                    Self.recentlyLaunchedGhosttySessions[sessionName] = Date()
+                    logger.info("Ghostty has \(windowCount) windows - launching new terminal for reliable tmux activation")
+                    launchTerminalWithTmuxSession(sessionName)
+                    return true
+                }
+            }
+
+            // For other terminals (iTerm, Terminal.app), use TTY discovery
+            let ttyActivated = await activateTerminalByTTYDiscovery(tty: hostTty)
+            runBashScript("tmux switch-client -t '\(sessionName)' 2>/dev/null")
+            return ttyActivated
+
+        case let .launchTerminalWithTmux(sessionName, _):
+            launchTerminalWithTmuxSession(sessionName)
+            return true
+
+        case let .launchNewTerminal(path, name):
+            launchNewTerminal(forPath: path, name: name)
+            return true
+
+        case .activatePriorityFallback:
+            activateFirstRunningTerminal()
+            return true
+
+        case .skip:
+            return true
+        }
+    }
+
+    private func activateByTtyAction(tty: String, terminalType: TerminalType) async -> Bool {
+        switch terminalType {
+        case .iTerm:
+            activateITermSession(tty: tty)
+            return true
+        case .terminalApp:
+            activateTerminalAppSession(tty: tty)
+            return true
+        case .ghostty, .alacritty, .warp:
+            return activateAppByName(terminalType.appName)
+        case .kitty:
+            return activateAppByName("kitty")
+        case .unknown:
+            if let owningTerminal = await discoverTerminalOwningTTY(tty: tty) {
+                switch owningTerminal {
+                case .iTerm:
+                    activateITermSession(tty: tty)
+                case .terminal:
+                    activateTerminalAppSession(tty: tty)
+                default:
+                    activateAppByName(owningTerminal.displayName)
+                }
+                return true
+            }
+            return false
+        }
+    }
+
+    private func activateIdeWindowAction(ideType: IdeType, projectPath: String) -> Bool {
+        let parentApp: ParentApp
+        switch ideType {
+        case .cursor: parentApp = .cursor
+        case .vsCode: parentApp = .vsCode
+        case .vsCodeInsiders: parentApp = .vsCodeInsiders
+        case .zed: parentApp = .zed
+        }
+
+        guard findRunningIDE(parentApp) != nil else { return false }
+        activateIDEWindowInternal(app: parentApp, projectPath: projectPath)
+        return true
+    }
+
+    // MARK: - Tmux Helpers
 
     private func hasTmuxClientAttached() async -> Bool {
         let result = await runBashScriptWithResultAsync("tmux list-clients 2>/dev/null")
@@ -147,6 +314,7 @@ final class TerminalLauncher {
     }
 
     private func launchTerminalWithTmuxSession(_ session: String) {
+        logger.debug("Launching terminal with tmux attach for session '\(session)'")
         let tmuxCmd = "tmux attach-session -t '\(session)'"
 
         // Launch terminal with tmux attach command
@@ -180,35 +348,12 @@ final class TerminalLauncher {
         activateFirstRunningTerminal()
     }
 
-    // MARK: - Shell Lookup
+    // MARK: - Shell Helpers
 
-    /// Finds an active shell for the given project path from shell-cwd.json.
-    ///
-    /// Only returns shells with live PIDs (verified via `kill(pid, 0)`).
-    /// When multiple shells exist at the same path, prefers tmux shells because
-    /// `tmux switch-client` is more reliable than TTY-based tab selection.
-    ///
-    /// Uses exact path matching—a shell at `/project/src` won't match `/project`.
-    /// This is intentional: monorepo packages should have their own terminals.
-    private func findExistingShell(for project: Project, in state: ShellCwdState?) -> ShellMatch? {
-        guard let shells = state?.shells else { return nil }
-
-        let liveShells = shells.filter { isLiveShell($0) }
-        let (nonTmuxShells, tmuxShells) = partitionByTmux(liveShells)
-
-        // Prefer tmux when both exist: tmux session switching is reliable across
-        // all terminal apps, while TTY-based activation only works for iTerm/Terminal.app.
-        return findMatchingShell(in: tmuxShells, projectPath: project.path)
-            ?? findMatchingShell(in: nonTmuxShells, projectPath: project.path)
-    }
-
-    /// Query tmux directly for a session matching the project path.
-    /// Returns the session name if found.
     private func findTmuxSessionForPath(_ projectPath: String) async -> String? {
         let result = await runBashScriptWithResultAsync("tmux list-windows -a -F '#{session_name}\t#{pane_current_path}' 2>/dev/null")
         guard result.exitCode == 0, let output = result.output else { return nil }
 
-        // Parse tab-separated lines: "session_name\tpath"
         for line in output.split(separator: "\n") {
             let parts = line.split(separator: "\t", maxSplits: 1)
             guard parts.count == 2 else { continue }
@@ -221,201 +366,9 @@ final class TerminalLauncher {
         return nil
     }
 
-    private func partitionByTmux(_ shells: [String: ShellEntry]) -> (nonTmux: [String: ShellEntry], tmux: [String: ShellEntry]) {
-        var nonTmux: [String: ShellEntry] = [:]
-        var tmux: [String: ShellEntry] = [:]
-
-        for (pid, shell) in shells {
-            if isTmuxShell(shell) {
-                tmux[pid] = shell
-            } else {
-                nonTmux[pid] = shell
-            }
-        }
-
-        return (nonTmux, tmux)
-    }
-
-    private func findMatchingShell(
-        in shells: [String: ShellEntry],
-        projectPath: String
-    ) -> ShellMatch? {
-        // Exact match only - no child path inheritance.
-        // Monorepo packages should launch their own sessions, not reuse parent's.
-        if let match = shells.first(where: { $0.value.cwd == projectPath }) {
-            return ShellMatch(pid: match.key, shell: match.value)
-        }
-
-        return nil
-    }
-
     private func isLiveShell(_ entry: (key: String, value: ShellEntry)) -> Bool {
         guard let pid = Int32(entry.key) else { return false }
         return kill(pid, 0) == 0
-    }
-
-    private func isTmuxShell(_ shell: ShellEntry) -> Bool {
-        shell.tmuxSession != nil
-    }
-
-    // MARK: - Strategy-Based Activation
-
-    private func activateExistingTerminal(shell: ShellEntry, pid: String, projectPath: String, shellState: ShellCwdState?) async {
-        let shellCount = shellState?.shells.count ?? 1
-        let scenario = ShellScenario(
-            parentApp: ParentApp(fromString: shell.parentApp),
-            context: ShellContext(hasTmuxSession: shell.tmuxSession != nil),
-            multiplicity: TerminalMultiplicity(shellCount: shellCount)
-        )
-
-        let behavior = configStore.behavior(for: scenario)
-        let context = ActivationContext(
-            shell: shell,
-            pid: pid,
-            projectPath: projectPath,
-            scenario: scenario,
-            shellState: shellState
-        )
-
-        let primarySuccess = await executeStrategy(behavior.primaryStrategy, context: context)
-
-        if !primarySuccess, let fallback = behavior.fallbackStrategy {
-            logger.info("Primary strategy \(String(describing: behavior.primaryStrategy)) failed, trying fallback: \(String(describing: fallback))")
-            _ = await executeStrategy(fallback, context: context)
-        }
-    }
-
-    @discardableResult
-    private func executeStrategy(_ strategy: ActivationStrategy, context: ActivationContext) async -> Bool {
-        switch strategy {
-        case .activateByTTY:
-            return await activateByTTY(context: context)
-        case .activateByApp:
-            return activateByApp(context: context)
-        case .activateKittyRemote:
-            return activateKittyRemote(context: context)
-        case .activateIDEWindow:
-            return activateIDEWindow(context: context)
-        case .switchTmuxSession:
-            return switchTmuxSession(context: context)
-        case .activateHostFirst:
-            return await activateHostFirst(context: context)
-        case .launchNewTerminal:
-            launchNewTerminalForContext(context: context)
-            return true
-        case .priorityFallback:
-            return activatePriorityFallback(context: context)
-        case .skip:
-            return true
-        }
-    }
-
-    // MARK: - Strategy Implementations
-
-    private func activateByTTY(context: ActivationContext) async -> Bool {
-        let tty = context.shell.tty
-        let parentApp = ParentApp(fromString: context.shell.parentApp)
-
-        if parentApp.category == .terminal {
-            switch parentApp {
-            case .iTerm:
-                activateITermSession(tty: tty)
-                return true
-            case .terminal:
-                activateTerminalAppSession(tty: tty)
-                return true
-            default:
-                break
-            }
-        }
-
-        if let owningTerminal = await discoverTerminalOwningTTY(tty: tty) {
-            switch owningTerminal {
-            case .iTerm:
-                activateITermSession(tty: tty)
-                return true
-            case .terminal:
-                activateTerminalAppSession(tty: tty)
-                return true
-            default:
-                activateAppByName(owningTerminal.displayName)
-                return true
-            }
-        }
-
-        return false
-    }
-
-    private func activateByApp(context: ActivationContext) -> Bool {
-        let parentApp = ParentApp(fromString: context.shell.parentApp)
-        guard parentApp != .unknown else { return false }
-
-        if parentApp.category == .ide {
-            if let app = findRunningIDE(parentApp) {
-                app.activate()
-                return true
-            }
-        }
-
-        if parentApp.category == .terminal {
-            if let app = findRunningApp(parentApp) {
-                app.activate()
-                return true
-            }
-        }
-
-        if activateAppByName(parentApp.displayName) {
-            return true
-        }
-
-        return false
-    }
-
-    private func activateKittyRemote(context: ActivationContext) -> Bool {
-        let activated = activateAppByName("kitty")
-        if activated {
-            runBashScript("kitty @ focus-window --match pid:\(context.pid) 2>/dev/null")
-        }
-        return activated
-    }
-
-    private func activateIDEWindow(context: ActivationContext) -> Bool {
-        let parentApp = ParentApp(fromString: context.shell.parentApp)
-        guard parentApp.category == .ide,
-              findRunningIDE(parentApp) != nil
-        else { return false }
-
-        activateIDEWindowInternal(app: parentApp, projectPath: context.projectPath)
-        return true
-    }
-
-    private func switchTmuxSession(context: ActivationContext) -> Bool {
-        guard let session = context.shell.tmuxSession else { return false }
-        runBashScript("tmux switch-client -t '\(session)' 2>/dev/null")
-        return true
-    }
-
-    private func activateHostFirst(context: ActivationContext) async -> Bool {
-        let hostTTY = context.shell.tmuxClientTty ?? context.shell.tty
-
-        let ttyActivated = await activateTerminalByTTYDiscovery(tty: hostTTY)
-
-        if let session = context.shell.tmuxSession {
-            runBashScript("tmux switch-client -t '\(session)' 2>/dev/null")
-        }
-
-        return ttyActivated
-    }
-
-    private func launchNewTerminalForContext(context: ActivationContext) {
-        let name = URL(fileURLWithPath: context.projectPath).lastPathComponent
-        launchNewTerminal(forPath: context.projectPath, name: name)
-    }
-
-    private func activatePriorityFallback(context: ActivationContext) -> Bool {
-        logger.info("Using priority fallback: activating first running terminal (no specific terminal found for project)")
-        activateFirstRunningTerminal()
-        return true
     }
 
     // MARK: - IDE Activation
@@ -443,6 +396,43 @@ final class TerminalLauncher {
         process.environment = env
 
         try? process.run()
+    }
+
+    // MARK: - Ghostty Window Detection
+    //
+    // Ghostty has no API for selecting a specific window by TTY (unlike iTerm/Terminal.app).
+    // When multiple Ghostty windows exist, we can't focus the correct one - only activate the app.
+    // Strategy: If exactly 1 window, activate app. If 0 or multiple, launch new terminal.
+
+    private func countGhosttyWindows() -> Int {
+        guard let ghosttyApp = NSWorkspace.shared.runningApplications.first(where: {
+            $0.bundleIdentifier == "com.mitchellh.ghostty"
+        }) else {
+            return 0
+        }
+
+        let appElement = AXUIElementCreateApplication(ghosttyApp.processIdentifier)
+        var windowsRef: CFTypeRef?
+        let result = AXUIElementCopyAttributeValue(appElement, kAXWindowsAttribute as CFString, &windowsRef)
+
+        guard result == .success, let windows = windowsRef as? [AXUIElement] else {
+            return 0
+        }
+
+        return windows.count
+    }
+
+    private func isGhosttyRunning() -> Bool {
+        NSWorkspace.shared.runningApplications.contains {
+            $0.bundleIdentifier == "com.mitchellh.ghostty"
+        }
+    }
+
+    private func cleanupExpiredGhosttyCache() {
+        let now = Date()
+        Self.recentlyLaunchedGhosttySessions = Self.recentlyLaunchedGhosttySessions.filter { _, launchTime in
+            now.timeIntervalSince(launchTime) < Constants.ghosttySessionCacheDuration
+        }
     }
 
     // MARK: - TTY Discovery
@@ -559,11 +549,15 @@ final class TerminalLauncher {
         guard let name = name,
               let app = NSWorkspace.shared.runningApplications.first(where: {
                   $0.localizedName?.lowercased().contains(name.lowercased()) == true
-              })
+              }),
+              let appName = app.localizedName
         else {
             return false
         }
-        app.activate()
+        // Use AppleScript for reliable activation - NSRunningApplication.activate()
+        // can silently fail when SwiftUI windows steal focus back.
+        logger.debug("Activating '\(appName)' via AppleScript")
+        runAppleScript("tell application \"\(appName)\" to activate")
         return true
     }
 

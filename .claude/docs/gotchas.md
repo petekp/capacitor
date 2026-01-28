@@ -40,8 +40,8 @@ Use custom decoder with `.withFractionalSeconds`. See `ShellStateStore.swift`.
 ### UniFFI Task Shadows Swift Task
 UniFFI bindings define a `Task` type shadowing Swift's `_Concurrency.Task`. Always use `_Concurrency.Task` explicitly. Symptom: "cannot specialize non-generic type 'Task'" errors. Affected: `TerminalLauncher.swift`, `ShellStateStore.swift`.
 
-### Activation Strategy Return Values
-In `TerminalLauncher.swift`, strategy methods like `activateKittyRemote` must return actual success (not always `true`). Returning `true` unconditionally breaks the fallback chain.
+### Rust Activation Resolver Is Sole Path
+Terminal activation now uses a single path: Rust decides (`engine.resolveActivation()`), Swift executes (`executeActivationAction()`). The legacy Swift-only strategy methods were removed in Jan 2026. All decision logic lives in `core/hud-core/src/activation.rs` (25+ unit tests).
 
 ## State & Locks
 

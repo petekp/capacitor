@@ -1,17 +1,71 @@
 # Agent Changelog
 
 > This file helps coding agents understand project evolution, key decisions,
-> and deprecated patterns. Updated: 2026-01-27 (Session 4)
+> and deprecated patterns. Updated: 2026-01-27 (Session 5)
 
 ## Current State Summary
 
-Capacitor is a native macOS SwiftUI app (Apple Silicon, macOS 14+) that acts as a sidecar dashboard for Claude Code. The architecture uses a Rust core (`hud-core`) with UniFFI bindings to Swift. State tracking relies on Claude Code hooks that write to `~/.capacitor/`, with session-based locks (`{session_id}-{pid}.lock`) as the authoritative signal for active sessions. Shell integration provides ambient project awareness via precmd hooks. Hooks run asynchronously to avoid blocking Claude Code execution. All file I/O uses `fs_err` for enriched error messages, and structured logging via `tracing` writes to `~/.capacitor/hud-hook-debug.{date}.log`. **Bulletproof Hooks complete:** Phase 4 Test Hooks button added for manual verification. **Audit complete:** A comprehensive 12-session side-effects analysis validated all major subsystems. **Activity fallback fixed:** Hook format detection bug in ActivityStore corrected—projects now show correct status when Claude runs from subdirectories.
+Capacitor is a native macOS SwiftUI app (Apple Silicon, macOS 14+) that acts as a sidecar dashboard for Claude Code. The architecture uses a Rust core (`hud-core`) with UniFFI bindings to Swift. State tracking relies on Claude Code hooks that write to `~/.capacitor/`, with session-based locks (`{session_id}-{pid}.lock`) as the authoritative signal for active sessions. Shell integration provides ambient project awareness via precmd hooks. Hooks run asynchronously to avoid blocking Claude Code execution. All file I/O uses `fs_err` for enriched error messages, and structured logging via `tracing` writes to `~/.capacitor/hud-hook-debug.{date}.log`. **Terminal activation now uses Rust-only path:** The legacy Swift decision logic was removed (~277 lines); Rust decides (`activation.rs`), Swift executes (macOS APIs). **Bulletproof Hooks complete:** Phase 4 Test Hooks button added for manual verification. **Audit complete:** A comprehensive 12-session side-effects analysis validated all major subsystems.
 
 ## Stale Information Detected
 
-None currently. Last audit: 2026-01-27 (fixed v3→v4 documentation in state modules, hud-hook audit remediation).
+None currently. Last audit: 2026-01-27 (terminal activation migration, Rust-only path).
 
 ## Timeline
+
+### 2026-01-27 — Terminal Activation: Rust-Only Path Migration
+
+**What changed:**
+Removed ~277 lines of legacy Swift decision logic from `TerminalLauncher.swift`. Terminal activation now uses a single path: Rust decides, Swift executes.
+
+**Before:**
+```
+launchTerminalAsync()
+├── if useRustResolver → launchTerminalWithRustResolver()
+│   → Rust decision → Swift execution
+└── else → launchTerminalLegacy()
+    → Swift decision → Swift execution
+```
+
+**After:**
+```
+launchTerminalAsync()
+└── launchTerminalWithRustResolver()
+    → Rust decision → Swift execution
+```
+
+**Removed components:**
+- Feature flag: `useRustResolver` property
+- Legacy types: `ShellMatch`, `ActivationContext`
+- Legacy methods: `launchTerminalLegacy`, `switchToTmuxSessionAndActivate`, `findExistingShell`, `partitionByTmux`, `findMatchingShell`, `isTmuxShell`
+- Strategy system: `activateExistingTerminal`, `executeStrategy`, `activateByTTY`, `activateByApp`, `activateKittyRemote`, `activateIDEWindow`, `switchTmuxSession`, `activateHostFirst`, `launchNewTerminalForContext`, `activatePriorityFallback`
+
+**Preserved (execution layer):**
+- `executeActivationAction()` — routes Rust decisions to macOS APIs
+- `activateByTtyAction()`, `activateIdeWindowAction()` — action executors
+- All AppleScript helpers, TTY discovery, Ghostty window detection
+- `launchTerminalWithTmuxSession()`, `findTmuxSessionForPath()`, `hasTmuxClientAttached()`
+
+**Why:**
+- Rust activation resolver was validated via feature flag testing
+- 25+ Rust unit tests cover all scenarios
+- Single code path is easier to maintain and reason about
+- Decision logic in Rust is testable without macOS mocking
+
+**Agent impact:**
+- Terminal activation decision logic lives in `core/hud-core/src/activation.rs`
+- Execution logic stays in Swift (`TerminalLauncher.executeActivationAction()`)
+- Principle: **Rust decides, Swift executes** (macOS APIs require Swift)
+- Don't add decision logic to Swift; add new `ActivationAction` variants in Rust instead
+
+**Documentation updated:**
+- `.claude/docs/gotchas.md` — Replaced obsolete "Activation Strategy Return Values" with "Rust Activation Resolver Is Sole Path"
+- `.claude/docs/architecture-overview.md` — Added Terminal Activation section
+- `.claude/plans/DONE-terminal-activation-api-contract.md` — Marked complete
+
+**Files changed:** `apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift` (1092→815 lines)
+
+---
 
 ### 2026-01-27 — Activity Store Hook Format Detection Fix
 

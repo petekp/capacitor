@@ -951,6 +951,42 @@ impl HudEngine {
             message,
         }
     }
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // Terminal Activation API
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    /// Resolves what activation action to take for a project.
+    ///
+    /// This is the main entry point for terminal activation. Given the current
+    /// shell state and tmux context, it determines what action(s) Swift should
+    /// take to activate the correct terminal.
+    ///
+    /// # Arguments
+    /// * `project_path` - The absolute path to the project
+    /// * `shell_state` - Current contents of shell-cwd.json (may be None if file missing)
+    /// * `tmux_context` - Tmux state queried by Swift
+    ///
+    /// # Returns
+    /// An `ActivationDecision` with primary action and optional fallback.
+    ///
+    /// # Example Usage (Swift)
+    /// ```swift
+    /// let decision = engine.resolveActivation(
+    ///     projectPath: project.path,
+    ///     shellState: shellStore.state?.toFfi(),
+    ///     tmuxContext: await queryTmuxContext()
+    /// )
+    /// await executeAction(decision.primary)
+    /// ```
+    pub fn resolve_activation(
+        &self,
+        project_path: String,
+        shell_state: Option<crate::activation::ShellCwdStateFfi>,
+        tmux_context: crate::activation::TmuxContextFfi,
+    ) -> crate::activation::ActivationDecision {
+        crate::activation::resolve_activation(&project_path, shell_state.as_ref(), &tmux_context)
+    }
 }
 
 impl HudEngine {

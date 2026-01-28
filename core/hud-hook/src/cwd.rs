@@ -354,6 +354,7 @@ const KNOWN_APPS: &[(&str, ParentApp)] = &[
     ("Code", ParentApp::VSCode),
     ("Zed", ParentApp::Zed),
     // Terminal emulators
+    ("ghostty", ParentApp::Ghostty),
     ("Ghostty", ParentApp::Ghostty),
     ("iTerm2", ParentApp::ITerm),
     ("Terminal", ParentApp::Terminal),

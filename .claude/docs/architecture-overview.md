@@ -216,6 +216,12 @@ See [Adding a New CLI Agent Guide](adding-new-cli-agent-guide.md) for implementa
 - `list_artifacts()`, `list_plugins()` - Artifact discovery
 - `load_dashboard()` - All dashboard data in one call
 
+**Terminal Activation (`activation.rs`):**
+- `resolve_activation()` - Pure Rust function that returns an `ActivationDecision`
+- Decision logic only: what action to take based on shell state + tmux context
+- Execution stays in Swift (`TerminalLauncher.executeActivationAction()`)
+- Principle: **Rust decides, Swift executes** (macOS APIs require Swift)
+
 ### Key Patterns
 
 **Error Handling:**

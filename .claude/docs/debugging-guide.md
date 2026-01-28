@@ -157,3 +157,55 @@ Color.clear
     .contentShape(Rectangle())
     .windowDraggable()
 ```
+
+### Terminal Activation Not Working (Wrong Window Focused)
+
+**Symptoms:** Clicking a project card focuses the wrong terminal window, or activates the app without selecting the correct tab.
+
+**CRITICAL FIRST STEP:** Before debugging code, check `.claude/docs/terminal-switching-matrix.md`:
+
+| Terminal | Tab Selection | Notes |
+|----------|--------------|-------|
+| iTerm2 | ✅ Full | AppleScript API |
+| Terminal.app | ✅ Full | AppleScript API |
+| kitty | ✅ Full | Requires `allow_remote_control yes` |
+| **Ghostty** | **❌ None** | No external API |
+| **Warp** | **❌ None** | No AppleScript/CLI API |
+| Alacritty | N/A | No tabs, windows only |
+
+If the user is using Ghostty or Warp with multiple windows, **this is a known limitation, not a bug**. The system cannot select a specific window—only activate the app.
+
+**Debugging methodology (layered systems):**
+
+The terminal activation system has two layers:
+1. **Decision layer** (Rust): `activation.rs` decides WHAT to do
+2. **Execution layer** (Swift): `TerminalLauncher.swift` does it
+
+Always trace BOTH layers:
+```bash
+# Check what decision Rust makes (add logging to launchTerminalWithRustResolver)
+# Check what Swift actually executes (add logging to executeActivationAction)
+```
+
+**Common misstep:** Assuming the decision layer is wrong when the execution layer has fundamental limitations. Ask "CAN the execution layer do what we're deciding?" before modifying decision logic.
+
+**Trace the full path:**
+```
+Click → AppState.launchTerminal
+      → TerminalLauncher.launchTerminalAsync
+      → resolveActivation (Rust decision)
+      → executeActivationAction (Swift execution)
+      → activateTerminalByTTYDiscovery / activateAppByName
+```
+
+If `activateAppByName` is called for a terminal without tab selection API, you've hit a fundamental limitation.
+
+**NSRunningApplication.activate() vs AppleScript:**
+
+`NSRunningApplication.activate()` can return `true` while silently failing to actually bring the app to front. This happens when:
+- SwiftUI windows aggressively re-activate themselves
+- There's a race condition with window ordering
+
+**Diagnosis:** Add logging to check if `activate()` returns true but the app doesn't come to front.
+
+**Fix:** Use AppleScript `tell application "AppName" to activate` instead. It goes through Apple Events which is more reliable for inter-app activation from SwiftUI apps.

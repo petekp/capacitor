@@ -754,6 +754,33 @@ public protocol HudEngineProtocol: AnyObject {
     func removeProject(path: String) throws
 
     /**
+     * Resolves what activation action to take for a project.
+     *
+     * This is the main entry point for terminal activation. Given the current
+     * shell state and tmux context, it determines what action(s) Swift should
+     * take to activate the correct terminal.
+     *
+     * # Arguments
+     * * `project_path` - The absolute path to the project
+     * * `shell_state` - Current contents of shell-cwd.json (may be None if file missing)
+     * * `tmux_context` - Tmux state queried by Swift
+     *
+     * # Returns
+     * An `ActivationDecision` with primary action and optional fallback.
+     *
+     * # Example Usage (Swift)
+     * ```swift
+     * let decision = engine.resolveActivation(
+     * projectPath: project.path,
+     * shellState: shellStore.state?.toFfi(),
+     * tmuxContext: await queryTmuxContext()
+     * )
+     * await executeAction(decision.primary)
+     * ```
+     */
+    func resolveActivation(projectPath: String, shellState: ShellCwdStateFfi?, tmuxContext: TmuxContextFfi) -> ActivationDecision
+
+    /**
      * Runs a comprehensive hook system test.
      *
      * This verifies:
@@ -1273,6 +1300,40 @@ open class HudEngine:
     }
 
     /**
+     * Resolves what activation action to take for a project.
+     *
+     * This is the main entry point for terminal activation. Given the current
+     * shell state and tmux context, it determines what action(s) Swift should
+     * take to activate the correct terminal.
+     *
+     * # Arguments
+     * * `project_path` - The absolute path to the project
+     * * `shell_state` - Current contents of shell-cwd.json (may be None if file missing)
+     * * `tmux_context` - Tmux state queried by Swift
+     *
+     * # Returns
+     * An `ActivationDecision` with primary action and optional fallback.
+     *
+     * # Example Usage (Swift)
+     * ```swift
+     * let decision = engine.resolveActivation(
+     * projectPath: project.path,
+     * shellState: shellStore.state?.toFfi(),
+     * tmuxContext: await queryTmuxContext()
+     * )
+     * await executeAction(decision.primary)
+     * ```
+     */
+    open func resolveActivation(projectPath: String, shellState: ShellCwdStateFfi?, tmuxContext: TmuxContextFfi) -> ActivationDecision {
+        return try! FfiConverterTypeActivationDecision.lift(try! rustCall {
+            uniffi_hud_core_fn_method_hudengine_resolve_activation(self.uniffiClonePointer(),
+                                                                   FfiConverterString.lower(projectPath),
+                                                                   FfiConverterOptionTypeShellCwdStateFfi.lower(shellState),
+                                                                   FfiConverterTypeTmuxContextFfi.lower(tmuxContext), $0)
+        })
+    }
+
+    /**
      * Runs a comprehensive hook system test.
      *
      * This verifies:
@@ -1448,6 +1509,97 @@ public func FfiConverterTypeHudEngine_lift(_ pointer: UnsafeMutableRawPointer) t
 #endif
 public func FfiConverterTypeHudEngine_lower(_ value: HudEngine) -> UnsafeMutableRawPointer {
     return FfiConverterTypeHudEngine.lower(value)
+}
+
+/**
+ * The resolved activation decision.
+ */
+public struct ActivationDecision {
+    /**
+     * Primary action to attempt
+     */
+    public var primary: ActivationAction
+    /**
+     * Fallback action if primary fails
+     */
+    public var fallback: ActivationAction?
+    /**
+     * Debug context explaining why this decision was made
+     */
+    public var reason: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Primary action to attempt
+         */ primary: ActivationAction,
+        /**
+            * Fallback action if primary fails
+            */ fallback: ActivationAction?,
+        /**
+            * Debug context explaining why this decision was made
+            */ reason: String
+    ) {
+        self.primary = primary
+        self.fallback = fallback
+        self.reason = reason
+    }
+}
+
+extension ActivationDecision: Equatable, Hashable {
+    public static func == (lhs: ActivationDecision, rhs: ActivationDecision) -> Bool {
+        if lhs.primary != rhs.primary {
+            return false
+        }
+        if lhs.fallback != rhs.fallback {
+            return false
+        }
+        if lhs.reason != rhs.reason {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(primary)
+        hasher.combine(fallback)
+        hasher.combine(reason)
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeActivationDecision: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ActivationDecision {
+        return
+            try ActivationDecision(
+                primary: FfiConverterTypeActivationAction.read(from: &buf),
+                fallback: FfiConverterOptionTypeActivationAction.read(from: &buf),
+                reason: FfiConverterString.read(from: &buf)
+            )
+    }
+
+    public static func write(_ value: ActivationDecision, into buf: inout [UInt8]) {
+        FfiConverterTypeActivationAction.write(value.primary, into: &buf)
+        FfiConverterOptionTypeActivationAction.write(value.fallback, into: &buf)
+        FfiConverterString.write(value.reason, into: &buf)
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeActivationDecision_lift(_ buf: RustBuffer) throws -> ActivationDecision {
+    return try FfiConverterTypeActivationDecision.lift(buf)
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeActivationDecision_lower(_ value: ActivationDecision) -> RustBuffer {
+    return FfiConverterTypeActivationDecision.lower(value)
 }
 
 /**
@@ -4200,6 +4352,169 @@ public func FfiConverterTypeSetupStatus_lower(_ value: SetupStatus) -> RustBuffe
 }
 
 /**
+ * Shell state as read from `~/.capacitor/shell-cwd.json`.
+ *
+ * This is the FFI-safe version of the shell state. Swift reads the JSON
+ * and converts it to this type before passing to Rust.
+ */
+public struct ShellCwdStateFfi {
+    public var version: UInt32
+    public var shells: [String: ShellEntryFfi]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(version: UInt32, shells: [String: ShellEntryFfi]) {
+        self.version = version
+        self.shells = shells
+    }
+}
+
+extension ShellCwdStateFfi: Equatable, Hashable {
+    public static func == (lhs: ShellCwdStateFfi, rhs: ShellCwdStateFfi) -> Bool {
+        if lhs.version != rhs.version {
+            return false
+        }
+        if lhs.shells != rhs.shells {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(version)
+        hasher.combine(shells)
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeShellCwdStateFfi: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ShellCwdStateFfi {
+        return
+            try ShellCwdStateFfi(
+                version: FfiConverterUInt32.read(from: &buf),
+                shells: FfiConverterDictionaryStringTypeShellEntryFfi.read(from: &buf)
+            )
+    }
+
+    public static func write(_ value: ShellCwdStateFfi, into buf: inout [UInt8]) {
+        FfiConverterUInt32.write(value.version, into: &buf)
+        FfiConverterDictionaryStringTypeShellEntryFfi.write(value.shells, into: &buf)
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeShellCwdStateFfi_lift(_ buf: RustBuffer) throws -> ShellCwdStateFfi {
+    return try FfiConverterTypeShellCwdStateFfi.lift(buf)
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeShellCwdStateFfi_lower(_ value: ShellCwdStateFfi) -> RustBuffer {
+    return FfiConverterTypeShellCwdStateFfi.lower(value)
+}
+
+/**
+ * A single shell entry from the shell state.
+ */
+public struct ShellEntryFfi {
+    public var cwd: String
+    public var tty: String
+    public var parentApp: ParentApp
+    public var tmuxSession: String?
+    public var tmuxClientTty: String?
+    public var updatedAt: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(cwd: String, tty: String, parentApp: ParentApp, tmuxSession: String?, tmuxClientTty: String?, updatedAt: String) {
+        self.cwd = cwd
+        self.tty = tty
+        self.parentApp = parentApp
+        self.tmuxSession = tmuxSession
+        self.tmuxClientTty = tmuxClientTty
+        self.updatedAt = updatedAt
+    }
+}
+
+extension ShellEntryFfi: Equatable, Hashable {
+    public static func == (lhs: ShellEntryFfi, rhs: ShellEntryFfi) -> Bool {
+        if lhs.cwd != rhs.cwd {
+            return false
+        }
+        if lhs.tty != rhs.tty {
+            return false
+        }
+        if lhs.parentApp != rhs.parentApp {
+            return false
+        }
+        if lhs.tmuxSession != rhs.tmuxSession {
+            return false
+        }
+        if lhs.tmuxClientTty != rhs.tmuxClientTty {
+            return false
+        }
+        if lhs.updatedAt != rhs.updatedAt {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(cwd)
+        hasher.combine(tty)
+        hasher.combine(parentApp)
+        hasher.combine(tmuxSession)
+        hasher.combine(tmuxClientTty)
+        hasher.combine(updatedAt)
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeShellEntryFfi: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ShellEntryFfi {
+        return
+            try ShellEntryFfi(
+                cwd: FfiConverterString.read(from: &buf),
+                tty: FfiConverterString.read(from: &buf),
+                parentApp: FfiConverterTypeParentApp.read(from: &buf),
+                tmuxSession: FfiConverterOptionString.read(from: &buf),
+                tmuxClientTty: FfiConverterOptionString.read(from: &buf),
+                updatedAt: FfiConverterString.read(from: &buf)
+            )
+    }
+
+    public static func write(_ value: ShellEntryFfi, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.cwd, into: &buf)
+        FfiConverterString.write(value.tty, into: &buf)
+        FfiConverterTypeParentApp.write(value.parentApp, into: &buf)
+        FfiConverterOptionString.write(value.tmuxSession, into: &buf)
+        FfiConverterOptionString.write(value.tmuxClientTty, into: &buf)
+        FfiConverterString.write(value.updatedAt, into: &buf)
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeShellEntryFfi_lift(_ buf: RustBuffer) throws -> ShellEntryFfi {
+    return try FfiConverterTypeShellEntryFfi.lift(buf)
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeShellEntryFfi_lower(_ value: ShellEntryFfi) -> RustBuffer {
+    return FfiConverterTypeShellEntryFfi.lower(value)
+}
+
+/**
  * The full stats cache, persisted to disk.
  */
 public struct StatsCache {
@@ -4448,6 +4763,83 @@ public func FfiConverterTypeTask_lower(_ value: Task) -> RustBuffer {
 }
 
 /**
+ * Context about tmux state, queried by Swift before calling the resolver.
+ */
+public struct TmuxContextFfi {
+    /**
+     * Session name if one exists at the project path
+     */
+    public var sessionAtPath: String?
+    /**
+     * Whether any tmux client is currently attached
+     */
+    public var hasAttachedClient: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Session name if one exists at the project path
+         */ sessionAtPath: String?,
+        /**
+            * Whether any tmux client is currently attached
+            */ hasAttachedClient: Bool
+    ) {
+        self.sessionAtPath = sessionAtPath
+        self.hasAttachedClient = hasAttachedClient
+    }
+}
+
+extension TmuxContextFfi: Equatable, Hashable {
+    public static func == (lhs: TmuxContextFfi, rhs: TmuxContextFfi) -> Bool {
+        if lhs.sessionAtPath != rhs.sessionAtPath {
+            return false
+        }
+        if lhs.hasAttachedClient != rhs.hasAttachedClient {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(sessionAtPath)
+        hasher.combine(hasAttachedClient)
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeTmuxContextFfi: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TmuxContextFfi {
+        return
+            try TmuxContextFfi(
+                sessionAtPath: FfiConverterOptionString.read(from: &buf),
+                hasAttachedClient: FfiConverterBool.read(from: &buf)
+            )
+    }
+
+    public static func write(_ value: TmuxContextFfi, into buf: inout [UInt8]) {
+        FfiConverterOptionString.write(value.sessionAtPath, into: &buf)
+        FfiConverterBool.write(value.hasAttachedClient, into: &buf)
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTmuxContextFfi_lift(_ buf: RustBuffer) throws -> TmuxContextFfi {
+    return try FfiConverterTypeTmuxContextFfi.lift(buf)
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTmuxContextFfi_lower(_ value: TmuxContextFfi) -> RustBuffer {
+    return FfiConverterTypeTmuxContextFfi.lower(value)
+}
+
+/**
  * FFI-friendly validation result for Swift/Kotlin/Python.
  *
  * Uses flat structure instead of enum variants for better FFI compatibility.
@@ -4581,6 +4973,158 @@ public func FfiConverterTypeValidationResultFfi_lift(_ buf: RustBuffer) throws -
 public func FfiConverterTypeValidationResultFfi_lower(_ value: ValidationResultFfi) -> RustBuffer {
     return FfiConverterTypeValidationResultFfi.lower(value)
 }
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * A single action for Swift to execute.
+ */
+
+public enum ActivationAction {
+    /**
+     * Activate a terminal by querying for TTY ownership (AppleScript)
+     */
+    case activateByTty(tty: String, terminalType: TerminalType)
+    /**
+     * Activate app by bringing its window to front
+     */
+    case activateApp(appName: String
+    )
+    /**
+     * Focus kitty window by shell PID using `kitty @`
+     */
+    case activateKittyWindow(shellPid: UInt32
+    )
+    /**
+     * Activate IDE and run CLI to focus correct window
+     */
+    case activateIdeWindow(ideType: IdeType, projectPath: String)
+    /**
+     * Switch tmux session in attached client
+     */
+    case switchTmuxSession(sessionName: String
+    )
+    /**
+     * Discover host terminal via TTY, then switch tmux session
+     */
+    case activateHostThenSwitchTmux(hostTty: String, sessionName: String)
+    /**
+     * Launch new terminal with tmux attach
+     */
+    case launchTerminalWithTmux(sessionName: String, projectPath: String)
+    /**
+     * Launch new terminal at project path (no tmux)
+     */
+    case launchNewTerminal(projectPath: String, projectName: String)
+    /**
+     * Activate first running terminal from priority list
+     */
+    case activatePriorityFallback
+    /**
+     * Do nothing
+     */
+    case skip
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeActivationAction: FfiConverterRustBuffer {
+    typealias SwiftType = ActivationAction
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ActivationAction {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        case 1: return try .activateByTty(tty: FfiConverterString.read(from: &buf), terminalType: FfiConverterTypeTerminalType.read(from: &buf))
+
+        case 2: return try .activateApp(appName: FfiConverterString.read(from: &buf)
+            )
+
+        case 3: return try .activateKittyWindow(shellPid: FfiConverterUInt32.read(from: &buf)
+            )
+
+        case 4: return try .activateIdeWindow(ideType: FfiConverterTypeIdeType.read(from: &buf), projectPath: FfiConverterString.read(from: &buf))
+
+        case 5: return try .switchTmuxSession(sessionName: FfiConverterString.read(from: &buf)
+            )
+
+        case 6: return try .activateHostThenSwitchTmux(hostTty: FfiConverterString.read(from: &buf), sessionName: FfiConverterString.read(from: &buf))
+
+        case 7: return try .launchTerminalWithTmux(sessionName: FfiConverterString.read(from: &buf), projectPath: FfiConverterString.read(from: &buf))
+
+        case 8: return try .launchNewTerminal(projectPath: FfiConverterString.read(from: &buf), projectName: FfiConverterString.read(from: &buf))
+
+        case 9: return .activatePriorityFallback
+
+        case 10: return .skip
+
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: ActivationAction, into buf: inout [UInt8]) {
+        switch value {
+        case let .activateByTty(tty, terminalType):
+            writeInt(&buf, Int32(1))
+            FfiConverterString.write(tty, into: &buf)
+            FfiConverterTypeTerminalType.write(terminalType, into: &buf)
+
+        case let .activateApp(appName):
+            writeInt(&buf, Int32(2))
+            FfiConverterString.write(appName, into: &buf)
+
+        case let .activateKittyWindow(shellPid):
+            writeInt(&buf, Int32(3))
+            FfiConverterUInt32.write(shellPid, into: &buf)
+
+        case let .activateIdeWindow(ideType, projectPath):
+            writeInt(&buf, Int32(4))
+            FfiConverterTypeIdeType.write(ideType, into: &buf)
+            FfiConverterString.write(projectPath, into: &buf)
+
+        case let .switchTmuxSession(sessionName):
+            writeInt(&buf, Int32(5))
+            FfiConverterString.write(sessionName, into: &buf)
+
+        case let .activateHostThenSwitchTmux(hostTty, sessionName):
+            writeInt(&buf, Int32(6))
+            FfiConverterString.write(hostTty, into: &buf)
+            FfiConverterString.write(sessionName, into: &buf)
+
+        case let .launchTerminalWithTmux(sessionName, projectPath):
+            writeInt(&buf, Int32(7))
+            FfiConverterString.write(sessionName, into: &buf)
+            FfiConverterString.write(projectPath, into: &buf)
+
+        case let .launchNewTerminal(projectPath, projectName):
+            writeInt(&buf, Int32(8))
+            FfiConverterString.write(projectPath, into: &buf)
+            FfiConverterString.write(projectName, into: &buf)
+
+        case .activatePriorityFallback:
+            writeInt(&buf, Int32(9))
+
+        case .skip:
+            writeInt(&buf, Int32(10))
+        }
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeActivationAction_lift(_ buf: RustBuffer) throws -> ActivationAction {
+    return try FfiConverterTypeActivationAction.lift(buf)
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeActivationAction_lower(_ value: ActivationAction) -> RustBuffer {
+    return FfiConverterTypeActivationAction.lower(value)
+}
+
+extension ActivationAction: Equatable, Hashable {}
 
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
@@ -5135,6 +5679,73 @@ extension HudFfiError: Foundation.LocalizedError {
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 /**
+ * IDE types for window activation via CLI.
+ */
+
+public enum IdeType {
+    case cursor
+    case vsCode
+    case vsCodeInsiders
+    case zed
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeIdeType: FfiConverterRustBuffer {
+    typealias SwiftType = IdeType
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> IdeType {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        case 1: return .cursor
+
+        case 2: return .vsCode
+
+        case 3: return .vsCodeInsiders
+
+        case 4: return .zed
+
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: IdeType, into buf: inout [UInt8]) {
+        switch value {
+        case .cursor:
+            writeInt(&buf, Int32(1))
+
+        case .vsCode:
+            writeInt(&buf, Int32(2))
+
+        case .vsCodeInsiders:
+            writeInt(&buf, Int32(3))
+
+        case .zed:
+            writeInt(&buf, Int32(4))
+        }
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeIdeType_lift(_ buf: RustBuffer) throws -> IdeType {
+    return try FfiConverterTypeIdeType.lift(buf)
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeIdeType_lower(_ value: IdeType) -> RustBuffer {
+    return FfiConverterTypeIdeType.lower(value)
+}
+
+extension IdeType: Equatable, Hashable {}
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
  * The parent application hosting a shell session.
  *
  * This is the authoritative enum for app identification, exported via UniFFI
@@ -5326,6 +5937,91 @@ public func FfiConverterTypeSessionState_lower(_ value: SessionState) -> RustBuf
 }
 
 extension SessionState: Equatable, Hashable {}
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * Terminal types that support TTY-based tab selection.
+ */
+
+public enum TerminalType {
+    case iTerm
+    case terminalApp
+    case ghostty
+    case alacritty
+    case kitty
+    case warp
+    case unknown
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeTerminalType: FfiConverterRustBuffer {
+    typealias SwiftType = TerminalType
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TerminalType {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        case 1: return .iTerm
+
+        case 2: return .terminalApp
+
+        case 3: return .ghostty
+
+        case 4: return .alacritty
+
+        case 5: return .kitty
+
+        case 6: return .warp
+
+        case 7: return .unknown
+
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: TerminalType, into buf: inout [UInt8]) {
+        switch value {
+        case .iTerm:
+            writeInt(&buf, Int32(1))
+
+        case .terminalApp:
+            writeInt(&buf, Int32(2))
+
+        case .ghostty:
+            writeInt(&buf, Int32(3))
+
+        case .alacritty:
+            writeInt(&buf, Int32(4))
+
+        case .kitty:
+            writeInt(&buf, Int32(5))
+
+        case .warp:
+            writeInt(&buf, Int32(6))
+
+        case .unknown:
+            writeInt(&buf, Int32(7))
+        }
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTerminalType_lift(_ buf: RustBuffer) throws -> TerminalType {
+    return try FfiConverterTypeTerminalType.lift(buf)
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTerminalType_lower(_ value: TerminalType) -> RustBuffer {
+    return FfiConverterTypeTerminalType.lower(value)
+}
+
+extension TerminalType: Equatable, Hashable {}
 
 #if swift(>=5.8)
     @_documentation(visibility: private)
@@ -5538,6 +6234,54 @@ private struct FfiConverterOptionTypeProjectStatus: FfiConverterRustBuffer {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeProjectStatus.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+private struct FfiConverterOptionTypeShellCwdStateFfi: FfiConverterRustBuffer {
+    typealias SwiftType = ShellCwdStateFfi?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeShellCwdStateFfi.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeShellCwdStateFfi.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+private struct FfiConverterOptionTypeActivationAction: FfiConverterRustBuffer {
+    typealias SwiftType = ActivationAction?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeActivationAction.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeActivationAction.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -5870,6 +6614,32 @@ private struct FfiConverterDictionaryStringTypeProjectSessionState: FfiConverter
     }
 }
 
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+private struct FfiConverterDictionaryStringTypeShellEntryFfi: FfiConverterRustBuffer {
+    public static func write(_ value: [String: ShellEntryFfi], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for (key, value) in value {
+            FfiConverterString.write(key, into: &buf)
+            FfiConverterTypeShellEntryFfi.write(value, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [String: ShellEntryFfi] {
+        let len: Int32 = try readInt(&buf)
+        var dict = [String: ShellEntryFfi]()
+        dict.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            let key = try FfiConverterString.read(from: &buf)
+            let value = try FfiConverterTypeShellEntryFfi.read(from: &buf)
+            dict[key] = value
+        }
+        return dict
+    }
+}
+
 private enum InitializationResult {
     case ok
     case contractVersionMismatch
@@ -5974,6 +6744,9 @@ private var initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if uniffi_hud_core_checksum_method_hudengine_remove_project() != 46288 {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if uniffi_hud_core_checksum_method_hudengine_resolve_activation() != 6034 {
         return InitializationResult.apiChecksumMismatch
     }
     if uniffi_hud_core_checksum_method_hudengine_run_hook_test() != 45458 {
