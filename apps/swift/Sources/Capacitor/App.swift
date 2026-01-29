@@ -357,9 +357,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             aboutIcon = logomark.tinted(with: capacitorGreen, size: NSSize(width: 48, height: 48))
         }
 
-        // Get version - use hardcoded value since SPM debug builds don't have correct Info.plist
-        // This matches the version in Cargo.toml
-        let version = "0.1.26"
+        // Get version from multiple sources (release builds have correct Info.plist, dev builds don't)
+        let version = Self.getAppVersion()
 
         var options: [NSApplication.AboutPanelOptionKey: Any] = [
             .applicationName: "Capacitor",
@@ -371,6 +370,28 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         NSApp.orderFrontStandardAboutPanel(options: options)
+    }
+
+    /// Gets the app version from the best available source:
+    /// 1. Info.plist (correct in release builds)
+    /// 2. VERSION file in project root (works in dev builds)
+    /// 3. Hardcoded fallback (updated by bump-version.sh)
+    private static func getAppVersion() -> String {
+        // Try Info.plist first (correct in release builds, set by build-distribution.sh)
+        if let bundleVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String,
+           bundleVersion != "1.0" {
+            return bundleVersion
+        }
+
+        // Dev build fallback: read VERSION file from project root
+        // This works because dev builds typically run from the project directory
+        if let versionData = FileManager.default.contents(atPath: "VERSION"),
+           let version = String(data: versionData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) {
+            return version
+        }
+
+        // Ultimate fallback (kept in sync by bump-version.sh)
+        return "0.1.27"
     }
 
     private func validateHookSetup() {

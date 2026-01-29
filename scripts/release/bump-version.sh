@@ -81,6 +81,16 @@ else
     echo -e "${YELLOW}⚠ Cargo.toml not found, skipping${NC}"
 fi
 
+# Update App.swift fallback version (used when Info.plist isn't available in dev builds)
+APP_SWIFT="$PROJECT_ROOT/apps/swift/Sources/Capacitor/App.swift"
+if [ -f "$APP_SWIFT" ]; then
+    echo -e "${YELLOW}Updating App.swift fallback version...${NC}"
+    sed -i '' "s/return \"[0-9]*\.[0-9]*\.[0-9]*\"  *\/\/ Ultimate fallback/return \"$NEW_VERSION\" \/\/ Ultimate fallback/" "$APP_SWIFT"
+    # Alternative pattern without the comment (backwards compatibility)
+    sed -i '' "s/return \"[0-9]*\.[0-9]*\.[0-9]*\"\$/return \"$NEW_VERSION\"/" "$APP_SWIFT"
+    echo -e "${GREEN}✓ App.swift fallback version updated${NC}"
+fi
+
 echo ""
 echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}Version bumped to $NEW_VERSION${NC}"
