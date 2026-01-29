@@ -119,6 +119,56 @@ SwiftUI's `onTapGesture(count: 2)` intercepts the underlying `mouseDown` events,
 2. Remove the gesture if window dragging is more important
 3. Apply gesture only to specific non-draggable areas
 
+### Multi-Source Version Detection
+
+Release builds and dev builds have different "sources of truth" for version:
+
+| Context | Version Source |
+|---------|---------------|
+| Release build | `Info.plist` (set by `build-distribution.sh`) |
+| Dev build (`swift run`) | `VERSION` file in project root |
+| Unknown | Hardcoded fallback (updated by `bump-version.sh`) |
+
+**Implementation pattern:**
+```swift
+private static func getAppVersion() -> String {
+    // 1. Try Info.plist (correct in release builds)
+    if let bundleVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String,
+       bundleVersion != "1.0" {
+        return bundleVersion
+    }
+
+    // 2. Dev build fallback: read VERSION file
+    if let versionData = FileManager.default.contents(atPath: "VERSION"),
+       let version = String(data: versionData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) {
+        return version
+    }
+
+    // 3. Ultimate fallback (kept in sync by bump-version.sh)
+    return "X.Y.Z"
+}
+```
+
+**Why this works:** SPM debug builds don't get correct Info.plist values, but the VERSION file is accessible when running from the project directory. The fallback is automatically updated by `bump-version.sh`.
+
+### CI Smoke Test Fallbacks
+
+When scripts need resources that only exist in full builds (e.g., app bundle Info.plist), check for `$CI` environment variable to provide fallbacks:
+
+```bash
+if [ -z "$BUILD_NUMBER" ]; then
+    if [ -n "$CI" ]; then
+        BUILD_NUMBER=$(date +"%Y%m%d%H%M")
+        echo "⚠ Using generated build number for CI: $BUILD_NUMBER"
+    else
+        echo "ERROR: Build required"
+        exit 1
+    fi
+fi
+```
+
+GitHub Actions sets `$CI=true` automatically. This allows smoke tests to verify script logic without requiring full distribution builds.
+
 ### Never Use Bundle.module
 Use `ResourceBundle.url(forResource:withExtension:)` instead—crashes in distributed builds.
 
