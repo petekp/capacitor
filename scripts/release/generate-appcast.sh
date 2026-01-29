@@ -46,9 +46,15 @@ if [ -f "$APP_PATH/Contents/Info.plist" ]; then
     BUILD_NUMBER=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$APP_PATH/Contents/Info.plist" 2>/dev/null)
 fi
 if [ -z "$BUILD_NUMBER" ]; then
-    echo -e "${RED}ERROR: Could not extract CFBundleVersion from $APP_PATH${NC}"
-    echo "Make sure the app is built first: ./scripts/release/build-distribution.sh"
-    exit 1
+    # Fallback for CI smoke tests: generate timestamp-based build number (same format as real builds)
+    if [ -n "$CI" ]; then
+        BUILD_NUMBER=$(date +"%Y%m%d%H%M")
+        echo -e "${YELLOW}⚠ App not built, using generated build number for CI: $BUILD_NUMBER${NC}"
+    else
+        echo -e "${RED}ERROR: Could not extract CFBundleVersion from $APP_PATH${NC}"
+        echo "Make sure the app is built first: ./scripts/release/build-distribution.sh"
+        exit 1
+    fi
 fi
 
 echo -e "${GREEN}========================================${NC}"
