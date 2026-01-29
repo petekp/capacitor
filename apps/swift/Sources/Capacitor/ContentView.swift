@@ -93,12 +93,6 @@ struct ContentView: View {
                 Color.hudBackground
             }
         }
-        .overlay {
-            // Larger resize handles for floating mode (no title bar = thin edges)
-            if floatingMode {
-                WindowResizeHandles(handleWidth: 10)
-            }
-        }
         .preferredColorScheme(.dark)
     }
 
