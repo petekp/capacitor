@@ -44,15 +44,19 @@ struct FooterView: View {
     @Environment(\.floatingMode) private var floatingMode
     @Binding var isPinned: Bool
 
-    private let footerBlurHeight: CGFloat = 56
+    private let progressiveBlurHeight: CGFloat = 30
 
     var body: some View {
         VStack(spacing: 0) {
-            if floatingMode {
-                Spacer()
-                    .frame(height: footerBlurHeight - 44)
-            }
+            // Progressive blur zone - fades content above into the footer
+            ProgressiveBlurView(
+                direction: .up,
+                height: progressiveBlurHeight,
+                material: floatingMode ? .hudWindow : .windowBackground
+            )
+            .allowsHitTesting(false)
 
+            // Footer content
             ZStack {
                 LogoView()
 
@@ -62,13 +66,20 @@ struct FooterView: View {
                 }
             }
             .padding(.horizontal, 16)
-            .padding(.vertical, 8)
-            .padding(.bottom, floatingMode ? 8 : 0)
-        }
-        .frame(height: floatingMode ? footerBlurHeight : nil)
-        .background {
-            if !floatingMode {
-                Color.hudBackground
+            .padding(.vertical, 6)
+            .padding(.bottom, floatingMode ? 6 : 0)
+            .background {
+                if floatingMode {
+                    // In floating mode, blend with the panel's frosted glass
+                    VibrancyView(
+                        material: .hudWindow,
+                        blendingMode: .behindWindow,
+                        isEmphasized: false,
+                        forceDarkAppearance: true
+                    )
+                } else {
+                    Color.hudBackground
+                }
             }
         }
     }

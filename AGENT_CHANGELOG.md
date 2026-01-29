@@ -1,17 +1,58 @@
 # Agent Changelog
 
 > This file helps coding agents understand project evolution, key decisions,
-> and deprecated patterns. Updated: 2026-01-28 (post v0.1.25 fixes)
+> and deprecated patterns. Updated: 2026-01-29 (UI polish: progressive blur, resize handles)
 
 ## Current State Summary
 
-Capacitor is a native macOS SwiftUI app (Apple Silicon, macOS 14+) that acts as a sidecar dashboard for Claude Code. The architecture uses a Rust core (`hud-core`) with UniFFI bindings to Swift. State tracking relies on Claude Code hooks that write to `~/.capacitor/`, with session-based locks (`{session_id}-{pid}.lock`) as the authoritative signal for active sessions. Shell integration provides ambient project awareness via precmd hooks. Hooks run asynchronously to avoid blocking Claude Code execution. All file I/O uses `fs_err` for enriched error messages, and structured logging via `tracing` writes to `~/.capacitor/hud-hook-debug.{date}.log`. **Terminal activation now uses Rust-only path:** The legacy Swift decision logic was removed (~277 lines); Rust decides (`activation.rs`), Swift executes (macOS APIs). **Terminal activation fully hardened and validated:** v0.1.25 plus two post-release fixes—stale TTY query (`TerminalLauncher.swift`) and HOME exclusion from path matching (`activation.rs`). Test matrix validated 15+ scenarios. **Bulletproof Hooks complete:** Phase 4 Test Hooks button added for manual verification. **Audit complete:** A comprehensive 12-session side-effects analysis validated all major subsystems.
+Capacitor is a native macOS SwiftUI app (Apple Silicon, macOS 14+) that acts as a sidecar dashboard for Claude Code. The architecture uses a Rust core (`hud-core`) with UniFFI bindings to Swift. State tracking relies on Claude Code hooks that write to `~/.capacitor/`, with session-based locks (`{session_id}-{pid}.lock`) as the authoritative signal for active sessions. Shell integration provides ambient project awareness via precmd hooks. Hooks run asynchronously to avoid blocking Claude Code execution. All file I/O uses `fs_err` for enriched error messages, and structured logging via `tracing` writes to `~/.capacitor/hud-hook-debug.{date}.log`. **Terminal activation now uses Rust-only path:** The legacy Swift decision logic was removed (~277 lines); Rust decides (`activation.rs`), Swift executes (macOS APIs). **Terminal activation fully hardened and validated:** v0.1.25 plus two post-release fixes—stale TTY query (`TerminalLauncher.swift`) and HOME exclusion from path matching (`activation.rs`). Test matrix validated 15+ scenarios. **Bulletproof Hooks complete:** Phase 4 Test Hooks button added for manual verification. **Audit complete:** A comprehensive 12-session side-effects analysis validated all major subsystems. **UI polish:** Progressive blur gradient masks on header/footer, larger resize handles for floating mode.
 
 ## Stale Information Detected
 
 None currently. Last audit: 2026-01-28 (post v0.1.25 hardening).
 
 ## Timeline
+
+### 2026-01-29 — UI Polish: Progressive Blur and Resize Handles
+
+**What changed:**
+
+1. **ProgressiveBlurView component** (`Views/Components/ProgressiveBlurView.swift`)
+   - Gradient-masked NSVisualEffectView for smooth edge transitions
+   - Supports four directions: `.up` (footer), `.down` (header), `.left`, `.right`
+   - Applied to header (fades down) and footer (fades up) with 30pt zones
+   - Uses standard vibrancy without additional glass overlays (kept simple after testing alternatives)
+
+2. **WindowResizeHandles component** (`Views/Components/WindowResizeHandles.swift`)
+   - Custom NSViewRepresentable that adds invisible 10pt hit zones around window edges
+   - 15pt corners for diagonal resize
+   - Handles full drag-to-resize loop manually (floating mode removes `.titled` styleMask)
+   - Shows appropriate resize cursors (↔ for sides, ↕ for top/bottom)
+   - Respects window min/max size constraints
+
+3. **Header/footer padding reduction** (~25%)
+   - Header: top padding 12→9 (floating) / 8→6 (docked), bottom 8→6
+   - Footer: vertical padding 8→6, bottom extra 8→6
+   - Tighter, more compact appearance
+
+**Why:**
+- Progressive blur: Smooth visual transition where content meets navigation bars (masking scrolling content)
+- Resize handles: Floating windows without title bars have nearly invisible resize edges (~2px); users couldn't grab them
+- Padding reduction: Overall tighter/denser UI feel
+
+**Agent impact:**
+- `ProgressiveBlurView` is reusable—use `.progressiveBlur(edge:height:)` modifier on any view
+- Resize handles only enabled in floating mode (docked mode has standard window chrome)
+- Header/footer heights are now more compact—keep this in mind for layout calculations
+
+**Files changed:**
+- `Views/Components/ProgressiveBlurView.swift` (new)
+- `Views/Components/WindowResizeHandles.swift` (new)
+- `Views/Header/HeaderView.swift` (progressive blur + padding)
+- `Views/Footer/FooterView.swift` (progressive blur + padding)
+- `ContentView.swift` (resize handles overlay)
+
+---
 
 ### 2026-01-28 — Post v0.1.25: Stale TTY and HOME Path Fixes
 
