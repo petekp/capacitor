@@ -260,16 +260,16 @@ struct EmptyProjectsView: View {
     @State private var isButtonHovered = false
 
     var body: some View {
-        ZStack {
-            if floatingMode {
-                Color.clear
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .contentShape(Rectangle())
-                    .windowDraggable()
+        contentView
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background {
+                // Draggable area behind content - won't block button clicks
+                if floatingMode {
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .windowDraggable()
+                }
             }
-
-            contentView
-        }
     }
 
     private var contentView: some View {

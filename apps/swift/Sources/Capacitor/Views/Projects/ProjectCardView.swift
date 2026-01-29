@@ -1,14 +1,5 @@
 import SwiftUI
 
-// MARK: - Preference Key for Frame Tracking
-
-private struct FramePreferenceKey: PreferenceKey {
-    static var defaultValue: CGRect = .zero
-    static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
-        value = nextValue()
-    }
-}
-
 // MARK: - Main Card View
 
 struct ProjectCardView: View {
@@ -97,17 +88,6 @@ struct ProjectCardView: View {
 
     // MARK: - Body
 
-    private var accessibilityStatusDescription: String {
-        guard let state = currentState else { return "No active session" }
-        switch state {
-        case .ready: return "Ready for input"
-        case .working: return "Working"
-        case .waiting: return "Waiting for user action"
-        case .compacting: return "Compacting history"
-        case .idle: return "Idle"
-        }
-    }
-
     var body: some View {
         cardContent
             .cardStyling(
@@ -152,6 +132,19 @@ struct ProjectCardView: View {
             .accessibilityAction(named: "Open in Terminal", onTap)
             .accessibilityAction(named: "View Details", onInfoTap)
             .accessibilityAction(named: "Move to Paused", onMoveToDormant)
+    }
+
+    // MARK: - Computed View Helpers
+
+    private var accessibilityStatusDescription: String {
+        guard let state = currentState else { return "No active session" }
+        switch state {
+        case .ready: return "Ready for input"
+        case .working: return "Working"
+        case .waiting: return "Waiting for user action"
+        case .compacting: return "Compacting history"
+        case .idle: return "Idle"
+        }
     }
 
     // MARK: - Card Content
@@ -331,97 +324,6 @@ struct CardActionButtons: View {
     }
 }
 
-// MARK: - Vibrancy Action Button
-
-/// Rounded button with native macOS vibrancy and entrance animation
-struct VibrancyActionButton: View {
-    let icon: String
-    let action: (CGRect) -> Void
-    var isVisible: Bool = true
-    var entranceDelay: Double = 0
-    var style: Style = .normal
-
-    enum Style {
-        case normal
-        case compact
-    }
-
-    @State private var isHovered = false
-    @State private var buttonFrame: CGRect = .zero
-
-    private var size: CGFloat {
-        style == .compact ? 32 : 40
-    }
-
-    private var iconSize: CGFloat {
-        style == .compact ? 13 : 15
-    }
-
-    private var entranceAnimation: Animation {
-        .spring(response: 0.25, dampingFraction: 0.7)
-            .delay(entranceDelay)
-    }
-
-    var body: some View {
-        Button(action: { action(buttonFrame) }) {
-            ZStack {
-                // Vibrancy background (only on hover)
-                if isHovered {
-                    Circle()
-                        .fill(.clear)
-                        .background(
-                            VibrancyView(
-                                material: .hudWindow,
-                                blendingMode: .behindWindow,
-                                isEmphasized: true,
-                                forceDarkAppearance: true
-                            )
-                        )
-                        .clipShape(Circle())
-
-                    // Light tint overlay
-                    Circle()
-                        .fill(Color.black.opacity(0.15))
-
-                    // Subtle border
-                    Circle()
-                        .strokeBorder(
-                            Color.white.opacity(0.15),
-                            lineWidth: 0.5
-                        )
-                }
-
-                // Icon
-                Image(systemName: icon)
-                    .font(.system(size: iconSize, weight: .medium))
-                    .foregroundStyle(.white.opacity(isHovered ? 0.95 : 0.5))
-            }
-            .frame(width: size, height: size)
-        }
-        .buttonStyle(.plain)
-        .scaleEffect(isVisible ? 1.0 : 0.9)
-        .blur(radius: isVisible ? 0 : 4)
-        .opacity(isVisible ? 1.0 : 0)
-        .animation(entranceAnimation, value: isVisible)
-        .background(
-            GeometryReader { geo in
-                Color.clear.preference(
-                    key: FramePreferenceKey.self,
-                    value: geo.frame(in: .named("contentView"))
-                )
-            }
-        )
-        .onPreferenceChange(FramePreferenceKey.self) { frame in
-            buttonFrame = frame
-        }
-        .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.15)) {
-                isHovered = hovering
-            }
-        }
-    }
-}
-
 // MARK: - Ticker Text Component
 
 private struct TickerText: View {
@@ -482,131 +384,6 @@ private struct ShimmerEffect: View {
 
 // Note: StaleBadge and StatusIndicator are in ProjectCardComponents.swift
 
-// View modifiers and glow effects are now in separate files:
+// Note: View modifiers and glow effects are in separate files:
 // - ProjectCardModifiers.swift (cardStyling, cardInteractions, cardLifecycleHandlers)
 // - ProjectCardGlow.swift (ReadyAmbientGlow, ReadyBorderGlow)
-
-// MARK: - Unused Legacy Components (kept for compatibility)
-
-struct PressableButtonStyle: ButtonStyle {
-    @Binding var isPressed: Bool
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .onChange(of: configuration.isPressed) { _, newValue in
-                isPressed = newValue
-            }
-    }
-}
-
-struct HealthBadge: View {
-    let project: Project
-    @State private var showingPopover = false
-
-    private var healthResult: HealthScoreResult {
-        ClaudeMdHealthScorer.score(content: project.claudeMdPreview)
-    }
-
-    private var badgeColor: Color {
-        switch healthResult.grade {
-        case .a: return Color(hue: 0.35, saturation: 0.7, brightness: 0.75)
-        case .b: return Color(hue: 0.28, saturation: 0.6, brightness: 0.8)
-        case .c: return Color(hue: 0.12, saturation: 0.6, brightness: 0.85)
-        case .d: return Color(hue: 0.06, saturation: 0.6, brightness: 0.85)
-        case .f: return Color(hue: 0.0, saturation: 0.6, brightness: 0.75)
-        case .none: return Color.white.opacity(0.3)
-        }
-    }
-
-    var body: some View {
-        if project.claudeMdPath != nil {
-            Button(action: { showingPopover.toggle() }) {
-                Text(healthResult.grade.rawValue)
-                    .font(AppTypography.badge)
-                    .foregroundColor(badgeColor)
-                    .frame(width: 14, height: 14)
-                    .background(badgeColor.opacity(0.15))
-                    .clipShape(Circle())
-                    .overlay(
-                        Circle()
-                            .strokeBorder(badgeColor.opacity(0.3), lineWidth: 0.5)
-                    )
-            }
-            .buttonStyle(.plain)
-            .help("CLAUDE.md health: \(healthResult.grade.rawValue) (\(healthResult.score)/100) - Click for details")
-            .popover(isPresented: $showingPopover, arrowEdge: .bottom) {
-                HealthDetailPopover(result: healthResult, projectPath: project.claudeMdPath ?? "")
-            }
-        }
-    }
-}
-
-struct HealthDetailPopover: View {
-    let result: HealthScoreResult
-    let projectPath: String
-    @State private var copiedTemplate: String?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("CLAUDE.md Health")
-                    .font(AppTypography.cardTitle)
-                Spacer()
-                Text("\(result.score)/\(result.maxScore)")
-                    .font(AppTypography.mono.weight(.medium))
-                    .foregroundColor(.secondary)
-            }
-
-            Divider()
-
-            ForEach(result.details, id: \.name) { check in
-                HStack(alignment: .top, spacing: 8) {
-                    Image(systemName: check.passed ? "checkmark.circle.fill" : "circle")
-                        .font(AppTypography.bodySecondary)
-                        .foregroundColor(check.passed ? .green : .secondary)
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(check.name)
-                            .font(AppTypography.cardSubtitle)
-
-                        if !check.passed, let suggestion = check.suggestion {
-                            Text(suggestion)
-                                .font(AppTypography.label)
-                                .foregroundColor(.secondary)
-                        }
-
-                        if !check.passed, let template = check.template {
-                            Button(action: {
-                                NSPasteboard.general.clearContents()
-                                NSPasteboard.general.setString(template, forType: .string)
-                                copiedTemplate = check.name
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                                    if copiedTemplate == check.name {
-                                        copiedTemplate = nil
-                                    }
-                                }
-                            }) {
-                                HStack(spacing: 3) {
-                                    Image(systemName: copiedTemplate == check.name ? "checkmark" : "doc.on.doc")
-                                        .font(AppTypography.captionSmall)
-                                    Text(copiedTemplate == check.name ? "Copied!" : "Copy template")
-                                        .font(AppTypography.captionSmall)
-                                }
-                                .foregroundColor(.accentColor)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-
-                    Spacer()
-
-                    Text("+\(check.points)")
-                        .font(AppTypography.monoCaption.weight(.medium))
-                        .foregroundColor(check.passed ? .green : .secondary.opacity(0.5))
-                }
-            }
-        }
-        .padding(12)
-        .frame(width: 260)
-    }
-}

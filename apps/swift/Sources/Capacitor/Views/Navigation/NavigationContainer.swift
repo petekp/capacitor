@@ -1,14 +1,25 @@
 import SwiftUI
 
+/// Position multiplier for navigation offsets.
+/// -1 = off-screen left, 0 = visible, 1 = off-screen right
+private enum SlidePosition: CGFloat {
+    case left = -1
+    case center = 0
+    case right = 1
+}
+
 struct NavigationContainer: View {
     @EnvironmentObject var appState: AppState
     @Environment(\.prefersReducedMotion) private var reduceMotion
     @Environment(\.floatingMode) private var floatingMode
 
-    @State private var listOffset: CGFloat = 0
-    @State private var detailOffset: CGFloat = 1000
-    @State private var addLinkOffset: CGFloat = 1000
-    @State private var newIdeaOffset: CGFloat = 1000
+    // Position multipliers instead of absolute pixel offsets
+    // This ensures offsets scale correctly when window is resized
+    @State private var listPosition: SlidePosition = .center
+    @State private var detailPosition: SlidePosition = .right
+    @State private var addLinkPosition: SlidePosition = .right
+    @State private var newIdeaPosition: SlidePosition = .right
+
     @State private var currentDetail: Project?
     @State private var showDetail = false
     @State private var showAddLink = false
@@ -54,7 +65,7 @@ struct NavigationContainer: View {
             ZStack {
                 ProjectsView()
                     .frame(width: width)
-                    .offset(x: reduceMotion ? 0 : listOffset)
+                    .offset(x: reduceMotion ? 0 : listPosition.rawValue * width)
                     .opacity(reduceMotion ? listOpacity : 1)
                     .zIndex(isListActive ? 1 : 0)
                     .allowsHitTesting(isListActive)
@@ -62,7 +73,7 @@ struct NavigationContainer: View {
                 if showDetail, let project = currentDetail {
                     ProjectDetailView(project: project)
                         .frame(width: width)
-                        .offset(x: reduceMotion ? 0 : detailOffset)
+                        .offset(x: reduceMotion ? 0 : detailPosition.rawValue * width)
                         .opacity(reduceMotion ? detailOpacity : 1)
                         .zIndex(isDetailActive ? 1 : 0)
                         .allowsHitTesting(isDetailActive)
@@ -71,7 +82,7 @@ struct NavigationContainer: View {
                 if showAddLink {
                     AddProjectView()
                         .frame(width: width)
-                        .offset(x: reduceMotion ? 0 : addLinkOffset)
+                        .offset(x: reduceMotion ? 0 : addLinkPosition.rawValue * width)
                         .opacity(reduceMotion ? addLinkOpacity : 1)
                         .zIndex(isAddLinkActive ? 1 : 0)
                         .allowsHitTesting(isAddLinkActive)
@@ -80,7 +91,7 @@ struct NavigationContainer: View {
                 if showNewIdea {
                     NewIdeaView()
                         .frame(width: width)
-                        .offset(x: reduceMotion ? 0 : newIdeaOffset)
+                        .offset(x: reduceMotion ? 0 : newIdeaPosition.rawValue * width)
                         .opacity(reduceMotion ? newIdeaOpacity : 1)
                         .zIndex(isNewIdeaActive ? 1 : 0)
                         .allowsHitTesting(isNewIdeaActive)
@@ -97,12 +108,12 @@ struct NavigationContainer: View {
                 return .ignored
             }
             .onChange(of: appState.projectView) { oldValue, newValue in
-                handleNavigation(from: oldValue, to: newValue, width: width)
+                handleNavigation(from: oldValue, to: newValue)
             }
         }
     }
 
-    private func handleNavigation(from oldValue: ProjectView, to newValue: ProjectView, width: CGFloat) {
+    private func handleNavigation(from oldValue: ProjectView, to newValue: ProjectView) {
         switch newValue {
         case .list:
             withAnimation(navigationAnimation) {
@@ -112,10 +123,10 @@ struct NavigationContainer: View {
                     addLinkOpacity = 0
                     newIdeaOpacity = 0
                 } else {
-                    listOffset = 0
-                    detailOffset = width
-                    addLinkOffset = width
-                    newIdeaOffset = width
+                    listPosition = .center
+                    detailPosition = .right
+                    addLinkPosition = .right
+                    newIdeaPosition = .right
                 }
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + animationDuration + 0.1) {
@@ -133,7 +144,7 @@ struct NavigationContainer: View {
             if reduceMotion {
                 detailOpacity = 0
             } else {
-                detailOffset = width
+                detailPosition = .right
             }
 
             DispatchQueue.main.async {
@@ -144,10 +155,10 @@ struct NavigationContainer: View {
                         self.addLinkOpacity = 0
                         self.newIdeaOpacity = 0
                     } else {
-                        self.listOffset = -width
-                        self.detailOffset = 0
-                        self.addLinkOffset = width
-                        self.newIdeaOffset = width
+                        self.listPosition = .left
+                        self.detailPosition = .center
+                        self.addLinkPosition = .right
+                        self.newIdeaPosition = .right
                     }
                 }
             }
@@ -165,7 +176,7 @@ struct NavigationContainer: View {
             if reduceMotion {
                 addLinkOpacity = 0
             } else {
-                addLinkOffset = width
+                addLinkPosition = .right
             }
 
             DispatchQueue.main.async {
@@ -176,10 +187,10 @@ struct NavigationContainer: View {
                         self.addLinkOpacity = 1
                         self.newIdeaOpacity = 0
                     } else {
-                        self.listOffset = -width
-                        self.detailOffset = width
-                        self.addLinkOffset = 0
-                        self.newIdeaOffset = width
+                        self.listPosition = .left
+                        self.detailPosition = .right
+                        self.addLinkPosition = .center
+                        self.newIdeaPosition = .right
                     }
                 }
             }
@@ -198,7 +209,7 @@ struct NavigationContainer: View {
             if reduceMotion {
                 newIdeaOpacity = 0
             } else {
-                newIdeaOffset = width
+                newIdeaPosition = .right
             }
 
             DispatchQueue.main.async {
@@ -209,10 +220,10 @@ struct NavigationContainer: View {
                         self.addLinkOpacity = 0
                         self.newIdeaOpacity = 1
                     } else {
-                        self.listOffset = -width
-                        self.detailOffset = width
-                        self.addLinkOffset = width
-                        self.newIdeaOffset = 0
+                        self.listPosition = .left
+                        self.detailPosition = .right
+                        self.addLinkPosition = .right
+                        self.newIdeaPosition = .center
                     }
                 }
             }

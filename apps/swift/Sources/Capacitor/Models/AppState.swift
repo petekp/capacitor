@@ -288,6 +288,12 @@ class AppState: ObservableObject {
 
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
+        // Navigate to list view first if not already there
+        let wasOnListView = projectView == .list
+        if !wasOnListView {
+            showProjectList()
+        }
+
         guard let result = validateProject(url.path) else {
             toast = ToastMessage("Could not validate project", isError: true)
             return
@@ -327,6 +333,11 @@ class AppState: ObservableObject {
     /// if applicable, showing "Moved to In Progress" rather than an error.
     func addProjectsFromDrop(_ urls: [URL]) {
         guard let engine = engine else { return }
+
+        // Navigate to list view first if not already there
+        if projectView != .list {
+            showProjectList()
+        }
 
         DispatchQueue.global(qos: .userInitiated).async {
             let fm = FileManager.default

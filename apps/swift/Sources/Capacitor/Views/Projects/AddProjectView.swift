@@ -357,7 +357,7 @@ struct AddProjectView: View {
     }
 
     private func moveToInProgressAndReturn(path: String) {
-        withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
+        _ = withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
             appState.manuallyDormant.remove(path)
         }
         appState.showProjectList()
