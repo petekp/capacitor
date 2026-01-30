@@ -183,31 +183,28 @@ A **local daemon** is the **only writer** of state. Hooks and the Swift app beco
 - Add env flag `CAPACITOR_DAEMON_ENABLED=1` (default off in prod initially).
 - Allow socket override via `CAPACITOR_DAEMON_SOCKET`.
 
-### Phase 3 — App Client (3–5 days)
+### Phase 3 — App Client + SQLite Persistence (4–7 days)
 
 - Add `DaemonClient` in Swift (Unix socket, newline framing, timeout/size limits).
 - App reads daemon state if available, otherwise fallback to JSON.
 - Wire first read path to daemon (`ShellStateStore` → `get_shell_state`).
 - Surface daemon status in Setup/Diagnostics UI.
-
-### Phase 4 — Transactional Storage (4–7 days)
-
 - Replace in-memory state with SQLite WAL.
 - Append to `events` table for replay.
 - Rebuild state on startup if cache tables empty/corrupt.
 
-### Phase 5 — Liveness + Locks Simplification (2–4 days)
+### Phase 4 — Liveness + Locks Simplification (2–4 days)
 
 - Centralize PID+proc_started logic in daemon.
 - Deprecate lock directories or keep as compatibility shim only.
 
-### Phase 6 — Launchd + Reliability (2–4 days)
+### Phase 5 — Launchd + Reliability (2–4 days)
 
 - Add LaunchAgent (auto-start + auto-restart).
 - Add health checks; fallback if daemon down.
 - Add crash loop backoff.
 
-### Phase 7 — Cleanup & Removal (1–3 days)
+### Phase 6 — Cleanup & Removal (1–3 days)
 
 - Remove file-based writes from hooks.
 - Remove JSON-based cleanup logic.
