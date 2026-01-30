@@ -19,6 +19,7 @@ use capacitor_daemon_protocol::{
 };
 
 mod db;
+mod process;
 mod state;
 
 use db::Db;

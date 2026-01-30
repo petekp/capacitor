@@ -44,6 +44,10 @@ impl SharedState {
             return;
         }
 
+        if let Err(err) = self.db.upsert_process_liveness(event) {
+            tracing::warn!(error = %err, "Failed to update process liveness");
+        }
+
         if event.event_type == EventType::ShellCwd {
             if let Err(err) = self.db.upsert_shell_state(event) {
                 tracing::warn!(error = %err, "Failed to update shell_state table");

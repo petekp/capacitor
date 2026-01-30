@@ -9,6 +9,7 @@ use rusqlite::{params, Connection, OpenFlags};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+use crate::process::get_process_start_time;
 use crate::state::{ShellEntry, ShellState};
 
 pub struct Db {
@@ -79,6 +80,29 @@ impl Db {
                 ],
             )
             .map_err(|err| format!("Failed to upsert shell state: {}", err))?;
+
+            Ok(())
+        })
+    }
+
+    pub fn upsert_process_liveness(&self, event: &EventEnvelope) -> Result<(), String> {
+        let pid = match event.pid {
+            Some(pid) => pid,
+            None => return Ok(()),
+        };
+
+        let proc_started = get_process_start_time(pid).map(|value| value as i64);
+
+        self.with_connection(|conn| {
+            conn.execute(
+                "INSERT INTO process_liveness (pid, proc_started, last_seen_at) \
+                 VALUES (?1, ?2, ?3) \
+                 ON CONFLICT(pid) DO UPDATE SET \
+                    proc_started = COALESCE(excluded.proc_started, process_liveness.proc_started), \
+                    last_seen_at = excluded.last_seen_at",
+                params![pid as i64, proc_started, event.recorded_at],
+            )
+            .map_err(|err| format!("Failed to upsert process liveness: {}", err))?;
 
             Ok(())
         })
@@ -231,6 +255,11 @@ impl Db {
                     tmux_client_tty TEXT,
                     updated_at TEXT NOT NULL
                  );
+                 CREATE TABLE IF NOT EXISTS process_liveness (
+                    pid INTEGER PRIMARY KEY,
+                    proc_started INTEGER,
+                    last_seen_at TEXT NOT NULL
+                 );
                  COMMIT;",
             )
             .map_err(|err| format!("Failed to initialize schema: {}", err))?;
@@ -274,6 +303,7 @@ impl Db {
 mod tests {
     use super::*;
     use capacitor_daemon_protocol::{EventEnvelope, EventType};
+    use rusqlite::OptionalExtension;
 
     fn shell_event(
         event_id: &str,
@@ -351,5 +381,45 @@ mod tests {
         assert_eq!(loaded.shells.len(), 2);
         assert_eq!(loaded.shells.get("123").unwrap().cwd, "/repo/app");
         assert_eq!(loaded.shells.get("456").unwrap().cwd, "/repo/cli");
+    }
+
+    #[test]
+    fn upserts_process_liveness_rows() {
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let db_path = temp_dir.path().join("state.db");
+        let db = Db::new(db_path).expect("db init");
+        let recorded_at = "2026-01-30T00:03:00Z";
+
+        let event = shell_event(
+            "evt-4",
+            std::process::id(),
+            "/tmp",
+            "/dev/ttys007",
+            recorded_at,
+        );
+        db.upsert_process_liveness(&event)
+            .expect("upsert process liveness");
+
+        let row = db
+            .with_connection(|conn| {
+                conn.query_row(
+                    "SELECT pid, proc_started, last_seen_at FROM process_liveness WHERE pid = ?1",
+                    params![std::process::id() as i64],
+                    |row| {
+                        Ok((
+                            row.get::<_, i64>(0)?,
+                            row.get::<_, Option<i64>>(1)?,
+                            row.get::<_, String>(2)?,
+                        ))
+                    },
+                )
+                .optional()
+                .map_err(|err| format!("Failed to query process_liveness row: {}", err))
+            })
+            .expect("query process_liveness");
+
+        let row = row.expect("process row exists");
+        assert_eq!(row.0 as u32, std::process::id());
+        assert_eq!(row.2, recorded_at);
     }
 }

@@ -147,7 +147,12 @@ A **local daemon** is the **only writer** of state. Hooks and the Swift app beco
    - tmux_client_tty
    - updated_at
 
-5. `tombstones`
+5. `process_liveness`
+   - pid
+   - proc_started
+   - last_seen_at
+
+6. `tombstones`
    - session_id
    - created_at
    - expires_at
@@ -200,6 +205,7 @@ A **local daemon** is the **only writer** of state. Hooks and the Swift app beco
 
 - Centralize PID+proc_started logic in daemon.
 - Deprecate lock directories or keep as compatibility shim only.
+- Add `process_liveness` table and update per incoming event.
 
 ### Phase 5 — Launchd + Reliability (2–4 days)
 
