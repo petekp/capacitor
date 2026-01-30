@@ -33,6 +33,9 @@ impl SharedState {
                 db.rebuild_shell_state_from_events().unwrap_or_default()
             }
         };
+        if let Err(err) = db.ensure_process_liveness() {
+            tracing::warn!(error = %err, "Failed to ensure process liveness table");
+        }
         Self {
             db,
             shell_state: Mutex::new(shell_state),

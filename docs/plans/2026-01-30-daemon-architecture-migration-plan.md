@@ -215,6 +215,7 @@ A **local daemon** is the **only writer** of state. Hooks and the Swift app beco
 - Expose `get_process_liveness` query for daemon-first PID identity checks.
 - Route `hud-core` cleanup/lock checks through daemon liveness when enabled (fallback to local checks).
 - Update lock-holder PID checks to use daemon-aware identity verification when possible.
+- Rebuild `process_liveness` from event log on daemon startup if table is empty.
 
 ### Phase 5 — Launchd + Reliability (2–4 days)
 

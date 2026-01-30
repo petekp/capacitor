@@ -125,6 +125,70 @@ impl Db {
             .map_err(|err| format!("Failed to query process liveness: {}", err))
         })
     }
+
+    pub fn ensure_process_liveness(&self) -> Result<(), String> {
+        let count = self.with_connection(|conn| {
+            conn.query_row("SELECT COUNT(*) FROM process_liveness", [], |row| {
+                row.get::<_, i64>(0)
+            })
+            .map_err(|err| format!("Failed to count process_liveness rows: {}", err))
+        })?;
+
+        if count == 0 {
+            self.rebuild_process_liveness_from_events()?;
+        }
+
+        Ok(())
+    }
+
+    pub fn rebuild_process_liveness_from_events(&self) -> Result<(), String> {
+        self.with_connection(|conn| {
+            let entries: Vec<(i64, Option<i64>, String)> = {
+                let mut stmt = conn
+                    .prepare(
+                        "SELECT pid, MAX(recorded_at) \
+                         FROM events \
+                         WHERE pid IS NOT NULL \
+                         GROUP BY pid",
+                    )
+                    .map_err(|err| format!("Failed to prepare process replay query: {}", err))?;
+
+                let rows = stmt
+                    .query_map([], |row| {
+                        Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+                    })
+                    .map_err(|err| format!("Failed to read process replay rows: {}", err))?;
+
+                let mut entries: Vec<(i64, Option<i64>, String)> = Vec::new();
+                for row in rows {
+                    let (pid, last_seen_at) =
+                        row.map_err(|err| format!("Failed to decode process replay row: {}", err))?;
+                    let proc_started = get_process_start_time(pid as u32).map(|value| value as i64);
+                    entries.push((pid, proc_started, last_seen_at));
+                }
+
+                entries
+            };
+
+            let tx = conn
+                .transaction()
+                .map_err(|err| format!("Failed to start process replay transaction: {}", err))?;
+            tx.execute("DELETE FROM process_liveness", [])
+                .map_err(|err| format!("Failed to clear process_liveness table: {}", err))?;
+            for (pid, proc_started, last_seen_at) in entries {
+                tx.execute(
+                    "INSERT INTO process_liveness (pid, proc_started, last_seen_at) \
+                     VALUES (?1, ?2, ?3)",
+                    params![pid, proc_started, last_seen_at],
+                )
+                .map_err(|err| format!("Failed to rebuild process_liveness table: {}", err))?;
+            }
+            tx.commit()
+                .map_err(|err| format!("Failed to commit process replay: {}", err))?;
+
+            Ok(())
+        })
+    }
     pub fn load_shell_state(&self) -> Result<ShellState, String> {
         self.with_connection(|conn| {
             let mut stmt = conn
@@ -423,5 +487,49 @@ mod tests {
 
         assert_eq!(row.pid, std::process::id());
         assert_eq!(row.last_seen_at, recorded_at);
+    }
+
+    #[test]
+    fn rebuilds_process_liveness_from_events() {
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let db_path = temp_dir.path().join("state.db");
+        let db = Db::new(db_path).expect("db init");
+
+        let alive_pid = std::process::id();
+        let dead_pid = 999_999_999u32;
+
+        db.insert_event(&shell_event(
+            "evt-5",
+            alive_pid,
+            "/tmp",
+            "/dev/ttys011",
+            "2026-01-30T00:05:00Z",
+        ))
+        .expect("insert alive pid");
+        db.insert_event(&shell_event(
+            "evt-6",
+            dead_pid,
+            "/tmp",
+            "/dev/ttys012",
+            "2026-01-30T00:06:00Z",
+        ))
+        .expect("insert dead pid");
+
+        db.rebuild_process_liveness_from_events()
+            .expect("rebuild process liveness");
+
+        let alive = db
+            .get_process_liveness(alive_pid)
+            .expect("query alive pid")
+            .expect("alive pid row");
+        assert_eq!(alive.last_seen_at, "2026-01-30T00:05:00Z");
+        assert!(alive.proc_started.is_some());
+
+        let dead = db
+            .get_process_liveness(dead_pid)
+            .expect("query dead pid")
+            .expect("dead pid row");
+        assert_eq!(dead.last_seen_at, "2026-01-30T00:06:00Z");
+        assert!(dead.proc_started.is_none());
     }
 }
