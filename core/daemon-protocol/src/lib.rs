@@ -1,8 +1,8 @@
 //! IPC protocol types and validation for capacitor-daemon.
 //!
-//! This module defines the on-the-wire schema and the rules we enforce at the
-//! daemon boundary. The goal is to fail fast on malformed input so we never
-//! accept events that could corrupt state.
+//! This crate is shared by the daemon and its clients to prevent schema drift.
+//! The daemon remains the authority on validation, but clients can reuse the
+//! same types to construct valid requests.
 
 use chrono::DateTime;
 use serde::{Deserialize, Serialize};
@@ -11,14 +11,14 @@ use serde_json::Value;
 pub const PROTOCOL_VERSION: u32 = 1;
 pub const MAX_REQUEST_BYTES: usize = 1024 * 1024; // 1MB
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum Method {
     GetHealth,
     Event,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Request {
     pub protocol_version: u32,
@@ -29,7 +29,7 @@ pub struct Request {
     pub params: Option<Value>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Response {
     pub ok: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -40,7 +40,7 @@ pub struct Response {
     pub error: Option<ErrorInfo>,
 }
 
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ErrorInfo {
     pub code: String,
     pub message: String,
@@ -84,12 +84,16 @@ impl Response {
     }
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum EventType {
     SessionStart,
     UserPromptSubmit,
+    PreToolUse,
     PostToolUse,
+    PermissionRequest,
+    PreCompact,
+    Notification,
     Stop,
     SessionEnd,
     ShellCwd,
@@ -98,7 +102,7 @@ pub enum EventType {
 // IPC contract fields; not all are consumed in Phase 1, but we keep them
 // to lock the schema early and avoid churn during client integration.
 #[allow(dead_code)]
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct EventEnvelope {
     pub event_id: String,
@@ -122,6 +126,10 @@ pub struct EventEnvelope {
     pub tmux_session: Option<String>,
     #[serde(default)]
     pub tmux_client_tty: Option<String>,
+    #[serde(default)]
+    pub notification_type: Option<String>,
+    #[serde(default)]
+    pub stop_hook_active: Option<bool>,
     #[serde(default)]
     pub metadata: Option<Value>,
 }
@@ -151,14 +159,22 @@ impl EventEnvelope {
                 require_string(&self.cwd, "cwd")?;
                 require_string(&self.tty, "tty")?;
             }
+            EventType::Notification => {
+                require_session_fields(self)?;
+                require_string(&self.notification_type, "notification_type")?;
+            }
+            EventType::Stop => {
+                require_session_fields(self)?;
+                require_bool(&self.stop_hook_active, "stop_hook_active")?;
+            }
             EventType::SessionStart
             | EventType::UserPromptSubmit
+            | EventType::PreToolUse
             | EventType::PostToolUse
-            | EventType::Stop
+            | EventType::PermissionRequest
+            | EventType::PreCompact
             | EventType::SessionEnd => {
-                require_string(&self.session_id, "session_id")?;
-                require_pid(&self.pid)?;
-                require_string(&self.cwd, "cwd")?;
+                require_session_fields(self)?;
             }
         }
 
@@ -175,6 +191,13 @@ pub fn parse_event(params: Value) -> Result<EventEnvelope, ErrorInfo> {
     })?;
     envelope.validate()?;
     Ok(envelope)
+}
+
+fn require_session_fields(event: &EventEnvelope) -> Result<(), ErrorInfo> {
+    require_string(&event.session_id, "session_id")?;
+    require_pid(&event.pid)?;
+    require_string(&event.cwd, "cwd")?;
+    Ok(())
 }
 
 fn require_string(value: &Option<String>, field: &str) -> Result<(), ErrorInfo> {
@@ -196,6 +219,16 @@ fn require_pid(pid: &Option<u32>) -> Result<(), ErrorInfo> {
     }
 }
 
+fn require_bool(value: &Option<bool>, field: &str) -> Result<(), ErrorInfo> {
+    match value {
+        Some(_) => Ok(()),
+        None => Err(ErrorInfo::new(
+            "missing_field",
+            format!("{} is required", field),
+        )),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -214,6 +247,8 @@ mod tests {
             tty: None,
             tmux_session: None,
             tmux_client_tty: None,
+            notification_type: None,
+            stop_hook_active: None,
             metadata: None,
         }
     }
@@ -222,6 +257,18 @@ mod tests {
     fn validates_session_event() {
         let event = base_event(EventType::SessionStart);
         assert!(event.validate().is_ok());
+    }
+
+    #[test]
+    fn validates_stop_requires_flag() {
+        let event = base_event(EventType::Stop);
+        assert!(event.validate().is_err());
+    }
+
+    #[test]
+    fn validates_notification_requires_type() {
+        let event = base_event(EventType::Notification);
+        assert!(event.validate().is_err());
     }
 
     #[test]

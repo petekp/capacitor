@@ -172,13 +172,22 @@ dependencies = [
 name = "capacitor-daemon"
 version = "0.1.27"
 dependencies = [
- "chrono",
+ "capacitor-daemon-protocol",
  "dirs",
  "fs-err 3.2.2",
  "serde",
  "serde_json",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "capacitor-daemon-protocol"
+version = "0.1.27"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -468,6 +477,7 @@ dependencies = [
 name = "hud-hook"
 version = "0.1.27"
 dependencies = [
+ "capacitor-daemon-protocol",
  "chrono",
  "clap",
  "dirs",

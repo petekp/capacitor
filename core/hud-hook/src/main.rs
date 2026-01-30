@@ -10,6 +10,7 @@
 //! - `lock-holder`: Background daemon for lock management (spawned internally)
 
 mod cwd;
+mod daemon_client;
 mod handle;
 mod lock_holder;
 mod logging;

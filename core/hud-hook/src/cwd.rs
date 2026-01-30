@@ -108,11 +108,18 @@ pub fn run(path: &str, pid: u32, tty: &str) -> Result<(), CwdError> {
 
     let cwd_changed = has_cwd_changed(&state, pid, &normalized_path);
     let parent_app = detect_parent_app(pid);
+    let entry = ShellEntry::new(normalized_path.clone(), tty.to_string(), parent_app);
 
-    state.shells.insert(
-        pid.to_string(),
-        ShellEntry::new(normalized_path.clone(), tty.to_string(), parent_app),
+    crate::daemon_client::send_shell_cwd_event(
+        pid,
+        &normalized_path,
+        tty,
+        parent_app,
+        entry.tmux_session.clone(),
+        entry.tmux_client_tty.clone(),
     );
+
+    state.shells.insert(pid.to_string(), entry);
 
     cleanup_dead_pids(&mut state);
     write_state_atomic(&cwd_path, &state)?;

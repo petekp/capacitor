@@ -26,3 +26,4 @@ fs-err.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 tracing-appender.workspace = true
+capacitor-daemon-protocol = { path = "../daemon-protocol" }

@@ -1,0 +1,13 @@
+[package]
+name = "capacitor-daemon-protocol"
+description = "IPC protocol types for the Capacitor daemon"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true

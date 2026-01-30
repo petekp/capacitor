@@ -86,6 +86,8 @@ Sends a single event to the daemon. The daemon validates the payload and respond
   "tty": "/dev/ttys003",
   "tmux_session": "dev",
   "tmux_client_tty": "/dev/ttys004",
+  "notification_type": "idle_prompt",
+  "stop_hook_active": false,
   "metadata": { "extra": "optional" }
 }
 ```
@@ -97,11 +99,17 @@ Sends a single event to the daemon. The daemon validates the payload and respond
 - `event_type` must be one of:
   - `session_start`
   - `user_prompt_submit`
+  - `pre_tool_use`
   - `post_tool_use`
+  - `permission_request`
+  - `pre_compact`
+  - `notification`
   - `stop`
   - `session_end`
   - `shell_cwd`
-- For `session_*` events: `session_id`, `pid`, and `cwd` are required.
+- For session events (`session_*`, `pre_tool_use`, `post_tool_use`, `permission_request`, `pre_compact`, `notification`, `stop`): `session_id`, `pid`, and `cwd` are required.
+- For `notification`: `notification_type` is required.
+- For `stop`: `stop_hook_active` is required.
 - For `shell_cwd`: `pid`, `cwd`, and `tty` are required.
 
 ## Error Codes (v1)

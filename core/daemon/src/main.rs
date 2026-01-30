@@ -13,9 +13,9 @@ use std::time::Duration;
 use tracing::{error, info, warn};
 use tracing_subscriber::EnvFilter;
 
-mod protocol;
-
-use protocol::{parse_event, ErrorInfo, Method, Request, Response, MAX_REQUEST_BYTES};
+use capacitor_daemon_protocol::{
+    parse_event, ErrorInfo, Method, Request, Response, MAX_REQUEST_BYTES, PROTOCOL_VERSION,
+};
 
 const SOCKET_NAME: &str = "daemon.sock";
 const READ_TIMEOUT_SECS: u64 = 2;
@@ -167,7 +167,7 @@ fn read_request(stream: &mut UnixStream) -> Result<Request, ErrorInfo> {
 }
 
 fn handle_request(request: Request) -> Response {
-    if request.protocol_version != protocol::PROTOCOL_VERSION {
+    if request.protocol_version != PROTOCOL_VERSION {
         return Response::error(
             request.id,
             "protocol_mismatch",
@@ -181,7 +181,7 @@ fn handle_request(request: Request) -> Response {
                 "status": "ok",
                 "pid": std::process::id(),
                 "version": env!("CARGO_PKG_VERSION"),
-                "protocol_version": protocol::PROTOCOL_VERSION,
+                "protocol_version": PROTOCOL_VERSION,
             });
             Response::ok(request.id, data)
         }

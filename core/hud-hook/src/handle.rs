@@ -163,6 +163,10 @@ fn handle_hook_input_with_home(hook_input: HookInput, home: &Path) -> Result<(),
 
     let cwd = cwd.unwrap_or_default();
 
+    if !cwd.is_empty() {
+        crate::daemon_client::send_handle_event(&event, &session_id, ppid, &cwd);
+    }
+
     // Log the action
     tracing::info!(
         action = ?action,

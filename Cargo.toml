@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "core/daemon",
+    "core/daemon-protocol",
     "core/hud-core",
     "core/hud-hook",
 ]
