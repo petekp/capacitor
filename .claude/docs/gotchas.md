@@ -256,6 +256,30 @@ Use custom decoder with `.withFractionalSeconds`. See `ShellStateStore.swift`.
 ### UniFFI Task Shadows Swift Task
 UniFFI bindings define a `Task` type shadowing Swift's `_Concurrency.Task`. Always use `_Concurrency.Task` explicitly. Symptom: "cannot specialize non-generic type 'Task'" errors. Affected: `TerminalLauncher.swift`, `ShellStateStore.swift`.
 
+### Swift Incremental Build Stale Binary
+
+Swift's incremental build tracks file modification times. If no `.swift` files changed since the last build, `swift build` reports "Build complete!" but **produces no new binary**. The running app uses the old binary.
+
+**Symptom:** Code changes don't appear after restart. Binary timestamp unchanged despite rebuild.
+
+**When this happens:**
+- Rust-only changes (dylib updated, Swift untouched)
+- Build interrupted then retried
+- IDE and CLI builds interleaved
+
+**Solution:** Use `--force` flag to invalidate the build cache:
+```bash
+./scripts/dev/restart-app.sh --force  # Touches App.swift to force recompilation
+```
+
+**Manual equivalent:**
+```bash
+touch apps/swift/Sources/Capacitor/App.swift
+swift build
+```
+
+**Why touching App.swift works:** It's the entry point, so touching it forces Swift to recompile and relink everything.
+
 ### Rust Activation Resolver Is Sole Path
 Terminal activation now uses a single path: Rust decides (`engine.resolveActivation()`), Swift executes (`executeActivationAction()`). The legacy Swift-only strategy methods were removed in Jan 2026. All decision logic lives in `core/hud-core/src/activation.rs` (25+ unit tests).
 
@@ -333,6 +357,33 @@ private func getCurrentTmuxClientTty() async -> String? {
 - `bashDoubleQuoteEscape()` — Escape `\`, `"`, `$`, `` ` `` for double-quoted strings
 
 Always use these when interpolating user-controlled values (like tmux session names) into shell commands.
+
+## Tmux
+
+### Use `new-session -A` for Idempotent Session Creation
+
+When launching a terminal that should attach to a tmux session, use `new-session -A` instead of `attach-session`:
+
+**Wrong:**
+```bash
+tmux attach-session -t 'my-session'  # ❌ Fails if session doesn't exist
+```
+
+**Right:**
+```bash
+tmux new-session -A -s 'my-session'  # ✅ Creates if missing, attaches if exists
+```
+
+**The `-A` flag** makes `new-session` behave like "attach-or-create"—idempotent and safe to call regardless of session state.
+
+**With working directory** (for new sessions):
+```bash
+tmux new-session -A -s 'my-session' -c '/path/to/project'
+```
+
+Note: `-c` only affects session creation. If the session already exists, it attaches without changing the working directory.
+
+**See:** `TerminalLauncher.swift:launchTerminalWithTmuxSession()`
 
 ## State & Locks
 
