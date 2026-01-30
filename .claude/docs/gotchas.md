@@ -119,6 +119,40 @@ SwiftUI's `onTapGesture(count: 2)` intercepts the underlying `mouseDown` events,
 2. Remove the gesture if window dragging is more important
 3. Apply gesture only to specific non-draggable areas
 
+### SwiftUI GeometryReader Constraint Loops
+
+Reading from `@ObservedObject` or `@Observable` inside a `GeometryReader` can trigger infinite constraint update loops, crashing the app with `EXC_BREAKPOINT` in `_postWindowNeedsUpdateConstraints`.
+
+**Root cause:** Reading an observable during layout → triggers `objectWillChange` → view update → new layout pass → read observable → infinite loop.
+
+**Symptom:** Crash log shows recursive `_informContainerThatSubviewsNeedUpdateConstraints` calls (10+ levels deep).
+
+**Wrong:**
+```swift
+var body: some View {
+    GeometryReader { geometry in
+        let spacing = glassConfig.cardSpacing  // ❌ @ObservedObject read during layout
+        LazyHStack(spacing: spacing) { ... }
+    }
+}
+```
+
+**Right:**
+```swift
+var body: some View {
+    // Capture layout values once at body evaluation
+    let spacing = glassConfig.cardSpacingRounded  // ✅ Evaluated before layout
+
+    GeometryReader { geometry in
+        LazyHStack(spacing: spacing) { ... }
+    }
+}
+```
+
+**Rule:** Always capture observable values into `let` bindings **before** entering `GeometryReader`, `scrollTransition`, or similar layout callbacks.
+
+**See:** `DockLayoutView.swift:20-22`, `ProjectsView.swift:37-41`, crash log `Capacitor-2026-01-29-102502.ips`
+
 ### SwiftUI Rapid State Changes Cause Recursive Layout Crashes
 
 When `objectWillChange.send()` is called synchronously during rapid state changes (e.g., killing multiple Claude Code sessions), SwiftUI can crash with `EXC_BREAKPOINT` in `-[NSWindow(NSDisplayCycle) _postWindowNeedsUpdateConstraints]`.
