@@ -89,18 +89,30 @@ enum DaemonService {
     private enum LaunchAgentManager {
         static func installAndKickstart(binaryPath: String) -> String? {
             let plistURL: URL
+            let didUpdate: Bool
             do {
-                plistURL = try writeLaunchAgentPlist(binaryPath: binaryPath)
+                (plistURL, didUpdate) = try writeLaunchAgentPlist(binaryPath: binaryPath)
             } catch {
                 return "Failed to write LaunchAgent plist: \(error.localizedDescription)"
             }
 
             let domain = "gui/\(getuid())"
 
-            _ = runLaunchctl(["bootout", domain, plistURL.path])
-            _ = runLaunchctl(["bootstrap", domain, plistURL.path])
+            let status = launchctlStatus(domain: domain, label: Constants.label)
 
-            let kickstart = runLaunchctl(["kickstart", "-k", "\(domain)/\(Constants.label)"])
+            if status == nil || didUpdate {
+                _ = runLaunchctl(["bootout", domain, plistURL.path])
+                let bootstrap = runLaunchctl(["bootstrap", domain, plistURL.path])
+                if bootstrap.exitCode != 0 {
+                    return "Failed to bootstrap daemon: \(bootstrap.output.trimmingCharacters(in: .whitespacesAndNewlines))"
+                }
+            }
+
+            if status?.isRunning == true && !didUpdate {
+                return nil
+            }
+
+            let kickstart = runLaunchctl(["kickstart", "\(domain)/\(Constants.label)"])
             if kickstart.exitCode != 0 {
                 return "Failed to start daemon: \(kickstart.output.trimmingCharacters(in: .whitespacesAndNewlines))"
             }
@@ -108,7 +120,20 @@ enum DaemonService {
             return nil
         }
 
-        private static func writeLaunchAgentPlist(binaryPath: String) throws -> URL {
+        private struct LaunchctlStatus {
+            let isRunning: Bool
+        }
+
+        private static func launchctlStatus(domain: String, label: String) -> LaunchctlStatus? {
+            let result = runLaunchctl(["print", "\(domain)/\(label)"])
+            if result.exitCode != 0 {
+                return nil
+            }
+            let isRunning = result.output.contains("state = running")
+            return LaunchctlStatus(isRunning: isRunning)
+        }
+
+        private static func writeLaunchAgentPlist(binaryPath: String) throws -> (URL, Bool) {
             let home = FileManager.default.homeDirectoryForCurrentUser
             let launchAgentsDir = home.appendingPathComponent("Library/LaunchAgents")
             let logsDir = home.appendingPathComponent(".capacitor/daemon")
@@ -130,8 +155,12 @@ enum DaemonService {
 
             let data = try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
             let plistURL = launchAgentsDir.appendingPathComponent("\(Constants.label).plist")
+            if let existing = try? Data(contentsOf: plistURL), existing == data {
+                return (plistURL, false)
+            }
+
             try data.write(to: plistURL, options: .atomic)
-            return plistURL
+            return (plistURL, true)
         }
 
         private static func runLaunchctl(_ arguments: [String]) -> (exitCode: Int32, output: String) {
