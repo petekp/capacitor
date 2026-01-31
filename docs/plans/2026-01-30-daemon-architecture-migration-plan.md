@@ -218,6 +218,7 @@ A **local daemon** is the **only writer** of state. Hooks and the Swift app beco
 - Rebuild `process_liveness` from event log on daemon startup if table is empty.
 - Define lock-directory deprecation plan (read-only shim + timeline for removal).
   - See `docs/plans/daemon-lock-deprecation-plan.md`.
+- Gate lock writes in hooks via `CAPACITOR_DAEMON_LOCK_MODE` (full/read-only/off).
 
 ### Phase 5 — Launchd + Reliability (2–4 days)
 
@@ -251,6 +252,7 @@ A **local daemon** is the **only writer** of state. Hooks and the Swift app beco
 - Socket override (`CAPACITOR_DAEMON_SOCKET`)
 - Fallback to file writes on IPC failure
 - Use daemon-aware liveness checks in lock-holder when enabled (fallback to local checks)
+- Support `CAPACITOR_DAEMON_LOCK_MODE` to disable or read-only lock writes
 
 ### HUD core changes
 
