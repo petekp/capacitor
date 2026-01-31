@@ -345,6 +345,12 @@ A **local daemon** is the **only writer** of state. Hooks and the Swift app beco
    - Set `CAPACITOR_DAEMON_LOCK_HEALTH=auto` and confirm lock creation stops when daemon is healthy.
    - Stop daemon and confirm lock creation resumes (fallback).
 
+**Manual run (2026-01-31):**
+- LaunchAgent installed and running (`launchctl print gui/$(id -u)/com.capacitor.daemon` shows running).
+- Daemon socket responds to `get_health` with `status: ok`.
+- Offline banner appears after bootout; Retry restores daemon.
+- Banner clears ~5 seconds after Retry.
+
 ---
 
 ## 9. Rollout Strategy
