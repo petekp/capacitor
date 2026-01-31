@@ -24,6 +24,7 @@ use std::collections::HashSet;
 use std::path::Path;
 
 use chrono::{Duration, Utc};
+use std::env;
 
 use super::lock::{is_pid_alive, is_pid_alive_verified, read_lock_info};
 use super::store::StateStore;
@@ -37,6 +38,38 @@ const SESSION_MAX_AGE_HOURS: i64 = 24;
 /// Maximum age for tombstones (1 minute).
 /// Tombstones only need to survive race conditions, not long-term.
 const TOMBSTONE_MAX_AGE_SECS: u64 = 60;
+
+const LOCK_MODE_ENV: &str = "CAPACITOR_DAEMON_LOCK_MODE";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LockMode {
+    Full,
+    ReadOnly,
+    Off,
+}
+
+fn lock_mode() -> LockMode {
+    lock_mode_from_env(env::var(LOCK_MODE_ENV).ok().as_deref())
+}
+
+fn lock_mode_from_env(value: Option<&str>) -> LockMode {
+    match value.map(|v| v.trim().to_ascii_lowercase()) {
+        Some(value)
+            if matches!(
+                value.as_str(),
+                "readonly" | "read-only" | "read_only" | "ro"
+            ) =>
+        {
+            LockMode::ReadOnly
+        }
+        Some(value) if matches!(value.as_str(), "off" | "disabled" | "none") => LockMode::Off,
+        _ => LockMode::Full,
+    }
+}
+
+fn lock_deletions_enabled(mode: LockMode) -> bool {
+    matches!(mode, LockMode::Full)
+}
 
 /// Kills orphaned lock-holder processes whose monitored PID is dead.
 ///
@@ -249,6 +282,14 @@ pub fn run_startup_cleanup(lock_base: &Path, state_file: &Path) -> CleanupStats 
 ///
 /// Note: Despite the name, this checks PID liveness, not timestamp staleness.
 fn cleanup_stale_locks(lock_base: &Path) -> CleanupStats {
+    cleanup_stale_locks_with_mode(lock_base, lock_mode())
+}
+
+fn cleanup_stale_locks_with_mode(lock_base: &Path, mode: LockMode) -> CleanupStats {
+    if !lock_deletions_enabled(mode) {
+        return CleanupStats::default();
+    }
+
     let mut stats = CleanupStats::default();
 
     let entries = match fs::read_dir(lock_base) {
@@ -298,6 +339,14 @@ fn cleanup_stale_locks(lock_base: &Path) -> CleanupStats {
 /// This cleans up locks created by old versions of hud-hook that used
 /// path-based locking instead of session-based locking.
 fn cleanup_legacy_locks(lock_base: &Path) -> CleanupStats {
+    cleanup_legacy_locks_with_mode(lock_base, lock_mode())
+}
+
+fn cleanup_legacy_locks_with_mode(lock_base: &Path, mode: LockMode) -> CleanupStats {
+    if !lock_deletions_enabled(mode) {
+        return CleanupStats::default();
+    }
+
     let mut stats = CleanupStats::default();
 
     let entries = match fs::read_dir(lock_base) {
@@ -592,6 +641,33 @@ mod tests {
         assert!(
             lock_base.join(format!("{}.lock", live_hash)).exists(),
             "Live lock should remain"
+        );
+    }
+
+    #[test]
+    fn cleanup_skips_lock_removal_in_read_only_mode() {
+        let temp = tempdir().unwrap();
+        let lock_base = temp.path().join("sessions");
+        fs::create_dir_all(&lock_base).unwrap();
+
+        create_lock_with_pid(&lock_base, "/dead/project", 99999999);
+        create_lock_with_pid(&lock_base, "/live/project", std::process::id());
+
+        let stats = cleanup_stale_locks_with_mode(&lock_base, LockMode::ReadOnly);
+
+        assert_eq!(
+            stats.locks_removed, 0,
+            "Read-only mode should skip deletions"
+        );
+        let dead_hash = format!("{:x}", md5::compute("/dead/project"));
+        assert!(
+            lock_base.join(format!("{}.lock", dead_hash)).exists(),
+            "Dead lock should remain in read-only mode"
+        );
+        let live_hash = format!("{:x}", md5::compute("/live/project"));
+        assert!(
+            lock_base.join(format!("{}.lock", live_hash)).exists(),
+            "Live lock should remain in read-only mode"
         );
     }
 
