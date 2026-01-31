@@ -1,4 +1,4 @@
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Utc};
 use fs_err as fs;
 use serde::{Deserialize, Serialize};
 use std::cmp;
@@ -91,6 +91,7 @@ fn save_state(path: &Path, state: &BackoffState) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::Duration;
 
     #[test]
     fn compute_backoff_after_threshold() {
