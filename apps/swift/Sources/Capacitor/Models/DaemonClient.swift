@@ -54,7 +54,7 @@ final class DaemonClient {
         static let socketEnv = "CAPACITOR_DAEMON_SOCKET"
         static let protocolVersion = 1
         static let maxResponseBytes = 1_048_576
-        static let timeoutSeconds: TimeInterval = 0.3
+        static let timeoutSeconds: TimeInterval = 0.6
     }
 
     private let queue = DispatchQueue(label: "com.capacitor.daemon.client")
