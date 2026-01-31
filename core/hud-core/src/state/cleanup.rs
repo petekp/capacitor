@@ -432,6 +432,18 @@ fn cleanup_legacy_locks_with_mode(lock_base: &Path, mode: LockMode) -> CleanupSt
 /// Note: This only removes records that are stale (> 5 minutes old) to avoid
 /// race conditions where a record exists but the lock hasn't been created yet.
 fn cleanup_orphaned_sessions(lock_base: &Path, state_file: &Path) -> CleanupStats {
+    cleanup_orphaned_sessions_with_mode(lock_base, state_file, lock_mode())
+}
+
+fn cleanup_orphaned_sessions_with_mode(
+    lock_base: &Path,
+    state_file: &Path,
+    mode: LockMode,
+) -> CleanupStats {
+    if !lock_deletions_enabled(mode) {
+        return CleanupStats::default();
+    }
+
     let mut stats = CleanupStats::default();
 
     let mut store = match StateStore::load(state_file) {
@@ -927,5 +939,41 @@ mod tests {
         // Verify the session still exists
         let store = StateStore::load(&state_file).unwrap();
         assert!(store.get_by_session_id("fresh-session").is_some());
+    }
+
+    #[test]
+    fn cleanup_orphaned_sessions_skips_in_read_only_mode() {
+        let temp = tempdir().unwrap();
+        let lock_base = temp.path().join("sessions");
+        let state_file = temp.path().join("sessions.json");
+        fs::create_dir_all(&lock_base).unwrap();
+
+        // Create state file with a stale session that has no lock.
+        let stale_time = Utc::now() - Duration::minutes(10);
+        let content = serde_json::json!({
+            "version": 3,
+            "sessions": {
+                "orphaned-session": {
+                    "session_id": "orphaned-session",
+                    "state": "ready",
+                    "cwd": "/orphaned/project",
+                    "updated_at": stale_time.to_rfc3339(),
+                    "state_changed_at": stale_time.to_rfc3339()
+                }
+            }
+        });
+        fs::write(&state_file, serde_json::to_string_pretty(&content).unwrap()).unwrap();
+
+        let stats =
+            cleanup_orphaned_sessions_with_mode(&lock_base, &state_file, LockMode::ReadOnly);
+
+        assert_eq!(
+            stats.orphaned_sessions_removed, 0,
+            "Read-only mode should skip orphaned session cleanup"
+        );
+
+        // Verify the session was preserved.
+        let store = StateStore::load(&state_file).unwrap();
+        assert!(store.get_by_session_id("orphaned-session").is_some());
     }
 }

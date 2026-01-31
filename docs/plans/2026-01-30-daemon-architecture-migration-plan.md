@@ -185,7 +185,8 @@ A **local daemon** is the **only writer** of state. Hooks and the Swift app beco
 - Done: `process_liveness` pruning on daemon startup (24h max age).
 - Done: cleanup uses daemon liveness for lock-holder PID checks (fallback to PID-only when unavailable).
 - Done: daemon startup backoff to mitigate crash loops.
-- Remaining highest-leverage: verify lock-mode gating coverage in cleanup (read-only/off skip deletions).
+- Done: orphaned-session cleanup skips when lock mode is read-only/off.
+- Remaining highest-leverage: confirm any remaining lock-mode edge cases before disabling locks by default.
 
 ### Phase 0 — Design & Spec (1–2 days)
 
