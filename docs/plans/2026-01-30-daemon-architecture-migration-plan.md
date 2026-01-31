@@ -184,7 +184,8 @@ A **local daemon** is the **only writer** of state. Hooks and the Swift app beco
 - Done: Default hook commands include `CAPACITOR_DAEMON_ENABLED=1` and `CAPACITOR_DAEMON_LOCK_HEALTH=auto`.
 - Done: `process_liveness` pruning on daemon startup (24h max age).
 - Done: cleanup uses daemon liveness for lock-holder PID checks (fallback to PID-only when unavailable).
-- Remaining highest-leverage: crash-loop backoff + verify lock-mode gating coverage in cleanup (read-only/off skip deletions).
+- Done: daemon startup backoff to mitigate crash loops.
+- Remaining highest-leverage: verify lock-mode gating coverage in cleanup (read-only/off skip deletions).
 
 ### Phase 0 — Design & Spec (1–2 days)
 

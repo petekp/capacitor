@@ -19,6 +19,7 @@ use capacitor_daemon_protocol::{
     PROTOCOL_VERSION,
 };
 
+mod backoff;
 mod db;
 mod process;
 mod state;
@@ -32,6 +33,12 @@ const READ_CHUNK_SIZE: usize = 4096;
 
 fn main() {
     init_logging();
+
+    if let Ok(path) = daemon_backoff_path() {
+        backoff::apply_startup_backoff(&path);
+    } else {
+        warn!("Failed to resolve daemon backoff path");
+    }
 
     let socket_path = match daemon_socket_path() {
         Ok(path) => path,
@@ -105,6 +112,14 @@ fn daemon_socket_path() -> Result<PathBuf, String> {
 fn daemon_db_path() -> Result<PathBuf, String> {
     let home = dirs::home_dir().ok_or_else(|| "Home directory not found".to_string())?;
     Ok(home.join(".capacitor").join("daemon").join("state.db"))
+}
+
+fn daemon_backoff_path() -> Result<PathBuf, String> {
+    let home = dirs::home_dir().ok_or_else(|| "Home directory not found".to_string())?;
+    Ok(home
+        .join(".capacitor")
+        .join("daemon")
+        .join("daemon-backoff.json"))
 }
 
 fn prepare_socket_dir(socket_path: &Path) -> Result<(), String> {
