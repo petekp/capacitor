@@ -138,15 +138,15 @@ Capacitor tracks session state via Claude Code hooks. To enable:
    ```json
    {
      "hooks": {
-       "SessionStart": [{ "hooks": [{ "type": "command", "command": "$HOME/.local/bin/hud-hook handle", "async": true, "timeout": 30 }] }],
-       "SessionEnd": [{ "hooks": [{ "type": "command", "command": "$HOME/.local/bin/hud-hook handle" }] }],
-       "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "$HOME/.local/bin/hud-hook handle", "async": true, "timeout": 30 }] }],
-       "PreToolUse": [{ "matcher": "*", "hooks": [{ "type": "command", "command": "$HOME/.local/bin/hud-hook handle", "async": true, "timeout": 30 }] }],
-       "PostToolUse": [{ "matcher": "*", "hooks": [{ "type": "command", "command": "$HOME/.local/bin/hud-hook handle", "async": true, "timeout": 30 }] }],
-       "PermissionRequest": [{ "matcher": "*", "hooks": [{ "type": "command", "command": "$HOME/.local/bin/hud-hook handle", "async": true, "timeout": 30 }] }],
-       "Stop": [{ "hooks": [{ "type": "command", "command": "$HOME/.local/bin/hud-hook handle", "async": true, "timeout": 30 }] }],
-       "PreCompact": [{ "hooks": [{ "type": "command", "command": "$HOME/.local/bin/hud-hook handle", "async": true, "timeout": 30 }] }],
-       "Notification": [{ "hooks": [{ "type": "command", "command": "$HOME/.local/bin/hud-hook handle", "async": true, "timeout": 30 }] }]
+       "SessionStart": [{ "hooks": [{ "type": "command", "command": "CAPACITOR_DAEMON_LOCK_HEALTH=auto $HOME/.local/bin/hud-hook handle", "async": true, "timeout": 30 }] }],
+       "SessionEnd": [{ "hooks": [{ "type": "command", "command": "CAPACITOR_DAEMON_LOCK_HEALTH=auto $HOME/.local/bin/hud-hook handle" }] }],
+       "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "CAPACITOR_DAEMON_LOCK_HEALTH=auto $HOME/.local/bin/hud-hook handle", "async": true, "timeout": 30 }] }],
+       "PreToolUse": [{ "matcher": "*", "hooks": [{ "type": "command", "command": "CAPACITOR_DAEMON_LOCK_HEALTH=auto $HOME/.local/bin/hud-hook handle", "async": true, "timeout": 30 }] }],
+       "PostToolUse": [{ "matcher": "*", "hooks": [{ "type": "command", "command": "CAPACITOR_DAEMON_LOCK_HEALTH=auto $HOME/.local/bin/hud-hook handle", "async": true, "timeout": 30 }] }],
+       "PermissionRequest": [{ "matcher": "*", "hooks": [{ "type": "command", "command": "CAPACITOR_DAEMON_LOCK_HEALTH=auto $HOME/.local/bin/hud-hook handle", "async": true, "timeout": 30 }] }],
+       "Stop": [{ "hooks": [{ "type": "command", "command": "CAPACITOR_DAEMON_LOCK_HEALTH=auto $HOME/.local/bin/hud-hook handle", "async": true, "timeout": 30 }] }],
+       "PreCompact": [{ "hooks": [{ "type": "command", "command": "CAPACITOR_DAEMON_LOCK_HEALTH=auto $HOME/.local/bin/hud-hook handle", "async": true, "timeout": 30 }] }],
+       "Notification": [{ "hooks": [{ "type": "command", "command": "CAPACITOR_DAEMON_LOCK_HEALTH=auto $HOME/.local/bin/hud-hook handle", "async": true, "timeout": 30 }] }]
      }
    }
    ```

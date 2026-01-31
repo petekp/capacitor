@@ -21,7 +21,8 @@ use std::path::PathBuf;
 use std::process::Command;
 use tempfile::NamedTempFile;
 
-const HOOK_COMMAND: &str = "$HOME/.local/bin/hud-hook handle";
+// Default hooks use daemon health to decide when to suppress lock writes.
+const HOOK_COMMAND: &str = "CAPACITOR_DAEMON_LOCK_HEALTH=auto $HOME/.local/bin/hud-hook handle";
 
 /// Hook event configuration: (event_name, needs_matcher, is_async)
 /// - `needs_matcher`: Events like PreToolUse need `matcher: "*"` to fire for all tools

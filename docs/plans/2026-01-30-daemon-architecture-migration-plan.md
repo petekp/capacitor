@@ -71,6 +71,7 @@ A **local daemon** is the **only writer** of state. Hooks and the Swift app beco
 6. **Activity is secondary**: activity should never override explicit session state.
 7. **Daemon is invisible**: must auto-start and auto-recover without user action.
 8. **PID identity is daemon-owned**: process identity should be sourced from `process_liveness`.
+9. **Lock deprecation is safe**: when lock creation is disabled, do not delete existing locks.
 
 ---
 
@@ -219,6 +220,9 @@ A **local daemon** is the **only writer** of state. Hooks and the Swift app beco
 - Define lock-directory deprecation plan (read-only shim + timeline for removal).
   - See `docs/plans/daemon-lock-deprecation-plan.md`.
 - Gate lock writes in hooks via `CAPACITOR_DAEMON_LOCK_MODE` (full/read-only/off).
+- Gate lock writes via `CAPACITOR_DAEMON_LOCK_HEALTH=0/1/auto` (set by daemon health probe/launcher).
+  - `auto` disables lock writes only when the daemon health probe returns ok.
+- When lock mode is `read-only` or `off`, cleanup must skip lock deletions.
 
 ### Phase 5 — Launchd + Reliability (2–4 days)
 
@@ -253,11 +257,15 @@ A **local daemon** is the **only writer** of state. Hooks and the Swift app beco
 - Fallback to file writes on IPC failure
 - Use daemon-aware liveness checks in lock-holder when enabled (fallback to local checks)
 - Support `CAPACITOR_DAEMON_LOCK_MODE` to disable or read-only lock writes
+- Support `CAPACITOR_DAEMON_LOCK_HEALTH` (0/1/auto) to gate lock creation + release
+  - Implement a health probe (`GetHealth`) when `auto` is set.
+  - Normalize hook commands to include `CAPACITOR_DAEMON_LOCK_HEALTH=auto` by default.
 
 ### HUD core changes
 
 - Add daemon liveness client (`get_process_liveness`) behind `CAPACITOR_DAEMON_ENABLED`
 - Route lock + cleanup liveness checks through daemon when enabled (fallback to local checks)
+- Skip lock cleanup deletions when lock mode is `read-only` or `off`
 
 ### Swift changes
 
@@ -282,6 +290,9 @@ A **local daemon** is the **only writer** of state. Hooks and the Swift app beco
 - Event log → `shell_state` rebuild (tempfile-backed integration test)
 - Process liveness upsert (pid, proc_started, last_seen_at)
 - Event log → `process_liveness` rebuild (tempfile-backed integration test)
+- IPC smoke test: `GetHealth` + `Event` + `GetProcessLiveness`
+- Hook fallback: daemon down still writes `sessions.json`
+- Cleanup fallback: daemon down still keeps live locks intact
 
 ### Integration Tests
 
@@ -289,12 +300,31 @@ A **local daemon** is the **only writer** of state. Hooks and the Swift app beco
 - Daemon down -> fallback to file mode
 - Daemon restart with replay
 - Cleanup uses daemon liveness when enabled; legacy locks still safe
+- Lock mode/health gating (read-only/off skips deletion; unhealthy daemon skips lock writes)
 
 ### Regression Tests
 
 - Activation matrix (Swift)
 - Hook health + heartbeat logic
 - Multi-shell same session_id handling
+
+### Practical Smoke Checklist (Manual)
+
+1. Start the daemon locally:
+   - `cargo run -p capacitor-daemon`
+2. Verify health via the socket:
+   - Send `{"protocol_version":1,"method":"get_health","id":"health","params":null}` to `~/.capacitor/daemon.sock`
+   - Expect `{ "status": "ok", ... }`
+3. Emit an event and verify liveness:
+   - Send `Event.SessionStart` with your PID.
+   - Call `GetProcessLiveness` for that PID.
+   - Expect `found=true` and `identity_matches=true`.
+4. Verify daemon-down fallback:
+   - Stop the daemon.
+   - Run a hook event (e.g., `SessionStart`) and confirm `~/.capacitor/sessions.json` updates.
+5. Verify lock gating:
+   - Set `CAPACITOR_DAEMON_LOCK_HEALTH=auto` and confirm lock creation stops when daemon is healthy.
+   - Stop daemon and confirm lock creation resumes (fallback).
 
 ---
 
@@ -324,6 +354,8 @@ A **local daemon** is the **only writer** of state. Hooks and the Swift app beco
 - Do we need any legacy disk seeding now that replay from the event log restores shell state?
 - How long should `process_liveness` rows be retained (TTL vs cleanup on demand)?
 - Do we need an in-app toggle for daemon enablement (GUI apps don’t inherit shell env vars)?
+- Where should `CAPACITOR_DAEMON_LOCK_HEALTH` be sourced (daemon probe vs Swift app vs installer)?
+- Should `CAPACITOR_DAEMON_LOCK_HEALTH=auto` become the default when daemon is enabled?
 
 ---
 

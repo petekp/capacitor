@@ -645,6 +645,49 @@ mod tests {
     }
 
     #[test]
+    fn cleanup_falls_back_when_daemon_down() {
+        let temp = tempdir().unwrap();
+        let lock_base = temp.path().join("sessions");
+        fs::create_dir_all(&lock_base).unwrap();
+
+        let prev_enabled = env::var("CAPACITOR_DAEMON_ENABLED").ok();
+        let prev_socket = env::var("CAPACITOR_DAEMON_SOCKET").ok();
+
+        env::set_var("CAPACITOR_DAEMON_ENABLED", "1");
+        env::set_var(
+            "CAPACITOR_DAEMON_SOCKET",
+            temp.path()
+                .join("missing.sock")
+                .to_string_lossy()
+                .to_string(),
+        );
+
+        create_lock_with_pid(&lock_base, "/dead/project", 99999999);
+        create_lock_with_pid(&lock_base, "/live/project", std::process::id());
+
+        let stats = cleanup_stale_locks(&lock_base);
+
+        assert_eq!(
+            stats.locks_removed, 1,
+            "Should remove dead lock even if daemon is down"
+        );
+        let live_hash = format!("{:x}", md5::compute("/live/project"));
+        assert!(
+            lock_base.join(format!("{}.lock", live_hash)).exists(),
+            "Live lock should remain with daemon down"
+        );
+
+        match prev_enabled {
+            Some(value) => env::set_var("CAPACITOR_DAEMON_ENABLED", value),
+            None => env::remove_var("CAPACITOR_DAEMON_ENABLED"),
+        }
+        match prev_socket {
+            Some(value) => env::set_var("CAPACITOR_DAEMON_SOCKET", value),
+            None => env::remove_var("CAPACITOR_DAEMON_SOCKET"),
+        }
+    }
+
+    #[test]
     fn cleanup_skips_lock_removal_in_read_only_mode() {
         let temp = tempdir().unwrap();
         let lock_base = temp.path().join("sessions");

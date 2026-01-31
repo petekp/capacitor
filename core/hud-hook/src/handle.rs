@@ -69,7 +69,19 @@ fn lock_writes_enabled() -> bool {
 
 fn lock_health_ok() -> bool {
     match env::var(LOCK_HEALTH_ENV) {
-        Ok(value) => matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"),
+        Ok(value) => {
+            let normalized = value.trim().to_ascii_lowercase();
+            if normalized == "auto" {
+                // Auto mode: disable lock writes when daemon is healthy, keep fallback when unhealthy.
+                match crate::daemon_client::daemon_health() {
+                    Some(true) => false,
+                    Some(false) => true,
+                    None => true,
+                }
+            } else {
+                matches!(normalized.as_str(), "1" | "true" | "yes")
+            }
+        }
         Err(_) => true,
     }
 }
@@ -767,6 +779,9 @@ mod tests {
         assert!(lock_health_ok());
         env::set_var(LOCK_HEALTH_ENV, "false");
         assert!(!lock_health_ok());
+        env::set_var(LOCK_HEALTH_ENV, "auto");
+        env::remove_var("CAPACITOR_DAEMON_ENABLED");
+        assert!(lock_health_ok());
         env::remove_var(LOCK_HEALTH_ENV);
     }
 
@@ -823,6 +838,41 @@ mod tests {
             !heartbeat_path.exists(),
             "Heartbeat should not be touched when session_id is missing"
         );
+    }
+
+    #[test]
+    fn test_daemon_down_does_not_block_state_updates() {
+        let temp = tempdir().unwrap();
+        let session_id = "session-daemon-down";
+
+        env::set_var("CAPACITOR_DAEMON_ENABLED", "1");
+        env::set_var(
+            "CAPACITOR_DAEMON_SOCKET",
+            temp.path()
+                .join("missing.sock")
+                .to_string_lossy()
+                .to_string(),
+        );
+        env::set_var(LOCK_MODE_ENV, "off");
+
+        let hook_input = make_hook_input("SessionStart", Some(session_id), Some("/tmp/test"));
+        handle_hook_input_with_home(hook_input, temp.path()).unwrap();
+
+        let state_path = temp.path().join(STATE_FILE);
+        assert!(
+            state_path.exists(),
+            "State file should be written even if daemon is down"
+        );
+
+        let content = fs::read_to_string(state_path).unwrap();
+        assert!(
+            content.contains(session_id),
+            "State file should contain the session id when daemon is down"
+        );
+
+        env::remove_var("CAPACITOR_DAEMON_ENABLED");
+        env::remove_var("CAPACITOR_DAEMON_SOCKET");
+        env::remove_var(LOCK_MODE_ENV);
     }
 
     #[test]

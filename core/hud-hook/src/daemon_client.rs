@@ -103,6 +103,32 @@ pub fn send_shell_cwd_event(
     }
 }
 
+pub fn daemon_health() -> Option<bool> {
+    if !daemon_enabled() {
+        return None;
+    }
+
+    let request = Request {
+        protocol_version: PROTOCOL_VERSION,
+        method: Method::GetHealth,
+        id: Some("health-check".to_string()),
+        params: None,
+    };
+
+    let response = send_request(request).ok()?;
+    if !response.ok {
+        return Some(false);
+    }
+
+    let status = response
+        .data
+        .as_ref()
+        .and_then(|data| data.get("status"))
+        .and_then(|value| value.as_str());
+
+    Some(matches!(status, Some("ok")))
+}
+
 fn daemon_enabled() -> bool {
     match env::var(ENABLE_ENV) {
         Ok(value) => matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"),
@@ -119,12 +145,6 @@ fn socket_path() -> Result<PathBuf, String> {
 }
 
 fn send_event(event: EventEnvelope) -> Result<(), String> {
-    let socket = socket_path()?;
-    let mut stream = UnixStream::connect(&socket)
-        .map_err(|err| format!("Failed to connect to daemon socket: {}", err))?;
-    let _ = stream.set_read_timeout(Some(Duration::from_millis(READ_TIMEOUT_MS)));
-    let _ = stream.set_write_timeout(Some(Duration::from_millis(WRITE_TIMEOUT_MS)));
-
     let request = Request {
         protocol_version: PROTOCOL_VERSION,
         method: Method::Event,
@@ -135,14 +155,7 @@ fn send_event(event: EventEnvelope) -> Result<(), String> {
         ),
     };
 
-    serde_json::to_writer(&mut stream, &request)
-        .map_err(|err| format!("Failed to write request: {}", err))?;
-    stream
-        .write_all(b"\n")
-        .map_err(|err| format!("Failed to flush request: {}", err))?;
-    stream.flush().ok();
-
-    let response = read_response(&mut stream)?;
+    let response = send_request(request)?;
     if response.ok {
         Ok(())
     } else {
@@ -152,6 +165,23 @@ fn send_event(event: EventEnvelope) -> Result<(), String> {
             .unwrap_or_else(|| "Unknown daemon error".to_string());
         Err(message)
     }
+}
+
+fn send_request(request: Request) -> Result<Response, String> {
+    let socket = socket_path()?;
+    let mut stream = UnixStream::connect(&socket)
+        .map_err(|err| format!("Failed to connect to daemon socket: {}", err))?;
+    let _ = stream.set_read_timeout(Some(Duration::from_millis(READ_TIMEOUT_MS)));
+    let _ = stream.set_write_timeout(Some(Duration::from_millis(WRITE_TIMEOUT_MS)));
+
+    serde_json::to_writer(&mut stream, &request)
+        .map_err(|err| format!("Failed to write request: {}", err))?;
+    stream
+        .write_all(b"\n")
+        .map_err(|err| format!("Failed to flush request: {}", err))?;
+    stream.flush().ok();
+
+    read_response(&mut stream)
 }
 
 fn read_response(stream: &mut UnixStream) -> Result<Response, String> {
