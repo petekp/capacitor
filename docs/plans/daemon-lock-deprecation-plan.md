@@ -50,6 +50,7 @@ This document defines the migration path from filesystem lock directories
 - Add a configuration gate to disable lock creation in Phase B.
 - Update cleanup to skip lock removal when running in read-only mode.
 - Add a diagnostic label indicating lock mode (full / read-only / disabled).
+- Implement `CAPACITOR_DAEMON_LOCK_MODE` in hooks (full/read-only/off).
 
 ## Open Questions
 

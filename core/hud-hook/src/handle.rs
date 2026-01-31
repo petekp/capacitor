@@ -34,6 +34,37 @@ const LOCK_DIR: &str = ".capacitor/sessions";
 const ACTIVITY_FILE: &str = ".capacitor/file-activity.json";
 const TOMBSTONES_DIR: &str = ".capacitor/ended-sessions";
 const HEARTBEAT_FILE: &str = ".capacitor/hud-hook-heartbeat";
+const LOCK_MODE_ENV: &str = "CAPACITOR_DAEMON_LOCK_MODE";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LockMode {
+    Full,
+    ReadOnly,
+    Off,
+}
+
+fn lock_mode() -> LockMode {
+    lock_mode_from_env(env::var(LOCK_MODE_ENV).ok().as_deref())
+}
+
+fn lock_mode_from_env(value: Option<&str>) -> LockMode {
+    match value.map(|v| v.trim().to_ascii_lowercase()) {
+        Some(value)
+            if matches!(
+                value.as_str(),
+                "readonly" | "read-only" | "read_only" | "ro"
+            ) =>
+        {
+            LockMode::ReadOnly
+        }
+        Some(value) if matches!(value.as_str(), "off" | "disabled" | "none") => LockMode::Off,
+        _ => LockMode::Full,
+    }
+}
+
+fn lock_writes_enabled() -> bool {
+    matches!(lock_mode(), LockMode::Full)
+}
 
 pub fn run() -> Result<(), String> {
     // Skip if this is a summary generation subprocess
@@ -209,11 +240,20 @@ fn handle_hook_input_with_home(hook_input: HookInput, home: &Path) -> Result<(),
             }
 
             // 4. Release lock LAST - UI will see no record AND no lock atomically
-            if release_lock_by_session(&lock_base, &session_id, ppid) {
-                tracing::info!(
+            if lock_writes_enabled() {
+                if release_lock_by_session(&lock_base, &session_id, ppid) {
+                    tracing::info!(
+                        session = %session_id,
+                        pid = ppid,
+                        "Released lock"
+                    );
+                }
+            } else {
+                tracing::debug!(
                     session = %session_id,
                     pid = ppid,
-                    "Released lock"
+                    mode = ?lock_mode(),
+                    "Skipping lock release (lock writes disabled)"
                 );
             }
         }
@@ -237,8 +277,17 @@ fn handle_hook_input_with_home(hook_input: HookInput, home: &Path) -> Result<(),
     // Spawn lock holder for session-establishing events (even if state was skipped)
     // This ensures locks are recreated after resets or when SessionStart is skipped
     // for active sessions. create_session_lock() is idempotent - returns None if lock exists.
-    if matches!(event, HookEvent::SessionStart | HookEvent::UserPromptSubmit) {
+    if matches!(event, HookEvent::SessionStart | HookEvent::UserPromptSubmit)
+        && lock_writes_enabled()
+    {
         spawn_lock_holder(&lock_base, &session_id, &cwd, ppid);
+    } else if matches!(event, HookEvent::SessionStart | HookEvent::UserPromptSubmit) {
+        tracing::debug!(
+            session = %session_id,
+            pid = ppid,
+            mode = ?lock_mode(),
+            "Skipping lock holder spawn (lock writes disabled)"
+        );
     }
 
     // Record file activity if applicable
@@ -684,6 +733,17 @@ fn write_file_atomic(path: &Path, content: &str) -> std::io::Result<()> {
 mod tests {
     use super::*;
     use tempfile::tempdir;
+
+    #[test]
+    fn test_lock_mode_from_env() {
+        assert_eq!(lock_mode_from_env(None), LockMode::Full);
+        assert_eq!(lock_mode_from_env(Some("readonly")), LockMode::ReadOnly);
+        assert_eq!(lock_mode_from_env(Some("read-only")), LockMode::ReadOnly);
+        assert_eq!(lock_mode_from_env(Some("ro")), LockMode::ReadOnly);
+        assert_eq!(lock_mode_from_env(Some("off")), LockMode::Off);
+        assert_eq!(lock_mode_from_env(Some("disabled")), LockMode::Off);
+        assert_eq!(lock_mode_from_env(Some("unknown")), LockMode::Full);
+    }
 
     fn make_hook_input(event_name: &str, session_id: Option<&str>, cwd: Option<&str>) -> HookInput {
         HookInput {
