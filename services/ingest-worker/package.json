@@ -1,0 +1,14 @@
+{
+  "name": "capacitor-ingest-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "node --test test/*.test.mjs",
+    "triage": "node scripts/weekly-triage-report.mjs"
+  },
+  "devDependencies": {
+    "wrangler": "^4.65.0"
+  }
+}

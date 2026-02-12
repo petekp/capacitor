@@ -1,0 +1,5 @@
+CAPACITOR_FEEDBACK_API_URL="https://<your-worker>.workers.dev/v1/feedback"
+CAPACITOR_TELEMETRY_URL="https://<your-worker>.workers.dev/v1/telemetry"
+CAPACITOR_INGEST_KEY="<your-ingest-key>"
+# 0 = keep path redaction enabled (recommended), 1 = allow raw paths.
+CAPACITOR_TELEMETRY_INCLUDE_PATHS="0"

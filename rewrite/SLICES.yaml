@@ -1,0 +1,819 @@
+version: 1
+global_acceptance:
+  replay_diff: required
+  e2e_smoke: required
+  legacy_deletion_same_pr: required
+slices:
+  - id: RW-000
+    name: "Rewrite Control Plane"
+    owner: "agent/session"
+    status: "done" # pending|in_progress|blocked|done
+    depends_on: []
+    touched_paths:
+      - rewrite/CHARTER.md
+      - rewrite/DECISIONS.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+      - scripts/rewrite/check_rewrite_guards.sh
+      - .github/workflows/ci.yml
+    contracts:
+      added:
+        - rewrite/CHARTER.md
+        - rewrite/DECISIONS.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+        - scripts/rewrite/check_rewrite_guards.sh
+      changed:
+        - .github/workflows/ci.yml
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns:
+      - "content:apps/swift/Sources/Capacitor/Models/AppState.swift::sessionStateManager\\.refreshSessionStates\\("
+      - "content:apps/swift/Sources/Capacitor/Models/AppState.swift::shellStateStore\\.stopPolling\\("
+      - "content:apps/swift/Sources/Capacitor/Models/AppState.swift::fetch(ProjectStates|Sessions|ShellState)\\("
+      - "content:apps/swift/Sources/Capacitor/Models/SessionStateManager.swift::fetchProjectStates\\("
+      - "content:apps/swift/Sources/Capacitor/Models/ShellStateStore.swift::fetchShellState\\("
+    deletion_targets: []
+    risks:
+      - "Guard script assumes schema version 1 for SLICES.yaml"
+    notes: "Foundational governance and CI checks only; no feature/runtime behavior changes."
+
+  - id: RW-001
+    name: "Canonical Domain Types"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-000
+    touched_paths:
+      - Cargo.toml
+      - Cargo.lock
+      - core/capacitor-core/Cargo.toml
+      - core/capacitor-core/src/lib.rs
+      - core/capacitor-core/src/domain/mod.rs
+      - core/capacitor-core/src/domain/identity.rs
+      - core/capacitor-core/src/domain/types.rs
+      - core/capacitor-core/src/ingest/mod.rs
+      - core/capacitor-core/src/reduce/mod.rs
+      - core/capacitor-core/src/query/mod.rs
+      - core/capacitor-core/src/activate/mod.rs
+      - core/capacitor-core/src/storage/mod.rs
+    contracts:
+      added:
+        - core/capacitor-core/Cargo.toml
+        - core/capacitor-core/src/lib.rs
+        - core/capacitor-core/src/domain/mod.rs
+        - core/capacitor-core/src/domain/identity.rs
+        - core/capacitor-core/src/domain/types.rs
+        - core/capacitor-core/src/ingest/mod.rs
+        - core/capacitor-core/src/reduce/mod.rs
+        - core/capacitor-core/src/query/mod.rs
+        - core/capacitor-core/src/activate/mod.rs
+        - core/capacitor-core/src/storage/mod.rs
+      changed:
+        - Cargo.toml
+        - Cargo.lock
+      removed: []
+    replay_scenarios:
+      - multi_project_monorepo_worktree
+      - hook_burst_out_of_order
+    smoke_scenarios:
+      - live_state_update_while_coding
+    denylist_patterns: []
+    deletion_targets: []
+    risks: []
+    notes: "Canonical domain contracts, identity, reducer semantics, activation fallback, and snapshot persistence established in capacitor-core with passing tests."
+
+  - id: RW-002
+    name: "Core Runtime and Ingest Pipeline"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-001
+    touched_paths:
+      - Cargo.lock
+      - core/hud-hook/Cargo.toml
+      - core/hud-hook/src/daemon_client.rs
+      - core/hud-hook/src/handle.rs
+      - core/hud-hook/src/cwd.rs
+      - core/hud-hook/tests/session_state_mapping_gate.rs
+      - core/capacitor-core/tests/replay_diff.rs
+      - core/capacitor-core/tests/fixtures/replay/multi_project_monorepo_worktree.json
+      - core/capacitor-core/tests/fixtures/replay/hook_burst_out_of_order.json
+      - apps/swift/Sources/Capacitor/Models/RuntimeClient.swift
+      - apps/swift/Sources/Capacitor/Models/AppState.swift
+      - apps/swift/Sources/Capacitor/Models/SessionStateManager.swift
+      - apps/swift/Sources/Capacitor/Models/ShellStateStore.swift
+      - apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift
+      - apps/swift/Tests/CapacitorTests/SessionStateManagerTests.swift
+      - apps/swift/Tests/CapacitorTests/ShellStateStoreRoutingStatusTests.swift
+      - apps/swift/Tests/CapacitorTests/AppStateRuntimeStartupRegressionTests.swift
+      - scripts/rewrite/check_rewrite_guards.sh
+    contracts:
+      added:
+        - core/capacitor-core/tests/replay_diff.rs
+        - core/capacitor-core/tests/fixtures/replay/multi_project_monorepo_worktree.json
+        - core/capacitor-core/tests/fixtures/replay/hook_burst_out_of_order.json
+      changed:
+        - Cargo.lock
+        - core/hud-hook/Cargo.toml
+        - core/hud-hook/src/daemon_client.rs
+        - core/hud-hook/src/handle.rs
+        - core/hud-hook/src/cwd.rs
+        - core/hud-hook/tests/session_state_mapping_gate.rs
+        - apps/swift/Sources/Capacitor/Models/RuntimeClient.swift
+        - apps/swift/Sources/Capacitor/Models/AppState.swift
+        - apps/swift/Sources/Capacitor/Models/SessionStateManager.swift
+        - apps/swift/Sources/Capacitor/Models/ShellStateStore.swift
+        - apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift
+        - apps/swift/Tests/CapacitorTests/SessionStateManagerTests.swift
+        - apps/swift/Tests/CapacitorTests/ShellStateStoreRoutingStatusTests.swift
+        - apps/swift/Tests/CapacitorTests/AppStateRuntimeStartupRegressionTests.swift
+        - scripts/rewrite/check_rewrite_guards.sh
+      removed: []
+    replay_scenarios:
+      - session_state_transition_chain
+      - shell_cwd_churn_tmux_and_non_tmux
+    smoke_scenarios:
+      - add_remove_project_flow
+      - hook_install_fix_flow
+    denylist_patterns:
+      - "content:apps/swift/Sources/Capacitor/Models/AppState.swift::sessionStateManager\\.refreshSessionStates\\("
+      - "content:apps/swift/Sources/Capacitor/Models/AppState.swift::shellStateStore\\.stopPolling\\("
+      - "content:apps/swift/Sources/Capacitor/Models/AppState.swift::fetch(ProjectStates|Sessions|ShellState)\\("
+      - "content:apps/swift/Sources/Capacitor/Models/SessionStateManager.swift::fetchProjectStates\\("
+      - "content:apps/swift/Sources/Capacitor/Models/ShellStateStore.swift::fetchShellState\\("
+    deletion_targets: []
+    risks:
+      - "Direct-core ingest now serializes through file locks; high-frequency hook storms may still need stronger transactional storage."
+    notes: "hud-hook now ingests directly into capacitor-core snapshot runtime (no daemon IPC), replay-diff corpus tests exist in capacitor-core, and Swift now uses a unified runtime snapshot tick in AppState with apply-only SessionStateManager/ShellStateStore surfaces plus denylist guardrails against legacy per-endpoint refresh reintroduction."
+
+  - id: RW-003
+    name: "FFI Cutover and Swift Runtime Simplification"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-002
+    touched_paths:
+      - apps/swift/Sources/Capacitor/Models/RuntimeClient.swift
+      - apps/swift/Sources/Capacitor/Models/AppState.swift
+      - apps/swift/Sources/Capacitor/Models/ShellStateStore.swift
+      - apps/swift/Sources/Capacitor/Models/RuntimeStatus.swift
+      - apps/swift/Sources/Capacitor/Models/ActiveProjectResolver.swift
+      - apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift
+      - apps/swift/Sources/Capacitor/Models/ShellSetupInstructions.swift
+      - apps/swift/Sources/Capacitor/Helpers/RuntimeDateParser.swift
+      - apps/swift/Sources/Capacitor/Utilities/DiagnosticsSnapshotLogger.swift
+      - apps/swift/Sources/Capacitor/Utilities/ProjectOrdering.swift
+      - apps/swift/Sources/Capacitor/Utilities/QuickFeedback.swift
+      - apps/swift/Sources/Capacitor/Views/Components/RuntimeStatusCard.swift
+      - apps/swift/Sources/Capacitor/Views/Debug/RuntimeStatus/RuntimeStatusBadge.swift
+      - apps/swift/Sources/Capacitor/Views/Debug/RuntimeStatus/RoutingRolloutBadge.swift
+      - apps/swift/Sources/Capacitor/Views/Debug/DebugProjectListPanel.swift
+      - apps/swift/Sources/Capacitor/Views/Debug/DebugSessionStateCard.swift
+      - apps/swift/Sources/Capacitor/Views/Debug/DebugShellStateCard.swift
+      - apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift
+      - apps/swift/Tests/CapacitorTests/AppStateRuntimeStartupRegressionTests.swift
+      - apps/swift/Tests/CapacitorTests/RuntimeDateParserTests.swift
+      - apps/swift/Tests/CapacitorTests/DemoModeAppStateTests.swift
+      - apps/swift/Tests/CapacitorTests/QuickFeedbackSubmitterTests.swift
+      - apps/swift/Tests/CapacitorTests/RoutingRolloutBadgeCopyTests.swift
+      - apps/swift/Tests/CapacitorTests/ShellSetupInstructionsTests.swift
+      - apps/swift/Tests/CapacitorTests/ShellStateStoreRoutingStatusTests.swift
+      - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
+      - apps/swift/Sources/Capacitor/Helpers/DaemonService.swift
+      - apps/swift/Sources/Capacitor/Models/DaemonRecoveryDecider.swift
+      - apps/swift/Sources/Capacitor/Models/DaemonStatusEvaluator.swift
+      - apps/swift/Tests/CapacitorTests/DaemonServiceTests.swift
+      - apps/swift/Tests/CapacitorTests/DaemonRecoveryDeciderTests.swift
+      - apps/swift/Tests/CapacitorTests/DaemonStatusEvaluatorTests.swift
+    contracts:
+      added: []
+      changed:
+        - apps/swift/Sources/Capacitor/Models/RuntimeClient.swift
+        - apps/swift/Sources/Capacitor/Models/AppState.swift
+        - apps/swift/Sources/Capacitor/Models/ShellStateStore.swift
+        - apps/swift/Sources/Capacitor/Models/RuntimeStatus.swift
+        - apps/swift/Sources/Capacitor/Models/ActiveProjectResolver.swift
+        - apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift
+        - apps/swift/Sources/Capacitor/Models/ShellSetupInstructions.swift
+        - apps/swift/Sources/Capacitor/Helpers/RuntimeDateParser.swift
+        - apps/swift/Sources/Capacitor/Utilities/DiagnosticsSnapshotLogger.swift
+        - apps/swift/Sources/Capacitor/Utilities/ProjectOrdering.swift
+        - apps/swift/Sources/Capacitor/Utilities/QuickFeedback.swift
+        - apps/swift/Sources/Capacitor/Views/Components/RuntimeStatusCard.swift
+        - apps/swift/Sources/Capacitor/Views/Debug/RuntimeStatus/RuntimeStatusBadge.swift
+        - apps/swift/Sources/Capacitor/Views/Debug/RuntimeStatus/RoutingRolloutBadge.swift
+        - apps/swift/Sources/Capacitor/Views/Debug/DebugProjectListPanel.swift
+        - apps/swift/Sources/Capacitor/Views/Debug/DebugSessionStateCard.swift
+        - apps/swift/Sources/Capacitor/Views/Debug/DebugShellStateCard.swift
+        - apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift
+        - apps/swift/Tests/CapacitorTests/AppStateRuntimeStartupRegressionTests.swift
+        - apps/swift/Tests/CapacitorTests/RuntimeDateParserTests.swift
+        - apps/swift/Tests/CapacitorTests/DemoModeAppStateTests.swift
+        - apps/swift/Tests/CapacitorTests/QuickFeedbackSubmitterTests.swift
+        - apps/swift/Tests/CapacitorTests/RoutingRolloutBadgeCopyTests.swift
+        - apps/swift/Tests/CapacitorTests/ShellSetupInstructionsTests.swift
+        - apps/swift/Tests/CapacitorTests/ShellStateStoreRoutingStatusTests.swift
+        - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
+      removed:
+        - apps/swift/Sources/Capacitor/Helpers/DaemonService.swift
+        - apps/swift/Sources/Capacitor/Models/DaemonRecoveryDecider.swift
+        - apps/swift/Sources/Capacitor/Models/DaemonStatusEvaluator.swift
+        - apps/swift/Tests/CapacitorTests/DaemonServiceTests.swift
+        - apps/swift/Tests/CapacitorTests/DaemonRecoveryDeciderTests.swift
+        - apps/swift/Tests/CapacitorTests/DaemonStatusEvaluatorTests.swift
+    replay_scenarios:
+      - activation_routing_attached_detached_unavailable
+    smoke_scenarios:
+      - click_project_restore_terminal
+      - idea_capture_edit_order
+    denylist_patterns:
+      - "content:apps/swift/Sources/Capacitor/Models/AppState.swift::DaemonService\\.enableForCurrentProcess\\("
+      - "content:apps/swift/Sources/Capacitor/Models/AppState.swift::DaemonService\\.ensureRunning\\("
+      - "content:apps/swift/Sources/Capacitor/Models/AppState.swift::daemonRecoveryDecider\\.shouldAttemptRecovery"
+      - "content:apps/swift/Sources/Capacitor/Models/RuntimeClient.swift::performRequest\\("
+      - "content:apps/swift/Sources/Capacitor/Models/RuntimeClient.swift::sendAndReceivePosix\\("
+      - "content:apps/swift/Sources/Capacitor/Models/RuntimeClient.swift::CAPACITOR_DAEMON_SOCKET"
+      - "content:apps/swift/Sources/Capacitor/Models/RuntimeClient.swift::CAPACITOR_DAEMON_ENABLED"
+      - "content:apps/swift/Sources/Capacitor/Models/ShellSetupInstructions.swift::CAPACITOR_DAEMON_ENABLED"
+      - "content:apps/swift/Sources/Capacitor/Models/RuntimeClient.swift::struct DaemonRoutingSnapshot"
+      - "content:apps/swift/Sources/Capacitor/Models/RuntimeClient.swift::struct DaemonRoutingDiagnostics"
+      - "content:apps/swift/Sources/Capacitor/Models/RuntimeClient.swift::func fetchRoutingSnapshot\\("
+      - "content:apps/swift/Sources/Capacitor/Models/RuntimeClient.swift::func fetchRoutingDiagnostics\\("
+      - "content:apps/swift/Sources/Capacitor/Models/ShellStateStore.swift::areRoutingSnapshot"
+      - "content:apps/swift/Sources/Capacitor/Models/ShellStateStore.swift::fetchRoutingSnapshot\\("
+      - "content:apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift::DaemonClient\\.shared\\.fetchRoutingSnapshot\\("
+      - "content:apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift::fetchCoreRoutingSnapshot"
+      - "content:apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift::activationActionFromAERSnapshot"
+      - "content:apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift::legacyActivationDecisionFromRoutingSnapshot"
+      - "content:apps/swift/Sources/Capacitor/Views/Debug/DebugShellStateCard.swift::DaemonRoutingDiagnostics"
+      - "content:apps/swift/Sources/Capacitor/Views/Debug/DebugShellStateCard.swift::fetchRoutingDiagnostics\\("
+      - "apps/swift/Sources/Capacitor/Models/DaemonClient.swift"
+      - "apps/swift/Sources/Capacitor/Models/DaemonStatus.swift"
+      - "apps/swift/Sources/Capacitor/Helpers/DaemonDateParser.swift"
+      - "apps/swift/Sources/Capacitor/Views/Components/DaemonStatusCard.swift"
+      - "apps/swift/Sources/Capacitor/Views/Debug/DaemonStatus/DaemonStatusBadge.swift"
+      - "apps/swift/Sources/Capacitor/Views/Debug/DaemonStatus/RoutingRolloutBadge.swift"
+      - "apps/swift/Tests/CapacitorTests/DaemonClientTests.swift"
+      - "apps/swift/Tests/CapacitorTests/AppStateDaemonStartupRegressionTests.swift"
+      - "apps/swift/Tests/CapacitorTests/DaemonDateParserTests.swift"
+      - "apps/swift/Sources/Capacitor/Helpers/DaemonService.swift"
+      - "apps/swift/Sources/Capacitor/Models/DaemonRecoveryDecider.swift"
+      - "apps/swift/Sources/Capacitor/Models/DaemonStatusEvaluator.swift"
+      - "apps/swift/Tests/CapacitorTests/DaemonServiceTests.swift"
+      - "apps/swift/Tests/CapacitorTests/DaemonRecoveryDeciderTests.swift"
+      - "apps/swift/Tests/CapacitorTests/DaemonStatusEvaluatorTests.swift"
+    deletion_targets: []
+    risks:
+      - "Routing diagnostics are currently synthesized from core snapshot routing views and may not preserve all prior daemon diagnostics richness."
+    notes: "RuntimeClient now runs snapshot-only (no socket transport fallback) and no longer exports daemon-shaped routing snapshot/diagnostic DTO APIs, AppState no longer orchestrates daemon launch/recovery, runtime terminology is propagated through health/routing/session DTOs plus file/module names (client/status/parser/debug badges/cards/tests), TerminalLauncher no longer exposes routing-snapshot injection or legacy snapshot->action mapping seams (tests inject ActivationDecision directly), shell state store dropped daemon-shaped routing cache, debug routing card reads core-native diagnostics, and dead daemon lifecycle modules/tests were deleted."
+
+  - id: RW-004
+    name: "Legacy Surface Deletion"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-003
+    touched_paths:
+      - Cargo.toml
+      - Cargo.lock
+      - core/capacitor-core/Cargo.toml
+      - core/capacitor-core/src/state/daemon.rs
+      - core/capacitor-core/src/state/mod.rs
+      - core/capacitor-core/src/engine.rs
+      - core/capacitor-core/src/setup.rs
+      - core/capacitor-core/src/agents/claude.rs
+      - core/capacitor-core/tests/agent_fixtures.rs
+      - core/hud-hook/src/main.rs
+      - core/hud-hook/src/runtime_client.rs
+      - core/hud-hook/src/cwd.rs
+      - core/hud-hook/src/handle.rs
+      - tests/hud-hook/hud-hook-smoke.bats
+      - scripts/release/build-distribution.sh
+      - scripts/release/verify-app-bundle.sh
+      - scripts/dev/restart-app.sh
+      - scripts/dev/reset-for-testing.sh
+      - scripts/dev/agent-observe.sh
+      - scripts/transparent-ui-server.mjs
+      - README.md
+      - CONTRIBUTING.md
+      - CLAUDE.md
+      - docs/ARCHITECTURE.md
+      - docs/daemon-ipc.md
+      - docs/architecture-decisions/005-daemon-based-state-service.md
+      - scripts/ci/session-state-gate.sh
+      - scripts/ci/hem-shadow-bench.sh
+      - apps/swift/Resources/LaunchAgents/com.capacitor.daemon.plist
+      - apps/swift/Sources/Capacitor/Utilities/DebugLog.swift
+      - apps/swift/Sources/Capacitor/Utilities/DiagnosticsSnapshotLogger.swift
+      - apps/swift/Sources/Capacitor/Utilities/Telemetry.swift
+      - apps/swift/Sources/Capacitor/Utilities/TelemetryRoutingPolicy.swift
+      - core/daemon
+      - core/daemon-protocol
+    contracts:
+      added:
+        - docs/ARCHITECTURE.md
+      changed:
+        - Cargo.toml
+        - Cargo.lock
+        - core/capacitor-core/Cargo.toml
+        - core/capacitor-core/src/state/daemon.rs
+        - core/capacitor-core/src/state/mod.rs
+        - core/capacitor-core/src/engine.rs
+        - core/capacitor-core/src/setup.rs
+        - core/capacitor-core/src/agents/claude.rs
+        - core/capacitor-core/tests/agent_fixtures.rs
+        - core/hud-hook/src/main.rs
+        - core/hud-hook/src/runtime_client.rs
+        - core/hud-hook/src/cwd.rs
+        - core/hud-hook/src/handle.rs
+        - tests/hud-hook/hud-hook-smoke.bats
+        - scripts/release/build-distribution.sh
+        - scripts/release/verify-app-bundle.sh
+        - scripts/dev/restart-app.sh
+        - scripts/dev/reset-for-testing.sh
+        - scripts/dev/agent-observe.sh
+        - scripts/transparent-ui-server.mjs
+        - README.md
+        - CONTRIBUTING.md
+        - CLAUDE.md
+        - scripts/ci/session-state-gate.sh
+        - scripts/ci/hem-shadow-bench.sh
+        - apps/swift/Sources/Capacitor/Utilities/DebugLog.swift
+        - apps/swift/Sources/Capacitor/Utilities/DiagnosticsSnapshotLogger.swift
+        - apps/swift/Sources/Capacitor/Utilities/Telemetry.swift
+        - apps/swift/Sources/Capacitor/Utilities/TelemetryRoutingPolicy.swift
+      removed:
+        - core/daemon
+        - core/daemon-protocol
+        - core/hud-hook/src/daemon_client.rs
+        - apps/swift/Resources/LaunchAgents/com.capacitor.daemon.plist
+        - docs/daemon-ipc.md
+        - docs/architecture-decisions/005-daemon-based-state-service.md
+    replay_scenarios:
+      - daemon_offline_equivalence_under_direct_core
+    smoke_scenarios:
+      - worktree_create_open_destroy
+      - quick_feedback_submit
+    denylist_patterns:
+      - "core/daemon"
+      - "core/daemon-protocol"
+      - "apps/swift/Resources/LaunchAgents/com.capacitor.daemon.plist"
+      - "content:Cargo.toml::core/daemon"
+      - "content:Cargo.toml::core/daemon-protocol"
+    deletion_targets:
+      - core/daemon
+      - core/daemon-protocol
+      - core/hud-hook/src/daemon_client.rs
+      - apps/swift/Resources/LaunchAgents/com.capacitor.daemon.plist
+      - apps/swift/Sources/Capacitor/Helpers/DaemonService.swift
+    risks:
+      - "Historical QA/decision docs may still include daemon terminology as archived context."
+    notes: "Daemon binary/protocol crates deleted, workspace detached from daemon members, capacitor-core moved from daemon IPC to direct runtime snapshot reads, hud-hook runtime client module renamed, launchd/LaunchAgent packaging removed from release/dev scripts, and legacy observability scripts converted to runtime-snapshot model."
+
+  - id: RW-005
+    name: "Hardening and Minimization"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-004
+    touched_paths:
+      - rewrite/MAP.csv
+      - rewrite/SLICES.yaml
+    contracts:
+      added: []
+      changed:
+        - rewrite/MAP.csv
+        - rewrite/SLICES.yaml
+      removed: []
+    replay_scenarios:
+      - full_corpus
+    smoke_scenarios:
+      - full_smoke_suite
+    denylist_patterns:
+      - "content:tests/hud-hook/hud-hook-smoke.bats::CAPACITOR_DAEMON_ENABLED"
+      - "content:scripts/release/build-distribution.sh::capacitor-daemon"
+      - "content:scripts/dev/restart-app.sh::capacitor-daemon"
+    deletion_targets: []
+    risks: []
+    notes: "Guardrails tightened with MAP/SLICES synchronization and denylist coverage for removed daemon surfaces, with full Rust/Swift/regression validation rerun after deletions and runtime script cutovers."
+
+  - id: RW-006
+    name: "Demo Feature Excision"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-005
+    touched_paths:
+      - apps/swift/Sources/Capacitor/Models/AppState.swift
+      - apps/swift/Sources/Capacitor/App.swift
+      - apps/swift/Sources/Capacitor/Views/Header/HeaderView.swift
+      - apps/swift/Sources/Capacitor/Views/Projects/ProjectCardView.swift
+      - apps/swift/Sources/Capacitor/Views/Projects/DockProjectCard.swift
+      - apps/swift/Sources/Capacitor/Views/Projects/ProjectDetailView.swift
+      - apps/swift/Sources/Capacitor/Utils/AccessibilityIdentifiers.swift
+      - apps/swift/Sources/Capacitor/Utils/DemoAccessibility.swift
+      - apps/swift/Sources/Capacitor/Utils/DemoConfig.swift
+      - apps/swift/Sources/Capacitor/Demo
+      - apps/swift/Tests/CapacitorTests/AccessibilityIdentifiersRegressionTests.swift
+      - apps/swift/Tests/CapacitorTests/DemoAccessibilityMarkersRegressionTests.swift
+      - apps/swift/Tests/CapacitorTests/DemoConfigTests.swift
+      - apps/swift/Tests/CapacitorTests/DemoFixturesTests.swift
+      - apps/swift/Tests/CapacitorTests/DemoModeAppStateTests.swift
+      - scripts/ax/ax_runner.swift
+      - scripts/demo
+      - scripts/ci/non-demo-ax-smoke.sh
+      - scripts/dev/restart-app.sh
+      - apps/swift/Sources/Capacitor/Bridge/capacitor_core.swift
+      - apps/swift/bindings/capacitor_core.swift
+      - docs/PRE_RELEASE_CHECKLIST.md
+      - docs/manual-qa/automated-demo-vertical-slice.md
+      - tests/dev-scripts/restart-app-demo-env.bats
+      - rewrite/MAP.csv
+      - rewrite/SLICES.yaml
+    contracts:
+      added:
+        - apps/swift/Sources/Capacitor/Utils/AccessibilityIdentifiers.swift
+        - scripts/ax/ax_runner.swift
+      changed:
+        - apps/swift/Sources/Capacitor/Models/AppState.swift
+        - apps/swift/Sources/Capacitor/App.swift
+        - apps/swift/Sources/Capacitor/Views/Header/HeaderView.swift
+        - apps/swift/Sources/Capacitor/Views/Projects/ProjectCardView.swift
+        - apps/swift/Sources/Capacitor/Views/Projects/DockProjectCard.swift
+        - apps/swift/Sources/Capacitor/Views/Projects/ProjectDetailView.swift
+        - apps/swift/Tests/CapacitorTests/AccessibilityIdentifiersRegressionTests.swift
+        - scripts/ci/non-demo-ax-smoke.sh
+        - scripts/dev/restart-app.sh
+        - apps/swift/Sources/Capacitor/Bridge/capacitor_core.swift
+        - apps/swift/bindings/capacitor_core.swift
+        - docs/PRE_RELEASE_CHECKLIST.md
+        - rewrite/MAP.csv
+        - rewrite/SLICES.yaml
+      removed:
+        - apps/swift/Sources/Capacitor/Utils/DemoAccessibility.swift
+        - apps/swift/Sources/Capacitor/Utils/DemoConfig.swift
+        - apps/swift/Sources/Capacitor/Demo
+        - apps/swift/Tests/CapacitorTests/DemoAccessibilityMarkersRegressionTests.swift
+        - apps/swift/Tests/CapacitorTests/DemoConfigTests.swift
+        - apps/swift/Tests/CapacitorTests/DemoFixturesTests.swift
+        - apps/swift/Tests/CapacitorTests/DemoModeAppStateTests.swift
+        - scripts/demo
+        - docs/manual-qa/automated-demo-vertical-slice.md
+        - tests/dev-scripts/restart-app-demo-env.bats
+    replay_scenarios:
+      - full_corpus
+    smoke_scenarios:
+      - non_demo_ax_ui_smoke
+      - release_bundle_and_isolated_launch
+    denylist_patterns:
+      - "scripts/demo"
+      - "content:apps/swift/Sources/Capacitor/Models/AppState.swift::DemoConfig"
+      - "content:apps/swift/Sources/Capacitor/Models/AppState.swift::DemoFixtures"
+      - "content:apps/swift/Sources/Capacitor/Models/AppState.swift::CAPACITOR_DEMO_"
+      - "content:apps/swift/Sources/Capacitor/App.swift::DemoConfig"
+      - "content:scripts/dev/restart-app.sh::CAPACITOR_DEMO_"
+      - 'content:scripts/ci/non-demo-ax-smoke.sh::scripts/demo/ax_runner\.swift'
+      - 'content:scripts/ci/non-demo-ax-smoke.sh::demo\.project'
+      - "apps/swift/Sources/Capacitor/Utils/DemoConfig.swift"
+      - "apps/swift/Sources/Capacitor/Utils/DemoAccessibility.swift"
+      - "apps/swift/Sources/Capacitor/Demo"
+      - "apps/swift/Tests/CapacitorTests/Demo*.swift"
+      - "tests/dev-scripts/restart-app-demo-env.bats"
+      - "docs/manual-qa/automated-demo-vertical-slice.md"
+    deletion_targets:
+      - apps/swift/Sources/Capacitor/Utils/DemoAccessibility.swift
+      - apps/swift/Sources/Capacitor/Utils/DemoConfig.swift
+      - apps/swift/Sources/Capacitor/Demo
+      - apps/swift/Tests/CapacitorTests/Demo*.swift
+      - scripts/demo
+      - docs/manual-qa/automated-demo-vertical-slice.md
+      - tests/dev-scripts/restart-app-demo-env.bats
+    risks:
+      - "External one-off automation that depended on scripts/demo may need manual replacement."
+      - "AX selector prefix switched to ax.* and requires scenario updates in any out-of-repo tooling."
+    notes: "Demo mode was removed from runtime state orchestration and startup, promo-video scripts/fixtures were deleted, and accessibility selectors were normalized to ax.* with smoke harness cut over to scripts/ax/ax_runner.swift."
+
+  - id: RW-007
+    name: "Hud-Core Elimination Control Plane Extension"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-006
+    touched_paths:
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+      - scripts/rewrite/check_rewrite_guards.sh
+      - .github/workflows/ci.yml
+    contracts:
+      added: []
+      changed:
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+        - scripts/rewrite/check_rewrite_guards.sh
+        - .github/workflows/ci.yml
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns:
+      - "core/hud-core"
+      - "apps/swift/Sources/HudCoreFFI"
+      - "apps/swift/Sources/Capacitor/Bridge/hud_core.swift"
+      - "apps/swift/Sources/Capacitor/Bridge/hud_coreFFI.h"
+      - "apps/swift/Sources/Capacitor/Bridge/hud_coreFFI.modulemap"
+      - "apps/swift/bindings/hud_core*"
+      - "content:Cargo.toml::core/hud-core"
+      - "content:apps/swift/Package.swift::hud_coreFFI"
+      - "content:apps/swift/Package.swift::libhud_core"
+      - "content:apps/swift/Sources/Capacitor/*/*.swift::HudEngine"
+      - "content:apps/swift/Sources/Capacitor/*/*/*.swift::HudEngine"
+    deletion_targets: []
+    risks: []
+    notes: "Governance extended for hard hud-core removal with explicit denylist for legacy crate/module names and Swift bridge artifacts."
+
+  - id: RW-008
+    name: "Absorb Used HudEngine Surface into Capacitor-Core"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-007
+    touched_paths:
+      - core/capacitor-core/Cargo.toml
+      - core/capacitor-core/src/lib.rs
+      - core/capacitor-core/src/runtime_*.rs
+      - core/capacitor-core/src/runtime_activation/*
+      - core/capacitor-core/src/runtime_state/*
+      - core/capacitor-core/uniffi-bindgen.rs
+      - Cargo.lock
+    contracts:
+      added:
+        - core/capacitor-core/src/runtime_*.rs
+        - core/capacitor-core/src/runtime_activation/*
+        - core/capacitor-core/src/runtime_state/*
+        - core/capacitor-core/uniffi-bindgen.rs
+      changed:
+        - core/capacitor-core/Cargo.toml
+        - core/capacitor-core/src/lib.rs
+        - Cargo.lock
+      removed: []
+    replay_scenarios:
+      - full_corpus
+    smoke_scenarios:
+      - hook_install_fix_flow
+      - add_remove_project_flow
+      - activation_trace_rendering
+      - idea_capture_edit_order
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Runtime API surface migrated quickly; behavior parity depends on existing Rust and Swift integration tests."
+    notes: "Used app-facing HudEngine behavior is now exposed from CoreRuntime in capacitor-core with runtime_* modules and UniFFI bindgen entrypoint in this crate."
+
+  - id: RW-009
+    name: "Decouple Hud-Hook from Hud-Core"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-008
+    touched_paths:
+      - core/hud-hook/Cargo.toml
+      - core/hud-hook/src/hook_types.rs
+      - core/hud-hook/src/cwd.rs
+      - core/hud-hook/src/handle.rs
+      - core/hud-hook/src/runtime_client.rs
+      - core/hud-hook/src/logging.rs
+      - core/hud-hook/src/main.rs
+      - Cargo.lock
+    contracts:
+      added:
+        - core/hud-hook/src/hook_types.rs
+      changed:
+        - core/hud-hook/Cargo.toml
+        - core/hud-hook/src/cwd.rs
+        - core/hud-hook/src/handle.rs
+        - core/hud-hook/src/runtime_client.rs
+        - core/hud-hook/src/logging.rs
+        - core/hud-hook/src/main.rs
+        - Cargo.lock
+      removed: []
+    replay_scenarios:
+      - shell_cwd_churn_tmux_and_non_tmux
+    smoke_scenarios:
+      - live_state_update_while_coding
+    denylist_patterns:
+      - "content:core/hud-hook/src/runtime_client.rs::CAPACITOR_DAEMON_ENABLED"
+      - "content:core/hud-hook/Cargo.toml::hud-core"
+    deletion_targets: []
+    risks: []
+    notes: "hud-hook no longer imports hud-core types and now maps hook payloads via local adapters plus capacitor-core domain types."
+
+  - id: RW-010
+    name: "Swift FFI Cutover to Capacitor-Core and Typed Snapshot"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-009
+    touched_paths:
+      - apps/swift/Package.swift
+      - apps/swift/Sources/CapacitorCoreFFI/*
+      - apps/swift/Sources/HudCoreFFI/*
+      - apps/swift/Sources/Capacitor/Bridge/capacitor_core*
+      - apps/swift/Sources/Capacitor/Bridge/hud_core*
+      - apps/swift/bindings/capacitor_core*
+      - apps/swift/bindings/hud_core*
+      - apps/swift/Sources/Capacitor/App.swift
+      - apps/swift/Sources/Capacitor/Helpers/HookInstaller.swift
+      - apps/swift/Sources/Capacitor/Models/ActivationConfig.swift
+      - apps/swift/Sources/Capacitor/Models/AppState.swift
+      - apps/swift/Sources/Capacitor/Models/ProjectDetailsManager.swift
+      - apps/swift/Sources/Capacitor/Models/ProjectIngestionWorker.swift
+      - apps/swift/Sources/Capacitor/Models/RuntimeClient.swift
+      - apps/swift/Sources/Capacitor/Models/SetupRequirements.swift
+      - apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift
+      - apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift
+    contracts:
+      added:
+        - apps/swift/Sources/CapacitorCoreFFI/module.modulemap
+        - apps/swift/Sources/Capacitor/Bridge/capacitor_core.swift
+        - apps/swift/Sources/Capacitor/Bridge/capacitor_coreFFI.h
+        - apps/swift/Sources/Capacitor/Bridge/capacitor_coreFFI.modulemap
+      changed:
+        - apps/swift/Package.swift
+        - apps/swift/Sources/Capacitor/App.swift
+        - apps/swift/Sources/Capacitor/Helpers/HookInstaller.swift
+        - apps/swift/Sources/Capacitor/Models/ActivationConfig.swift
+        - apps/swift/Sources/Capacitor/Models/AppState.swift
+        - apps/swift/Sources/Capacitor/Models/ProjectDetailsManager.swift
+        - apps/swift/Sources/Capacitor/Models/ProjectIngestionWorker.swift
+        - apps/swift/Sources/Capacitor/Models/RuntimeClient.swift
+        - apps/swift/Sources/Capacitor/Models/SetupRequirements.swift
+        - apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift
+        - apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift
+        - apps/swift/bindings/capacitor_core.swift
+        - apps/swift/bindings/capacitor_coreFFI.h
+      removed:
+        - apps/swift/Sources/HudCoreFFI
+        - apps/swift/Sources/Capacitor/Bridge/hud_core.swift
+        - apps/swift/Sources/Capacitor/Bridge/hud_coreFFI.h
+        - apps/swift/Sources/Capacitor/Bridge/hud_coreFFI.modulemap
+        - apps/swift/bindings/hud_core.swift
+        - apps/swift/bindings/hud_coreFFI.h
+        - apps/swift/bindings/hud_coreFFI.modulemap
+    replay_scenarios:
+      - full_corpus
+    smoke_scenarios:
+      - fresh_install_setup_flow
+      - project_activation_and_trace_display
+    denylist_patterns:
+      - "content:apps/swift/Sources/Capacitor/Models/RuntimeClient.swift::CoreRuntimeSnapshot"
+      - "content:apps/swift/Sources/Capacitor/Models/RuntimeClient.swift::CoreRuntimeProjectState"
+      - "content:apps/swift/Sources/Capacitor/Models/RuntimeClient.swift::CoreRuntimeSessionState"
+      - "content:apps/swift/Sources/Capacitor/Models/RuntimeClient.swift::CoreRuntimeShellSignal"
+      - "content:apps/swift/Sources/Capacitor/Models/RuntimeClient.swift::CoreRuntimeRoutingView"
+      - "content:apps/swift/Sources/Capacitor/Models/RuntimeClient.swift::CoreRuntimeDiagnostics"
+    deletion_targets:
+      - apps/swift/Sources/HudCoreFFI
+      - apps/swift/Sources/Capacitor/Bridge/hud_core.swift
+      - apps/swift/Sources/Capacitor/Bridge/hud_coreFFI.h
+      - apps/swift/Sources/Capacitor/Bridge/hud_coreFFI.modulemap
+      - apps/swift/bindings/hud_core.swift
+      - apps/swift/bindings/hud_coreFFI.h
+      - apps/swift/bindings/hud_coreFFI.modulemap
+    risks:
+      - "Bridge regeneration can drift when UniFFI output changes; tests and release scripts must keep dylib/header/modulemap in lockstep."
+    notes: "Swift now links only capacitor_core and pulls typed AppSnapshot from CoreRuntime without private JSON mirror DTOs."
+
+  - id: RW-011
+    name: "Delete Hud-Core and Harden Zero-Vestige Guards"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-010
+    touched_paths:
+      - Cargo.toml
+      - Cargo.lock
+      - core/hud-core
+      - scripts/bootstrap.sh
+      - scripts/dev/restart-app.sh
+      - scripts/dev/run-tests.sh
+      - scripts/release/build-distribution.sh
+      - scripts/release/verify-app-bundle.sh
+      - .github/workflows/ci.yml
+      - .swiftformat
+      - apps/swift/.periphery.yml
+      - docs/ARCHITECTURE.md
+      - docs/PRE_RELEASE_CHECKLIST.md
+      - docs/architecture-decisions/006-hierarchical-evidence-matching-state-detection.md
+      - docs/transparent-ui/capacitor-interfaces-explorer.html
+      - docs/worktree-migration-post-alpha.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+      - .claude/**
+    contracts:
+      added: []
+      changed:
+        - Cargo.toml
+        - Cargo.lock
+        - scripts/bootstrap.sh
+        - scripts/dev/restart-app.sh
+        - scripts/dev/run-tests.sh
+        - scripts/release/build-distribution.sh
+        - scripts/release/verify-app-bundle.sh
+        - .github/workflows/ci.yml
+        - .swiftformat
+        - apps/swift/.periphery.yml
+        - docs/ARCHITECTURE.md
+        - docs/PRE_RELEASE_CHECKLIST.md
+        - docs/architecture-decisions/006-hierarchical-evidence-matching-state-detection.md
+        - docs/transparent-ui/capacitor-interfaces-explorer.html
+        - docs/worktree-migration-post-alpha.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed:
+        - core/hud-core
+    replay_scenarios:
+      - full_corpus
+    smoke_scenarios:
+      - full_smoke_suite
+    denylist_patterns:
+      - "core/hud-core"
+      - "apps/swift/Sources/HudCoreFFI"
+      - "apps/swift/Sources/Capacitor/Bridge/hud_core.swift"
+      - "apps/swift/bindings/hud_core*"
+      - "content:Cargo.toml::hud-core"
+      - "content:apps/swift/Package.swift::hud_coreFFI"
+      - "content:apps/swift/Package.swift::libhud_core"
+      - "content:apps/swift/Sources/Capacitor/*/*.swift::HudEngine"
+      - "content:apps/swift/Sources/Capacitor/*/*/*.swift::HudEngine"
+      - "content:scripts/release/build-distribution.sh::libhud_core"
+      - "content:scripts/release/verify-app-bundle.sh::libhud_core"
+    deletion_targets:
+      - core/hud-core
+      - apps/swift/Sources/HudCoreFFI
+      - apps/swift/Sources/Capacitor/Bridge/hud_core.swift
+      - apps/swift/Sources/Capacitor/Bridge/hud_coreFFI.h
+      - apps/swift/Sources/Capacitor/Bridge/hud_coreFFI.modulemap
+      - apps/swift/bindings/hud_core.swift
+      - apps/swift/bindings/hud_coreFFI.h
+      - apps/swift/bindings/hud_coreFFI.modulemap
+    risks:
+      - "Manual exploratory UX-only checks remain inherently non-deterministic; automated AX smoke plus tests are the enforced confidence baseline."
+    notes: "Hard-delete migration closed with passing rewrite guards, cargo test, session-state gate, non-demo AX smoke, bats suites, release build, and app-bundle verification."
+
+  - id: RW-012
+    name: "Post-Rewrite Vestigial Cleanup Sweep"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-011
+    touched_paths:
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+      - apps/swift/Sources/Capacitor/Views/Settings/SettingsView.swift
+      - apps/swift/Sources/Capacitor/Views/Setup/ShellInstructionsSheet.swift
+      - scripts/dev/clean-user-install.sh
+      - docs/SESSION_STATE_RELEASE_MATRIX.md
+      - docs/TERMINAL_ACTIVATION_MANUAL_TESTING.md
+      - docs/TERMINAL_ACTIVATION_UX_SPEC.md
+      - docs/alpha-feedback-telemetry-loop.md
+      - docs/ambient-routing-engine-runbook.md
+      - docs/architecture-decisions/003-sidecar-architecture-pattern.md
+      - docs/transparent-ui/README.md
+      - docs/transparent-ui/capacitor-interfaces-explorer.html
+      - docs/transparent-ui/enriched-data-model.ts
+      - docs/transparent-ui/session-machine-model.js
+      - docs/transparent-ui/session-machine-model.test.js
+    contracts:
+      added: []
+      changed:
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+        - apps/swift/Sources/Capacitor/Views/Settings/SettingsView.swift
+        - apps/swift/Sources/Capacitor/Views/Setup/ShellInstructionsSheet.swift
+        - scripts/dev/clean-user-install.sh
+        - docs/SESSION_STATE_RELEASE_MATRIX.md
+        - docs/TERMINAL_ACTIVATION_MANUAL_TESTING.md
+        - docs/TERMINAL_ACTIVATION_UX_SPEC.md
+        - docs/alpha-feedback-telemetry-loop.md
+        - docs/architecture-decisions/003-sidecar-architecture-pattern.md
+        - docs/transparent-ui/README.md
+        - docs/transparent-ui/capacitor-interfaces-explorer.html
+      removed:
+        - docs/ambient-routing-engine-runbook.md
+        - docs/transparent-ui/enriched-data-model.ts
+        - docs/transparent-ui/session-machine-model.js
+        - docs/transparent-ui/session-machine-model.test.js
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns:
+      - "content:apps/swift/Sources/Capacitor/Bridge/capacitor_core.swift::daemon"
+      - "content:apps/swift/bindings/capacitor_core.swift::daemon"
+    deletion_targets:
+      - docs/ambient-routing-engine-runbook.md
+      - docs/transparent-ui/enriched-data-model.ts
+      - docs/transparent-ui/session-machine-model.js
+      - docs/transparent-ui/session-machine-model.test.js
+    risks:
+      - "Doc and wording cleanup can accidentally erase useful historical context; keep architecture truth in active docs and rely on git history for archaeology."
+    notes: "Comprehensive vestigial cleanup sweep removed stale runtime/daemon-era docs and model artifacts, normalized remaining docs/copy to direct runtime terminology, and regenerated UniFFI bindings to purge stale generated wording."

@@ -1,0 +1,12 @@
+name = "capacitor-ingest-worker"
+main = "src/index.js"
+compatibility_date = "2026-02-16"
+
+[triggers]
+crons = ["17 */6 * * *"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "capacitor-alpha"
+database_id = "fb40a923-61ad-4b4d-a18d-d2fcd36c4f44"
+migrations_dir = "migrations"

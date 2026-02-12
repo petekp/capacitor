@@ -1,0 +1,77 @@
+#!/bin/bash
+
+# Pre-commit hook: fast checks before each commit
+# Install: ln -sf ../../scripts/dev/pre-commit .git/hooks/pre-commit
+
+set -e
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+echo "Running pre-commit checks..."
+
+# Auto-format staged files and re-stage them.
+STAGED_FILES=()
+while IFS= read -r file; do
+    if [ -n "$file" ]; then
+        STAGED_FILES+=("$file")
+    fi
+done < <(git diff --cached --name-only --diff-filter=ACMR)
+RUST_FILES=()
+SWIFT_FILES=()
+for file in "${STAGED_FILES[@]}"; do
+    if [[ "$file" == *.rs ]]; then
+        RUST_FILES+=("$file")
+    fi
+    if [[ "$file" =~ ^apps/swift/.*\.swift$ ]]; then
+        SWIFT_FILES+=("$file")
+    fi
+done
+
+if [ ${#RUST_FILES[@]} -gt 0 ]; then
+    echo "Auto-formatting Rust files..."
+    if ! cargo fmt -- "${RUST_FILES[@]}" >/dev/null 2>&1; then
+        echo -e "${RED}✗ Rust formatting failed${NC}"
+        exit 1
+    fi
+fi
+
+if [ ${#SWIFT_FILES[@]} -gt 0 ]; then
+    if command -v swiftformat &> /dev/null; then
+        echo "Auto-formatting Swift files..."
+        if ! swiftformat "${SWIFT_FILES[@]}" >/dev/null 2>&1; then
+            echo -e "${RED}✗ Swift formatting failed${NC}"
+            exit 1
+        fi
+    else
+        echo -e "${YELLOW}⚠ swiftformat not installed, skipping (brew install swiftformat)${NC}"
+    fi
+fi
+
+if [ ${#STAGED_FILES[@]} -gt 0 ]; then
+    git add -- "${STAGED_FILES[@]}"
+fi
+
+# 1. Rust formatting check (guardrail)
+if ! cargo fmt --check --quiet 2>/dev/null; then
+    echo -e "${RED}✗ Rust formatting issues remain${NC}"
+    exit 1
+fi
+
+# 2. Swift formatting check (guardrail)
+if command -v swiftformat &> /dev/null; then
+    if ! swiftformat --lint apps/swift >/dev/null 2>&1; then
+        echo -e "${RED}✗ Swift formatting issues remain${NC}"
+        exit 1
+    fi
+fi
+
+# 3. Rust tests (the main value - catches broken tests)
+if ! cargo test --quiet 2>/dev/null; then
+    echo -e "${RED}✗ Rust tests failed${NC}"
+    exit 1
+fi
+
+echo -e "${GREEN}✓ Pre-commit checks passed${NC}"

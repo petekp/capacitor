@@ -1,0 +1,223 @@
+slice_id,capability,current_path,target_path,status,delete_in_pr,notes
+RW-000,rewrite-charter,,rewrite/CHARTER.md,done,false,Foundational charter and constraints
+RW-000,rewrite-decisions,,rewrite/DECISIONS.md,done,false,Locked architecture decisions
+RW-000,rewrite-slices,,rewrite/SLICES.yaml,done,false,Slice registry and governance schema
+RW-000,rewrite-map,,rewrite/MAP.csv,done,false,File-to-slice mapping source of truth
+RW-000,rewrite-guard-script,,scripts/rewrite/check_rewrite_guards.sh,done,false,CI/local guard checks
+RW-000,ci-wiring,.github/workflows/ci.yml,.github/workflows/ci.yml,done,false,Run rewrite guards in CI and gate jobs
+RW-001,workspace-member-registration,Cargo.toml,Cargo.toml,done,false,Register new canonical core crate in workspace
+RW-001,workspace-lockfile,Cargo.lock,Cargo.lock,done,false,Lockfile update for new canonical core crate
+RW-001,canonical-core-crate,,core/capacitor-core/Cargo.toml,done,false,Define canonical core crate package and dependencies
+RW-001,canonical-core-lib,,core/capacitor-core/src/lib.rs,done,false,CoreRuntime UniFFI object and command handlers
+RW-001,canonical-domain-types,,core/capacitor-core/src/domain/*,done,false,Canonical domain contracts and snapshot schema
+RW-001,canonical-domain-identity,,core/capacitor-core/src/domain/identity.rs,done,false,Canonical project/workspace identity and boundary detection
+RW-001,canonical-ingest-normalization,,core/capacitor-core/src/ingest/*,done,false,Normalize inbound command shapes
+RW-001,canonical-reducer,,core/capacitor-core/src/reduce/*,done,false,Event-to-state projection logic
+RW-001,canonical-query,,core/capacitor-core/src/query/*,done,false,Snapshot query surface
+RW-001,canonical-activation,,core/capacitor-core/src/activate/*,done,false,Activation planning surface
+RW-001,canonical-storage,,core/capacitor-core/src/storage/*,done,false,Storage abstraction for snapshots
+RW-002,hud-hook-direct-core-ingest,Cargo.lock,Cargo.lock,done,false,Lockfile refresh after hooking hud-hook to capacitor-core
+RW-002,hud-hook-core-dependency,core/hud-hook/Cargo.toml,core/hud-hook/Cargo.toml,done,false,Replace daemon protocol dependency with capacitor-core
+RW-002,hud-hook-runtime-client,core/hud-hook/src/daemon_client.rs,core/hud-hook/src/daemon_client.rs,done,false,Direct-core runtime client with snapshot locking
+RW-002,hud-hook-handle-cutover,core/hud-hook/src/handle.rs,core/hud-hook/src/handle.rs,done,false,Route handle command through direct core ingest
+RW-002,hud-hook-cwd-cutover,core/hud-hook/src/cwd.rs,core/hud-hook/src/cwd.rs,done,false,Route cwd command through direct core ingest
+RW-002,hud-hook-mapping-gate-tests,core/hud-hook/tests/session_state_mapping_gate.rs,core/hud-hook/tests/session_state_mapping_gate.rs,done,false,Validate snapshot semantics instead of daemon socket envelopes
+RW-002,replay-diff-harness,,core/capacitor-core/tests/replay_diff.rs,done,false,Deterministic replay-diff harness for core runtime projections
+RW-002,replay-diff-fixtures,,core/capacitor-core/tests/fixtures/replay/*.json,done,false,Replay corpus fixtures for multi-project and out-of-order hook scenarios
+RW-002,swift-project-states-core-snapshot,apps/swift/Sources/Capacitor/Models/RuntimeClient.swift,apps/swift/Sources/Capacitor/Models/RuntimeClient.swift,done,false,Allow project state reads from core runtime snapshot file
+RW-002,swift-sessions-core-snapshot,apps/swift/Sources/Capacitor/Models/RuntimeClient.swift,apps/swift/Sources/Capacitor/Models/RuntimeClient.swift,done,false,Allow session reads from core runtime snapshot file
+RW-002,swift-shell-state-core-snapshot,apps/swift/Sources/Capacitor/Models/RuntimeClient.swift,apps/swift/Sources/Capacitor/Models/RuntimeClient.swift,done,false,Allow shell state reads from core runtime snapshot file
+RW-002,swift-runtime-snapshot-api,apps/swift/Sources/Capacitor/Models/RuntimeClient.swift,apps/swift/Sources/Capacitor/Models/RuntimeClient.swift,done,false,Expose unified runtime snapshot fetch that batches project/session/shell reads
+RW-002,swift-session-state-direct-apply,apps/swift/Sources/Capacitor/Models/SessionStateManager.swift,apps/swift/Sources/Capacitor/Models/SessionStateManager.swift,done,false,Allow applying daemon project states from shared snapshot without per-manager network fetch
+RW-002,swift-shell-state-direct-apply,apps/swift/Sources/Capacitor/Models/ShellStateStore.swift,apps/swift/Sources/Capacitor/Models/ShellStateStore.swift,done,false,Allow applying shell state from shared snapshot tick and reuse routing refresh
+RW-002,swift-appstate-unified-runtime-tick,apps/swift/Sources/Capacitor/Models/AppState.swift,apps/swift/Sources/Capacitor/Models/AppState.swift,done,false,Use one runtime snapshot refresh task per tick to fan out project/session/shell state
+RW-002,swift-project-states-core-snapshot-tests,apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift,apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift,done,false,Verify core snapshot read path for project states
+RW-002,swift-sessions-core-snapshot-tests,apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift,apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift,done,false,Verify core snapshot read path for sessions
+RW-002,swift-shell-state-core-snapshot-tests,apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift,apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift,done,false,Verify core snapshot read path for shell state
+RW-002,swift-runtime-snapshot-tests,apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift,apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift,done,false,Verify unified runtime snapshot fetch can load all read models from core snapshot without transport
+RW-002,swift-session-state-direct-apply-tests,apps/swift/Tests/CapacitorTests/SessionStateManagerTests.swift,apps/swift/Tests/CapacitorTests/SessionStateManagerTests.swift,done,false,Verify direct daemon-project-state apply path updates state cache without network refresh
+RW-002,swift-shell-state-direct-apply-tests,apps/swift/Tests/CapacitorTests/ShellStateStoreRoutingStatusTests.swift,apps/swift/Tests/CapacitorTests/ShellStateStoreRoutingStatusTests.swift,done,false,Verify shell store accepts direct shell state application from shared runtime tick
+RW-002,swift-appstate-runtime-refresh-guard-tests,apps/swift/Tests/CapacitorTests/AppStateRuntimeStartupRegressionTests.swift,apps/swift/Tests/CapacitorTests/AppStateRuntimeStartupRegressionTests.swift,done,false,Guard against reintroducing legacy manager fallback or shell polling controls in AppState runtime refresh path
+RW-003,swift-daemonclient-snapshot-only,apps/swift/Sources/Capacitor/Models/RuntimeClient.swift,apps/swift/Sources/Capacitor/Models/RuntimeClient.swift,done,false,Hard-cut daemon socket transport fallback and derive runtime/routing reads from core snapshot only
+RW-003,swift-appstate-direct-core-health,apps/swift/Sources/Capacitor/Models/AppState.swift,apps/swift/Sources/Capacitor/Models/AppState.swift,done,false,Remove DaemonService startup/recovery orchestration and keep health status aligned to core snapshot availability
+RW-003,swift-daemonclient-snapshot-only-tests,apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift,apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift,done,false,Lock snapshot-only DaemonClient behavior and route derivation semantics
+RW-003,swift-appstate-no-daemon-launch-tests,apps/swift/Tests/CapacitorTests/AppStateRuntimeStartupRegressionTests.swift,apps/swift/Tests/CapacitorTests/AppStateRuntimeStartupRegressionTests.swift,done,false,Guard against reintroducing daemon launchd lifecycle paths in AppState
+RW-003,swift-daemonservice-delete,apps/swift/Sources/Capacitor/Helpers/DaemonService.swift,,done,true,Delete launchd daemon lifecycle manager after hard cut to direct core snapshot runtime
+RW-003,swift-daemon-recovery-decider-delete,apps/swift/Sources/Capacitor/Models/DaemonRecoveryDecider.swift,,done,true,Delete unused daemon restart policy helper after removing daemon startup orchestration
+RW-003,swift-daemon-status-evaluator-delete,apps/swift/Sources/Capacitor/Models/DaemonStatusEvaluator.swift,,done,true,Delete unused daemon startup grace/failure evaluator after direct core health model
+RW-003,swift-daemonservice-tests-delete,apps/swift/Tests/CapacitorTests/DaemonServiceTests.swift,,done,true,Delete daemon lifecycle unit tests tied to removed DaemonService
+RW-003,swift-daemon-recovery-decider-tests-delete,apps/swift/Tests/CapacitorTests/DaemonRecoveryDeciderTests.swift,,done,true,Delete unit tests for removed daemon restart decider
+RW-003,swift-daemon-status-evaluator-tests-delete,apps/swift/Tests/CapacitorTests/DaemonStatusEvaluatorTests.swift,,done,true,Delete unit tests for removed daemon status evaluator
+RW-003,swift-terminal-launcher-core-resolver-default,apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift,apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift,done,false,Default terminal activation path resolves directly from Rust activation decision contracts instead of daemon routing snapshot client reads
+RW-003,swift-terminal-launcher-core-resolver-tests,apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift,apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift,done,false,Guard default launcher dependency direction toward core resolver decisions
+RW-003,swift-shell-state-store-routing-snapshot-removal,apps/swift/Sources/Capacitor/Models/ShellStateStore.swift,apps/swift/Sources/Capacitor/Models/ShellStateStore.swift,done,false,Remove daemon-shaped routing snapshot cache from shell store and keep it as shell-signal state only
+RW-003,swift-shell-state-store-routing-snapshot-removal-tests,apps/swift/Tests/CapacitorTests/ShellStateStoreRoutingStatusTests.swift,apps/swift/Tests/CapacitorTests/ShellStateStoreRoutingStatusTests.swift,done,false,Rebaseline shell store tests around direct shell state application without routing snapshot coupling
+RW-003,swift-debug-shell-card-core-routing,apps/swift/Sources/Capacitor/Views/Debug/DebugShellStateCard.swift,apps/swift/Sources/Capacitor/Views/Debug/DebugShellStateCard.swift,done,false,Use core-native routing diagnostics read model in debug UI to avoid daemon routing DTO coupling
+RW-003,swift-runtime-status-model-rename-surface,apps/swift/Sources/Capacitor/Models/RuntimeStatus.swift,apps/swift/Sources/Capacitor/Models/RuntimeStatus.swift,done,false,Keep runtime health model naming aligned to direct core runtime status semantics
+RW-003,swift-runtime-status-ui-card,apps/swift/Sources/Capacitor/Views/Components/RuntimeStatusCard.swift,apps/swift/Sources/Capacitor/Views/Components/RuntimeStatusCard.swift,done,false,Keep status card bound to RuntimeStatus while daemon lifecycle implementation is removed
+RW-003,swift-runtime-status-ui-badge,apps/swift/Sources/Capacitor/Views/Debug/RuntimeStatus/RuntimeStatusBadge.swift,apps/swift/Sources/Capacitor/Views/Debug/RuntimeStatus/RuntimeStatusBadge.swift,done,false,Keep debug status badge bound to RuntimeStatus while daemon naming cleanup continues
+RW-003,swift-debug-project-panel-runtime-health,apps/swift/Sources/Capacitor/Views/Debug/DebugProjectListPanel.swift,apps/swift/Sources/Capacitor/Views/Debug/DebugProjectListPanel.swift,done,false,Update debug project list panel to runtime terminology and core snapshot health wiring
+RW-003,swift-debug-session-card-runtime-health,apps/swift/Sources/Capacitor/Views/Debug/DebugSessionStateCard.swift,apps/swift/Sources/Capacitor/Views/Debug/DebugSessionStateCard.swift,done,false,Update debug session card to runtime terminology and core snapshot health wiring
+RW-003,swift-routing-rollout-runtime-types,apps/swift/Sources/Capacitor/Views/Debug/RuntimeStatus/RoutingRolloutBadge.swift,apps/swift/Sources/Capacitor/Views/Debug/RuntimeStatus/RoutingRolloutBadge.swift,done,false,Align routing rollout badge API with runtime-owned rollout model types
+RW-003,swift-runtime-health-diagnostics-logger,apps/swift/Sources/Capacitor/Utilities/DiagnosticsSnapshotLogger.swift,apps/swift/Sources/Capacitor/Utilities/DiagnosticsSnapshotLogger.swift,done,false,Rebase diagnostics snapshot logs on runtime status naming instead of daemon lifecycle wording
+RW-003,swift-quick-feedback-runtime-context,apps/swift/Sources/Capacitor/Utilities/QuickFeedback.swift,apps/swift/Sources/Capacitor/Utilities/QuickFeedback.swift,done,false,Carry runtime status in quick feedback context now that daemon lifecycle APIs are removed
+RW-003,swift-runtime-date-parser-surface,apps/swift/Sources/Capacitor/Helpers/RuntimeDateParser.swift,apps/swift/Sources/Capacitor/Helpers/RuntimeDateParser.swift,done,false,Rename date parser API to runtime terminology for core snapshot timestamp parsing
+RW-003,swift-runtime-date-parser-active-project,apps/swift/Sources/Capacitor/Models/ActiveProjectResolver.swift,apps/swift/Sources/Capacitor/Models/ActiveProjectResolver.swift,done,false,Align active project timestamp parsing call sites with runtime parser naming
+RW-003,swift-runtime-date-parser-project-ordering,apps/swift/Sources/Capacitor/Utilities/ProjectOrdering.swift,apps/swift/Sources/Capacitor/Utilities/ProjectOrdering.swift,done,false,Align project ordering timestamp parsing call sites with runtime parser naming
+RW-003,swift-runtime-env-hook-snippets,apps/swift/Sources/Capacitor/Models/ShellSetupInstructions.swift,apps/swift/Sources/Capacitor/Models/ShellSetupInstructions.swift,done,false,Rename shell hook install snippets to runtime enablement env key
+RW-003,swift-quick-feedback-runtime-context-tests,apps/swift/Tests/CapacitorTests/QuickFeedbackSubmitterTests.swift,apps/swift/Tests/CapacitorTests/QuickFeedbackSubmitterTests.swift,done,false,Verify quick feedback payload encodes runtime status fields after daemon lifecycle deletion
+RW-003,swift-demo-mode-runtime-status-tests,apps/swift/Tests/CapacitorTests/DemoModeAppStateTests.swift,apps/swift/Tests/CapacitorTests/DemoModeAppStateTests.swift,done,false,Lock demo mode behavior against runtime status naming and direct core health path
+RW-003,swift-routing-rollout-runtime-types-tests,apps/swift/Tests/CapacitorTests/RoutingRolloutBadgeCopyTests.swift,apps/swift/Tests/CapacitorTests/RoutingRolloutBadgeCopyTests.swift,done,false,Lock routing rollout debug copy semantics while migrating to runtime rollout type names
+RW-003,swift-runtime-date-parser-tests,apps/swift/Tests/CapacitorTests/RuntimeDateParserTests.swift,apps/swift/Tests/CapacitorTests/RuntimeDateParserTests.swift,done,false,Verify runtime parser continues to accept canonical timestamp variants after naming migration
+RW-003,swift-runtime-env-hook-snippets-tests,apps/swift/Tests/CapacitorTests/ShellSetupInstructionsTests.swift,apps/swift/Tests/CapacitorTests/ShellSetupInstructionsTests.swift,done,false,Verify shell hook instructions emit runtime enablement env key
+RW-003,swift-runtime-file-rename-client,apps/swift/Sources/Capacitor/Models/DaemonClient.swift,apps/swift/Sources/Capacitor/Models/RuntimeClient.swift,done,false,Rename daemon client file to runtime client file while preserving guardrail coverage of moved path
+RW-003,swift-runtime-file-rename-status-model,apps/swift/Sources/Capacitor/Models/DaemonStatus.swift,apps/swift/Sources/Capacitor/Models/RuntimeStatus.swift,done,false,Rename daemon status model file to runtime status file while preserving guardrail coverage of moved path
+RW-003,swift-runtime-file-rename-date-parser,apps/swift/Sources/Capacitor/Helpers/DaemonDateParser.swift,apps/swift/Sources/Capacitor/Helpers/RuntimeDateParser.swift,done,false,Rename daemon date parser file to runtime parser file while preserving guardrail coverage of moved path
+RW-003,swift-runtime-file-rename-status-card,apps/swift/Sources/Capacitor/Views/Components/DaemonStatusCard.swift,apps/swift/Sources/Capacitor/Views/Components/RuntimeStatusCard.swift,done,false,Rename daemon status card file to runtime status card file while preserving guardrail coverage of moved path
+RW-003,swift-runtime-file-rename-status-badge,apps/swift/Sources/Capacitor/Views/Debug/DaemonStatus/DaemonStatusBadge.swift,apps/swift/Sources/Capacitor/Views/Debug/RuntimeStatus/RuntimeStatusBadge.swift,done,false,Rename daemon status badge file to runtime status badge file while preserving guardrail coverage of moved path
+RW-003,swift-runtime-file-rename-rollout-badge,apps/swift/Sources/Capacitor/Views/Debug/DaemonStatus/RoutingRolloutBadge.swift,apps/swift/Sources/Capacitor/Views/Debug/RuntimeStatus/RoutingRolloutBadge.swift,done,false,Rename daemon status rollout badge path to runtime status path while preserving guardrail coverage of moved path
+RW-003,swift-runtime-file-rename-client-tests,apps/swift/Tests/CapacitorTests/DaemonClientTests.swift,apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift,done,false,Rename daemon client test file to runtime client test file while preserving guardrail coverage of moved path
+RW-003,swift-runtime-file-rename-startup-tests,apps/swift/Tests/CapacitorTests/AppStateDaemonStartupRegressionTests.swift,apps/swift/Tests/CapacitorTests/AppStateRuntimeStartupRegressionTests.swift,done,false,Rename daemon startup regression test file to runtime startup regression test file while preserving guardrail coverage of moved path
+RW-003,swift-runtime-file-rename-date-parser-tests,apps/swift/Tests/CapacitorTests/DaemonDateParserTests.swift,apps/swift/Tests/CapacitorTests/RuntimeDateParserTests.swift,done,false,Rename daemon date parser tests file to runtime parser tests file while preserving guardrail coverage of moved path
+RW-004,rw004-com-capacitor-daemon-plist,apps/swift/Resources/LaunchAgents/com.capacitor.daemon.plist,,done,true,Legacy surface removed in daemon/IPC deletion
+RW-004,rw004-debuglog-swift,apps/swift/Sources/Capacitor/Utilities/DebugLog.swift,apps/swift/Sources/Capacitor/Utilities/DebugLog.swift,done,false,Legacy surface cleanup and runtime-first cutover
+RW-004,rw004-telemetry-swift,apps/swift/Sources/Capacitor/Utilities/Telemetry.swift,apps/swift/Sources/Capacitor/Utilities/Telemetry.swift,done,false,Legacy surface cleanup and runtime-first cutover
+RW-004,rw004-telemetryroutingpolicy-swift,apps/swift/Sources/Capacitor/Utilities/TelemetryRoutingPolicy.swift,apps/swift/Sources/Capacitor/Utilities/TelemetryRoutingPolicy.swift,done,false,Legacy surface cleanup and runtime-first cutover
+RW-004,rw004-cargo-toml,core/daemon-protocol/Cargo.toml,,done,true,Legacy surface removed in daemon/IPC deletion
+RW-004,rw004-ipc-client-rs,core/daemon-protocol/src/ipc_client.rs,,done,true,Legacy surface removed in daemon/IPC deletion
+RW-004,rw004-lib-rs,core/daemon-protocol/src/lib.rs,,done,true,Legacy surface removed in daemon/IPC deletion
+RW-004,rw004-cargo-toml,core/daemon/Cargo.toml,,done,true,Legacy surface removed in daemon/IPC deletion
+RW-004,rw004-hem-v2-example-toml,core/daemon/config/hem-v2.example.toml,,done,true,Legacy surface removed in daemon/IPC deletion
+RW-004,rw004-activity-rs,core/daemon/src/activity.rs,,done,true,Legacy surface removed in daemon/IPC deletion
+RW-004,rw004-metrics-rs,core/daemon/src/are/metrics.rs,,done,true,Legacy surface removed in daemon/IPC deletion
+RW-004,rw004-mod-rs,core/daemon/src/are/mod.rs,,done,true,Legacy surface removed in daemon/IPC deletion
+RW-004,rw004-registry-rs,core/daemon/src/are/registry.rs,,done,true,Legacy surface removed in daemon/IPC deletion
+RW-004,rw004-resolver-rs,core/daemon/src/are/resolver.rs,,done,true,Legacy surface removed in daemon/IPC deletion
+RW-004,rw004-state-rs,core/daemon/src/are/state.rs,,done,true,Legacy surface removed in daemon/IPC deletion
+RW-004,rw004-tmux-poller-rs,core/daemon/src/are/tmux_poller.rs,,done,true,Legacy surface removed in daemon/IPC deletion
+RW-004,rw004-backoff-rs,core/daemon/src/backoff.rs,,done,true,Legacy surface removed in daemon/IPC deletion
+RW-004,rw004-boundaries-rs,core/daemon/src/boundaries.rs,,done,true,Legacy surface removed in daemon/IPC deletion
+RW-004,rw004-db-rs,core/daemon/src/db.rs,,done,true,Legacy surface removed in daemon/IPC deletion
+RW-004,rw004-hem-rs,core/daemon/src/hem.rs,,done,true,Legacy surface removed in daemon/IPC deletion
+RW-004,rw004-main-rs,core/daemon/src/main.rs,,done,true,Legacy surface removed in daemon/IPC deletion
+RW-004,rw004-process-rs,core/daemon/src/process.rs,,done,true,Legacy surface removed in daemon/IPC deletion
+RW-004,rw004-project-identity-rs,core/daemon/src/project_identity.rs,,done,true,Legacy surface removed in daemon/IPC deletion
+RW-004,rw004-project-state-policy-rs,core/daemon/src/project_state_policy.rs,,done,true,Legacy surface removed in daemon/IPC deletion
+RW-004,rw004-reducer-rs,core/daemon/src/reducer.rs,,done,true,Legacy surface removed in daemon/IPC deletion
+RW-004,rw004-replay-rs,core/daemon/src/replay.rs,,done,true,Legacy surface removed in daemon/IPC deletion
+RW-004,rw004-session-store-rs,core/daemon/src/session_store.rs,,done,true,Legacy surface removed in daemon/IPC deletion
+RW-004,rw004-state-rs,core/daemon/src/state.rs,,done,true,Legacy surface removed in daemon/IPC deletion
+RW-004,rw004-hem-shadow-bench-rs,core/daemon/tests/hem_shadow_bench.rs,,done,true,Legacy surface removed in daemon/IPC deletion
+RW-004,rw004-ipc-hardening-rs,core/daemon/tests/ipc_hardening.rs,,done,true,Legacy surface removed in daemon/IPC deletion
+RW-004,rw004-ipc-smoke-rs,core/daemon/tests/ipc_smoke.rs,,done,true,Legacy surface removed in daemon/IPC deletion
+RW-004,rw004-session-state-release-gate-rs,core/daemon/tests/session_state_release_gate.rs,,done,true,Legacy surface removed in daemon/IPC deletion
+RW-004,rw004-cargo-toml,core/capacitor-core/Cargo.toml,core/capacitor-core/Cargo.toml,done,false,Legacy surface cleanup and runtime-first cutover
+RW-004,rw004-claude-rs,core/capacitor-core/src/agents/claude.rs,core/capacitor-core/src/agents/claude.rs,done,false,Legacy surface cleanup and runtime-first cutover
+RW-004,rw004-engine-rs,core/capacitor-core/src/engine.rs,core/capacitor-core/src/engine.rs,done,false,Legacy surface cleanup and runtime-first cutover
+RW-004,rw004-setup-rs,core/capacitor-core/src/setup.rs,core/capacitor-core/src/setup.rs,done,false,Legacy surface cleanup and runtime-first cutover
+RW-004,rw004-daemon-rs,core/capacitor-core/src/state/daemon.rs,core/capacitor-core/src/state/daemon.rs,done,false,Legacy surface cleanup and runtime-first cutover
+RW-004,rw004-mod-rs,core/capacitor-core/src/state/mod.rs,core/capacitor-core/src/state/mod.rs,done,false,Legacy surface cleanup and runtime-first cutover
+RW-004,rw004-agent-fixtures-rs,core/capacitor-core/tests/agent_fixtures.rs,core/capacitor-core/tests/agent_fixtures.rs,done,false,Legacy surface cleanup and runtime-first cutover
+RW-004,rw004-main-rs,core/hud-hook/src/main.rs,core/hud-hook/src/main.rs,done,false,Legacy surface cleanup and runtime-first cutover
+RW-004,rw004-hem-shadow-bench-sh,scripts/ci/hem-shadow-bench.sh,scripts/ci/hem-shadow-bench.sh,done,false,Legacy surface cleanup and runtime-first cutover
+RW-004,rw004-session-state-gate-sh,scripts/ci/session-state-gate.sh,scripts/ci/session-state-gate.sh,done,false,Legacy surface cleanup and runtime-first cutover
+RW-004,rw004-agent-observe-sh,scripts/dev/agent-observe.sh,scripts/dev/agent-observe.sh,done,false,Legacy surface cleanup and runtime-first cutover
+RW-004,rw004-reset-for-testing-sh,scripts/dev/reset-for-testing.sh,scripts/dev/reset-for-testing.sh,done,false,Legacy surface cleanup and runtime-first cutover
+RW-004,rw004-restart-app-sh,scripts/dev/restart-app.sh,scripts/dev/restart-app.sh,done,false,Legacy surface cleanup and runtime-first cutover
+RW-004,rw004-build-distribution-sh,scripts/release/build-distribution.sh,scripts/release/build-distribution.sh,done,false,Legacy surface cleanup and runtime-first cutover
+RW-004,rw004-verify-app-bundle-sh,scripts/release/verify-app-bundle.sh,scripts/release/verify-app-bundle.sh,done,false,Legacy surface cleanup and runtime-first cutover
+RW-004,rw004-transparent-ui-server-mjs,scripts/transparent-ui-server.mjs,scripts/transparent-ui-server.mjs,done,false,Legacy surface cleanup and runtime-first cutover
+RW-004,rw004-hud-hook-smoke-bats,tests/hud-hook/hud-hook-smoke.bats,tests/hud-hook/hud-hook-smoke.bats,done,false,Legacy surface cleanup and runtime-first cutover
+RW-004,rw004-readme-runtime-doc,README.md,README.md,done,false,Top-level docs switched from daemon model to runtime-snapshot model
+RW-004,rw004-contributing-runtime-structure,CONTRIBUTING.md,CONTRIBUTING.md,done,false,Contributing structure updated for capacitor-core runtime architecture
+RW-004,rw004-claude-runtime-tracking-doc,CLAUDE.md,CLAUDE.md,done,false,Agent-facing architecture guide updated to runtime snapshot flow
+RW-004,rw004-remove-daemon-ipc-doc,docs/daemon-ipc.md,,done,true,Removed stale daemon IPC contract doc after daemon deletion
+RW-004,rw004-remove-daemon-adr,docs/architecture-decisions/005-daemon-based-state-service.md,,done,true,Removed obsolete daemon architecture decision doc
+RW-004,rw004-add-runtime-architecture-doc,,docs/ARCHITECTURE.md,done,false,Added concise canonical runtime architecture document
+RW-006,demo-runtime-removal-appstate,apps/swift/Sources/Capacitor/Models/AppState.swift,apps/swift/Sources/Capacitor/Models/AppState.swift,done,false,Remove demo-mode control flow and side-effect bypass from app runtime
+RW-006,demo-runtime-removal-app-delegate,apps/swift/Sources/Capacitor/App.swift,apps/swift/Sources/Capacitor/App.swift,done,false,Always validate hook setup at launch without demo-mode bypass
+RW-006,feedback-header-always-on,apps/swift/Sources/Capacitor/Views/Header/HeaderView.swift,apps/swift/Sources/Capacitor/Views/Header/HeaderView.swift,done,false,Remove demo-gated feedback button rendering
+RW-006,ax-identifiers-helper-new,,apps/swift/Sources/Capacitor/Utils/AccessibilityIdentifiers.swift,done,false,Introduce neutral accessibility identifier helper for smoke selectors
+RW-006,ax-identifiers-helper-legacy-delete,apps/swift/Sources/Capacitor/Utils/DemoAccessibility.swift,,done,true,Delete demo-named accessibility helper
+RW-006,project-card-ax-selector-update,apps/swift/Sources/Capacitor/Views/Projects/ProjectCardView.swift,apps/swift/Sources/Capacitor/Views/Projects/ProjectCardView.swift,done,false,Switch card and details selectors to neutral accessibility helper
+RW-006,dock-card-ax-selector-update,apps/swift/Sources/Capacitor/Views/Projects/DockProjectCard.swift,apps/swift/Sources/Capacitor/Views/Projects/DockProjectCard.swift,done,false,Switch dock selectors to neutral accessibility helper
+RW-006,project-detail-ax-selector-update,apps/swift/Sources/Capacitor/Views/Projects/ProjectDetailView.swift,apps/swift/Sources/Capacitor/Views/Projects/ProjectDetailView.swift,done,false,Switch detail navigation selectors to neutral accessibility helper
+RW-006,demo-config-delete,apps/swift/Sources/Capacitor/Utils/DemoConfig.swift,,done,true,Delete demo environment configuration model
+RW-006,demo-fixtures-delete,apps/swift/Sources/Capacitor/Demo/*,,done,true,Delete in-app demo fixture runtime surface
+RW-006,demo-tests-delete,apps/swift/Tests/CapacitorTests/Demo*.swift,,done,true,Delete demo-mode/config/fixture regression tests
+RW-006,ax-test-rename,apps/swift/Tests/CapacitorTests/DemoAccessibilityMarkersRegressionTests.swift,apps/swift/Tests/CapacitorTests/AccessibilityIdentifiersRegressionTests.swift,done,false,Rename and repoint accessibility selector regression tests away from demo naming
+RW-006,ax-runner-relocation,scripts/demo/ax_runner.swift,scripts/ax/ax_runner.swift,done,false,Move AX runner to neutral scripts/ax namespace
+RW-006,demo-automation-delete,scripts/demo/**,,done,true,Delete promo video automation scripts and fixture scenarios
+RW-006,manual-demo-doc-delete,docs/manual-qa/automated-demo-vertical-slice.md,,done,true,Remove obsolete demo automation manual guide
+RW-006,restart-app-demo-cleanup,scripts/dev/restart-app.sh,scripts/dev/restart-app.sh,done,false,Remove demo env preserve/unset logic
+RW-006,non-demo-ax-script-update,scripts/ci/non-demo-ax-smoke.sh,scripts/ci/non-demo-ax-smoke.sh,done,false,Retarget smoke selectors to ax.* namespace and neutral runner path
+RW-006,release-checklist-ax-prefix,docs/PRE_RELEASE_CHECKLIST.md,docs/PRE_RELEASE_CHECKLIST.md,done,false,Update checklist selector contract to ax.* prefix
+RW-006,restart-app-demo-env-test-delete,tests/dev-scripts/restart-app-demo-env.bats,,done,true,Delete obsolete restart-app demo-env behavior tests
+RW-006,rewrite-map-update,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Register demo-excision file mapping coverage for guard checks
+RW-006,rewrite-slices-update,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record demo-excision slice and deletion targets
+RW-006,uniffi-generated-bridge-file,apps/swift/Sources/Capacitor/Bridge/capacitor_core.swift,apps/swift/Sources/Capacitor/Bridge/capacitor_core.swift,done,false,Generated UniFFI bridge file touched during runtime rebuild
+RW-006,uniffi-generated-bindings-file,apps/swift/bindings/capacitor_core.swift,apps/swift/bindings/capacitor_core.swift,done,false,Generated UniFFI bindings source touched during runtime rebuild
+RW-007,rewrite-slices-rw007,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Add RW-007..RW-011 governance coverage
+RW-007,rewrite-map-rw007,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Add hud-core elimination path mappings
+RW-007,rewrite-guard-script-rw007,scripts/rewrite/check_rewrite_guards.sh,scripts/rewrite/check_rewrite_guards.sh,done,false,Extend denylist enforcement for hud-core elimination
+RW-007,ci-guard-wiring-rw007,.github/workflows/ci.yml,.github/workflows/ci.yml,done,false,Ensure rewrite guard remains mandatory in CI
+RW-007,agent-audit-docs-rw007,.claude/**,.claude/**,done,false,Carry forward rewrite audit notes touched during hud-core elimination
+RW-008,core-runtime-crate-rw008,core/capacitor-core/Cargo.toml,core/capacitor-core/Cargo.toml,done,false,Add dependencies and bindgen bin for expanded runtime surface
+RW-008,core-runtime-lib-rw008,core/capacitor-core/src/lib.rs,core/capacitor-core/src/lib.rs,done,false,Expose absorbed runtime methods from CoreRuntime
+RW-008,core-runtime-modules-rw008,,core/capacitor-core/src/runtime_*.rs,done,false,Port used HudEngine modules into capacitor-core runtime namespace
+RW-008,core-runtime-activation-rw008,,core/capacitor-core/src/runtime_activation/*,done,false,Port activation policy and trace modules
+RW-008,core-runtime-state-rw008,,core/capacitor-core/src/runtime_state/*,done,false,Port runtime state helpers/path utils/snapshot helpers
+RW-008,core-uniffi-bindgen-rw008,,core/capacitor-core/uniffi-bindgen.rs,done,false,Add bindgen entrypoint under capacitor-core
+RW-008,workspace-lock-rw008,Cargo.lock,Cargo.lock,done,false,Lockfile refresh after runtime surface absorption
+RW-009,hud-hook-cargo-rw009,core/hud-hook/Cargo.toml,core/hud-hook/Cargo.toml,done,false,Remove hud-core dependency and keep capacitor-core only
+RW-009,hud-hook-local-types-rw009,,core/hud-hook/src/hook_types.rs,done,false,Introduce hook payload adapters local to hud-hook
+RW-009,hud-hook-cwd-rw009,core/hud-hook/src/cwd.rs,core/hud-hook/src/cwd.rs,done,false,Cut hud-hook over to capacitor-core contracts
+RW-009,hud-hook-handle-rw009,core/hud-hook/src/handle.rs,core/hud-hook/src/handle.rs,done,false,Cut hud-hook over to capacitor-core contracts
+RW-009,hud-hook-runtime-client-rw009,core/hud-hook/src/runtime_client.rs,core/hud-hook/src/runtime_client.rs,done,false,Cut hud-hook over to capacitor-core contracts
+RW-009,hud-hook-logging-rw009,core/hud-hook/src/logging.rs,core/hud-hook/src/logging.rs,done,false,Cut hud-hook over to capacitor-core contracts
+RW-009,hud-hook-main-rw009,core/hud-hook/src/main.rs,core/hud-hook/src/main.rs,done,false,Cut hud-hook over to capacitor-core contracts
+RW-010,swift-package-cutover-rw010,apps/swift/Package.swift,apps/swift/Package.swift,done,false,Switch system lib/linking to capacitor_core
+RW-010,swift-ffi-systemlib-rw010,,apps/swift/Sources/CapacitorCoreFFI/*,done,false,Canonical system library modulemap for capacitor_coreFFI
+RW-010,swift-ffi-bridge-capacitor-rw010,,apps/swift/Sources/Capacitor/Bridge/capacitor_core*,done,false,Generated capacitor-core bridge artifacts
+RW-010,swift-ffi-bridge-hud-delete-rw010,apps/swift/Sources/Capacitor/Bridge/hud_core*,,done,true,Delete hud-core bridge artifacts
+RW-010,swift-bindings-capacitor-rw010,apps/swift/bindings/capacitor_core*,apps/swift/bindings/capacitor_core*,done,false,Generated capacitor-core Swift bindings
+RW-010,swift-bindings-hud-delete-rw010,apps/swift/bindings/hud_core*,,done,true,Delete hud-core generated bindings
+RW-010,swift-systemlib-hud-delete-rw010,apps/swift/Sources/HudCoreFFI/*,,done,true,Delete legacy HudCoreFFI system library target
+RW-010,swift-appstate-rw010,apps/swift/Sources/Capacitor/App.swift,apps/swift/Sources/Capacitor/App.swift,done,false,Replace HudEngine and JSON mirrors with CoreRuntime typed snapshot APIs
+RW-010,swift-hookinstaller-rw010,apps/swift/Sources/Capacitor/Helpers/HookInstaller.swift,apps/swift/Sources/Capacitor/Helpers/HookInstaller.swift,done,false,Replace HudEngine and JSON mirrors with CoreRuntime typed snapshot APIs
+RW-010,swift-activation-config-rw010,apps/swift/Sources/Capacitor/Models/ActivationConfig.swift,apps/swift/Sources/Capacitor/Models/ActivationConfig.swift,done,false,Replace HudEngine and JSON mirrors with CoreRuntime typed snapshot APIs
+RW-010,swift-appstate-model-rw010,apps/swift/Sources/Capacitor/Models/AppState.swift,apps/swift/Sources/Capacitor/Models/AppState.swift,done,false,Replace HudEngine and JSON mirrors with CoreRuntime typed snapshot APIs
+RW-010,swift-project-details-rw010,apps/swift/Sources/Capacitor/Models/ProjectDetailsManager.swift,apps/swift/Sources/Capacitor/Models/ProjectDetailsManager.swift,done,false,Replace HudEngine and JSON mirrors with CoreRuntime typed snapshot APIs
+RW-010,swift-project-ingestion-rw010,apps/swift/Sources/Capacitor/Models/ProjectIngestionWorker.swift,apps/swift/Sources/Capacitor/Models/ProjectIngestionWorker.swift,done,false,Replace HudEngine and JSON mirrors with CoreRuntime typed snapshot APIs
+RW-010,swift-runtime-client-rw010,apps/swift/Sources/Capacitor/Models/RuntimeClient.swift,apps/swift/Sources/Capacitor/Models/RuntimeClient.swift,done,false,Replace HudEngine and JSON mirrors with CoreRuntime typed snapshot APIs
+RW-010,swift-setup-requirements-rw010,apps/swift/Sources/Capacitor/Models/SetupRequirements.swift,apps/swift/Sources/Capacitor/Models/SetupRequirements.swift,done,false,Replace HudEngine and JSON mirrors with CoreRuntime typed snapshot APIs
+RW-010,swift-terminal-launcher-rw010,apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift,apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift,done,false,Replace HudEngine and JSON mirrors with CoreRuntime typed snapshot APIs
+RW-010,swift-runtime-tests-rw010,apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift,apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift,done,false,Update fixture contracts for typed AppSnapshot
+RW-010,swift-periphery-rw010,apps/swift/.periphery.yml,apps/swift/.periphery.yml,done,false,Reflect bridge filename changes in periphery exclusions
+RW-011,workspace-remove-hud-core-rw011,Cargo.toml,Cargo.toml,done,false,Remove hud-core workspace member
+RW-011,hud-core-delete-rw011,core/hud-core/**,,done,true,Delete hud-core crate and all files
+RW-011,scripts-bootstrap-rw011,scripts/bootstrap.sh,scripts/bootstrap.sh,done,false,Retarget scripts to capacitor-core dylib and crate
+RW-011,scripts-restart-app-rw011,scripts/dev/restart-app.sh,scripts/dev/restart-app.sh,done,false,Retarget scripts to capacitor-core dylib and crate
+RW-011,scripts-run-tests-rw011,scripts/dev/run-tests.sh,scripts/dev/run-tests.sh,done,false,Retarget scripts to capacitor-core dylib and crate
+RW-011,scripts-build-distribution-rw011,scripts/release/build-distribution.sh,scripts/release/build-distribution.sh,done,false,Retarget scripts to capacitor-core dylib and crate
+RW-011,scripts-verify-bundle-rw011,scripts/release/verify-app-bundle.sh,scripts/release/verify-app-bundle.sh,done,false,Retarget scripts to capacitor-core dylib and crate
+RW-011,ci-linkage-rw011,.github/workflows/ci.yml,.github/workflows/ci.yml,done,false,Retarget CI Rust/Swift build to capacitor-core
+RW-011,docs-architecture-rw011,docs/ARCHITECTURE.md,docs/ARCHITECTURE.md,done,false,Remove stale hud-core references from active docs
+RW-011,docs-pre-release-rw011,docs/PRE_RELEASE_CHECKLIST.md,docs/PRE_RELEASE_CHECKLIST.md,done,false,Remove stale hud-core references from active docs
+RW-011,docs-adr-006-rw011,docs/architecture-decisions/006-hierarchical-evidence-matching-state-detection.md,docs/architecture-decisions/006-hierarchical-evidence-matching-state-detection.md,done,false,Remove stale hud-core references from active docs
+RW-011,docs-transparent-ui-rw011,docs/transparent-ui/capacitor-interfaces-explorer.html,docs/transparent-ui/capacitor-interfaces-explorer.html,done,false,Remove stale hud-core references from active docs
+RW-011,docs-worktree-post-alpha-rw011,docs/worktree-migration-post-alpha.md,docs/worktree-migration-post-alpha.md,done,false,Remove stale hud-core references from active docs
+RW-011,tooling-format-rw011,.swiftformat,.swiftformat,done,false,Align formatting/ignore settings with new bridge files
+RW-012,swift-settings-runtime-wording-rw012,apps/swift/Sources/Capacitor/Views/Settings/SettingsView.swift,apps/swift/Sources/Capacitor/Views/Settings/SettingsView.swift,done,false,Normalize runtime wording and remove daemon-era copy in settings
+RW-012,swift-setup-sheet-runtime-wording-rw012,apps/swift/Sources/Capacitor/Views/Setup/ShellInstructionsSheet.swift,apps/swift/Sources/Capacitor/Views/Setup/ShellInstructionsSheet.swift,done,false,Normalize setup instructions wording for direct core runtime
+RW-012,scripts-clean-user-install-runtime-wording-rw012,scripts/dev/clean-user-install.sh,scripts/dev/clean-user-install.sh,done,false,Remove stale daemon-era cleanup copy
+RW-012,docs-session-state-matrix-runtime-rw012,docs/SESSION_STATE_RELEASE_MATRIX.md,docs/SESSION_STATE_RELEASE_MATRIX.md,done,false,Rewrite matrix for runtime snapshot architecture
+RW-012,docs-terminal-activation-manual-runtime-rw012,docs/TERMINAL_ACTIVATION_MANUAL_TESTING.md,docs/TERMINAL_ACTIVATION_MANUAL_TESTING.md,done,false,Rewrite terminal activation manual testing for runtime snapshot flow
+RW-012,docs-terminal-activation-ux-runtime-rw012,docs/TERMINAL_ACTIVATION_UX_SPEC.md,docs/TERMINAL_ACTIVATION_UX_SPEC.md,done,false,Rewrite activation UX contract for runtime and CoreRuntime trace semantics
+RW-012,docs-telemetry-loop-runtime-rw012,docs/alpha-feedback-telemetry-loop.md,docs/alpha-feedback-telemetry-loop.md,done,false,Remove stale daemon_ipc telemetry references
+RW-012,docs-ambient-runbook-delete-rw012,docs/ambient-routing-engine-runbook.md,,done,true,Delete obsolete ambient routing runbook after runtime architecture simplification
+RW-012,docs-adr-003-runtime-rw012,docs/architecture-decisions/003-sidecar-architecture-pattern.md,docs/architecture-decisions/003-sidecar-architecture-pattern.md,done,false,Retarget ADR content from sidecar daemon era to runtime snapshot architecture
+RW-012,docs-transparent-ui-readme-rw012,docs/transparent-ui/README.md,docs/transparent-ui/README.md,done,false,Replace stale transparent-ui references with runtime-only notes
+RW-012,docs-transparent-ui-model-delete-ts-rw012,docs/transparent-ui/enriched-data-model.ts,,done,true,Delete stale transparent-ui model artifact
+RW-012,docs-transparent-ui-model-delete-js-rw012,docs/transparent-ui/session-machine-model.js,,done,true,Delete stale transparent-ui JS model artifact
+RW-012,docs-transparent-ui-model-test-delete-rw012,docs/transparent-ui/session-machine-model.test.js,,done,true,Delete stale transparent-ui JS model test artifact

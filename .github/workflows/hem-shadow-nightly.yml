@@ -1,0 +1,59 @@
+name: HEM Shadow Nightly
+
+on:
+  schedule:
+    - cron: "15 8 * * *"
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  BENCH_REPORT_PATH: ${{ github.workspace }}/artifacts/hem-shadow-bench-report.json
+
+jobs:
+  hem-shadow-bench:
+    name: HEM Shadow Benchmark Guardrail
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Run HEM shadow benchmark harness
+        run: ./scripts/ci/hem-shadow-bench.sh "${BENCH_REPORT_PATH}"
+
+      - name: Publish benchmark summary
+        run: |
+          if [ -f "${BENCH_REPORT_PATH}" ]; then
+            {
+              echo "## HEM Shadow Benchmark"
+              echo ""
+              echo "\`generated_at\`: $(jq -r '.generated_at' "${BENCH_REPORT_PATH}")"
+              echo "\`acceptance.passed\`: $(jq -r '.acceptance.passed' "${BENCH_REPORT_PATH}")"
+              echo "\`shadow.p95_ms\`: $(jq -r '.shadow.burst_latency.p95_ms' "${BENCH_REPORT_PATH}")"
+              echo "\`shadow.p99_ms\`: $(jq -r '.shadow.burst_latency.p99_ms' "${BENCH_REPORT_PATH}")"
+              echo "\`overhead.replay_startup_delta_pct\`: $(jq -r '.overhead.replay_startup_delta_pct' "${BENCH_REPORT_PATH}")"
+              echo "\`shadow.stable_state_agreement_rate\`: $(jq -r '.shadow.hem_shadow_health.stable_state_agreement_rate // \"n/a\"' "${BENCH_REPORT_PATH}")"
+              echo "\`shadow.stable_state_agreement_gate_met\`: $(jq -r '.shadow.hem_shadow_health.stable_state_agreement_gate_met // \"n/a\"' "${BENCH_REPORT_PATH}")"
+              echo "\`shadow.gate_blocking_mismatches\`: $(jq -r '.shadow.hem_shadow_health.gate_blocking_mismatches // \"n/a\"' "${BENCH_REPORT_PATH}")"
+            } >> "${GITHUB_STEP_SUMMARY}"
+          fi
+
+      - name: Upload benchmark report artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: hem-shadow-bench-report-${{ github.run_id }}
+          path: ${{ env.BENCH_REPORT_PATH }}
+          if-no-files-found: error
+          retention-days: 30

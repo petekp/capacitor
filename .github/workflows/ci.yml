@@ -1,0 +1,218 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rewrite-guards:
+    name: Rewrite Guards
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run rewrite guard checks
+        run: ./scripts/rewrite/check_rewrite_guards.sh --status
+
+  test-scripts:
+    name: Test Release Scripts
+    runs-on: macos-14
+    needs: rewrite-guards
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install bats
+        run: brew install bats-core
+
+      - name: Run release script tests
+        run: bats tests/release-scripts
+
+  test-rust:
+    name: Test Rust
+    runs-on: macos-14
+    needs: rewrite-guards
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Run cargo fmt check
+        run: cargo fmt --check
+
+      - name: Run cargo clippy
+        run: cargo clippy -- -D warnings -W dead_code
+
+      - name: Install cargo-machete
+        run: cargo install cargo-machete
+
+      - name: Check for unused dependencies
+        run: cargo machete
+
+      - name: Run cargo test
+        run: cargo test
+
+  test-hook:
+    name: Test Hook Binary
+    runs-on: macos-14
+    needs: rewrite-guards
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Build hud-hook (release)
+        run: cargo build -p hud-hook --release
+
+      - name: Install bats
+        run: brew install bats-core
+
+      - name: Run hud-hook smoke tests
+        run: bats tests/hud-hook/hud-hook-smoke.bats
+
+  test-swift:
+    name: Test Swift
+    runs-on: macos-15
+    needs: test-rust
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Cache Swift packages
+        uses: actions/cache@v4
+        with:
+          path: apps/swift/.build
+          key: ${{ runner.os }}-spm-${{ hashFiles('apps/swift/Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-spm-
+
+      - name: Install swiftformat (pinned)
+        env:
+          SWIFTFORMAT_VERSION: "0.59.1"
+        run: |
+          curl -sL "https://github.com/nicklockwood/SwiftFormat/releases/download/${SWIFTFORMAT_VERSION}/swiftformat.zip" -o /tmp/swiftformat.zip
+          unzip -o /tmp/swiftformat.zip -d /usr/local/bin/
+          chmod +x /usr/local/bin/swiftformat
+          swiftformat --version
+
+      - name: SwiftFormat lint
+        run: ./scripts/ci/swiftformat-lint.sh
+
+      - name: Build Rust library
+        run: cargo build -p capacitor-core --release
+
+      - name: Fix dylib install_name
+        run: install_name_tool -id "@rpath/libcapacitor_core.dylib" target/release/libcapacitor_core.dylib
+
+      - name: Build Swift and copy dylib
+        working-directory: apps/swift
+        run: |
+          swift build
+          cp ../../target/release/libcapacitor_core.dylib "$(swift build --show-bin-path)/"
+
+      - name: Run Swift tests
+        working-directory: apps/swift
+        run: swift test
+
+  build-smoke-test:
+    name: Build Smoke Test
+    runs-on: macos-15
+    needs: [test-rust, test-swift]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Cache Swift packages
+        uses: actions/cache@v4
+        with:
+          path: apps/swift/.build
+          key: ${{ runner.os }}-spm-${{ hashFiles('apps/swift/Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-spm-
+
+      - name: Build Rust library (release)
+        run: cargo build -p capacitor-core --release
+
+      - name: Fix dylib install_name
+        run: install_name_tool -id "@rpath/libcapacitor_core.dylib" target/release/libcapacitor_core.dylib
+
+      - name: Build Swift app (release)
+        working-directory: apps/swift
+        run: swift build -c release
+
+      - name: Verify VERSION file exists
+        run: |
+          if [ ! -f VERSION ]; then
+            echo "ERROR: VERSION file not found"
+            exit 1
+          fi
+          echo "Version: $(cat VERSION)"
+
+      - name: Test bump-version.sh (dry run)
+        run: |
+          # Save current version
+          ORIGINAL=$(cat VERSION)
+
+          # Test patch bump
+          ./scripts/release/bump-version.sh patch
+          NEW=$(cat VERSION)
+          echo "Bumped from $ORIGINAL to $NEW"
+
+          # Restore all files modified by bump-version
+          git checkout -- VERSION Cargo.toml apps/swift/Sources/Capacitor/App.swift
