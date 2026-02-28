@@ -1,0 +1,5 @@
+--swiftversion 6.2
+--indent 4
+--linebreaks lf
+--exclude apps/swift/.build,apps/swift/Packages,apps/swift/DerivedData,apps/swift/bindings/capacitor_core.swift,apps/swift/Sources/Capacitor/Bridge/capacitor_core.swift,apps/swift/Package.swift
+--disable enumNamespaces

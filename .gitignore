@@ -1,0 +1,41 @@
+# macOS
+.DS_Store
+
+# Editor / IDE
+.idea
+.cursor/
+.vscode/
+*.sw?
+
+# Node.js (transparent-ui server)
+node_modules
+logs
+*.log
+npm-debug.log*
+dist/
+artifacts/demo/
+artifacts/manual-testing/
+
+# Rust
+target/
+
+# Swift build artifacts
+apps/swift/.build/
+apps/swift/.swiftpm/
+apps/swift/*.app
+apps/swift/Capacitor.app/
+apps/swift/resource_bundle_accessor-*
+
+# Claude local state (not shared)
+.claude/hud-status.json
+.claude/settings.local.json
+.claude/archive/
+
+# Local planning / session notes
+*.local.md
+plan-*.md
+apps/swift/plan-*.md
+recover.md
+
+# Local runtime env with secrets
+scripts/dev/capacitor-ingest.local

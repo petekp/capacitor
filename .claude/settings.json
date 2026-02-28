@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pkill -x Capacitor:*)",
+      "Bash(pkill:*)",
+      "Bash(kill:*)",
+      "Bash(swift build:*)",
+      "Bash(swift run:*)",
+      "Bash(cargo build:*)",
+      "Bash(pkill -x Capacitor 2>/dev/null; sleep 0.5; swift run 2>&1 &:*)"
+    ]
+  }
+}

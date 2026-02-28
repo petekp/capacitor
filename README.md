@@ -1,0 +1,136 @@
+![Capacitor banner](assets/banner.png)
+
+# Capacitor
+
+Capacitor is a companion app for [Claude Code](https://claude.ai/claude-code) (more coding agents on the way, starting with Codex). I built it because I was tired of coding agent tools that try to be the terminal, the editor, the git client, and the chat window all at once. None of those things end up as good as the tools you already use.
+
+If you've ever lost track of which terminal window or tmux pane has which session, that's what Capacitor is for. It keeps your sessions visible and one click away. More features on are the way, ones that further streamline your process and respect your tooling preferences.
+
+## Download
+
+**[Download the latest alpha release](https://github.com/petekp/capacitor/releases)** (Apple Silicon, macOS 14+)
+
+Capacitor is in early alpha. Expect rough edges. [Report issues here.](https://github.com/petekp/capacitor/issues)
+
+## Why use it
+
+- Keep project context visible without terminal tab hunting
+- See live session state at a glance
+- Click a project card to return to the right terminal/tmux context
+- Stay focused when juggling multiple projects
+- It's _fun_!
+
+## How terminal switching works
+
+When you click a project card, Capacitor tries to get you back to the right place:
+
+| Workflow | Ghostty | iTerm2 | Terminal.app |
+| --- | --- | --- | --- |
+| Single window, single pane | ✅ | ✅ | ✅ |
+| Multiple tmux panes | ✅ | ✅ | ✅ |
+| Switch between tmux sessions | ✅ | ✅ | ✅ |
+| Reattach detached tmux sessions | ✅ | ✅ | ✅ |
+
+If a matching session or pane exists, Capacitor focuses it. If there's an existing terminal window, it reuses it instead of spawning a new one. If nothing can be recovered, it falls back to opening a new window.
+
+Only Ghostty, iTerm2, and Terminal.app are supported right now. More on the way if there's demand.
+
+**Known rough edges:** Ghostty routing now uses Accessibility tab targeting first, then window raise fallback. If Accessibility is unavailable (or no deterministic tab/window route can be applied), Capacitor falls back to generic Ghostty activation.
+
+## Install
+
+1. Download the latest DMG from the [Releases page](https://github.com/petekp/capacitor/releases).
+2. Drag `Capacitor.app` into `/Applications`.
+3. Launch the app.
+
+## Quick Start
+
+1. Open Capacitor.
+2. Connect a project (or drag a project folder into the app).
+3. Run Claude Code in your terminal(s) as normal.
+4. Click project cards in Capacitor to jump to the right session.
+
+## How it works
+
+Capacitor is a sidecar. It watches what Claude Code is doing without getting in the way.
+
+On first launch, it installs a small hook binary (`~/.local/bin/hud-hook`) and adds entries to Claude Code's `~/.claude/settings.json`. Hook events are written directly into the Rust runtime snapshot (`~/.capacitor/runtime/app_snapshot.json`). The Swift app reads that snapshot and renders state.
+
+It doesn't call the Anthropic API. It's read-only.
+
+## Data & privacy
+
+Capacitor reads from `~/.claude/` (transcripts, settings) and writes its own state to `~/.capacitor/`. It also adds hook entries to `~/.claude/settings.json` but doesn't touch your other settings.
+
+By default, data stays on your machine. There's a local debug endpoint (`localhost:9133`) that only does anything if you run the dev UI yourself.
+
+Optional remote ingest is supported only when telemetry env vars are configured (for example: `CAPACITOR_FEEDBACK_API_URL` / `CAPACITOR_TELEMETRY_URL` with `CAPACITOR_INGEST_KEY`). In that mode, feedback submissions and a limited allowlist of diagnostic telemetry events can be sent to your configured endpoint.
+
+The "Include anonymized telemetry" toggle in Settings controls whether app metadata gets attached to GitHub issue drafts when you submit feedback. Project paths are redacted by default.
+
+## Permissions
+
+Terminal switching uses AppleScript, so macOS will ask for Automation access the first time you click a project card. If you dismiss the prompt, terminal switching won't work. You can re-grant it later in System Settings > Privacy & Security > Automation.
+
+## Settings
+
+`⌘,` opens Settings. Current toggles:
+
+- Floating mode (borderless, position anywhere)
+- Always on top
+- Ready chime (plays a sound when Claude finishes)
+- Automatic update checks
+- Feedback privacy (anonymized telemetry for issue drafts, project path inclusion)
+
+## Keyboard shortcuts
+
+| Shortcut | Action |
+| --- | --- |
+| `⌘O` | Connect project |
+| `⌘1` | Vertical layout |
+| `⌘2` | Dock layout |
+| `⌘⇧T` | Toggle floating mode |
+| `⌘⇧P` | Toggle always on top |
+| `⌘,` | Settings |
+
+## Requirements
+
+- Apple Silicon Mac (`arm64`)
+- macOS 14+
+- Claude Code installed
+- `tmux` recommended (Capacitor can restore exact pane context)
+
+## Troubleshooting
+
+**Projects not showing up?** Check the hooks status indicator in the app. If it says something's wrong, click "Fix All."
+
+**Terminal switching broken?** You probably dismissed the Automation permission prompt. Go to System Settings > Privacy & Security > Automation and grant it.
+
+**Runtime issues?** If something seems off, check runtime artifacts in `~/.capacitor/runtime/` (for example `app_snapshot.json` and `app-debug.log`).
+
+For coding-agent debugging in this repo, use:
+
+- `./scripts/dev/agent-observe.sh` (single observability helper)
+- `make observe-help` (`observe-*` shortcuts)
+- `.claude/docs/agent-observability-runbook.md` (canonical runtime-debug workflow)
+
+More help: [open a GitHub issue](https://github.com/petekp/capacitor/issues).
+
+## Uninstall
+
+To remove everything:
+
+1. Quit the app
+2. `rm -rf /Applications/Capacitor.app`
+3. `rm -rf ~/.capacitor`
+4. `rm ~/.local/bin/hud-hook`
+5. Remove `hud-hook` entries from `~/.claude/settings.json`
+6. Optionally: `defaults delete com.capacitor.app`
+
+## License
+
+MIT. See [LICENSE](LICENSE).
+
+## Feedback
+
+Use the in-app feedback form, or open a [GitHub issue](https://github.com/petekp/capacitor/issues).
