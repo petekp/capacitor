@@ -100,16 +100,10 @@ final class RuntimeClientTests: XCTestCase {
             case runtimeUnavailable
         }
 
-        struct Scenario {
-            let name: String
-            let makeClient: () throws -> RuntimeClient
-            let expected: ExpectedError
-        }
-
-        let scenarios: [Scenario] = [
-            Scenario(
-                name: "snapshot_missing",
-                makeClient: {
+        let scenarios: [LabeledExpectationScenario<() throws -> RuntimeClient, ExpectedError>] = [
+            LabeledExpectationScenario(
+                label: "snapshot_missing",
+                input: {
                     let missingPath = FileManager.default.temporaryDirectory
                         .appendingPathComponent(UUID().uuidString)
                         .appendingPathComponent("missing_snapshot.json")
@@ -118,18 +112,18 @@ final class RuntimeClientTests: XCTestCase {
                 },
                 expected: .runtimeUnavailable,
             ),
-            Scenario(
-                name: "invalid_shell_timestamp",
-                makeClient: { [self] in
+            LabeledExpectationScenario(
+                label: "invalid_shell_timestamp",
+                input: { [self] in
                     try self.makeClient(
                         coreSnapshot: Self.makeInvalidShellTimestampSnapshot()
                     )
                 },
                 expected: .invalidResponse,
             ),
-            Scenario(
-                name: "snapshot_read_disabled",
-                makeClient: { [self] in
+            LabeledExpectationScenario(
+                label: "snapshot_read_disabled",
+                input: { [self] in
                     setenv("CAPACITOR_CORE_SNAPSHOT_READ_ENABLED", "0", 1)
                     return try self.makeClient()
                 },
@@ -138,12 +132,12 @@ final class RuntimeClientTests: XCTestCase {
         ]
 
         for scenario in scenarios {
-            let context = scenarioContext(scenario.name)
+            let context = scenarioContext(scenario.label)
             unsetenv("CAPACITOR_CORE_SNAPSHOT_READ_ENABLED")
-            let client = try scenario.makeClient()
+            let client = try scenario.input()
 
             do {
-                _ = try await client.fetchRuntimeSnapshot(correlationId: "failure-\(scenario.name)")
+                _ = try await client.fetchRuntimeSnapshot(correlationId: "failure-\(scenario.label)")
                 XCTFail("\(context) expected RuntimeClientError")
             } catch let error as RuntimeClientError {
                 switch (scenario.expected, error) {
@@ -202,13 +196,7 @@ final class RuntimeClientTests: XCTestCase {
     }
 
     func testFetchCoreRoutingSnapshotReasonCodeScenarios() async throws {
-        struct Scenario {
-            let name: String
-            let inputReasonCode: String
-            let expected: AttachedRouteExpectation
-        }
-
-        let scenarios: [Scenario] = [
+        let scenarios: [LabeledExpectationScenario<String, AttachedRouteExpectation>] = [
             RouteReasonScenario(
                 name: "default_reason",
                 inputReasonCode: "tmux_client_attached",
@@ -225,9 +213,9 @@ final class RuntimeClientTests: XCTestCase {
                 expectedReasonCode: "NO_TRUSTED_EVIDENCE",
             ),
         ].map { scenario in
-            Scenario(
-                name: scenario.name,
-                inputReasonCode: scenario.inputReasonCode,
+            LabeledExpectationScenario(
+                label: scenario.name,
+                input: scenario.inputReasonCode,
                 expected: AttachedRouteExpectation(
                     reasonCode: scenario.expectedReasonCode,
                     scopeResolution: nil,
@@ -237,9 +225,9 @@ final class RuntimeClientTests: XCTestCase {
         }
 
         for scenario in scenarios {
-            let context = scenarioContext(scenario.name)
+            let context = scenarioContext(scenario.label)
             let client = try makeClient(
-                coreSnapshot: Self.makeRoutingReasonSnapshot(reasonCode: scenario.inputReasonCode)
+                coreSnapshot: Self.makeRoutingReasonSnapshot(reasonCode: scenario.input)
             )
             let snapshot = try await client.fetchCoreRoutingSnapshot(
                 projectPath: "/tmp/core-project",
@@ -254,13 +242,7 @@ final class RuntimeClientTests: XCTestCase {
     }
 
     func testFetchCoreRoutingDiagnosticsScopeResolutionScenarios() async throws {
-        struct Scenario {
-            let name: String
-            let workspaceId: String
-            let expected: AttachedRouteExpectation
-        }
-
-        let scenarios: [Scenario] = [
+        let scenarios: [LabeledExpectationScenario<String, AttachedRouteExpectation>] = [
             DiagnosticsScopeScenario(
                 name: "workspace_match",
                 workspaceId: "workspace-core",
@@ -272,9 +254,9 @@ final class RuntimeClientTests: XCTestCase {
                 expectedScopeResolution: "project_path",
             ),
         ].map { scenario in
-            Scenario(
-                name: scenario.name,
-                workspaceId: scenario.workspaceId,
+            LabeledExpectationScenario(
+                label: scenario.name,
+                input: scenario.workspaceId,
                 expected: AttachedRouteExpectation(
                     reasonCode: nil,
                     scopeResolution: scenario.expectedScopeResolution,
@@ -284,11 +266,11 @@ final class RuntimeClientTests: XCTestCase {
         }
 
         for scenario in scenarios {
-            let context = scenarioContext(scenario.name)
+            let context = scenarioContext(scenario.label)
             let client = try makeClient()
             let diagnostics = try await client.fetchCoreRoutingDiagnostics(
                 projectPath: "/tmp/core-project",
-                workspaceId: scenario.workspaceId,
+                workspaceId: scenario.input,
             )
 
             assertAttachedTmuxRoute(diagnostics.snapshot, context: context)

@@ -625,3 +625,7 @@ RW-086,swift-setup-status-copy-row-dedupe-rw086,apps/swift/Tests/CapacitorTests/
 RW-086,rewrite-test-audit-rw086,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit conclusions after setup/hook scenario row de-duplication
 RW-086,rewrite-ledger-rw086,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-086 lifecycle and risk notes
 RW-086,rewrite-map-rw086,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-086 path mappings for guard enforcement
+RW-087,swift-runtimeclient-shared-scenario-records-rw087,apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift,apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift,done,false,Replace local non-setup scenario structs with shared labeled scenario records in RuntimeClient contract tests
+RW-087,rewrite-test-audit-rw087,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit conclusions after non-setup harness adoption
+RW-087,rewrite-ledger-rw087,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-087 lifecycle and risk notes
+RW-087,rewrite-map-rw087,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-087 path mappings for guard enforcement

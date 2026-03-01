@@ -10,7 +10,7 @@ Scope: `core/`, `apps/swift/Tests/CapacitorTests/`, `tests/`, `services/ingest-w
 3. Freeze current weak-pattern surface with a CI guard so debt cannot grow.
 4. Define next rewrite slices to pay debt down deterministically.
 
-## Current Metrics (After RW-086)
+## Current Metrics (After RW-087)
 
 - Swift test files: `43`
 - Swift test methods: `253`
@@ -129,7 +129,8 @@ Static bats source checks that do not execute behavior have been removed from th
 71. RW-084 collapsed setup manager `executeStep` one-off assertions into a labeled action-routing matrix (`SetupRequirementsManagerTests`) and extended the shared setup scenario harness with async contract support, reducing Swift test methods by one without behavior loss.
 72. RW-085 converged remaining setup presentation scenario tables (`HookPresentationPolicyTests`, `HookDiagnosticPresentationTests`) onto the shared labeled harness, removing parallel scenario struct patterns while preserving explicit projected expectation records.
 73. RW-086 pruned duplicate scenario rows from setup/hook contract suites and kept one-row-per-branch semantics by adding a healthy visibility branch case while removing duplicate branch-equivalent rows.
-74. Next reductions should continue collapsing duplicate edge-case assertions into explicit contract tables rather than proliferating one-off tests.
+74. RW-087 extended shared labeled scenario records beyond setup suites by replacing ad-hoc local scenario structs in `RuntimeClientTests`, improving scenario-definition consistency across contract suites.
+75. Next reductions should continue collapsing duplicate edge-case assertions into explicit contract tables rather than proliferating one-off tests.
 
 ## Guardrails Added
 
@@ -148,7 +149,7 @@ This does not claim these patterns are good. It prevents regression while we pay
 
 ## Next Slices (proposed)
 
-1. `RW-087` Extend shared harness usage to non-setup contract suites where the same labeled scenario pattern is still redefined locally.
-2. `RW-088` Add a lightweight scenario-coverage checklist to prevent future branch-equivalent duplicate rows from regrowing in table-driven suites.
+1. `RW-088` Add a lightweight scenario-coverage checklist to prevent future branch-equivalent duplicate rows from regrowing in table-driven suites.
+2. `RW-089` Extend shared harness usage to remaining non-setup suites with repeated local scenario records (`ActivationActionExecutorTests`, `TerminalLauncherTests`) where it improves clarity.
 
 Each slice should delete replaced tests in the same PR and ratchet the audit limits downward.

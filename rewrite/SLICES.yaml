@@ -3163,3 +3163,32 @@ slices:
     risks:
       - "Pruning scenario rows can accidentally remove branch coverage if branches are misunderstood; mitigation is one-row-per-branch analysis before deletion."
     notes: "Prunes duplicate scenario rows across setup/hook contract suites while preserving one representative row for each behavior branch."
+
+  - id: RW-087
+    name: "Non-Setup Harness Adoption in RuntimeClient Tests"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-086
+    touched_paths:
+      - apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios:
+      - live state update while coding
+      - fresh install setup flow
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Applying the shared harness to non-setup suites can weaken intent if scenario label/input/expected mapping becomes indirect."
+    notes: "Adopts shared labeled scenario records in `RuntimeClientTests`, replacing ad-hoc local scenario structs in non-setup contract suites."
