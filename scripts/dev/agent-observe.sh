@@ -31,6 +31,9 @@ Commands:
   stream                                 Transparent UI: GET /telemetry-stream (SSE passthrough)
   tail <app|runtime-stderr|runtime-stdout> Tail key logs
   smoke [project_path] [workspace_id]    Run all observability smoke checks
+  freshness                              Snapshot age and staleness check
+  errors [limit]                         Recent error lines from app debug log (default=20)
+  hooks                                  Hook installation status + recent events
 USAGE
 }
 
@@ -258,6 +261,63 @@ case "$command" in
       "$0" routing-diagnostics >/dev/null && echo "  ok routing-diagnostics"
     fi
     echo "Observability smoke checks passed."
+    ;;
+  freshness)
+    if [[ ! -f "$SNAPSHOT_PATH" ]]; then
+      echo '{"ok":false,"error":"snapshot_missing","age_seconds":null}' | pretty_print_json
+      exit 1
+    fi
+    if command -v jq >/dev/null 2>&1; then
+      generated_at=$(jq -r '.generated_at // empty' "$SNAPSHOT_PATH" 2>/dev/null)
+      if [[ -n "$generated_at" ]]; then
+        generated_epoch=$(date -j -f "%Y-%m-%dT%H:%M:%SZ" "$generated_at" "+%s" 2>/dev/null || date -d "$generated_at" "+%s" 2>/dev/null || echo "")
+        if [[ -n "$generated_epoch" ]]; then
+          now_epoch=$(date "+%s")
+          age=$(( now_epoch - generated_epoch ))
+          stale="false"
+          if [[ "$age" -gt 30 ]]; then stale="true"; fi
+          jq -n --argjson age "$age" --argjson stale "$stale" --arg generated_at "$generated_at" \
+            '{ok:true, age_seconds:$age, stale:$stale, generated_at:$generated_at}'
+        else
+          echo '{"ok":true,"age_seconds":null,"note":"could not parse generated_at"}' | pretty_print_json
+        fi
+      else
+        echo '{"ok":true,"age_seconds":null,"note":"no generated_at in snapshot"}' | pretty_print_json
+      fi
+    else
+      stat -f "%m" "$SNAPSHOT_PATH" 2>/dev/null || echo "jq required for detailed freshness"
+    fi
+    ;;
+  errors)
+    limit="${1:-20}"
+    if [[ ! -f "$APP_LOG_PATH" ]]; then
+      echo "No app debug log found: $APP_LOG_PATH" >&2
+      exit 1
+    fi
+    grep -i -E 'error|fail|crash|fatal' "$APP_LOG_PATH" | tail -n "$limit"
+    ;;
+  hooks)
+    echo "Hook binary:"
+    hook_path="${HOME}/.local/bin/hud-hook"
+    if [[ -L "$hook_path" ]]; then
+      target=$(readlink "$hook_path")
+      if [[ -x "$hook_path" ]]; then
+        echo "  ok (symlink -> $target)"
+      else
+        echo "  broken symlink (-> $target)"
+      fi
+    elif [[ -x "$hook_path" ]]; then
+      echo "  ok (binary)"
+    else
+      echo "  missing ($hook_path)"
+    fi
+    echo ""
+    echo "Recent hook events (from debug log):"
+    if [[ -f "$APP_LOG_PATH" ]]; then
+      grep -i -E 'hook|hud-hook|shell.integration|startup' "$APP_LOG_PATH" | tail -n 20
+    else
+      echo "  (no debug log found)"
+    fi
     ;;
   *)
     echo "Unknown command: $command" >&2
