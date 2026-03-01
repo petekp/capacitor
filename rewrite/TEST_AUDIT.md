@@ -10,7 +10,7 @@ Scope: `core/`, `apps/swift/Tests/CapacitorTests/`, `tests/`, `services/ingest-w
 3. Freeze current weak-pattern surface with a CI guard so debt cannot grow.
 4. Define next rewrite slices to pay debt down deterministically.
 
-## Current Metrics (After RW-084)
+## Current Metrics (After RW-085)
 
 - Swift test files: `43`
 - Swift test methods: `253`
@@ -127,7 +127,8 @@ Static bats source checks that do not execute behavior have been removed from th
 69. RW-082 consolidated hook diagnostic presentation assertions into two labeled contract matrices (visibility + header/guidance), reducing one-off test methods while preserving behavior semantics.
 70. RW-083 introduced a shared labeled setup scenario harness (`SetupScenarioHarness`) and rewired setup readiness/status contract suites to remove repeated local scenario record scaffolding without changing test-method coverage.
 71. RW-084 collapsed setup manager `executeStep` one-off assertions into a labeled action-routing matrix (`SetupRequirementsManagerTests`) and extended the shared setup scenario harness with async contract support, reducing Swift test methods by one without behavior loss.
-72. Next reductions should continue collapsing duplicate edge-case assertions into explicit contract tables rather than proliferating one-off tests.
+72. RW-085 converged remaining setup presentation scenario tables (`HookPresentationPolicyTests`, `HookDiagnosticPresentationTests`) onto the shared labeled harness, removing parallel scenario struct patterns while preserving explicit projected expectation records.
+73. Next reductions should continue collapsing duplicate edge-case assertions into explicit contract tables rather than proliferating one-off tests.
 
 ## Guardrails Added
 
@@ -146,7 +147,7 @@ This does not claim these patterns are good. It prevents regression while we pay
 
 ## Next Slices (proposed)
 
-1. `RW-085` Consolidate remaining setup presentation scenario definitions onto the shared scenario harness where duplication remains (header/guidance/status permutations).
-2. `RW-086` Review setup/hook contract suites for redundant scenario rows and prune true duplicates while preserving one-row-per-branch semantics.
+1. `RW-086` Review setup/hook contract suites for redundant scenario rows and prune true duplicates while preserving one-row-per-branch semantics.
+2. `RW-087` Extend shared harness usage to non-setup contract suites where the same labeled scenario pattern is still redefined locally.
 
 Each slice should delete replaced tests in the same PR and ratchet the audit limits downward.

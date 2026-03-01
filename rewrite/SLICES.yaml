@@ -3101,3 +3101,34 @@ slices:
     risks:
       - "Collapsing manager action tests into one matrix can hide per-step intent if scenario labels and expected state transitions are not explicit."
     notes: "Replaces one-off `executeStep` setup-manager tests with a labeled action-routing matrix and extends the shared harness with async evaluation support."
+
+  - id: RW-085
+    name: "Setup Presentation Harness Convergence"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-084
+    touched_paths:
+      - apps/swift/Tests/CapacitorTests/HookPresentationPolicyTests.swift
+      - apps/swift/Tests/CapacitorTests/HookDiagnosticPresentationTests.swift
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - apps/swift/Tests/CapacitorTests/HookPresentationPolicyTests.swift
+        - apps/swift/Tests/CapacitorTests/HookDiagnosticPresentationTests.swift
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios:
+      - fresh install setup flow
+      - hook install/fix flow
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Converging setup presentation tests onto one harness can hide individual assertion intent unless projected expectation records stay explicit."
+    notes: "Moves remaining setup presentation scenario tables onto the shared labeled harness for one consistent scenario-definition pattern across setup/hook contract suites."

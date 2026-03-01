@@ -4,107 +4,89 @@ import XCTest
 @MainActor
 final class HookDiagnosticPresentationTests: XCTestCase {
     func testSetupCardVisibilityScenariosMatchContract() {
-        struct Scenario {
-            let label: String
-            let diagnostic: HookDiagnosticReport
-            let expectedVisible: Bool
-        }
-
-        let scenarios: [Scenario] = [
-            Scenario(
+        let scenarios: [LabeledExpectationScenario<HookDiagnosticReport, Bool>] = [
+            LabeledExpectationScenario(
                 label: "idle-after-first-run",
-                diagnostic: SetupTestFixtures.hookDiagnosticReport(
+                input: SetupTestFixtures.hookDiagnosticReport(
                     primaryIssue: .notFiring(lastSeenSecs: 120),
                     configOk: true,
                     lastHeartbeatAgeSecs: 120,
                 ),
-                expectedVisible: false,
+                expected: false,
             ),
-            Scenario(
+            LabeledExpectationScenario(
                 label: "first-run-not-firing",
-                diagnostic: SetupTestFixtures.hookDiagnosticReport(
+                input: SetupTestFixtures.hookDiagnosticReport(
                     primaryIssue: .notFiring(lastSeenSecs: nil),
                     isFirstRun: true,
                     configOk: true,
                 ),
-                expectedVisible: false,
+                expected: false,
             ),
-            Scenario(
+            LabeledExpectationScenario(
                 label: "config-missing",
-                diagnostic: SetupTestFixtures.hookDiagnosticReport(
+                input: SetupTestFixtures.hookDiagnosticReport(
                     primaryIssue: .configMissing,
                     configOk: false,
                 ),
-                expectedVisible: true,
+                expected: true,
             ),
-            Scenario(
+            LabeledExpectationScenario(
                 label: "first-run-config-missing",
-                diagnostic: SetupTestFixtures.hookDiagnosticReport(
+                input: SetupTestFixtures.hookDiagnosticReport(
                     primaryIssue: .configMissing,
                     isFirstRun: true,
                     configOk: false,
                 ),
-                expectedVisible: true,
+                expected: true,
             ),
         ]
 
-        for scenario in scenarios {
-            XCTAssertEqual(
-                scenario.diagnostic.shouldShowSetupCard,
-                scenario.expectedVisible,
-                "[\(scenario.label)] setup card visibility mismatch",
-            )
+        assertLabeledScenarios(scenarios, mismatch: "setup card visibility mismatch") { diagnostic in
+            diagnostic.shouldShowSetupCard
         }
     }
 
     func testSetupCardHeaderAndGuidanceScenariosMatchContract() {
-        struct Scenario {
-            let label: String
-            let diagnostic: HookDiagnosticReport
-            let expectedPolicyBlocked: Bool
-            let expectedHeader: String
-            let expectedGuidance: String
+        struct SetupCardPresentation: Equatable {
+            let isPolicyBlocked: Bool
+            let header: String
+            let guidance: String?
         }
 
-        let scenarios: [Scenario] = [
-            Scenario(
+        let scenarios: [LabeledExpectationScenario<HookDiagnosticReport, SetupCardPresentation>] = [
+            LabeledExpectationScenario(
                 label: "config-missing",
-                diagnostic: SetupTestFixtures.hookDiagnosticReport(
+                input: SetupTestFixtures.hookDiagnosticReport(
                     primaryIssue: .configMissing,
                     configOk: false,
                 ),
-                expectedPolicyBlocked: false,
-                expectedHeader: "Claude hooks not configured",
-                expectedGuidance: "Install/update Claude hooks in `~/.claude/settings.json`.",
+                expected: SetupCardPresentation(
+                    isPolicyBlocked: false,
+                    header: "Claude hooks not configured",
+                    guidance: "Install/update Claude hooks in `~/.claude/settings.json`."
+                ),
             ),
-            Scenario(
+            LabeledExpectationScenario(
                 label: "policy-blocked",
-                diagnostic: SetupTestFixtures.hookDiagnosticReport(
+                input: SetupTestFixtures.hookDiagnosticReport(
                     primaryIssue: .policyBlocked(reason: "disableAllHooks is enabled."),
                     canAutoFix: false,
                     configOk: false,
                 ),
-                expectedPolicyBlocked: true,
-                expectedHeader: "Hooks disabled by policy",
-                expectedGuidance: "disableAllHooks is enabled. Remove this setting to enable session tracking.",
+                expected: SetupCardPresentation(
+                    isPolicyBlocked: true,
+                    header: "Hooks disabled by policy",
+                    guidance: "disableAllHooks is enabled. Remove this setting to enable session tracking."
+                ),
             ),
         ]
 
-        for scenario in scenarios {
-            XCTAssertEqual(
-                scenario.diagnostic.setupCardIsPolicyBlocked,
-                scenario.expectedPolicyBlocked,
-                "[\(scenario.label)] policy blocked state mismatch",
-            )
-            XCTAssertEqual(
-                scenario.diagnostic.setupCardHeaderMessage,
-                scenario.expectedHeader,
-                "[\(scenario.label)] setup card header mismatch",
-            )
-            XCTAssertEqual(
-                scenario.diagnostic.setupCardGuidanceMessage,
-                scenario.expectedGuidance,
-                "[\(scenario.label)] setup card guidance mismatch",
+        assertLabeledScenarios(scenarios, mismatch: "setup card presentation mismatch") { diagnostic in
+            SetupCardPresentation(
+                isPolicyBlocked: diagnostic.setupCardIsPolicyBlocked,
+                header: diagnostic.setupCardHeaderMessage,
+                guidance: diagnostic.setupCardGuidanceMessage
             )
         }
     }

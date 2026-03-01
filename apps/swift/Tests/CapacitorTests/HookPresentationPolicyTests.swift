@@ -3,40 +3,26 @@ import XCTest
 
 final class HookPresentationPolicyTests: XCTestCase {
     func testSetupCardHeaderScenariosMatchCanonicalContract() {
-        struct Scenario {
-            let label: String
-            let issue: HookIssue?
-            let isFirstRun: Bool
-            let expected: String
-        }
-
-        let scenarios: [Scenario] = [
-            Scenario(
+        let scenarios: [LabeledExpectationScenario<(issue: HookIssue?, isFirstRun: Bool), String>] = [
+            LabeledExpectationScenario(
                 label: "first-run-override",
-                issue: .configMissing,
-                isFirstRun: true,
+                input: (issue: .configMissing, isFirstRun: true),
                 expected: "Let's get you set up",
             ),
-            Scenario(
+            LabeledExpectationScenario(
                 label: "binary-missing",
-                issue: .binaryMissing,
-                isFirstRun: false,
+                input: (issue: .binaryMissing, isFirstRun: false),
                 expected: "Hook binary missing",
             ),
-            Scenario(
+            LabeledExpectationScenario(
                 label: "unknown-issue",
-                issue: nil,
-                isFirstRun: false,
+                input: (issue: nil, isFirstRun: false),
                 expected: "Session tracking unavailable",
             ),
         ]
 
-        for scenario in scenarios {
-            XCTAssertEqual(
-                HookPresentationPolicy.setupCardHeader(for: scenario.issue, isFirstRun: scenario.isFirstRun),
-                scenario.expected,
-                "[\(scenario.label)] setup card header mismatch",
-            )
+        assertLabeledScenarios(scenarios, mismatch: "setup card header mismatch") { input in
+            HookPresentationPolicy.setupCardHeader(for: input.issue, isFirstRun: input.isFirstRun)
         }
     }
 }

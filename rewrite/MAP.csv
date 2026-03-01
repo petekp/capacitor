@@ -615,3 +615,8 @@ RW-084,swift-setup-manager-action-matrix-rw084,apps/swift/Tests/CapacitorTests/S
 RW-084,rewrite-test-audit-rw084,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit metrics/conclusions after setup manager action matrix consolidation
 RW-084,rewrite-ledger-rw084,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-084 lifecycle and risk notes
 RW-084,rewrite-map-rw084,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-084 path mappings for guard enforcement
+RW-085,swift-hook-presentation-harness-cutover-rw085,apps/swift/Tests/CapacitorTests/HookPresentationPolicyTests.swift,apps/swift/Tests/CapacitorTests/HookPresentationPolicyTests.swift,done,false,Move setup-card header scenario table to shared labeled setup scenario harness
+RW-085,swift-hook-diagnostic-harness-cutover-rw085,apps/swift/Tests/CapacitorTests/HookDiagnosticPresentationTests.swift,apps/swift/Tests/CapacitorTests/HookDiagnosticPresentationTests.swift,done,false,Move hook diagnostic visibility and setup-card presentation scenario tables to shared labeled setup scenario harness
+RW-085,rewrite-test-audit-rw085,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit metrics/conclusions after setup presentation harness convergence
+RW-085,rewrite-ledger-rw085,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-085 lifecycle and risk notes
+RW-085,rewrite-map-rw085,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-085 path mappings for guard enforcement
