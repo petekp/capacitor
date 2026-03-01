@@ -647,3 +647,33 @@ RW-091,ci-test-surface-zero-local-scenario-budget-rw091,scripts/ci/test-surface-
 RW-091,rewrite-test-audit-rw091,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh metrics/conclusions after eliminating local Scenario structs
 RW-091,rewrite-ledger-rw091,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-091 lifecycle and risk notes
 RW-091,rewrite-map-rw091,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-091 path mappings for guard enforcement
+RW-092,swift-runtimeclient-expectation-tuple-cutover-rw092,apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift,apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift,done,false,Replace one-off runtime route expectation structs with typed labeled tuple expectations
+RW-092,swift-activation-executor-expectation-tuple-cutover-rw092,apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift,apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift,done,false,Replace activate-app route expectation struct with typed labeled tuple expectations
+RW-092,rewrite-test-audit-rw092,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit conclusions after expectation-record scaffolding consolidation
+RW-092,rewrite-ledger-rw092,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-092 lifecycle and risk notes
+RW-092,rewrite-map-rw092,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-092 path mappings for guard enforcement
+RW-093,ci-test-surface-expected-record-struct-budget-rw093,scripts/ci/test-surface-audit.sh,scripts/ci/test-surface-audit.sh,done,false,Add private struct Expected* count metric and fail-on-growth budget
+RW-093,rewrite-test-audit-rw093,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit metrics/conclusions after expected-record budget ratchet
+RW-093,rewrite-ledger-rw093,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-093 lifecycle and risk notes
+RW-093,rewrite-map-rw093,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-093 path mappings for guard enforcement
+RW-094,swift-terminal-launcher-action-assertion-convergence-rw094,apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift,apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift,done,false,Converge duplicated launch/ensure action assertion helpers into one typed action assertion helper
+RW-094,rewrite-test-audit-rw094,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit conclusions after TerminalLauncher assertion-helper convergence
+RW-094,rewrite-ledger-rw094,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-094 lifecycle and risk notes
+RW-094,rewrite-map-rw094,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-094 path mappings for guard enforcement
+RW-095,swift-activation-expected-tuple-alias-cutover-rw095,apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift,apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift,done,false,Replace remaining private struct Expected* helpers with labeled tuple aliases
+RW-095,ci-test-surface-expected-record-zero-budget-rw095,scripts/ci/test-surface-audit.sh,scripts/ci/test-surface-audit.sh,done,false,Ratchet private struct Expected* budget from 2 to 0 after helper elimination
+RW-095,rewrite-test-audit-rw095,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh metrics and conclusions after expected-record helper elimination
+RW-095,rewrite-ledger-rw095,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-095 lifecycle and risk notes
+RW-095,rewrite-map-rw095,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-095 path mappings for guard enforcement
+RW-096,swift-terminal-launcher-script-assertion-convergence-rw096,apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift,apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift,done,false,Route one-off script snippet checks through shared script assertion helpers and remove redundant single-snippet helper
+RW-096,rewrite-test-audit-rw096,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit conclusions after script assertion helper convergence
+RW-096,rewrite-ledger-rw096,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-096 lifecycle and risk notes
+RW-096,rewrite-map-rw096,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-096 path mappings for guard enforcement
+RW-097,swift-shared-scenario-context-helper-rw097,apps/swift/Tests/CapacitorTests/SetupScenarioHarness.swift,apps/swift/Tests/CapacitorTests/SetupScenarioHarness.swift,done,false,Add canonical scenarioContext helper to shared setup scenario harness
+RW-097,swift-runtime-remove-local-scenario-context-rw097,apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift,apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift,done,false,Remove duplicated local scenarioContext helper in RuntimeClient tests
+RW-097,swift-activation-remove-local-scenario-context-rw097,apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift,apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift,done,false,Remove duplicated local scenarioContext helper in ActivationActionExecutor tests
+RW-097,swift-terminal-remove-local-scenario-context-rw097,apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift,apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift,done,false,Remove duplicated local scenarioContext helper in TerminalLauncher tests
+RW-097,ci-test-surface-scenario-context-budget-rw097,scripts/ci/test-surface-audit.sh,scripts/ci/test-surface-audit.sh,done,false,Add private scenarioContext helper count metric and enforce zero-growth budget
+RW-097,rewrite-test-audit-rw097,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh metrics and conclusions after scenarioContext helper convergence
+RW-097,rewrite-ledger-rw097,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-097 lifecycle and risk notes
+RW-097,rewrite-map-rw097,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-097 path mappings for guard enforcement

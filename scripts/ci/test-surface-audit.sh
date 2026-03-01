@@ -30,6 +30,8 @@ SOURCE_CONTAINS_MAX_ASSERTS=0
 TASK_SLEEP_MAX_CALLS=0
 STATIC_BATS_MAX_SOURCE_ASSERT_LINES=0
 LOCAL_SCENARIO_STRUCT_MAX=0
+EXPECTED_RECORD_STRUCT_MAX=0
+SCENARIO_CONTEXT_HELPER_MAX=0
 
 SOURCE_CONTAINS_ALLOWLIST=''
 
@@ -122,6 +124,20 @@ if (( local_scenario_struct_count > LOCAL_SCENARIO_STRUCT_MAX )); then
   warn_or_fail "local struct Scenario declarations grew ($local_scenario_struct_count > $LOCAL_SCENARIO_STRUCT_MAX)"
 fi
 
+expected_record_struct_count=$(
+  (rg -n '^[[:space:]]*private struct Expected[A-Za-z0-9_]*\b' "$SWIFT_TEST_DIR" || true) | wc -l | tr -d ' '
+)
+if (( expected_record_struct_count > EXPECTED_RECORD_STRUCT_MAX )); then
+  warn_or_fail "private struct Expected* declarations grew ($expected_record_struct_count > $EXPECTED_RECORD_STRUCT_MAX)"
+fi
+
+scenario_context_helper_count=$(
+  (rg -n '^[[:space:]]*private func scenarioContext\(' "$SWIFT_TEST_DIR" || true) | wc -l | tr -d ' '
+)
+if (( scenario_context_helper_count > SCENARIO_CONTEXT_HELPER_MAX )); then
+  warn_or_fail "private func scenarioContext declarations grew ($scenario_context_helper_count > $SCENARIO_CONTEXT_HELPER_MAX)"
+fi
+
 echo "Test Surface Audit"
 echo "  mode: $MODE"
 echo "  source_contains_files: $source_contains_file_count"
@@ -131,6 +147,8 @@ echo "  task_sleep_files: $task_sleep_file_count"
 echo "  task_sleep_calls: $task_sleep_call_count"
 echo "  static_bats_source_assert_lines: $static_bats_source_assert_lines"
 echo "  local_scenario_structs: $local_scenario_struct_count"
+echo "  expected_record_structs: $expected_record_struct_count"
+echo "  local_scenario_context_helpers: $scenario_context_helper_count"
 
 if (( failures > 0 )); then
   echo "Test surface audit failed with $failures violation(s)."

@@ -7,12 +7,16 @@ struct LabeledExpectationScenario<Input, Expected> {
 }
 
 extension XCTestCase {
+    func scenarioContext(_ name: String) -> String {
+        "[\(name)]"
+    }
+
     func assertLabeledScenarios<Input, Expected: Equatable>(
         _ scenarios: [LabeledExpectationScenario<Input, Expected>],
         mismatch: String,
         file: StaticString = #filePath,
         line: UInt = #line,
-        evaluate: (Input) -> Expected
+        evaluate: (Input) -> Expected,
     ) {
         for scenario in scenarios {
             XCTAssertEqual(
@@ -30,7 +34,7 @@ extension XCTestCase {
         mismatch: String,
         file: StaticString = #filePath,
         line: UInt = #line,
-        evaluate: (Input) async -> Expected
+        evaluate: (Input) async -> Expected,
     ) async {
         for scenario in scenarios {
             let actual = await evaluate(scenario.input)

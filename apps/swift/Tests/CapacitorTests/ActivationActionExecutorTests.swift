@@ -3,21 +3,21 @@ import XCTest
 
 @MainActor
 final class ActivationActionExecutorTests: XCTestCase {
-    private struct ExpectedDependencyRoute {
-        let action: String
-        let tty: String?
-        let terminalType: TerminalType?
-        let sessionName: String?
-        let projectPath: String?
-        let projectName: String?
-    }
+    private typealias ExpectedDependencyRoute = (
+        action: String,
+        tty: String?,
+        terminalType: TerminalType?,
+        sessionName: String?,
+        projectPath: String?,
+        projectName: String?,
+    )
 
-    private struct ExpectedEnsureRoute {
-        let sessionName: String
-        let projectPath: String
-        let preferredClientTty: String?
-        let assertPreferredClientTty: Bool
-    }
+    private typealias ExpectedEnsureRoute = (
+        sessionName: String,
+        projectPath: String,
+        preferredClientTty: String?,
+        assertPreferredClientTty: Bool,
+    )
 
     private struct HostSwitchFallbackExpectation {
         let ensureRoute: ExpectedEnsureRoute?
@@ -298,32 +298,33 @@ final class ActivationActionExecutorTests: XCTestCase {
     }
 
     func testExecuteRoutesActivateAppRoutingScenarios() async {
-        struct ActivateAppRouteExpectation {
-            let expectedLastAction: String?
-            let expectedLastAppName: String?
-            let expectedGhosttyActivations: Int
-            let expectedGhosttyProjectPath: String?
-        }
-
-        let scenarios: [LabeledExpectationScenario<String, ActivateAppRouteExpectation>] = [
+        let scenarios: [LabeledExpectationScenario<
+            String,
+            (
+                expectedLastAction: String?,
+                expectedLastAppName: String?,
+                expectedGhosttyActivations: Int,
+                expectedGhosttyProjectPath: String?
+            ),
+        >] = [
             LabeledExpectationScenario(
                 label: "ghostty_bypasses_dependencies",
                 input: "Ghostty",
-                expected: ActivateAppRouteExpectation(
+                expected: (
                     expectedLastAction: nil,
                     expectedLastAppName: nil,
                     expectedGhosttyActivations: 1,
-                    expectedGhosttyProjectPath: "/Users/pete/Code/capacitor"
+                    expectedGhosttyProjectPath: "/Users/pete/Code/capacitor",
                 ),
             ),
             LabeledExpectationScenario(
                 label: "non_ghostty_routes_to_dependencies",
                 input: "iTerm",
-                expected: ActivateAppRouteExpectation(
+                expected: (
                     expectedLastAction: "activateApp",
                     expectedLastAppName: "iTerm",
                     expectedGhosttyActivations: 0,
-                    expectedGhosttyProjectPath: nil
+                    expectedGhosttyProjectPath: nil,
                 ),
             ),
         ]
@@ -439,9 +440,9 @@ final class ActivationActionExecutorTests: XCTestCase {
                         sessionName: "cap",
                         projectPath: "/Users/pete/Code/cap",
                         preferredClientTty: nil,
-                        assertPreferredClientTty: false
+                        assertPreferredClientTty: false,
                     ),
-                    shouldSpawnNewWindow: false
+                    shouldSpawnNewWindow: false,
                 ),
             ),
             EnsureFallbackScenario(
@@ -456,9 +457,9 @@ final class ActivationActionExecutorTests: XCTestCase {
                         sessionName: "cap",
                         projectPath: "/Users/pete/Code/cap",
                         preferredClientTty: nil,
-                        assertPreferredClientTty: false
+                        assertPreferredClientTty: false,
                     ),
-                    shouldSpawnNewWindow: false
+                    shouldSpawnNewWindow: false,
                 ),
             ),
         ]
@@ -521,9 +522,9 @@ final class ActivationActionExecutorTests: XCTestCase {
                         sessionName: "openclaw",
                         projectPath: "/Users/pete/Code/openclaw",
                         preferredClientTty: "/dev/ttys042",
-                        assertPreferredClientTty: true
+                        assertPreferredClientTty: true,
                     ),
-                    shouldSpawnNewWindow: false
+                    shouldSpawnNewWindow: false,
                 ),
             ),
             AttachedSwitchFallbackScenario(
@@ -536,9 +537,9 @@ final class ActivationActionExecutorTests: XCTestCase {
                         sessionName: "openclaw",
                         projectPath: "/Users/pete/Code/openclaw",
                         preferredClientTty: "/dev/ttys042",
-                        assertPreferredClientTty: true
+                        assertPreferredClientTty: true,
                     ),
-                    shouldSpawnNewWindow: false
+                    shouldSpawnNewWindow: false,
                 ),
             ),
             AttachedSwitchFallbackScenario(
@@ -551,9 +552,9 @@ final class ActivationActionExecutorTests: XCTestCase {
                         sessionName: "openclaw",
                         projectPath: "/Users/pete/Code/openclaw",
                         preferredClientTty: "/dev/ttys042",
-                        assertPreferredClientTty: true
+                        assertPreferredClientTty: true,
                     ),
-                    shouldSpawnNewWindow: false
+                    shouldSpawnNewWindow: false,
                 ),
             ),
         ]
@@ -628,8 +629,8 @@ final class ActivationActionExecutorTests: XCTestCase {
                     dependencyAction: nil,
                     fallback: HostSwitchFallbackExpectation(
                         ensureRoute: nil,
-                        shouldSpawnNewWindow: false
-                    )
+                        shouldSpawnNewWindow: false,
+                    ),
                 ),
             ),
             NoClientGhosttyScenario(
@@ -644,8 +645,8 @@ final class ActivationActionExecutorTests: XCTestCase {
                     dependencyAction: nil,
                     fallback: HostSwitchFallbackExpectation(
                         ensureRoute: nil,
-                        shouldSpawnNewWindow: false
-                    )
+                        shouldSpawnNewWindow: false,
+                    ),
                 ),
             ),
             NoClientGhosttyScenario(
@@ -663,9 +664,9 @@ final class ActivationActionExecutorTests: XCTestCase {
                             sessionName: "cap",
                             projectPath: "/Users/pete/Code/cap",
                             preferredClientTty: nil,
-                            assertPreferredClientTty: false
+                            assertPreferredClientTty: false,
                         ),
-                        shouldSpawnNewWindow: false
+                        shouldSpawnNewWindow: false,
                     ),
                 ),
             ),
@@ -684,9 +685,9 @@ final class ActivationActionExecutorTests: XCTestCase {
                             sessionName: "cap",
                             projectPath: "/Users/pete/Code/cap",
                             preferredClientTty: nil,
-                            assertPreferredClientTty: false
+                            assertPreferredClientTty: false,
                         ),
-                        shouldSpawnNewWindow: false
+                        shouldSpawnNewWindow: false,
                     ),
                 ),
             ),
@@ -702,8 +703,8 @@ final class ActivationActionExecutorTests: XCTestCase {
                     dependencyAction: nil,
                     fallback: HostSwitchFallbackExpectation(
                         ensureRoute: nil,
-                        shouldSpawnNewWindow: false
-                    )
+                        shouldSpawnNewWindow: false,
+                    ),
                 ),
             ),
         ]
@@ -934,10 +935,6 @@ final class ActivationActionExecutorTests: XCTestCase {
         )
     }
 
-    private func scenarioContext(_ name: String) -> String {
-        "[\(name)]"
-    }
-
     private func makeExecutor(
         configure: ((StubDependencies, StubTmuxClient, StubTerminalDiscovery, StubTerminalLauncherClient) -> Void)? = nil,
     ) -> (
@@ -945,7 +942,7 @@ final class ActivationActionExecutorTests: XCTestCase {
         deps: StubDependencies,
         tmux: StubTmuxClient,
         terminalDiscovery: StubTerminalDiscovery,
-        launcher: StubTerminalLauncherClient
+        launcher: StubTerminalLauncherClient,
     ) {
         let deps = StubDependencies()
         let tmux = StubTmuxClient()

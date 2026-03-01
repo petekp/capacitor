@@ -10,7 +10,7 @@ Scope: `core/`, `apps/swift/Tests/CapacitorTests/`, `tests/`, `services/ingest-w
 3. Freeze current weak-pattern surface with a CI guard so debt cannot grow.
 4. Define next rewrite slices to pay debt down deterministically.
 
-## Current Metrics (After RW-091)
+## Current Metrics (After RW-098)
 
 - Swift test files: `43`
 - Swift test methods: `253`
@@ -19,6 +19,8 @@ Scope: `core/`, `apps/swift/Tests/CapacitorTests/`, `tests/`, `services/ingest-w
 - Swift test methods inside source-coupled files: `0`
 - Sleep calls in Swift tests (`Task.sleep`/`Thread.sleep`/`usleep`): `0`
 - Local Swift `struct Scenario` declarations: `0`
+- Swift `private struct Expected*` declarations: `0`
+- Swift `private func scenarioContext` declarations: `0`
 - Rust test files: `22`
 - Rust test functions: `237`
 - bats files: `4`
@@ -135,7 +137,14 @@ Static bats source checks that do not execute behavior have been removed from th
 76. RW-089 extended shared labeled scenario record usage into `ActivationActionExecutorTests` and `TerminalLauncherTests`, increasing non-setup suite consistency without changing behavior coverage.
 77. RW-090 tightened the CI test-surface budget by freezing local Swift `struct Scenario` declarations at `4` (current level), preventing scenario-struct proliferation while preserving existing contracts.
 78. RW-091 removed all remaining local `struct Scenario` declarations (all were in `ActivationActionExecutorTests`) and ratcheted the CI budget to `0`, eliminating this duplication vector entirely.
-79. Next reductions should continue collapsing duplicate edge-case assertions into explicit contract tables rather than proliferating one-off tests.
+79. RW-092 removed remaining one-off expectation record structs in `RuntimeClientTests` and `ActivationActionExecutorTests` by converging those scenario tables on typed labeled tuple expectations, preserving branch-specific assertions while reducing scaffolding.
+80. RW-093 added a CI budget for Swift `private struct Expected*` declarations (`2`), freezing expectation-record helper growth while keeping the remaining focused route helpers explicit.
+81. RW-094 converged duplicated launch/ensure action assertion helpers in `TerminalLauncherTests` into one typed helper, reducing parallel helper shapes while preserving scenario-context diagnostics.
+82. RW-095 replaced the remaining `private struct Expected*` records in `ActivationActionExecutorTests` with labeled tuple aliases and ratcheted the CI `expected_record_structs` budget to `0`.
+83. RW-096 collapsed one-off script-snippet assertions in `TerminalLauncherTests` onto the shared `assertScriptsContainAll`/`assertScriptsContainNone` helper path and deleted the redundant single-snippet helper.
+84. RW-097 moved `scenarioContext` into the shared setup scenario harness, removed duplicate per-file helpers from high-volume suites, and added a CI zero-budget for local `scenarioContext` helper declarations.
+85. RW-098 resolved pre-existing SwiftFormat trailing-comma lint debt in five setup/installer contract test files so strict pre-commit linting remains enforceable without bypasses.
+86. Next reductions should continue collapsing duplicate edge-case assertions into explicit contract tables rather than proliferating one-off tests.
 
 ## Guardrails Added
 
@@ -154,7 +163,7 @@ This does not claim these patterns are good. It prevents regression while we pay
 
 ## Next Slices (proposed)
 
-1. `RW-092` Consolidate any remaining duplicated expectation record structs across high-volume suites (`RuntimeClientTests`, `ActivationActionExecutorTests`) where semantic overlap remains.
-2. `RW-093` Evaluate whether additional test-surface ratchets are possible (for example helper duplication counts) without harming readability.
+1. `RW-099` Identify and remove any remaining low-leverage assertion-helper duplication across `RuntimeClientTests` and `TerminalLauncherTests`.
+2. `RW-100` Evaluate whether one further safe CI test-surface ratchet is feasible after RW-099.
 
 Each slice should delete replaced tests in the same PR and ratchet the audit limits downward.

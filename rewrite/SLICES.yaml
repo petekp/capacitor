@@ -3308,3 +3308,186 @@ slices:
     risks:
       - "Renaming generic scenario structs to specific case types improves metric discipline but can still leave semantic overlap if expectation shapes are not later consolidated."
     notes: "Removes all remaining local `struct Scenario` declarations from Swift tests and ratchets `local_scenario_structs` CI budget to zero."
+
+  - id: RW-092
+    name: "Consolidate Remaining Expectation Record Scaffolding"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-091
+    touched_paths:
+      - apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift
+      - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift
+        - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios:
+      - live state update while coding
+      - click project card and restore terminal/tmux context
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Replacing explicit expectation structs with tuple expectations can reduce discoverability if tuple labels are not kept semantically clear at each scenario row."
+    notes: "Removes remaining one-off expectation structs in runtime/executor high-volume suites by converging on typed labeled tuple expectations."
+
+  - id: RW-093
+    name: "Test Surface Budget Ratchet for Expected Record Structs"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-092
+    touched_paths:
+      - scripts/ci/test-surface-audit.sh
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - scripts/ci/test-surface-audit.sh
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Pattern-based budgets can block valid additions; mitigation is keeping the threshold focused and adjusting only in explicit debt-paydown slices."
+    notes: "Adds a CI budget for Swift `private struct Expected*` declarations to freeze expectation-record helper growth after RW-092 cleanup."
+
+  - id: RW-094
+    name: "Terminal Launcher Action Assertion Helper Convergence"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-093
+    touched_paths:
+      - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios:
+      - click project card and restore terminal/tmux context
+      - live state update while coding
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Over-consolidating assertion helpers can reduce branch-level failure specificity; mitigation is preserving scenario-specific context strings at each call site."
+    notes: "Collapses duplicated launch/ensure action assertion helpers into one typed helper in `TerminalLauncherTests`, reducing parallel helper shapes while keeping explicit expectations."
+
+  - id: RW-095
+    name: "Expected Record Struct Elimination and Budget Ratchet"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-094
+    touched_paths:
+      - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
+      - scripts/ci/test-surface-audit.sh
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
+        - scripts/ci/test-surface-audit.sh
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios:
+      - click project card and restore terminal/tmux context
+      - live state update while coding
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Tuple aliases can obscure structural intent if labels drift; mitigation is preserving explicit labels and assertion helper boundaries."
+    notes: "Replaces the remaining `private struct Expected*` helpers with labeled tuple aliases and ratchets `expected_record_structs` CI budget from 2 to 0."
+
+  - id: RW-096
+    name: "Terminal Launcher Script Assertion Scaffolding Convergence"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-095
+    touched_paths:
+      - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios:
+      - click project card and restore terminal/tmux context
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Over-collapsing script assertions can hide specific intent; mitigation is preserving context-rich assertion messages for each scenario branch."
+    notes: "Routes remaining one-off script-snippet assertions through shared script assertion helpers and deletes the redundant single-snippet helper."
+
+  - id: RW-097
+    name: "Shared Scenario Context Helper + Zero-Budget Guardrail"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-096
+    touched_paths:
+      - apps/swift/Tests/CapacitorTests/SetupScenarioHarness.swift
+      - apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift
+      - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
+      - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
+      - scripts/ci/test-surface-audit.sh
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - apps/swift/Tests/CapacitorTests/SetupScenarioHarness.swift
+        - apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift
+        - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
+        - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
+        - scripts/ci/test-surface-audit.sh
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios:
+      - click project card and restore terminal/tmux context
+      - live state update while coding
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Centralizing context helper behavior could affect assertion-message formatting if changed later; mitigation is keeping helper output stable and simple."
+    notes: "Moves `scenarioContext` into shared test harness, removes duplicate per-file helpers, and enforces a zero-budget CI guard for local scenario-context helper declarations."

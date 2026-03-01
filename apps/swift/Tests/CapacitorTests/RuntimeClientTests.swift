@@ -3,36 +3,6 @@ import Foundation
 import XCTest
 
 final class RuntimeClientTests: XCTestCase {
-    private struct UnavailableRouteExpectation {
-        let workspaceId: String
-        let projectPath: String
-    }
-
-    private struct UnavailableRouteScenario {
-        let name: String
-        let projectPath: String
-        let workspaceId: String
-        let expected: UnavailableRouteExpectation
-    }
-
-    private struct RouteReasonScenario {
-        let name: String
-        let inputReasonCode: String
-        let expectedReasonCode: String
-    }
-
-    private struct DiagnosticsScopeScenario {
-        let name: String
-        let workspaceId: String
-        let expectedScopeResolution: String
-    }
-
-    private struct AttachedRouteExpectation {
-        let reasonCode: String?
-        let scopeResolution: String?
-        let candidateCount: Int?
-    }
-
     override func tearDown() {
         super.tearDown()
         unsetenv("CAPACITOR_RUNTIME_ENABLED")
@@ -115,8 +85,8 @@ final class RuntimeClientTests: XCTestCase {
             LabeledExpectationScenario(
                 label: "invalid_shell_timestamp",
                 input: { [self] in
-                    try self.makeClient(
-                        coreSnapshot: Self.makeInvalidShellTimestampSnapshot()
+                    try makeClient(
+                        coreSnapshot: Self.makeInvalidShellTimestampSnapshot(),
                     )
                 },
                 expected: .invalidResponse,
@@ -125,7 +95,7 @@ final class RuntimeClientTests: XCTestCase {
                 label: "snapshot_read_disabled",
                 input: { [self] in
                     setenv("CAPACITOR_CORE_SNAPSHOT_READ_ENABLED", "0", 1)
-                    return try self.makeClient()
+                    return try makeClient()
                 },
                 expected: .runtimeUnavailable,
             ),
@@ -146,7 +116,7 @@ final class RuntimeClientTests: XCTestCase {
                 case let (.runtimeUnavailable, .runtimeUnavailable(message)):
                     XCTAssertTrue(
                         message.contains("Core runtime snapshot unavailable"),
-                        "\(context) message mismatch"
+                        "\(context) message mismatch",
                     )
                 default:
                     XCTFail("\(context) unexpected RuntimeClientError: \(error)")
@@ -157,21 +127,28 @@ final class RuntimeClientTests: XCTestCase {
 
     func testFetchCoreRoutingSnapshotUnavailableScenarios() async throws {
         let normalizedUnmatchedPath = PathNormalizer.normalize("/TMP/Unmatched/../Unmatched///")
-        let scenarios: [UnavailableRouteScenario] = [
-            UnavailableRouteScenario(
-                name: "explicit_workspace_id",
-                projectPath: "/tmp/unmatched",
-                workspaceId: "workspace-missing",
-                expected: UnavailableRouteExpectation(
+        let scenarios: [LabeledExpectationScenario<
+            (projectPath: String, workspaceId: String),
+            (workspaceId: String, projectPath: String),
+        >] = [
+            LabeledExpectationScenario(
+                label: "explicit_workspace_id",
+                input: (
+                    projectPath: "/tmp/unmatched",
+                    workspaceId: "workspace-missing",
+                ),
+                expected: (
                     workspaceId: "workspace-missing",
                     projectPath: "/tmp/unmatched",
                 ),
             ),
-            UnavailableRouteScenario(
-                name: "blank_workspace_uses_normalized_project_path",
-                projectPath: "/TMP/Unmatched/../Unmatched///",
-                workspaceId: "   ",
-                expected: UnavailableRouteExpectation(
+            LabeledExpectationScenario(
+                label: "blank_workspace_uses_normalized_project_path",
+                input: (
+                    projectPath: "/TMP/Unmatched/../Unmatched///",
+                    workspaceId: "   ",
+                ),
+                expected: (
                     workspaceId: normalizedUnmatchedPath,
                     projectPath: normalizedUnmatchedPath,
                 ),
@@ -179,55 +156,60 @@ final class RuntimeClientTests: XCTestCase {
         ]
 
         for scenario in scenarios {
-            let context = scenarioContext(scenario.name)
+            let context = scenarioContext(scenario.label)
             let client = try makeClient()
             let snapshot = try await client.fetchCoreRoutingSnapshot(
-                projectPath: scenario.projectPath,
-                workspaceId: scenario.workspaceId,
+                projectPath: scenario.input.projectPath,
+                workspaceId: scenario.input.workspaceId,
             )
 
             assertUnavailableRoute(
                 snapshot,
                 projectPath: scenario.expected.projectPath,
                 workspaceId: scenario.expected.workspaceId,
-                context: context
+                context: context,
             )
         }
     }
 
     func testFetchCoreRoutingSnapshotReasonCodeScenarios() async throws {
-        let scenarios: [LabeledExpectationScenario<String, AttachedRouteExpectation>] = [
-            RouteReasonScenario(
-                name: "default_reason",
-                inputReasonCode: "tmux_client_attached",
-                expectedReasonCode: "TMUX_CLIENT_ATTACHED",
-            ),
-            RouteReasonScenario(
-                name: "normalizes_mixed_case",
-                inputReasonCode: "  mixed_case_reason  ",
-                expectedReasonCode: "MIXED_CASE_REASON",
-            ),
-            RouteReasonScenario(
-                name: "defaults_blank_reason",
-                inputReasonCode: "   ",
-                expectedReasonCode: "NO_TRUSTED_EVIDENCE",
-            ),
-        ].map { scenario in
+        let scenarios: [LabeledExpectationScenario<
+            String,
+            (reasonCode: String?, scopeResolution: String?, candidateCount: Int?),
+        >] = [
             LabeledExpectationScenario(
-                label: scenario.name,
-                input: scenario.inputReasonCode,
-                expected: AttachedRouteExpectation(
-                    reasonCode: scenario.expectedReasonCode,
+                label: "default_reason",
+                input: "tmux_client_attached",
+                expected: (
+                    reasonCode: "TMUX_CLIENT_ATTACHED",
                     scopeResolution: nil,
-                    candidateCount: nil
-                )
-            )
-        }
+                    candidateCount: nil,
+                ),
+            ),
+            LabeledExpectationScenario(
+                label: "normalizes_mixed_case",
+                input: "  mixed_case_reason  ",
+                expected: (
+                    reasonCode: "MIXED_CASE_REASON",
+                    scopeResolution: nil,
+                    candidateCount: nil,
+                ),
+            ),
+            LabeledExpectationScenario(
+                label: "defaults_blank_reason",
+                input: "   ",
+                expected: (
+                    reasonCode: "NO_TRUSTED_EVIDENCE",
+                    scopeResolution: nil,
+                    candidateCount: nil,
+                ),
+            ),
+        ]
 
         for scenario in scenarios {
             let context = scenarioContext(scenario.label)
             let client = try makeClient(
-                coreSnapshot: Self.makeRoutingReasonSnapshot(reasonCode: scenario.input)
+                coreSnapshot: Self.makeRoutingReasonSnapshot(reasonCode: scenario.input),
             )
             let snapshot = try await client.fetchCoreRoutingSnapshot(
                 projectPath: "/tmp/core-project",
@@ -242,28 +224,29 @@ final class RuntimeClientTests: XCTestCase {
     }
 
     func testFetchCoreRoutingDiagnosticsScopeResolutionScenarios() async throws {
-        let scenarios: [LabeledExpectationScenario<String, AttachedRouteExpectation>] = [
-            DiagnosticsScopeScenario(
-                name: "workspace_match",
-                workspaceId: "workspace-core",
-                expectedScopeResolution: "workspace_id",
-            ),
-            DiagnosticsScopeScenario(
-                name: "workspace_missing_falls_back_to_project_path",
-                workspaceId: "workspace-missing",
-                expectedScopeResolution: "project_path",
-            ),
-        ].map { scenario in
+        let scenarios: [LabeledExpectationScenario<
+            String,
+            (reasonCode: String?, scopeResolution: String?, candidateCount: Int?),
+        >] = [
             LabeledExpectationScenario(
-                label: scenario.name,
-                input: scenario.workspaceId,
-                expected: AttachedRouteExpectation(
+                label: "workspace_match",
+                input: "workspace-core",
+                expected: (
                     reasonCode: nil,
-                    scopeResolution: scenario.expectedScopeResolution,
-                    candidateCount: 1
-                )
-            )
-        }
+                    scopeResolution: "workspace_id",
+                    candidateCount: 1,
+                ),
+            ),
+            LabeledExpectationScenario(
+                label: "workspace_missing_falls_back_to_project_path",
+                input: "workspace-missing",
+                expected: (
+                    reasonCode: nil,
+                    scopeResolution: "project_path",
+                    candidateCount: 1,
+                ),
+            ),
+        ]
 
         for scenario in scenarios {
             let context = scenarioContext(scenario.label)
@@ -301,10 +284,6 @@ final class RuntimeClientTests: XCTestCase {
         XCTAssertEqual(health.status, "ok")
         XCTAssertEqual(health.protocolVersion, 1)
         XCTAssertTrue(health.version.contains("core-snapshot"))
-    }
-
-    private func scenarioContext(_ name: String) -> String {
-        "[\(name)]"
     }
 
     private func writeCoreSnapshot(_ data: Data) throws -> String {

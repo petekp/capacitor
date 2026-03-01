@@ -106,8 +106,14 @@ final class TerminalLauncherTests: XCTestCase {
 
         XCTAssertTrue(result)
         XCTAssertEqual(activateCalls, 1)
-        assertScriptsContain(scripts, "display-message -p '#{client_tty}'")
-        assertScriptsContain(scripts, "tmux switch-client -c '/dev/ttys010' -t 'writing'")
+        assertScriptsContainAll(
+            scripts,
+            required: [
+                "display-message -p '#{client_tty}'",
+                "tmux switch-client -c '/dev/ttys010' -t 'writing'",
+            ],
+            context: "Switch flow should resolve client tty and target session.",
+        )
     }
 
     func testEnsureTmuxSessionCreatesThenActivates() async {
@@ -612,7 +618,7 @@ final class TerminalLauncherTests: XCTestCase {
                         command: "/opt/homebrew/bin/claude --resume abc123",
                     ),
                     expectNoTmux: true,
-                    expectNoUnsupportedTerminals: false
+                    expectNoUnsupportedTerminals: false,
                 ),
                 expected: (),
             ),
@@ -625,7 +631,7 @@ final class TerminalLauncherTests: XCTestCase {
                         claudePath: "/opt/homebrew/bin/claude",
                     ),
                     expectNoTmux: true,
-                    expectNoUnsupportedTerminals: true
+                    expectNoUnsupportedTerminals: true,
                 ),
                 expected: (),
             ),
@@ -638,7 +644,7 @@ final class TerminalLauncherTests: XCTestCase {
                         claudePath: "/opt/homebrew/bin/claude",
                     ),
                     expectNoTmux: true,
-                    expectNoUnsupportedTerminals: true
+                    expectNoUnsupportedTerminals: true,
                 ),
                 expected: (),
             ),
@@ -662,12 +668,18 @@ final class TerminalLauncherTests: XCTestCase {
 
             let lowercased = scenario.input.script.lowercased()
             if scenario.input.expectNoTmux {
-                XCTAssertFalse(lowercased.contains("tmux"), "\(context) Launch script must not reference tmux.")
+                assertScriptsContainNone(
+                    [lowercased],
+                    forbidden: ["tmux"],
+                    context: "\(context) Launch script must not reference tmux.",
+                )
             }
             if scenario.input.expectNoUnsupportedTerminals {
-                XCTAssertFalse(lowercased.contains("alacritty"), "\(context) Launch script must not include Alacritty branch.")
-                XCTAssertFalse(lowercased.contains("warp"), "\(context) Launch script must not include Warp branch.")
-                XCTAssertFalse(lowercased.contains("kitty"), "\(context) Launch script must not include kitty branch.")
+                assertScriptsContainNone(
+                    [lowercased],
+                    forbidden: ["alacritty", "warp", "kitty"],
+                    context: "\(context) Launch script must not include unsupported terminal branches.",
+                )
             }
         }
     }
@@ -1002,16 +1014,20 @@ final class TerminalLauncherTests: XCTestCase {
             case .primaryEnsureFailsThenFallbackLaunch:
                 XCTAssertEqual(actions.count, 2, "\(context) Expected one primary and one fallback action.")
                 if actions.count == 2 {
-                    assertEnsureTmuxAction(
+                    assertAction(
                         actions[0].action,
-                        expectedSession: "project-a",
-                        expectedProjectPath: projectA.path,
+                        expected: .ensureTmux(
+                            sessionName: "project-a",
+                            projectPath: projectA.path,
+                        ),
                         context: "\(context) Expected ensureTmuxSession primary action.",
                     )
-                    assertLaunchNewTerminalAction(
+                    assertAction(
                         actions[1].action,
-                        expectedPath: projectA.path,
-                        expectedName: projectA.name,
+                        expected: .launch(
+                            projectPath: projectA.path,
+                            projectName: projectA.name,
+                        ),
                         context: "\(context) Expected launchNewTerminal fallback action.",
                     )
                 }
@@ -1487,20 +1503,6 @@ final class TerminalLauncherTests: XCTestCase {
         scripts.contains { $0.contains(snippet) }
     }
 
-    private func assertScriptsContain(
-        _ scripts: [String],
-        _ snippet: String,
-        file: StaticString = #filePath,
-        line: UInt = #line,
-    ) {
-        XCTAssertTrue(
-            scriptsContain(scripts, snippet),
-            "Expected scripts to contain snippet: \(snippet)\nScripts: \(scripts)",
-            file: file,
-            line: line,
-        )
-    }
-
     private func assertScriptsContainAll(
         _ scripts: [String],
         required: [String],
@@ -1553,32 +1555,29 @@ final class TerminalLauncherTests: XCTestCase {
         )
     }
 
-    private func assertEnsureTmuxAction(
+    private func assertAction(
         _ action: ActivationAction,
-        expectedSession: String,
-        expectedProjectPath: String,
+        expected: ExpectedActivationAction,
         context: String,
+        file: StaticString = #filePath,
+        line: UInt = #line,
     ) {
-        guard case let .ensureTmuxSession(sessionName, projectPath) = action else {
-            XCTFail("\(context) Got \(String(describing: action))")
-            return
+        switch expected {
+        case let .launch(projectPath, projectName):
+            guard case let .launchNewTerminal(actualProjectPath, actualProjectName) = action else {
+                XCTFail("\(context) Got \(String(describing: action))", file: file, line: line)
+                return
+            }
+            XCTAssertEqual(actualProjectPath, projectPath, file: file, line: line)
+            XCTAssertEqual(actualProjectName, projectName, file: file, line: line)
+        case let .ensureTmux(sessionName, projectPath):
+            guard case let .ensureTmuxSession(actualSessionName, actualProjectPath) = action else {
+                XCTFail("\(context) Got \(String(describing: action))", file: file, line: line)
+                return
+            }
+            XCTAssertEqual(actualSessionName, sessionName, file: file, line: line)
+            XCTAssertEqual(actualProjectPath, projectPath, file: file, line: line)
         }
-        XCTAssertEqual(sessionName, expectedSession)
-        XCTAssertEqual(projectPath, expectedProjectPath)
-    }
-
-    private func assertLaunchNewTerminalAction(
-        _ action: ActivationAction,
-        expectedPath: String,
-        expectedName: String,
-        context: String,
-    ) {
-        guard case let .launchNewTerminal(projectPath, projectName) = action else {
-            XCTFail("\(context) Got \(String(describing: action))")
-            return
-        }
-        XCTAssertEqual(projectPath, expectedPath)
-        XCTAssertEqual(projectName, expectedName)
     }
 
     private func assertSingleActivationResult(
@@ -1592,10 +1591,6 @@ final class TerminalLauncherTests: XCTestCase {
         XCTAssertEqual(results.first?.projectPath, expectedPath)
         XCTAssertEqual(results.first?.success, expectedSuccess)
         XCTAssertEqual(results.first?.usedFallback, expectedUsedFallback)
-    }
-
-    private func scenarioContext(_ name: String) -> String {
-        "[\(name)]"
     }
 
     private static func actionMatches(
@@ -1625,21 +1620,6 @@ final class TerminalLauncherTests: XCTestCase {
     ) {
         XCTAssertEqual(actions.count, 1, "\(context) Expected exactly one action.", file: file, line: line)
         guard let first = actions.first else { return }
-        switch expected {
-        case let .launch(projectPath, projectName):
-            assertLaunchNewTerminalAction(
-                first,
-                expectedPath: projectPath,
-                expectedName: projectName,
-                context: context,
-            )
-        case let .ensureTmux(sessionName, projectPath):
-            assertEnsureTmuxAction(
-                first,
-                expectedSession: sessionName,
-                expectedProjectPath: projectPath,
-                context: context,
-            )
-        }
+        assertAction(first, expected: expected, context: context, file: file, line: line)
     }
 }
