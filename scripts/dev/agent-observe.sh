@@ -102,13 +102,6 @@ check() {
   echo "Runtime stdout log: $RUNTIME_STDOUT_LOG_PATH"
   [[ -f "$RUNTIME_STDOUT_LOG_PATH" ]] && echo "  ok" || echo "  missing"
 
-  echo "Transparent UI: $TRANSPARENT_UI_BASE_URL"
-  if curl -fsS "${TRANSPARENT_UI_BASE_URL}/runtime-snapshot" >/dev/null 2>&1; then
-    echo "  ok (reachable)"
-  else
-    echo "  not reachable"
-  fi
-
   if [[ "$ok" -eq 0 ]]; then
     exit 1
   fi
@@ -120,11 +113,6 @@ snapshot_path=$SNAPSHOT_PATH
 app_log_path=$APP_LOG_PATH
 runtime_stderr_log_path=$RUNTIME_STDERR_LOG_PATH
 runtime_stdout_log_path=$RUNTIME_STDOUT_LOG_PATH
-transparent_ui_base_url=$TRANSPARENT_UI_BASE_URL
-telemetry_endpoint=${TRANSPARENT_UI_BASE_URL}/telemetry
-telemetry_stream_endpoint=${TRANSPARENT_UI_BASE_URL}/telemetry-stream
-runtime_snapshot_endpoint=${TRANSPARENT_UI_BASE_URL}/runtime-snapshot
-agent_briefing_endpoint=${TRANSPARENT_UI_BASE_URL}/agent-briefing
 PATHS
 }
 
@@ -197,11 +185,7 @@ case "$command" in
     snapshot_query '.diagnostics'
     ;;
   snapshot)
-    if curl -fsS "${TRANSPARENT_UI_BASE_URL}/runtime-snapshot" >/dev/null 2>&1; then
-      http_get_json "${TRANSPARENT_UI_BASE_URL}/runtime-snapshot"
-    else
-      read_snapshot | pretty_print_json
-    fi
+    read_snapshot | pretty_print_json
     ;;
   briefing)
     if command -v jq >/dev/null 2>&1; then
@@ -226,7 +210,12 @@ case "$command" in
     ;;
   telemetry)
     limit="${1:-200}"
-    http_get_json "${TRANSPARENT_UI_BASE_URL}/telemetry?limit=${limit}"
+    if curl -fsS "${TRANSPARENT_UI_BASE_URL}/telemetry?limit=${limit}" 2>/dev/null | pretty_print_json; then
+      :
+    else
+      echo "Telemetry requires transparent-ui-server (node scripts/transparent-ui-server.mjs)" >&2
+      exit 1
+    fi
     ;;
   stream)
     require_cmd curl
