@@ -10,18 +10,12 @@ final class SetupReadinessCoordinatorTests: XCTestCase {
             let expected: StartupSetupDecision
         }
 
-        let presentClaudeDependency = DependencyStatus(
-            name: "claude",
-            required: true,
-            found: true,
-            path: "/opt/homebrew/bin/claude",
-            installHint: nil,
-        )
+        let presentClaudeDependency = SetupTestFixtures.claudeDependency(found: true)
 
         let scenarios: [Scenario] = [
             Scenario(
                 label: "claude-missing",
-                dependencies: [DependencyStatus(name: "claude", required: true, found: false, path: nil, installHint: nil)],
+                dependencies: [SetupTestFixtures.claudeDependency(found: false)],
                 hooks: .installed(version: "1.0.0"),
                 expected: .showWelcome(event: .claudeMissing),
             ),
@@ -46,7 +40,7 @@ final class SetupReadinessCoordinatorTests: XCTestCase {
         ]
 
         for scenario in scenarios {
-            let setupStatus = makeSetupStatus(
+            let setupStatus = SetupTestFixtures.setupStatus(
                 dependencies: scenario.dependencies,
                 hooks: scenario.hooks,
             )
@@ -57,9 +51,5 @@ final class SetupReadinessCoordinatorTests: XCTestCase {
                 "[\(scenario.label)] startup decision mismatch",
             )
         }
-    }
-
-    private func makeSetupStatus(dependencies: [DependencyStatus], hooks: HookStatus) -> SetupStatus {
-        SetupStatus(dependencies: dependencies, hooks: hooks, storageReady: true, allReady: true, blockingReason: nil)
     }
 }

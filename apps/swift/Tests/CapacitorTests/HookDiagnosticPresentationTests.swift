@@ -4,16 +4,9 @@ import XCTest
 @MainActor
 final class HookDiagnosticPresentationTests: XCTestCase {
     func testSetupCardHiddenWhenHooksIdleAfterFirstRun() {
-        let diagnostic = HookDiagnosticReport(
-            isHealthy: false,
+        let diagnostic = SetupTestFixtures.hookDiagnosticReport(
             primaryIssue: .notFiring(lastSeenSecs: 120),
-            canAutoFix: true,
-            isFirstRun: false,
-            binaryOk: true,
             configOk: true,
-            firingOk: false,
-            symlinkPath: "/tmp/hud-hook",
-            symlinkTarget: nil,
             lastHeartbeatAgeSecs: 120,
         )
 
@@ -21,68 +14,38 @@ final class HookDiagnosticPresentationTests: XCTestCase {
     }
 
     func testSetupCardHiddenOnFirstRunWhenNotFiring() {
-        let diagnostic = HookDiagnosticReport(
-            isHealthy: false,
+        let diagnostic = SetupTestFixtures.hookDiagnosticReport(
             primaryIssue: .notFiring(lastSeenSecs: nil),
-            canAutoFix: true,
             isFirstRun: true,
-            binaryOk: true,
             configOk: true,
-            firingOk: false,
-            symlinkPath: "/tmp/hud-hook",
-            symlinkTarget: nil,
-            lastHeartbeatAgeSecs: nil,
         )
 
         XCTAssertFalse(diagnostic.shouldShowSetupCard)
     }
 
     func testSetupCardShownOnConfigMissing() {
-        let diagnostic = HookDiagnosticReport(
-            isHealthy: false,
+        let diagnostic = SetupTestFixtures.hookDiagnosticReport(
             primaryIssue: .configMissing,
-            canAutoFix: true,
-            isFirstRun: false,
-            binaryOk: true,
             configOk: false,
-            firingOk: false,
-            symlinkPath: "/tmp/hud-hook",
-            symlinkTarget: nil,
-            lastHeartbeatAgeSecs: nil,
         )
 
         XCTAssertTrue(diagnostic.shouldShowSetupCard)
     }
 
     func testSetupCardShownOnFirstRunWhenConfigMissing() {
-        let diagnostic = HookDiagnosticReport(
-            isHealthy: false,
+        let diagnostic = SetupTestFixtures.hookDiagnosticReport(
             primaryIssue: .configMissing,
-            canAutoFix: true,
             isFirstRun: true,
-            binaryOk: true,
             configOk: false,
-            firingOk: false,
-            symlinkPath: "/tmp/hud-hook",
-            symlinkTarget: nil,
-            lastHeartbeatAgeSecs: nil,
         )
 
         XCTAssertTrue(diagnostic.shouldShowSetupCard)
     }
 
     func testSetupCardHeaderMessageIsIssueSpecificForConfigMissing() {
-        let diagnostic = HookDiagnosticReport(
-            isHealthy: false,
+        let diagnostic = SetupTestFixtures.hookDiagnosticReport(
             primaryIssue: .configMissing,
-            canAutoFix: true,
-            isFirstRun: false,
-            binaryOk: true,
             configOk: false,
-            firingOk: false,
-            symlinkPath: "/tmp/hud-hook",
-            symlinkTarget: nil,
-            lastHeartbeatAgeSecs: nil,
         )
 
         XCTAssertEqual(diagnostic.setupCardHeaderMessage, "Claude hooks not configured")
@@ -90,17 +53,10 @@ final class HookDiagnosticPresentationTests: XCTestCase {
     }
 
     func testSetupCardGuidanceIncludesPolicyReasonWhenBlocked() {
-        let diagnostic = HookDiagnosticReport(
-            isHealthy: false,
+        let diagnostic = SetupTestFixtures.hookDiagnosticReport(
             primaryIssue: .policyBlocked(reason: "disableAllHooks is enabled."),
             canAutoFix: false,
-            isFirstRun: false,
-            binaryOk: true,
             configOk: false,
-            firingOk: false,
-            symlinkPath: "/tmp/hud-hook",
-            symlinkTarget: nil,
-            lastHeartbeatAgeSecs: nil,
         )
 
         XCTAssertTrue(diagnostic.setupCardIsPolicyBlocked)

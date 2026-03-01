@@ -10,7 +10,7 @@ Scope: `core/`, `apps/swift/Tests/CapacitorTests/`, `tests/`, `services/ingest-w
 3. Freeze current weak-pattern surface with a CI guard so debt cannot grow.
 4. Define next rewrite slices to pay debt down deterministically.
 
-## Current Metrics (After RW-080)
+## Current Metrics (After RW-081)
 
 - Swift test files: `43`
 - Swift test methods: `258`
@@ -123,7 +123,8 @@ Static bats source checks that do not execute behavior have been removed from th
 65. RW-078 replaced repetitive setup preview scenario array literals with typed scenario records and added explicit preview scenario contract tests for step-order/status parity.
 66. RW-079 consolidated setup onboarding contract assertions into labeled scenario-table tests (`HookPresentationPolicyTests`, `SetupReadinessCoordinatorTests`), reducing one-off test method count while preserving explicit branch coverage.
 67. RW-080 centralized shell/hook setup status copy assertions into one canonical scenario-table suite (`SetupStatusCopyContractTests`) and removed redundant copies from adjacent setup suites without reducing behavior coverage.
-68. Next reductions should continue collapsing duplicate edge-case assertions into explicit contract tables rather than proliferating one-off tests.
+68. RW-081 introduced a shared setup fixture module (`SetupTestFixtures`) and removed duplicated setup status/diagnostic constructor scaffolding from readiness and hook diagnostic suites without changing behavior assertions.
+69. Next reductions should continue collapsing duplicate edge-case assertions into explicit contract tables rather than proliferating one-off tests.
 
 ## Guardrails Added
 
@@ -142,7 +143,7 @@ This does not claim these patterns are good. It prevents regression while we pay
 
 ## Next Slices (proposed)
 
-1. `RW-081` Consolidate duplicated setup fixture builders across setup-focused Swift tests (`HookDiagnosticPresentation`, setup-preview, readiness) into one shared test fixture module.
-2. `RW-082` Continue table-driven consolidation in setup diagnostics tests by merging overlapping visibility/header/guidance permutations into one labeled contract matrix.
+1. `RW-082` Continue table-driven consolidation in setup diagnostics tests by merging overlapping visibility/header/guidance permutations into one labeled contract matrix.
+2. `RW-083` Consolidate repeated setup-status scenario record structs into a shared test harness helper to reduce per-file boilerplate without losing labeled context.
 
 Each slice should delete replaced tests in the same PR and ratchet the audit limits downward.

@@ -594,3 +594,9 @@ RW-080,swift-setup-catalog-status-assertion-prune-rw080,apps/swift/Tests/Capacit
 RW-080,rewrite-test-audit-rw080,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit conclusions after setup status contract consolidation
 RW-080,rewrite-ledger-rw080,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-080 lifecycle and risk notes
 RW-080,rewrite-map-rw080,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-080 path mappings for guard enforcement
+RW-081,swift-setup-fixture-module-rw081,,apps/swift/Tests/CapacitorTests/SetupTestFixtures.swift,done,false,Add shared setup fixture builders for setup status/dependency/diagnostic report contracts
+RW-081,swift-hook-diagnostic-fixture-cutover-rw081,apps/swift/Tests/CapacitorTests/HookDiagnosticPresentationTests.swift,apps/swift/Tests/CapacitorTests/HookDiagnosticPresentationTests.swift,done,false,Rewire hook diagnostic presentation tests to canonical setup fixture builders
+RW-081,swift-startup-readiness-fixture-cutover-rw081,apps/swift/Tests/CapacitorTests/SetupReadinessCoordinatorTests.swift,apps/swift/Tests/CapacitorTests/SetupReadinessCoordinatorTests.swift,done,false,Rewire startup readiness scenario tests to canonical setup fixture builders
+RW-081,rewrite-test-audit-rw081,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit metrics/conclusions after setup fixture consolidation
+RW-081,rewrite-ledger-rw081,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-081 lifecycle and risk notes
+RW-081,rewrite-map-rw081,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-081 path mappings for guard enforcement

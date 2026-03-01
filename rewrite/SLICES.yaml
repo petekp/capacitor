@@ -2975,3 +2975,36 @@ slices:
     risks:
       - "Centralizing status-copy assertions into one suite can hide regressions if other setup tests implicitly relied on now-removed local assertions."
     notes: "Collapses duplicate shell/hook setup status-copy assertions into one canonical scenario-table contract and removes redundant copies from adjacent setup-focused tests."
+
+  - id: RW-081
+    name: "Shared Setup Test Fixture Module"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-080
+    touched_paths:
+      - apps/swift/Tests/CapacitorTests/SetupTestFixtures.swift
+      - apps/swift/Tests/CapacitorTests/HookDiagnosticPresentationTests.swift
+      - apps/swift/Tests/CapacitorTests/SetupReadinessCoordinatorTests.swift
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added:
+        - apps/swift/Tests/CapacitorTests/SetupTestFixtures.swift
+      changed:
+        - apps/swift/Tests/CapacitorTests/HookDiagnosticPresentationTests.swift
+        - apps/swift/Tests/CapacitorTests/SetupReadinessCoordinatorTests.swift
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios:
+      - fresh install setup flow
+      - hook install/fix flow
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Fixture abstraction can hide per-test intent if helpers become over-parameterized or encode behavior implicitly."
+    notes: "Extracts shared setup fixture builders (`SetupStatus`, `DependencyStatus`, `HookDiagnosticReport`) and rewires setup-focused tests to reduce constructor duplication."
