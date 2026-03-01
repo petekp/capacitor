@@ -342,6 +342,58 @@ final class TerminalLauncher: ActivationActionDependencies {
         return retry.exitCode == 0
     }
 
+    /// Unified activation flow per spec v2 decision tree.
+    /// 1. Resolve client (managed → any → launch)
+    /// 2. Ensure session + switch
+    /// 3. Focus terminal
+    static func performUnifiedActivation(
+        sessionName: String,
+        projectPath: String,
+        managedTty: String?,
+        isTtyAlive: (String) -> Bool,
+        resolveAnyClientTty: () async -> String?,
+        ensureAndSwitch: (String, String, String) async -> Bool,
+        launchTerminalWithTmux: (String, String) -> Void,
+        activateTerminal: (String?, String, String?) async -> Bool,
+        pollForNewClient: (() async -> String?)? = nil,
+        onManagedTtyUpdate: (String?) -> Void,
+    ) async -> Bool {
+        // Step 1: Resolve client.
+        let clientTty = await resolveTmuxClient(
+            managedTty: managedTty,
+            isTtyAlive: isTtyAlive,
+            resolveAnyClientTty: resolveAnyClientTty,
+        )
+
+        guard let clientTty else {
+            // No client available — launch terminal with tmux (creates client).
+            debugLog("performUnifiedActivation noClient, launching terminal session=\(sessionName)")
+            launchTerminalWithTmux(sessionName, projectPath)
+            // Capture TTY from the newly launched client.
+            if let poll = pollForNewClient, let newTty = await poll() {
+                onManagedTtyUpdate(newTty)
+            }
+            return true
+        }
+
+        // Update managed TTY if we adopted a new one.
+        if clientTty != managedTty {
+            debugLog("performUnifiedActivation adoptingTty=\(clientTty)")
+            onManagedTtyUpdate(clientTty)
+        }
+
+        // Step 2: Ensure session exists + switch client to it.
+        let switched = await ensureAndSwitch(sessionName, projectPath, clientTty)
+        guard switched else {
+            debugLog("performUnifiedActivation ensureAndSwitch failed session=\(sessionName)")
+            return false
+        }
+
+        // Step 3: Focus terminal.
+        _ = await activateTerminal(clientTty, projectPath, sessionName)
+        return true
+    }
+
     func launchTerminal(for project: Project) {
         latestLaunchRequestID &+= 1
         let requestID = latestLaunchRequestID

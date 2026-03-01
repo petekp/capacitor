@@ -1510,6 +1510,117 @@ final class TerminalLauncherTests: XCTestCase {
         XCTAssertTrue(commands[1].contains("new-project"))
     }
 
+    // S1/S7: No clients at all → launch terminal
+    func testUnifiedActivationLaunchesWhenNoClients() async {
+        var launched = false
+        var capturedTty: String?
+        let ok = await TerminalLauncher.performUnifiedActivation(
+            sessionName: "my-project",
+            projectPath: "/path/to/project",
+            managedTty: nil,
+            isTtyAlive: { _ in false },
+            resolveAnyClientTty: { nil },
+            ensureAndSwitch: { _, _, _ in XCTFail("should not be called"); return false },
+            launchTerminalWithTmux: { session, path in
+                XCTAssertEqual(session, "my-project")
+                XCTAssertEqual(path, "/path/to/project")
+                launched = true
+            },
+            activateTerminal: { _, _, _ in XCTFail("should not be called"); return false },
+            pollForNewClient: { "/dev/ttys050" },
+            onManagedTtyUpdate: { capturedTty = $0 },
+        )
+        XCTAssertTrue(ok)
+        XCTAssertTrue(launched)
+        XCTAssertEqual(capturedTty, "/dev/ttys050")
+    }
+
+    // S3: Managed TTY alive, session exists → switch + focus
+    func testUnifiedActivationSwitchesOnManagedTty() async {
+        var switchedSession: String?
+        var terminalActivated = false
+        let ok = await TerminalLauncher.performUnifiedActivation(
+            sessionName: "other-project",
+            projectPath: "/other",
+            managedTty: "/dev/ttys001",
+            isTtyAlive: { _ in true },
+            resolveAnyClientTty: { XCTFail("should not be called"); return nil },
+            ensureAndSwitch: { session, _, tty in
+                switchedSession = session
+                XCTAssertEqual(tty, "/dev/ttys001")
+                return true
+            },
+            launchTerminalWithTmux: { _, _ in XCTFail("should not launch") },
+            activateTerminal: { _, _, _ in terminalActivated = true; return true },
+            onManagedTtyUpdate: { _ in },
+        )
+        XCTAssertTrue(ok)
+        XCTAssertEqual(switchedSession, "other-project")
+        XCTAssertTrue(terminalActivated)
+    }
+
+    // S6: Managed TTY dead, other client exists → adopt + switch
+    func testUnifiedActivationAdoptsClientWhenManagedDead() async {
+        var adoptedTty: String?
+        var switchTty: String?
+        let ok = await TerminalLauncher.performUnifiedActivation(
+            sessionName: "proj",
+            projectPath: "/proj",
+            managedTty: "/dev/ttys99999",
+            isTtyAlive: { _ in false },
+            resolveAnyClientTty: { "/dev/ttys042" },
+            ensureAndSwitch: { _, _, tty in
+                switchTty = tty
+                return true
+            },
+            launchTerminalWithTmux: { _, _ in XCTFail("should not launch") },
+            activateTerminal: { _, _, _ in true },
+            onManagedTtyUpdate: { adoptedTty = $0 },
+        )
+        XCTAssertTrue(ok)
+        XCTAssertEqual(adoptedTty, "/dev/ttys042")
+        XCTAssertEqual(switchTty, "/dev/ttys042")
+    }
+
+    // S4: Session doesn't exist → ensureAndSwitch creates + switches
+    func testUnifiedActivationCreatesSessionWhenMissing() async {
+        var ensureCalled = false
+        let ok = await TerminalLauncher.performUnifiedActivation(
+            sessionName: "new-proj",
+            projectPath: "/new",
+            managedTty: "/dev/ttys001",
+            isTtyAlive: { _ in true },
+            resolveAnyClientTty: { nil },
+            ensureAndSwitch: { session, path, _ in
+                ensureCalled = true
+                XCTAssertEqual(session, "new-proj")
+                XCTAssertEqual(path, "/new")
+                return true
+            },
+            launchTerminalWithTmux: { _, _ in XCTFail("should not launch") },
+            activateTerminal: { _, _, _ in true },
+            onManagedTtyUpdate: { _ in },
+        )
+        XCTAssertTrue(ok)
+        XCTAssertTrue(ensureCalled)
+    }
+
+    /// Switch fails → returns false
+    func testUnifiedActivationReturnsFalseWhenSwitchFails() async {
+        let ok = await TerminalLauncher.performUnifiedActivation(
+            sessionName: "broken",
+            projectPath: "/broken",
+            managedTty: "/dev/ttys001",
+            isTtyAlive: { _ in true },
+            resolveAnyClientTty: { nil },
+            ensureAndSwitch: { _, _, _ in false },
+            launchTerminalWithTmux: { _, _ in },
+            activateTerminal: { _, _, _ in true },
+            onManagedTtyUpdate: { _ in },
+        )
+        XCTAssertFalse(ok)
+    }
+
     /// Create fails → return false
     func testEnsureAndSwitchReturnsFalseWhenCreateFails() async {
         let ok = await TerminalLauncher.ensureSessionAndSwitch(
