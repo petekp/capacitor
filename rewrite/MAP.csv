@@ -409,6 +409,14 @@ RW-054,swift-terminal-fallback-expectation-records-rw054,apps/swift/Tests/Capaci
 RW-054,rewrite-test-audit-rw054,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit conclusions after TerminalLauncher expectation-record consolidation
 RW-054,rewrite-ledger-rw054,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-054 lifecycle and risk notes
 RW-054,rewrite-map-rw054,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-054 path mappings for guard enforcement
+RW-055,swift-activation-host-switch-fallback-expectations-rw055,apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift,apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift,done,false,Introduce compact host-switch fallback expectation records and shared assertion helper across activation fallback scenario suites
+RW-055,rewrite-test-audit-rw055,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit conclusions after ActivationActionExecutor fallback expectation consolidation
+RW-055,rewrite-ledger-rw055,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-055 lifecycle and risk notes
+RW-055,rewrite-map-rw055,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-055 path mappings for guard enforcement
 RW-056,rust-hook-settings-legacy-migration-rw056,core/capacitor-core/src/runtime_setup.rs,core/capacitor-core/src/runtime_setup.rs,done,false,Migrate legacy flat Claude hook entries to nested hooks-array format and add regression coverage
 RW-056,rewrite-ledger-rw056,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-056 lifecycle and risk notes
 RW-056,rewrite-map-rw056,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-056 path mappings for guard enforcement
+RW-057,rust-hook-matcher-object-compat-rw057,core/capacitor-core/src/runtime_setup.rs,core/capacitor-core/src/runtime_setup.rs,done,false,Accept and preserve object-based matcher shapes while still registering Capacitor-managed hooks
+RW-057,rewrite-test-audit-rw057,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit conclusions after hook matcher-object compatibility hardening
+RW-057,rewrite-ledger-rw057,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-057 lifecycle and risk notes
+RW-057,rewrite-map-rw057,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-057 path mappings for guard enforcement

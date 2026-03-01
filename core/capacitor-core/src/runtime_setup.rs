@@ -436,8 +436,8 @@ impl SetupChecker {
                 if needs_matcher {
                     let matcher_ok = hook_config
                         .matcher
-                        .as_deref()
-                        .map(|m| m.trim() == "*")
+                        .as_ref()
+                        .map(matcher_matches_all_tools)
                         .unwrap_or(false);
                     if matcher_ok {
                         return true;
@@ -528,11 +528,11 @@ impl SetupChecker {
         if has_hud_hook && needs_matcher {
             let matcher_ok = hook_config
                 .matcher
-                .as_deref()
-                .map(|m| m.trim() == "*")
+                .as_ref()
+                .map(matcher_matches_all_tools)
                 .unwrap_or(false);
             if !matcher_ok {
-                hook_config.matcher = Some("*".to_string());
+                hook_config.matcher = Some(serde_json::Value::String("*".to_string()));
             }
         }
 
@@ -704,7 +704,7 @@ impl SetupChecker {
             if !already_has_hud_hook {
                 let hook_config = HookConfig {
                     matcher: if needs_matcher {
-                        Some("*".to_string())
+                        Some(serde_json::Value::String("*".to_string()))
                     } else {
                         None
                     },
@@ -856,7 +856,7 @@ struct SettingsFile {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct HookConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
-    matcher: Option<String>,
+    matcher: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     hooks: Option<Vec<InnerHook>>,
     #[serde(flatten)]
@@ -875,6 +875,22 @@ struct InnerHook {
     timeout: Option<u32>,
     #[serde(flatten)]
     other: HashMap<String, serde_json::Value>,
+}
+
+fn matcher_matches_all_tools(matcher: &serde_json::Value) -> bool {
+    match matcher {
+        serde_json::Value::String(value) => value.trim() == "*",
+        serde_json::Value::Object(map) => map
+            .get("tools")
+            .and_then(|tools| tools.as_array())
+            .map(|tools| {
+                tools
+                    .iter()
+                    .any(|tool| tool.as_str().map(|value| value.trim() == "*").unwrap_or(false))
+            })
+            .unwrap_or(false),
+        _ => false,
+    }
 }
 
 #[cfg(test)]
@@ -968,6 +984,47 @@ mod tests {
             HOOK_COMMAND
         );
         assert!(checker.hooks_registered_in_settings());
+    }
+
+    #[test]
+    fn test_register_hooks_preserves_object_matcher_entries() {
+        let (_temp, storage) = setup_test_env();
+        let checker = SetupChecker::new(storage.clone());
+
+        let existing = r#"{
+            "hooks": {
+                "PostToolUse": [
+                    {
+                        "matcher": {"tools": ["BashTool"]},
+                        "hooks": [{"type": "command", "command": "custom-post-tool.sh"}]
+                    }
+                ]
+            }
+        }"#;
+        fs::write(storage.claude_settings_file(), existing).unwrap();
+
+        checker.register_hooks_in_settings().unwrap();
+
+        let settings_content = fs::read_to_string(storage.claude_settings_file()).unwrap();
+        let settings: serde_json::Value = serde_json::from_str(&settings_content).unwrap();
+        let post_tool_use = settings["hooks"]["PostToolUse"]
+            .as_array()
+            .expect("PostToolUse should remain an array");
+
+        assert!(
+            post_tool_use.iter().any(|entry| {
+                entry["matcher"]["tools"][0] == "BashTool" &&
+                    entry["hooks"][0]["command"] == "custom-post-tool.sh"
+            }),
+            "object-matcher custom entry should be preserved"
+        );
+
+        assert!(
+            post_tool_use.iter().any(|entry| {
+                entry["hooks"][0]["command"] == HOOK_COMMAND && entry["matcher"] == "*"
+            }),
+            "Capacitor-managed hook should still be registered"
+        );
     }
 
     #[test]
@@ -1152,6 +1209,18 @@ mod tests {
         assert_eq!(hook.command.as_deref(), Some(original.as_str()));
         assert_eq!(hook.async_hook, None);
         assert_eq!(hook.timeout, None);
+    }
+
+    #[test]
+    fn test_matcher_matches_all_tools_supports_string_and_object_forms() {
+        assert!(matcher_matches_all_tools(&serde_json::json!("*")));
+        assert!(matcher_matches_all_tools(&serde_json::json!({
+            "tools": ["BashTool", "*"]
+        })));
+        assert!(!matcher_matches_all_tools(&serde_json::json!({
+            "tools": ["BashTool"]
+        })));
+        assert!(!matcher_matches_all_tools(&serde_json::json!(null)));
     }
 
     // ─────────────────────────────────────────────────────────────────────────────

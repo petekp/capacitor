@@ -2034,6 +2034,33 @@ slices:
       - "Grouping fallback/no-trusted-evidence expectations into shared record structs can hide scenario intent if case names and helper assertions are not explicit about launch-vs-ensure routing."
     notes: "Refactors snapshot-failure and no-trusted-evidence scenario tables in `TerminalLauncherTests` to use shared expectation records, reducing repeated scalar expectation wiring while preserving action/result marker assertions."
 
+  - id: RW-055
+    name: "Activation Host-Switch Fallback Expectations"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-052
+    touched_paths:
+      - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Collapsing fallback assertions into shared expectation records can reduce per-scenario clarity unless expected dependency action and ensure-route intent remain explicit in the scenario table."
+    notes: "Introduces compact host-switch fallback expectation records and a shared assertion helper in `ActivationActionExecutorTests`, replacing repeated ensure-route/no-window assertion bundles across fallback scenario suites."
+
   - id: RW-056
     name: "Hook Settings Legacy Entry Migration"
     owner: "agent/session"
@@ -2058,3 +2085,30 @@ slices:
     risks:
       - "Migrating legacy flat hook objects can alter non-Capacitor custom hooks if they relied on malformed top-level fields instead of nested hooks arrays."
     notes: "Adds a migration pass that rewrites legacy flat hook entries (`type`/`command` at top level) into modern nested `hooks` arrays before hook normalization, and adds regression coverage to prevent SessionStart/SessionEnd schema errors."
+
+  - id: RW-057
+    name: "Hook Matcher Object Compatibility"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-056
+    touched_paths:
+      - core/capacitor-core/src/runtime_setup.rs
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - core/capacitor-core/src/runtime_setup.rs
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Accepting matcher object forms increases parser flexibility but can mask malformed matcher objects unless explicit wildcard compatibility checks remain covered by unit tests."
+    notes: "Updates hook matcher handling to accept both string (`\"*\"`) and object (`{\"tools\":[...]}`) forms, preserves custom object-matcher entries, and adds matcher compatibility regression tests."
