@@ -304,6 +304,19 @@ final class TerminalLauncher: ActivationActionDependencies {
         FileManager.default.fileExists(atPath: tty)
     }
 
+    /// Resolve which tmux client TTY to use for session switching.
+    /// Spec decision tree step 1: managed (alive) → any client → nil (must launch).
+    static func resolveTmuxClient(
+        managedTty: String?,
+        isTtyAlive: (String) -> Bool,
+        resolveAnyClientTty: () async -> String?,
+    ) async -> String? {
+        if let managedTty, isTtyAlive(managedTty) {
+            return managedTty
+        }
+        return await resolveAnyClientTty()
+    }
+
     func launchTerminal(for project: Project) {
         latestLaunchRequestID &+= 1
         let requestID = latestLaunchRequestID

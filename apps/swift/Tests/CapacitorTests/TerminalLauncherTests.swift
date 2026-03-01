@@ -1435,6 +1435,51 @@ final class TerminalLauncherTests: XCTestCase {
         XCTAssertTrue(TerminalLauncher.isTtyAlive("/dev/null"))
     }
 
+    // S3/S5: Managed TTY alive → use it directly (no resolve call)
+    func testResolveTmuxClientUsesManagedWhenAlive() async {
+        let result = await TerminalLauncher.resolveTmuxClient(
+            managedTty: "/dev/ttys001",
+            isTtyAlive: { _ in true },
+            resolveAnyClientTty: { XCTFail("should not be called"); return nil },
+        )
+        XCTAssertEqual(result, "/dev/ttys001")
+    }
+
+    // S6: Managed TTY died, another client exists → adopt it
+    func testResolveTmuxClientFallsBackToAnyClientWhenManagedDead() async {
+        var resolvedAnyCalled = false
+        let result = await TerminalLauncher.resolveTmuxClient(
+            managedTty: "/dev/ttys99999",
+            isTtyAlive: { _ in false },
+            resolveAnyClientTty: {
+                resolvedAnyCalled = true
+                return "/dev/ttys042"
+            },
+        )
+        XCTAssertEqual(result, "/dev/ttys042")
+        XCTAssertTrue(resolvedAnyCalled)
+    }
+
+    // S1/S7: No managed TTY, no clients → nil (caller must launch)
+    func testResolveTmuxClientReturnsNilWhenNoClients() async {
+        let result = await TerminalLauncher.resolveTmuxClient(
+            managedTty: nil,
+            isTtyAlive: { _ in false },
+            resolveAnyClientTty: { nil },
+        )
+        XCTAssertNil(result)
+    }
+
+    /// No managed TTY but a client exists → adopt it
+    func testResolveTmuxClientAdoptsWhenNoManagedTty() async {
+        let result = await TerminalLauncher.resolveTmuxClient(
+            managedTty: nil,
+            isTtyAlive: { _ in false },
+            resolveAnyClientTty: { "/dev/ttys010" },
+        )
+        XCTAssertEqual(result, "/dev/ttys010")
+    }
+
     // MARK: - Helpers
 
     private static func makeAttachedTerminalAppDecision(
