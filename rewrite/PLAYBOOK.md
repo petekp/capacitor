@@ -200,3 +200,15 @@ git diff --name-only
 ```
 
 Use this playbook as process law for major refactors. If you need to bend a rule, record the exception as a decision with explicit scope and expiry.
+
+## 15) Scenario Coverage Checklist (Table-Driven Tests)
+
+Before merging table-driven test edits, run this checklist:
+
+1. Enumerate branches in the production function being tested (`switch` arms, guards, early returns).
+2. Keep exactly one scenario row per branch unless a row validates a distinct invariant for the same branch.
+3. Include the "healthy/default/no-op" branch explicitly when it exists.
+4. Remove branch-equivalent duplicate rows (same branch, same assertion outcome, no additional invariant).
+5. Use branch-meaningful labels (`config-missing-shown`, `not-firing-hidden`) instead of data-shape labels.
+6. If two rows intentionally target the same branch, document the extra invariant inline in the row label.
+7. After pruning, rerun full suite and verify no method-level coverage loss in the audit metrics.

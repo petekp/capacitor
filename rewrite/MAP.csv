@@ -629,3 +629,7 @@ RW-087,swift-runtimeclient-shared-scenario-records-rw087,apps/swift/Tests/Capaci
 RW-087,rewrite-test-audit-rw087,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit conclusions after non-setup harness adoption
 RW-087,rewrite-ledger-rw087,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-087 lifecycle and risk notes
 RW-087,rewrite-map-rw087,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-087 path mappings for guard enforcement
+RW-088,rewrite-playbook-scenario-checklist-rw088,rewrite/PLAYBOOK.md,rewrite/PLAYBOOK.md,done,false,Add lightweight scenario-coverage checklist for table-driven tests to prevent duplicate branch-equivalent rows
+RW-088,rewrite-test-audit-rw088,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Reference checklist guardrail adoption in test-audit conclusions/next slices
+RW-088,rewrite-ledger-rw088,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-088 lifecycle and risk notes
+RW-088,rewrite-map-rw088,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-088 path mappings for guard enforcement

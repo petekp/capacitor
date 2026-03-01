@@ -3192,3 +3192,30 @@ slices:
     risks:
       - "Applying the shared harness to non-setup suites can weaken intent if scenario label/input/expected mapping becomes indirect."
     notes: "Adopts shared labeled scenario records in `RuntimeClientTests`, replacing ad-hoc local scenario structs in non-setup contract suites."
+
+  - id: RW-088
+    name: "Scenario Coverage Checklist Guardrail"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-087
+    touched_paths:
+      - rewrite/PLAYBOOK.md
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - rewrite/PLAYBOOK.md
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Checklist-only guardrails can drift from practice if not referenced during slice reviews; mitigation is embedding it in the rewrite playbook and audit loop."
+    notes: "Adds a lightweight table-driven scenario-coverage checklist to prevent branch-equivalent duplicate scenario rows from regrowing."
