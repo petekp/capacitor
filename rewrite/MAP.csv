@@ -582,3 +582,8 @@ RW-078,swift-setup-preview-scenario-tests-rw078,,apps/swift/Tests/CapacitorTests
 RW-078,rewrite-test-audit-rw078,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit metrics/conclusions after setup preview scenario consolidation
 RW-078,rewrite-ledger-rw078,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-078 lifecycle and risk notes
 RW-078,rewrite-map-rw078,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-078 path mappings for guard enforcement
+RW-079,swift-hook-presentation-scenario-table-tests-rw079,apps/swift/Tests/CapacitorTests/HookPresentationPolicyTests.swift,apps/swift/Tests/CapacitorTests/HookPresentationPolicyTests.swift,done,false,Collapse one-off setup status/header assertions into labeled scenario tables
+RW-079,swift-startup-readiness-scenario-table-tests-rw079,apps/swift/Tests/CapacitorTests/SetupReadinessCoordinatorTests.swift,apps/swift/Tests/CapacitorTests/SetupReadinessCoordinatorTests.swift,done,false,Collapse one-off startup readiness assertions into one labeled scenario table contract
+RW-079,rewrite-test-audit-rw079,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit metrics/conclusions after setup onboarding contract consolidation
+RW-079,rewrite-ledger-rw079,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-079 lifecycle and risk notes
+RW-079,rewrite-map-rw079,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-079 path mappings for guard enforcement

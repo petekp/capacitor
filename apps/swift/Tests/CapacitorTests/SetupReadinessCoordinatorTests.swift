@@ -2,49 +2,61 @@
 import XCTest
 
 final class SetupReadinessCoordinatorTests: XCTestCase {
-    func testStartupDecisionShowsWelcomeWhenClaudeDependencyMissing() {
-        let setupStatus = makeSetupStatus(
-            dependencies: [DependencyStatus(name: "claude", required: true, found: false, path: nil, installHint: nil)],
-            hooks: .installed(version: "1.0.0"),
+    func testStartupDecisionScenariosMatchCanonicalContract() {
+        struct Scenario {
+            let label: String
+            let dependencies: [DependencyStatus]
+            let hooks: HookStatus
+            let expected: StartupSetupDecision
+        }
+
+        let presentClaudeDependency = DependencyStatus(
+            name: "claude",
+            required: true,
+            found: true,
+            path: "/opt/homebrew/bin/claude",
+            installHint: nil,
         )
 
-        XCTAssertEqual(
-            SetupReadinessCoordinator.startupDecision(from: setupStatus),
-            .showWelcome(event: .claudeMissing),
-        )
-    }
+        let scenarios: [Scenario] = [
+            Scenario(
+                label: "claude-missing",
+                dependencies: [DependencyStatus(name: "claude", required: true, found: false, path: nil, installHint: nil)],
+                hooks: .installed(version: "1.0.0"),
+                expected: .showWelcome(event: .claudeMissing),
+            ),
+            Scenario(
+                label: "hooks-policy-blocked",
+                dependencies: [presentClaudeDependency],
+                hooks: .policyBlocked(reason: "disableAllHooks is enabled."),
+                expected: .showWelcome(event: .hooksBlockedByPolicy(reason: "disableAllHooks is enabled.")),
+            ),
+            Scenario(
+                label: "hooks-needs-repair",
+                dependencies: [presentClaudeDependency],
+                hooks: .notInstalled,
+                expected: .attemptHookRepair(event: .hooksNeedAutoRepair(status: .notInstalled)),
+            ),
+            Scenario(
+                label: "ready",
+                dependencies: [presentClaudeDependency],
+                hooks: .installed(version: "1.0.0"),
+                expected: .ready,
+            ),
+        ]
 
-    func testStartupDecisionShowsWelcomeWhenHooksPolicyBlocked() {
-        let setupStatus = makeSetupStatus(
-            dependencies: [DependencyStatus(name: "claude", required: true, found: true, path: "/opt/homebrew/bin/claude", installHint: nil)],
-            hooks: .policyBlocked(reason: "disableAllHooks is enabled."),
-        )
+        for scenario in scenarios {
+            let setupStatus = makeSetupStatus(
+                dependencies: scenario.dependencies,
+                hooks: scenario.hooks,
+            )
 
-        XCTAssertEqual(
-            SetupReadinessCoordinator.startupDecision(from: setupStatus),
-            .showWelcome(event: .hooksBlockedByPolicy(reason: "disableAllHooks is enabled.")),
-        )
-    }
-
-    func testStartupDecisionAttemptsRepairWhenHooksNeedRepair() {
-        let setupStatus = makeSetupStatus(
-            dependencies: [DependencyStatus(name: "claude", required: true, found: true, path: "/opt/homebrew/bin/claude", installHint: nil)],
-            hooks: .notInstalled,
-        )
-
-        XCTAssertEqual(
-            SetupReadinessCoordinator.startupDecision(from: setupStatus),
-            .attemptHookRepair(event: .hooksNeedAutoRepair(status: .notInstalled)),
-        )
-    }
-
-    func testStartupDecisionIsReadyWhenClaudePresentAndHooksInstalled() {
-        let setupStatus = makeSetupStatus(
-            dependencies: [DependencyStatus(name: "claude", required: true, found: true, path: "/opt/homebrew/bin/claude", installHint: nil)],
-            hooks: .installed(version: "1.0.0"),
-        )
-
-        XCTAssertEqual(SetupReadinessCoordinator.startupDecision(from: setupStatus), .ready)
+            XCTAssertEqual(
+                SetupReadinessCoordinator.startupDecision(from: setupStatus),
+                scenario.expected,
+                "[\(scenario.label)] startup decision mismatch",
+            )
+        }
     }
 
     private func makeSetupStatus(dependencies: [DependencyStatus], hooks: HookStatus) -> SetupStatus {

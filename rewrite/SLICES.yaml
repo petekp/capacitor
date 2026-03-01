@@ -2909,3 +2909,34 @@ slices:
     risks:
       - "Preview-only refactors can drift from production semantics if canonical step order/status contracts are not explicitly asserted."
     notes: "Replaces repetitive setup preview step array literals with typed scenario state records and adds explicit preview scenario contract tests."
+
+  - id: RW-079
+    name: "Setup Onboarding Contract Scenario Tables"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-078
+    touched_paths:
+      - apps/swift/Tests/CapacitorTests/HookPresentationPolicyTests.swift
+      - apps/swift/Tests/CapacitorTests/SetupReadinessCoordinatorTests.swift
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - apps/swift/Tests/CapacitorTests/HookPresentationPolicyTests.swift
+        - apps/swift/Tests/CapacitorTests/SetupReadinessCoordinatorTests.swift
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios:
+      - fresh install setup flow
+      - hook install/fix flow
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Table-driven test refactors can obscure missing edge cases if scenario lists are not explicit and labeled."
+    notes: "Consolidates setup/hook onboarding assertions into labeled scenario tables, reducing one-off test methods while preserving behavior contracts."
