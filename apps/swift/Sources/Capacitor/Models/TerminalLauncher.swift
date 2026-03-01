@@ -1343,9 +1343,27 @@ final class TerminalLauncher: ActivationActionDependencies {
             tmuxCmd = "tmux new-session -A -s \(escapedSession)"
         }
 
+        // When Ghostty is already running, open a new tab instead of a new window.
+        if isGhosttyRunningInternal() {
+            debugLog("launchTerminalWithTmuxSession ghosttyRunning=true, opening new tab")
+            let applescriptSafe = tmuxCmd
+                .replacingOccurrences(of: "\\", with: "\\\\")
+                .replacingOccurrences(of: "\"", with: "\\\"")
+            let script = """
+            osascript -e 'tell application "Ghostty" to activate'
+            sleep 0.2
+            osascript -e 'tell application "System Events" to tell process "Ghostty" to keystroke "t" using command down'
+            sleep 0.3
+            osascript -e 'tell application "System Events" to tell process "Ghostty" to keystroke "\(applescriptSafe)"'
+            osascript -e 'tell application "System Events" to tell process "Ghostty" to key code 36'
+            """
+            runBashScript(script)
+            return
+        }
+
         let escapedTmuxCmd = bashDoubleQuoteEscape(tmuxCmd)
 
-        // Launch terminal with tmux command
+        // No Ghostty running — launch new window
         let script = """
         if [ -d "/Applications/Ghostty.app" ]; then
             open -na "Ghostty.app" --args -e sh -c "\(escapedTmuxCmd)"

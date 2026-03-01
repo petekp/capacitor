@@ -2156,14 +2156,22 @@ public struct DiagnosticsSummary {
     public var eventsIngested: UInt64
     public var sessionsTracked: UInt64
     public var shellSignalsTracked: UInt64
+    public var eventsSkipped: UInt64
+    public var staleEventsSkipped: UInt64
+    public var informationalEventsSkipped: UInt64
+    public var reducerEventsSkipped: UInt64
     public var lastError: String?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(eventsIngested: UInt64, sessionsTracked: UInt64, shellSignalsTracked: UInt64, lastError: String?) {
+    public init(eventsIngested: UInt64, sessionsTracked: UInt64, shellSignalsTracked: UInt64, eventsSkipped: UInt64, staleEventsSkipped: UInt64, informationalEventsSkipped: UInt64, reducerEventsSkipped: UInt64, lastError: String?) {
         self.eventsIngested = eventsIngested
         self.sessionsTracked = sessionsTracked
         self.shellSignalsTracked = shellSignalsTracked
+        self.eventsSkipped = eventsSkipped
+        self.staleEventsSkipped = staleEventsSkipped
+        self.informationalEventsSkipped = informationalEventsSkipped
+        self.reducerEventsSkipped = reducerEventsSkipped
         self.lastError = lastError
     }
 }
@@ -2181,6 +2189,18 @@ extension DiagnosticsSummary: Equatable, Hashable {
         if lhs.shellSignalsTracked != rhs.shellSignalsTracked {
             return false
         }
+        if lhs.eventsSkipped != rhs.eventsSkipped {
+            return false
+        }
+        if lhs.staleEventsSkipped != rhs.staleEventsSkipped {
+            return false
+        }
+        if lhs.informationalEventsSkipped != rhs.informationalEventsSkipped {
+            return false
+        }
+        if lhs.reducerEventsSkipped != rhs.reducerEventsSkipped {
+            return false
+        }
         if lhs.lastError != rhs.lastError {
             return false
         }
@@ -2191,6 +2211,10 @@ extension DiagnosticsSummary: Equatable, Hashable {
         hasher.combine(eventsIngested)
         hasher.combine(sessionsTracked)
         hasher.combine(shellSignalsTracked)
+        hasher.combine(eventsSkipped)
+        hasher.combine(staleEventsSkipped)
+        hasher.combine(informationalEventsSkipped)
+        hasher.combine(reducerEventsSkipped)
         hasher.combine(lastError)
     }
 }
@@ -2206,6 +2230,10 @@ public struct FfiConverterTypeDiagnosticsSummary: FfiConverterRustBuffer {
                 eventsIngested: FfiConverterUInt64.read(from: &buf), 
                 sessionsTracked: FfiConverterUInt64.read(from: &buf), 
                 shellSignalsTracked: FfiConverterUInt64.read(from: &buf), 
+                eventsSkipped: FfiConverterUInt64.read(from: &buf), 
+                staleEventsSkipped: FfiConverterUInt64.read(from: &buf), 
+                informationalEventsSkipped: FfiConverterUInt64.read(from: &buf), 
+                reducerEventsSkipped: FfiConverterUInt64.read(from: &buf), 
                 lastError: FfiConverterOptionString.read(from: &buf)
         )
     }
@@ -2214,6 +2242,10 @@ public struct FfiConverterTypeDiagnosticsSummary: FfiConverterRustBuffer {
         FfiConverterUInt64.write(value.eventsIngested, into: &buf)
         FfiConverterUInt64.write(value.sessionsTracked, into: &buf)
         FfiConverterUInt64.write(value.shellSignalsTracked, into: &buf)
+        FfiConverterUInt64.write(value.eventsSkipped, into: &buf)
+        FfiConverterUInt64.write(value.staleEventsSkipped, into: &buf)
+        FfiConverterUInt64.write(value.informationalEventsSkipped, into: &buf)
+        FfiConverterUInt64.write(value.reducerEventsSkipped, into: &buf)
         FfiConverterOptionString.write(value.lastError, into: &buf)
     }
 }
