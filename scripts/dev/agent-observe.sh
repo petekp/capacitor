@@ -26,7 +26,7 @@ Commands:
   routing-snapshot <project_path> [ws]   Print routing entry for a project/workspace
   routing-diagnostics                    Print diagnostics summary
   snapshot                               Print full runtime snapshot payload
-  briefing [limit]                       Transparent UI: GET /agent-briefing
+  briefing                                Agent briefing from snapshot (self-sufficient)
   telemetry [limit]                      Transparent UI: GET /telemetry
   stream                                 Transparent UI: GET /telemetry-stream (SSE passthrough)
   tail <app|runtime-stderr|runtime-stdout> Tail key logs
@@ -204,8 +204,25 @@ case "$command" in
     fi
     ;;
   briefing)
-    limit="${1:-200}"
-    http_get_json "${TRANSPARENT_UI_BASE_URL}/agent-briefing?limit=${limit}"
+    if command -v jq >/dev/null 2>&1; then
+      read_snapshot | jq '{
+        ok: true,
+        summary: {
+          projects: { count: (.projects | length), paths: [.projects[].project_path] },
+          sessions: {
+            count: (.sessions | length),
+            states: ([.sessions[].state] | group_by(.) | map({(.[0]): length}) | add // {}),
+            working: [.sessions[] | select(.state == "working") | {session_id, project_path, updated_at, tools_in_flight}]
+          },
+          shells: { count: (.shells | length) },
+          routing: [.routing[] | {project_path, status, target_kind, target_value, reason_code}],
+          diagnostics: .diagnostics,
+          generated_at: .generated_at
+        }
+      }'
+    else
+      read_snapshot
+    fi
     ;;
   telemetry)
     limit="${1:-200}"
