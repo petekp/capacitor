@@ -2,57 +2,63 @@
 
 setup() {
     PROJECT_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
+    RUNTIME_STATE_FILE="$(mktemp)"
 }
 
-@test "restart-app has alpha/stable fallback defaults" {
-    run grep -F 'CHANNEL="${CHANNEL:-alpha}"' "$PROJECT_ROOT/scripts/dev/restart-app.sh"
-    [ "$status" -eq 0 ]
-
-    run grep -F 'PROFILE="${PROFILE:-stable}"' "$PROJECT_ROOT/scripts/dev/restart-app.sh"
-    [ "$status" -eq 0 ]
+teardown() {
+    rm -f "$RUNTIME_STATE_FILE"
 }
 
-@test "restart-app can load persisted runtime context" {
-    run grep -En 'CAPACITOR_RUNTIME_STATE_FILE|runtime-context\\.env|CAPACITOR_RUNTIME_CHANNEL|CAPACITOR_RUNTIME_PROFILE' \
-        "$PROJECT_ROOT/scripts/dev/restart-app.sh"
+@test "restart-app --help is available and documents profile flag" {
+    run env \
+        CAPACITOR_RUNTIME_STATE_FILE="$RUNTIME_STATE_FILE" \
+        CAPACITOR_RUNTIME_STATE_PERSIST=0 \
+        "$PROJECT_ROOT/scripts/dev/restart-app.sh" --help
     [ "$status" -eq 0 ]
+    [[ "$output" == *"Usage: restart-app.sh [OPTIONS]"* ]]
+    [[ "$output" == *"--profile <stable|frontier>"* ]]
 }
 
-@test "restart-app help documents profile flags" {
-    run grep -En -- '--profile <stable\\|frontier>' "$PROJECT_ROOT/scripts/dev/restart-app.sh"
-    [ "$status" -eq 0 ]
-
-    run grep -En -- '--frontier' "$PROJECT_ROOT/scripts/dev/restart-app.sh"
-    [ "$status" -eq 0 ]
+@test "restart-app rejects invalid profile before build steps" {
+    run env \
+        CAPACITOR_RUNTIME_STATE_FILE="$RUNTIME_STATE_FILE" \
+        CAPACITOR_RUNTIME_STATE_PERSIST=0 \
+        "$PROJECT_ROOT/scripts/dev/restart-app.sh" --profile nonsense
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"Invalid profile"* ]]
 }
 
-@test "restart-app enforces alpha-only channel unless bypass is set" {
-    run grep -En 'CAPACITOR_ALLOW_NON_ALPHA' "$PROJECT_ROOT/scripts/dev/restart-app.sh"
-    [ "$status" -eq 0 ]
-
-    run grep -F '"$CHANNEL" != "alpha"' "$PROJECT_ROOT/scripts/dev/restart-app.sh"
-    [ "$status" -eq 0 ]
+@test "restart-app blocks non-alpha channel in enforced dev mode" {
+    run env \
+        CAPACITOR_RUNTIME_STATE_FILE="$RUNTIME_STATE_FILE" \
+        CAPACITOR_RUNTIME_STATE_PERSIST=0 \
+        CAPACITOR_ENFORCE_ALPHA_ONLY=1 \
+        "$PROJECT_ROOT/scripts/dev/restart-app.sh" --channel beta --profile stable
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"Refusing to launch non-alpha channel 'beta'"* ]]
 }
 
-@test "restart-app writes CapacitorProfile into debug app Info.plist" {
-    run grep -En 'CapacitorProfile' "$PROJECT_ROOT/scripts/dev/restart-app.sh"
+@test "restart wrappers expose restart-app help path" {
+    run "$PROJECT_ROOT/scripts/dev/restart-alpha-stable.sh" --help
     [ "$status" -eq 0 ]
+    [[ "$output" == *"Usage: restart-app.sh [OPTIONS]"* ]]
+
+    run "$PROJECT_ROOT/scripts/dev/restart-alpha-frontier.sh" --help
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Usage: restart-app.sh [OPTIONS]"* ]]
+
+    run "$PROJECT_ROOT/scripts/dev/restart-current.sh" --help
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Usage: restart-app.sh [OPTIONS]"* ]]
 }
 
-@test "stable wrapper invokes restart-app with alpha stable args" {
-    run grep -F -- '--channel alpha --profile stable' \
-        "$PROJECT_ROOT/scripts/dev/restart-alpha-stable.sh"
+@test "restart-app help documents runtime default precedence" {
+    run env \
+        CAPACITOR_RUNTIME_STATE_FILE="$RUNTIME_STATE_FILE" \
+        CAPACITOR_RUNTIME_STATE_PERSIST=0 \
+        "$PROJECT_ROOT/scripts/dev/restart-app.sh" --help
     [ "$status" -eq 0 ]
-}
-
-@test "frontier wrapper invokes restart-app with alpha frontier args" {
-    run grep -F -- '--channel alpha --profile frontier' \
-        "$PROJECT_ROOT/scripts/dev/restart-alpha-frontier.sh"
-    [ "$status" -eq 0 ]
-}
-
-@test "current wrapper delegates to restart-app without forcing channel/profile" {
-    run grep -F 'exec "$SCRIPT_DIR/restart-app.sh" "$@"' \
-        "$PROJECT_ROOT/scripts/dev/restart-current.sh"
-    [ "$status" -eq 0 ]
+    [[ "$output" == *"Defaults come from:"* ]]
+    [[ "$output" == *"alpha + stable"* ]]
+    [[ "$output" == *"$RUNTIME_STATE_FILE"* ]]
 }

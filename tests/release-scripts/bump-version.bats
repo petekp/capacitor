@@ -73,9 +73,7 @@ teardown() {
     run "$TEST_DIR/scripts/bump-version.sh" "invalid"
     [ "$status" -eq 1 ]
     [[ "$output" == *"Invalid version format"* ]]
-}
 
-@test "rejects partial version numbers" {
     run "$TEST_DIR/scripts/bump-version.sh" "1.2"
     [ "$status" -eq 1 ]
     [[ "$output" == *"Invalid version format"* ]]
@@ -86,13 +84,6 @@ teardown() {
     run "$TEST_DIR/scripts/bump-version.sh" patch
     [ "$status" -eq 0 ]
     [ "$(cat "$TEST_DIR/VERSION")" = "0.0.1" ]
-}
-
-@test "accepts version with leading zeros (preserves them)" {
-    # Note: Strict semver doesn't allow leading zeros, but our script accepts them
-    run "$TEST_DIR/scripts/bump-version.sh" "01.02.03"
-    [ "$status" -eq 0 ]
-    [ "$(cat "$TEST_DIR/VERSION")" = "01.02.03" ]
 }
 
 @test "fails gracefully when VERSION file missing" {

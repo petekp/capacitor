@@ -2141,3 +2141,69 @@ slices:
     risks:
       - "Centralizing route-target expectations into shared records can obscure scenario intent unless per-scenario names still describe the exact branch and assertion context."
     notes: "Introduces shared typed expectation records for remaining repeated route-target assertions in RuntimeClient and ActivationActionExecutor scenario suites, reducing scalar-field duplication while preserving branch-specific assertions."
+
+  - id: RW-059
+    name: "Canonical Hook Uninstall Semantics"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-058
+    touched_paths:
+      - core/capacitor-core/src/runtime_setup.rs
+      - core/capacitor-core/src/lib.rs
+      - apps/swift/Sources/Capacitor/App.swift
+      - apps/swift/bindings/capacitor_core.swift
+      - apps/swift/bindings/capacitor_coreFFI.h
+      - apps/swift/Sources/Capacitor/Bridge/capacitor_core.swift
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - core/capacitor-core/src/runtime_setup.rs
+        - core/capacitor-core/src/lib.rs
+        - apps/swift/Sources/Capacitor/App.swift
+        - apps/swift/bindings/capacitor_core.swift
+        - apps/swift/bindings/capacitor_coreFFI.h
+        - apps/swift/Sources/Capacitor/Bridge/capacitor_core.swift
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Canonical uninstall now removes any `hud-hook handle` command entries, which can include user-authored variants intentionally mirroring Capacitor-managed hook commands."
+    notes: "Adds Rust-owned managed-hook uninstall semantics (including legacy `hud-state-tracker` entries), exposes the API via CoreRuntime/UniFFI, and deletes Swift-side direct settings.json mutation in debug onboarding reset."
+
+  - id: RW-060
+    name: "Prune Low-Leverage Script Guardrail Assertions"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-059
+    touched_paths:
+      - tests/dev-scripts/channel-profile-guardrails.bats
+      - tests/release-scripts/bump-version.bats
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - tests/dev-scripts/channel-profile-guardrails.bats
+        - tests/release-scripts/bump-version.bats
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Pruning duplicate script assertions can reduce diagnostic granularity if a remaining behavior test fails without clearly identifying which invalid input branch regressed."
+    notes: "Removes redundant low-leverage bats assertions (duplicate invalid-version and restart help/runtime-state checks) while preserving executable behavior checks for release/dev script flows."

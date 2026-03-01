@@ -562,6 +562,8 @@ public protocol CoreRuntimeProtocol : AnyObject {
     
     func mutateWorktree(command: MutateWorktreeCommand) throws  -> MutationOutcome
     
+    func removeHooks() throws  -> InstallResult
+    
     func removeProject(path: String) throws 
     
     func resolveActivationWithTrace(projectPath: String, shellState: ShellCwdStateFfi?, tmuxContext: TmuxContextFfi, includeTrace: Bool)  -> ActivationDecision
@@ -828,6 +830,13 @@ open func mutateWorktree(command: MutateWorktreeCommand)throws  -> MutationOutco
     return try  FfiConverterTypeMutationOutcome.lift(try rustCallWithError(FfiConverterTypeCoreRuntimeError.lift) {
     uniffi_capacitor_core_fn_method_coreruntime_mutate_worktree(self.uniffiClonePointer(),
         FfiConverterTypeMutateWorktreeCommand.lower(command),$0
+    )
+})
+}
+    
+open func removeHooks()throws  -> InstallResult {
+    return try  FfiConverterTypeInstallResult.lift(try rustCallWithError(FfiConverterTypeCoreRuntimeError.lift) {
+    uniffi_capacitor_core_fn_method_coreruntime_remove_hooks(self.uniffiClonePointer(),$0
     )
 })
 }
@@ -8636,6 +8645,9 @@ private var initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_capacitor_core_checksum_method_coreruntime_mutate_worktree() != 17358) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_capacitor_core_checksum_method_coreruntime_remove_hooks() != 18263) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_capacitor_core_checksum_method_coreruntime_remove_project() != 50715) {

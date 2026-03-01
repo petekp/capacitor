@@ -263,7 +263,7 @@ struct CapacitorApp: App {
                 try? fm.removeItem(at: capacitorPath)
                 print("[Debug] Removed ~/.capacitor/")
 
-                // 3. Remove hooks from settings.json (best effort)
+                // 3. Remove hooks from settings.json using canonical core semantics (best effort)
                 // Note: We don't remove the binary (~/.local/bin/hud-hook) - user may want it
                 await removeHooksFromSettings()
 
@@ -301,40 +301,10 @@ struct CapacitorApp: App {
         }
 
         private func removeHooksFromSettings() async {
-            let settingsPath = FileManager.default.homeDirectoryForCurrentUser
-                .appendingPathComponent(".claude/settings.json")
-
-            guard FileManager.default.fileExists(atPath: settingsPath.path) else { return }
-
             do {
-                let data = try Data(contentsOf: settingsPath)
-                guard var json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-                      var hooks = json["hooks"] as? [String: Any] else { return }
-
-                // Remove any hook configs that contain our hud-hook (binary) or hud-state-tracker (legacy)
-                for (eventType, eventHooks) in hooks {
-                    guard var hookArray = eventHooks as? [[String: Any]] else { continue }
-
-                    hookArray.removeAll { hookConfig in
-                        guard let innerHooks = hookConfig["hooks"] as? [[String: Any]] else { return false }
-                        return innerHooks.contains { hook in
-                            guard let command = hook["command"] as? String else { return false }
-                            return command.contains("hud-hook") || command.contains("hud-state-tracker")
-                        }
-                    }
-
-                    if hookArray.isEmpty {
-                        hooks.removeValue(forKey: eventType)
-                    } else {
-                        hooks[eventType] = hookArray
-                    }
-                }
-
-                json["hooks"] = hooks.isEmpty ? nil : hooks
-
-                let updatedData = try JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys])
-                try updatedData.write(to: settingsPath)
-                print("[Debug] Removed HUD hooks from settings.json")
+                let engine = try CoreRuntime()
+                let result = try engine.removeHooks()
+                print("[Debug] \(result.message)")
             } catch {
                 print("[Debug] Failed to remove hooks: \(error)")
             }

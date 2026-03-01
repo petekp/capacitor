@@ -425,3 +425,17 @@ RW-058,swift-activation-no-client-expectation-record-rw058,apps/swift/Tests/Capa
 RW-058,rewrite-test-audit-rw058,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit conclusions after shared route-target expectation record consolidation
 RW-058,rewrite-ledger-rw058,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-058 lifecycle and risk notes
 RW-058,rewrite-map-rw058,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-058 path mappings for guard enforcement
+RW-059,rust-hook-uninstall-canonical-semantics-rw059,core/capacitor-core/src/runtime_setup.rs,core/capacitor-core/src/runtime_setup.rs,done,false,Add canonical Rust-owned managed-hook uninstall semantics and regression tests preserving user settings
+RW-059,rust-core-runtime-remove-hooks-ffi-rw059,core/capacitor-core/src/lib.rs,core/capacitor-core/src/lib.rs,done,false,Expose remove_hooks through CoreRuntime as the only FFI hook-uninstall entrypoint
+RW-059,swift-debug-reset-hook-uninstall-cutover-rw059,apps/swift/Sources/Capacitor/App.swift,apps/swift/Sources/Capacitor/App.swift,done,false,Delete Swift-side direct settings.json mutation and delegate debug reset hook cleanup to CoreRuntime.removeHooks
+RW-059,swift-uniffi-bindings-remove-hooks-rw059,apps/swift/bindings/capacitor_core.swift,apps/swift/bindings/capacitor_core.swift,done,false,Regenerate Swift UniFFI bindings to include CoreRuntime.removeHooks contract
+RW-059,swift-uniffi-ffi-header-remove-hooks-rw059,apps/swift/bindings/capacitor_coreFFI.h,apps/swift/bindings/capacitor_coreFFI.h,done,false,Regenerate FFI header declarations/checksums for remove_hooks symbol
+RW-059,swift-bridge-remove-hooks-rw059,apps/swift/Sources/Capacitor/Bridge/capacitor_core.swift,apps/swift/Sources/Capacitor/Bridge/capacitor_core.swift,done,false,Sync app bridge bindings with regenerated removeHooks API
+RW-059,rewrite-test-audit-rw059,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Record hook uninstall canonicalization and updated test metrics/conclusions
+RW-059,rewrite-ledger-rw059,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-059 lifecycle and risk notes
+RW-059,rewrite-map-rw059,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-059 path mappings for guard enforcement
+RW-060,dev-script-guardrail-prune-rw060,tests/dev-scripts/channel-profile-guardrails.bats,tests/dev-scripts/channel-profile-guardrails.bats,done,false,Remove redundant restart help/runtime-state assertion while preserving executable guardrail coverage
+RW-060,release-script-guardrail-prune-rw060,tests/release-scripts/bump-version.bats,tests/release-scripts/bump-version.bats,done,false,Remove duplicate invalid-version and low-value leading-zero assertion while preserving version bump behavior coverage
+RW-060,rewrite-test-audit-rw060,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit metrics and conclusions after script guardrail pruning
+RW-060,rewrite-ledger-rw060,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-060 lifecycle and risk notes
+RW-060,rewrite-map-rw060,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-060 path mappings for guard enforcement

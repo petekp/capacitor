@@ -742,6 +742,12 @@ impl CoreRuntime {
             .map_err(|error| CoreRuntimeError::from(error.to_string()))
     }
 
+    pub fn remove_hooks(&self) -> Result<InstallResult, CoreRuntimeError> {
+        self.setup_checker()
+            .remove_hooks()
+            .map_err(|error| CoreRuntimeError::from(error.to_string()))
+    }
+
     pub fn get_hook_status(&self) -> HookStatus {
         self.setup_checker().check_setup_status().hooks
     }

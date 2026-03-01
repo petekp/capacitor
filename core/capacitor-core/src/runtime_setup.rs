@@ -8,7 +8,7 @@
 //! ## Design
 //!
 //! The setup module follows the sidecar principle - it reads Claude Code's settings
-//! but only modifies them to add our hooks, never removing or changing other settings.
+//! and only mutates Capacitor-managed hook entries while preserving unrelated user settings.
 //! Installer writes are atomic (temp + rename) to avoid corrupting settings.
 
 use crate::runtime_error::HudFfiError;
@@ -23,6 +23,7 @@ use tempfile::NamedTempFile;
 
 // Capacitor-managed hook marker. This tags owned hook entries without forcing legacy behavior.
 const HOOK_COMMAND: &str = "CAPACITOR_HOOK_MARKER=1 $HOME/.local/bin/hud-hook handle";
+const LEGACY_STATE_TRACKER_MARKER: &str = "hud-state-tracker";
 
 /// Hook event configuration: (event_name, needs_matcher, is_async)
 /// - `needs_matcher`: Tool events like PreToolUse/PostToolUse/PostToolUseFailure/PermissionRequest
@@ -661,20 +662,53 @@ impl SetupChecker {
         })
     }
 
+    pub fn remove_hooks(&self) -> Result<InstallResult, HudFfiError> {
+        let settings_path = self.storage.claude_settings_file();
+        if !settings_path.exists() {
+            return Ok(InstallResult {
+                success: true,
+                message: "No Claude settings file found; nothing to remove".to_string(),
+                script_path: None,
+            });
+        }
+
+        let mut settings = self.load_settings_file(&settings_path)?;
+        let hooks = match settings.hooks.as_mut() {
+            Some(hooks) => hooks,
+            None => {
+                return Ok(InstallResult {
+                    success: true,
+                    message: "No hook entries found in Claude settings".to_string(),
+                    script_path: Some(settings_path.to_string_lossy().to_string()),
+                });
+            }
+        };
+
+        let mut removed_count = 0u32;
+        hooks.retain(|_, event_hooks| {
+            let before_len = event_hooks.len();
+            event_hooks.retain(|hook_config| !self.hook_config_contains_managed_hook(hook_config));
+            removed_count += (before_len.saturating_sub(event_hooks.len())) as u32;
+            !event_hooks.is_empty()
+        });
+
+        if hooks.is_empty() {
+            settings.hooks = None;
+        }
+
+        self.persist_settings_file(&settings_path, &settings)?;
+
+        Ok(InstallResult {
+            success: true,
+            message: format!("Removed {removed_count} Capacitor-managed hook entrie(s)"),
+            script_path: Some(settings_path.to_string_lossy().to_string()),
+        })
+    }
+
     pub(crate) fn register_hooks_in_settings(&self) -> Result<(), HudFfiError> {
         let settings_path = self.storage.claude_settings_file();
-
-        let mut settings: SettingsFile = if settings_path.exists() {
-            let content = fs::read_to_string(&settings_path).map_err(|e| HudFfiError::General {
-                message: format!("Failed to read settings: {}", e),
-            })?;
-            serde_json::from_str(&content).map_err(|e| HudFfiError::General {
-                message: format!(
-                    "Failed to parse settings.json (file may be corrupted): {}. \
-                     Please fix the JSON syntax or delete the file to start fresh.",
-                    e
-                ),
-            })?
+        let mut settings = if settings_path.exists() {
+            self.load_settings_file(&settings_path)?
         } else {
             SettingsFile::default()
         };
@@ -726,10 +760,54 @@ impl SetupChecker {
             }
         }
 
-        let content =
-            serde_json::to_string_pretty(&settings).map_err(|e| HudFfiError::General {
-                message: format!("Failed to serialize settings: {}", e),
-            })?;
+        self.persist_settings_file(&settings_path, &settings)
+    }
+
+    fn hook_config_contains_managed_hook(&self, hook_config: &HookConfig) -> bool {
+        if let Some(inner_hooks) = &hook_config.hooks {
+            if inner_hooks.iter().any(|hook| {
+                is_managed_hook_command(
+                    hook.command
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|command| !command.is_empty()),
+                )
+            }) {
+                return true;
+            }
+        }
+
+        hook_config
+            .other
+            .get("command")
+            .and_then(|value| value.as_str())
+            .map(str::trim)
+            .filter(|command| !command.is_empty())
+            .map(|command| is_managed_hook_command(Some(command)))
+            .unwrap_or(false)
+    }
+
+    fn load_settings_file(&self, settings_path: &PathBuf) -> Result<SettingsFile, HudFfiError> {
+        let content = fs::read_to_string(settings_path).map_err(|e| HudFfiError::General {
+            message: format!("Failed to read settings: {}", e),
+        })?;
+        serde_json::from_str(&content).map_err(|e| HudFfiError::General {
+            message: format!(
+                "Failed to parse settings.json (file may be corrupted): {}. \
+                 Please fix the JSON syntax or delete the file to start fresh.",
+                e
+            ),
+        })
+    }
+
+    fn persist_settings_file(
+        &self,
+        settings_path: &PathBuf,
+        settings: &SettingsFile,
+    ) -> Result<(), HudFfiError> {
+        let content = serde_json::to_string_pretty(settings).map_err(|e| HudFfiError::General {
+            message: format!("Failed to serialize settings: {}", e),
+        })?;
 
         let settings_dir = settings_path.parent().ok_or_else(|| HudFfiError::General {
             message: "Settings path has no parent directory".to_string(),
@@ -747,7 +825,7 @@ impl SetupChecker {
             message: format!("Failed to flush settings: {}", e),
         })?;
         temp_settings
-            .persist(&settings_path)
+            .persist(settings_path)
             .map_err(|e| HudFfiError::General {
                 message: format!("Failed to persist settings: {}", e.error),
             })?;
@@ -826,6 +904,15 @@ fn is_hud_hook_command(cmd: Option<&str>) -> bool {
     matches!(tokens.next(), Some("handle"))
 }
 
+fn is_managed_hook_command(cmd: Option<&str>) -> bool {
+    let Some(command) = cmd else {
+        return false;
+    };
+    is_hud_hook_command(Some(command))
+        || command.contains("CAPACITOR_HOOK_MARKER=1")
+        || command.contains(LEGACY_STATE_TRACKER_MARKER)
+}
+
 fn is_shell_assignment_token(token: &str) -> bool {
     let Some((name, _value)) = token.split_once('=') else {
         return false;
@@ -884,9 +971,11 @@ fn matcher_matches_all_tools(matcher: &serde_json::Value) -> bool {
             .get("tools")
             .and_then(|tools| tools.as_array())
             .map(|tools| {
-                tools
-                    .iter()
-                    .any(|tool| tool.as_str().map(|value| value.trim() == "*").unwrap_or(false))
+                tools.iter().any(|tool| {
+                    tool.as_str()
+                        .map(|value| value.trim() == "*")
+                        .unwrap_or(false)
+                })
             })
             .unwrap_or(false),
         _ => false,
@@ -1013,8 +1102,8 @@ mod tests {
 
         assert!(
             post_tool_use.iter().any(|entry| {
-                entry["matcher"]["tools"][0] == "BashTool" &&
-                    entry["hooks"][0]["command"] == "custom-post-tool.sh"
+                entry["matcher"]["tools"][0] == "BashTool"
+                    && entry["hooks"][0]["command"] == "custom-post-tool.sh"
             }),
             "object-matcher custom entry should be preserved"
         );
@@ -1221,6 +1310,67 @@ mod tests {
             "tools": ["BashTool"]
         })));
         assert!(!matcher_matches_all_tools(&serde_json::json!(null)));
+    }
+
+    #[test]
+    fn test_remove_hooks_removes_managed_entries_but_preserves_custom_hooks_and_settings() {
+        let (_temp, storage) = setup_test_env();
+        let checker = SetupChecker::new(storage.clone());
+
+        let existing = r#"{
+            "someOtherSetting": "value",
+            "hooks": {
+                "SessionStart": [
+                    {"hooks": [{"type": "command", "command": "CAPACITOR_HOOK_MARKER=1 $HOME/.local/bin/hud-hook handle"}]},
+                    {"hooks": [{"type": "command", "command": "custom-start.sh"}]}
+                ],
+                "SessionEnd": [
+                    {"type": "command", "command": "hud-state-tracker"}
+                ],
+                "PostToolUse": [
+                    {"matcher": {"tools": ["BashTool"]}, "hooks": [{"type": "command", "command": "custom-post-tool.sh"}]}
+                ]
+            }
+        }"#;
+        fs::write(storage.claude_settings_file(), existing).unwrap();
+
+        let result = checker.remove_hooks().unwrap();
+        assert!(result.success);
+        assert!(result.message.contains("Removed 2"));
+
+        let settings_content = fs::read_to_string(storage.claude_settings_file()).unwrap();
+        let settings: serde_json::Value = serde_json::from_str(&settings_content).unwrap();
+
+        assert_eq!(settings["someOtherSetting"], "value");
+        assert_eq!(
+            settings["hooks"]["SessionStart"][0]["hooks"][0]["command"],
+            "custom-start.sh"
+        );
+        assert!(
+            settings["hooks"]["SessionEnd"].is_null(),
+            "legacy-only SessionEnd should be removed entirely"
+        );
+        assert_eq!(
+            settings["hooks"]["PostToolUse"][0]["hooks"][0]["command"],
+            "custom-post-tool.sh"
+        );
+    }
+
+    #[test]
+    fn test_remove_hooks_clears_hooks_key_when_only_managed_entries_exist() {
+        let (_temp, storage) = setup_test_env();
+        let checker = SetupChecker::new(storage.clone());
+
+        checker.register_hooks_in_settings().unwrap();
+        let result = checker.remove_hooks().unwrap();
+        assert!(result.success);
+
+        let settings_content = fs::read_to_string(storage.claude_settings_file()).unwrap();
+        let settings: serde_json::Value = serde_json::from_str(&settings_content).unwrap();
+        assert!(
+            settings["hooks"].is_null(),
+            "hooks key should be removed when no hook entries remain"
+        );
     }
 
     // ─────────────────────────────────────────────────────────────────────────────

@@ -10,7 +10,7 @@ Scope: `core/`, `apps/swift/Tests/CapacitorTests/`, `tests/`, `services/ingest-w
 3. Freeze current weak-pattern surface with a CI guard so debt cannot grow.
 4. Define next rewrite slices to pay debt down deterministically.
 
-## Current Metrics (After RW-058)
+## Current Metrics (After RW-060)
 
 - Swift test files: `35`
 - Swift test methods: `236`
@@ -19,9 +19,9 @@ Scope: `core/`, `apps/swift/Tests/CapacitorTests/`, `tests/`, `services/ingest-w
 - Swift test methods inside source-coupled files: `0`
 - Sleep calls in Swift tests (`Task.sleep`/`Thread.sleep`/`usleep`): `0`
 - Rust test files: `22`
-- Rust test functions: `232`
+- Rust test functions: `237`
 - bats files: `4`
-- bats test cases: `22`
+- bats test cases: `19`
 - Node worker test files: `2`
 - Node worker test cases: `10`
 - Static script-source assertions in bats (`run grep ... scripts/...`): `0`
@@ -101,7 +101,9 @@ Static bats source checks that do not execute behavior have been removed from th
 43. RW-055 introduced compact fallback expectation records and a shared host-switch fallback assertion helper in `ActivationActionExecutorTests`, removing repeated ensure-route/no-window assertion bundles while preserving branch-specific expectations.
 44. RW-057 hardened hook settings compatibility in `runtime_setup` by supporting both string and object matcher forms, with regression coverage for preserving custom object-matcher entries and wildcard matcher detection logic.
 45. RW-058 introduced shared typed expectation records for remaining repeated route-target assertions in `RuntimeClientTests` and `ActivationActionExecutorTests`, reducing scalar duplication while preserving scenario-specific behavior assertions.
-46. Next reductions should continue collapsing duplicate edge-case assertions into explicit contract tables rather than proliferating one-off tests.
+46. RW-059 removed Swift-side direct JSON mutation for hook cleanup and moved uninstall semantics into canonical Rust `runtime_setup`, with regression tests proving managed-hook removal preserves user hooks and unrelated settings.
+47. RW-060 pruned low-leverage script guardrail assertions in bats suites by removing duplicate invalid-version coverage and redundant restart help/runtime-state checks while preserving executable behavior coverage for release/dev script flows.
+48. Next reductions should continue collapsing duplicate edge-case assertions into explicit contract tables rather than proliferating one-off tests.
 
 ## Guardrails Added
 
@@ -120,7 +122,7 @@ This does not claim these patterns are good. It prevents regression while we pay
 
 ## Next Slices (proposed)
 
-1. `RW-059` Audit hook install/remove flows across Rust + Swift (`runtime_setup`, `HookInstaller`, App debug cleanup path) for single canonical mutation semantics and redundant path deletion opportunities.
-2. `RW-060` Audit release/dev script tests for remaining low-leverage guardrail assertions and replace with behavior-first checks where practical.
+1. `RW-061` Audit hook-setup callsites (`AppState`, `SetupRequirements`, startup auto-repair) and collapse repeated install orchestration into one canonical helper while preserving UI-specific messaging.
+2. `RW-062` Audit helper/util/config directory boundaries (`Helpers/`, `Utilities/`, `Utils/`) and execute one concrete consolidation with deletion-in-slice discipline.
 
 Each slice should delete replaced tests in the same PR and ratchet the audit limits downward.
