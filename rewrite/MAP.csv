@@ -447,3 +447,13 @@ RW-061,swift-hook-installer-contract-tests-rw061,,apps/swift/Tests/CapacitorTest
 RW-061,rewrite-test-audit-rw061,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit metrics and conclusions after hook install helper consolidation
 RW-061,rewrite-ledger-rw061,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-061 lifecycle and risk notes
 RW-061,rewrite-map-rw061,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-061 path mappings for guard enforcement
+RW-062,swift-date-formatting-canonical-parser-rw062,apps/swift/Sources/Capacitor/Utilities/DateFormatting.swift,apps/swift/Sources/Capacitor/Utilities/DateFormatting.swift,done,false,Expand DateFormatting to be the single Swift date parsing surface including microsecond normalization fallback
+RW-062,swift-active-project-date-parser-cutover-rw062,apps/swift/Sources/Capacitor/Models/ActiveProjectResolver.swift,apps/swift/Sources/Capacitor/Models/ActiveProjectResolver.swift,done,false,Replace RuntimeDateParser.parse callsites with canonical parseISO8601Date
+RW-062,swift-runtime-client-date-parser-cutover-rw062,apps/swift/Sources/Capacitor/Models/RuntimeClient.swift,apps/swift/Sources/Capacitor/Models/RuntimeClient.swift,done,false,Replace RuntimeDateParser.parse callsites with canonical parseISO8601Date
+RW-062,swift-diagnostics-date-parser-cutover-rw062,apps/swift/Sources/Capacitor/Utilities/DiagnosticsSnapshotLogger.swift,apps/swift/Sources/Capacitor/Utilities/DiagnosticsSnapshotLogger.swift,done,false,Replace RuntimeDateParser.parse callsites with canonical parseISO8601Date
+RW-062,swift-project-ordering-date-parser-cutover-rw062,apps/swift/Sources/Capacitor/Utilities/ProjectOrdering.swift,apps/swift/Sources/Capacitor/Utilities/ProjectOrdering.swift,done,false,Replace RuntimeDateParser.parse callsites with canonical parseISO8601Date
+RW-062,swift-runtime-date-parser-delete-rw062,apps/swift/Sources/Capacitor/Helpers/RuntimeDateParser.swift,-,done,true,Delete redundant RuntimeDateParser helper after callsite cutover
+RW-062,swift-date-formatting-tests-rw062,apps/swift/Tests/CapacitorTests/RuntimeDateParserTests.swift,apps/swift/Tests/CapacitorTests/DateFormattingTests.swift,done,true,Rename date parser tests to date formatting tests and add long-fraction contract coverage
+RW-062,rewrite-test-audit-rw062,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit metrics and conclusions after date parsing consolidation
+RW-062,rewrite-ledger-rw062,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-062 lifecycle and risk notes
+RW-062,rewrite-map-rw062,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-062 path mappings for guard enforcement

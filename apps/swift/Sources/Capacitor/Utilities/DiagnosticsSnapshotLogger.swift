@@ -153,7 +153,7 @@ import Foundation
                 guard state.state == .working else { continue }
                 if state.thinking == true { continue }
                 guard let updatedAt = state.updatedAt,
-                      let updatedDate = RuntimeDateParser.parse(updatedAt)
+                      let updatedDate = parseISO8601Date(updatedAt)
                 else {
                     continue
                 }

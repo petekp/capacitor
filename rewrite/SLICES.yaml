@@ -2242,3 +2242,46 @@ slices:
     risks:
       - "Centralizing hook install flow into one helper can homogenize error text and make some UI contexts less specific unless callers add context where needed."
     notes: "Introduces `HookInstaller.ensureHooksInstalled` as the canonical install+configure flow and rewires startup/AppState/setup callsites to use it, with focused unit tests for failure and success branches."
+
+  - id: RW-062
+    name: "Canonical Swift Date Parsing Surface"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-061
+    touched_paths:
+      - apps/swift/Sources/Capacitor/Utilities/DateFormatting.swift
+      - apps/swift/Sources/Capacitor/Models/ActiveProjectResolver.swift
+      - apps/swift/Sources/Capacitor/Models/RuntimeClient.swift
+      - apps/swift/Sources/Capacitor/Utilities/DiagnosticsSnapshotLogger.swift
+      - apps/swift/Sources/Capacitor/Utilities/ProjectOrdering.swift
+      - apps/swift/Sources/Capacitor/Helpers/RuntimeDateParser.swift
+      - apps/swift/Tests/CapacitorTests/RuntimeDateParserTests.swift
+      - apps/swift/Tests/CapacitorTests/DateFormattingTests.swift
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added:
+        - apps/swift/Tests/CapacitorTests/DateFormattingTests.swift
+      changed:
+        - apps/swift/Sources/Capacitor/Utilities/DateFormatting.swift
+        - apps/swift/Sources/Capacitor/Models/ActiveProjectResolver.swift
+        - apps/swift/Sources/Capacitor/Models/RuntimeClient.swift
+        - apps/swift/Sources/Capacitor/Utilities/DiagnosticsSnapshotLogger.swift
+        - apps/swift/Sources/Capacitor/Utilities/ProjectOrdering.swift
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed:
+        - apps/swift/Sources/Capacitor/Helpers/RuntimeDateParser.swift
+        - apps/swift/Tests/CapacitorTests/RuntimeDateParserTests.swift
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns: []
+    deletion_targets:
+      - apps/swift/Sources/Capacitor/Helpers/RuntimeDateParser.swift
+      - apps/swift/Tests/CapacitorTests/RuntimeDateParserTests.swift
+    risks:
+      - "Unifying parsing fallback behavior can subtly change timestamp acceptance/rejection if any call sites relied on RuntimeDateParser-specific normalization quirks."
+    notes: "Deletes RuntimeDateParser and consolidates all Swift timestamp parsing into DateFormatting.parseISO8601Date, including microsecond normalization support and call-site rewires."

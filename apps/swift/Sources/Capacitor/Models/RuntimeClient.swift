@@ -517,7 +517,7 @@ final class RuntimeClient {
     ) -> ShellCwdState? {
         var shells: [String: ShellEntry] = [:]
         for signal in snapshot.shells {
-            guard let updatedAt = RuntimeDateParser.parse(signal.updatedAt) else {
+            guard let updatedAt = parseISO8601Date(signal.updatedAt) else {
                 let cid = correlationId ?? "none"
                 DebugLog.write(
                     "RuntimeClient.\(operation) source=core_snapshot_map_error cid=\(cid) pid=\(signal.pid) invalid_updated_at=\(signal.updatedAt)",
@@ -618,7 +618,7 @@ final class RuntimeClient {
             .filter { $0.tmuxSession == target }
             .compactMap { shell in
                 let ageMs: UInt64
-                if let updatedAt = RuntimeDateParser.parse(shell.updatedAt) {
+                if let updatedAt = parseISO8601Date(shell.updatedAt) {
                     let interval = max(0, now.timeIntervalSince(updatedAt))
                     ageMs = UInt64((interval * 1000).rounded())
                 } else {

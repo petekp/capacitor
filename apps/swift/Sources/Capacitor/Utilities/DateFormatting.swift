@@ -25,11 +25,48 @@ extension ISO8601DateFormatter {
     }()
 }
 
+private let microsecondISO8601Formatter: DateFormatter = {
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.timeZone = TimeZone(secondsFromGMT: 0)
+    formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSSSSXXXXX"
+    return formatter
+}()
+
+private func normalizeToMicrosecondISO8601(_ raw: String) -> String? {
+    guard let dotIndex = raw.firstIndex(of: ".") else { return nil }
+    var index = raw.index(after: dotIndex)
+    var fraction = ""
+    while index < raw.endIndex {
+        let character = raw[index]
+        if character >= "0", character <= "9" {
+            fraction.append(character)
+            index = raw.index(after: index)
+        } else {
+            break
+        }
+    }
+
+    guard !fraction.isEmpty else { return nil }
+    let timezoneSuffix = String(raw[index...])
+    let prefix = String(raw[..<dotIndex])
+    let normalizedFraction = fraction.count >= 6
+        ? String(fraction.prefix(6))
+        : fraction.padding(toLength: 6, withPad: "0", startingAt: 0)
+    return "\(prefix).\(normalizedFraction)\(timezoneSuffix)"
+}
+
 /// Parse ISO8601 timestamp with automatic fallback for fractional seconds.
 /// Uses cached formatters to avoid allocation overhead in hot paths.
 func parseISO8601Date(_ string: String) -> Date? {
     if let date = ISO8601DateFormatter.shared.date(from: string) {
         return date
     }
-    return ISO8601DateFormatter.sharedWithoutFractionalSeconds.date(from: string)
+    if let date = ISO8601DateFormatter.sharedWithoutFractionalSeconds.date(from: string) {
+        return date
+    }
+    if let normalized = normalizeToMicrosecondISO8601(string) {
+        return microsecondISO8601Formatter.date(from: normalized)
+    }
+    return nil
 }

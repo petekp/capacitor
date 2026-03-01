@@ -91,7 +91,7 @@ enum ProjectOrdering {
         case .idle:
             guard
                 let stateChangedAt = session.stateChangedAt,
-                let changedAt = RuntimeDateParser.parse(stateChangedAt)
+                let changedAt = parseISO8601Date(stateChangedAt)
             else {
                 return .idle
             }

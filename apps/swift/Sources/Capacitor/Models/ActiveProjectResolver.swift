@@ -105,11 +105,11 @@ final class ActiveProjectResolver {
             // Use updated_at (updates on every hook event) for accurate activity tracking.
             // Falls back to stateChangedAt, then Date.distantPast.
             let updatedAt: Date = if let dateStr = sessionState.updatedAt,
-                                     let parsed = RuntimeDateParser.parse(dateStr)
+                                     let parsed = parseISO8601Date(dateStr)
             {
                 parsed
             } else if let dateStr = sessionState.stateChangedAt,
-                      let parsed = RuntimeDateParser.parse(dateStr)
+                      let parsed = parseISO8601Date(dateStr)
             {
                 parsed
             } else {

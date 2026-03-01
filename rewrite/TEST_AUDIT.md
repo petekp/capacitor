@@ -10,10 +10,10 @@ Scope: `core/`, `apps/swift/Tests/CapacitorTests/`, `tests/`, `services/ingest-w
 3. Freeze current weak-pattern surface with a CI guard so debt cannot grow.
 4. Define next rewrite slices to pay debt down deterministically.
 
-## Current Metrics (After RW-061)
+## Current Metrics (After RW-062)
 
 - Swift test files: `36`
-- Swift test methods: `241`
+- Swift test methods: `242`
 - Swift files with `source.contains` assertions: `0`
 - `source.contains` assertions (total): `0`
 - Swift test methods inside source-coupled files: `0`
@@ -104,7 +104,8 @@ Static bats source checks that do not execute behavior have been removed from th
 46. RW-059 removed Swift-side direct JSON mutation for hook cleanup and moved uninstall semantics into canonical Rust `runtime_setup`, with regression tests proving managed-hook removal preserves user hooks and unrelated settings.
 47. RW-060 pruned low-leverage script guardrail assertions in bats suites by removing duplicate invalid-version coverage and redundant restart help/runtime-state checks while preserving executable behavior coverage for release/dev script flows.
 48. RW-061 collapsed repeated hook install orchestration from `AppState`, `SetupRequirements`, and startup auto-repair into `HookInstaller.ensureHooksInstalled` and added focused unit tests that lock binary-failure, install-failure, throw, status-mismatch, and success paths.
-49. Next reductions should continue collapsing duplicate edge-case assertions into explicit contract tables rather than proliferating one-off tests.
+49. RW-062 removed `Helpers/RuntimeDateParser.swift` and made `Utilities/DateFormatting.swift` the single date parsing surface (including microsecond normalization), with all call sites rewired and tests renamed to `DateFormattingTests`.
+50. Next reductions should continue collapsing duplicate edge-case assertions into explicit contract tables rather than proliferating one-off tests.
 
 ## Guardrails Added
 
@@ -123,7 +124,7 @@ This does not claim these patterns are good. It prevents regression while we pay
 
 ## Next Slices (proposed)
 
-1. `RW-062` Audit helper/util/config directory boundaries (`Helpers/`, `Utilities/`, `Utils/`) and execute one concrete consolidation with deletion-in-slice discipline.
-2. `RW-063` Consolidate runtime date/time formatting/parsing surfaces (`RuntimeDateParser`, `DateFormatting`, UniFFI extension date adapters) into one canonical path with explicit contracts.
+1. `RW-063` Consolidate remaining ad-hoc `ISO8601DateFormatter()` allocations into the canonical date formatting surface (`DateFormatting.swift`), including UniFFI extension adapters.
+2. `RW-064` Audit helper/util/config directory boundaries (`Helpers/`, `Utilities/`, `Utils/`) and execute one concrete config-surface consolidation with deletion-in-slice discipline.
 
 Each slice should delete replaced tests in the same PR and ratchet the audit limits downward.
