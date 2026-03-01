@@ -819,14 +819,15 @@ final class TerminalLauncher: ActivationActionDependencies {
             var fallback = decision.fallback
             let normalizedReasonCode = decision.reason.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
 
-            if normalizedReasonCode.contains("NO_TRUSTED_EVIDENCE") {
-                if case .launchNewTerminal = primary,
-                   let sessionName = await resolveSnapshotFailureFallbackTmuxSession(for: project.path)
-                {
-                    debugLog("ARE no-trusted-evidence tmux recovery path=\(project.path) session=\(sessionName)")
+            let shouldAttemptTmuxRecovery = normalizedReasonCode.contains("NO_TRUSTED_EVIDENCE")
+                || normalizedReasonCode.contains("TMUX_SESSION_DETACHED")
+
+            if shouldAttemptTmuxRecovery {
+                if let sessionName = await resolveSnapshotFailureFallbackTmuxSession(for: project.path) {
+                    debugLog("ARE tmux-recovery override reason=\(normalizedReasonCode) path=\(project.path) session=\(sessionName)")
                     primary = .ensureTmuxSession(sessionName: sessionName, projectPath: project.path)
                 } else {
-                    debugLog("ARE no-trusted-evidence fallback launch path=\(project.path)")
+                    debugLog("ARE no tmux session for recovery path=\(project.path)")
                 }
             }
             guard shouldProcessLaunchRequest(requestID) else {

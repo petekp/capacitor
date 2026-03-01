@@ -1399,7 +1399,7 @@ final class TerminalLauncherTests: XCTestCase {
                 let markerTimeout: TimeInterval = testCase.expected.expectFallbackLaunchMarker ? 1.0 : 0.2
                 let foundFallbackMarker = await waitUntil(timeout: markerTimeout) {
                     await collector.contains {
-                        $0.contains("[TerminalLauncher] ARE no-trusted-evidence fallback launch path=\(testCase.project.path)")
+                        $0.contains("[TerminalLauncher] ARE no tmux session for recovery path=\(testCase.project.path)")
                     }
                 }
                 if testCase.expected.expectFallbackLaunchMarker {
@@ -1413,6 +1413,77 @@ final class TerminalLauncherTests: XCTestCase {
                         "\(context) Did not expect no-trusted-evidence launch marker when tmux recovery wins.",
                     )
                 }
+            }
+        }
+    }
+
+    func testLaunchTerminalDetachedClientAutoAttachesViaTmuxRecovery() async {
+        struct Case {
+            let name: String
+            let reasonCode: String
+        }
+
+        let cases = [
+            Case(name: "no_trusted_evidence", reasonCode: "NO_TRUSTED_EVIDENCE"),
+            Case(name: "tmux_session_detached", reasonCode: "TMUX_SESSION_DETACHED"),
+        ]
+
+        let project = makeProject(name: "capacitor", path: "/Users/pete/Code/capacitor")
+        let expectedAction = ExpectedActivationAction.ensureTmux(
+            sessionName: "capacitor",
+            projectPath: "/Users/pete/Code/capacitor",
+        )
+
+        for testCase in cases {
+            let context = scenarioContext(testCase.name)
+            await withLogCollector { _ in
+                var actions: [ActivationAction] = []
+                var results: [TerminalActivationResult] = []
+
+                let launcher = TerminalLauncher(
+                    appleScript: StubAppleScriptClient(shouldSucceed: true),
+                    resolveActivationDecisionOverride: { _ in
+                        ActivationDecision(
+                            primary: .activatePriorityFallback,
+                            fallback: nil,
+                            reason: testCase.reasonCode,
+                            trace: nil,
+                        )
+                    },
+                    fallbackTmuxSessionResolver: { _ in
+                        "capacitor"
+                    },
+                    executeActivationActionOverride: { action, _, _ in
+                        actions.append(action)
+                        return Self.actionMatches(action, expected: expectedAction)
+                    },
+                )
+
+                launcher.onActivationResult = { result in
+                    results.append(result)
+                }
+
+                launcher.launchTerminal(for: project)
+                _ = await assertEventually(
+                    timeout: 1.0,
+                    context: "\(context) Expected detached-client auto-attach to complete.",
+                ) {
+                    actions.count == 1 && results.count == 1
+                }
+
+                assertSingleAction(
+                    actions,
+                    expected: expectedAction,
+                    context: "\(context) Detached client with tmux session should auto-attach via ensureTmuxSession.",
+                )
+
+                assertSingleActivationResult(
+                    results,
+                    expectedPath: "/Users/pete/Code/capacitor",
+                    expectedSuccess: true,
+                    expectedUsedFallback: false,
+                    context: "\(context) Auto-attach should report success.",
+                )
             }
         }
     }
