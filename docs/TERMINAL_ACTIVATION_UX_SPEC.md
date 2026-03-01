@@ -1,4 +1,7 @@
-# Terminal Activation UX Spec (Runtime Snapshot)
+# Terminal Activation UX Spec (Runtime Snapshot) — DEPRECATED
+
+> **DEPRECATED:** Superseded by `.claude/docs/terminal-activation-ux-spec.md` (v2, 2026-03-01).
+> This document is retained for historical reference only. Do not use for implementation guidance.
 
 - Canonical path: `docs/TERMINAL_ACTIVATION_UX_SPEC.md`
 - Companion QA guide: `docs/TERMINAL_ACTIVATION_MANUAL_TESTING.md`

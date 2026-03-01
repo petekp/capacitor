@@ -1,4 +1,7 @@
-# Terminal Activation Manual Testing (Runtime Snapshot)
+# Terminal Activation Manual Testing (Runtime Snapshot) — DEPRECATED
+
+> **DEPRECATED:** Superseded by `.claude/docs/terminal-activation-ux-spec.md` (v2, 2026-03-01).
+> This document is retained for historical reference only.
 
 - Canonical path: `docs/TERMINAL_ACTIVATION_MANUAL_TESTING.md`
 - UX contract: `docs/TERMINAL_ACTIVATION_UX_SPEC.md`
