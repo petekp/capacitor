@@ -817,3 +817,1244 @@ slices:
     risks:
       - "Doc and wording cleanup can accidentally erase useful historical context; keep architecture truth in active docs and rely on git history for archaeology."
     notes: "Comprehensive vestigial cleanup sweep removed stale runtime/daemon-era docs and model artifacts, normalized remaining docs/copy to direct runtime terminology, and regenerated UniFFI bindings to purge stale generated wording."
+
+  - id: RW-013
+    name: "Rewrite Process Playbook"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-012
+    touched_paths:
+      - rewrite/PLAYBOOK.md
+      - rewrite/CHARTER.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added:
+        - rewrite/PLAYBOOK.md
+      changed:
+        - rewrite/CHARTER.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Process docs can drift from enforcement scripts; keep this playbook aligned with check_rewrite_guards.sh semantics."
+    notes: "Adds a canonical playbook for running future major refactors with the same slice-first rigor, evidence gates, and anti-vestigial controls used in the core rewrite."
+
+  - id: RW-014
+    name: "Test Surface Audit and Guardrails"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-013
+    touched_paths:
+      - rewrite/TEST_AUDIT.md
+      - scripts/ci/test-surface-audit.sh
+      - .github/workflows/ci.yml
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added:
+        - rewrite/TEST_AUDIT.md
+        - scripts/ci/test-surface-audit.sh
+      changed:
+        - .github/workflows/ci.yml
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Frozen debt budgets can hide value-neutral churn; ratchet metrics downward only when replacement behavior tests land."
+      - "Audit script must stay macOS-compatible (bash 3.2) to avoid false CI failures."
+    notes: "Applies rewrite playbook rigor to tests: inventories leverage, records weak patterns, freezes anti-pattern growth in CI, and defines next debt-paydown slices."
+
+  - id: RW-015
+    name: "80/20 Test Surface Prune"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-014
+    touched_paths:
+      - apps/swift/Tests/CapacitorTests/ProjectCardIdentityRegressionTests.swift
+      - apps/swift/Tests/CapacitorTests/AppStateProjectIngestionPerformanceRegressionTests.swift
+      - apps/swift/Tests/CapacitorTests/FooterControlsRegressionTests.swift
+      - apps/swift/Tests/CapacitorTests/AppStateRuntimeStartupRegressionTests.swift
+      - apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift
+      - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
+      - scripts/ci/test-surface-audit.sh
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift
+        - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
+        - scripts/ci/test-surface-audit.sh
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed:
+        - apps/swift/Tests/CapacitorTests/ProjectCardIdentityRegressionTests.swift
+        - apps/swift/Tests/CapacitorTests/AppStateProjectIngestionPerformanceRegressionTests.swift
+        - apps/swift/Tests/CapacitorTests/FooterControlsRegressionTests.swift
+        - apps/swift/Tests/CapacitorTests/AppStateRuntimeStartupRegressionTests.swift
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns:
+      - "apps/swift/Tests/CapacitorTests/ProjectCardIdentityRegressionTests.swift"
+      - "apps/swift/Tests/CapacitorTests/AppStateProjectIngestionPerformanceRegressionTests.swift"
+      - "apps/swift/Tests/CapacitorTests/FooterControlsRegressionTests.swift"
+      - "apps/swift/Tests/CapacitorTests/AppStateRuntimeStartupRegressionTests.swift"
+    deletion_targets:
+      - apps/swift/Tests/CapacitorTests/ProjectCardIdentityRegressionTests.swift
+      - apps/swift/Tests/CapacitorTests/AppStateProjectIngestionPerformanceRegressionTests.swift
+      - apps/swift/Tests/CapacitorTests/FooterControlsRegressionTests.swift
+      - apps/swift/Tests/CapacitorTests/AppStateRuntimeStartupRegressionTests.swift
+    risks:
+      - "Removing source-coupled tests can reduce confidence if behavior coverage is absent; retained existing runtime and domain contract suites as acceptance baseline."
+    notes: "Deletes the highest-volume low-leverage source-inspection suites and removes source assertions from behavior-heavy runtime/launcher suites (43 assertions removed total), then ratchets CI anti-pattern budgets downward to lock in the reduction."
+
+  - id: RW-016
+    name: "Deterministic TerminalLauncher Test Timing"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-015
+    touched_paths:
+      - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
+      - scripts/ci/test-surface-audit.sh
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
+        - scripts/ci/test-surface-audit.sh
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns:
+      - "content:apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift::Task.sleep"
+      - "content:apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift::Thread.sleep"
+      - "content:apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift::usleep"
+    deletion_targets: []
+    risks:
+      - "Deterministic gate-based sequencing can miss wall-clock race windows; keep overlap/stale-marker assertions broad to canonical marker variants."
+    notes: "Replaces sleep-based timing in TerminalLauncherTests with gate-driven sequencing and condition waits, drops test sleep count to zero, and ratchets CI sleep budget to zero."
+
+  - id: RW-017
+    name: "Executable Dev-Script Guardrails"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-016
+    touched_paths:
+      - tests/dev-scripts/channel-profile-guardrails.bats
+      - scripts/ci/test-surface-audit.sh
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - tests/dev-scripts/channel-profile-guardrails.bats
+        - scripts/ci/test-surface-audit.sh
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Behavior tests still cover only the early guard branches of restart scripts; heavy build/release paths remain covered by release-script tests and integration smoke."
+    notes: "Replaces dev-script grep-only guardrails with executable bats behavior tests and ratchets static bats source-assert budget from 10 to 3."
+
+  - id: RW-018
+    name: "Remove Remaining Source-Coupled Swift Tests"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-017
+    touched_paths:
+      - apps/swift/Tests/CapacitorTests/AccessibilityIdentifiersRegressionTests.swift
+      - apps/swift/Tests/CapacitorTests/ActivityPanelTerminalRoutingRegressionTests.swift
+      - apps/swift/Tests/CapacitorTests/AppStateFileBrowserRegressionTests.swift
+      - apps/swift/Tests/CapacitorTests/AppStateTerminalRoutingRegressionTests.swift
+      - apps/swift/Tests/CapacitorTests/DebugMenuSetupScreenRegressionTests.swift
+      - apps/swift/Tests/CapacitorTests/ProjectCardSessionObservationRegressionTests.swift
+      - apps/swift/Tests/CapacitorTests/ProjectCardStateResolutionRegressionTests.swift
+      - apps/swift/Tests/CapacitorTests/ProjectListRoutingVisibilityRegressionTests.swift
+      - scripts/ci/test-surface-audit.sh
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - scripts/ci/test-surface-audit.sh
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed:
+        - apps/swift/Tests/CapacitorTests/AccessibilityIdentifiersRegressionTests.swift
+        - apps/swift/Tests/CapacitorTests/ActivityPanelTerminalRoutingRegressionTests.swift
+        - apps/swift/Tests/CapacitorTests/AppStateFileBrowserRegressionTests.swift
+        - apps/swift/Tests/CapacitorTests/AppStateTerminalRoutingRegressionTests.swift
+        - apps/swift/Tests/CapacitorTests/DebugMenuSetupScreenRegressionTests.swift
+        - apps/swift/Tests/CapacitorTests/ProjectCardSessionObservationRegressionTests.swift
+        - apps/swift/Tests/CapacitorTests/ProjectCardStateResolutionRegressionTests.swift
+        - apps/swift/Tests/CapacitorTests/ProjectListRoutingVisibilityRegressionTests.swift
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns:
+      - "apps/swift/Tests/CapacitorTests/AccessibilityIdentifiersRegressionTests.swift"
+      - "apps/swift/Tests/CapacitorTests/ActivityPanelTerminalRoutingRegressionTests.swift"
+      - "apps/swift/Tests/CapacitorTests/AppStateFileBrowserRegressionTests.swift"
+      - "apps/swift/Tests/CapacitorTests/AppStateTerminalRoutingRegressionTests.swift"
+      - "apps/swift/Tests/CapacitorTests/DebugMenuSetupScreenRegressionTests.swift"
+      - "apps/swift/Tests/CapacitorTests/ProjectCardSessionObservationRegressionTests.swift"
+      - "apps/swift/Tests/CapacitorTests/ProjectCardStateResolutionRegressionTests.swift"
+      - "apps/swift/Tests/CapacitorTests/ProjectListRoutingVisibilityRegressionTests.swift"
+      - "content:apps/swift/Tests/CapacitorTests/*.swift::source.contains"
+    deletion_targets:
+      - apps/swift/Tests/CapacitorTests/AccessibilityIdentifiersRegressionTests.swift
+      - apps/swift/Tests/CapacitorTests/ActivityPanelTerminalRoutingRegressionTests.swift
+      - apps/swift/Tests/CapacitorTests/AppStateFileBrowserRegressionTests.swift
+      - apps/swift/Tests/CapacitorTests/AppStateTerminalRoutingRegressionTests.swift
+      - apps/swift/Tests/CapacitorTests/DebugMenuSetupScreenRegressionTests.swift
+      - apps/swift/Tests/CapacitorTests/ProjectCardSessionObservationRegressionTests.swift
+      - apps/swift/Tests/CapacitorTests/ProjectCardStateResolutionRegressionTests.swift
+      - apps/swift/Tests/CapacitorTests/ProjectListRoutingVisibilityRegressionTests.swift
+    risks:
+      - "Deleting low-leverage source-inspection tests can hide presentation-level regressions; retain high-leverage runtime/domain tests and smoke scripts as confidence floor."
+    notes: "Removes the remaining source-coupled Swift tests and ratchets the source.contains budget to zero with CI enforcement."
+
+  - id: RW-019
+    name: "Zero Static Script-Source Assertions"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-018
+    touched_paths:
+      - tests/release-scripts/release-flow-guardrails.bats
+      - scripts/ci/test-surface-audit.sh
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - scripts/ci/test-surface-audit.sh
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed:
+        - tests/release-scripts/release-flow-guardrails.bats
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns:
+      - "tests/release-scripts/release-flow-guardrails.bats"
+      - "content:tests/*.bats::run grep.*\\$PROJECT_ROOT/scripts"
+      - "content:tests/*/*.bats::run grep.*\\$PROJECT_ROOT/scripts"
+    deletion_targets:
+      - tests/release-scripts/release-flow-guardrails.bats
+    risks:
+      - "Removing static source checks may miss script-default drift; rely on executable bats behavior tests and release pipeline smoke for confidence."
+    notes: "Eliminates the remaining static script-source assertion file and ratchets CI static bats source-assert budget to zero."
+
+  - id: RW-020
+    name: "FFI Contract Invariants"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-019
+    touched_paths:
+      - apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift
+      - core/capacitor-core/tests/ffi_contract.rs
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift
+        - core/capacitor-core/tests/ffi_contract.rs
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "FFI fixture JSON in Swift tests can drift from Rust schema; keep tests focused on cross-boundary invariants rather than duplicating full schema snapshots."
+    notes: "Adds high-leverage FFI contract tests in Swift and Rust for malformed shell timestamp rejection, snapshot-read-disabled behavior, routing lookup fallback scope, reason-code normalization/defaulting, normalized unavailable workspace identity, snapshot constructor contracts, and command required-field validation."
+
+  - id: RW-021
+    name: "Table-Driven Overlap Contracts"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-020
+    touched_paths:
+      - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Consolidating one-off overlap tests into table-driven coverage can hide case intent if scenario labels drift; keep case names explicit and assertions invariant-focused."
+    notes: "Replaces four overlapping/supersession one-off TerminalLauncher tests with one table-driven overlap contract suite and a shared stale-marker helper while preserving behavioral guarantees."
+
+  - id: RW-022
+    name: "Table-Driven Snapshot Fallback Contracts"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-021
+    touched_paths:
+      - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Combining fallback paths into one parameterized test can blur failure diagnosis unless per-case assertion messages remain explicit."
+    notes: "Consolidates snapshot-unavailable fallback permutations (launch success/failure, resolved tmux recovery, exact-session recovery) into one table-driven TerminalLauncher contract test and removes redundant one-off variants."
+
+  - id: RW-023
+    name: "Rust Command Envelope Contracts"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-022
+    touched_paths:
+      - core/capacitor-core/tests/ffi_contract.rs
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - core/capacitor-core/tests/ffi_contract.rs
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Message-string assertions on mutation outcomes can become brittle if wording changes; keep assertions scoped to contract-significant fields only."
+    notes: "Adds canonical Rust FFI contract tests for mutate_project validation/add-rename-remove lifecycle and mutate_idea/mutate_worktree command envelope semantics."
+
+  - id: RW-024
+    name: "No-Trusted-Evidence Scenario Matrix"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-022
+    touched_paths:
+      - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Negative marker assertions can add latency/flakiness if timeout windows are too large; keep negative-path waits tight."
+    notes: "Replaces separate no-trusted-evidence launch and tmux-recovery tests with one scenario matrix preserving launch marker and latency assertions."
+
+  - id: RW-025
+    name: "Primary-Failure and Stale-Suppression Matrix"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-024
+    touched_paths:
+      - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Scenario-table consolidation can obscure fallback ordering intent; keep per-case labels explicit and assert only contract-level outcomes."
+    notes: "Replaces remaining stale-primary and primary-failure one-off TerminalLauncher tests with a compact scenario matrix while preserving single-fallback and stale-suppression guarantees."
+
+  - id: RW-026
+    name: "Terminal Script Invariant Matrix"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-025
+    touched_paths:
+      - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Merging script-shape checks into one matrix can reduce per-test intent visibility; keep scenario names explicit and failure messages specific."
+    notes: "Collapses six one-off launch script shape checks into one scenario-matrix invariant test covering supported-terminal branches, no Terminal.app fallback, no tmux references, and no unsupported terminal branches."
+
+  - id: RW-027
+    name: "Rust FFI Validation Case Tables"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-023
+    touched_paths:
+      - core/capacitor-core/tests/ffi_contract.rs
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - core/capacitor-core/tests/ffi_contract.rs
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Helper-driven table tests can hide field-level intent if case labels drift; keep each invalid-input case explicitly named."
+    notes: "Consolidates duplicate required-field negative permutations in Rust FFI contract tests into shared fixture builders and case tables while preserving diagnostics assertions."
+
+  - id: RW-028
+    name: "Activation Fallback Scenario Tables"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-026
+    touched_paths:
+      - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Scenario loops can obscure branch provenance if context labels drift; keep case names tied to explicit terminal/tmux preconditions."
+    notes: "Removes one exact-duplicate Ghostty fallback test and merges three attached-client switch-failure variants into one scenario table while preserving ensure-session recovery and no-new-window guarantees."
+
+  - id: RW-029
+    name: "Replay Fixture Loading Cleanup"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-027
+    touched_paths:
+      - core/capacitor-core/tests/replay_diff.rs
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - core/capacitor-core/tests/replay_diff.rs
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Fixture-loading helper centralization can hide per-file parse errors unless panic output includes fixture path context."
+    notes: "Centralizes replay fixture decoding through a shared helper and removes dead mutation-outcome type-anchor code from replay_diff tests."
+
+  - id: RW-030
+    name: "No-Client Ghostty Fallback Matrix"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-028
+    touched_paths:
+      - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Scenario matrices can blur nuanced branch intent unless per-case assertions include explicit expected switch/fallback markers."
+    notes: "Replaces five overlapping no-client Ghostty fallback tests with one scenario matrix covering running/AX-unavailable states, host-tty switch heuristics, ensure-session fallback, and no-new-window guarantees."
+
+  - id: RW-031
+    name: "Terminal Action Assertion Helpers"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-030
+    touched_paths:
+      - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Shared assertion helpers can mask scenario-specific intent if context messages are not explicit."
+    notes: "Introduces focused helpers for ensure/launch action-shape assertions and rewires repeated TerminalLauncher scenario suites to reduce copy-paste without changing behavior coverage."
+
+  - id: RW-032
+    name: "Dependency Route Matrix for Activation Executor"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-028
+    touched_paths:
+      - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Table-driven routing checks can hide per-action intent if expected field assertions are incomplete."
+    notes: "Replaces four repetitive execute-route tests (activateByTty/switch/ensure/launch) with one dependency-backed action matrix preserving action-specific field assertions."
+
+  - id: RW-033
+    name: "Tmux Script Predicate Helpers"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-031
+    touched_paths:
+      - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Predicate helper abstraction can blur per-assertion intent if messages are not preserved at call sites."
+    notes: "Adds script log helper predicates in TerminalLauncherTests and rewires repeated tmux command-shape assertions to reduce duplicated `scripts.contains` scaffolding."
+
+  - id: RW-034
+    name: "Runtime Snapshot Fixture and Routing Assertion Helpers"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-020
+      - RW-029
+    touched_paths:
+      - apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift
+      - core/capacitor-core/tests/replay_diff.rs
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift
+        - core/capacitor-core/tests/replay_diff.rs
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios:
+      - replay_diff_corpus_matches_expected_and_is_deterministic
+    smoke_scenarios: []
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Centralized routing assertion helpers can hide scenario-specific invariants if optional expectations are not passed explicitly."
+    notes: "Introduces RuntimeClient helper seams for snapshot-backed client setup and canonical routing assertions, plus shared replay-diff state-map extraction to reduce repeated integration expectation scaffolding."
+
+  - id: RW-035
+    name: "Activation Result Assertion Helper"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-031
+    touched_paths:
+      - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Shared result assertion helper can hide scenario intent unless each call includes a clear context label."
+    notes: "Introduces a single activation-result tuple helper and rewires repeated projectPath/success/usedFallback assertions in TerminalLauncher scenario suites."
+
+  - id: RW-036
+    name: "Runtime Routing Scenario Matrices"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-034
+    touched_paths:
+      - apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Matrix conversion can over-generalize if scenario labels are not specific enough to preserve failure locality."
+    notes: "Replaces one-off core-routing reason and diagnostics-scope tests with explicit scenario matrices while preserving attached/unavailable routing contracts."
+
+  - id: RW-037
+    name: "Activation Executor Route/Fallback Matrices"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-032
+    touched_paths:
+      - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Combining Ghostty/non-Ghostty and ensure-fallback tests into matrices can blur branch-specific intent if scenario labels and per-case expected fields drift."
+    notes: "Consolidates duplicate activate-app routing and ensure fallback tests into scenario matrices with explicit per-case branch expectations."
+
+  - id: RW-038
+    name: "Terminal Launcher Arbitration and Debounce Matrices"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-035
+    touched_paths:
+      - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Merging overlap/sequential/debounce tests into scenario tables increases branch density, so per-case gate staging must stay explicit to avoid hidden timing regressions."
+    notes: "Collapses overlap-primary-stale, sequential ordering, and snapshot-unavailable debounce one-offs into explicit scenario matrices while preserving stale-marker, ordering, and fallback contracts."
+
+  - id: RW-039
+    name: "Rust FFI Contract Assertion Helpers"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-027
+    touched_paths:
+      - core/capacitor-core/tests/ffi_contract.rs
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - core/capacitor-core/tests/ffi_contract.rs
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Shared assertion helpers can hide operation-specific diagnostics intent if expected error strings are not explicitly asserted per case."
+    notes: "Extracts canonical snapshot/last-error/mutate-project helpers in `ffi_contract.rs` to remove repeated validation and diagnostics scaffolding while preserving boundary assertions."
+
+  - id: RW-040
+    name: "Terminal Launcher Log Harness Consolidation"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-038
+    touched_paths:
+      - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Centralizing DebugLog observer setup can hide per-test observer lifecycle mistakes if async closure boundaries are not explicit."
+    notes: "Introduces a canonical `withLogCollector` harness and rewires arbitration, snapshot-fallback, and no-trusted-evidence scenario suites to remove repeated observer setup/teardown scaffolding."
+
+  - id: RW-041
+    name: "Shared Rust Hook Event Test Fixture"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-039
+    touched_paths:
+      - core/capacitor-core/tests/common.rs
+      - core/capacitor-core/tests/ffi_contract.rs
+      - core/capacitor-core/tests/replay_diff.rs
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added:
+        - core/capacitor-core/tests/common.rs
+      changed:
+        - core/capacitor-core/tests/ffi_contract.rs
+        - core/capacitor-core/tests/replay_diff.rs
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios:
+      - replay_diff_hook_event_type_deserialization_is_stable
+    smoke_scenarios: []
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Centralizing hook-event fixture construction can blur per-test field intent if future tests rely on implicit defaults instead of explicit overrides."
+    notes: "Adds a shared Rust test fixture helper for hook-event command construction and rewires `ffi_contract.rs` and `replay_diff.rs` to remove cross-file fixture duplication."
+
+  - id: RW-042
+    name: "RuntimeClient Failure and Unavailable Scenario Matrices"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-036
+    touched_paths:
+      - apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Combining runtime failure and unavailable-route one-offs into scenario tables can blur error-shape intent if expected error classes and fallback path expectations are not asserted per case."
+    notes: "Replaces one-off RuntimeClient snapshot failure and unavailable-route fallback tests with explicit scenario matrices while preserving malformed timestamp, read-disabled, missing-snapshot, and normalized workspace fallback contracts."
+
+  - id: RW-043
+    name: "TerminalLauncher Action Assertion Helper Consolidation"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-040
+    touched_paths:
+      - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Centralizing expected-action assertions can hide scenario-specific intent if per-case context labels and associated-value expectations drift."
+    notes: "Introduces canonical expected-action matching/assertion helpers and rewires remaining scenario matrices in `TerminalLauncherTests` to remove repeated branch wiring while preserving deterministic action and fallback-result contracts."
+
+  - id: RW-044
+    name: "ActivationActionExecutor Fallback Assertion Helpers"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-037
+    touched_paths:
+      - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Shared fallback assertion helpers can over-constrain scenario-specific fields unless optional assertions (for preferred client TTY) remain explicit."
+    notes: "Adds canonical ensure-fallback and no-window assertion helpers in `ActivationActionExecutorTests` and rewires three scenario matrices to remove repeated branch-specific assertion scaffolding."
+
+  - id: RW-045
+    name: "TerminalLauncher Async Completion Assertion Harness"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-040
+    touched_paths:
+      - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Centralizing async completion assertions can hide per-scenario timeout intent if context labels and timeout values are not passed explicitly at call sites."
+    notes: "Introduces a canonical `assertEventually` helper and rewires repeated `waitUntil`+`XCTAssertTrue` completion/debounce checks across TerminalLauncher scenario suites."
+
+  - id: RW-046
+    name: "ActivationActionExecutor Fixture Builder"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-044
+    touched_paths:
+      - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Shared fixture builders can hide scenario preconditions if setup closures become too implicit; critical per-scenario overrides must remain local and explicit."
+    notes: "Adds a canonical executor/stub fixture builder and rewires repeated ActivationActionExecutor setup scaffolding in host-switch scenario tests."
+
+  - id: RW-047
+    name: "RuntimeClient Named Snapshot Fixture Builders"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-042
+    touched_paths:
+      - apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Narrowing a parameterized snapshot fixture builder can hide future variant needs unless each new variant is added as an explicit named constructor."
+    notes: "Replaces ad-hoc `makeCoreSnapshotResponse` parameter overrides with named snapshot builders (`default`, `invalidShellTimestamp`, `routingReason`) and narrows the base fixture surface to test-used variant fields."
+
+  - id: RW-048
+    name: "ActivationActionExecutor Expected Route Assertion Helper"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-046
+    touched_paths:
+      - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Centralizing expected-route field assertions can obscure per-field failure intent unless helper error messages include explicit context labels."
+    notes: "Adds a canonical expected dependency-route assertion helper and rewires scenario-table assertions in `ActivationActionExecutorTests` to remove repeated route field checks."
+
+  - id: RW-049
+    name: "TerminalLauncher Script Snippet Assertion Helpers"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-043
+    touched_paths:
+      - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Batching required/forbidden snippet assertions can hide which exact script branch failed unless failure messages include the missing/forbidden snippet text."
+    notes: "Introduces canonical `assertScriptsContainAll` and `assertScriptsContainNone` helpers and rewires repeated script-snippet assertions in `TerminalLauncherTests`."
+
+  - id: RW-050
+    name: "ActivationActionExecutor Result-Route Outcome Helper"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-048
+    touched_paths:
+      - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Consolidating success+route assertions can blur route-specific intent if helper callsites omit explicit expected routing fields."
+    notes: "Adds a canonical activate-app route outcome helper and rewires repeated success/dependency-route/Ghostty-route assertions in `ActivationActionExecutorTests`."
+
+  - id: RW-051
+    name: "Ignore Local TLDR Cache Artifacts"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-050
+    touched_paths:
+      - .gitignore
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - .gitignore
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Ignoring a broad cache directory can hide accidentally useful local diagnostics unless any intentionally shared artifacts are stored outside `.tldr/`."
+    notes: "Adds `.tldr/` to gitignore so local tool cache artifacts cannot re-enter tracked history and create vestigial churn."
+
+  - id: RW-052
+    name: "Swift Scenario Context Label Helpers"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-050
+    touched_paths:
+      - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
+      - apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift
+      - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
+        - apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift
+        - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Centralizing scenario context formatting can hide precise assertion intent unless each assertion keeps a descriptive suffix after the shared context prefix."
+    notes: "Adds a tiny scenario-context helper and per-loop `context` binding in high-density scenario suites to reduce repeated string interpolation scaffolding without changing behavior assertions."
+
+  - id: RW-053
+    name: "RuntimeClient Route Scenario Structs"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-052
+    touched_paths:
+      - apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Refactoring tuple scenarios into named expectation structs can accidentally transpose expected fields unless expected route attributes remain asserted via the existing route assertion helpers."
+    notes: "Replaces tuple-based routing scenario inputs in `RuntimeClientTests` with named scenario and expectation structs, reducing positional-field ambiguity while preserving attached/unavailable route and scope assertions."
+
+  - id: RW-054
+    name: "TerminalLauncher Fallback Expectation Records"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-052
+    touched_paths:
+      - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Grouping fallback/no-trusted-evidence expectations into shared record structs can hide scenario intent if case names and helper assertions are not explicit about launch-vs-ensure routing."
+    notes: "Refactors snapshot-failure and no-trusted-evidence scenario tables in `TerminalLauncherTests` to use shared expectation records, reducing repeated scalar expectation wiring while preserving action/result marker assertions."
+
+  - id: RW-056
+    name: "Hook Settings Legacy Entry Migration"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-053
+    touched_paths:
+      - core/capacitor-core/src/runtime_setup.rs
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - core/capacitor-core/src/runtime_setup.rs
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Migrating legacy flat hook objects can alter non-Capacitor custom hooks if they relied on malformed top-level fields instead of nested hooks arrays."
+    notes: "Adds a migration pass that rewrites legacy flat hook entries (`type`/`command` at top level) into modern nested `hooks` arrays before hook normalization, and adds regression coverage to prevent SessionStart/SessionEnd schema errors."

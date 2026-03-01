@@ -221,3 +221,194 @@ RW-012,docs-transparent-ui-readme-rw012,docs/transparent-ui/README.md,docs/trans
 RW-012,docs-transparent-ui-model-delete-ts-rw012,docs/transparent-ui/enriched-data-model.ts,,done,true,Delete stale transparent-ui model artifact
 RW-012,docs-transparent-ui-model-delete-js-rw012,docs/transparent-ui/session-machine-model.js,,done,true,Delete stale transparent-ui JS model artifact
 RW-012,docs-transparent-ui-model-test-delete-rw012,docs/transparent-ui/session-machine-model.test.js,,done,true,Delete stale transparent-ui JS model test artifact
+RW-013,rewrite-playbook-rw013,,rewrite/PLAYBOOK.md,done,false,Canonical process playbook for future slice-based rewrites
+RW-014,rewrite-test-audit-rw014,,rewrite/TEST_AUDIT.md,done,false,Canonical leverage audit of current test surfaces and anti-pattern findings
+RW-014,ci-test-surface-audit-script-rw014,,scripts/ci/test-surface-audit.sh,done,false,CI guard script freezing source-coupled and sleep-heavy test pattern growth
+RW-014,ci-wiring-test-surface-audit-rw014,.github/workflows/ci.yml,.github/workflows/ci.yml,done,false,Run rewrite guard checks plus test-surface audit in CI
+RW-014,rewrite-ledger-test-audit-rw014,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-014 slice lifecycle and acceptance evidence
+RW-014,rewrite-map-test-audit-rw014,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-014 path mappings for guard enforcement
+RW-015,swift-test-delete-project-card-identity-rw015,apps/swift/Tests/CapacitorTests/ProjectCardIdentityRegressionTests.swift,,done,true,Delete high-churn source-inspection regression suite
+RW-015,swift-test-delete-project-ingestion-perf-rw015,apps/swift/Tests/CapacitorTests/AppStateProjectIngestionPerformanceRegressionTests.swift,,done,true,Delete source-inspection performance assertions that do not validate runtime behavior
+RW-015,swift-test-delete-footer-controls-rw015,apps/swift/Tests/CapacitorTests/FooterControlsRegressionTests.swift,,done,true,Delete source-inspection footer UI string assertions
+RW-015,swift-test-delete-runtime-startup-rw015,apps/swift/Tests/CapacitorTests/AppStateRuntimeStartupRegressionTests.swift,,done,true,Delete source-inspection startup assertions
+RW-015,swift-test-prune-runtime-client-source-checks-rw015,apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift,apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift,done,false,Remove source-inspection assertions from behavior-heavy runtime client suite
+RW-015,swift-test-prune-terminal-launcher-source-checks-rw015,apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift,apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift,done,false,Remove source-inspection assertions from behavior-heavy terminal launcher suite
+RW-015,ci-test-surface-ratchet-rw015,scripts/ci/test-surface-audit.sh,scripts/ci/test-surface-audit.sh,done,false,Ratchet anti-pattern budgets to new lower baseline
+RW-015,rewrite-test-audit-refresh-rw015,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Update audit report to reflect post-prune metrics and residual debt
+RW-015,rewrite-ledger-rw015,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-015 lifecycle and deletion targets
+RW-015,rewrite-map-rw015,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-015 path mappings for guard enforcement
+RW-016,swift-terminal-launcher-deterministic-timing-rw016,apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift,apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift,done,false,Replace sleep-driven overlap ordering with deterministic async gates and condition waits
+RW-016,ci-test-surface-sleep-budget-rw016,scripts/ci/test-surface-audit.sh,scripts/ci/test-surface-audit.sh,done,false,Ratchet sleep budget to zero and harden zero-match handling under bash -euo
+RW-016,rewrite-test-audit-rw016,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit metrics after sleep elimination and update next slices
+RW-016,rewrite-ledger-rw016,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-016 lifecycle and denylist patterns
+RW-016,rewrite-map-rw016,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-016 path mappings for guard enforcement
+RW-017,bats-dev-script-behavior-rw017,tests/dev-scripts/channel-profile-guardrails.bats,tests/dev-scripts/channel-profile-guardrails.bats,done,false,Replace source-inspection assertions with executable restart script behavior tests
+RW-017,ci-test-surface-static-bats-ratchet-rw017,scripts/ci/test-surface-audit.sh,scripts/ci/test-surface-audit.sh,done,false,Ratchet static bats source-assert budget from 10 to 3
+RW-017,rewrite-test-audit-rw017,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit metrics after dev-script guardrail conversion
+RW-017,rewrite-ledger-rw017,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-017 lifecycle and risk notes
+RW-017,rewrite-map-rw017,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-017 path mappings for guard enforcement
+RW-018,swift-test-delete-accessibility-identifiers-rw018,apps/swift/Tests/CapacitorTests/AccessibilityIdentifiersRegressionTests.swift,,done,true,Delete source-coupled accessibility identifier inspection suite
+RW-018,swift-test-delete-activity-panel-routing-rw018,apps/swift/Tests/CapacitorTests/ActivityPanelTerminalRoutingRegressionTests.swift,,done,true,Delete source-coupled activity panel routing inspection suite
+RW-018,swift-test-delete-appstate-file-browser-rw018,apps/swift/Tests/CapacitorTests/AppStateFileBrowserRegressionTests.swift,,done,true,Delete source-coupled file browser inspection suite
+RW-018,swift-test-delete-appstate-terminal-routing-rw018,apps/swift/Tests/CapacitorTests/AppStateTerminalRoutingRegressionTests.swift,,done,true,Delete source-coupled terminal routing inspection suite
+RW-018,swift-test-delete-debug-menu-setup-rw018,apps/swift/Tests/CapacitorTests/DebugMenuSetupScreenRegressionTests.swift,,done,true,Delete source-coupled debug menu setup inspection suite
+RW-018,swift-test-delete-projectcard-session-observation-rw018,apps/swift/Tests/CapacitorTests/ProjectCardSessionObservationRegressionTests.swift,,done,true,Delete source-coupled project card session observation inspection suite
+RW-018,swift-test-delete-projectcard-state-resolution-rw018,apps/swift/Tests/CapacitorTests/ProjectCardStateResolutionRegressionTests.swift,,done,true,Delete source-coupled project card state resolution inspection suite
+RW-018,swift-test-delete-project-list-routing-visibility-rw018,apps/swift/Tests/CapacitorTests/ProjectListRoutingVisibilityRegressionTests.swift,,done,true,Delete source-coupled project list routing visibility inspection suite
+RW-018,ci-test-surface-source-contains-zero-rw018,scripts/ci/test-surface-audit.sh,scripts/ci/test-surface-audit.sh,done,false,Ratchet source.contains budgets and allowlist to zero tolerance
+RW-018,rewrite-test-audit-rw018,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit metrics and recommendations after source-coupled test deletion
+RW-018,rewrite-ledger-rw018,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-018 lifecycle and denylist/deletion targets
+RW-018,rewrite-map-rw018,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-018 path mappings for guard enforcement
+RW-019,bats-release-flow-delete-rw019,tests/release-scripts/release-flow-guardrails.bats,,done,true,Delete remaining static release-flow source-inspection guardrail suite
+RW-019,ci-static-bats-zero-rw019,scripts/ci/test-surface-audit.sh,scripts/ci/test-surface-audit.sh,done,false,Ratchet static script-source assertion budget to zero
+RW-019,rewrite-test-audit-rw019,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit metrics after static release-flow suite removal
+RW-019,rewrite-ledger-rw019,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-019 lifecycle and permanent denylist
+RW-019,rewrite-map-rw019,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-019 path mappings for guard enforcement
+RW-020,swift-runtime-client-ffi-contract-invariants-rw020,apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift,apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift,done,false,Add FFI-boundary invariants for snapshot read gating, shell timestamp validation, routing fallback scope, reason normalization, and normalized unavailable workspace identity
+RW-020,rust-core-ffi-contract-invariants-rw020,,core/capacitor-core/tests/ffi_contract.rs,done,false,Add canonical CoreRuntime FFI constructor and command validation contract tests
+RW-020,rewrite-test-audit-rw020,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit metrics and conclusions after FFI invariant coverage
+RW-020,rewrite-ledger-rw020,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-020 lifecycle and contract scope
+RW-020,rewrite-map-rw020,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-020 path mappings for guard enforcement
+RW-021,swift-terminal-launcher-overlap-contract-rw021,apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift,apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift,done,false,Collapse duplicate overlap/supersession tests into table-driven contract coverage with shared stale-marker helper
+RW-021,rewrite-test-audit-rw021,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit metrics and conclusions after overlap contract consolidation
+RW-021,rewrite-ledger-rw021,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-021 lifecycle and risk notes
+RW-021,rewrite-map-rw021,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-021 path mappings for guard enforcement
+RW-022,swift-terminal-launcher-snapshot-fallback-contract-rw022,apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift,apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift,done,false,Collapse snapshot-unavailable fallback permutations into table-driven contract coverage
+RW-022,rewrite-test-audit-rw022,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit metrics and conclusions after snapshot fallback consolidation
+RW-022,rewrite-ledger-rw022,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-022 lifecycle and risk notes
+RW-022,rewrite-map-rw022,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-022 path mappings for guard enforcement
+RW-023,rust-ffi-command-envelope-contracts-rw023,core/capacitor-core/tests/ffi_contract.rs,core/capacitor-core/tests/ffi_contract.rs,done,false,Add canonical mutate_project/mutate_idea/mutate_worktree FFI envelope contract tests
+RW-023,rewrite-test-audit-rw023,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit conclusions after Rust command envelope contract expansion
+RW-023,rewrite-ledger-rw023,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-023 lifecycle and risk notes
+RW-023,rewrite-map-rw023,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-023 path mappings for guard enforcement
+RW-024,swift-terminal-launcher-no-trusted-evidence-matrix-rw024,apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift,apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift,done,false,Replace separate no-trusted-evidence launch/recovery tests with one scenario matrix preserving marker and latency assertions
+RW-024,rewrite-test-audit-rw024,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit metrics and next slices after no-trusted-evidence consolidation
+RW-024,rewrite-ledger-rw024,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-024 lifecycle and risk notes
+RW-024,rewrite-map-rw024,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-024 path mappings for guard enforcement
+RW-025,swift-terminal-launcher-primary-failure-stale-matrix-rw025,apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift,apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift,done,false,Replace stale-primary and primary-failure fallback one-off tests with one scenario matrix preserving single-fallback and stale-suppression contracts
+RW-025,rewrite-test-audit-rw025,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit metrics and conclusions after primary-failure/stale-suppression matrix consolidation
+RW-025,rewrite-ledger-rw025,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-025 lifecycle and risk notes
+RW-025,rewrite-map-rw025,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-025 path mappings for guard enforcement
+RW-026,swift-terminal-script-invariant-matrix-rw026,apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift,apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift,done,false,Collapse one-off launch script shape checks into one invariant matrix test spanning supported terminals and no Terminal/tmux fallback guarantees
+RW-026,rewrite-test-audit-rw026,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit metrics and conclusions after terminal script invariant consolidation
+RW-026,rewrite-ledger-rw026,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-026 lifecycle and risk notes
+RW-026,rewrite-map-rw026,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-026 path mappings for guard enforcement
+RW-027,rust-ffi-validation-case-tables-rw027,core/capacitor-core/tests/ffi_contract.rs,core/capacitor-core/tests/ffi_contract.rs,done,false,Consolidate duplicate required-field validation permutations into shared fixture builders and case tables while preserving diagnostics assertions
+RW-027,rewrite-test-audit-rw027,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit conclusions after Rust FFI validation table consolidation
+RW-027,rewrite-ledger-rw027,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-027 lifecycle and risk notes
+RW-027,rewrite-map-rw027,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-027 path mappings for guard enforcement
+RW-028,swift-activation-fallback-scenario-tables-rw028,apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift,apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift,done,false,Replace duplicate one-off activation fallback tests with scenario tables while preserving ensure-session recovery and no-new-window contracts
+RW-028,rewrite-test-audit-rw028,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit metrics and conclusions after activation fallback test consolidation
+RW-028,rewrite-ledger-rw028,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-028 lifecycle and risk notes
+RW-028,rewrite-map-rw028,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-028 path mappings for guard enforcement
+RW-029,rust-replay-fixture-loading-cleanup-rw029,core/capacitor-core/tests/replay_diff.rs,core/capacitor-core/tests/replay_diff.rs,done,false,Centralize replay fixture decoding and remove dead mutation-outcome type anchor from replay_diff tests
+RW-029,rewrite-test-audit-rw029,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit conclusions after replay fixture-loading cleanup
+RW-029,rewrite-ledger-rw029,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-029 lifecycle and risk notes
+RW-029,rewrite-map-rw029,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-029 path mappings for guard enforcement
+RW-030,swift-no-client-ghostty-fallback-matrix-rw030,apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift,apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift,done,false,Collapse overlapping no-client Ghostty fallback permutations into one scenario matrix with explicit switch/fallback contracts
+RW-030,rewrite-test-audit-rw030,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit metrics and conclusions after no-client fallback matrix consolidation
+RW-030,rewrite-ledger-rw030,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-030 lifecycle and risk notes
+RW-030,rewrite-map-rw030,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-030 path mappings for guard enforcement
+RW-031,swift-terminal-action-assertion-helpers-rw031,apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift,apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift,done,false,Reduce repeated action-shape assertions by introducing focused ensure/launch helper assertions in TerminalLauncher scenario suites
+RW-031,rewrite-test-audit-rw031,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit conclusions after TerminalLauncher assertion scaffolding cleanup
+RW-031,rewrite-ledger-rw031,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-031 lifecycle and risk notes
+RW-031,rewrite-map-rw031,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-031 path mappings for guard enforcement
+RW-032,swift-activation-executor-dependency-route-matrix-rw032,apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift,apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift,done,false,Replace repetitive dependency-backed execute route tests with one scenario matrix while preserving action-specific field assertions
+RW-032,rewrite-test-audit-rw032,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit metrics and conclusions after activation executor route matrix consolidation
+RW-032,rewrite-ledger-rw032,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-032 lifecycle and risk notes
+RW-032,rewrite-map-rw032,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-032 path mappings for guard enforcement
+RW-033,swift-terminal-launcher-tmux-script-predicate-helpers-rw033,apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift,apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift,done,false,Replace repeated tmux script-shape contains assertions with focused helper predicates
+RW-033,rewrite-test-audit-rw033,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit conclusions after TerminalLauncher tmux predicate helper cleanup
+RW-033,rewrite-ledger-rw033,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-033 lifecycle and risk notes
+RW-033,rewrite-map-rw033,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-033 path mappings for guard enforcement
+RW-034,swift-runtime-client-snapshot-and-routing-helpers-rw034,apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift,apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift,done,false,Collapse duplicated snapshot-backed RuntimeClient setup and routing assertions into canonical helper contracts
+RW-034,rust-replay-diff-state-map-helper-rw034,core/capacitor-core/tests/replay_diff.rs,core/capacitor-core/tests/replay_diff.rs,done,false,Replace duplicated replay expected map construction with shared state-map helper
+RW-034,rewrite-test-audit-rw034,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit metrics and conclusions after runtime/replay helper consolidation
+RW-034,rewrite-ledger-rw034,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-034 lifecycle and risk notes
+RW-034,rewrite-map-rw034,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-034 path mappings for guard enforcement
+RW-035,swift-terminal-launcher-activation-result-helper-rw035,apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift,apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift,done,false,Replace repeated activation result tuple assertions with one labeled helper contract
+RW-035,rewrite-test-audit-rw035,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit metrics and conclusions after activation result helper consolidation
+RW-035,rewrite-ledger-rw035,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-035 lifecycle and risk notes
+RW-035,rewrite-map-rw035,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-035 path mappings for guard enforcement
+RW-036,swift-runtime-client-routing-scenario-matrices-rw036,apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift,apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift,done,false,Collapse one-off routing reason and diagnostics scope tests into explicit scenario matrices with labeled assertions
+RW-036,rewrite-test-audit-rw036,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit metrics and conclusions after runtime routing matrix consolidation
+RW-036,rewrite-ledger-rw036,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-036 lifecycle and risk notes
+RW-036,rewrite-map-rw036,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-036 path mappings for guard enforcement
+RW-037,swift-activation-executor-route-fallback-matrices-rw037,apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift,apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift,done,false,Collapse duplicate activate-app and ensure-fallback one-off tests into scenario matrices with explicit branch assertions
+RW-037,rewrite-test-audit-rw037,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit metrics and conclusions after activation executor matrix consolidation
+RW-037,rewrite-ledger-rw037,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-037 lifecycle and risk notes
+RW-037,rewrite-map-rw037,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-037 path mappings for guard enforcement
+RW-038,swift-terminal-launcher-arbitration-and-debounce-matrices-rw038,apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift,apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift,done,false,Collapse overlap/sequential/debounce one-off tests into scenario matrices while preserving stale-marker and fallback contracts
+RW-038,rewrite-test-audit-rw038,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit metrics and conclusions after terminal launcher arbitration/debounce matrix consolidation
+RW-038,rewrite-ledger-rw038,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-038 lifecycle and risk notes
+RW-038,rewrite-map-rw038,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-038 path mappings for guard enforcement
+RW-039,rust-ffi-contract-assertion-helpers-rw039,core/capacitor-core/tests/ffi_contract.rs,core/capacitor-core/tests/ffi_contract.rs,done,false,Extract shared snapshot/last-error/mutate-project helpers to reduce repeated FFI diagnostics assertion scaffolding
+RW-039,rewrite-test-audit-rw039,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit conclusions after Rust FFI assertion helper consolidation
+RW-039,rewrite-ledger-rw039,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-039 lifecycle and risk notes
+RW-039,rewrite-map-rw039,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-039 path mappings for guard enforcement
+RW-040,swift-terminal-launcher-log-harness-rw040,apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift,apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift,done,false,Introduce shared withLogCollector harness and remove repeated DebugLog observer setup/teardown in scenario suites
+RW-040,rewrite-test-audit-rw040,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit conclusions after terminal launcher log harness consolidation
+RW-040,rewrite-ledger-rw040,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-040 lifecycle and risk notes
+RW-040,rewrite-map-rw040,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-040 path mappings for guard enforcement
+RW-041,rust-shared-hook-event-fixture-rw041,,core/capacitor-core/tests/common.rs,done,false,Add shared Rust integration-test fixture helper for hook event command construction
+RW-041,rust-ffi-contract-fixture-cutover-rw041,core/capacitor-core/tests/ffi_contract.rs,core/capacitor-core/tests/ffi_contract.rs,done,false,Rewire ffi_contract tests to use shared hook event fixture helper
+RW-041,rust-replay-diff-fixture-cutover-rw041,core/capacitor-core/tests/replay_diff.rs,core/capacitor-core/tests/replay_diff.rs,done,false,Rewire replay_diff hook event deserialization test to use shared fixture helper
+RW-041,rewrite-test-audit-rw041,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit conclusions after shared Rust fixture consolidation
+RW-041,rewrite-ledger-rw041,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-041 lifecycle and risk notes
+RW-041,rewrite-map-rw041,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-041 path mappings for guard enforcement
+RW-042,swift-runtime-client-failure-and-unavailable-matrices-rw042,apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift,apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift,done,false,Collapse one-off runtime snapshot failure and unavailable routing fallback tests into explicit scenario matrices
+RW-042,rewrite-test-audit-rw042,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit conclusions and counts after runtime client matrix consolidation
+RW-042,rewrite-ledger-rw042,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-042 lifecycle and risk notes
+RW-042,rewrite-map-rw042,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-042 path mappings for guard enforcement
+RW-043,swift-terminal-launcher-expected-action-helper-rw043,apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift,apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift,done,false,Centralize expected-action matching and assertion wiring for TerminalLauncher scenario matrices
+RW-043,rewrite-test-audit-rw043,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit conclusions after TerminalLauncher action helper consolidation
+RW-043,rewrite-ledger-rw043,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-043 lifecycle and risk notes
+RW-043,rewrite-map-rw043,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-043 path mappings for guard enforcement
+RW-044,swift-activation-executor-fallback-assertion-helpers-rw044,apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift,apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift,done,false,Centralize ensure-fallback and no-window assertions across activation executor scenario suites
+RW-044,rewrite-test-audit-rw044,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit conclusions after activation executor helper consolidation
+RW-044,rewrite-ledger-rw044,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-044 lifecycle and risk notes
+RW-044,rewrite-map-rw044,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-044 path mappings for guard enforcement
+RW-045,swift-terminal-launcher-async-completion-harness-rw045,apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift,apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift,done,false,Centralize repeated waitUntil completion assertions via assertEventually helper
+RW-045,rewrite-test-audit-rw045,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit conclusions after TerminalLauncher async assertion harness consolidation
+RW-045,rewrite-ledger-rw045,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-045 lifecycle and risk notes
+RW-045,rewrite-map-rw045,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-045 path mappings for guard enforcement
+RW-046,swift-activation-executor-fixture-builder-rw046,apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift,apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift,done,false,Introduce canonical fixture builder and remove repeated stub/executor setup in host-switch scenario tests
+RW-046,rewrite-test-audit-rw046,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit conclusions after ActivationActionExecutor fixture-builder consolidation
+RW-046,rewrite-ledger-rw046,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-046 lifecycle and risk notes
+RW-046,rewrite-map-rw046,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-046 path mappings for guard enforcement
+RW-047,swift-runtime-client-named-snapshot-fixtures-rw047,apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift,apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift,done,false,Replace ad-hoc core snapshot parameter overrides with explicit named snapshot fixture builders
+RW-047,rewrite-test-audit-rw047,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit conclusions after RuntimeClient named snapshot fixture consolidation
+RW-047,rewrite-ledger-rw047,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-047 lifecycle and risk notes
+RW-047,rewrite-map-rw047,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-047 path mappings for guard enforcement
+RW-048,swift-activation-executor-expected-route-helper-rw048,apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift,apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift,done,false,Add canonical expected dependency-route assertion helper and remove repeated per-field route assertions
+RW-048,rewrite-test-audit-rw048,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit conclusions after activation executor expected-route helper consolidation
+RW-048,rewrite-ledger-rw048,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-048 lifecycle and risk notes
+RW-048,rewrite-map-rw048,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-048 path mappings for guard enforcement
+RW-049,swift-terminal-launcher-script-snippet-helpers-rw049,apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift,apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift,done,false,Add compact required/forbidden script-snippet helpers and remove repeated snippet assertion scaffolding
+RW-049,rewrite-test-audit-rw049,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit conclusions after TerminalLauncher script helper consolidation
+RW-049,rewrite-ledger-rw049,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-049 lifecycle and risk notes
+RW-049,rewrite-map-rw049,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-049 path mappings for guard enforcement
+RW-050,swift-activation-executor-result-route-outcome-helper-rw050,apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift,apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift,done,false,Add activate-app result-route outcome helper and remove repeated success/dependency-route/Ghostty-route assertions
+RW-050,rewrite-test-audit-rw050,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit conclusions after activation executor outcome helper consolidation
+RW-050,rewrite-ledger-rw050,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-050 lifecycle and risk notes
+RW-050,rewrite-map-rw050,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-050 path mappings for guard enforcement
+RW-051,gitignore-tldr-cache-rw051,.gitignore,.gitignore,done,false,Ignore local .tldr cache artifacts to prevent vestigial generated files from re-entering the repo
+RW-051,rewrite-ledger-rw051,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-051 lifecycle and risk notes
+RW-051,rewrite-map-rw051,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-051 path mappings for guard enforcement
+RW-052,swift-activation-context-label-helper-rw052,apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift,apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift,done,false,Replace repeated inline scenario context string interpolation with local context helper in activation executor scenario suites
+RW-052,swift-runtime-context-label-helper-rw052,apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift,apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift,done,false,Replace repeated inline scenario context string interpolation with local context helper in runtime client scenario suites
+RW-052,swift-terminal-context-label-helper-rw052,apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift,apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift,done,false,Replace repeated inline case/scenario context string interpolation with local context helper in terminal launcher scenario suites
+RW-052,rewrite-test-audit-rw052,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit conclusions after context-label helper consolidation
+RW-052,rewrite-ledger-rw052,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-052 lifecycle and risk notes
+RW-052,rewrite-map-rw052,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-052 path mappings for guard enforcement
+RW-053,swift-runtime-route-scenario-structs-rw053,apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift,apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift,done,false,Replace tuple-based runtime routing scenarios with named scenario/expectation structs to make route contracts explicit
+RW-053,rewrite-test-audit-rw053,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit conclusions after RuntimeClient scenario-struct consolidation
+RW-053,rewrite-ledger-rw053,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-053 lifecycle and risk notes
+RW-053,rewrite-map-rw053,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-053 path mappings for guard enforcement
+RW-054,swift-terminal-fallback-expectation-records-rw054,apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift,apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift,done,false,Refactor snapshot-failure and no-trusted-evidence scenario matrices to use shared expectation record structs instead of repeated scalar fields
+RW-054,rewrite-test-audit-rw054,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit conclusions after TerminalLauncher expectation-record consolidation
+RW-054,rewrite-ledger-rw054,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-054 lifecycle and risk notes
+RW-054,rewrite-map-rw054,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-054 path mappings for guard enforcement
+RW-056,rust-hook-settings-legacy-migration-rw056,core/capacitor-core/src/runtime_setup.rs,core/capacitor-core/src/runtime_setup.rs,done,false,Migrate legacy flat Claude hook entries to nested hooks-array format and add regression coverage
+RW-056,rewrite-ledger-rw056,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-056 lifecycle and risk notes
+RW-056,rewrite-map-rw056,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-056 path mappings for guard enforcement

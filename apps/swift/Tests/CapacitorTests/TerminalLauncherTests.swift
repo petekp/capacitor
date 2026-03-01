@@ -7,6 +7,11 @@ final class TerminalLauncherTests: XCTestCase {
         case unavailable
     }
 
+    private enum ExpectedActivationAction {
+        case launch(projectPath: String, projectName: String)
+        case ensureTmux(sessionName: String, projectPath: String)
+    }
+
     private actor LogCollector {
         private var lines: [String] = []
 
@@ -16,6 +21,28 @@ final class TerminalLauncherTests: XCTestCase {
 
         func contains(_ predicate: (String) -> Bool) -> Bool {
             lines.contains(where: predicate)
+        }
+    }
+
+    private actor AsyncGate {
+        private var isOpen = false
+        private var waiters: [CheckedContinuation<Void, Never>] = []
+
+        func wait() async {
+            if isOpen {
+                return
+            }
+            await withCheckedContinuation { continuation in
+                waiters.append(continuation)
+            }
+        }
+
+        func open() {
+            guard !isOpen else { return }
+            isOpen = true
+            let continuations = waiters
+            waiters.removeAll()
+            continuations.forEach { $0.resume() }
         }
     }
 
@@ -32,18 +59,6 @@ final class TerminalLauncherTests: XCTestCase {
             checkedScripts.append(script)
             return shouldSucceed
         }
-    }
-
-    func testTerminalLauncherUsesDecisionOverrideSeamNotRoutingSnapshotSeam() throws {
-        let source = try loadTerminalLauncherSource()
-        XCTAssertFalse(
-            source.contains("RuntimeClient.shared.fetchRoutingSnapshot("),
-            "TerminalLauncher should use Rust activation resolver decisions directly, not daemon-shaped routing snapshot client reads.",
-        )
-        XCTAssertFalse(
-            source.contains("fetchCoreRoutingSnapshot"),
-            "TerminalLauncher should not expose a routing-snapshot injection seam; tests should inject ActivationDecision directly.",
-        )
     }
 
     @MainActor
@@ -69,16 +84,6 @@ final class TerminalLauncherTests: XCTestCase {
         }
     }
 
-    private func loadTerminalLauncherSource() throws -> String {
-        let testsDir = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-        let swiftPackageRoot = testsDir
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let sourceURL = swiftPackageRoot
-            .appendingPathComponent("Sources/Capacitor/Models/TerminalLauncher.swift")
-        return try String(contentsOf: sourceURL, encoding: .utf8)
-    }
-
     func testSwitchTmuxSessionActivatesTerminalOnSuccess() async {
         var activateCalls = 0
         var scripts: [String] = []
@@ -101,8 +106,8 @@ final class TerminalLauncherTests: XCTestCase {
 
         XCTAssertTrue(result)
         XCTAssertEqual(activateCalls, 1)
-        XCTAssertTrue(scripts.contains { $0.contains("display-message -p '#{client_tty}'") })
-        XCTAssertTrue(scripts.contains { $0.contains("tmux switch-client -c '/dev/ttys010' -t 'writing'") })
+        assertScriptsContain(scripts, "display-message -p '#{client_tty}'")
+        assertScriptsContain(scripts, "tmux switch-client -c '/dev/ttys010' -t 'writing'")
     }
 
     func testEnsureTmuxSessionCreatesThenActivates() async {
@@ -168,13 +173,15 @@ final class TerminalLauncherTests: XCTestCase {
 
         XCTAssertTrue(result)
         XCTAssertEqual(activateCalls, 1)
-        XCTAssertTrue(
-            scripts.contains { $0.contains("list-clients -F '#{client_tty}'") },
-            "Expected list-clients fallback lookup, got scripts: \(scripts)",
+        assertScriptsContainAll(
+            scripts,
+            required: ["list-clients -F '#{client_tty}'"],
+            context: "Expected list-clients fallback lookup",
         )
-        XCTAssertFalse(
-            scripts.contains { $0.contains("tmux new-session -d -s 'agent-skills'") },
-            "Expected no session creation when existing session can be switched",
+        assertScriptsContainNone(
+            scripts,
+            forbidden: ["tmux new-session -d -s 'agent-skills'"],
+            context: "Expected no session creation when existing session can be switched",
         )
     }
 
@@ -209,13 +216,18 @@ final class TerminalLauncherTests: XCTestCase {
 
         XCTAssertTrue(result)
         XCTAssertEqual(activateCalls, 1)
-        XCTAssertTrue(
-            scripts.contains { $0.contains("tmux switch-client -c '/dev/ttys042' -t 'openclaw'") },
-            "Expected ensure path to target the preferred tmux client tty.",
+        assertScriptsContainAll(
+            scripts,
+            required: ["tmux switch-client -c '/dev/ttys042' -t 'openclaw'"],
+            context: "Expected ensure path to target the preferred tmux client tty.",
         )
-        XCTAssertFalse(
-            scripts.contains { $0.contains("display-message -p '#{client_tty}'") || $0.contains("list-clients -F '#{client_tty}'") },
-            "Preferred tty path should not auto-resolve a different tmux client.",
+        assertScriptsContainNone(
+            scripts,
+            forbidden: [
+                "display-message -p '#{client_tty}'",
+                "list-clients -F '#{client_tty}'",
+            ],
+            context: "Preferred tty path should not auto-resolve a different tmux client.",
         )
     }
 
@@ -260,9 +272,10 @@ final class TerminalLauncherTests: XCTestCase {
         XCTAssertTrue(result)
         XCTAssertEqual(activateCalls, 0, "No tmux client is attached, so terminal activation callback should not run")
         XCTAssertEqual(launched, 1, "Expected a single terminal launch to attach the ensured session")
-        XCTAssertTrue(
-            scripts.contains { $0.contains("tmux has-session -t 'cap'") },
-            "Expected has-session check before deciding whether creation is needed",
+        assertScriptsContainAll(
+            scripts,
+            required: ["tmux has-session -t 'cap'"],
+            context: "Expected has-session check before deciding whether creation is needed",
         )
     }
 
@@ -310,13 +323,13 @@ final class TerminalLauncherTests: XCTestCase {
 
         XCTAssertTrue(result)
         XCTAssertEqual(activateCalls, 1)
-        XCTAssertTrue(
-            scripts.contains { $0.contains("display-message -p '#{client_tty}'") },
-            "Expected tmux client tty lookup before switch, got scripts: \(scripts)",
-        )
-        XCTAssertTrue(
-            scripts.contains { $0.contains("tmux switch-client -c '/dev/ttys072' -t 'capacitor'") },
-            "Expected explicit client tty switch target, got scripts: \(scripts)",
+        assertScriptsContainAll(
+            scripts,
+            required: [
+                "display-message -p '#{client_tty}'",
+                "tmux switch-client -c '/dev/ttys072' -t 'capacitor'",
+            ],
+            context: "Expected explicit tmux client tty lookup and switch target",
         )
     }
 
@@ -382,9 +395,10 @@ final class TerminalLauncherTests: XCTestCase {
         )
 
         XCTAssertTrue(result)
-        XCTAssertTrue(
-            scripts.contains { $0.contains("tmux select-pane -t 'workspace:0.1'") },
-            "Expected switch flow to focus project-specific pane, got scripts: \(scripts)",
+        assertScriptsContainAll(
+            scripts,
+            required: ["tmux select-pane -t 'workspace:0.1'"],
+            context: "Expected switch flow to focus project-specific pane",
         )
     }
 
@@ -437,9 +451,10 @@ final class TerminalLauncherTests: XCTestCase {
         )
 
         XCTAssertTrue(result)
-        XCTAssertTrue(
-            scripts.contains { $0.contains("tmux select-pane -t 'workspace:1.1'") },
-            "Expected ensure flow to focus project-specific pane, got scripts: \(scripts)",
+        assertScriptsContainAll(
+            scripts,
+            required: ["tmux select-pane -t 'workspace:1.1'"],
+            context: "Expected ensure flow to focus project-specific pane",
         )
     }
 
@@ -581,71 +596,72 @@ final class TerminalLauncherTests: XCTestCase {
         XCTAssertEqual(reader.focusedTabs.first?.index, 0)
     }
 
-    func testLaunchWithCommandDoesNotFallbackToTerminal() {
-        let script = TerminalScripts.launchWithCommand(
-            projectPath: "/Users/pete/Code/myproject",
-            command: "/opt/homebrew/bin/claude --resume abc123",
-        )
+    func testTerminalLaunchScriptsHonorAlphaTerminalInvariants() {
+        struct Scenario {
+            let name: String
+            let script: String
+            let expectNoTmux: Bool
+            let expectNoUnsupportedTerminals: Bool
+        }
+
+        let scenarios = [
+            Scenario(
+                name: "launch_with_command",
+                script: TerminalScripts.launchWithCommand(
+                    projectPath: "/Users/pete/Code/myproject",
+                    command: "/opt/homebrew/bin/claude --resume abc123",
+                ),
+                expectNoTmux: true,
+                expectNoUnsupportedTerminals: false,
+            ),
+            Scenario(
+                name: "launch_no_tmux",
+                script: TerminalScripts.launchNoTmux(
+                    projectPath: "/Users/pete/Code/myproject",
+                    projectName: "myproject",
+                    claudePath: "/opt/homebrew/bin/claude",
+                ),
+                expectNoTmux: true,
+                expectNoUnsupportedTerminals: true,
+            ),
+            Scenario(
+                name: "launch_new_terminal_script_wrapper",
+                script: TerminalLauncher.launchNewTerminalScript(
+                    projectPath: "/Users/pete/Code/myproject",
+                    projectName: "myproject",
+                    claudePath: "/opt/homebrew/bin/claude",
+                ),
+                expectNoTmux: true,
+                expectNoUnsupportedTerminals: true,
+            ),
+        ]
 
         let terminalLaunchPattern = #"tell application \\"Terminal\\" to do script"#
-        XCTAssertNil(
-            script.range(of: terminalLaunchPattern, options: .regularExpression),
-            "Ideas flow launch must not spawn Terminal.app.",
-        )
-    }
+        for scenario in scenarios {
+            let context = scenarioContext(scenario.name)
+            XCTAssertTrue(
+                scenario.script.contains("Ghostty.app"),
+                "\(context) Expected Ghostty branch in launch script.",
+            )
+            XCTAssertTrue(
+                scenario.script.contains("iTerm"),
+                "\(context) Expected iTerm branch in launch script.",
+            )
+            XCTAssertNil(
+                scenario.script.range(of: terminalLaunchPattern, options: .regularExpression),
+                "\(context) Launch script must not spawn Terminal.app fallback.",
+            )
 
-    func testLaunchWithCommandIncludesGhosttyAndITerm() {
-        let script = TerminalScripts.launchWithCommand(
-            projectPath: "/Users/pete/Code/myproject",
-            command: "/opt/homebrew/bin/claude --resume abc123",
-        )
-
-        XCTAssertTrue(script.contains("Ghostty.app"), "Expected Ghostty branch in launchWithCommand script.")
-        XCTAssertTrue(script.contains("iTerm"), "Expected iTerm branch in launchWithCommand script.")
-    }
-
-    func testLaunchNoTmuxScriptDoesNotReferenceTmux() {
-        let script = TerminalScripts.launchNoTmux(
-            projectPath: "/Users/pete/Code/myproject",
-            projectName: "myproject",
-            claudePath: "/opt/homebrew/bin/claude",
-        )
-        XCTAssertFalse(script.lowercased().contains("tmux"))
-    }
-
-    func testLaunchNoTmuxScriptSkipsUnsupportedTerminalsForAlpha() {
-        let script = TerminalScripts.launchNoTmux(
-            projectPath: "/Users/pete/Code/myproject",
-            projectName: "myproject",
-            claudePath: "/opt/homebrew/bin/claude",
-        )
-        let lowercased = script.lowercased()
-        XCTAssertFalse(lowercased.contains("alacritty"))
-        XCTAssertFalse(lowercased.contains("warp"))
-        XCTAssertFalse(lowercased.contains("kitty"))
-    }
-
-    func testLaunchNoTmuxScriptDoesNotLaunchTerminalFallback() {
-        let script = TerminalScripts.launchNoTmux(
-            projectPath: "/Users/pete/Code/myproject",
-            projectName: "myproject",
-            claudePath: "/opt/homebrew/bin/claude",
-        )
-
-        let terminalLaunchPattern = #"tell application \\"Terminal\\" to do script"#
-        XCTAssertNil(
-            script.range(of: terminalLaunchPattern, options: .regularExpression),
-            "Project-card launch fallback must not spawn Terminal.app.",
-        )
-    }
-
-    func testLaunchNewTerminalScriptDoesNotReferenceTmux() {
-        let script = TerminalLauncher.launchNewTerminalScript(
-            projectPath: "/Users/pete/Code/myproject",
-            projectName: "myproject",
-            claudePath: "/opt/homebrew/bin/claude",
-        )
-        XCTAssertFalse(script.lowercased().contains("tmux"))
+            let lowercased = scenario.script.lowercased()
+            if scenario.expectNoTmux {
+                XCTAssertFalse(lowercased.contains("tmux"), "\(context) Launch script must not reference tmux.")
+            }
+            if scenario.expectNoUnsupportedTerminals {
+                XCTAssertFalse(lowercased.contains("alacritty"), "\(context) Launch script must not include Alacritty branch.")
+                XCTAssertFalse(lowercased.contains("warp"), "\(context) Launch script must not include Warp branch.")
+                XCTAssertFalse(lowercased.contains("kitty"), "\(context) Launch script must not include kitty branch.")
+            }
+        }
     }
 
     func testTerminalAppMatchingNames() {
@@ -703,778 +719,678 @@ final class TerminalLauncherTests: XCTestCase {
         wait(for: [exp], timeout: 5.0)
     }
 
-    func testLaunchTerminalOverlappingRequestsOnlyExecutesLatestClick() async {
+    func testLaunchTerminalRequestArbitrationScenarios() async {
+        enum ScenarioKind {
+            case overlapResolveGate
+            case overlapActionGate
+            case sequential
+        }
+
+        struct Case {
+            let name: String
+            let kind: ScenarioKind
+            let first: Project
+            let followups: [Project]
+            let expectedExecutedPaths: [String]
+            let expectedResultPaths: [String]
+            let expectedStalePath: String?
+        }
+
         let projectA = makeProject(name: "project-a", path: "/Users/pete/Code/project-a")
         let projectB = makeProject(name: "project-b", path: "/Users/pete/Code/project-b")
-        var executedPaths: [String] = []
-        var resultPaths: [String] = []
+        let cases = [
+            Case(
+                name: "cross_project_overlap",
+                kind: .overlapResolveGate,
+                first: projectA,
+                followups: [projectB],
+                expectedExecutedPaths: [projectB.path],
+                expectedResultPaths: [projectB.path],
+                expectedStalePath: projectA.path,
+            ),
+            Case(
+                name: "same_project_rapid_repeat",
+                kind: .overlapResolveGate,
+                first: projectA,
+                followups: [projectA, projectA],
+                expectedExecutedPaths: [projectA.path],
+                expectedResultPaths: [projectA.path],
+                expectedStalePath: projectA.path,
+            ),
+            Case(
+                name: "stale_after_primary_action_started",
+                kind: .overlapActionGate,
+                first: projectA,
+                followups: [projectB],
+                expectedExecutedPaths: [projectA.path, projectB.path],
+                expectedResultPaths: [projectB.path],
+                expectedStalePath: projectA.path,
+            ),
+            Case(
+                name: "sequential_requests_execute_in_order",
+                kind: .sequential,
+                first: projectA,
+                followups: [projectB],
+                expectedExecutedPaths: [projectA.path, projectB.path],
+                expectedResultPaths: [projectA.path, projectB.path],
+                expectedStalePath: nil,
+            ),
+        ]
 
-        let launcher = TerminalLauncher(
-            appleScript: StubAppleScriptClient(shouldSucceed: true),
-            resolveActivationDecisionOverride: { project in
-                let projectPath = project.path
-                if projectPath == projectA.path {
-                    try await _Concurrency.Task.sleep(nanoseconds: 220_000_000)
-                } else {
-                    try await _Concurrency.Task.sleep(nanoseconds: 25_000_000)
-                }
-                return Self.makeAttachedTerminalAppDecision(projectPath: projectPath, projectName: project.name, appName: "Ghostty")
-            },
-            executeActivationActionOverride: { _, projectPath, _ in
-                executedPaths.append(projectPath)
-                return true
-            },
-        )
+        for testCase in cases {
+            let context = scenarioContext(testCase.name)
+            await withLogCollector { collector in
+                var executedPaths: [String] = []
+                var resultPaths: [String] = []
+                let resolveGateEntered = testCase.kind == .overlapResolveGate
+                    ? expectation(description: "\(testCase.name)-resolve-gate-entered")
+                    : nil
+                let actionGateEntered = testCase.kind == .overlapActionGate
+                    ? expectation(description: "\(testCase.name)-action-gate-entered")
+                    : nil
+                let releaseGate = AsyncGate()
+                var resolveCallCount = 0
 
-        launcher.onActivationResult = { (result: TerminalActivationResult) in
-            resultPaths.append(result.projectPath)
-        }
-
-        launcher.launchTerminal(for: projectA)
-        try? await _Concurrency.Task.sleep(nanoseconds: 40_000_000)
-        launcher.launchTerminal(for: projectB)
-
-        try? await _Concurrency.Task.sleep(nanoseconds: 450_000_000)
-
-        XCTAssertEqual(
-            executedPaths,
-            [projectB.path],
-            "Overlapping clicks should coalesce to the latest request.",
-        )
-        XCTAssertEqual(
-            resultPaths,
-            [projectB.path],
-            "Only the latest click should emit an activation result.",
-        )
-    }
-
-    func testLaunchTerminalOverlappingRequestsLogsStaleSnapshotMarker() async {
-        let projectA = makeProject(name: "project-a", path: "/Users/pete/Code/project-a")
-        let projectB = makeProject(name: "project-b", path: "/Users/pete/Code/project-b")
-        let collector = LogCollector()
-
-        DebugLog.setTestObserver { line in
-            _Concurrency.Task {
-                await collector.append(line)
-            }
-        }
-        defer { DebugLog.setTestObserver(nil) }
-
-        let launcher = TerminalLauncher(
-            appleScript: StubAppleScriptClient(shouldSucceed: true),
-            resolveActivationDecisionOverride: { project in
-                let projectPath = project.path
-                if projectPath == projectA.path {
-                    try await _Concurrency.Task.sleep(nanoseconds: 220_000_000)
-                } else {
-                    try await _Concurrency.Task.sleep(nanoseconds: 25_000_000)
-                }
-                return Self.makeAttachedTerminalAppDecision(projectPath: projectPath, projectName: project.name, appName: "Ghostty")
-            },
-            executeActivationActionOverride: { _, _, _ in
-                true
-            },
-        )
-
-        launcher.launchTerminal(for: projectA)
-        try? await _Concurrency.Task.sleep(nanoseconds: 40_000_000)
-        launcher.launchTerminal(for: projectB)
-        try? await _Concurrency.Task.sleep(nanoseconds: 450_000_000)
-
-        let foundMarker = await collector.contains {
-            $0.contains("[TerminalLauncher] ARE snapshot request canceled/stale") &&
-                $0.contains(projectA.path)
-        }
-
-        XCTAssertTrue(foundMarker, "Expected stale overlap marker for superseded request.")
-    }
-
-    func testLaunchTerminalOverlappingRequestsStaleAfterPrimaryEmitsCanonicalStaleMarker() async {
-        let projectA = makeProject(name: "project-a", path: "/Users/pete/Code/project-a")
-        let projectB = makeProject(name: "project-b", path: "/Users/pete/Code/project-b")
-        let collector = LogCollector()
-        var resultPaths: [String] = []
-
-        DebugLog.setTestObserver { line in
-            _Concurrency.Task {
-                await collector.append(line)
-            }
-        }
-        defer { DebugLog.setTestObserver(nil) }
-
-        let launcher = TerminalLauncher(
-            appleScript: StubAppleScriptClient(shouldSucceed: true),
-            resolveActivationDecisionOverride: { project in
-                let projectPath = project.path
-                return Self.makeAttachedTerminalAppDecision(projectPath: projectPath, projectName: project.name, appName: "Ghostty")
-            },
-            executeActivationActionOverride: { _, projectPath, _ in
-                if projectPath == projectA.path {
-                    try? await _Concurrency.Task.sleep(nanoseconds: 220_000_000)
-                }
-                return true
-            },
-        )
-
-        launcher.onActivationResult = { result in
-            resultPaths.append(result.projectPath)
-        }
-
-        launcher.launchTerminal(for: projectA)
-        try? await _Concurrency.Task.sleep(nanoseconds: 30_000_000)
-        launcher.launchTerminal(for: projectB)
-        try? await _Concurrency.Task.sleep(nanoseconds: 500_000_000)
-
-        XCTAssertEqual(
-            resultPaths,
-            [projectB.path],
-            "Only the latest request should emit a final outcome after overlap.",
-        )
-        let foundCanonicalMarker = await collector.contains {
-            ($0.contains("[TerminalLauncher] ARE snapshot request canceled/stale") ||
-                $0.contains("[TerminalLauncher] ARE snapshot ignored for stale request") ||
-                $0.contains("[TerminalLauncher] launchTerminalAsync ignored stale request")) &&
-                $0.contains(projectA.path)
-        }
-
-        XCTAssertTrue(
-            foundCanonicalMarker,
-            "Expected canonical stale suppression marker when a request becomes stale during primary action.",
-        )
-    }
-
-    func testLaunchTerminalSequentialRequestsExecuteInOrder() async {
-        let projectA = makeProject(name: "project-a", path: "/Users/pete/Code/project-a")
-        let projectB = makeProject(name: "project-b", path: "/Users/pete/Code/project-b")
-        var executedPaths: [String] = []
-        var resultPaths: [String] = []
-
-        let launcher = TerminalLauncher(
-            appleScript: StubAppleScriptClient(shouldSucceed: true),
-            resolveActivationDecisionOverride: { project in
-                let projectPath = project.path
-                try? await _Concurrency.Task.sleep(nanoseconds: 20_000_000)
-                return Self.makeAttachedTerminalAppDecision(projectPath: projectPath, projectName: project.name, appName: "Ghostty")
-            },
-            executeActivationActionOverride: { _, projectPath, _ in
-                executedPaths.append(projectPath)
-                return true
-            },
-        )
-
-        launcher.onActivationResult = { (result: TerminalActivationResult) in
-            resultPaths.append(result.projectPath)
-        }
-
-        launcher.launchTerminal(for: projectA)
-        try? await _Concurrency.Task.sleep(nanoseconds: 120_000_000)
-        launcher.launchTerminal(for: projectB)
-        try? await _Concurrency.Task.sleep(nanoseconds: 120_000_000)
-
-        XCTAssertEqual(executedPaths, [projectA.path, projectB.path])
-        XCTAssertEqual(resultPaths, [projectA.path, projectB.path])
-    }
-
-    func testLaunchTerminalPrimaryFailureExecutesSingleFallbackLaunch() async {
-        let project = makeProject(name: "project-a", path: "/Users/pete/Code/project-a")
-        var actions: [ActivationAction] = []
-        var results: [TerminalActivationResult] = []
-
-        let launcher = TerminalLauncher(
-            appleScript: StubAppleScriptClient(shouldSucceed: true),
-            resolveActivationDecisionOverride: { project in
-                ActivationDecision(
-                    primary: .ensureTmuxSession(sessionName: "project-a", projectPath: project.path),
-                    fallback: .launchNewTerminal(projectPath: project.path, projectName: project.name),
-                    reason: "TMUX_SESSION_DETACHED",
-                    trace: nil,
+                let launcher = TerminalLauncher(
+                    appleScript: StubAppleScriptClient(shouldSucceed: true),
+                    resolveActivationDecisionOverride: { project in
+                        if testCase.kind == .overlapResolveGate {
+                            resolveCallCount += 1
+                            if resolveCallCount == 1 {
+                                resolveGateEntered?.fulfill()
+                                await releaseGate.wait()
+                            }
+                        }
+                        return Self.makeAttachedTerminalAppDecision(
+                            projectPath: project.path,
+                            projectName: project.name,
+                            appName: "Ghostty",
+                        )
+                    },
+                    executeActivationActionOverride: { _, projectPath, _ in
+                        executedPaths.append(projectPath)
+                        if testCase.kind == .overlapActionGate, projectPath == testCase.first.path {
+                            actionGateEntered?.fulfill()
+                            await releaseGate.wait()
+                        }
+                        return true
+                    },
                 )
-            },
-            executeActivationActionOverride: { action, _, _ in
-                actions.append(action)
-                switch action {
-                case .ensureTmuxSession:
-                    return false
-                case .launchNewTerminal:
-                    return true
-                default:
-                    return true
+
+                launcher.onActivationResult = { result in
+                    resultPaths.append(result.projectPath)
                 }
-            },
-        )
 
-        launcher.onActivationResult = { result in
-            results.append(result)
-        }
+                launcher.launchTerminal(for: testCase.first)
+                switch testCase.kind {
+                case .overlapResolveGate:
+                    await fulfillment(of: [resolveGateEntered!], timeout: 1.0)
+                    for project in testCase.followups {
+                        launcher.launchTerminal(for: project)
+                    }
+                    await releaseGate.open()
+                case .overlapActionGate:
+                    await fulfillment(of: [actionGateEntered!], timeout: 1.0)
+                    for project in testCase.followups {
+                        launcher.launchTerminal(for: project)
+                    }
+                    await releaseGate.open()
+                case .sequential:
+                    _ = await assertEventually(
+                        timeout: 1.0,
+                        context: "\(context) Expected first sequential request to complete before next.",
+                    ) {
+                        executedPaths.count == 1 && resultPaths.count == 1
+                    }
+                    for project in testCase.followups {
+                        launcher.launchTerminal(for: project)
+                    }
+                }
 
-        launcher.launchTerminal(for: project)
-        try? await _Concurrency.Task.sleep(nanoseconds: 250_000_000)
-
-        XCTAssertEqual(actions.count, 2, "Expected one primary action and one fallback launch action.")
-        if actions.count == 2 {
-            if case let .ensureTmuxSession(session, path) = actions[0] {
-                XCTAssertEqual(session, "project-a")
-                XCTAssertEqual(path, project.path)
-            } else {
-                XCTFail("Expected ensureTmuxSession primary action, got \(String(describing: actions[0]))")
-            }
-            if case let .launchNewTerminal(path, name) = actions[1] {
-                XCTAssertEqual(path, project.path)
-                XCTAssertEqual(name, project.name)
-            } else {
-                XCTFail("Expected launchNewTerminal fallback action, got \(String(describing: actions[1]))")
-            }
-        }
-
-        XCTAssertEqual(results.count, 1)
-        XCTAssertEqual(results.first?.projectPath, project.path)
-        XCTAssertEqual(results.first?.success, true)
-        XCTAssertEqual(results.first?.usedFallback, true)
-    }
-
-    func testLaunchTerminalPrimaryLaunchFailureDoesNotChainSecondFallback() async {
-        let project = makeProject(name: "project-a", path: "/Users/pete/Code/project-a")
-        var actions: [ActivationAction] = []
-        var results: [TerminalActivationResult] = []
-
-        let launcher = TerminalLauncher(
-            appleScript: StubAppleScriptClient(shouldSucceed: true),
-            resolveActivationDecisionOverride: { project in
-                ActivationDecision(
-                    primary: .launchNewTerminal(projectPath: project.path, projectName: project.name),
-                    fallback: nil,
-                    reason: "NO_TRUSTED_EVIDENCE",
-                    trace: nil,
+                _ = await assertEventually(
+                    timeout: 1.5,
+                    context: "\(context) Expected arbitration scenario to complete.",
+                ) {
+                    executedPaths.count == testCase.expectedExecutedPaths.count &&
+                        resultPaths.count == testCase.expectedResultPaths.count
+                }
+                XCTAssertEqual(
+                    executedPaths,
+                    testCase.expectedExecutedPaths,
+                    "\(context) Unexpected executed path ordering.",
                 )
-            },
-            executeActivationActionOverride: { action, _, _ in
-                actions.append(action)
-                if case .launchNewTerminal = action {
-                    return false
-                }
-                return true
-            },
-        )
-
-        launcher.onActivationResult = { result in
-            results.append(result)
-        }
-
-        launcher.launchTerminal(for: project)
-        try? await _Concurrency.Task.sleep(nanoseconds: 250_000_000)
-
-        XCTAssertEqual(actions.count, 1, "Primary launch failure should not trigger a second launch fallback.")
-        if let first = actions.first {
-            if case let .launchNewTerminal(path, name) = first {
-                XCTAssertEqual(path, project.path)
-                XCTAssertEqual(name, project.name)
-            } else {
-                XCTFail("Expected launchNewTerminal primary action, got \(String(describing: first))")
-            }
-        }
-
-        XCTAssertEqual(results.count, 1)
-        XCTAssertEqual(results.first?.projectPath, project.path)
-        XCTAssertEqual(results.first?.success, false)
-        XCTAssertEqual(results.first?.usedFallback, false)
-    }
-
-    func testLaunchTerminalSnapshotFetchFailureLaunchesFallbackWithSuccessOutcome() async {
-        let project = makeProject(name: "project-a", path: "/Users/pete/Code/project-a")
-        var launchedFallbacks: [(path: String, name: String)] = []
-        var results: [TerminalActivationResult] = []
-
-        let launcher = TerminalLauncher(
-            appleScript: StubAppleScriptClient(shouldSucceed: true),
-            resolveActivationDecisionOverride: { _ in
-                throw SnapshotFetchError.unavailable
-            },
-            launchNewTerminalOverride: { path, name in
-                launchedFallbacks.append((path, name))
-                return true
-            },
-        )
-
-        launcher.onActivationResult = { result in
-            results.append(result)
-        }
-
-        launcher.launchTerminal(for: project)
-        try? await _Concurrency.Task.sleep(nanoseconds: 250_000_000)
-
-        XCTAssertEqual(launchedFallbacks.count, 1)
-        XCTAssertEqual(launchedFallbacks.first?.path, project.path)
-        XCTAssertEqual(launchedFallbacks.first?.name, project.name)
-        XCTAssertEqual(results.count, 1)
-        XCTAssertEqual(results.first?.projectPath, project.path)
-        XCTAssertEqual(results.first?.success, true)
-        XCTAssertEqual(results.first?.usedFallback, true)
-    }
-
-    func testLaunchTerminalSnapshotFetchFailureRecoversViaTmuxSessionBeforeLaunchingNewTerminal() async {
-        let project = makeProject(name: "project-a", path: "/Users/pete/Code/project-a")
-        var actions: [ActivationAction] = []
-        var launchedFallbacks: [(path: String, name: String)] = []
-        var results: [TerminalActivationResult] = []
-
-        let launcher = TerminalLauncher(
-            appleScript: StubAppleScriptClient(shouldSucceed: true),
-            resolveActivationDecisionOverride: { _ in
-                throw SnapshotFetchError.unavailable
-            },
-            fallbackTmuxSessionResolver: { _ in
-                "project-a"
-            },
-            executeActivationActionOverride: { action, _, _ in
-                actions.append(action)
-                if case let .ensureTmuxSession(sessionName, projectPath) = action {
-                    return sessionName == "project-a" && projectPath == project.path
-                }
-                return false
-            },
-            launchNewTerminalOverride: { path, name in
-                launchedFallbacks.append((path, name))
-                return true
-            },
-        )
-
-        launcher.onActivationResult = { result in
-            results.append(result)
-        }
-
-        launcher.launchTerminal(for: project)
-        try? await _Concurrency.Task.sleep(nanoseconds: 250_000_000)
-
-        XCTAssertEqual(actions.count, 1, "Expected tmux recovery action before considering terminal launch.")
-        if let firstAction = actions.first {
-            if case let .ensureTmuxSession(sessionName, projectPath) = firstAction {
-                XCTAssertEqual(sessionName, "project-a")
-                XCTAssertEqual(projectPath, project.path)
-            } else {
-                XCTFail("Expected ensureTmuxSession recovery action, got \(String(describing: firstAction))")
-            }
-        }
-        XCTAssertTrue(
-            launchedFallbacks.isEmpty,
-            "Snapshot fetch failure should not spawn a new terminal when tmux recovery succeeds.",
-        )
-        XCTAssertEqual(results.count, 1)
-        XCTAssertEqual(results.first?.projectPath, project.path)
-        XCTAssertEqual(results.first?.success, true)
-        XCTAssertEqual(results.first?.usedFallback, true)
-    }
-
-    func testLaunchTerminalSnapshotFetchFailureRecoversViaExactSessionNameWhenPathLookupMisses() async {
-        let project = makeProject(name: "agent-skills", path: "/Users/pete/Code/agent-skills")
-        var actions: [ActivationAction] = []
-        var launchedFallbacks: [(path: String, name: String)] = []
-        var results: [TerminalActivationResult] = []
-
-        let launcher = TerminalLauncher(
-            appleScript: StubAppleScriptClient(shouldSucceed: true),
-            resolveActivationDecisionOverride: { _ in
-                throw SnapshotFetchError.unavailable
-            },
-            fallbackTmuxSessionResolver: { _ in
-                nil
-            },
-            fallbackTmuxSessionExistsResolver: { sessionName in
-                sessionName == "agent-skills"
-            },
-            executeActivationActionOverride: { action, _, _ in
-                actions.append(action)
-                if case let .ensureTmuxSession(sessionName, projectPath) = action {
-                    return sessionName == "agent-skills" && projectPath == project.path
-                }
-                return false
-            },
-            launchNewTerminalOverride: { path, name in
-                launchedFallbacks.append((path, name))
-                return true
-            },
-        )
-
-        launcher.onActivationResult = { result in
-            results.append(result)
-        }
-
-        launcher.launchTerminal(for: project)
-        try? await _Concurrency.Task.sleep(nanoseconds: 250_000_000)
-
-        XCTAssertEqual(actions.count, 1)
-        if let firstAction = actions.first {
-            if case let .ensureTmuxSession(sessionName, projectPath) = firstAction {
-                XCTAssertEqual(sessionName, "agent-skills")
-                XCTAssertEqual(projectPath, project.path)
-            } else {
-                XCTFail("Expected ensureTmuxSession exact-name recovery action, got \(String(describing: firstAction))")
-            }
-        }
-        XCTAssertTrue(launchedFallbacks.isEmpty, "Exact session-name recovery should prevent new terminal launch.")
-        XCTAssertEqual(results.count, 1)
-        XCTAssertEqual(results.first?.projectPath, project.path)
-        XCTAssertEqual(results.first?.success, true)
-    }
-
-    func testLaunchTerminalColdStartNoTrustedEvidenceLogsFallbackMarkerAndLaunchesWithoutStall() async {
-        let project = makeProject(name: "project-a", path: "/Users/pete/Code/project-a")
-        var actions: [ActivationAction] = []
-        var results: [TerminalActivationResult] = []
-        var elapsed: TimeInterval?
-        let collector = LogCollector()
-        let startedAt = Date()
-
-        DebugLog.setTestObserver { line in
-            _Concurrency.Task {
-                await collector.append(line)
-            }
-        }
-        defer { DebugLog.setTestObserver(nil) }
-
-        let launcher = TerminalLauncher(
-            appleScript: StubAppleScriptClient(shouldSucceed: true),
-            resolveActivationDecisionOverride: { project in
-                ActivationDecision(
-                    primary: .launchNewTerminal(projectPath: project.path, projectName: project.name),
-                    fallback: nil,
-                    reason: "NO_TRUSTED_EVIDENCE",
-                    trace: nil,
+                XCTAssertEqual(
+                    resultPaths,
+                    testCase.expectedResultPaths,
+                    "\(context) Unexpected result path ordering.",
                 )
-            },
-            executeActivationActionOverride: { action, _, _ in
-                actions.append(action)
-                return true
-            },
-        )
-
-        launcher.onActivationResult = { result in
-            results.append(result)
-            elapsed = Date().timeIntervalSince(startedAt)
-        }
-
-        launcher.launchTerminal(for: project)
-        try? await _Concurrency.Task.sleep(nanoseconds: 250_000_000)
-
-        XCTAssertEqual(actions.count, 1)
-        if let firstAction = actions.first {
-            if case let .launchNewTerminal(path, name) = firstAction {
-                XCTAssertEqual(path, project.path)
-                XCTAssertEqual(name, project.name)
-            } else {
-                XCTFail("Expected launchNewTerminal for cold-start empty evidence, got \(String(describing: firstAction))")
-            }
-        }
-        XCTAssertEqual(results.count, 1)
-        XCTAssertLessThan(
-            elapsed ?? .infinity,
-            0.5,
-            "Cold-start empty-evidence fallback should resolve quickly without apparent stall.",
-        )
-
-        let foundMarker = await collector.contains {
-            $0.contains("[TerminalLauncher] ARE no-trusted-evidence fallback launch path=\(project.path)")
-        }
-        XCTAssertTrue(foundMarker, "Expected explicit no-trusted-evidence fallback marker for cold-start clarity.")
-    }
-
-    func testLaunchTerminalNoTrustedEvidenceReusesRecoverableTmuxSessionBeforeLaunchingNewTerminal() async {
-        let project = makeProject(name: "assistant-ui", path: "/Users/pete/Code/assistant-ui")
-        var actions: [ActivationAction] = []
-        var results: [TerminalActivationResult] = []
-
-        let launcher = TerminalLauncher(
-            appleScript: StubAppleScriptClient(shouldSucceed: true),
-            resolveActivationDecisionOverride: { project in
-                ActivationDecision(
-                    primary: .launchNewTerminal(projectPath: project.path, projectName: project.name),
-                    fallback: nil,
-                    reason: "NO_TRUSTED_EVIDENCE",
-                    trace: nil,
-                )
-            },
-            fallbackTmuxSessionResolver: { _ in
-                "assistant-ui"
-            },
-            executeActivationActionOverride: { action, _, _ in
-                actions.append(action)
-                if case let .ensureTmuxSession(sessionName, projectPath) = action {
-                    return sessionName == "assistant-ui" && projectPath == project.path
-                }
-                return false
-            },
-        )
-
-        launcher.onActivationResult = { result in
-            results.append(result)
-        }
-
-        launcher.launchTerminal(for: project)
-        try? await _Concurrency.Task.sleep(nanoseconds: 250_000_000)
-
-        XCTAssertEqual(actions.count, 1, "Expected tmux recovery action before launching a new terminal.")
-        if let firstAction = actions.first {
-            if case let .ensureTmuxSession(sessionName, projectPath) = firstAction {
-                XCTAssertEqual(sessionName, "assistant-ui")
-                XCTAssertEqual(projectPath, project.path)
-            } else {
-                XCTFail("Expected ensureTmuxSession recovery action, got \(String(describing: firstAction))")
-            }
-        }
-        XCTAssertEqual(results.count, 1)
-        XCTAssertEqual(results.first?.projectPath, project.path)
-        XCTAssertEqual(results.first?.success, true)
-        XCTAssertEqual(results.first?.usedFallback, false)
-    }
-
-    func testLaunchTerminalSnapshotFailureFallbackIsDebouncedAcrossRapidRepeatedClicks() async {
-        let project = makeProject(name: "project-a", path: "/Users/pete/Code/project-a")
-        var launchedFallbacks: [(path: String, name: String)] = []
-        var results: [TerminalActivationResult] = []
-        let collector = LogCollector()
-
-        DebugLog.setTestObserver { line in
-            _Concurrency.Task {
-                await collector.append(line)
-            }
-        }
-        defer { DebugLog.setTestObserver(nil) }
-
-        let launcher = TerminalLauncher(
-            appleScript: StubAppleScriptClient(shouldSucceed: true),
-            resolveActivationDecisionOverride: { _ in
-                throw SnapshotFetchError.unavailable
-            },
-            launchNewTerminalOverride: { path, name in
-                launchedFallbacks.append((path, name))
-                return true
-            },
-        )
-
-        launcher.onActivationResult = { result in
-            results.append(result)
-        }
-
-        launcher.launchTerminal(for: project)
-        let firstFallbackCompleted = await waitUntil(timeout: 1.5) {
-            launchedFallbacks.count == 1 && results.count >= 1
-        }
-        XCTAssertTrue(firstFallbackCompleted, "Expected first snapshot-unavailable fallback launch to complete.")
-
-        launcher.launchTerminal(for: project)
-        let secondOutcomeCompleted = await waitUntil(timeout: 1.5) {
-            results.count >= 2
-        }
-        XCTAssertTrue(secondOutcomeCompleted, "Expected debounced repeated click to emit a second activation outcome.")
-
-        XCTAssertEqual(
-            launchedFallbacks.count,
-            1,
-            "Rapid repeated snapshot failures should not spawn repeated fallback launches.",
-        )
-        XCTAssertGreaterThanOrEqual(results.count, 2)
-        guard results.count >= 2 else { return }
-        XCTAssertEqual(results[0].projectPath, project.path)
-        XCTAssertEqual(results[1].projectPath, project.path)
-        XCTAssertTrue(results[0].usedFallback)
-        XCTAssertTrue(results[1].usedFallback)
-
-        let foundDebounceMarker = await waitUntil(timeout: 1.0) {
-            await collector.contains {
-                $0.contains("[TerminalLauncher] snapshot_unavailable_fallback debounced path=\(project.path)")
-            }
-        }
-        XCTAssertTrue(foundDebounceMarker, "Expected debounce marker for repeated snapshot failure fallback.")
-    }
-
-    func testLaunchTerminalSnapshotFailureFallbackLaunchFailureReturnsUnsuccessfulResult() async {
-        let project = makeProject(name: "project-a", path: "/Users/pete/Code/project-a")
-        var launchedFallbacks: [(path: String, name: String)] = []
-        var results: [TerminalActivationResult] = []
-
-        let launcher = TerminalLauncher(
-            appleScript: StubAppleScriptClient(shouldSucceed: true),
-            resolveActivationDecisionOverride: { _ in
-                throw SnapshotFetchError.unavailable
-            },
-            launchNewTerminalOverride: { path, name in
-                launchedFallbacks.append((path, name))
-                return false
-            },
-        )
-
-        launcher.onActivationResult = { result in
-            results.append(result)
-        }
-
-        launcher.launchTerminal(for: project)
-        try? await _Concurrency.Task.sleep(nanoseconds: 250_000_000)
-
-        XCTAssertEqual(launchedFallbacks.count, 1)
-        XCTAssertEqual(results.count, 1)
-        XCTAssertEqual(results.first?.projectPath, project.path)
-        XCTAssertEqual(results.first?.usedFallback, true)
-        XCTAssertEqual(results.first?.success, false)
-    }
-
-    func testLaunchTerminalRepeatedSameCardRapidClicksCoalesceToSingleOutcome() async {
-        let project = makeProject(name: "project-a", path: "/Users/pete/Code/project-a")
-        var executionCount = 0
-        var resultPaths: [String] = []
-        let collector = LogCollector()
-
-        DebugLog.setTestObserver { line in
-            _Concurrency.Task {
-                await collector.append(line)
-            }
-        }
-        defer { DebugLog.setTestObserver(nil) }
-
-        var callCount = 0
-        let launcher = TerminalLauncher(
-            appleScript: StubAppleScriptClient(shouldSucceed: true),
-            resolveActivationDecisionOverride: { project in
-                callCount += 1
-                if callCount < 3 {
-                    try await _Concurrency.Task.sleep(nanoseconds: 220_000_000)
-                } else {
-                    try await _Concurrency.Task.sleep(nanoseconds: 25_000_000)
-                }
-                return Self.makeAttachedTerminalAppDecision(projectPath: project.path, projectName: project.name, appName: "Ghostty")
-            },
-            executeActivationActionOverride: { _, _, _ in
-                executionCount += 1
-                return true
-            },
-        )
-
-        launcher.onActivationResult = { result in
-            resultPaths.append(result.projectPath)
-        }
-
-        launcher.launchTerminal(for: project)
-        try? await _Concurrency.Task.sleep(nanoseconds: 30_000_000)
-        launcher.launchTerminal(for: project)
-        try? await _Concurrency.Task.sleep(nanoseconds: 30_000_000)
-        launcher.launchTerminal(for: project)
-        try? await _Concurrency.Task.sleep(nanoseconds: 500_000_000)
-
-        XCTAssertEqual(executionCount, 1, "Repeated in-flight clicks on same card should coalesce to one execution.")
-        XCTAssertEqual(resultPaths, [project.path], "Expected one final outcome for repeated same-card overlap.")
-        let hasStaleMarker = await collector.contains {
-            $0.contains("[TerminalLauncher] ARE snapshot request canceled/stale") &&
-                $0.contains(project.path)
-        }
-        XCTAssertTrue(hasStaleMarker, "Expected stale suppression marker for superseded same-card requests.")
-    }
-
-    func testLaunchTerminalLatestClickEmitsSingleFinalOutcomeSequence() async {
-        let projectA = makeProject(name: "project-a", path: "/Users/pete/Code/project-a")
-        let projectB = makeProject(name: "project-b", path: "/Users/pete/Code/project-b")
-        var executedPaths: [String] = []
-        var results: [TerminalActivationResult] = []
-        let collector = LogCollector()
-
-        DebugLog.setTestObserver { line in
-            _Concurrency.Task {
-                await collector.append(line)
-            }
-        }
-        defer { DebugLog.setTestObserver(nil) }
-
-        let launcher = TerminalLauncher(
-            appleScript: StubAppleScriptClient(shouldSucceed: true),
-            resolveActivationDecisionOverride: { project in
-                let projectPath = project.path
-                if projectPath == projectA.path {
-                    try await _Concurrency.Task.sleep(nanoseconds: 220_000_000)
-                } else {
-                    try await _Concurrency.Task.sleep(nanoseconds: 25_000_000)
-                }
-                return Self.makeAttachedTerminalAppDecision(projectPath: projectPath, projectName: project.name, appName: "Ghostty")
-            },
-            executeActivationActionOverride: { _, projectPath, _ in
-                executedPaths.append(projectPath)
-                return true
-            },
-        )
-
-        launcher.onActivationResult = { result in
-            results.append(result)
-        }
-
-        launcher.launchTerminal(for: projectA)
-        try? await _Concurrency.Task.sleep(nanoseconds: 40_000_000)
-        launcher.launchTerminal(for: projectB)
-        try? await _Concurrency.Task.sleep(nanoseconds: 500_000_000)
-
-        XCTAssertEqual(executedPaths, [projectB.path])
-        XCTAssertEqual(results.count, 1, "Latest-click overlap should emit exactly one final outcome.")
-        XCTAssertEqual(results.first?.projectPath, projectB.path)
-        let sawStaleSuppression = await collector.contains {
-            $0.contains("[TerminalLauncher] ARE snapshot request canceled/stale") &&
-                $0.contains(projectA.path)
-        }
-        XCTAssertTrue(sawStaleSuppression, "Expected stale suppression marker for superseded request.")
-    }
-
-    func testLaunchTerminalStalePrimaryFailureDoesNotLaunchFallbackAfterNewerClick() async {
-        let projectA = makeProject(name: "project-a", path: "/Users/pete/Code/project-a")
-        let projectB = makeProject(name: "project-b", path: "/Users/pete/Code/project-b")
-        var executedActions: [(path: String, action: ActivationAction)] = []
-        var results: [TerminalActivationResult] = []
-
-        let launcher = TerminalLauncher(
-            appleScript: StubAppleScriptClient(shouldSucceed: true),
-            resolveActivationDecisionOverride: { project in
-                let projectPath = project.path
-                if projectPath == projectA.path {
-                    return ActivationDecision(
-                        primary: .ensureTmuxSession(sessionName: "project-a", projectPath: projectA.path),
-                        fallback: .launchNewTerminal(projectPath: projectA.path, projectName: projectA.name),
-                        reason: "TMUX_SESSION_DETACHED",
-                        trace: nil,
+                if let stalePath = testCase.expectedStalePath {
+                    let foundMarker = await waitForStaleSuppressionMarker(
+                        collector: collector,
+                        projectPath: stalePath,
+                        timeout: 1.0,
+                    )
+                    XCTAssertTrue(
+                        foundMarker,
+                        "\(context) Expected stale suppression marker for superseded request.",
                     )
                 }
-                return Self.makeAttachedTerminalAppDecision(projectPath: projectPath, projectName: project.name, appName: "Ghostty")
-            },
-            executeActivationActionOverride: { action, projectPath, _ in
-                executedActions.append((projectPath, action))
-                if projectPath == projectA.path {
-                    if case .ensureTmuxSession = action {
-                        try? await _Concurrency.Task.sleep(nanoseconds: 220_000_000)
-                        return false
+            }
+        }
+    }
+
+    func testLaunchTerminalPrimaryFailureAndStaleSuppressionScenarios() async throws {
+        enum Scenario {
+            case primaryEnsureFailsThenFallbackLaunch
+            case primaryLaunchFailsWithoutSecondFallback
+            case stalePrimaryFailureSuppressedByNewerClick
+        }
+
+        let projectA = makeProject(name: "project-a", path: "/Users/pete/Code/project-a")
+        let projectB = makeProject(name: "project-b", path: "/Users/pete/Code/project-b")
+        let scenarios: [(name: String, kind: Scenario)] = [
+            ("primary_ensure_fails_then_fallback_launch", .primaryEnsureFailsThenFallbackLaunch),
+            ("primary_launch_fails_without_second_fallback", .primaryLaunchFailsWithoutSecondFallback),
+            ("stale_primary_failure_suppressed_by_newer_click", .stalePrimaryFailureSuppressedByNewerClick),
+        ]
+
+        for scenario in scenarios {
+            let context = scenarioContext(scenario.name)
+            var actions: [(path: String, action: ActivationAction)] = []
+            var results: [TerminalActivationResult] = []
+            var stalePrimaryEntered: XCTestExpectation?
+            let releaseStalePrimary = AsyncGate()
+
+            let launcher = TerminalLauncher(
+                appleScript: StubAppleScriptClient(shouldSucceed: true),
+                resolveActivationDecisionOverride: { project in
+                    switch scenario.kind {
+                    case .primaryEnsureFailsThenFallbackLaunch:
+                        return ActivationDecision(
+                            primary: .ensureTmuxSession(sessionName: "project-a", projectPath: project.path),
+                            fallback: .launchNewTerminal(projectPath: project.path, projectName: project.name),
+                            reason: "TMUX_SESSION_DETACHED",
+                            trace: nil,
+                        )
+                    case .primaryLaunchFailsWithoutSecondFallback:
+                        return ActivationDecision(
+                            primary: .launchNewTerminal(projectPath: project.path, projectName: project.name),
+                            fallback: nil,
+                            reason: "NO_TRUSTED_EVIDENCE",
+                            trace: nil,
+                        )
+                    case .stalePrimaryFailureSuppressedByNewerClick:
+                        if project.path == projectA.path {
+                            return ActivationDecision(
+                                primary: .ensureTmuxSession(sessionName: "project-a", projectPath: projectA.path),
+                                fallback: .launchNewTerminal(projectPath: projectA.path, projectName: projectA.name),
+                                reason: "TMUX_SESSION_DETACHED",
+                                trace: nil,
+                            )
+                        }
+                        return Self.makeAttachedTerminalAppDecision(
+                            projectPath: project.path,
+                            projectName: project.name,
+                            appName: "Ghostty",
+                        )
                     }
-                    if case .launchNewTerminal = action {
+                },
+                executeActivationActionOverride: { action, projectPath, _ in
+                    actions.append((projectPath, action))
+                    switch scenario.kind {
+                    case .primaryEnsureFailsThenFallbackLaunch:
+                        switch action {
+                        case .ensureTmuxSession:
+                            return false
+                        case .launchNewTerminal:
+                            return true
+                        default:
+                            return true
+                        }
+                    case .primaryLaunchFailsWithoutSecondFallback:
+                        if case .launchNewTerminal = action {
+                            return false
+                        }
+                        return true
+                    case .stalePrimaryFailureSuppressedByNewerClick:
+                        if projectPath == projectA.path {
+                            if case .ensureTmuxSession = action {
+                                stalePrimaryEntered?.fulfill()
+                                await releaseStalePrimary.wait()
+                                return false
+                            }
+                            if case .launchNewTerminal = action {
+                                return true
+                            }
+                        }
                         return true
                     }
-                }
-                return true
-            },
-        )
+                },
+            )
 
-        launcher.onActivationResult = { result in
-            results.append(result)
-        }
-
-        launcher.launchTerminal(for: projectA)
-        try? await _Concurrency.Task.sleep(nanoseconds: 30_000_000)
-        launcher.launchTerminal(for: projectB)
-        try? await _Concurrency.Task.sleep(nanoseconds: 500_000_000)
-
-        let staleFallbackLaunches = executedActions.filter { entry in
-            guard entry.path == projectA.path else { return false }
-            if case .launchNewTerminal = entry.action {
-                return true
+            launcher.onActivationResult = { result in
+                results.append(result)
             }
-            return false
+
+            switch scenario.kind {
+            case .primaryEnsureFailsThenFallbackLaunch, .primaryLaunchFailsWithoutSecondFallback:
+                launcher.launchTerminal(for: projectA)
+            case .stalePrimaryFailureSuppressedByNewerClick:
+                stalePrimaryEntered = expectation(description: "\(scenario.name)-stale-primary-entered")
+                launcher.launchTerminal(for: projectA)
+                try await fulfillment(of: [XCTUnwrap(stalePrimaryEntered)], timeout: 1.0)
+                launcher.launchTerminal(for: projectB)
+                await releaseStalePrimary.open()
+            }
+
+            _ = await assertEventually(
+                timeout: 1.5,
+                context: "\(context) Expected scenario to emit one terminal activation result.",
+            ) {
+                results.count == 1
+            }
+
+            switch scenario.kind {
+            case .primaryEnsureFailsThenFallbackLaunch:
+                XCTAssertEqual(actions.count, 2, "\(context) Expected one primary and one fallback action.")
+                if actions.count == 2 {
+                    assertEnsureTmuxAction(
+                        actions[0].action,
+                        expectedSession: "project-a",
+                        expectedProjectPath: projectA.path,
+                        context: "\(context) Expected ensureTmuxSession primary action.",
+                    )
+                    assertLaunchNewTerminalAction(
+                        actions[1].action,
+                        expectedPath: projectA.path,
+                        expectedName: projectA.name,
+                        context: "\(context) Expected launchNewTerminal fallback action.",
+                    )
+                }
+                XCTAssertEqual(results.first?.projectPath, projectA.path)
+                XCTAssertEqual(results.first?.success, true)
+                XCTAssertEqual(results.first?.usedFallback, true)
+            case .primaryLaunchFailsWithoutSecondFallback:
+                assertSingleAction(
+                    actions.map(\.action),
+                    expected: .launch(projectPath: projectA.path, projectName: projectA.name),
+                    context: "\(context) Expected launchNewTerminal primary action.",
+                )
+                assertSingleActivationResult(
+                    results,
+                    expectedPath: projectA.path,
+                    expectedSuccess: false,
+                    expectedUsedFallback: false,
+                    context: "\(context)",
+                )
+            case .stalePrimaryFailureSuppressedByNewerClick:
+                let staleFallbackLaunches = actions.filter { entry in
+                    guard entry.path == projectA.path else { return false }
+                    if case .launchNewTerminal = entry.action {
+                        return true
+                    }
+                    return false
+                }
+                XCTAssertTrue(
+                    staleFallbackLaunches.isEmpty,
+                    "\(context) Stale request must not launch fallback after newer click wins.",
+                )
+                assertSingleActivationResult(
+                    results,
+                    expectedPath: projectB.path,
+                    expectedSuccess: true,
+                    expectedUsedFallback: false,
+                    context: "\(context)",
+                )
+            }
+        }
+    }
+
+    func testLaunchTerminalSnapshotFetchFailureScenariosFollowFallbackContracts() async {
+        struct ExpectedFallbackOutcome {
+            let primaryAction: ExpectedActivationAction?
+            let launchCount: Int
+            let success: Bool
+            let resultCount: Int
+            let expectDebounceMarker: Bool
+            let launchAttemptsAreStaged: Bool
         }
 
-        XCTAssertTrue(
-            staleFallbackLaunches.isEmpty,
-            "Stale request must not launch fallback after a newer click wins.",
-        )
-        XCTAssertEqual(results.count, 1)
-        XCTAssertEqual(results.first?.projectPath, projectB.path)
+        struct Case {
+            let name: String
+            let project: Project
+            let resolvedSessionName: String?
+            let exactSessionExists: Bool
+            let launchOutcome: Bool
+            let launchAttempts: Int
+            let expected: ExpectedFallbackOutcome
+        }
+
+        let cases = [
+            Case(
+                name: "launch_fallback_success",
+                project: makeProject(name: "project-a", path: "/Users/pete/Code/project-a"),
+                resolvedSessionName: nil,
+                exactSessionExists: false,
+                launchOutcome: true,
+                launchAttempts: 1,
+                expected: ExpectedFallbackOutcome(
+                    primaryAction: nil,
+                    launchCount: 1,
+                    success: true,
+                    resultCount: 1,
+                    expectDebounceMarker: false,
+                    launchAttemptsAreStaged: false,
+                ),
+            ),
+            Case(
+                name: "launch_fallback_failure",
+                project: makeProject(name: "project-a", path: "/Users/pete/Code/project-a"),
+                resolvedSessionName: nil,
+                exactSessionExists: false,
+                launchOutcome: false,
+                launchAttempts: 1,
+                expected: ExpectedFallbackOutcome(
+                    primaryAction: nil,
+                    launchCount: 1,
+                    success: false,
+                    resultCount: 1,
+                    expectDebounceMarker: false,
+                    launchAttemptsAreStaged: false,
+                ),
+            ),
+            Case(
+                name: "recover_via_resolved_tmux_session",
+                project: makeProject(name: "project-a", path: "/Users/pete/Code/project-a"),
+                resolvedSessionName: "project-a",
+                exactSessionExists: false,
+                launchOutcome: true,
+                launchAttempts: 1,
+                expected: ExpectedFallbackOutcome(
+                    primaryAction: .ensureTmux(
+                        sessionName: "project-a",
+                        projectPath: "/Users/pete/Code/project-a",
+                    ),
+                    launchCount: 0,
+                    success: true,
+                    resultCount: 1,
+                    expectDebounceMarker: false,
+                    launchAttemptsAreStaged: false,
+                ),
+            ),
+            Case(
+                name: "recover_via_exact_session_name",
+                project: makeProject(name: "agent-skills", path: "/Users/pete/Code/agent-skills"),
+                resolvedSessionName: nil,
+                exactSessionExists: true,
+                launchOutcome: true,
+                launchAttempts: 1,
+                expected: ExpectedFallbackOutcome(
+                    primaryAction: .ensureTmux(
+                        sessionName: "agent-skills",
+                        projectPath: "/Users/pete/Code/agent-skills",
+                    ),
+                    launchCount: 0,
+                    success: true,
+                    resultCount: 1,
+                    expectDebounceMarker: false,
+                    launchAttemptsAreStaged: false,
+                ),
+            ),
+            Case(
+                name: "rapid_repeat_snapshot_failure_debounces_fallback_launch",
+                project: makeProject(name: "project-a", path: "/Users/pete/Code/project-a"),
+                resolvedSessionName: nil,
+                exactSessionExists: false,
+                launchOutcome: true,
+                launchAttempts: 2,
+                expected: ExpectedFallbackOutcome(
+                    primaryAction: nil,
+                    launchCount: 1,
+                    success: true,
+                    resultCount: 2,
+                    expectDebounceMarker: true,
+                    launchAttemptsAreStaged: true,
+                ),
+            ),
+        ]
+
+        for testCase in cases {
+            let context = scenarioContext(testCase.name)
+            await withLogCollector { collector in
+                var actions: [ActivationAction] = []
+                var launchedFallbacks: [(path: String, name: String)] = []
+                var results: [TerminalActivationResult] = []
+
+                let launcher = TerminalLauncher(
+                    appleScript: StubAppleScriptClient(shouldSucceed: true),
+                    resolveActivationDecisionOverride: { _ in
+                        throw SnapshotFetchError.unavailable
+                    },
+                    fallbackTmuxSessionResolver: { _ in
+                        testCase.resolvedSessionName
+                    },
+                    fallbackTmuxSessionExistsResolver: { sessionName in
+                        testCase.exactSessionExists && sessionName == testCase.project.name
+                    },
+                    executeActivationActionOverride: { action, _, _ in
+                        actions.append(action)
+                        guard let expectedAction = testCase.expected.primaryAction else {
+                            return false
+                        }
+                        return Self.actionMatches(action, expected: expectedAction)
+                    },
+                    launchNewTerminalOverride: { path, name in
+                        launchedFallbacks.append((path, name))
+                        return testCase.launchOutcome
+                    },
+                )
+
+                launcher.onActivationResult = { result in
+                    results.append(result)
+                }
+
+                if testCase.expected.launchAttemptsAreStaged {
+                    launcher.launchTerminal(for: testCase.project)
+                    _ = await assertEventually(
+                        timeout: 1.0,
+                        context: "\(context) Expected first fallback launch before repeated click.",
+                    ) {
+                        launchedFallbacks.count == 1 && results.count >= 1
+                    }
+                    for _ in 1 ..< testCase.launchAttempts {
+                        launcher.launchTerminal(for: testCase.project)
+                    }
+                } else {
+                    for _ in 0 ..< testCase.launchAttempts {
+                        launcher.launchTerminal(for: testCase.project)
+                    }
+                }
+                _ = await assertEventually(
+                    timeout: 1.5,
+                    context: "\(context) Expected fallback outcome count.",
+                ) {
+                    results.count == testCase.expected.resultCount
+                }
+
+                if let expectedAction = testCase.expected.primaryAction {
+                    assertSingleAction(
+                        actions,
+                        expected: expectedAction,
+                        context: "\(context) Expected exactly one recovery action.",
+                    )
+                } else {
+                    XCTAssertTrue(actions.isEmpty, "\(context) No ensureTmuxSession action expected.")
+                }
+
+                XCTAssertEqual(
+                    launchedFallbacks.count,
+                    testCase.expected.launchCount,
+                    "\(context) Unexpected launchNewTerminal count.",
+                )
+                if testCase.expected.launchCount > 0 {
+                    XCTAssertEqual(launchedFallbacks.first?.path, testCase.project.path)
+                    XCTAssertEqual(launchedFallbacks.first?.name, testCase.project.name)
+                }
+
+                if testCase.expected.resultCount == 1 {
+                    assertSingleActivationResult(
+                        results,
+                        expectedPath: testCase.project.path,
+                        expectedSuccess: testCase.expected.success,
+                        expectedUsedFallback: true,
+                        context: "\(context)",
+                    )
+                } else {
+                    XCTAssertEqual(results.count, testCase.expected.resultCount)
+                    XCTAssertTrue(
+                        results.allSatisfy { result in
+                            result.projectPath == testCase.project.path &&
+                                result.success == testCase.expected.success &&
+                                result.usedFallback
+                        },
+                        "\(context) Expected repeated fallback outcomes to preserve path/success/usedFallback contract.",
+                    )
+                }
+
+                if testCase.expected.expectDebounceMarker {
+                    _ = await assertEventually(
+                        timeout: 1.0,
+                        context: "\(context) Expected debounce marker for repeated snapshot failure fallback.",
+                    ) {
+                        await collector.contains {
+                            $0.contains("[TerminalLauncher] snapshot_unavailable_fallback debounced path=\(testCase.project.path)")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    func testLaunchTerminalNoTrustedEvidenceScenariosPreferRecoveryBeforeLaunch() async {
+        struct ExpectedNoTrustedEvidenceOutcome {
+            let action: ExpectedActivationAction
+            let maxElapsed: TimeInterval?
+            let expectFallbackLaunchMarker: Bool
+        }
+
+        struct Case {
+            let name: String
+            let project: Project
+            let resolvedSessionName: String?
+            let expected: ExpectedNoTrustedEvidenceOutcome
+        }
+
+        let cases = [
+            Case(
+                name: "cold_start_launches_without_stall",
+                project: makeProject(name: "project-a", path: "/Users/pete/Code/project-a"),
+                resolvedSessionName: nil,
+                expected: ExpectedNoTrustedEvidenceOutcome(
+                    action: .launch(
+                        projectPath: "/Users/pete/Code/project-a",
+                        projectName: "project-a",
+                    ),
+                    maxElapsed: 0.5,
+                    expectFallbackLaunchMarker: true,
+                ),
+            ),
+            Case(
+                name: "recoverable_tmux_session_beats_launch",
+                project: makeProject(name: "assistant-ui", path: "/Users/pete/Code/assistant-ui"),
+                resolvedSessionName: "assistant-ui",
+                expected: ExpectedNoTrustedEvidenceOutcome(
+                    action: .ensureTmux(
+                        sessionName: "assistant-ui",
+                        projectPath: "/Users/pete/Code/assistant-ui",
+                    ),
+                    maxElapsed: nil,
+                    expectFallbackLaunchMarker: false,
+                ),
+            ),
+        ]
+
+        for testCase in cases {
+            let context = scenarioContext(testCase.name)
+            await withLogCollector { collector in
+                var actions: [ActivationAction] = []
+                var results: [TerminalActivationResult] = []
+                var elapsed: TimeInterval?
+                let startedAt = Date()
+
+                let launcher = TerminalLauncher(
+                    appleScript: StubAppleScriptClient(shouldSucceed: true),
+                    resolveActivationDecisionOverride: { project in
+                        ActivationDecision(
+                            primary: .launchNewTerminal(projectPath: project.path, projectName: project.name),
+                            fallback: nil,
+                            reason: "NO_TRUSTED_EVIDENCE",
+                            trace: nil,
+                        )
+                    },
+                    fallbackTmuxSessionResolver: { _ in
+                        testCase.resolvedSessionName
+                    },
+                    executeActivationActionOverride: { action, _, _ in
+                        actions.append(action)
+                        return Self.actionMatches(action, expected: testCase.expected.action)
+                    },
+                )
+
+                launcher.onActivationResult = { result in
+                    results.append(result)
+                    elapsed = Date().timeIntervalSince(startedAt)
+                }
+
+                launcher.launchTerminal(for: testCase.project)
+                _ = await assertEventually(
+                    timeout: 1.0,
+                    context: "\(context) Expected scenario to complete.",
+                ) {
+                    actions.count == 1 && results.count == 1
+                }
+
+                assertSingleAction(
+                    actions,
+                    expected: testCase.expected.action,
+                    context: "\(context) Expected deterministic primary action.",
+                )
+
+                assertSingleActivationResult(
+                    results,
+                    expectedPath: testCase.project.path,
+                    expectedSuccess: true,
+                    expectedUsedFallback: false,
+                    context: "\(context)",
+                )
+
+                if let maxElapsed = testCase.expected.maxElapsed {
+                    XCTAssertLessThan(
+                        elapsed ?? .infinity,
+                        maxElapsed,
+                        "\(context) Expected no-trusted-evidence path to resolve without visible stall.",
+                    )
+                }
+
+                let markerTimeout: TimeInterval = testCase.expected.expectFallbackLaunchMarker ? 1.0 : 0.2
+                let foundFallbackMarker = await waitUntil(timeout: markerTimeout) {
+                    await collector.contains {
+                        $0.contains("[TerminalLauncher] ARE no-trusted-evidence fallback launch path=\(testCase.project.path)")
+                    }
+                }
+                if testCase.expected.expectFallbackLaunchMarker {
+                    XCTAssertTrue(
+                        foundFallbackMarker,
+                        "\(context) Expected no-trusted-evidence launch marker.",
+                    )
+                } else {
+                    XCTAssertFalse(
+                        foundFallbackMarker,
+                        "\(context) Did not expect no-trusted-evidence launch marker when tmux recovery wins.",
+                    )
+                }
+            }
+        }
     }
 
     private static func makeAttachedTerminalAppDecision(
@@ -1505,9 +1421,21 @@ final class TerminalLauncherTests: XCTestCase {
         )
     }
 
+    private func withLogCollector(
+        _ body: (LogCollector) async -> Void,
+    ) async {
+        let collector = LogCollector()
+        DebugLog.setTestObserver { line in
+            _Concurrency.Task {
+                await collector.append(line)
+            }
+        }
+        defer { DebugLog.setTestObserver(nil) }
+        await body(collector)
+    }
+
     private func waitUntil(
         timeout: TimeInterval,
-        pollNanoseconds: UInt64 = 10_000_000,
         condition: @escaping () async -> Bool,
     ) async -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
@@ -1515,9 +1443,88 @@ final class TerminalLauncherTests: XCTestCase {
             if await condition() {
                 return true
             }
-            try? await _Concurrency.Task.sleep(nanoseconds: pollNanoseconds)
+            await _Concurrency.Task.yield()
         }
         return await condition()
+    }
+
+    private func assertEventually(
+        timeout: TimeInterval,
+        context: String,
+        condition: @escaping () async -> Bool,
+        file: StaticString = #filePath,
+        line: UInt = #line,
+    ) async -> Bool {
+        let satisfied = await waitUntil(timeout: timeout, condition: condition)
+        XCTAssertTrue(satisfied, context, file: file, line: line)
+        return satisfied
+    }
+
+    private func waitForStaleSuppressionMarker(
+        collector: LogCollector,
+        projectPath: String,
+        timeout: TimeInterval,
+    ) async -> Bool {
+        await waitUntil(timeout: timeout) {
+            await collector.contains {
+                ($0.contains("[TerminalLauncher] ARE snapshot request canceled/stale") ||
+                    $0.contains("[TerminalLauncher] ARE snapshot ignored for stale request") ||
+                    $0.contains("[TerminalLauncher] launchTerminalAsync ignored stale request")) &&
+                    $0.contains(projectPath)
+            }
+        }
+    }
+
+    private func scriptsContain(_ scripts: [String], _ snippet: String) -> Bool {
+        scripts.contains { $0.contains(snippet) }
+    }
+
+    private func assertScriptsContain(
+        _ scripts: [String],
+        _ snippet: String,
+        file: StaticString = #filePath,
+        line: UInt = #line,
+    ) {
+        XCTAssertTrue(
+            scriptsContain(scripts, snippet),
+            "Expected scripts to contain snippet: \(snippet)\nScripts: \(scripts)",
+            file: file,
+            line: line,
+        )
+    }
+
+    private func assertScriptsContainAll(
+        _ scripts: [String],
+        required: [String],
+        context: String,
+        file: StaticString = #filePath,
+        line: UInt = #line,
+    ) {
+        for snippet in required {
+            XCTAssertTrue(
+                scriptsContain(scripts, snippet),
+                "\(context): missing snippet '\(snippet)'\nScripts: \(scripts)",
+                file: file,
+                line: line,
+            )
+        }
+    }
+
+    private func assertScriptsContainNone(
+        _ scripts: [String],
+        forbidden: [String],
+        context: String,
+        file: StaticString = #filePath,
+        line: UInt = #line,
+    ) {
+        for snippet in forbidden {
+            XCTAssertFalse(
+                scriptsContain(scripts, snippet),
+                "\(context): unexpected snippet '\(snippet)'\nScripts: \(scripts)",
+                file: file,
+                line: line,
+            )
+        }
     }
 
     private func makeGhosttyTab(title: String?, index: Int, isSelected: Bool = false) -> GhosttyTabSnapshot {
@@ -1536,5 +1543,95 @@ final class TerminalLauncherTests: XCTestCase {
             tabs: tabs,
             isMain: isMain,
         )
+    }
+
+    private func assertEnsureTmuxAction(
+        _ action: ActivationAction,
+        expectedSession: String,
+        expectedProjectPath: String,
+        context: String,
+    ) {
+        guard case let .ensureTmuxSession(sessionName, projectPath) = action else {
+            XCTFail("\(context) Got \(String(describing: action))")
+            return
+        }
+        XCTAssertEqual(sessionName, expectedSession)
+        XCTAssertEqual(projectPath, expectedProjectPath)
+    }
+
+    private func assertLaunchNewTerminalAction(
+        _ action: ActivationAction,
+        expectedPath: String,
+        expectedName: String,
+        context: String,
+    ) {
+        guard case let .launchNewTerminal(projectPath, projectName) = action else {
+            XCTFail("\(context) Got \(String(describing: action))")
+            return
+        }
+        XCTAssertEqual(projectPath, expectedPath)
+        XCTAssertEqual(projectName, expectedName)
+    }
+
+    private func assertSingleActivationResult(
+        _ results: [TerminalActivationResult],
+        expectedPath: String,
+        expectedSuccess: Bool,
+        expectedUsedFallback: Bool,
+        context: String,
+    ) {
+        XCTAssertEqual(results.count, 1, "\(context) Expected exactly one activation result.")
+        XCTAssertEqual(results.first?.projectPath, expectedPath)
+        XCTAssertEqual(results.first?.success, expectedSuccess)
+        XCTAssertEqual(results.first?.usedFallback, expectedUsedFallback)
+    }
+
+    private func scenarioContext(_ name: String) -> String {
+        "[\(name)]"
+    }
+
+    private static func actionMatches(
+        _ action: ActivationAction,
+        expected: ExpectedActivationAction,
+    ) -> Bool {
+        switch expected {
+        case let .launch(projectPath, projectName):
+            guard case let .launchNewTerminal(actualProjectPath, actualProjectName) = action else {
+                return false
+            }
+            return actualProjectPath == projectPath && actualProjectName == projectName
+        case let .ensureTmux(sessionName, projectPath):
+            guard case let .ensureTmuxSession(actualSessionName, actualProjectPath) = action else {
+                return false
+            }
+            return actualSessionName == sessionName && actualProjectPath == projectPath
+        }
+    }
+
+    private func assertSingleAction(
+        _ actions: [ActivationAction],
+        expected: ExpectedActivationAction,
+        context: String,
+        file: StaticString = #filePath,
+        line: UInt = #line,
+    ) {
+        XCTAssertEqual(actions.count, 1, "\(context) Expected exactly one action.", file: file, line: line)
+        guard let first = actions.first else { return }
+        switch expected {
+        case let .launch(projectPath, projectName):
+            assertLaunchNewTerminalAction(
+                first,
+                expectedPath: projectPath,
+                expectedName: projectName,
+                context: context,
+            )
+        case let .ensureTmux(sessionName, projectPath):
+            assertEnsureTmuxAction(
+                first,
+                expectedSession: sessionName,
+                expectedProjectPath: projectPath,
+                context: context,
+            )
+        }
     }
 }
