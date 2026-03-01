@@ -150,6 +150,7 @@ impl RuntimeFileLock {
 
         let file = OpenOptions::new()
             .create(true)
+            .truncate(false)
             .read(true)
             .write(true)
             .open(&lock_path)

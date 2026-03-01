@@ -22,6 +22,7 @@ pub struct ReducerState {
     pub last_error: Option<String>,
 }
 
+#[allow(clippy::large_enum_variant)]
 enum SessionUpdate {
     Upsert(SessionSummary),
     Delete(String),

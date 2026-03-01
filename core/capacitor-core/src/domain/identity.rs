@@ -65,8 +65,7 @@ struct ProjectBoundary {
 pub fn display_name(project_path: &str) -> String {
     project_path
         .split('/')
-        .filter(|part| !part.is_empty())
-        .next_back()
+        .rfind(|part| !part.is_empty())
         .unwrap_or(project_path)
         .to_string()
 }
