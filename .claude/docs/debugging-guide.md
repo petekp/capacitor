@@ -22,8 +22,10 @@ Capacitor is runtime-snapshot based:
 ./scripts/dev/agent-observe.sh projects    # Project summaries
 ./scripts/dev/agent-observe.sh shells      # Shell summaries
 ./scripts/dev/agent-observe.sh routing-snapshot <path> [ws]  # Routing entry
-./scripts/dev/agent-observe.sh errors      # Recent errors from debug log
-./scripts/dev/agent-observe.sh hooks       # Hook status + recent events
+./scripts/dev/agent-observe.sh session <id> # Full detail for one session
+./scripts/dev/agent-observe.sh shell-audit  # Cross-validate shells: PID, TTY, liveness
+./scripts/dev/agent-observe.sh errors      # Recent error/warning lines from debug log
+./scripts/dev/agent-observe.sh hooks       # Hook binary + heartbeat age + recent events
 ./scripts/dev/agent-observe.sh briefing    # Agent-friendly summary
 ./scripts/dev/agent-observe.sh snapshot    # Full runtime snapshot
 ./scripts/dev/agent-observe.sh smoke       # Run all smoke checks

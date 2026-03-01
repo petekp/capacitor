@@ -8,6 +8,7 @@ APP_LOG_PATH="${CAPACITOR_APP_DEBUG_LOG:-${RUNTIME_DIR}/app-debug.log}"
 RUNTIME_STDERR_LOG_PATH="${CAPACITOR_RUNTIME_STDERR_LOG:-${RUNTIME_DIR}/runtime.stderr.log}"
 RUNTIME_STDOUT_LOG_PATH="${CAPACITOR_RUNTIME_STDOUT_LOG:-${RUNTIME_DIR}/runtime.stdout.log}"
 TRANSPARENT_UI_BASE_URL="${CAPACITOR_TRANSPARENT_UI_BASE_URL:-http://localhost:9133}"
+HEARTBEAT_PATH="${CAPACITOR_HEARTBEAT_PATH:-${CAP_HOME}/hud-hook-heartbeat}"
 
 usage() {
   cat <<'USAGE'
@@ -32,8 +33,10 @@ Commands:
   tail <app|runtime-stderr|runtime-stdout> Tail key logs
   smoke [project_path] [workspace_id]    Run all observability smoke checks
   freshness                              Snapshot age and staleness check
-  errors [limit]                         Recent error lines from app debug log (default=20)
-  hooks                                  Hook installation status + recent events
+  session <session_id>                   Full detail for one session
+  shell-audit                            Cross-validate shells: PID liveness, TTY, parent_app
+  errors [limit]                         Recent error/warning lines from app debug log (default=20)
+  hooks                                  Hook installation status + heartbeat + recent events
   diagnose                               One-shot full diagnostic summary
 USAGE
 }
@@ -280,13 +283,57 @@ case "$command" in
       stat -f "%m" "$SNAPSHOT_PATH" 2>/dev/null || echo "jq required for detailed freshness"
     fi
     ;;
+  session)
+    session_id="${1:-}"
+    if [[ -z "$session_id" ]]; then
+      echo "Usage: scripts/dev/agent-observe.sh session <session_id>" >&2
+      exit 1
+    fi
+    if command -v jq >/dev/null 2>&1; then
+      result=$(snapshot_query ".sessions[] | select(.session_id == \"${session_id}\")" 2>/dev/null) || true
+      if [[ -z "$result" || "$result" == "null" ]]; then
+        echo "Session not found: $session_id" >&2
+        exit 1
+      fi
+      echo "$result"
+    else
+      read_snapshot
+    fi
+    ;;
+  shell-audit)
+    if command -v jq >/dev/null 2>&1; then
+      read_snapshot | jq -r '.shells[] | {
+        pid,
+        cwd,
+        tty,
+        parent_app,
+        tmux_session,
+        is_alive: (.is_alive // "unknown"),
+        updated_at
+      }' | while IFS= read -r shell_json; do
+        echo "$shell_json"
+      done
+      echo ""
+      echo "Shell health summary:"
+      read_snapshot | jq -r '
+        def shell_status:
+          if .is_alive == true then "alive"
+          elif .is_alive == false then "dead"
+          else "unknown"
+          end;
+        .shells | group_by(shell_status) | map({(.[0] | shell_status): length}) | add // {}
+      '
+    else
+      read_snapshot
+    fi
+    ;;
   errors)
     limit="${1:-20}"
     if [[ ! -f "$APP_LOG_PATH" ]]; then
       echo "No app debug log found: $APP_LOG_PATH" >&2
       exit 1
     fi
-    grep -i -E 'error|fail|crash|fatal' "$APP_LOG_PATH" | tail -n "$limit"
+    grep -i -E 'error|fail|crash|fatal|skip|unable|reject|block|broken|stale|unavailable' "$APP_LOG_PATH" | tail -n "$limit"
     ;;
   hooks)
     echo "Hook binary:"
@@ -302,6 +349,22 @@ case "$command" in
       echo "  ok (binary)"
     else
       echo "  missing ($hook_path)"
+    fi
+    echo ""
+    echo "Heartbeat:"
+    if [[ -f "$HEARTBEAT_PATH" ]]; then
+      heartbeat_mtime=$(stat -f "%m" "$HEARTBEAT_PATH" 2>/dev/null || stat -c "%Y" "$HEARTBEAT_PATH" 2>/dev/null || echo "0")
+      now_epoch=$(date +%s)
+      heartbeat_age=$((now_epoch - heartbeat_mtime))
+      if [[ "$heartbeat_age" -le 30 ]]; then
+        echo "  ok (${heartbeat_age} seconds ago)"
+      elif [[ "$heartbeat_age" -le 300 ]]; then
+        echo "  stale (${heartbeat_age} seconds ago)"
+      else
+        echo "  WARNING: very stale (${heartbeat_age} seconds ago)"
+      fi
+    else
+      echo "  missing ($HEARTBEAT_PATH)"
     fi
     echo ""
     echo "Recent hook events (from debug log):"
@@ -329,7 +392,17 @@ case "$command" in
       [.sessions[] | select(.state == "working") | select(
         (.updated_at // "" | length) > 0 and
         ((now - ((.updated_at // "1970-01-01T00:00:00Z") | parse_ts)) > 30)
-      ) | {session_id, project_path, state, updated_at, tools_in_flight}]' "$SNAPSHOT_PATH" 2>/dev/null)
+      ) | {
+        session_id,
+        project_path,
+        state,
+        updated_at,
+        tools_in_flight,
+        last_event: (.last_event // "unknown"),
+        last_activity_at: (.last_activity_at // "unknown"),
+        age_seconds: ((now - ((.updated_at // "1970-01-01T00:00:00Z") | parse_ts)) | floor),
+        pid_alive: (if .pid > 0 then "check: kill -0 \(.pid)" else "no_pid" end)
+      }]' "$SNAPSHOT_PATH" 2>/dev/null)
       count=$(echo "$stuck" | jq 'length' 2>/dev/null || echo "0")
       if [[ "$count" -gt 0 ]]; then
         echo "  WARNING: $count potentially stuck session(s):"
@@ -344,11 +417,11 @@ case "$command" in
 
     echo "--- Recent Errors ---"
     if [[ -f "$APP_LOG_PATH" ]]; then
-      error_count=$(grep -c -i -E 'error|fail|crash|fatal' "$APP_LOG_PATH" 2>/dev/null || echo "0")
-      echo "  Total error lines: $error_count"
+      error_count=$(grep -c -i -E 'error|fail|crash|fatal|skip|unable|reject|block|broken|stale|unavailable' "$APP_LOG_PATH" 2>/dev/null || echo "0")
+      echo "  Total error/warning lines: $error_count"
       if [[ "$error_count" -gt 0 ]]; then
         echo "  Last 5:"
-        grep -i -E 'error|fail|crash|fatal' "$APP_LOG_PATH" | tail -n 5 | sed 's/^/    /'
+        grep -i -E 'error|fail|crash|fatal|skip|unable|reject|block|broken|stale|unavailable' "$APP_LOG_PATH" | tail -n 5 | sed 's/^/    /'
       fi
     else
       echo "  (no debug log)"
