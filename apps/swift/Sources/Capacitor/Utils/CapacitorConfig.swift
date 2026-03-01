@@ -3,6 +3,18 @@ import Foundation
 actor CapacitorConfig {
     static let shared = CapacitorConfig()
 
+    nonisolated static var defaultURL: URL {
+        let capacitorDir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".capacitor")
+        return capacitorDir.appendingPathComponent("runtime-config.json")
+    }
+
+    nonisolated static var legacyURL: URL {
+        let capacitorDir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".capacitor")
+        return capacitorDir.appendingPathComponent("config.json")
+    }
+
     private let configURL: URL
     private var cachedConfig: Config?
 
@@ -13,10 +25,8 @@ actor CapacitorConfig {
         var hooksVersion: String?
     }
 
-    private init() {
-        let capacitorDir = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".capacitor")
-        configURL = capacitorDir.appendingPathComponent("config.json")
+    private init(configURL: URL = CapacitorConfig.defaultURL) {
+        self.configURL = configURL
     }
 
     // MARK: - Read
@@ -26,18 +36,29 @@ actor CapacitorConfig {
             return cached
         }
 
-        guard FileManager.default.fileExists(atPath: configURL.path) else {
+        let sourceURL: URL
+        if FileManager.default.fileExists(atPath: configURL.path) {
+            sourceURL = configURL
+        } else if FileManager.default.fileExists(atPath: Self.legacyURL.path) {
+            sourceURL = Self.legacyURL
+        } else {
             let defaultConfig = Config()
             cachedConfig = defaultConfig
             return defaultConfig
         }
 
         do {
-            let data = try Data(contentsOf: configURL)
+            let data = try Data(contentsOf: sourceURL)
             let decoder = JSONDecoder()
             decoder.dateDecodingStrategy = .iso8601
             let config = try decoder.decode(Config.self, from: data)
             cachedConfig = config
+
+            // One-way migrate off legacy config.json to avoid clobbering AppConfig file semantics.
+            if sourceURL != configURL {
+                await save(config)
+            }
+
             return config
         } catch {
             DebugLog.write("Warning: Could not load config: \(error)")

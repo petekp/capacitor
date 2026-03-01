@@ -10,10 +10,10 @@ Scope: `core/`, `apps/swift/Tests/CapacitorTests/`, `tests/`, `services/ingest-w
 3. Freeze current weak-pattern surface with a CI guard so debt cannot grow.
 4. Define next rewrite slices to pay debt down deterministically.
 
-## Current Metrics (After RW-063)
+## Current Metrics (After RW-064)
 
-- Swift test files: `36`
-- Swift test methods: `242`
+- Swift test files: `37`
+- Swift test methods: `244`
 - Swift files with `source.contains` assertions: `0`
 - `source.contains` assertions (total): `0`
 - Swift test methods inside source-coupled files: `0`
@@ -106,7 +106,8 @@ Static bats source checks that do not execute behavior have been removed from th
 48. RW-061 collapsed repeated hook install orchestration from `AppState`, `SetupRequirements`, and startup auto-repair into `HookInstaller.ensureHooksInstalled` and added focused unit tests that lock binary-failure, install-failure, throw, status-mismatch, and success paths.
 49. RW-062 removed `Helpers/RuntimeDateParser.swift` and made `Utilities/DateFormatting.swift` the single date parsing surface (including microsecond normalization), with all call sites rewired and tests renamed to `DateFormattingTests`.
 50. RW-063 removed remaining ad-hoc `ISO8601DateFormatter()` allocations from hot paths (`DebugLog`, `RuntimeClient`, UniFFI date adapters) by routing through canonical date helpers.
-51. Next reductions should continue collapsing duplicate edge-case assertions into explicit contract tables rather than proliferating one-off tests.
+51. RW-064 split conflicting config ownership by moving `CapacitorConfig` persistence to `~/.capacitor/runtime-config.json` (with legacy-read migration) and added contract tests that lock non-collision with `AppConfig` file semantics.
+52. Next reductions should continue collapsing duplicate edge-case assertions into explicit contract tables rather than proliferating one-off tests.
 
 ## Guardrails Added
 
@@ -125,7 +126,7 @@ This does not claim these patterns are good. It prevents regression while we pay
 
 ## Next Slices (proposed)
 
-1. `RW-064` Audit helper/util/config directory boundaries (`Helpers/`, `Utilities/`, `Utils/`) and execute one concrete config-surface consolidation with deletion-in-slice discipline.
-2. `RW-065` Replace remaining private per-module ISO8601 formatter duplicates (`Telemetry`, `QuickFeedback`, `DiagnosticsSnapshotLogger`) with canonical timestamp helpers where behavior is equivalent.
+1. `RW-065` Replace remaining private per-module ISO8601 formatter duplicates (`Telemetry`, `QuickFeedback`, `DiagnosticsSnapshotLogger`) with canonical timestamp helpers where behavior is equivalent.
+2. `RW-066` Collapse `Utils/` config-like surfaces into one explicit support namespace and remove one redundant config layer in the same slice.
 
 Each slice should delete replaced tests in the same PR and ratchet the audit limits downward.

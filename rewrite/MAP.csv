@@ -464,3 +464,8 @@ RW-063,swift-uniffi-date-adapter-cutover-rw063,apps/swift/Sources/Capacitor/Brid
 RW-063,rewrite-test-audit-rw063,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit conclusions after ad-hoc ISO8601 allocation cleanup
 RW-063,rewrite-ledger-rw063,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-063 lifecycle and risk notes
 RW-063,rewrite-map-rw063,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-063 path mappings for guard enforcement
+RW-064,swift-capacitor-config-runtime-path-split-rw064,apps/swift/Sources/Capacitor/Utils/CapacitorConfig.swift,apps/swift/Sources/Capacitor/Utils/CapacitorConfig.swift,done,false,Split runtime persistence from AppConfig by moving CapacitorConfig storage to runtime-config.json with legacy-read migration
+RW-064,swift-capacitor-config-contract-tests-rw064,,apps/swift/Tests/CapacitorTests/CapacitorConfigTests.swift,done,false,Add tests asserting dedicated runtime config path and non-collision with AppConfig config file path
+RW-064,rewrite-test-audit-rw064,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit metrics and conclusions after config surface split
+RW-064,rewrite-ledger-rw064,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-064 lifecycle and risk notes
+RW-064,rewrite-map-rw064,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-064 path mappings for guard enforcement

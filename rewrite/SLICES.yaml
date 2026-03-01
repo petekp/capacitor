@@ -2318,3 +2318,32 @@ slices:
     risks:
       - "Switching log/snapshot timestamp formatting to shared helpers can change serialized timestamp precision (fractional seconds) and affect downstream string-level expectations."
     notes: "Replaces ad-hoc `ISO8601DateFormatter()` allocations in DebugLog, RuntimeClient fallback routing snapshots, and UniFFI date adapters with canonical date helper functions."
+
+  - id: RW-064
+    name: "Config Surface Collision Split"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-063
+    touched_paths:
+      - apps/swift/Sources/Capacitor/Utils/CapacitorConfig.swift
+      - apps/swift/Tests/CapacitorTests/CapacitorConfigTests.swift
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added:
+        - apps/swift/Tests/CapacitorTests/CapacitorConfigTests.swift
+      changed:
+        - apps/swift/Sources/Capacitor/Utils/CapacitorConfig.swift
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Migrating runtime config persistence from `config.json` to `runtime-config.json` can leave stale legacy files around and split manually edited settings across files if users edit both."
+    notes: "Moves Capacitor runtime state persistence to dedicated `runtime-config.json`, keeps one-way legacy read migration from old `config.json`, and adds tests to lock non-collision with AppConfig file path semantics."
