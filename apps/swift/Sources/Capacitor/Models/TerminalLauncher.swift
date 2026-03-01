@@ -271,6 +271,10 @@ final class TerminalLauncher: ActivationActionDependencies {
     private var latestLaunchRequestID: UInt64 = 0
     private var launchTask: _Concurrency.Task<Void, Never>?
 
+    /// The TTY of the tmux client Capacitor is managing. Persists across card clicks.
+    /// Cleared when the TTY becomes stale (tab closed). See spec invariant B6.
+    private(set) var managedClientTty: String?
+
     // MARK: - Public API
 
     init(
@@ -291,6 +295,13 @@ final class TerminalLauncher: ActivationActionDependencies {
         self.executeActivationActionOverride = executeActivationActionOverride
         self.launchNewTerminalOverride = launchNewTerminalOverride
         hudEngine = try? hudEngineFactory()
+    }
+
+    // MARK: - Unified Activation Primitives (spec v2)
+
+    /// Check if a TTY device is still alive (file exists at /dev path).
+    static func isTtyAlive(_ tty: String) -> Bool {
+        FileManager.default.fileExists(atPath: tty)
     }
 
     func launchTerminal(for project: Project) {

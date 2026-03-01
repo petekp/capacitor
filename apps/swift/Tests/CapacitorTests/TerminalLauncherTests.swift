@@ -1417,6 +1417,26 @@ final class TerminalLauncherTests: XCTestCase {
         }
     }
 
+    // MARK: - Unified Activation Tests (spec v2)
+
+    func testManagedClientTtyStartsNil() {
+        let launcher = TerminalLauncher(
+            resolveActivationDecisionOverride: { _ in fatalError() },
+        )
+        XCTAssertNil(launcher.managedClientTty)
+    }
+
+    func testIsTtyAliveReturnsFalseForNonexistentTty() {
+        XCTAssertFalse(TerminalLauncher.isTtyAlive("/dev/ttys99999"))
+    }
+
+    func testIsTtyAliveReturnsTrueForExistingPath() {
+        // /dev/null always exists on macOS
+        XCTAssertTrue(TerminalLauncher.isTtyAlive("/dev/null"))
+    }
+
+    // MARK: - Helpers
+
     private static func makeAttachedTerminalAppDecision(
         projectPath: String,
         projectName: String,
