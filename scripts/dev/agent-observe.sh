@@ -34,6 +34,7 @@ Commands:
   freshness                              Snapshot age and staleness check
   errors [limit]                         Recent error lines from app debug log (default=20)
   hooks                                  Hook installation status + recent events
+  diagnose                               One-shot full diagnostic summary
 USAGE
 }
 
@@ -318,6 +319,62 @@ case "$command" in
     else
       echo "  (no debug log found)"
     fi
+    ;;
+  diagnose)
+    echo "=== Capacitor Diagnostics ==="
+    echo ""
+
+    echo "--- Freshness ---"
+    "$0" freshness 2>/dev/null || echo '{"ok":false,"error":"freshness check failed"}'
+    echo ""
+
+    echo "--- Health ---"
+    "$0" health 2>/dev/null || echo '{"ok":false,"error":"health check failed"}'
+    echo ""
+
+    echo "--- Stuck Sessions ---"
+    if command -v jq >/dev/null 2>&1 && [[ -f "$SNAPSHOT_PATH" ]]; then
+      stuck=$(jq '[.sessions[] | select(.state == "working") | select(
+        (.updated_at // "" | length) > 0 and
+        ((now - ((.updated_at // "1970-01-01T00:00:00Z") | fromdateiso8601)) > 30)
+      ) | {session_id, project_path, state, updated_at, tools_in_flight}]' "$SNAPSHOT_PATH" 2>/dev/null)
+      count=$(echo "$stuck" | jq 'length' 2>/dev/null || echo "0")
+      if [[ "$count" -gt 0 ]]; then
+        echo "  WARNING: $count potentially stuck session(s):"
+        echo "$stuck" | jq .
+      else
+        echo "  ok (no stuck sessions)"
+      fi
+    else
+      echo "  (requires jq + snapshot)"
+    fi
+    echo ""
+
+    echo "--- Recent Errors ---"
+    if [[ -f "$APP_LOG_PATH" ]]; then
+      error_count=$(grep -c -i -E 'error|fail|crash|fatal' "$APP_LOG_PATH" 2>/dev/null || echo "0")
+      echo "  Total error lines: $error_count"
+      if [[ "$error_count" -gt 0 ]]; then
+        echo "  Last 5:"
+        grep -i -E 'error|fail|crash|fatal' "$APP_LOG_PATH" | tail -n 5 | sed 's/^/    /'
+      fi
+    else
+      echo "  (no debug log)"
+    fi
+    echo ""
+
+    echo "--- Hooks ---"
+    "$0" hooks 2>/dev/null | sed 's/^/  /'
+    echo ""
+
+    echo "--- Routing Summary ---"
+    if command -v jq >/dev/null 2>&1 && [[ -f "$SNAPSHOT_PATH" ]]; then
+      jq '.routing | map({project_path, status, target_kind, reason_code})' "$SNAPSHOT_PATH" 2>/dev/null || echo "  (parse error)"
+    else
+      echo "  (requires jq + snapshot)"
+    fi
+    echo ""
+    echo "=== End Diagnostics ==="
     ;;
   *)
     echo "Unknown command: $command" >&2
