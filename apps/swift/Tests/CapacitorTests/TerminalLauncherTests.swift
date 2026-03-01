@@ -597,66 +597,74 @@ final class TerminalLauncherTests: XCTestCase {
     }
 
     func testTerminalLaunchScriptsHonorAlphaTerminalInvariants() {
-        struct Scenario {
-            let name: String
+        struct LaunchScriptInput {
             let script: String
             let expectNoTmux: Bool
             let expectNoUnsupportedTerminals: Bool
         }
 
-        let scenarios = [
-            Scenario(
-                name: "launch_with_command",
-                script: TerminalScripts.launchWithCommand(
-                    projectPath: "/Users/pete/Code/myproject",
-                    command: "/opt/homebrew/bin/claude --resume abc123",
+        let scenarios: [LabeledExpectationScenario<LaunchScriptInput, Void>] = [
+            LabeledExpectationScenario(
+                label: "launch_with_command",
+                input: LaunchScriptInput(
+                    script: TerminalScripts.launchWithCommand(
+                        projectPath: "/Users/pete/Code/myproject",
+                        command: "/opt/homebrew/bin/claude --resume abc123",
+                    ),
+                    expectNoTmux: true,
+                    expectNoUnsupportedTerminals: false
                 ),
-                expectNoTmux: true,
-                expectNoUnsupportedTerminals: false,
+                expected: (),
             ),
-            Scenario(
-                name: "launch_no_tmux",
-                script: TerminalScripts.launchNoTmux(
-                    projectPath: "/Users/pete/Code/myproject",
-                    projectName: "myproject",
-                    claudePath: "/opt/homebrew/bin/claude",
+            LabeledExpectationScenario(
+                label: "launch_no_tmux",
+                input: LaunchScriptInput(
+                    script: TerminalScripts.launchNoTmux(
+                        projectPath: "/Users/pete/Code/myproject",
+                        projectName: "myproject",
+                        claudePath: "/opt/homebrew/bin/claude",
+                    ),
+                    expectNoTmux: true,
+                    expectNoUnsupportedTerminals: true
                 ),
-                expectNoTmux: true,
-                expectNoUnsupportedTerminals: true,
+                expected: (),
             ),
-            Scenario(
-                name: "launch_new_terminal_script_wrapper",
-                script: TerminalLauncher.launchNewTerminalScript(
-                    projectPath: "/Users/pete/Code/myproject",
-                    projectName: "myproject",
-                    claudePath: "/opt/homebrew/bin/claude",
+            LabeledExpectationScenario(
+                label: "launch_new_terminal_script_wrapper",
+                input: LaunchScriptInput(
+                    script: TerminalLauncher.launchNewTerminalScript(
+                        projectPath: "/Users/pete/Code/myproject",
+                        projectName: "myproject",
+                        claudePath: "/opt/homebrew/bin/claude",
+                    ),
+                    expectNoTmux: true,
+                    expectNoUnsupportedTerminals: true
                 ),
-                expectNoTmux: true,
-                expectNoUnsupportedTerminals: true,
+                expected: (),
             ),
         ]
 
         let terminalLaunchPattern = #"tell application \\"Terminal\\" to do script"#
         for scenario in scenarios {
-            let context = scenarioContext(scenario.name)
+            let context = scenarioContext(scenario.label)
             XCTAssertTrue(
-                scenario.script.contains("Ghostty.app"),
+                scenario.input.script.contains("Ghostty.app"),
                 "\(context) Expected Ghostty branch in launch script.",
             )
             XCTAssertTrue(
-                scenario.script.contains("iTerm"),
+                scenario.input.script.contains("iTerm"),
                 "\(context) Expected iTerm branch in launch script.",
             )
             XCTAssertNil(
-                scenario.script.range(of: terminalLaunchPattern, options: .regularExpression),
+                scenario.input.script.range(of: terminalLaunchPattern, options: .regularExpression),
                 "\(context) Launch script must not spawn Terminal.app fallback.",
             )
 
-            let lowercased = scenario.script.lowercased()
-            if scenario.expectNoTmux {
+            let lowercased = scenario.input.script.lowercased()
+            if scenario.input.expectNoTmux {
                 XCTAssertFalse(lowercased.contains("tmux"), "\(context) Launch script must not reference tmux.")
             }
-            if scenario.expectNoUnsupportedTerminals {
+            if scenario.input.expectNoUnsupportedTerminals {
                 XCTAssertFalse(lowercased.contains("alacritty"), "\(context) Launch script must not include Alacritty branch.")
                 XCTAssertFalse(lowercased.contains("warp"), "\(context) Launch script must not include Warp branch.")
                 XCTAssertFalse(lowercased.contains("kitty"), "\(context) Launch script must not include kitty branch.")

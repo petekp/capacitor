@@ -298,36 +298,38 @@ final class ActivationActionExecutorTests: XCTestCase {
     }
 
     func testExecuteRoutesActivateAppRoutingScenarios() async {
-        struct Scenario {
-            let name: String
-            let appName: String
+        struct ActivateAppRouteExpectation {
             let expectedLastAction: String?
             let expectedLastAppName: String?
             let expectedGhosttyActivations: Int
             let expectedGhosttyProjectPath: String?
         }
 
-        let scenarios = [
-            Scenario(
-                name: "ghostty_bypasses_dependencies",
-                appName: "Ghostty",
-                expectedLastAction: nil,
-                expectedLastAppName: nil,
-                expectedGhosttyActivations: 1,
-                expectedGhosttyProjectPath: "/Users/pete/Code/capacitor",
+        let scenarios: [LabeledExpectationScenario<String, ActivateAppRouteExpectation>] = [
+            LabeledExpectationScenario(
+                label: "ghostty_bypasses_dependencies",
+                input: "Ghostty",
+                expected: ActivateAppRouteExpectation(
+                    expectedLastAction: nil,
+                    expectedLastAppName: nil,
+                    expectedGhosttyActivations: 1,
+                    expectedGhosttyProjectPath: "/Users/pete/Code/capacitor"
+                ),
             ),
-            Scenario(
-                name: "non_ghostty_routes_to_dependencies",
-                appName: "iTerm",
-                expectedLastAction: "activateApp",
-                expectedLastAppName: "iTerm",
-                expectedGhosttyActivations: 0,
-                expectedGhosttyProjectPath: nil,
+            LabeledExpectationScenario(
+                label: "non_ghostty_routes_to_dependencies",
+                input: "iTerm",
+                expected: ActivateAppRouteExpectation(
+                    expectedLastAction: "activateApp",
+                    expectedLastAppName: "iTerm",
+                    expectedGhosttyActivations: 0,
+                    expectedGhosttyProjectPath: nil
+                ),
             ),
         ]
 
         for scenario in scenarios {
-            let context = scenarioContext(scenario.name)
+            let context = scenarioContext(scenario.label)
             let deps = StubDependencies()
             let terminalDiscovery = StubTerminalDiscovery()
             let executor = ActivationActionExecutor(
@@ -338,7 +340,7 @@ final class ActivationActionExecutorTests: XCTestCase {
             )
 
             let result = await executor.execute(
-                .activateApp(appName: scenario.appName),
+                .activateApp(appName: scenario.input),
                 projectPath: "/Users/pete/Code/capacitor",
                 projectName: "capacitor",
             )
@@ -347,10 +349,10 @@ final class ActivationActionExecutorTests: XCTestCase {
                 result: result,
                 deps: deps,
                 terminalDiscovery: terminalDiscovery,
-                expectedLastAction: scenario.expectedLastAction,
-                expectedLastAppName: scenario.expectedLastAppName,
-                expectedGhosttyActivations: scenario.expectedGhosttyActivations,
-                expectedGhosttyProjectPath: scenario.expectedGhosttyProjectPath,
+                expectedLastAction: scenario.expected.expectedLastAction,
+                expectedLastAppName: scenario.expected.expectedLastAppName,
+                expectedGhosttyActivations: scenario.expected.expectedGhosttyActivations,
+                expectedGhosttyProjectPath: scenario.expected.expectedGhosttyProjectPath,
                 context: "\(context)",
             )
         }

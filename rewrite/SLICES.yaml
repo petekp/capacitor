@@ -3219,3 +3219,34 @@ slices:
     risks:
       - "Checklist-only guardrails can drift from practice if not referenced during slice reviews; mitigation is embedding it in the rewrite playbook and audit loop."
     notes: "Adds a lightweight table-driven scenario-coverage checklist to prevent branch-equivalent duplicate scenario rows from regrowing."
+
+  - id: RW-089
+    name: "Non-Setup Harness Expansion Across Executor/Launcher Suites"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-088
+    touched_paths:
+      - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
+      - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
+        - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios:
+      - live state update while coding
+      - click project card and restore terminal/tmux context
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Applying shared scenario records to complex non-setup suites can make input/expectation wiring harder to read if expectation structs are not explicit."
+    notes: "Extends shared labeled scenario record usage into `ActivationActionExecutorTests` and `TerminalLauncherTests` for consistent non-setup contract table structure."

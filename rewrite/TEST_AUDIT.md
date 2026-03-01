@@ -10,7 +10,7 @@ Scope: `core/`, `apps/swift/Tests/CapacitorTests/`, `tests/`, `services/ingest-w
 3. Freeze current weak-pattern surface with a CI guard so debt cannot grow.
 4. Define next rewrite slices to pay debt down deterministically.
 
-## Current Metrics (After RW-088)
+## Current Metrics (After RW-089)
 
 - Swift test files: `43`
 - Swift test methods: `253`
@@ -131,7 +131,8 @@ Static bats source checks that do not execute behavior have been removed from th
 73. RW-086 pruned duplicate scenario rows from setup/hook contract suites and kept one-row-per-branch semantics by adding a healthy visibility branch case while removing duplicate branch-equivalent rows.
 74. RW-087 extended shared labeled scenario records beyond setup suites by replacing ad-hoc local scenario structs in `RuntimeClientTests`, improving scenario-definition consistency across contract suites.
 75. RW-088 added an explicit scenario-coverage checklist to the rewrite playbook so table-driven suites maintain one-row-per-branch rigor and avoid branch-equivalent duplicate regrowth.
-76. Next reductions should continue collapsing duplicate edge-case assertions into explicit contract tables rather than proliferating one-off tests.
+76. RW-089 extended shared labeled scenario record usage into `ActivationActionExecutorTests` and `TerminalLauncherTests`, increasing non-setup suite consistency without changing behavior coverage.
+77. Next reductions should continue collapsing duplicate edge-case assertions into explicit contract tables rather than proliferating one-off tests.
 
 ## Guardrails Added
 
@@ -150,7 +151,7 @@ This does not claim these patterns are good. It prevents regression while we pay
 
 ## Next Slices (proposed)
 
-1. `RW-089` Extend shared harness usage to remaining non-setup suites with repeated local scenario records (`ActivationActionExecutorTests`, `TerminalLauncherTests`) where it improves clarity.
-2. `RW-090` Re-evaluate test-surface metrics and tighten guard budgets if no regressions appear after RW-089 convergence.
+1. `RW-090` Re-evaluate test-surface metrics and tighten guard budgets if no regressions appear after RW-089 convergence.
+2. `RW-091` Consolidate any remaining duplicated expectation record structs across high-volume suites (`RuntimeClientTests`, `ActivationActionExecutorTests`) where semantic overlap remains.
 
 Each slice should delete replaced tests in the same PR and ratchet the audit limits downward.

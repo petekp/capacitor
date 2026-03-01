@@ -633,3 +633,8 @@ RW-088,rewrite-playbook-scenario-checklist-rw088,rewrite/PLAYBOOK.md,rewrite/PLA
 RW-088,rewrite-test-audit-rw088,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Reference checklist guardrail adoption in test-audit conclusions/next slices
 RW-088,rewrite-ledger-rw088,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-088 lifecycle and risk notes
 RW-088,rewrite-map-rw088,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-088 path mappings for guard enforcement
+RW-089,swift-activation-executor-scenario-records-rw089,apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift,apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift,done,false,Adopt shared labeled scenario records in non-setup activate-app routing contract matrix
+RW-089,swift-terminal-launcher-scenario-records-rw089,apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift,apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift,done,false,Adopt shared labeled scenario records in terminal launch script invariant matrix
+RW-089,rewrite-test-audit-rw089,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit conclusions after non-setup harness expansion
+RW-089,rewrite-ledger-rw089,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-089 lifecycle and risk notes
+RW-089,rewrite-map-rw089,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-089 path mappings for guard enforcement
