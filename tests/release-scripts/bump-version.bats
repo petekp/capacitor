@@ -32,6 +32,15 @@ teardown() {
     rm -rf "$TEST_DIR"
 }
 
+run_bump_and_assert_version() {
+    local bump="$1"
+    local expected="$2"
+
+    run "$TEST_DIR/scripts/bump-version.sh" "$bump"
+    [ "$status" -eq 0 ]
+    [ "$(cat "$TEST_DIR/VERSION")" = "$expected" ]
+}
+
 @test "shows usage when no argument provided" {
     run "$TEST_DIR/scripts/bump-version.sh"
     [ "$status" -eq 1 ]
@@ -39,27 +48,19 @@ teardown() {
 }
 
 @test "patch bump increments patch version" {
-    run "$TEST_DIR/scripts/bump-version.sh" patch
-    [ "$status" -eq 0 ]
-    [ "$(cat "$TEST_DIR/VERSION")" = "1.2.4" ]
+    run_bump_and_assert_version patch "1.2.4"
 }
 
 @test "minor bump increments minor and resets patch" {
-    run "$TEST_DIR/scripts/bump-version.sh" minor
-    [ "$status" -eq 0 ]
-    [ "$(cat "$TEST_DIR/VERSION")" = "1.3.0" ]
+    run_bump_and_assert_version minor "1.3.0"
 }
 
 @test "major bump increments major and resets minor and patch" {
-    run "$TEST_DIR/scripts/bump-version.sh" major
-    [ "$status" -eq 0 ]
-    [ "$(cat "$TEST_DIR/VERSION")" = "2.0.0" ]
+    run_bump_and_assert_version major "2.0.0"
 }
 
 @test "explicit version sets exact version" {
-    run "$TEST_DIR/scripts/bump-version.sh" "5.0.0"
-    [ "$status" -eq 0 ]
-    [ "$(cat "$TEST_DIR/VERSION")" = "5.0.0" ]
+    run_bump_and_assert_version "5.0.0" "5.0.0"
 }
 
 @test "updates Cargo.toml workspace version" {
@@ -70,13 +71,11 @@ teardown() {
 }
 
 @test "rejects invalid version format" {
-    run "$TEST_DIR/scripts/bump-version.sh" "invalid"
-    [ "$status" -eq 1 ]
-    [[ "$output" == *"Invalid version format"* ]]
-
-    run "$TEST_DIR/scripts/bump-version.sh" "1.2"
-    [ "$status" -eq 1 ]
-    [[ "$output" == *"Invalid version format"* ]]
+    for input in "invalid" "1.2"; do
+        run "$TEST_DIR/scripts/bump-version.sh" "$input"
+        [ "$status" -eq 1 ]
+        [[ "$output" == *"Invalid version format"* ]]
+    done
 }
 
 @test "handles version 0.0.0 correctly" {

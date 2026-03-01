@@ -10,7 +10,7 @@ Scope: `core/`, `apps/swift/Tests/CapacitorTests/`, `tests/`, `services/ingest-w
 3. Freeze current weak-pattern surface with a CI guard so debt cannot grow.
 4. Define next rewrite slices to pay debt down deterministically.
 
-## Current Metrics (After RW-076)
+## Current Metrics (After RW-077)
 
 - Swift test files: `41`
 - Swift test methods: `263`
@@ -119,7 +119,8 @@ Static bats source checks that do not execute behavior have been removed from th
 61. RW-074 removed low-leverage source-inspection regression suites and added a dedicated CI `test-surface-audit` gate so weak-pattern test debt cannot regrow unnoticed.
 62. RW-075 added canonical Rust FFI contract coverage (`core/capacitor-core/tests/ffi_contract.rs`) and shared replay/contract fixtures to tighten boundary invariants while reducing duplicated test scaffolding.
 63. RW-076 replaced stringly setup-step routing with a typed `SetupStepID` surface across `SetupRequirementsManager`, `SetupStepCatalog`, and `WelcomeView`, and added focused manager execution contracts to guard the new typed path.
-64. Next reductions should continue collapsing duplicate edge-case assertions into explicit contract tables rather than proliferating one-off tests.
+64. RW-077 consolidated remaining release-script bats duplication with shared helper assertions and compact invalid-input loops, preserving behavior checks while reducing repetitive scaffolding.
+65. Next reductions should continue collapsing duplicate edge-case assertions into explicit contract tables rather than proliferating one-off tests.
 
 ## Guardrails Added
 
@@ -138,7 +139,7 @@ This does not claim these patterns are good. It prevents regression while we pay
 
 ## Next Slices (proposed)
 
-1. `RW-077` Consolidate remaining release-script bats duplication by introducing shared scenario helpers and deleting one-off shell-shape assertions that do not verify behavior.
-2. `RW-078` Collapse duplicate setup-preview scenario array literals into typed scenario records to reduce copy-paste branch drift while preserving preview fidelity.
+1. `RW-078` Collapse duplicate setup-preview scenario array literals into typed scenario records to reduce copy-paste branch drift while preserving preview fidelity.
+2. `RW-079` Consolidate remaining setup/hook onboarding call-site assertions into a dedicated setup contract suite to reduce implicit behavior coupling across view tests.
 
 Each slice should delete replaced tests in the same PR and ratchet the audit limits downward.

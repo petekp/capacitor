@@ -2849,3 +2849,33 @@ slices:
     risks:
       - "Changing setup step identity to a typed enum can break view wiring if any path still expects raw string IDs."
     notes: "Introduces `SetupStepID` and rewires setup manager/catalog/view call sites to typed identifiers, removing stringly setup action/status routing."
+
+  - id: RW-077
+    name: "Release Script Bats Consolidation"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-076
+    touched_paths:
+      - tests/release-scripts/bump-version.bats
+      - tests/release-scripts/generate-appcast.bats
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - tests/release-scripts/bump-version.bats
+        - tests/release-scripts/generate-appcast.bats
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios:
+      - release bundle build + isolated launch check
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Refactoring test scaffolding can accidentally weaken assertions if helper functions hide command outcomes."
+    notes: "Collapses repeated release bats command/assert scaffolding into helper functions and compact loops while preserving the same behavior assertions."

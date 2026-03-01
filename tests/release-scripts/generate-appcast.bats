@@ -21,14 +21,20 @@ teardown() {
     rm -rf "$TEST_DIR"
 }
 
+require_arm64() {
+    [ "$(uname -m)" = "arm64" ] || skip "generate-appcast.sh requires arm64"
+}
+
+assert_appcast_created() {
+    [ -f "$TEST_DIR/dist/appcast.xml" ]
+}
+
 @test "generate-appcast creates appcast.xml with expected version and zip name" {
-    if [ "$(uname -m)" != "arm64" ]; then
-        skip "generate-appcast.sh requires arm64"
-    fi
+    require_arm64
 
     run env CI=1 "$TEST_DIR/scripts/release/generate-appcast.sh"
     [ "$status" -eq 0 ]
-    [ -f "$TEST_DIR/dist/appcast.xml" ]
+    assert_appcast_created
 
     run grep -q "Version 1.2.3" "$TEST_DIR/dist/appcast.xml"
     [ "$status" -eq 0 ]
@@ -37,9 +43,7 @@ teardown() {
 }
 
 @test "generate-appcast --sign falls back to unsigned output when sign_update fails" {
-    if [ "$(uname -m)" != "arm64" ]; then
-        skip "generate-appcast.sh requires arm64"
-    fi
+    require_arm64
 
     mkdir -p "$TEST_DIR/apps/swift/.build/artifacts/sparkle/Sparkle/bin"
     cat > "$TEST_DIR/apps/swift/.build/artifacts/sparkle/Sparkle/bin/sign_update" <<'EOF'
@@ -51,7 +55,7 @@ EOF
 
     run env CI=1 "$TEST_DIR/scripts/release/generate-appcast.sh" --sign
     [ "$status" -eq 0 ]
-    [ -f "$TEST_DIR/dist/appcast.xml" ]
+    assert_appcast_created
     [[ "$output" == *"Signed: No"* ]]
 
     run grep -q "sparkle:edSignature=" "$TEST_DIR/dist/appcast.xml"

@@ -572,3 +572,8 @@ RW-076,swift-setup-requirements-manager-tests-rw076,,apps/swift/Tests/CapacitorT
 RW-076,rewrite-test-audit-rw076,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit metrics and conclusions after typed setup-step cutover
 RW-076,rewrite-ledger-rw076,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-076 lifecycle and risk notes
 RW-076,rewrite-map-rw076,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-076 path mappings for guard enforcement
+RW-077,release-bats-bump-version-scaffold-consolidation-rw077,tests/release-scripts/bump-version.bats,tests/release-scripts/bump-version.bats,done,false,Replace repeated bump-version run/assert blocks with helper-based assertions and compact invalid-input loop
+RW-077,release-bats-generate-appcast-scaffold-consolidation-rw077,tests/release-scripts/generate-appcast.bats,tests/release-scripts/generate-appcast.bats,done,false,Extract shared arm64 gating and appcast existence assertions across generate-appcast scenarios
+RW-077,rewrite-test-audit-rw077,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit conclusions after release-script bats consolidation
+RW-077,rewrite-ledger-rw077,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-077 lifecycle and risk notes
+RW-077,rewrite-map-rw077,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-077 path mappings for guard enforcement
