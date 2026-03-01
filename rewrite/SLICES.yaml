@@ -2656,3 +2656,157 @@ slices:
     risks:
       - "Renaming a central presentation policy type can break local tooling references and hand-written docs even when runtime behavior and tests stay green."
     notes: "Renames `HookSetupCopy` into canonical `HookPresentationPolicy`, rewires hook presentation/status call sites, and keeps `HookDiagnosticPresentation` as a thin report adapter over the policy."
+
+  - id: RW-073
+    name: "Canonical Startup Diagnostics Events"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-072
+    touched_paths:
+      - apps/swift/Sources/Capacitor/App.swift
+      - apps/swift/Sources/Capacitor/Models/HookPresentationPolicy.swift
+      - apps/swift/Sources/Capacitor/Models/SetupReadinessCoordinator.swift
+      - apps/swift/Sources/Capacitor/Utilities/DebugLog.swift
+      - apps/swift/Tests/CapacitorTests/DebugLogTests.swift
+      - apps/swift/Tests/CapacitorTests/HookPresentationPolicyTests.swift
+      - apps/swift/Tests/CapacitorTests/SetupReadinessCoordinatorTests.swift
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - apps/swift/Sources/Capacitor/App.swift
+        - apps/swift/Sources/Capacitor/Models/HookPresentationPolicy.swift
+        - apps/swift/Sources/Capacitor/Models/SetupReadinessCoordinator.swift
+        - apps/swift/Sources/Capacitor/Utilities/DebugLog.swift
+        - apps/swift/Tests/CapacitorTests/DebugLogTests.swift
+        - apps/swift/Tests/CapacitorTests/HookPresentationPolicyTests.swift
+        - apps/swift/Tests/CapacitorTests/SetupReadinessCoordinatorTests.swift
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios:
+      - hook install/fix flow
+      - fresh install setup flow
+    denylist_patterns:
+      - content:apps/swift/Sources/Capacitor/Models/HookPresentationPolicy.swift::startupPolicyBlockedMessage|startupNeedsRepairMessage
+    deletion_targets: []
+    risks:
+      - "Typed startup events reduce drift, but startup operator logs can regress if event formatting contracts are not asserted."
+    notes: "Replaces ad-hoc startup string assembly with typed `DebugLog.StartupEvent` events and canonical formatting at the log boundary."
+
+  - id: RW-074
+    name: "Test Surface Guard and Legacy Regression Suite Cleanup"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-073
+    touched_paths:
+      - .github/workflows/ci.yml
+      - .gitignore
+      - scripts/ci/test-surface-audit.sh
+      - rewrite/CHARTER.md
+      - rewrite/PLAYBOOK.md
+      - apps/swift/Tests/CapacitorTests/AccessibilityIdentifiersRegressionTests.swift
+      - apps/swift/Tests/CapacitorTests/ActivityPanelTerminalRoutingRegressionTests.swift
+      - apps/swift/Tests/CapacitorTests/AppStateFileBrowserRegressionTests.swift
+      - apps/swift/Tests/CapacitorTests/AppStateProjectIngestionPerformanceRegressionTests.swift
+      - apps/swift/Tests/CapacitorTests/AppStateRuntimeStartupRegressionTests.swift
+      - apps/swift/Tests/CapacitorTests/AppStateTerminalRoutingRegressionTests.swift
+      - apps/swift/Tests/CapacitorTests/DebugMenuSetupScreenRegressionTests.swift
+      - apps/swift/Tests/CapacitorTests/FooterControlsRegressionTests.swift
+      - apps/swift/Tests/CapacitorTests/ProjectCardIdentityRegressionTests.swift
+      - apps/swift/Tests/CapacitorTests/ProjectCardSessionObservationRegressionTests.swift
+      - apps/swift/Tests/CapacitorTests/ProjectCardStateResolutionRegressionTests.swift
+      - apps/swift/Tests/CapacitorTests/ProjectListRoutingVisibilityRegressionTests.swift
+      - tests/release-scripts/release-flow-guardrails.bats
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added:
+        - scripts/ci/test-surface-audit.sh
+        - rewrite/PLAYBOOK.md
+      changed:
+        - .github/workflows/ci.yml
+        - .gitignore
+        - rewrite/CHARTER.md
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed:
+        - apps/swift/Tests/CapacitorTests/AccessibilityIdentifiersRegressionTests.swift
+        - apps/swift/Tests/CapacitorTests/ActivityPanelTerminalRoutingRegressionTests.swift
+        - apps/swift/Tests/CapacitorTests/AppStateFileBrowserRegressionTests.swift
+        - apps/swift/Tests/CapacitorTests/AppStateProjectIngestionPerformanceRegressionTests.swift
+        - apps/swift/Tests/CapacitorTests/AppStateRuntimeStartupRegressionTests.swift
+        - apps/swift/Tests/CapacitorTests/AppStateTerminalRoutingRegressionTests.swift
+        - apps/swift/Tests/CapacitorTests/DebugMenuSetupScreenRegressionTests.swift
+        - apps/swift/Tests/CapacitorTests/FooterControlsRegressionTests.swift
+        - apps/swift/Tests/CapacitorTests/ProjectCardIdentityRegressionTests.swift
+        - apps/swift/Tests/CapacitorTests/ProjectCardSessionObservationRegressionTests.swift
+        - apps/swift/Tests/CapacitorTests/ProjectCardStateResolutionRegressionTests.swift
+        - apps/swift/Tests/CapacitorTests/ProjectListRoutingVisibilityRegressionTests.swift
+        - tests/release-scripts/release-flow-guardrails.bats
+    replay_scenarios: []
+    smoke_scenarios:
+      - hook install/fix flow
+      - add/remove/validate project flow
+      - release bundle build + isolated launch check
+    denylist_patterns:
+      - apps/swift/Tests/CapacitorTests/*RegressionTests.swift
+      - tests/release-scripts/release-flow-guardrails.bats
+    deletion_targets:
+      - apps/swift/Tests/CapacitorTests/AccessibilityIdentifiersRegressionTests.swift
+      - apps/swift/Tests/CapacitorTests/ActivityPanelTerminalRoutingRegressionTests.swift
+      - apps/swift/Tests/CapacitorTests/AppStateFileBrowserRegressionTests.swift
+      - apps/swift/Tests/CapacitorTests/AppStateProjectIngestionPerformanceRegressionTests.swift
+      - apps/swift/Tests/CapacitorTests/AppStateRuntimeStartupRegressionTests.swift
+      - apps/swift/Tests/CapacitorTests/AppStateTerminalRoutingRegressionTests.swift
+      - apps/swift/Tests/CapacitorTests/DebugMenuSetupScreenRegressionTests.swift
+      - apps/swift/Tests/CapacitorTests/FooterControlsRegressionTests.swift
+      - apps/swift/Tests/CapacitorTests/ProjectCardIdentityRegressionTests.swift
+      - apps/swift/Tests/CapacitorTests/ProjectCardSessionObservationRegressionTests.swift
+      - apps/swift/Tests/CapacitorTests/ProjectCardStateResolutionRegressionTests.swift
+      - apps/swift/Tests/CapacitorTests/ProjectListRoutingVisibilityRegressionTests.swift
+      - tests/release-scripts/release-flow-guardrails.bats
+    risks:
+      - "Removing source-shape regression tests can miss style-level regressions; mitigated by contract-level runtime tests and CI audit ceilings."
+    notes: "Deletes low-leverage source-inspection regression suites, codifies the rewrite process playbook, and enforces test debt ceilings in CI via `test-surface-audit.sh`."
+
+  - id: RW-075
+    name: "Canonical Rust FFI and Replay Test Fixtures"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-074
+    touched_paths:
+      - core/capacitor-core/tests/common.rs
+      - core/capacitor-core/tests/ffi_contract.rs
+      - core/capacitor-core/tests/replay_diff.rs
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added:
+        - core/capacitor-core/tests/common.rs
+        - core/capacitor-core/tests/ffi_contract.rs
+      changed:
+        - core/capacitor-core/tests/replay_diff.rs
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios:
+      - multi-project with nested monorepo and worktrees
+      - rapid hook bursts with out-of-order timestamps
+    smoke_scenarios: []
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Fixture consolidation can hide assertion intent if shared helpers become too broad; mitigated by context-labeled assertions and explicit table cases."
+    notes: "Introduces shared hook-event fixtures and first-class Rust FFI contract tests to tighten boundary invariants while reducing duplicated test scaffolding."

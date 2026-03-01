@@ -2,9 +2,11 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+mod common;
+
 use capacitor_core::domain::{
     AppSnapshot, HookEventType, IngestHookEventCommand, IngestShellSignalCommand,
-    MutateProjectCommand, MutationOutcome, ProjectMutationKind, SessionState,
+    MutateProjectCommand, ProjectMutationKind, SessionState,
 };
 use capacitor_core::CoreRuntime;
 
@@ -33,16 +35,13 @@ struct ReplayExpected {
 
 #[test]
 fn replay_diff_corpus_matches_expected_and_is_deterministic() {
-    let fixtures = replay_fixture_paths();
+    let cases = replay_cases();
     assert!(
-        !fixtures.is_empty(),
+        !cases.is_empty(),
         "replay corpus fixtures should not be empty"
     );
 
-    for fixture in fixtures {
-        let payload = fs::read_to_string(&fixture).expect("read fixture payload");
-        let case: ReplayCase = serde_json::from_str(&payload).expect("parse replay case fixture");
-
+    for case in cases {
         let first_snapshot = run_replay_case(&case);
         assert_expected(&case, &first_snapshot);
 
@@ -53,7 +52,7 @@ fn replay_diff_corpus_matches_expected_and_is_deterministic() {
             normalized_snapshot(first_snapshot),
             normalized_snapshot(second_snapshot),
             "replay case '{}' should be deterministic",
-            case.name
+            case.name,
         );
     }
 }
@@ -96,16 +95,12 @@ fn assert_expected(case: &ReplayCase, snapshot: &AppSnapshot) {
         case.name
     );
 
-    let project_states = snapshot
-        .projects
-        .iter()
-        .map(|project| {
-            (
-                project.project_path.clone(),
-                state_label(project.state).to_string(),
-            )
-        })
-        .collect::<BTreeMap<_, _>>();
+    let project_states = snapshot_state_map(snapshot.projects.iter().map(|project| {
+        (
+            project.project_path.clone(),
+            state_label(project.state).to_string(),
+        )
+    }));
 
     assert_eq!(
         project_states, case.expected.project_states,
@@ -113,22 +108,22 @@ fn assert_expected(case: &ReplayCase, snapshot: &AppSnapshot) {
         case.name
     );
 
-    let session_states = snapshot
-        .sessions
-        .iter()
-        .map(|session| {
-            (
-                session.session_id.clone(),
-                state_label(session.state).to_string(),
-            )
-        })
-        .collect::<BTreeMap<_, _>>();
+    let session_states = snapshot_state_map(snapshot.sessions.iter().map(|session| {
+        (
+            session.session_id.clone(),
+            state_label(session.state).to_string(),
+        )
+    }));
 
     assert_eq!(
         session_states, case.expected.session_states,
         "session state map mismatch for case '{}'",
         case.name
     );
+}
+
+fn snapshot_state_map(pairs: impl Iterator<Item = (String, String)>) -> BTreeMap<String, String> {
+    pairs.collect::<BTreeMap<_, _>>()
 }
 
 fn normalized_snapshot(mut snapshot: AppSnapshot) -> serde_json::Value {
@@ -162,24 +157,21 @@ fn replay_fixture_paths() -> Vec<PathBuf> {
     paths
 }
 
+fn replay_cases() -> Vec<ReplayCase> {
+    replay_fixture_paths()
+        .into_iter()
+        .map(|fixture| {
+            let payload = fs::read_to_string(&fixture).expect("read fixture payload");
+            serde_json::from_str(&payload).unwrap_or_else(|error| {
+                panic!("parse replay case fixture '{}': {error}", fixture.display())
+            })
+        })
+        .collect()
+}
+
 #[test]
 fn replay_diff_hook_event_type_deserialization_is_stable() {
-    let hook_case = IngestHookEventCommand {
-        event_id: "evt-1".to_string(),
-        recorded_at: "2026-02-28T00:00:00Z".to_string(),
-        event_type: HookEventType::TaskCompleted,
-        session_id: "session-1".to_string(),
-        pid: Some(42),
-        project_path: "/tmp/project".to_string(),
-        cwd: Some("/tmp/project".to_string()),
-        file_path: None,
-        workspace_id: None,
-        notification_type: None,
-        stop_hook_active: None,
-        tool_name: None,
-        agent_id: None,
-        teammate_name: None,
-    };
+    let hook_case = common::valid_hook_event_command(HookEventType::TaskCompleted);
 
     let payload = serde_json::to_value(&hook_case).expect("serialize command");
     let decoded: IngestHookEventCommand =
@@ -210,6 +202,3 @@ fn replay_diff_project_mutation_variant_deserializes() {
         _ => panic!("expected project mutation event"),
     }
 }
-
-#[allow(dead_code)]
-fn _assert_outcome_type(_outcome: MutationOutcome) {}

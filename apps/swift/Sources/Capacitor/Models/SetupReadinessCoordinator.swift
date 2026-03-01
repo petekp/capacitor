@@ -1,22 +1,22 @@
 enum StartupSetupDecision: Equatable {
     case ready
-    case showWelcome(logMessage: String)
-    case attemptHookRepair(logMessage: String)
+    case showWelcome(event: DebugLog.StartupEvent)
+    case attemptHookRepair(event: DebugLog.StartupEvent)
 }
 
 enum SetupReadinessCoordinator {
     static func startupDecision(from setupStatus: SetupStatus) -> StartupSetupDecision {
         if isRequiredDependencyMissing(named: "claude", in: setupStatus.dependencies) {
-            return .showWelcome(logMessage: "[Startup] Claude CLI not found, showing WelcomeView")
+            return .showWelcome(event: .claudeMissing)
         }
 
         switch setupStatus.hooks {
         case .installed:
             return .ready
         case let .policyBlocked(reason):
-            return .showWelcome(logMessage: "[Startup] \(HookPresentationPolicy.startupPolicyBlockedMessage(reason: reason))")
+            return .showWelcome(event: .hooksBlockedByPolicy(reason: reason))
         case .notInstalled, .binaryBroken, .symlinkBroken:
-            return .attemptHookRepair(logMessage: "[Startup] \(HookPresentationPolicy.startupNeedsRepairMessage(for: setupStatus.hooks))")
+            return .attemptHookRepair(event: .hooksNeedAutoRepair(status: setupStatus.hooks))
         }
     }
 

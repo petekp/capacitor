@@ -412,16 +412,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         switch SetupReadinessCoordinator.startupDecision(from: setupStatus) {
         case .ready:
             break
-        case let .showWelcome(logMessage):
-            DebugLog.write(logMessage)
+        case let .showWelcome(event):
+            DebugLog.write(startup: event)
             UserDefaults.standard.set(false, forKey: "setupComplete")
             return
-        case let .attemptHookRepair(logMessage):
-            DebugLog.write(logMessage)
+        case let .attemptHookRepair(event):
+            DebugLog.write(startup: event)
             if attemptAutoRepair(engine: engine) {
-                DebugLog.write("[Startup] Hook auto-repair succeeded")
+                DebugLog.write(startup: .hooksAutoRepairSucceeded)
             } else {
-                DebugLog.write("[Startup] Hook auto-repair failed, showing WelcomeView")
+                DebugLog.write(startup: .hooksAutoRepairFailedShowingWelcome)
                 UserDefaults.standard.set(false, forKey: "setupComplete")
                 return
             }
@@ -432,23 +432,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if shellType != .unsupported, !shellType.isSnippetInstalled {
             switch shellType.installSnippet() {
             case .success:
-                DebugLog.write("[Startup] Shell integration installed in \(shellType.configFile)")
+                DebugLog.write(startup: .shellIntegrationInstalled(configFile: shellType.configFile))
             case let .failure(error):
                 // Non-blocking — shell integration is optional
-                DebugLog.write("[Startup] Shell integration skipped: \(error.localizedDescription)")
+                DebugLog.write(startup: .shellIntegrationSkipped(reason: error.localizedDescription))
             }
         }
 
         // 3. Everything is ready — skip the setup screen
         if !UserDefaults.standard.bool(forKey: "setupComplete") {
-            DebugLog.write("[Startup] Auto-setup complete, skipping WelcomeView")
+            DebugLog.write(startup: .autoSetupComplete)
             UserDefaults.standard.set(true, forKey: "setupComplete")
         }
     }
 
     private func attemptAutoRepair(engine: CoreRuntime) -> Bool {
         if let hookInstallError = HookInstaller.ensureHooksInstalled(using: engine) {
-            DebugLog.write("[Startup] Hook auto-repair failed: \(hookInstallError)")
+            DebugLog.write(startup: .hooksAutoRepairFailed(error: hookInstallError))
             return false
         }
 

@@ -527,3 +527,40 @@ RW-072,swift-setup-preview-hook-policy-cutover-rw072,apps/swift/Sources/Capacito
 RW-072,rewrite-test-audit-rw072,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit conclusions after hook presentation policy consolidation
 RW-072,rewrite-ledger-rw072,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-072 lifecycle and denylist enforcement
 RW-072,rewrite-map-rw072,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-072 path mappings for guard enforcement
+RW-073,swift-startup-diagnostics-event-cutover-rw073,apps/swift/Sources/Capacitor/App.swift,apps/swift/Sources/Capacitor/App.swift,done,false,Replace ad-hoc startup log literals with canonical typed startup events
+RW-073,swift-setup-readiness-startup-event-cutover-rw073,apps/swift/Sources/Capacitor/Models/SetupReadinessCoordinator.swift,apps/swift/Sources/Capacitor/Models/SetupReadinessCoordinator.swift,done,false,Emit typed startup readiness diagnostics events instead of string payloads
+RW-073,swift-hook-presentation-startup-message-removal-rw073,apps/swift/Sources/Capacitor/Models/HookPresentationPolicy.swift,apps/swift/Sources/Capacitor/Models/HookPresentationPolicy.swift,done,false,Remove startup message formatting from hook presentation policy surface
+RW-073,swift-debug-log-startup-event-surface-rw073,apps/swift/Sources/Capacitor/Utilities/DebugLog.swift,apps/swift/Sources/Capacitor/Utilities/DebugLog.swift,done,false,Add canonical DebugLog.StartupEvent enum and formatter
+RW-073,swift-debug-log-startup-event-tests-rw073,apps/swift/Tests/CapacitorTests/DebugLogTests.swift,apps/swift/Tests/CapacitorTests/DebugLogTests.swift,done,false,Add startup event formatting contract tests
+RW-073,swift-hook-policy-startup-test-prune-rw073,apps/swift/Tests/CapacitorTests/HookPresentationPolicyTests.swift,apps/swift/Tests/CapacitorTests/HookPresentationPolicyTests.swift,done,false,Remove startup message tests now owned by DebugLog contracts
+RW-073,swift-setup-readiness-startup-event-tests-rw073,apps/swift/Tests/CapacitorTests/SetupReadinessCoordinatorTests.swift,apps/swift/Tests/CapacitorTests/SetupReadinessCoordinatorTests.swift,done,false,Rewire startup readiness tests to typed event outputs
+RW-073,rewrite-test-audit-rw073,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit conclusions after startup diagnostics event consolidation
+RW-073,rewrite-ledger-rw073,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-073 lifecycle and risk notes
+RW-073,rewrite-map-rw073,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-073 path mappings for guard enforcement
+RW-074,rewrite-playbook-doc-rw074,,rewrite/PLAYBOOK.md,done,false,Codify rigorous slice-based rewrite process as reusable playbook
+RW-074,rewrite-charter-playbook-reference-rw074,rewrite/CHARTER.md,rewrite/CHARTER.md,done,false,Reference playbook from rewrite charter
+RW-074,ci-test-surface-audit-script-rw074,,scripts/ci/test-surface-audit.sh,done,false,Add frozen debt budget guard for low-leverage test patterns
+RW-074,ci-workflow-test-surface-gate-rw074,.github/workflows/ci.yml,.github/workflows/ci.yml,done,false,Run rewrite guard status/check and test-surface audit in CI
+RW-074,tooling-ignore-agent-cache-rw074,.gitignore,.gitignore,done,false,Ignore local agent helper directories to avoid noisy untracked files
+RW-074,swift-accessibility-regression-delete-rw074,apps/swift/Tests/CapacitorTests/AccessibilityIdentifiersRegressionTests.swift,-,done,true,Delete low-leverage source-inspection regression suite
+RW-074,swift-terminal-routing-regression-delete-rw074,apps/swift/Tests/CapacitorTests/ActivityPanelTerminalRoutingRegressionTests.swift,-,done,true,Delete low-leverage source-inspection regression suite
+RW-074,swift-file-browser-regression-delete-rw074,apps/swift/Tests/CapacitorTests/AppStateFileBrowserRegressionTests.swift,-,done,true,Delete low-leverage source-inspection regression suite
+RW-074,swift-project-ingestion-regression-delete-rw074,apps/swift/Tests/CapacitorTests/AppStateProjectIngestionPerformanceRegressionTests.swift,-,done,true,Delete low-leverage source-inspection regression suite
+RW-074,swift-runtime-startup-regression-delete-rw074,apps/swift/Tests/CapacitorTests/AppStateRuntimeStartupRegressionTests.swift,-,done,true,Delete low-leverage source-inspection regression suite
+RW-074,swift-appstate-terminal-routing-regression-delete-rw074,apps/swift/Tests/CapacitorTests/AppStateTerminalRoutingRegressionTests.swift,-,done,true,Delete low-leverage source-inspection regression suite
+RW-074,swift-debug-menu-regression-delete-rw074,apps/swift/Tests/CapacitorTests/DebugMenuSetupScreenRegressionTests.swift,-,done,true,Delete low-leverage source-inspection regression suite
+RW-074,swift-footer-controls-regression-delete-rw074,apps/swift/Tests/CapacitorTests/FooterControlsRegressionTests.swift,-,done,true,Delete low-leverage source-inspection regression suite
+RW-074,swift-project-card-identity-regression-delete-rw074,apps/swift/Tests/CapacitorTests/ProjectCardIdentityRegressionTests.swift,-,done,true,Delete low-leverage source-inspection regression suite
+RW-074,swift-project-card-session-observation-regression-delete-rw074,apps/swift/Tests/CapacitorTests/ProjectCardSessionObservationRegressionTests.swift,-,done,true,Delete low-leverage source-inspection regression suite
+RW-074,swift-project-card-state-resolution-regression-delete-rw074,apps/swift/Tests/CapacitorTests/ProjectCardStateResolutionRegressionTests.swift,-,done,true,Delete low-leverage source-inspection regression suite
+RW-074,swift-project-list-routing-visibility-regression-delete-rw074,apps/swift/Tests/CapacitorTests/ProjectListRoutingVisibilityRegressionTests.swift,-,done,true,Delete low-leverage source-inspection regression suite
+RW-074,release-flow-guardrails-delete-rw074,tests/release-scripts/release-flow-guardrails.bats,-,done,true,Delete static release source-inspection bats guardrails in favor of executable behavior tests and CI audit
+RW-074,rewrite-test-audit-rw074,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit conclusions after regression-suite cleanup and CI surface guard addition
+RW-074,rewrite-ledger-rw074,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-074 lifecycle and risk notes
+RW-074,rewrite-map-rw074,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-074 path mappings for guard enforcement
+RW-075,rust-ffi-contract-test-surface-rw075,,core/capacitor-core/tests/ffi_contract.rs,done,false,Add first-class Rust FFI command/snapshot contract integration tests
+RW-075,rust-shared-hook-fixtures-rw075,,core/capacitor-core/tests/common.rs,done,false,Extract shared hook event fixtures for replay/contract tests
+RW-075,rust-replay-fixture-cleanup-rw075,core/capacitor-core/tests/replay_diff.rs,core/capacitor-core/tests/replay_diff.rs,done,false,Refactor replay-diff test file to shared fixture helpers and explicit replay case loader
+RW-075,rewrite-test-audit-rw075,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit conclusions after Rust contract test additions
+RW-075,rewrite-ledger-rw075,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-075 lifecycle and risk notes
+RW-075,rewrite-map-rw075,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-075 path mappings for guard enforcement

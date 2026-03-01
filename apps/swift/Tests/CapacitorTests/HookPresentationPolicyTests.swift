@@ -51,22 +51,4 @@ final class HookPresentationPolicyTests: XCTestCase {
             "Session tracking unavailable",
         )
     }
-
-    func testStartupPolicyBlockedMessageIncludesReason() {
-        XCTAssertEqual(
-            HookPresentationPolicy.startupPolicyBlockedMessage(reason: "disableAllHooks is enabled."),
-            "Hooks blocked by policy (disableAllHooks is enabled.), showing WelcomeView",
-        )
-    }
-
-    func testStartupRepairMessageIsStatusSpecific() {
-        XCTAssertEqual(
-            HookPresentationPolicy.startupNeedsRepairMessage(for: .notInstalled),
-            "Hook status notInstalled requires auto-repair",
-        )
-        XCTAssertEqual(
-            HookPresentationPolicy.startupNeedsRepairMessage(for: .binaryBroken(reason: "codesign error")),
-            "Hook status binaryBroken requires auto-repair",
-        )
-    }
 }

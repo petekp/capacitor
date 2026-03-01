@@ -1,5 +1,7 @@
 # Capacitor Rewrite Charter
 
+Operational procedure lives in `rewrite/PLAYBOOK.md`.
+
 ## Purpose
 Capacitor is being rewritten to converge on one authoritative core and one clear UI shell. The rewrite optimizes for simplicity, coherence, and deletion of redundant paths.
 

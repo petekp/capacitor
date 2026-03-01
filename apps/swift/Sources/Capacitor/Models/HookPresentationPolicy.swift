@@ -67,30 +67,4 @@ enum HookPresentationPolicy {
             return "No hook heartbeat detected yet. Start a Claude session and trigger one event, then run Test Hooks."
         }
     }
-
-    static func startupPolicyBlockedMessage(reason: String) -> String {
-        if reason.isEmpty {
-            return "Hooks blocked by policy, showing WelcomeView"
-        }
-        return "Hooks blocked by policy (\(reason)), showing WelcomeView"
-    }
-
-    static func startupNeedsRepairMessage(for hookStatus: HookStatus) -> String {
-        "Hook status \(startupStatusLabel(for: hookStatus)) requires auto-repair"
-    }
-
-    private static func startupStatusLabel(for hookStatus: HookStatus) -> String {
-        switch hookStatus {
-        case .notInstalled:
-            "notInstalled"
-        case .installed:
-            "installed"
-        case .policyBlocked:
-            "policyBlocked"
-        case .binaryBroken:
-            "binaryBroken"
-        case .symlinkBroken:
-            "symlinkBroken"
-        }
-    }
 }

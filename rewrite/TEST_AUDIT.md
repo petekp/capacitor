@@ -1,6 +1,6 @@
 # Test Audit (Playbook Applied)
 
-Date: 2026-02-28  
+Date: 2026-03-01  
 Scope: `core/`, `apps/swift/Tests/CapacitorTests/`, `tests/`, `services/ingest-worker/test/`
 
 ## Method
@@ -10,10 +10,10 @@ Scope: `core/`, `apps/swift/Tests/CapacitorTests/`, `tests/`, `services/ingest-w
 3. Freeze current weak-pattern surface with a CI guard so debt cannot grow.
 4. Define next rewrite slices to pay debt down deterministically.
 
-## Current Metrics (After RW-072)
+## Current Metrics (After RW-075)
 
 - Swift test files: `40`
-- Swift test methods: `259`
+- Swift test methods: `260`
 - Swift files with `source.contains` assertions: `0`
 - `source.contains` assertions (total): `0`
 - Swift test methods inside source-coupled files: `0`
@@ -115,7 +115,10 @@ Static bats source checks that do not execute behavior have been removed from th
 57. RW-070 moved pure pathing/identity helpers (`GitRepositoryInfo`, `PathNormalizer`, `WorkspaceIdentity`) from ambiguous `Helpers/` into `Support/Pathing`, keeping only IO-oriented adapters in `Helpers/` and reducing role confusion for new contributors/agents.
 58. RW-071 introduced a startup `SetupReadinessCoordinator` decision surface (driven by `checkSetupStatus()`), rewired `AppDelegate.validateHookSetup` to consume it, and added focused coordinator tests so startup/setup policy no longer diverges across independent branches.
 59. RW-072 replaced parallel hook presentation layers by renaming `HookSetupCopy` to canonical `HookPresentationPolicy` and keeping `HookDiagnosticPresentation` as a thin adapter over that policy, removing split ownership of hook UI/status copy semantics.
-60. Next reductions should continue collapsing duplicate edge-case assertions into explicit contract tables rather than proliferating one-off tests.
+60. RW-073 replaced startup log string assembly with typed `DebugLog.StartupEvent` contracts and moved formatting ownership to `DebugLog`, preventing copy drift across startup decision call sites.
+61. RW-074 removed low-leverage source-inspection regression suites and added a dedicated CI `test-surface-audit` gate so weak-pattern test debt cannot regrow unnoticed.
+62. RW-075 added canonical Rust FFI contract coverage (`core/capacitor-core/tests/ffi_contract.rs`) and shared replay/contract fixtures to tighten boundary invariants while reducing duplicated test scaffolding.
+63. Next reductions should continue collapsing duplicate edge-case assertions into explicit contract tables rather than proliferating one-off tests.
 
 ## Guardrails Added
 
@@ -134,7 +137,7 @@ This does not claim these patterns are good. It prevents regression while we pay
 
 ## Next Slices (proposed)
 
-1. `RW-073` Collapse duplicate startup log string assembly into typed diagnostics events with canonical formatting in `DebugLog`.
-2. `RW-074` Reduce remaining setup status mapping duplication by introducing typed setup action/status descriptors instead of stringly-typed IDs in `SetupRequirementsManager`.
+1. `RW-076` Reduce remaining setup status mapping duplication by introducing typed setup action/status descriptors instead of stringly-typed IDs in `SetupRequirementsManager`.
+2. `RW-077` Consolidate remaining release-script bats duplication by introducing shared scenario helpers and deleting one-off shell-shape assertions that do not verify behavior.
 
 Each slice should delete replaced tests in the same PR and ratchet the audit limits downward.

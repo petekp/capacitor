@@ -10,7 +10,7 @@ final class SetupReadinessCoordinatorTests: XCTestCase {
 
         XCTAssertEqual(
             SetupReadinessCoordinator.startupDecision(from: setupStatus),
-            .showWelcome(logMessage: "[Startup] Claude CLI not found, showing WelcomeView"),
+            .showWelcome(event: .claudeMissing),
         )
     }
 
@@ -22,7 +22,7 @@ final class SetupReadinessCoordinatorTests: XCTestCase {
 
         XCTAssertEqual(
             SetupReadinessCoordinator.startupDecision(from: setupStatus),
-            .showWelcome(logMessage: "[Startup] Hooks blocked by policy (disableAllHooks is enabled.), showing WelcomeView"),
+            .showWelcome(event: .hooksBlockedByPolicy(reason: "disableAllHooks is enabled.")),
         )
     }
 
@@ -34,7 +34,7 @@ final class SetupReadinessCoordinatorTests: XCTestCase {
 
         XCTAssertEqual(
             SetupReadinessCoordinator.startupDecision(from: setupStatus),
-            .attemptHookRepair(logMessage: "[Startup] Hook status notInstalled requires auto-repair"),
+            .attemptHookRepair(event: .hooksNeedAutoRepair(status: .notInstalled)),
         )
     }
 

@@ -2,6 +2,18 @@ import Foundation
 
 /// Lightweight debug logger that appends to a file for deep diagnostics.
 enum DebugLog {
+    enum StartupEvent: Equatable {
+        case claudeMissing
+        case hooksBlockedByPolicy(reason: String)
+        case hooksNeedAutoRepair(status: HookStatus)
+        case hooksAutoRepairSucceeded
+        case hooksAutoRepairFailedShowingWelcome
+        case hooksAutoRepairFailed(error: String)
+        case shellIntegrationInstalled(configFile: String)
+        case shellIntegrationSkipped(reason: String)
+        case autoSetupComplete
+    }
+
     private enum Limits {
         static let maxBytes = 20 * 1024 * 1024
         static let retainBytes = 5 * 1024 * 1024
@@ -59,6 +71,10 @@ enum DebugLog {
         }
     }
 
+    static func write(startup event: StartupEvent) {
+        write(startupMessage(for: event))
+    }
+
     private static func append(_ data: Data, to url: URL, maxBytes: Int, retainBytes: Int) throws {
         let dir = url.deletingLastPathComponent()
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true, attributes: nil)
@@ -101,5 +117,48 @@ enum DebugLog {
         let attrs = try FileManager.default.attributesOfItem(atPath: url.path)
         guard let raw = attrs[.size] as? NSNumber else { return 0 }
         return raw.int64Value
+    }
+
+    private static func startupMessage(for event: StartupEvent) -> String {
+        let details = switch event {
+        case .claudeMissing:
+            "Claude CLI not found, showing WelcomeView"
+        case let .hooksBlockedByPolicy(reason):
+            if reason.isEmpty {
+                "Hooks blocked by policy, showing WelcomeView"
+            } else {
+                "Hooks blocked by policy (\(reason)), showing WelcomeView"
+            }
+        case let .hooksNeedAutoRepair(status):
+            "Hook status \(startupStatusLabel(for: status)) requires auto-repair"
+        case .hooksAutoRepairSucceeded:
+            "Hook auto-repair succeeded"
+        case .hooksAutoRepairFailedShowingWelcome:
+            "Hook auto-repair failed, showing WelcomeView"
+        case let .hooksAutoRepairFailed(error):
+            "Hook auto-repair failed: \(error)"
+        case let .shellIntegrationInstalled(configFile):
+            "Shell integration installed in \(configFile)"
+        case let .shellIntegrationSkipped(reason):
+            "Shell integration skipped: \(reason)"
+        case .autoSetupComplete:
+            "Auto-setup complete, skipping WelcomeView"
+        }
+        return "[Startup] \(details)"
+    }
+
+    private static func startupStatusLabel(for hookStatus: HookStatus) -> String {
+        switch hookStatus {
+        case .notInstalled:
+            "notInstalled"
+        case .installed:
+            "installed"
+        case .policyBlocked:
+            "policyBlocked"
+        case .binaryBroken:
+            "binaryBroken"
+        case .symlinkBroken:
+            "symlinkBroken"
+        }
     }
 }

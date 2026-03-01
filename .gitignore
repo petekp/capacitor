@@ -6,6 +6,8 @@
 .cursor/
 .vscode/
 *.sw?
+.tldr/
+.serena/
 
 # Node.js (transparent-ui server)
 node_modules

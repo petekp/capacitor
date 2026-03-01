@@ -18,8 +18,14 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Run rewrite guard checks
+      - name: Run rewrite guard status
         run: ./scripts/rewrite/check_rewrite_guards.sh --status
+
+      - name: Run rewrite guard checks
+        run: ./scripts/rewrite/check_rewrite_guards.sh
+
+      - name: Run test surface audit
+        run: bash scripts/ci/test-surface-audit.sh --check
 
   test-scripts:
     name: Test Release Scripts
