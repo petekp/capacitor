@@ -399,12 +399,10 @@ class AppState {
     private func updatePostSessionRefreshContext() {
         activeProjectResolver.resolve()
         reconcileProjectGroups()
-        #if DEBUG
-            DiagnosticsSnapshotLogger.updateContext(
-                activeProjectPath: activeProjectPath,
-                activeSource: activeSource,
-            )
-        #endif
+        DiagnosticsSnapshotLogger.updateContext(
+            activeProjectPath: activeProjectPath,
+            activeSource: activeSource,
+        )
         DebugLog.write("AppState.refreshSessionStates activeProject=\(activeProjectResolver.activeProject?.path ?? "nil") source=\(String(describing: activeProjectResolver.activeSource))")
         if let active = activeProjectResolver.activeProject {
             Telemetry.emit("active_project_resolution", "Resolved active project", payload: [

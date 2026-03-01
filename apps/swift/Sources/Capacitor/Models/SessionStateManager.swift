@@ -149,9 +149,7 @@ final class SessionStateManager {
         sessionAttributions = nextAttributions.filter { stabilized[$0.key] != nil }
         latestSessionIds = nextLatestSessionIds.filter { stabilized[$0.key] != nil }
         pruneCachedStates()
-        #if DEBUG
-            DiagnosticsSnapshotLogger.maybeCaptureStuckSessions(sessionStates: stabilized)
-        #endif
+        DiagnosticsSnapshotLogger.maybeCaptureStuckSessions(sessionStates: stabilized)
         if didChange {
             checkForStateChanges()
         }
