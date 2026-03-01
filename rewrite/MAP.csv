@@ -476,3 +476,8 @@ RW-065,swift-diagnostics-timestamp-helper-cutover-rw065,apps/swift/Sources/Capac
 RW-065,rewrite-test-audit-rw065,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit conclusions after duplicate ISO8601 helper cleanup
 RW-065,rewrite-ledger-rw065,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-065 lifecycle and risk notes
 RW-065,rewrite-map-rw065,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-065 path mappings for guard enforcement
+RW-066,swift-capacitor-config-dead-fields-rw066,apps/swift/Sources/Capacitor/Utils/CapacitorConfig.swift,apps/swift/Sources/Capacitor/Utils/CapacitorConfig.swift,done,false,Remove unused setupCompletedAt/hooksVersion persistence and markSetupComplete mutation path
+RW-066,swift-welcome-setup-complete-write-removal-rw066,apps/swift/Sources/Capacitor/Views/Setup/WelcomeView.swift,apps/swift/Sources/Capacitor/Views/Setup/WelcomeView.swift,done,false,Delete redundant CapacitorConfig setup-complete write during onboarding completion
+RW-066,rewrite-test-audit-rw066,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit conclusions after redundant setup config write removal
+RW-066,rewrite-ledger-rw066,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-066 lifecycle and risk notes
+RW-066,rewrite-map-rw066,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-066 path mappings for guard enforcement

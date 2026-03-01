@@ -2380,3 +2380,32 @@ slices:
     risks:
       - "Unifying timestamp helper usage can alter serialized timestamp precision across telemetry/diagnostic payloads and affect external consumers expecting previous format granularity."
     notes: "Removes remaining private ISO8601 formatter instances in utility modules and routes timestamp formatting through `currentISO8601Timestamp`/`formatISO8601Timestamp` canonical helpers."
+
+  - id: RW-066
+    name: "Remove Redundant CapacitorConfig Setup Fields"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-065
+    touched_paths:
+      - apps/swift/Sources/Capacitor/Utils/CapacitorConfig.swift
+      - apps/swift/Sources/Capacitor/Views/Setup/WelcomeView.swift
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - apps/swift/Sources/Capacitor/Utils/CapacitorConfig.swift
+        - apps/swift/Sources/Capacitor/Views/Setup/WelcomeView.swift
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Removing setup-complete persistence in CapacitorConfig can break any out-of-band tools/scripts that implicitly relied on those legacy fields in `runtime-config.json`."
+    notes: "Deletes unused `setupCompletedAt`/`hooksVersion` persistence and removes the corresponding write call from setup completion flow, reducing redundant config surface area."

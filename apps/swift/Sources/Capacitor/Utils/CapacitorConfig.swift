@@ -21,8 +21,6 @@ actor CapacitorConfig {
     struct Config: Codable {
         var claudePath: String?
         var tmuxPath: String?
-        var setupCompletedAt: Date?
-        var hooksVersion: String?
     }
 
     private init(configURL: URL = CapacitorConfig.defaultURL) {
@@ -104,9 +102,4 @@ actor CapacitorConfig {
         await save(config)
     }
 
-    func markSetupComplete() async {
-        var config = await load()
-        config.setupCompletedAt = Date()
-        await save(config)
-    }
 }

@@ -10,7 +10,7 @@ Scope: `core/`, `apps/swift/Tests/CapacitorTests/`, `tests/`, `services/ingest-w
 3. Freeze current weak-pattern surface with a CI guard so debt cannot grow.
 4. Define next rewrite slices to pay debt down deterministically.
 
-## Current Metrics (After RW-065)
+## Current Metrics (After RW-066)
 
 - Swift test files: `37`
 - Swift test methods: `244`
@@ -108,7 +108,8 @@ Static bats source checks that do not execute behavior have been removed from th
 50. RW-063 removed remaining ad-hoc `ISO8601DateFormatter()` allocations from hot paths (`DebugLog`, `RuntimeClient`, UniFFI date adapters) by routing through canonical date helpers.
 51. RW-064 split conflicting config ownership by moving `CapacitorConfig` persistence to `~/.capacitor/runtime-config.json` (with legacy-read migration) and added contract tests that lock non-collision with `AppConfig` file semantics.
 52. RW-065 removed remaining private ISO8601 formatter duplicates in `Telemetry`, `QuickFeedback`, and `DiagnosticsSnapshotLogger`, routing all timestamp formatting through canonical date helpers.
-53. Next reductions should continue collapsing duplicate edge-case assertions into explicit contract tables rather than proliferating one-off tests.
+53. RW-066 removed dead `CapacitorConfig` persistence fields/mutations (`setupCompletedAt`, `hooksVersion`, `markSetupComplete`) and deleted the redundant setup-complete write path in `WelcomeView`.
+54. Next reductions should continue collapsing duplicate edge-case assertions into explicit contract tables rather than proliferating one-off tests.
 
 ## Guardrails Added
 
@@ -127,7 +128,7 @@ This does not claim these patterns are good. It prevents regression while we pay
 
 ## Next Slices (proposed)
 
-1. `RW-066` Collapse `Utils/` config-like surfaces into one explicit support namespace and remove one redundant config layer in the same slice.
-2. `RW-067` Consolidate hook setup UX surfaces (`HookDiagnosticPresentation`, setup-step copy, startup diagnostics messaging) to one canonical status-to-copy mapper with tests.
+1. `RW-067` Consolidate hook setup UX surfaces (`HookDiagnosticPresentation`, setup-step copy, startup diagnostics messaging) to one canonical status-to-copy mapper with tests.
+2. `RW-068` Move remaining config/runtime helper files out of ambiguous `Utils/` into explicit support namespaces and enforce with rewrite denylist patterns.
 
 Each slice should delete replaced tests in the same PR and ratchet the audit limits downward.

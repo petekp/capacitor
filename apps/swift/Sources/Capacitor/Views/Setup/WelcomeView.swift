@@ -107,15 +107,11 @@ struct WelcomeView: View {
     // MARK: - Actions
 
     private func completeSetup() {
-        _Concurrency.Task {
-            await CapacitorConfig.shared.markSetupComplete()
+        #if DEBUG
+            CapacitorApp.restoreOnboardingBackup()
+        #endif
 
-            #if DEBUG
-                CapacitorApp.restoreOnboardingBackup()
-            #endif
-
-            onComplete()
-        }
+        onComplete()
     }
 }
 
