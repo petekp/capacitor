@@ -70,23 +70,19 @@ Hooks → **hud-hook** → **capacitor-core snapshot** → Swift reads runtime s
 
 ## Telemetry
 
-Launch with `./scripts/run-transparent-ui.sh` (server on `localhost:9133`). Use `/runtime-snapshot` for one-shot state, `/agent-briefing` for agent context. See `.claude/docs/debugging-guide.md` for full endpoint list and troubleshooting.
-
-For coding-agent runtime debugging, use the canonical observability runbook and helper:
-
-- Runbook: `.claude/docs/agent-observability-runbook.md`
-- Helper CLI: `./scripts/dev/agent-observe.sh`
-- Make targets: `make observe-help` (and `make observe-*`)
-
-Quick start:
+For coding-agent runtime debugging, use the canonical diagnostic CLI:
 
 ```bash
-./scripts/dev/agent-observe.sh check
-make observe-smoke
-./scripts/dev/agent-observe.sh health
-./scripts/dev/agent-observe.sh projects
-./scripts/dev/agent-observe.sh sessions
+./scripts/dev/agent-observe.sh diagnose   # One-shot full diagnostics
+./scripts/dev/agent-observe.sh check      # Validate paths
+./scripts/dev/agent-observe.sh health     # Runtime health
+./scripts/dev/agent-observe.sh freshness  # Snapshot staleness
 ```
+
+Full command reference: `./scripts/dev/agent-observe.sh help`
+Debugging guide: `.claude/docs/debugging-guide.md`
+
+Optional browser UI: `node scripts/transparent-ui-server.mjs` (localhost:9133)
 
 ## Common Gotchas
 
