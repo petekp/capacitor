@@ -604,3 +604,9 @@ RW-082,swift-hook-diagnostic-matrix-tests-rw082,apps/swift/Tests/CapacitorTests/
 RW-082,rewrite-test-audit-rw082,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit metrics/conclusions after setup diagnostic matrix consolidation
 RW-082,rewrite-ledger-rw082,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-082 lifecycle and risk notes
 RW-082,rewrite-map-rw082,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-082 path mappings for guard enforcement
+RW-083,swift-setup-scenario-harness-rw083,,apps/swift/Tests/CapacitorTests/SetupScenarioHarness.swift,done,false,Add shared labeled scenario harness to reduce repeated setup contract scaffolding
+RW-083,swift-startup-readiness-harness-cutover-rw083,apps/swift/Tests/CapacitorTests/SetupReadinessCoordinatorTests.swift,apps/swift/Tests/CapacitorTests/SetupReadinessCoordinatorTests.swift,done,false,Replace per-test startup scenario struct with shared harness record type
+RW-083,swift-setup-status-copy-harness-cutover-rw083,apps/swift/Tests/CapacitorTests/SetupStatusCopyContractTests.swift,apps/swift/Tests/CapacitorTests/SetupStatusCopyContractTests.swift,done,false,Replace repeated setup status scenario records and loops with shared labeled scenario harness
+RW-083,rewrite-test-audit-rw083,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit metrics/conclusions after setup scenario harness consolidation
+RW-083,rewrite-ledger-rw083,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-083 lifecycle and risk notes
+RW-083,rewrite-map-rw083,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-083 path mappings for guard enforcement

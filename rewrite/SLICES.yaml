@@ -3037,3 +3037,36 @@ slices:
     risks:
       - "Merging one-off diagnostic assertions into matrices can accidentally drop nuance unless scenario labels and expectations remain explicit."
     notes: "Replaces overlapping hook-diagnostic visibility/header/guidance one-off tests with labeled contract matrices to reduce test-method proliferation."
+
+  - id: RW-083
+    name: "Shared Setup Scenario Harness Consolidation"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-082
+    touched_paths:
+      - apps/swift/Tests/CapacitorTests/SetupScenarioHarness.swift
+      - apps/swift/Tests/CapacitorTests/SetupReadinessCoordinatorTests.swift
+      - apps/swift/Tests/CapacitorTests/SetupStatusCopyContractTests.swift
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added:
+        - apps/swift/Tests/CapacitorTests/SetupScenarioHarness.swift
+      changed:
+        - apps/swift/Tests/CapacitorTests/SetupReadinessCoordinatorTests.swift
+        - apps/swift/Tests/CapacitorTests/SetupStatusCopyContractTests.swift
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios:
+      - fresh install setup flow
+      - hook install/fix flow
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Over-generalizing test harness helpers can hide assertion intent if scenario input/expected records become opaque."
+    notes: "Introduces one shared labeled scenario harness and rewires setup readiness/status contract suites to remove repeated per-file scenario record boilerplate while preserving explicit labels."

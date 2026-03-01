@@ -3,103 +3,112 @@ import XCTest
 
 final class SetupStatusCopyContractTests: XCTestCase {
     func testHookSetupStatusCopyScenariosMatchCanonicalContract() {
-        struct Scenario {
-            let label: String
-            let hookStatus: HookStatus
-            let expected: SetupStepStatus
-        }
-
-        let scenarios: [Scenario] = [
-            Scenario(
+        let scenarios: [LabeledExpectationScenario<HookStatus, SetupStepStatus>] = [
+            LabeledExpectationScenario(
                 label: "installed",
-                hookStatus: .installed(version: "1.2.3"),
+                input: .installed(version: "1.2.3"),
                 expected: .completed(detail: "Connected"),
             ),
-            Scenario(
+            LabeledExpectationScenario(
                 label: "not-installed",
-                hookStatus: .notInstalled,
+                input: .notInstalled,
                 expected: .actionNeeded(message: "Tap Install to connect"),
             ),
-            Scenario(
+            LabeledExpectationScenario(
                 label: "policy-blocked",
-                hookStatus: .policyBlocked(reason: "disableAllHooks is enabled"),
+                input: .policyBlocked(reason: "disableAllHooks is enabled"),
                 expected: .error(message: "Your Claude settings prevent hook installation"),
             ),
-            Scenario(
+            LabeledExpectationScenario(
                 label: "binary-broken",
-                hookStatus: .binaryBroken(reason: "codesign error"),
+                input: .binaryBroken(reason: "codesign error"),
                 expected: .error(message: "Session tracking needs repair"),
             ),
-            Scenario(
+            LabeledExpectationScenario(
                 label: "symlink-broken",
-                hookStatus: .symlinkBroken(target: "/missing", reason: "target missing"),
+                input: .symlinkBroken(target: "/missing", reason: "target missing"),
                 expected: .error(message: "Session tracking needs repair"),
             ),
         ]
 
-        for scenario in scenarios {
-            XCTAssertEqual(
-                HookPresentationPolicy.setupStepStatus(for: scenario.hookStatus),
-                scenario.expected,
-                "[\(scenario.label)] HookPresentationPolicy mapping mismatch",
-            )
+        assertLabeledScenarios(scenarios, mismatch: "HookPresentationPolicy mapping mismatch") { hookStatus in
+            HookPresentationPolicy.setupStepStatus(for: hookStatus)
         }
     }
 
     func testHookAndShellStepBuildersAndPreviewScenariosUseCanonicalStatuses() {
-        struct Scenario {
-            let label: String
-            let previewScenario: SetupPreviewScenario
-            let expectedHookStatus: SetupStepStatus
-            let expectedShellStatus: SetupStepStatus
+        struct PreviewStatusProjection: Equatable {
+            let hookStepID: SetupStepID
+            let shellStepID: SetupStepID
+            let hookStatus: SetupStepStatus
+            let shellStatus: SetupStepStatus
+            let hookCatalogStatus: SetupStepStatus
+            let shellCatalogStatus: SetupStepStatus
         }
 
-        let scenarios: [Scenario] = [
-            Scenario(
+        let scenarios: [LabeledExpectationScenario<SetupPreviewScenario, PreviewStatusProjection>] = [
+            LabeledExpectationScenario(
                 label: "hooks-needed",
-                previewScenario: .hooksNeeded,
-                expectedHookStatus: .actionNeeded(message: "Tap Install to connect"),
-                expectedShellStatus: .pending,
+                input: .hooksNeeded,
+                expected: PreviewStatusProjection(
+                    hookStepID: .hooks,
+                    shellStepID: .shell,
+                    hookStatus: .actionNeeded(message: "Tap Install to connect"),
+                    shellStatus: .pending,
+                    hookCatalogStatus: .actionNeeded(message: "Tap Install to connect"),
+                    shellCatalogStatus: .pending
+                ),
             ),
-            Scenario(
+            LabeledExpectationScenario(
                 label: "hooks-policy-blocked",
-                previewScenario: .hooksPolicyBlocked,
-                expectedHookStatus: .error(message: "Your Claude settings prevent hook installation"),
-                expectedShellStatus: .pending,
+                input: .hooksPolicyBlocked,
+                expected: PreviewStatusProjection(
+                    hookStepID: .hooks,
+                    shellStepID: .shell,
+                    hookStatus: .error(message: "Your Claude settings prevent hook installation"),
+                    shellStatus: .pending,
+                    hookCatalogStatus: .error(message: "Your Claude settings prevent hook installation"),
+                    shellCatalogStatus: .pending
+                ),
             ),
-            Scenario(
+            LabeledExpectationScenario(
                 label: "shell-optional",
-                previewScenario: .shellOptional,
-                expectedHookStatus: .completed(detail: "Connected"),
-                expectedShellStatus: .actionNeeded(message: "Add to ~/.zshrc"),
+                input: .shellOptional,
+                expected: PreviewStatusProjection(
+                    hookStepID: .hooks,
+                    shellStepID: .shell,
+                    hookStatus: .completed(detail: "Connected"),
+                    shellStatus: .actionNeeded(message: "Add to ~/.zshrc"),
+                    hookCatalogStatus: .completed(detail: "Connected"),
+                    shellCatalogStatus: .actionNeeded(message: "Add to ~/.zshrc")
+                ),
             ),
-            Scenario(
+            LabeledExpectationScenario(
                 label: "all-complete",
-                previewScenario: .allComplete,
-                expectedHookStatus: .completed(detail: "Connected"),
-                expectedShellStatus: .completed(detail: "Active"),
+                input: .allComplete,
+                expected: PreviewStatusProjection(
+                    hookStepID: .hooks,
+                    shellStepID: .shell,
+                    hookStatus: .completed(detail: "Connected"),
+                    shellStatus: .completed(detail: "Active"),
+                    hookCatalogStatus: .completed(detail: "Connected"),
+                    shellCatalogStatus: .completed(detail: "Active")
+                ),
             ),
         ]
 
-        for scenario in scenarios {
-            let steps = scenario.previewScenario.steps
+        assertLabeledScenarios(scenarios, mismatch: "preview scenario status projection mismatch") { previewScenario in
+            let steps = previewScenario.steps
             let hookStep = steps[1]
             let shellStep = steps[2]
 
-            XCTAssertEqual(hookStep.id, .hooks, "[\(scenario.label)] hook step id mismatch")
-            XCTAssertEqual(shellStep.id, .shell, "[\(scenario.label)] shell step id mismatch")
-            XCTAssertEqual(hookStep.status, scenario.expectedHookStatus, "[\(scenario.label)] hook status mismatch")
-            XCTAssertEqual(shellStep.status, scenario.expectedShellStatus, "[\(scenario.label)] shell status mismatch")
-
-            XCTAssertEqual(
-                SetupStepCatalog.hooks(status: scenario.expectedHookStatus).status,
-                scenario.expectedHookStatus,
-                "[\(scenario.label)] hook catalog status passthrough mismatch",
-            )
-            XCTAssertEqual(
-                SetupStepCatalog.shell(status: scenario.expectedShellStatus).status,
-                scenario.expectedShellStatus,
-                "[\(scenario.label)] shell catalog status passthrough mismatch",
+            return PreviewStatusProjection(
+                hookStepID: hookStep.id,
+                shellStepID: shellStep.id,
+                hookStatus: hookStep.status,
+                shellStatus: shellStep.status,
+                hookCatalogStatus: SetupStepCatalog.hooks(status: hookStep.status).status,
+                shellCatalogStatus: SetupStepCatalog.shell(status: shellStep.status).status
             )
         }
     }
