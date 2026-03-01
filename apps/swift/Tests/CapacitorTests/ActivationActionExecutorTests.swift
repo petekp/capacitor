@@ -194,7 +194,7 @@ final class ActivationActionExecutorTests: XCTestCase {
     }
 
     func testExecuteRoutesDependencyBackedActions() async {
-        struct Scenario {
+        struct DependencyBackedScenario {
             let name: String
             let configure: (StubDependencies) -> Void
             let action: ActivationAction
@@ -205,7 +205,7 @@ final class ActivationActionExecutorTests: XCTestCase {
         }
 
         let scenarios = [
-            Scenario(
+            DependencyBackedScenario(
                 name: "activate_by_tty",
                 configure: { $0.activateByTtyResult = false },
                 action: .activateByTty(tty: "/dev/ttys001", terminalType: .iTerm),
@@ -221,7 +221,7 @@ final class ActivationActionExecutorTests: XCTestCase {
                     projectName: nil,
                 ),
             ),
-            Scenario(
+            DependencyBackedScenario(
                 name: "switch_tmux_session",
                 configure: { $0.switchTmuxResult = false },
                 action: .switchTmuxSession(sessionName: "cap"),
@@ -237,7 +237,7 @@ final class ActivationActionExecutorTests: XCTestCase {
                     projectName: nil,
                 ),
             ),
-            Scenario(
+            DependencyBackedScenario(
                 name: "ensure_tmux_session",
                 configure: { $0.ensureTmuxResult = false },
                 action: .ensureTmuxSession(sessionName: "cap", projectPath: "/Users/pete/Code/cap"),
@@ -253,7 +253,7 @@ final class ActivationActionExecutorTests: XCTestCase {
                     projectName: nil,
                 ),
             ),
-            Scenario(
+            DependencyBackedScenario(
                 name: "launch_new_terminal",
                 configure: { _ in },
                 action: .launchNewTerminal(projectPath: "/Users/pete/Code/app", projectName: "app"),
@@ -416,7 +416,7 @@ final class ActivationActionExecutorTests: XCTestCase {
     }
 
     func testActivateHostThenSwitchTmuxEnsureFallbackScenarios() async {
-        struct Scenario {
+        struct EnsureFallbackScenario {
             let name: String
             let switchResult: Bool
             let ensureTmuxResult: Bool
@@ -427,7 +427,7 @@ final class ActivationActionExecutorTests: XCTestCase {
         }
 
         let scenarios = [
-            Scenario(
+            EnsureFallbackScenario(
                 name: "no_tty_no_ghostty_falls_back_to_ensure",
                 switchResult: true,
                 ensureTmuxResult: true,
@@ -444,7 +444,7 @@ final class ActivationActionExecutorTests: XCTestCase {
                     shouldSpawnNewWindow: false
                 ),
             ),
-            Scenario(
+            EnsureFallbackScenario(
                 name: "switch_failure_and_failed_ensure_returns_false",
                 switchResult: false,
                 ensureTmuxResult: false,
@@ -502,7 +502,7 @@ final class ActivationActionExecutorTests: XCTestCase {
     }
 
     func testActivateHostThenSwitchTmuxAttachedClientSwitchFailureFallbackScenarios() async {
-        struct Scenario {
+        struct AttachedSwitchFallbackScenario {
             let name: String
             let activateByTtyResult: Bool
             let ghosttyState: GhosttyWindowState
@@ -511,7 +511,7 @@ final class ActivationActionExecutorTests: XCTestCase {
         }
 
         let scenarios = [
-            Scenario(
+            AttachedSwitchFallbackScenario(
                 name: "ghostty_running_tty_discovery_succeeds",
                 activateByTtyResult: true,
                 ghosttyState: .running,
@@ -526,7 +526,7 @@ final class ActivationActionExecutorTests: XCTestCase {
                     shouldSpawnNewWindow: false
                 ),
             ),
-            Scenario(
+            AttachedSwitchFallbackScenario(
                 name: "non_ghostty_terminal_context",
                 activateByTtyResult: true,
                 ghosttyState: .notRunning,
@@ -541,7 +541,7 @@ final class ActivationActionExecutorTests: XCTestCase {
                     shouldSpawnNewWindow: false
                 ),
             ),
-            Scenario(
+            AttachedSwitchFallbackScenario(
                 name: "ghostty_running_tty_discovery_fails",
                 activateByTtyResult: false,
                 ghosttyState: .running,
@@ -605,7 +605,7 @@ final class ActivationActionExecutorTests: XCTestCase {
     }
 
     func testActivateHostThenSwitchTmuxNoClientGhosttyFallbackScenarios() async {
-        struct Scenario {
+        struct NoClientGhosttyScenario {
             let name: String
             let hostTty: String
             let activateByTtyResult: Bool
@@ -616,7 +616,7 @@ final class ActivationActionExecutorTests: XCTestCase {
         }
 
         let scenarios = [
-            Scenario(
+            NoClientGhosttyScenario(
                 name: "running_ghostty_reuse_context",
                 hostTty: "/dev/ttys021",
                 activateByTtyResult: false,
@@ -632,7 +632,7 @@ final class ActivationActionExecutorTests: XCTestCase {
                     )
                 ),
             ),
-            Scenario(
+            NoClientGhosttyScenario(
                 name: "running_ghostty_host_tty_heuristic_switch",
                 hostTty: "/dev/ttys021",
                 activateByTtyResult: true,
@@ -648,7 +648,7 @@ final class ActivationActionExecutorTests: XCTestCase {
                     )
                 ),
             ),
-            Scenario(
+            NoClientGhosttyScenario(
                 name: "switch_failure_falls_back_to_ensure",
                 hostTty: "/dev/ttys-stale",
                 activateByTtyResult: true,
@@ -669,7 +669,7 @@ final class ActivationActionExecutorTests: XCTestCase {
                     ),
                 ),
             ),
-            Scenario(
+            NoClientGhosttyScenario(
                 name: "ghostty_activation_failure_falls_back_to_ensure",
                 hostTty: "/dev/ttys-stale",
                 activateByTtyResult: true,
@@ -690,7 +690,7 @@ final class ActivationActionExecutorTests: XCTestCase {
                     ),
                 ),
             ),
-            Scenario(
+            NoClientGhosttyScenario(
                 name: "ax_unavailable_attempts_switch_without_ensure",
                 hostTty: "/dev/ttys-ax",
                 activateByTtyResult: true,

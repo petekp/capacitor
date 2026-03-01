@@ -642,3 +642,8 @@ RW-090,ci-test-surface-local-scenario-budget-rw090,scripts/ci/test-surface-audit
 RW-090,rewrite-test-audit-rw090,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh metrics and conclusions after test-surface budget ratchet
 RW-090,rewrite-ledger-rw090,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-090 lifecycle and risk notes
 RW-090,rewrite-map-rw090,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-090 path mappings for guard enforcement
+RW-091,swift-activation-executor-remove-local-scenario-rw091,apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift,apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift,done,false,Replace remaining generic local Scenario structs with specific case types
+RW-091,ci-test-surface-zero-local-scenario-budget-rw091,scripts/ci/test-surface-audit.sh,scripts/ci/test-surface-audit.sh,done,false,Ratchet local struct Scenario budget from 4 down to 0 after elimination
+RW-091,rewrite-test-audit-rw091,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh metrics/conclusions after eliminating local Scenario structs
+RW-091,rewrite-ledger-rw091,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-091 lifecycle and risk notes
+RW-091,rewrite-map-rw091,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-091 path mappings for guard enforcement

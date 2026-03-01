@@ -10,7 +10,7 @@ Scope: `core/`, `apps/swift/Tests/CapacitorTests/`, `tests/`, `services/ingest-w
 3. Freeze current weak-pattern surface with a CI guard so debt cannot grow.
 4. Define next rewrite slices to pay debt down deterministically.
 
-## Current Metrics (After RW-090)
+## Current Metrics (After RW-091)
 
 - Swift test files: `43`
 - Swift test methods: `253`
@@ -18,7 +18,7 @@ Scope: `core/`, `apps/swift/Tests/CapacitorTests/`, `tests/`, `services/ingest-w
 - `source.contains` assertions (total): `0`
 - Swift test methods inside source-coupled files: `0`
 - Sleep calls in Swift tests (`Task.sleep`/`Thread.sleep`/`usleep`): `0`
-- Local Swift `struct Scenario` declarations: `4`
+- Local Swift `struct Scenario` declarations: `0`
 - Rust test files: `22`
 - Rust test functions: `237`
 - bats files: `4`
@@ -134,7 +134,8 @@ Static bats source checks that do not execute behavior have been removed from th
 75. RW-088 added an explicit scenario-coverage checklist to the rewrite playbook so table-driven suites maintain one-row-per-branch rigor and avoid branch-equivalent duplicate regrowth.
 76. RW-089 extended shared labeled scenario record usage into `ActivationActionExecutorTests` and `TerminalLauncherTests`, increasing non-setup suite consistency without changing behavior coverage.
 77. RW-090 tightened the CI test-surface budget by freezing local Swift `struct Scenario` declarations at `4` (current level), preventing scenario-struct proliferation while preserving existing contracts.
-78. Next reductions should continue collapsing duplicate edge-case assertions into explicit contract tables rather than proliferating one-off tests.
+78. RW-091 removed all remaining local `struct Scenario` declarations (all were in `ActivationActionExecutorTests`) and ratcheted the CI budget to `0`, eliminating this duplication vector entirely.
+79. Next reductions should continue collapsing duplicate edge-case assertions into explicit contract tables rather than proliferating one-off tests.
 
 ## Guardrails Added
 
@@ -153,7 +154,7 @@ This does not claim these patterns are good. It prevents regression while we pay
 
 ## Next Slices (proposed)
 
-1. `RW-091` Reduce remaining local `struct Scenario` declarations in `ActivationActionExecutorTests` and ratchet the `local_scenario_structs` budget downward.
-2. `RW-092` Consolidate any remaining duplicated expectation record structs across high-volume suites (`RuntimeClientTests`, `ActivationActionExecutorTests`) where semantic overlap remains.
+1. `RW-092` Consolidate any remaining duplicated expectation record structs across high-volume suites (`RuntimeClientTests`, `ActivationActionExecutorTests`) where semantic overlap remains.
+2. `RW-093` Evaluate whether additional test-surface ratchets are possible (for example helper duplication counts) without harming readability.
 
 Each slice should delete replaced tests in the same PR and ratchet the audit limits downward.

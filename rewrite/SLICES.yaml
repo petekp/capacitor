@@ -3277,3 +3277,34 @@ slices:
     risks:
       - "Metric budgets can lock in accidental complexity if baseline values are not ratcheted down in follow-up slices."
     notes: "Adds a CI budget for local Swift `struct Scenario` declarations and freezes the current count to prevent scenario-struct growth before further reductions."
+
+  - id: RW-091
+    name: "Eliminate Remaining Local Scenario Structs"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-090
+    touched_paths:
+      - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
+      - scripts/ci/test-surface-audit.sh
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
+        - scripts/ci/test-surface-audit.sh
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios:
+      - live state update while coding
+      - click project card and restore terminal/tmux context
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Renaming generic scenario structs to specific case types improves metric discipline but can still leave semantic overlap if expectation shapes are not later consolidated."
+    notes: "Removes all remaining local `struct Scenario` declarations from Swift tests and ratchets `local_scenario_structs` CI budget to zero."
