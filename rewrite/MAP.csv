@@ -620,3 +620,8 @@ RW-085,swift-hook-diagnostic-harness-cutover-rw085,apps/swift/Tests/CapacitorTes
 RW-085,rewrite-test-audit-rw085,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit metrics/conclusions after setup presentation harness convergence
 RW-085,rewrite-ledger-rw085,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-085 lifecycle and risk notes
 RW-085,rewrite-map-rw085,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-085 path mappings for guard enforcement
+RW-086,swift-hook-diagnostic-row-dedupe-rw086,apps/swift/Tests/CapacitorTests/HookDiagnosticPresentationTests.swift,apps/swift/Tests/CapacitorTests/HookDiagnosticPresentationTests.swift,done,false,Prune duplicate visibility scenario rows while preserving one-row-per-branch coverage
+RW-086,swift-setup-status-copy-row-dedupe-rw086,apps/swift/Tests/CapacitorTests/SetupStatusCopyContractTests.swift,apps/swift/Tests/CapacitorTests/SetupStatusCopyContractTests.swift,done,false,Remove duplicate hook-status row that exercised an already-covered merged branch
+RW-086,rewrite-test-audit-rw086,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit conclusions after setup/hook scenario row de-duplication
+RW-086,rewrite-ledger-rw086,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-086 lifecycle and risk notes
+RW-086,rewrite-map-rw086,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-086 path mappings for guard enforcement

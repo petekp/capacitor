@@ -6,7 +6,17 @@ final class HookDiagnosticPresentationTests: XCTestCase {
     func testSetupCardVisibilityScenariosMatchContract() {
         let scenarios: [LabeledExpectationScenario<HookDiagnosticReport, Bool>] = [
             LabeledExpectationScenario(
-                label: "idle-after-first-run",
+                label: "healthy-report-hidden",
+                input: SetupTestFixtures.hookDiagnosticReport(
+                    primaryIssue: nil,
+                    isHealthy: true,
+                    configOk: true,
+                    firingOk: true,
+                ),
+                expected: false,
+            ),
+            LabeledExpectationScenario(
+                label: "not-firing-hidden",
                 input: SetupTestFixtures.hookDiagnosticReport(
                     primaryIssue: .notFiring(lastSeenSecs: 120),
                     configOk: true,
@@ -15,31 +25,13 @@ final class HookDiagnosticPresentationTests: XCTestCase {
                 expected: false,
             ),
             LabeledExpectationScenario(
-                label: "first-run-not-firing",
-                input: SetupTestFixtures.hookDiagnosticReport(
-                    primaryIssue: .notFiring(lastSeenSecs: nil),
-                    isFirstRun: true,
-                    configOk: true,
-                ),
-                expected: false,
-            ),
-            LabeledExpectationScenario(
-                label: "config-missing",
+                label: "config-missing-shown",
                 input: SetupTestFixtures.hookDiagnosticReport(
                     primaryIssue: .configMissing,
                     configOk: false,
                 ),
                 expected: true,
-            ),
-            LabeledExpectationScenario(
-                label: "first-run-config-missing",
-                input: SetupTestFixtures.hookDiagnosticReport(
-                    primaryIssue: .configMissing,
-                    isFirstRun: true,
-                    configOk: false,
-                ),
-                expected: true,
-            ),
+            )
         ]
 
         assertLabeledScenarios(scenarios, mismatch: "setup card visibility mismatch") { diagnostic in

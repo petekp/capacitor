@@ -24,11 +24,6 @@ final class SetupStatusCopyContractTests: XCTestCase {
                 input: .binaryBroken(reason: "codesign error"),
                 expected: .error(message: "Session tracking needs repair"),
             ),
-            LabeledExpectationScenario(
-                label: "symlink-broken",
-                input: .symlinkBroken(target: "/missing", reason: "target missing"),
-                expected: .error(message: "Session tracking needs repair"),
-            ),
         ]
 
         assertLabeledScenarios(scenarios, mismatch: "HookPresentationPolicy mapping mismatch") { hookStatus in

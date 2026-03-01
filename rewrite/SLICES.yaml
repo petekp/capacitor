@@ -3132,3 +3132,34 @@ slices:
     risks:
       - "Converging setup presentation tests onto one harness can hide individual assertion intent unless projected expectation records stay explicit."
     notes: "Moves remaining setup presentation scenario tables onto the shared labeled harness for one consistent scenario-definition pattern across setup/hook contract suites."
+
+  - id: RW-086
+    name: "Setup/Hook Scenario Row De-duplication"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-085
+    touched_paths:
+      - apps/swift/Tests/CapacitorTests/HookDiagnosticPresentationTests.swift
+      - apps/swift/Tests/CapacitorTests/SetupStatusCopyContractTests.swift
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - apps/swift/Tests/CapacitorTests/HookDiagnosticPresentationTests.swift
+        - apps/swift/Tests/CapacitorTests/SetupStatusCopyContractTests.swift
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios:
+      - fresh install setup flow
+      - hook install/fix flow
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Pruning scenario rows can accidentally remove branch coverage if branches are misunderstood; mitigation is one-row-per-branch analysis before deletion."
+    notes: "Prunes duplicate scenario rows across setup/hook contract suites while preserving one representative row for each behavior branch."
