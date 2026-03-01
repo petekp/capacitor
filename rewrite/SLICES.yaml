@@ -3250,3 +3250,30 @@ slices:
     risks:
       - "Applying shared scenario records to complex non-setup suites can make input/expectation wiring harder to read if expectation structs are not explicit."
     notes: "Extends shared labeled scenario record usage into `ActivationActionExecutorTests` and `TerminalLauncherTests` for consistent non-setup contract table structure."
+
+  - id: RW-090
+    name: "Test Surface Budget Ratchet for Scenario Structs"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-089
+    touched_paths:
+      - scripts/ci/test-surface-audit.sh
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - scripts/ci/test-surface-audit.sh
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Metric budgets can lock in accidental complexity if baseline values are not ratcheted down in follow-up slices."
+    notes: "Adds a CI budget for local Swift `struct Scenario` declarations and freezes the current count to prevent scenario-struct growth before further reductions."

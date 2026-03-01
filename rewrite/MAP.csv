@@ -638,3 +638,7 @@ RW-089,swift-terminal-launcher-scenario-records-rw089,apps/swift/Tests/Capacitor
 RW-089,rewrite-test-audit-rw089,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit conclusions after non-setup harness expansion
 RW-089,rewrite-ledger-rw089,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-089 lifecycle and risk notes
 RW-089,rewrite-map-rw089,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-089 path mappings for guard enforcement
+RW-090,ci-test-surface-local-scenario-budget-rw090,scripts/ci/test-surface-audit.sh,scripts/ci/test-surface-audit.sh,done,false,Add local struct Scenario count metric and fail-on-growth budget
+RW-090,rewrite-test-audit-rw090,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh metrics and conclusions after test-surface budget ratchet
+RW-090,rewrite-ledger-rw090,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-090 lifecycle and risk notes
+RW-090,rewrite-map-rw090,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-090 path mappings for guard enforcement
