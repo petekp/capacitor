@@ -18,18 +18,10 @@ final class SetupStepCatalogTests: XCTestCase {
         XCTAssertEqual(steps.map(\.isOptional), [false, false, true])
     }
 
-    func testCatalogBuildersPreserveProvidedStatus() {
+    func testClaudeCatalogBuilderPreservesProvidedStatus() {
         XCTAssertEqual(
             SetupStepCatalog.claude(status: .completed(detail: "Installed")).status,
             .completed(detail: "Installed"),
-        )
-        XCTAssertEqual(
-            SetupStepCatalog.hooks(status: .actionNeeded(message: "Tap Install to connect")).status,
-            .actionNeeded(message: "Tap Install to connect"),
-        )
-        XCTAssertEqual(
-            SetupStepCatalog.shell(status: .completed(detail: "Active")).status,
-            .completed(detail: "Active"),
         )
     }
 

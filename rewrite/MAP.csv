@@ -587,3 +587,10 @@ RW-079,swift-startup-readiness-scenario-table-tests-rw079,apps/swift/Tests/Capac
 RW-079,rewrite-test-audit-rw079,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit metrics/conclusions after setup onboarding contract consolidation
 RW-079,rewrite-ledger-rw079,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-079 lifecycle and risk notes
 RW-079,rewrite-map-rw079,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-079 path mappings for guard enforcement
+RW-080,swift-setup-status-copy-contract-tests-rw080,,apps/swift/Tests/CapacitorTests/SetupStatusCopyContractTests.swift,done,false,Add canonical scenario-table contract for hook/shell setup status copy semantics
+RW-080,swift-hook-presentation-status-assertion-prune-rw080,apps/swift/Tests/CapacitorTests/HookPresentationPolicyTests.swift,apps/swift/Tests/CapacitorTests/HookPresentationPolicyTests.swift,done,false,Remove redundant setup status copy assertions now covered by canonical setup status contract suite
+RW-080,swift-setup-preview-status-assertion-prune-rw080,apps/swift/Tests/CapacitorTests/SetupPreviewScenarioTests.swift,apps/swift/Tests/CapacitorTests/SetupPreviewScenarioTests.swift,done,false,Remove redundant hook policy-blocked status assertion now covered by canonical setup status contract suite
+RW-080,swift-setup-catalog-status-assertion-prune-rw080,apps/swift/Tests/CapacitorTests/SetupStepCatalogTests.swift,apps/swift/Tests/CapacitorTests/SetupStepCatalogTests.swift,done,false,Remove redundant hook/shell status passthrough assertions now covered by canonical setup status contract suite
+RW-080,rewrite-test-audit-rw080,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit conclusions after setup status contract consolidation
+RW-080,rewrite-ledger-rw080,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-080 lifecycle and risk notes
+RW-080,rewrite-map-rw080,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-080 path mappings for guard enforcement

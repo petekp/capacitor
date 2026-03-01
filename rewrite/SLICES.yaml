@@ -2940,3 +2940,38 @@ slices:
     risks:
       - "Table-driven test refactors can obscure missing edge cases if scenario lists are not explicit and labeled."
     notes: "Consolidates setup/hook onboarding assertions into labeled scenario tables, reducing one-off test methods while preserving behavior contracts."
+
+  - id: RW-080
+    name: "Canonical Setup Status Copy Contract Table"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-079
+    touched_paths:
+      - apps/swift/Tests/CapacitorTests/SetupStatusCopyContractTests.swift
+      - apps/swift/Tests/CapacitorTests/HookPresentationPolicyTests.swift
+      - apps/swift/Tests/CapacitorTests/SetupPreviewScenarioTests.swift
+      - apps/swift/Tests/CapacitorTests/SetupStepCatalogTests.swift
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added:
+        - apps/swift/Tests/CapacitorTests/SetupStatusCopyContractTests.swift
+      changed:
+        - apps/swift/Tests/CapacitorTests/HookPresentationPolicyTests.swift
+        - apps/swift/Tests/CapacitorTests/SetupPreviewScenarioTests.swift
+        - apps/swift/Tests/CapacitorTests/SetupStepCatalogTests.swift
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios:
+      - fresh install setup flow
+      - hook install/fix flow
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Centralizing status-copy assertions into one suite can hide regressions if other setup tests implicitly relied on now-removed local assertions."
+    notes: "Collapses duplicate shell/hook setup status-copy assertions into one canonical scenario-table contract and removes redundant copies from adjacent setup-focused tests."

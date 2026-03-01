@@ -11,12 +11,4 @@ final class SetupPreviewScenarioTests: XCTestCase {
             )
         }
     }
-
-    func testHooksPolicyBlockedScenarioUsesPolicyBlockedStatus() {
-        let hooksStep = SetupPreviewScenario.hooksPolicyBlocked.steps[1]
-        XCTAssertEqual(
-            hooksStep.status,
-            HookPresentationPolicy.setupStepStatus(for: .policyBlocked(reason: "preview")),
-        )
-    }
 }
