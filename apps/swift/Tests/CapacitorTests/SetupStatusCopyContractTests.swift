@@ -51,7 +51,7 @@ final class SetupStatusCopyContractTests: XCTestCase {
                     hookStatus: .actionNeeded(message: "Tap Install to connect"),
                     shellStatus: .pending,
                     hookCatalogStatus: .actionNeeded(message: "Tap Install to connect"),
-                    shellCatalogStatus: .pending
+                    shellCatalogStatus: .pending,
                 ),
             ),
             LabeledExpectationScenario(
@@ -63,7 +63,7 @@ final class SetupStatusCopyContractTests: XCTestCase {
                     hookStatus: .error(message: "Your Claude settings prevent hook installation"),
                     shellStatus: .pending,
                     hookCatalogStatus: .error(message: "Your Claude settings prevent hook installation"),
-                    shellCatalogStatus: .pending
+                    shellCatalogStatus: .pending,
                 ),
             ),
             LabeledExpectationScenario(
@@ -75,7 +75,7 @@ final class SetupStatusCopyContractTests: XCTestCase {
                     hookStatus: .completed(detail: "Connected"),
                     shellStatus: .actionNeeded(message: "Add to ~/.zshrc"),
                     hookCatalogStatus: .completed(detail: "Connected"),
-                    shellCatalogStatus: .actionNeeded(message: "Add to ~/.zshrc")
+                    shellCatalogStatus: .actionNeeded(message: "Add to ~/.zshrc"),
                 ),
             ),
             LabeledExpectationScenario(
@@ -87,7 +87,7 @@ final class SetupStatusCopyContractTests: XCTestCase {
                     hookStatus: .completed(detail: "Connected"),
                     shellStatus: .completed(detail: "Active"),
                     hookCatalogStatus: .completed(detail: "Connected"),
-                    shellCatalogStatus: .completed(detail: "Active")
+                    shellCatalogStatus: .completed(detail: "Active"),
                 ),
             ),
         ]
@@ -103,7 +103,7 @@ final class SetupStatusCopyContractTests: XCTestCase {
                 hookStatus: hookStep.status,
                 shellStatus: shellStep.status,
                 hookCatalogStatus: SetupStepCatalog.hooks(status: hookStep.status).status,
-                shellCatalogStatus: SetupStepCatalog.shell(status: shellStep.status).status
+                shellCatalogStatus: SetupStepCatalog.shell(status: shellStep.status).status,
             )
         }
     }

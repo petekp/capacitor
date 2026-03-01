@@ -10,7 +10,7 @@ final class SetupReadinessCoordinatorTests: XCTestCase {
                 label: "claude-missing",
                 input: (
                     dependencies: [SetupTestFixtures.claudeDependency(found: false)],
-                    hooks: .installed(version: "1.0.0")
+                    hooks: .installed(version: "1.0.0"),
                 ),
                 expected: .showWelcome(event: .claudeMissing),
             ),
@@ -18,7 +18,7 @@ final class SetupReadinessCoordinatorTests: XCTestCase {
                 label: "hooks-policy-blocked",
                 input: (
                     dependencies: [presentClaudeDependency],
-                    hooks: .policyBlocked(reason: "disableAllHooks is enabled.")
+                    hooks: .policyBlocked(reason: "disableAllHooks is enabled."),
                 ),
                 expected: .showWelcome(event: .hooksBlockedByPolicy(reason: "disableAllHooks is enabled.")),
             ),
@@ -26,7 +26,7 @@ final class SetupReadinessCoordinatorTests: XCTestCase {
                 label: "hooks-needs-repair",
                 input: (
                     dependencies: [presentClaudeDependency],
-                    hooks: .notInstalled
+                    hooks: .notInstalled,
                 ),
                 expected: .attemptHookRepair(event: .hooksNeedAutoRepair(status: .notInstalled)),
             ),
@@ -34,7 +34,7 @@ final class SetupReadinessCoordinatorTests: XCTestCase {
                 label: "ready",
                 input: (
                     dependencies: [presentClaudeDependency],
-                    hooks: .installed(version: "1.0.0")
+                    hooks: .installed(version: "1.0.0"),
                 ),
                 expected: .ready,
             ),
@@ -45,7 +45,7 @@ final class SetupReadinessCoordinatorTests: XCTestCase {
                 from: SetupTestFixtures.setupStatus(
                     dependencies: input.dependencies,
                     hooks: input.hooks,
-                )
+                ),
             )
         }
     }

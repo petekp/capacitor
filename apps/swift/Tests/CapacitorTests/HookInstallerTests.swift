@@ -5,12 +5,12 @@ final class HookInstallerTests: XCTestCase {
     func testEnsureHooksInstalledStopsWhenBinaryInstallFails() {
         let runtime = StubHookRuntime(
             installHooksResult: .success(InstallResult(success: true, message: "ok", scriptPath: nil)),
-            hookStatus: .installed(version: "1.0.0")
+            hookStatus: .installed(version: "1.0.0"),
         )
 
         let message = HookInstaller.ensureHooksInstalled(
             using: runtime,
-            binaryInstallStep: { _ in "missing bundled binary" }
+            binaryInstallStep: { _ in "missing bundled binary" },
         )
 
         XCTAssertEqual(message, "missing bundled binary")
@@ -20,12 +20,12 @@ final class HookInstallerTests: XCTestCase {
     func testEnsureHooksInstalledReturnsInstallHooksFailureMessage() {
         let runtime = StubHookRuntime(
             installHooksResult: .success(InstallResult(success: false, message: "config write failed", scriptPath: nil)),
-            hookStatus: .notInstalled
+            hookStatus: .notInstalled,
         )
 
         let message = HookInstaller.ensureHooksInstalled(
             using: runtime,
-            binaryInstallStep: { _ in nil }
+            binaryInstallStep: { _ in nil },
         )
 
         XCTAssertEqual(message, "config write failed")
@@ -35,12 +35,12 @@ final class HookInstallerTests: XCTestCase {
     func testEnsureHooksInstalledReturnsThrownInstallError() {
         let runtime = StubHookRuntime(
             installHooksResult: .failure(StubError("boom")),
-            hookStatus: .notInstalled
+            hookStatus: .notInstalled,
         )
 
         let message = HookInstaller.ensureHooksInstalled(
             using: runtime,
-            binaryInstallStep: { _ in nil }
+            binaryInstallStep: { _ in nil },
         )
 
         XCTAssertEqual(message, "Installation failed: boom")
@@ -50,12 +50,12 @@ final class HookInstallerTests: XCTestCase {
     func testEnsureHooksInstalledRequiresInstalledStatusAfterSuccess() {
         let runtime = StubHookRuntime(
             installHooksResult: .success(InstallResult(success: true, message: "configured", scriptPath: nil)),
-            hookStatus: .policyBlocked(reason: "managed hooks disabled")
+            hookStatus: .policyBlocked(reason: "managed hooks disabled"),
         )
 
         let message = HookInstaller.ensureHooksInstalled(
             using: runtime,
-            binaryInstallStep: { _ in nil }
+            binaryInstallStep: { _ in nil },
         )
 
         XCTAssertNotNil(message)
@@ -65,12 +65,12 @@ final class HookInstallerTests: XCTestCase {
     func testEnsureHooksInstalledReturnsNilOnSuccess() {
         let runtime = StubHookRuntime(
             installHooksResult: .success(InstallResult(success: true, message: "configured", scriptPath: nil)),
-            hookStatus: .installed(version: "1.0.0")
+            hookStatus: .installed(version: "1.0.0"),
         )
 
         let message = HookInstaller.ensureHooksInstalled(
             using: runtime,
-            binaryInstallStep: { _ in nil }
+            binaryInstallStep: { _ in nil },
         )
 
         XCTAssertNil(message)
@@ -97,7 +97,7 @@ private final class StubHookRuntime: HookRuntimeInstalling {
 
     init(
         installHooksResult: Result<InstallResult, Error>,
-        hookStatus: HookStatus
+        hookStatus: HookStatus,
     ) {
         self.installHooksResult = installHooksResult
         self.hookStatus = hookStatus

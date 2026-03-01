@@ -31,7 +31,7 @@ final class HookDiagnosticPresentationTests: XCTestCase {
                     configOk: false,
                 ),
                 expected: true,
-            )
+            ),
         ]
 
         assertLabeledScenarios(scenarios, mismatch: "setup card visibility mismatch") { diagnostic in
@@ -56,7 +56,7 @@ final class HookDiagnosticPresentationTests: XCTestCase {
                 expected: SetupCardPresentation(
                     isPolicyBlocked: false,
                     header: "Claude hooks not configured",
-                    guidance: "Install/update Claude hooks in `~/.claude/settings.json`."
+                    guidance: "Install/update Claude hooks in `~/.claude/settings.json`.",
                 ),
             ),
             LabeledExpectationScenario(
@@ -69,7 +69,7 @@ final class HookDiagnosticPresentationTests: XCTestCase {
                 expected: SetupCardPresentation(
                     isPolicyBlocked: true,
                     header: "Hooks disabled by policy",
-                    guidance: "disableAllHooks is enabled. Remove this setting to enable session tracking."
+                    guidance: "disableAllHooks is enabled. Remove this setting to enable session tracking.",
                 ),
             ),
         ]
@@ -78,7 +78,7 @@ final class HookDiagnosticPresentationTests: XCTestCase {
             SetupCardPresentation(
                 isPolicyBlocked: diagnostic.setupCardIsPolicyBlocked,
                 header: diagnostic.setupCardHeaderMessage,
-                guidance: diagnostic.setupCardGuidanceMessage
+                guidance: diagnostic.setupCardGuidanceMessage,
             )
         }
     }
