@@ -19,8 +19,31 @@ enum SetupStepStatus: Equatable {
     }
 }
 
+enum SetupStepID: String, CaseIterable, Identifiable {
+    case claude
+    case hooks
+    case shell
+
+    var id: String {
+        rawValue
+    }
+
+    static func runtime(named name: String) -> SetupStepID? {
+        SetupStepID(rawValue: name)
+    }
+
+    static func dependency(named name: String) -> SetupStepID? {
+        switch name {
+        case SetupStepID.claude.rawValue:
+            .claude
+        default:
+            nil
+        }
+    }
+}
+
 struct SetupStep: Identifiable {
-    let id: String
+    let id: SetupStepID
     let title: String
     let description: String
     var status: SetupStepStatus
@@ -103,24 +126,23 @@ final class SetupRequirementsManager {
     }
 
     private func updateShellStatus() {
-        updateStep("shell", status: .checking)
+        updateStep(.shell, status: .checking)
 
         let shellType = ShellType.current
 
         if let store = shellStateStore, ShellIntegrationChecker.isConfigured(shellStateStore: store) {
-            updateStep("shell", status: .completed(detail: "Active"))
+            updateStep(.shell, status: .completed(detail: "Active"))
         } else if shellType.isSnippetInstalled {
-            updateStep("shell", status: .completed(detail: "Installed"))
+            updateStep(.shell, status: .completed(detail: "Installed"))
         } else if shellType == .unsupported {
-            updateStep("shell", status: .completed(detail: "Skipped — unsupported shell"))
+            updateStep(.shell, status: .completed(detail: "Skipped — unsupported shell"))
         } else {
-            updateStep("shell", status: .actionNeeded(message: "Add hook to \(shellType.configFile)"))
+            updateStep(.shell, status: .actionNeeded(message: "Add hook to \(shellType.configFile)"))
         }
     }
 
     private func updateDependencyStatus(_ dep: DependencyStatus) async {
-        let stepId = dep.name
-
+        guard let stepId = SetupStepID.dependency(named: dep.name) else { return }
         guard steps.contains(where: { $0.id == stepId }) else { return }
 
         updateStep(stepId, status: .checking)
@@ -128,54 +150,50 @@ final class SetupRequirementsManager {
         if dep.found {
             updateStep(stepId, status: .completed(detail: "Installed"))
 
-            if dep.name == "claude" {
+            if stepId == .claude {
                 claudePath = dep.path
                 if let path = dep.path {
                     await CapacitorConfig.shared.setClaudePath(path)
                 }
-            } else if dep.name == "tmux" {
-                tmuxPath = dep.path
             }
         } else if dep.required {
-            let hint = dep.name == "claude"
+            let hint = stepId == .claude
                 ? "Not found — download from claude.ai/download"
-                : dep.installHint ?? "Please install \(dep.name)"
+                : dep.installHint ?? "Please install \(stepId.rawValue)"
             updateStep(stepId, status: .error(message: hint))
         } else {
-            let hint = dep.installHint ?? "Optional: install \(dep.name)"
+            let hint = dep.installHint ?? "Optional: install \(stepId.rawValue)"
             updateStep(stepId, status: .completed(detail: hint))
         }
     }
 
     private func updateHookStatus(_ hookStatus: HookStatus) async {
-        updateStep("hooks", status: .checking)
-        updateStep("hooks", status: HookPresentationPolicy.setupStepStatus(for: hookStatus))
+        updateStep(.hooks, status: .checking)
+        updateStep(.hooks, status: HookPresentationPolicy.setupStepStatus(for: hookStatus))
     }
 
-    func executeStep(_ stepId: String) async {
+    func executeStep(_ stepId: SetupStepID) async {
         switch stepId {
-        case "hooks":
+        case .hooks:
             await installHooks()
-        case "shell":
+        case .shell:
             showShellInstructions = true
         default:
             break
         }
     }
 
-    func retryStep(_ stepId: String) async {
+    func retryStep(_ stepId: SetupStepID) async {
         guard let engine else { return }
         switch stepId {
-        case "claude":
-            let dep = engine.checkDependency(name: stepId)
+        case .claude:
+            let dep = engine.checkDependency(name: stepId.rawValue)
             await updateDependencyStatus(dep)
-        case "hooks":
+        case .hooks:
             let status = engine.getHookStatus()
             await updateHookStatus(status)
-        case "shell":
+        case .shell:
             updateShellStatus()
-        default:
-            break
         }
     }
 
@@ -184,7 +202,7 @@ final class SetupRequirementsManager {
         updateShellStatus()
     }
 
-    private func updateStep(_ id: String, status: SetupStepStatus) {
+    private func updateStep(_ id: SetupStepID, status: SetupStepStatus) {
         if let index = steps.firstIndex(where: { $0.id == id }) {
             steps[index].status = status
         }
@@ -192,10 +210,10 @@ final class SetupRequirementsManager {
 
     private func installHooks() async {
         guard let engine else { return }
-        updateStep("hooks", status: .checking)
+        updateStep(.hooks, status: .checking)
 
         if let hookInstallError = HookInstaller.ensureHooksInstalled(using: engine) {
-            updateStep("hooks", status: .error(message: hookInstallError))
+            updateStep(.hooks, status: .error(message: hookInstallError))
             return
         }
 
@@ -230,35 +248,35 @@ final class SetupRequirementsManager {
 
     extension SetupPreviewScenario {
         /// Shared step builder to keep preview copy in sync with production copy
-        private static func step(_ id: String, status: SetupStepStatus) -> SetupStep {
+        private static func step(_ id: SetupStepID, status: SetupStepStatus) -> SetupStep {
             SetupStepCatalog.step(for: id, status: status)
         }
 
         var steps: [SetupStep] {
             switch self {
             case .allPending:
-                [Self.step("claude", status: .pending), Self.step("hooks", status: .pending), Self.step("shell", status: .pending)]
+                [Self.step(.claude, status: .pending), Self.step(.hooks, status: .pending), Self.step(.shell, status: .pending)]
 
             case .checking:
-                [Self.step("claude", status: .checking), Self.step("hooks", status: .pending), Self.step("shell", status: .pending)]
+                [Self.step(.claude, status: .checking), Self.step(.hooks, status: .pending), Self.step(.shell, status: .pending)]
 
             case .cliMissing:
-                [Self.step("claude", status: .error(message: "Not found — download from claude.ai/download")), Self.step("hooks", status: .pending), Self.step("shell", status: .pending)]
+                [Self.step(.claude, status: .error(message: "Not found — download from claude.ai/download")), Self.step(.hooks, status: .pending), Self.step(.shell, status: .pending)]
 
             case .hooksNeeded:
-                [Self.step("claude", status: .completed(detail: "Installed")), Self.step("hooks", status: HookPresentationPolicy.setupStepStatus(for: .notInstalled)), Self.step("shell", status: .pending)]
+                [Self.step(.claude, status: .completed(detail: "Installed")), Self.step(.hooks, status: HookPresentationPolicy.setupStepStatus(for: .notInstalled)), Self.step(.shell, status: .pending)]
 
             case .hooksError:
-                [Self.step("claude", status: .completed(detail: "Installed")), Self.step("hooks", status: HookPresentationPolicy.setupStepStatus(for: .binaryBroken(reason: "preview"))), Self.step("shell", status: .pending)]
+                [Self.step(.claude, status: .completed(detail: "Installed")), Self.step(.hooks, status: HookPresentationPolicy.setupStepStatus(for: .binaryBroken(reason: "preview"))), Self.step(.shell, status: .pending)]
 
             case .hooksPolicyBlocked:
-                [Self.step("claude", status: .completed(detail: "Installed")), Self.step("hooks", status: HookPresentationPolicy.setupStepStatus(for: .policyBlocked(reason: "preview"))), Self.step("shell", status: .pending)]
+                [Self.step(.claude, status: .completed(detail: "Installed")), Self.step(.hooks, status: HookPresentationPolicy.setupStepStatus(for: .policyBlocked(reason: "preview"))), Self.step(.shell, status: .pending)]
 
             case .shellOptional:
-                [Self.step("claude", status: .completed(detail: "Installed")), Self.step("hooks", status: HookPresentationPolicy.setupStepStatus(for: .installed(version: "preview"))), Self.step("shell", status: .actionNeeded(message: "Add to ~/.zshrc"))]
+                [Self.step(.claude, status: .completed(detail: "Installed")), Self.step(.hooks, status: HookPresentationPolicy.setupStepStatus(for: .installed(version: "preview"))), Self.step(.shell, status: .actionNeeded(message: "Add to ~/.zshrc"))]
 
             case .allComplete:
-                [Self.step("claude", status: .completed(detail: "Installed")), Self.step("hooks", status: HookPresentationPolicy.setupStepStatus(for: .installed(version: "preview"))), Self.step("shell", status: .completed(detail: "Active"))]
+                [Self.step(.claude, status: .completed(detail: "Installed")), Self.step(.hooks, status: HookPresentationPolicy.setupStepStatus(for: .installed(version: "preview"))), Self.step(.shell, status: .completed(detail: "Active"))]
             }
         }
     }

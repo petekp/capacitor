@@ -7,22 +7,20 @@ enum SetupStepCatalog {
         ]
     }
 
-    static func step(for id: String, status: SetupStepStatus) -> SetupStep {
+    static func step(for id: SetupStepID, status: SetupStepStatus) -> SetupStep {
         switch id {
-        case "claude":
+        case .claude:
             claude(status: status)
-        case "hooks":
+        case .hooks:
             hooks(status: status)
-        case "shell":
+        case .shell:
             shell(status: status)
-        default:
-            fatalError("Unknown setup step id: \(id)")
         }
     }
 
     static func claude(status: SetupStepStatus = .pending) -> SetupStep {
         SetupStep(
-            id: "claude",
+            id: .claude,
             title: "Claude Code",
             description: "Capacitor reads your Claude sessions to show live project status",
             status: status,
@@ -31,7 +29,7 @@ enum SetupStepCatalog {
 
     static func hooks(status: SetupStepStatus = .pending) -> SetupStep {
         SetupStep(
-            id: "hooks",
+            id: .hooks,
             title: "Session tracking",
             description: "See which projects are active and what Claude is working on",
             status: status,
@@ -40,7 +38,7 @@ enum SetupStepCatalog {
 
     static func shell(status: SetupStepStatus = .pending) -> SetupStep {
         SetupStep(
-            id: "shell",
+            id: .shell,
             title: "Terminal tracking",
             description: "Add hook to ~/.zshrc to auto-detect which project each terminal is in",
             status: status,

@@ -564,3 +564,11 @@ RW-075,rust-replay-fixture-cleanup-rw075,core/capacitor-core/tests/replay_diff.r
 RW-075,rewrite-test-audit-rw075,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit conclusions after Rust contract test additions
 RW-075,rewrite-ledger-rw075,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-075 lifecycle and risk notes
 RW-075,rewrite-map-rw075,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-075 path mappings for guard enforcement
+RW-076,swift-setup-step-id-type-rw076,apps/swift/Sources/Capacitor/Models/SetupRequirements.swift,apps/swift/Sources/Capacitor/Models/SetupRequirements.swift,done,false,Introduce typed SetupStepID enum and remove stringly setup action/status routing
+RW-076,swift-setup-step-catalog-typed-id-rw076,apps/swift/Sources/Capacitor/Models/SetupStepCatalog.swift,apps/swift/Sources/Capacitor/Models/SetupStepCatalog.swift,done,false,Cut setup step catalog lookup/builders over to typed SetupStepID
+RW-076,swift-welcome-view-typed-setup-actions-rw076,apps/swift/Sources/Capacitor/Views/Setup/WelcomeView.swift,apps/swift/Sources/Capacitor/Views/Setup/WelcomeView.swift,done,false,Route setup row actions and Claude-link branching through typed setup step identifiers
+RW-076,swift-setup-step-catalog-tests-typed-id-rw076,apps/swift/Tests/CapacitorTests/SetupStepCatalogTests.swift,apps/swift/Tests/CapacitorTests/SetupStepCatalogTests.swift,done,false,Update setup step catalog tests to typed step IDs and mapping helpers
+RW-076,swift-setup-requirements-manager-tests-rw076,,apps/swift/Tests/CapacitorTests/SetupRequirementsManagerTests.swift,done,false,Add setup manager execute-step contracts for typed setup step IDs
+RW-076,rewrite-test-audit-rw076,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit metrics and conclusions after typed setup-step cutover
+RW-076,rewrite-ledger-rw076,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-076 lifecycle and risk notes
+RW-076,rewrite-map-rw076,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-076 path mappings for guard enforcement

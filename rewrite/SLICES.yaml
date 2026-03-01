@@ -2810,3 +2810,42 @@ slices:
     risks:
       - "Fixture consolidation can hide assertion intent if shared helpers become too broad; mitigated by context-labeled assertions and explicit table cases."
     notes: "Introduces shared hook-event fixtures and first-class Rust FFI contract tests to tighten boundary invariants while reducing duplicated test scaffolding."
+
+  - id: RW-076
+    name: "Typed Setup Step Identifier Cutover"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-075
+    touched_paths:
+      - apps/swift/Sources/Capacitor/Models/SetupRequirements.swift
+      - apps/swift/Sources/Capacitor/Models/SetupStepCatalog.swift
+      - apps/swift/Sources/Capacitor/Views/Setup/WelcomeView.swift
+      - apps/swift/Tests/CapacitorTests/SetupStepCatalogTests.swift
+      - apps/swift/Tests/CapacitorTests/SetupRequirementsManagerTests.swift
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added:
+        - apps/swift/Tests/CapacitorTests/SetupRequirementsManagerTests.swift
+      changed:
+        - apps/swift/Sources/Capacitor/Models/SetupRequirements.swift
+        - apps/swift/Sources/Capacitor/Models/SetupStepCatalog.swift
+        - apps/swift/Sources/Capacitor/Views/Setup/WelcomeView.swift
+        - apps/swift/Tests/CapacitorTests/SetupStepCatalogTests.swift
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios:
+      - fresh install setup flow
+      - hook install/fix flow
+    denylist_patterns:
+      - 'content:apps/swift/Sources/Capacitor/Models/SetupRequirements.swift::executeStep\(_ stepId: String\)|retryStep\(_ stepId: String\)|updateStep\(_ id: String\)'
+      - 'content:apps/swift/Sources/Capacitor/Models/SetupStepCatalog.swift::step\(for id: String'
+    deletion_targets: []
+    risks:
+      - "Changing setup step identity to a typed enum can break view wiring if any path still expects raw string IDs."
+    notes: "Introduces `SetupStepID` and rewires setup manager/catalog/view call sites to typed identifiers, removing stringly setup action/status routing."

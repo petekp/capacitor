@@ -51,7 +51,7 @@ struct WelcomeView: View {
                         SetupStepRow(
                             step: step,
                             isCurrentStep: manager.currentStepIndex == index,
-                            linkURL: step.id == "claude" ? URL(string: "https://claude.ai/download") : nil,
+                            linkURL: step.id == .claude ? URL(string: "https://claude.ai/download") : nil,
                             onAction: {
                                 _Concurrency.Task {
                                     await manager.executeStep(step.id)
