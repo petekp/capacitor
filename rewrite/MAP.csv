@@ -677,3 +677,15 @@ RW-097,ci-test-surface-scenario-context-budget-rw097,scripts/ci/test-surface-aud
 RW-097,rewrite-test-audit-rw097,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh metrics and conclusions after scenarioContext helper convergence
 RW-097,rewrite-ledger-rw097,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-097 lifecycle and risk notes
 RW-097,rewrite-map-rw097,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-097 path mappings for guard enforcement
+RW-098,swift-capacitor-config-lint-rw098,apps/swift/Tests/CapacitorTests/CapacitorConfigTests.swift,apps/swift/Tests/CapacitorTests/CapacitorConfigTests.swift,done,false,Trailing comma normalization
+RW-098,swift-hook-diagnostic-lint-rw098,apps/swift/Tests/CapacitorTests/HookDiagnosticPresentationTests.swift,apps/swift/Tests/CapacitorTests/HookDiagnosticPresentationTests.swift,done,false,Trailing comma normalization
+RW-098,swift-hook-installer-lint-rw098,apps/swift/Tests/CapacitorTests/HookInstallerTests.swift,apps/swift/Tests/CapacitorTests/HookInstallerTests.swift,done,false,Trailing comma normalization
+RW-098,swift-setup-readiness-lint-rw098,apps/swift/Tests/CapacitorTests/SetupReadinessCoordinatorTests.swift,apps/swift/Tests/CapacitorTests/SetupReadinessCoordinatorTests.swift,done,false,Trailing comma normalization
+RW-098,swift-setup-status-lint-rw098,apps/swift/Tests/CapacitorTests/SetupStatusCopyContractTests.swift,apps/swift/Tests/CapacitorTests/SetupStatusCopyContractTests.swift,done,false,Trailing comma normalization
+RW-098,rewrite-test-audit-rw098,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh metrics label after RW-098
+RW-098,rewrite-ledger-rw098,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-098 lifecycle
+RW-099,swift-activation-executor-makeexecutor-expansion-rw099,apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift,apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift,done,false,Expand makeExecutor() to five remaining manual-setup scenario tests
+RW-099,swift-terminal-launcher-assert-action-delegation-rw099,apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift,apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift,done,false,Consolidate assertAction to delegate to actionMatches reducing duplicated switch logic
+RW-099,rewrite-test-audit-rw099,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Record final audit conclusions and practical completion assessment
+RW-099,rewrite-ledger-rw099,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-099 lifecycle and risk notes
+RW-099,rewrite-map-rw099,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-099 path mappings

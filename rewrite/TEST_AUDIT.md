@@ -144,7 +144,8 @@ Static bats source checks that do not execute behavior have been removed from th
 83. RW-096 collapsed one-off script-snippet assertions in `TerminalLauncherTests` onto the shared `assertScriptsContainAll`/`assertScriptsContainNone` helper path and deleted the redundant single-snippet helper.
 84. RW-097 moved `scenarioContext` into the shared setup scenario harness, removed duplicate per-file helpers from high-volume suites, and added a CI zero-budget for local `scenarioContext` helper declarations.
 85. RW-098 resolved pre-existing SwiftFormat trailing-comma lint debt in five setup/installer contract test files so strict pre-commit linting remains enforceable without bypasses.
-86. Next reductions should continue collapsing duplicate edge-case assertions into explicit contract tables rather than proliferating one-off tests.
+86. RW-099 expanded `makeExecutor()` usage to five remaining manual-setup tests in `ActivationActionExecutorTests` and consolidated `assertAction` to delegate to `actionMatches` in `TerminalLauncherTests`, reducing duplicated switch logic and repeated stub construction. `RuntimeClientTests` was audited and deemed already well-consolidated with no actionable duplication.
+87. The test audit has reached practical completion. All tracked CI budgets are at zero, all high-volume suites use shared scenario harnesses, and remaining local scenario structs serve readability in complex async test flows. Further consolidation would reduce diagnostic quality or readability without meaningful duplication reduction.
 
 ## Guardrails Added
 
@@ -163,7 +164,6 @@ This does not claim these patterns are good. It prevents regression while we pay
 
 ## Next Slices (proposed)
 
-1. `RW-099` Identify and remove any remaining low-leverage assertion-helper duplication across `RuntimeClientTests` and `TerminalLauncherTests`.
-2. `RW-100` Evaluate whether one further safe CI test-surface ratchet is feasible after RW-099.
+1. `RW-100` Evaluate whether a CI budget for local test-scoped scenario structs (non-`private struct Expected*`, non-`struct Scenario`) is feasible, or whether remaining structs serve readability and should be allowed.
 
-Each slice should delete replaced tests in the same PR and ratchet the audit limits downward.
+The test audit program has reached practical completion. Future work should focus on expanding *behavior coverage* rather than further consolidation.

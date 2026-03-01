@@ -273,16 +273,11 @@ final class ActivationActionExecutorTests: XCTestCase {
 
         for scenario in scenarios {
             let context = scenarioContext(scenario.name)
-            let deps = StubDependencies()
-            scenario.configure(deps)
-            let executor = ActivationActionExecutor(
-                dependencies: deps,
-                tmuxClient: StubTmuxClient(),
-                terminalDiscovery: StubTerminalDiscovery(),
-                terminalLauncher: StubTerminalLauncherClient(),
-            )
+            let harness = makeExecutor { deps, _, _, _ in
+                scenario.configure(deps)
+            }
 
-            let result = await executor.execute(
+            let result = await harness.executor.execute(
                 scenario.action,
                 projectPath: scenario.requestProjectPath,
                 projectName: scenario.requestProjectName,
@@ -290,7 +285,7 @@ final class ActivationActionExecutorTests: XCTestCase {
 
             XCTAssertEqual(result, scenario.expectedResult, "\(context) unexpected execution result")
             assertExpectedDependencyRoute(
-                deps,
+                harness.deps,
                 expected: scenario.expectedRoute,
                 context: "\(context)",
             )
@@ -331,16 +326,9 @@ final class ActivationActionExecutorTests: XCTestCase {
 
         for scenario in scenarios {
             let context = scenarioContext(scenario.label)
-            let deps = StubDependencies()
-            let terminalDiscovery = StubTerminalDiscovery()
-            let executor = ActivationActionExecutor(
-                dependencies: deps,
-                tmuxClient: StubTmuxClient(),
-                terminalDiscovery: terminalDiscovery,
-                terminalLauncher: StubTerminalLauncherClient(),
-            )
+            let harness = makeExecutor()
 
-            let result = await executor.execute(
+            let result = await harness.executor.execute(
                 .activateApp(appName: scenario.input),
                 projectPath: "/Users/pete/Code/capacitor",
                 projectName: "capacitor",
@@ -348,8 +336,8 @@ final class ActivationActionExecutorTests: XCTestCase {
 
             assertActivateAppRouteOutcome(
                 result: result,
-                deps: deps,
-                terminalDiscovery: terminalDiscovery,
+                deps: harness.deps,
+                terminalDiscovery: harness.terminalDiscovery,
                 expectedLastAction: scenario.expected.expectedLastAction,
                 expectedLastAppName: scenario.expected.expectedLastAppName,
                 expectedGhosttyActivations: scenario.expected.expectedGhosttyActivations,
@@ -466,23 +454,14 @@ final class ActivationActionExecutorTests: XCTestCase {
 
         for scenario in scenarios {
             let context = scenarioContext(scenario.name)
-            let deps = StubDependencies()
-            deps.ensureTmuxResult = scenario.ensureTmuxResult
-            let tmux = StubTmuxClient()
-            tmux.switchResult = scenario.switchResult
-            let terminalDiscovery = StubTerminalDiscovery()
-            terminalDiscovery.activateByTtyResult = scenario.activateByTtyResult
-            terminalDiscovery.ghosttyState = scenario.ghosttyState
-            let launcher = StubTerminalLauncherClient()
+            let harness = makeExecutor { deps, tmux, terminalDiscovery, _ in
+                deps.ensureTmuxResult = scenario.ensureTmuxResult
+                tmux.switchResult = scenario.switchResult
+                terminalDiscovery.activateByTtyResult = scenario.activateByTtyResult
+                terminalDiscovery.ghosttyState = scenario.ghosttyState
+            }
 
-            let executor = ActivationActionExecutor(
-                dependencies: deps,
-                tmuxClient: tmux,
-                terminalDiscovery: terminalDiscovery,
-                terminalLauncher: launcher,
-            )
-
-            let result = await executor.activateHostThenSwitchTmux(
+            let result = await harness.executor.activateHostThenSwitchTmux(
                 hostTty: "/dev/ttys000",
                 sessionName: "cap",
                 projectPath: "/Users/pete/Code/cap",
@@ -494,8 +473,8 @@ final class ActivationActionExecutorTests: XCTestCase {
                 "\(context) unexpected fallback result",
             )
             assertHostSwitchFallbackOutcome(
-                deps: deps,
-                launcher: launcher,
+                deps: harness.deps,
+                launcher: harness.launcher,
                 expectation: scenario.fallbackExpectation,
                 context: context,
             )
@@ -561,27 +540,16 @@ final class ActivationActionExecutorTests: XCTestCase {
 
         for scenario in scenarios {
             let context = scenarioContext(scenario.name)
-            let deps = StubDependencies()
-            deps.ensureTmuxResult = true
+            let harness = makeExecutor { deps, tmux, terminalDiscovery, _ in
+                deps.ensureTmuxResult = true
+                tmux.hasClientAttached = true
+                tmux.currentClientTty = "/dev/ttys042"
+                tmux.switchResult = false
+                terminalDiscovery.activateByTtyResult = scenario.activateByTtyResult
+                terminalDiscovery.ghosttyState = scenario.ghosttyState
+            }
 
-            let tmux = StubTmuxClient()
-            tmux.hasClientAttached = true
-            tmux.currentClientTty = "/dev/ttys042"
-            tmux.switchResult = false
-
-            let terminalDiscovery = StubTerminalDiscovery()
-            terminalDiscovery.activateByTtyResult = scenario.activateByTtyResult
-            terminalDiscovery.ghosttyState = scenario.ghosttyState
-
-            let launcher = StubTerminalLauncherClient()
-            let executor = ActivationActionExecutor(
-                dependencies: deps,
-                tmuxClient: tmux,
-                terminalDiscovery: terminalDiscovery,
-                terminalLauncher: launcher,
-            )
-
-            let result = await executor.activateHostThenSwitchTmux(
+            let result = await harness.executor.activateHostThenSwitchTmux(
                 hostTty: "/dev/ttys042",
                 sessionName: "openclaw",
                 projectPath: "/Users/pete/Code/openclaw",
@@ -592,13 +560,13 @@ final class ActivationActionExecutorTests: XCTestCase {
                 "\(context) Attached-client switch failures should recover by ensuring/creating the tmux session.",
             )
             assertHostSwitchFallbackOutcome(
-                deps: deps,
-                launcher: launcher,
+                deps: harness.deps,
+                launcher: harness.launcher,
                 expectation: scenario.fallbackExpectation,
                 context: context,
             )
             XCTAssertEqual(
-                terminalDiscovery.lastActivatedApp == "Ghostty",
+                harness.terminalDiscovery.lastActivatedApp == "Ghostty",
                 scenario.expectGhosttyAppActivation,
                 "\(context) Ghostty app activation expectation mismatch.",
             )
@@ -711,28 +679,17 @@ final class ActivationActionExecutorTests: XCTestCase {
 
         for scenario in scenarios {
             let context = scenarioContext(scenario.name)
-            let deps = StubDependencies()
-            deps.ensureTmuxResult = true
+            let harness = makeExecutor { deps, tmux, terminalDiscovery, _ in
+                deps.ensureTmuxResult = true
+                tmux.hasClientAttached = false
+                tmux.currentClientTty = nil
+                tmux.switchResult = scenario.switchResult
+                terminalDiscovery.activateByTtyResult = scenario.activateByTtyResult
+                terminalDiscovery.ghosttyState = scenario.ghosttyState
+                terminalDiscovery.activateGhosttyResult = scenario.activateGhosttyResult
+            }
 
-            let tmux = StubTmuxClient()
-            tmux.hasClientAttached = false
-            tmux.currentClientTty = nil
-            tmux.switchResult = scenario.switchResult
-
-            let terminalDiscovery = StubTerminalDiscovery()
-            terminalDiscovery.activateByTtyResult = scenario.activateByTtyResult
-            terminalDiscovery.ghosttyState = scenario.ghosttyState
-            terminalDiscovery.activateGhosttyResult = scenario.activateGhosttyResult
-
-            let launcher = StubTerminalLauncherClient()
-            let executor = ActivationActionExecutor(
-                dependencies: deps,
-                tmuxClient: tmux,
-                terminalDiscovery: terminalDiscovery,
-                terminalLauncher: launcher,
-            )
-
-            let result = await executor.activateHostThenSwitchTmux(
+            let result = await harness.executor.activateHostThenSwitchTmux(
                 hostTty: scenario.hostTty,
                 sessionName: "cap",
                 projectPath: "/Users/pete/Code/cap",
@@ -740,23 +697,23 @@ final class ActivationActionExecutorTests: XCTestCase {
 
             XCTAssertTrue(result, "\(context) expected activation to succeed")
             XCTAssertEqual(
-                terminalDiscovery.lastActivatedApp,
+                harness.terminalDiscovery.lastActivatedApp,
                 "Ghostty",
                 "\(context) should always attempt Ghostty app activation in no-client path",
             )
             XCTAssertEqual(
-                tmux.lastSwitchedClientTty,
+                harness.tmux.lastSwitchedClientTty,
                 scenario.expected.switchedClientTty,
                 "\(context) unexpected tmux switch target",
             )
             XCTAssertEqual(
-                deps.lastAction,
+                harness.deps.lastAction,
                 scenario.expected.dependencyAction,
                 "\(context) unexpected dependency fallback action",
             )
             assertHostSwitchFallbackOutcome(
-                deps: deps,
-                launcher: launcher,
+                deps: harness.deps,
+                launcher: harness.launcher,
                 expectation: scenario.expected.fallback,
                 context: context,
             )

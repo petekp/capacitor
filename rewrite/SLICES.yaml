@@ -3491,3 +3491,67 @@ slices:
     risks:
       - "Centralizing context helper behavior could affect assertion-message formatting if changed later; mitigation is keeping helper output stable and simple."
     notes: "Moves `scenarioContext` into shared test harness, removes duplicate per-file helpers, and enforces a zero-budget CI guard for local scenario-context helper declarations."
+
+  - id: RW-098
+    name: "SwiftFormat Trailing-Comma Lint Normalization"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-097
+    touched_paths:
+      - apps/swift/Tests/CapacitorTests/CapacitorConfigTests.swift
+      - apps/swift/Tests/CapacitorTests/HookDiagnosticPresentationTests.swift
+      - apps/swift/Tests/CapacitorTests/HookInstallerTests.swift
+      - apps/swift/Tests/CapacitorTests/SetupReadinessCoordinatorTests.swift
+      - apps/swift/Tests/CapacitorTests/SetupStatusCopyContractTests.swift
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+    contracts:
+      added: []
+      changed:
+        - apps/swift/Tests/CapacitorTests/CapacitorConfigTests.swift
+        - apps/swift/Tests/CapacitorTests/HookDiagnosticPresentationTests.swift
+        - apps/swift/Tests/CapacitorTests/HookInstallerTests.swift
+        - apps/swift/Tests/CapacitorTests/SetupReadinessCoordinatorTests.swift
+        - apps/swift/Tests/CapacitorTests/SetupStatusCopyContractTests.swift
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Pure formatting changes; no behavioral risk."
+    notes: "Resolves pre-existing SwiftFormat trailing-comma debt so strict pre-commit linting remains enforceable without bypasses."
+
+  - id: RW-099
+    name: "Final Assertion Helper Duplication Audit"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-098
+    touched_paths:
+      - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
+      - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
+        - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios:
+      - click project card and restore terminal/tmux context
+      - live state update while coding
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Delegating assertAction to actionMatches trades per-field XCTAssertEqual diagnostics for a single combined failure message; mitigation is including both expected and actual in the message."
+    notes: "Expands makeExecutor() to five remaining manual-setup tests in ActivationActionExecutorTests, consolidates assertAction to delegate to actionMatches in TerminalLauncherTests, and concludes RuntimeClientTests is already well-consolidated. Marks practical completion of the test audit program."

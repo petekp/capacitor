@@ -1562,22 +1562,12 @@ final class TerminalLauncherTests: XCTestCase {
         file: StaticString = #filePath,
         line: UInt = #line,
     ) {
-        switch expected {
-        case let .launch(projectPath, projectName):
-            guard case let .launchNewTerminal(actualProjectPath, actualProjectName) = action else {
-                XCTFail("\(context) Got \(String(describing: action))", file: file, line: line)
-                return
-            }
-            XCTAssertEqual(actualProjectPath, projectPath, file: file, line: line)
-            XCTAssertEqual(actualProjectName, projectName, file: file, line: line)
-        case let .ensureTmux(sessionName, projectPath):
-            guard case let .ensureTmuxSession(actualSessionName, actualProjectPath) = action else {
-                XCTFail("\(context) Got \(String(describing: action))", file: file, line: line)
-                return
-            }
-            XCTAssertEqual(actualSessionName, sessionName, file: file, line: line)
-            XCTAssertEqual(actualProjectPath, projectPath, file: file, line: line)
-        }
+        XCTAssertTrue(
+            Self.actionMatches(action, expected: expected),
+            "\(context) expected \(expected), got \(String(describing: action))",
+            file: file,
+            line: line,
+        )
     }
 
     private func assertSingleActivationResult(
