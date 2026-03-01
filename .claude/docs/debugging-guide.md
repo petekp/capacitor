@@ -45,6 +45,21 @@ Capacitor is runtime-snapshot based:
 3. Verify hook install via setup screen / hook diagnostics.
 4. Confirm snapshot updates after shell cwd changes.
 
+## Event Loss Debugging
+
+The reducer silently skips events in several categories. Skip counters in
+`diagnostics` make this visible:
+
+- `stale_events_skipped` — events older than the session's last update
+- `informational_events_skipped` — WorktreeCreate/Remove, ConfigChange, Unknown
+- `reducer_events_skipped` — stop_guard, session_start_already_active, idle_prompt_tools_in_flight, etc.
+- `events_skipped` — total (sum of above)
+
+Check via: `./scripts/dev/agent-observe.sh diagnose` (shows skip counters + skip rate).
+
+If skip rate is high (>30%), investigate which category dominates — stale events
+suggest clock skew or event replay; reducer skips suggest heavy subagent activity.
+
 ## If State Looks Wrong
 
 1. Run `./scripts/dev/agent-observe.sh diagnose` first.

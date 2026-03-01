@@ -415,6 +415,22 @@ case "$command" in
     fi
     echo ""
 
+    echo "--- Skip Counters ---"
+    if command -v jq >/dev/null 2>&1 && [[ -f "$SNAPSHOT_PATH" ]]; then
+      jq '.diagnostics | {
+        events_skipped,
+        stale_events_skipped,
+        informational_events_skipped,
+        reducer_events_skipped,
+        skip_rate: (if .events_ingested > 0 then
+          "\((.events_skipped * 100 / .events_ingested))%"
+        else "n/a" end)
+      }' "$SNAPSHOT_PATH" 2>/dev/null || echo "  (skip counters not available in this snapshot)"
+    else
+      echo "  (requires jq + snapshot)"
+    fi
+    echo ""
+
     echo "--- Recent Errors ---"
     if [[ -f "$APP_LOG_PATH" ]]; then
       error_count=$(grep -c -i -E 'error|fail|crash|fatal|skip|unable|reject|block|broken|stale|unavailable' "$APP_LOG_PATH" 2>/dev/null || echo "0")

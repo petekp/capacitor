@@ -19,6 +19,9 @@ pub struct ReducerState {
     pub shells: HashMap<u32, ShellSignal>,
     pub routing: BTreeMap<String, crate::domain::RoutingView>,
     pub events_ingested: u64,
+    pub stale_events_skipped: u64,
+    pub informational_events_skipped: u64,
+    pub reducer_events_skipped: u64,
     pub last_error: Option<String>,
 }
 
@@ -58,6 +61,9 @@ impl ReducerState {
             shells,
             routing,
             events_ingested: snapshot.diagnostics.events_ingested,
+            stale_events_skipped: snapshot.diagnostics.stale_events_skipped,
+            informational_events_skipped: snapshot.diagnostics.informational_events_skipped,
+            reducer_events_skipped: snapshot.diagnostics.reducer_events_skipped,
             last_error: snapshot.diagnostics.last_error,
         }
     }
@@ -84,6 +90,7 @@ impl ReducerState {
 
         let current = self.sessions.get(&command.session_id).cloned();
         if is_event_stale(current.as_ref(), &command) {
+            self.stale_events_skipped += 1;
             return MutationOutcome {
                 ok: true,
                 message: "stale event skipped".to_string(),
@@ -99,7 +106,10 @@ impl ReducerState {
             SessionUpdate::Delete(session_id) => {
                 self.sessions.remove(session_id);
             }
-            SessionUpdate::Skip(_) => {}
+            SessionUpdate::Skip(reason) => match *reason {
+                "informational_event" => self.informational_events_skipped += 1,
+                _ => self.reducer_events_skipped += 1,
+            },
         }
 
         self.recompute_projects();
@@ -179,6 +189,12 @@ impl ReducerState {
                 events_ingested: self.events_ingested,
                 sessions_tracked: self.sessions.len() as u64,
                 shell_signals_tracked: self.shells.len() as u64,
+                events_skipped: self.stale_events_skipped
+                    + self.informational_events_skipped
+                    + self.reducer_events_skipped,
+                stale_events_skipped: self.stale_events_skipped,
+                informational_events_skipped: self.informational_events_skipped,
+                reducer_events_skipped: self.reducer_events_skipped,
                 last_error: self.last_error.clone(),
             },
             generated_at: now_rfc3339(),
@@ -895,5 +911,67 @@ mod tests {
         assert_eq!(project.session_count, 2);
         assert_eq!(project.active_count, 2);
         assert!(project.has_session);
+    }
+
+    #[test]
+    fn diagnostics_tracks_skip_counters() {
+        let mut state = ReducerState::default();
+
+        // Establish a session so we can trigger skip paths
+        let start = event_base(HookEventType::UserPromptSubmit);
+        let _ = state.apply_hook_event(start);
+
+        // 1) Stale event → stale_events_skipped
+        let mut stale = event_base(HookEventType::PermissionRequest);
+        stale.recorded_at = "2025-12-01T00:00:00Z".to_string();
+        let outcome = state.apply_hook_event(stale);
+        assert_eq!(outcome.message, "stale event skipped");
+
+        // 2) Informational event → informational_events_skipped
+        let mut config_change = event_base(HookEventType::ConfigChange);
+        config_change.recorded_at = "2026-01-31T00:00:01Z".to_string();
+        let outcome = state.apply_hook_event(config_change);
+        assert!(outcome.message.contains("informational_event"));
+
+        // 3) Another informational event to prove counting
+        let mut worktree = event_base(HookEventType::WorktreeCreate);
+        worktree.recorded_at = "2026-01-31T00:00:02Z".to_string();
+        let outcome = state.apply_hook_event(worktree);
+        assert!(outcome.message.contains("informational_event"));
+
+        // 4) Idle prompt while tools in flight → idle_prompt_skipped
+        let mut pre_tool = event_base(HookEventType::PreToolUse);
+        pre_tool.recorded_at = "2026-01-31T00:00:03Z".to_string();
+        let _ = state.apply_hook_event(pre_tool);
+
+        let mut idle = event_base(HookEventType::Notification);
+        idle.notification_type = Some("idle_prompt".to_string());
+        idle.recorded_at = "2026-01-31T00:00:04Z".to_string();
+        let outcome = state.apply_hook_event(idle);
+        assert!(outcome.message.contains("idle_prompt_tools_in_flight"));
+
+        // Verify skip counters in snapshot
+        let diag = state.snapshot().diagnostics;
+        assert!(
+            diag.events_skipped > 0,
+            "events_skipped should be non-zero, got {}",
+            diag.events_skipped
+        );
+        assert!(
+            diag.stale_events_skipped > 0,
+            "stale_events_skipped should be non-zero"
+        );
+        assert!(
+            diag.informational_events_skipped >= 2,
+            "informational_events_skipped should be >= 2, got {}",
+            diag.informational_events_skipped
+        );
+        assert_eq!(
+            diag.events_skipped,
+            diag.stale_events_skipped
+                + diag.informational_events_skipped
+                + diag.reducer_events_skipped,
+            "events_skipped should equal sum of sub-counters"
+        );
     }
 }

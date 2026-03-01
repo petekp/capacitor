@@ -157,6 +157,10 @@ write_fixture_snapshot() {
     "events_ingested": 500,
     "sessions_tracked": 2,
     "shell_signals_tracked": 2,
+    "events_skipped": 42,
+    "stale_events_skipped": 10,
+    "informational_events_skipped": 25,
+    "reducer_events_skipped": 7,
     "last_error": null
   },
   "generated_at": "2026-03-01T12:00:05+00:00"
@@ -209,6 +213,10 @@ assert_contains "$output" "last_event" "stuck session includes last_event"
 assert_contains "$output" "tools_in_flight" "stuck session includes tools_in_flight"
 assert_contains "$output" "last_activity_at" "stuck session includes last_activity_at"
 assert_contains "$output" "pid_alive" "stuck session includes pid_alive"
+assert_contains "$output" "Skip Counters" "diagnose includes skip counters section"
+assert_contains "$output" "events_skipped" "diagnose shows events_skipped"
+assert_contains "$output" "stale_events_skipped" "diagnose shows stale_events_skipped"
+assert_contains "$output" "skip_rate" "diagnose shows skip_rate"
 echo ""
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

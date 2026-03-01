@@ -331,6 +331,10 @@ fn fixture_snapshot_json() -> &'static str {
     "events_ingested": 7,
     "sessions_tracked": 1,
     "shell_signals_tracked": 1,
+    "events_skipped": 0,
+    "stale_events_skipped": 0,
+    "informational_events_skipped": 0,
+    "reducer_events_skipped": 0,
     "last_error": null
   },
   "generated_at": "2026-02-28T19:00:00Z"

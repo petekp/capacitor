@@ -113,6 +113,10 @@ pub struct DiagnosticsSummary {
     pub events_ingested: u64,
     pub sessions_tracked: u64,
     pub shell_signals_tracked: u64,
+    pub events_skipped: u64,
+    pub stale_events_skipped: u64,
+    pub informational_events_skipped: u64,
+    pub reducer_events_skipped: u64,
     pub last_error: Option<String>,
 }
 
