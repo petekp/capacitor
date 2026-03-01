@@ -469,3 +469,10 @@ RW-064,swift-capacitor-config-contract-tests-rw064,,apps/swift/Tests/CapacitorTe
 RW-064,rewrite-test-audit-rw064,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit metrics and conclusions after config surface split
 RW-064,rewrite-ledger-rw064,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-064 lifecycle and risk notes
 RW-064,rewrite-map-rw064,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-064 path mappings for guard enforcement
+RW-065,swift-date-formatting-format-helper-rw065,apps/swift/Sources/Capacitor/Utilities/DateFormatting.swift,apps/swift/Sources/Capacitor/Utilities/DateFormatting.swift,done,false,Add canonical formatISO8601Timestamp helper and route current timestamp helper through it
+RW-065,swift-telemetry-timestamp-helper-cutover-rw065,apps/swift/Sources/Capacitor/Utilities/Telemetry.swift,apps/swift/Sources/Capacitor/Utilities/Telemetry.swift,done,false,Replace private telemetry formatter with canonical currentISO8601Timestamp helper
+RW-065,swift-quickfeedback-timestamp-helper-cutover-rw065,apps/swift/Sources/Capacitor/Utilities/QuickFeedback.swift,apps/swift/Sources/Capacitor/Utilities/QuickFeedback.swift,done,false,Replace private quick-feedback formatter with canonical formatISO8601Timestamp helper
+RW-065,swift-diagnostics-timestamp-helper-cutover-rw065,apps/swift/Sources/Capacitor/Utilities/DiagnosticsSnapshotLogger.swift,apps/swift/Sources/Capacitor/Utilities/DiagnosticsSnapshotLogger.swift,done,false,Replace private diagnostics formatter with canonical currentISO8601Timestamp helper
+RW-065,rewrite-test-audit-rw065,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit conclusions after duplicate ISO8601 helper cleanup
+RW-065,rewrite-ledger-rw065,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-065 lifecycle and risk notes
+RW-065,rewrite-map-rw065,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-065 path mappings for guard enforcement

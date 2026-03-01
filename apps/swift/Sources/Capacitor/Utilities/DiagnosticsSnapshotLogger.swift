@@ -73,12 +73,6 @@ import Foundation
             return encoder
         }()
 
-        private static let timestampFormatter: ISO8601DateFormatter = {
-            let formatter = ISO8601DateFormatter()
-            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            return formatter
-        }()
-
         private static let logURL: URL = {
             let home = FileManager.default.homeDirectoryForCurrentUser
             return home.appendingPathComponent(".capacitor/runtime/diagnostic-snapshots.jsonl")
@@ -131,7 +125,7 @@ import Foundation
                 }
 
                 let snapshot = DiagnosticSnapshot(
-                    timestamp: timestampFormatter.string(from: Date()),
+                    timestamp: currentISO8601Timestamp(),
                     reason: "stuck_working",
                     context: contextSnapshot,
                     stuckSessions: stuck,

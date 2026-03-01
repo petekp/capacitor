@@ -4,7 +4,6 @@ import os.log
 /// Lightweight telemetry emitter for local debug or remote ingest endpoints.
 enum Telemetry {
     private static let logger = Logger(subsystem: "com.capacitor.app", category: "Telemetry")
-    private static let formatter = ISO8601DateFormatter()
     private static let throttleLock = NSLock()
     private static var recentIngestDiagnosticsBySignature: [String: Date] = [:]
     private static let ingestDiagnosticsThrottleWindowSeconds: TimeInterval = 2
@@ -50,7 +49,7 @@ enum Telemetry {
         var body: [String: Any] = [
             "type": type,
             "message": sanitizedMessage,
-            "timestamp": formatter.string(from: Date()),
+            "timestamp": currentISO8601Timestamp(),
         ]
         if !sanitizedPayload.isEmpty {
             body["payload"] = sanitizedPayload

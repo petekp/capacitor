@@ -286,12 +286,6 @@ enum QuickFeedbackPayloadBuilder {
         static let maxProjectSnapshots = 12
     }
 
-    private static let timestampFormatter: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter
-    }()
-
     static func build(
         feedbackID: String,
         draft: QuickFeedbackDraft,
@@ -367,7 +361,7 @@ enum QuickFeedbackPayloadBuilder {
                 expectedBehavior: optionalValue(normalizedDraft.expectedBehavior),
                 stepsToReproduce: optionalValue(normalizedDraft.stepsToReproduce),
             ),
-            submittedAt: timestampFormatter.string(from: now),
+            submittedAt: formatISO8601Timestamp(now),
             app: QuickFeedbackPayload.AppSnapshot(
                 version: context.appVersion,
                 buildNumber: context.buildNumber,

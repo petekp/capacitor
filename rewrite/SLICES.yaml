@@ -2347,3 +2347,36 @@ slices:
     risks:
       - "Migrating runtime config persistence from `config.json` to `runtime-config.json` can leave stale legacy files around and split manually edited settings across files if users edit both."
     notes: "Moves Capacitor runtime state persistence to dedicated `runtime-config.json`, keeps one-way legacy read migration from old `config.json`, and adds tests to lock non-collision with AppConfig file path semantics."
+
+  - id: RW-065
+    name: "Replace Remaining Duplicate ISO8601 Helpers"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-064
+    touched_paths:
+      - apps/swift/Sources/Capacitor/Utilities/DateFormatting.swift
+      - apps/swift/Sources/Capacitor/Utilities/Telemetry.swift
+      - apps/swift/Sources/Capacitor/Utilities/QuickFeedback.swift
+      - apps/swift/Sources/Capacitor/Utilities/DiagnosticsSnapshotLogger.swift
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - apps/swift/Sources/Capacitor/Utilities/DateFormatting.swift
+        - apps/swift/Sources/Capacitor/Utilities/Telemetry.swift
+        - apps/swift/Sources/Capacitor/Utilities/QuickFeedback.swift
+        - apps/swift/Sources/Capacitor/Utilities/DiagnosticsSnapshotLogger.swift
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Unifying timestamp helper usage can alter serialized timestamp precision across telemetry/diagnostic payloads and affect external consumers expecting previous format granularity."
+    notes: "Removes remaining private ISO8601 formatter instances in utility modules and routes timestamp formatting through `currentISO8601Timestamp`/`formatISO8601Timestamp` canonical helpers."
