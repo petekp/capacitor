@@ -269,22 +269,13 @@ case "$command" in
       exit 1
     fi
     if command -v jq >/dev/null 2>&1; then
-      generated_at=$(jq -r '.generated_at // empty' "$SNAPSHOT_PATH" 2>/dev/null)
-      if [[ -n "$generated_at" ]]; then
-        generated_epoch=$(date -j -f "%Y-%m-%dT%H:%M:%SZ" "$generated_at" "+%s" 2>/dev/null || date -d "$generated_at" "+%s" 2>/dev/null || echo "")
-        if [[ -n "$generated_epoch" ]]; then
-          now_epoch=$(date "+%s")
-          age=$(( now_epoch - generated_epoch ))
-          stale="false"
-          if [[ "$age" -gt 30 ]]; then stale="true"; fi
-          jq -n --argjson age "$age" --argjson stale "$stale" --arg generated_at "$generated_at" \
-            '{ok:true, age_seconds:$age, stale:$stale, generated_at:$generated_at}'
-        else
-          echo '{"ok":true,"age_seconds":null,"note":"could not parse generated_at"}' | pretty_print_json
-        fi
-      else
-        echo '{"ok":true,"age_seconds":null,"note":"no generated_at in snapshot"}' | pretty_print_json
-      fi
+      jq 'def parse_ts: sub("\\.[0-9]+"; "") | sub("\\+00:00$"; "Z") | fromdateiso8601;
+      {
+        ok: true,
+        generated_at: .generated_at,
+        age_seconds: (now - (.generated_at | parse_ts) | floor),
+        stale: ((now - (.generated_at | parse_ts)) > 30)
+      }' "$SNAPSHOT_PATH" 2>/dev/null || echo '{"ok":true,"age_seconds":null,"note":"could not parse generated_at"}' | pretty_print_json
     else
       stat -f "%m" "$SNAPSHOT_PATH" 2>/dev/null || echo "jq required for detailed freshness"
     fi
@@ -334,9 +325,10 @@ case "$command" in
 
     echo "--- Stuck Sessions ---"
     if command -v jq >/dev/null 2>&1 && [[ -f "$SNAPSHOT_PATH" ]]; then
-      stuck=$(jq '[.sessions[] | select(.state == "working") | select(
+      stuck=$(jq 'def parse_ts: sub("\\.[0-9]+"; "") | sub("\\+00:00$"; "Z") | fromdateiso8601;
+      [.sessions[] | select(.state == "working") | select(
         (.updated_at // "" | length) > 0 and
-        ((now - ((.updated_at // "1970-01-01T00:00:00Z") | fromdateiso8601)) > 30)
+        ((now - ((.updated_at // "1970-01-01T00:00:00Z") | parse_ts)) > 30)
       ) | {session_id, project_path, state, updated_at, tools_in_flight}]' "$SNAPSHOT_PATH" 2>/dev/null)
       count=$(echo "$stuck" | jq 'length' 2>/dev/null || echo "0")
       if [[ "$count" -gt 0 ]]; then

@@ -110,9 +110,8 @@ Terminal switching uses AppleScript, so macOS will ask for Automation access the
 
 For coding-agent debugging in this repo, use:
 
-- `./scripts/dev/agent-observe.sh` (single observability helper)
-- `make observe-help` (`observe-*` shortcuts)
-- `.claude/docs/agent-observability-runbook.md` (canonical runtime-debug workflow)
+- `./scripts/dev/agent-observe.sh diagnose` (one-shot full diagnostics)
+- `.claude/docs/debugging-guide.md` (canonical debugging workflow)
 
 More help: [open a GitHub issue](https://github.com/petekp/capacitor/issues).
 
