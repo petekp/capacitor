@@ -1470,6 +1470,57 @@ final class TerminalLauncherTests: XCTestCase {
         XCTAssertNil(result)
     }
 
+    // S3: Session exists → just switch
+    func testEnsureAndSwitchExistingSessionJustSwitches() async {
+        var commands: [String] = []
+        let ok = await TerminalLauncher.ensureSessionAndSwitch(
+            sessionName: "my-project",
+            projectPath: "/path/to/project",
+            clientTty: "/dev/ttys001",
+            runScript: { cmd in
+                commands.append(cmd)
+                return (0, nil)
+            },
+        )
+        XCTAssertTrue(ok)
+        XCTAssertEqual(commands.count, 1, "Should only run switch, not create")
+        XCTAssertTrue(commands[0].contains("switch-client"))
+        XCTAssertTrue(commands[0].contains("my-project"))
+    }
+
+    // S4: Session doesn't exist → create then switch
+    func testEnsureAndSwitchCreatesSessionWhenMissing() async {
+        var commands: [String] = []
+        let ok = await TerminalLauncher.ensureSessionAndSwitch(
+            sessionName: "new-project",
+            projectPath: "/path/to/new",
+            clientTty: "/dev/ttys001",
+            runScript: { cmd in
+                commands.append(cmd)
+                // First switch fails (session not found), create succeeds, retry succeeds
+                if cmd.contains("switch-client"), commands.count(where: { $0.contains("switch-client") }) == 1 {
+                    return (1, "session not found")
+                }
+                return (0, nil)
+            },
+        )
+        XCTAssertTrue(ok)
+        XCTAssertEqual(commands.count, 3, "switch → create → switch")
+        XCTAssertTrue(commands[1].contains("new-session"))
+        XCTAssertTrue(commands[1].contains("new-project"))
+    }
+
+    /// Create fails → return false
+    func testEnsureAndSwitchReturnsFalseWhenCreateFails() async {
+        let ok = await TerminalLauncher.ensureSessionAndSwitch(
+            sessionName: "broken",
+            projectPath: "/path/to/broken",
+            clientTty: "/dev/ttys001",
+            runScript: { _ in (1, "error") },
+        )
+        XCTAssertFalse(ok)
+    }
+
     /// No managed TTY but a client exists → adopt it
     func testResolveTmuxClientAdoptsWhenNoManagedTty() async {
         let result = await TerminalLauncher.resolveTmuxClient(

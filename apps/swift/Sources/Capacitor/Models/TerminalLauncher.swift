@@ -317,6 +317,31 @@ final class TerminalLauncher: ActivationActionDependencies {
         return await resolveAnyClientTty()
     }
 
+    /// Ensure a tmux session exists and switch the given client to it.
+    /// Spec decision tree step 2: try switch → if fail, create session → retry switch.
+    static func ensureSessionAndSwitch(
+        sessionName: String,
+        projectPath: String,
+        clientTty: String,
+        runScript: (String) async -> (exitCode: Int32, output: String?),
+    ) async -> Bool {
+        let escaped = shellEscape(sessionName)
+        let escapedTty = shellEscape(clientTty)
+        let switchCmd = "tmux switch-client -c \(escapedTty) -t \(escaped) 2>&1"
+
+        // Try switching directly (session may already exist).
+        let first = await runScript(switchCmd)
+        if first.exitCode == 0 { return true }
+
+        // Session doesn't exist — create it, then retry.
+        let escapedPath = shellEscape(projectPath)
+        let createResult = await runScript("tmux new-session -d -s \(escaped) -c \(escapedPath) 2>&1")
+        if createResult.exitCode != 0 { return false }
+
+        let retry = await runScript(switchCmd)
+        return retry.exitCode == 0
+    }
+
     func launchTerminal(for project: Project) {
         latestLaunchRequestID &+= 1
         let requestID = latestLaunchRequestID
