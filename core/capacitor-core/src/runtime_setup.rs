@@ -451,6 +451,51 @@ impl SetupChecker {
         false
     }
 
+    fn migrate_legacy_flat_hook_config(&self, hook_config: &mut HookConfig) -> bool {
+        if hook_config.hooks.is_some() {
+            return false;
+        }
+
+        let command = hook_config
+            .other
+            .get("command")
+            .and_then(|value| value.as_str())
+            .map(str::to_string);
+        let Some(command) = command else {
+            return false;
+        };
+
+        let hook_type = hook_config
+            .other
+            .get("type")
+            .and_then(|value| value.as_str())
+            .map(str::to_string);
+        let async_hook = hook_config
+            .other
+            .get("async")
+            .and_then(|value| value.as_bool());
+        let timeout = hook_config
+            .other
+            .get("timeout")
+            .and_then(|value| value.as_u64())
+            .and_then(|value| u32::try_from(value).ok());
+
+        hook_config.hooks = Some(vec![InnerHook {
+            hook_type,
+            command: Some(command),
+            async_hook,
+            timeout,
+            other: HashMap::new(),
+        }]);
+
+        hook_config.other.remove("type");
+        hook_config.other.remove("command");
+        hook_config.other.remove("async");
+        hook_config.other.remove("timeout");
+
+        true
+    }
+
     fn normalize_hud_hook_config(
         &self,
         hook_config: &mut HookConfig,
@@ -635,6 +680,15 @@ impl SetupChecker {
         };
 
         let hooks = settings.hooks.get_or_insert_with(HashMap::new);
+
+        // Migrate legacy flat hook entries ({"type":"command","command":"..."})
+        // into the modern nested form ({"hooks":[...]}). Claude Code now rejects
+        // event entries without a `hooks` array.
+        for event_hooks in hooks.values_mut() {
+            for hook_config in event_hooks.iter_mut() {
+                self.migrate_legacy_flat_hook_config(hook_config);
+            }
+        }
 
         for (event, needs_matcher, is_async) in HUD_HOOK_EVENTS {
             let event_hooks = hooks.entry(event.to_string()).or_default();
@@ -868,6 +922,52 @@ mod tests {
 
         let post_tool_use_failure = &settings["hooks"]["PostToolUseFailure"][0];
         assert_eq!(post_tool_use_failure["matcher"], "*");
+    }
+
+    #[test]
+    fn test_register_hooks_migrates_legacy_flat_entries() {
+        let (_temp, storage) = setup_test_env();
+        let checker = SetupChecker::new(storage.clone());
+
+        let legacy = r#"{
+            "hooks": {
+                "SessionStart": [{"type": "command", "command": "$HOME/.local/bin/hud-hook handle"}],
+                "SessionEnd": [{"type": "command", "command": "$HOME/.local/bin/hud-hook handle"}],
+                "CustomEvent": [{"type": "command", "command": "custom.sh"}]
+            }
+        }"#;
+        fs::write(storage.claude_settings_file(), legacy).unwrap();
+
+        checker.register_hooks_in_settings().unwrap();
+
+        let settings_content = fs::read_to_string(storage.claude_settings_file()).unwrap();
+        let settings: serde_json::Value = serde_json::from_str(&settings_content).unwrap();
+
+        for event in ["SessionStart", "SessionEnd", "CustomEvent"] {
+            let entries = settings["hooks"][event]
+                .as_array()
+                .unwrap_or_else(|| panic!("{event} should be an array"));
+            assert!(
+                entries.iter().all(|entry| entry["hooks"].is_array()),
+                "{event} should only contain entries with `hooks` arrays after migration"
+            );
+            assert!(
+                entries
+                    .iter()
+                    .all(|entry| entry["command"].is_null() && entry["type"].is_null()),
+                "{event} should not retain legacy top-level command/type fields"
+            );
+        }
+
+        assert_eq!(
+            settings["hooks"]["CustomEvent"][0]["hooks"][0]["command"],
+            "custom.sh"
+        );
+        assert_eq!(
+            settings["hooks"]["SessionStart"][0]["hooks"][0]["command"],
+            HOOK_COMMAND
+        );
+        assert!(checker.hooks_registered_in_settings());
     }
 
     #[test]
