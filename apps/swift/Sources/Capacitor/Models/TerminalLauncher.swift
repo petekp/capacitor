@@ -217,6 +217,8 @@ final class TerminalLauncher: ActivationActionDependencies {
     private let fallbackTmuxSessionExistsResolver: ((String) async -> Bool)?
     private let executeActivationActionOverride: ((ActivationAction, String, String) async -> Bool)?
     private let launchNewTerminalOverride: ((String, String) -> Bool)?
+    /// Override for the unified activation flow. Tests use this to intercept card-click behavior.
+    private let activateProjectSessionOverride: ((String, String) async -> Bool)?
     private let hudEngine: CoreRuntime?
     var onActivationTrace: ((String) -> Void)?
     var onActivationResult: ((TerminalActivationResult) -> Void)?
@@ -285,6 +287,7 @@ final class TerminalLauncher: ActivationActionDependencies {
         fallbackTmuxSessionExistsResolver: ((String) async -> Bool)? = nil,
         executeActivationActionOverride: ((ActivationAction, String, String) async -> Bool)? = nil,
         launchNewTerminalOverride: ((String, String) -> Bool)? = nil,
+        activateProjectSessionOverride: ((String, String) async -> Bool)? = nil,
         hudEngineFactory: () throws -> CoreRuntime = { try CoreRuntime() },
     ) {
         self.appleScript = appleScript
@@ -294,6 +297,7 @@ final class TerminalLauncher: ActivationActionDependencies {
         self.fallbackTmuxSessionExistsResolver = fallbackTmuxSessionExistsResolver
         self.executeActivationActionOverride = executeActivationActionOverride
         self.launchNewTerminalOverride = launchNewTerminalOverride
+        self.activateProjectSessionOverride = activateProjectSessionOverride
         hudEngine = try? hudEngineFactory()
     }
 
@@ -409,53 +413,129 @@ final class TerminalLauncher: ActivationActionDependencies {
             return
         }
 
-        let handledWithARE = await launchTerminalWithAERSnapshot(for: project, requestID: requestID)
-        if handledWithARE {
-            return
+        // Resolve tmux session name: try existing session for this path, else use project slug.
+        let sessionName = await resolveSessionName(for: project)
+
+        // Log the Rust resolver's opinion for telemetry (but don't use its action choice).
+        do {
+            let decision = try await resolveActivationDecision(for: project)
+            if let trace = decision.trace {
+                let formatted = formatActivationTrace(trace: trace)
+                for line in formatted.split(separator: "\n") {
+                    debugLog(String(line))
+                }
+                onActivationTrace?(formatted)
+            } else {
+                debugLog("ActivationTrace reason=\(decision.reason)")
+                onActivationTrace?(decision.reason)
+            }
+        } catch {
+            if !(error is CancellationError) {
+                debugLog("rust_resolver_trace unavailable: \(error.localizedDescription)")
+            }
         }
+
         guard shouldProcessLaunchRequest(requestID) else {
-            debugLog("launchTerminalAsync skipped fallback for stale request id=\(requestID) path=\(project.path)")
+            debugLog("launchTerminalAsync ignored stale request id=\(requestID) path=\(project.path)")
             return
         }
 
-        if await recoverSnapshotFailureViaTmuxIfPossible(for: project, requestID: requestID) {
-            return
-        }
+        // Run unified activation flow (spec v2).
+        let success = await activateProjectSession(
+            sessionName: sessionName,
+            projectPath: project.path,
+        )
+
+        // Post-activation stale check: if a newer request arrived while we were activating,
+        // suppress result emission so only the latest request reports.
         guard shouldProcessLaunchRequest(requestID) else {
-            debugLog("launchTerminalAsync skipped post-recovery fallback for stale request id=\(requestID) path=\(project.path)")
+            debugLog("launchTerminalAsync ignored stale request id=\(requestID) path=\(project.path)")
             return
         }
 
-        // Hard cutover fallback: if snapshot fetch is unavailable, open a fresh terminal.
-        let shouldAttemptFallbackLaunch = shouldLaunchSnapshotFailureFallbackLaunch(for: project.path)
-        let finalSuccess: Bool
-        if shouldAttemptFallbackLaunch {
-            let launchSucceeded = launchNewTerminal(for: project)
-            finalSuccess = launchSucceeded
-            Telemetry.emit("activation_outcome", "snapshot_unavailable_fallback", payload: [
-                "project": project.name,
-                "path": project.path,
-                "used_fallback": true,
-                "fallback_debounced": false,
-                "success": launchSucceeded,
-            ])
-        } else {
-            finalSuccess = true
-            debugLog("snapshot_unavailable_fallback debounced path=\(project.path)")
-            Telemetry.emit("activation_outcome", "snapshot_unavailable_fallback_debounced", payload: [
-                "project": project.name,
-                "path": project.path,
-                "used_fallback": true,
-                "fallback_debounced": true,
-                "success": true,
-            ])
-        }
+        Telemetry.emit("activation_outcome", "unified_v2", payload: [
+            "project": project.name,
+            "path": project.path,
+            "session": sessionName,
+            "success": success,
+        ])
         onActivationResult?(TerminalActivationResult(
             projectName: project.name,
             projectPath: project.path,
-            success: finalSuccess,
-            usedFallback: true,
+            success: success,
+            usedFallback: false,
         ))
+    }
+
+    /// Resolve a tmux session name for a project.
+    /// Prefers an existing tmux session matching the project path; falls back to project slug.
+    private func resolveSessionName(for project: Project) async -> String {
+        if let resolver = fallbackTmuxSessionResolver,
+           let resolved = await resolver(project.path),
+           !resolved.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        {
+            return resolved.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        if let existing = await findTmuxSessionForPath(project.path) {
+            return existing
+        }
+        // Default: use project directory name as session name
+        return URL(fileURLWithPath: project.path).lastPathComponent
+    }
+
+    /// Instance method that wires real dependencies into performUnifiedActivation.
+    /// Uses activateProjectSessionOverride when available (for test injection).
+    private func activateProjectSession(sessionName: String, projectPath: String) async -> Bool {
+        if let activateProjectSessionOverride {
+            return await activateProjectSessionOverride(sessionName, projectPath)
+        }
+        return await Self.performUnifiedActivation(
+            sessionName: sessionName,
+            projectPath: projectPath,
+            managedTty: managedClientTty,
+            isTtyAlive: Self.isTtyAlive,
+            resolveAnyClientTty: {
+                await Self.resolveAttachedTmuxClientTty(
+                    runScript: { await Self.runBashScriptWithResult($0) },
+                )
+            },
+            ensureAndSwitch: { session, path, tty in
+                await Self.ensureSessionAndSwitch(
+                    sessionName: session,
+                    projectPath: path,
+                    clientTty: tty,
+                    runScript: { await Self.runBashScriptWithResult($0) },
+                )
+            },
+            launchTerminalWithTmux: { [weak self] session, path in
+                self?.launchTerminalWithTmuxSession(session, projectPath: path)
+            },
+            activateTerminal: { [weak self] tty, path, sessionHint in
+                guard let self else { return false }
+                return await activateTerminalAfterTmuxSwitch(
+                    clientTty: tty,
+                    projectPath: path,
+                    tmuxSessionHint: sessionHint,
+                )
+            },
+            pollForNewClient: {
+                // Poll for newly attached tmux client after launch
+                for _ in 0 ..< 10 {
+                    try? await _Concurrency.Task.sleep(nanoseconds: 200_000_000) // 200ms
+                    let result = await Self.runBashScriptWithResult("tmux list-clients -F '#{client_tty}' 2>/dev/null")
+                    if result.exitCode == 0,
+                       let output = result.output?.trimmingCharacters(in: .whitespacesAndNewlines),
+                       !output.isEmpty
+                    {
+                        return output.split(separator: "\n").first.map(String.init)
+                    }
+                }
+                return nil
+            },
+            onManagedTtyUpdate: { [weak self] tty in
+                self?.managedClientTty = tty
+            },
+        )
     }
 
     private func shouldProcessLaunchRequest(_ requestID: UInt64) -> Bool {

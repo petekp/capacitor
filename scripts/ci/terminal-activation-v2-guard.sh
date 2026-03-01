@@ -22,8 +22,8 @@ fail() {
 # Start at measured baseline, decrement as slices eliminate instances.
 # Target: all reach 0 by TAv2-006.
 
-BUDGET_RESOLVE_ATTACHED_TTY=3     # resolveAttachedTmuxClientTty in Sources
-BUDGET_ACTION_SPECIFIC_METHODS=11 # performSwitch|performEnsure|switchTmuxSessionAction|ensureTmuxSessionAction|launchTerminalWithAERSnapshot in Sources
+BUDGET_RESOLVE_ATTACHED_TTY=4     # resolveAttachedTmuxClientTty in Sources (TAv2-005 adds 1 temporary ref in unified flow wiring)
+BUDGET_ACTION_SPECIFIC_METHODS=10 # performSwitch|performEnsure|switchTmuxSessionAction|ensureTmuxSessionAction|launchTerminalWithAERSnapshot in Sources (TAv2-005 removed 1)
 BUDGET_EXECUTOR_REFS=3            # ActivationActionExecutor in Sources
 BUDGET_ACTION_TEST_METHODS=9      # action-specific methods in Tests
 
