@@ -30,6 +30,7 @@ Commands:
   telemetry [limit]                      Transparent UI: GET /telemetry
   stream                                 Transparent UI: GET /telemetry-stream (SSE passthrough)
   tail <app|runtime-stderr|runtime-stdout> Tail key logs
+  smoke [project_path] [workspace_id]    Run all observability smoke checks
 USAGE
 }
 
@@ -234,6 +235,23 @@ case "$command" in
         exit 1
         ;;
     esac
+    ;;
+  smoke)
+    project_path="${1:-$(pwd)}"
+    workspace_id="${2:-}"
+    echo "Running observability smoke checks..."
+    set -e
+    "$0" check >/dev/null && echo "  ok check"
+    "$0" health >/dev/null && echo "  ok health"
+    "$0" projects >/dev/null && echo "  ok projects"
+    "$0" sessions >/dev/null && echo "  ok sessions"
+    "$0" shells >/dev/null && echo "  ok shells"
+    "$0" snapshot >/dev/null && echo "  ok snapshot"
+    if [[ -n "$project_path" ]]; then
+      "$0" routing-snapshot "$project_path" "$workspace_id" >/dev/null && echo "  ok routing-snapshot ($project_path)"
+      "$0" routing-diagnostics >/dev/null && echo "  ok routing-diagnostics"
+    fi
+    echo "Observability smoke checks passed."
     ;;
   *)
     echo "Unknown command: $command" >&2
