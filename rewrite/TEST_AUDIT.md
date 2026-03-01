@@ -10,10 +10,10 @@ Scope: `core/`, `apps/swift/Tests/CapacitorTests/`, `tests/`, `services/ingest-w
 3. Freeze current weak-pattern surface with a CI guard so debt cannot grow.
 4. Define next rewrite slices to pay debt down deterministically.
 
-## Current Metrics (After RW-066)
+## Current Metrics (After RW-072)
 
-- Swift test files: `37`
-- Swift test methods: `244`
+- Swift test files: `40`
+- Swift test methods: `259`
 - Swift files with `source.contains` assertions: `0`
 - `source.contains` assertions (total): `0`
 - Swift test methods inside source-coupled files: `0`
@@ -109,7 +109,13 @@ Static bats source checks that do not execute behavior have been removed from th
 51. RW-064 split conflicting config ownership by moving `CapacitorConfig` persistence to `~/.capacitor/runtime-config.json` (with legacy-read migration) and added contract tests that lock non-collision with `AppConfig` file semantics.
 52. RW-065 removed remaining private ISO8601 formatter duplicates in `Telemetry`, `QuickFeedback`, and `DiagnosticsSnapshotLogger`, routing all timestamp formatting through canonical date helpers.
 53. RW-066 removed dead `CapacitorConfig` persistence fields/mutations (`setupCompletedAt`, `hooksVersion`, `markSetupComplete`) and deleted the redundant setup-complete write path in `WelcomeView`.
-54. Next reductions should continue collapsing duplicate edge-case assertions into explicit contract tables rather than proliferating one-off tests.
+54. RW-067 introduced a canonical `HookSetupCopy` mapper for setup-step status copy, setup-card presentation copy, and startup hook diagnostics messaging, replacing duplicated hook-status text branches across `SetupRequirements`, `HookDiagnosticPresentation`, and `AppDelegate` with focused contract tests.
+55. RW-068 moved the remaining `Utils/*` files into explicit `Support/*` namespaces (`Config`, `Accessibility`, `Health`, `Updates`), deleted `Utils/`, and added a rewrite denylist to prevent ambiguous utility sprawl from re-entering the active codebase.
+56. RW-069 introduced a canonical `SetupStepCatalog` and rewired runtime + preview setup step construction through that single factory surface, eliminating repeated step literals and locking metadata/status contracts with focused catalog tests.
+57. RW-070 moved pure pathing/identity helpers (`GitRepositoryInfo`, `PathNormalizer`, `WorkspaceIdentity`) from ambiguous `Helpers/` into `Support/Pathing`, keeping only IO-oriented adapters in `Helpers/` and reducing role confusion for new contributors/agents.
+58. RW-071 introduced a startup `SetupReadinessCoordinator` decision surface (driven by `checkSetupStatus()`), rewired `AppDelegate.validateHookSetup` to consume it, and added focused coordinator tests so startup/setup policy no longer diverges across independent branches.
+59. RW-072 replaced parallel hook presentation layers by renaming `HookSetupCopy` to canonical `HookPresentationPolicy` and keeping `HookDiagnosticPresentation` as a thin adapter over that policy, removing split ownership of hook UI/status copy semantics.
+60. Next reductions should continue collapsing duplicate edge-case assertions into explicit contract tables rather than proliferating one-off tests.
 
 ## Guardrails Added
 
@@ -128,7 +134,7 @@ This does not claim these patterns are good. It prevents regression while we pay
 
 ## Next Slices (proposed)
 
-1. `RW-067` Consolidate hook setup UX surfaces (`HookDiagnosticPresentation`, setup-step copy, startup diagnostics messaging) to one canonical status-to-copy mapper with tests.
-2. `RW-068` Move remaining config/runtime helper files out of ambiguous `Utils/` into explicit support namespaces and enforce with rewrite denylist patterns.
+1. `RW-073` Collapse duplicate startup log string assembly into typed diagnostics events with canonical formatting in `DebugLog`.
+2. `RW-074` Reduce remaining setup status mapping duplication by introducing typed setup action/status descriptors instead of stringly-typed IDs in `SetupRequirementsManager`.
 
 Each slice should delete replaced tests in the same PR and ratchet the audit limits downward.

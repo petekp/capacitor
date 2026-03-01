@@ -481,3 +481,49 @@ RW-066,swift-welcome-setup-complete-write-removal-rw066,apps/swift/Sources/Capac
 RW-066,rewrite-test-audit-rw066,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit conclusions after redundant setup config write removal
 RW-066,rewrite-ledger-rw066,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-066 lifecycle and risk notes
 RW-066,rewrite-map-rw066,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-066 path mappings for guard enforcement
+RW-067,swift-hook-setup-copy-canonical-mapper-rw067,,apps/swift/Sources/Capacitor/Models/HookSetupCopy.swift,done,false,Add canonical hook status-to-copy mapper shared across setup, diagnostics card, and startup diagnostics
+RW-067,swift-hook-diagnostic-copy-cutover-rw067,apps/swift/Sources/Capacitor/Models/HookDiagnosticPresentation.swift,apps/swift/Sources/Capacitor/Models/HookDiagnosticPresentation.swift,done,false,Route setup card header/guidance copy through canonical hook copy mapper
+RW-067,swift-setup-requirements-hook-copy-cutover-rw067,apps/swift/Sources/Capacitor/Models/SetupRequirements.swift,apps/swift/Sources/Capacitor/Models/SetupRequirements.swift,done,false,Replace duplicated hook setup step status copy branches with canonical mapper
+RW-067,swift-startup-hook-diagnostics-copy-cutover-rw067,apps/swift/Sources/Capacitor/App.swift,apps/swift/Sources/Capacitor/App.swift,done,false,Route startup hook policy/repair diagnostics log messages through canonical mapper
+RW-067,swift-setup-step-row-preview-hook-copy-cutover-rw067,apps/swift/Sources/Capacitor/Views/Setup/SetupStepRow.swift,apps/swift/Sources/Capacitor/Views/Setup/SetupStepRow.swift,done,false,Replace setup preview hook install prompt literal with canonical mapper output
+RW-067,swift-hook-setup-copy-contract-tests-rw067,,apps/swift/Tests/CapacitorTests/HookSetupCopyTests.swift,done,false,Add focused tests locking setup-step and startup hook copy contracts in one canonical surface
+RW-067,rewrite-test-audit-rw067,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh test audit metrics and conclusions after hook setup copy consolidation
+RW-067,rewrite-ledger-rw067,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-067 lifecycle and risk notes
+RW-067,rewrite-map-rw067,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-067 path mappings for guard enforcement
+RW-068,swift-utils-accessibility-move-rw068,apps/swift/Sources/Capacitor/Utils/AccessibilityIdentifiers.swift,apps/swift/Sources/Capacitor/Support/Accessibility/AccessibilityIdentifiers.swift,done,true,Move accessibility identifiers helper into explicit Support/Accessibility namespace
+RW-068,swift-utils-alpha-guardrail-move-rw068,apps/swift/Sources/Capacitor/Utils/AlphaChannelGuardrail.swift,apps/swift/Sources/Capacitor/Support/Config/AlphaChannelGuardrail.swift,done,true,Move alpha channel guardrail into Support/Config namespace
+RW-068,swift-utils-app-config-move-rw068,apps/swift/Sources/Capacitor/Utils/AppConfig.swift,apps/swift/Sources/Capacitor/Support/Config/AppConfig.swift,done,true,Move app config surface into Support/Config namespace
+RW-068,swift-utils-runtime-config-move-rw068,apps/swift/Sources/Capacitor/Utils/CapacitorConfig.swift,apps/swift/Sources/Capacitor/Support/Config/CapacitorConfig.swift,done,true,Move runtime config actor into Support/Config namespace
+RW-068,swift-utils-claude-md-health-move-rw068,apps/swift/Sources/Capacitor/Utils/ClaudeMdHealth.swift,apps/swift/Sources/Capacitor/Support/Health/ClaudeMdHealth.swift,done,true,Move ClaudeMd health scorer into Support/Health namespace
+RW-068,swift-utils-updater-controller-move-rw068,apps/swift/Sources/Capacitor/Utils/UpdaterController.swift,apps/swift/Sources/Capacitor/Support/Updates/UpdaterController.swift,done,true,Move updater controller into Support/Updates namespace
+RW-068,rewrite-test-audit-rw068,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit conclusions after Utils namespace elimination
+RW-068,rewrite-ledger-rw068,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-068 lifecycle and denylist enforcement
+RW-068,rewrite-map-rw068,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-068 move mappings for rewrite guard enforcement
+RW-069,swift-setup-step-catalog-rw069,,apps/swift/Sources/Capacitor/Models/SetupStepCatalog.swift,done,false,Add canonical setup-step factory/catalog for shared metadata and status-aware builders
+RW-069,swift-setup-requirements-step-catalog-cutover-rw069,apps/swift/Sources/Capacitor/Models/SetupRequirements.swift,apps/swift/Sources/Capacitor/Models/SetupRequirements.swift,done,false,Route runtime and preview setup step construction through SetupStepCatalog
+RW-069,swift-setup-step-row-preview-catalog-cutover-rw069,apps/swift/Sources/Capacitor/Views/Setup/SetupStepRow.swift,apps/swift/Sources/Capacitor/Views/Setup/SetupStepRow.swift,done,false,Replace repeated setup preview step literals with catalog builders
+RW-069,swift-setup-step-catalog-tests-rw069,,apps/swift/Tests/CapacitorTests/SetupStepCatalogTests.swift,done,false,Add focused contract tests for setup-step ordering, metadata, and status-preserving builders
+RW-069,rewrite-test-audit-rw069,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit metrics/conclusions after setup-step catalog consolidation
+RW-069,rewrite-ledger-rw069,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-069 lifecycle and risk notes
+RW-069,rewrite-map-rw069,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-069 path mappings for guard enforcement
+RW-070,swift-helpers-git-repo-info-move-rw070,apps/swift/Sources/Capacitor/Helpers/GitRepositoryInfo.swift,apps/swift/Sources/Capacitor/Support/Pathing/GitRepositoryInfo.swift,done,true,Move pure git repository path discovery helper into Support/Pathing
+RW-070,swift-helpers-path-normalizer-move-rw070,apps/swift/Sources/Capacitor/Helpers/PathNormalizer.swift,apps/swift/Sources/Capacitor/Support/Pathing/PathNormalizer.swift,done,true,Move pure path normalization helper into Support/Pathing
+RW-070,swift-helpers-workspace-identity-move-rw070,apps/swift/Sources/Capacitor/Helpers/WorkspaceIdentity.swift,apps/swift/Sources/Capacitor/Support/Pathing/WorkspaceIdentity.swift,done,true,Move pure workspace identity helper into Support/Pathing
+RW-070,rewrite-test-audit-rw070,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit conclusions after Helpers ownership boundary cleanup
+RW-070,rewrite-ledger-rw070,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-070 lifecycle and denylist enforcement
+RW-070,rewrite-map-rw070,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-070 move mappings for guard enforcement
+RW-071,swift-setup-readiness-coordinator-rw071,,apps/swift/Sources/Capacitor/Models/SetupReadinessCoordinator.swift,done,false,Add canonical startup setup-readiness decision coordinator driven by SetupStatus
+RW-071,swift-app-startup-readiness-cutover-rw071,apps/swift/Sources/Capacitor/App.swift,apps/swift/Sources/Capacitor/App.swift,done,false,Route AppDelegate startup setup validation through SetupReadinessCoordinator
+RW-071,swift-setup-readiness-coordinator-tests-rw071,,apps/swift/Tests/CapacitorTests/SetupReadinessCoordinatorTests.swift,done,false,Add focused coordinator tests for claude-missing/policy-blocked/repair/ready startup decisions
+RW-071,rewrite-test-audit-rw071,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit metrics/conclusions after startup setup coordinator consolidation
+RW-071,rewrite-ledger-rw071,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-071 lifecycle and risk notes
+RW-071,rewrite-map-rw071,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-071 path mappings for guard enforcement
+RW-072,swift-hook-presentation-policy-rename-rw072,apps/swift/Sources/Capacitor/Models/HookSetupCopy.swift,apps/swift/Sources/Capacitor/Models/HookPresentationPolicy.swift,done,true,Rename hook setup copy utility into canonical hook presentation policy surface
+RW-072,swift-hook-presentation-tests-rename-rw072,apps/swift/Tests/CapacitorTests/HookSetupCopyTests.swift,apps/swift/Tests/CapacitorTests/HookPresentationPolicyTests.swift,done,true,Rename hook copy contract tests to reflect canonical policy naming
+RW-072,swift-hook-diagnostic-policy-cutover-rw072,apps/swift/Sources/Capacitor/Models/HookDiagnosticPresentation.swift,apps/swift/Sources/Capacitor/Models/HookDiagnosticPresentation.swift,done,false,Keep hook diagnostic extension as thin adapter over canonical HookPresentationPolicy
+RW-072,swift-setup-requirements-hook-policy-cutover-rw072,apps/swift/Sources/Capacitor/Models/SetupRequirements.swift,apps/swift/Sources/Capacitor/Models/SetupRequirements.swift,done,false,Route setup hook status mapping through HookPresentationPolicy
+RW-072,swift-startup-readiness-hook-policy-cutover-rw072,apps/swift/Sources/Capacitor/Models/SetupReadinessCoordinator.swift,apps/swift/Sources/Capacitor/Models/SetupReadinessCoordinator.swift,done,false,Route startup policy-blocked/repair messages through HookPresentationPolicy
+RW-072,swift-setup-preview-hook-policy-cutover-rw072,apps/swift/Sources/Capacitor/Views/Setup/SetupStepRow.swift,apps/swift/Sources/Capacitor/Views/Setup/SetupStepRow.swift,done,false,Route setup preview hook status copy through HookPresentationPolicy
+RW-072,rewrite-test-audit-rw072,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit conclusions after hook presentation policy consolidation
+RW-072,rewrite-ledger-rw072,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-072 lifecycle and denylist enforcement
+RW-072,rewrite-map-rw072,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-072 path mappings for guard enforcement

@@ -84,27 +84,7 @@ final class SetupRequirementsManager {
     }
 
     private func setupSteps() {
-        steps = [
-            SetupStep(
-                id: "claude",
-                title: "Claude Code",
-                description: "Capacitor reads your Claude sessions to show live project status",
-                status: .pending,
-            ),
-            SetupStep(
-                id: "hooks",
-                title: "Session tracking",
-                description: "See which projects are active and what Claude is working on",
-                status: .pending,
-            ),
-            SetupStep(
-                id: "shell",
-                title: "Terminal tracking",
-                description: "Add hook to ~/.zshrc to auto-detect which project each terminal is in",
-                status: .pending,
-                isOptional: true,
-            ),
-        ]
+        steps = SetupStepCatalog.defaultSteps()
     }
 
     func runChecks() async {
@@ -169,23 +149,7 @@ final class SetupRequirementsManager {
 
     private func updateHookStatus(_ hookStatus: HookStatus) async {
         updateStep("hooks", status: .checking)
-
-        switch hookStatus {
-        case .installed:
-            updateStep("hooks", status: .completed(detail: "Connected"))
-
-        case .notInstalled:
-            updateStep("hooks", status: .actionNeeded(message: "Tap Install to connect"))
-
-        case .policyBlocked:
-            updateStep("hooks", status: .error(message: "Your Claude settings prevent hook installation"))
-
-        case .binaryBroken:
-            updateStep("hooks", status: .error(message: "Session tracking needs repair"))
-
-        case .symlinkBroken:
-            updateStep("hooks", status: .error(message: "Session tracking needs repair"))
-        }
+        updateStep("hooks", status: HookPresentationPolicy.setupStepStatus(for: hookStatus))
     }
 
     func executeStep(_ stepId: String) async {
@@ -267,16 +231,7 @@ final class SetupRequirementsManager {
     extension SetupPreviewScenario {
         /// Shared step builder to keep preview copy in sync with production copy
         private static func step(_ id: String, status: SetupStepStatus) -> SetupStep {
-            switch id {
-            case "claude":
-                SetupStep(id: "claude", title: "Claude Code", description: "Capacitor reads your Claude sessions to show live project status", status: status)
-            case "hooks":
-                SetupStep(id: "hooks", title: "Session tracking", description: "See which projects are active and what Claude is working on", status: status)
-            case "shell":
-                SetupStep(id: "shell", title: "Terminal tracking", description: "Add hook to ~/.zshrc to auto-detect which project each terminal is in", status: status, isOptional: true)
-            default:
-                fatalError("Unknown step id: \(id)")
-            }
+            SetupStepCatalog.step(for: id, status: status)
         }
 
         var steps: [SetupStep] {
@@ -291,19 +246,19 @@ final class SetupRequirementsManager {
                 [Self.step("claude", status: .error(message: "Not found — download from claude.ai/download")), Self.step("hooks", status: .pending), Self.step("shell", status: .pending)]
 
             case .hooksNeeded:
-                [Self.step("claude", status: .completed(detail: "Installed")), Self.step("hooks", status: .actionNeeded(message: "Tap Install to connect")), Self.step("shell", status: .pending)]
+                [Self.step("claude", status: .completed(detail: "Installed")), Self.step("hooks", status: HookPresentationPolicy.setupStepStatus(for: .notInstalled)), Self.step("shell", status: .pending)]
 
             case .hooksError:
-                [Self.step("claude", status: .completed(detail: "Installed")), Self.step("hooks", status: .error(message: "Session tracking needs repair")), Self.step("shell", status: .pending)]
+                [Self.step("claude", status: .completed(detail: "Installed")), Self.step("hooks", status: HookPresentationPolicy.setupStepStatus(for: .binaryBroken(reason: "preview"))), Self.step("shell", status: .pending)]
 
             case .hooksPolicyBlocked:
-                [Self.step("claude", status: .completed(detail: "Installed")), Self.step("hooks", status: .error(message: "Your Claude settings prevent hook installation")), Self.step("shell", status: .pending)]
+                [Self.step("claude", status: .completed(detail: "Installed")), Self.step("hooks", status: HookPresentationPolicy.setupStepStatus(for: .policyBlocked(reason: "preview"))), Self.step("shell", status: .pending)]
 
             case .shellOptional:
-                [Self.step("claude", status: .completed(detail: "Installed")), Self.step("hooks", status: .completed(detail: "Connected")), Self.step("shell", status: .actionNeeded(message: "Add to ~/.zshrc"))]
+                [Self.step("claude", status: .completed(detail: "Installed")), Self.step("hooks", status: HookPresentationPolicy.setupStepStatus(for: .installed(version: "preview"))), Self.step("shell", status: .actionNeeded(message: "Add to ~/.zshrc"))]
 
             case .allComplete:
-                [Self.step("claude", status: .completed(detail: "Installed")), Self.step("hooks", status: .completed(detail: "Connected")), Self.step("shell", status: .completed(detail: "Active"))]
+                [Self.step("claude", status: .completed(detail: "Installed")), Self.step("hooks", status: HookPresentationPolicy.setupStepStatus(for: .installed(version: "preview"))), Self.step("shell", status: .completed(detail: "Active"))]
             }
         }
     }

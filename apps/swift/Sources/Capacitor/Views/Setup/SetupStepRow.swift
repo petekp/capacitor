@@ -151,56 +151,30 @@ struct SetupStepRow: View {
 #Preview("All States") {
     VStack(spacing: 12) {
         SetupStepRow(
-            step: SetupStep(
-                id: "claude",
-                title: "Claude Code",
-                description: "Capacitor reads your Claude sessions to show live project status",
-                status: .completed(detail: "Installed"),
-            ),
+            step: SetupStepCatalog.claude(status: .completed(detail: "Installed")),
             isCurrentStep: false,
         )
 
         SetupStepRow(
-            step: SetupStep(
-                id: "hooks",
-                title: "Session tracking",
-                description: "See which projects are active and what Claude is working on",
-                status: .checking,
-            ),
+            step: SetupStepCatalog.hooks(status: .checking),
             isCurrentStep: true,
         )
 
         SetupStepRow(
-            step: SetupStep(
-                id: "hooks",
-                title: "Session tracking",
-                description: "See which projects are active and what Claude is working on",
-                status: .actionNeeded(message: "Tap Install to connect"),
-            ),
+            step: SetupStepCatalog.hooks(status: HookPresentationPolicy.setupStepStatus(for: .notInstalled)),
             isCurrentStep: true,
             onAction: { print("Install tapped") },
         )
 
         SetupStepRow(
-            step: SetupStep(
-                id: "claude",
-                title: "Claude Code",
-                description: "Capacitor reads your Claude sessions to show live project status",
-                status: .error(message: "Not found — download from claude.ai/download"),
-            ),
+            step: SetupStepCatalog.claude(status: .error(message: "Not found — download from claude.ai/download")),
             isCurrentStep: true,
             linkURL: URL(string: "https://claude.ai/download"),
             onRetry: { print("Retry tapped") },
         )
 
         SetupStepRow(
-            step: SetupStep(
-                id: "shell",
-                title: "Terminal tracking",
-                description: "Add hook to ~/.zshrc to auto-detect which project each terminal is in",
-                status: .pending,
-                isOptional: true,
-            ),
+            step: SetupStepCatalog.shell(),
             isCurrentStep: false,
         )
     }

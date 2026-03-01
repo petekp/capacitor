@@ -2409,3 +2409,250 @@ slices:
     risks:
       - "Removing setup-complete persistence in CapacitorConfig can break any out-of-band tools/scripts that implicitly relied on those legacy fields in `runtime-config.json`."
     notes: "Deletes unused `setupCompletedAt`/`hooksVersion` persistence and removes the corresponding write call from setup completion flow, reducing redundant config surface area."
+
+  - id: RW-067
+    name: "Canonical Hook Setup Copy Mapper"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-066
+    touched_paths:
+      - apps/swift/Sources/Capacitor/Models/HookSetupCopy.swift
+      - apps/swift/Sources/Capacitor/Models/HookDiagnosticPresentation.swift
+      - apps/swift/Sources/Capacitor/Models/SetupRequirements.swift
+      - apps/swift/Sources/Capacitor/App.swift
+      - apps/swift/Sources/Capacitor/Views/Setup/SetupStepRow.swift
+      - apps/swift/Tests/CapacitorTests/HookSetupCopyTests.swift
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added:
+        - apps/swift/Sources/Capacitor/Models/HookSetupCopy.swift
+        - apps/swift/Tests/CapacitorTests/HookSetupCopyTests.swift
+      changed:
+        - apps/swift/Sources/Capacitor/Models/HookDiagnosticPresentation.swift
+        - apps/swift/Sources/Capacitor/Models/SetupRequirements.swift
+        - apps/swift/Sources/Capacitor/App.swift
+        - apps/swift/Sources/Capacitor/Views/Setup/SetupStepRow.swift
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Centralizing hook copy can flatten context-specific phrasing and unintentionally hide detail unless callers explicitly compose contextual suffixes."
+    notes: "Adds `HookSetupCopy` as the canonical hook status-to-copy surface, rewires setup-step/status-card/startup diagnostics message paths to it, and locks behavior with focused mapper contract tests."
+
+  - id: RW-068
+    name: "Eliminate Ambiguous Swift Utils Namespace"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-067
+    touched_paths:
+      - apps/swift/Sources/Capacitor/Utils/AccessibilityIdentifiers.swift
+      - apps/swift/Sources/Capacitor/Utils/AlphaChannelGuardrail.swift
+      - apps/swift/Sources/Capacitor/Utils/AppConfig.swift
+      - apps/swift/Sources/Capacitor/Utils/CapacitorConfig.swift
+      - apps/swift/Sources/Capacitor/Utils/ClaudeMdHealth.swift
+      - apps/swift/Sources/Capacitor/Utils/UpdaterController.swift
+      - apps/swift/Sources/Capacitor/Support/Accessibility/AccessibilityIdentifiers.swift
+      - apps/swift/Sources/Capacitor/Support/Config/AlphaChannelGuardrail.swift
+      - apps/swift/Sources/Capacitor/Support/Config/AppConfig.swift
+      - apps/swift/Sources/Capacitor/Support/Config/CapacitorConfig.swift
+      - apps/swift/Sources/Capacitor/Support/Health/ClaudeMdHealth.swift
+      - apps/swift/Sources/Capacitor/Support/Updates/UpdaterController.swift
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added:
+        - apps/swift/Sources/Capacitor/Support/Accessibility/AccessibilityIdentifiers.swift
+        - apps/swift/Sources/Capacitor/Support/Config/AlphaChannelGuardrail.swift
+        - apps/swift/Sources/Capacitor/Support/Config/AppConfig.swift
+        - apps/swift/Sources/Capacitor/Support/Config/CapacitorConfig.swift
+        - apps/swift/Sources/Capacitor/Support/Health/ClaudeMdHealth.swift
+        - apps/swift/Sources/Capacitor/Support/Updates/UpdaterController.swift
+      changed:
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed:
+        - apps/swift/Sources/Capacitor/Utils/AccessibilityIdentifiers.swift
+        - apps/swift/Sources/Capacitor/Utils/AlphaChannelGuardrail.swift
+        - apps/swift/Sources/Capacitor/Utils/AppConfig.swift
+        - apps/swift/Sources/Capacitor/Utils/CapacitorConfig.swift
+        - apps/swift/Sources/Capacitor/Utils/ClaudeMdHealth.swift
+        - apps/swift/Sources/Capacitor/Utils/UpdaterController.swift
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns:
+      - apps/swift/Sources/Capacitor/Utils
+      - apps/swift/Sources/Capacitor/Utils/*
+    deletion_targets:
+      - apps/swift/Sources/Capacitor/Utils/AccessibilityIdentifiers.swift
+      - apps/swift/Sources/Capacitor/Utils/AlphaChannelGuardrail.swift
+      - apps/swift/Sources/Capacitor/Utils/AppConfig.swift
+      - apps/swift/Sources/Capacitor/Utils/CapacitorConfig.swift
+      - apps/swift/Sources/Capacitor/Utils/ClaudeMdHealth.swift
+      - apps/swift/Sources/Capacitor/Utils/UpdaterController.swift
+      - apps/swift/Sources/Capacitor/Utils
+    risks:
+      - "Path-only moves can obscure import/search history and may break external tooling that hard-codes old source paths even when runtime behavior is unchanged."
+    notes: "Moves all remaining ambiguous `Utils/*` surfaces into explicit `Support/*` namespaces, deletes `Utils/`, and introduces a permanent denylist so new utility files cannot re-enter the ambiguous bucket."
+
+  - id: RW-069
+    name: "Canonical Setup Step Catalog"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-068
+    touched_paths:
+      - apps/swift/Sources/Capacitor/Models/SetupStepCatalog.swift
+      - apps/swift/Sources/Capacitor/Models/SetupRequirements.swift
+      - apps/swift/Sources/Capacitor/Views/Setup/SetupStepRow.swift
+      - apps/swift/Tests/CapacitorTests/SetupStepCatalogTests.swift
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added:
+        - apps/swift/Sources/Capacitor/Models/SetupStepCatalog.swift
+        - apps/swift/Tests/CapacitorTests/SetupStepCatalogTests.swift
+      changed:
+        - apps/swift/Sources/Capacitor/Models/SetupRequirements.swift
+        - apps/swift/Sources/Capacitor/Views/Setup/SetupStepRow.swift
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Centralizing setup-step metadata behind one catalog can hide local context unless feature-specific views explicitly layer context-specific copy on top."
+    notes: "Introduces `SetupStepCatalog` as the canonical source for setup-step metadata/builders and rewires runtime + preview setup step construction to prevent literal copy drift."
+
+  - id: RW-070
+    name: "Helpers Ownership Boundary Cleanup"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-069
+    touched_paths:
+      - apps/swift/Sources/Capacitor/Helpers/GitRepositoryInfo.swift
+      - apps/swift/Sources/Capacitor/Helpers/PathNormalizer.swift
+      - apps/swift/Sources/Capacitor/Helpers/WorkspaceIdentity.swift
+      - apps/swift/Sources/Capacitor/Support/Pathing/GitRepositoryInfo.swift
+      - apps/swift/Sources/Capacitor/Support/Pathing/PathNormalizer.swift
+      - apps/swift/Sources/Capacitor/Support/Pathing/WorkspaceIdentity.swift
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added:
+        - apps/swift/Sources/Capacitor/Support/Pathing/GitRepositoryInfo.swift
+        - apps/swift/Sources/Capacitor/Support/Pathing/PathNormalizer.swift
+        - apps/swift/Sources/Capacitor/Support/Pathing/WorkspaceIdentity.swift
+      changed:
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed:
+        - apps/swift/Sources/Capacitor/Helpers/GitRepositoryInfo.swift
+        - apps/swift/Sources/Capacitor/Helpers/PathNormalizer.swift
+        - apps/swift/Sources/Capacitor/Helpers/WorkspaceIdentity.swift
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns:
+      - apps/swift/Sources/Capacitor/Helpers/GitRepositoryInfo.swift
+      - apps/swift/Sources/Capacitor/Helpers/PathNormalizer.swift
+      - apps/swift/Sources/Capacitor/Helpers/WorkspaceIdentity.swift
+    deletion_targets:
+      - apps/swift/Sources/Capacitor/Helpers/GitRepositoryInfo.swift
+      - apps/swift/Sources/Capacitor/Helpers/PathNormalizer.swift
+      - apps/swift/Sources/Capacitor/Helpers/WorkspaceIdentity.swift
+    risks:
+      - "Pure file moves can still break external tooling/scripts that target source paths directly, even with no runtime behavior changes."
+    notes: "Moves pure pathing/identity helpers into `Support/Pathing` and leaves `Helpers/` scoped to IO adapters (`HookInstaller`, `WorktreeService`) to reduce architectural ambiguity."
+
+  - id: RW-071
+    name: "Canonical Startup Setup Readiness Coordinator"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-070
+    touched_paths:
+      - apps/swift/Sources/Capacitor/Models/SetupReadinessCoordinator.swift
+      - apps/swift/Sources/Capacitor/App.swift
+      - apps/swift/Tests/CapacitorTests/SetupReadinessCoordinatorTests.swift
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added:
+        - apps/swift/Sources/Capacitor/Models/SetupReadinessCoordinator.swift
+        - apps/swift/Tests/CapacitorTests/SetupReadinessCoordinatorTests.swift
+      changed:
+        - apps/swift/Sources/Capacitor/App.swift
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Centralizing startup readiness decisions can make startup behavior less obvious unless decision outputs remain explicit and strongly logged at call sites."
+    notes: "Introduces `SetupReadinessCoordinator` as the single startup readiness decision surface driven by `checkSetupStatus()` and rewires `AppDelegate.validateHookSetup` to consume that decision contract."
+
+  - id: RW-072
+    name: "Canonical Hook Presentation Policy Surface"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-071
+    touched_paths:
+      - apps/swift/Sources/Capacitor/Models/HookSetupCopy.swift
+      - apps/swift/Sources/Capacitor/Models/HookPresentationPolicy.swift
+      - apps/swift/Sources/Capacitor/Models/HookDiagnosticPresentation.swift
+      - apps/swift/Sources/Capacitor/Models/SetupRequirements.swift
+      - apps/swift/Sources/Capacitor/Models/SetupReadinessCoordinator.swift
+      - apps/swift/Sources/Capacitor/Views/Setup/SetupStepRow.swift
+      - apps/swift/Tests/CapacitorTests/HookSetupCopyTests.swift
+      - apps/swift/Tests/CapacitorTests/HookPresentationPolicyTests.swift
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added:
+        - apps/swift/Sources/Capacitor/Models/HookPresentationPolicy.swift
+        - apps/swift/Tests/CapacitorTests/HookPresentationPolicyTests.swift
+      changed:
+        - apps/swift/Sources/Capacitor/Models/HookDiagnosticPresentation.swift
+        - apps/swift/Sources/Capacitor/Models/SetupRequirements.swift
+        - apps/swift/Sources/Capacitor/Models/SetupReadinessCoordinator.swift
+        - apps/swift/Sources/Capacitor/Views/Setup/SetupStepRow.swift
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed:
+        - apps/swift/Sources/Capacitor/Models/HookSetupCopy.swift
+        - apps/swift/Tests/CapacitorTests/HookSetupCopyTests.swift
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns:
+      - apps/swift/Sources/Capacitor/Models/HookSetupCopy.swift
+      - apps/swift/Tests/CapacitorTests/HookSetupCopyTests.swift
+    deletion_targets:
+      - apps/swift/Sources/Capacitor/Models/HookSetupCopy.swift
+      - apps/swift/Tests/CapacitorTests/HookSetupCopyTests.swift
+    risks:
+      - "Renaming a central presentation policy type can break local tooling references and hand-written docs even when runtime behavior and tests stay green."
+    notes: "Renames `HookSetupCopy` into canonical `HookPresentationPolicy`, rewires hook presentation/status call sites, and keeps `HookDiagnosticPresentation` as a thin report adapter over the policy."

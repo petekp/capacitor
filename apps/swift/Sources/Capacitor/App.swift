@@ -407,27 +407,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func validateHookSetup() {
         guard let engine = try? CoreRuntime() else { return }
 
-        // 1. Check if Claude CLI is available — this is the one thing we can't auto-fix
-        let claudeDep = engine.checkDependency(name: "claude")
-        if claudeDep.required, !claudeDep.found {
-            DebugLog.write("[Startup] Claude CLI not found, showing WelcomeView")
-            UserDefaults.standard.set(false, forKey: "setupComplete")
-            return
-        }
-
-        // 2. Ensure hooks are installed (auto-repair if needed)
-        let hookStatus = engine.getHookStatus()
-
-        switch hookStatus {
-        case .installed:
+        // 1. Evaluate startup readiness from one canonical setup status snapshot.
+        let setupStatus = engine.checkSetupStatus()
+        switch SetupReadinessCoordinator.startupDecision(from: setupStatus) {
+        case .ready:
             break
-
-        case .policyBlocked:
-            DebugLog.write("[Startup] Hooks blocked by policy, showing WelcomeView")
+        case let .showWelcome(logMessage):
+            DebugLog.write(logMessage)
             UserDefaults.standard.set(false, forKey: "setupComplete")
             return
-
-        case .symlinkBroken, .binaryBroken, .notInstalled:
+        case let .attemptHookRepair(logMessage):
+            DebugLog.write(logMessage)
             if attemptAutoRepair(engine: engine) {
                 DebugLog.write("[Startup] Hook auto-repair succeeded")
             } else {
@@ -437,7 +427,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        // 3. Auto-install shell integration if not already configured
+        // 2. Auto-install shell integration if not already configured
         let shellType = ShellType.current
         if shellType != .unsupported, !shellType.isSnippetInstalled {
             switch shellType.installSnippet() {
@@ -449,7 +439,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        // 4. Everything is ready — skip the setup screen
+        // 3. Everything is ready — skip the setup screen
         if !UserDefaults.standard.bool(forKey: "setupComplete") {
             DebugLog.write("[Startup] Auto-setup complete, skipping WelcomeView")
             UserDefaults.standard.set(true, forKey: "setupComplete")

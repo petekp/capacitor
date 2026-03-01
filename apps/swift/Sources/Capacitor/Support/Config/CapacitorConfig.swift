@@ -101,5 +101,4 @@ actor CapacitorConfig {
         config.claudePath = path
         await save(config)
     }
-
 }
