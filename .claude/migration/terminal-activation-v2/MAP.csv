@@ -1,0 +1,14 @@
+slice_id,capability,current_path,target_path,status,delete_in_pr,notes
+TAv2-000,control-plane,.claude/migration/terminal-activation-v2/CHARTER.md,.claude/migration/terminal-activation-v2/CHARTER.md,done,,governance
+TAv2-000,control-plane,.claude/migration/terminal-activation-v2/DECISIONS.md,.claude/migration/terminal-activation-v2/DECISIONS.md,done,,governance
+TAv2-000,control-plane,.claude/migration/terminal-activation-v2/SLICES.yaml,.claude/migration/terminal-activation-v2/SLICES.yaml,done,,governance
+TAv2-000,control-plane,.claude/migration/terminal-activation-v2/MAP.csv,.claude/migration/terminal-activation-v2/MAP.csv,done,,governance
+TAv2-000,control-plane,scripts/ci/terminal-activation-v2-guard.sh,scripts/ci/terminal-activation-v2-guard.sh,done,,guard script
+TAv2-001,managed-tty,apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift,apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift,pending,,add managedClientTty + isTtyAlive
+TAv2-001,managed-tty-tests,apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift,apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift,pending,,tests for Task 1
+TAv2-002,tty-resolution,apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift,apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift,pending,,add resolveTmuxClient
+TAv2-003,session-switch,apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift,apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift,pending,,add ensureSessionAndSwitch
+TAv2-004,unified-entry,apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift,apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift,pending,,add performUnifiedActivation
+TAv2-005,wire-clicks,apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift,apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift,pending,,replace launchTerminalAsync internals
+TAv2-006,delete-old,apps/swift/Sources/Capacitor/Models/ActivationActionExecutor.swift,,pending,yes,entire file deleted
+TAv2-006,delete-old,apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift,,pending,yes,test file deleted with source

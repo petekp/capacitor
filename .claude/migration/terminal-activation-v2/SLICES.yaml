@@ -1,0 +1,178 @@
+version: 1
+spec: .claude/docs/terminal-activation-ux-spec.md
+plan: .claude/plans/2026-03-01-terminal-activation-v2-implementation.md
+
+slices:
+  - id: TAv2-000
+    name: "Migration Control Plane"
+    status: "done"
+    depends_on: []
+    touched_paths:
+      - .claude/migration/terminal-activation-v2/CHARTER.md
+      - .claude/migration/terminal-activation-v2/DECISIONS.md
+      - .claude/migration/terminal-activation-v2/SLICES.yaml
+      - .claude/migration/terminal-activation-v2/MAP.csv
+      - scripts/ci/terminal-activation-v2-guard.sh
+    contracts:
+      added:
+        - .claude/migration/terminal-activation-v2/CHARTER.md
+        - .claude/migration/terminal-activation-v2/DECISIONS.md
+        - .claude/migration/terminal-activation-v2/SLICES.yaml
+        - .claude/migration/terminal-activation-v2/MAP.csv
+        - scripts/ci/terminal-activation-v2-guard.sh
+      changed: []
+      removed: []
+    deletion_targets: []
+    risks: []
+    notes: "Governance and guard script only. No runtime behavior changes."
+
+  - id: TAv2-001
+    name: "Managed-TTY State and Liveness Check"
+    status: "pending"
+    depends_on:
+      - TAv2-000
+    touched_paths:
+      - apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift
+      - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
+    contracts:
+      added:
+        - "TerminalLauncher.managedClientTty: String?"
+        - "TerminalLauncher.isTtyAlive(_:) -> Bool"
+      changed: []
+      removed: []
+    deletion_targets: []
+    smoke_scenarios:
+      - "testManagedClientTtyStartsNil"
+      - "testIsTtyAliveReturnsFalseForNonexistentTty"
+    risks: []
+    notes: "Plan Task 1. Adds persistent state for spec B6."
+
+  - id: TAv2-002
+    name: "Unified TTY Resolution"
+    status: "pending"
+    depends_on:
+      - TAv2-001
+    touched_paths:
+      - apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift
+      - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
+    contracts:
+      added:
+        - "TerminalLauncher.resolveTmuxClient(managedTty:isTtyAlive:resolveAnyClientTty:) -> String?"
+      changed: []
+      removed: []
+    deletion_targets: []
+    smoke_scenarios:
+      - "testResolveManagedTtyUsesManagedWhenAlive (S3/S5)"
+      - "testResolveManagedTtyFallsBackToAnyClientWhenManagedDead (S6)"
+      - "testResolveManagedTtyReturnsNilWhenNoClients (S1/S7)"
+    risks: []
+    notes: "Plan Task 2. Spec decision tree step 1."
+
+  - id: TAv2-003
+    name: "Unified Session Ensure + Switch"
+    status: "pending"
+    depends_on:
+      - TAv2-002
+    touched_paths:
+      - apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift
+      - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
+    contracts:
+      added:
+        - "TerminalLauncher.ensureSessionAndSwitch(sessionName:projectPath:clientTty:runScript:) -> Bool"
+      changed: []
+      removed: []
+    deletion_targets: []
+    smoke_scenarios:
+      - "testEnsureAndSwitchExistingSessionJustSwitches (S3)"
+      - "testEnsureAndSwitchCreatesSessionWhenMissing (S4)"
+    risks: []
+    notes: "Plan Task 3. Spec decision tree step 2. Combines B2 + B3."
+
+  - id: TAv2-004
+    name: "Unified Activation Entry Point"
+    status: "pending"
+    depends_on:
+      - TAv2-003
+    touched_paths:
+      - apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift
+      - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
+    contracts:
+      added:
+        - "TerminalLauncher.performUnifiedActivation(...) -> Bool"
+      changed: []
+      removed: []
+    deletion_targets: []
+    smoke_scenarios:
+      - "testActivateProjectSessionLaunchesWhenNoClientAndNoGhostty (S1)"
+      - "testActivateProjectSessionSwitchesOnManagedTty (S3)"
+      - "testActivateProjectSessionAdoptsClientWhenManagedDead (S6)"
+    risks:
+      - "Harness pattern may differ from existing test scaffolding"
+    notes: "Plan Task 4. Full decision tree wiring."
+
+  - id: TAv2-005
+    name: "Wire Card Clicks + Capture TTY"
+    status: "pending"
+    depends_on:
+      - TAv2-004
+    touched_paths:
+      - apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift
+      - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
+    contracts:
+      added:
+        - "Post-launch TTY polling in performUnifiedActivation"
+      changed:
+        - "launchTerminalAsync now calls unified flow instead of resolver → executor"
+      removed: []
+    deletion_targets: []
+    smoke_scenarios:
+      - "testManagedTtyCapturedAfterLaunch"
+      - "Full test suite (253+ tests)"
+    risks:
+      - "Existing tests mocking old resolver → executor path may need updating"
+    notes: "Plan Tasks 5+6 combined. Wires unified flow to real card clicks."
+
+  - id: TAv2-006
+    name: "Delete Old Dispatch Path"
+    status: "pending"
+    depends_on:
+      - TAv2-005
+    touched_paths:
+      - apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift
+      - apps/swift/Sources/Capacitor/Models/ActivationActionExecutor.swift
+      - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
+      - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
+    contracts:
+      added: []
+      changed: []
+      removed:
+        - "ActivationActionExecutor (entire file)"
+        - "performSwitchTmuxSession"
+        - "performEnsureTmuxSession"
+        - "switchTmuxSessionAction"
+        - "ensureTmuxSessionAction"
+        - "launchTerminalWithAERSnapshot"
+        - "recoverSnapshotFailureViaTmux"
+        - "resolveAttachedTmuxClientTty (replaced by resolveTmuxClient)"
+    deletion_targets:
+      - apps/swift/Sources/Capacitor/Models/ActivationActionExecutor.swift
+      - "performSwitchTmuxSession method"
+      - "performEnsureTmuxSession method"
+      - "switchTmuxSessionAction method"
+      - "ensureTmuxSessionAction method"
+      - "launchTerminalWithAERSnapshot method"
+      - "recoverSnapshotFailureViaTmux method"
+      - "resolveAttachedTmuxClientTty method"
+    denylist_patterns:
+      - "content:apps/swift/Sources/Capacitor/Models/ActivationActionExecutor.swift"
+      - "content:apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift::performSwitchTmuxSession"
+      - "content:apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift::performEnsureTmuxSession"
+      - "content:apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift::switchTmuxSessionAction"
+      - "content:apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift::ensureTmuxSessionAction"
+    smoke_scenarios:
+      - "Full test suite passes"
+      - "Guard script passes with all ratchets at 0"
+    risks:
+      - "ActivationActionExecutor tests must be replaced before deletion"
+      - "Other code may reference deleted methods"
+    notes: "Final cleanup slice. All anti-pattern budgets reach 0."
