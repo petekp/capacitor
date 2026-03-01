@@ -10,10 +10,10 @@ Scope: `core/`, `apps/swift/Tests/CapacitorTests/`, `tests/`, `services/ingest-w
 3. Freeze current weak-pattern surface with a CI guard so debt cannot grow.
 4. Define next rewrite slices to pay debt down deterministically.
 
-## Current Metrics (After RW-083)
+## Current Metrics (After RW-084)
 
 - Swift test files: `43`
-- Swift test methods: `254`
+- Swift test methods: `253`
 - Swift files with `source.contains` assertions: `0`
 - `source.contains` assertions (total): `0`
 - Swift test methods inside source-coupled files: `0`
@@ -126,7 +126,8 @@ Static bats source checks that do not execute behavior have been removed from th
 68. RW-081 introduced a shared setup fixture module (`SetupTestFixtures`) and removed duplicated setup status/diagnostic constructor scaffolding from readiness and hook diagnostic suites without changing behavior assertions.
 69. RW-082 consolidated hook diagnostic presentation assertions into two labeled contract matrices (visibility + header/guidance), reducing one-off test methods while preserving behavior semantics.
 70. RW-083 introduced a shared labeled setup scenario harness (`SetupScenarioHarness`) and rewired setup readiness/status contract suites to remove repeated local scenario record scaffolding without changing test-method coverage.
-71. Next reductions should continue collapsing duplicate edge-case assertions into explicit contract tables rather than proliferating one-off tests.
+71. RW-084 collapsed setup manager `executeStep` one-off assertions into a labeled action-routing matrix (`SetupRequirementsManagerTests`) and extended the shared setup scenario harness with async contract support, reducing Swift test methods by one without behavior loss.
+72. Next reductions should continue collapsing duplicate edge-case assertions into explicit contract tables rather than proliferating one-off tests.
 
 ## Guardrails Added
 
@@ -145,7 +146,7 @@ This does not claim these patterns are good. It prevents regression while we pay
 
 ## Next Slices (proposed)
 
-1. `RW-084` Continue setup test-surface reduction by collapsing remaining one-off setup manager action assertions into a compact action matrix while preserving explicit expected outcomes.
-2. `RW-085` Consolidate remaining setup presentation scenario definitions onto the shared scenario harness where duplication remains (header/guidance/status permutations).
+1. `RW-085` Consolidate remaining setup presentation scenario definitions onto the shared scenario harness where duplication remains (header/guidance/status permutations).
+2. `RW-086` Review setup/hook contract suites for redundant scenario rows and prune true duplicates while preserving one-row-per-branch semantics.
 
 Each slice should delete replaced tests in the same PR and ratchet the audit limits downward.

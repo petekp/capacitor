@@ -3,19 +3,35 @@ import XCTest
 
 @MainActor
 final class SetupRequirementsManagerTests: XCTestCase {
-    func testExecuteStepShellShowsShellInstructions() async {
-        let manager = SetupRequirementsManager.preview(.allPending)
+    func testExecuteStepShellInstructionRoutingScenariosMatchContract() async {
+        struct ShellInstructionRoutingState: Equatable {
+            let isShownBefore: Bool
+            let isShownAfter: Bool
+        }
 
-        XCTAssertFalse(manager.showShellInstructions)
-        await manager.executeStep(.shell)
-        XCTAssertTrue(manager.showShellInstructions)
-    }
+        let scenarios: [LabeledExpectationScenario<SetupStepID, ShellInstructionRoutingState>] = [
+            LabeledExpectationScenario(
+                label: "shell-step-shows-instructions",
+                input: .shell,
+                expected: .init(isShownBefore: false, isShownAfter: true),
+            ),
+            LabeledExpectationScenario(
+                label: "claude-step-keeps-instructions-hidden",
+                input: .claude,
+                expected: .init(isShownBefore: false, isShownAfter: false),
+            ),
+            LabeledExpectationScenario(
+                label: "hooks-step-keeps-instructions-hidden",
+                input: .hooks,
+                expected: .init(isShownBefore: false, isShownAfter: false),
+            ),
+        ]
 
-    func testExecuteStepClaudeDoesNotShowShellInstructions() async {
-        let manager = SetupRequirementsManager.preview(.allPending)
-
-        XCTAssertFalse(manager.showShellInstructions)
-        await manager.executeStep(.claude)
-        XCTAssertFalse(manager.showShellInstructions)
+        await assertLabeledScenariosAsync(scenarios, mismatch: "execute step shell-instruction routing mismatch") { stepID in
+            let manager = SetupRequirementsManager.preview(.allPending)
+            let before = manager.showShellInstructions
+            await manager.executeStep(stepID)
+            return ShellInstructionRoutingState(isShownBefore: before, isShownAfter: manager.showShellInstructions)
+        }
     }
 }

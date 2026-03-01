@@ -610,3 +610,8 @@ RW-083,swift-setup-status-copy-harness-cutover-rw083,apps/swift/Tests/CapacitorT
 RW-083,rewrite-test-audit-rw083,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit metrics/conclusions after setup scenario harness consolidation
 RW-083,rewrite-ledger-rw083,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-083 lifecycle and risk notes
 RW-083,rewrite-map-rw083,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-083 path mappings for guard enforcement
+RW-084,swift-setup-scenario-harness-async-rw084,apps/swift/Tests/CapacitorTests/SetupScenarioHarness.swift,apps/swift/Tests/CapacitorTests/SetupScenarioHarness.swift,done,false,Extend shared setup scenario harness with async assertion support for async manager contracts
+RW-084,swift-setup-manager-action-matrix-rw084,apps/swift/Tests/CapacitorTests/SetupRequirementsManagerTests.swift,apps/swift/Tests/CapacitorTests/SetupRequirementsManagerTests.swift,done,false,Replace one-off executeStep tests with labeled setup-step action matrix contract
+RW-084,rewrite-test-audit-rw084,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit metrics/conclusions after setup manager action matrix consolidation
+RW-084,rewrite-ledger-rw084,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-084 lifecycle and risk notes
+RW-084,rewrite-map-rw084,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-084 path mappings for guard enforcement

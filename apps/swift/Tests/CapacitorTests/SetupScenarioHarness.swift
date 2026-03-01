@@ -24,4 +24,23 @@ extension XCTestCase {
             )
         }
     }
+
+    func assertLabeledScenariosAsync<Input, Expected: Equatable>(
+        _ scenarios: [LabeledExpectationScenario<Input, Expected>],
+        mismatch: String,
+        file: StaticString = #filePath,
+        line: UInt = #line,
+        evaluate: (Input) async -> Expected
+    ) async {
+        for scenario in scenarios {
+            let actual = await evaluate(scenario.input)
+            XCTAssertEqual(
+                actual,
+                scenario.expected,
+                "[\(scenario.label)] \(mismatch)",
+                file: file,
+                line: line,
+            )
+        }
+    }
 }
