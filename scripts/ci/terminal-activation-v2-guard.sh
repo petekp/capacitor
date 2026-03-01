@@ -22,10 +22,10 @@ fail() {
 # Start at measured baseline, decrement as slices eliminate instances.
 # Target: all reach 0 by TAv2-006.
 
-BUDGET_RESOLVE_ATTACHED_TTY=4     # resolveAttachedTmuxClientTty in Sources (TAv2-005 adds 1 temporary ref in unified flow wiring)
-BUDGET_ACTION_SPECIFIC_METHODS=10 # performSwitch|performEnsure|switchTmuxSessionAction|ensureTmuxSessionAction|launchTerminalWithAERSnapshot in Sources (TAv2-005 removed 1)
-BUDGET_EXECUTOR_REFS=3            # ActivationActionExecutor in Sources
-BUDGET_ACTION_TEST_METHODS=9      # action-specific methods in Tests
+BUDGET_RESOLVE_ATTACHED_TTY=0     # resolveAttachedTmuxClientTty in Sources (TAv2-006: renamed to resolveAnyTmuxClientTty)
+BUDGET_ACTION_SPECIFIC_METHODS=0  # performSwitch|performEnsure|switchTmuxSessionAction|ensureTmuxSessionAction|launchTerminalWithAERSnapshot in Sources (TAv2-006: all deleted)
+BUDGET_EXECUTOR_REFS=0            # ActivationActionExecutor in Sources (TAv2-006: file deleted)
+BUDGET_ACTION_TEST_METHODS=0      # action-specific methods in Tests (TAv2-006: all deleted)
 
 check_ratchet() {
   local label="$1"
@@ -34,7 +34,7 @@ check_ratchet() {
   local search_path="$4"
 
   local count
-  count=$(cd "$ROOT" && rg -c "$pattern" "$search_path" 2>/dev/null | awk -F: '{s+=$NF} END {print s+0}')
+  count=$(cd "$ROOT" && { rg -c "$pattern" "$search_path" 2>/dev/null || true; } | awk -F: '{s+=$NF} END {print s+0}')
 
   if [[ "$MODE" == "--status" ]]; then
     printf "  %-40s %3d / %3d\n" "$label" "$count" "$budget"

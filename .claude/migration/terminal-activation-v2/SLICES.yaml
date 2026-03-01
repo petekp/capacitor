@@ -134,7 +134,7 @@ slices:
 
   - id: TAv2-006
     name: "Delete Old Dispatch Path"
-    status: "pending"
+    status: "done"
     depends_on:
       - TAv2-005
     touched_paths:
@@ -164,7 +164,7 @@ slices:
       - "recoverSnapshotFailureViaTmux method"
       - "resolveAttachedTmuxClientTty method"
     denylist_patterns:
-      - "content:apps/swift/Sources/Capacitor/Models/ActivationActionExecutor.swift"
+      - "content:apps/swift/Sources/Capacitor/Models/ActivationActionExecutor.swift::ActivationActionExecutor"
       - "content:apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift::performSwitchTmuxSession"
       - "content:apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift::performEnsureTmuxSession"
       - "content:apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift::switchTmuxSessionAction"

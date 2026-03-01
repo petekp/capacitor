@@ -15,6 +15,12 @@ private func debugLog(_ message: String) {
     DebugLog.write("[TerminalLauncher] \(message)")
 }
 
+enum GhosttyWindowState: Equatable {
+    case notRunning
+    case axUnavailable
+    case running
+}
+
 protocol AppleScriptClient {
     func run(_ script: String)
     func runChecked(_ script: String) -> Bool
@@ -199,7 +205,7 @@ struct TerminalActivationResult: Equatable {
 // Ghostty window. The runtime shell snapshot finds the actively-used terminal.
 
 @MainActor
-final class TerminalLauncher: ActivationActionDependencies {
+final class TerminalLauncher {
     enum ResolverError: Error {
         case engineUnavailable
     }
@@ -207,69 +213,24 @@ final class TerminalLauncher: ActivationActionDependencies {
     private enum Constants {
         static let activationDelaySeconds: Double = 0.3
         static let homebrewPaths = "/opt/homebrew/bin:/usr/local/bin"
-        static let snapshotFailureFallbackDebounceSeconds: TimeInterval = 1.0
     }
 
     private let appleScript: AppleScriptClient
     private let ghosttyWindowReader: GhosttyWindowReader
     private let resolveActivationDecisionOverride: ((Project) async throws -> ActivationDecision)?
     private let fallbackTmuxSessionResolver: ((String) async -> String?)?
-    private let fallbackTmuxSessionExistsResolver: ((String) async -> Bool)?
-    private let executeActivationActionOverride: ((ActivationAction, String, String) async -> Bool)?
     private let launchNewTerminalOverride: ((String, String) -> Bool)?
     /// Override for the unified activation flow. Tests use this to intercept card-click behavior.
     private let activateProjectSessionOverride: ((String, String) async -> Bool)?
     private let hudEngine: CoreRuntime?
     var onActivationTrace: ((String) -> Void)?
     var onActivationResult: ((TerminalActivationResult) -> Void)?
-    private lazy var executor: ActivationActionExecutor = {
-        let tmuxAdapter = TmuxClientAdapter(
-            hasAnyClientAttached: { [weak self] in
-                await self?.hasAnyClientAttachedInternal() ?? false
-            },
-            getCurrentClientTty: { [weak self] in
-                await self?.getCurrentClientTtyInternal()
-            },
-            switchClient: { [weak self] sessionName, clientTty in
-                await self?.switchClientInternal(to: sessionName, clientTty: clientTty) ?? false
-            },
-        )
-
-        let terminalDiscovery = TerminalDiscoveryAdapter(
-            activateTerminalByTTY: { [weak self] tty in
-                await self?.activateTerminalByTTYDiscovery(tty: tty) ?? false
-            },
-            activateAppByName: { [weak self] appName in
-                self?.activateAppAction(appName: appName) ?? false
-            },
-            ghosttyWindowState: { [weak self] in
-                self?.ghosttyWindowStateInternal() ?? .notRunning
-            },
-            activateGhostty: { [weak self] projectPath in
-                await self?.activateGhostty(projectPath: projectPath) ?? false
-            },
-        )
-
-        let terminalLauncher = TerminalLauncherAdapter(
-            launchTerminalWithTmux: { [weak self] sessionName in
-                self?.launchTerminalWithTmuxSession(sessionName)
-            },
-        )
-
-        return ActivationActionExecutor(
-            dependencies: self,
-            tmuxClient: tmuxAdapter,
-            terminalDiscovery: terminalDiscovery,
-            terminalLauncher: terminalLauncher,
-        )
-    }()
 
     private static let activationTraceEnabled: Bool = {
         let value = ProcessInfo.processInfo.environment["CAPACITOR_ACTIVATION_TRACE"]?.lowercased() ?? ""
         return value == "1" || value == "true" || value == "yes"
     }()
 
-    private var lastSnapshotFailureFallbackLaunchByProjectPath: [String: Date] = [:]
     private var latestLaunchRequestID: UInt64 = 0
     private var launchTask: _Concurrency.Task<Void, Never>?
 
@@ -284,8 +245,6 @@ final class TerminalLauncher: ActivationActionDependencies {
         ghosttyWindowReader: GhosttyWindowReader? = nil,
         resolveActivationDecisionOverride: ((Project) async throws -> ActivationDecision)? = nil,
         fallbackTmuxSessionResolver: ((String) async -> String?)? = nil,
-        fallbackTmuxSessionExistsResolver: ((String) async -> Bool)? = nil,
-        executeActivationActionOverride: ((ActivationAction, String, String) async -> Bool)? = nil,
         launchNewTerminalOverride: ((String, String) -> Bool)? = nil,
         activateProjectSessionOverride: ((String, String) async -> Bool)? = nil,
         hudEngineFactory: () throws -> CoreRuntime = { try CoreRuntime() },
@@ -294,8 +253,6 @@ final class TerminalLauncher: ActivationActionDependencies {
         self.ghosttyWindowReader = ghosttyWindowReader ?? DefaultGhosttyAXReader()
         self.resolveActivationDecisionOverride = resolveActivationDecisionOverride
         self.fallbackTmuxSessionResolver = fallbackTmuxSessionResolver
-        self.fallbackTmuxSessionExistsResolver = fallbackTmuxSessionExistsResolver
-        self.executeActivationActionOverride = executeActivationActionOverride
         self.launchNewTerminalOverride = launchNewTerminalOverride
         self.activateProjectSessionOverride = activateProjectSessionOverride
         hudEngine = try? hudEngineFactory()
@@ -495,7 +452,7 @@ final class TerminalLauncher: ActivationActionDependencies {
             managedTty: managedClientTty,
             isTtyAlive: Self.isTtyAlive,
             resolveAnyClientTty: {
-                await Self.resolveAttachedTmuxClientTty(
+                await Self.resolveAnyTmuxClientTty(
                     runScript: { await Self.runBashScriptWithResult($0) },
                 )
             },
@@ -540,94 +497,6 @@ final class TerminalLauncher: ActivationActionDependencies {
 
     private func shouldProcessLaunchRequest(_ requestID: UInt64) -> Bool {
         requestID == latestLaunchRequestID && !_Concurrency.Task.isCancelled
-    }
-
-    private func shouldLaunchSnapshotFailureFallbackLaunch(for projectPath: String) -> Bool {
-        let now = Date()
-        lastSnapshotFailureFallbackLaunchByProjectPath = lastSnapshotFailureFallbackLaunchByProjectPath.filter { _, value in
-            now.timeIntervalSince(value) <= Constants.snapshotFailureFallbackDebounceSeconds
-        }
-        if let lastLaunch = lastSnapshotFailureFallbackLaunchByProjectPath[projectPath],
-           now.timeIntervalSince(lastLaunch) < Constants.snapshotFailureFallbackDebounceSeconds
-        {
-            return false
-        }
-        lastSnapshotFailureFallbackLaunchByProjectPath[projectPath] = now
-        return true
-    }
-
-    private func recoverSnapshotFailureViaTmuxIfPossible(for project: Project, requestID: UInt64) async -> Bool {
-        guard shouldProcessLaunchRequest(requestID) else {
-            return false
-        }
-        guard let sessionName = await resolveSnapshotFailureFallbackTmuxSession(for: project.path) else {
-            return false
-        }
-        let recovered = await executeActivationAction(
-            .ensureTmuxSession(sessionName: sessionName, projectPath: project.path),
-            projectPath: project.path,
-            projectName: project.name,
-        )
-        guard shouldProcessLaunchRequest(requestID) else {
-            debugLog("snapshot_unavailable_tmux_recovery ignored stale request id=\(requestID) path=\(project.path)")
-            return true
-        }
-        if recovered {
-            debugLog("snapshot_unavailable_tmux_recovery success path=\(project.path) session=\(sessionName)")
-            Telemetry.emit("activation_outcome", "snapshot_unavailable_tmux_recovery", payload: [
-                "project": project.name,
-                "path": project.path,
-                "session": sessionName,
-                "used_fallback": true,
-                "success": true,
-            ])
-            onActivationResult?(TerminalActivationResult(
-                projectName: project.name,
-                projectPath: project.path,
-                success: true,
-                usedFallback: true,
-            ))
-            return true
-        }
-        debugLog("snapshot_unavailable_tmux_recovery failed path=\(project.path) session=\(sessionName)")
-        return false
-    }
-
-    private func resolveSnapshotFailureFallbackTmuxSession(for projectPath: String) async -> String? {
-        let candidate: String? = if let fallbackTmuxSessionResolver {
-            await fallbackTmuxSessionResolver(projectPath)
-        } else {
-            await findTmuxSessionForPath(projectPath)
-        }
-        if let candidate {
-            let trimmed = candidate.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !trimmed.isEmpty {
-                return trimmed
-            }
-        }
-
-        // During runtime snapshot outages, preserve session-name-exact semantics from the resolver:
-        // if the project slug itself is a valid tmux session, recover via ensure/switch.
-        let projectSlug = URL(fileURLWithPath: projectPath).lastPathComponent
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !projectSlug.isEmpty else { return nil }
-
-        let exists: Bool = if let fallbackTmuxSessionExistsResolver {
-            await fallbackTmuxSessionExistsResolver(projectSlug)
-        } else {
-            await hasTmuxSessionNamed(projectSlug)
-        }
-        if exists {
-            debugLog("snapshot_unavailable_tmux_recovery session=\(projectSlug) path=\(projectPath)")
-            return projectSlug
-        }
-        return nil
-    }
-
-    private func hasTmuxSessionNamed(_ sessionName: String) async -> Bool {
-        let escaped = shellEscape(sessionName)
-        let result = await runBashScriptWithResultAsync("tmux has-session -t \(escaped) 2>/dev/null")
-        return result.exitCode == 0
     }
 
     private func resolveActivationDecision(for project: Project) async throws -> ActivationDecision {
@@ -711,104 +580,7 @@ final class TerminalLauncher: ActivationActionDependencies {
         }
     }
 
-    static func performSwitchTmuxSession(
-        sessionName: String,
-        projectPath: String,
-        runScript: (String) async -> (exitCode: Int32, output: String?),
-        activateTerminal: (String?, String) async -> Bool,
-    ) async -> Bool {
-        let clientTty = await resolveAttachedTmuxClientTty(runScript: runScript)
-        let escapedSession = shellEscape(sessionName)
-        let switchCommand: String
-        if let clientTty, !clientTty.isEmpty {
-            let escapedClientTty = shellEscape(clientTty)
-            switchCommand = "tmux switch-client -c \(escapedClientTty) -t \(escapedSession) 2>&1"
-        } else {
-            switchCommand = "tmux switch-client -t \(escapedSession) 2>&1"
-        }
-        let switchResult = await runScript(switchCommand)
-        if switchResult.exitCode == 0 {
-            let activated = await activateTerminal(clientTty, projectPath)
-            guard activated else { return false }
-            _ = await focusTmuxPaneForProjectPathIfAvailable(
-                sessionName: sessionName,
-                projectPath: projectPath,
-                clientTty: clientTty,
-                runScript: runScript,
-            )
-            return true
-        }
-        return false
-    }
-
-    static func performEnsureTmuxSession(
-        sessionName: String,
-        projectPath: String,
-        runScript: (String) async -> (exitCode: Int32, output: String?),
-        activateTerminal: (String?, String) async -> Bool,
-        preferredClientTty: String? = nil,
-        launchWhenNoClient: (() -> Bool)? = nil,
-    ) async -> Bool {
-        let normalizedPreferredClientTty = preferredClientTty?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let clientTty: String? = if let normalizedPreferredClientTty, !normalizedPreferredClientTty.isEmpty {
-            normalizedPreferredClientTty
-        } else {
-            await resolveAttachedTmuxClientTty(runScript: runScript)
-        }
-        let escapedSession = shellEscape(sessionName)
-        let switchCommand: String
-        if let clientTty, !clientTty.isEmpty {
-            let escapedClientTty = shellEscape(clientTty)
-            switchCommand = "tmux switch-client -c \(escapedClientTty) -t \(escapedSession) 2>&1"
-        } else {
-            switchCommand = "tmux switch-client -t \(escapedSession) 2>&1"
-        }
-        let switchResult = await runScript(switchCommand)
-        if switchResult.exitCode == 0 {
-            let activated = await activateTerminal(clientTty, projectPath)
-            guard activated else { return false }
-            _ = await focusTmuxPaneForProjectPathIfAvailable(
-                sessionName: sessionName,
-                projectPath: projectPath,
-                clientTty: clientTty,
-                runScript: runScript,
-            )
-            return true
-        }
-
-        let hasSessionResult = await runScript("tmux has-session -t \(escapedSession) 2>/dev/null")
-        let escapedPath = shellEscape(projectPath)
-        if hasSessionResult.exitCode != 0 {
-            let createResult = await runScript(
-                "tmux new-session -d -s \(escapedSession) -c \(escapedPath) 2>&1",
-            )
-            if createResult.exitCode != 0 {
-                return false
-            }
-        }
-
-        let retryResult = await runScript(switchCommand)
-        if retryResult.exitCode == 0 {
-            let activated = await activateTerminal(clientTty, projectPath)
-            guard activated else { return false }
-            _ = await focusTmuxPaneForProjectPathIfAvailable(
-                sessionName: sessionName,
-                projectPath: projectPath,
-                clientTty: clientTty,
-                runScript: runScript,
-            )
-            return true
-        }
-
-        if clientTty == nil, let launchWhenNoClient {
-            return launchWhenNoClient()
-        }
-
-        return false
-    }
-
-    static func resolveAttachedTmuxClientTty(
+    static func resolveAnyTmuxClientTty(
         runScript: (String) async -> (exitCode: Int32, output: String?),
     ) async -> String? {
         let result = await runScript("tmux display-message -p '#{client_tty}' 2>/dev/null")
@@ -975,137 +747,6 @@ final class TerminalLauncher: ActivationActionDependencies {
         return (bestMatch.windowIndex, bestMatch.paneIndex)
     }
 
-    // MARK: - Rust Resolver Path
-
-    private func launchTerminalWithAERSnapshot(for project: Project, requestID: UInt64) async -> Bool {
-        do {
-            let decision = try await resolveActivationDecision(for: project)
-            guard shouldProcessLaunchRequest(requestID) else {
-                debugLog("ARE snapshot ignored for stale request id=\(requestID) path=\(project.path)")
-                return true
-            }
-
-            if let trace = decision.trace {
-                let formatted = formatActivationTrace(trace: trace)
-                for line in formatted.split(separator: "\n") {
-                    debugLog(String(line))
-                }
-                onActivationTrace?(formatted)
-            } else {
-                debugLog("ActivationTrace reason=\(decision.reason)")
-                onActivationTrace?(decision.reason)
-            }
-
-            var primary = decision.primary
-            var fallback = decision.fallback
-            let normalizedReasonCode = decision.reason.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
-
-            let shouldAttemptTmuxRecovery = normalizedReasonCode.contains("NO_TRUSTED_EVIDENCE")
-                || normalizedReasonCode.contains("TMUX_SESSION_DETACHED")
-
-            if shouldAttemptTmuxRecovery {
-                if let sessionName = await resolveSnapshotFailureFallbackTmuxSession(for: project.path) {
-                    debugLog("ARE tmux-recovery override reason=\(normalizedReasonCode) path=\(project.path) session=\(sessionName)")
-                    primary = .ensureTmuxSession(sessionName: sessionName, projectPath: project.path)
-                } else {
-                    debugLog("ARE no tmux session for recovery path=\(project.path)")
-                }
-            }
-            guard shouldProcessLaunchRequest(requestID) else {
-                debugLog("ARE snapshot ignored for stale request id=\(requestID) path=\(project.path) stage=post_no_trusted_evidence")
-                return true
-            }
-            logger.info(
-                "ARE launcher resolver: reason=\(decision.reason) primary=\(String(describing: primary)) fallback=\(String(describing: fallback))",
-            )
-            Telemetry.emit("activation_decision", "are_snapshot", payload: [
-                "primary": String(describing: primary),
-                "fallback": String(describing: fallback),
-                "reason": decision.reason,
-            ])
-
-            let primarySuccess = await executeActivationAction(primary, projectPath: project.path, projectName: project.name)
-            guard shouldProcessLaunchRequest(requestID) else {
-                debugLog("ARE snapshot ignored for stale request id=\(requestID) path=\(project.path) stage=post_primary")
-                return true
-            }
-            var fallbackSuccess = false
-            var usedFallback = false
-            if !primarySuccess {
-                let primaryIsLaunchNew = if case .launchNewTerminal = primary {
-                    true
-                } else {
-                    false
-                }
-                if !primaryIsLaunchNew, shouldProcessLaunchRequest(requestID) {
-                    if fallback == nil {
-                        fallback = .launchNewTerminal(
-                            projectPath: project.path,
-                            projectName: project.name,
-                        )
-                    }
-                }
-                if let fallback, shouldProcessLaunchRequest(requestID) {
-                    usedFallback = true
-                    fallbackSuccess = await executeActivationAction(
-                        fallback,
-                        projectPath: project.path,
-                        projectName: project.name,
-                    )
-                }
-            }
-
-            let finalSuccess = primarySuccess || fallbackSuccess
-            guard shouldProcessLaunchRequest(requestID) else {
-                debugLog("ARE snapshot ignored for stale request id=\(requestID) path=\(project.path) stage=post_outcome")
-                return true
-            }
-            Telemetry.emit("activation_outcome", "are_snapshot_activation", payload: [
-                "project": project.name,
-                "path": project.path,
-                "reason": decision.reason,
-                "primary_action": String(describing: primary),
-                "fallback_action": String(describing: fallback),
-                "primary_success": primarySuccess,
-                "used_fallback": usedFallback,
-                "fallback_success": fallbackSuccess,
-                "success": finalSuccess,
-            ])
-            onActivationResult?(TerminalActivationResult(
-                projectName: project.name,
-                projectPath: project.path,
-                success: finalSuccess,
-                usedFallback: usedFallback,
-            ))
-            return true
-        } catch {
-            if error is CancellationError || !shouldProcessLaunchRequest(requestID) {
-                debugLog("ARE snapshot request canceled/stale id=\(requestID) path=\(project.path)")
-                return true
-            }
-            logger.warning("ARE launcher snapshot unavailable, falling back to resolver: \(error.localizedDescription)")
-            Telemetry.emit("activation_decision", "are_snapshot_fetch_failed", payload: [
-                "project": project.name,
-                "path": project.path,
-                "error": error.localizedDescription,
-            ])
-            return false
-        }
-    }
-
-    // MARK: - Action Execution
-
-    private func executeActivationAction(_ action: ActivationAction, projectPath: String, projectName: String) async -> Bool {
-        if let executeActivationActionOverride {
-            return await executeActivationActionOverride(action, projectPath, projectName)
-        }
-        debugLog("executeActivationAction action=\(String(describing: action))")
-        logger.debug("Executing activation action: \(String(describing: action))")
-        let result = await executor.execute(action, projectPath: projectPath, projectName: projectName)
-        logger.debug("Activation action result: \(result ? "SUCCESS" : "FAILED")")
-        return result
-    }
-
     // MARK: - Action Helpers
 
     private func activateAppAction(appName: String) -> Bool {
@@ -1124,75 +765,6 @@ final class TerminalLauncher: ActivationActionDependencies {
         }
         logger.info("  ▸ activateKittyWindow result: \(activated ? "SUCCESS" : "FAILED")")
         return activated
-    }
-
-    private func switchTmuxSessionAction(sessionName: String, projectPath: String) async -> Bool {
-        logger.info("  ▸ switchTmuxSession: \(sessionName)")
-        debugLog("switchTmuxSession session=\(sessionName)")
-        let succeeded = await Self.performSwitchTmuxSession(
-            sessionName: sessionName,
-            projectPath: projectPath,
-            runScript: { await runBashScriptWithResultAsync($0) },
-            activateTerminal: { tty, switchedProjectPath in
-                await self.activateTerminalAfterTmuxSwitch(
-                    clientTty: tty,
-                    projectPath: switchedProjectPath,
-                    tmuxSessionHint: sessionName,
-                )
-            },
-        )
-        if !succeeded {
-            logger.warning("  ▸ tmux switch failed for session '\(sessionName)'")
-            debugLog("switchTmuxSession failed session=\(sessionName)")
-            return false
-        }
-        logger.info("  ▸ switchTmuxSession result: SUCCESS")
-        return true
-    }
-
-    private func ensureTmuxSessionAction(
-        sessionName: String,
-        projectPath: String,
-        preferredClientTty: String? = nil,
-    ) async -> Bool {
-        logger.info("  ▸ ensureTmuxSession: \(sessionName)")
-        debugLog("ensureTmuxSession session=\(sessionName)")
-        let succeeded = await Self.performEnsureTmuxSession(
-            sessionName: sessionName,
-            projectPath: projectPath,
-            runScript: { await runBashScriptWithResultAsync($0) },
-            activateTerminal: { tty, switchedProjectPath in
-                await self.activateTerminalAfterTmuxSwitch(
-                    clientTty: tty,
-                    projectPath: switchedProjectPath,
-                    tmuxSessionHint: sessionName,
-                )
-            },
-            preferredClientTty: preferredClientTty,
-            launchWhenNoClient: { [weak self] in
-                guard let self else { return false }
-                debugLog("ensureTmuxSession no attached client; launching terminal with tmux session=\(sessionName)")
-                launchTerminalWithTmuxSession(sessionName, projectPath: projectPath)
-                return true
-            },
-        )
-        if !succeeded {
-            logger.warning("  ▸ tmux ensure/create failed for session '\(sessionName)'")
-            debugLog("ensureTmuxSession failed session=\(sessionName)")
-            return false
-        }
-        logger.info("  ▸ ensureTmuxSession result: SUCCESS")
-        return true
-    }
-
-    private func activateHostThenSwitchTmuxAction(hostTty: String, sessionName: String, projectPath: String) async -> Bool {
-        logger.info("  ▸ activateHostThenSwitchTmux: hostTty=\(hostTty), session=\(sessionName)")
-        debugLog("activateHostThenSwitchTmux hostTty=\(hostTty) session=\(sessionName) path=\(projectPath)")
-        return await executor.activateHostThenSwitchTmux(
-            hostTty: hostTty,
-            sessionName: sessionName,
-            projectPath: projectPath,
-        )
     }
 
     private func launchTerminalWithTmuxAction(sessionName: String, projectPath: String) -> Bool {
@@ -1405,74 +977,6 @@ final class TerminalLauncher: ActivationActionDependencies {
 
         guard findRunningIDE(parentApp) != nil else { return false }
         return await activateIDEWindowInternal(app: parentApp, projectPath: projectPath)
-    }
-
-    // MARK: - ActivationActionDependencies
-
-    func activateByTty(tty: String, terminalType: TerminalType, projectPath: String?) async -> Bool {
-        let result = await activateByTtyAction(tty: tty, terminalType: terminalType, projectPath: projectPath)
-        logger.info("  ▸ activateByTty result: \(result ? "SUCCESS" : "FAILED")")
-        return result
-    }
-
-    func activateGhostty(projectPath: String?) async -> Bool {
-        await activateGhosttyWithAXRouting(forTty: nil, projectPath: projectPath)
-    }
-
-    func activateApp(appName: String) -> Bool {
-        activateAppAction(appName: appName)
-    }
-
-    func activateKittyWindow(shellPid: UInt32) -> Bool {
-        activateKittyWindowAction(shellPid: shellPid)
-    }
-
-    func activateIdeWindow(ideType: IdeType, projectPath: String) async -> Bool {
-        logger.info("  ▸ activateIdeWindow: ide=\(String(describing: ideType)), path=\(projectPath)")
-        debugLog("activateIdeWindow ide=\(String(describing: ideType)) path=\(projectPath)")
-        let result = await activateIdeWindowAction(ideType: ideType, projectPath: projectPath)
-        logger.info("  ▸ activateIdeWindow result: \(result ? "SUCCESS" : "FAILED")")
-        return result
-    }
-
-    func switchTmuxSession(sessionName: String, projectPath: String) async -> Bool {
-        await switchTmuxSessionAction(sessionName: sessionName, projectPath: projectPath)
-    }
-
-    func ensureTmuxSession(sessionName: String, projectPath: String) async -> Bool {
-        await ensureTmuxSessionAction(sessionName: sessionName, projectPath: projectPath)
-    }
-
-    func ensureTmuxSession(
-        sessionName: String,
-        projectPath: String,
-        preferredClientTty: String?,
-    ) async -> Bool {
-        await ensureTmuxSessionAction(
-            sessionName: sessionName,
-            projectPath: projectPath,
-            preferredClientTty: preferredClientTty,
-        )
-    }
-
-    func activateHostThenSwitchTmux(hostTty: String, sessionName: String, projectPath: String) async -> Bool {
-        await activateHostThenSwitchTmuxAction(
-            hostTty: hostTty,
-            sessionName: sessionName,
-            projectPath: projectPath,
-        )
-    }
-
-    func launchTerminalWithTmux(sessionName: String, projectPath: String) -> Bool {
-        launchTerminalWithTmuxAction(sessionName: sessionName, projectPath: projectPath)
-    }
-
-    func launchNewTerminal(projectPath: String, projectName: String) -> Bool {
-        launchNewTerminalAction(projectPath: projectPath, projectName: projectName)
-    }
-
-    func activatePriorityFallback() -> Bool {
-        activatePriorityFallbackAction()
     }
 
     // MARK: - Adapter Helpers
