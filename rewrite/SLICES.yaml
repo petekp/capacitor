@@ -3008,3 +3008,32 @@ slices:
     risks:
       - "Fixture abstraction can hide per-test intent if helpers become over-parameterized or encode behavior implicitly."
     notes: "Extracts shared setup fixture builders (`SetupStatus`, `DependencyStatus`, `HookDiagnosticReport`) and rewires setup-focused tests to reduce constructor duplication."
+
+  - id: RW-082
+    name: "Setup Diagnostic Contract Matrix Consolidation"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-081
+    touched_paths:
+      - apps/swift/Tests/CapacitorTests/HookDiagnosticPresentationTests.swift
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - apps/swift/Tests/CapacitorTests/HookDiagnosticPresentationTests.swift
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios:
+      - hook install/fix flow
+      - fresh install setup flow
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Merging one-off diagnostic assertions into matrices can accidentally drop nuance unless scenario labels and expectations remain explicit."
+    notes: "Replaces overlapping hook-diagnostic visibility/header/guidance one-off tests with labeled contract matrices to reduce test-method proliferation."

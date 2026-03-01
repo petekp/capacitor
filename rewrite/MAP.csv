@@ -600,3 +600,7 @@ RW-081,swift-startup-readiness-fixture-cutover-rw081,apps/swift/Tests/CapacitorT
 RW-081,rewrite-test-audit-rw081,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit metrics/conclusions after setup fixture consolidation
 RW-081,rewrite-ledger-rw081,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-081 lifecycle and risk notes
 RW-081,rewrite-map-rw081,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-081 path mappings for guard enforcement
+RW-082,swift-hook-diagnostic-matrix-tests-rw082,apps/swift/Tests/CapacitorTests/HookDiagnosticPresentationTests.swift,apps/swift/Tests/CapacitorTests/HookDiagnosticPresentationTests.swift,done,false,Collapse one-off diagnostic visibility/header/guidance assertions into labeled scenario matrices
+RW-082,rewrite-test-audit-rw082,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit metrics/conclusions after setup diagnostic matrix consolidation
+RW-082,rewrite-ledger-rw082,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-082 lifecycle and risk notes
+RW-082,rewrite-map-rw082,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-082 path mappings for guard enforcement
