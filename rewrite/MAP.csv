@@ -457,3 +457,10 @@ RW-062,swift-date-formatting-tests-rw062,apps/swift/Tests/CapacitorTests/Runtime
 RW-062,rewrite-test-audit-rw062,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit metrics and conclusions after date parsing consolidation
 RW-062,rewrite-ledger-rw062,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-062 lifecycle and risk notes
 RW-062,rewrite-map-rw062,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-062 path mappings for guard enforcement
+RW-063,swift-date-formatting-current-timestamp-helper-rw063,apps/swift/Sources/Capacitor/Utilities/DateFormatting.swift,apps/swift/Sources/Capacitor/Utilities/DateFormatting.swift,done,false,Add canonical currentISO8601Timestamp helper and reuse shared ISO8601 formatter surface
+RW-063,swift-debug-log-date-helper-cutover-rw063,apps/swift/Sources/Capacitor/Utilities/DebugLog.swift,apps/swift/Sources/Capacitor/Utilities/DebugLog.swift,done,false,Replace ad-hoc ISO8601 formatter allocations with canonical timestamp helper in log write/trim paths
+RW-063,swift-runtime-client-date-helper-cutover-rw063,apps/swift/Sources/Capacitor/Models/RuntimeClient.swift,apps/swift/Sources/Capacitor/Models/RuntimeClient.swift,done,false,Replace ad-hoc fallback snapshot updatedAt formatter allocation with canonical timestamp helper
+RW-063,swift-uniffi-date-adapter-cutover-rw063,apps/swift/Sources/Capacitor/Bridge/UniFFIExtensions.swift,apps/swift/Sources/Capacitor/Bridge/UniFFIExtensions.swift,done,false,Replace ad-hoc UniFFI date parsing allocations with canonical parseISO8601Date helper
+RW-063,rewrite-test-audit-rw063,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit conclusions after ad-hoc ISO8601 allocation cleanup
+RW-063,rewrite-ledger-rw063,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-063 lifecycle and risk notes
+RW-063,rewrite-map-rw063,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-063 path mappings for guard enforcement

@@ -70,3 +70,8 @@ func parseISO8601Date(_ string: String) -> Date? {
     }
     return nil
 }
+
+/// Format the current wall-clock time using the canonical shared ISO8601 formatter.
+func currentISO8601Timestamp() -> String {
+    ISO8601DateFormatter.shared.string(from: Date())
+}

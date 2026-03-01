@@ -361,7 +361,7 @@ final class RuntimeClient {
             reasonCode: "NO_TRUSTED_EVIDENCE",
             reason: "No routing evidence available in core snapshot",
             evidence: [],
-            updatedAt: ISO8601DateFormatter().string(from: Date()),
+            updatedAt: currentISO8601Timestamp(),
         )
     }
 

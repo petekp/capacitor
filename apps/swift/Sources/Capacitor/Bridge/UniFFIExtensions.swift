@@ -104,10 +104,10 @@ extension CreationProgress: Codable {
 
 extension ProjectCreation {
     var createdAtDate: Date? {
-        ISO8601DateFormatter().date(from: createdAt)
+        parseISO8601Date(createdAt)
     }
 
     var completedAtDate: Date? {
-        completedAt.flatMap { ISO8601DateFormatter().date(from: $0) }
+        completedAt.flatMap(parseISO8601Date)
     }
 }

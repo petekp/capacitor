@@ -2285,3 +2285,36 @@ slices:
     risks:
       - "Unifying parsing fallback behavior can subtly change timestamp acceptance/rejection if any call sites relied on RuntimeDateParser-specific normalization quirks."
     notes: "Deletes RuntimeDateParser and consolidates all Swift timestamp parsing into DateFormatting.parseISO8601Date, including microsecond normalization support and call-site rewires."
+
+  - id: RW-063
+    name: "Remove Ad-Hoc ISO8601 Allocations in Hot Paths"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-062
+    touched_paths:
+      - apps/swift/Sources/Capacitor/Utilities/DateFormatting.swift
+      - apps/swift/Sources/Capacitor/Utilities/DebugLog.swift
+      - apps/swift/Sources/Capacitor/Models/RuntimeClient.swift
+      - apps/swift/Sources/Capacitor/Bridge/UniFFIExtensions.swift
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - apps/swift/Sources/Capacitor/Utilities/DateFormatting.swift
+        - apps/swift/Sources/Capacitor/Utilities/DebugLog.swift
+        - apps/swift/Sources/Capacitor/Models/RuntimeClient.swift
+        - apps/swift/Sources/Capacitor/Bridge/UniFFIExtensions.swift
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Switching log/snapshot timestamp formatting to shared helpers can change serialized timestamp precision (fractional seconds) and affect downstream string-level expectations."
+    notes: "Replaces ad-hoc `ISO8601DateFormatter()` allocations in DebugLog, RuntimeClient fallback routing snapshots, and UniFFI date adapters with canonical date helper functions."

@@ -29,7 +29,7 @@ enum DebugLog {
         maxBytes: Int = Limits.maxBytes,
         retainBytes: Int = Limits.retainBytes,
     ) {
-        let timestamp = ISO8601DateFormatter().string(from: Date())
+        let timestamp = currentISO8601Timestamp()
         let line = "[\(timestamp)] \(message)\n"
         let data = Data(line.utf8)
 
@@ -89,7 +89,7 @@ enum DebugLog {
         try handle.seek(toOffset: UInt64(start))
         let tail = try handle.readToEnd() ?? Data()
 
-        let timestamp = ISO8601DateFormatter().string(from: Date())
+        let timestamp = currentISO8601Timestamp()
         let header = Data("[\(timestamp)] [DebugLog] trimmed oversized log (size=\(size), retained=\(retained))\n".utf8)
         var compacted = Data()
         compacted.append(header)
