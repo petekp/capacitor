@@ -420,3 +420,8 @@ RW-057,rust-hook-matcher-object-compat-rw057,core/capacitor-core/src/runtime_set
 RW-057,rewrite-test-audit-rw057,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit conclusions after hook matcher-object compatibility hardening
 RW-057,rewrite-ledger-rw057,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-057 lifecycle and risk notes
 RW-057,rewrite-map-rw057,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-057 path mappings for guard enforcement
+RW-058,swift-runtime-attached-route-expectation-record-rw058,apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift,apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift,done,false,Introduce shared attached-route expectation record in RuntimeClient scenario tests to reduce repeated route-target scalar wiring
+RW-058,swift-activation-no-client-expectation-record-rw058,apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift,apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift,done,false,Introduce shared no-client ghostty expectation record in ActivationActionExecutor fallback scenarios
+RW-058,rewrite-test-audit-rw058,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit conclusions after shared route-target expectation record consolidation
+RW-058,rewrite-ledger-rw058,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-058 lifecycle and risk notes
+RW-058,rewrite-map-rw058,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-058 path mappings for guard enforcement

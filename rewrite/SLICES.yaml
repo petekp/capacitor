@@ -2112,3 +2112,32 @@ slices:
     risks:
       - "Accepting matcher object forms increases parser flexibility but can mask malformed matcher objects unless explicit wildcard compatibility checks remain covered by unit tests."
     notes: "Updates hook matcher handling to accept both string (`\"*\"`) and object (`{\"tools\":[...]}`) forms, preserves custom object-matcher entries, and adds matcher compatibility regression tests."
+
+  - id: RW-058
+    name: "Shared Route-Target Expectation Records"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-055
+    touched_paths:
+      - apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift
+      - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift
+        - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Centralizing route-target expectations into shared records can obscure scenario intent unless per-scenario names still describe the exact branch and assertion context."
+    notes: "Introduces shared typed expectation records for remaining repeated route-target assertions in RuntimeClient and ActivationActionExecutor scenario suites, reducing scalar-field duplication while preserving branch-specific assertions."

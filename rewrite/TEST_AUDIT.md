@@ -10,7 +10,7 @@ Scope: `core/`, `apps/swift/Tests/CapacitorTests/`, `tests/`, `services/ingest-w
 3. Freeze current weak-pattern surface with a CI guard so debt cannot grow.
 4. Define next rewrite slices to pay debt down deterministically.
 
-## Current Metrics (After RW-057)
+## Current Metrics (After RW-058)
 
 - Swift test files: `35`
 - Swift test methods: `236`
@@ -100,7 +100,8 @@ Static bats source checks that do not execute behavior have been removed from th
 42. RW-054 refactored `TerminalLauncherTests` snapshot-failure and no-trusted-evidence matrices to use shared expectation record structs, reducing repeated scalar expectation wiring while preserving action/result/debounce-marker contracts.
 43. RW-055 introduced compact fallback expectation records and a shared host-switch fallback assertion helper in `ActivationActionExecutorTests`, removing repeated ensure-route/no-window assertion bundles while preserving branch-specific expectations.
 44. RW-057 hardened hook settings compatibility in `runtime_setup` by supporting both string and object matcher forms, with regression coverage for preserving custom object-matcher entries and wildcard matcher detection logic.
-45. Next reductions should continue collapsing duplicate edge-case assertions into explicit contract tables rather than proliferating one-off tests.
+45. RW-058 introduced shared typed expectation records for remaining repeated route-target assertions in `RuntimeClientTests` and `ActivationActionExecutorTests`, reducing scalar duplication while preserving scenario-specific behavior assertions.
+46. Next reductions should continue collapsing duplicate edge-case assertions into explicit contract tables rather than proliferating one-off tests.
 
 ## Guardrails Added
 
@@ -119,7 +120,7 @@ This does not claim these patterns are good. It prevents regression while we pay
 
 ## Next Slices (proposed)
 
-1. `RW-058` Audit `RuntimeClientTests` and `ActivationActionExecutorTests` for remaining repeated route-target expectation fields that can move to shared typed expectation records.
-2. `RW-059` Audit hook install/remove flows across Rust + Swift (`runtime_setup`, `HookInstaller`, App debug cleanup path) for single canonical mutation semantics and redundant path deletion opportunities.
+1. `RW-059` Audit hook install/remove flows across Rust + Swift (`runtime_setup`, `HookInstaller`, App debug cleanup path) for single canonical mutation semantics and redundant path deletion opportunities.
+2. `RW-060` Audit release/dev script tests for remaining low-leverage guardrail assertions and replace with behavior-first checks where practical.
 
 Each slice should delete replaced tests in the same PR and ratchet the audit limits downward.

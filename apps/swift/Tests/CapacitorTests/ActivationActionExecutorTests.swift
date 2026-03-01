@@ -24,6 +24,12 @@ final class ActivationActionExecutorTests: XCTestCase {
         let shouldSpawnNewWindow: Bool
     }
 
+    private struct NoClientGhosttyExpectation {
+        let switchedClientTty: String?
+        let dependencyAction: String?
+        let fallback: HostSwitchFallbackExpectation
+    }
+
     private final class StubDependencies: ActivationActionDependencies {
         var lastAction: String?
         var lastTty: String?
@@ -604,9 +610,7 @@ final class ActivationActionExecutorTests: XCTestCase {
             let ghosttyState: GhosttyWindowState
             let activateGhosttyResult: Bool
             let switchResult: Bool
-            let expectedSwitchClientTty: String?
-            let expectedLastAction: String?
-            let fallbackExpectation: HostSwitchFallbackExpectation
+            let expected: NoClientGhosttyExpectation
         }
 
         let scenarios = [
@@ -617,11 +621,13 @@ final class ActivationActionExecutorTests: XCTestCase {
                 ghosttyState: .running,
                 activateGhosttyResult: true,
                 switchResult: true,
-                expectedSwitchClientTty: "/dev/ttys021",
-                expectedLastAction: nil,
-                fallbackExpectation: HostSwitchFallbackExpectation(
-                    ensureRoute: nil,
-                    shouldSpawnNewWindow: false
+                expected: NoClientGhosttyExpectation(
+                    switchedClientTty: "/dev/ttys021",
+                    dependencyAction: nil,
+                    fallback: HostSwitchFallbackExpectation(
+                        ensureRoute: nil,
+                        shouldSpawnNewWindow: false
+                    )
                 ),
             ),
             Scenario(
@@ -631,11 +637,13 @@ final class ActivationActionExecutorTests: XCTestCase {
                 ghosttyState: .running,
                 activateGhosttyResult: true,
                 switchResult: true,
-                expectedSwitchClientTty: "/dev/ttys021",
-                expectedLastAction: nil,
-                fallbackExpectation: HostSwitchFallbackExpectation(
-                    ensureRoute: nil,
-                    shouldSpawnNewWindow: false
+                expected: NoClientGhosttyExpectation(
+                    switchedClientTty: "/dev/ttys021",
+                    dependencyAction: nil,
+                    fallback: HostSwitchFallbackExpectation(
+                        ensureRoute: nil,
+                        shouldSpawnNewWindow: false
+                    )
                 ),
             ),
             Scenario(
@@ -645,16 +653,18 @@ final class ActivationActionExecutorTests: XCTestCase {
                 ghosttyState: .running,
                 activateGhosttyResult: true,
                 switchResult: false,
-                expectedSwitchClientTty: "/dev/ttys-stale",
-                expectedLastAction: "ensureTmuxSession",
-                fallbackExpectation: HostSwitchFallbackExpectation(
-                    ensureRoute: ExpectedEnsureRoute(
-                        sessionName: "cap",
-                        projectPath: "/Users/pete/Code/cap",
-                        preferredClientTty: nil,
-                        assertPreferredClientTty: false
+                expected: NoClientGhosttyExpectation(
+                    switchedClientTty: "/dev/ttys-stale",
+                    dependencyAction: "ensureTmuxSession",
+                    fallback: HostSwitchFallbackExpectation(
+                        ensureRoute: ExpectedEnsureRoute(
+                            sessionName: "cap",
+                            projectPath: "/Users/pete/Code/cap",
+                            preferredClientTty: nil,
+                            assertPreferredClientTty: false
+                        ),
+                        shouldSpawnNewWindow: false
                     ),
-                    shouldSpawnNewWindow: false
                 ),
             ),
             Scenario(
@@ -664,16 +674,18 @@ final class ActivationActionExecutorTests: XCTestCase {
                 ghosttyState: .running,
                 activateGhosttyResult: false,
                 switchResult: true,
-                expectedSwitchClientTty: nil,
-                expectedLastAction: "ensureTmuxSession",
-                fallbackExpectation: HostSwitchFallbackExpectation(
-                    ensureRoute: ExpectedEnsureRoute(
-                        sessionName: "cap",
-                        projectPath: "/Users/pete/Code/cap",
-                        preferredClientTty: nil,
-                        assertPreferredClientTty: false
+                expected: NoClientGhosttyExpectation(
+                    switchedClientTty: nil,
+                    dependencyAction: "ensureTmuxSession",
+                    fallback: HostSwitchFallbackExpectation(
+                        ensureRoute: ExpectedEnsureRoute(
+                            sessionName: "cap",
+                            projectPath: "/Users/pete/Code/cap",
+                            preferredClientTty: nil,
+                            assertPreferredClientTty: false
+                        ),
+                        shouldSpawnNewWindow: false
                     ),
-                    shouldSpawnNewWindow: false
                 ),
             ),
             Scenario(
@@ -683,11 +695,13 @@ final class ActivationActionExecutorTests: XCTestCase {
                 ghosttyState: .axUnavailable,
                 activateGhosttyResult: true,
                 switchResult: true,
-                expectedSwitchClientTty: "/dev/ttys-ax",
-                expectedLastAction: nil,
-                fallbackExpectation: HostSwitchFallbackExpectation(
-                    ensureRoute: nil,
-                    shouldSpawnNewWindow: false
+                expected: NoClientGhosttyExpectation(
+                    switchedClientTty: "/dev/ttys-ax",
+                    dependencyAction: nil,
+                    fallback: HostSwitchFallbackExpectation(
+                        ensureRoute: nil,
+                        shouldSpawnNewWindow: false
+                    )
                 ),
             ),
         ]
@@ -729,18 +743,18 @@ final class ActivationActionExecutorTests: XCTestCase {
             )
             XCTAssertEqual(
                 tmux.lastSwitchedClientTty,
-                scenario.expectedSwitchClientTty,
+                scenario.expected.switchedClientTty,
                 "\(context) unexpected tmux switch target",
             )
             XCTAssertEqual(
                 deps.lastAction,
-                scenario.expectedLastAction,
+                scenario.expected.dependencyAction,
                 "\(context) unexpected dependency fallback action",
             )
             assertHostSwitchFallbackOutcome(
                 deps: deps,
                 launcher: launcher,
-                expectation: scenario.fallbackExpectation,
+                expectation: scenario.expected.fallback,
                 context: context,
             )
         }

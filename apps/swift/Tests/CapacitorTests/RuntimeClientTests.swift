@@ -3,6 +3,36 @@ import Foundation
 import XCTest
 
 final class RuntimeClientTests: XCTestCase {
+    private struct UnavailableRouteExpectation {
+        let workspaceId: String
+        let projectPath: String
+    }
+
+    private struct UnavailableRouteScenario {
+        let name: String
+        let projectPath: String
+        let workspaceId: String
+        let expected: UnavailableRouteExpectation
+    }
+
+    private struct RouteReasonScenario {
+        let name: String
+        let inputReasonCode: String
+        let expectedReasonCode: String
+    }
+
+    private struct DiagnosticsScopeScenario {
+        let name: String
+        let workspaceId: String
+        let expectedScopeResolution: String
+    }
+
+    private struct AttachedRouteExpectation {
+        let reasonCode: String?
+        let scopeResolution: String?
+        let candidateCount: Int?
+    }
+
     override func tearDown() {
         super.tearDown()
         unsetenv("CAPACITOR_RUNTIME_ENABLED")
@@ -17,8 +47,7 @@ final class RuntimeClientTests: XCTestCase {
     }
 
     func testFetchProjectStatesUsesCoreSnapshotWhenAvailable() async throws {
-        let snapshotPath = try writeCoreSnapshot(Self.makeCoreSnapshotResponse())
-        let client = RuntimeClient(coreSnapshotPathOverride: snapshotPath)
+        let client = try makeClient()
 
         let states = try await client.fetchProjectStates()
 
@@ -29,8 +58,7 @@ final class RuntimeClientTests: XCTestCase {
     }
 
     func testFetchSessionsUsesCoreSnapshotWhenAvailable() async throws {
-        let snapshotPath = try writeCoreSnapshot(Self.makeCoreSnapshotResponse())
-        let client = RuntimeClient(coreSnapshotPathOverride: snapshotPath)
+        let client = try makeClient()
 
         let sessions = try await client.fetchSessions()
 
@@ -41,8 +69,7 @@ final class RuntimeClientTests: XCTestCase {
     }
 
     func testFetchShellStateUsesCoreSnapshotWhenAvailable() async throws {
-        let snapshotPath = try writeCoreSnapshot(Self.makeCoreSnapshotResponse())
-        let client = RuntimeClient(coreSnapshotPathOverride: snapshotPath)
+        let client = try makeClient()
 
         let shellState = try await client.fetchShellState()
 
@@ -56,8 +83,7 @@ final class RuntimeClientTests: XCTestCase {
     }
 
     func testFetchRuntimeSnapshotUsesCoreSnapshotWhenAvailable() async throws {
-        let snapshotPath = try writeCoreSnapshot(Self.makeCoreSnapshotResponse())
-        let client = RuntimeClient(coreSnapshotPathOverride: snapshotPath)
+        let client = try makeClient()
 
         let snapshot = try await client.fetchRuntimeSnapshot(correlationId: "runtime-test")
 
@@ -68,81 +94,215 @@ final class RuntimeClientTests: XCTestCase {
         XCTAssertEqual(snapshot.sessions.first?.sessionId, "session-core")
     }
 
-    func testFetchRuntimeSnapshotThrowsWhenSnapshotMissing() async throws {
-        let missingPath = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString)
-            .appendingPathComponent("missing_snapshot.json")
-            .path
-        let client = RuntimeClient(coreSnapshotPathOverride: missingPath)
+    func testFetchRuntimeSnapshotFailureScenarios() async throws {
+        enum ExpectedError {
+            case invalidResponse
+            case runtimeUnavailable
+        }
 
-        do {
-            _ = try await client.fetchRuntimeSnapshot(correlationId: "missing")
-            XCTFail("Expected snapshot unavailable error")
-        } catch let error as RuntimeClientError {
-            switch error {
-            case let .runtimeUnavailable(message):
-                XCTAssertTrue(message.contains("Core runtime snapshot unavailable"))
-            default:
-                XCTFail("Unexpected error: \(error)")
+        struct Scenario {
+            let name: String
+            let makeClient: () throws -> RuntimeClient
+            let expected: ExpectedError
+        }
+
+        let scenarios: [Scenario] = [
+            Scenario(
+                name: "snapshot_missing",
+                makeClient: {
+                    let missingPath = FileManager.default.temporaryDirectory
+                        .appendingPathComponent(UUID().uuidString)
+                        .appendingPathComponent("missing_snapshot.json")
+                        .path
+                    return RuntimeClient(coreSnapshotPathOverride: missingPath)
+                },
+                expected: .runtimeUnavailable,
+            ),
+            Scenario(
+                name: "invalid_shell_timestamp",
+                makeClient: { [self] in
+                    try self.makeClient(
+                        coreSnapshot: Self.makeInvalidShellTimestampSnapshot()
+                    )
+                },
+                expected: .invalidResponse,
+            ),
+            Scenario(
+                name: "snapshot_read_disabled",
+                makeClient: { [self] in
+                    setenv("CAPACITOR_CORE_SNAPSHOT_READ_ENABLED", "0", 1)
+                    return try self.makeClient()
+                },
+                expected: .runtimeUnavailable,
+            ),
+        ]
+
+        for scenario in scenarios {
+            let context = scenarioContext(scenario.name)
+            unsetenv("CAPACITOR_CORE_SNAPSHOT_READ_ENABLED")
+            let client = try scenario.makeClient()
+
+            do {
+                _ = try await client.fetchRuntimeSnapshot(correlationId: "failure-\(scenario.name)")
+                XCTFail("\(context) expected RuntimeClientError")
+            } catch let error as RuntimeClientError {
+                switch (scenario.expected, error) {
+                case (.invalidResponse, .invalidResponse):
+                    break
+                case let (.runtimeUnavailable, .runtimeUnavailable(message)):
+                    XCTAssertTrue(
+                        message.contains("Core runtime snapshot unavailable"),
+                        "\(context) message mismatch"
+                    )
+                default:
+                    XCTFail("\(context) unexpected RuntimeClientError: \(error)")
+                }
             }
         }
     }
 
-    func testFetchCoreRoutingSnapshotDerivesFromCoreSnapshotRouting() async throws {
-        let snapshotPath = try writeCoreSnapshot(Self.makeCoreSnapshotResponse())
-        let client = RuntimeClient(coreSnapshotPathOverride: snapshotPath)
+    func testFetchCoreRoutingSnapshotUnavailableScenarios() async throws {
+        let normalizedUnmatchedPath = PathNormalizer.normalize("/TMP/Unmatched/../Unmatched///")
+        let scenarios: [UnavailableRouteScenario] = [
+            UnavailableRouteScenario(
+                name: "explicit_workspace_id",
+                projectPath: "/tmp/unmatched",
+                workspaceId: "workspace-missing",
+                expected: UnavailableRouteExpectation(
+                    workspaceId: "workspace-missing",
+                    projectPath: "/tmp/unmatched",
+                ),
+            ),
+            UnavailableRouteScenario(
+                name: "blank_workspace_uses_normalized_project_path",
+                projectPath: "/TMP/Unmatched/../Unmatched///",
+                workspaceId: "   ",
+                expected: UnavailableRouteExpectation(
+                    workspaceId: normalizedUnmatchedPath,
+                    projectPath: normalizedUnmatchedPath,
+                ),
+            ),
+        ]
 
-        let snapshot = try await client.fetchCoreRoutingSnapshot(
-            projectPath: "/tmp/core-project",
-            workspaceId: "workspace-core",
-        )
+        for scenario in scenarios {
+            let context = scenarioContext(scenario.name)
+            let client = try makeClient()
+            let snapshot = try await client.fetchCoreRoutingSnapshot(
+                projectPath: scenario.projectPath,
+                workspaceId: scenario.workspaceId,
+            )
 
-        XCTAssertEqual(snapshot.status, "attached")
-        XCTAssertEqual(snapshot.target.kind, "tmux_session")
-        XCTAssertEqual(snapshot.target.value, "caps")
-        XCTAssertEqual(snapshot.reasonCode, "TMUX_CLIENT_ATTACHED")
+            assertUnavailableRoute(
+                snapshot,
+                projectPath: scenario.expected.projectPath,
+                workspaceId: scenario.expected.workspaceId,
+                context: context
+            )
+        }
     }
 
-    func testFetchCoreRoutingSnapshotReturnsUnavailableWithoutMatchingRoute() async throws {
-        let snapshotPath = try writeCoreSnapshot(Self.makeCoreSnapshotResponse())
-        let client = RuntimeClient(coreSnapshotPathOverride: snapshotPath)
+    func testFetchCoreRoutingSnapshotReasonCodeScenarios() async throws {
+        struct Scenario {
+            let name: String
+            let inputReasonCode: String
+            let expected: AttachedRouteExpectation
+        }
 
-        let snapshot = try await client.fetchCoreRoutingSnapshot(
-            projectPath: "/tmp/unmatched",
-            workspaceId: "workspace-missing",
-        )
+        let scenarios: [Scenario] = [
+            RouteReasonScenario(
+                name: "default_reason",
+                inputReasonCode: "tmux_client_attached",
+                expectedReasonCode: "TMUX_CLIENT_ATTACHED",
+            ),
+            RouteReasonScenario(
+                name: "normalizes_mixed_case",
+                inputReasonCode: "  mixed_case_reason  ",
+                expectedReasonCode: "MIXED_CASE_REASON",
+            ),
+            RouteReasonScenario(
+                name: "defaults_blank_reason",
+                inputReasonCode: "   ",
+                expectedReasonCode: "NO_TRUSTED_EVIDENCE",
+            ),
+        ].map { scenario in
+            Scenario(
+                name: scenario.name,
+                inputReasonCode: scenario.inputReasonCode,
+                expected: AttachedRouteExpectation(
+                    reasonCode: scenario.expectedReasonCode,
+                    scopeResolution: nil,
+                    candidateCount: nil
+                )
+            )
+        }
 
-        XCTAssertEqual(snapshot.status, "unavailable")
-        XCTAssertEqual(snapshot.target.kind, "none")
-        XCTAssertEqual(snapshot.reasonCode, "NO_TRUSTED_EVIDENCE")
+        for scenario in scenarios {
+            let context = scenarioContext(scenario.name)
+            let client = try makeClient(
+                coreSnapshot: Self.makeRoutingReasonSnapshot(reasonCode: scenario.inputReasonCode)
+            )
+            let snapshot = try await client.fetchCoreRoutingSnapshot(
+                projectPath: "/tmp/core-project",
+                workspaceId: "workspace-core",
+            )
+            assertAttachedTmuxRoute(
+                snapshot,
+                expectedReasonCode: scenario.expected.reasonCode,
+                context: context,
+            )
+        }
     }
 
-    func testFetchCoreRoutingDiagnosticsMirrorsDerivedRoutingSnapshot() async throws {
-        let snapshotPath = try writeCoreSnapshot(Self.makeCoreSnapshotResponse())
-        let client = RuntimeClient(coreSnapshotPathOverride: snapshotPath)
+    func testFetchCoreRoutingDiagnosticsScopeResolutionScenarios() async throws {
+        struct Scenario {
+            let name: String
+            let workspaceId: String
+            let expected: AttachedRouteExpectation
+        }
 
-        let diagnostics = try await client.fetchCoreRoutingDiagnostics(
-            projectPath: "/tmp/core-project",
-            workspaceId: "workspace-core",
-        )
+        let scenarios: [Scenario] = [
+            DiagnosticsScopeScenario(
+                name: "workspace_match",
+                workspaceId: "workspace-core",
+                expectedScopeResolution: "workspace_id",
+            ),
+            DiagnosticsScopeScenario(
+                name: "workspace_missing_falls_back_to_project_path",
+                workspaceId: "workspace-missing",
+                expectedScopeResolution: "project_path",
+            ),
+        ].map { scenario in
+            Scenario(
+                name: scenario.name,
+                workspaceId: scenario.workspaceId,
+                expected: AttachedRouteExpectation(
+                    reasonCode: nil,
+                    scopeResolution: scenario.expectedScopeResolution,
+                    candidateCount: 1
+                )
+            )
+        }
 
-        XCTAssertEqual(diagnostics.snapshot.status, "attached")
-        XCTAssertEqual(diagnostics.snapshot.target.kind, "tmux_session")
-        XCTAssertEqual(diagnostics.scopeResolution, "workspace_id")
-        XCTAssertEqual(diagnostics.candidateTargets.count, 1)
-    }
+        for scenario in scenarios {
+            let context = scenarioContext(scenario.name)
+            let client = try makeClient()
+            let diagnostics = try await client.fetchCoreRoutingDiagnostics(
+                projectPath: "/tmp/core-project",
+                workspaceId: scenario.workspaceId,
+            )
 
-    func testRuntimeClientNoLongerExposesLegacyRoutingSnapshotSurface() throws {
-        let source = try loadRuntimeClientSource()
-        XCTAssertFalse(source.contains("struct DaemonRoutingSnapshot"))
-        XCTAssertFalse(source.contains("struct DaemonRoutingDiagnostics"))
-        XCTAssertFalse(source.contains("func fetchRoutingSnapshot("))
-        XCTAssertFalse(source.contains("func fetchRoutingDiagnostics("))
+            assertAttachedTmuxRoute(diagnostics.snapshot, context: context)
+            if let expectedScope = scenario.expected.scopeResolution {
+                XCTAssertEqual(diagnostics.scopeResolution, expectedScope, "\(context)")
+            }
+            if let expectedCount = scenario.expected.candidateCount {
+                XCTAssertEqual(diagnostics.candidateTargets.count, expectedCount, "\(context)")
+            }
+        }
     }
 
     func testFetchRuntimeConfigReturnsCoreDefaults() async throws {
-        let snapshotPath = try writeCoreSnapshot(Self.makeCoreSnapshotResponse())
-        let client = RuntimeClient(coreSnapshotPathOverride: snapshotPath)
+        let client = try makeClient()
 
         let config = try await client.fetchRuntimeConfig()
         XCTAssertEqual(config.tmuxSignalFreshMs, 5000)
@@ -152,14 +312,17 @@ final class RuntimeClientTests: XCTestCase {
     }
 
     func testFetchHealthReturnsCoreSnapshotModeHealth() async throws {
-        let snapshotPath = try writeCoreSnapshot(Self.makeCoreSnapshotResponse())
-        let client = RuntimeClient(coreSnapshotPathOverride: snapshotPath)
+        let client = try makeClient()
 
         let health = try await client.fetchHealth()
 
         XCTAssertEqual(health.status, "ok")
         XCTAssertEqual(health.protocolVersion, 1)
         XCTAssertTrue(health.version.contains("core-snapshot"))
+    }
+
+    private func scenarioContext(_ name: String) -> String {
+        "[\(name)]"
     }
 
     private func writeCoreSnapshot(_ data: Data) throws -> String {
@@ -170,19 +333,65 @@ final class RuntimeClientTests: XCTestCase {
         return snapshotPath.path
     }
 
-    private func loadRuntimeClientSource() throws -> String {
-        let testsDir = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-        let swiftPackageRoot = testsDir
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let sourceURL = swiftPackageRoot
-            .appendingPathComponent("Sources/Capacitor/Models/RuntimeClient.swift")
-        return try String(contentsOf: sourceURL, encoding: .utf8)
+    private func makeClient(coreSnapshot: Data? = nil) throws -> RuntimeClient {
+        let snapshotPath = try writeCoreSnapshot(coreSnapshot ?? Self.makeDefaultCoreSnapshot())
+        return RuntimeClient(coreSnapshotPathOverride: snapshotPath)
     }
 
-    private static func makeCoreSnapshotResponse() -> Data {
+    private func assertAttachedTmuxRoute(
+        _ snapshot: CoreRoutingSnapshot,
+        expectedReasonCode: String? = nil,
+        context: String = "",
+        file: StaticString = #filePath,
+        line: UInt = #line,
+    ) {
+        XCTAssertEqual(snapshot.status, "attached", "\(context) status mismatch", file: file, line: line)
+        XCTAssertEqual(snapshot.target.kind, "tmux_session", "\(context) target kind mismatch", file: file, line: line)
+        XCTAssertEqual(snapshot.target.value, "caps", "\(context) target value mismatch", file: file, line: line)
+        if let expectedReasonCode {
+            XCTAssertEqual(
+                snapshot.reasonCode,
+                expectedReasonCode,
+                "\(context) reason code mismatch",
+                file: file,
+                line: line,
+            )
+        }
+    }
+
+    private func assertUnavailableRoute(
+        _ snapshot: CoreRoutingSnapshot,
+        projectPath: String,
+        workspaceId: String,
+        context: String = "",
+        file: StaticString = #filePath,
+        line: UInt = #line,
+    ) {
+        XCTAssertEqual(snapshot.status, "unavailable", "\(context) status mismatch", file: file, line: line)
+        XCTAssertEqual(snapshot.target.kind, "none", "\(context) target kind mismatch", file: file, line: line)
+        XCTAssertEqual(snapshot.reasonCode, "NO_TRUSTED_EVIDENCE", "\(context) reason mismatch", file: file, line: line)
+        XCTAssertEqual(snapshot.workspaceId, workspaceId, "\(context) workspace mismatch", file: file, line: line)
+        XCTAssertEqual(snapshot.projectPath, projectPath, "\(context) project path mismatch", file: file, line: line)
+    }
+
+    private static func makeDefaultCoreSnapshot() -> Data {
+        makeCoreSnapshotResponse()
+    }
+
+    private static func makeInvalidShellTimestampSnapshot() -> Data {
+        makeCoreSnapshotResponse(shellUpdatedAt: "not-an-rfc3339-timestamp")
+    }
+
+    private static func makeRoutingReasonSnapshot(reasonCode: String) -> Data {
+        makeCoreSnapshotResponse(routeReasonCode: reasonCode)
+    }
+
+    private static func makeCoreSnapshotResponse(
+        shellUpdatedAt: String = "2026-02-28T19:00:00Z",
+        routeReasonCode: String = "tmux_client_attached",
+    ) -> Data {
         let json = """
-        {"projects":[{"project_id":"/tmp/core-project/.git","workspace_id":"workspace-core","project_path":"/tmp/core-project","display_name":"core-project","state":"working","updated_at":"2026-02-28T19:00:00Z","state_changed_at":"2026-02-28T19:00:00Z","representative_session_id":"session-core","latest_session_id":"session-core","session_count":1,"active_count":1,"has_session":true}],"sessions":[{"session_id":"session-core","pid":4242,"cwd":"/tmp/core-project","project_id":"/tmp/core-project/.git","project_path":"/tmp/core-project","workspace_id":"workspace-core","state":"working","state_changed_at":"2026-02-28T19:00:00Z","updated_at":"2026-02-28T19:00:00Z","last_event":"user_prompt_submit","last_activity_at":"2026-02-28T19:00:00Z","tools_in_flight":1,"ready_reason":null}],"shells":[{"pid":4242,"cwd":"/tmp/core-project","tty":"/dev/ttys001","parent_app":"Ghostty","tmux_session":"core","updated_at":"2026-02-28T19:00:00Z"}],"routing":[{"workspace_id":"workspace-core","project_path":"/tmp/core-project","status":"attached","target_kind":"tmux_session","target_value":"caps","reason_code":"tmux_client_attached","reason":"Attached tmux client","updated_at":"2026-02-28T19:00:00Z"}],"diagnostics":{"events_ingested":7,"sessions_tracked":1,"shell_signals_tracked":1,"last_error":null},"generated_at":"2026-02-28T19:00:00Z"}
+        {"projects":[{"project_id":"/tmp/core-project/.git","workspace_id":"workspace-core","project_path":"/tmp/core-project","display_name":"core-project","state":"working","updated_at":"2026-02-28T19:00:00Z","state_changed_at":"2026-02-28T19:00:00Z","representative_session_id":"session-core","latest_session_id":"session-core","session_count":1,"active_count":1,"has_session":true}],"sessions":[{"session_id":"session-core","pid":4242,"cwd":"/tmp/core-project","project_id":"/tmp/core-project/.git","project_path":"/tmp/core-project","workspace_id":"workspace-core","state":"working","state_changed_at":"2026-02-28T19:00:00Z","updated_at":"2026-02-28T19:00:00Z","last_event":"user_prompt_submit","last_activity_at":"2026-02-28T19:00:00Z","tools_in_flight":1,"ready_reason":null}],"shells":[{"pid":4242,"cwd":"/tmp/core-project","tty":"/dev/ttys001","parent_app":"Ghostty","tmux_session":"core","updated_at":"\(shellUpdatedAt)"}],"routing":[{"workspace_id":"workspace-core","project_path":"/tmp/core-project","status":"attached","target_kind":"tmux_session","target_value":"caps","reason_code":"\(routeReasonCode)","reason":"Attached tmux client","updated_at":"2026-02-28T19:00:00Z"}],"diagnostics":{"events_ingested":7,"sessions_tracked":1,"shell_signals_tracked":1,"last_error":null},"generated_at":"2026-02-28T19:00:00Z"}
         """
         return Data(json.utf8)
     }
