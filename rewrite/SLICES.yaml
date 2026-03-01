@@ -2207,3 +2207,38 @@ slices:
     risks:
       - "Pruning duplicate script assertions can reduce diagnostic granularity if a remaining behavior test fails without clearly identifying which invalid input branch regressed."
     notes: "Removes redundant low-leverage bats assertions (duplicate invalid-version and restart help/runtime-state checks) while preserving executable behavior checks for release/dev script flows."
+
+  - id: RW-061
+    name: "Canonical Hook Install Orchestration Helper"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-060
+    touched_paths:
+      - apps/swift/Sources/Capacitor/Helpers/HookInstaller.swift
+      - apps/swift/Sources/Capacitor/App.swift
+      - apps/swift/Sources/Capacitor/Models/AppState.swift
+      - apps/swift/Sources/Capacitor/Models/SetupRequirements.swift
+      - apps/swift/Tests/CapacitorTests/HookInstallerTests.swift
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added:
+        - apps/swift/Tests/CapacitorTests/HookInstallerTests.swift
+      changed:
+        - apps/swift/Sources/Capacitor/Helpers/HookInstaller.swift
+        - apps/swift/Sources/Capacitor/App.swift
+        - apps/swift/Sources/Capacitor/Models/AppState.swift
+        - apps/swift/Sources/Capacitor/Models/SetupRequirements.swift
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Centralizing hook install flow into one helper can homogenize error text and make some UI contexts less specific unless callers add context where needed."
+    notes: "Introduces `HookInstaller.ensureHooksInstalled` as the canonical install+configure flow and rewires startup/AppState/setup callsites to use it, with focused unit tests for failure and success branches."

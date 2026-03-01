@@ -1,8 +1,46 @@
 import Foundation
 
+protocol HookRuntimeInstalling {
+    func installHookBinaryFromPath(sourcePath: String) throws -> InstallResult
+    func installHooks() throws -> InstallResult
+    func getHookStatus() -> HookStatus
+}
+
+extension CoreRuntime: HookRuntimeInstalling {}
+
 enum HookInstaller {
     private static let targetPath = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent(".local/bin/hud-hook").path
+
+    typealias BinaryInstallStep = (_ engine: any HookRuntimeInstalling) -> String?
+
+    /// Installs and configures hooks using one canonical flow.
+    ///
+    /// Returns nil on success or a user-facing error string on failure.
+    static func ensureHooksInstalled(
+        using engine: any HookRuntimeInstalling,
+        binaryInstallStep: BinaryInstallStep = { installBundledBinary(using: $0) },
+    ) -> String? {
+        if let installError = binaryInstallStep(engine) {
+            return installError
+        }
+
+        do {
+            let result = try engine.installHooks()
+            if !result.success {
+                return result.message
+            }
+        } catch {
+            return "Installation failed: \(error.localizedDescription)"
+        }
+
+        let status = engine.getHookStatus()
+        if case .installed = status {
+            return nil
+        }
+
+        return "Hook install completed but status is \(String(describing: status))"
+    }
 
     /// Installs the bundled hud-hook binary to ~/.local/bin/hud-hook.
     ///
@@ -15,7 +53,7 @@ enum HookInstaller {
     /// installation and return success.
     ///
     /// Returns nil on success, or an error message on failure.
-    static func installBundledBinary(using engine: CoreRuntime) -> String? {
+    static func installBundledBinary(using engine: any HookRuntimeInstalling) -> String? {
         if let sourcePath = findBundledBinary() {
             do {
                 let result = try engine.installHookBinaryFromPath(sourcePath: sourcePath)

@@ -439,3 +439,11 @@ RW-060,release-script-guardrail-prune-rw060,tests/release-scripts/bump-version.b
 RW-060,rewrite-test-audit-rw060,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit metrics and conclusions after script guardrail pruning
 RW-060,rewrite-ledger-rw060,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-060 lifecycle and risk notes
 RW-060,rewrite-map-rw060,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-060 path mappings for guard enforcement
+RW-061,swift-hook-installer-canonical-flow-rw061,apps/swift/Sources/Capacitor/Helpers/HookInstaller.swift,apps/swift/Sources/Capacitor/Helpers/HookInstaller.swift,done,false,Add canonical ensureHooksInstalled helper and runtime protocol seam for shared install/configure semantics
+RW-061,swift-startup-hook-autorepair-helper-cutover-rw061,apps/swift/Sources/Capacitor/App.swift,apps/swift/Sources/Capacitor/App.swift,done,false,Replace startup auto-repair duplicate hook install steps with HookInstaller.ensureHooksInstalled
+RW-061,swift-appstate-hook-fix-helper-cutover-rw061,apps/swift/Sources/Capacitor/Models/AppState.swift,apps/swift/Sources/Capacitor/Models/AppState.swift,done,false,Replace AppState fixHooks duplicate install orchestration with canonical helper
+RW-061,swift-setup-requirements-hook-install-helper-cutover-rw061,apps/swift/Sources/Capacitor/Models/SetupRequirements.swift,apps/swift/Sources/Capacitor/Models/SetupRequirements.swift,done,false,Replace setup-step hook install duplicate orchestration with canonical helper and shared error semantics
+RW-061,swift-hook-installer-contract-tests-rw061,,apps/swift/Tests/CapacitorTests/HookInstallerTests.swift,done,false,Add focused tests for binary failure/install failure/throw/status mismatch/success branches of canonical helper
+RW-061,rewrite-test-audit-rw061,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit metrics and conclusions after hook install helper consolidation
+RW-061,rewrite-ledger-rw061,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-061 lifecycle and risk notes
+RW-061,rewrite-map-rw061,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-061 path mappings for guard enforcement

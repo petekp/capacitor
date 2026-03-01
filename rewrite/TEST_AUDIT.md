@@ -10,10 +10,10 @@ Scope: `core/`, `apps/swift/Tests/CapacitorTests/`, `tests/`, `services/ingest-w
 3. Freeze current weak-pattern surface with a CI guard so debt cannot grow.
 4. Define next rewrite slices to pay debt down deterministically.
 
-## Current Metrics (After RW-060)
+## Current Metrics (After RW-061)
 
-- Swift test files: `35`
-- Swift test methods: `236`
+- Swift test files: `36`
+- Swift test methods: `241`
 - Swift files with `source.contains` assertions: `0`
 - `source.contains` assertions (total): `0`
 - Swift test methods inside source-coupled files: `0`
@@ -103,7 +103,8 @@ Static bats source checks that do not execute behavior have been removed from th
 45. RW-058 introduced shared typed expectation records for remaining repeated route-target assertions in `RuntimeClientTests` and `ActivationActionExecutorTests`, reducing scalar duplication while preserving scenario-specific behavior assertions.
 46. RW-059 removed Swift-side direct JSON mutation for hook cleanup and moved uninstall semantics into canonical Rust `runtime_setup`, with regression tests proving managed-hook removal preserves user hooks and unrelated settings.
 47. RW-060 pruned low-leverage script guardrail assertions in bats suites by removing duplicate invalid-version coverage and redundant restart help/runtime-state checks while preserving executable behavior coverage for release/dev script flows.
-48. Next reductions should continue collapsing duplicate edge-case assertions into explicit contract tables rather than proliferating one-off tests.
+48. RW-061 collapsed repeated hook install orchestration from `AppState`, `SetupRequirements`, and startup auto-repair into `HookInstaller.ensureHooksInstalled` and added focused unit tests that lock binary-failure, install-failure, throw, status-mismatch, and success paths.
+49. Next reductions should continue collapsing duplicate edge-case assertions into explicit contract tables rather than proliferating one-off tests.
 
 ## Guardrails Added
 
@@ -122,7 +123,7 @@ This does not claim these patterns are good. It prevents regression while we pay
 
 ## Next Slices (proposed)
 
-1. `RW-061` Audit hook-setup callsites (`AppState`, `SetupRequirements`, startup auto-repair) and collapse repeated install orchestration into one canonical helper while preserving UI-specific messaging.
-2. `RW-062` Audit helper/util/config directory boundaries (`Helpers/`, `Utilities/`, `Utils/`) and execute one concrete consolidation with deletion-in-slice discipline.
+1. `RW-062` Audit helper/util/config directory boundaries (`Helpers/`, `Utilities/`, `Utils/`) and execute one concrete consolidation with deletion-in-slice discipline.
+2. `RW-063` Consolidate runtime date/time formatting/parsing surfaces (`RuntimeDateParser`, `DateFormatting`, UniFFI extension date adapters) into one canonical path with explicit contracts.
 
 Each slice should delete replaced tests in the same PR and ratchet the audit limits downward.

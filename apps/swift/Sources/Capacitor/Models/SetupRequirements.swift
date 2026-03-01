@@ -230,24 +230,13 @@ final class SetupRequirementsManager {
         guard let engine else { return }
         updateStep("hooks", status: .checking)
 
-        // First, install the bundled hook binary using the shared helper
-        if let installError = HookInstaller.installBundledBinary(using: engine) {
-            updateStep("hooks", status: .error(message: installError))
+        if let hookInstallError = HookInstaller.ensureHooksInstalled(using: engine) {
+            updateStep("hooks", status: .error(message: hookInstallError))
             return
         }
 
-        do {
-            let result = try engine.installHooks()
-
-            if result.success {
-                let status = engine.getHookStatus()
-                await updateHookStatus(status)
-            } else {
-                updateStep("hooks", status: .error(message: result.message))
-            }
-        } catch {
-            updateStep("hooks", status: .error(message: "Installation failed: \(error.localizedDescription)"))
-        }
+        let status = engine.getHookStatus()
+        await updateHookStatus(status)
     }
 }
 

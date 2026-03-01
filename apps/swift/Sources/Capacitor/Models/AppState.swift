@@ -429,24 +429,14 @@ class AppState {
     func fixHooks() {
         guard let engine else { return }
 
-        // First, install the bundled hook binary using the shared helper
-        if let installError = HookInstaller.installBundledBinary(using: engine) {
-            toast = ToastMessage(installError, isError: true)
+        if let hookInstallError = HookInstaller.ensureHooksInstalled(using: engine) {
+            toast = ToastMessage(hookInstallError, isError: true)
             return
         }
 
-        do {
-            let result = try engine.installHooks()
-            if result.success {
-                checkHookDiagnostic()
-                if hookDiagnostic?.isHealthy == true {
-                    toast = ToastMessage("Hooks repaired")
-                }
-            } else {
-                toast = ToastMessage(result.message, isError: true)
-            }
-        } catch {
-            toast = ToastMessage(error.localizedDescription, isError: true)
+        checkHookDiagnostic()
+        if hookDiagnostic?.isHealthy == true {
+            toast = ToastMessage("Hooks repaired")
         }
     }
 

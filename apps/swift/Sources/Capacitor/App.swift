@@ -457,25 +457,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func attemptAutoRepair(engine: CoreRuntime) -> Bool {
-        if let installError = HookInstaller.installBundledBinary(using: engine) {
-            DebugLog.write("[Startup] Hook binary install failed: \(installError)")
+        if let hookInstallError = HookInstaller.ensureHooksInstalled(using: engine) {
+            DebugLog.write("[Startup] Hook auto-repair failed: \(hookInstallError)")
             return false
         }
 
-        do {
-            let result = try engine.installHooks()
-            if result.success {
-                let newStatus = engine.getHookStatus()
-                if case .installed = newStatus {
-                    return true
-                }
-            }
-            DebugLog.write("[Startup] Hook config install failed: \(result.message)")
-        } catch {
-            DebugLog.write("[Startup] Hook install threw: \(error)")
-        }
-
-        return false
+        return true
     }
 
     /// When always-on-top is active, subsidiary windows (Settings, About, Sparkle
