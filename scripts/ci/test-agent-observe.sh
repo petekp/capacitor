@@ -180,6 +180,12 @@ write_fixture_log() {
 [2026-03-01T11:00:07Z] RuntimeClient unable to resolve workspace identity for /test/foo
 [2026-03-01T11:00:08Z] TerminalLauncher activation rejected: no routing evidence
 [2026-03-01T11:00:09Z] Some normal log line with nothing notable
+[2026-03-01T11:00:10Z] [TerminalLauncher] ActivationTrace preferTmux=true selectedPid=77777
+[2026-03-01T11:00:10Z] [TerminalLauncher] ActivationTrace policyOrder=tmux_live_exact | tmux_live_parent | live_exact | live_parent
+[2026-03-01T11:00:10Z] [TerminalLauncher] ActivationTrace candidate pid=77777 match=exact rank=0 live=true tmux=true updatedAt=2026-03-01T12:00:00Z parent=Ghostty
+[2026-03-01T11:00:10Z] [TerminalLauncher] ActivationTrace rankKey=live=1, path_rank=0, tmux=1, updated_at=2026-03-01T12:00:00Z, pid=77777
+[2026-03-01T11:00:10Z] [TerminalLauncher] ActivationTrace candidate pid=66666 match=parent rank=2 live=true tmux=false updatedAt=2026-03-01T11:50:00Z parent=iTerm2
+[2026-03-01T11:00:10Z] [TerminalLauncher] ActivationTrace rankKey=live=1, path_rank=2, tmux=0, updated_at=2026-03-01T11:50:00Z, pid=66666
 LOG
 }
 
@@ -287,9 +293,25 @@ assert_not_contains "$output" "nothing notable" "excludes normal lines"
 echo ""
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# T6: activation-traces command
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+echo "T6: activation-traces"
+write_fixture_log
+
+output=$("$OBSERVE" activation-traces 2>&1)
+
+assert_contains "$output" "preferTmux" "shows activation decision preference"
+assert_contains "$output" "policyOrder" "shows policy order"
+assert_contains "$output" "candidate.*pid=77777" "shows selected candidate"
+assert_contains "$output" "candidate.*pid=66666" "shows non-selected candidate"
+assert_contains "$output" "rankKey" "shows ranking keys"
+assert_not_contains "$output" "nothing notable" "excludes non-trace lines"
+echo ""
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # Existing commands still work (regression)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-echo "T6: regression — existing commands"
+echo "T7: regression — existing commands"
 write_fixture_snapshot
 
 "$OBSERVE" check >/dev/null 2>&1 && pass "check" || fail "check" "exited non-zero"

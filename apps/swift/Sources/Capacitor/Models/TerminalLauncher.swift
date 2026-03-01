@@ -466,7 +466,7 @@ final class TerminalLauncher: ActivationActionDependencies {
             projectPath: project.path,
             shellState: shellStateFfi,
             tmuxContext: tmuxContext,
-            includeTrace: Self.activationTraceEnabled,
+            includeTrace: true,
         )
     }
 
@@ -805,8 +805,13 @@ final class TerminalLauncher: ActivationActionDependencies {
             }
 
             if let trace = decision.trace {
-                onActivationTrace?(formatActivationTrace(trace: trace))
+                let formatted = formatActivationTrace(trace: trace)
+                for line in formatted.split(separator: "\n") {
+                    debugLog(String(line))
+                }
+                onActivationTrace?(formatted)
             } else {
+                debugLog("ActivationTrace reason=\(decision.reason)")
                 onActivationTrace?(decision.reason)
             }
 

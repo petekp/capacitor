@@ -26,6 +26,7 @@ Capacitor is runtime-snapshot based:
 ./scripts/dev/agent-observe.sh shell-audit  # Cross-validate shells: PID, TTY, liveness
 ./scripts/dev/agent-observe.sh errors      # Recent error/warning lines from debug log
 ./scripts/dev/agent-observe.sh hooks       # Hook binary + heartbeat age + recent events
+./scripts/dev/agent-observe.sh activation-traces  # Recent activation decision traces
 ./scripts/dev/agent-observe.sh briefing    # Agent-friendly summary
 ./scripts/dev/agent-observe.sh snapshot    # Full runtime snapshot
 ./scripts/dev/agent-observe.sh smoke       # Run all smoke checks
@@ -34,9 +35,13 @@ Capacitor is runtime-snapshot based:
 ## Activation Debugging
 
 1. Reproduce with a known project card click.
-2. Inspect routing block in snapshot (`.routing`).
-3. Verify shell evidence in `.shells` and session evidence in `.sessions`.
-4. Run `apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift` when policy changes.
+2. Run `./scripts/dev/agent-observe.sh activation-traces` to see the decision trace
+   (shows candidates, ranking keys, policy order, selected PID).
+3. Inspect routing block in snapshot (`.routing`).
+4. Verify shell evidence in `.shells` and session evidence in `.sessions`.
+5. Run `apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift` when policy changes.
+
+Traces are always written to the debug log — no env var needed.
 
 ## Hook Debugging
 

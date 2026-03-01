@@ -37,6 +37,7 @@ Commands:
   shell-audit                            Cross-validate shells: PID liveness, TTY, parent_app
   errors [limit]                         Recent error/warning lines from app debug log (default=20)
   hooks                                  Hook installation status + heartbeat + recent events
+  activation-traces [limit]              Recent activation decision traces from debug log (default=50)
   diagnose                               One-shot full diagnostic summary
 USAGE
 }
@@ -373,6 +374,14 @@ case "$command" in
     else
       echo "  (no debug log found)"
     fi
+    ;;
+  activation-traces)
+    limit="${1:-50}"
+    if [[ ! -f "$APP_LOG_PATH" ]]; then
+      echo "No app debug log found: $APP_LOG_PATH" >&2
+      exit 1
+    fi
+    grep -E 'ActivationTrace ' "$APP_LOG_PATH" | tail -n "$limit"
     ;;
   diagnose)
     echo "=== Capacitor Diagnostics ==="
