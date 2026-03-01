@@ -2879,3 +2879,33 @@ slices:
     risks:
       - "Refactoring test scaffolding can accidentally weaken assertions if helper functions hide command outcomes."
     notes: "Collapses repeated release bats command/assert scaffolding into helper functions and compact loops while preserving the same behavior assertions."
+
+  - id: RW-078
+    name: "Typed Setup Preview Scenario Records"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-077
+    touched_paths:
+      - apps/swift/Sources/Capacitor/Models/SetupRequirements.swift
+      - apps/swift/Tests/CapacitorTests/SetupPreviewScenarioTests.swift
+      - rewrite/TEST_AUDIT.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added:
+        - apps/swift/Tests/CapacitorTests/SetupPreviewScenarioTests.swift
+      changed:
+        - apps/swift/Sources/Capacitor/Models/SetupRequirements.swift
+        - rewrite/TEST_AUDIT.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios:
+      - fresh install setup flow
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Preview-only refactors can drift from production semantics if canonical step order/status contracts are not explicitly asserted."
+    notes: "Replaces repetitive setup preview step array literals with typed scenario state records and adds explicit preview scenario contract tests."

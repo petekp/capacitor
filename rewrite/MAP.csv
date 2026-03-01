@@ -577,3 +577,8 @@ RW-077,release-bats-generate-appcast-scaffold-consolidation-rw077,tests/release-
 RW-077,rewrite-test-audit-rw077,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit conclusions after release-script bats consolidation
 RW-077,rewrite-ledger-rw077,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-077 lifecycle and risk notes
 RW-077,rewrite-map-rw077,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-077 path mappings for guard enforcement
+RW-078,swift-setup-preview-scenario-records-rw078,apps/swift/Sources/Capacitor/Models/SetupRequirements.swift,apps/swift/Sources/Capacitor/Models/SetupRequirements.swift,done,false,Replace repetitive setup preview arrays with typed scenario-state records and shared builder
+RW-078,swift-setup-preview-scenario-tests-rw078,,apps/swift/Tests/CapacitorTests/SetupPreviewScenarioTests.swift,done,false,Add explicit preview scenario order/status contracts for refactor safety
+RW-078,rewrite-test-audit-rw078,rewrite/TEST_AUDIT.md,rewrite/TEST_AUDIT.md,done,false,Refresh audit metrics/conclusions after setup preview scenario consolidation
+RW-078,rewrite-ledger-rw078,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record RW-078 lifecycle and risk notes
+RW-078,rewrite-map-rw078,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track RW-078 path mappings for guard enforcement

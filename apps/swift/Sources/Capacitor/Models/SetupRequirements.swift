@@ -252,32 +252,82 @@ final class SetupRequirementsManager {
             SetupStepCatalog.step(for: id, status: status)
         }
 
-        var steps: [SetupStep] {
+        private struct ScenarioState {
+            let claude: SetupStepStatus
+            let hooks: SetupStepStatus
+            let shell: SetupStepStatus
+        }
+
+        private static func steps(for state: ScenarioState) -> [SetupStep] {
+            [
+                step(.claude, status: state.claude),
+                step(.hooks, status: state.hooks),
+                step(.shell, status: state.shell),
+            ]
+        }
+
+        private var scenarioState: ScenarioState {
             switch self {
             case .allPending:
-                [Self.step(.claude, status: .pending), Self.step(.hooks, status: .pending), Self.step(.shell, status: .pending)]
+                ScenarioState(
+                    claude: .pending,
+                    hooks: .pending,
+                    shell: .pending,
+                )
 
             case .checking:
-                [Self.step(.claude, status: .checking), Self.step(.hooks, status: .pending), Self.step(.shell, status: .pending)]
+                ScenarioState(
+                    claude: .checking,
+                    hooks: .pending,
+                    shell: .pending,
+                )
 
             case .cliMissing:
-                [Self.step(.claude, status: .error(message: "Not found — download from claude.ai/download")), Self.step(.hooks, status: .pending), Self.step(.shell, status: .pending)]
+                ScenarioState(
+                    claude: .error(message: "Not found — download from claude.ai/download"),
+                    hooks: .pending,
+                    shell: .pending,
+                )
 
             case .hooksNeeded:
-                [Self.step(.claude, status: .completed(detail: "Installed")), Self.step(.hooks, status: HookPresentationPolicy.setupStepStatus(for: .notInstalled)), Self.step(.shell, status: .pending)]
+                ScenarioState(
+                    claude: .completed(detail: "Installed"),
+                    hooks: HookPresentationPolicy.setupStepStatus(for: .notInstalled),
+                    shell: .pending,
+                )
 
             case .hooksError:
-                [Self.step(.claude, status: .completed(detail: "Installed")), Self.step(.hooks, status: HookPresentationPolicy.setupStepStatus(for: .binaryBroken(reason: "preview"))), Self.step(.shell, status: .pending)]
+                ScenarioState(
+                    claude: .completed(detail: "Installed"),
+                    hooks: HookPresentationPolicy.setupStepStatus(for: .binaryBroken(reason: "preview")),
+                    shell: .pending,
+                )
 
             case .hooksPolicyBlocked:
-                [Self.step(.claude, status: .completed(detail: "Installed")), Self.step(.hooks, status: HookPresentationPolicy.setupStepStatus(for: .policyBlocked(reason: "preview"))), Self.step(.shell, status: .pending)]
+                ScenarioState(
+                    claude: .completed(detail: "Installed"),
+                    hooks: HookPresentationPolicy.setupStepStatus(for: .policyBlocked(reason: "preview")),
+                    shell: .pending,
+                )
 
             case .shellOptional:
-                [Self.step(.claude, status: .completed(detail: "Installed")), Self.step(.hooks, status: HookPresentationPolicy.setupStepStatus(for: .installed(version: "preview"))), Self.step(.shell, status: .actionNeeded(message: "Add to ~/.zshrc"))]
+                ScenarioState(
+                    claude: .completed(detail: "Installed"),
+                    hooks: HookPresentationPolicy.setupStepStatus(for: .installed(version: "preview")),
+                    shell: .actionNeeded(message: "Add to ~/.zshrc"),
+                )
 
             case .allComplete:
-                [Self.step(.claude, status: .completed(detail: "Installed")), Self.step(.hooks, status: HookPresentationPolicy.setupStepStatus(for: .installed(version: "preview"))), Self.step(.shell, status: .completed(detail: "Active"))]
+                ScenarioState(
+                    claude: .completed(detail: "Installed"),
+                    hooks: HookPresentationPolicy.setupStepStatus(for: .installed(version: "preview")),
+                    shell: .completed(detail: "Active"),
+                )
             }
+        }
+
+        var steps: [SetupStep] {
+            Self.steps(for: scenarioState)
         }
     }
 #endif
