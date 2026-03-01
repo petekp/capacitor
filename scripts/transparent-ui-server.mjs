@@ -255,7 +255,6 @@ async function buildBriefing(options = {}) {
       runtimeSnapshot: "/runtime-snapshot",
       routingSnapshot: "/routing-snapshot",
       routingDiagnostics: "/routing-diagnostics",
-      routingRollout: "/routing-rollout",
       agentBriefing: "/agent-briefing"
     }
   };
@@ -362,17 +361,6 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  if (req.url.startsWith("/routing-rollout")) {
-    jsonResponse(res, 200, {
-      ok: true,
-      timestamp: new Date().toISOString(),
-      routing: null,
-      rollout: null,
-      note: "rollout metrics removed in direct-core mode"
-    });
-    return;
-  }
-
   if (req.url.startsWith("/agent-briefing")) {
     const url = new URL(req.url, `http://localhost:${PORT}`);
     const limit = parseBoundedPositiveInt(url.searchParams.get("limit"), 200, TELEMETRY_LIMIT);
@@ -413,7 +401,6 @@ const server = http.createServer(async (req, res) => {
       runtimeSnapshot: "/runtime-snapshot",
       routingSnapshot: "/routing-snapshot",
       routingDiagnostics: "/routing-diagnostics",
-      routingRollout: "/routing-rollout",
       agentBriefing: "/agent-briefing"
     },
     snapshotPath: SNAPSHOT_PATH
