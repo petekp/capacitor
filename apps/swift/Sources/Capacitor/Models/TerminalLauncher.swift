@@ -293,12 +293,6 @@ final class TerminalLauncher {
                     runScript: { await Self.runBashScriptWithResult($0) },
                 )
             },
-            hasExistingSession: { name in
-                await Self.hasTmuxSession(
-                    name: name,
-                    runScript: { await Self.runBashScriptWithResult($0) },
-                )
-            },
             ensureAndSwitch: { session, path, tty in
                 await Self.ensureSessionAndSwitch(
                     sessionName: session,
@@ -309,9 +303,6 @@ final class TerminalLauncher {
             },
             launchTerminalWithTmux: { [weak self] session, path in
                 self?.launchTerminalWithTmuxSession(session, projectPath: path)
-            },
-            attachToExistingSession: { [weak self] session in
-                self?.attachToExistingTmuxSession(session)
             },
             activateTerminal: { [weak self] tty, path, sessionHint in
                 guard let self else { return false }
@@ -437,12 +428,13 @@ final class TerminalLauncher {
                     )
                 }
 
-                // If we found a tab match, or we don't have a project path,
-                // or we are on the last attempt, we proceed to resolve routing.
-                if matchedTab != nil || projectPath == nil || attempt == maxRetries - 1 {
-                    let tabCount = windows.reduce(into: 0) { partialResult, window in
-                        partialResult += window.tabs.count
-                    }
+                let tabCount = windows.reduce(into: 0) { partialResult, window in
+                    partialResult += window.tabs.count
+                }
+
+                // Proceed immediately if we matched a tab, have no project path,
+                // have zero tabs (stale TTY — retrying won't help), or exhausted retries.
+                if matchedTab != nil || projectPath == nil || tabCount == 0 || attempt == maxRetries - 1 {
                     let allTabTitles = windows.flatMap { w in
                         w.tabs.map { t in "w\(w.index)t\(t.index)=\(t.title ?? "<nil>")" }
                     }.joined(separator: ", ")
@@ -459,7 +451,18 @@ final class TerminalLauncher {
                         ghosttyWindowReader: ghosttyWindowReader,
                     ) {
                         logger.info("    activateGhosttyWithAXRouting: resolved route=\(route.rawValue)")
-                        debugLog("activateGhosttyWithAXRouting route=\(route.rawValue)")
+                        debugLog("activateGhosttyWithAXRouting route=\(route.rawValue) matchedTab=\(matchedTab?.tab.title ?? "<none>")")
+
+                        // If routing only achieved window_raise without matching any tab,
+                        // the client TTY is likely stale (terminal tab closed but tmux
+                        // client lingers). Return false so the caller falls through to
+                        // launching a new tab instead of silently doing nothing.
+                        if route == .windowRaise, matchedTab == nil {
+                            logger.info("    activateGhosttyWithAXRouting: window_raise with no tab match → stale TTY")
+                            debugLog("activateGhosttyWithAXRouting stale: window_raise but no matchedTab, returning false")
+                            return false
+                        }
+
                         return true
                     }
 
@@ -551,7 +554,8 @@ final class TerminalLauncher {
             tell application "System Events"
                 tell process "Ghostty"
                     keystroke "\(applescriptSafe)"
-                    key code 36
+                    delay 0.05
+                    keystroke return
                 end tell
             end tell
             APPLESCRIPT
@@ -561,55 +565,6 @@ final class TerminalLauncher {
         }
 
         // No Ghostty running — launch Ghostty with the tmux command directly.
-        let escapedTmuxCmd = bashDoubleQuoteEscape(tmuxCmd)
-        runBashScript("open -a Ghostty.app --args -e sh -c \"\(escapedTmuxCmd)\"")
-    }
-
-    // MARK: - Shell Helpers
-
-    /// Check whether a named tmux session currently exists (attached or detached).
-    /// Uses `tmux has-session` which exits 0 if the session exists, non-zero otherwise.
-    static func hasTmuxSession(
-        name: String,
-        runScript: (String) async -> (exitCode: Int32, output: String?),
-    ) async -> Bool {
-        let escaped = shellEscape(name)
-        let result = await runScript("tmux has-session -t \(escaped) 2>/dev/null")
-        return result.exitCode == 0
-    }
-
-    /// Attach to an existing (detached) tmux session in the current Ghostty tab.
-    /// Instead of opening a new tab (Cmd+T), this types `tmux attach -t <session>`
-    /// into whichever tab is currently active — reusing it for the tmux session.
-    /// Falls back to launching a new Ghostty window if Ghostty isn't running.
-    private func attachToExistingTmuxSession(_ sessionName: String) {
-        let escaped = shellEscape(sessionName)
-        let tmuxCmd = "tmux attach-session -t \(escaped)"
-        debugLog("attachToExistingTmuxSession session=\(sessionName)")
-
-        if isGhosttyRunningInternal() {
-            // Ghostty is running — type the attach command into the current active tab.
-            // No new tab: reuse the existing idle shell.
-            let applescriptSafe = tmuxCmd
-                .replacingOccurrences(of: "\\", with: "\\\\")
-                .replacingOccurrences(of: "\"", with: "\\\"")
-            let script = """
-            osascript <<'APPLESCRIPT'
-            tell application "Ghostty" to activate
-            delay 0.2
-            tell application "System Events"
-                tell process "Ghostty"
-                    keystroke "\(applescriptSafe)"
-                    key code 36
-                end tell
-            end tell
-            APPLESCRIPT
-            """
-            runBashScript(script)
-            return
-        }
-
-        // Ghostty not running — launch with the attach command directly.
         let escapedTmuxCmd = bashDoubleQuoteEscape(tmuxCmd)
         runBashScript("open -a Ghostty.app --args -e sh -c \"\(escapedTmuxCmd)\"")
     }
