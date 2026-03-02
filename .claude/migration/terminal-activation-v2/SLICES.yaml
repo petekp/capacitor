@@ -176,3 +176,33 @@ slices:
       - "ActivationActionExecutor tests must be replaced before deletion"
       - "Other code may reference deleted methods"
     notes: "Final cleanup slice. All anti-pattern budgets reach 0."
+
+  - id: TAv2-007
+    name: "Pre-Switch Tab Bookmark"
+    status: "done"
+    depends_on:
+      - TAv2-006
+    touched_paths:
+      - apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift
+      - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
+    contracts:
+      added:
+        - "TerminalLauncher.lastMatchedGhosttyTabIndex: (windowIndex: Int, tabIndex: Int)?"
+        - "TerminalLauncher.tryBookmarkedGhosttyTab(windows:bookmarkedTabIndex:ghosttyWindowReader:) -> GhosttyAXRoutingResolution?"
+      changed:
+        - "activateGhosttyWithAXRouting: bookmark-first, retry-fallback (15→5 retries)"
+        - "activateGhosttyWithAXRouting: updates bookmark after successful title match"
+      removed: []
+    deletion_targets: []
+    smoke_scenarios:
+      - "testTryBookmarkedGhosttyTabFocusesTabAtStoredIndex"
+      - "testTryBookmarkedGhosttyTabReturnsNilWhenIndexOutOfRange"
+      - "testTryBookmarkedGhosttyTabReturnsNilWhenWindowIndexInvalid"
+      - "testTryBookmarkedGhosttyTabReturnsNilWhenFocusFails"
+      - "testLastMatchedGhosttyTabIndexStartsNilOnColdStart"
+      - "Full test suite passes (260 tests)"
+      - "Manual: bookmark=hit route=tab_press in 7ms (vs 238ms+ retry path)"
+    risks:
+      - "AX tab index may not be stable across Ghostty versions"
+      - "Tab reordering between bookmark and focus (rare in single-client model)"
+    notes: "Eliminates AX title race for 95% of session switches. Retry reduced from 15×200ms to 5×200ms as fallback-only. Bookmark path measured at ~7ms vs ~238ms for retry (34x speedup)."

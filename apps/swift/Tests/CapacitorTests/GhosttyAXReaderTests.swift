@@ -241,4 +241,91 @@ final class GhosttyAXReaderTests: XCTestCase {
 
         XCTAssertNil(match)
     }
+
+    // MARK: - Window Title Session Matching (D-008)
+
+    /// When tabs aren't enumerable (tabCount=0), window title provides the
+    /// session match signal. A window whose title contains the session name
+    /// indicates the session IS displayed in that window.
+    func testWindowTitleMatchesSessionWithSessionHint() {
+        let windows = [
+            window(index: 0, title: "capacitor: ~/Code/capacitor", tabs: []),
+        ]
+
+        let result = ghosttyWindowTitleMatchesSession(
+            windows: windows,
+            projectPath: "/Users/pete/Code/capacitor",
+            homeDirectory: home,
+            tmuxSessionHint: "capacitor",
+        )
+
+        XCTAssertTrue(result, "Window title containing session name should match")
+    }
+
+    func testWindowTitleMatchesSessionViaProjectPath() {
+        let windows = [
+            window(index: 0, title: "~/Code/capacitor", tabs: []),
+        ]
+
+        let result = ghosttyWindowTitleMatchesSession(
+            windows: windows,
+            projectPath: "/Users/pete/Code/capacitor",
+            homeDirectory: home,
+        )
+
+        XCTAssertTrue(result, "Window title matching project path should match")
+    }
+
+    func testWindowTitleDoesNotMatchUnrelatedSession() {
+        let windows = [
+            window(index: 0, title: "other-project: ~/Code/other-project", tabs: []),
+        ]
+
+        let result = ghosttyWindowTitleMatchesSession(
+            windows: windows,
+            projectPath: "/Users/pete/Code/capacitor",
+            homeDirectory: home,
+            tmuxSessionHint: "capacitor",
+        )
+
+        XCTAssertFalse(result, "Unrelated window title should not match")
+    }
+
+    func testWindowTitleDoesNotMatchWhenWindowsHaveNoTitles() {
+        let windows = [
+            window(index: 0, title: nil, tabs: []),
+            window(index: 1, title: "", tabs: []),
+        ]
+
+        let result = ghosttyWindowTitleMatchesSession(
+            windows: windows,
+            projectPath: "/Users/pete/Code/capacitor",
+            homeDirectory: home,
+            tmuxSessionHint: "capacitor",
+        )
+
+        XCTAssertFalse(result, "Windows without titles should not match")
+    }
+
+    func testWindowTitleDoesNotMatchEmptyWindows() {
+        let result = ghosttyWindowTitleMatchesSession(
+            windows: [],
+            projectPath: "/Users/pete/Code/capacitor",
+            homeDirectory: home,
+        )
+
+        XCTAssertFalse(result, "Empty window list should not match")
+    }
+
+    // MARK: - Helpers
+
+    private func window(index: Int, title: String?, isMain: Bool = false, tabs: [GhosttyTabSnapshot]) -> GhosttyWindowSnapshot {
+        GhosttyWindowSnapshot(
+            element: AXUIElementCreateSystemWide(),
+            index: index,
+            tabs: tabs,
+            isMain: isMain,
+            title: title,
+        )
+    }
 }

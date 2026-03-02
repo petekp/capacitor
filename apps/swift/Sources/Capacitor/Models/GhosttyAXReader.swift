@@ -25,6 +25,15 @@ struct GhosttyWindowSnapshot {
     let index: Int
     let tabs: [GhosttyTabSnapshot]
     let isMain: Bool
+    let title: String?
+
+    init(element: AXUIElement, index: Int, tabs: [GhosttyTabSnapshot], isMain: Bool, title: String? = nil) {
+        self.element = element
+        self.index = index
+        self.tabs = tabs
+        self.isMain = isMain
+        self.title = title
+    }
 }
 
 struct DefaultGhosttyAXReader: GhosttyWindowReader {
@@ -49,6 +58,7 @@ struct DefaultGhosttyAXReader: GhosttyWindowReader {
                 index: index,
                 tabs: readWindowTabs(window),
                 isMain: readBool(window, attribute: kAXMainAttribute as CFString) ?? false,
+                title: readTitle(window),
             )
         }
 
@@ -241,6 +251,40 @@ func bestGhosttyWindowForRaise(windows: [GhosttyWindowSnapshot]) -> GhosttyWindo
         }
         return lhs.index < rhs.index
     }.first
+}
+
+/// Check if any Ghostty window's title matches the given session/project.
+/// Used as a fallback signal when tabs aren't enumerable (tabCount == 0) — the
+/// window title reflects the active tab's title, so it can serve as a proxy for
+/// tab-level matching. Reuses the same matching logic as `bestGhosttyTabMatch`.
+func ghosttyWindowTitleMatchesSession(
+    windows: [GhosttyWindowSnapshot],
+    projectPath: String,
+    homeDirectory: String = NSHomeDirectory(),
+    tmuxSessionHint: String? = nil,
+) -> Bool {
+    let normalizedProjectPath = normalizeGhosttyPath(projectPath, homeDirectory: homeDirectory)
+    let normalizedHome = normalizeGhosttyPath(homeDirectory, homeDirectory: homeDirectory)
+
+    for window in windows {
+        guard let title = window.title,
+              !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else {
+            continue
+        }
+
+        let normalizedTitle = normalizeGhosttyPath(title, homeDirectory: homeDirectory)
+        if ghosttyPathRankAndDistance(shellPath: normalizedTitle, projectPath: normalizedProjectPath, homeDir: normalizedHome) != nil {
+            return true
+        }
+        if ghosttySessionTitleRankAndDistance(tabTitle: title, projectPath: normalizedProjectPath) != nil {
+            return true
+        }
+        if ghosttySessionHintRankAndDistance(tabTitle: title, sessionHint: tmuxSessionHint) != nil {
+            return true
+        }
+    }
+    return false
 }
 
 private func normalizeGhosttyPath(_ path: String, homeDirectory: String) -> String {

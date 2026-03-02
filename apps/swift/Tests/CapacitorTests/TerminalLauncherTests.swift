@@ -117,6 +117,26 @@ final class TerminalLauncherTests: XCTestCase {
         XCTAssertFalse(activatedTerminalApp)
     }
 
+    /// When both TTY discovery and AX routing fail (e.g., orphaned tmux client
+    /// after tab closure), the terminal app is activated as a best effort but
+    /// the method returns false — the caller should clear state and relaunch.
+    func testCompleteTerminalActivationReturnsFalseWhenBothDiscoveryAndAXFail() async {
+        var activatedTerminalApp = false
+
+        let result = await TerminalLauncher.completeTerminalActivationAfterTmuxSwitch(
+            clientTty: "/dev/ttys200",
+            projectPath: "/Users/pete/Code/agentic-canvas-v2",
+            activateByTTYDiscovery: { _ in false },
+            activateGhosttyByAXRouting: { _, _, _ in false }, // AX routing couldn't find tab
+            isGhosttyRunning: { true },
+            activateTerminalApp: { activatedTerminalApp = true },
+            tmuxSessionHint: "agentic-canvas-v2",
+        )
+
+        XCTAssertFalse(result, "Should return false when neither TTY discovery nor AX routing can focus the right tab")
+        XCTAssertTrue(activatedTerminalApp, "Terminal app still activated as best effort")
+    }
+
     func testBestTmuxPaneTargetForProjectPathPrefersExactMatch() {
         let output = "workspace\t0\t0\t/Users/pete/Code/project-a\nworkspace\t0\t1\t/Users/pete/Code/project-b\n"
         let target = TerminalLauncher.bestTmuxPaneTargetForProjectPath(
@@ -247,6 +267,59 @@ final class TerminalLauncherTests: XCTestCase {
         XCTAssertEqual(reader.raisedWindowCount, 1)
     }
 
+    /// Reproduces the AX routing race: after `tmux switch-client -t new-session`,
+    /// the tab title still shows the OLD session name because Ghostty hasn't
+    /// processed the title escape sequence yet. The routing falls to window_raise
+    /// instead of tab_press, leaving the wrong tab visible.
+    func testResolveGhosttyAXRoutingFallsToWindowRaiseWhenTitleShowsStaleSession() {
+        let reader = StubGhosttyWindowReader()
+        // Tab 0: tmux tab still showing OLD session title (stale after switch-client)
+        // Tab 1: non-tmux tab (e.g., running pnpm dev)
+        let windows = [
+            makeGhosttyWindow(index: 0, isMain: true, tabs: [
+                makeGhosttyTab(title: "capacitor: ~/Code/capacitor", index: 0, isSelected: false),
+                makeGhosttyTab(title: "pnpm dev", index: 1, isSelected: true),
+            ]),
+        ]
+
+        // We just switched to "agentic-canvas-v2" but the title hasn't propagated yet
+        let outcome = TerminalLauncher.resolveGhosttyAXRouting(
+            windows: windows,
+            projectPath: "/Users/pete/Code/agentic-canvas-v2",
+            tmuxSessionHint: "agentic-canvas-v2",
+            ghosttyWindowReader: reader,
+        )
+
+        // BUG: Without a title match, routing falls to window_raise instead of
+        // focusing the tmux tab (index 0). The user sees the wrong tab.
+        XCTAssertEqual(outcome, .windowRaise, "Stale title causes window_raise instead of tab_press")
+        XCTAssertEqual(reader.focusedTabs.count, 0, "No tab was focused because the title didn't match")
+        XCTAssertEqual(reader.raisedWindowCount, 1)
+    }
+
+    /// After `tmux switch-client`, once the title propagates, the hint match works.
+    func testResolveGhosttyAXRoutingMatchesAfterTitlePropagates() {
+        let reader = StubGhosttyWindowReader()
+        // Tab 0: tmux tab has now updated its title to the NEW session
+        let windows = [
+            makeGhosttyWindow(index: 0, isMain: true, tabs: [
+                makeGhosttyTab(title: "agentic-canvas-v2: ~/Code/agentic-canvas-v2", index: 0, isSelected: false),
+                makeGhosttyTab(title: "pnpm dev", index: 1, isSelected: true),
+            ]),
+        ]
+
+        let outcome = TerminalLauncher.resolveGhosttyAXRouting(
+            windows: windows,
+            projectPath: "/Users/pete/Code/agentic-canvas-v2",
+            tmuxSessionHint: "agentic-canvas-v2",
+            ghosttyWindowReader: reader,
+        )
+
+        XCTAssertEqual(outcome, .tabPress, "Once title propagates, hint match correctly focuses the tmux tab")
+        XCTAssertEqual(reader.focusedTabs.count, 1)
+        XCTAssertEqual(reader.focusedTabs.first?.index, 0)
+    }
+
     func testResolveGhosttyAXRoutingUsesTmuxSessionHintWhenProjectSlugDiffers() {
         let reader = StubGhosttyWindowReader()
         let windows = [
@@ -266,6 +339,151 @@ final class TerminalLauncherTests: XCTestCase {
         XCTAssertEqual(outcome, .tabPress)
         XCTAssertEqual(reader.focusedTabs.count, 1)
         XCTAssertEqual(reader.focusedTabs.first?.index, 0)
+    }
+
+    // MARK: - Ghostty Tab Bookmark Tests
+
+    func testTryBookmarkedGhosttyTabFocusesTabAtStoredIndex() {
+        let reader = StubGhosttyWindowReader()
+        let windows = [
+            makeGhosttyWindow(index: 0, isMain: true, tabs: [
+                makeGhosttyTab(title: "pnpm dev", index: 0, isSelected: true),
+                makeGhosttyTab(title: "capacitor: ~/Code/capacitor", index: 1, isSelected: false),
+            ]),
+        ]
+
+        // Bookmark says tab 1 in window 0 is the tmux tab.
+        // After tmux switch-client, the title may be stale, but the tab is still correct.
+        let result = TerminalLauncher.tryBookmarkedGhosttyTab(
+            windows: windows,
+            bookmarkedTabIndex: (windowIndex: 0, tabIndex: 1),
+            ghosttyWindowReader: reader,
+        )
+
+        XCTAssertEqual(result, .tabPress)
+        XCTAssertEqual(reader.focusedTabs.count, 1)
+        XCTAssertEqual(reader.focusedTabs.first?.index, 1)
+    }
+
+    func testTryBookmarkedGhosttyTabReturnsNilWhenIndexOutOfRange() {
+        let reader = StubGhosttyWindowReader()
+        let windows = [
+            makeGhosttyWindow(index: 0, isMain: true, tabs: [
+                makeGhosttyTab(title: "capacitor: ~/Code/capacitor", index: 0),
+            ]),
+        ]
+
+        // Bookmark points to tab index 5 which doesn't exist.
+        let result = TerminalLauncher.tryBookmarkedGhosttyTab(
+            windows: windows,
+            bookmarkedTabIndex: (windowIndex: 0, tabIndex: 5),
+            ghosttyWindowReader: reader,
+        )
+
+        XCTAssertNil(result)
+        XCTAssertEqual(reader.focusedTabs.count, 0)
+    }
+
+    func testTryBookmarkedGhosttyTabReturnsNilWhenWindowIndexInvalid() {
+        let reader = StubGhosttyWindowReader()
+        let windows = [
+            makeGhosttyWindow(index: 0, isMain: true, tabs: [
+                makeGhosttyTab(title: "capacitor: ~/Code/capacitor", index: 0),
+            ]),
+        ]
+
+        // Bookmark points to window index 3 which doesn't exist.
+        let result = TerminalLauncher.tryBookmarkedGhosttyTab(
+            windows: windows,
+            bookmarkedTabIndex: (windowIndex: 3, tabIndex: 0),
+            ghosttyWindowReader: reader,
+        )
+
+        XCTAssertNil(result)
+        XCTAssertEqual(reader.focusedTabs.count, 0)
+    }
+
+    func testTryBookmarkedGhosttyTabReturnsNilWhenFocusFails() {
+        let reader = StubGhosttyWindowReader()
+        reader.focusTabResult = false
+        let windows = [
+            makeGhosttyWindow(index: 0, isMain: true, tabs: [
+                makeGhosttyTab(title: "capacitor: ~/Code/capacitor", index: 0),
+            ]),
+        ]
+
+        let result = TerminalLauncher.tryBookmarkedGhosttyTab(
+            windows: windows,
+            bookmarkedTabIndex: (windowIndex: 0, tabIndex: 0),
+            ghosttyWindowReader: reader,
+        )
+
+        XCTAssertNil(result, "Bookmark should fail when AX focusTab returns false")
+        XCTAssertEqual(reader.focusedTabs.count, 1, "Should have attempted to focus the tab")
+    }
+
+    func testTryBookmarkedGhosttyTabReturnsNilWhenStoredTitleDoesNotMatchCurrentTab() {
+        let reader = StubGhosttyWindowReader()
+        // After user closes the tmux tab (was index 1), the tab that was at index 2
+        // shifts down to index 1. The bookmark still points to (w=0, t=1) but
+        // the tab there now has a different title.
+        let windows = [
+            makeGhosttyWindow(index: 0, isMain: true, tabs: [
+                makeGhosttyTab(title: "pnpm dev", index: 0, isSelected: true),
+                makeGhosttyTab(title: "other-project: ~/Code/other", index: 1, isSelected: false),
+            ]),
+        ]
+
+        let result = TerminalLauncher.tryBookmarkedGhosttyTab(
+            windows: windows,
+            bookmarkedTabIndex: (windowIndex: 0, tabIndex: 1),
+            bookmarkedTabTitle: "capacitor: ~/Code/capacitor",
+            ghosttyWindowReader: reader,
+        )
+
+        XCTAssertNil(result, "Bookmark should miss when stored title doesn't match tab at index (tab shifted)")
+        XCTAssertEqual(reader.focusedTabs.count, 0, "Should NOT attempt to focus a shifted tab")
+    }
+
+    func testTryBookmarkedGhosttyTabSucceedsWhenStoredTitleMatchesCurrentTab() {
+        let reader = StubGhosttyWindowReader()
+        let windows = [
+            makeGhosttyWindow(index: 0, isMain: true, tabs: [
+                makeGhosttyTab(title: "pnpm dev", index: 0, isSelected: true),
+                makeGhosttyTab(title: "capacitor: ~/Code/capacitor", index: 1, isSelected: false),
+            ]),
+        ]
+
+        let result = TerminalLauncher.tryBookmarkedGhosttyTab(
+            windows: windows,
+            bookmarkedTabIndex: (windowIndex: 0, tabIndex: 1),
+            bookmarkedTabTitle: "capacitor: ~/Code/capacitor",
+            ghosttyWindowReader: reader,
+        )
+
+        XCTAssertEqual(result, .tabPress, "Bookmark should succeed when stored title matches")
+        XCTAssertEqual(reader.focusedTabs.count, 1)
+    }
+
+    func testTryBookmarkedGhosttyTabSucceedsWhenNoStoredTitle() {
+        let reader = StubGhosttyWindowReader()
+        let windows = [
+            makeGhosttyWindow(index: 0, isMain: true, tabs: [
+                makeGhosttyTab(title: "capacitor: ~/Code/capacitor", index: 0),
+            ]),
+        ]
+
+        // No stored title (nil) — first activation before title propagated.
+        // Can't validate, so proceed with focus.
+        let result = TerminalLauncher.tryBookmarkedGhosttyTab(
+            windows: windows,
+            bookmarkedTabIndex: (windowIndex: 0, tabIndex: 0),
+            bookmarkedTabTitle: nil,
+            ghosttyWindowReader: reader,
+        )
+
+        XCTAssertEqual(result, .tabPress, "Bookmark should succeed when no stored title (can't validate)")
+        XCTAssertEqual(reader.focusedTabs.count, 1)
     }
 
     func testTerminalLaunchScriptsHonorAlphaTerminalInvariants() {
@@ -648,13 +866,18 @@ final class TerminalLauncherTests: XCTestCase {
     }
 
     // S3/S5: Managed TTY alive → use it directly (no resolve call)
-    func testResolveTmuxClientUsesManagedWhenAlive() async {
+    func testResolveTmuxClientUsesManagedWhenAliveAndClientConfirmed() async {
+        var resolveAnyCalled = false
         let result = await TerminalLauncher.resolveTmuxClient(
             managedTty: "/dev/ttys001",
             isTtyAlive: { _ in true },
-            resolveAnyClientTty: { XCTFail("should not be called"); return nil },
+            resolveAnyClientTty: {
+                resolveAnyCalled = true
+                return "/dev/ttys001" // Confirms the managed TTY is an active client
+            },
         )
         XCTAssertEqual(result, "/dev/ttys001")
+        XCTAssertTrue(resolveAnyCalled, "Should cross-check managed TTY against active tmux clients")
     }
 
     // S6: Managed TTY died, another client exists → adopt it
@@ -680,6 +903,17 @@ final class TerminalLauncherTests: XCTestCase {
             resolveAnyClientTty: { nil },
         )
         XCTAssertNil(result)
+    }
+
+    // Bug: managed TTY device file persists after tab closure, but tmux client is gone.
+    // resolveTmuxClient should detect this and return nil (trigger new terminal launch).
+    func testResolveTmuxClientReturnsNilWhenDeviceFileExistsButNoClientsAttached() async {
+        let result = await TerminalLauncher.resolveTmuxClient(
+            managedTty: "/dev/ttys000",
+            isTtyAlive: { _ in true }, // Device file still exists
+            resolveAnyClientTty: { nil }, // But no tmux clients
+        )
+        XCTAssertNil(result, "Stale TTY device file should not be treated as a live client")
     }
 
     // S3: Session exists → just switch
@@ -747,7 +981,7 @@ final class TerminalLauncherTests: XCTestCase {
         XCTAssertEqual(capturedTty, "/dev/ttys050")
     }
 
-    // S3: Managed TTY alive, session exists → switch + focus
+    // S3: Managed TTY alive + confirmed by tmux, session exists → switch + focus
     func testUnifiedActivationSwitchesOnManagedTty() async {
         var switchedSession: String?
         var terminalActivated = false
@@ -756,7 +990,7 @@ final class TerminalLauncherTests: XCTestCase {
             projectPath: "/other",
             managedTty: "/dev/ttys001",
             isTtyAlive: { _ in true },
-            resolveAnyClientTty: { XCTFail("should not be called"); return nil },
+            resolveAnyClientTty: { "/dev/ttys001" }, // Confirms client is attached
             ensureAndSwitch: { session, _, tty in
                 switchedSession = session
                 XCTAssertEqual(tty, "/dev/ttys001")
@@ -802,7 +1036,7 @@ final class TerminalLauncherTests: XCTestCase {
             projectPath: "/new",
             managedTty: "/dev/ttys001",
             isTtyAlive: { _ in true },
-            resolveAnyClientTty: { nil },
+            resolveAnyClientTty: { "/dev/ttys001" }, // Confirms client is attached
             ensureAndSwitch: { session, path, _ in
                 ensureCalled = true
                 XCTAssertEqual(session, "new-proj")
@@ -824,13 +1058,119 @@ final class TerminalLauncherTests: XCTestCase {
             projectPath: "/broken",
             managedTty: "/dev/ttys001",
             isTtyAlive: { _ in true },
-            resolveAnyClientTty: { nil },
+            resolveAnyClientTty: { "/dev/ttys001" }, // Client confirmed alive
             ensureAndSwitch: { _, _, _ in false },
             launchTerminalWithTmux: { _, _ in },
             activateTerminal: { _, _, _ in true },
             onManagedTtyUpdate: { _ in },
         )
         XCTAssertFalse(ok)
+    }
+
+    /// When managed TTY is alive and tmux confirms the client, but the terminal
+    /// that owned the TTY is gone (activateTerminal returns false), the flow
+    /// should clear the managed TTY and launch a fresh terminal instead of
+    /// silently succeeding with nothing visible.
+    func testUnifiedActivationLaunchesWhenManagedClientTerminalGone() async {
+        var launched = false
+        var managedTtyCleared = false
+        let ok = await TerminalLauncher.performUnifiedActivation(
+            sessionName: "my-project",
+            projectPath: "/path/to/project",
+            managedTty: "/dev/ttys001",
+            isTtyAlive: { _ in true },
+            resolveAnyClientTty: { "/dev/ttys001" }, // Client still in tmux list-clients
+            ensureAndSwitch: { _, _, _ in true }, // tmux switch succeeds
+            launchTerminalWithTmux: { _, _ in launched = true },
+            activateTerminal: { _, _, _ in false }, // Terminal focus FAILS (tab gone)
+            onManagedTtyUpdate: { tty in
+                if tty == nil { managedTtyCleared = true }
+            },
+        )
+        XCTAssertTrue(ok, "Should succeed via fresh launch")
+        XCTAssertTrue(launched, "Should launch new terminal when focus fails")
+        XCTAssertTrue(managedTtyCleared, "Should clear managed TTY on terminal gone")
+    }
+
+    // MARK: - Auto-Attach (Detached Session Reuse)
+
+    /// When no tmux client exists but a session is already running (detached),
+    /// the flow should attach to the existing session instead of launching
+    /// a brand-new terminal tab.
+    func testUnifiedActivationAutoAttachesWhenSessionExists() async {
+        var attached = false
+        var capturedTty: String?
+        let ok = await TerminalLauncher.performUnifiedActivation(
+            sessionName: "capacitor",
+            projectPath: "/path/to/capacitor",
+            managedTty: nil,
+            isTtyAlive: { _ in false },
+            resolveAnyClientTty: { nil },
+            hasExistingSession: { name in name == "capacitor" },
+            ensureAndSwitch: { _, _, _ in XCTFail("should not be called"); return false },
+            launchTerminalWithTmux: { _, _ in XCTFail("should not launch new — should auto-attach") },
+            attachToExistingSession: { session in
+                XCTAssertEqual(session, "capacitor")
+                attached = true
+            },
+            activateTerminal: { _, _, _ in XCTFail("should not be called"); return false },
+            pollForNewClient: { "/dev/ttys060" },
+            onManagedTtyUpdate: { capturedTty = $0 },
+        )
+        XCTAssertTrue(ok)
+        XCTAssertTrue(attached, "Should auto-attach to existing detached session")
+        XCTAssertEqual(capturedTty, "/dev/ttys060", "Should still poll and capture new client TTY")
+    }
+
+    /// When no tmux client exists and no session exists for the project,
+    /// the flow should launch a new terminal (not try to attach).
+    func testUnifiedActivationLaunchesNewWhenNoSessionExists() async {
+        var launched = false
+        var attachCalled = false
+        let ok = await TerminalLauncher.performUnifiedActivation(
+            sessionName: "brand-new",
+            projectPath: "/path/to/brand-new",
+            managedTty: nil,
+            isTtyAlive: { _ in false },
+            resolveAnyClientTty: { nil },
+            hasExistingSession: { _ in false },
+            ensureAndSwitch: { _, _, _ in XCTFail("should not be called"); return false },
+            launchTerminalWithTmux: { session, path in
+                XCTAssertEqual(session, "brand-new")
+                XCTAssertEqual(path, "/path/to/brand-new")
+                launched = true
+            },
+            attachToExistingSession: { _ in attachCalled = true },
+            activateTerminal: { _, _, _ in XCTFail("should not be called"); return false },
+            pollForNewClient: { "/dev/ttys070" },
+            onManagedTtyUpdate: { _ in },
+        )
+        XCTAssertTrue(ok)
+        XCTAssertTrue(launched, "Should launch new terminal when no session exists")
+        XCTAssertFalse(attachCalled, "Should NOT auto-attach when session doesn't exist")
+    }
+
+    /// When a tmux client already exists, auto-attach logic is skipped entirely —
+    /// the normal switch-client flow handles it.
+    func testUnifiedActivationSkipsAutoAttachWhenClientExists() async {
+        var switched = false
+        var attachCalled = false
+        let ok = await TerminalLauncher.performUnifiedActivation(
+            sessionName: "proj",
+            projectPath: "/proj",
+            managedTty: "/dev/ttys001",
+            isTtyAlive: { _ in true },
+            resolveAnyClientTty: { "/dev/ttys001" },
+            hasExistingSession: { _ in XCTFail("should not check session when client exists"); return true },
+            ensureAndSwitch: { _, _, _ in switched = true; return true },
+            launchTerminalWithTmux: { _, _ in XCTFail("should not launch") },
+            attachToExistingSession: { _ in attachCalled = true },
+            activateTerminal: { _, _, _ in true },
+            onManagedTtyUpdate: { _ in },
+        )
+        XCTAssertTrue(ok)
+        XCTAssertTrue(switched, "Should use normal switch-client flow")
+        XCTAssertFalse(attachCalled, "Should NOT auto-attach when client exists")
     }
 
     /// Create fails → return false
@@ -842,6 +1182,115 @@ final class TerminalLauncherTests: XCTestCase {
             runScript: { _ in (1, "error") },
         )
         XCTAssertFalse(ok)
+    }
+
+    /// When a recent launch's poll timed out (managedClientTty is nil),
+    /// the pre-activation poll should capture the client TTY before
+    /// the unified flow runs, preventing a duplicate tab launch.
+    func testPrePollCapturesClientAfterRecentLaunch() async {
+        let projectA = makeProject(name: "proj", path: "/Users/pete/Code/proj")
+        var results: [TerminalActivationResult] = []
+
+        // Use a box to capture the launcher reference indirectly, since
+        // we can't use [weak launcher] in the initializer closure.
+        class Ref { weak var launcher: TerminalLauncher? }
+        let ref = Ref()
+
+        let launcher = TerminalLauncher(
+            appleScript: StubAppleScriptClient(shouldSucceed: true),
+            resolveActivationDecisionOverride: { _ in
+                throw SnapshotFetchError.unavailable
+            },
+            fallbackTmuxSessionResolver: { path in
+                URL(fileURLWithPath: path).lastPathComponent
+            },
+            activateProjectSessionOverride: { _, _ in true },
+        )
+        ref.launcher = launcher
+        launcher.onActivationResult = { results.append($0) }
+
+        // Simulate: a launch happened 2 seconds ago but poll timed out.
+        launcher.lastTerminalLaunchDate = Date().addingTimeInterval(-2)
+        XCTAssertNil(launcher.managedClientTty)
+
+        // Pre-activation poll will find the client.
+        launcher.preActivationPollOverride = { "/dev/ttys050" }
+
+        launcher.launchTerminal(for: projectA)
+        _ = await assertEventually(timeout: 2.0, context: "Expected activation result") {
+            results.count == 1
+        }
+
+        // The pre-poll should have set managedClientTty BEFORE activation ran.
+        XCTAssertEqual(launcher.managedClientTty, "/dev/ttys050",
+                       "Pre-poll should capture client TTY before activation runs")
+    }
+
+    /// When lastTerminalLaunchDate is nil (no recent launch), the pre-poll
+    /// should NOT run — activation proceeds directly.
+    func testNoPrePollWhenNoRecentLaunch() async {
+        let projectA = makeProject(name: "proj", path: "/Users/pete/Code/proj")
+        var prePollCalled = false
+        var results: [TerminalActivationResult] = []
+
+        let launcher = TerminalLauncher(
+            appleScript: StubAppleScriptClient(shouldSucceed: true),
+            resolveActivationDecisionOverride: { _ in
+                throw SnapshotFetchError.unavailable
+            },
+            fallbackTmuxSessionResolver: { path in
+                URL(fileURLWithPath: path).lastPathComponent
+            },
+            activateProjectSessionOverride: { _, _ in true },
+        )
+        launcher.onActivationResult = { results.append($0) }
+
+        // No recent launch — pre-poll should not run.
+        XCTAssertNil(launcher.lastTerminalLaunchDate)
+        launcher.preActivationPollOverride = {
+            prePollCalled = true
+            return "/dev/ttys050"
+        }
+
+        launcher.launchTerminal(for: projectA)
+        _ = await assertEventually(timeout: 2.0, context: "Expected activation result") {
+            results.count == 1
+        }
+
+        XCTAssertFalse(prePollCalled, "Pre-poll should not run when there's no recent launch")
+    }
+
+    /// When lastTerminalLaunchDate is old (>15s), the pre-poll should NOT run.
+    func testNoPrePollWhenLaunchIsTooOld() async {
+        let projectA = makeProject(name: "proj", path: "/Users/pete/Code/proj")
+        var prePollCalled = false
+        var results: [TerminalActivationResult] = []
+
+        let launcher = TerminalLauncher(
+            appleScript: StubAppleScriptClient(shouldSucceed: true),
+            resolveActivationDecisionOverride: { _ in
+                throw SnapshotFetchError.unavailable
+            },
+            fallbackTmuxSessionResolver: { path in
+                URL(fileURLWithPath: path).lastPathComponent
+            },
+            activateProjectSessionOverride: { _, _ in true },
+        )
+        launcher.onActivationResult = { results.append($0) }
+
+        // Launch happened 30 seconds ago — too old for cooldown.
+        launcher.lastTerminalLaunchDate = Date().addingTimeInterval(-30)
+        launcher.preActivationPollOverride = {
+            prePollCalled = true
+            return "/dev/ttys050"
+        }
+
+        launcher.launchTerminal(for: projectA)
+        _ = await assertEventually(timeout: 2.0, context: "Expected activation result") {
+            results.count == 1
+        }
+
+        XCTAssertFalse(prePollCalled, "Pre-poll should not run when launch is older than 15s")
     }
 
     /// No managed TTY but a client exists → adopt it

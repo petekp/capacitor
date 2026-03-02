@@ -20,11 +20,19 @@ Every card click executes this algorithm:
    b. Is there ANY tmux client attached in any Ghostty tab?
       → YES: adopt it (remember its TTY as managed).
       → NO: continue.
-   c. Is Ghostty running with at least one window?
-      → YES: open new tab, run `tmux new -A -s <session> -c <project-path>`,
-        remember TTY. Done (skip step 2).
-      → NO: launch Ghostty with `tmux new -A -s <session> -c <project-path>`,
-        remember TTY. Done (skip step 2).
+   c. Does a detached tmux session already exist for this project?
+      → YES (auto-attach):
+        - Ghostty running? Type `tmux attach-session -t <session>` into the
+          active tab (no new tab). Remember TTY. Done (skip step 2).
+        - Ghostty not running? Launch Ghostty with
+          `tmux attach-session -t <session>`. Remember TTY. Done (skip step 2).
+      → NO (fresh launch):
+        - Ghostty running? Open new tab, run
+          `tmux new-session -s <session> -c <project-path>`.
+          Remember TTY. Done (skip step 2).
+        - Ghostty not running? Launch Ghostty with
+          `tmux new-session -s <session> -c <project-path>`.
+          Remember TTY. Done (skip step 2).
 
 2. Switch session on the resolved client:
    a. Does a tmux session for this project already exist?
@@ -50,20 +58,22 @@ Every card click executes this algorithm:
 | B6 | Managed-TTY affinity | Remember which TTY Capacitor is using. Reuse it until it dies. |
 | B7 | Graceful recovery | If the managed TTY disappears, adopt any other tmux client. If none exist, create a new tab. |
 | B8 | Multi-terminal support | Ghostty gets full AX tab routing. iTerm/Terminal.app get TTY-discovery activation. |
+| B9 | Auto-attach detached sessions | If no tmux client exists but a detached session does, attach to it in the current Ghostty tab — don't open a new tab. New tabs only when no session exists at all. |
 
 ## Scenario Matrix
 
 | ID | Starting State | User Action | Expected Behavior |
 |----|---------------|-------------|-------------------|
 | S1 | No Ghostty, no tmux sessions | Click project A | Launch Ghostty → create session A → attach → remember TTY |
-| S2 | No Ghostty, session A exists | Click project A | Launch Ghostty → attach to session A → remember TTY |
+| S2 | No Ghostty, detached session A exists | Click project A | Launch Ghostty → `tmux attach-session -t A` → remember TTY |
 | S3 | Managed tab on session A | Click project B (session exists) | `switch-client -t B` → AX focus tab → activate Ghostty |
 | S4 | Managed tab on session A | Click project B (no session) | Create session B → `switch-client -t B` → AX focus → activate |
 | S5 | Managed tab on session A | Click project A (same) | No-op or idempotent switch → AX focus → activate |
 | S6 | Managed tab closed by user | Click any project | Detect TTY gone → find any other tmux client → adopt → switch |
-| S7 | Managed tab closed, no clients | Click any project | Open new tab → `tmux new -A -s <session>` → remember new TTY |
+| S7 | Managed tab closed, no clients, no sessions | Click any project | Open new tab → `tmux new-session -s <session> -c <path>` → remember new TTY |
 | S8 | Rapid click A then B (<200ms) | — | Only B executes; A discarded via staleness guard |
 | S9 | Core snapshot unavailable | Click any project | Tmux session-name fallback → ensure + switch. Last resort: launch |
+| S10 | Ghostty running (idle shell tab), no tmux clients, detached session A | Click project A | Auto-attach: type `tmux attach-session -t A` into current tab (no new tab) → remember TTY |
 
 ## AX Routing Strategy
 
@@ -100,25 +110,31 @@ Investigate AX tree structure for tab-level focus parity with Ghostty. Track as 
           │        └─────────────────────┘        │
           │ found any client                      │ no clients
           ▼                                       ▼
-┌──────────────────┐                    ┌──────────────────┐
-│ Adopt client TTY │                    │ Launch / open tab │
-│ Remember as      │                    │ tmux new -A -s    │
-│ managed TTY      │                    │ Remember new TTY  │
-└────────┬─────────┘                    └────────┬─────────┘
-         │                                       │
-         └──────────────┬────────────────────────┘
-                        │
-                        ▼
-              ┌──────────────────┐
-              │  Managed TTY     │◄──── card clicks use this
-              │  (active)        │      for switch-client
-              └────────┬─────────┘
-                       │ TTY dies (tab closed)
-                       ▼
-              ┌──────────────────┐
-              │  Managed TTY     │──► back to Resolve TTY
-              │  (stale)         │    on next card click
-              └──────────────────┘
+┌──────────────────┐              ┌───────────────────────┐
+│ Adopt client TTY │              │ tmux has-session -t ?  │
+│ Remember as      │              └───────┬───────┬───────┘
+│ managed TTY      │                      │       │
+└────────┬─────────┘               exists │       │ doesn't exist
+         │                                ▼       ▼
+         │                    ┌────────────┐  ┌──────────────┐
+         │                    │ Auto-attach │  │ Open new tab │
+         │                    │ tmux attach │  │ tmux new -s  │
+         │                    │ (reuse tab) │  │ -c <path>    │
+         │                    └──────┬─────┘  └──────┬───────┘
+         │                           │               │
+         └──────────┬────────────────┴───────────────┘
+                    │
+                    ▼
+          ┌──────────────────┐
+          │  Managed TTY     │◄──── card clicks use this
+          │  (active)        │      for switch-client
+          └────────┬─────────┘
+                   │ TTY dies (tab closed)
+                   ▼
+          ┌──────────────────┐
+          │  Managed TTY     │──► back to Resolve TTY
+          │  (stale)         │    on next card click
+          └──────────────────┘
 ```
 
 Staleness detection: before each `tmux switch-client -c <tty>`, verify the TTY is still alive. If not, clear it and re-enter resolution.
@@ -146,8 +162,13 @@ Retained from old spec:
 
 Automated tests must cover:
 
-1. `apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift` — unified activation flow
-2. `apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift` — executor routing
-3. `core/capacitor-core/src/` — Rust resolver unit tests
+1. `apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift` — unified activation flow, auto-attach, managed-TTY lifecycle
+2. `apps/swift/Tests/CapacitorTests/GhosttyAXReaderTests.swift` — AX tab/window matching, window title session matching
+3. `core/capacitor-core/src/` — Rust resolver unit tests (telemetry only)
 
-Each scenario in the matrix (S1–S9) should have at least one corresponding automated test.
+Each scenario in the matrix (S1–S10) should have at least one corresponding automated test.
+
+Key auto-attach tests (B9 / D-010):
+- `testUnifiedActivationAutoAttachesWhenSessionExists` — S10: no client + session exists → attach
+- `testUnifiedActivationLaunchesNewWhenNoSessionExists` — S7: no client + no session → new tab
+- `testUnifiedActivationSkipsAutoAttachWhenClientExists` — client exists → normal switch-client flow

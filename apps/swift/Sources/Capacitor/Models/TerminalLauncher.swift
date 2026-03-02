@@ -238,6 +238,21 @@ final class TerminalLauncher {
     /// Cleared when the TTY becomes stale (tab closed). See spec invariant B6.
     private(set) var managedClientTty: String?
 
+    /// The last Ghostty tab that matched via AX title routing. Stored as (windowIndex, tabIndex, tabTitle).
+    /// Before `tmux switch-client`, the tab's position is known — after the switch,
+    /// only the title changes. Focusing by stored index avoids the title propagation race (D-005).
+    /// The stored `tabTitle` enables detecting tab index shifts after tab closure.
+    private(set) var lastMatchedGhosttyTabIndex: (windowIndex: Int, tabIndex: Int, tabTitle: String?)?
+
+    /// Timestamp of the most recent terminal launch (Ghostty tab open).
+    /// Used to detect "launch pending" state: a launch happened but the poll
+    /// didn't capture the client TTY in time.
+    var lastTerminalLaunchDate: Date?
+
+    /// Override for the pre-activation poll. Tests inject this to simulate
+    /// finding a client after a recent launch.
+    var preActivationPollOverride: (() async -> String?)?
+
     // MARK: - Public API
 
     init(
@@ -266,14 +281,23 @@ final class TerminalLauncher {
     }
 
     /// Resolve which tmux client TTY to use for session switching.
-    /// Spec decision tree step 1: managed (alive) → any client → nil (must launch).
+    /// Spec decision tree step 1: managed (alive + verified) → any client → nil (must launch).
     static func resolveTmuxClient(
         managedTty: String?,
         isTtyAlive: (String) -> Bool,
         resolveAnyClientTty: () async -> String?,
     ) async -> String? {
         if let managedTty, isTtyAlive(managedTty) {
-            return managedTty
+            // Device file exists. Cross-check that a tmux client is actually attached.
+            // After tab closure, the device file can persist for minutes while the
+            // tmux client has already detached. Without this check, the flow tries
+            // to switch a dead client and silently fails.
+            if let activeClient = await resolveAnyClientTty() {
+                return managedTty == activeClient ? managedTty : activeClient
+            }
+            // No tmux clients despite device file existing — stale.
+            debugLog("resolveTmuxClient managedTty=\(managedTty) deviceFileExists=true but no tmux clients, treating as stale")
+            return nil
         }
         return await resolveAnyClientTty()
     }
@@ -304,7 +328,7 @@ final class TerminalLauncher {
     }
 
     /// Unified activation flow per spec v2 decision tree.
-    /// 1. Resolve client (managed → any → launch)
+    /// 1. Resolve client (managed → any → auto-attach / launch)
     /// 2. Ensure session + switch
     /// 3. Focus terminal
     static func performUnifiedActivation(
@@ -313,8 +337,10 @@ final class TerminalLauncher {
         managedTty: String?,
         isTtyAlive: (String) -> Bool,
         resolveAnyClientTty: () async -> String?,
+        hasExistingSession: (String) async -> Bool = { _ in false },
         ensureAndSwitch: (String, String, String) async -> Bool,
         launchTerminalWithTmux: (String, String) -> Void,
+        attachToExistingSession: ((String) -> Void)? = nil,
         activateTerminal: (String?, String, String?) async -> Bool,
         pollForNewClient: (() async -> String?)? = nil,
         onManagedTtyUpdate: (String?) -> Void,
@@ -327,10 +353,19 @@ final class TerminalLauncher {
         )
 
         guard let clientTty else {
-            // No client available — launch terminal with tmux (creates client).
-            debugLog("performUnifiedActivation noClient, launching terminal session=\(sessionName)")
-            launchTerminalWithTmux(sessionName, projectPath)
-            // Capture TTY from the newly launched client.
+            // No client available. Check if a detached session already exists
+            // for this project — if so, auto-attach to it (reuses the current
+            // Ghostty tab instead of opening a new one).
+            if let attach = attachToExistingSession,
+               await hasExistingSession(sessionName)
+            {
+                debugLog("performUnifiedActivation noClient, auto-attaching to existing session=\(sessionName)")
+                attach(sessionName)
+            } else {
+                debugLog("performUnifiedActivation noClient, launching new terminal session=\(sessionName)")
+                launchTerminalWithTmux(sessionName, projectPath)
+            }
+            // Capture TTY from the newly attached/launched client.
             if let poll = pollForNewClient, let newTty = await poll() {
                 onManagedTtyUpdate(newTty)
             }
@@ -351,7 +386,18 @@ final class TerminalLauncher {
         }
 
         // Step 3: Focus terminal.
-        _ = await activateTerminal(clientTty, projectPath, sessionName)
+        let focused = await activateTerminal(clientTty, projectPath, sessionName)
+        if !focused {
+            // Terminal that owned the TTY is gone (e.g. Ghostty tab closed but
+            // tmux client hasn't fully detached yet — ~5s window). Clear managed
+            // state and launch a fresh terminal so the user sees something.
+            debugLog("performUnifiedActivation terminal gone for tty=\(clientTty), clearing and relaunching")
+            onManagedTtyUpdate(nil)
+            launchTerminalWithTmux(sessionName, projectPath)
+            if let poll = pollForNewClient, let newTty = await poll() {
+                onManagedTtyUpdate(newTty)
+            }
+        }
         return true
     }
 
@@ -395,6 +441,28 @@ final class TerminalLauncher {
         guard shouldProcessLaunchRequest(requestID) else {
             debugLog("launchTerminalAsync ignored stale request id=\(requestID) path=\(project.path)")
             return
+        }
+
+        // Pre-activation recovery: if we recently launched a terminal but the
+        // post-launch poll didn't capture the client TTY (Ghostty was still
+        // booting), try to capture it now before entering the unified flow.
+        // This prevents duplicate tab launches on rapid re-clicks.
+        if managedClientTty == nil,
+           let lastLaunch = lastTerminalLaunchDate,
+           Date().timeIntervalSince(lastLaunch) < 15
+        {
+            debugLog("launchTerminalAsync recentLaunchPending, pre-polling for client")
+            let tty: String? = if let override = preActivationPollOverride {
+                await override()
+            } else {
+                await Self.pollForTmuxClient()
+            }
+            if let tty {
+                managedClientTty = tty
+                debugLog("launchTerminalAsync capturedPendingClient tty=\(tty)")
+            } else {
+                debugLog("launchTerminalAsync prePollTimedOut, proceeding anyway")
+            }
         }
 
         // Run unified activation flow (spec v2).
@@ -456,6 +524,12 @@ final class TerminalLauncher {
                     runScript: { await Self.runBashScriptWithResult($0) },
                 )
             },
+            hasExistingSession: { name in
+                await Self.hasTmuxSession(
+                    name: name,
+                    runScript: { await Self.runBashScriptWithResult($0) },
+                )
+            },
             ensureAndSwitch: { session, path, tty in
                 await Self.ensureSessionAndSwitch(
                     sessionName: session,
@@ -465,7 +539,12 @@ final class TerminalLauncher {
                 )
             },
             launchTerminalWithTmux: { [weak self] session, path in
+                self?.lastTerminalLaunchDate = Date()
                 self?.launchTerminalWithTmuxSession(session, projectPath: path)
+            },
+            attachToExistingSession: { [weak self] session in
+                self?.lastTerminalLaunchDate = Date()
+                self?.attachToExistingTmuxSession(session)
             },
             activateTerminal: { [weak self] tty, path, sessionHint in
                 guard let self else { return false }
@@ -476,17 +555,21 @@ final class TerminalLauncher {
                 )
             },
             pollForNewClient: {
-                // Poll for newly attached tmux client after launch
-                for _ in 0 ..< 10 {
-                    try? await _Concurrency.Task.sleep(nanoseconds: 200_000_000) // 200ms
+                // Poll for newly attached tmux client after launch.
+                // Window: 20 × 500ms = 10 seconds (Ghostty + shell init + tmux attach).
+                for attempt in 0 ..< 20 {
+                    try? await _Concurrency.Task.sleep(nanoseconds: 500_000_000)
                     let result = await Self.runBashScriptWithResult("tmux list-clients -F '#{client_tty}' 2>/dev/null")
                     if result.exitCode == 0,
                        let output = result.output?.trimmingCharacters(in: .whitespacesAndNewlines),
                        !output.isEmpty
                     {
-                        return output.split(separator: "\n").first.map(String.init)
+                        let tty = output.split(separator: "\n").first.map(String.init)
+                        debugLog("pollForNewClient found tty=\(tty ?? "nil") attempt=\(attempt)")
+                        return tty
                     }
                 }
+                debugLog("pollForNewClient timed out after 10s")
                 return nil
             },
             onManagedTtyUpdate: { [weak self] tty in
@@ -608,6 +691,30 @@ final class TerminalLauncher {
             }
         }
 
+        return nil
+    }
+
+    /// Poll `tmux list-clients` repeatedly until a client appears or timeout.
+    /// Used for pre-activation recovery when a recent launch's poll timed out.
+    static func pollForTmuxClient(
+        maxRetries: Int = 20,
+        intervalNs: UInt64 = 500_000_000,
+        runScript: ((String) async -> (exitCode: Int32, output: String?))? = nil,
+    ) async -> String? {
+        let run = runScript ?? { await Self.runBashScriptWithResult($0) }
+        for attempt in 0 ..< maxRetries {
+            try? await _Concurrency.Task.sleep(nanoseconds: intervalNs)
+            let result = await run("tmux list-clients -F '#{client_tty}' 2>/dev/null")
+            if result.exitCode == 0,
+               let output = result.output?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !output.isEmpty
+            {
+                let tty = output.split(separator: "\n").first.map(String.init)
+                debugLog("pollForTmuxClient found tty=\(tty ?? "nil") attempt=\(attempt)")
+                return tty
+            }
+        }
+        debugLog("pollForTmuxClient timed out after \(maxRetries) attempts")
         return nil
     }
 
@@ -865,8 +972,40 @@ final class TerminalLauncher {
             return false
         }
 
+        // Fast path: try bookmarked tab index before any retry (D-005).
+        // In the single-client model, after `tmux switch-client` the tab hasn't moved —
+        // only its title changed. Focusing by stored index is instant (~50ms).
+        var bookmarkWasCleared = false
+        if let bookmark = lastMatchedGhosttyTabIndex {
+            switch ghosttyWindowReader.readWindows() {
+            case .unavailable:
+                break // Fall through to retry loop (which handles .unavailable with fallback)
+            case let .windows(windows) where !windows.isEmpty:
+                if let route = Self.tryBookmarkedGhosttyTab(
+                    windows: windows,
+                    bookmarkedTabIndex: (windowIndex: bookmark.windowIndex, tabIndex: bookmark.tabIndex),
+                    bookmarkedTabTitle: bookmark.tabTitle,
+                    ghosttyWindowReader: ghosttyWindowReader,
+                ) {
+                    logger.info("    activateGhosttyWithAXRouting: bookmark=hit route=\(route.rawValue)")
+                    debugLog("activateGhosttyWithAXRouting bookmark=hit route=\(route.rawValue)")
+                    return true
+                }
+                // Bookmark miss — the tab index is gone or a different tab shifted into position.
+                // Clear and fall through to retry, but remember this for orphan detection.
+                logger.info("    activateGhosttyWithAXRouting: bookmark=miss (stored=\(bookmark.tabTitle ?? "<nil>"), w=\(bookmark.windowIndex), t=\(bookmark.tabIndex)), clearing")
+                debugLog("activateGhosttyWithAXRouting bookmark=miss stored_title=\(bookmark.tabTitle ?? "<nil>") w=\(bookmark.windowIndex) t=\(bookmark.tabIndex)")
+                lastMatchedGhosttyTabIndex = nil
+                bookmarkWasCleared = true
+            default:
+                break
+            }
+        }
+
+        // Fallback: retry-based title matching. With bookmarking active,
+        // this only fires on cold start or when the bookmark was stale.
         let maxRetries = 5
-        let retryDelayNanoseconds: UInt64 = 100_000_000 // 100ms
+        let retryDelayNanoseconds: UInt64 = 200_000_000 // 200ms
 
         for attempt in 0 ..< maxRetries {
             switch ghosttyWindowReader.readWindows() {
@@ -901,9 +1040,13 @@ final class TerminalLauncher {
                     let tabCount = windows.reduce(into: 0) { partialResult, window in
                         partialResult += window.tabs.count
                     }
+                    let allTabTitles = windows.flatMap { w in
+                        w.tabs.map { t in "w\(w.index)t\(t.index)=\(t.title ?? "<nil>")" }
+                    }.joined(separator: ", ")
+                    let allWindowTitles = windows.map { w in "w\(w.index)=\(w.title ?? "<nil>")" }.joined(separator: ", ")
                     logger.info("    activateGhosttyWithAXRouting: tty=\(resolvedTty ?? "<none>"), windowCount=\(windows.count), tabCount=\(tabCount)")
                     debugLog(
-                        "activateGhosttyWithAXRouting tty=\(resolvedTty ?? "<none>") windowCount=\(windows.count) tabCount=\(tabCount) path=\(projectPath ?? "<nil>") sessionHint=\(tmuxSessionHint ?? "<none>") matchedTabIndex=\(matchedTab?.tab.index.description ?? "<none>") matchedTabTitle=\(matchedTab?.tab.title ?? "<none>")",
+                        "activateGhosttyWithAXRouting tty=\(resolvedTty ?? "<none>") windowCount=\(windows.count) tabCount=\(tabCount) path=\(projectPath ?? "<nil>") sessionHint=\(tmuxSessionHint ?? "<none>") matchedTabIndex=\(matchedTab?.tab.index.description ?? "<none>") matchedTabTitle=\(matchedTab?.tab.title ?? "<none>") tabs=[\(allTabTitles)] windowTitles=[\(allWindowTitles)]",
                     )
 
                     if let route = Self.resolveGhosttyAXRouting(
@@ -912,8 +1055,50 @@ final class TerminalLauncher {
                         tmuxSessionHint: tmuxSessionHint,
                         ghosttyWindowReader: ghosttyWindowReader,
                     ) {
+                        // Update bookmark for next activation (D-005).
+                        if route == .tabPress, let matchedTab {
+                            lastMatchedGhosttyTabIndex = (
+                                windowIndex: matchedTab.window.index,
+                                tabIndex: matchedTab.tab.index,
+                                tabTitle: matchedTab.tab.title,
+                            )
+                            debugLog("activateGhosttyWithAXRouting bookmark=updated w=\(matchedTab.window.index) t=\(matchedTab.tab.index) title=\(matchedTab.tab.title ?? "<nil>")")
+                        }
                         logger.info("    activateGhosttyWithAXRouting: resolved route=\(route.rawValue)")
                         debugLog("activateGhosttyWithAXRouting route=\(route.rawValue)")
+                        if route == .windowRaise, bookmarkWasCleared {
+                            // D-007: Bookmark existed but the target tab is gone.
+                            debugLog("activateGhosttyWithAXRouting orphan detected: bookmark cleared + window_raise")
+                            return false
+                        }
+                        // D-008: When no tab matched and route fell to window_raise,
+                        // use window title + TTY liveness to detect orphaned clients.
+                        // After the 1-second retry window (5 × 200ms), title has
+                        // propagated in the normal case. If the window title matches,
+                        // the session is visible. If not, check whether Ghostty still
+                        // holds the TTY — if it does, the tab exists but its title is
+                        // unrecognizable (e.g., "✳ Claude Code" without session prefix).
+                        // If Ghostty doesn't hold the TTY, the tab is truly gone.
+                        if route == .windowRaise, let projectPath {
+                            let titleMatch = ghosttyWindowTitleMatchesSession(
+                                windows: windows,
+                                projectPath: projectPath,
+                                tmuxSessionHint: tmuxSessionHint,
+                            )
+                            if !titleMatch {
+                                // Before concluding orphan, check if Ghostty still holds the TTY.
+                                // When a tab closes, Ghostty releases the PTY master immediately.
+                                // If Ghostty still has it open, the tab exists — just with an
+                                // unrecognizable title (suppress orphan detection).
+                                if let tty = resolvedTty, await isGhosttyHoldingTty(tty) {
+                                    debugLog("activateGhosttyWithAXRouting no title match but Ghostty holds tty=\(tty) → window_raise valid (tabCount=\(tabCount))")
+                                    return true
+                                }
+                                debugLog("activateGhosttyWithAXRouting orphan detected: no title match, Ghostty not holding tty (tabCount=\(tabCount))")
+                                return false
+                            }
+                            debugLog("activateGhosttyWithAXRouting no tab match, window title matches → window_raise valid (tabCount=\(tabCount))")
+                        }
                         return true
                     }
 
@@ -934,6 +1119,39 @@ final class TerminalLauncher {
     enum GhosttyAXRoutingResolution: String, Equatable {
         case tabPress = "tab_press"
         case windowRaise = "window_raise"
+    }
+
+    /// Try to focus the Ghostty tab at a previously-bookmarked index.
+    /// In the single-client model, after `tmux switch-client` the tab hasn't moved —
+    /// only its title changed. Focusing by stored index avoids the title propagation race.
+    ///
+    /// When `bookmarkedTabTitle` is non-nil, the tab at the bookmarked index must still
+    /// have the same title. A mismatch means tab indices shifted (e.g., user closed a tab)
+    /// and the tab at this position is a different tab — return nil to trigger orphan detection.
+    static func tryBookmarkedGhosttyTab(
+        windows: [GhosttyWindowSnapshot],
+        bookmarkedTabIndex: (windowIndex: Int, tabIndex: Int),
+        bookmarkedTabTitle: String? = nil,
+        ghosttyWindowReader: GhosttyWindowReader,
+    ) -> GhosttyAXRoutingResolution? {
+        guard let window = windows.first(where: { $0.index == bookmarkedTabIndex.windowIndex }),
+              let tab = window.tabs.first(where: { $0.index == bookmarkedTabIndex.tabIndex })
+        else {
+            return nil
+        }
+
+        // Validate tab identity: if we stored a title at bookmark time,
+        // verify the tab at this index still has the same title. A mismatch
+        // means tabs shifted after closure — focusing would hit the wrong tab.
+        if let storedTitle = bookmarkedTabTitle, tab.title != storedTitle {
+            return nil
+        }
+
+        if ghosttyWindowReader.focusTab(tab, in: window.element) {
+            return .tabPress
+        }
+
+        return nil
     }
 
     static func resolveGhosttyAXRouting(
@@ -980,6 +1198,16 @@ final class TerminalLauncher {
     }
 
     // MARK: - Adapter Helpers
+
+    /// Check if the Ghostty process still holds a given TTY device open.
+    /// When a Ghostty tab closes, Ghostty releases the PTY master immediately.
+    /// A positive result means the tab is alive (just with an unrecognizable title).
+    /// Used by D-008 to prevent false-positive orphan detection.
+    private func isGhosttyHoldingTty(_ tty: String) async -> Bool {
+        let escapedTty = shellEscape(tty)
+        let result = await runBashScriptWithResultAsync("lsof \(escapedTty) 2>/dev/null | grep -qi ghostty")
+        return result.exitCode == 0
+    }
 
     private func hasAnyClientAttachedInternal() async -> Bool {
         let result = await runBashScriptWithResultAsync("tmux list-clients 2>/dev/null")
@@ -1073,6 +1301,57 @@ final class TerminalLauncher {
     }
 
     // MARK: - Shell Helpers
+
+    /// Check whether a named tmux session currently exists (attached or detached).
+    /// Uses `tmux has-session` which exits 0 if the session exists, non-zero otherwise.
+    static func hasTmuxSession(
+        name: String,
+        runScript: (String) async -> (exitCode: Int32, output: String?),
+    ) async -> Bool {
+        let escaped = shellEscape(name)
+        let result = await runScript("tmux has-session -t \(escaped) 2>/dev/null")
+        return result.exitCode == 0
+    }
+
+    /// Attach to an existing (detached) tmux session in the current Ghostty tab.
+    /// Instead of opening a new tab (Cmd+T), this types `tmux attach -t <session>`
+    /// into whichever tab is currently active — reusing it for the tmux session.
+    /// Falls back to launching a new Ghostty window if Ghostty isn't running.
+    private func attachToExistingTmuxSession(_ sessionName: String) {
+        let escaped = shellEscape(sessionName)
+        let tmuxCmd = "tmux attach-session -t \(escaped)"
+        debugLog("attachToExistingTmuxSession session=\(sessionName)")
+
+        if isGhosttyRunningInternal() {
+            // Ghostty is already running — type the attach command into the active tab.
+            // No Cmd+T: we want to reuse the current tab, not open a new one.
+            let applescriptSafe = tmuxCmd
+                .replacingOccurrences(of: "\\", with: "\\\\")
+                .replacingOccurrences(of: "\"", with: "\\\"")
+            let script = """
+            osascript -e 'tell application "Ghostty" to activate'
+            sleep 0.2
+            osascript -e 'tell application "System Events" to tell process "Ghostty" to keystroke "\(applescriptSafe)"'
+            osascript -e 'tell application "System Events" to tell process "Ghostty" to key code 36'
+            """
+            runBashScript(script)
+            return
+        }
+
+        // Ghostty not running — launch it with the attach command.
+        let escapedTmuxCmd = bashDoubleQuoteEscape(tmuxCmd)
+        let script = """
+        if [ -d "/Applications/Ghostty.app" ]; then
+            open -na "Ghostty.app" --args -e sh -c "\(escapedTmuxCmd)"
+        elif [ -d "/Applications/iTerm.app" ]; then
+            osascript -e "tell application \\"iTerm\\" to create window with default profile command \\"\(escapedTmuxCmd)\\""
+            osascript -e 'tell application "iTerm" to activate'
+        else
+            echo "No supported terminal available (Ghostty/iTerm not installed)." >&2
+        fi
+        """
+        runBashScript(script)
+    }
 
     private func findTmuxSessionForPath(_ projectPath: String) async -> String? {
         let result = await runBashScriptWithResultAsync("tmux list-windows -a -F '#{session_name}\t#{pane_current_path}' 2>/dev/null")
@@ -1263,7 +1542,7 @@ final class TerminalLauncher {
         projectPath: String,
         tmuxSessionHint: String?,
     ) async -> Bool {
-        await Self.completeTerminalActivationAfterTmuxSwitch(
+        let result = await Self.completeTerminalActivationAfterTmuxSwitch(
             clientTty: clientTty,
             projectPath: projectPath,
             activateByTTYDiscovery: { tty in await self.activateTerminalByTTYDiscovery(tty: tty) },
@@ -1278,6 +1557,12 @@ final class TerminalLauncher {
             activateTerminalApp: { self.activateTerminalApp() },
             tmuxSessionHint: tmuxSessionHint,
         )
+        if !result {
+            // Terminal gone — clear stale bookmark so the next activation
+            // doesn't try to focus a tab that no longer exists.
+            lastMatchedGhosttyTabIndex = nil
+        }
+        return result
     }
 
     static func completeTerminalActivationAfterTmuxSwitch(
@@ -1305,8 +1590,11 @@ final class TerminalLauncher {
             return true
         }
 
+        // Last resort: bring the terminal app to front. This doesn't guarantee
+        // the correct tab/session is visible — return false so the caller can
+        // detect orphaned clients and launch a fresh terminal when needed.
         activateTerminalApp()
-        return true
+        return false
     }
 
     private func discoverTerminalOwningTTY(tty: String) async -> ParentApp? {
