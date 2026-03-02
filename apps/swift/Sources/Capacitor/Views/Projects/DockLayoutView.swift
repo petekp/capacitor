@@ -87,8 +87,11 @@ struct DockLayoutView: View {
 
                         // Schedule hide after 3 seconds of inactivity
                         pageIndicatorHideTask = _Concurrency.Task { @MainActor in
-                            try? await _Concurrency.Task.sleep(for: .seconds(3))
-                            guard !_Concurrency.Task.isCancelled else { return }
+                            do {
+                                try await _Concurrency.Task.sleep(for: .seconds(3))
+                            } catch {
+                                return
+                            }
                             withAnimation(.easeOut(duration: 0.4)) {
                                 showPageIndicator = false
                             }

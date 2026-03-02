@@ -211,17 +211,11 @@ class AppState {
             sessionStateRevision &+= 1
         }
 
-        terminalLauncher.onActivationTrace = { [weak self] trace in
-            _Concurrency.Task { @MainActor in
-                self?.activationTrace = trace
-            }
-        }
-
         terminalLauncher.onActivationResult = { [weak self] result in
             guard let self else { return }
             if !result.success {
                 toast = ToastMessage(
-                    "Couldn’t activate a terminal. Open Ghostty, iTerm2, or Terminal.app.",
+                    "Couldn’t activate Ghostty.",
                     isError: true,
                 )
             }
@@ -1602,7 +1596,11 @@ class AppState {
             let pollInterval: UInt64 = 2_000_000_000
 
             for _ in 0 ..< maxAttempts {
-                try? await _Concurrency.Task.sleep(nanoseconds: pollInterval)
+                do {
+                    try await _Concurrency.Task.sleep(nanoseconds: pollInterval)
+                } catch {
+                    return
+                }
 
                 let currentSessions = getExistingSessionIds(for: projectPath)
                 let newSessions = currentSessions.subtracting(existingSessions)
@@ -1637,7 +1635,11 @@ class AppState {
             let maxStableChecks = 30
 
             for _ in 0 ..< 300 {
-                try? await _Concurrency.Task.sleep(nanoseconds: 2_000_000_000)
+                do {
+                    try await _Concurrency.Task.sleep(nanoseconds: 2_000_000_000)
+                } catch {
+                    return
+                }
 
                 guard let creation = activeCreations.first(where: { $0.id == creationId }),
                       creation.status == .inProgress

@@ -15,12 +15,6 @@ private func debugLog(_ message: String) {
     DebugLog.write("[TerminalLauncher] \(message)")
 }
 
-enum GhosttyWindowState: Equatable {
-    case notRunning
-    case axUnavailable
-    case running
-}
-
 protocol AppleScriptClient {
     func run(_ script: String)
     func runChecked(_ script: String) -> Bool
@@ -62,100 +56,6 @@ private struct DefaultAppleScriptClient: AppleScriptClient {
     }
 }
 
-// MARK: - ParentApp Terminal Extensions
-
-extension ParentApp {
-    static let alphaSupportedTerminals: [ParentApp] = [
-        .ghostty, .iTerm, .terminal,
-    ]
-
-    var isAlphaSupportedTerminal: Bool {
-        Self.alphaSupportedTerminals.contains(self)
-    }
-
-    var bundlePath: String? {
-        switch self {
-        case .ghostty: "/Applications/Ghostty.app"
-        case .iTerm: "/Applications/iTerm.app"
-        case .alacritty: "/Applications/Alacritty.app"
-        case .warp: "/Applications/Warp.app"
-        case .terminal: "/System/Applications/Utilities/Terminal.app"
-        case .kitty: nil
-        default: nil
-        }
-    }
-
-    var isInstalled: Bool {
-        guard category == .terminal, isAlphaSupportedTerminal else { return false }
-        if self == .terminal {
-            let candidates = [
-                "/System/Applications/Utilities/Terminal.app",
-                "/Applications/Utilities/Terminal.app",
-            ]
-            return candidates.contains { FileManager.default.fileExists(atPath: $0) }
-        }
-        guard let path = bundlePath else { return false }
-        return FileManager.default.fileExists(atPath: path)
-    }
-
-    static let terminalPriorityOrder: [ParentApp] = [
-        .ghostty, .iTerm, .terminal,
-    ]
-
-    var runningAppMatchNames: [String] {
-        switch self {
-        case .terminal: ["Terminal", "Terminal.app"]
-        case .iTerm: ["iTerm", "iTerm2", "iTerm.app"]
-        case .ghostty: ["Ghostty"]
-        case .alacritty: ["Alacritty"]
-        case .kitty: ["kitty"]
-        case .warp: ["Warp", "WarpTerminal"]
-        default: [displayName]
-        }
-    }
-
-    func matchesRunningAppName(_ localizedName: String) -> Bool {
-        let lower = localizedName.lowercased()
-        return runningAppMatchNames.contains { lower == $0.lowercased() }
-    }
-
-    var processName: String? {
-        switch self {
-        case .cursor: "Cursor"
-        case .vsCode: "Code"
-        case .vsCodeInsiders: "Code - Insiders"
-        case .zed: "Zed"
-        default: nil
-        }
-    }
-
-    var cliBinary: String? {
-        switch self {
-        case .cursor: "cursor"
-        case .vsCode: "code"
-        case .vsCodeInsiders: "code-insiders"
-        case .zed: "zed"
-        default: nil
-        }
-    }
-}
-
-// MARK: - TerminalType Display Name Extension
-
-extension TerminalType {
-    var appName: String {
-        switch self {
-        case .iTerm: "iTerm"
-        case .terminalApp: "Terminal"
-        case .ghostty: "Ghostty"
-        case .alacritty: "Alacritty"
-        case .kitty: "kitty"
-        case .warp: "Warp"
-        case .unknown: ""
-        }
-    }
-}
-
 // MARK: - Shell Escape Utilities
 
 /// Escapes a string for safe use in single-quoted shell arguments.
@@ -188,120 +88,48 @@ struct TerminalActivationResult: Equatable {
 // Handles "click project → focus terminal" activation. The goal is to bring the user
 // to their existing terminal window for a project, not spawn new windows unnecessarily.
 //
-// ACTIVATION PRIORITY (ordered by user intent signal strength):
+// ACTIVATION FLOW (Ghostty + tmux):
 //
-//   1. Active shell in Rust resolver input snapshot → User has a terminal window open RIGHT NOW
-//      These are verified-live PIDs from recent shell hook activity.
+//   1. Resolve tmux client (tmux list-clients) → identifies attached terminal
+//   2. Ensure tmux session exists for project → create if needed
+//   3. Switch client to project session → focus correct tab via AX
 //
-//   2. Tmux session at project path → User has a session but may not be attached
-//      Queried directly from tmux, may exist even without recent shell activity.
+// If no client exists: launch new Ghostty tab with tmux attach/new-session.
 //
-//   3. Launch new terminal → No existing terminal for this project
-//
-// WHY THIS ORDER MATTERS:
-// Previously, tmux was checked first. This caused a bug: if a user had a Ghostty
-// window open (non-tmux) AND a tmux session existed at the same path, clicking
-// the project would open a NEW window in tmux instead of focusing the existing
-// Ghostty window. The runtime shell snapshot finds the actively-used terminal.
 
 @MainActor
 final class TerminalLauncher {
-    enum ResolverError: Error {
-        case engineUnavailable
-    }
-
     private enum Constants {
-        static let activationDelaySeconds: Double = 0.3
         static let homebrewPaths = "/opt/homebrew/bin:/usr/local/bin"
     }
 
     private let appleScript: AppleScriptClient
     private let ghosttyWindowReader: GhosttyWindowReader
-    private let resolveActivationDecisionOverride: ((Project) async throws -> ActivationDecision)?
     private let fallbackTmuxSessionResolver: ((String) async -> String?)?
-    private let launchNewTerminalOverride: ((String, String) -> Bool)?
     /// Override for the unified activation flow. Tests use this to intercept card-click behavior.
     private let activateProjectSessionOverride: ((String, String) async -> Bool)?
-    private let hudEngine: CoreRuntime?
-    var onActivationTrace: ((String) -> Void)?
     var onActivationResult: ((TerminalActivationResult) -> Void)?
-
-    private static let activationTraceEnabled: Bool = {
-        let value = ProcessInfo.processInfo.environment["CAPACITOR_ACTIVATION_TRACE"]?.lowercased() ?? ""
-        return value == "1" || value == "true" || value == "yes"
-    }()
 
     private var latestLaunchRequestID: UInt64 = 0
     private var launchTask: _Concurrency.Task<Void, Never>?
-
-    /// The TTY of the tmux client Capacitor is managing. Persists across card clicks.
-    /// Cleared when the TTY becomes stale (tab closed). See spec invariant B6.
-    private(set) var managedClientTty: String?
-
-    /// The last Ghostty tab that matched via AX title routing. Stored as (windowIndex, tabIndex, tabTitle).
-    /// Before `tmux switch-client`, the tab's position is known — after the switch,
-    /// only the title changes. Focusing by stored index avoids the title propagation race (D-005).
-    /// The stored `tabTitle` enables detecting tab index shifts after tab closure.
-    private(set) var lastMatchedGhosttyTabIndex: (windowIndex: Int, tabIndex: Int, tabTitle: String?)?
-
-    /// Timestamp of the most recent terminal launch (Ghostty tab open).
-    /// Used to detect "launch pending" state: a launch happened but the poll
-    /// didn't capture the client TTY in time.
-    var lastTerminalLaunchDate: Date?
-
-    /// Override for the pre-activation poll. Tests inject this to simulate
-    /// finding a client after a recent launch.
-    var preActivationPollOverride: (() async -> String?)?
 
     // MARK: - Public API
 
     init(
         appleScript: AppleScriptClient = DefaultAppleScriptClient(),
         ghosttyWindowReader: GhosttyWindowReader? = nil,
-        resolveActivationDecisionOverride: ((Project) async throws -> ActivationDecision)? = nil,
         fallbackTmuxSessionResolver: ((String) async -> String?)? = nil,
-        launchNewTerminalOverride: ((String, String) -> Bool)? = nil,
         activateProjectSessionOverride: ((String, String) async -> Bool)? = nil,
-        hudEngineFactory: () throws -> CoreRuntime = { try CoreRuntime() },
     ) {
         self.appleScript = appleScript
         self.ghosttyWindowReader = ghosttyWindowReader ?? DefaultGhosttyAXReader()
-        self.resolveActivationDecisionOverride = resolveActivationDecisionOverride
         self.fallbackTmuxSessionResolver = fallbackTmuxSessionResolver
-        self.launchNewTerminalOverride = launchNewTerminalOverride
         self.activateProjectSessionOverride = activateProjectSessionOverride
-        hudEngine = try? hudEngineFactory()
     }
 
     // MARK: - Unified Activation Primitives (spec v2)
 
     /// Check if a TTY device is still alive (file exists at /dev path).
-    static func isTtyAlive(_ tty: String) -> Bool {
-        FileManager.default.fileExists(atPath: tty)
-    }
-
-    /// Resolve which tmux client TTY to use for session switching.
-    /// Spec decision tree step 1: managed (alive + verified) → any client → nil (must launch).
-    static func resolveTmuxClient(
-        managedTty: String?,
-        isTtyAlive: (String) -> Bool,
-        resolveAnyClientTty: () async -> String?,
-    ) async -> String? {
-        if let managedTty, isTtyAlive(managedTty) {
-            // Device file exists. Cross-check that a tmux client is actually attached.
-            // After tab closure, the device file can persist for minutes while the
-            // tmux client has already detached. Without this check, the flow tries
-            // to switch a dead client and silently fails.
-            if let activeClient = await resolveAnyClientTty() {
-                return managedTty == activeClient ? managedTty : activeClient
-            }
-            // No tmux clients despite device file existing — stale.
-            debugLog("resolveTmuxClient managedTty=\(managedTty) deviceFileExists=true but no tmux clients, treating as stale")
-            return nil
-        }
-        return await resolveAnyClientTty()
-    }
-
     /// Ensure a tmux session exists and switch the given client to it.
     /// Spec decision tree step 2: try switch → if fail, create session → retry switch.
     static func ensureSessionAndSwitch(
@@ -327,15 +155,13 @@ final class TerminalLauncher {
         return retry.exitCode == 0
     }
 
-    /// Unified activation flow per spec v2 decision tree.
-    /// 1. Resolve client (managed → any → auto-attach / launch)
+    /// Unified activation flow:
+    /// 1. Resolve client (tmux list-clients → auto-attach / launch)
     /// 2. Ensure session + switch
     /// 3. Focus terminal
     static func performUnifiedActivation(
         sessionName: String,
         projectPath: String,
-        managedTty: String?,
-        isTtyAlive: (String) -> Bool,
         resolveAnyClientTty: () async -> String?,
         hasExistingSession: (String) async -> Bool = { _ in false },
         ensureAndSwitch: (String, String, String) async -> Bool,
@@ -343,14 +169,9 @@ final class TerminalLauncher {
         attachToExistingSession: ((String) -> Void)? = nil,
         activateTerminal: (String?, String, String?) async -> Bool,
         pollForNewClient: (() async -> String?)? = nil,
-        onManagedTtyUpdate: (String?) -> Void,
     ) async -> Bool {
-        // Step 1: Resolve client.
-        let clientTty = await resolveTmuxClient(
-            managedTty: managedTty,
-            isTtyAlive: isTtyAlive,
-            resolveAnyClientTty: resolveAnyClientTty,
-        )
+        // Step 1: Resolve client via tmux list-clients.
+        let clientTty = await resolveAnyClientTty()
 
         guard let clientTty else {
             // No client available. Check if a detached session already exists
@@ -365,17 +186,11 @@ final class TerminalLauncher {
                 debugLog("performUnifiedActivation noClient, launching new terminal session=\(sessionName)")
                 launchTerminalWithTmux(sessionName, projectPath)
             }
-            // Capture TTY from the newly attached/launched client.
-            if let poll = pollForNewClient, let newTty = await poll() {
-                onManagedTtyUpdate(newTty)
+            // Wait for new client to appear (sync barrier).
+            if let poll = pollForNewClient {
+                _ = await poll()
             }
             return true
-        }
-
-        // Update managed TTY if we adopted a new one.
-        if clientTty != managedTty {
-            debugLog("performUnifiedActivation adoptingTty=\(clientTty)")
-            onManagedTtyUpdate(clientTty)
         }
 
         // Step 2: Ensure session exists + switch client to it.
@@ -388,14 +203,11 @@ final class TerminalLauncher {
         // Step 3: Focus terminal.
         let focused = await activateTerminal(clientTty, projectPath, sessionName)
         if !focused {
-            // Terminal that owned the TTY is gone (e.g. Ghostty tab closed but
-            // tmux client hasn't fully detached yet — ~5s window). Clear managed
-            // state and launch a fresh terminal so the user sees something.
-            debugLog("performUnifiedActivation terminal gone for tty=\(clientTty), clearing and relaunching")
-            onManagedTtyUpdate(nil)
+            // Terminal that owned the TTY is gone — launch a fresh one.
+            debugLog("performUnifiedActivation terminal gone for tty=\(clientTty), relaunching")
             launchTerminalWithTmux(sessionName, projectPath)
-            if let poll = pollForNewClient, let newTty = await poll() {
-                onManagedTtyUpdate(newTty)
+            if let poll = pollForNewClient {
+                _ = await poll()
             }
         }
         return true
@@ -419,53 +231,12 @@ final class TerminalLauncher {
         // Resolve tmux session name: try existing session for this path, else use project slug.
         let sessionName = await resolveSessionName(for: project)
 
-        // Log the Rust resolver's opinion for telemetry (but don't use its action choice).
-        do {
-            let decision = try await resolveActivationDecision(for: project)
-            if let trace = decision.trace {
-                let formatted = formatActivationTrace(trace: trace)
-                for line in formatted.split(separator: "\n") {
-                    debugLog(String(line))
-                }
-                onActivationTrace?(formatted)
-            } else {
-                debugLog("ActivationTrace reason=\(decision.reason)")
-                onActivationTrace?(decision.reason)
-            }
-        } catch {
-            if !(error is CancellationError) {
-                debugLog("rust_resolver_trace unavailable: \(error.localizedDescription)")
-            }
-        }
-
         guard shouldProcessLaunchRequest(requestID) else {
             debugLog("launchTerminalAsync ignored stale request id=\(requestID) path=\(project.path)")
             return
         }
 
-        // Pre-activation recovery: if we recently launched a terminal but the
-        // post-launch poll didn't capture the client TTY (Ghostty was still
-        // booting), try to capture it now before entering the unified flow.
-        // This prevents duplicate tab launches on rapid re-clicks.
-        if managedClientTty == nil,
-           let lastLaunch = lastTerminalLaunchDate,
-           Date().timeIntervalSince(lastLaunch) < 15
-        {
-            debugLog("launchTerminalAsync recentLaunchPending, pre-polling for client")
-            let tty: String? = if let override = preActivationPollOverride {
-                await override()
-            } else {
-                await Self.pollForTmuxClient()
-            }
-            if let tty {
-                managedClientTty = tty
-                debugLog("launchTerminalAsync capturedPendingClient tty=\(tty)")
-            } else {
-                debugLog("launchTerminalAsync prePollTimedOut, proceeding anyway")
-            }
-        }
-
-        // Run unified activation flow (spec v2).
+        // Run unified activation flow.
         let success = await activateProjectSession(
             sessionName: sessionName,
             projectPath: project.path,
@@ -517,8 +288,6 @@ final class TerminalLauncher {
         return await Self.performUnifiedActivation(
             sessionName: sessionName,
             projectPath: projectPath,
-            managedTty: managedClientTty,
-            isTtyAlive: Self.isTtyAlive,
             resolveAnyClientTty: {
                 await Self.resolveAnyTmuxClientTty(
                     runScript: { await Self.runBashScriptWithResult($0) },
@@ -539,11 +308,9 @@ final class TerminalLauncher {
                 )
             },
             launchTerminalWithTmux: { [weak self] session, path in
-                self?.lastTerminalLaunchDate = Date()
                 self?.launchTerminalWithTmuxSession(session, projectPath: path)
             },
             attachToExistingSession: { [weak self] session in
-                self?.lastTerminalLaunchDate = Date()
                 self?.attachToExistingTmuxSession(session)
             },
             activateTerminal: { [weak self] tty, path, sessionHint in
@@ -558,7 +325,16 @@ final class TerminalLauncher {
                 // Poll for newly attached tmux client after launch.
                 // Window: 20 × 500ms = 10 seconds (Ghostty + shell init + tmux attach).
                 for attempt in 0 ..< 20 {
-                    try? await _Concurrency.Task.sleep(nanoseconds: 500_000_000)
+                    guard !_Concurrency.Task.isCancelled else {
+                        debugLog("pollForNewClient cancelled at attempt=\(attempt)")
+                        return nil
+                    }
+                    do {
+                        try await _Concurrency.Task.sleep(nanoseconds: 500_000_000)
+                    } catch {
+                        debugLog("pollForNewClient cancelled during sleep at attempt=\(attempt)")
+                        return nil
+                    }
                     let result = await Self.runBashScriptWithResult("tmux list-clients -F '#{client_tty}' 2>/dev/null")
                     if result.exitCode == 0,
                        let output = result.output?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -572,95 +348,11 @@ final class TerminalLauncher {
                 debugLog("pollForNewClient timed out after 10s")
                 return nil
             },
-            onManagedTtyUpdate: { [weak self] tty in
-                self?.managedClientTty = tty
-            },
         )
     }
 
     private func shouldProcessLaunchRequest(_ requestID: UInt64) -> Bool {
         requestID == latestLaunchRequestID && !_Concurrency.Task.isCancelled
-    }
-
-    private func resolveActivationDecision(for project: Project) async throws -> ActivationDecision {
-        if let resolveActivationDecisionOverride {
-            return try await resolveActivationDecisionOverride(project)
-        }
-
-        guard let hudEngine else {
-            throw ResolverError.engineUnavailable
-        }
-
-        let shellState = try? await RuntimeClient.shared.fetchShellState()
-        let shellStateFfi = shellState.map(Self.makeShellStateFfi)
-        let tmuxContext = await makeTmuxContext(projectPath: project.path)
-
-        return hudEngine.resolveActivationWithTrace(
-            projectPath: project.path,
-            shellState: shellStateFfi,
-            tmuxContext: tmuxContext,
-            includeTrace: true,
-        )
-    }
-
-    private func makeTmuxContext(projectPath: String) async -> TmuxContextFfi {
-        let sessionAtPath = await findTmuxSessionForPath(projectPath)
-        let hasAttachedClient = await hasAnyClientAttachedInternal()
-        return TmuxContextFfi(
-            sessionAtPath: sessionAtPath,
-            hasAttachedClient: hasAttachedClient,
-            homeDir: NSHomeDirectory(),
-        )
-    }
-
-    private static func makeShellStateFfi(_ shellState: ShellCwdState) -> ShellCwdStateFfi {
-        let shells: [String: ShellEntryFfi] = shellState.shells.mapValues { entry in
-            ShellEntryFfi(
-                cwd: entry.cwd,
-                tty: entry.tty,
-                parentApp: parentAppFromShellString(entry.parentApp),
-                tmuxSession: entry.tmuxSession,
-                tmuxClientTty: entry.tmuxClientTty,
-                updatedAt: ISO8601DateFormatter.shared.string(from: entry.updatedAt),
-                isLive: false,
-            )
-        }
-
-        return ShellCwdStateFfi(
-            version: UInt32(shellState.version),
-            shells: shells,
-        )
-    }
-
-    private static func parentAppFromShellString(_ raw: String?) -> ParentApp {
-        guard let raw else { return .unknown }
-        let value = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        switch value {
-        case "ghostty":
-            return .ghostty
-        case "iterm2", "iterm", "iterm.app":
-            return .iTerm
-        case "terminal", "terminal.app":
-            return .terminal
-        case "alacritty":
-            return .alacritty
-        case "kitty":
-            return .kitty
-        case "warp", "warpterminal":
-            return .warp
-        case "cursor":
-            return .cursor
-        case "code", "vscode", "vs code", "visual studio code":
-            return .vsCode
-        case "code - insiders", "vscode-insiders", "vs code insiders":
-            return .vsCodeInsiders
-        case "zed":
-            return .zed
-        case "tmux":
-            return .tmux
-        default:
-            return .unknown
-        }
     }
 
     static func resolveAnyTmuxClientTty(
@@ -694,270 +386,7 @@ final class TerminalLauncher {
         return nil
     }
 
-    /// Poll `tmux list-clients` repeatedly until a client appears or timeout.
-    /// Used for pre-activation recovery when a recent launch's poll timed out.
-    static func pollForTmuxClient(
-        maxRetries: Int = 20,
-        intervalNs: UInt64 = 500_000_000,
-        runScript: ((String) async -> (exitCode: Int32, output: String?))? = nil,
-    ) async -> String? {
-        let run = runScript ?? { await Self.runBashScriptWithResult($0) }
-        for attempt in 0 ..< maxRetries {
-            try? await _Concurrency.Task.sleep(nanoseconds: intervalNs)
-            let result = await run("tmux list-clients -F '#{client_tty}' 2>/dev/null")
-            if result.exitCode == 0,
-               let output = result.output?.trimmingCharacters(in: .whitespacesAndNewlines),
-               !output.isEmpty
-            {
-                let tty = output.split(separator: "\n").first.map(String.init)
-                debugLog("pollForTmuxClient found tty=\(tty ?? "nil") attempt=\(attempt)")
-                return tty
-            }
-        }
-        debugLog("pollForTmuxClient timed out after \(maxRetries) attempts")
-        return nil
-    }
-
-    private nonisolated static func focusTmuxPaneForProjectPathIfAvailable(
-        sessionName: String,
-        projectPath: String,
-        clientTty: String?,
-        runScript: (String) async -> (exitCode: Int32, output: String?),
-    ) async -> Bool {
-        let escapedSession = shellEscape(sessionName)
-        let panesResult = await runScript(
-            "tmux list-panes -t \(escapedSession) -F '#{session_name}\t#{window_index}\t#{pane_index}\t#{pane_current_path}' 2>/dev/null",
-        )
-        guard panesResult.exitCode == 0,
-              let output = panesResult.output,
-              let paneTarget = bestTmuxPaneTargetForProjectPath(
-                  output: output,
-                  sessionName: sessionName,
-                  projectPath: projectPath,
-                  homeDirectory: NSHomeDirectory(),
-              )
-        else {
-            return false
-        }
-
-        let windowTarget = "\(sessionName):\(paneTarget.windowIndex)"
-        let fullPaneTarget = "\(windowTarget).\(paneTarget.paneIndex)"
-
-        if let clientTty {
-            let trimmedClientTty = clientTty.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !trimmedClientTty.isEmpty {
-                let escapedClientTty = shellEscape(trimmedClientTty)
-                let escapedWindowTarget = shellEscape(windowTarget)
-                let switchWindowResult = await runScript(
-                    "tmux switch-client -c \(escapedClientTty) -t \(escapedWindowTarget) 2>&1",
-                )
-                if switchWindowResult.exitCode != 0 {
-                    return false
-                }
-            }
-        }
-
-        let escapedPaneTarget = shellEscape(fullPaneTarget)
-        let selectPaneResult = await runScript("tmux select-pane -t \(escapedPaneTarget) 2>&1")
-        return selectPaneResult.exitCode == 0
-    }
-
-    nonisolated static func bestTmuxPaneTargetForProjectPath(
-        output: String,
-        sessionName: String,
-        projectPath: String,
-        homeDirectory: String,
-    ) -> (windowIndex: String, paneIndex: String)? {
-        func normalizePath(_ path: String) -> String {
-            if path == "/" { return "/" }
-            var normalized = path
-            while normalized.hasSuffix("/"), normalized != "/" {
-                normalized.removeLast()
-            }
-            return normalized.lowercased()
-        }
-
-        func pathComponentCount(_ path: String) -> Int {
-            path.split(separator: "/").count
-        }
-
-        func matchRankAndDistance(panePath: String, projectPath: String, homeDir: String) -> (rank: Int, distance: Int)? {
-            if panePath == projectPath {
-                return (2, 0)
-            }
-
-            if panePath == homeDir || projectPath == homeDir {
-                return nil
-            }
-
-            if panePath.hasPrefix(projectPath + "/") {
-                return (1, max(0, pathComponentCount(panePath) - pathComponentCount(projectPath)))
-            }
-
-            if projectPath.hasPrefix(panePath + "/") {
-                return (0, max(0, pathComponentCount(projectPath) - pathComponentCount(panePath)))
-            }
-
-            return nil
-        }
-
-        let normalizedSession = sessionName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !normalizedSession.isEmpty else { return nil }
-
-        let normalizedProjectPath = normalizePath(projectPath)
-        let normalizedHome = normalizePath(homeDirectory)
-        var bestMatch: (rank: Int, distance: Int, window: Int, pane: Int, windowIndex: String, paneIndex: String)?
-
-        for line in output.split(separator: "\n") {
-            let parts = line.split(separator: "\t", omittingEmptySubsequences: false)
-            guard parts.count == 4 else { continue }
-
-            let lineSession = String(parts[0]).trimmingCharacters(in: .whitespacesAndNewlines)
-            guard lineSession == normalizedSession else { continue }
-
-            let windowIndex = String(parts[1]).trimmingCharacters(in: .whitespacesAndNewlines)
-            let paneIndex = String(parts[2]).trimmingCharacters(in: .whitespacesAndNewlines)
-            guard let windowInt = Int(windowIndex), let paneInt = Int(paneIndex) else { continue }
-
-            let panePath = normalizePath(String(parts[3]))
-            guard let (rank, distance) = matchRankAndDistance(
-                panePath: panePath,
-                projectPath: normalizedProjectPath,
-                homeDir: normalizedHome,
-            ) else {
-                continue
-            }
-
-            let candidate = (
-                rank: rank,
-                distance: distance,
-                window: windowInt,
-                pane: paneInt,
-                windowIndex: windowIndex,
-                paneIndex: paneIndex,
-            )
-
-            if let best = bestMatch {
-                if candidate.rank > best.rank ||
-                    (candidate.rank == best.rank && candidate.distance < best.distance) ||
-                    (candidate.rank == best.rank && candidate.distance == best.distance && candidate.window < best.window) ||
-                    (candidate.rank == best.rank && candidate.distance == best.distance && candidate.window == best.window && candidate.pane < best.pane)
-                {
-                    bestMatch = candidate
-                }
-            } else {
-                bestMatch = candidate
-            }
-        }
-
-        guard let bestMatch else { return nil }
-        return (bestMatch.windowIndex, bestMatch.paneIndex)
-    }
-
-    // MARK: - Action Helpers
-
-    private func activateAppAction(appName: String) -> Bool {
-        logger.info("  ▸ activateApp: \(appName)")
-        let result = activateAppByName(appName)
-        logger.info("  ▸ activateApp result: \(result ? "SUCCESS" : "FAILED")")
-        return result
-    }
-
-    private func activateKittyWindowAction(shellPid: UInt32) -> Bool {
-        logger.info("  ▸ activateKittyWindow: pid=\(shellPid)")
-        debugLog("activateKittyWindow pid=\(shellPid)")
-        let activated = activateAppByName("kitty")
-        if activated {
-            runBashScript("kitty @ focus-window --match pid:\(shellPid) 2>/dev/null")
-        }
-        logger.info("  ▸ activateKittyWindow result: \(activated ? "SUCCESS" : "FAILED")")
-        return activated
-    }
-
-    private func launchTerminalWithTmuxAction(sessionName: String, projectPath: String) -> Bool {
-        logger.info("  ▸ launchTerminalWithTmux: session=\(sessionName), path=\(projectPath)")
-        debugLog("launchTerminalWithTmux session=\(sessionName) path=\(projectPath)")
-        launchTerminalWithTmuxSession(sessionName, projectPath: projectPath)
-        logger.info("  ▸ launchTerminalWithTmux: launched")
-        return true
-    }
-
-    private func launchNewTerminalAction(projectPath: String, projectName: String) -> Bool {
-        logger.info("  ▸ launchNewTerminal: path=\(projectPath), name=\(projectName)")
-        debugLog("launchNewTerminal path=\(projectPath) name=\(projectName)")
-        let launched = launchNewTerminal(forPath: projectPath, name: projectName)
-        logger.info("  ▸ launchNewTerminal result: \(launched ? "SUCCESS" : "FAILED")")
-        return launched
-    }
-
-    private func activatePriorityFallbackAction() -> Bool {
-        logger.warning("  ⚠️ activatePriorityFallback: FALLBACK PATH - activating first running terminal")
-        debugLog("activatePriorityFallback (activating first running terminal)")
-        if ParentApp.ghostty.isInstalled {
-            switch ghosttyWindowStateInternal() {
-            case .notRunning:
-                logger.warning("  ⚠️ activatePriorityFallback: Ghostty installed but not running; allowing fallback launch")
-                debugLog("activatePriorityFallback ghostty not running -> return false")
-                return false
-            case .axUnavailable, .running:
-                break
-            }
-        }
-        let activated = activateFirstRunningTerminal()
-        logger.warning("  ⚠️ activatePriorityFallback: completed (may have focused wrong window)")
-        return activated
-    }
-
-    func activateByTtyAction(tty: String, terminalType: TerminalType, projectPath: String?) async -> Bool {
-        logger.info(
-            "    activateByTtyAction: tty=\(tty), terminalType=\(String(describing: terminalType)), path=\(projectPath ?? "<nil>")",
-        )
-        debugLog(
-            "activateByTtyAction tty=\(tty) terminalType=\(String(describing: terminalType)) path=\(projectPath ?? "<nil>")",
-        )
-
-        switch terminalType {
-        case .iTerm:
-            return activateITermSession(tty: tty)
-        case .terminalApp:
-            return activateTerminalAppSession(tty: tty)
-        case .ghostty:
-            debugLog("activateByTtyAction ghostty AX routing tty=\(tty)")
-            return await activateGhosttyWithAXRouting(forTty: tty, projectPath: projectPath)
-        case .alacritty, .warp:
-            return activateAppByName(terminalType.appName)
-        case .kitty:
-            return activateAppByName("kitty")
-        case .unknown:
-            logger.info("    activateByTtyAction: unknown type, attempting TTY discovery")
-            debugLog("activateByTtyAction unknown terminalType; starting TTY discovery tty=\(tty)")
-            if let owningTerminal = await discoverTerminalOwningTTY(tty: tty) {
-                logger.info("    TTY discovery found: \(owningTerminal.displayName) for tty=\(tty)")
-                debugLog("activateByTtyAction tty discovery found terminal=\(owningTerminal.displayName) tty=\(tty)")
-                switch owningTerminal {
-                case .iTerm:
-                    return activateITermSession(tty: tty)
-                case .terminal:
-                    return activateTerminalAppSession(tty: tty)
-                case .ghostty:
-                    return await activateGhosttyWithAXRouting(forTty: tty, projectPath: projectPath)
-                default:
-                    return activateAppByName(owningTerminal.displayName)
-                }
-            }
-
-            logger.info("    TTY discovery failed, checking if Ghostty is running")
-            debugLog("activateByTtyAction tty discovery failed tty=\(tty); ghosttyRunning=\(isGhosttyRunningInternal())")
-            if isGhosttyRunningInternal() {
-                logger.info("    Ghostty is running, trying Ghostty AX routing as fallback")
-                return await activateGhosttyWithAXRouting(forTty: tty, projectPath: projectPath)
-            }
-
-            logger.info("    No known terminal found for TTY")
-            debugLog("activateByTtyAction no known terminal for tty=\(tty)")
-            return false
-        }
-    }
+    // MARK: - Ghostty AX Routing
 
     private func activateGhosttyWithAXRouting(
         forTty tty: String?,
@@ -972,38 +401,8 @@ final class TerminalLauncher {
             return false
         }
 
-        // Fast path: try bookmarked tab index before any retry (D-005).
-        // In the single-client model, after `tmux switch-client` the tab hasn't moved —
-        // only its title changed. Focusing by stored index is instant (~50ms).
-        var bookmarkWasCleared = false
-        if let bookmark = lastMatchedGhosttyTabIndex {
-            switch ghosttyWindowReader.readWindows() {
-            case .unavailable:
-                break // Fall through to retry loop (which handles .unavailable with fallback)
-            case let .windows(windows) where !windows.isEmpty:
-                if let route = Self.tryBookmarkedGhosttyTab(
-                    windows: windows,
-                    bookmarkedTabIndex: (windowIndex: bookmark.windowIndex, tabIndex: bookmark.tabIndex),
-                    bookmarkedTabTitle: bookmark.tabTitle,
-                    ghosttyWindowReader: ghosttyWindowReader,
-                ) {
-                    logger.info("    activateGhosttyWithAXRouting: bookmark=hit route=\(route.rawValue)")
-                    debugLog("activateGhosttyWithAXRouting bookmark=hit route=\(route.rawValue)")
-                    return true
-                }
-                // Bookmark miss — the tab index is gone or a different tab shifted into position.
-                // Clear and fall through to retry, but remember this for orphan detection.
-                logger.info("    activateGhosttyWithAXRouting: bookmark=miss (stored=\(bookmark.tabTitle ?? "<nil>"), w=\(bookmark.windowIndex), t=\(bookmark.tabIndex)), clearing")
-                debugLog("activateGhosttyWithAXRouting bookmark=miss stored_title=\(bookmark.tabTitle ?? "<nil>") w=\(bookmark.windowIndex) t=\(bookmark.tabIndex)")
-                lastMatchedGhosttyTabIndex = nil
-                bookmarkWasCleared = true
-            default:
-                break
-            }
-        }
-
-        // Fallback: retry-based title matching. With bookmarking active,
-        // this only fires on cold start or when the bookmark was stale.
+        // Retry-based title matching. Polls AX windows up to 5 times (200ms apart)
+        // waiting for the tab title to propagate after tmux switch-client.
         let maxRetries = 5
         let retryDelayNanoseconds: UInt64 = 200_000_000 // 200ms
 
@@ -1018,7 +417,11 @@ final class TerminalLauncher {
             case let .windows(windows):
                 if windows.isEmpty {
                     if attempt < maxRetries - 1 {
-                        try? await _Concurrency.Task.sleep(nanoseconds: retryDelayNanoseconds)
+                        do {
+                            try await _Concurrency.Task.sleep(nanoseconds: retryDelayNanoseconds)
+                        } catch {
+                            return false
+                        }
                         continue
                     }
                     logger.info("    activateGhosttyWithAXRouting: no windows → returning false")
@@ -1055,50 +458,8 @@ final class TerminalLauncher {
                         tmuxSessionHint: tmuxSessionHint,
                         ghosttyWindowReader: ghosttyWindowReader,
                     ) {
-                        // Update bookmark for next activation (D-005).
-                        if route == .tabPress, let matchedTab {
-                            lastMatchedGhosttyTabIndex = (
-                                windowIndex: matchedTab.window.index,
-                                tabIndex: matchedTab.tab.index,
-                                tabTitle: matchedTab.tab.title,
-                            )
-                            debugLog("activateGhosttyWithAXRouting bookmark=updated w=\(matchedTab.window.index) t=\(matchedTab.tab.index) title=\(matchedTab.tab.title ?? "<nil>")")
-                        }
                         logger.info("    activateGhosttyWithAXRouting: resolved route=\(route.rawValue)")
                         debugLog("activateGhosttyWithAXRouting route=\(route.rawValue)")
-                        if route == .windowRaise, bookmarkWasCleared {
-                            // D-007: Bookmark existed but the target tab is gone.
-                            debugLog("activateGhosttyWithAXRouting orphan detected: bookmark cleared + window_raise")
-                            return false
-                        }
-                        // D-008: When no tab matched and route fell to window_raise,
-                        // use window title + TTY liveness to detect orphaned clients.
-                        // After the 1-second retry window (5 × 200ms), title has
-                        // propagated in the normal case. If the window title matches,
-                        // the session is visible. If not, check whether Ghostty still
-                        // holds the TTY — if it does, the tab exists but its title is
-                        // unrecognizable (e.g., "✳ Claude Code" without session prefix).
-                        // If Ghostty doesn't hold the TTY, the tab is truly gone.
-                        if route == .windowRaise, let projectPath {
-                            let titleMatch = ghosttyWindowTitleMatchesSession(
-                                windows: windows,
-                                projectPath: projectPath,
-                                tmuxSessionHint: tmuxSessionHint,
-                            )
-                            if !titleMatch {
-                                // Before concluding orphan, check if Ghostty still holds the TTY.
-                                // When a tab closes, Ghostty releases the PTY master immediately.
-                                // If Ghostty still has it open, the tab exists — just with an
-                                // unrecognizable title (suppress orphan detection).
-                                if let tty = resolvedTty, await isGhosttyHoldingTty(tty) {
-                                    debugLog("activateGhosttyWithAXRouting no title match but Ghostty holds tty=\(tty) → window_raise valid (tabCount=\(tabCount))")
-                                    return true
-                                }
-                                debugLog("activateGhosttyWithAXRouting orphan detected: no title match, Ghostty not holding tty (tabCount=\(tabCount))")
-                                return false
-                            }
-                            debugLog("activateGhosttyWithAXRouting no tab match, window title matches → window_raise valid (tabCount=\(tabCount))")
-                        }
                         return true
                     }
 
@@ -1109,7 +470,11 @@ final class TerminalLauncher {
 
                 // We have a projectPath, but didn't find a matching tab, and we have retries left.
                 // Wait for the tab to appear or update its title.
-                try? await _Concurrency.Task.sleep(nanoseconds: retryDelayNanoseconds)
+                do {
+                    try await _Concurrency.Task.sleep(nanoseconds: retryDelayNanoseconds)
+                } catch {
+                    return false
+                }
             }
         }
 
@@ -1119,39 +484,6 @@ final class TerminalLauncher {
     enum GhosttyAXRoutingResolution: String, Equatable {
         case tabPress = "tab_press"
         case windowRaise = "window_raise"
-    }
-
-    /// Try to focus the Ghostty tab at a previously-bookmarked index.
-    /// In the single-client model, after `tmux switch-client` the tab hasn't moved —
-    /// only its title changed. Focusing by stored index avoids the title propagation race.
-    ///
-    /// When `bookmarkedTabTitle` is non-nil, the tab at the bookmarked index must still
-    /// have the same title. A mismatch means tab indices shifted (e.g., user closed a tab)
-    /// and the tab at this position is a different tab — return nil to trigger orphan detection.
-    static func tryBookmarkedGhosttyTab(
-        windows: [GhosttyWindowSnapshot],
-        bookmarkedTabIndex: (windowIndex: Int, tabIndex: Int),
-        bookmarkedTabTitle: String? = nil,
-        ghosttyWindowReader: GhosttyWindowReader,
-    ) -> GhosttyAXRoutingResolution? {
-        guard let window = windows.first(where: { $0.index == bookmarkedTabIndex.windowIndex }),
-              let tab = window.tabs.first(where: { $0.index == bookmarkedTabIndex.tabIndex })
-        else {
-            return nil
-        }
-
-        // Validate tab identity: if we stored a title at bookmark time,
-        // verify the tab at this index still has the same title. A mismatch
-        // means tabs shifted after closure — focusing would hit the wrong tab.
-        if let storedTitle = bookmarkedTabTitle, tab.title != storedTitle {
-            return nil
-        }
-
-        if ghosttyWindowReader.focusTab(tab, in: window.element) {
-            return .tabPress
-        }
-
-        return nil
     }
 
     static func resolveGhosttyAXRouting(
@@ -1185,69 +517,12 @@ final class TerminalLauncher {
         return nil
     }
 
-    private func activateIdeWindowAction(ideType: IdeType, projectPath: String) async -> Bool {
-        let parentApp: ParentApp = switch ideType {
-        case .cursor: .cursor
-        case .vsCode: .vsCode
-        case .vsCodeInsiders: .vsCodeInsiders
-        case .zed: .zed
-        }
-
-        guard findRunningIDE(parentApp) != nil else { return false }
-        return await activateIDEWindowInternal(app: parentApp, projectPath: projectPath)
-    }
-
-    // MARK: - Adapter Helpers
-
-    /// Check if the Ghostty process still holds a given TTY device open.
-    /// When a Ghostty tab closes, Ghostty releases the PTY master immediately.
-    /// A positive result means the tab is alive (just with an unrecognizable title).
-    /// Used by D-008 to prevent false-positive orphan detection.
-    private func isGhosttyHoldingTty(_ tty: String) async -> Bool {
-        let escapedTty = shellEscape(tty)
-        let result = await runBashScriptWithResultAsync("lsof \(escapedTty) 2>/dev/null | grep -qi ghostty")
-        return result.exitCode == 0
-    }
-
-    private func hasAnyClientAttachedInternal() async -> Bool {
-        let result = await runBashScriptWithResultAsync("tmux list-clients 2>/dev/null")
-        guard result.exitCode == 0, let output = result.output else { return false }
-        return !output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    private func getCurrentClientTtyInternal() async -> String? {
-        let result = await runBashScriptWithResultAsync("tmux display-message -p '#{client_tty}' 2>/dev/null")
-        guard result.exitCode == 0, let output = result.output else { return nil }
-        let tty = output.trimmingCharacters(in: .whitespacesAndNewlines)
-        return tty.isEmpty ? nil : tty
-    }
-
-    private func switchClientInternal(to sessionName: String, clientTty: String?) async -> Bool {
-        let escapedSession = shellEscape(sessionName)
-        let script: String
-        if let clientTty, !clientTty.isEmpty {
-            let escapedClient = shellEscape(clientTty)
-            script = "tmux switch-client -c \(escapedClient) -t \(escapedSession) 2>&1"
-        } else {
-            script = "tmux switch-client -t \(escapedSession) 2>&1"
-        }
-
-        let result = await runBashScriptWithResultAsync(script)
-        if result.exitCode != 0 {
-            logger.warning("tmux switch-client failed (exit \(result.exitCode)): \(result.output ?? "")")
-            return false
-        }
-        return true
-    }
-
     // MARK: - Tmux Helpers
 
     private func launchTerminalWithTmuxSession(_ session: String, projectPath: String? = nil) {
         logger.debug("Launching terminal with tmux session '\(session)' at path '\(projectPath ?? "default")'")
         debugLog("launchTerminalWithTmuxSession session=\(session) path=\(projectPath ?? "default")")
         let escapedSession = shellEscape(session)
-        // Use -A flag: attach if session exists, create if it doesn't
-        // Use -c to set working directory when creating new session
         let tmuxCmd: String
         if let path = projectPath {
             let escapedPath = shellEscape(path)
@@ -1256,48 +531,38 @@ final class TerminalLauncher {
             tmuxCmd = "tmux new-session -A -s \(escapedSession)"
         }
 
-        // When Ghostty is already running, open a new tab instead of a new window.
         if isGhosttyRunningInternal() {
-            debugLog("launchTerminalWithTmuxSession ghosttyRunning=true, opening new tab")
+            // Ghostty is running: open -a sends an Apple Event to the existing
+            // instance, which opens a new tab at the given directory. No -n flag
+            // means no new process and no extra dock icon.
+            debugLog("launchTerminalWithTmuxSession ghosttyRunning=true, open -a new tab")
+            if let path = projectPath {
+                runBashScript("open -a Ghostty.app \(shellEscape(path))")
+            } else {
+                runBashScript("open -a Ghostty.app")
+            }
+            // Wait for the new tab's shell to initialize, then type the tmux command.
             let applescriptSafe = tmuxCmd
                 .replacingOccurrences(of: "\\", with: "\\\\")
                 .replacingOccurrences(of: "\"", with: "\\\"")
             let script = """
-            osascript -e 'tell application "Ghostty" to activate'
-            sleep 0.2
-            osascript -e 'tell application "System Events" to tell process "Ghostty" to keystroke "t" using command down'
-            sleep 0.3
-            osascript -e 'tell application "System Events" to tell process "Ghostty" to keystroke "\(applescriptSafe)"'
-            osascript -e 'tell application "System Events" to tell process "Ghostty" to key code 36'
+            osascript <<'APPLESCRIPT'
+            delay 1.0
+            tell application "System Events"
+                tell process "Ghostty"
+                    keystroke "\(applescriptSafe)"
+                    key code 36
+                end tell
+            end tell
+            APPLESCRIPT
             """
             runBashScript(script)
             return
         }
 
+        // No Ghostty running — launch Ghostty with the tmux command directly.
         let escapedTmuxCmd = bashDoubleQuoteEscape(tmuxCmd)
-
-        // No Ghostty running — launch new window
-        let script = """
-        if [ -d "/Applications/Ghostty.app" ]; then
-            open -na "Ghostty.app" --args -e sh -c "\(escapedTmuxCmd)"
-        elif [ -d "/Applications/iTerm.app" ]; then
-            osascript -e "tell application \\"iTerm\\" to create window with default profile command \\"\(escapedTmuxCmd)\\""
-            osascript -e 'tell application "iTerm" to activate'
-        else
-            echo "No supported terminal available (Ghostty/iTerm not installed)." >&2
-        fi
-        """
-        runBashScript(script)
-    }
-
-    func activateTerminalApp() {
-        if let frontmost = NSWorkspace.shared.frontmostApplication,
-           isTerminalApp(frontmost)
-        {
-            frontmost.activate()
-            return
-        }
-        _ = activateFirstRunningTerminal()
+        runBashScript("open -a Ghostty.app --args -e sh -c \"\(escapedTmuxCmd)\"")
     }
 
     // MARK: - Shell Helpers
@@ -1323,34 +588,30 @@ final class TerminalLauncher {
         debugLog("attachToExistingTmuxSession session=\(sessionName)")
 
         if isGhosttyRunningInternal() {
-            // Ghostty is already running — type the attach command into the active tab.
-            // No Cmd+T: we want to reuse the current tab, not open a new one.
+            // Ghostty is running — type the attach command into the current active tab.
+            // No new tab: reuse the existing idle shell.
             let applescriptSafe = tmuxCmd
                 .replacingOccurrences(of: "\\", with: "\\\\")
                 .replacingOccurrences(of: "\"", with: "\\\"")
             let script = """
-            osascript -e 'tell application "Ghostty" to activate'
-            sleep 0.2
-            osascript -e 'tell application "System Events" to tell process "Ghostty" to keystroke "\(applescriptSafe)"'
-            osascript -e 'tell application "System Events" to tell process "Ghostty" to key code 36'
+            osascript <<'APPLESCRIPT'
+            tell application "Ghostty" to activate
+            delay 0.2
+            tell application "System Events"
+                tell process "Ghostty"
+                    keystroke "\(applescriptSafe)"
+                    key code 36
+                end tell
+            end tell
+            APPLESCRIPT
             """
             runBashScript(script)
             return
         }
 
-        // Ghostty not running — launch it with the attach command.
+        // Ghostty not running — launch with the attach command directly.
         let escapedTmuxCmd = bashDoubleQuoteEscape(tmuxCmd)
-        let script = """
-        if [ -d "/Applications/Ghostty.app" ]; then
-            open -na "Ghostty.app" --args -e sh -c "\(escapedTmuxCmd)"
-        elif [ -d "/Applications/iTerm.app" ]; then
-            osascript -e "tell application \\"iTerm\\" to create window with default profile command \\"\(escapedTmuxCmd)\\""
-            osascript -e 'tell application "iTerm" to activate'
-        else
-            echo "No supported terminal available (Ghostty/iTerm not installed)." >&2
-        fi
-        """
-        runBashScript(script)
+        runBashScript("open -a Ghostty.app --args -e sh -c \"\(escapedTmuxCmd)\"")
     }
 
     private func findTmuxSessionForPath(_ projectPath: String) async -> String? {
@@ -1445,49 +706,6 @@ final class TerminalLauncher {
         return bestMatch?.session
     }
 
-    // MARK: - IDE Activation
-
-    private func findRunningIDE(_ app: ParentApp) -> NSRunningApplication? {
-        guard let processName = app.processName else { return nil }
-        return NSWorkspace.shared.runningApplications.first {
-            $0.localizedName == processName
-        }
-    }
-
-    private func activateIDEWindowInternal(app: ParentApp, projectPath: String) async -> Bool {
-        guard let runningApp = findRunningIDE(app),
-              let cliBinary = app.cliBinary
-        else { return false }
-
-        runningApp.activate()
-
-        return await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                let process = Process()
-                process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-                process.arguments = [cliBinary, projectPath]
-
-                var env = ProcessInfo.processInfo.environment
-                env["PATH"] = Constants.homebrewPaths + ":" + (env["PATH"] ?? "")
-                process.environment = env
-
-                do {
-                    try process.run()
-                    process.waitUntilExit()
-                    if process.terminationStatus != 0 {
-                        logger.warning("IDE CLI '\(cliBinary)' exited with status \(process.terminationStatus)")
-                        continuation.resume(returning: false)
-                        return
-                    }
-                    continuation.resume(returning: true)
-                } catch {
-                    logger.error("Failed to launch IDE CLI '\(cliBinary)': \(error.localizedDescription)")
-                    continuation.resume(returning: false)
-                }
-            }
-        }
-    }
-
     // MARK: - Ghostty Window Detection
 
     private func isGhosttyRunningInternal() -> Bool {
@@ -1496,198 +714,22 @@ final class TerminalLauncher {
         }
     }
 
-    private func ghosttyWindowStateInternal() -> GhosttyWindowState {
-        guard isGhosttyRunningInternal() else {
-            return .notRunning
-        }
-
-        switch ghosttyWindowReader.readWindows() {
-        case .unavailable:
-            if Self.activationTraceEnabled {
-                debugLog("ghostty window state ax=unavailable")
-            }
-            return .axUnavailable
-        case let .windows(windows):
-            if Self.activationTraceEnabled {
-                debugLog("ghostty windows count=\(windows.count)")
-            }
-            return .running
-        }
-    }
-
-    // MARK: - TTY Discovery
-
-    @discardableResult
-    private func activateTerminalByTTYDiscovery(tty: String) async -> Bool {
-        if let owningTerminal = await discoverTerminalOwningTTY(tty: tty) {
-            logger.debug("    TTY discovery found: \(owningTerminal.displayName) for tty=\(tty)")
-            debugLog("activateTerminalByTTYDiscovery found terminal=\(owningTerminal.displayName) tty=\(tty)")
-            switch owningTerminal {
-            case .iTerm:
-                return activateITermSession(tty: tty)
-            case .terminal:
-                return activateTerminalAppSession(tty: tty)
-            default:
-                return activateAppByName(owningTerminal.displayName)
-            }
-        } else {
-            logger.debug("    TTY discovery: no terminal found for tty=\(tty)")
-            debugLog("activateTerminalByTTYDiscovery no terminal found tty=\(tty)")
-            return false
-        }
-    }
+    // MARK: - Terminal Focus After Tmux Switch
 
     private func activateTerminalAfterTmuxSwitch(
         clientTty: String?,
         projectPath: String,
         tmuxSessionHint: String?,
     ) async -> Bool {
-        let result = await Self.completeTerminalActivationAfterTmuxSwitch(
-            clientTty: clientTty,
-            projectPath: projectPath,
-            activateByTTYDiscovery: { tty in await self.activateTerminalByTTYDiscovery(tty: tty) },
-            activateGhosttyByAXRouting: { tty, projectPath, sessionHint in
-                await self.activateGhosttyWithAXRouting(
-                    forTty: tty,
-                    projectPath: projectPath,
-                    tmuxSessionHint: sessionHint,
-                )
-            },
-            isGhosttyRunning: { self.isGhosttyRunningInternal() },
-            activateTerminalApp: { self.activateTerminalApp() },
-            tmuxSessionHint: tmuxSessionHint,
-        )
-        if !result {
-            // Terminal gone — clear stale bookmark so the next activation
-            // doesn't try to focus a tab that no longer exists.
-            lastMatchedGhosttyTabIndex = nil
-        }
-        return result
-    }
-
-    static func completeTerminalActivationAfterTmuxSwitch(
-        clientTty: String?,
-        projectPath: String,
-        activateByTTYDiscovery: (String) async -> Bool,
-        activateGhosttyByAXRouting: @escaping (String?, String?, String?) async -> Bool,
-        isGhosttyRunning: () -> Bool,
-        activateTerminalApp: () -> Void,
-        tmuxSessionHint: String? = nil,
-    ) async -> Bool {
-        if let clientTty {
-            let trimmed = clientTty.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !trimmed.isEmpty {
-                let focused = await activateByTTYDiscovery(trimmed)
-                if focused {
-                    return true
-                }
-            }
-        }
-
-        if isGhosttyRunning(),
-           await activateGhosttyByAXRouting(clientTty, projectPath, tmuxSessionHint)
+        // Try Ghostty AX routing (tab focus via accessibility)
+        if isGhosttyRunningInternal(),
+           await activateGhosttyWithAXRouting(forTty: clientTty, projectPath: projectPath, tmuxSessionHint: tmuxSessionHint)
         {
             return true
         }
-
-        // Last resort: bring the terminal app to front. This doesn't guarantee
-        // the correct tab/session is visible — return false so the caller can
-        // detect orphaned clients and launch a fresh terminal when needed.
-        activateTerminalApp()
+        // Last resort: generic Ghostty activation (may show wrong tab)
+        activateAppByName("Ghostty")
         return false
-    }
-
-    private func discoverTerminalOwningTTY(tty: String) async -> ParentApp? {
-        if findRunningApp(.iTerm) != nil, await queryITermForTTY(tty) {
-            debugLog("discoverTerminalOwningTTY iTerm owns tty=\(tty)")
-            return .iTerm
-        }
-        if findRunningApp(.terminal) != nil, await queryTerminalAppForTTY(tty) {
-            debugLog("discoverTerminalOwningTTY Terminal owns tty=\(tty)")
-            return .terminal
-        }
-        return nil
-    }
-
-    private func queryITermForTTY(_ tty: String) async -> Bool {
-        let script = """
-        tell application "iTerm"
-            repeat with w in windows
-                repeat with t in tabs of w
-                    repeat with s in sessions of t
-                        if tty of s is "\(tty)" then
-                            return "found"
-                        end if
-                    end repeat
-                end repeat
-            end repeat
-        end tell
-        return "not found"
-        """
-        return await runAppleScriptWithResultAsync(script) == "found"
-    }
-
-    private func queryTerminalAppForTTY(_ tty: String) async -> Bool {
-        let script = """
-        tell application "Terminal"
-            repeat with w in windows
-                repeat with t in tabs of w
-                    if tty of t is "\(tty)" then
-                        return "found"
-                    end if
-                end repeat
-            end repeat
-        end tell
-        return "not found"
-        """
-        return await runAppleScriptWithResultAsync(script) == "found"
-    }
-
-    // MARK: - TTY-Based Tab Selection (AppleScript)
-
-    @discardableResult
-    private func activateITermSession(tty: String) -> Bool {
-        let script = """
-        if application "iTerm" is running then
-            tell application "iTerm"
-                activate
-                repeat with w in windows
-                    repeat with t in tabs of w
-                        repeat with s in sessions of t
-                            if tty of s is "\(tty)" then
-                                select t
-                                select s
-                                set index of w to 1
-                                return
-                            end if
-                        end repeat
-                    end repeat
-                end repeat
-            end tell
-        end if
-        """
-        return runAppleScriptChecked(script)
-    }
-
-    @discardableResult
-    private func activateTerminalAppSession(tty: String) -> Bool {
-        let script = """
-        if application "Terminal" is running then
-            tell application "Terminal"
-                activate
-                repeat with w in windows
-                    repeat with t in tabs of w
-                        if tty of t is "\(tty)" then
-                            set selected tab of w to t
-                            set frontmost of w to true
-                            return
-                        end if
-                    end repeat
-                end repeat
-            end tell
-        end if
-        """
-        return runAppleScriptChecked(script)
     }
 
     // MARK: - App Activation Helpers
@@ -1711,123 +753,13 @@ final class TerminalLauncher {
         return result
     }
 
-    private func activateFirstRunningTerminal() -> Bool {
-        logger.debug("    activateFirstRunningTerminal: checking priority order...")
-        for terminal in ParentApp.terminalPriorityOrder where terminal.isInstalled {
-            logger.debug("    checking \(terminal.displayName)...")
-            if let app = findRunningApp(terminal) {
-                logger.warning("    ⚠️ FALLBACK: activating \(terminal.displayName) (pid=\(app.processIdentifier)) - NO PROJECT CONTEXT")
-                debugLog("activateFirstRunningTerminal activating \(terminal.displayName) pid=\(app.processIdentifier)")
-                app.activate()
-                return true
-            }
-        }
-        logger.warning("    activateFirstRunningTerminal: no running terminal found")
-        debugLog("activateFirstRunningTerminal no running terminal found")
-        return false
-    }
-
-    private func findRunningApp(_ terminal: ParentApp) -> NSRunningApplication? {
-        NSWorkspace.shared.runningApplications.first {
-            guard let localizedName = $0.localizedName else { return false }
-            return terminal.matchesRunningAppName(localizedName)
-        }
-    }
-
-    private func isTerminalApp(_ app: NSRunningApplication) -> Bool {
-        guard let name = app.localizedName else { return false }
-        return ParentApp.terminalPriorityOrder.contains { $0.matchesRunningAppName(name) }
-    }
-
-    // MARK: - New Terminal Launch
-
-    private func launchNewTerminal(for project: Project) -> Bool {
-        debugLog("launchNewTerminal project=\(project.name) path=\(project.path)")
-        return launchNewTerminal(forPath: project.path, name: project.name)
-    }
-
-    static func launchNewTerminalScript(projectPath: String, projectName: String, claudePath: String) -> String {
-        TerminalScripts.launchNoTmux(
-            projectPath: projectPath,
-            projectName: projectName,
-            claudePath: claudePath,
-        )
-    }
-
-    private func launchNewTerminal(forPath path: String, name: String) -> Bool {
-        if let launchNewTerminalOverride {
-            return launchNewTerminalOverride(path, name)
-        }
-        _Concurrency.Task {
-            let claudePath = await getClaudePath()
-            debugLog("launchNewTerminal script path=\(path) name=\(name) claudePath=\(claudePath)")
-            let script = Self.launchNewTerminalScript(
-                projectPath: path,
-                projectName: name,
-                claudePath: claudePath,
-            )
-            runBashScript(script)
-            scheduleTerminalActivation()
-        }
-        return true
-    }
-
-    private func getClaudePath() async -> String {
-        await CapacitorConfig.shared.getClaudePath() ?? "/opt/homebrew/bin/claude"
-    }
-
-    private func scheduleTerminalActivation() {
-        _Concurrency.Task { @MainActor in
-            try? await _Concurrency.Task.sleep(nanoseconds: UInt64(Constants.activationDelaySeconds * 1_000_000_000))
-            activateTerminalApp()
-        }
-    }
-
     // MARK: - Script Execution
-
-    private func runAppleScript(_ script: String) {
-        appleScript.run(script)
-    }
 
     /// Runs AppleScript and returns success/failure based on exit code.
     /// Use this for critical activation paths where failure should trigger fallback.
     @discardableResult
     private func runAppleScriptChecked(_ script: String) -> Bool {
         appleScript.runChecked(script)
-    }
-
-    private func runAppleScriptWithResultAsync(_ script: String) async -> String? {
-        await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                let process = Process()
-                process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-                process.arguments = ["-e", script]
-
-                let pipe = Pipe()
-                let errorPipe = Pipe()
-                process.standardOutput = pipe
-                process.standardError = errorPipe
-
-                process.terminationHandler = { process in
-                    if process.terminationStatus != 0 {
-                        let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
-                        let errorMsg = String(data: errorData, encoding: .utf8) ?? "unknown"
-                        logger.warning("AppleScript failed (exit \(process.terminationStatus)): \(errorMsg)")
-                    }
-
-                    let data = pipe.fileHandleForReading.readDataToEndOfFile()
-                    let result = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
-                    continuation.resume(returning: result)
-                }
-
-                do {
-                    try process.run()
-                } catch {
-                    logger.error("AppleScript launch failed: \(error.localizedDescription)")
-                    continuation.resume(returning: nil)
-                }
-            }
-        }
     }
 
     private func runBashScript(_ script: String) {
@@ -1899,46 +831,10 @@ enum TerminalScripts {
         PROJECT_PATH="\(escapedPath)"
         CLAUDE_CMD="\(escapedCommand)"
 
-        # Escape path for single-quoted arguments in osascript commands
-        PATH_ESC=$(printf '%s' "$PROJECT_PATH" | sed "s/'/'\\\\''/g")
-
         if [ -d "/Applications/Ghostty.app" ]; then
-            open -na "Ghostty.app" --args --working-directory="$PROJECT_PATH" -e bash -c "$CLAUDE_CMD"
-        elif [ -d "/Applications/iTerm.app" ]; then
-            osascript -e "tell application \\"iTerm\\" to create window with default profile command \\"cd '$PATH_ESC' && $CLAUDE_CMD\\""
-            osascript -e 'tell application "iTerm" to activate'
+            open -a Ghostty.app --args --working-directory="$PROJECT_PATH" -e bash -c "$CLAUDE_CMD"
         else
-            echo "No supported terminal available (Ghostty/iTerm not installed)." >&2
-        fi
-        """
-    }
-
-    static func launchNoTmux(projectPath: String, projectName: String, claudePath: String) -> String {
-        // Escape values for safe interpolation into bash double-quoted strings
-        let escapedPath = bashDoubleQuoteEscape(projectPath)
-        let escapedName = bashDoubleQuoteEscape(projectName)
-        let escapedClaude = bashDoubleQuoteEscape(claudePath)
-
-        return """
-        PROJECT_PATH="\(escapedPath)"
-        PROJECT_NAME="\(escapedName)"
-        CLAUDE_PATH="\(escapedClaude)"
-
-        # Helper function to escape strings for single-quoted shell arguments
-        shell_escape_single() {
-            printf '%s' "$1" | sed "s/'/'\\\\''/g"
-        }
-
-        # Escape path for single-quoted arguments in osascript commands
-        PATH_ESC=$(shell_escape_single "$PROJECT_PATH")
-
-        if [ -d "/Applications/Ghostty.app" ]; then
-            open -na "Ghostty.app" --args --working-directory="$PROJECT_PATH"
-        elif [ -d "/Applications/iTerm.app" ]; then
-            osascript -e "tell application \\"iTerm\\" to create window with default profile command \\"cd '$PATH_ESC' && exec \\$SHELL\\""
-            osascript -e 'tell application "iTerm" to activate'
-        else
-            echo "No supported terminal available (Ghostty/iTerm not installed)." >&2
+            echo "Ghostty not installed at /Applications/Ghostty.app" >&2
         fi
         """
     }

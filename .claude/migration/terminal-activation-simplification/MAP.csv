@@ -1,0 +1,28 @@
+slice_id,capability,current_path,target_path,status,delete_in_pr,notes
+S-000,control-plane,.claude/migration/terminal-activation-simplification/CHARTER.md,.claude/migration/terminal-activation-simplification/CHARTER.md,done,,governance
+S-000,control-plane,.claude/migration/terminal-activation-simplification/DECISIONS.md,.claude/migration/terminal-activation-simplification/DECISIONS.md,done,,governance
+S-000,control-plane,.claude/migration/terminal-activation-simplification/SLICES.yaml,.claude/migration/terminal-activation-simplification/SLICES.yaml,done,,governance
+S-000,control-plane,.claude/migration/terminal-activation-simplification/MAP.csv,.claude/migration/terminal-activation-simplification/MAP.csv,done,,governance
+S-000,control-plane,scripts/ci/terminal-simplification-guard.sh,scripts/ci/terminal-simplification-guard.sh,done,,guard script
+S-001,dead-code,apps/swift/Sources/Capacitor/Models/ActivationConfig.swift,,proposed,yes,entire file — dead v1 scenario matrix
+S-002,dead-code,core/capacitor-core/src/activate/mod.rs,,proposed,yes,old Rust activate module superseded by runtime_activation
+S-002,dead-code,core/capacitor-core/src/lib.rs,core/capacitor-core/src/lib.rs,proposed,,remove mod activate declaration
+S-003,tab-creation,apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift,apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift,proposed,,replace keystroke sim + open -na with open -a
+S-003,tab-creation-tests,apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift,apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift,proposed,,update tests for open -a approach
+S-004,pre-poll,apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift,apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift,proposed,,remove recentLaunchPending + pre-activation poll
+S-005,multi-terminal,apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift,apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift,proposed,,remove iTerm/Terminal.app fallback paths
+S-006,rust-resolver,apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift,apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift,proposed,,remove resolveActivationDecision FFI call from hot path
+S-007,orphan-detection,apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift,apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift,proposed,,remove bookmark system + orphan detection
+S-008,managed-tty,apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift,apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift,proposed,,simplify TTY tracking to minimal client check
+S-009,cancellation,apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift,apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift,proposed,,fix remaining try? await Task.sleep patterns
+S-010,collapse,apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift,apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift,proposed,,rewrite to ~30-line three-branch flow
+S-010,collapse-tests,apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift,apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift,proposed,,simplify tests to match new architecture
+,preserve,apps/swift/Sources/Capacitor/Models/GhosttyAXReader.swift,apps/swift/Sources/Capacitor/Models/GhosttyAXReader.swift,keep,,AX routing — justified complexity — do not simplify
+,preserve,apps/swift/Tests/CapacitorTests/GhosttyAXReaderTests.swift,apps/swift/Tests/CapacitorTests/GhosttyAXReaderTests.swift,keep,,AX reader tests — preserve
+,preserve,apps/swift/Sources/Capacitor/Models/AppState.swift,apps/swift/Sources/Capacitor/Models/AppState.swift,keep,,calls launchTerminal — may need minor update
+,preserve,apps/swift/Sources/Capacitor/Views/Projects/ProjectCardView.swift,apps/swift/Sources/Capacitor/Views/Projects/ProjectCardView.swift,keep,,card click entry — no changes expected
+,preserve,apps/swift/Sources/Capacitor/Views/Projects/DockLayoutView.swift,apps/swift/Sources/Capacitor/Views/Projects/DockLayoutView.swift,keep,,dock card click entry — no changes expected
+,preserve,apps/swift/Sources/Capacitor/Bridge/capacitor_core.swift,apps/swift/Sources/Capacitor/Bridge/capacitor_core.swift,keep,,UniFFI bindings — auto-generated
+,preserve,core/capacitor-core/src/runtime_activation/mod.rs,core/capacitor-core/src/runtime_activation/mod.rs,keep,,v2 Rust resolver — keep for snapshot but remove from hot path
+,preserve,core/capacitor-core/src/runtime_activation/policy.rs,core/capacitor-core/src/runtime_activation/policy.rs,keep,,activation policy — keep with runtime_activation
+,preserve,core/capacitor-core/src/runtime_activation/trace.rs,core/capacitor-core/src/runtime_activation/trace.rs,keep,,activation trace — keep with runtime_activation

@@ -194,7 +194,11 @@ struct DockProjectCard: View {
             }, perform: {})
             .task(id: pressStartTime) {
                 guard pressStartTime != nil else { return }
-                try? await _Concurrency.Task.sleep(for: .milliseconds(Int(rippleDuration * 1000)))
+                do {
+                    try await _Concurrency.Task.sleep(for: .milliseconds(Int(rippleDuration * 1000)))
+                } catch {
+                    return
+                }
                 pressStartTime = nil
             }
             .contentShape(Rectangle())
