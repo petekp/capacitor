@@ -113,15 +113,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Select Xcode 16.3 (Swift 6.1+)
+      - name: Select Xcode 26.3 (Swift 6.2)
         run: |
-          if [ -d "/Applications/Xcode_16.3.app" ]; then
-            sudo xcode-select -s /Applications/Xcode_16.3.app/Contents/Developer
-          else
-            echo "Available Xcode versions:"
-            ls -d /Applications/Xcode*.app 2>/dev/null || echo "None found"
-            echo "Using default Xcode"
-          fi
+          sudo xcode-select -s /Applications/Xcode_26.3.app/Contents/Developer
           swift --version
 
       - name: Install Rust toolchain
@@ -181,15 +175,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Select Xcode 16.3 (Swift 6.1+)
+      - name: Select Xcode 26.3 (Swift 6.2)
         run: |
-          if [ -d "/Applications/Xcode_16.3.app" ]; then
-            sudo xcode-select -s /Applications/Xcode_16.3.app/Contents/Developer
-          else
-            echo "Available Xcode versions:"
-            ls -d /Applications/Xcode*.app 2>/dev/null || echo "None found"
-            echo "Using default Xcode"
-          fi
+          sudo xcode-select -s /Applications/Xcode_26.3.app/Contents/Developer
           swift --version
 
       - name: Install Rust toolchain
