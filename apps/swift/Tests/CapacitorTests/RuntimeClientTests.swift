@@ -127,10 +127,12 @@ final class RuntimeClientTests: XCTestCase {
 
     func testFetchCoreRoutingSnapshotUnavailableScenarios() async throws {
         let normalizedUnmatchedPath = PathNormalizer.normalize("/TMP/Unmatched/../Unmatched///")
+        // swiftformat:disable trailingCommas
         let scenarios: [LabeledExpectationScenario<
             (projectPath: String, workspaceId: String),
-            (workspaceId: String, projectPath: String),
+            (workspaceId: String, projectPath: String)
         >] = [
+            // swiftformat:enable trailingCommas
             LabeledExpectationScenario(
                 label: "explicit_workspace_id",
                 input: (
@@ -173,10 +175,12 @@ final class RuntimeClientTests: XCTestCase {
     }
 
     func testFetchCoreRoutingSnapshotReasonCodeScenarios() async throws {
+        // swiftformat:disable trailingCommas
         let scenarios: [LabeledExpectationScenario<
             String,
-            (reasonCode: String?, scopeResolution: String?, candidateCount: Int?),
+            (reasonCode: String?, scopeResolution: String?, candidateCount: Int?)
         >] = [
+            // swiftformat:enable trailingCommas
             LabeledExpectationScenario(
                 label: "default_reason",
                 input: "tmux_client_attached",
@@ -224,10 +228,12 @@ final class RuntimeClientTests: XCTestCase {
     }
 
     func testFetchCoreRoutingDiagnosticsScopeResolutionScenarios() async throws {
+        // swiftformat:disable trailingCommas
         let scenarios: [LabeledExpectationScenario<
             String,
-            (reasonCode: String?, scopeResolution: String?, candidateCount: Int?),
+            (reasonCode: String?, scopeResolution: String?, candidateCount: Int?)
         >] = [
+            // swiftformat:enable trailingCommas
             LabeledExpectationScenario(
                 label: "workspace_match",
                 input: "workspace-core",

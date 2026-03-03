@@ -113,6 +113,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Select Xcode 16.3 (Swift 6.1+)
+        run: |
+          if [ -d "/Applications/Xcode_16.3.app" ]; then
+            sudo xcode-select -s /Applications/Xcode_16.3.app/Contents/Developer
+          else
+            echo "Available Xcode versions:"
+            ls -d /Applications/Xcode*.app 2>/dev/null || echo "None found"
+            echo "Using default Xcode"
+          fi
+          swift --version
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
@@ -169,6 +180,17 @@ jobs:
     needs: [test-rust, test-swift]
     steps:
       - uses: actions/checkout@v4
+
+      - name: Select Xcode 16.3 (Swift 6.1+)
+        run: |
+          if [ -d "/Applications/Xcode_16.3.app" ]; then
+            sudo xcode-select -s /Applications/Xcode_16.3.app/Contents/Developer
+          else
+            echo "Available Xcode versions:"
+            ls -d /Applications/Xcode*.app 2>/dev/null || echo "None found"
+            echo "Using default Xcode"
+          fi
+          swift --version
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
