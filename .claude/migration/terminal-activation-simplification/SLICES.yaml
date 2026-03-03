@@ -133,8 +133,8 @@ slices:
 
   - id: S-005
     name: "Remove multi-terminal fallback"
-    status: proposed
-    notes_updated: "Deferred to S-010 — deeply entangled with legacy action dispatch. Will be removed during final collapse."
+    status: done
+    notes_updated: "Originally deferred to S-010, but completed as part of the stash-based simplification (2026-03-02)."
     depends_on:
       - S-003
     touched_paths:
@@ -257,7 +257,7 @@ slices:
 
   - id: S-010
     name: "Collapse performUnifiedActivation to target architecture"
-    status: proposed
+    status: done
     depends_on:
       - S-003
       - S-004
@@ -272,12 +272,13 @@ slices:
     contracts:
       added: []
       changed:
-        - "performUnifiedActivation: rewrite to ~30-line three-branch flow"
+        - "performUnifiedActivation: three-branch flow (client → switch, no client + Ghostty → new tab, no Ghostty → launch)"
       removed:
-        - "All intermediate helper methods no longer needed"
-        - "Dead code paths from prior slices"
-    deletion_targets:
-      - "Any remaining dead methods after S-001 through S-009"
+        - "attachToExistingTmuxSession and hasTmuxSession methods"
+        - "Dead pane matching (focusTmuxPaneForProjectPathIfAvailable, bestTmuxPaneTargetForProjectPath)"
+        - "Dead activateTerminalApp() method"
+        - "Dead ParentApp.displayName extension"
+    deletion_targets: []
     denylist_patterns: []
     smoke_scenarios:
       - "Card click with existing client → session switch + AX focus"
@@ -285,6 +286,5 @@ slices:
       - "Card click with no client, Ghostty not running → launch Ghostty + tmux"
       - "Rapid consecutive clicks → no duplicate tabs"
       - "Full test suite passes"
-    risks:
-      - "Largest blast radius slice — depends on all prior simplifications"
-    notes: "Final slice. TerminalLauncher should be ~200 lines after this."
+    risks: []
+    notes: "Done. Target architecture achieved. Final size ~796 lines (not 200 as originally estimated — remaining code is legitimate AX routing, tmux helpers, and shell integration). All three smoke scenarios verified via live testing (2026-03-02)."
