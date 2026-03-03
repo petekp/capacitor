@@ -5,7 +5,6 @@
 
 uniffi::setup_scaffolding!();
 
-pub mod activate;
 pub mod domain;
 pub mod ingest;
 pub mod query;
@@ -34,7 +33,7 @@ use std::sync::Arc;
 use domain::{
     default_workspace_id, display_name, now_rfc3339, AppSnapshot, IngestHookEventCommand,
     IngestShellSignalCommand, MutateIdeaCommand, MutateProjectCommand, MutateWorktreeCommand,
-    MutationOutcome, ProjectMutationKind, ResolveActivationCommand, ResolveActivationOutcome,
+    MutationOutcome, ProjectMutationKind,
 };
 use runtime_artifacts::{count_artifacts_in_dir, count_hooks_in_dir};
 use runtime_config::{load_hud_config_with_storage, resolve_symlink, save_hud_config_with_storage};
@@ -290,14 +289,6 @@ impl CoreRuntime {
         drop(state);
         self.persist_snapshot(&snapshot)?;
         Ok(outcome)
-    }
-
-    pub fn resolve_runtime_activation(
-        &self,
-        command: ResolveActivationCommand,
-    ) -> Result<ResolveActivationOutcome, CoreRuntimeError> {
-        let state = self.lock_state()?;
-        Ok(activate::resolve_activation(&state, command))
     }
 
     pub fn mutate_project(
@@ -926,8 +917,7 @@ impl CoreRuntime {
 mod tests {
     use super::CoreRuntime;
     use crate::domain::{
-        HookEventType, IngestHookEventCommand, IngestShellSignalCommand, MutateProjectCommand,
-        ProjectMutationKind,
+        HookEventType, IngestHookEventCommand, MutateProjectCommand, ProjectMutationKind,
     };
 
     #[test]
@@ -966,31 +956,5 @@ mod tests {
         assert_eq!(snapshot.sessions.len(), 1);
         assert_eq!(snapshot.sessions[0].project_path, "/repo");
         assert_eq!(snapshot.projects[0].session_count, 1);
-    }
-
-    #[test]
-    fn runtime_resolves_activation_with_tty_when_shell_matches() {
-        let runtime = CoreRuntime::new().expect("runtime");
-
-        runtime
-            .ingest_shell_signal(IngestShellSignalCommand {
-                pid: 42,
-                cwd: "/repo".to_string(),
-                tty: "/dev/ttys001".to_string(),
-                parent_app: "ghostty".to_string(),
-                tmux_session: Some("cap-main".to_string()),
-                recorded_at: "2026-02-28T00:00:00Z".to_string(),
-            })
-            .expect("ingest shell signal");
-
-        let outcome = runtime
-            .resolve_runtime_activation(crate::domain::ResolveActivationCommand {
-                project_path: "/repo".to_string(),
-                workspace_id: None,
-            })
-            .expect("resolve activation");
-
-        assert_eq!(outcome.plan.target_tty.as_deref(), Some("/dev/ttys001"));
-        assert_eq!(outcome.plan.tmux_session.as_deref(), Some("cap-main"));
     }
 }

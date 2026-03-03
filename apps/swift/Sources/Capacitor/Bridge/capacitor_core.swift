@@ -568,8 +568,6 @@ public protocol CoreRuntimeProtocol : AnyObject {
     
     func resolveActivationWithTrace(projectPath: String, shellState: ShellCwdStateFfi?, tmuxContext: TmuxContextFfi, includeTrace: Bool)  -> ActivationDecision
     
-    func resolveRuntimeActivation(command: ResolveActivationCommand) throws  -> ResolveActivationOutcome
-    
     func runHookTest()  -> HookTestResult
     
     func saveIdeasOrder(projectPath: String, ideaIds: [String]) throws 
@@ -859,14 +857,6 @@ open func resolveActivationWithTrace(projectPath: String, shellState: ShellCwdSt
 })
 }
     
-open func resolveRuntimeActivation(command: ResolveActivationCommand)throws  -> ResolveActivationOutcome {
-    return try  FfiConverterTypeResolveActivationOutcome.lift(try rustCallWithError(FfiConverterTypeCoreRuntimeError.lift) {
-    uniffi_capacitor_core_fn_method_coreruntime_resolve_runtime_activation(self.uniffiClonePointer(),
-        FfiConverterTypeResolveActivationCommand.lower(command),$0
-    )
-})
-}
-    
 open func runHookTest() -> HookTestResult {
     return try!  FfiConverterTypeHookTestResult.lift(try! rustCall() {
     uniffi_capacitor_core_fn_method_coreruntime_run_hook_test(self.uniffiClonePointer(),$0
@@ -1096,104 +1086,6 @@ public func FfiConverterTypeActivationDecision_lift(_ buf: RustBuffer) throws ->
 #endif
 public func FfiConverterTypeActivationDecision_lower(_ value: ActivationDecision) -> RustBuffer {
     return FfiConverterTypeActivationDecision.lower(value)
-}
-
-
-public struct ActivationPlan {
-    public var action: ActivationActionKind
-    public var targetTty: String?
-    public var tmuxSession: String?
-    public var appName: String?
-    public var projectPath: String
-    public var reasonCode: String
-
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
-    public init(action: ActivationActionKind, targetTty: String?, tmuxSession: String?, appName: String?, projectPath: String, reasonCode: String) {
-        self.action = action
-        self.targetTty = targetTty
-        self.tmuxSession = tmuxSession
-        self.appName = appName
-        self.projectPath = projectPath
-        self.reasonCode = reasonCode
-    }
-}
-
-
-
-extension ActivationPlan: Equatable, Hashable {
-    public static func ==(lhs: ActivationPlan, rhs: ActivationPlan) -> Bool {
-        if lhs.action != rhs.action {
-            return false
-        }
-        if lhs.targetTty != rhs.targetTty {
-            return false
-        }
-        if lhs.tmuxSession != rhs.tmuxSession {
-            return false
-        }
-        if lhs.appName != rhs.appName {
-            return false
-        }
-        if lhs.projectPath != rhs.projectPath {
-            return false
-        }
-        if lhs.reasonCode != rhs.reasonCode {
-            return false
-        }
-        return true
-    }
-
-    public func hash(into hasher: inout Hasher) {
-        hasher.combine(action)
-        hasher.combine(targetTty)
-        hasher.combine(tmuxSession)
-        hasher.combine(appName)
-        hasher.combine(projectPath)
-        hasher.combine(reasonCode)
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeActivationPlan: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ActivationPlan {
-        return
-            try ActivationPlan(
-                action: FfiConverterTypeActivationActionKind.read(from: &buf), 
-                targetTty: FfiConverterOptionString.read(from: &buf), 
-                tmuxSession: FfiConverterOptionString.read(from: &buf), 
-                appName: FfiConverterOptionString.read(from: &buf), 
-                projectPath: FfiConverterString.read(from: &buf), 
-                reasonCode: FfiConverterString.read(from: &buf)
-        )
-    }
-
-    public static func write(_ value: ActivationPlan, into buf: inout [UInt8]) {
-        FfiConverterTypeActivationActionKind.write(value.action, into: &buf)
-        FfiConverterOptionString.write(value.targetTty, into: &buf)
-        FfiConverterOptionString.write(value.tmuxSession, into: &buf)
-        FfiConverterOptionString.write(value.appName, into: &buf)
-        FfiConverterString.write(value.projectPath, into: &buf)
-        FfiConverterString.write(value.reasonCode, into: &buf)
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeActivationPlan_lift(_ buf: RustBuffer) throws -> ActivationPlan {
-    return try FfiConverterTypeActivationPlan.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeActivationPlan_lower(_ value: ActivationPlan) -> RustBuffer {
-    return FfiConverterTypeActivationPlan.lower(value)
 }
 
 
@@ -4848,138 +4740,6 @@ public func FfiConverterTypeProjectSummary_lower(_ value: ProjectSummary) -> Rus
 }
 
 
-public struct ResolveActivationCommand {
-    public var projectPath: String
-    public var workspaceId: String?
-
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
-    public init(projectPath: String, workspaceId: String?) {
-        self.projectPath = projectPath
-        self.workspaceId = workspaceId
-    }
-}
-
-
-
-extension ResolveActivationCommand: Equatable, Hashable {
-    public static func ==(lhs: ResolveActivationCommand, rhs: ResolveActivationCommand) -> Bool {
-        if lhs.projectPath != rhs.projectPath {
-            return false
-        }
-        if lhs.workspaceId != rhs.workspaceId {
-            return false
-        }
-        return true
-    }
-
-    public func hash(into hasher: inout Hasher) {
-        hasher.combine(projectPath)
-        hasher.combine(workspaceId)
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeResolveActivationCommand: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ResolveActivationCommand {
-        return
-            try ResolveActivationCommand(
-                projectPath: FfiConverterString.read(from: &buf), 
-                workspaceId: FfiConverterOptionString.read(from: &buf)
-        )
-    }
-
-    public static func write(_ value: ResolveActivationCommand, into buf: inout [UInt8]) {
-        FfiConverterString.write(value.projectPath, into: &buf)
-        FfiConverterOptionString.write(value.workspaceId, into: &buf)
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeResolveActivationCommand_lift(_ buf: RustBuffer) throws -> ResolveActivationCommand {
-    return try FfiConverterTypeResolveActivationCommand.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeResolveActivationCommand_lower(_ value: ResolveActivationCommand) -> RustBuffer {
-    return FfiConverterTypeResolveActivationCommand.lower(value)
-}
-
-
-public struct ResolveActivationOutcome {
-    public var plan: ActivationPlan
-    public var confidence: String
-
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
-    public init(plan: ActivationPlan, confidence: String) {
-        self.plan = plan
-        self.confidence = confidence
-    }
-}
-
-
-
-extension ResolveActivationOutcome: Equatable, Hashable {
-    public static func ==(lhs: ResolveActivationOutcome, rhs: ResolveActivationOutcome) -> Bool {
-        if lhs.plan != rhs.plan {
-            return false
-        }
-        if lhs.confidence != rhs.confidence {
-            return false
-        }
-        return true
-    }
-
-    public func hash(into hasher: inout Hasher) {
-        hasher.combine(plan)
-        hasher.combine(confidence)
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeResolveActivationOutcome: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ResolveActivationOutcome {
-        return
-            try ResolveActivationOutcome(
-                plan: FfiConverterTypeActivationPlan.read(from: &buf), 
-                confidence: FfiConverterString.read(from: &buf)
-        )
-    }
-
-    public static func write(_ value: ResolveActivationOutcome, into buf: inout [UInt8]) {
-        FfiConverterTypeActivationPlan.write(value.plan, into: &buf)
-        FfiConverterString.write(value.confidence, into: &buf)
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeResolveActivationOutcome_lift(_ buf: RustBuffer) throws -> ResolveActivationOutcome {
-    return try FfiConverterTypeResolveActivationOutcome.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeResolveActivationOutcome_lower(_ value: ResolveActivationOutcome) -> RustBuffer {
-    return FfiConverterTypeResolveActivationOutcome.lower(value)
-}
-
-
 public struct RoutingView {
     public var workspaceId: String
     public var projectPath: String
@@ -6312,91 +6072,6 @@ public func FfiConverterTypeActivationAction_lower(_ value: ActivationAction) ->
 
 
 extension ActivationAction: Equatable, Hashable {}
-
-
-
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
-
-public enum ActivationActionKind {
-    
-    case activateByTty
-    case switchTmuxSession
-    case ensureTmuxSession
-    case activateApp
-    case launchNewTerminal
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeActivationActionKind: FfiConverterRustBuffer {
-    typealias SwiftType = ActivationActionKind
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ActivationActionKind {
-        let variant: Int32 = try readInt(&buf)
-        switch variant {
-        
-        case 1: return .activateByTty
-        
-        case 2: return .switchTmuxSession
-        
-        case 3: return .ensureTmuxSession
-        
-        case 4: return .activateApp
-        
-        case 5: return .launchNewTerminal
-        
-        default: throw UniffiInternalError.unexpectedEnumCase
-        }
-    }
-
-    public static func write(_ value: ActivationActionKind, into buf: inout [UInt8]) {
-        switch value {
-        
-        
-        case .activateByTty:
-            writeInt(&buf, Int32(1))
-        
-        
-        case .switchTmuxSession:
-            writeInt(&buf, Int32(2))
-        
-        
-        case .ensureTmuxSession:
-            writeInt(&buf, Int32(3))
-        
-        
-        case .activateApp:
-            writeInt(&buf, Int32(4))
-        
-        
-        case .launchNewTerminal:
-            writeInt(&buf, Int32(5))
-        
-        }
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeActivationActionKind_lift(_ buf: RustBuffer) throws -> ActivationActionKind {
-    return try FfiConverterTypeActivationActionKind.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeActivationActionKind_lower(_ value: ActivationActionKind) -> RustBuffer {
-    return FfiConverterTypeActivationActionKind.lower(value)
-}
-
-
-
-extension ActivationActionKind: Equatable, Hashable {}
 
 
 
@@ -8686,9 +8361,6 @@ private var initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_capacitor_core_checksum_method_coreruntime_resolve_activation_with_trace() != 56387) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_capacitor_core_checksum_method_coreruntime_resolve_runtime_activation() != 36056) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_capacitor_core_checksum_method_coreruntime_run_hook_test() != 23431) {

@@ -211,12 +211,6 @@ pub struct IngestShellSignalCommand {
     pub recorded_at: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Record)]
-pub struct ResolveActivationCommand {
-    pub project_path: String,
-    pub workspace_id: Option<String>,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Enum)]
 #[serde(rename_all = "snake_case")]
 pub enum ProjectMutationKind {
@@ -263,35 +257,6 @@ pub struct MutateWorktreeCommand {
     pub repo_path: String,
     pub worktree_name: String,
     pub force: bool,
-}
-
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Enum, Default,
-)]
-#[serde(rename_all = "snake_case")]
-pub enum ActivationActionKind {
-    ActivateByTty,
-    SwitchTmuxSession,
-    EnsureTmuxSession,
-    ActivateApp,
-    #[default]
-    LaunchNewTerminal,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Record)]
-pub struct ActivationPlan {
-    pub action: ActivationActionKind,
-    pub target_tty: Option<String>,
-    pub tmux_session: Option<String>,
-    pub app_name: Option<String>,
-    pub project_path: String,
-    pub reason_code: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Record)]
-pub struct ResolveActivationOutcome {
-    pub plan: ActivationPlan,
-    pub confidence: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Record)]
