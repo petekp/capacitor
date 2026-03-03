@@ -37,9 +37,17 @@ struct HeaderView: View {
                 if floatingMode {
                     // Use NSViewRepresentable for drag + double-click handling.
                     // Keep background clear so it matches the panel and avoids seams.
-                    HeaderDragArea {
-                        WindowFrameStore.shared.cycleCompactState()
-                    }
+                    HeaderDragArea(
+                        onDoubleClick: {
+                            WindowFrameStore.shared.cycleCompactState()
+                        },
+                        onDragBegan: appState.isWindowAnchoringEnabled ? { [weak appState] in
+                            appState?.anchoringController.hudDragBegan()
+                        } : nil,
+                        onDragEnded: appState.isWindowAnchoringEnabled ? { [weak appState] frame in
+                            appState?.anchoringController.hudDragEnded(hudFrame: frame)
+                        } : nil,
+                    )
                 } else {
                     Color.hudBackground
                 }
@@ -103,33 +111,62 @@ private struct HeaderFeedbackButton: View {
 /// needed for window dragging via isMovableByWindowBackground.
 struct HeaderDragArea: NSViewRepresentable {
     let onDoubleClick: () -> Void
+    let onDragBegan: (() -> Void)?
+    let onDragEnded: ((CGRect) -> Void)?
+
+    init(
+        onDoubleClick: @escaping () -> Void,
+        onDragBegan: (() -> Void)? = nil,
+        onDragEnded: ((CGRect) -> Void)? = nil,
+    ) {
+        self.onDoubleClick = onDoubleClick
+        self.onDragBegan = onDragBegan
+        self.onDragEnded = onDragEnded
+    }
 
     func makeNSView(context _: Context) -> HeaderDragNSView {
         let view = HeaderDragNSView()
         view.onDoubleClick = onDoubleClick
+        view.onDragBegan = onDragBegan
+        view.onDragEnded = onDragEnded
         return view
     }
 
     func updateNSView(_ nsView: HeaderDragNSView, context _: Context) {
         nsView.onDoubleClick = onDoubleClick
+        nsView.onDragBegan = onDragBegan
+        nsView.onDragEnded = onDragEnded
     }
 }
 
 class HeaderDragNSView: NSView {
     var onDoubleClick: (() -> Void)?
+    var onDragBegan: (() -> Void)?
+    var onDragEnded: ((CGRect) -> Void)?
 
     override func mouseDown(with event: NSEvent) {
         if event.clickCount == 2 {
             // Double-click: cycle compact state
             onDoubleClick?()
         } else {
-            // Single click: initiate window drag
+            // Notify anchoring controller before drag starts
+            onDragBegan?()
+            let startTime = CACurrentMediaTime()
+            // Single click: initiate window drag (blocks until mouse-up)
             window?.performDrag(with: event)
+            let elapsed = CACurrentMediaTime() - startTime
+            DebugLog.write("[Anchoring] performDrag returned after \(Int(elapsed * 1000))ms")
+            // Drag ended — notify with final frame
+            if let frame = window?.frame {
+                onDragEnded?(frame)
+            }
         }
     }
 
     override var mouseDownCanMoveWindow: Bool {
-        // Allow the system to also participate in window dragging
+        // Panel uses isMovableByWindowBackground for system-level drag.
+        // performDrag(with:) returns immediately (0ms) regardless of this value.
+        // Keep true so the system participates in window dragging.
         true
     }
 }

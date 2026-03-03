@@ -77,6 +77,10 @@ class AppState {
         featureFlags.llmFeatures && isProjectDetailsEnabled
     }
 
+    var isWindowAnchoringEnabled: Bool {
+        featureFlags.windowAnchoring
+    }
+
     // MARK: - Navigation
 
     var projectView: ProjectView = .list
@@ -142,6 +146,7 @@ class AppState {
 
     // MARK: - Managers (extracted for cleaner architecture)
 
+    let anchoringController = WindowAnchoringController()
     let shellStateStore = ShellStateStore()
     let terminalLauncher = TerminalLauncher()
     let sessionStateManager = SessionStateManager()

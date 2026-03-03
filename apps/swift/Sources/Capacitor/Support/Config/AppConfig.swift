@@ -56,6 +56,7 @@ struct FeatureFlags: Equatable, Codable {
     var workstreams: Bool
     var projectCreation: Bool
     var llmFeatures: Bool
+    var windowAnchoring: Bool
 
     static func defaults(for profile: AppProfile) -> FeatureFlags {
         switch profile {
@@ -66,6 +67,7 @@ struct FeatureFlags: Equatable, Codable {
                 workstreams: false,
                 projectCreation: false,
                 llmFeatures: false,
+                windowAnchoring: false,
             )
         case .frontier:
             FeatureFlags(
@@ -74,6 +76,7 @@ struct FeatureFlags: Equatable, Codable {
                 workstreams: true,
                 projectCreation: true,
                 llmFeatures: true,
+                windowAnchoring: true,
             )
         }
     }
@@ -108,6 +111,8 @@ struct FeatureFlags: Equatable, Codable {
             projectCreation = enabled
         case .llmFeatures:
             llmFeatures = enabled
+        case .windowAnchoring:
+            windowAnchoring = enabled
         }
     }
 }
@@ -299,6 +304,7 @@ private enum FeatureKey: String, CaseIterable {
     case workstreams
     case projectCreation = "projectcreation"
     case llmFeatures = "llmfeatures"
+    case windowAnchoring = "windowanchoring"
 
     static func parse(_ raw: String?) -> FeatureKey? {
         guard let raw else { return nil }

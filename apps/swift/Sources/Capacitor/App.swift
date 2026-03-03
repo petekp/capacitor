@@ -26,6 +26,7 @@ struct CapacitorApp: App {
                         .modifier(LayoutModeFrameModifier(layoutMode: appState.layoutMode))
                         .background(FloatingWindowConfigurator(enabled: floatingMode, alwaysOnTop: alwaysOnTop))
                         .background(WindowFrameConfigurator(layoutMode: appState.layoutMode))
+                        .background(AnchoringConfigurator(controller: appState.anchoringController, enabled: appState.isWindowAnchoringEnabled))
                         .onAppear {
                             if let mode = LayoutMode(rawValue: layoutMode) {
                                 appState.layoutMode = mode
@@ -580,6 +581,35 @@ struct FloatingWindowConfigurator: NSViewRepresentable {
 
         for subview in view.subviews {
             clearBackgrounds(of: subview)
+        }
+    }
+}
+
+struct AnchoringConfigurator: NSViewRepresentable {
+    let controller: WindowAnchoringController
+    let enabled: Bool
+
+    func makeNSView(context _: Context) -> NSView {
+        let view = NSView()
+        if enabled {
+            DispatchQueue.main.async {
+                if let window = view.window {
+                    controller.configure(hudWindow: window)
+                }
+            }
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context _: Context) {
+        if enabled {
+            DispatchQueue.main.async {
+                if let window = nsView.window {
+                    controller.configure(hudWindow: window)
+                }
+            }
+        } else {
+            controller.detach()
         }
     }
 }
