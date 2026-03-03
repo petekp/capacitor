@@ -60,6 +60,7 @@ struct AnchorDescriptor: Equatable {
 enum AnchoringState: Equatable {
     case idle
     case anchored(AnchorDescriptor)
+    case dormant(AnchorDescriptor)
     case trackingDrag(AnchorDescriptor, cursorDelta: CGSize)
     case trackingMotion(AnchorDescriptor, ticksSinceLastMove: Int)
 
@@ -67,15 +68,38 @@ enum AnchoringState: Equatable {
         switch self {
         case .idle:
             nil
-        case let .anchored(d), let .trackingDrag(d, _), let .trackingMotion(d, _):
+        case let .anchored(d), let .dormant(d), let .trackingDrag(d, _), let .trackingMotion(d, _):
             d
         }
     }
 
+    /// True when an anchor relationship exists (including dormant).
     var isAnchored: Bool {
         if case .idle = self { return false }
         return true
     }
+
+    /// True when actively anchored and tracking the target (not dormant).
+    var isActivelyAnchored: Bool {
+        switch self {
+        case .anchored, .trackingDrag, .trackingMotion: true
+        case .idle, .dormant: false
+        }
+    }
+
+    var isDormant: Bool {
+        if case .dormant = self { return true }
+        return false
+    }
+}
+
+// MARK: - Proximity Feedback
+
+/// Published by the anchoring controller as the HUD approaches a target window.
+/// `fraction` ramps from 0 (at snap threshold boundary) to 1 (touching).
+struct ProximityFeedback: Equatable {
+    let edge: AnchorEdge
+    let fraction: CGFloat
 }
 
 // MARK: - Snap Candidate

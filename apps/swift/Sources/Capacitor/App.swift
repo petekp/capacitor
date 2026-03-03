@@ -24,7 +24,7 @@ struct CapacitorApp: App {
                         .environment(\.alwaysOnTop, alwaysOnTop)
                         .readReduceMotion()
                         .modifier(LayoutModeFrameModifier(layoutMode: appState.layoutMode))
-                        .background(FloatingWindowConfigurator(enabled: floatingMode, alwaysOnTop: alwaysOnTop))
+                        .background(FloatingWindowConfigurator(enabled: floatingMode, alwaysOnTop: alwaysOnTop, anchoringOwnsLevel: appState.anchoringController.state.isAnchored))
                         .background(WindowFrameConfigurator(layoutMode: appState.layoutMode))
                         .background(AnchoringConfigurator(controller: appState.anchoringController, enabled: appState.isWindowAnchoringEnabled))
                         .onAppear {
@@ -493,6 +493,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 struct FloatingWindowConfigurator: NSViewRepresentable {
     let enabled: Bool
     let alwaysOnTop: Bool
+    var anchoringOwnsLevel: Bool = false
 
     func makeNSView(context: Context) -> NSView {
         let view = NSView()
@@ -525,11 +526,9 @@ struct FloatingWindowConfigurator: NSViewRepresentable {
         let isTransitioningToFloating = coordinator.previousFloatingMode == false && enabled
         coordinator.previousFloatingMode = enabled
 
-        // Set window level based on alwaysOnTop preference
-        if alwaysOnTop {
-            window.level = .floating
-        } else {
-            window.level = .normal
+        // Set window level based on alwaysOnTop preference — unless anchoring owns it
+        if !anchoringOwnsLevel {
+            window.level = alwaysOnTop ? .floating : .normal
         }
 
         if enabled {

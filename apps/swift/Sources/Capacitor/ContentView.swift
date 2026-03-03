@@ -58,6 +58,8 @@ struct ContentView: View {
                         .transition(.opacity)
                 }
 
+                AnchorEdgeGlow(controller: appState.anchoringController)
+
                 ToastContainer(toast: $appState.toast)
 
                 TipTooltipContainer(

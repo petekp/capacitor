@@ -9,12 +9,15 @@ final class WindowAnchoringController {
 
     private(set) var state: AnchoringState = .idle
     private(set) var activeSnapCandidate: SnapCandidate?
+    private(set) var proximityFeedback: ProximityFeedback?
 
     // MARK: - Configuration
 
-    static let snapThreshold: CGFloat = 150
+    static let snapThreshold: CGFloat = 50
     private static let titleBarHeight: CGFloat = 28
     private static let motionDecayThreshold = 30
+    private static let proximityEvalInterval: CFTimeInterval = 0.05 // 20Hz
+    private static let sleepWakeDebounce: CFTimeInterval = 0.033 // ~1 frame at 30fps
 
     // MARK: - Dependencies
 
@@ -62,6 +65,16 @@ final class WindowAnchoringController {
     /// Debounce work item for evaluating snap after HUD stops moving.
     @ObservationIgnored
     private var snapDebounceWork: DispatchWorkItem?
+    /// Throttle timestamp for proximity evaluation during HUD movement.
+    @ObservationIgnored
+    private var lastProximityEvalTime: CFTimeInterval = 0
+
+    // MARK: - Workspace Activation Observer
+
+    @ObservationIgnored
+    private var workspaceObserver: NSObjectProtocol?
+    @ObservationIgnored
+    private var sleepWakeWork: DispatchWorkItem?
 
     // MARK: - Init
 
@@ -75,6 +88,17 @@ final class WindowAnchoringController {
         ) { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.handleScreenChange()
+            }
+        }
+
+        workspaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification,
+            object: nil,
+            queue: .main,
+        ) { [weak self] notification in
+            MainActor.assumeIsolated {
+                let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+                self?.handleAppActivated(app)
             }
         }
     }
@@ -96,6 +120,10 @@ final class WindowAnchoringController {
         if let observer = hudMoveObserver {
             NotificationCenter.default.removeObserver(observer)
         }
+        if let observer = workspaceObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(observer)
+        }
+        sleepWakeWork?.cancel()
     }
 
     // MARK: - Public API
@@ -119,7 +147,11 @@ final class WindowAnchoringController {
         )
         state = .anchored(descriptor)
         activeSnapCandidate = nil
+        proximityFeedback = nil
         lastTargetBounds = nil
+
+        // Anchoring now owns the window level — float above the target
+        hudWindow?.level = .floating
 
         // Initial position sync
         syncPosition(for: descriptor)
@@ -133,14 +165,18 @@ final class WindowAnchoringController {
         let wasAnchored = state.isAnchored
         state = .idle
         activeSnapCandidate = nil
+        proximityFeedback = nil
         lastTargetBounds = nil
         lastSetFrame = nil
         dragCursorOrigin = nil
 
         stopTimer()
         removeEventMonitors()
+        sleepWakeWork?.cancel()
+        sleepWakeWork = nil
 
         if wasAnchored {
+            restorePinLevel()
             lastDetachTime = CACurrentMediaTime()
             DebugLog.write("[Anchoring] Detached")
         }
@@ -154,11 +190,12 @@ final class WindowAnchoringController {
 
     func hudDragBegan() {
         if let descriptor = state.descriptor {
-            // Was anchored — save descriptor so hudDragEnded knows to detach.
+            // Was anchored/dormant — save descriptor so hudDragEnded knows to detach.
             // Stop timer/monitors so they don't fight the system drag.
             dragStartDescriptor = descriptor
             stopTimer()
             removeEventMonitors()
+            restorePinLevel()
         } else {
             dragStartDescriptor = nil
         }
@@ -389,7 +426,7 @@ final class WindowAnchoringController {
 
     private func pollTick() {
         switch state {
-        case .idle:
+        case .idle, .dormant:
             stopTimer()
 
         case let .anchored(descriptor):
@@ -568,7 +605,7 @@ final class WindowAnchoringController {
     // MARK: - Screen Change
 
     private func handleScreenChange() {
-        guard let descriptor = state.descriptor else { return }
+        guard state.isActivelyAnchored, let descriptor = state.descriptor else { return }
         syncPosition(for: descriptor)
     }
 
@@ -602,6 +639,13 @@ final class WindowAnchoringController {
         // the drift check in pollTick — not here.
         guard state == .idle else { return }
 
+        // Throttled proximity evaluation for real-time visual feedback
+        let now = CACurrentMediaTime()
+        if now - lastProximityEvalTime >= Self.proximityEvalInterval {
+            lastProximityEvalTime = now
+            updateProximityFeedback()
+        }
+
         // HUD moved while idle — user is dragging it freely.
         // Debounce: evaluate snap candidates 200ms after the last movement.
         snapDebounceWork?.cancel()
@@ -611,6 +655,48 @@ final class WindowAnchoringController {
         }
         snapDebounceWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: work)
+    }
+
+    /// Evaluates proximity to nearby target windows for visual feedback.
+    /// Publishes a `ProximityFeedback` with the nearest edge and a 0→1 fraction.
+    private func updateProximityFeedback() {
+        guard let hudWindow else {
+            proximityFeedback = nil
+            return
+        }
+
+        // Suppress during cooldown
+        let timeSinceDetach = CACurrentMediaTime() - lastDetachTime
+        if timeSinceDetach < Self.detachCooldown {
+            proximityFeedback = nil
+            return
+        }
+
+        let hudFrame = hudWindow.frame
+        let targets = boundsProvider.visibleTargetWindows()
+        var bestEdge: AnchorEdge?
+        var bestDistance: CGFloat = .infinity
+
+        for (_, targetBounds) in targets {
+            for edge in AnchorEdge.allCases {
+                let distance = edgeProximity(
+                    hudFrame: hudFrame,
+                    targetBounds: targetBounds,
+                    edge: edge,
+                )
+                if distance < Self.snapThreshold, distance < bestDistance {
+                    bestDistance = distance
+                    bestEdge = edge
+                }
+            }
+        }
+
+        if let bestEdge {
+            let fraction = max(0, 1 - bestDistance / Self.snapThreshold)
+            proximityFeedback = ProximityFeedback(edge: bestEdge, fraction: fraction)
+        } else {
+            proximityFeedback = nil
+        }
     }
 
     /// Called 200ms after the HUD stops moving. Evaluates snap candidates
@@ -642,6 +728,69 @@ final class WindowAnchoringController {
         }
         snapDebounceWork?.cancel()
         snapDebounceWork = nil
+    }
+
+    // MARK: - Companion Z-Order (Sleep/Wake)
+
+    /// Handles app activation changes. When anchored, Capacitor's window level tracks
+    /// the target app: float when target is active, recede when a third-party app is active.
+    private func handleAppActivated(_ app: NSRunningApplication?) {
+        guard let descriptor = state.descriptor,
+              let activatedPID = app?.processIdentifier
+        else { return }
+
+        let isTargetApp = activatedPID == descriptor.target.ownerPID
+        let isCapacitor = activatedPID == ProcessInfo.processInfo.processIdentifier
+
+        // Debounce rapid Cmd-Tab cycling
+        sleepWakeWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            if isTargetApp || isCapacitor {
+                if state.isDormant, let d = state.descriptor {
+                    wake(descriptor: d)
+                }
+            } else {
+                if state.isActivelyAnchored, let d = state.descriptor {
+                    sleep(descriptor: d)
+                }
+            }
+        }
+        sleepWakeWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.sleepWakeDebounce, execute: work)
+    }
+
+    /// Transition from actively anchored to dormant: pause sync, lower z-order.
+    private func sleep(descriptor: AnchorDescriptor) {
+        stopTimer()
+        removeEventMonitors()
+        hudWindow?.level = .normal
+        state = .dormant(descriptor)
+        DebugLog.write("[Anchoring] Dormant — target app deactivated")
+    }
+
+    /// Transition from dormant back to actively anchored: raise z-order, resume sync.
+    private func wake(descriptor: AnchorDescriptor) {
+        hudWindow?.level = .floating
+
+        // Re-sync position — target may have moved while dormant
+        if boundsProvider.bounds(for: descriptor.target.windowID) != nil {
+            state = .anchored(descriptor)
+            syncPosition(for: descriptor)
+            installEventMonitors(for: descriptor)
+            startTimer(interval: 0.5) // 2Hz heartbeat
+            DebugLog.write("[Anchoring] Woke — target app activated")
+        } else {
+            // Target disappeared while dormant
+            DebugLog.write("[Anchoring] Target lost during dormancy (wid=\(descriptor.target.windowID))")
+            detach()
+        }
+    }
+
+    /// Restore window level to the user's pin preference (used when anchoring releases control).
+    private func restorePinLevel() {
+        let pinned = UserDefaults.standard.bool(forKey: "alwaysOnTop")
+        hudWindow?.level = pinned ? .floating : .normal
     }
 
     // MARK: - Helpers
