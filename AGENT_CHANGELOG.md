@@ -1,21 +1,82 @@
 # Agent Changelog
 
-> This file helps coding agents understand project evolution, key decisions, and deprecated patterns. Updated: 2026-03-01
+> This file helps coding agents understand project evolution, key decisions, and deprecated patterns. Updated: 2026-03-02
 
 ## Current State Summary
 
-Capacitor is a macOS sidecar (SwiftUI + Rust/UniFFI) with a **direct-core snapshot architecture** — hooks ingest events into `capacitor-core`, which projects state to `~/.capacitor/runtime/app_snapshot.json`. The daemon, SQLite WAL, and IPC socket are gone. Terminal activation is Rust-decision + Swift-execution, with tmux recovery overriding any resolver action when reason is `NO_TRUSTED_EVIDENCE` or `TMUX_SESSION_DETACHED` and a tmux session exists. When Ghostty is already running, activation opens a new tab (System Events Cmd+T) instead of a new window. Diagnostics are consolidated into a single CLI (`./scripts/dev/agent-observe.sh`) with self-sufficient commands that read the snapshot file directly. Remote ingest keeps a strict diagnostics allowlist with app+worker duplicate throttling and scheduled D1 retention pruning.
+Capacitor is a macOS sidecar (SwiftUI + Rust/UniFFI) with a **direct-core snapshot architecture** — hooks ingest events into `capacitor-core`, which projects state to `~/.capacitor/runtime/app_snapshot.json`. Terminal activation is a simple three-branch Swift flow (resolve tmux client → switch-client or launch new tab → AX focus) in ~800 lines. Ghostty is the only supported terminal. New tabs use `open -a Ghostty.app /path` (no `-n` flag = no dock icon duplication) + AppleScript to type tmux commands. The Rust resolver is no longer called during card clicks. AX tab routing (`GhosttyAXReader` + `bestGhosttyTabMatch`) handles tab focus after session switches, with stale-TTY detection returning false when `window_raise` has no matched tab. Diagnostics are consolidated into `./scripts/dev/agent-observe.sh`.
 
 ## Stale Information Detected
 
 | Location | States | Reality | Since |
 |----------|--------|---------|-------|
+| `README.md` (Terminal support table, lines 27-36) | Claims iTerm2 and Terminal.app support with full workflow parity | Only Ghostty is supported; multi-terminal fallback code deleted | 2026-03-02 |
 | `README.md` (Data & privacy section) | "No data leaves your machine." | Remote feedback/telemetry ingest is supported when `CAPACITOR_FEEDBACK_API_URL` / `CAPACITOR_TELEMETRY_URL` + `CAPACITOR_INGEST_KEY` are configured. | 2026-02-15 |
-| Previous AGENT_CHANGELOG (Current State Summary) | "daemon-authoritative session model (`~/.capacitor/daemon/` + SQLite WAL)" | Daemon replaced by direct-core snapshot (`~/.capacitor/runtime/app_snapshot.json`). No daemon, no SQLite, no IPC socket. | 2026-02-28 (RW-001/002 completed) |
+| `.claude/docs/terminal-activation-ux-spec.md` | Describes managed-TTY affinity (B6), auto-attach (B9/D-010), bookmark system (D-005/D-007-D-009) | All removed in simplification. Current flow has no managed TTY state, no bookmarks, no auto-attach path | 2026-03-02 |
+| `.claude/migration/terminal-activation-v2/DECISIONS.md` | Describes D-002 (managed TTY), D-005 (bookmark), D-007-D-009 (orphan detection), D-010 (auto-attach) | All superseded by simplification DECISIONS.md in `terminal-activation-simplification/` | 2026-03-02 |
+| `docs/PRE_RELEASE_CHECKLIST.md` (lines 22-24) | References `docs/TERMINAL_ACTIVATION_UX_SPEC.md` and `docs/TERMINAL_ACTIVATION_MANUAL_TESTING.md` | Both deprecated; canonical spec is `.claude/docs/terminal-activation-ux-spec.md` | 2026-03-01 |
 
 ## Timeline
 
-### 2026-03-01 — Tmux Auto-Attach + Ghostty New Tab on Card Click
+### 2026-03-02 — Terminal Activation Bug Fixes (Live Testing)
+
+**What changed:**
+Three bugs found during manual testing of the simplified activation flow:
+1. **Keystroke timing**: replaced `key code 36` (Enter keycode) with `delay 0.05` + `keystroke return` — AppleScript was firing Enter before the text finished typing.
+2. **Auto-attach removal**: deleted `attachToExistingTmuxSession` and `hasTmuxSession` methods — the attach path typed tmux commands into whichever Ghostty tab was focused (often an active Claude Code session) instead of opening a new tab.
+3. **Stale TTY detection**: when `activateGhosttyWithAXRouting` resolves to `window_raise` with no matched tab, return `false` so `performUnifiedActivation` falls through to launching a fresh tab. Also skip the 5x200ms AX retry loop when `tabCount == 0` (no tabs = stale TTY, retrying won't help).
+
+**Why:**
+All three were invisible in unit tests because they depend on real macOS process/AX state. The stale-TTY bug was particularly subtle: `tmux list-clients` returns a TTY for ~5 seconds after a Ghostty tab closes. `switch-client` succeeds against this stale TTY, and `window_raise` brings Ghostty to front but with no useful tab — causing "nothing happens" on first 1-2 clicks.
+
+**Agent impact:**
+- `activateGhosttyWithAXRouting` now returns `false` for `window_raise` + no `matchedTab` — treat this as definitive stale-TTY signal.
+- AppleScript keystroke sequences must have a `delay` before `keystroke return` — never use `key code 36` (race-prone).
+- The "no client" path in `performUnifiedActivation` always goes through `launchTerminalWithTmux` (opens new tab) — there is no auto-attach-to-current-tab path.
+
+---
+
+### 2026-03-02 — Terminal Activation Simplification (2,281 Lines Removed)
+
+**What changed:**
+Reduced `TerminalLauncher.swift` from ~1,945 to ~800 lines by removing 10 categories of dead complexity:
+- **ActivationConfig model** — deleted entirely (326 lines), including `ScenarioBehavior`, `ActivationStrategy`, `ActivationConfigManager`
+- **Managed-TTY state** — removed `managedClientTty`, `isTtyAlive`, `resolveTmuxClient`, TTY adoption/clearing logic
+- **Orphan detection + bookmark system** — removed `lastMatchedGhosttyTabIndex`, `bookmarkWasCleared`, `tryBookmarkedGhosttyTab`, tab-title validation (D-005/D-007/D-008/D-009)
+- **Keystroke simulation** — replaced `open -na` + Cmd+T with `open -a Ghostty.app /path` (Apple Event to existing instance)
+- **Multi-terminal fallback** — removed iTerm/Terminal.app detection and fallback paths (Ghostty-only per Decision 2)
+- **Rust resolver in hot path** — removed `resolveActivationDecision` FFI call from card clicks (Decision 4)
+- **Pre-activation poll** — removed `recentLaunchPending` polling guard
+- **Cancellation-unsafe sleeps** — replaced `try? await Task.sleep` patterns with cancellation-respecting versions
+- **Dead pane matching** — removed `focusTmuxPaneForProjectPathIfAvailable`, `bestTmuxPaneTargetForProjectPath`, `activateTerminalApp()`
+- **Dead test helpers** — removed `scriptsContain`, `assertScriptsContainAll`, `assertScriptsContainNone`
+
+**Why:**
+The bookmark/orphan system (D-005 through D-009) was a ~200-line workaround for a 5-second window where stale tmux clients persist after tab closure. Using `open -a` (no `-n` flag) eliminates the dock-icon-duplication root cause that motivated the original complexity. The simplified flow handles stale TTYs naturally: `switch-client` against a stale TTY triggers `window_raise` with no tab match → return false → launch fresh tab.
+
+**Agent impact:**
+- Card clicks use a simple three-branch flow: (1) client exists → switch-client + AX focus, (2) Ghostty running + no client → `open -a` new tab + type tmux command, (3) Ghostty not running → `open -a` with `--args -e` to launch with tmux.
+- No managed TTY state — every card click resolves the client fresh via `tmux list-clients`.
+- No bookmark system — AX routing uses retry-based title matching (5x200ms) after session switch, with stale-TTY short-circuit when `tabCount == 0`.
+- Ghostty is the only supported terminal. If multi-terminal support is ever needed, build it fresh.
+- Rust `runtime_activation` module is unused from Swift. The old `activate/` module (178 lines) is a deletion candidate.
+- Migration docs live in `.claude/migration/terminal-activation-simplification/` (CHARTER, DECISIONS, SLICES, MAP).
+
+**Deprecated:**
+- All managed-TTY state (`managedClientTty`, `isTtyAlive`, `resolveTmuxClient`)
+- Bookmark/orphan system (`lastMatchedGhosttyTabIndex`, `bookmarkWasCleared`, `tryBookmarkedGhosttyTab`)
+- `ActivationConfig` model and all associated types
+- `open -na Ghostty.app` for launching (use `open -a` without `-n`)
+- Keystroke simulation for new tabs (Cmd+T via System Events)
+- Multi-terminal detection and fallback (iTerm, Terminal.app)
+- Rust resolver FFI call in card-click hot path
+- TAv2 decisions D-002 (managed TTY), D-005 (bookmark), D-007-D-009 (orphan detection), D-010 (auto-attach)
+
+---
+
+### 2026-03-01 — Tmux Auto-Attach + Ghostty New Tab on Card Click [SUPERSEDED]
+
+**⚠️ Note:** This entry describes an intermediate state (TAv2) that was superseded by the Terminal Activation Simplification on 2026-03-02. The auto-attach path, System Events Cmd+T, and Rust resolver tmux recovery override were all removed. See the 2026-03-02 entries above for current architecture.
 
 **What changed:**
 - `TerminalLauncher.launchTerminalWithAERSnapshot` (line 822): broadened tmux recovery override to fire on both `NO_TRUSTED_EVIDENCE` and `TMUX_SESSION_DETACHED`, and removed the `.launchNewTerminal`-only guard so any primary action (including `.activatePriorityFallback`) gets overridden to `.ensureTmuxSession` when a tmux session exists.
@@ -26,13 +87,9 @@ Capacitor is a macOS sidecar (SwiftUI + Rust/UniFFI) with a **direct-core snapsh
 Clicking a project card when no tmux client was attached would either focus a random Ghostty window (`activatePriorityFallback`) or open a brand new Ghostty window. Users expected the existing Ghostty window to open a tab attached to the correct tmux session.
 
 **Agent impact:**
-- The tmux recovery override at line 822 is now reason-code-based, not action-type-based. It fires for ANY primary action when the reason suggests no trusted evidence or a detached session.
-- New Rust `DiagnosticsSummary` fields should always use `#[serde(default)]` for forward/backward snapshot compatibility.
-- The System Events keystroke approach for Ghostty tabs requires Accessibility permission (one-time macOS consent).
-
-**Deprecated:**
-- Opening a new Ghostty window via `open -na` when Ghostty is already running.
-- Guard-on-`.launchNewTerminal` for `NO_TRUSTED_EVIDENCE` tmux recovery (now fires regardless of primary action).
+- ~~The tmux recovery override at line 822 is now reason-code-based.~~ → Rust resolver removed from hot path entirely.
+- New Rust `DiagnosticsSummary` fields should always use `#[serde(default)]` for forward/backward snapshot compatibility. (Still valid.)
+- ~~System Events keystroke approach for Ghostty tabs.~~ → Replaced by `open -a Ghostty.app /path`.
 
 ---
 
@@ -140,22 +197,15 @@ A prior ingest hardening pass had cut remote telemetry to quick-feedback-only, w
 
 ---
 
-### 2026-02-25 — `NO_TRUSTED_EVIDENCE` Launch Fallback Fix (Reuse tmux Before New Window)
+### 2026-02-25 — `NO_TRUSTED_EVIDENCE` Launch Fallback Fix [SUPERSEDED]
+
+**⚠️ Note:** The Rust resolver is no longer called during card clicks (removed 2026-03-02). The `launchTerminalWithAERSnapshot` method and its reason-code-based overrides no longer exist. See 2026-03-02 entries.
 
 **What changed:**
-- Updated `launchTerminalWithAERSnapshot` in `apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift`:
-  - when ARE snapshot is `status=unavailable` + `reasonCode=NO_TRUSTED_EVIDENCE`, launcher now tries fallback tmux session resolution first
-  - if session is recoverable, primary action is rewritten from `.launchNewTerminal(...)` to `.ensureTmuxSession(...)`
-
-**Why:**
-Project-card clicks could open a fresh Ghostty window even when a valid tmux session already existed, causing avoidable fan-out and wrong-context UX.
+- Updated `launchTerminalWithAERSnapshot`: when ARE snapshot is `status=unavailable` + `reasonCode=NO_TRUSTED_EVIDENCE`, launcher tried fallback tmux session resolution first.
 
 **Agent impact:**
-- Preserve the `NO_TRUSTED_EVIDENCE -> tmux recovery first` behavior unless explicit product direction changes.
-- For routing bugfixes, keep test-first guardrails in `TerminalLauncherTests` and validate both recovery and cold-start fallback paths.
-
-**Deprecated:**
-- Immediate launch-new-terminal fallback on `NO_TRUSTED_EVIDENCE` when tmux recovery is possible.
+- ~~Preserve the `NO_TRUSTED_EVIDENCE -> tmux recovery first` behavior.~~ → Rust resolver removed from hot path entirely. Card clicks use Swift-only unified flow.
 
 ---
 
@@ -298,8 +348,15 @@ Ghostty multi-tab/multi-window activation was the biggest reliability gap.
 
 | Don't | Do Instead | Deprecated Since |
 |-------|------------|------------------|
-| Open new Ghostty window via `open -na` when Ghostty is running | Use System Events Cmd+T to create a new tab in existing Ghostty | 2026-03-01 |
-| Guard tmux recovery on `.launchNewTerminal` action type | Fire tmux recovery on reason code (`NO_TRUSTED_EVIDENCE`, `TMUX_SESSION_DETACHED`) regardless of primary action | 2026-03-01 |
+| Use `open -na Ghostty.app` (spawns new process + dock icon) | Use `open -a Ghostty.app /path` (Apple Event to existing instance, new tab) | 2026-03-02 |
+| Use System Events Cmd+T keystroke simulation for new tabs | Use `open -a Ghostty.app /path` which opens a tab deterministically | 2026-03-02 |
+| Use `key code 36` for Enter in AppleScript | Use `delay 0.05` + `keystroke return` (key code races with text input) | 2026-03-02 |
+| Track managed-TTY state (`managedClientTty`, `isTtyAlive`) | Resolve client fresh each time via `tmux list-clients` | 2026-03-02 |
+| Use bookmark/orphan detection for stale TTY handling | Return `false` from AX routing when `window_raise` + no matched tab | 2026-03-02 |
+| Use `ActivationConfig`, `ScenarioBehavior`, `ActivationStrategy` | Deleted entirely; activation is a simple three-branch Swift flow | 2026-03-02 |
+| Call Rust resolver (`resolveActivationDecision`) during card clicks | Swift-only unified flow; Rust resolver unused from Swift | 2026-03-02 |
+| Add iTerm/Terminal.app fallback paths | Ghostty-only; multi-terminal would be a new feature if ever needed | 2026-03-02 |
+| Type `tmux attach-session` into current active Ghostty tab | Always open a new tab via `open -a` + type tmux command into the new tab | 2026-03-02 |
 | Add new `DiagnosticsSummary` fields without `#[serde(default)]` | Always use `#[serde(default)]` for new optional/additive fields in snapshot types | 2026-03-01 |
 | Use Makefile `observe-*` targets for diagnostics | Use `./scripts/dev/agent-observe.sh` directly | 2026-03-01 |
 | Require transparent-ui-server for basic diagnostic queries | CLI commands read snapshot file directly | 2026-03-01 |
@@ -319,7 +376,9 @@ Ghostty multi-tab/multi-window activation was the biggest reliability gap.
 ## Trajectory
 
 1. **Architecture is stabilized on direct-core snapshots.** The daemon → direct-core migration is complete. All state flows through `capacitor-core` → snapshot file → Swift reads.
-2. **Terminal activation is converging on tab-level precision.** Ghostty AX tab routing is in stabilization; tmux auto-attach now handles the detached-client edge case; new-tab-instead-of-new-window improves multi-session UX.
-3. **Diagnostics are consolidated.** Single CLI entry point (`agent-observe.sh`), self-sufficient commands, activation traces in debug log, skip counters for event loss visibility.
-4. **Test infrastructure is governed.** CI-enforced scenario-struct budgets, shared harnesses, typed identifiers. New test code should follow these patterns.
-5. **Remote telemetry is low-noise, high-signal.** Strict allowlist + throttling + retention, not firehose.
+2. **Terminal activation is dramatically simplified.** TerminalLauncher went from ~1,945 to ~800 lines. The flow is a simple three-branch model (resolve client → switch or launch → AX focus). Ghostty-only. No managed state, no bookmarks, no Rust resolver in the hot path. Next target: reduce further toward ~200 lines by examining remaining helper methods.
+3. **Stale documentation needs cleanup.** README still claims multi-terminal support. UX spec v2 describes an intermediate state (managed TTY, bookmarks, auto-attach) that no longer exists. PRE_RELEASE_CHECKLIST references deprecated doc paths.
+4. **Rust `runtime_activation` and `activate/` modules are pruning candidates.** The `activate/` module (178 lines) is fully dead. The `runtime_activation` module is unused from Swift but could be kept for future telemetry.
+5. **Diagnostics are consolidated.** Single CLI entry point (`agent-observe.sh`), self-sufficient commands, activation traces in debug log.
+6. **Test infrastructure is governed.** CI-enforced scenario-struct budgets, shared harnesses, typed identifiers. New test code should follow these patterns.
+7. **Remote telemetry is low-noise, high-signal.** Strict allowlist + throttling + retention, not firehose.

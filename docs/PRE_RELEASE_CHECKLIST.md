@@ -17,10 +17,9 @@ The dev environment masks problems:
 
 ### 0. Terminal Activation QA (When Activation/Routing Changed)
 
-If the release includes changes to terminal activation, tmux switching, or runtime routing snapshots, run:
+If the release includes changes to terminal activation, tmux switching, or Ghostty AX routing, reference:
 
-- `docs/TERMINAL_ACTIVATION_UX_SPEC.md` (canonical UX contract)
-- `docs/TERMINAL_ACTIVATION_MANUAL_TESTING.md` (canonical guide)
+- `.claude/docs/terminal-activation-ux-spec.md` (canonical UX contract)
 - `docs/manual-qa/2026-02-23-ghostty-tab-routing-manual-qa.md` (Ghostty tab-routing artifact template/report)
 
 Required sign-off artifacts:
