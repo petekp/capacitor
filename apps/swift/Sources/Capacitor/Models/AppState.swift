@@ -1563,7 +1563,7 @@ class AppState {
         let existingSessions = getExistingSessionIds(for: projectPath)
 
         let claudeCmd = "/opt/homebrew/bin/claude \"$(cat '\(promptFile.path)')\" ; rm -f '\(promptFile.path)'"
-        let script = TerminalScripts.launchWithCommand(projectPath: projectPath, command: claudeCmd)
+        let script = TerminalScripts.launchWithCommand(projectPath: projectPath, command: claudeCmd, terminalApp: TerminalActivatorFactory.detectTerminalAppName())
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/bash")
@@ -1683,7 +1683,7 @@ class AppState {
 
     private func launchClaudeResume(projectPath: String, sessionId: String, creationId: String) async throws {
         let claudeCmd = "/opt/homebrew/bin/claude --resume \(sessionId)"
-        let script = TerminalScripts.launchWithCommand(projectPath: projectPath, command: claudeCmd)
+        let script = TerminalScripts.launchWithCommand(projectPath: projectPath, command: claudeCmd, terminalApp: TerminalActivatorFactory.detectTerminalAppName())
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/bash")

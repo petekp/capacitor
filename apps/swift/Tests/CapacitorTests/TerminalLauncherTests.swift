@@ -37,21 +37,6 @@ final class TerminalLauncherTests: XCTestCase {
         }
     }
 
-    private final class StubAppleScriptClient: AppleScriptClient {
-        let shouldSucceed: Bool
-        private(set) var checkedScripts: [String] = []
-
-        init(shouldSucceed: Bool) {
-            self.shouldSucceed = shouldSucceed
-        }
-
-        func run(_: String) {}
-        func runChecked(_ script: String) -> Bool {
-            checkedScripts.append(script)
-            return shouldSucceed
-        }
-    }
-
     @MainActor
     private final class StubGhosttyWindowReader: GhosttyWindowReader {
         var readResult: GhosttyWindowReadResult = .windows([])
@@ -84,10 +69,10 @@ final class TerminalLauncherTests: XCTestCase {
             ]),
         ]
 
-        let outcome = TerminalLauncher.resolveGhosttyAXRouting(
+        let outcome = GhosttyActivator.resolveAXRouting(
             windows: windows,
             projectPath: "/Users/pete/Code/capacitor",
-            ghosttyWindowReader: reader,
+            windowReader: reader,
         )
 
         XCTAssertEqual(outcome, .tabPress)
@@ -105,10 +90,10 @@ final class TerminalLauncherTests: XCTestCase {
             ]),
         ]
 
-        let outcome = TerminalLauncher.resolveGhosttyAXRouting(
+        let outcome = GhosttyActivator.resolveAXRouting(
             windows: windows,
             projectPath: "/Users/pete/Code/capacitor",
-            ghosttyWindowReader: reader,
+            windowReader: reader,
         )
 
         XCTAssertEqual(outcome, .windowRaise)
@@ -127,10 +112,10 @@ final class TerminalLauncherTests: XCTestCase {
             ]),
         ]
 
-        let outcome = TerminalLauncher.resolveGhosttyAXRouting(
+        let outcome = GhosttyActivator.resolveAXRouting(
             windows: windows,
             projectPath: "/Users/pete/Code/capacitor",
-            ghosttyWindowReader: reader,
+            windowReader: reader,
         )
 
         XCTAssertEqual(outcome, .windowRaise)
@@ -145,10 +130,10 @@ final class TerminalLauncherTests: XCTestCase {
             makeGhosttyWindow(index: 0, isMain: false, tabs: []),
         ]
 
-        let outcome = TerminalLauncher.resolveGhosttyAXRouting(
+        let outcome = GhosttyActivator.resolveAXRouting(
             windows: windows,
             projectPath: nil,
-            ghosttyWindowReader: reader,
+            windowReader: reader,
         )
 
         XCTAssertNil(outcome)
@@ -172,11 +157,11 @@ final class TerminalLauncherTests: XCTestCase {
         ]
 
         // We just switched to "agentic-canvas-v2" but the title hasn't propagated yet
-        let outcome = TerminalLauncher.resolveGhosttyAXRouting(
+        let outcome = GhosttyActivator.resolveAXRouting(
             windows: windows,
             projectPath: "/Users/pete/Code/agentic-canvas-v2",
             tmuxSessionHint: "agentic-canvas-v2",
-            ghosttyWindowReader: reader,
+            windowReader: reader,
         )
 
         // BUG: Without a title match, routing falls to window_raise instead of
@@ -197,11 +182,11 @@ final class TerminalLauncherTests: XCTestCase {
             ]),
         ]
 
-        let outcome = TerminalLauncher.resolveGhosttyAXRouting(
+        let outcome = GhosttyActivator.resolveAXRouting(
             windows: windows,
             projectPath: "/Users/pete/Code/agentic-canvas-v2",
             tmuxSessionHint: "agentic-canvas-v2",
-            ghosttyWindowReader: reader,
+            windowReader: reader,
         )
 
         XCTAssertEqual(outcome, .tabPress, "Once title propagates, hint match correctly focuses the tmux tab")
@@ -218,11 +203,11 @@ final class TerminalLauncherTests: XCTestCase {
             ]),
         ]
 
-        let outcome = TerminalLauncher.resolveGhosttyAXRouting(
+        let outcome = GhosttyActivator.resolveAXRouting(
             windows: windows,
             projectPath: "/Users/pete/Code/aui/mcp-app-studio-starter",
             tmuxSessionHint: "mcp-app-studio",
-            ghosttyWindowReader: reader,
+            windowReader: reader,
         )
 
         XCTAssertEqual(outcome, .tabPress)
@@ -282,7 +267,6 @@ final class TerminalLauncherTests: XCTestCase {
             let releaseGate = AsyncGate()
 
             let launcher = TerminalLauncher(
-                appleScript: StubAppleScriptClient(shouldSucceed: true),
                 fallbackTmuxSessionResolver: { path in
                     URL(fileURLWithPath: path).lastPathComponent
                 },
@@ -329,7 +313,6 @@ final class TerminalLauncherTests: XCTestCase {
             let releaseGate = AsyncGate()
 
             let launcher = TerminalLauncher(
-                appleScript: StubAppleScriptClient(shouldSucceed: true),
                 fallbackTmuxSessionResolver: { path in
                     URL(fileURLWithPath: path).lastPathComponent
                 },
@@ -375,7 +358,6 @@ final class TerminalLauncherTests: XCTestCase {
             var resultPaths: [String] = []
 
             let launcher = TerminalLauncher(
-                appleScript: StubAppleScriptClient(shouldSucceed: true),
                 fallbackTmuxSessionResolver: { path in
                     URL(fileURLWithPath: path).lastPathComponent
                 },
@@ -415,7 +397,6 @@ final class TerminalLauncherTests: XCTestCase {
         var results: [TerminalActivationResult] = []
 
         let launcher = TerminalLauncher(
-            appleScript: StubAppleScriptClient(shouldSucceed: true),
             fallbackTmuxSessionResolver: { path in
                 URL(fileURLWithPath: path).lastPathComponent
             },
@@ -441,7 +422,6 @@ final class TerminalLauncherTests: XCTestCase {
         var results: [TerminalActivationResult] = []
 
         let launcher = TerminalLauncher(
-            appleScript: StubAppleScriptClient(shouldSucceed: true),
             fallbackTmuxSessionResolver: { path in
                 URL(fileURLWithPath: path).lastPathComponent
             },

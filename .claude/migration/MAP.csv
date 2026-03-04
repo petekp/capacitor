@@ -1,0 +1,12 @@
+slice_id,capability,current_path,target_path,status,delete_in_pr,notes
+slice-1,protocol,N/A,apps/swift/Sources/Capacitor/Models/TerminalActivator.swift,proposed,no,New file — protocol + factory + universal helpers
+slice-2,ghostty_activator,N/A,apps/swift/Sources/Capacitor/Models/GhosttyActivator.swift,proposed,no,New file — extracted from TerminalLauncher
+slice-2,orchestrator,apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift,apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift,proposed,no,Remove Ghostty-specific code
+slice-2,tests,apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift,apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift,proposed,no,Update resolveGhosttyAXRouting test call sites
+slice-3,orchestrator,apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift,apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift,proposed,no,Replace AppleScript activation with NSRunningApplication
+slice-4,iterm_activator,N/A,apps/swift/Sources/Capacitor/Models/ITermActivator.swift,proposed,no,New file — iTerm2 AppleScript activation
+slice-5,terminal_activator,N/A,apps/swift/Sources/Capacitor/Models/TerminalAppActivator.swift,proposed,no,New file — Terminal.app AppleScript activation
+slice-6,orchestrator,apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift,apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift,proposed,no,Wire factory + parameterize all hardcoded Ghostty refs
+N/A,ax_reader,apps/swift/Sources/Capacitor/Models/GhosttyAXReader.swift,apps/swift/Sources/Capacitor/Models/GhosttyAXReader.swift,unchanged,no,Unchanged — called by GhosttyActivator
+N/A,uniffi_bindings,apps/swift/Sources/Capacitor/Bridge/capacitor_core.swift,apps/swift/Sources/Capacitor/Bridge/capacitor_core.swift,unchanged,no,ParentApp enum already has all variants
+N/A,ax_reader_tests,apps/swift/Tests/CapacitorTests/GhosttyAXReaderTests.swift,apps/swift/Tests/CapacitorTests/GhosttyAXReaderTests.swift,unchanged,no,Tab matching tests — unchanged

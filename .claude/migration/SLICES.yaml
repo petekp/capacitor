@@ -1,0 +1,165 @@
+slices:
+  - id: slice-0
+    name: "Audit — control plane + guard script"
+    status: done
+    dependencies: []
+    touched_paths:
+      - .claude/migration/CHARTER.md
+      - .claude/migration/DECISIONS.md
+      - .claude/migration/SLICES.yaml
+      - .claude/migration/MAP.csv
+      - scripts/ci/terminal-abstraction-guard.sh
+    contracts:
+      added:
+        - "CHARTER.md with mission, invariants, translation guide"
+        - "DECISIONS.md with 3 seed decisions"
+        - "SLICES.yaml with 6 slices"
+        - "MAP.csv with all migration-domain files"
+        - "Guard script with 6 ratchets"
+      changed: []
+      removed: []
+    denylist_patterns: []
+    deletion_targets: []
+    risks: []
+    notes: "Purely additive — no production code changes"
+
+  - id: slice-1
+    name: "Protocol + Factory + Universal Activation Helpers"
+    status: done
+    dependencies: [slice-0]
+    touched_paths:
+      - apps/swift/Sources/Capacitor/Models/TerminalActivator.swift
+    contracts:
+      added:
+        - "TerminalActivator protocol"
+        - "TerminalActivatorFactory enum"
+        - "TerminalActivation namespace with activateApp(bundleId:) and isRunning(bundleId:)"
+      changed: []
+      removed: []
+    denylist_patterns: []
+    deletion_targets: []
+    risks: []
+    notes: "Purely additive — no behavior change"
+
+  - id: slice-2
+    name: "Extract GhosttyActivator"
+    status: done
+    dependencies: [slice-1]
+    touched_paths:
+      - apps/swift/Sources/Capacitor/Models/GhosttyActivator.swift
+      - apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift
+      - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
+    contracts:
+      added:
+        - "GhosttyActivator conforming to TerminalActivator"
+      changed:
+        - "TerminalLauncher.activateTerminalAfterTmuxSwitch() dispatches to activator"
+        - "TerminalLauncher init takes activator: (any TerminalActivator)? = nil"
+      removed:
+        - "TerminalLauncher.activateGhosttyWithAXRouting()"
+        - "TerminalLauncher.resolveGhosttyAXRouting()"
+        - "TerminalLauncher.GhosttyAXRoutingResolution enum"
+        - "TerminalLauncher.isGhosttyRunningInternal()"
+        - "ghosttyWindowReader property from TerminalLauncher init"
+    denylist_patterns:
+      - "activateGhosttyWithAXRouting in TerminalLauncher.swift"
+      - "isGhosttyRunningInternal in TerminalLauncher.swift"
+      - "GhosttyAXRoutingResolution in TerminalLauncher.swift"
+    deletion_targets:
+      - "TerminalLauncher.activateGhosttyWithAXRouting() — DELETED"
+      - "TerminalLauncher.resolveGhosttyAXRouting() — DELETED"
+      - "TerminalLauncher.GhosttyAXRoutingResolution enum — DELETED"
+      - "TerminalLauncher.isGhosttyRunningInternal() — DELETED"
+    risks:
+      - "Highest-risk slice: preserved exact AX retry behavior (5x200ms), tab matching, window raise fallback"
+    notes: "Tests updated: resolveGhosttyAXRouting → GhosttyActivator.resolveAXRouting, ghosttyWindowReader → windowReader"
+
+  - id: slice-3
+    name: "Remove dead AppleScript activation code"
+    status: done
+    dependencies: [slice-2]
+    touched_paths:
+      - apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift
+    contracts:
+      added: []
+      changed: []
+      removed:
+        - "activateAppByName() — dead after Slice 2"
+        - "runAppleScriptChecked() — dead after Slice 2"
+        - "AppleScriptClient protocol — no remaining callers"
+        - "DefaultAppleScriptClient — no remaining callers"
+        - "appleScript property and init parameter"
+    denylist_patterns:
+      - "tell application.*to activate in TerminalLauncher.swift"
+      - "AppleScriptClient in TerminalLauncher.swift"
+    deletion_targets:
+      - "activateAppByName() — DELETED"
+      - "runAppleScriptChecked() — DELETED"
+      - "AppleScriptClient protocol — DELETED"
+      - "DefaultAppleScriptClient — DELETED"
+    risks: []
+    notes: "Slice 2 eliminated all callers of these methods, making them dead code"
+
+  - id: slice-4
+    name: "Implement ITermActivator"
+    status: done
+    dependencies: [slice-1]
+    touched_paths:
+      - apps/swift/Sources/Capacitor/Models/ITermActivator.swift
+    contracts:
+      added:
+        - "ITermActivator conforming to TerminalActivator"
+      changed: []
+      removed: []
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "iTerm2 TTY property bug (GitLab #2921) — may return same TTY for split panes"
+    notes: "In-process NSAppleScript for speed"
+
+  - id: slice-5
+    name: "Implement TerminalAppActivator"
+    status: done
+    dependencies: [slice-1]
+    touched_paths:
+      - apps/swift/Sources/Capacitor/Models/TerminalAppActivator.swift
+    contracts:
+      added:
+        - "TerminalAppActivator conforming to TerminalActivator"
+      changed: []
+      removed: []
+    denylist_patterns: []
+    deletion_targets: []
+    risks: []
+    notes: "In-process NSAppleScript for speed"
+
+  - id: slice-6
+    name: "Wire detection + parameterize launch"
+    status: done
+    dependencies: [slice-2, slice-3, slice-4, slice-5]
+    touched_paths:
+      - apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift
+      - apps/swift/Sources/Capacitor/Models/TerminalActivator.swift
+      - apps/swift/Sources/Capacitor/Models/AppState.swift
+      - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
+    contracts:
+      added:
+        - "TerminalActivatorFactory.detectTerminalAppName() for file-based detection"
+      changed:
+        - "launchTerminalWithTmuxSession() parameterized by activator.appName"
+        - "TerminalScripts.launchWithCommand() takes terminalApp: parameter"
+        - "Cold-start uses universal open + System Events keystroke (not Ghostty --args)"
+      removed:
+        - "All hardcoded 'Ghostty' string literals from TerminalLauncher.swift"
+        - "All 'open -a Ghostty.app' references from TerminalLauncher.swift"
+        - "com.mitchellh.ghostty bundle ID from TerminalLauncher.swift"
+        - "StubAppleScriptClient from tests"
+        - "TerminalScripts.detectTerminalApp() — moved to TerminalActivatorFactory"
+    denylist_patterns:
+      - "'Ghostty' in TerminalLauncher.swift"
+      - "open -a Ghostty in TerminalLauncher.swift"
+      - "com.mitchellh.ghostty in TerminalLauncher.swift"
+    deletion_targets:
+      - "All hardcoded Ghostty references in TerminalLauncher.swift — ELIMINATED"
+    risks: []
+    notes: "All 6 ratchets at 0. Guard PASSED. 247 tests pass."
