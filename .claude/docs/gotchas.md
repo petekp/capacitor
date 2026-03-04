@@ -47,6 +47,11 @@ Capture observable values into local `let` constants before entering `GeometryRe
 ### TimelineView + Material Blur Can Overload WindowServer
 Avoid `TimelineView(.animation)` for blur-heavy surfaces; prefer state-driven `withAnimation` loops.
 
+### XCTest Expectations + Actor Continuations Crash in Loops (Swift 6.2)
+Creating `XCTestExpectation` + `fulfillment(of:)` inside a `for` loop in an `async` test method,
+combined with `CheckedContinuation` stored in an actor, triggers "freed pointer was not the last
+allocation" (SIGABRT). Fix: unroll the loop into separate sequential blocks, each with its own scope.
+
 ### Incremental Build Can Leave Stale Binary
 When no Swift files changed, force a rebuild:
 ```bash
@@ -61,8 +66,11 @@ Activation decision logic belongs in Rust (`core/capacitor-core/src/runtime_acti
 ### Tmux Client TTY Must Be Queried at Activation Time
 Do not trust previously captured tmux client tty values. Query fresh with:
 ```bash
-tmux display-message -p '#{client_tty}'
+tmux list-clients -F '#{client_tty} #{session_name}'
 ```
+When multiple Ghostty tabs are attached to different tmux sessions, prefer a client already
+viewing the target session. This makes `switch-client` a no-op and avoids the AX title
+propagation race (Ghostty updates titles asynchronously after session switches).
 
 ### Matching Rules: Exact for Identity, Parent/Child for UI Focus
 Use exact identity matching for project/session ownership; use parent/child path matching only for focus UX.

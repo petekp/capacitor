@@ -139,6 +139,105 @@ final class SessionStateManagerTests: XCTestCase {
         XCTAssertNil(manager.getSessionState(for: project))
     }
 
+    // MARK: - Idle Stabilization (Hysteresis)
+
+    func testIdleStabilizationCommitsAfterThreshold() {
+        let manager = SessionStateManager()
+        let project = makeProject("my-project", path: "/tmp/my-project")
+
+        // Establish active state
+        manager.applyRuntimeProjectStates(
+            [makeRuntimeProjectState(projectPath: project.path, state: "working", sessionId: "session-1")],
+            for: [project],
+            correlationId: "idle-commit-1",
+        )
+
+        // First idle — held
+        manager.applyRuntimeProjectStates(
+            [makeRuntimeProjectState(projectPath: project.path, state: "idle", sessionId: nil)],
+            for: [project],
+            correlationId: "idle-commit-2",
+        )
+        XCTAssertEqual(manager.getSessionState(for: project)?.state, .working)
+
+        // Second idle — committed
+        manager.applyRuntimeProjectStates(
+            [makeRuntimeProjectState(projectPath: project.path, state: "idle", sessionId: nil)],
+            for: [project],
+            correlationId: "idle-commit-3",
+        )
+        XCTAssertEqual(
+            manager.getSessionState(for: project)?.state,
+            .idle,
+            "Second consecutive idle snapshot should commit the idle transition.",
+        )
+    }
+
+    func testIdleStabilizationResetsOnActive() {
+        let manager = SessionStateManager()
+        let project = makeProject("my-project", path: "/tmp/my-project")
+
+        // Establish active state
+        manager.applyRuntimeProjectStates(
+            [makeRuntimeProjectState(projectPath: project.path, state: "working", sessionId: "session-1")],
+            for: [project],
+            correlationId: "idle-reset-1",
+        )
+
+        // First idle — held
+        manager.applyRuntimeProjectStates(
+            [makeRuntimeProjectState(projectPath: project.path, state: "idle", sessionId: nil)],
+            for: [project],
+            correlationId: "idle-reset-2",
+        )
+        XCTAssertEqual(manager.getSessionState(for: project)?.state, .working)
+
+        // Active again — counter should reset
+        manager.applyRuntimeProjectStates(
+            [makeRuntimeProjectState(projectPath: project.path, state: "ready", sessionId: "session-2")],
+            for: [project],
+            correlationId: "idle-reset-3",
+        )
+        XCTAssertEqual(manager.getSessionState(for: project)?.state, .ready)
+
+        // First idle again after reset — should be held (counter was reset)
+        manager.applyRuntimeProjectStates(
+            [makeRuntimeProjectState(projectPath: project.path, state: "idle", sessionId: nil)],
+            for: [project],
+            correlationId: "idle-reset-4",
+        )
+        XCTAssertEqual(
+            manager.getSessionState(for: project)?.state,
+            .ready,
+            "After reset, the first idle snapshot should be held again.",
+        )
+    }
+
+    func testIdleStabilizationPassesThroughAlreadyIdle() {
+        let manager = SessionStateManager()
+        let project = makeProject("my-project", path: "/tmp/my-project")
+
+        // First apply is idle (no previous active state)
+        manager.applyRuntimeProjectStates(
+            [makeRuntimeProjectState(projectPath: project.path, state: "idle", sessionId: nil)],
+            for: [project],
+            correlationId: "idle-passthrough-1",
+        )
+        XCTAssertEqual(
+            manager.getSessionState(for: project)?.state,
+            .idle,
+            "Idle should pass through immediately when there's no previous active state to hold.",
+        )
+
+        // Second idle — still idle, no hold
+        manager.applyRuntimeProjectStates(
+            [makeRuntimeProjectState(projectPath: project.path, state: "idle", sessionId: nil)],
+            for: [project],
+            correlationId: "idle-passthrough-2",
+        )
+        XCTAssertEqual(manager.getSessionState(for: project)?.state, .idle)
+    }
+
     func testGetSessionStateFallsBackToNormalizedPathLookup() throws {
         let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)

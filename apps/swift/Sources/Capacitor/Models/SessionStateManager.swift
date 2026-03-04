@@ -57,6 +57,9 @@ final class SessionStateManager {
     private enum Constants {
         static let flashDurationSeconds: TimeInterval = 1.4
         static let emptySnapshotCommitThreshold = 2
+        /// Consecutive idle snapshots required before committing an active→idle transition.
+        /// At 2s polling, threshold of 2 means a 4s hold before showing idle.
+        static let idleCommitThreshold = 2
     }
 
     @ObservationIgnored var onVisualStateChanged: (() -> Void)?
@@ -80,6 +83,8 @@ final class SessionStateManager {
 
     private var previousSessionStates: [String: SessionState] = [:]
     private var consecutiveEmptySnapshotCount = 0
+    /// Per-project consecutive idle snapshot count for hysteresis stabilization.
+    private var consecutiveIdleCounts: [String: Int] = [:]
     private var applyGeneration: UInt64 = 0
     private var refreshCorrelationCounter: UInt64 = 0
 
@@ -115,7 +120,8 @@ final class SessionStateManager {
     ) {
         let mergeResult = mergeRuntimeProjectStates(runtimeProjects, projects: projects)
         let merged = mergeResult.states
-        let stabilized = stabilizeEmptyRuntimeSnapshotIfNeeded(merged)
+        let emptyStabilized = stabilizeEmptyRuntimeSnapshotIfNeeded(merged)
+        let stabilized = stabilizeIdleTransitions(emptyStabilized)
         let nextAttributions: [String: SessionAttribution] = {
             if stabilized == merged {
                 return mergeResult.attributions
@@ -198,6 +204,54 @@ final class SessionStateManager {
             )
         }
         return merged
+    }
+
+    /// Stabilizes active→idle transitions using asymmetric hysteresis.
+    ///
+    /// A project must show as idle for `idleCommitThreshold` consecutive snapshots
+    /// before the idle state is committed to the UI. Transitions from idle back to
+    /// active are instant (no hold). This prevents brief idle flickers caused by
+    /// transient gaps in the hook event pipeline (e.g., SessionEnd → SessionStart).
+    private func stabilizeIdleTransitions(
+        _ incoming: [String: ProjectSessionState],
+    ) -> [String: ProjectSessionState] {
+        var result = incoming
+
+        for (path, incomingState) in incoming {
+            let isIncomingIdle = incomingState.state == .idle
+            let wasActive = sessionStates[path].map { $0.state != .idle } ?? false
+
+            if isIncomingIdle, wasActive {
+                let count = (consecutiveIdleCounts[path] ?? 0) + 1
+                consecutiveIdleCounts[path] = count
+
+                if count < Constants.idleCommitThreshold {
+                    // Hold previous active state
+                    result[path] = sessionStates[path]!
+                    DebugLog.write(
+                        "SessionStateManager.idleStabilize action=hold project=\(path) count=\(count)/\(Constants.idleCommitThreshold)",
+                    )
+                } else {
+                    // Threshold reached — commit the idle transition
+                    consecutiveIdleCounts[path] = 0
+                    DebugLog.write(
+                        "SessionStateManager.idleStabilize action=commit project=\(path) count=\(count)",
+                    )
+                }
+            } else {
+                if consecutiveIdleCounts[path] != nil, consecutiveIdleCounts[path] != 0 {
+                    DebugLog.write(
+                        "SessionStateManager.idleStabilize action=reset project=\(path) (became \(incomingState.state))",
+                    )
+                }
+                consecutiveIdleCounts[path] = 0
+            }
+        }
+
+        // Prune counts for projects no longer in the snapshot
+        consecutiveIdleCounts = consecutiveIdleCounts.filter { result[$0.key] != nil }
+
+        return result
     }
 
     private func logEmptySnapshotDecision(
