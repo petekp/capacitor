@@ -674,6 +674,38 @@ final class TerminalLauncherTests: XCTestCase {
         XCTAssertFalse(ok)
     }
 
+    // MARK: - Session-Aware Client Resolution
+
+    /// When multiple clients are attached and one is already on the target session,
+    /// resolveAnyTmuxClientTty should return that client's TTY (avoids switch-client).
+    func testResolveClientTtyPrefersTargetSession() async {
+        let tty = await TerminalLauncher.resolveAnyTmuxClientTty(
+            targetSession: "capacitor",
+            runScript: { cmd in
+                if cmd.contains("display-message") {
+                    return (1, nil) // Not inside a tmux client
+                }
+                // Two clients: ttys001 on "other-project", ttys002 on "capacitor"
+                return (0, "/dev/ttys001 other-project\n/dev/ttys002 capacitor\n")
+            },
+        )
+        XCTAssertEqual(tty, "/dev/ttys002", "Should prefer client already on target session")
+    }
+
+    /// When no client is on the target session, fall back to the first available TTY.
+    func testResolveClientTtyFallsBackWhenNoSessionMatch() async {
+        let tty = await TerminalLauncher.resolveAnyTmuxClientTty(
+            targetSession: "nonexistent-session",
+            runScript: { cmd in
+                if cmd.contains("display-message") {
+                    return (1, nil)
+                }
+                return (0, "/dev/ttys001 alpha\n/dev/ttys002 beta\n")
+            },
+        )
+        XCTAssertEqual(tty, "/dev/ttys001", "Should fall back to first client when no session matches")
+    }
+
     // MARK: - Helpers
 
     private func makeProject(name: String, path: String) -> Project {

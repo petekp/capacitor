@@ -290,6 +290,7 @@ final class TerminalLauncher {
             projectPath: projectPath,
             resolveAnyClientTty: {
                 await Self.resolveAnyTmuxClientTty(
+                    targetSession: sessionName,
                     runScript: { await Self.runBashScriptWithResult($0) },
                 )
             },
@@ -347,6 +348,7 @@ final class TerminalLauncher {
     }
 
     static func resolveAnyTmuxClientTty(
+        targetSession: String? = nil,
         runScript: (String) async -> (exitCode: Int32, output: String?),
     ) async -> String? {
         let result = await runScript("tmux display-message -p '#{client_tty}' 2>/dev/null")
@@ -358,23 +360,39 @@ final class TerminalLauncher {
         }
 
         // App-triggered activation usually runs outside a tmux client, so
-        // `display-message` cannot resolve #{client_tty}. Fall back to any
-        // attached client to make switch-client deterministic.
-        let clients = await runScript("tmux list-clients -F '#{client_tty}' 2>/dev/null")
+        // `display-message` cannot resolve #{client_tty}. Fall back to
+        // attached clients. When targetSession is set, prefer a client
+        // already viewing that session (avoids switch-client and the
+        // associated AX title propagation race).
+        let clients = await runScript("tmux list-clients -F '#{client_tty} #{session_name}' 2>/dev/null")
         guard clients.exitCode == 0,
               let output = clients.output
         else {
             return nil
         }
 
+        // First pass: find a client already on the target session.
+        var firstTty: String?
         for line in output.split(separator: "\n") {
-            let tty = line.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !tty.isEmpty {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+
+            // Format: "<tty> <session_name>" — split on first space.
+            let parts = trimmed.split(separator: " ", maxSplits: 1)
+            let tty = String(parts[0])
+            let session = parts.count > 1 ? String(parts[1]) : nil
+
+            if firstTty == nil {
+                firstTty = tty
+            }
+
+            if let targetSession, let session, session == targetSession {
                 return tty
             }
         }
 
-        return nil
+        // Second pass (fallback): return first non-empty TTY.
+        return firstTty
     }
 
     // MARK: - Ghostty AX Routing
