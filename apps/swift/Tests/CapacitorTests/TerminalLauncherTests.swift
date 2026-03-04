@@ -271,141 +271,141 @@ final class TerminalLauncherTests: XCTestCase {
     }
 
     func testLaunchTerminalRequestArbitrationScenarios() async {
-        enum ScenarioKind {
-            case overlapActionGate
-            case sequential
-        }
-
-        struct Case {
-            let name: String
-            let kind: ScenarioKind
-            let first: Project
-            let followups: [Project]
-            let expectedExecutedPaths: [String]
-            let expectedResultPaths: [String]
-            let expectedStalePath: String?
-        }
-
         let projectA = makeProject(name: "project-a", path: "/Users/pete/Code/project-a")
         let projectB = makeProject(name: "project-b", path: "/Users/pete/Code/project-b")
-        let cases = [
-            Case(
-                name: "cross_project_overlap",
-                kind: .overlapActionGate,
-                first: projectA,
-                followups: [projectB],
-                expectedExecutedPaths: [projectA.path, projectB.path],
-                expectedResultPaths: [projectB.path],
-                expectedStalePath: projectA.path,
-            ),
-            Case(
-                name: "same_project_rapid_repeat",
-                kind: .overlapActionGate,
-                first: projectA,
-                followups: [projectA, projectA],
-                expectedExecutedPaths: [projectA.path, projectA.path],
-                expectedResultPaths: [projectA.path],
-                expectedStalePath: projectA.path,
-            ),
-            Case(
-                name: "stale_after_activation_started",
-                kind: .overlapActionGate,
-                first: projectA,
-                followups: [projectB],
-                expectedExecutedPaths: [projectA.path, projectB.path],
-                expectedResultPaths: [projectB.path],
-                expectedStalePath: projectA.path,
-            ),
-            Case(
-                name: "sequential_requests_execute_in_order",
-                kind: .sequential,
-                first: projectA,
-                followups: [projectB],
-                expectedExecutedPaths: [projectA.path, projectB.path],
-                expectedResultPaths: [projectA.path, projectB.path],
-                expectedStalePath: nil,
-            ),
-        ]
 
-        for testCase in cases {
-            let context = scenarioContext(testCase.name)
-            await withLogCollector { collector in
-                var executedPaths: [String] = []
-                var resultPaths: [String] = []
-                let actionGateEntered = testCase.kind == .overlapActionGate
-                    ? expectation(description: "\(testCase.name)-action-gate-entered")
-                    : nil
-                let releaseGate = AsyncGate()
+        // Scenario 1: cross-project overlap
+        await withLogCollector { collector in
+            var executedPaths: [String] = []
+            var resultPaths: [String] = []
+            let actionGateEntered = expectation(description: "cross_project_overlap-action-gate-entered")
+            let releaseGate = AsyncGate()
 
-                let launcher = TerminalLauncher(
-                    appleScript: StubAppleScriptClient(shouldSucceed: true),
-                    fallbackTmuxSessionResolver: { path in
-                        // Return project slug as session name for test determinism.
-                        URL(fileURLWithPath: path).lastPathComponent
-                    },
-                    activateProjectSessionOverride: { _, projectPath in
-                        executedPaths.append(projectPath)
-                        if testCase.kind == .overlapActionGate, projectPath == testCase.first.path {
-                            actionGateEntered?.fulfill()
-                            await releaseGate.wait()
-                        }
-                        return true
-                    },
-                )
-
-                launcher.onActivationResult = { result in
-                    resultPaths.append(result.projectPath)
-                }
-
-                launcher.launchTerminal(for: testCase.first)
-                switch testCase.kind {
-                case .overlapActionGate:
-                    await fulfillment(of: [actionGateEntered!], timeout: 1.0)
-                    for project in testCase.followups {
-                        launcher.launchTerminal(for: project)
+            let launcher = TerminalLauncher(
+                appleScript: StubAppleScriptClient(shouldSucceed: true),
+                fallbackTmuxSessionResolver: { path in
+                    URL(fileURLWithPath: path).lastPathComponent
+                },
+                activateProjectSessionOverride: { _, projectPath in
+                    executedPaths.append(projectPath)
+                    if projectPath == projectA.path {
+                        actionGateEntered.fulfill()
+                        await releaseGate.wait()
                     }
-                    await releaseGate.open()
-                case .sequential:
-                    _ = await assertEventually(
-                        timeout: 1.0,
-                        context: "\(context) Expected first sequential request to complete before next.",
-                    ) {
-                        executedPaths.count == 1 && resultPaths.count == 1
-                    }
-                    for project in testCase.followups {
-                        launcher.launchTerminal(for: project)
-                    }
-                }
+                    return true
+                },
+            )
 
-                _ = await assertEventually(
-                    timeout: 1.5,
-                    context: "\(context) Expected arbitration scenario to complete.",
-                ) {
-                    executedPaths.count == testCase.expectedExecutedPaths.count &&
-                        resultPaths.count == testCase.expectedResultPaths.count
-                }
-                XCTAssertEqual(
-                    executedPaths,
-                    testCase.expectedExecutedPaths,
-                    "\(context) Unexpected executed path ordering.",
-                )
-                XCTAssertEqual(
-                    resultPaths,
-                    testCase.expectedResultPaths,
-                    "\(context) Unexpected result path ordering.",
-                )
-                if let stalePath = testCase.expectedStalePath {
-                    let foundMarker = await waitForStaleSuppressionMarker(
-                        collector: collector,
-                        projectPath: stalePath,
-                        timeout: 1.0,
-                    )
-                    XCTAssertTrue(
-                        foundMarker,
-                        "\(context) Expected stale suppression marker for superseded request.",
-                    )
-                }
+            launcher.onActivationResult = { result in
+                resultPaths.append(result.projectPath)
             }
+
+            launcher.launchTerminal(for: projectA)
+            await fulfillment(of: [actionGateEntered], timeout: 1.0)
+            launcher.launchTerminal(for: projectB)
+            await releaseGate.open()
+
+            _ = await assertEventually(
+                timeout: 1.5,
+                context: "cross_project_overlap: Expected arbitration to complete.",
+            ) {
+                executedPaths.count == 2 && resultPaths.count == 1
+            }
+            XCTAssertEqual(executedPaths, [projectA.path, projectB.path])
+            XCTAssertEqual(resultPaths, [projectB.path])
+            let foundMarker = await waitForStaleSuppressionMarker(
+                collector: collector,
+                projectPath: projectA.path,
+                timeout: 1.0,
+            )
+            XCTAssertTrue(foundMarker, "Expected stale suppression marker for superseded request.")
+        }
+
+        // Scenario 2: same-project rapid repeat
+        await withLogCollector { collector in
+            var executedPaths: [String] = []
+            var resultPaths: [String] = []
+            let actionGateEntered = expectation(description: "same_project_rapid_repeat-action-gate-entered")
+            let releaseGate = AsyncGate()
+
+            let launcher = TerminalLauncher(
+                appleScript: StubAppleScriptClient(shouldSucceed: true),
+                fallbackTmuxSessionResolver: { path in
+                    URL(fileURLWithPath: path).lastPathComponent
+                },
+                activateProjectSessionOverride: { _, projectPath in
+                    executedPaths.append(projectPath)
+                    if executedPaths.count == 1 {
+                        actionGateEntered.fulfill()
+                        await releaseGate.wait()
+                    }
+                    return true
+                },
+            )
+
+            launcher.onActivationResult = { result in
+                resultPaths.append(result.projectPath)
+            }
+
+            launcher.launchTerminal(for: projectA)
+            await fulfillment(of: [actionGateEntered], timeout: 1.0)
+            launcher.launchTerminal(for: projectA)
+            launcher.launchTerminal(for: projectA)
+            await releaseGate.open()
+
+            _ = await assertEventually(
+                timeout: 1.5,
+                context: "same_project_rapid_repeat: Expected arbitration to complete.",
+            ) {
+                executedPaths.count == 2 && resultPaths.count == 1
+            }
+            XCTAssertEqual(executedPaths, [projectA.path, projectA.path])
+            XCTAssertEqual(resultPaths, [projectA.path])
+            let foundMarker = await waitForStaleSuppressionMarker(
+                collector: collector,
+                projectPath: projectA.path,
+                timeout: 1.0,
+            )
+            XCTAssertTrue(foundMarker, "Expected stale suppression marker for superseded request.")
+        }
+
+        // Scenario 3: sequential requests execute in order
+        await withLogCollector { _ in
+            var executedPaths: [String] = []
+            var resultPaths: [String] = []
+
+            let launcher = TerminalLauncher(
+                appleScript: StubAppleScriptClient(shouldSucceed: true),
+                fallbackTmuxSessionResolver: { path in
+                    URL(fileURLWithPath: path).lastPathComponent
+                },
+                activateProjectSessionOverride: { _, projectPath in
+                    executedPaths.append(projectPath)
+                    return true
+                },
+            )
+
+            launcher.onActivationResult = { result in
+                resultPaths.append(result.projectPath)
+            }
+
+            launcher.launchTerminal(for: projectA)
+            _ = await assertEventually(
+                timeout: 1.0,
+                context: "sequential: Expected first request to complete before next.",
+            ) {
+                executedPaths.count == 1 && resultPaths.count == 1
+            }
+            launcher.launchTerminal(for: projectB)
+
+            _ = await assertEventually(
+                timeout: 1.5,
+                context: "sequential: Expected both requests to complete.",
+            ) {
+                executedPaths.count == 2 && resultPaths.count == 2
+            }
+            XCTAssertEqual(executedPaths, [projectA.path, projectB.path])
+            XCTAssertEqual(resultPaths, [projectA.path, projectB.path])
         }
     }
 
