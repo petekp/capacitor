@@ -41,3 +41,6 @@ recover.md
 
 # Local runtime env with secrets
 scripts/dev/capacitor-ingest.local
+
+# Git worktrees
+.worktrees/

@@ -27,9 +27,9 @@ verify_binary() {
         return 2
     fi
 
-    # Send empty JSON and check exit code
+    # Verify the binary runs by checking --help output
     local exit_code
-    echo '{}' | "$binary" handle 2>/dev/null
+    "$binary" --help >/dev/null 2>&1
     exit_code=$?
 
     if [[ $exit_code -eq 137 ]]; then
@@ -38,8 +38,8 @@ verify_binary() {
     elif [[ $exit_code -eq 0 ]]; then
         return 0
     else
-        # Other error - might still work for real events
-        return 0
+        # Other error - binary may be corrupt
+        return 2
     fi
 }
 
@@ -157,6 +157,5 @@ esac
 echo ""
 echo "Done! The hud-hook binary is ready."
 echo ""
-echo "To configure Claude Code hooks, run the app and use the 'Fix All' button,"
-echo "or manually add hooks to ~/.claude/settings.json pointing to:"
-echo "  $INSTALLED_BINARY handle"
+echo "To configure Claude Code hooks, run the app and use the 'Fix All' button."
+echo "The app starts 'hud-hook serve' and registers HTTP hooks automatically."

@@ -150,6 +150,7 @@ class AppState {
     let shellStateStore = ShellStateStore()
     let terminalLauncher = TerminalLauncher()
     let sessionStateManager = SessionStateManager()
+    let hookServerManager = HookServerManager()
     let projectDetailsManager = ProjectDetailsManager()
     private let projectIngestionWorker = ProjectIngestionWorker()
     @ObservationIgnored
@@ -247,6 +248,7 @@ class AppState {
                 projectDetailsManager.configure(engine: engine)
                 loadDashboard()
                 checkHookDiagnostic()
+                hookServerManager.startIfNeeded()
                 setupRefreshTimer()
                 startShellTracking()
             } catch {
@@ -259,6 +261,7 @@ class AppState {
     // MARK: - Setup
 
     private var hookHealthCheckCounter = 0
+    private var hookServerHealthCounter = 0
     private var statsRefreshCounter = 0
     private var runtimeHealthCheckCounter = 0
 
@@ -277,6 +280,13 @@ class AppState {
                 if self.hookHealthCheckCounter >= 5 {
                     self.hookHealthCheckCounter = 0
                     self.checkHookDiagnostic()
+                }
+
+                // Check hook server health every ~10 seconds
+                self.hookServerHealthCounter += 1
+                if self.hookServerHealthCounter >= 5 {
+                    self.hookServerHealthCounter = 0
+                    self.hookServerManager.checkHealth()
                 }
 
                 // Check runtime health every ~16 seconds

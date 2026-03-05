@@ -1,7 +1,7 @@
 //! Event handler for Claude Code hooks.
 //!
-//! Reads JSON from stdin, parses the hook event, and updates session state
-//! through the canonical `capacitor-core` runtime.
+//! Processes hook events and updates session state through the canonical
+//! `capacitor-core` runtime. Called by the HTTP server in `serve.rs`.
 //!
 //! ## State Machine
 //!
@@ -18,10 +18,7 @@
 //! ```
 
 use capacitor_core::domain::SessionState;
-use chrono::Utc;
 use fs_err as fs;
-use std::env;
-use std::io::{self, Read};
 use std::path::Path;
 
 use crate::hook_types::{HookEvent, HookInput};
@@ -29,35 +26,7 @@ use crate::hook_types::{HookEvent, HookInput};
 const SESSION_STATE_GATE_ID: &str = "session_state_reliability_gate_v1";
 const SESSION_STATE_MAPPING_SCENARIO_ID: &str = "SS-P0-1";
 
-pub fn run() -> Result<(), String> {
-    // Skip if this is a summary generation subprocess
-    if env::var("HUD_SUMMARY_GEN")
-        .map(|v| v == "1")
-        .unwrap_or(false)
-    {
-        // Drain stdin and exit
-        let _ = io::stdin().read_to_end(&mut Vec::new());
-        return Ok(());
-    }
-
-    // Read JSON from stdin
-    let mut input = String::new();
-    io::stdin()
-        .read_to_string(&mut input)
-        .map_err(|e| format!("Failed to read stdin: {}", e))?;
-
-    if input.trim().is_empty() {
-        return Ok(());
-    }
-
-    // Parse the hook input
-    let hook_input: HookInput =
-        serde_json::from_str(&input).map_err(|e| format!("Failed to parse hook input: {}", e))?;
-
-    handle_hook_input(hook_input)
-}
-
-fn handle_hook_input(hook_input: HookInput) -> Result<(), String> {
+pub(crate) fn handle_hook_input(hook_input: HookInput) -> Result<(), String> {
     let home = dirs::home_dir().ok_or("Cannot determine home directory")?;
     handle_hook_input_with_home(hook_input, &home)
 }
@@ -137,8 +106,10 @@ fn handle_hook_input_with_home(hook_input: HookInput, home: &Path) -> Result<(),
     }
 
     let cwd = cwd.unwrap_or_default();
-    let claude_pid = std::process::id();
-    let session_pid = resolve_session_pid(get_ppid(), claude_pid);
+    // In the HTTP server model, we can't infer the Claude session's PID from
+    // process hierarchy (getppid() returns the Swift app, not Claude Code).
+    // Pass None and let the reducer preserve any existing session PID.
+    let session_pid: Option<u32> = None;
 
     let runtime_sent = crate::runtime_client::send_handle_event(
         &event,
@@ -313,29 +284,6 @@ fn process_event(
     }
 }
 
-fn get_ppid() -> Option<u32> {
-    #[cfg(unix)]
-    {
-        // SAFETY: getppid() is a simple syscall that returns the parent process ID.
-        // It has no failure modes and always returns a valid PID (1 if parent exited).
-        #[allow(unsafe_code)]
-        Some(unsafe { libc::getppid() } as u32)
-    }
-    #[cfg(not(unix))]
-    {
-        None
-    }
-}
-
-fn resolve_session_pid(parent_pid: Option<u32>, fallback_pid: u32) -> Option<u32> {
-    let pid = parent_pid.unwrap_or(fallback_pid);
-    if pid <= 1 {
-        tracing::debug!(parent_pid = ?parent_pid, fallback_pid, "Skipping unusable session pid");
-        return None;
-    }
-    Some(pid)
-}
-
 fn touch_heartbeat(home: &Path) {
     let heartbeat_path = home.join(".capacitor/hud-hook-heartbeat");
 
@@ -343,32 +291,9 @@ fn touch_heartbeat(home: &Path) {
         let _ = fs::create_dir_all(parent);
     }
 
-    use fs_err::OpenOptions;
-    use std::io::Write as _;
-
-    // To prevent a harmless but annoying data race error from fs-err/rusqlite
-    // during fast concurrent hook firings, we open the file in append mode,
-    // and if we need to write, we just append instead of truncating.
-    // The health check only looks at the mtime of the file, not the contents.
-    // However, to keep the file from growing indefinitely, we'll write an empty
-    // string, or we'll just use a direct metadata touch if we can.
-    // Actually, setting utimes is the cleanest way without writing data.
-
-    // Instead of truncate+write which causes race conditions under heavy load,
-    // we simply write a single byte in append mode, or just create it if missing.
-    // Core diagnostics only check the modified timestamp.
-
-    let current_time = Utc::now().timestamp();
-    if let Ok(mut file) = OpenOptions::new()
-        .create(true)
-        .write(true)
-        // No truncate(true) to avoid data race on concurrent file size changes
-        // Use append to safely write concurrently
-        .append(true)
-        .open(&heartbeat_path)
-    {
-        let _ = writeln!(file, "{}", current_time);
-    }
+    // Core diagnostics only check the file's mtime, not its contents.
+    // The HTTP server is single-threaded so truncate is safe (no concurrent writers).
+    let _ = fs::write(&heartbeat_path, b"");
 }
 
 #[cfg(test)]
@@ -500,16 +425,5 @@ mod tests {
 
         let result = handle_hook_input_with_home(hook_input, &temp_dir);
         assert!(result.is_ok());
-    }
-
-    #[test]
-    fn resolve_session_pid_rejects_unusable_parent_pid() {
-        assert_eq!(resolve_session_pid(Some(0), 4242), None);
-        assert_eq!(resolve_session_pid(Some(1), 4242), None);
-    }
-
-    #[test]
-    fn resolve_session_pid_uses_parent_pid_when_valid() {
-        assert_eq!(resolve_session_pid(Some(4242), 9999), Some(4242));
     }
 }

@@ -458,7 +458,12 @@ final class SessionStateManager {
         var latestSessionIds: [String: String] = [:]
         for (projectPath, best) in bestStates {
             let state = best.state
-            let mappedState = mapRuntimeState(state.state)
+            var mappedState = mapRuntimeState(state.state)
+            // If working but no events for 2 minutes, downgrade to ready.
+            // Claude Code doesn't always fire Stop on interrupt.
+            if SessionStaleness.isWorkingStale(state: mappedState, updatedAt: state.updatedAt) {
+                mappedState = .ready
+            }
             let sessionState = ProjectSessionState(
                 state: mappedState,
                 stateChangedAt: state.stateChangedAt,

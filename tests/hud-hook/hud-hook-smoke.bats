@@ -14,9 +14,28 @@ setup() {
     [[ "$output" == *"hud-hook"* ]]
 }
 
-@test "hud-hook handle exits cleanly with empty input" {
-    run "$HUD_HOOK_BIN" handle < /dev/null
+@test "hud-hook serve starts and responds to health check" {
+    # Start server on a random high port
+    local port=17474
+    "$HUD_HOOK_BIN" serve --port "$port" &
+    local server_pid=$!
+    trap "kill $server_pid 2>/dev/null; wait $server_pid 2>/dev/null" EXIT
+
+    # Wait for server to become ready
+    for i in $(seq 1 20); do
+        if curl -sf "http://127.0.0.1:$port/health" >/dev/null 2>&1; then
+            break
+        fi
+        sleep 0.25
+    done
+
+    run curl -sf "http://127.0.0.1:$port/health"
     [ "$status" -eq 0 ]
+    [[ "$output" == *'"status":"ok"'* ]]
+
+    kill "$server_pid" 2>/dev/null
+    wait "$server_pid" 2>/dev/null || true
+    trap - EXIT
 }
 
 @test "hud-hook cwd fails fast when runtime disabled" {

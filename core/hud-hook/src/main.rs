@@ -1,11 +1,10 @@
 //! hud-hook: CLI hook handler for Capacitor session state tracking.
 //!
 //! Rust binary that handles Claude Code hook events and updates session state.
-//! Called directly by Claude Code hooks configured in ~/.claude/settings.json.
 //!
 //! ## Subcommands
 //!
-//! - `handle`: Main hook handler, reads JSON from stdin
+//! - `serve`: HTTP hook server — receives hook events via POST from Claude Code
 //! - `cwd`: Shell CWD tracking (called by shell precmd hooks)
 
 mod cwd;
@@ -13,6 +12,7 @@ mod handle;
 mod hook_types;
 mod logging;
 mod runtime_client;
+mod serve;
 
 use clap::{Parser, Subcommand};
 
@@ -41,8 +41,12 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Handle a hook event (reads JSON from stdin)
-    Handle,
+    /// Run HTTP hook server (receives hook events via POST)
+    Serve {
+        /// Port to listen on
+        #[arg(long, default_value = "7474")]
+        port: u16,
+    },
 
     /// Report shell current working directory (called by shell precmd hooks)
     Cwd {
@@ -65,9 +69,9 @@ fn main() {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Handle => {
-            if let Err(e) = handle::run() {
-                tracing::error!(error = %e, "hud-hook handle failed");
+        Commands::Serve { port } => {
+            if let Err(e) = serve::run(port) {
+                tracing::error!(error = %e, "hud-hook serve failed");
                 std::process::exit(1);
             }
         }

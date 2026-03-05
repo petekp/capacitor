@@ -21,33 +21,31 @@ use std::path::PathBuf;
 use std::process::Command;
 use tempfile::NamedTempFile;
 
-// Capacitor-managed hook marker. This tags owned hook entries without forcing legacy behavior.
-const HOOK_COMMAND: &str = "CAPACITOR_HOOK_MARKER=1 $HOME/.local/bin/hud-hook handle";
+/// Default HTTP hook endpoint for the local `hud-hook serve` server.
+const HOOK_HTTP_URL: &str = "http://127.0.0.1:7474/hook";
+
+/// Legacy marker for detecting old command-based hooks during cleanup/removal.
 const LEGACY_STATE_TRACKER_MARKER: &str = "hud-state-tracker";
 
-/// Hook event configuration: (event_name, needs_matcher, is_async)
+/// Hook event configuration: (event_name, needs_matcher)
 /// - `needs_matcher`: Tool events like PreToolUse/PostToolUse/PostToolUseFailure/PermissionRequest
 ///   need `matcher: "*"` to match all tools.
-/// - `is_async`: If true, hook runs in background without blocking Claude Code
-///   SessionEnd is sync to ensure cleanup completes before session exits
-const HUD_HOOK_EVENTS: [(&str, bool, bool); 14] = [
-    ("SessionStart", false, true),
-    ("SessionEnd", false, false), // Keep sync for guaranteed cleanup
-    ("UserPromptSubmit", false, true),
-    ("PreToolUse", true, true),
-    ("PostToolUse", true, true),
-    ("PostToolUseFailure", true, true),
-    ("PermissionRequest", true, true),
-    ("Stop", false, true),
-    ("PreCompact", false, true),
-    ("Notification", false, true),
-    ("SubagentStart", false, true),
-    ("SubagentStop", false, true),
-    ("TeammateIdle", false, true),
-    ("TaskCompleted", false, true),
+const HUD_HOOK_EVENTS: [(&str, bool); 14] = [
+    ("SessionStart", false),
+    ("SessionEnd", false),
+    ("UserPromptSubmit", false),
+    ("PreToolUse", true),
+    ("PostToolUse", true),
+    ("PostToolUseFailure", true),
+    ("PermissionRequest", true),
+    ("Stop", false),
+    ("PreCompact", false),
+    ("Notification", false),
+    ("SubagentStart", false),
+    ("SubagentStop", false),
+    ("TeammateIdle", false),
+    ("TaskCompleted", false),
 ];
-
-const HOOK_TIMEOUT_SECONDS: u32 = 30;
 
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct DependencyStatus {
@@ -392,10 +390,10 @@ impl SetupChecker {
             None => return false,
         };
 
-        for (event, needs_matcher, is_async) in HUD_HOOK_EVENTS {
+        for (event, needs_matcher) in HUD_HOOK_EVENTS {
             let has_hook = hooks
                 .get(event)
-                .map(|h| self.has_hud_hook_with_correct_config(h, needs_matcher, is_async))
+                .map(|h| self.has_hud_hook_with_correct_config(h, needs_matcher))
                 .unwrap_or(false);
 
             if !has_hook {
@@ -406,34 +404,15 @@ impl SetupChecker {
         true
     }
 
-    fn has_hud_hook_with_correct_config(
-        &self,
-        hooks: &[HookConfig],
-        needs_matcher: bool,
-        expected_async: bool,
-    ) -> bool {
+    fn has_hud_hook_with_correct_config(&self, hooks: &[HookConfig], needs_matcher: bool) -> bool {
         for hook_config in hooks {
-            // Check if this config has our hook with correct async setting
-            let has_correct_hud_hook = hook_config
+            let has_managed_hook = hook_config
                 .hooks
                 .as_ref()
-                .map(|inner| {
-                    inner.iter().any(|h| {
-                        if !is_hud_hook_command(h.command.as_deref()) {
-                            return false;
-                        }
-                        // Verify async configuration matches expected
-                        if expected_async {
-                            h.async_hook == Some(true) && h.timeout == Some(HOOK_TIMEOUT_SECONDS)
-                        } else {
-                            h.async_hook.is_none() && h.timeout.is_none()
-                        }
-                    })
-                })
+                .map(|inner| inner.iter().any(is_managed_hook))
                 .unwrap_or(false);
 
-            if has_correct_hud_hook {
-                // If this event needs a matcher, verify it has one
+            if has_managed_hook {
                 if needs_matcher {
                     let matcher_ok = hook_config
                         .matcher
@@ -443,7 +422,6 @@ impl SetupChecker {
                     if matcher_ok {
                         return true;
                     }
-                    // Has hook but missing required matcher - keep looking
                 } else {
                     return true;
                 }
@@ -484,6 +462,7 @@ impl SetupChecker {
         hook_config.hooks = Some(vec![InnerHook {
             hook_type,
             command: Some(command),
+            url: None,
             async_hook,
             timeout,
             other: HashMap::new(),
@@ -497,30 +476,26 @@ impl SetupChecker {
         true
     }
 
-    fn normalize_hud_hook_config(
-        &self,
-        hook_config: &mut HookConfig,
-        needs_matcher: bool,
-        is_async: bool,
-    ) -> bool {
+    /// Normalizes existing Capacitor-managed hooks to HTTP form.
+    ///
+    /// If an old command-based hook is found, it's upgraded in-place to an HTTP hook.
+    /// HTTP hooks that are already in canonical form are left as-is.
+    fn normalize_hud_hook_config(&self, hook_config: &mut HookConfig, needs_matcher: bool) -> bool {
         let mut has_hud_hook = false;
 
         if let Some(inner_hooks) = hook_config.hooks.as_mut() {
             for hook in inner_hooks.iter_mut() {
+                if is_hud_hook_url(hook.url.as_deref()) {
+                    has_hud_hook = true;
+                    continue;
+                }
                 if is_hud_hook_command(hook.command.as_deref()) {
-                    // Normalize the command to the canonical path (binary)
-                    hook.command = Some(HOOK_COMMAND.to_string());
-                    if hook.hook_type.is_none() {
-                        hook.hook_type = Some("command".to_string());
-                    }
-                    // Update async/timeout settings
-                    if is_async {
-                        hook.async_hook = Some(true);
-                        hook.timeout = Some(HOOK_TIMEOUT_SECONDS);
-                    } else {
-                        hook.async_hook = None;
-                        hook.timeout = None;
-                    }
+                    // Upgrade command hook → HTTP hook
+                    hook.hook_type = Some("http".to_string());
+                    hook.url = Some(HOOK_HTTP_URL.to_string());
+                    hook.command = None;
+                    hook.async_hook = None;
+                    hook.timeout = None;
                     has_hud_hook = true;
                 }
             }
@@ -705,6 +680,10 @@ impl SetupChecker {
         })
     }
 
+    /// Registers HTTP hooks in settings.json for all managed events.
+    ///
+    /// Migrates any legacy flat entries, normalizes existing command hooks to HTTP,
+    /// and adds HTTP hook entries for any events that don't have one yet.
     pub(crate) fn register_hooks_in_settings(&self) -> Result<(), HudFfiError> {
         let settings_path = self.storage.claude_settings_file();
         let mut settings = if settings_path.exists() {
@@ -724,13 +703,14 @@ impl SetupChecker {
             }
         }
 
-        for (event, needs_matcher, is_async) in HUD_HOOK_EVENTS {
+        for (event, needs_matcher) in HUD_HOOK_EVENTS {
             let event_hooks = hooks.entry(event.to_string()).or_default();
 
-            // Normalize any existing HUD hook entries, then check if we already have one
+            // Normalize any existing HUD hook entries (upgrades command → HTTP),
+            // then check if we already have one
             let mut already_has_hud_hook = false;
             for hook_config in event_hooks.iter_mut() {
-                if self.normalize_hud_hook_config(hook_config, needs_matcher, is_async) {
+                if self.normalize_hud_hook_config(hook_config, needs_matcher) {
                     already_has_hud_hook = true;
                 }
             }
@@ -743,14 +723,11 @@ impl SetupChecker {
                         None
                     },
                     hooks: Some(vec![InnerHook {
-                        hook_type: Some("command".to_string()),
-                        command: Some(HOOK_COMMAND.to_string()),
-                        async_hook: if is_async { Some(true) } else { None },
-                        timeout: if is_async {
-                            Some(HOOK_TIMEOUT_SECONDS)
-                        } else {
-                            None
-                        },
+                        hook_type: Some("http".to_string()),
+                        command: None,
+                        url: Some(HOOK_HTTP_URL.to_string()),
+                        async_hook: None,
+                        timeout: None,
                         other: HashMap::new(),
                     }]),
                     other: HashMap::new(),
@@ -765,18 +742,12 @@ impl SetupChecker {
 
     fn hook_config_contains_managed_hook(&self, hook_config: &HookConfig) -> bool {
         if let Some(inner_hooks) = &hook_config.hooks {
-            if inner_hooks.iter().any(|hook| {
-                is_managed_hook_command(
-                    hook.command
-                        .as_deref()
-                        .map(str::trim)
-                        .filter(|command| !command.is_empty()),
-                )
-            }) {
+            if inner_hooks.iter().any(is_managed_hook) {
                 return true;
             }
         }
 
+        // Legacy flat format: check "command" in other fields
         hook_config
             .other
             .get("command")
@@ -913,6 +884,24 @@ fn is_managed_hook_command(cmd: Option<&str>) -> bool {
         || command.contains(LEGACY_STATE_TRACKER_MARKER)
 }
 
+/// Check if a URL is the HUD hook HTTP endpoint.
+fn is_hud_hook_url(url: Option<&str>) -> bool {
+    match url {
+        Some(u) => u.trim() == HOOK_HTTP_URL,
+        None => false,
+    }
+}
+
+/// Check if an InnerHook is managed by Capacitor (either command or HTTP).
+fn is_managed_hook(hook: &InnerHook) -> bool {
+    is_managed_hook_command(
+        hook.command
+            .as_deref()
+            .map(str::trim)
+            .filter(|c| !c.is_empty()),
+    ) || is_hud_hook_url(hook.url.as_deref())
+}
+
 fn is_shell_assignment_token(token: &str) -> bool {
     let Some((name, _value)) = token.split_once('=') else {
         return false;
@@ -956,6 +945,8 @@ struct InnerHook {
     hook_type: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     command: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    url: Option<String>,
     #[serde(rename = "async", skip_serializing_if = "Option::is_none")]
     async_hook: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1068,9 +1059,14 @@ mod tests {
             settings["hooks"]["CustomEvent"][0]["hooks"][0]["command"],
             "custom.sh"
         );
+        // Legacy command hooks get normalized to HTTP hooks
         assert_eq!(
-            settings["hooks"]["SessionStart"][0]["hooks"][0]["command"],
-            HOOK_COMMAND
+            settings["hooks"]["SessionStart"][0]["hooks"][0]["type"],
+            "http"
+        );
+        assert_eq!(
+            settings["hooks"]["SessionStart"][0]["hooks"][0]["url"],
+            HOOK_HTTP_URL
         );
         assert!(checker.hooks_registered_in_settings());
     }
@@ -1110,9 +1106,11 @@ mod tests {
 
         assert!(
             post_tool_use.iter().any(|entry| {
-                entry["hooks"][0]["command"] == HOOK_COMMAND && entry["matcher"] == "*"
+                entry["hooks"][0]["type"] == "http"
+                    && entry["hooks"][0]["url"] == HOOK_HTTP_URL
+                    && entry["matcher"] == "*"
             }),
-            "Capacitor-managed hook should still be registered"
+            "Capacitor-managed HTTP hook should be registered"
         );
     }
 
@@ -1280,6 +1278,7 @@ mod tests {
             hooks: Some(vec![InnerHook {
                 hook_type: Some("command".to_string()),
                 command: Some(original.clone()),
+                url: None,
                 async_hook: None,
                 timeout: None,
                 other: HashMap::new(),
@@ -1287,7 +1286,7 @@ mod tests {
             other: HashMap::new(),
         };
 
-        let normalized = checker.normalize_hud_hook_config(&mut hook_config, false, true);
+        let normalized = checker.normalize_hud_hook_config(&mut hook_config, false);
         assert!(!normalized);
 
         let hook = hook_config
@@ -1295,6 +1294,7 @@ mod tests {
             .as_ref()
             .and_then(|hooks| hooks.first())
             .expect("hook exists");
+        // Unrelated command should not be modified
         assert_eq!(hook.command.as_deref(), Some(original.as_str()));
         assert_eq!(hook.async_hook, None);
         assert_eq!(hook.timeout, None);
