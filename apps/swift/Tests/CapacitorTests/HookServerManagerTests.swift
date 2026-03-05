@@ -56,6 +56,8 @@ final class HookServerManagerTests: XCTestCase {
         let process = FakeHookServerProcess(pid: 41)
         var launchCount = 0
         var continuation: CheckedContinuation<Bool, Never>?
+        let unexpectedRestart = expectation(description: "late health failure must not relaunch")
+        unexpectedRestart.isInverted = true
 
         let manager = HookServerManager(
             port: 8123,
@@ -63,6 +65,9 @@ final class HookServerManagerTests: XCTestCase {
             dependencies: makeDependencies(
                 launchProcess: { _, _, _ in
                     launchCount += 1
+                    if launchCount > 1 {
+                        unexpectedRestart.fulfill()
+                    }
                     return process
                 },
                 fetchHealth: { _ in
@@ -89,7 +94,7 @@ final class HookServerManagerTests: XCTestCase {
 
         continuation?.resume(returning: false)
         await _Concurrency.Task.yield()
-        try? await _Concurrency.Task.sleep(nanoseconds: 20_000_000)
+        await fulfillment(of: [unexpectedRestart], timeout: 0.1)
 
         XCTAssertEqual(manager.status, .stopped)
         XCTAssertEqual(launchCount, 1, "explicit stop must dominate late health failures")

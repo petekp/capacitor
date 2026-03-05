@@ -3555,3 +3555,32 @@ slices:
     risks:
       - "Delegating assertAction to actionMatches trades per-field XCTAssertEqual diagnostics for a single combined failure message; mitigation is including both expected and actual in the message."
     notes: "Expands makeExecutor() to five remaining manual-setup tests in ActivationActionExecutorTests, consolidates assertAction to delegate to actionMatches in TerminalLauncherTests, and concludes RuntimeClientTests is already well-consolidated. Marks practical completion of the test audit program."
+
+  - id: RW-100
+    name: "Post-Rewrite Reliability Migration Guard Sync"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-099
+    touched_paths:
+      - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+      - scripts/rewrite/check_rewrite_guards.sh
+    contracts:
+      added: []
+      changed:
+        - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+        - scripts/rewrite/check_rewrite_guards.sh
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios:
+      - click project card and restore terminal/tmux context
+      - run rewrite guards in GitHub Actions without ripgrep preinstalled
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Backfilling governance coverage can hide stale assumptions if future migrations skip the rewrite ledger again; mitigation is keeping CI bound to the same portable guard script."
+    notes: "Makes rewrite guard path matching directory-aware, adds grep fallback for content denylist checks, backfills rewrite MAP coverage for the post-rewrite reliability migration artifacts, and removes the last Task.sleep from TerminalLauncherTests so the denylist remains enforceable."

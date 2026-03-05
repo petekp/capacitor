@@ -35,7 +35,7 @@ final class AppStateCreationTests: XCTestCase {
         let sessionTask: _Concurrency.Task<Void, Never> = _Concurrency.Task {
             await withTaskCancellationHandler(operation: {
                 while !_Concurrency.Task.isCancelled {
-                    try? await _Concurrency.Task.sleep(nanoseconds: 10_000_000)
+                    await _Concurrency.Task.yield()
                 }
             }, onCancel: {
                 sessionCancelled.fulfill()
@@ -45,7 +45,7 @@ final class AppStateCreationTests: XCTestCase {
         let completionTask: _Concurrency.Task<Void, Never> = _Concurrency.Task {
             await withTaskCancellationHandler(operation: {
                 while !_Concurrency.Task.isCancelled {
-                    try? await _Concurrency.Task.sleep(nanoseconds: 10_000_000)
+                    await _Concurrency.Task.yield()
                 }
             }, onCancel: {
                 completionCancelled.fulfill()

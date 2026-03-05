@@ -279,13 +279,21 @@ final class TerminalLauncherTests: XCTestCase {
 
     func testRunBashScriptWithResultCancellationTerminatesProcessPromptly() async {
         let exp = expectation(description: "cancelled runBashScriptWithResult returns promptly")
+        let readyURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("terminal-launcher-cancel-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: readyURL) }
 
         let task = _Concurrency.Task {
-            _ = await TerminalLauncher.runBashScriptWithResult("sleep 5; echo done")
+            _ = await TerminalLauncher.runBashScriptWithResult("touch '\(readyURL.path)'; exec tail -f /dev/null")
             exp.fulfill()
         }
 
-        try? await _Concurrency.Task.sleep(nanoseconds: 100_000_000)
+        _ = await assertEventually(
+            timeout: 1.0,
+            context: "cancellation test process started",
+        ) {
+            FileManager.default.fileExists(atPath: readyURL.path)
+        }
         task.cancel()
 
         await fulfillment(of: [exp], timeout: 1.5)

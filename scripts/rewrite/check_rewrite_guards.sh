@@ -18,6 +18,17 @@ fail() {
   failures=$((failures + 1))
 }
 
+search_content() {
+  local regex="$1"
+  shift
+
+  if command -v rg >/dev/null 2>&1; then
+    rg -n --color never -e "$regex" "$@" || true
+  else
+    grep -En -- "$regex" "$@" || true
+  fi
+}
+
 contains_glob() {
   local input="$1"
   [[ "$input" == *"*"* || "$input" == *"?"* || "$input" == *"["* ]]
@@ -91,7 +102,7 @@ if (( ${#changed_files[@]} > 0 )); then
     mapped=false
 
     for exact in "${exact_map_paths[@]}"; do
-      if [[ "$file" == "$exact" ]]; then
+      if [[ "$file" == "$exact" || "$file" == "$exact"/* ]]; then
         mapped=true
         break
       fi
@@ -140,7 +151,7 @@ while IFS=$'\t' read -r slice_id pattern; do
       continue
     fi
 
-    content_matches="$(cd "$ROOT" && rg -n --color never -e "$regex" "${matched_files[@]}" || true)"
+    content_matches="$(cd "$ROOT" && search_content "$regex" "${matched_files[@]}")"
     if [[ -n "$content_matches" ]]; then
       fail "Denylist content violation in $slice_id: pattern '$pattern' matched code"
       echo "$content_matches" | head -n 10 | sed 's/^/  - /'
