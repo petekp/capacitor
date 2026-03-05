@@ -147,8 +147,9 @@ fn install_signal_handlers() {
     // async-signal-safe. No heap allocation, no locks, no IO.
     #[allow(unsafe_code)]
     unsafe {
-        libc::signal(libc::SIGTERM, signal_handler as libc::sighandler_t);
-        libc::signal(libc::SIGINT, signal_handler as libc::sighandler_t);
+        let handler = signal_handler as *const () as libc::sighandler_t;
+        libc::signal(libc::SIGTERM, handler);
+        libc::signal(libc::SIGINT, handler);
     }
 }
 
