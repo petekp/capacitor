@@ -336,21 +336,12 @@ impl SetupChecker {
             return Err("Binary not found".to_string());
         }
 
-        // Try to run the binary with empty input
+        // Probe a supported CLI path and verify expected command surface.
         let output = Command::new(&binary_path)
-            .arg("handle")
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::null())
+            .arg("--help")
+            .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
-            .spawn()
-            .and_then(|mut child| {
-                // Write empty JSON to stdin
-                if let Some(stdin) = child.stdin.as_mut() {
-                    use std::io::Write;
-                    let _ = stdin.write_all(b"{}");
-                }
-                child.wait_with_output()
-            });
+            .output();
 
         match output {
             Ok(output) => {
@@ -358,12 +349,27 @@ impl SetupChecker {
                 if code == 137 {
                     // SIGKILL - macOS killed unsigned binary
                     // This shouldn't happen with symlinks, but catch it anyway
-                    Err("Binary killed by macOS (exit 137). Try reinstalling the app.".to_string())
-                } else {
-                    // Exit code 0 or other non-fatal codes are OK
-                    // (binary may exit non-zero for empty input, that's fine)
-                    Ok(())
+                    return Err(
+                        "Binary killed by macOS (exit 137). Try reinstalling the app.".to_string(),
+                    );
                 }
+                if !output.status.success() {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    return Err(format!(
+                        "Binary failed --help probe (exit {}): {}",
+                        code,
+                        stderr.trim()
+                    ));
+                }
+
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                if !(stdout.contains("serve") && stdout.contains("cwd")) {
+                    return Err(
+                        "Binary missing required subcommands (`serve` and `cwd`)".to_string()
+                    );
+                }
+
+                Ok(())
             }
             Err(e) => Err(format!("Failed to run binary: {}", e)),
         }
@@ -976,7 +982,50 @@ fn matcher_matches_all_tools(matcher: &serde_json::Value) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Mutex, OnceLock};
     use tempfile::TempDir;
+
+    static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+    struct EnvVarGuard {
+        key: &'static str,
+        original: Option<String>,
+    }
+
+    impl EnvVarGuard {
+        fn set(key: &'static str, value: &std::path::Path) -> Self {
+            let original = std::env::var(key).ok();
+            std::env::set_var(key, value);
+            Self { key, original }
+        }
+    }
+
+    impl Drop for EnvVarGuard {
+        fn drop(&mut self) {
+            if let Some(value) = &self.original {
+                std::env::set_var(self.key, value);
+            } else {
+                std::env::remove_var(self.key);
+            }
+        }
+    }
+
+    fn env_lock() -> std::sync::MutexGuard<'static, ()> {
+        ENV_LOCK
+            .get_or_init(|| Mutex::new(()))
+            .lock()
+            .expect("env lock poisoned")
+    }
+
+    #[cfg(unix)]
+    fn write_executable_script(path: &std::path::Path, script: &str) {
+        use std::os::unix::fs::PermissionsExt;
+
+        fs::write(path, script).expect("write script");
+        let mut perms = fs::metadata(path).expect("script metadata").permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(path, perms).expect("set executable permission");
+    }
 
     fn setup_test_env() -> (TempDir, StorageConfig) {
         let temp = TempDir::new().unwrap();
@@ -1162,6 +1211,97 @@ mod tests {
             assert!(!result.success);
             assert!(result.message.contains("not found"));
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_verify_hook_binary_rejects_unsupported_cli_shape() {
+        let _guard = env_lock();
+        let (temp, storage) = setup_test_env();
+        let home = temp.path();
+        let _home_guard = EnvVarGuard::set("HOME", home);
+
+        let bin_dir = home.join(".local/bin");
+        fs::create_dir_all(&bin_dir).expect("create bin dir");
+        let binary_path = bin_dir.join("hud-hook");
+        write_executable_script(
+            &binary_path,
+            "#!/bin/sh\n\
+             # Simulate a binary that is executable but does not expose supported CLI shape.\n\
+             if [ \"$1\" = \"handle\" ]; then\n\
+               exit 2\n\
+             fi\n\
+             echo \"unsupported\"\n\
+             exit 2\n",
+        );
+
+        let checker = SetupChecker::new(storage);
+        let result = checker.verify_hook_binary();
+        assert!(
+            result.is_err(),
+            "verify_hook_binary should fail for unsupported CLI shape, got: {result:?}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_verify_hook_binary_accepts_supported_cli_shape_from_help_output() {
+        let _guard = env_lock();
+        let (temp, storage) = setup_test_env();
+        let home = temp.path();
+        let _home_guard = EnvVarGuard::set("HOME", home);
+
+        let bin_dir = home.join(".local/bin");
+        fs::create_dir_all(&bin_dir).expect("create bin dir");
+        let binary_path = bin_dir.join("hud-hook");
+        write_executable_script(
+            &binary_path,
+            "#!/bin/sh\n\
+             if [ \"$1\" = \"--help\" ]; then\n\
+               echo \"Commands: serve cwd\"\n\
+               exit 0\n\
+             fi\n\
+             exit 0\n",
+        );
+
+        let checker = SetupChecker::new(storage);
+        let result = checker.verify_hook_binary();
+        assert!(
+            result.is_ok(),
+            "verify_hook_binary should accept supported CLI shape, got: {result:?}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_verify_hook_binary_rejects_help_output_missing_required_subcommand() {
+        let _guard = env_lock();
+        let (temp, storage) = setup_test_env();
+        let home = temp.path();
+        let _home_guard = EnvVarGuard::set("HOME", home);
+
+        let bin_dir = home.join(".local/bin");
+        fs::create_dir_all(&bin_dir).expect("create bin dir");
+        let binary_path = bin_dir.join("hud-hook");
+        write_executable_script(
+            &binary_path,
+            "#!/bin/sh\n\
+             if [ \"$1\" = \"--help\" ]; then\n\
+               echo \"Commands: serve\"\n\
+               exit 0\n\
+             fi\n\
+             exit 0\n",
+        );
+
+        let checker = SetupChecker::new(storage);
+        let result = checker.verify_hook_binary();
+        assert!(
+            result
+                .as_ref()
+                .err()
+                .is_some_and(|message| message.contains("missing required subcommands")),
+            "verify_hook_binary should reject help output missing required subcommands, got: {result:?}"
+        );
     }
 
     #[test]

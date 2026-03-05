@@ -54,7 +54,7 @@ Only Ghostty, iTerm2, and Terminal.app are supported right now. More on the way 
 
 Capacitor is a sidecar. It watches what Claude Code is doing without getting in the way.
 
-On first launch, it installs a small hook binary (`~/.local/bin/hud-hook`) and adds entries to Claude Code's `~/.claude/settings.json`. Hook events are written directly into the Rust runtime snapshot (`~/.capacitor/runtime/app_snapshot.json`). The Swift app reads that snapshot and renders state.
+On first launch, it installs a small hook binary (`~/.local/bin/hud-hook`) and adds entries to Claude Code's `~/.claude/settings.json`. Hook events are written directly into the Rust runtime snapshot (`~/.capacitor/runtime/app_snapshot.json`). The Swift app reads that snapshot, applies deterministic projection/stabilization, and then renders visible state.
 
 It doesn't call the Anthropic API. It's read-only.
 

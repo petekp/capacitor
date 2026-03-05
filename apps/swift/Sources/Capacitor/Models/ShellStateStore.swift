@@ -57,4 +57,15 @@ final class ShellStateStore {
             "stale_filtered_count": staleCount,
         ])
     }
+
+    func clearRuntimeShellState(correlationId: String? = nil) {
+        state = nil
+        let cid = correlationId ?? "none"
+        logger.info("Shell state cleared")
+        DebugLog.write("ShellStateStore.clearRuntimeShellState cid=\(cid)")
+        Telemetry.emit("shell_state_refresh", "Shell state cleared", payload: [
+            "shell_count": 0,
+            "stale_filtered_count": 0,
+        ])
+    }
 }

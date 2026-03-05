@@ -5,7 +5,7 @@ import XCTest
 @MainActor
 final class SessionStateManagerTests: XCTestCase {
     func testApplyRuntimeProjectStatesMatchingIgnoresCaseDifferences() {
-        let manager = SessionStateManager()
+        let manager = makeManager()
         let project = makeProject("Project", path: "/Users/pete/code/project")
 
         manager.applyRuntimeProjectStates(
@@ -18,7 +18,7 @@ final class SessionStateManagerTests: XCTestCase {
     }
 
     func testApplyRuntimeProjectStatesPrefersMostSpecificProject() {
-        let manager = SessionStateManager()
+        let manager = makeManager()
         let rootProject = makeProject("assistant-ui", path: "/Users/pete/Code/assistant-ui")
         let packageProject = makeProject("assistant-ui-web", path: "/Users/pete/Code/assistant-ui/packages/web")
 
@@ -33,7 +33,7 @@ final class SessionStateManagerTests: XCTestCase {
     }
 
     func testApplyRuntimeProjectStatesUsesChildWhenOnlyRootPinned() {
-        let manager = SessionStateManager()
+        let manager = makeManager()
         let rootProject = makeProject("assistant-ui", path: "/Users/pete/Code/assistant-ui")
 
         manager.applyRuntimeProjectStates(
@@ -46,7 +46,7 @@ final class SessionStateManagerTests: XCTestCase {
     }
 
     func testApplyRuntimeProjectStatesDoesNotMatchParentToChild() {
-        let manager = SessionStateManager()
+        let manager = makeManager()
         let packageProject = makeProject("assistant-ui-web", path: "/Users/pete/Code/assistant-ui/packages/web")
 
         manager.applyRuntimeProjectStates(
@@ -81,7 +81,7 @@ final class SessionStateManagerTests: XCTestCase {
             encoding: .utf8,
         )
 
-        let manager = SessionStateManager()
+        let manager = makeManager()
         let project = makeProject("assistant-ui-docs", path: pinnedPath.path)
         manager.applyRuntimeProjectStates(
             [makeRuntimeProjectState(projectPath: worktreePath.path, state: "working", sessionId: "session-1")],
@@ -93,7 +93,7 @@ final class SessionStateManagerTests: XCTestCase {
     }
 
     func testApplyRuntimeProjectStatesUpdatesLatestSessionId() {
-        let manager = SessionStateManager()
+        let manager = makeManager()
         let project = makeProject("core-project", path: "/tmp/core-project")
         let daemonProjects = [
             RuntimeProjectState(
@@ -101,8 +101,8 @@ final class SessionStateManagerTests: XCTestCase {
                 workspaceId: "workspace-core",
                 projectPath: "/tmp/core-project",
                 state: "working",
-                updatedAt: "2026-02-28T19:00:00Z",
-                stateChangedAt: "2026-02-28T19:00:00Z",
+                updatedAt: fixtureStateTimestamp,
+                stateChangedAt: fixtureStateTimestamp,
                 sessionId: "session-representative",
                 latestSessionId: "session-latest",
                 sessionCount: 2,
@@ -117,8 +117,42 @@ final class SessionStateManagerTests: XCTestCase {
         XCTAssertEqual(manager.getPreferredSessionId(for: project), "session-latest")
     }
 
+    func testApplyRuntimeProjectStatesPrefersMoreRecentReadyOverStaleWorkingCandidate() {
+        let manager = makeManager()
+        let project = makeProject("core-project", path: "/tmp/core-project")
+
+        manager.applyRuntimeProjectStates(
+            [
+                makeRuntimeProjectState(
+                    projectPath: project.path,
+                    state: "working",
+                    sessionId: "session-old-working",
+                    updatedAt: formatISO8601Timestamp(fixtureNow.addingTimeInterval(-610)),
+                    stateChangedAt: formatISO8601Timestamp(fixtureNow.addingTimeInterval(-610)),
+                ),
+                makeRuntimeProjectState(
+                    projectPath: project.path,
+                    state: "ready",
+                    sessionId: "session-new-ready",
+                    updatedAt: formatISO8601Timestamp(fixtureNow.addingTimeInterval(-10)),
+                    stateChangedAt: formatISO8601Timestamp(fixtureNow.addingTimeInterval(-10)),
+                ),
+            ],
+            for: [project],
+            correlationId: "apply-recency-over-stale-activity",
+        )
+
+        XCTAssertEqual(manager.getSessionState(for: project)?.state, .ready)
+        XCTAssertEqual(
+            manager.getSessionState(for: project)?.sessionId,
+            "session-new-ready",
+            "A more recent ready state should beat an older working state that will be downgraded to ready.",
+        )
+        XCTAssertEqual(manager.getPreferredSessionId(for: project), "session-new-ready")
+    }
+
     func testApplyRuntimeProjectStatesHoldsSingleEmptySnapshotThenCommitsSecond() {
-        let manager = SessionStateManager()
+        let manager = makeManager()
         let project = makeProject("core-project", path: "/tmp/core-project")
 
         manager.applyRuntimeProjectStates(
@@ -142,7 +176,7 @@ final class SessionStateManagerTests: XCTestCase {
     // MARK: - Idle Stabilization (Hysteresis)
 
     func testIdleStabilizationCommitsAfterThreshold() {
-        let manager = SessionStateManager()
+        let manager = makeManager()
         let project = makeProject("my-project", path: "/tmp/my-project")
 
         // Establish active state
@@ -174,7 +208,7 @@ final class SessionStateManagerTests: XCTestCase {
     }
 
     func testIdleStabilizationResetsOnActive() {
-        let manager = SessionStateManager()
+        let manager = makeManager()
         let project = makeProject("my-project", path: "/tmp/my-project")
 
         // Establish active state
@@ -214,7 +248,7 @@ final class SessionStateManagerTests: XCTestCase {
     }
 
     func testIdleStabilizationPassesThroughAlreadyIdle() {
-        let manager = SessionStateManager()
+        let manager = makeManager()
         let project = makeProject("my-project", path: "/tmp/my-project")
 
         // First apply is idle (no previous active state)
@@ -238,6 +272,44 @@ final class SessionStateManagerTests: XCTestCase {
         XCTAssertEqual(manager.getSessionState(for: project)?.state, .idle)
     }
 
+    func testIdleHoldOnlyPreservesMetadataForHeldProject() {
+        let manager = makeManager()
+        let projectA = makeProject("project-a", path: "/tmp/project-a")
+        let projectB = makeProject("project-b", path: "/tmp/project-b")
+        let projects = [projectA, projectB]
+
+        manager.applyRuntimeProjectStates(
+            [
+                makeRuntimeProjectState(projectPath: projectA.path, state: "working", sessionId: "a-1"),
+                makeRuntimeProjectState(projectPath: projectB.path, state: "working", sessionId: "b-1"),
+            ],
+            for: projects,
+            correlationId: "metadata-baseline",
+        )
+        XCTAssertEqual(manager.getPreferredSessionId(for: projectA), "a-1")
+        XCTAssertEqual(manager.getPreferredSessionId(for: projectB), "b-1")
+
+        manager.applyRuntimeProjectStates(
+            [
+                makeRuntimeProjectState(projectPath: projectA.path, state: "idle", sessionId: nil),
+                makeRuntimeProjectState(projectPath: projectB.path, state: "working", sessionId: "b-2"),
+            ],
+            for: projects,
+            correlationId: "metadata-hold",
+        )
+
+        XCTAssertEqual(
+            manager.getSessionState(for: projectA)?.state,
+            .working,
+            "Project A should remain held in active state during first idle snapshot.",
+        )
+        XCTAssertEqual(
+            manager.getPreferredSessionId(for: projectB),
+            "b-2",
+            "Project B metadata should continue to update even when Project A is held.",
+        )
+    }
+
     func testGetSessionStateFallsBackToNormalizedPathLookup() throws {
         let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
@@ -247,7 +319,7 @@ final class SessionStateManagerTests: XCTestCase {
         try FileManager.default.createDirectory(at: realProjectPath, withIntermediateDirectories: true)
         try FileManager.default.createSymbolicLink(atPath: symlinkPath.path, withDestinationPath: realProjectPath.path)
 
-        let manager = SessionStateManager()
+        let manager = makeManager()
         manager.setSessionStatesForTesting([
             symlinkPath.path + "/": makeSessionState(state: .ready, sessionId: "session-symlink"),
         ])
@@ -268,7 +340,7 @@ final class SessionStateManagerTests: XCTestCase {
         try FileManager.default.createDirectory(at: realProjectPath, withIntermediateDirectories: true)
         try FileManager.default.createSymbolicLink(atPath: symlinkPath.path, withDestinationPath: realProjectPath.path)
 
-        let manager = SessionStateManager()
+        let manager = makeManager()
         manager.setSessionStatesForTesting([
             symlinkPath.path + "/": makeSessionState(state: .ready, sessionId: "session-fallback"),
             realProjectPath.path: makeSessionState(state: .working, sessionId: "session-direct"),
@@ -294,6 +366,28 @@ final class SessionStateManagerTests: XCTestCase {
         )
     }
 
+    private var fixtureNow: Date {
+        var components = DateComponents()
+        components.calendar = Calendar(identifier: .gregorian)
+        components.timeZone = TimeZone(secondsFromGMT: 0)
+        components.year = 2026
+        components.month = 2
+        components.day = 28
+        components.hour = 19
+        components.minute = 0
+        components.second = 10
+        return components.date!
+    }
+
+    private var fixtureStateTimestamp: String {
+        formatISO8601Timestamp(fixtureNow.addingTimeInterval(-10))
+    }
+
+    private func makeManager(now: Date? = nil) -> SessionStateManager {
+        let resolvedNow = now ?? fixtureNow
+        return SessionStateManager(clock: .fixed(resolvedNow))
+    }
+
     private func makeProject(_ name: String, path: String) -> Project {
         Project(
             name: name,
@@ -313,14 +407,16 @@ final class SessionStateManagerTests: XCTestCase {
         projectPath: String,
         state: String,
         sessionId: String?,
+        updatedAt: String? = nil,
+        stateChangedAt: String? = nil,
     ) -> RuntimeProjectState {
         RuntimeProjectState(
             projectId: nil,
             workspaceId: nil,
             projectPath: projectPath,
             state: state,
-            updatedAt: "2026-02-28T19:00:00Z",
-            stateChangedAt: "2026-02-28T19:00:00Z",
+            updatedAt: updatedAt ?? fixtureStateTimestamp,
+            stateChangedAt: stateChangedAt ?? fixtureStateTimestamp,
             sessionId: sessionId,
             latestSessionId: sessionId,
             sessionCount: sessionId == nil ? 0 : 1,

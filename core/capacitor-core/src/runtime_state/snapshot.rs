@@ -43,6 +43,11 @@ impl RuntimeSessionsSnapshot {
         &self.sessions
     }
 
+    #[cfg(test)]
+    pub(crate) fn from_sessions(sessions: Vec<RuntimeSessionRecord>) -> Self {
+        Self { sessions }
+    }
+
     pub fn latest_for_project(&self, project_path: &str) -> Option<&RuntimeSessionRecord> {
         let home_dir = dirs::home_dir().map(|path| path.to_string_lossy().to_string());
         let mut best: Option<&RuntimeSessionRecord> = None;
@@ -93,7 +98,7 @@ pub fn sessions_snapshot() -> Option<RuntimeSessionsSnapshot> {
             last_activity_at: session.last_activity_at,
             tools_in_flight: session.tools_in_flight,
             ready_reason: session.ready_reason,
-            is_alive: Some(true),
+            is_alive: None,
         })
         .collect();
 
@@ -237,7 +242,7 @@ mod tests {
             last_activity_at: None,
             tools_in_flight: 0,
             ready_reason: None,
-            is_alive: Some(true),
+            is_alive: None,
         }
     }
 
@@ -264,13 +269,11 @@ mod tests {
 
     #[test]
     fn latest_for_project_matches_subpath() {
-        let snapshot = RuntimeSessionsSnapshot {
-            sessions: vec![make_session_record(
-                "session-1",
-                "/Users/pete/Code/assistant-ui/packages/web",
-                "2026-02-01T00:00:00Z",
-            )],
-        };
+        let snapshot = RuntimeSessionsSnapshot::from_sessions(vec![make_session_record(
+            "session-1",
+            "/Users/pete/Code/assistant-ui/packages/web",
+            "2026-02-01T00:00:00Z",
+        )]);
 
         let selected = snapshot
             .latest_for_project("/Users/pete/Code/assistant-ui")
@@ -284,13 +287,11 @@ mod tests {
 
     #[test]
     fn latest_for_project_does_not_match_parent_path() {
-        let snapshot = RuntimeSessionsSnapshot {
-            sessions: vec![make_session_record(
-                "session-1",
-                "/Users/pete/Code/assistant-ui",
-                "2026-02-01T00:00:00Z",
-            )],
-        };
+        let snapshot = RuntimeSessionsSnapshot::from_sessions(vec![make_session_record(
+            "session-1",
+            "/Users/pete/Code/assistant-ui",
+            "2026-02-01T00:00:00Z",
+        )]);
 
         let selected = snapshot.latest_for_project("/Users/pete/Code/assistant-ui/packages/web");
 
@@ -316,5 +317,56 @@ mod tests {
         let _guard = env_lock();
         let _set = EnvGuard::set(ENABLE_ENV, "1");
         assert!(runtime_enabled());
+    }
+
+    #[test]
+    fn sessions_snapshot_does_not_assume_alive_state() {
+        let _guard = env_lock();
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let snapshot_path = tempdir.path().join("snapshot.json");
+        let snapshot = serde_json::json!({
+            "projects": [],
+            "sessions": [{
+                "session_id": "session-1",
+                "pid": 123,
+                "cwd": "/repo",
+                "project_id": "/repo/.git",
+                "project_path": "/repo",
+                "workspace_id": "workspace-1",
+                "state": "working",
+                "state_changed_at": "2026-03-05T00:00:00Z",
+                "updated_at": "2026-03-05T00:00:00Z",
+                "last_event": "user_prompt_submit",
+                "last_activity_at": "2026-03-05T00:00:00Z",
+                "tools_in_flight": 1,
+                "ready_reason": null
+            }],
+            "shells": [],
+            "routing": [],
+            "diagnostics": {
+                "events_ingested": 1,
+                "sessions_tracked": 1,
+                "shell_signals_tracked": 0,
+                "events_skipped": 0,
+                "stale_events_skipped": 0,
+                "informational_events_skipped": 0,
+                "reducer_events_skipped": 0,
+                "last_error": null
+            },
+            "generated_at": "2026-03-05T00:00:00Z"
+        });
+
+        std::fs::write(
+            &snapshot_path,
+            serde_json::to_vec(&snapshot).expect("serialize snapshot"),
+        )
+        .expect("write snapshot");
+
+        let _enable = EnvGuard::set(ENABLE_ENV, "1");
+        let _snapshot = EnvGuard::set(SNAPSHOT_ENV, snapshot_path.to_str().expect("snapshot path"));
+
+        let sessions = sessions_snapshot().expect("sessions snapshot");
+        assert_eq!(sessions.sessions().len(), 1);
+        assert_eq!(sessions.sessions()[0].is_alive, None);
     }
 }

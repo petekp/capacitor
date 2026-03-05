@@ -18,8 +18,8 @@ impl SessionState {
     pub fn priority(self) -> u8 {
         match self {
             Self::Waiting => 4,
-            Self::Compacting => 3,
-            Self::Working => 2,
+            Self::Working => 3,
+            Self::Compacting => 2,
             Self::Ready => 1,
             Self::Idle => 0,
         }
@@ -71,6 +71,7 @@ pub struct ShellSignal {
     pub tty: String,
     pub parent_app: String,
     pub tmux_session: Option<String>,
+    pub tmux_client_tty: Option<String>,
     pub updated_at: String,
 }
 
@@ -208,6 +209,7 @@ pub struct IngestShellSignalCommand {
     pub tty: String,
     pub parent_app: String,
     pub tmux_session: Option<String>,
+    pub tmux_client_tty: Option<String>,
     pub recorded_at: String,
 }
 

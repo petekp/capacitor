@@ -1,7 +1,10 @@
 use serde::Deserialize;
-use serde_json::{Map, Value};
+use serde_json::Value;
 use std::collections::BTreeMap;
 
+// Fields are populated by serde deserialization from Claude Code hook payloads.
+// Many are not read directly in Rust but must exist for correct deserialization.
+#[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
 pub struct HookInput {
     pub hook_event_name: Option<String>,
@@ -176,125 +179,8 @@ impl HookInput {
     pub fn resolve_cwd(&self, current_cwd: Option<&str>) -> Option<String> {
         self.cwd
             .clone()
-            .or_else(|| std::env::var("CLAUDE_PROJECT_DIR").ok())
             .or_else(|| current_cwd.map(ToString::to_string))
-            .or_else(|| std::env::var("PWD").ok())
             .map(|cwd| normalize_path(&cwd))
-    }
-
-    #[allow(dead_code)]
-    pub fn to_metadata_map(&self) -> Map<String, Value> {
-        let mut metadata = Map::new();
-
-        insert_trimmed_str(
-            &mut metadata,
-            "transcript_path",
-            self.transcript_path.as_deref(),
-        );
-        insert_trimmed_str(
-            &mut metadata,
-            "permission_mode",
-            self.permission_mode.as_deref(),
-        );
-        insert_trimmed_str(&mut metadata, "trigger", self.trigger.as_deref());
-        insert_trimmed_str(&mut metadata, "prompt", self.prompt.as_deref());
-        insert_trimmed_str(
-            &mut metadata,
-            "custom_instructions",
-            self.custom_instructions.as_deref(),
-        );
-        insert_trimmed_str(
-            &mut metadata,
-            "notification_type",
-            self.notification_type.as_deref(),
-        );
-        insert_trimmed_str(&mut metadata, "message", self.message.as_deref());
-        insert_trimmed_str(&mut metadata, "title", self.title.as_deref());
-        if let Some(stop_hook_active) = self.stop_hook_active {
-            metadata.insert(
-                "stop_hook_active".to_string(),
-                Value::Bool(stop_hook_active),
-            );
-        }
-        insert_trimmed_str(
-            &mut metadata,
-            "last_assistant_message",
-            self.last_assistant_message.as_deref(),
-        );
-        insert_trimmed_str(&mut metadata, "tool_name", self.tool_name.as_deref());
-        insert_trimmed_str(&mut metadata, "tool_use_id", self.tool_use_id.as_deref());
-        insert_trimmed_str(&mut metadata, "error", self.error.as_deref());
-        if let Some(is_interrupt) = self.is_interrupt {
-            metadata.insert("is_interrupt".to_string(), Value::Bool(is_interrupt));
-        }
-        insert_trimmed_str(&mut metadata, "model", self.model.as_deref());
-        insert_trimmed_str(&mut metadata, "agent_id", self.agent_id.as_deref());
-        insert_trimmed_str(&mut metadata, "agent_type", self.agent_type.as_deref());
-        insert_trimmed_str(
-            &mut metadata,
-            "agent_transcript_path",
-            self.agent_transcript_path.as_deref(),
-        );
-        insert_trimmed_str(
-            &mut metadata,
-            "teammate_name",
-            self.teammate_name.as_deref(),
-        );
-        insert_trimmed_str(&mut metadata, "team_name", self.team_name.as_deref());
-        insert_trimmed_str(&mut metadata, "task_id", self.task_id.as_deref());
-        insert_trimmed_str(&mut metadata, "task_subject", self.task_subject.as_deref());
-        insert_trimmed_str(
-            &mut metadata,
-            "task_description",
-            self.task_description.as_deref(),
-        );
-
-        if let Some(source) = &self.source {
-            metadata.insert("source".to_string(), source.clone());
-        }
-        if let Some(reason) = &self.reason {
-            metadata.insert("reason".to_string(), reason.clone());
-        }
-        if let Some(permission_suggestions) = &self.permission_suggestions {
-            metadata.insert(
-                "permission_suggestions".to_string(),
-                permission_suggestions.clone(),
-            );
-        }
-
-        if let Some(tool_input) = &self.tool_input {
-            if let Ok(value) = serde_json::to_value(tool_input) {
-                if !value_is_empty_object(&value) {
-                    metadata.insert("tool_input".to_string(), value);
-                }
-            }
-        }
-        if let Some(tool_response) = &self.tool_response {
-            if let Ok(value) = serde_json::to_value(tool_response) {
-                if !value_is_empty_object(&value) {
-                    metadata.insert("tool_response".to_string(), value);
-                }
-            }
-        }
-
-        for (key, value) in &self.extra {
-            metadata.entry(key.clone()).or_insert_with(|| value.clone());
-        }
-
-        metadata
-    }
-}
-
-fn insert_trimmed_str(map: &mut Map<String, Value>, key: &str, value: Option<&str>) {
-    if let Some(value) = value.map(str::trim).filter(|value| !value.is_empty()) {
-        map.insert(key.to_string(), Value::String(value.to_string()));
-    }
-}
-
-fn value_is_empty_object(value: &Value) -> bool {
-    match value {
-        Value::Object(object) => object.is_empty(),
-        _ => false,
     }
 }
 
@@ -304,5 +190,71 @@ fn normalize_path(path: &str) -> String {
         "/".to_string()
     } else {
         trimmed.to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::HookInput;
+    use crate::test_support::env_lock;
+
+    struct EnvGuard {
+        key: &'static str,
+        prior: Option<String>,
+    }
+
+    impl EnvGuard {
+        fn set(key: &'static str, value: &str) -> Self {
+            let prior = std::env::var(key).ok();
+            std::env::set_var(key, value);
+            Self { key, prior }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            if let Some(value) = &self.prior {
+                std::env::set_var(self.key, value);
+            } else {
+                std::env::remove_var(self.key);
+            }
+        }
+    }
+
+    fn hook_input_with_cwd(cwd: Option<&str>) -> HookInput {
+        let value = match cwd {
+            Some(path) => serde_json::json!({ "hook_event_name": "SessionStart", "cwd": path }),
+            None => serde_json::json!({ "hook_event_name": "SessionStart" }),
+        };
+        serde_json::from_value(value).expect("valid hook input json")
+    }
+
+    #[test]
+    fn resolve_cwd_uses_payload_cwd_when_present() {
+        let input = hook_input_with_cwd(Some("/repo/path/"));
+        assert_eq!(input.resolve_cwd(None).as_deref(), Some("/repo/path"));
+    }
+
+    #[test]
+    fn resolve_cwd_uses_current_cwd_when_provided() {
+        let _guard = env_lock();
+        let _pwd = EnvGuard::set("PWD", "/ambient/pwd");
+        let _project_dir = EnvGuard::set("CLAUDE_PROJECT_DIR", "/ambient/project");
+        let input = hook_input_with_cwd(None);
+
+        assert_eq!(
+            input.resolve_cwd(Some("/request/cwd/")).as_deref(),
+            Some("/request/cwd")
+        );
+    }
+
+    #[test]
+    fn resolve_cwd_does_not_use_ambient_env_when_request_cwd_missing() {
+        let _guard = env_lock();
+        let _pwd = EnvGuard::set("PWD", "/ambient/pwd");
+        let _project_dir = EnvGuard::set("CLAUDE_PROJECT_DIR", "/ambient/project");
+        let input = hook_input_with_cwd(None);
+
+        assert_eq!(input.resolve_cwd(None), None);
     }
 }

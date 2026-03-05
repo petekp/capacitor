@@ -181,6 +181,7 @@ dependencies = [
  "chrono",
  "dirs",
  "fs-err 3.3.0",
+ "libc",
  "md5",
  "once_cell",
  "regex",

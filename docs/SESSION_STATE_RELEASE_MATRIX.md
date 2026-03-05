@@ -1,7 +1,7 @@
-# Session State Reliability Gate v2 (Runtime)
+# Session State Reliability Gate v3 (Runtime + Operations)
 
 - Canonical path: `docs/SESSION_STATE_RELEASE_MATRIX.md`
-- Scope: Hook ingest -> `capacitor-core` reducer -> runtime snapshot projection
+- Scope: Hook ingest -> `capacitor-core` reducer/query -> persisted runtime snapshot -> Swift projection/stabilization (`AppState`, `SessionStateManager`, `ShellStateStore`), plus the operational checks that keep replay and soak verification wired into CI
 - Policy: `P0` blocking, `P1/P2` triage-required
 
 ## Purpose
@@ -11,6 +11,7 @@ This gate protects session-state correctness in the runtime-snapshot architectur
 1. Hook event classification must remain explicit and deterministic.
 2. Replay projection must remain deterministic for the same corpus.
 3. Reducer/query baselines must remain stable under refactors.
+4. Replay verification must stay wired into pre-merge CI, and soak verification must stay wired into the nightly workflow.
 
 ## P0 Blocking Commands
 
@@ -27,6 +28,13 @@ The script enforces:
 3. Core reducer/query baseline suites  
    `cargo test -p capacitor-core reduce` and `cargo test -p capacitor-core query`
 
+## Operational Wiring
+
+- Pre-merge CI runs `./scripts/ci/runtime-reliability.sh ci`
+- Nightly/scheduled verification runs `./scripts/ci/runtime-reliability.sh nightly <report-path>`
+
+`runtime-reliability.sh` is the stable operational wrapper. It always runs the migration guard and replay gate, and nightly mode additionally runs the HEM shadow soak benchmark.
+
 ## P1/P2 Non-Blocking (Triage Required)
 
 The gate script also runs compatibility checks:
@@ -38,11 +46,12 @@ Any failure here requires explicit triage ownership and risk note before release
 
 ## Evidence Requirements
 
-For releases touching hook/reducer/session logic:
+For releases touching hook ingest, reducer/query behavior, runtime snapshot projection, or Swift-side session/shell projection and freshness logic:
 
-1. Attach `scripts/ci/session-state-gate.sh` output.
+1. Attach `scripts/ci/session-state-gate.sh` output, or the equivalent section from `scripts/ci/runtime-reliability.sh`.
 2. Attach relevant runtime logs from `~/.capacitor/runtime/` (snapshot and diagnostics context).
-3. Document any non-blocking triage failures with owner and due date.
+3. If the change affects Swift-side projection/stabilization, attach the relevant `swift test` evidence as well.
+4. Document any non-blocking triage failures with owner and due date.
 
 ## Pass / Fail
 

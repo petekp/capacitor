@@ -18,6 +18,7 @@ private func debugLog(_ message: String) {
 protocol AppleScriptClient {
     func run(_ script: String)
     func runChecked(_ script: String) -> Bool
+    func runBoolean(_ script: String) -> Bool?
 }
 
 private struct DefaultAppleScriptClient: AppleScriptClient {
@@ -52,6 +53,49 @@ private struct DefaultAppleScriptClient: AppleScriptClient {
             logger.error("AppleScript launch failed: \(error.localizedDescription)")
             debugLog("runAppleScriptChecked failed error=\(error.localizedDescription)")
             return false
+        }
+    }
+
+    func runBoolean(_ script: String) -> Bool? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        process.arguments = ["-e", script]
+
+        let outputPipe = Pipe()
+        let errorPipe = Pipe()
+        process.standardOutput = outputPipe
+        process.standardError = errorPipe
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+
+            if process.terminationStatus != 0 {
+                let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+                let errorMsg = String(data: errorData, encoding: .utf8) ?? "unknown"
+                logger.warning("AppleScript boolean eval failed (exit \(process.terminationStatus)): \(errorMsg)")
+                debugLog("runAppleScriptBoolean failed exit=\(process.terminationStatus) error=\(errorMsg)")
+                return nil
+            }
+
+            let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
+            let output = String(data: outputData, encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .lowercased()
+
+            switch output {
+            case "true":
+                return true
+            case "false":
+                return false
+            default:
+                debugLog("runAppleScriptBoolean unexpectedOutput=\(output ?? "<nil>")")
+                return nil
+            }
+        } catch {
+            logger.error("AppleScript boolean eval launch failed: \(error.localizedDescription)")
+            debugLog("runAppleScriptBoolean failed error=\(error.localizedDescription)")
+            return nil
         }
     }
 }
@@ -99,12 +143,72 @@ struct TerminalActivationResult: Equatable {
 
 @MainActor
 final class TerminalLauncher {
+    enum SupportedTerminalApp: CaseIterable, Equatable {
+        case ghostty
+        case iTerm
+        case terminal
+
+        var processName: String {
+            switch self {
+            case .ghostty: "Ghostty"
+            case .iTerm: "iTerm2"
+            case .terminal: "Terminal"
+            }
+        }
+
+        var bundleId: String {
+            switch self {
+            case .ghostty: "com.mitchellh.ghostty"
+            case .iTerm: "com.googlecode.iterm2"
+            case .terminal: "com.apple.Terminal"
+            }
+        }
+
+        static func from(parentApp: String?) -> SupportedTerminalApp? {
+            guard let normalized = parentApp?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .lowercased(),
+                !normalized.isEmpty
+            else {
+                return nil
+            }
+
+            switch normalized {
+            case "ghostty":
+                return .ghostty
+            case "iterm", "iterm2":
+                return .iTerm
+            case "terminal", "terminal.app":
+                return .terminal
+            default:
+                return nil
+            }
+        }
+
+        static func detectAvailable() -> SupportedTerminalApp {
+            let runningApps = NSWorkspace.shared.runningApplications.compactMap { app in
+                SupportedTerminalApp.allCases.first(where: { $0.bundleId == app.bundleIdentifier })
+            }
+            if let running = runningApps.first {
+                return running
+            }
+            if FileManager.default.fileExists(atPath: "/Applications/Ghostty.app") {
+                return .ghostty
+            }
+            if FileManager.default.fileExists(atPath: "/Applications/iTerm.app") {
+                return .iTerm
+            }
+            return .terminal
+        }
+    }
+
     private enum Constants {
         static let homebrewPaths = "/opt/homebrew/bin:/usr/local/bin"
     }
 
     private let appleScript: AppleScriptClient
     private let ghosttyWindowReader: GhosttyWindowReader
+    var preferredTerminalAppResolver: ((String?, String, String?) -> SupportedTerminalApp?)?
     private let fallbackTmuxSessionResolver: ((String) async -> String?)?
     /// Override for the unified activation flow. Tests use this to intercept card-click behavior.
     private let activateProjectSessionOverride: ((String, String) async -> Bool)?
@@ -422,7 +526,7 @@ final class TerminalLauncher {
                 // fall back to generic app activation so users can still reach Ghostty.
                 logger.info("    activateGhosttyWithAXRouting: AX unavailable, falling back to generic activation")
                 debugLog("activateGhosttyWithAXRouting ax unavailable tty=\(resolvedTty ?? "<none>") path=\(projectPath ?? "<nil>")")
-                return activateAppByName("Ghostty")
+                return activateApp(.ghostty)
             case let .windows(windows):
                 if windows.isEmpty {
                     if attempt < maxRetries - 1 {
@@ -486,7 +590,7 @@ final class TerminalLauncher {
 
                     logger.info("    activateGhosttyWithAXRouting: no deterministic tab/window route → generic activation")
                     debugLog("activateGhosttyWithAXRouting route=app_activate_fallback")
-                    return activateAppByName("Ghostty")
+                    return activateApp(.ghostty)
                 }
 
                 // We have a projectPath, but didn't find a matching tab, and we have retries left.
@@ -541,8 +645,13 @@ final class TerminalLauncher {
     // MARK: - Tmux Helpers
 
     private func launchTerminalWithTmuxSession(_ session: String, projectPath: String? = nil) {
-        logger.debug("Launching terminal with tmux session '\(session)' at path '\(projectPath ?? "default")'")
-        debugLog("launchTerminalWithTmuxSession session=\(session) path=\(projectPath ?? "default")")
+        let app = preferredTerminalApp(
+            clientTty: nil,
+            projectPath: projectPath ?? "",
+            sessionName: session,
+        )
+        logger.debug("Launching \(app.processName) with tmux session '\(session)' at path '\(projectPath ?? "default")'")
+        debugLog("launchTerminalWithTmuxSession app=\(app.processName) session=\(session) path=\(projectPath ?? "default")")
         let escapedSession = shellEscape(session)
         let tmuxCmd: String
         if let path = projectPath {
@@ -552,7 +661,7 @@ final class TerminalLauncher {
             tmuxCmd = "tmux new-session -A -s \(escapedSession)"
         }
 
-        if isGhosttyRunningInternal() {
+        if app == .ghostty, isTerminalRunning(.ghostty) {
             // Ghostty is running: open -a sends an Apple Event to the existing
             // instance, which opens a new tab at the given directory. No -n flag
             // means no new process and no extra dock icon.
@@ -582,9 +691,37 @@ final class TerminalLauncher {
             return
         }
 
-        // No Ghostty running — launch Ghostty with the tmux command directly.
-        let escapedTmuxCmd = bashDoubleQuoteEscape(tmuxCmd)
-        runBashScript("open -a Ghostty.app --args -e sh -c \"\(escapedTmuxCmd)\"")
+        if app == .ghostty {
+            // No Ghostty running — launch Ghostty with the tmux command directly.
+            let escapedTmuxCmd = bashDoubleQuoteEscape(tmuxCmd)
+            runBashScript("open -a Ghostty.app --args -e sh -c \"\(escapedTmuxCmd)\"")
+            return
+        }
+
+        let isRunning = isTerminalRunning(app)
+        if let path = projectPath {
+            runBashScript("open -b \(app.bundleId) \(shellEscape(path))")
+        } else {
+            runBashScript("open -b \(app.bundleId)")
+        }
+
+        let delay = isRunning ? 1.0 : 2.5
+        let applescriptSafe = tmuxCmd
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        let script = """
+        osascript <<'APPLESCRIPT'
+        delay \(delay)
+        tell application "System Events"
+            tell process "\(app.processName)"
+                keystroke "\(applescriptSafe)"
+                delay 0.05
+                keystroke return
+            end tell
+        end tell
+        APPLESCRIPT
+        """
+        runBashScript(script)
     }
 
     private func findTmuxSessionForPath(_ projectPath: String) async -> String? {
@@ -679,12 +816,70 @@ final class TerminalLauncher {
         return bestMatch?.session
     }
 
+    static func resolvePreferredTerminalApp(
+        clientTty: String?,
+        projectPath: String,
+        sessionName: String?,
+        shellState: ShellCwdState,
+    ) -> SupportedTerminalApp? {
+        let normalizedProjectPath = PathNormalizer.normalize(projectPath)
+        let normalizedClientTty: String? = {
+            guard let value = clientTty?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !value.isEmpty
+            else {
+                return nil
+            }
+            return value
+        }()
+        let normalizedSessionName: String? = {
+            guard let value = sessionName?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !value.isEmpty
+            else {
+                return nil
+            }
+            return value
+        }()
+
+        var bestMatch: (rank: Int, updatedAt: Date, app: SupportedTerminalApp)?
+
+        for entry in shellState.shells.values {
+            guard let app = SupportedTerminalApp.from(parentApp: entry.parentApp) else {
+                continue
+            }
+
+            let rank: Int? = if let normalizedClientTty, entry.tmuxClientTty == normalizedClientTty {
+                4
+            } else if let normalizedClientTty, entry.tty == normalizedClientTty {
+                3
+            } else if let normalizedSessionName, entry.tmuxSession == normalizedSessionName {
+                2
+            } else if PathNormalizer.normalize(entry.cwd) == normalizedProjectPath {
+                1
+            } else {
+                nil
+            }
+
+            guard let rank else { continue }
+
+            if let currentBest = bestMatch {
+                if rank < currentBest.rank {
+                    continue
+                }
+                if rank == currentBest.rank, entry.updatedAt <= currentBest.updatedAt {
+                    continue
+                }
+            }
+
+            bestMatch = (rank, entry.updatedAt, app)
+        }
+
+        return bestMatch?.app
+    }
+
     // MARK: - Ghostty Window Detection
 
     private func isGhosttyRunningInternal() -> Bool {
-        NSWorkspace.shared.runningApplications.contains {
-            $0.bundleIdentifier == "com.mitchellh.ghostty"
-        }
+        isTerminalRunning(.ghostty)
     }
 
     // MARK: - Terminal Focus After Tmux Switch
@@ -694,36 +889,109 @@ final class TerminalLauncher {
         projectPath: String,
         tmuxSessionHint: String?,
     ) async -> Bool {
-        // Try Ghostty AX routing (tab focus via accessibility)
-        if isGhosttyRunningInternal(),
-           await activateGhosttyWithAXRouting(forTty: clientTty, projectPath: projectPath, tmuxSessionHint: tmuxSessionHint)
-        {
-            return true
+        let app = preferredTerminalApp(
+            clientTty: clientTty,
+            projectPath: projectPath,
+            sessionName: tmuxSessionHint,
+        )
+
+        switch app {
+        case .ghostty:
+            if isTerminalRunning(.ghostty),
+               await activateGhosttyWithAXRouting(forTty: clientTty, projectPath: projectPath, tmuxSessionHint: tmuxSessionHint)
+            {
+                return true
+            }
+        case .iTerm, .terminal:
+            if let clientTty, focusTerminalTabByTty(clientTty, app: app) {
+                return true
+            }
         }
-        // Last resort: generic Ghostty activation (may show wrong tab)
-        activateAppByName("Ghostty")
+
+        // Last resort: generic app activation (may show wrong tab and still trigger relaunch).
+        activateApp(app)
         return false
     }
 
     // MARK: - App Activation Helpers
 
     @discardableResult
-    private func activateAppByName(_ name: String?) -> Bool {
-        guard let name,
-              let app = NSWorkspace.shared.runningApplications.first(where: {
-                  $0.localizedName?.lowercased().contains(name.lowercased()) == true
-              }),
-              let appName = app.localizedName
-        else {
-            debugLog("activateAppByName failed name=\(name ?? "nil") (no running app match)")
-            return false
-        }
+    private func activateApp(_ app: SupportedTerminalApp) -> Bool {
         // Use AppleScript for reliable activation - NSRunningApplication.activate()
         // can silently fail when SwiftUI windows steal focus back.
-        logger.debug("Activating '\(appName)' via AppleScript")
-        let result = runAppleScriptChecked("tell application \"\(appName)\" to activate")
-        debugLog("activateAppByName app=\(appName) result=\(result)")
+        logger.debug("Activating '\(app.processName)' via AppleScript")
+        let result = runAppleScriptChecked("tell application \"\(app.processName)\" to activate")
+        debugLog("activateApp app=\(app.processName) result=\(result)")
         return result
+    }
+
+    private func preferredTerminalApp(
+        clientTty: String?,
+        projectPath: String,
+        sessionName: String?,
+    ) -> SupportedTerminalApp {
+        preferredTerminalAppResolver?(clientTty, projectPath, sessionName) ?? SupportedTerminalApp.detectAvailable()
+    }
+
+    private func isTerminalRunning(_ app: SupportedTerminalApp) -> Bool {
+        NSWorkspace.shared.runningApplications.contains {
+            $0.bundleIdentifier == app.bundleId
+        }
+    }
+
+    private func focusTerminalTabByTty(_ tty: String, app: SupportedTerminalApp) -> Bool {
+        guard isTerminalRunning(app) else {
+            debugLog("focusTerminalTabByTty app=\(app.processName) not running tty=\(tty)")
+            return false
+        }
+
+        let escapedTty = tty
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+
+        let script: String
+        switch app {
+        case .ghostty:
+            return false
+        case .iTerm:
+            script = """
+            tell application "iTerm2"
+                repeat with w in windows
+                    repeat with t in tabs of w
+                        repeat with s in sessions of t
+                            if tty of s is "\(escapedTty)" then
+                                select t
+                                set index of w to 1
+                                activate
+                                return true
+                            end if
+                        end repeat
+                    end repeat
+                end repeat
+            end tell
+            return false
+            """
+        case .terminal:
+            script = """
+            tell application "Terminal"
+                repeat with w in windows
+                    repeat with t in tabs of w
+                        if tty of t is "\(escapedTty)" then
+                            set selected tab of w to t
+                            set index of w to 1
+                            activate
+                            return true
+                        end if
+                    end repeat
+                end repeat
+            end tell
+            return false
+            """
+        }
+
+        let matched = runAppleScriptBoolean(script) == true
+        debugLog("focusTerminalTabByTty app=\(app.processName) tty=\(tty) matched=\(matched)")
+        return matched
     }
 
     // MARK: - Script Execution
@@ -733,6 +1001,10 @@ final class TerminalLauncher {
     @discardableResult
     private func runAppleScriptChecked(_ script: String) -> Bool {
         appleScript.runChecked(script)
+    }
+
+    private func runAppleScriptBoolean(_ script: String) -> Bool? {
+        appleScript.runBoolean(script)
     }
 
     private func runBashScript(_ script: String) {
@@ -752,43 +1024,106 @@ final class TerminalLauncher {
     }
 
     static func runBashScriptWithResult(_ script: String) async -> (exitCode: Int32, output: String?) {
-        await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                let process = Process()
-                process.executableURL = URL(fileURLWithPath: "/bin/bash")
-                process.arguments = ["-c", script]
+        if _Concurrency.Task.isCancelled {
+            return (-1, nil)
+        }
 
-                var env = ProcessInfo.processInfo.environment
-                env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:" + (env["PATH"] ?? "")
-                process.environment = env
+        final class ProcessHolder: @unchecked Sendable {
+            private let lock = NSLock()
+            private var process: Process?
 
-                let pipe = Pipe()
-                process.standardOutput = pipe
-                process.standardError = FileHandle.nullDevice
+            func set(_ process: Process) {
+                lock.lock()
+                self.process = process
+                lock.unlock()
+            }
 
-                var outputData = Data()
-                pipe.fileHandleForReading.readabilityHandler = { handle in
-                    let data = handle.availableData
-                    guard !data.isEmpty else { return }
-                    outputData.append(data)
-                }
+            func terminateIfRunning() {
+                lock.lock()
+                let process = process
+                lock.unlock()
+                guard let process, process.isRunning else { return }
+                process.terminate()
+            }
+        }
 
-                process.terminationHandler = { process in
-                    pipe.fileHandleForReading.readabilityHandler = nil
-                    let trailingData = pipe.fileHandleForReading.readDataToEndOfFile()
-                    if !trailingData.isEmpty {
-                        outputData.append(trailingData)
+        final class ContinuationBox: @unchecked Sendable {
+            private let lock = NSLock()
+            private var continuation: CheckedContinuation<(exitCode: Int32, output: String?), Never>?
+
+            init(_ continuation: CheckedContinuation<(exitCode: Int32, output: String?), Never>) {
+                self.continuation = continuation
+            }
+
+            func resume(_ value: (exitCode: Int32, output: String?)) {
+                lock.lock()
+                let continuation = continuation
+                self.continuation = nil
+                lock.unlock()
+                continuation?.resume(returning: value)
+            }
+        }
+
+        let processHolder = ProcessHolder()
+
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                let continuationBox = ContinuationBox(continuation)
+
+                DispatchQueue.global(qos: .userInitiated).async {
+                    let process = Process()
+                    process.executableURL = URL(fileURLWithPath: "/bin/bash")
+                    process.arguments = ["-c", script]
+
+                    var env = ProcessInfo.processInfo.environment
+                    env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:" + (env["PATH"] ?? "")
+                    process.environment = env
+
+                    let pipe = Pipe()
+                    process.standardOutput = pipe
+                    process.standardError = FileHandle.nullDevice
+
+                    let outputLock = NSLock()
+                    var outputData = Data()
+
+                    pipe.fileHandleForReading.readabilityHandler = { handle in
+                        let data = handle.availableData
+                        guard !data.isEmpty else { return }
+                        outputLock.lock()
+                        outputData.append(data)
+                        outputLock.unlock()
                     }
-                    let output = String(data: outputData, encoding: .utf8)
-                    continuation.resume(returning: (process.terminationStatus, output))
-                }
 
-                do {
-                    try process.run()
-                } catch {
-                    continuation.resume(returning: (-1, nil))
+                    processHolder.set(process)
+
+                    let timeoutWork = DispatchWorkItem {
+                        processHolder.terminateIfRunning()
+                    }
+
+                    process.terminationHandler = { process in
+                        timeoutWork.cancel()
+                        pipe.fileHandleForReading.readabilityHandler = nil
+                        let trailingData = pipe.fileHandleForReading.readDataToEndOfFile()
+                        outputLock.lock()
+                        if !trailingData.isEmpty {
+                            outputData.append(trailingData)
+                        }
+                        let output = String(data: outputData, encoding: .utf8)
+                        outputLock.unlock()
+                        continuationBox.resume((process.terminationStatus, output))
+                    }
+
+                    do {
+                        try process.run()
+                        DispatchQueue.global().asyncAfter(deadline: .now() + 10, execute: timeoutWork)
+                    } catch {
+                        timeoutWork.cancel()
+                        continuationBox.resume((-1, nil))
+                    }
                 }
             }
+        } onCancel: {
+            processHolder.terminateIfRunning()
         }
     }
 }
@@ -796,19 +1131,48 @@ final class TerminalLauncher {
 // MARK: - Terminal Launch Scripts
 
 enum TerminalScripts {
-    static func launchWithCommand(projectPath: String, command: String) -> String {
+    static func launchWithCommand(
+        projectPath: String,
+        command: String,
+        preferredApp: TerminalLauncher.SupportedTerminalApp? = nil,
+    ) -> String {
+        let app = preferredApp ?? TerminalLauncher.SupportedTerminalApp.detectAvailable()
         let escapedPath = bashDoubleQuoteEscape(projectPath)
         let escapedCommand = bashDoubleQuoteEscape(command)
+
+        if app == .ghostty {
+            return """
+            PROJECT_PATH="\(escapedPath)"
+            CLAUDE_CMD="\(escapedCommand)"
+
+            if [ -d "/Applications/Ghostty.app" ]; then
+                open -a Ghostty.app --args --working-directory="$PROJECT_PATH" -e bash -c "$CLAUDE_CMD"
+            else
+                echo "Ghostty not installed at /Applications/Ghostty.app" >&2
+            fi
+            """
+        }
+
+        let delay = NSWorkspace.shared.runningApplications.contains {
+            $0.bundleIdentifier == app.bundleId
+        } ? "1.0" : "2.5"
 
         return """
         PROJECT_PATH="\(escapedPath)"
         CLAUDE_CMD="\(escapedCommand)"
 
-        if [ -d "/Applications/Ghostty.app" ]; then
-            open -a Ghostty.app --args --working-directory="$PROJECT_PATH" -e bash -c "$CLAUDE_CMD"
-        else
-            echo "Ghostty not installed at /Applications/Ghostty.app" >&2
-        fi
+        open -b \(app.bundleId) "$PROJECT_PATH"
+
+        osascript <<'APPLESCRIPT'
+        delay \(delay)
+        tell application "System Events"
+            tell process "\(app.processName)"
+                keystroke "\(escapedCommand)"
+                delay 0.05
+                keystroke return
+            end tell
+        end tell
+        APPLESCRIPT
         """
     }
 }

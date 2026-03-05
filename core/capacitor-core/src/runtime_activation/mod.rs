@@ -43,14 +43,14 @@ use trace::DecisionTraceFfi;
 ///
 /// This is the FFI-safe version of the shell state. Swift fetches the runtime
 /// snapshot and converts it to this type before passing to Rust.
-#[derive(Debug, Clone, Serialize, Deserialize, uniffi::Record)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ShellCwdStateFfi {
     pub version: u32,
     pub shells: HashMap<String, ShellEntryFfi>,
 }
 
 /// A single shell entry from the shell state.
-#[derive(Debug, Clone, Serialize, Deserialize, uniffi::Record)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ShellEntryFfi {
     pub cwd: String,
     pub tty: String,
@@ -66,7 +66,7 @@ pub struct ShellEntryFfi {
 }
 
 /// Context about tmux state, queried by Swift before calling the resolver.
-#[derive(Debug, Clone, Default, uniffi::Record)]
+#[derive(Debug, Clone, Default)]
 pub struct TmuxContextFfi {
     /// Session name if one exists at the project path
     pub session_at_path: Option<String>,
@@ -77,7 +77,7 @@ pub struct TmuxContextFfi {
 }
 
 /// The resolved activation decision.
-#[derive(Debug, Clone, uniffi::Record)]
+#[derive(Debug, Clone)]
 pub struct ActivationDecision {
     /// Primary action to attempt
     pub primary: ActivationAction,
@@ -90,7 +90,7 @@ pub struct ActivationDecision {
 }
 
 /// A single action for Swift to execute.
-#[derive(Debug, Clone, PartialEq, uniffi::Enum)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ActivationAction {
     /// Activate a terminal by querying for TTY ownership (AppleScript)
     ActivateByTty {
@@ -139,13 +139,10 @@ pub enum ActivationAction {
 
     /// Activate first running terminal from priority list
     ActivatePriorityFallback,
-
-    /// Do nothing
-    Skip,
 }
 
 /// Terminal types that support TTY-based tab selection.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TerminalType {
     ITerm,
     TerminalApp,
@@ -171,7 +168,7 @@ impl From<ParentApp> for TerminalType {
 }
 
 /// IDE types for window activation via CLI.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IdeType {
     Cursor,
     VsCode,
@@ -345,8 +342,7 @@ fn resolve_activation_internal(
 /// - One path is a subdirectory of the other
 ///
 /// This allows activating a shell in `/project/src` when clicking `/project`.
-#[uniffi::export]
-pub fn paths_match(a: &str, b: &str) -> bool {
+pub(crate) fn paths_match(a: &str, b: &str) -> bool {
     let normalized_a = normalize_path_for_matching(a);
     let normalized_b = normalize_path_for_matching(b);
 
@@ -366,8 +362,7 @@ pub fn paths_match(a: &str, b: &str) -> bool {
 }
 
 /// Formats a decision trace for logging.
-#[uniffi::export]
-pub fn format_activation_trace(trace: DecisionTraceFfi) -> String {
+pub(crate) fn format_activation_trace(trace: DecisionTraceFfi) -> String {
     trace::format_decision_trace(&trace)
 }
 

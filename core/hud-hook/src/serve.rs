@@ -72,12 +72,34 @@ fn handle_hook(mut request: tiny_http::Request) {
         }
     }
 
-    let mut body = String::new();
-    if let Err(e) = request.as_reader().read_to_string(&mut body) {
-        tracing::debug!(error = %e, "Failed to read request body");
-        let _ = request.respond(json_error(400, "failed to read body"));
-        return;
+    let mut reader = request.as_reader();
+    let mut body_bytes = Vec::new();
+    let mut chunk = [0u8; 8192];
+    loop {
+        match std::io::Read::read(&mut reader, &mut chunk) {
+            Ok(0) => break,
+            Ok(n) => {
+                if (body_bytes.len() + n) as u64 > MAX_BODY_BYTES {
+                    let _ = request.respond(json_error(413, "body too large"));
+                    return;
+                }
+                body_bytes.extend_from_slice(&chunk[..n]);
+            }
+            Err(e) => {
+                tracing::debug!(error = %e, "Failed to read request body");
+                let _ = request.respond(json_error(400, "failed to read body"));
+                return;
+            }
+        }
     }
+    let body = match String::from_utf8(body_bytes) {
+        Ok(body) => body,
+        Err(e) => {
+            tracing::debug!(error = %e, "Failed to decode request body as UTF-8");
+            let _ = request.respond(json_error(400, "failed to read body"));
+            return;
+        }
+    };
 
     let hook_input: HookInput = match serde_json::from_str(&body) {
         Ok(input) => input,

@@ -30,13 +30,9 @@ pub fn normalize_shell_signal(command: IngestShellSignalCommand) -> IngestShellS
         tty: command.tty.trim().to_string(),
         parent_app: command.parent_app.trim().to_string(),
         tmux_session: normalize_optional_text(command.tmux_session),
+        tmux_client_tty: normalize_optional_text(command.tmux_client_tty),
         recorded_at: command.recorded_at.trim().to_string(),
     }
-}
-
-#[must_use]
-pub fn normalize_path(path: &str) -> String {
-    normalize_required_path(path)
 }
 
 #[must_use]
@@ -65,15 +61,8 @@ fn normalize_optional_text(value: Option<String>) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{normalize_hook_event, normalize_path};
+    use super::normalize_hook_event;
     use crate::domain::{HookEventType, IngestHookEventCommand};
-
-    #[test]
-    fn normalize_path_strips_trailing_slashes() {
-        assert_eq!(normalize_path("/repo/"), "/repo");
-        assert_eq!(normalize_path("/repo//"), "/repo");
-        assert_eq!(normalize_path("/"), "/");
-    }
 
     #[test]
     fn normalize_hook_event_cleans_optional_fields() {

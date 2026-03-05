@@ -115,9 +115,12 @@ if [ -d "$RESOURCE_BUNDLE" ]; then
         fi
     fi
 
-    # Check for Assets.car (compiled asset catalog)
+    # SwiftPM may preserve asset catalogs as raw Assets.xcassets directories instead of
+    # compiling them into a single Assets.car inside the resource bundle.
     if [ -f "$RESOURCE_BUNDLE/Contents/Resources/Assets.car" ] || find "$RESOURCE_BUNDLE" -name "Assets.car" 2>/dev/null | head -1 | grep -q .; then
         pass "Assets.car (compiled assets) found"
+    elif [ -d "$RESOURCE_BUNDLE/Assets.xcassets" ] || find "$RESOURCE_BUNDLE" -type d -name "Assets.xcassets" 2>/dev/null | head -1 | grep -q .; then
+        pass "Assets.xcassets resource catalog found"
     else
         warn "Assets.car not found (may be okay if assets are elsewhere)"
     fi

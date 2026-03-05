@@ -37,13 +37,13 @@ Required sign-off artifacts:
   - [ ] Last-intent-wins confidence under rapid clicks
   - [ ] Focus stability (no post-action focus drift)
 
-### 0.5 Session State Reliability QA (When Hook/Reducer/State Logic Changed)
+### 0.5 Session State Reliability QA (When Runtime or Swift Projection Logic Changed)
 
-If the release includes changes to hook event handling, runtime reducer/session transitions, or stop-gate behavior, run:
+If the release includes changes to hook ingest, reducer/query/session transitions, runtime snapshot projection, or Swift-side session/shell projection and hysteresis behavior, run:
 
 - `docs/SESSION_STATE_RELEASE_MATRIX.md` (canonical session-state gate)
 - `docs/manual-qa/session-state-matrix-template.md` (manual evidence template)
-- `scripts/ci/session-state-gate.sh` (automated gate runner)
+- `scripts/ci/runtime-reliability.sh ci` (automated pre-merge gate runner)
 
 Required sign-off artifacts:
 

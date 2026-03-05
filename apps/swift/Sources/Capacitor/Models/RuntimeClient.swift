@@ -530,7 +530,7 @@ final class RuntimeClient {
                 tty: signal.tty,
                 parentApp: signal.parentApp,
                 tmuxSession: signal.tmuxSession,
-                tmuxClientTty: nil,
+                tmuxClientTty: signal.tmuxClientTty,
                 updatedAt: updatedAt,
             )
         }

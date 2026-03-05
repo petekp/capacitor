@@ -40,15 +40,3 @@ pub static RE_FRONTMATTER_NAME: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"(?m)^name:\s*(.+)$").unwrap());
 pub static RE_FRONTMATTER_DESC: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"(?m)^description:\s*(.+)$").unwrap());
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// Markdown Stripping Regexes
-// ═══════════════════════════════════════════════════════════════════════════════
-
-pub static RE_MD_BOLD_ASTERISK: Lazy<Regex> = Lazy::new(|| Regex::new(r"\*\*([^*]+)\*\*").unwrap());
-pub static RE_MD_ITALIC_ASTERISK: Lazy<Regex> = Lazy::new(|| Regex::new(r"\*([^*]+)\*").unwrap());
-pub static RE_MD_BOLD_UNDERSCORE: Lazy<Regex> = Lazy::new(|| Regex::new(r"__([^_]+)__").unwrap());
-pub static RE_MD_ITALIC_UNDERSCORE: Lazy<Regex> = Lazy::new(|| Regex::new(r"_([^_]+)_").unwrap());
-pub static RE_MD_CODE: Lazy<Regex> = Lazy::new(|| Regex::new(r"`([^`]+)`").unwrap());
-pub static RE_MD_HEADING: Lazy<Regex> = Lazy::new(|| Regex::new(r"^#+\s*").unwrap());
-pub static RE_MD_LINK: Lazy<Regex> = Lazy::new(|| Regex::new(r"\[([^\]]+)\]\([^)]+\)").unwrap());

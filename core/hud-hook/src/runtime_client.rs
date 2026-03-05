@@ -59,7 +59,7 @@ pub fn send_shell_cwd_event(
     tty: &str,
     parent_app: ParentApp,
     tmux_session: Option<String>,
-    _tmux_client_tty: Option<String>,
+    tmux_client_tty: Option<String>,
     _proc_start: Option<u64>,
     _tmux_pane: Option<String>,
 ) -> Result<(), String> {
@@ -69,19 +69,11 @@ pub fn send_shell_cwd_event(
         tty: tty.to_string(),
         parent_app: parent_app_string(parent_app),
         tmux_session,
+        tmux_client_tty,
         recorded_at: Utc::now().to_rfc3339(),
     };
 
     send_shell_signal(command)
-}
-
-#[allow(dead_code)]
-pub fn runtime_health() -> Option<bool> {
-    if !runtime_enabled() {
-        return None;
-    }
-
-    Some(with_runtime_lock(|_runtime| Ok(())).is_ok())
 }
 
 pub fn runtime_enabled() -> bool {

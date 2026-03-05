@@ -65,17 +65,127 @@ struct SetupStep: Identifiable {
     }
 }
 
+struct SetupLifecycleState {
+    enum HookInstallResult: Equatable {
+        case success(HookStatus)
+        case failure(String)
+    }
+
+    enum Event {
+        case initialize(initializationErrorMessage: String?)
+        case checksStarted
+        case checksFinished
+        case dependencyResolved(DependencyStatus)
+        case hookStatusResolved(HookStatus)
+        case shellStatusResolved(SetupStepStatus)
+        case hookInstallStarted
+        case hookInstallFinished(result: HookInstallResult)
+        case shellInstructionsPresented
+        case shellInstructionsDismissed(status: SetupStepStatus)
+    }
+
+    var steps: [SetupStep]
+    var claudePath: String?
+    var initializationErrorMessage: String?
+    var isRunningChecks = false
+    var showShellInstructions = false
+
+    static func initial() -> SetupLifecycleState {
+        SetupLifecycleState(
+            steps: SetupStepCatalog.defaultSteps(),
+            claudePath: nil,
+            initializationErrorMessage: nil,
+            isRunningChecks: false,
+            showShellInstructions: false,
+        )
+    }
+
+    var hasBlockingError: Bool {
+        steps.contains { $0.status.isBlocking }
+    }
+
+    mutating func apply(_ event: Event) {
+        switch event {
+        case let .initialize(initializationErrorMessage):
+            self.initializationErrorMessage = initializationErrorMessage
+            if let initializationErrorMessage {
+                updateStep(.hooks, status: .error(message: initializationErrorMessage))
+            }
+
+        case .checksStarted:
+            isRunningChecks = true
+
+        case .checksFinished:
+            isRunningChecks = false
+
+        case let .dependencyResolved(dep):
+            guard let stepId = SetupStepID.dependency(named: dep.name),
+                  steps.contains(where: { $0.id == stepId })
+            else {
+                return
+            }
+
+            if dep.found {
+                updateStep(stepId, status: .completed(detail: "Installed"))
+                if stepId == .claude {
+                    claudePath = dep.path
+                }
+            } else if dep.required {
+                let hint = stepId == .claude
+                    ? "Not found — download from claude.ai/download"
+                    : dep.installHint ?? "Please install \(stepId.rawValue)"
+                updateStep(stepId, status: .error(message: hint))
+            } else {
+                let hint = dep.installHint ?? "Optional: install \(stepId.rawValue)"
+                updateStep(stepId, status: .completed(detail: hint))
+            }
+
+        case let .hookStatusResolved(hookStatus):
+            updateStep(.hooks, status: HookPresentationPolicy.setupStepStatus(for: hookStatus))
+
+        case let .shellStatusResolved(status):
+            updateStep(.shell, status: status)
+
+        case .hookInstallStarted:
+            updateStep(.hooks, status: .checking)
+
+        case let .hookInstallFinished(result):
+            switch result {
+            case let .success(hookStatus):
+                updateStep(.hooks, status: HookPresentationPolicy.setupStepStatus(for: hookStatus))
+            case let .failure(message):
+                updateStep(.hooks, status: .error(message: message))
+            }
+
+        case .shellInstructionsPresented:
+            showShellInstructions = true
+
+        case let .shellInstructionsDismissed(status):
+            showShellInstructions = false
+            updateStep(.shell, status: status)
+        }
+    }
+
+    private mutating func updateStep(_ id: SetupStepID, status: SetupStepStatus) {
+        if let index = steps.firstIndex(where: { $0.id == id }) {
+            steps[index].status = status
+        }
+    }
+}
+
 @Observable
 @MainActor
 final class SetupRequirementsManager {
     private(set) var steps: [SetupStep] = []
     private(set) var claudePath: String?
     private(set) var tmuxPath: String?
+    private(set) var initializationErrorMessage: String?
     private(set) var isRunningChecks = false
     var showShellInstructions = false
     private let engine: CoreRuntime?
     private weak var shellStateStore: ShellStateStore?
     private let isPreview: Bool
+    private var lifecycle = SetupLifecycleState.initial()
 
     var allComplete: Bool {
         steps.filter { !$0.isOptional }.allSatisfy(\.status.isComplete)
@@ -89,31 +199,49 @@ final class SetupRequirementsManager {
         steps.firstIndex { !$0.status.isComplete }
     }
 
-    init(engine: CoreRuntime? = nil, shellStateStore: ShellStateStore? = nil) {
-        self.engine = engine ?? (try? CoreRuntime()) ?? {
-            fatalError("Failed to create CoreRuntime")
-        }()
+    init(
+        engine: CoreRuntime? = nil,
+        shellStateStore: ShellStateStore? = nil,
+        runtimeFactory: () throws -> CoreRuntime = { try CoreRuntime() },
+    ) {
+        if let engine {
+            self.engine = engine
+            initializationErrorMessage = nil
+        } else {
+            do {
+                self.engine = try runtimeFactory()
+                initializationErrorMessage = nil
+            } catch {
+                self.engine = nil
+                initializationErrorMessage = "Runtime initialization failed. Restart Capacitor and try again."
+            }
+        }
         self.shellStateStore = shellStateStore
         isPreview = false
-        setupSteps()
+        lifecycle = .initial()
+        applyLifecycle(.initialize(initializationErrorMessage: initializationErrorMessage))
     }
 
     /// Preview-only initializer: pre-bakes step states so previews are instant and deterministic.
     private init(previewSteps: [SetupStep]) {
         engine = nil
         shellStateStore = nil
+        initializationErrorMessage = nil
         isPreview = true
-        steps = previewSteps
-    }
-
-    private func setupSteps() {
-        steps = SetupStepCatalog.defaultSteps()
+        lifecycle = SetupLifecycleState(
+            steps: previewSteps,
+            claudePath: nil,
+            initializationErrorMessage: nil,
+            isRunningChecks: false,
+            showShellInstructions: false,
+        )
+        syncFromLifecycle()
     }
 
     func runChecks() async {
         guard !isPreview, !isRunningChecks, let engine else { return }
-        isRunningChecks = true
-        defer { isRunningChecks = false }
+        applyLifecycle(.checksStarted)
+        defer { applyLifecycle(.checksFinished) }
 
         let setupStatus = engine.checkSetupStatus()
 
@@ -126,18 +254,16 @@ final class SetupRequirementsManager {
     }
 
     private func updateShellStatus() {
-        updateStep(.shell, status: .checking)
-
         let shellType = ShellType.current
 
         if let store = shellStateStore, ShellIntegrationChecker.isConfigured(shellStateStore: store) {
-            updateStep(.shell, status: .completed(detail: "Active"))
+            applyLifecycle(.shellStatusResolved(.completed(detail: "Active")))
         } else if shellType.isSnippetInstalled {
-            updateStep(.shell, status: .completed(detail: "Installed"))
+            applyLifecycle(.shellStatusResolved(.completed(detail: "Installed")))
         } else if shellType == .unsupported {
-            updateStep(.shell, status: .completed(detail: "Skipped — unsupported shell"))
+            applyLifecycle(.shellStatusResolved(.completed(detail: "Skipped — unsupported shell")))
         } else {
-            updateStep(.shell, status: .actionNeeded(message: "Add hook to \(shellType.configFile)"))
+            applyLifecycle(.shellStatusResolved(.actionNeeded(message: "Add hook to \(shellType.configFile)")))
         }
     }
 
@@ -145,31 +271,15 @@ final class SetupRequirementsManager {
         guard let stepId = SetupStepID.dependency(named: dep.name) else { return }
         guard steps.contains(where: { $0.id == stepId }) else { return }
 
-        updateStep(stepId, status: .checking)
+        applyLifecycle(.dependencyResolved(dep))
 
-        if dep.found {
-            updateStep(stepId, status: .completed(detail: "Installed"))
-
-            if stepId == .claude {
-                claudePath = dep.path
-                if let path = dep.path {
-                    await CapacitorConfig.shared.setClaudePath(path)
-                }
-            }
-        } else if dep.required {
-            let hint = stepId == .claude
-                ? "Not found — download from claude.ai/download"
-                : dep.installHint ?? "Please install \(stepId.rawValue)"
-            updateStep(stepId, status: .error(message: hint))
-        } else {
-            let hint = dep.installHint ?? "Optional: install \(stepId.rawValue)"
-            updateStep(stepId, status: .completed(detail: hint))
+        if stepId == .claude, let path = dep.path, dep.found {
+            await CapacitorConfig.shared.setClaudePath(path)
         }
     }
 
     private func updateHookStatus(_ hookStatus: HookStatus) async {
-        updateStep(.hooks, status: .checking)
-        updateStep(.hooks, status: HookPresentationPolicy.setupStepStatus(for: hookStatus))
+        applyLifecycle(.hookStatusResolved(hookStatus))
     }
 
     func executeStep(_ stepId: SetupStepID) async {
@@ -177,7 +287,7 @@ final class SetupRequirementsManager {
         case .hooks:
             await installHooks()
         case .shell:
-            showShellInstructions = true
+            applyLifecycle(.shellInstructionsPresented)
         default:
             break
         }
@@ -198,27 +308,43 @@ final class SetupRequirementsManager {
     }
 
     func dismissShellInstructions() {
-        showShellInstructions = false
-        updateShellStatus()
-    }
-
-    private func updateStep(_ id: SetupStepID, status: SetupStepStatus) {
-        if let index = steps.firstIndex(where: { $0.id == id }) {
-            steps[index].status = status
+        let shellType = ShellType.current
+        let status: SetupStepStatus = if let store = shellStateStore, ShellIntegrationChecker.isConfigured(shellStateStore: store) {
+            .completed(detail: "Active")
+        } else if shellType.isSnippetInstalled {
+            .completed(detail: "Installed")
+        } else if shellType == .unsupported {
+            .completed(detail: "Skipped — unsupported shell")
+        } else {
+            .actionNeeded(message: "Add hook to \(shellType.configFile)")
         }
+        applyLifecycle(.shellInstructionsDismissed(status: status))
     }
 
     private func installHooks() async {
         guard let engine else { return }
-        updateStep(.hooks, status: .checking)
+        applyLifecycle(.hookInstallStarted)
 
         if let hookInstallError = HookInstaller.ensureHooksInstalled(using: engine) {
-            updateStep(.hooks, status: .error(message: hookInstallError))
+            applyLifecycle(.hookInstallFinished(result: .failure(hookInstallError)))
             return
         }
 
         let status = engine.getHookStatus()
-        await updateHookStatus(status)
+        applyLifecycle(.hookInstallFinished(result: .success(status)))
+    }
+
+    private func applyLifecycle(_ event: SetupLifecycleState.Event) {
+        lifecycle.apply(event)
+        syncFromLifecycle()
+    }
+
+    private func syncFromLifecycle() {
+        steps = lifecycle.steps
+        claudePath = lifecycle.claudePath
+        initializationErrorMessage = lifecycle.initializationErrorMessage
+        isRunningChecks = lifecycle.isRunningChecks
+        showShellInstructions = lifecycle.showShellInstructions
     }
 }
 

@@ -36,9 +36,6 @@ struct ProjectsView: View {
     @State private var pausedCollapsed = true
     @State private var draggedProject: Project?
     @State private var rowOrderTracker = RowOrderTracker()
-    #if DEBUG
-        @AppStorage("debugShowProjectListDiagnostics") private var debugShowProjectListDiagnostics = true
-    #endif
 
     private var nonPausedProjects: [Project] {
         appState.projects.filter { !appState.isManuallyDormant($0) }
@@ -91,16 +88,9 @@ struct ProjectsView: View {
         if !appState.isLoading, appState.projects.isEmpty {
             ScrollView {
                 VStack(spacing: 0) {
-                    #if DEBUG
-                        if debugShowProjectListDiagnostics {
-                            DebugActiveStateCard()
-                                .padding(.horizontal, listHorizontalPadding)
-                                .padding(.bottom, 6)
-                            DebugActivationTraceCard()
-                                .padding(.horizontal, listHorizontalPadding)
-                                .padding(.bottom, 6)
-                        }
-                    #endif
+                    ProjectListDiagnosticsSection()
+                        .padding(.horizontal, listHorizontalPadding)
+                        .padding(.bottom, 6)
                     if let diagnostic = appState.hookDiagnostic, diagnostic.shouldShowSetupCard {
                         SetupStatusCard(
                             diagnostic: diagnostic,
@@ -131,14 +121,8 @@ struct ProjectsView: View {
             ScrollView {
                 ScrollViewReader { scrollProxy in
                     LazyVStack(spacing: cardListSpacing) {
-                        #if DEBUG
-                            if debugShowProjectListDiagnostics {
-                                DebugActiveStateCard()
-                                    .padding(.bottom, 6)
-                                DebugActivationTraceCard()
-                                    .padding(.bottom, 6)
-                            }
-                        #endif
+                        ProjectListDiagnosticsSection()
+                            .padding(.bottom, 6)
                         // Setup status card - show regardless of project state
                         if let diagnostic = appState.hookDiagnostic, diagnostic.shouldShowSetupCard {
                             SetupStatusCard(

@@ -12,16 +12,16 @@ That increased drift, duplicated policy, and made debugging difficult.
 
 Adopt a single runtime-snapshot architecture:
 
-1. `capacitor-core` is the only domain-policy authority.
+1. `capacitor-core` is the persisted runtime authority for hook ingest, reducer/query policy, and snapshot persistence.
 2. `hud-hook` is a thin ingest adapter into `capacitor-core`.
-3. Swift reads typed runtime snapshots and executes platform effects only.
-4. No parallel business logic across Rust and Swift.
+3. Swift reads typed runtime snapshots, then owns deterministic post-snapshot projection, freshness guards, hysteresis, and platform effects.
+4. Do not duplicate source-of-truth runtime policy across Rust and Swift; Swift may own deterministic presentation/lifecycle projection without rewriting persisted runtime truth.
 
 ## Consequences
 
 Positive:
 
-1. One source of truth for session/project/routing derivation.
+1. One persisted runtime truth plus one deterministic Swift projection layer for visible session/project/routing state.
 2. Simpler failure model and easier debugging.
 3. Smaller API surface and fewer translation layers.
 

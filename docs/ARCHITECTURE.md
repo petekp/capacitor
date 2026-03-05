@@ -2,28 +2,32 @@
 
 ## Principles
 
-1. One core, one truth: Rust owns domain policy and state derivation.
-2. Thin UI shell: Swift renders state, captures intent, and performs macOS integrations.
-3. Data-first boundaries: commands in, immutable snapshots out.
+1. One persisted runtime truth: Rust owns hook ingest, reducer/query policy, and snapshot persistence.
+2. One production owner per behavior: Swift owns UI projection, lifecycle orchestration, activation, and macOS integrations.
+3. Data-first boundary: runtime snapshots cross the Rust/Swift seam, then Swift applies deterministic projection rules before rendering.
 
 ## Runtime Flow
 
 1. Claude Code hook events invoke `hud-hook`.
 2. `hud-hook` normalizes events and writes them to `capacitor-core`.
 3. `capacitor-core` applies reducer logic and persists `~/.capacitor/runtime/app_snapshot.json`.
-4. Swift reads snapshot-shaped data through `RuntimeClient` and updates UI state.
+4. Swift reads snapshot-shaped data through `RuntimeClient`.
+5. `AppState`, `SessionStateManager`, and `ShellStateStore` apply freshness guards, attribution, and hysteresis before updating visible UI state.
 
 ## Ownership
 
 - Rust (`core/capacitor-core`):
   - Path normalization and workspace identity
-  - Session/project state derivation
-  - Routing/activation planning inputs
+  - Hook event normalization and reducer/query state derivation
   - Snapshot persistence
+  - Runtime setup validation and hook-health evaluation
 - Swift (`apps/swift/Sources/Capacitor`):
+  - Snapshot projection and stabilization (`SessionStateManager`, `ShellStateStore`, `AppState`)
   - SwiftUI views + interaction flows
   - macOS automation (AppleScript/AX, window activation)
-  - User-triggered command dispatch to runtime
+  - Terminal activation ownership
+  - Setup/hook-server lifecycle orchestration
+  - Feature-policy coordinators for creation, ideas, and debug surfaces
 
 ## Boundaries
 
@@ -35,7 +39,7 @@
 
 - `core/capacitor-core/`: canonical reducer/query/storage runtime + FFI APIs
 - `core/hud-hook/`: hook/CWD ingest adapter
-- `apps/swift/`: menubar application
+- `apps/swift/`: menubar application, projection layer, lifecycle supervisors, and feature coordinators
 
 ## Non-Goals
 

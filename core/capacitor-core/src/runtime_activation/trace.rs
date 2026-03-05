@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use super::policy::{Candidate, PathMatch, SelectionPolicy};
 use super::ParentApp;
 
-#[derive(Debug, Clone, Serialize, Deserialize, uniffi::Record)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DecisionTraceFfi {
     pub prefer_tmux: bool,
     pub policy_order: Vec<String>,
@@ -11,7 +11,7 @@ pub struct DecisionTraceFfi {
     pub selected_pid: Option<u32>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, uniffi::Record)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CandidateTraceFfi {
     pub pid: u32,
     pub cwd: String,
