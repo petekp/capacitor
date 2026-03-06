@@ -33,7 +33,7 @@ The script enforces:
 - Pre-merge CI runs `./scripts/ci/runtime-reliability.sh ci`
 - Nightly/scheduled verification runs `./scripts/ci/runtime-reliability.sh nightly <report-path>`
 
-`runtime-reliability.sh` is the stable operational wrapper. It always runs the migration guard and replay gate, and nightly mode additionally runs the HEM shadow soak benchmark.
+`runtime-reliability.sh` is the stable operational wrapper. It always runs the runtime reliability guard and replay gate, and nightly mode additionally runs the HEM shadow soak benchmark.
 
 ## P1/P2 Non-Blocking (Triage Required)
 

@@ -1,4 +1,0 @@
-module capacitor_coreFFI {
-    header "capacitor_coreFFI.h"
-    export *
-}

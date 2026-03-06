@@ -13,7 +13,6 @@ struct HookServerLifecycleState: Equatable {
         case none
         case serverReady
         case restart
-        case stopped
     }
 
     enum Event: Equatable {
@@ -65,7 +64,7 @@ struct HookServerLifecycleState: Equatable {
             stopRequested = true
             consecutiveHealthFailures = 0
             status = .stopped
-            return .stopped
+            return .none
         }
     }
 }
@@ -321,7 +320,7 @@ final class HookServerManager {
             ])
         case .restart:
             handleUnexpectedExit(for: generation)
-        case .none, .stopped:
+        case .none:
             break
         }
     }

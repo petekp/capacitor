@@ -1,12 +1,13 @@
 #!/bin/bash
-# Migration guard script — enforces ratchet budgets for the holistic reliability program.
-# Run: bash .claude/migration/guard.sh [--status]
+# Runtime reliability guard — enforces ratchet budgets for the holistic reliability program.
+# Run: bash scripts/ci/runtime-reliability-guard.sh [--status]
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT"
 
 MODE="${1:-run}"
+SELF_PATH="scripts/ci/runtime-reliability-guard.sh"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -22,7 +23,7 @@ check_budget() {
     local path="${4:-.}"
 
     local count
-    count="$(grep -rn "$pattern" "$path" --include='*.rs' --include='*.swift' --include='*.sh' --include='*.bats' 2>/dev/null | grep -v '.claude/migration' | grep -v 'target/' | grep -v '.worktrees/' | wc -l)"
+    count="$(grep -rn "$pattern" "$path" --include='*.rs' --include='*.swift' --include='*.sh' --include='*.bats' 2>/dev/null | grep -v '/.claude/' | grep -v "$SELF_PATH" | grep -v 'target/' | grep -v '.worktrees/' | wc -l)"
     count="${count##* }"
     count="${count:-0}"
 
@@ -42,7 +43,7 @@ check_denylist() {
     local path="${3:-.}"
 
     local count
-    count="$(grep -rn "$pattern" "$path" --include='*.rs' --include='*.swift' --include='*.sh' --include='*.bats' 2>/dev/null | grep -v '.claude/migration' | grep -v 'target/' | grep -v '.worktrees/' | wc -l)"
+    count="$(grep -rn "$pattern" "$path" --include='*.rs' --include='*.swift' --include='*.sh' --include='*.bats' 2>/dev/null | grep -v '/.claude/' | grep -v "$SELF_PATH" | grep -v 'target/' | grep -v '.worktrees/' | wc -l)"
     count="${count##* }"
     count="${count:-0}"
 
@@ -80,7 +81,7 @@ check_file_contains() {
 }
 
 echo "═══════════════════════════════════════════════════════════════"
-echo "  Holistic Migration Guard Script"
+echo "  Runtime Reliability Guard"
 echo "═══════════════════════════════════════════════════════════════"
 echo ""
 
@@ -138,7 +139,7 @@ echo ""
 
 check_file_contains "CI runtime reliability gate" ".github/workflows/ci.yml" 'scripts/ci/runtime-reliability.sh ci'
 check_file_contains "Nightly runtime reliability suite" ".github/workflows/hem-shadow-nightly.yml" 'scripts/ci/runtime-reliability.sh nightly'
-check_file_contains "Runtime reliability wraps migration guard" "scripts/ci/runtime-reliability.sh" '.claude/migration/guard.sh --status'
+check_file_contains "Runtime reliability wraps reliability guard" "scripts/ci/runtime-reliability.sh" 'scripts/ci/runtime-reliability-guard.sh --status'
 check_file_contains "Runtime reliability wraps replay gate" "scripts/ci/runtime-reliability.sh" 'scripts/ci/session-state-gate.sh'
 check_file_contains "Runtime reliability wraps soak bench" "scripts/ci/runtime-reliability.sh" 'scripts/ci/hem-shadow-bench.sh'
 check_file_contains "Nightly workflow keeps schedule trigger" ".github/workflows/hem-shadow-nightly.yml" 'schedule:'

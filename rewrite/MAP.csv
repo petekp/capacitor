@@ -708,3 +708,27 @@ RW-100,post-rewrite-core-test-common-rw100,core/capacitor-core/tests/common/*,co
 RW-100,post-rewrite-hook-serve-rw100,core/hud-hook/src/serve.rs,core/hud-hook/src/serve.rs,done,false,Backfill governance coverage for bounded body and missing-cwd ingress fixes
 RW-100,post-rewrite-hook-tests-rw100,core/hud-hook/tests/*,core/hud-hook/tests/*,done,false,Backfill governance coverage for serve integration regressions and shared hook test helpers
 RW-100,post-rewrite-runtime-reliability-script-rw100,scripts/ci/runtime-reliability.sh,scripts/ci/runtime-reliability.sh,done,false,Backfill governance coverage for consolidated runtime reliability gate script
+RW-101,repo-hygiene-gitignore-rw101,.gitignore,.gitignore,done,false,Ignore local-only audit, exploration, and migration trees under .claude
+RW-101,repo-hygiene-readme-rw101,README.md,README.md,done,false,Remove stale terminal support claims and tighten local-observer wording
+RW-101,repo-hygiene-agent-changelog-delete-rw101,AGENT_CHANGELOG.md,,done,true,Delete unreferenced agent changelog artifact
+RW-101,repo-hygiene-claude-audit-delete-rw101,.claude/docs/audit/*,,done,true,Delete tracked audit notes and keep future audit work local-only
+RW-101,repo-hygiene-claude-explorations-delete-rw101,.claude/explorations/*,,done,true,Delete tracked exploration artifacts and keep future explorations local-only
+RW-101,repo-hygiene-claude-migration-delete-rw101,.claude/migration/*,,done,true,Delete tracked migration planning artifacts after extracting the live guard script
+RW-101,repo-hygiene-runtime-guard-rw101,scripts/ci/runtime-reliability-guard.sh,scripts/ci/runtime-reliability-guard.sh,done,false,Promote runtime reliability guard to tracked operational script outside .claude
+RW-101,repo-hygiene-runtime-wrapper-rw101,scripts/ci/runtime-reliability.sh,scripts/ci/runtime-reliability.sh,done,false,Rewire runtime reliability wrapper to the tracked guard script
+RW-101,repo-hygiene-terminal-guard-comment-rw101,scripts/ci/terminal-simplification-guard.sh,scripts/ci/terminal-simplification-guard.sh,done,false,Remove stale migration-path comment from simplification guard
+RW-101,repo-hygiene-session-matrix-rw101,docs/SESSION_STATE_RELEASE_MATRIX.md,docs/SESSION_STATE_RELEASE_MATRIX.md,done,false,Update operational docs to reference runtime reliability guard naming
+RW-101,repo-hygiene-bootstrap-rw101,scripts/bootstrap.sh,scripts/bootstrap.sh,done,false,Generate UniFFI artifacts into a temp directory and copy only canonical Swift package outputs
+RW-101,repo-hygiene-restart-app-rw101,scripts/dev/restart-app.sh,scripts/dev/restart-app.sh,done,false,Generate UniFFI artifacts into a temp directory during restart flow and copy only canonical outputs
+RW-101,repo-hygiene-capacitorcoreffi-header-rw101,apps/swift/Sources/CapacitorCoreFFI/capacitor_coreFFI.h,apps/swift/Sources/CapacitorCoreFFI/capacitor_coreFFI.h,done,false,Move the canonical FFI header into the system library target directory
+RW-101,repo-hygiene-capacitorcoreffi-modulemap-rw101,apps/swift/Sources/CapacitorCoreFFI/module.modulemap,apps/swift/Sources/CapacitorCoreFFI/module.modulemap,done,false,Point the system library modulemap at the local canonical FFI header
+RW-101,repo-hygiene-bridge-ffi-delete-rw101,apps/swift/Sources/Capacitor/Bridge/capacitor_coreFFI.h,,done,true,Delete unused duplicate FFI header from Bridge
+RW-101,repo-hygiene-bridge-modulemap-delete-rw101,apps/swift/Sources/Capacitor/Bridge/capacitor_coreFFI.modulemap,,done,true,Delete unused duplicate FFI modulemap from Bridge
+RW-101,repo-hygiene-bindings-delete-rw101,apps/swift/bindings/*,,done,true,Delete tracked UniFFI staging artifacts now that generation copies directly into canonical destinations
+RW-101,repo-hygiene-appstate-dead-wrappers-rw101,apps/swift/Sources/Capacitor/Models/AppState.swift,apps/swift/Sources/Capacitor/Models/AppState.swift,done,false,Delete unreferenced AppState project-creation pass-through wrappers
+RW-101,repo-hygiene-hookserver-dead-branch-rw101,apps/swift/Sources/Capacitor/Models/HookServerManager.swift,apps/swift/Sources/Capacitor/Models/HookServerManager.swift,done,false,Delete no-op stopped directive branch from hook server lifecycle reducer
+RW-101,repo-hygiene-projectcreation-path-dedupe-rw101,apps/swift/Sources/Capacitor/Models/ProjectCreationCoordinator.swift,apps/swift/Sources/Capacitor/Models/ProjectCreationCoordinator.swift,done,false,Route completion monitoring through the injected Claude projects directory provider
+RW-101,repo-hygiene-hookserver-tests-rw101,apps/swift/Tests/CapacitorTests/HookServerManagerTests.swift,apps/swift/Tests/CapacitorTests/HookServerManagerTests.swift,done,false,Align lifecycle reducer tests with simplified directive surface
+RW-101,repo-hygiene-projectcreation-tests-rw101,apps/swift/Tests/CapacitorTests/ProjectCreationCoordinatorTests.swift,apps/swift/Tests/CapacitorTests/ProjectCreationCoordinatorTests.swift,done,false,Add regression coverage for provider-based session file path resolution
+RW-101,rewrite-ledger-rw101,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record repo hygiene cleanup slice and deletion targets
+RW-101,rewrite-map-rw101,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track repo hygiene cleanup paths for guard enforcement

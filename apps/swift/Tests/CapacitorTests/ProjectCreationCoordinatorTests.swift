@@ -46,6 +46,25 @@ final class ProjectCreationCoordinatorTests: XCTestCase {
         XCTAssertEqual(selected, "session-100")
     }
 
+    func testSessionFileURLUsesInjectedClaudeProjectsDirectory() {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let coordinator = makeCoordinator(claudeProjectsDirectory: tempDir)
+
+        let sessionFile = coordinator.sessionFileURLForTesting(
+            projectPath: "/tmp/projects/capacitor",
+            sessionId: "session-123",
+        )
+
+        XCTAssertEqual(
+            sessionFile.path,
+            tempDir
+                .appendingPathComponent("tmp-projects-capacitor", isDirectory: true)
+                .appendingPathComponent("session-123.jsonl")
+                .path,
+        )
+    }
+
     private func makeCoordinator(claudeProjectsDirectory: URL) -> ProjectCreationCoordinator {
         var creations: [ProjectCreation] = []
         return ProjectCreationCoordinator(

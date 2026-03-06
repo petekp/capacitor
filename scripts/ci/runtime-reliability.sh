@@ -10,8 +10,8 @@ report_path="${2:-${CAPACITOR_BENCH_REPORT_PATH:-target/hem-shadow-bench-report.
 
 run_guard() {
   echo ""
-  echo "[runtime-reliability] migration guard"
-  bash .claude/migration/guard.sh --status
+  echo "[runtime-reliability] reliability guard"
+  bash scripts/ci/runtime-reliability-guard.sh --status
 }
 
 run_replay_gate() {

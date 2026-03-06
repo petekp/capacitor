@@ -3584,3 +3584,79 @@ slices:
     risks:
       - "Backfilling governance coverage can hide stale assumptions if future migrations skip the rewrite ledger again; mitigation is keeping CI bound to the same portable guard script."
     notes: "Makes rewrite guard path matching directory-aware, adds grep fallback for content denylist checks, backfills rewrite MAP coverage for the post-rewrite reliability migration artifacts, and removes the last Task.sleep from TerminalLauncherTests so the denylist remains enforceable."
+
+  - id: RW-101
+    name: "Repo Hygiene Sweep for Local Artifacts and FFI Duplicates"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-100
+    touched_paths:
+      - .gitignore
+      - README.md
+      - AGENT_CHANGELOG.md
+      - .claude/docs/audit
+      - .claude/explorations
+      - .claude/migration
+      - apps/swift/Sources/Capacitor/Bridge/capacitor_coreFFI.h
+      - apps/swift/Sources/Capacitor/Bridge/capacitor_coreFFI.modulemap
+      - apps/swift/Sources/CapacitorCoreFFI/*
+      - apps/swift/bindings/*
+      - apps/swift/Sources/Capacitor/Models/AppState.swift
+      - apps/swift/Sources/Capacitor/Models/HookServerManager.swift
+      - apps/swift/Sources/Capacitor/Models/ProjectCreationCoordinator.swift
+      - apps/swift/Tests/CapacitorTests/HookServerManagerTests.swift
+      - apps/swift/Tests/CapacitorTests/ProjectCreationCoordinatorTests.swift
+      - docs/SESSION_STATE_RELEASE_MATRIX.md
+      - scripts/bootstrap.sh
+      - scripts/dev/restart-app.sh
+      - scripts/ci/runtime-reliability.sh
+      - scripts/ci/runtime-reliability-guard.sh
+      - scripts/ci/terminal-simplification-guard.sh
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added:
+        - scripts/ci/runtime-reliability-guard.sh
+        - apps/swift/Sources/CapacitorCoreFFI/capacitor_coreFFI.h
+      changed:
+        - .gitignore
+        - README.md
+        - apps/swift/Sources/CapacitorCoreFFI/module.modulemap
+        - apps/swift/Sources/Capacitor/Models/AppState.swift
+        - apps/swift/Sources/Capacitor/Models/HookServerManager.swift
+        - apps/swift/Sources/Capacitor/Models/ProjectCreationCoordinator.swift
+        - apps/swift/Tests/CapacitorTests/HookServerManagerTests.swift
+        - apps/swift/Tests/CapacitorTests/ProjectCreationCoordinatorTests.swift
+        - docs/SESSION_STATE_RELEASE_MATRIX.md
+        - scripts/bootstrap.sh
+        - scripts/dev/restart-app.sh
+        - scripts/ci/runtime-reliability.sh
+        - scripts/ci/terminal-simplification-guard.sh
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed:
+        - AGENT_CHANGELOG.md
+        - .claude/docs/audit
+        - .claude/explorations
+        - .claude/migration
+        - apps/swift/Sources/Capacitor/Bridge/capacitor_coreFFI.h
+        - apps/swift/Sources/Capacitor/Bridge/capacitor_coreFFI.modulemap
+        - apps/swift/bindings
+    replay_scenarios: []
+    smoke_scenarios:
+      - live state update while coding
+      - click project card and restore terminal/tmux context
+    denylist_patterns: []
+    deletion_targets:
+      - AGENT_CHANGELOG.md
+      - .claude/docs/audit
+      - .claude/explorations
+      - .claude/migration
+      - apps/swift/Sources/Capacitor/Bridge/capacitor_coreFFI.h
+      - apps/swift/Sources/Capacitor/Bridge/capacitor_coreFFI.modulemap
+      - apps/swift/bindings
+    risks:
+      - "Moving the runtime reliability guard out of .claude can change ratchet counts if the guard starts matching itself; mitigation is excluding the operational guard path explicitly."
+      - "Removing tracked planning artifacts can break newcomer references if active docs still point at them; mitigation is updating all live script and doc references in the same slice."
+    notes: "Deletes tracked audit/migration/exploration artifacts, removes the unreferenced agent changelog, makes runtime reliability guard operational instead of .claude-scoped, consolidates UniFFI artifacts to canonical Swift package paths, and removes confirmed-dead Swift wrappers/branches."

@@ -1495,18 +1495,6 @@ class AppState {
         projectCreationCoordinator.loadCreations()
     }
 
-    func startCreation(request: NewProjectRequest, projectPath: String) -> String {
-        projectCreationCoordinator.startCreation(request: request, projectPath: projectPath)
-    }
-
-    func updateCreationStatus(_ id: String, status: CreationStatus, sessionId: String? = nil, error: String? = nil) {
-        projectCreationCoordinator.updateCreationStatus(id, status: status, sessionId: sessionId, error: error)
-    }
-
-    func updateCreationProgress(_ id: String, phase: String, message: String, percentComplete: Int?) {
-        projectCreationCoordinator.updateCreationProgress(id, phase: phase, message: message, percentComplete: percentComplete)
-    }
-
     #if DEBUG
         func applyDiscoveredSessionToCreationForTesting(_ creationId: String, sessionId: String) -> Bool {
             projectCreationCoordinator.applyDiscoveredSessionToCreationForTesting(creationId, sessionId: sessionId)

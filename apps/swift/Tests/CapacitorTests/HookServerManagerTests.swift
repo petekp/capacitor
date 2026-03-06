@@ -42,7 +42,7 @@ final class HookServerManagerTests: XCTestCase {
         var state = HookServerLifecycleState()
         state.status = .running
 
-        XCTAssertEqual(state.apply(.stopRequested), .stopped)
+        XCTAssertEqual(state.apply(.stopRequested), .none)
         XCTAssertEqual(state.status, .stopped)
 
         XCTAssertEqual(

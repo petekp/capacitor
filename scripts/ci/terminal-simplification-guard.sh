@@ -5,7 +5,6 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 
 # Terminal Activation Simplification Guard
-# Migration: .claude/migration/terminal-activation-simplification/
 # Run: ./scripts/ci/terminal-simplification-guard.sh
 # Status: ./scripts/ci/terminal-simplification-guard.sh --status
 

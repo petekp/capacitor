@@ -185,13 +185,15 @@ if [ "$SWIFT_ONLY" != true ]; then
     install_name_tool -id "@rpath/libcapacitor_core.dylib" target/release/libcapacitor_core.dylib
 
     # Always regenerate UniFFI bindings to prevent checksum mismatch crashes
+    BINDINGS_TMP_DIR="$(mktemp -d)"
+    trap 'rm -rf "$BINDINGS_TMP_DIR"' EXIT
     cargo run -p capacitor-core --bin uniffi-bindgen generate \
         --library target/release/libcapacitor_core.dylib \
         --language swift \
-        --out-dir apps/swift/bindings/
+        --out-dir "$BINDINGS_TMP_DIR"
 
-    # Copy bindings to Bridge directory
-    cp apps/swift/bindings/capacitor_core.swift apps/swift/Sources/Capacitor/Bridge/
+    cp "$BINDINGS_TMP_DIR/capacitor_core.swift" apps/swift/Sources/Capacitor/Bridge/
+    cp "$BINDINGS_TMP_DIR/capacitor_coreFFI.h" apps/swift/Sources/CapacitorCoreFFI/
 fi
 
 cd "$PROJECT_ROOT/apps/swift"

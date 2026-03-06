@@ -4,7 +4,7 @@
 
 Capacitor is a companion app for [Claude Code](https://claude.ai/claude-code) (more coding agents on the way, starting with Codex). I built it because I was tired of coding agent tools that try to be the terminal, the editor, the git client, and the chat window all at once. None of those things end up as good as the tools you already use.
 
-If you've ever lost track of which terminal window or tmux pane has which session, that's what Capacitor is for. It keeps your sessions visible and one click away. More features on are the way, ones that further streamline your process and respect your tooling preferences.
+If you've ever lost track of which terminal window or tmux pane has which session, that's what Capacitor is for. It keeps your sessions visible and one click away. More features are on the way, ones that further streamline your process and respect your tooling preferences.
 
 ## Download
 
@@ -22,20 +22,15 @@ Capacitor is in early alpha. Expect rough edges. [Report issues here.](https://g
 
 ## How terminal switching works
 
-When you click a project card, Capacitor tries to get you back to the right place:
+When you click a project card, Capacitor tries to get you back to the right Ghostty/tmux context:
 
-| Workflow | Ghostty | iTerm2 | Terminal.app |
-| --- | --- | --- | --- |
-| Single window, single pane | ✅ | ✅ | ✅ |
-| Multiple tmux panes | ✅ | ✅ | ✅ |
-| Switch between tmux sessions | ✅ | ✅ | ✅ |
-| Reattach detached tmux sessions | ✅ | ✅ | ✅ |
+- Reuse an attached tmux client when possible
+- Switch to the correct tmux session or pane
+- Fall back to opening a fresh Ghostty tab only when reuse fails
 
-If a matching session or pane exists, Capacitor focuses it. If there's an existing terminal window, it reuses it instead of spawning a new one. If nothing can be recovered, it falls back to opening a new window.
+Ghostty is the only supported terminal right now.
 
-Only Ghostty, iTerm2, and Terminal.app are supported right now. More on the way if there's demand.
-
-**Known rough edges:** Ghostty routing now uses Accessibility tab targeting first, then window raise fallback. If Accessibility is unavailable (or no deterministic tab/window route can be applied), Capacitor falls back to generic Ghostty activation.
+**Known rough edges:** Ghostty routing uses Accessibility tab targeting first, then window raise fallback. If Accessibility is unavailable or no deterministic tab match exists, Capacitor falls back to generic Ghostty activation.
 
 ## Install
 
@@ -56,7 +51,7 @@ Capacitor is a sidecar. It watches what Claude Code is doing without getting in 
 
 On first launch, it installs a small hook binary (`~/.local/bin/hud-hook`) and adds entries to Claude Code's `~/.claude/settings.json`. Hook events are written directly into the Rust runtime snapshot (`~/.capacitor/runtime/app_snapshot.json`). The Swift app reads that snapshot, applies deterministic projection/stabilization, and then renders visible state.
 
-It doesn't call the Anthropic API. It's read-only.
+It doesn't call the Anthropic API directly. It observes local Claude Code activity and manages its own local runtime state.
 
 ## Data & privacy
 

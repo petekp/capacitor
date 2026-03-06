@@ -32,6 +32,9 @@ apps/swift/resource_bundle_accessor-*
 .claude/hud-status.json
 .claude/settings.local.json
 .claude/archive/
+.claude/docs/audit/
+.claude/explorations/
+.claude/migration/
 
 # Local planning / session notes
 *.local.md

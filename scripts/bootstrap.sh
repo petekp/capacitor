@@ -104,15 +104,18 @@ install_name_tool -id "@rpath/libcapacitor_core.dylib" target/release/libcapacit
 # UniFFI bindings
 # Generates Swift code from the compiled Rust library. Must regenerate after
 # any Rust API changes to avoid "UniFFI API checksum mismatch" crashes.
-# The bindings go to two places: where uniffi writes them (bindings/) and
-# where SPM expects them (Sources/Capacitor/Bridge/).
+# Generate into a temporary directory, then copy only the canonical app-facing
+# artifacts into the Swift package.
 # -----------------------------------------------------------------------------
 
 echo "Generating UniFFI bindings..."
+BINDINGS_TMP_DIR="$(mktemp -d)"
+trap 'rm -rf "$BINDINGS_TMP_DIR"' EXIT
 cargo run -p capacitor-core --bin uniffi-bindgen generate \
     --library target/release/libcapacitor_core.dylib \
-    --language swift --out-dir apps/swift/bindings
-cp apps/swift/bindings/capacitor_core.swift apps/swift/Sources/Capacitor/Bridge/
+    --language swift --out-dir "$BINDINGS_TMP_DIR"
+cp "$BINDINGS_TMP_DIR/capacitor_core.swift" apps/swift/Sources/Capacitor/Bridge/
+cp "$BINDINGS_TMP_DIR/capacitor_coreFFI.h" apps/swift/Sources/CapacitorCoreFFI/
 
 # -----------------------------------------------------------------------------
 # Build Swift app

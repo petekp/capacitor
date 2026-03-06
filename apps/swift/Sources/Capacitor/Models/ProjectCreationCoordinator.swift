@@ -173,6 +173,12 @@ final class ProjectCreationCoordinator {
             applyDiscoveredSessionToCreation(creationId, sessionId: sessionId)
         }
 
+        func sessionFileURLForTesting(projectPath: String, sessionId: String) -> URL {
+            claudeProjectsDirectoryProvider()
+                .appendingPathComponent(encodedSessionDirectoryName(for: projectPath))
+                .appendingPathComponent("\(sessionId).jsonl")
+        }
+
         func setCreationMonitorTasksForTesting(
             creationId: String,
             sessionTask: _Concurrency.Task<Void, Never>?,
@@ -526,15 +532,8 @@ final class ProjectCreationCoordinator {
             }
 
             guard let self else { return }
-            let claudeProjectsDir = FileManager.default.homeDirectoryForCurrentUser
-                .appendingPathComponent(".claude/projects")
-
-            let encodedPath = projectPath
-                .replacingOccurrences(of: "/", with: "-")
-                .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
-
-            let sessionFile = claudeProjectsDir
-                .appendingPathComponent(encodedPath)
+            let sessionFile = claudeProjectsDirectoryProvider()
+                .appendingPathComponent(encodedSessionDirectoryName(for: projectPath))
                 .appendingPathComponent("\(sessionId).jsonl")
 
             var lastSize: UInt64 = 0
