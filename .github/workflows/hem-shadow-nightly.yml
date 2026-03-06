@@ -13,6 +13,7 @@ jobs:
   hem-shadow-bench:
     name: HEM Shadow Benchmark Guardrail
     runs-on: macos-14
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
@@ -31,7 +32,7 @@ jobs:
             ${{ runner.os }}-cargo-
 
       - name: Run HEM shadow benchmark harness
-        run: ./scripts/ci/hem-shadow-bench.sh "${BENCH_REPORT_PATH}"
+        run: ./scripts/ci/runtime-reliability.sh nightly "${BENCH_REPORT_PATH}"
 
       - name: Publish benchmark summary
         run: |

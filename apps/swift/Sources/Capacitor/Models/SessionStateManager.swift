@@ -1,14 +1,15 @@
 import Foundation
 import SwiftUI
 
-/// Manages session state display for projects.
+/// Projects runtime snapshot state into the UI-facing session model for projects.
 ///
-/// This is a "dumb" client that:
-/// - Caches states from the Rust engine
-/// - Detects state changes for flash animations
-/// - Provides state to views (direct passthrough)
-///
-/// All state logic (staleness, lock detection, resolution) lives in Rust.
+/// Rust remains authoritative for hook ingest, reducer/query policy, and persisted snapshot
+/// contents. This layer owns the deterministic Swift-side projection rules that turn runtime
+/// project states into view state:
+/// - project/session matching and attribution
+/// - stale-working normalization using the injected session clock
+/// - empty-snapshot and idle-transition hysteresis
+/// - visual change detection for animation triggers
 @Observable
 @MainActor
 final class SessionStateManager {
@@ -87,8 +88,11 @@ final class SessionStateManager {
     private var consecutiveIdleCounts: [String: Int] = [:]
     private var applyGeneration: UInt64 = 0
     private var refreshCorrelationCounter: UInt64 = 0
+    private let clock: SessionClock
 
-    init() {}
+    init(clock: SessionClock = .live) {
+        self.clock = clock
+    }
 
     /// Applies runtime project states directly without initiating a network refresh.
     /// Used by the consolidated AppSnapshot tick in AppState.
@@ -118,22 +122,26 @@ final class SessionStateManager {
         correlationId: String,
         requestGeneration: UInt64,
     ) {
-        let mergeResult = mergeRuntimeProjectStates(runtimeProjects, projects: projects)
+        let mergeResult = mergeRuntimeProjectStates(runtimeProjects, projects: projects, now: clock.now())
         let merged = mergeResult.states
         let emptyStabilized = stabilizeEmptyRuntimeSnapshotIfNeeded(merged)
         let stabilized = stabilizeIdleTransitions(emptyStabilized)
-        let nextAttributions: [String: SessionAttribution] = {
-            if stabilized == merged {
-                return mergeResult.attributions
+        let heldPaths = Set(stabilized.keys.filter { stabilized[$0] != merged[$0] })
+        var nextAttributions = mergeResult.attributions
+        var nextLatestSessionIds = mergeResult.latestSessionIds
+        for path in heldPaths {
+            if let previousAttribution = sessionAttributions[path] {
+                nextAttributions[path] = previousAttribution
+            } else {
+                nextAttributions.removeValue(forKey: path)
             }
-            return self.sessionAttributions
-        }()
-        let nextLatestSessionIds: [String: String] = {
-            if stabilized == merged {
-                return mergeResult.latestSessionIds
+
+            if let previousLatest = latestSessionIds[path] {
+                nextLatestSessionIds[path] = previousLatest
+            } else {
+                nextLatestSessionIds.removeValue(forKey: path)
             }
-            return self.latestSessionIds
-        }()
+        }
         DebugLog.write(
             "SessionStateManager.refresh cid=\(correlationId) action=fetch_success generation=\(requestGeneration) runtime_count=\(runtimeProjects.count)",
         )
@@ -348,6 +356,7 @@ final class SessionStateManager {
     private nonisolated func mergeRuntimeProjectStates(
         _ states: [RuntimeProjectState],
         projects: [Project],
+        now: Date,
     ) -> MergeResult {
         let homeNormalized = PathNormalizer.normalize(NSHomeDirectory())
         var projectInfos: [ProjectMatchInfo] = []
@@ -423,7 +432,7 @@ final class SessionStateManager {
                         let projectPath = candidate.project.path
                         let candidateBest = BestProjectState(state: state, priority: .repoFallback)
                         if let existing = bestStates[projectPath] {
-                            if shouldReplace(existing: existing, with: candidateBest) {
+                            if shouldReplace(existing: existing, with: candidateBest, now: now) {
                                 bestStates[projectPath] = candidateBest
                             }
                         } else {
@@ -440,7 +449,7 @@ final class SessionStateManager {
             let projectPath = match.project.path
             let candidateBest = BestProjectState(state: state, priority: .direct)
             if let existing = bestStates[projectPath] {
-                if shouldReplace(existing: existing, with: candidateBest) {
+                if shouldReplace(existing: existing, with: candidateBest, now: now) {
                     bestStates[projectPath] = candidateBest
                 }
             } else {
@@ -458,12 +467,7 @@ final class SessionStateManager {
         var latestSessionIds: [String: String] = [:]
         for (projectPath, best) in bestStates {
             let state = best.state
-            var mappedState = mapRuntimeState(state.state)
-            // If working but no events for 2 minutes, downgrade to ready.
-            // Claude Code doesn't always fire Stop on interrupt.
-            if SessionStaleness.isWorkingStale(state: mappedState, updatedAt: state.updatedAt) {
-                mappedState = .ready
-            }
+            let mappedState = normalizedRuntimeState(state, now: now)
             let sessionState = ProjectSessionState(
                 state: mappedState,
                 stateChangedAt: state.stateChangedAt,
@@ -550,27 +554,44 @@ final class SessionStateManager {
         }
     }
 
-    private nonisolated func shouldReplace(existing: BestProjectState, with candidate: BestProjectState) -> Bool {
+    private nonisolated func shouldReplace(existing: BestProjectState, with candidate: BestProjectState, now: Date) -> Bool {
         if candidate.priority != existing.priority {
             return candidate.priority.rawValue > existing.priority.rawValue
         }
+
+        let candidateMoreRecent = isMoreRecent(candidate.state, than: existing.state)
+        let existingMoreRecent = isMoreRecent(existing.state, than: candidate.state)
+        if candidateMoreRecent != existingMoreRecent {
+            return candidateMoreRecent
+        }
+
         if candidate.priority == .direct {
-            let candidateActivity = stateActivityPriority(candidate.state)
-            let existingActivity = stateActivityPriority(existing.state)
+            let candidateActivity = stateActivityPriority(candidate.state, now: now)
+            let existingActivity = stateActivityPriority(existing.state, now: now)
             if candidateActivity != existingActivity {
                 return candidateActivity > existingActivity
             }
         }
-        return isMoreRecent(candidate.state, than: existing.state)
+        return false
     }
 
-    private nonisolated func stateActivityPriority(_ state: RuntimeProjectState) -> Int {
-        switch mapRuntimeState(state.state) {
+    private nonisolated func stateActivityPriority(_ state: RuntimeProjectState, now: Date) -> Int {
+        switch normalizedRuntimeState(state, now: now) {
         case .working, .waiting, .compacting:
             1
         case .ready, .idle:
             0
         }
+    }
+
+    private nonisolated func normalizedRuntimeState(_ state: RuntimeProjectState, now: Date) -> SessionState {
+        var mappedState = mapRuntimeState(state.state)
+        // If working but no events for 2 minutes, downgrade to ready.
+        // Claude Code doesn't always fire Stop on interrupt.
+        if SessionStaleness.isWorkingStale(state: mappedState, updatedAt: state.updatedAt, now: now) {
+            mappedState = .ready
+        }
+        return mappedState
     }
 
     private nonisolated func mapRuntimeState(_ state: String) -> SessionState {
@@ -596,6 +617,16 @@ final class SessionStateManager {
         applyGeneration &+= 1
         consecutiveEmptySnapshotCount = 0
         sessionStates = states
+        sessionAttributions = [:]
+        latestSessionIds = [:]
+        pruneCachedStates()
+        checkForStateChanges()
+    }
+
+    func clearRuntimeProjectStates() {
+        applyGeneration &+= 1
+        consecutiveEmptySnapshotCount = 0
+        sessionStates = [:]
         sessionAttributions = [:]
         latestSessionIds = [:]
         pruneCachedStates()

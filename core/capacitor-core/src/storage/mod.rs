@@ -144,6 +144,7 @@ mod tests {
                 tty: "/dev/ttys001".to_string(),
                 parent_app: "ghostty".to_string(),
                 tmux_session: None,
+                tmux_client_tty: None,
                 updated_at: "2026-02-28T00:00:00Z".to_string(),
             }],
             routing: vec![RoutingView {

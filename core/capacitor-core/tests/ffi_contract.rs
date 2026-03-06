@@ -20,6 +20,7 @@ fn valid_shell_signal_command() -> IngestShellSignalCommand {
         tty: "/dev/ttys001".to_string(),
         parent_app: "Ghostty".to_string(),
         tmux_session: Some("core".to_string()),
+        tmux_client_tty: Some("/dev/ttys099".to_string()),
         recorded_at: "2026-02-28T19:00:00Z".to_string(),
     }
 }

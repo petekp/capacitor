@@ -1,4 +1,125 @@
+import Darwin
 import Foundation
+
+protocol HookServerProcessControlling: AnyObject {
+    var isRunning: Bool { get }
+    var processIdentifier: Int32 { get }
+    var terminationStatus: Int32 { get }
+    func terminate()
+}
+
+struct HookServerLifecycleState: Equatable {
+    enum Directive: Equatable {
+        case none
+        case serverReady
+        case restart
+        case stopped
+    }
+
+    enum Event: Equatable {
+        case launchRequested
+        case launchFailed(String)
+        case adoptedExistingProcess
+        case healthCheckFinished(healthy: Bool, maxConsecutiveFailures: Int)
+        case stopRequested
+    }
+
+    var status: HookServerManager.Status = .stopped
+    var consecutiveHealthFailures = 0
+    var stopRequested = false
+
+    mutating func apply(_ event: Event) -> Directive {
+        switch event {
+        case .launchRequested, .adoptedExistingProcess:
+            stopRequested = false
+            consecutiveHealthFailures = 0
+            status = .starting
+            return .none
+
+        case let .launchFailed(message):
+            status = .failed(message)
+            return .none
+
+        case let .healthCheckFinished(healthy, maxConsecutiveFailures):
+            guard status == .running || status == .starting else { return .none }
+            guard !stopRequested else { return .none }
+
+            if healthy {
+                consecutiveHealthFailures = 0
+                if status == .starting {
+                    status = .running
+                    return .serverReady
+                }
+                return .none
+            }
+
+            consecutiveHealthFailures += 1
+            if consecutiveHealthFailures >= maxConsecutiveFailures {
+                consecutiveHealthFailures = 0
+                status = .starting
+                return .restart
+            }
+            return .none
+
+        case .stopRequested:
+            stopRequested = true
+            consecutiveHealthFailures = 0
+            status = .stopped
+            return .stopped
+        }
+    }
+}
+
+struct HookServerManagerDependencies {
+    var isExecutableFile: (String) -> Bool
+    var readPidFile: (String) -> Int32?
+    var removePidFile: (String) -> Void
+    var isProcessAlive: (Int32) -> Bool
+    var isManagedServerProcess: (Int32, String) -> Bool
+    var terminatePid: (Int32) -> Void
+    var launchProcess: (String, UInt16, [String: String]) throws -> any HookServerProcessControlling
+    var fetchHealth: (UInt16) async -> Bool
+}
+
+private final class LiveHookServerProcess: HookServerProcessControlling {
+    private let process: Process
+
+    init(binaryPath: String, port: UInt16, environment: [String: String]) throws {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: binaryPath)
+        process.arguments = ["serve", "--port", String(port)]
+        process.environment = environment
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        try process.run()
+        self.process = process
+    }
+
+    var isRunning: Bool {
+        process.isRunning
+    }
+
+    var processIdentifier: Int32 {
+        process.processIdentifier
+    }
+
+    var terminationStatus: Int32 {
+        process.terminationStatus
+    }
+
+    func terminate() {
+        process.terminate()
+    }
+
+    static func executablePath(pid: Int32) -> String? {
+        var buffer = [CChar](repeating: 0, count: Int(MAXPATHLEN) * 4)
+        let count = proc_pidpath(pid, &buffer, UInt32(buffer.count))
+        guard count > 0 else {
+            return nil
+        }
+        return String(cString: buffer)
+    }
+}
 
 /// Manages the lifecycle of the `hud-hook serve` HTTP server process.
 ///
@@ -27,15 +148,27 @@ final class HookServerManager {
 
     // MARK: - Private
 
-    private var process: Process?
+    private var process: (any HookServerProcessControlling)?
+    private var adoptedPid: Int32?
+    private var healthCheckTask: _Concurrency.Task<Void, Never>?
+    private var healthCheckToken: UUID?
+    private var lifecycleGeneration: UInt64 = 0
+    private var stopRequested = false
     private let port: UInt16
     private let binaryPath: String
+    private let dependencies: HookServerManagerDependencies
+    private var lifecycleState = HookServerLifecycleState()
 
     // MARK: - Init
 
-    init(port: UInt16 = HookServerManager.defaultPort) {
+    init(
+        port: UInt16 = HookServerManager.defaultPort,
+        binaryPath: String? = nil,
+        dependencies: HookServerManagerDependencies = .live,
+    ) {
         self.port = port
-        binaryPath = FileManager.default.homeDirectoryForCurrentUser
+        self.dependencies = dependencies
+        self.binaryPath = binaryPath ?? FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".local/bin/hud-hook").path
     }
 
@@ -44,30 +177,28 @@ final class HookServerManager {
     /// Starts the server if the binary exists and the server isn't already running.
     ///
     /// On launch, checks for a stale PID file from a previous app session. If the
-    /// old process is still alive on our port, we adopt it. If it's dead, we clean
-    /// up the PID file and start fresh.
+    /// old process is still alive and still points at the expected hook binary, we
+    /// adopt it. If not, we clean up the PID file and start fresh.
     func startIfNeeded() {
         guard status != .running, status != .starting else { return }
 
-        guard FileManager.default.isExecutableFile(atPath: binaryPath) else {
+        guard dependencies.isExecutableFile(binaryPath) else {
             DebugLog.write("HookServerManager: binary not found at \(binaryPath), skipping")
-            status = .failed("Binary not found")
+            _ = applyLifecycle(.launchFailed("Binary not found"))
             return
         }
 
-        // Check for orphaned server from a previous app session
-        if let stalePid = readPidFile() {
-            if isProcessAlive(stalePid) {
+        if let stalePid = dependencies.readPidFile(pidFilePath) {
+            if dependencies.isProcessAlive(stalePid),
+               dependencies.isManagedServerProcess(stalePid, binaryPath)
+            {
                 DebugLog.write("HookServerManager: adopting existing server pid \(stalePid) on port \(port)")
-                status = .starting
-                // Don't hold a Process reference — we didn't spawn it, so we
-                // monitor it purely via health checks. If it dies, checkHealth()
-                // will trigger handleUnexpectedExit() and we'll spawn a new one.
+                beginLifecycleObservation(adoptedPid: stalePid)
                 return
-            } else {
-                DebugLog.write("HookServerManager: removing stale PID file (pid \(stalePid) dead)")
-                removePidFile()
             }
+
+            DebugLog.write("HookServerManager: removing stale PID file (pid \(stalePid) invalid for adoption)")
+            dependencies.removePidFile(pidFilePath)
         }
 
         start()
@@ -77,92 +208,138 @@ final class HookServerManager {
     /// Restarts the server after `maxConsecutiveFailures` consecutive failures.
     func checkHealth() {
         guard status == .running || status == .starting else { return }
+        guard healthCheckTask == nil else { return }
 
-        // Check if the process is still alive first
+        let generation = lifecycleGeneration
+
         if let proc = process, !proc.isRunning {
             DebugLog.write("HookServerManager: process exited with code \(proc.terminationStatus)")
-            handleUnexpectedExit()
+            handleUnexpectedExit(for: generation)
             return
         }
 
-        _Concurrency.Task { [weak self] in
+        if let adoptedPid, !dependencies.isProcessAlive(adoptedPid) {
+            DebugLog.write("HookServerManager: adopted pid \(adoptedPid) is no longer alive")
+            handleUnexpectedExit(for: generation)
+            return
+        }
+
+        let token = UUID()
+        healthCheckToken = token
+        healthCheckTask = _Concurrency.Task { [weak self] in
             guard let self else { return }
-            let healthy = await fetchHealth()
+            let healthy = await dependencies.fetchHealth(port)
             await MainActor.run {
-                if healthy {
-                    self.consecutiveHealthFailures = 0
-                    if self.status == .starting {
-                        self.status = .running
-                        DebugLog.write("HookServerManager: server ready on port \(self.port)")
-                        Telemetry.emit("hook_server", "Server started", payload: [
-                            "port": self.port,
-                        ])
-                    }
-                } else {
-                    self.consecutiveHealthFailures += 1
-                    DebugLog.write(
-                        "HookServerManager: health check failed (\(self.consecutiveHealthFailures)/\(Self.maxConsecutiveFailures))",
-                    )
-                    if self.consecutiveHealthFailures >= Self.maxConsecutiveFailures {
-                        self.handleUnexpectedExit()
-                    }
-                }
+                self.finishHealthCheck(healthy: healthy, token: token, generation: generation)
             }
         }
     }
 
-    /// Gracefully stops the server process.
+    /// Gracefully stops the server process without blocking the main actor.
     func stop() {
-        guard let proc = process, proc.isRunning else {
-            status = .stopped
-            process = nil
-            return
+        lifecycleGeneration &+= 1
+        cancelHealthCheck()
+
+        let ownedProcess = process
+        let ownedPid = adoptedPid
+
+        process = nil
+        adoptedPid = nil
+        _ = applyLifecycle(.stopRequested)
+
+        ownedProcess?.terminate()
+        if let ownedPid {
+            dependencies.terminatePid(ownedPid)
         }
 
-        // SIGTERM triggers the AtomicBool shutdown flag in serve.rs
-        proc.terminate()
-        proc.waitUntilExit()
-        process = nil
-        status = .stopped
-        DebugLog.write("HookServerManager: server stopped")
+        DebugLog.write("HookServerManager: server stop requested")
     }
 
     // MARK: - Private
 
     private func start() {
-        status = .starting
-        consecutiveHealthFailures = 0
+        lifecycleGeneration &+= 1
+        cancelHealthCheck()
+        adoptedPid = nil
+        _ = applyLifecycle(.launchRequested)
 
-        let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: binaryPath)
-        proc.arguments = ["serve", "--port", String(port)]
-
-        // Inherit the environment so CAPACITOR_CORE_ENABLED and snapshot path are picked up
-        var env = ProcessInfo.processInfo.environment
-        env["CAPACITOR_CORE_ENABLED"] = "1"
-        proc.environment = env
-
-        // Discard stdout/stderr — the server logs via tracing to its own log file
-        proc.standardOutput = FileHandle.nullDevice
-        proc.standardError = FileHandle.nullDevice
+        var environment = ProcessInfo.processInfo.environment
+        environment["CAPACITOR_CORE_ENABLED"] = "1"
 
         do {
-            try proc.run()
-            process = proc
-            DebugLog.write("HookServerManager: launched pid \(proc.processIdentifier) on port \(port)")
+            let launchedProcess = try dependencies.launchProcess(binaryPath, port, environment)
+            process = launchedProcess
+            DebugLog.write("HookServerManager: launched pid \(launchedProcess.processIdentifier) on port \(port)")
         } catch {
-            status = .failed(error.localizedDescription)
-            DebugLog.write("HookServerManager: failed to launch — \(error)")
+            process = nil
+            _ = applyLifecycle(.launchFailed(error.localizedDescription))
+            DebugLog.write("HookServerManager: failed to launch - \(error)")
             Telemetry.emit("hook_server", "Launch failed", payload: [
                 "error": String(describing: error),
             ])
         }
     }
 
-    private func handleUnexpectedExit() {
-        let oldPid = process?.processIdentifier
+    private func beginLifecycleObservation(adoptedPid: Int32) {
+        lifecycleGeneration &+= 1
+        cancelHealthCheck()
         process = nil
-        consecutiveHealthFailures = 0
+        self.adoptedPid = adoptedPid
+        _ = applyLifecycle(.adoptedExistingProcess)
+    }
+
+    private func finishHealthCheck(healthy: Bool, token: UUID, generation: UInt64) {
+        guard healthCheckToken == token else { return }
+        healthCheckTask = nil
+        healthCheckToken = nil
+
+        guard generation == lifecycleGeneration, !stopRequested else {
+            return
+        }
+
+        guard status == .running || status == .starting else {
+            return
+        }
+
+        let previousFailures = consecutiveHealthFailures
+        let directive = applyLifecycle(.healthCheckFinished(
+            healthy: healthy,
+            maxConsecutiveFailures: Self.maxConsecutiveFailures,
+        ))
+
+        if !healthy {
+            DebugLog.write(
+                "HookServerManager: health check failed (\(previousFailures + 1)/\(Self.maxConsecutiveFailures))",
+            )
+        }
+
+        switch directive {
+        case .serverReady:
+            DebugLog.write("HookServerManager: server ready on port \(port)")
+            Telemetry.emit("hook_server", "Server started", payload: [
+                "port": port,
+            ])
+        case .restart:
+            handleUnexpectedExit(for: generation)
+        case .none, .stopped:
+            break
+        }
+    }
+
+    private func cancelHealthCheck() {
+        healthCheckTask?.cancel()
+        healthCheckTask = nil
+        healthCheckToken = nil
+    }
+
+    private func handleUnexpectedExit(for generation: UInt64) {
+        guard generation == lifecycleGeneration, !stopRequested else {
+            return
+        }
+
+        let oldPid = process?.processIdentifier ?? adoptedPid
+        process = nil
+        adoptedPid = nil
 
         DebugLog.write("HookServerManager: restarting (was pid \(oldPid ?? 0))")
         Telemetry.emit("hook_server", "Server restarting", payload: [
@@ -172,6 +349,14 @@ final class HookServerManager {
         start()
     }
 
+    private func applyLifecycle(_ event: HookServerLifecycleState.Event) -> HookServerLifecycleState.Directive {
+        let directive = lifecycleState.apply(event)
+        status = lifecycleState.status
+        consecutiveHealthFailures = lifecycleState.consecutiveHealthFailures
+        stopRequested = lifecycleState.stopRequested
+        return directive
+    }
+
     // MARK: - PID File Helpers
 
     private var pidFilePath: String {
@@ -179,24 +364,8 @@ final class HookServerManager {
             .appendingPathComponent(".capacitor/runtime/hud-hook-serve-\(port).pid").path
     }
 
-    private func readPidFile() -> Int32? {
-        guard let contents = try? String(contentsOfFile: pidFilePath, encoding: .utf8) else {
-            return nil
-        }
-        return Int32(contents.trimmingCharacters(in: .whitespacesAndNewlines))
-    }
-
-    private func removePidFile() {
-        try? FileManager.default.removeItem(atPath: pidFilePath)
-    }
-
-    private func isProcessAlive(_ pid: Int32) -> Bool {
-        // kill(pid, 0) checks existence without sending a signal
-        kill(pid, 0) == 0
-    }
-
-    private nonisolated func fetchHealth() async -> Bool {
-        guard let url = URL(string: "http://127.0.0.1:\(port)\(Self.healthPath)") else {
+    nonisolated static func fetchHealth(port: UInt16) async -> Bool {
+        guard let url = URL(string: "http://127.0.0.1:\(port)\(healthPath)") else {
             return false
         }
 
@@ -205,7 +374,6 @@ final class HookServerManager {
             guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
                 return false
             }
-            // Parse {"status":"ok"}
             if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                let status = json["status"] as? String
             {
@@ -216,4 +384,34 @@ final class HookServerManager {
             return false
         }
     }
+}
+
+extension HookServerManagerDependencies {
+    static let live = HookServerManagerDependencies(
+        isExecutableFile: { FileManager.default.isExecutableFile(atPath: $0) },
+        readPidFile: { path in
+            guard let contents = try? String(contentsOfFile: path, encoding: .utf8) else {
+                return nil
+            }
+            return Int32(contents.trimmingCharacters(in: .whitespacesAndNewlines))
+        },
+        removePidFile: { path in
+            try? FileManager.default.removeItem(atPath: path)
+        },
+        isProcessAlive: { pid in
+            kill(pid, 0) == 0
+        },
+        isManagedServerProcess: { pid, expectedBinaryPath in
+            LiveHookServerProcess.executablePath(pid: pid) == expectedBinaryPath
+        },
+        terminatePid: { pid in
+            _ = kill(pid, SIGTERM)
+        },
+        launchProcess: { binaryPath, port, environment in
+            try LiveHookServerProcess(binaryPath: binaryPath, port: port, environment: environment)
+        },
+        fetchHealth: { port in
+            await HookServerManager.fetchHealth(port: port)
+        },
+    )
 }

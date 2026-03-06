@@ -566,8 +566,6 @@ public protocol CoreRuntimeProtocol : AnyObject {
     
     func removeProject(path: String) throws 
     
-    func resolveActivationWithTrace(projectPath: String, shellState: ShellCwdStateFfi?, tmuxContext: TmuxContextFfi, includeTrace: Bool)  -> ActivationDecision
-    
     func runHookTest()  -> HookTestResult
     
     func saveIdeasOrder(projectPath: String, ideaIds: [String]) throws 
@@ -846,17 +844,6 @@ open func removeProject(path: String)throws  {try rustCallWithError(FfiConverter
 }
 }
     
-open func resolveActivationWithTrace(projectPath: String, shellState: ShellCwdStateFfi?, tmuxContext: TmuxContextFfi, includeTrace: Bool) -> ActivationDecision {
-    return try!  FfiConverterTypeActivationDecision.lift(try! rustCall() {
-    uniffi_capacitor_core_fn_method_coreruntime_resolve_activation_with_trace(self.uniffiClonePointer(),
-        FfiConverterString.lower(projectPath),
-        FfiConverterOptionTypeShellCwdStateFfi.lower(shellState),
-        FfiConverterTypeTmuxContextFfi.lower(tmuxContext),
-        FfiConverterBool.lower(includeTrace),$0
-    )
-})
-}
-    
 open func runHookTest() -> HookTestResult {
     return try!  FfiConverterTypeHookTestResult.lift(try! rustCall() {
     uniffi_capacitor_core_fn_method_coreruntime_run_hook_test(self.uniffiClonePointer(),$0
@@ -977,115 +964,6 @@ public func FfiConverterTypeCoreRuntime_lift(_ pointer: UnsafeMutableRawPointer)
 #endif
 public func FfiConverterTypeCoreRuntime_lower(_ value: CoreRuntime) -> UnsafeMutableRawPointer {
     return FfiConverterTypeCoreRuntime.lower(value)
-}
-
-
-/**
- * The resolved activation decision.
- */
-public struct ActivationDecision {
-    /**
-     * Primary action to attempt
-     */
-    public var primary: ActivationAction
-    /**
-     * Fallback action if primary fails
-     */
-    public var fallback: ActivationAction?
-    /**
-     * Debug context explaining why this decision was made
-     */
-    public var reason: String
-    /**
-     * Optional decision trace for debugging selection logic
-     */
-    public var trace: DecisionTraceFfi?
-
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
-    public init(
-        /**
-         * Primary action to attempt
-         */primary: ActivationAction, 
-        /**
-         * Fallback action if primary fails
-         */fallback: ActivationAction?, 
-        /**
-         * Debug context explaining why this decision was made
-         */reason: String, 
-        /**
-         * Optional decision trace for debugging selection logic
-         */trace: DecisionTraceFfi?) {
-        self.primary = primary
-        self.fallback = fallback
-        self.reason = reason
-        self.trace = trace
-    }
-}
-
-
-
-extension ActivationDecision: Equatable, Hashable {
-    public static func ==(lhs: ActivationDecision, rhs: ActivationDecision) -> Bool {
-        if lhs.primary != rhs.primary {
-            return false
-        }
-        if lhs.fallback != rhs.fallback {
-            return false
-        }
-        if lhs.reason != rhs.reason {
-            return false
-        }
-        if lhs.trace != rhs.trace {
-            return false
-        }
-        return true
-    }
-
-    public func hash(into hasher: inout Hasher) {
-        hasher.combine(primary)
-        hasher.combine(fallback)
-        hasher.combine(reason)
-        hasher.combine(trace)
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeActivationDecision: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ActivationDecision {
-        return
-            try ActivationDecision(
-                primary: FfiConverterTypeActivationAction.read(from: &buf), 
-                fallback: FfiConverterOptionTypeActivationAction.read(from: &buf), 
-                reason: FfiConverterString.read(from: &buf), 
-                trace: FfiConverterOptionTypeDecisionTraceFfi.read(from: &buf)
-        )
-    }
-
-    public static func write(_ value: ActivationDecision, into buf: inout [UInt8]) {
-        FfiConverterTypeActivationAction.write(value.primary, into: &buf)
-        FfiConverterOptionTypeActivationAction.write(value.fallback, into: &buf)
-        FfiConverterString.write(value.reason, into: &buf)
-        FfiConverterOptionTypeDecisionTraceFfi.write(value.trace, into: &buf)
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeActivationDecision_lift(_ buf: RustBuffer) throws -> ActivationDecision {
-    return try FfiConverterTypeActivationDecision.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeActivationDecision_lower(_ value: ActivationDecision) -> RustBuffer {
-    return FfiConverterTypeActivationDecision.lower(value)
 }
 
 
@@ -1418,136 +1296,6 @@ public func FfiConverterTypeCachedProjectStats_lower(_ value: CachedProjectStats
 }
 
 
-public struct CandidateTraceFfi {
-    public var pid: UInt32
-    public var cwd: String
-    public var tty: String
-    public var parentApp: ParentApp
-    public var isLive: Bool
-    public var hasTmux: Bool
-    public var matchType: String
-    public var matchRank: UInt8
-    public var updatedAt: String
-    public var rankKey: [String]
-
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
-    public init(pid: UInt32, cwd: String, tty: String, parentApp: ParentApp, isLive: Bool, hasTmux: Bool, matchType: String, matchRank: UInt8, updatedAt: String, rankKey: [String]) {
-        self.pid = pid
-        self.cwd = cwd
-        self.tty = tty
-        self.parentApp = parentApp
-        self.isLive = isLive
-        self.hasTmux = hasTmux
-        self.matchType = matchType
-        self.matchRank = matchRank
-        self.updatedAt = updatedAt
-        self.rankKey = rankKey
-    }
-}
-
-
-
-extension CandidateTraceFfi: Equatable, Hashable {
-    public static func ==(lhs: CandidateTraceFfi, rhs: CandidateTraceFfi) -> Bool {
-        if lhs.pid != rhs.pid {
-            return false
-        }
-        if lhs.cwd != rhs.cwd {
-            return false
-        }
-        if lhs.tty != rhs.tty {
-            return false
-        }
-        if lhs.parentApp != rhs.parentApp {
-            return false
-        }
-        if lhs.isLive != rhs.isLive {
-            return false
-        }
-        if lhs.hasTmux != rhs.hasTmux {
-            return false
-        }
-        if lhs.matchType != rhs.matchType {
-            return false
-        }
-        if lhs.matchRank != rhs.matchRank {
-            return false
-        }
-        if lhs.updatedAt != rhs.updatedAt {
-            return false
-        }
-        if lhs.rankKey != rhs.rankKey {
-            return false
-        }
-        return true
-    }
-
-    public func hash(into hasher: inout Hasher) {
-        hasher.combine(pid)
-        hasher.combine(cwd)
-        hasher.combine(tty)
-        hasher.combine(parentApp)
-        hasher.combine(isLive)
-        hasher.combine(hasTmux)
-        hasher.combine(matchType)
-        hasher.combine(matchRank)
-        hasher.combine(updatedAt)
-        hasher.combine(rankKey)
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeCandidateTraceFfi: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CandidateTraceFfi {
-        return
-            try CandidateTraceFfi(
-                pid: FfiConverterUInt32.read(from: &buf), 
-                cwd: FfiConverterString.read(from: &buf), 
-                tty: FfiConverterString.read(from: &buf), 
-                parentApp: FfiConverterTypeParentApp.read(from: &buf), 
-                isLive: FfiConverterBool.read(from: &buf), 
-                hasTmux: FfiConverterBool.read(from: &buf), 
-                matchType: FfiConverterString.read(from: &buf), 
-                matchRank: FfiConverterUInt8.read(from: &buf), 
-                updatedAt: FfiConverterString.read(from: &buf), 
-                rankKey: FfiConverterSequenceString.read(from: &buf)
-        )
-    }
-
-    public static func write(_ value: CandidateTraceFfi, into buf: inout [UInt8]) {
-        FfiConverterUInt32.write(value.pid, into: &buf)
-        FfiConverterString.write(value.cwd, into: &buf)
-        FfiConverterString.write(value.tty, into: &buf)
-        FfiConverterTypeParentApp.write(value.parentApp, into: &buf)
-        FfiConverterBool.write(value.isLive, into: &buf)
-        FfiConverterBool.write(value.hasTmux, into: &buf)
-        FfiConverterString.write(value.matchType, into: &buf)
-        FfiConverterUInt8.write(value.matchRank, into: &buf)
-        FfiConverterString.write(value.updatedAt, into: &buf)
-        FfiConverterSequenceString.write(value.rankKey, into: &buf)
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeCandidateTraceFfi_lift(_ buf: RustBuffer) throws -> CandidateTraceFfi {
-    return try FfiConverterTypeCandidateTraceFfi.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeCandidateTraceFfi_lower(_ value: CandidateTraceFfi) -> RustBuffer {
-    return FfiConverterTypeCandidateTraceFfi.lower(value)
-}
-
-
 /**
  * Context window usage information.
  */
@@ -1869,88 +1617,6 @@ public func FfiConverterTypeDashboardData_lift(_ buf: RustBuffer) throws -> Dash
 #endif
 public func FfiConverterTypeDashboardData_lower(_ value: DashboardData) -> RustBuffer {
     return FfiConverterTypeDashboardData.lower(value)
-}
-
-
-public struct DecisionTraceFfi {
-    public var preferTmux: Bool
-    public var policyOrder: [String]
-    public var candidates: [CandidateTraceFfi]
-    public var selectedPid: UInt32?
-
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
-    public init(preferTmux: Bool, policyOrder: [String], candidates: [CandidateTraceFfi], selectedPid: UInt32?) {
-        self.preferTmux = preferTmux
-        self.policyOrder = policyOrder
-        self.candidates = candidates
-        self.selectedPid = selectedPid
-    }
-}
-
-
-
-extension DecisionTraceFfi: Equatable, Hashable {
-    public static func ==(lhs: DecisionTraceFfi, rhs: DecisionTraceFfi) -> Bool {
-        if lhs.preferTmux != rhs.preferTmux {
-            return false
-        }
-        if lhs.policyOrder != rhs.policyOrder {
-            return false
-        }
-        if lhs.candidates != rhs.candidates {
-            return false
-        }
-        if lhs.selectedPid != rhs.selectedPid {
-            return false
-        }
-        return true
-    }
-
-    public func hash(into hasher: inout Hasher) {
-        hasher.combine(preferTmux)
-        hasher.combine(policyOrder)
-        hasher.combine(candidates)
-        hasher.combine(selectedPid)
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeDecisionTraceFfi: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> DecisionTraceFfi {
-        return
-            try DecisionTraceFfi(
-                preferTmux: FfiConverterBool.read(from: &buf), 
-                policyOrder: FfiConverterSequenceString.read(from: &buf), 
-                candidates: FfiConverterSequenceTypeCandidateTraceFfi.read(from: &buf), 
-                selectedPid: FfiConverterOptionUInt32.read(from: &buf)
-        )
-    }
-
-    public static func write(_ value: DecisionTraceFfi, into buf: inout [UInt8]) {
-        FfiConverterBool.write(value.preferTmux, into: &buf)
-        FfiConverterSequenceString.write(value.policyOrder, into: &buf)
-        FfiConverterSequenceTypeCandidateTraceFfi.write(value.candidates, into: &buf)
-        FfiConverterOptionUInt32.write(value.selectedPid, into: &buf)
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeDecisionTraceFfi_lift(_ buf: RustBuffer) throws -> DecisionTraceFfi {
-    return try FfiConverterTypeDecisionTraceFfi.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeDecisionTraceFfi_lower(_ value: DecisionTraceFfi) -> RustBuffer {
-    return FfiConverterTypeDecisionTraceFfi.lower(value)
 }
 
 
@@ -3083,16 +2749,18 @@ public struct IngestShellSignalCommand {
     public var tty: String
     public var parentApp: String
     public var tmuxSession: String?
+    public var tmuxClientTty: String?
     public var recordedAt: String
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(pid: UInt32, cwd: String, tty: String, parentApp: String, tmuxSession: String?, recordedAt: String) {
+    public init(pid: UInt32, cwd: String, tty: String, parentApp: String, tmuxSession: String?, tmuxClientTty: String?, recordedAt: String) {
         self.pid = pid
         self.cwd = cwd
         self.tty = tty
         self.parentApp = parentApp
         self.tmuxSession = tmuxSession
+        self.tmuxClientTty = tmuxClientTty
         self.recordedAt = recordedAt
     }
 }
@@ -3116,6 +2784,9 @@ extension IngestShellSignalCommand: Equatable, Hashable {
         if lhs.tmuxSession != rhs.tmuxSession {
             return false
         }
+        if lhs.tmuxClientTty != rhs.tmuxClientTty {
+            return false
+        }
         if lhs.recordedAt != rhs.recordedAt {
             return false
         }
@@ -3128,6 +2799,7 @@ extension IngestShellSignalCommand: Equatable, Hashable {
         hasher.combine(tty)
         hasher.combine(parentApp)
         hasher.combine(tmuxSession)
+        hasher.combine(tmuxClientTty)
         hasher.combine(recordedAt)
     }
 }
@@ -3145,6 +2817,7 @@ public struct FfiConverterTypeIngestShellSignalCommand: FfiConverterRustBuffer {
                 tty: FfiConverterString.read(from: &buf), 
                 parentApp: FfiConverterString.read(from: &buf), 
                 tmuxSession: FfiConverterOptionString.read(from: &buf), 
+                tmuxClientTty: FfiConverterOptionString.read(from: &buf), 
                 recordedAt: FfiConverterString.read(from: &buf)
         )
     }
@@ -3155,6 +2828,7 @@ public struct FfiConverterTypeIngestShellSignalCommand: FfiConverterRustBuffer {
         FfiConverterString.write(value.tty, into: &buf)
         FfiConverterString.write(value.parentApp, into: &buf)
         FfiConverterOptionString.write(value.tmuxSession, into: &buf)
+        FfiConverterOptionString.write(value.tmuxClientTty, into: &buf)
         FfiConverterString.write(value.recordedAt, into: &buf)
     }
 }
@@ -5098,209 +4772,24 @@ public func FfiConverterTypeSetupStatus_lower(_ value: SetupStatus) -> RustBuffe
 }
 
 
-/**
- * Shell state as returned by the runtime snapshot.
- *
- * This is the FFI-safe version of the shell state. Swift fetches the runtime
- * snapshot and converts it to this type before passing to Rust.
- */
-public struct ShellCwdStateFfi {
-    public var version: UInt32
-    public var shells: [String: ShellEntryFfi]
-
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
-    public init(version: UInt32, shells: [String: ShellEntryFfi]) {
-        self.version = version
-        self.shells = shells
-    }
-}
-
-
-
-extension ShellCwdStateFfi: Equatable, Hashable {
-    public static func ==(lhs: ShellCwdStateFfi, rhs: ShellCwdStateFfi) -> Bool {
-        if lhs.version != rhs.version {
-            return false
-        }
-        if lhs.shells != rhs.shells {
-            return false
-        }
-        return true
-    }
-
-    public func hash(into hasher: inout Hasher) {
-        hasher.combine(version)
-        hasher.combine(shells)
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeShellCwdStateFfi: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ShellCwdStateFfi {
-        return
-            try ShellCwdStateFfi(
-                version: FfiConverterUInt32.read(from: &buf), 
-                shells: FfiConverterDictionaryStringTypeShellEntryFfi.read(from: &buf)
-        )
-    }
-
-    public static func write(_ value: ShellCwdStateFfi, into buf: inout [UInt8]) {
-        FfiConverterUInt32.write(value.version, into: &buf)
-        FfiConverterDictionaryStringTypeShellEntryFfi.write(value.shells, into: &buf)
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeShellCwdStateFfi_lift(_ buf: RustBuffer) throws -> ShellCwdStateFfi {
-    return try FfiConverterTypeShellCwdStateFfi.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeShellCwdStateFfi_lower(_ value: ShellCwdStateFfi) -> RustBuffer {
-    return FfiConverterTypeShellCwdStateFfi.lower(value)
-}
-
-
-/**
- * A single shell entry from the shell state.
- */
-public struct ShellEntryFfi {
-    public var cwd: String
-    public var tty: String
-    public var parentApp: ParentApp
-    public var tmuxSession: String?
-    public var tmuxClientTty: String?
-    public var updatedAt: String
-    /**
-     * Whether the shell process is still running (verified via kill(pid, 0))
-     */
-    public var isLive: Bool
-
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
-    public init(cwd: String, tty: String, parentApp: ParentApp, tmuxSession: String?, tmuxClientTty: String?, updatedAt: String, 
-        /**
-         * Whether the shell process is still running (verified via kill(pid, 0))
-         */isLive: Bool) {
-        self.cwd = cwd
-        self.tty = tty
-        self.parentApp = parentApp
-        self.tmuxSession = tmuxSession
-        self.tmuxClientTty = tmuxClientTty
-        self.updatedAt = updatedAt
-        self.isLive = isLive
-    }
-}
-
-
-
-extension ShellEntryFfi: Equatable, Hashable {
-    public static func ==(lhs: ShellEntryFfi, rhs: ShellEntryFfi) -> Bool {
-        if lhs.cwd != rhs.cwd {
-            return false
-        }
-        if lhs.tty != rhs.tty {
-            return false
-        }
-        if lhs.parentApp != rhs.parentApp {
-            return false
-        }
-        if lhs.tmuxSession != rhs.tmuxSession {
-            return false
-        }
-        if lhs.tmuxClientTty != rhs.tmuxClientTty {
-            return false
-        }
-        if lhs.updatedAt != rhs.updatedAt {
-            return false
-        }
-        if lhs.isLive != rhs.isLive {
-            return false
-        }
-        return true
-    }
-
-    public func hash(into hasher: inout Hasher) {
-        hasher.combine(cwd)
-        hasher.combine(tty)
-        hasher.combine(parentApp)
-        hasher.combine(tmuxSession)
-        hasher.combine(tmuxClientTty)
-        hasher.combine(updatedAt)
-        hasher.combine(isLive)
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeShellEntryFfi: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ShellEntryFfi {
-        return
-            try ShellEntryFfi(
-                cwd: FfiConverterString.read(from: &buf), 
-                tty: FfiConverterString.read(from: &buf), 
-                parentApp: FfiConverterTypeParentApp.read(from: &buf), 
-                tmuxSession: FfiConverterOptionString.read(from: &buf), 
-                tmuxClientTty: FfiConverterOptionString.read(from: &buf), 
-                updatedAt: FfiConverterString.read(from: &buf), 
-                isLive: FfiConverterBool.read(from: &buf)
-        )
-    }
-
-    public static func write(_ value: ShellEntryFfi, into buf: inout [UInt8]) {
-        FfiConverterString.write(value.cwd, into: &buf)
-        FfiConverterString.write(value.tty, into: &buf)
-        FfiConverterTypeParentApp.write(value.parentApp, into: &buf)
-        FfiConverterOptionString.write(value.tmuxSession, into: &buf)
-        FfiConverterOptionString.write(value.tmuxClientTty, into: &buf)
-        FfiConverterString.write(value.updatedAt, into: &buf)
-        FfiConverterBool.write(value.isLive, into: &buf)
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeShellEntryFfi_lift(_ buf: RustBuffer) throws -> ShellEntryFfi {
-    return try FfiConverterTypeShellEntryFfi.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeShellEntryFfi_lower(_ value: ShellEntryFfi) -> RustBuffer {
-    return FfiConverterTypeShellEntryFfi.lower(value)
-}
-
-
 public struct ShellSignal {
     public var pid: UInt32
     public var cwd: String
     public var tty: String
     public var parentApp: String
     public var tmuxSession: String?
+    public var tmuxClientTty: String?
     public var updatedAt: String
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(pid: UInt32, cwd: String, tty: String, parentApp: String, tmuxSession: String?, updatedAt: String) {
+    public init(pid: UInt32, cwd: String, tty: String, parentApp: String, tmuxSession: String?, tmuxClientTty: String?, updatedAt: String) {
         self.pid = pid
         self.cwd = cwd
         self.tty = tty
         self.parentApp = parentApp
         self.tmuxSession = tmuxSession
+        self.tmuxClientTty = tmuxClientTty
         self.updatedAt = updatedAt
     }
 }
@@ -5324,6 +4813,9 @@ extension ShellSignal: Equatable, Hashable {
         if lhs.tmuxSession != rhs.tmuxSession {
             return false
         }
+        if lhs.tmuxClientTty != rhs.tmuxClientTty {
+            return false
+        }
         if lhs.updatedAt != rhs.updatedAt {
             return false
         }
@@ -5336,6 +4828,7 @@ extension ShellSignal: Equatable, Hashable {
         hasher.combine(tty)
         hasher.combine(parentApp)
         hasher.combine(tmuxSession)
+        hasher.combine(tmuxClientTty)
         hasher.combine(updatedAt)
     }
 }
@@ -5353,6 +4846,7 @@ public struct FfiConverterTypeShellSignal: FfiConverterRustBuffer {
                 tty: FfiConverterString.read(from: &buf), 
                 parentApp: FfiConverterString.read(from: &buf), 
                 tmuxSession: FfiConverterOptionString.read(from: &buf), 
+                tmuxClientTty: FfiConverterOptionString.read(from: &buf), 
                 updatedAt: FfiConverterString.read(from: &buf)
         )
     }
@@ -5363,6 +4857,7 @@ public struct FfiConverterTypeShellSignal: FfiConverterRustBuffer {
         FfiConverterString.write(value.tty, into: &buf)
         FfiConverterString.write(value.parentApp, into: &buf)
         FfiConverterOptionString.write(value.tmuxSession, into: &buf)
+        FfiConverterOptionString.write(value.tmuxClientTty, into: &buf)
         FfiConverterString.write(value.updatedAt, into: &buf)
     }
 }
@@ -5647,101 +5142,6 @@ public func FfiConverterTypeTask_lower(_ value: Task) -> RustBuffer {
 
 
 /**
- * Context about tmux state, queried by Swift before calling the resolver.
- */
-public struct TmuxContextFfi {
-    /**
-     * Session name if one exists at the project path
-     */
-    public var sessionAtPath: String?
-    /**
-     * Whether any tmux client is currently attached
-     */
-    public var hasAttachedClient: Bool
-    /**
-     * User's home directory (e.g., "/Users/pete") - excluded from parent matching
-     */
-    public var homeDir: String
-
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
-    public init(
-        /**
-         * Session name if one exists at the project path
-         */sessionAtPath: String?, 
-        /**
-         * Whether any tmux client is currently attached
-         */hasAttachedClient: Bool, 
-        /**
-         * User's home directory (e.g., "/Users/pete") - excluded from parent matching
-         */homeDir: String) {
-        self.sessionAtPath = sessionAtPath
-        self.hasAttachedClient = hasAttachedClient
-        self.homeDir = homeDir
-    }
-}
-
-
-
-extension TmuxContextFfi: Equatable, Hashable {
-    public static func ==(lhs: TmuxContextFfi, rhs: TmuxContextFfi) -> Bool {
-        if lhs.sessionAtPath != rhs.sessionAtPath {
-            return false
-        }
-        if lhs.hasAttachedClient != rhs.hasAttachedClient {
-            return false
-        }
-        if lhs.homeDir != rhs.homeDir {
-            return false
-        }
-        return true
-    }
-
-    public func hash(into hasher: inout Hasher) {
-        hasher.combine(sessionAtPath)
-        hasher.combine(hasAttachedClient)
-        hasher.combine(homeDir)
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeTmuxContextFfi: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TmuxContextFfi {
-        return
-            try TmuxContextFfi(
-                sessionAtPath: FfiConverterOptionString.read(from: &buf), 
-                hasAttachedClient: FfiConverterBool.read(from: &buf), 
-                homeDir: FfiConverterString.read(from: &buf)
-        )
-    }
-
-    public static func write(_ value: TmuxContextFfi, into buf: inout [UInt8]) {
-        FfiConverterOptionString.write(value.sessionAtPath, into: &buf)
-        FfiConverterBool.write(value.hasAttachedClient, into: &buf)
-        FfiConverterString.write(value.homeDir, into: &buf)
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeTmuxContextFfi_lift(_ buf: RustBuffer) throws -> TmuxContextFfi {
-    return try FfiConverterTypeTmuxContextFfi.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeTmuxContextFfi_lower(_ value: TmuxContextFfi) -> RustBuffer {
-    return FfiConverterTypeTmuxContextFfi.lower(value)
-}
-
-
-/**
  * FFI-friendly validation result for Swift/Kotlin/Python.
  *
  * Uses flat structure instead of enum variants for better FFI compatibility.
@@ -5878,202 +5278,6 @@ public func FfiConverterTypeValidationResultFfi_lift(_ buf: RustBuffer) throws -
 public func FfiConverterTypeValidationResultFfi_lower(_ value: ValidationResultFfi) -> RustBuffer {
     return FfiConverterTypeValidationResultFfi.lower(value)
 }
-
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
-/**
- * A single action for Swift to execute.
- */
-
-public enum ActivationAction {
-    
-    /**
-     * Activate a terminal by querying for TTY ownership (AppleScript)
-     */
-    case activateByTty(tty: String, terminalType: TerminalType
-    )
-    /**
-     * Activate app by bringing its window to front
-     */
-    case activateApp(appName: String
-    )
-    /**
-     * Focus kitty window by shell PID using `kitty @`
-     */
-    case activateKittyWindow(shellPid: UInt32
-    )
-    /**
-     * Activate IDE and run CLI to focus correct window
-     */
-    case activateIdeWindow(ideType: IdeType, projectPath: String
-    )
-    /**
-     * Switch tmux session in attached client
-     */
-    case switchTmuxSession(sessionName: String
-    )
-    /**
-     * Ensure tmux session exists (create if needed), then switch
-     */
-    case ensureTmuxSession(sessionName: String, projectPath: String
-    )
-    /**
-     * Discover host terminal via TTY, then switch tmux session
-     */
-    case activateHostThenSwitchTmux(hostTty: String, sessionName: String
-    )
-    /**
-     * Launch new terminal with tmux attach
-     */
-    case launchTerminalWithTmux(sessionName: String, projectPath: String
-    )
-    /**
-     * Launch new terminal at project path (no tmux)
-     */
-    case launchNewTerminal(projectPath: String, projectName: String
-    )
-    /**
-     * Activate first running terminal from priority list
-     */
-    case activatePriorityFallback
-    /**
-     * Do nothing
-     */
-    case skip
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeActivationAction: FfiConverterRustBuffer {
-    typealias SwiftType = ActivationAction
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ActivationAction {
-        let variant: Int32 = try readInt(&buf)
-        switch variant {
-        
-        case 1: return .activateByTty(tty: try FfiConverterString.read(from: &buf), terminalType: try FfiConverterTypeTerminalType.read(from: &buf)
-        )
-        
-        case 2: return .activateApp(appName: try FfiConverterString.read(from: &buf)
-        )
-        
-        case 3: return .activateKittyWindow(shellPid: try FfiConverterUInt32.read(from: &buf)
-        )
-        
-        case 4: return .activateIdeWindow(ideType: try FfiConverterTypeIdeType.read(from: &buf), projectPath: try FfiConverterString.read(from: &buf)
-        )
-        
-        case 5: return .switchTmuxSession(sessionName: try FfiConverterString.read(from: &buf)
-        )
-        
-        case 6: return .ensureTmuxSession(sessionName: try FfiConverterString.read(from: &buf), projectPath: try FfiConverterString.read(from: &buf)
-        )
-        
-        case 7: return .activateHostThenSwitchTmux(hostTty: try FfiConverterString.read(from: &buf), sessionName: try FfiConverterString.read(from: &buf)
-        )
-        
-        case 8: return .launchTerminalWithTmux(sessionName: try FfiConverterString.read(from: &buf), projectPath: try FfiConverterString.read(from: &buf)
-        )
-        
-        case 9: return .launchNewTerminal(projectPath: try FfiConverterString.read(from: &buf), projectName: try FfiConverterString.read(from: &buf)
-        )
-        
-        case 10: return .activatePriorityFallback
-        
-        case 11: return .skip
-        
-        default: throw UniffiInternalError.unexpectedEnumCase
-        }
-    }
-
-    public static func write(_ value: ActivationAction, into buf: inout [UInt8]) {
-        switch value {
-        
-        
-        case let .activateByTty(tty,terminalType):
-            writeInt(&buf, Int32(1))
-            FfiConverterString.write(tty, into: &buf)
-            FfiConverterTypeTerminalType.write(terminalType, into: &buf)
-            
-        
-        case let .activateApp(appName):
-            writeInt(&buf, Int32(2))
-            FfiConverterString.write(appName, into: &buf)
-            
-        
-        case let .activateKittyWindow(shellPid):
-            writeInt(&buf, Int32(3))
-            FfiConverterUInt32.write(shellPid, into: &buf)
-            
-        
-        case let .activateIdeWindow(ideType,projectPath):
-            writeInt(&buf, Int32(4))
-            FfiConverterTypeIdeType.write(ideType, into: &buf)
-            FfiConverterString.write(projectPath, into: &buf)
-            
-        
-        case let .switchTmuxSession(sessionName):
-            writeInt(&buf, Int32(5))
-            FfiConverterString.write(sessionName, into: &buf)
-            
-        
-        case let .ensureTmuxSession(sessionName,projectPath):
-            writeInt(&buf, Int32(6))
-            FfiConverterString.write(sessionName, into: &buf)
-            FfiConverterString.write(projectPath, into: &buf)
-            
-        
-        case let .activateHostThenSwitchTmux(hostTty,sessionName):
-            writeInt(&buf, Int32(7))
-            FfiConverterString.write(hostTty, into: &buf)
-            FfiConverterString.write(sessionName, into: &buf)
-            
-        
-        case let .launchTerminalWithTmux(sessionName,projectPath):
-            writeInt(&buf, Int32(8))
-            FfiConverterString.write(sessionName, into: &buf)
-            FfiConverterString.write(projectPath, into: &buf)
-            
-        
-        case let .launchNewTerminal(projectPath,projectName):
-            writeInt(&buf, Int32(9))
-            FfiConverterString.write(projectPath, into: &buf)
-            FfiConverterString.write(projectName, into: &buf)
-            
-        
-        case .activatePriorityFallback:
-            writeInt(&buf, Int32(10))
-        
-        
-        case .skip:
-            writeInt(&buf, Int32(11))
-        
-        }
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeActivationAction_lift(_ buf: RustBuffer) throws -> ActivationAction {
-    return try FfiConverterTypeActivationAction.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeActivationAction_lower(_ value: ActivationAction) -> RustBuffer {
-    return FfiConverterTypeActivationAction.lower(value)
-}
-
-
-
-extension ActivationAction: Equatable, Hashable {}
-
-
 
 
 public enum CoreRuntimeError {
@@ -6786,87 +5990,6 @@ extension HudFfiError: Foundation.LocalizedError {
 
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
-/**
- * IDE types for window activation via CLI.
- */
-
-public enum IdeType {
-    
-    case cursor
-    case vsCode
-    case vsCodeInsiders
-    case zed
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeIdeType: FfiConverterRustBuffer {
-    typealias SwiftType = IdeType
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> IdeType {
-        let variant: Int32 = try readInt(&buf)
-        switch variant {
-        
-        case 1: return .cursor
-        
-        case 2: return .vsCode
-        
-        case 3: return .vsCodeInsiders
-        
-        case 4: return .zed
-        
-        default: throw UniffiInternalError.unexpectedEnumCase
-        }
-    }
-
-    public static func write(_ value: IdeType, into buf: inout [UInt8]) {
-        switch value {
-        
-        
-        case .cursor:
-            writeInt(&buf, Int32(1))
-        
-        
-        case .vsCode:
-            writeInt(&buf, Int32(2))
-        
-        
-        case .vsCodeInsiders:
-            writeInt(&buf, Int32(3))
-        
-        
-        case .zed:
-            writeInt(&buf, Int32(4))
-        
-        }
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeIdeType_lift(_ buf: RustBuffer) throws -> IdeType {
-    return try FfiConverterTypeIdeType.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeIdeType_lower(_ value: IdeType) -> RustBuffer {
-    return FfiConverterTypeIdeType.lower(value)
-}
-
-
-
-extension IdeType: Equatable, Hashable {}
-
-
-
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 
 public enum IdeaMutationKind {
     
@@ -7380,108 +6503,6 @@ extension SessionState: Equatable, Hashable {}
 
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
-/**
- * Terminal types that support TTY-based tab selection.
- */
-
-public enum TerminalType {
-    
-    case iTerm
-    case terminalApp
-    case ghostty
-    case alacritty
-    case kitty
-    case warp
-    case unknown
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeTerminalType: FfiConverterRustBuffer {
-    typealias SwiftType = TerminalType
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TerminalType {
-        let variant: Int32 = try readInt(&buf)
-        switch variant {
-        
-        case 1: return .iTerm
-        
-        case 2: return .terminalApp
-        
-        case 3: return .ghostty
-        
-        case 4: return .alacritty
-        
-        case 5: return .kitty
-        
-        case 6: return .warp
-        
-        case 7: return .unknown
-        
-        default: throw UniffiInternalError.unexpectedEnumCase
-        }
-    }
-
-    public static func write(_ value: TerminalType, into buf: inout [UInt8]) {
-        switch value {
-        
-        
-        case .iTerm:
-            writeInt(&buf, Int32(1))
-        
-        
-        case .terminalApp:
-            writeInt(&buf, Int32(2))
-        
-        
-        case .ghostty:
-            writeInt(&buf, Int32(3))
-        
-        
-        case .alacritty:
-            writeInt(&buf, Int32(4))
-        
-        
-        case .kitty:
-            writeInt(&buf, Int32(5))
-        
-        
-        case .warp:
-            writeInt(&buf, Int32(6))
-        
-        
-        case .unknown:
-            writeInt(&buf, Int32(7))
-        
-        }
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeTerminalType_lift(_ buf: RustBuffer) throws -> TerminalType {
-    return try FfiConverterTypeTerminalType.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeTerminalType_lower(_ value: TerminalType) -> RustBuffer {
-    return FfiConverterTypeTerminalType.lower(value)
-}
-
-
-
-extension TerminalType: Equatable, Hashable {}
-
-
-
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 
 public enum WorktreeMutationKind {
     
@@ -7715,30 +6736,6 @@ fileprivate struct FfiConverterOptionTypeCreationProgress: FfiConverterRustBuffe
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-fileprivate struct FfiConverterOptionTypeDecisionTraceFfi: FfiConverterRustBuffer {
-    typealias SwiftType = DecisionTraceFfi?
-
-    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
-        guard let value = value else {
-            writeInt(&buf, Int8(0))
-            return
-        }
-        writeInt(&buf, Int8(1))
-        FfiConverterTypeDecisionTraceFfi.write(value, into: &buf)
-    }
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
-        switch try readInt(&buf) as Int8 {
-        case 0: return nil
-        case 1: return try FfiConverterTypeDecisionTraceFfi.read(from: &buf)
-        default: throw UniffiInternalError.unexpectedOptionalTag
-        }
-    }
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
 fileprivate struct FfiConverterOptionTypeProjectStats: FfiConverterRustBuffer {
     typealias SwiftType = ProjectStats?
 
@@ -7779,54 +6776,6 @@ fileprivate struct FfiConverterOptionTypeProjectStatus: FfiConverterRustBuffer {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeProjectStatus.read(from: &buf)
-        default: throw UniffiInternalError.unexpectedOptionalTag
-        }
-    }
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-fileprivate struct FfiConverterOptionTypeShellCwdStateFfi: FfiConverterRustBuffer {
-    typealias SwiftType = ShellCwdStateFfi?
-
-    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
-        guard let value = value else {
-            writeInt(&buf, Int8(0))
-            return
-        }
-        writeInt(&buf, Int8(1))
-        FfiConverterTypeShellCwdStateFfi.write(value, into: &buf)
-    }
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
-        switch try readInt(&buf) as Int8 {
-        case 0: return nil
-        case 1: return try FfiConverterTypeShellCwdStateFfi.read(from: &buf)
-        default: throw UniffiInternalError.unexpectedOptionalTag
-        }
-    }
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-fileprivate struct FfiConverterOptionTypeActivationAction: FfiConverterRustBuffer {
-    typealias SwiftType = ActivationAction?
-
-    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
-        guard let value = value else {
-            writeInt(&buf, Int8(0))
-            return
-        }
-        writeInt(&buf, Int8(1))
-        FfiConverterTypeActivationAction.write(value, into: &buf)
-    }
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
-        switch try readInt(&buf) as Int8 {
-        case 0: return nil
-        case 1: return try FfiConverterTypeActivationAction.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -7876,31 +6825,6 @@ fileprivate struct FfiConverterSequenceString: FfiConverterRustBuffer {
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterString.read(from: &buf))
-        }
-        return seq
-    }
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-fileprivate struct FfiConverterSequenceTypeCandidateTraceFfi: FfiConverterRustBuffer {
-    typealias SwiftType = [CandidateTraceFfi]
-
-    public static func write(_ value: [CandidateTraceFfi], into buf: inout [UInt8]) {
-        let len = Int32(value.count)
-        writeInt(&buf, len)
-        for item in value {
-            FfiConverterTypeCandidateTraceFfi.write(item, into: &buf)
-        }
-    }
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [CandidateTraceFfi] {
-        let len: Int32 = try readInt(&buf)
-        var seq = [CandidateTraceFfi]()
-        seq.reserveCapacity(Int(len))
-        for _ in 0 ..< len {
-            seq.append(try FfiConverterTypeCandidateTraceFfi.read(from: &buf))
         }
         return seq
     }
@@ -8208,59 +7132,6 @@ fileprivate struct FfiConverterDictionaryStringTypeCachedProjectStats: FfiConver
     }
 }
 
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-fileprivate struct FfiConverterDictionaryStringTypeShellEntryFfi: FfiConverterRustBuffer {
-    public static func write(_ value: [String: ShellEntryFfi], into buf: inout [UInt8]) {
-        let len = Int32(value.count)
-        writeInt(&buf, len)
-        for (key, value) in value {
-            FfiConverterString.write(key, into: &buf)
-            FfiConverterTypeShellEntryFfi.write(value, into: &buf)
-        }
-    }
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [String: ShellEntryFfi] {
-        let len: Int32 = try readInt(&buf)
-        var dict = [String: ShellEntryFfi]()
-        dict.reserveCapacity(Int(len))
-        for _ in 0..<len {
-            let key = try FfiConverterString.read(from: &buf)
-            let value = try FfiConverterTypeShellEntryFfi.read(from: &buf)
-            dict[key] = value
-        }
-        return dict
-    }
-}
-/**
- * Formats a decision trace for logging.
- */
-public func formatActivationTrace(trace: DecisionTraceFfi) -> String {
-    return try!  FfiConverterString.lift(try! rustCall() {
-    uniffi_capacitor_core_fn_func_format_activation_trace(
-        FfiConverterTypeDecisionTraceFfi.lower(trace),$0
-    )
-})
-}
-/**
- * Check if two paths refer to the same location or are parent/child.
- *
- * Returns true if:
- * - The paths are identical
- * - One path is a subdirectory of the other
- *
- * This allows activating a shell in `/project/src` when clicking `/project`.
- */
-public func pathsMatch(a: String, b: String) -> Bool {
-    return try!  FfiConverterBool.lift(try! rustCall() {
-    uniffi_capacitor_core_fn_func_paths_match(
-        FfiConverterString.lower(a),
-        FfiConverterString.lower(b),$0
-    )
-})
-}
-
 private enum InitializationResult {
     case ok
     case contractVersionMismatch
@@ -8275,12 +7146,6 @@ private var initializationResult: InitializationResult = {
     let scaffolding_contract_version = ffi_capacitor_core_uniffi_contract_version()
     if bindings_contract_version != scaffolding_contract_version {
         return InitializationResult.contractVersionMismatch
-    }
-    if (uniffi_capacitor_core_checksum_func_format_activation_trace() != 51204) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_capacitor_core_checksum_func_paths_match() != 6145) {
-        return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_capacitor_core_checksum_method_coreruntime_add_project() != 46746) {
         return InitializationResult.apiChecksumMismatch
@@ -8358,9 +7223,6 @@ private var initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_capacitor_core_checksum_method_coreruntime_remove_project() != 50715) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_capacitor_core_checksum_method_coreruntime_resolve_activation_with_trace() != 56387) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_capacitor_core_checksum_method_coreruntime_run_hook_test() != 23431) {

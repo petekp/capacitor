@@ -6,7 +6,7 @@ A fun, glanceable, bring-your-own terminal UI for navigating multiple coding age
 
 - **Platform** — Apple Silicon, macOS 14+
 - **Swift App** (`apps/swift/`) — SwiftUI, 120Hz ProMotion
-- **Rust Core** (`core/capacitor-core/`) — Business logic via UniFFI bindings
+- **Rust Core** (`core/capacitor-core/`) — Persisted runtime ingest/reduce/query, snapshot storage, and UniFFI exports
 
 ## Commands
 
@@ -35,7 +35,7 @@ cargo build -p capacitor-core --release && cd apps/swift && swift build
 capacitor/
 ├── core/capacitor-core/src/      # Rust runtime: ingest/, reduce/, query/, activate/, storage/
 ├── core/hud-hook/src/            # Rust CLI hook handler
-├── apps/swift/Sources/Capacitor/ # Swift app shell + views + runtime client
+├── apps/swift/Sources/Capacitor/ # Swift app shell, projection/stabilization, lifecycle coordinators, and macOS integrations
 └── .claude/docs/                 # Local engineering runbooks
 ```
 
@@ -46,14 +46,19 @@ capacitor/
 - Read from `~/.claude/` — transcripts, config (Claude's namespace)
 - Write to `~/.capacitor/` — runtime snapshot, logs, and state (our namespace)
 - Never call Anthropic API directly — invoke `claude` CLI instead
+- Treat a fresh runtime snapshot as the canonical runtime input, then apply deterministic
+  Swift-side projection and stabilization before rendering.
 
 ## Key Files
 
 | Purpose | Location |
 |---------|----------|
 | CoreRuntime facade | `core/capacitor-core/src/lib.rs` |
-| Runtime types | `core/capacitor-core/src/runtime_types.rs` |
+| Runtime/domain types | `core/capacitor-core/src/domain/types.rs` |
 | Runtime setup + validation | `core/capacitor-core/src/runtime_setup.rs` |
+| App composition root | `apps/swift/Sources/Capacitor/Models/AppState.swift` |
+| Session projection + hysteresis | `apps/swift/Sources/Capacitor/Models/SessionStateManager.swift` |
+| Project creation coordinator | `apps/swift/Sources/Capacitor/Models/ProjectCreationCoordinator.swift` |
 | Shell CWD tracking | `core/hud-hook/src/cwd.rs` |
 | Terminal activation | `apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift` |
 | UniFFI bindings | `apps/swift/Sources/Capacitor/Bridge/capacitor_core.swift` |
@@ -66,7 +71,8 @@ Hooks → **hud-hook** → **capacitor-core snapshot** → Swift reads runtime s
 - **Runtime logs/artifacts:** `~/.capacitor/runtime/`
 - **Hook binary:** `~/.local/bin/hud-hook`
 
-**Resolution:** runtime sessions and shell state are authoritative.
+**Resolution:** Rust owns runtime ingest/reduce/query truth; Swift owns freshness guards,
+projection hysteresis, shell/session composition, and macOS-facing lifecycle behavior.
 
 ## Telemetry
 

@@ -154,6 +154,7 @@ impl ReducerState {
             tty: command.tty,
             parent_app: command.parent_app,
             tmux_session: command.tmux_session,
+            tmux_client_tty: command.tmux_client_tty,
             updated_at,
         };
         self.shells.insert(shell.pid, shell);
@@ -271,7 +272,7 @@ impl ReducerState {
             entry.latest_session_id = reduced.latest_session_id;
             entry.session_count = reduced.session_count;
             entry.active_count = reduced.active_count;
-            entry.has_session = entry.state.is_active();
+            entry.has_session = reduced.session_count > 0;
         }
 
         self.projects = next;
@@ -348,10 +349,12 @@ fn reduce_session(
 ) -> SessionUpdate {
     match event.event_type {
         HookEventType::SessionStart => {
-            if current
-                .map(|record| record.state.is_active())
-                .unwrap_or(false)
-            {
+            let already_working = current
+                .map(|record| {
+                    record.state == SessionState::Working || record.state == SessionState::Waiting
+                })
+                .unwrap_or(false);
+            if already_working {
                 SessionUpdate::Skip("session_start_already_active")
             } else {
                 SessionUpdate::Upsert(upsert_session(current, event, SessionState::Ready, None))
@@ -361,16 +364,7 @@ fn reduce_session(
             SessionUpdate::Upsert(upsert_session(current, event, SessionState::Working, None))
         }
         HookEventType::PostToolUse | HookEventType::PostToolUseFailure => {
-            let next_state = if current
-                .map(|record| record.state == SessionState::Compacting)
-                .unwrap_or(false)
-            {
-                SessionState::Compacting
-            } else {
-                SessionState::Working
-            };
-
-            SessionUpdate::Upsert(upsert_session(current, event, next_state, None))
+            SessionUpdate::Upsert(upsert_session(current, event, SessionState::Working, None))
         }
         HookEventType::PermissionRequest => {
             SessionUpdate::Upsert(upsert_session(current, event, SessionState::Waiting, None))
@@ -415,7 +409,7 @@ fn reduce_session(
             _ => SessionUpdate::Skip("notification_non_stateful"),
         },
         HookEventType::Stop => {
-            if should_skip_stop(current, event) {
+            if should_skip_stop(event) {
                 SessionUpdate::Skip("stop_guard")
             } else {
                 SessionUpdate::Upsert(upsert_session(
@@ -438,7 +432,22 @@ fn reduce_session(
                 ))
             }
         }
-        HookEventType::SessionEnd => SessionUpdate::Delete(event.session_id.clone()),
+        HookEventType::SessionEnd => {
+            let pid = event
+                .pid
+                .or_else(|| current.map(|record| record.pid))
+                .unwrap_or(0);
+            if pid > 0 && is_pid_alive(pid) {
+                SessionUpdate::Upsert(upsert_session(
+                    current,
+                    event,
+                    SessionState::Ready,
+                    Some("session_cleared".to_string()),
+                ))
+            } else {
+                SessionUpdate::Delete(event.session_id.clone())
+            }
+        }
         HookEventType::SubagentStart
         | HookEventType::SubagentStop
         | HookEventType::TeammateIdle
@@ -641,34 +650,6 @@ fn path_is_parent_or_self(parent: &str, child: &str) -> bool {
     parent == child || child.starts_with(&(parent + "/"))
 }
 
-#[must_use]
-pub fn default_workspace_id_for_path(project_path: &str) -> String {
-    crate::domain::default_workspace_id(project_path)
-}
-
-#[must_use]
-pub fn map_event_to_state(event_type: HookEventType) -> SessionState {
-    match event_type {
-        HookEventType::SessionStart => SessionState::Ready,
-        HookEventType::UserPromptSubmit => SessionState::Working,
-        HookEventType::PreToolUse => SessionState::Working,
-        HookEventType::PostToolUse | HookEventType::PostToolUseFailure => SessionState::Working,
-        HookEventType::PermissionRequest => SessionState::Waiting,
-        HookEventType::PreCompact => SessionState::Compacting,
-        HookEventType::Notification => SessionState::Ready,
-        HookEventType::SessionEnd => SessionState::Idle,
-        HookEventType::SubagentStart
-        | HookEventType::SubagentStop
-        | HookEventType::Stop
-        | HookEventType::TeammateIdle
-        | HookEventType::TaskCompleted
-        | HookEventType::WorktreeCreate
-        | HookEventType::WorktreeRemove
-        | HookEventType::ConfigChange
-        | HookEventType::Unknown => SessionState::Idle,
-    }
-}
-
 fn should_update_activity(event_type: HookEventType) -> bool {
     matches!(
         event_type,
@@ -685,6 +666,7 @@ fn adjust_tools_in_flight(current: u32, event_type: HookEventType) -> u32 {
         HookEventType::PreToolUse => current.saturating_add(1),
         HookEventType::PostToolUse | HookEventType::PostToolUseFailure => current.saturating_sub(1),
         HookEventType::SessionStart
+        | HookEventType::SessionEnd
         | HookEventType::PreCompact
         | HookEventType::Stop
         | HookEventType::TaskCompleted => 0,
@@ -703,14 +685,7 @@ fn has_auxiliary_task_metadata(event: &IngestHookEventCommand) -> bool {
             .is_some_and(|value| !value.trim().is_empty())
 }
 
-fn should_skip_stop(current: Option<&SessionSummary>, event: &IngestHookEventCommand) -> bool {
-    if current
-        .map(|record| record.state == SessionState::Compacting)
-        .unwrap_or(false)
-    {
-        return true;
-    }
-
+fn should_skip_stop(event: &IngestHookEventCommand) -> bool {
     if event.stop_hook_active == Some(true) {
         return true;
     }
@@ -719,6 +694,18 @@ fn should_skip_stop(current: Option<&SessionSummary>, event: &IngestHookEventCom
         .agent_id
         .as_ref()
         .is_some_and(|value| !value.trim().is_empty())
+}
+
+/// Checks whether a process is still running via `kill(pid, 0)`.
+///
+/// Used to distinguish `/clear` (process stays alive) from a true session exit
+/// (process is gone). When the PID is alive at `SessionEnd` time, we transition
+/// to `Ready` instead of deleting the session — avoiding a transient idle flicker
+/// while Claude Code reinitializes the cleared conversation.
+fn is_pid_alive(pid: u32) -> bool {
+    // SAFETY: kill(pid, 0) is a standard POSIX call that checks process existence
+    // without sending any signal. Returns 0 if the process exists, -1 otherwise.
+    unsafe { libc::kill(pid as libc::pid_t, 0) == 0 }
 }
 
 fn is_event_stale(current: Option<&SessionSummary>, event: &IngestHookEventCommand) -> bool {
@@ -746,11 +733,6 @@ fn parse_rfc3339(value: &str) -> Option<DateTime<Utc>> {
     DateTime::parse_from_rfc3339(value)
         .ok()
         .map(|value| value.with_timezone(&Utc))
-}
-
-#[must_use]
-pub fn default_workspace_id(project_path: &str) -> String {
-    default_workspace_id_for_path(project_path)
 }
 
 #[cfg(test)]
@@ -864,6 +846,45 @@ mod tests {
     }
 
     #[test]
+    fn session_end_with_live_pid_transitions_to_ready() {
+        let mut state = ReducerState::default();
+        let _ = state.apply_hook_event(event_base(HookEventType::UserPromptSubmit));
+
+        let mut end = event_base(HookEventType::SessionEnd);
+        // Use the current process PID so is_pid_alive returns true
+        end.pid = Some(std::process::id());
+        end.recorded_at = "2026-01-31T00:00:05Z".to_string();
+
+        let outcome = state.apply_hook_event(end);
+        assert!(outcome.ok);
+        assert_eq!(
+            state.sessions.get("session-1").map(|s| s.state),
+            Some(SessionState::Ready),
+        );
+        assert_eq!(
+            state
+                .sessions
+                .get("session-1")
+                .and_then(|s| s.ready_reason.as_deref()),
+            Some("session_cleared"),
+        );
+    }
+
+    #[test]
+    fn session_end_with_dead_pid_deletes_session() {
+        let mut state = ReducerState::default();
+        let _ = state.apply_hook_event(event_base(HookEventType::UserPromptSubmit));
+
+        let mut end = event_base(HookEventType::SessionEnd);
+        // PID 1234 from event_base is not alive → should delete
+        end.recorded_at = "2026-01-31T00:00:05Z".to_string();
+
+        let outcome = state.apply_hook_event(end);
+        assert!(outcome.ok);
+        assert!(!state.sessions.contains_key("session-1"));
+    }
+
+    #[test]
     fn reducer_tracks_shell_signals() {
         let mut state = ReducerState::default();
         let outcome = state.apply_shell_signal(IngestShellSignalCommand {
@@ -872,11 +893,19 @@ mod tests {
             tty: "/dev/ttys001".to_string(),
             parent_app: "ghostty".to_string(),
             tmux_session: Some("cap".to_string()),
+            tmux_client_tty: Some("/dev/ttys099".to_string()),
             recorded_at: "2026-02-28T00:00:00Z".to_string(),
         });
 
         assert!(outcome.ok);
         assert!(state.shells.contains_key(&4242));
+        assert_eq!(
+            state
+                .shells
+                .get(&4242)
+                .and_then(|shell| shell.tmux_client_tty.as_deref()),
+            Some("/dev/ttys099")
+        );
     }
 
     #[test]

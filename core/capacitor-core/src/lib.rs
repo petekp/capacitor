@@ -1,7 +1,7 @@
 //! Canonical Capacitor core runtime.
 //!
-//! This crate is the long-term source of truth for domain policy, projection,
-//! and activation planning exposed through UniFFI.
+//! This crate is the long-term source of truth for domain policy and
+//! projection exposed through UniFFI.
 
 uniffi::setup_scaffolding!();
 
@@ -9,7 +9,8 @@ pub mod domain;
 pub mod ingest;
 pub mod query;
 pub mod reduce;
-pub mod runtime_activation;
+#[cfg(test)]
+mod runtime_activation;
 pub mod runtime_artifacts;
 pub mod runtime_boundaries;
 pub mod runtime_config;
@@ -30,6 +31,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use chrono::{DateTime, Utc};
 use domain::{
     default_workspace_id, display_name, now_rfc3339, AppSnapshot, IngestHookEventCommand,
     IngestShellSignalCommand, MutateIdeaCommand, MutateProjectCommand, MutateWorktreeCommand,
@@ -224,17 +226,51 @@ fn heartbeat_status(
 
 fn has_active_runtime_session(
     snapshot: Option<&runtime_state::snapshot::RuntimeSessionsSnapshot>,
+    max_age_secs: u64,
 ) -> bool {
     let snapshot = match snapshot {
         Some(snapshot) => snapshot,
         None => return false,
     };
 
-    snapshot.sessions().iter().any(|record| {
-        let is_alive = record.is_alive.unwrap_or(true);
-        let is_active = !matches!(record.state.to_ascii_lowercase().as_str(), "idle");
-        is_alive && is_active
-    })
+    let now = Utc::now();
+    snapshot
+        .sessions()
+        .iter()
+        .any(|record| runtime_session_is_active_for_health(record, now, max_age_secs))
+}
+
+fn runtime_session_is_active_for_health(
+    record: &runtime_state::snapshot::RuntimeSessionRecord,
+    now: DateTime<Utc>,
+    max_age_secs: u64,
+) -> bool {
+    if !matches!(
+        record.state.to_ascii_lowercase().as_str(),
+        "working" | "waiting" | "compacting"
+    ) {
+        return false;
+    }
+
+    let last_activity = record
+        .last_activity_at
+        .as_deref()
+        .and_then(parse_rfc3339_utc)
+        .or_else(|| parse_rfc3339_utc(&record.updated_at))
+        .or_else(|| parse_rfc3339_utc(&record.state_changed_at));
+
+    let recently_active = last_activity
+        .map(|timestamp| now.signed_duration_since(timestamp).num_seconds() <= max_age_secs as i64)
+        .unwrap_or(false);
+
+    let is_alive = record.is_alive.unwrap_or(recently_active);
+    is_alive && recently_active
+}
+
+fn parse_rfc3339_utc(value: &str) -> Option<DateTime<Utc>> {
+    DateTime::parse_from_rfc3339(value)
+        .ok()
+        .map(|timestamp| timestamp.with_timezone(&Utc))
 }
 
 #[uniffi::export]
@@ -757,6 +793,7 @@ impl CoreRuntime {
                     let has_active_session = if age_secs > threshold_secs {
                         has_active_runtime_session(
                             runtime_state::snapshot::sessions_snapshot().as_ref(),
+                            HOOK_HEALTH_GRACE_SECS,
                         )
                     } else {
                         false
@@ -896,29 +933,56 @@ impl CoreRuntime {
             message,
         }
     }
-
-    pub fn resolve_activation_with_trace(
-        &self,
-        project_path: String,
-        shell_state: Option<runtime_activation::ShellCwdStateFfi>,
-        tmux_context: runtime_activation::TmuxContextFfi,
-        include_trace: bool,
-    ) -> runtime_activation::ActivationDecision {
-        runtime_activation::resolve_activation_with_trace(
-            &project_path,
-            shell_state.as_ref(),
-            &tmux_context,
-            include_trace,
-        )
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::CoreRuntime;
     use crate::domain::{
-        HookEventType, IngestHookEventCommand, MutateProjectCommand, ProjectMutationKind,
+        AppSnapshot, DiagnosticsSummary, HookEventType, IngestHookEventCommand,
+        MutateProjectCommand, ProjectMutationKind, ProjectSummary, SessionState, SessionSummary,
     };
+    use crate::runtime_state::snapshot::{RuntimeSessionRecord, RuntimeSessionsSnapshot};
+    use crate::runtime_storage::StorageConfig;
+    use crate::runtime_types::HookHealthStatus;
+    use crate::storage::InMemorySnapshotStorage;
+    use chrono::{Duration, Utc};
+    use std::fs::{self, File};
+    use std::sync::{Arc, Mutex, OnceLock};
+    use std::time::{Duration as StdDuration, SystemTime};
+    use tempfile::TempDir;
+
+    static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+    struct EnvVarGuard {
+        key: &'static str,
+        prior: Option<String>,
+    }
+
+    impl EnvVarGuard {
+        fn set(key: &'static str, value: &str) -> Self {
+            let prior = std::env::var(key).ok();
+            std::env::set_var(key, value);
+            Self { key, prior }
+        }
+    }
+
+    impl Drop for EnvVarGuard {
+        fn drop(&mut self) {
+            if let Some(value) = &self.prior {
+                std::env::set_var(self.key, value);
+            } else {
+                std::env::remove_var(self.key);
+            }
+        }
+    }
+
+    fn env_lock() -> std::sync::MutexGuard<'static, ()> {
+        match ENV_LOCK.get_or_init(|| Mutex::new(())).lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        }
+    }
 
     #[test]
     fn runtime_tracks_project_and_session_in_snapshot() {
@@ -956,5 +1020,253 @@ mod tests {
         assert_eq!(snapshot.sessions.len(), 1);
         assert_eq!(snapshot.sessions[0].project_path, "/repo");
         assert_eq!(snapshot.projects[0].session_count, 1);
+    }
+
+    #[test]
+    fn active_runtime_session_requires_recent_active_state() {
+        let now = Utc::now();
+        let snapshot = RuntimeSessionsSnapshot::from_sessions(vec![
+            make_runtime_session_record(
+                "ready-recent",
+                "ready",
+                now - Duration::seconds(30),
+                Some(now - Duration::seconds(30)),
+                Some(true),
+            ),
+            make_runtime_session_record(
+                "working-stale",
+                "working",
+                now - Duration::seconds(601),
+                Some(now - Duration::seconds(601)),
+                Some(true),
+            ),
+        ]);
+
+        assert!(
+            !super::has_active_runtime_session(Some(&snapshot), 300),
+            "ready and stale sessions must not extend heartbeat grace",
+        );
+    }
+
+    #[test]
+    fn active_runtime_session_respects_recent_alive_work() {
+        let now = Utc::now();
+        let snapshot = RuntimeSessionsSnapshot::from_sessions(vec![make_runtime_session_record(
+            "working-recent",
+            "working",
+            now - Duration::seconds(45),
+            Some(now - Duration::seconds(45)),
+            Some(true),
+        )]);
+
+        assert!(super::has_active_runtime_session(Some(&snapshot), 300));
+    }
+
+    #[test]
+    fn active_runtime_session_respects_explicit_dead_flag() {
+        let now = Utc::now();
+        let snapshot = RuntimeSessionsSnapshot::from_sessions(vec![make_runtime_session_record(
+            "working-dead",
+            "working",
+            now - Duration::seconds(30),
+            Some(now - Duration::seconds(30)),
+            Some(false),
+        )]);
+
+        assert!(
+            !super::has_active_runtime_session(Some(&snapshot), 300),
+            "explicit dead sessions must not extend heartbeat grace",
+        );
+    }
+
+    #[test]
+    fn check_hook_health_treats_recent_waiting_session_as_grace_healthy() {
+        let _guard = env_lock();
+        let temp = setup_hook_health_env();
+        let _snapshot_env = EnvVarGuard::set(
+            "CAPACITOR_CORE_SNAPSHOT",
+            temp.snapshot_path.to_str().expect("snapshot path"),
+        );
+        write_snapshot(
+            &temp.snapshot_path,
+            vec![make_snapshot_session("waiting", 45, Some(true))],
+        );
+        write_heartbeat(&temp.heartbeat_path, 120);
+
+        let runtime = make_runtime_with_storage(&temp);
+        let report = runtime.check_hook_health();
+
+        assert!(matches!(report.status, HookHealthStatus::Healthy));
+        assert!(report.last_heartbeat_age_secs.is_some_and(|age| age >= 120));
+    }
+
+    #[test]
+    fn check_hook_health_does_not_extend_grace_for_ready_sessions() {
+        let _guard = env_lock();
+        let temp = setup_hook_health_env();
+        let _snapshot_env = EnvVarGuard::set(
+            "CAPACITOR_CORE_SNAPSHOT",
+            temp.snapshot_path.to_str().expect("snapshot path"),
+        );
+        write_snapshot(
+            &temp.snapshot_path,
+            vec![make_snapshot_session("ready", 30, Some(true))],
+        );
+        write_heartbeat(&temp.heartbeat_path, 120);
+
+        let runtime = make_runtime_with_storage(&temp);
+        let report = runtime.check_hook_health();
+
+        assert!(
+            matches!(
+                report.status,
+                HookHealthStatus::Stale { last_seen_secs } if last_seen_secs >= 120
+            ),
+            "report was {report:?}"
+        );
+        assert!(report.last_heartbeat_age_secs.is_some_and(|age| age >= 120));
+    }
+
+    fn make_runtime_session_record(
+        session_id: &str,
+        state: &str,
+        updated_at: chrono::DateTime<Utc>,
+        last_activity_at: Option<chrono::DateTime<Utc>>,
+        is_alive: Option<bool>,
+    ) -> RuntimeSessionRecord {
+        RuntimeSessionRecord {
+            session_id: session_id.to_string(),
+            pid: 42,
+            state: state.to_string(),
+            cwd: "/repo".to_string(),
+            project_path: "/repo".to_string(),
+            updated_at: updated_at.to_rfc3339(),
+            state_changed_at: updated_at.to_rfc3339(),
+            last_event: None,
+            last_activity_at: last_activity_at.map(|value| value.to_rfc3339()),
+            tools_in_flight: 0,
+            ready_reason: None,
+            is_alive,
+        }
+    }
+
+    struct HookHealthTestEnv {
+        _temp: TempDir,
+        storage: StorageConfig,
+        snapshot_path: std::path::PathBuf,
+        heartbeat_path: std::path::PathBuf,
+    }
+
+    fn setup_hook_health_env() -> HookHealthTestEnv {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let capacitor_root = temp.path().join("capacitor");
+        let claude_root = temp.path().join("claude");
+        fs::create_dir_all(&capacitor_root).expect("create capacitor root");
+        fs::create_dir_all(&claude_root).expect("create claude root");
+        let storage = StorageConfig::with_roots(capacitor_root.clone(), claude_root);
+        HookHealthTestEnv {
+            snapshot_path: temp.path().join("app_snapshot.json"),
+            heartbeat_path: capacitor_root.join("hud-hook-heartbeat"),
+            storage,
+            _temp: temp,
+        }
+    }
+
+    fn make_runtime_with_storage(env: &HookHealthTestEnv) -> Arc<CoreRuntime> {
+        CoreRuntime::from_storage(
+            Arc::new(InMemorySnapshotStorage::default()),
+            env.storage.clone(),
+        )
+        .expect("runtime")
+    }
+
+    fn write_snapshot(path: &std::path::Path, sessions: Vec<SessionSummary>) {
+        let now = Utc::now().to_rfc3339();
+        let snapshot = AppSnapshot {
+            projects: vec![ProjectSummary {
+                project_path: "/repo".to_string(),
+                project_id: "/repo/.git".to_string(),
+                workspace_id: "workspace-repo".to_string(),
+                display_name: "repo".to_string(),
+                state: SessionState::Working,
+                state_changed_at: now.clone(),
+                updated_at: now.clone(),
+                representative_session_id: sessions
+                    .first()
+                    .map(|session| session.session_id.clone()),
+                latest_session_id: sessions.first().map(|session| session.session_id.clone()),
+                session_count: sessions.len() as u64,
+                active_count: sessions
+                    .iter()
+                    .filter(|session| session.state.is_active())
+                    .count() as u64,
+                has_session: !sessions.is_empty(),
+            }],
+            sessions,
+            shells: vec![],
+            routing: vec![],
+            diagnostics: DiagnosticsSummary {
+                events_ingested: 0,
+                sessions_tracked: 0,
+                shell_signals_tracked: 0,
+                events_skipped: 0,
+                stale_events_skipped: 0,
+                informational_events_skipped: 0,
+                reducer_events_skipped: 0,
+                last_error: None,
+            },
+            generated_at: now,
+        };
+        let payload = serde_json::to_vec(&snapshot).expect("serialize snapshot");
+        fs::write(path, payload).expect("write snapshot");
+    }
+
+    fn make_snapshot_session(
+        state: &str,
+        seconds_ago: i64,
+        is_alive: Option<bool>,
+    ) -> SessionSummary {
+        let timestamp = (Utc::now() - Duration::seconds(seconds_ago)).to_rfc3339();
+        let ready_reason = is_alive.and_then(|alive| {
+            if alive {
+                Some("alive".to_string())
+            } else {
+                None
+            }
+        });
+        SessionSummary {
+            session_id: format!("{state}-{seconds_ago}"),
+            pid: 42,
+            cwd: "/repo".to_string(),
+            project_id: "/repo/.git".to_string(),
+            project_path: "/repo".to_string(),
+            workspace_id: "workspace-repo".to_string(),
+            state: match state {
+                "working" => SessionState::Working,
+                "waiting" => SessionState::Waiting,
+                "compacting" => SessionState::Compacting,
+                "ready" => SessionState::Ready,
+                _ => SessionState::Idle,
+            },
+            state_changed_at: timestamp.clone(),
+            updated_at: timestamp.clone(),
+            last_event: None,
+            last_activity_at: Some(timestamp),
+            tools_in_flight: 0,
+            ready_reason,
+        }
+    }
+
+    fn write_heartbeat(path: &std::path::Path, age_secs: u64) {
+        fs::write(path, "heartbeat").expect("write heartbeat");
+        let file = File::options()
+            .write(true)
+            .open(path)
+            .expect("open heartbeat");
+        let modified = SystemTime::now()
+            .checked_sub(StdDuration::from_secs(age_secs))
+            .expect("compute heartbeat time");
+        file.set_times(std::fs::FileTimes::new().set_modified(modified))
+            .expect("set heartbeat mtime");
     }
 }

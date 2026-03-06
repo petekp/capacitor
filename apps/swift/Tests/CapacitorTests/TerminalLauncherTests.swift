@@ -40,6 +40,8 @@ final class TerminalLauncherTests: XCTestCase {
     private final class StubAppleScriptClient: AppleScriptClient {
         let shouldSucceed: Bool
         private(set) var checkedScripts: [String] = []
+        private(set) var booleanScripts: [String] = []
+        var booleanResult: Bool?
 
         init(shouldSucceed: Bool) {
             self.shouldSucceed = shouldSucceed
@@ -49,6 +51,11 @@ final class TerminalLauncherTests: XCTestCase {
         func runChecked(_ script: String) -> Bool {
             checkedScripts.append(script)
             return shouldSucceed
+        }
+
+        func runBoolean(_ script: String) -> Bool? {
+            booleanScripts.append(script)
+            return booleanResult
         }
     }
 
@@ -268,6 +275,28 @@ final class TerminalLauncherTests: XCTestCase {
             exp.fulfill()
         }
         wait(for: [exp], timeout: 5.0)
+    }
+
+    func testRunBashScriptWithResultCancellationTerminatesProcessPromptly() async {
+        let exp = expectation(description: "cancelled runBashScriptWithResult returns promptly")
+        let readyURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("terminal-launcher-cancel-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: readyURL) }
+
+        let task = _Concurrency.Task {
+            _ = await TerminalLauncher.runBashScriptWithResult("touch '\(readyURL.path)'; exec tail -f /dev/null")
+            exp.fulfill()
+        }
+
+        _ = await assertEventually(
+            timeout: 1.0,
+            context: "cancellation test process started",
+        ) {
+            FileManager.default.fileExists(atPath: readyURL.path)
+        }
+        task.cancel()
+
+        await fulfillment(of: [exp], timeout: 1.5)
     }
 
     func testLaunchTerminalRequestArbitrationScenarios() async {
@@ -704,6 +733,88 @@ final class TerminalLauncherTests: XCTestCase {
             },
         )
         XCTAssertEqual(tty, "/dev/ttys001", "Should fall back to first client when no session matches")
+    }
+
+    func testResolvePreferredTerminalAppPrefersClientTtyMatch() {
+        let shellState = ShellCwdState(
+            version: 1,
+            shells: [
+                "100": ShellEntry(
+                    cwd: "/Users/pete/Code/capacitor",
+                    tty: "/dev/ttys010",
+                    parentApp: "Ghostty",
+                    tmuxSession: "caps",
+                    tmuxClientTty: "/dev/ttys001",
+                    updatedAt: Date(timeIntervalSince1970: 1_700_000_000),
+                ),
+                "101": ShellEntry(
+                    cwd: "/Users/pete/Code/capacitor",
+                    tty: "/dev/ttys020",
+                    parentApp: "iTerm2",
+                    tmuxSession: "caps",
+                    tmuxClientTty: "/dev/ttys002",
+                    updatedAt: Date(timeIntervalSince1970: 1_700_000_100),
+                ),
+            ],
+        )
+
+        let app = TerminalLauncher.resolvePreferredTerminalApp(
+            clientTty: "/dev/ttys002",
+            projectPath: "/Users/pete/Code/capacitor",
+            sessionName: "caps",
+            shellState: shellState,
+        )
+
+        XCTAssertEqual(app, .iTerm)
+    }
+
+    func testResolvePreferredTerminalAppFallsBackToSessionMatch() {
+        let shellState = ShellCwdState(
+            version: 1,
+            shells: [
+                "200": ShellEntry(
+                    cwd: "/Users/pete/Code/capacitor",
+                    tty: "/dev/ttys030",
+                    parentApp: "Terminal",
+                    tmuxSession: "caps",
+                    tmuxClientTty: nil,
+                    updatedAt: Date(timeIntervalSince1970: 1_700_000_200),
+                ),
+            ],
+        )
+
+        let app = TerminalLauncher.resolvePreferredTerminalApp(
+            clientTty: nil,
+            projectPath: "/Users/pete/Code/capacitor",
+            sessionName: "caps",
+            shellState: shellState,
+        )
+
+        XCTAssertEqual(app, .terminal)
+    }
+
+    func testLaunchWithCommandSupportsITerm() {
+        let script = TerminalScripts.launchWithCommand(
+            projectPath: "/Users/pete/Code/capacitor",
+            command: "claude --resume",
+            preferredApp: .iTerm,
+        )
+
+        XCTAssertTrue(script.contains("open -b com.googlecode.iterm2"))
+        XCTAssertTrue(script.contains("tell process \"iTerm2\""))
+        XCTAssertTrue(script.contains("claude --resume"))
+    }
+
+    func testLaunchWithCommandSupportsTerminalApp() {
+        let script = TerminalScripts.launchWithCommand(
+            projectPath: "/Users/pete/Code/capacitor",
+            command: "claude --resume",
+            preferredApp: .terminal,
+        )
+
+        XCTAssertTrue(script.contains("open -b com.apple.Terminal"))
+        XCTAssertTrue(script.contains("tell process \"Terminal\""))
+        XCTAssertTrue(script.contains("claude --resume"))
     }
 
     // MARK: - Helpers

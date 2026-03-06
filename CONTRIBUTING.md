@@ -77,10 +77,9 @@ Pre-commit hooks run `cargo fmt --check` and `cargo test` automatically, so you'
 
 ```
 capacitor/
-├── core/capacitor-core/  # Canonical runtime domain + reducer + snapshot storage
-├── core/capacitor-core/        # Rust business logic, UniFFI bindings
-├── core/hud-hook/        # Rust CLI hook handler
-├── apps/swift/           # SwiftUI app
+├── core/capacitor-core/  # Canonical runtime ingest/reduce/query + snapshot storage + UniFFI
+├── core/hud-hook/        # Rust CLI hook/CWD ingest adapter
+├── apps/swift/           # SwiftUI app, projection/stabilization layer, and macOS integrations
 └── scripts/              # Dev, CI, and release scripts
 ```
 
@@ -93,6 +92,6 @@ capacitor/
 3. Make sure `cargo fmt`, `cargo clippy -- -D warnings`, and `cargo test` all pass
 4. Open a PR against `main`
 
-`cargo fmt` is enforced by pre-commit hooks. Rust builds in release mode; Swift links against the release dylib. `restart-app.sh` regenerates bindings automatically after Rust API changes.
+`cargo fmt` is enforced by pre-commit hooks. Rust builds in release mode; Swift links against the release dylib and owns post-snapshot projection/lifecycle behavior. `restart-app.sh` regenerates bindings automatically after Rust API changes.
 
 See `.claude/docs/gotchas.md` for things that might trip you up.

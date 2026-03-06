@@ -111,6 +111,39 @@ pub fn count_tasks_in_project(claude_projects_dir: &Path, encoded_name: &str) ->
         .unwrap_or(0)
 }
 
+fn latest_session_activity_mtime(claude_project_dir: &Path) -> Option<SystemTime> {
+    let mut most_recent_mtime: Option<SystemTime> = None;
+
+    if let Ok(entries) = fs::read_dir(claude_project_dir) {
+        for entry in entries.flatten() {
+            let entry_path = entry.path();
+            if !entry_path
+                .extension()
+                .is_some_and(|extension| extension == "jsonl")
+            {
+                continue;
+            }
+
+            if entry_path
+                .file_stem()
+                .is_some_and(|stem| stem.to_string_lossy().starts_with("agent-"))
+            {
+                continue;
+            }
+
+            if let Ok(metadata) = entry_path.metadata() {
+                if let Ok(mtime) = metadata.modified() {
+                    if most_recent_mtime.map_or(true, |existing| mtime > existing) {
+                        most_recent_mtime = Some(mtime);
+                    }
+                }
+            }
+        }
+    }
+
+    most_recent_mtime
+}
+
 /// Encodes a path for use as a Claude projects directory name.
 pub fn encode_project_path(path: &str) -> String {
     path.replace('/', "-")
@@ -172,27 +205,7 @@ pub fn build_project_from_path(
 
     let claude_project_dir = projects_dir.join(&encoded_name);
 
-    let mut most_recent_mtime: Option<SystemTime> = None;
-    if let Ok(entries) = fs::read_dir(&claude_project_dir) {
-        for entry in entries.flatten() {
-            let entry_path = entry.path();
-            if entry_path.extension().is_some_and(|e| e == "jsonl") {
-                if entry_path
-                    .file_stem()
-                    .is_some_and(|s| s.to_string_lossy().starts_with("agent-"))
-                {
-                    continue;
-                }
-                if let Ok(metadata) = entry_path.metadata() {
-                    if let Ok(mtime) = metadata.modified() {
-                        if most_recent_mtime.map_or(true, |t| mtime > t) {
-                            most_recent_mtime = Some(mtime);
-                        }
-                    }
-                }
-            }
-        }
-    }
+    let most_recent_mtime = latest_session_activity_mtime(&claude_project_dir);
     let last_active = most_recent_mtime.map(format_relative_time);
 
     let claude_md_path = project_path.join("CLAUDE.md");
@@ -279,11 +292,8 @@ pub fn load_projects_with_storage(storage: &StorageConfig) -> Result<Vec<Project
 
         let encoded_name = encode_project_path(path);
         let claude_project_dir = projects_dir.join(&encoded_name);
-        let sort_time = claude_project_dir
-            .metadata()
-            .ok()
-            .and_then(|m| m.modified().ok())
-            .unwrap_or(SystemTime::UNIX_EPOCH);
+        let sort_time =
+            latest_session_activity_mtime(&claude_project_dir).unwrap_or(SystemTime::UNIX_EPOCH);
         projects.push((project, sort_time));
     }
 
@@ -299,6 +309,7 @@ mod tests {
     use super::*;
     use crate::runtime_types::HudConfig;
     use crate::save_hud_config_with_storage;
+    use std::time::Duration;
     use tempfile::tempdir;
 
     #[test]
@@ -322,5 +333,110 @@ mod tests {
         assert_eq!(projects.len(), 1);
         assert!(projects[0].is_missing);
         assert_eq!(projects[0].path, missing_path.to_string_lossy());
+    }
+
+    #[test]
+    fn project_order_uses_latest_session_file_activity_not_directory_mtime() {
+        let temp = tempdir().expect("tempdir");
+        let root = temp.path().join("capacitor");
+        let claude_root = temp.path().join("claude");
+        std::fs::create_dir_all(&root).expect("create root");
+        std::fs::create_dir_all(&claude_root).expect("create claude root");
+
+        let storage = StorageConfig::with_roots(root, claude_root.clone());
+
+        let project_a = temp.path().join("project-a");
+        let project_b = temp.path().join("project-b");
+        std::fs::create_dir_all(&project_a).expect("create project a");
+        std::fs::create_dir_all(&project_b).expect("create project b");
+        std::fs::write(project_a.join("CLAUDE.md"), "# A").expect("write claude a");
+        std::fs::write(project_b.join("CLAUDE.md"), "# B").expect("write claude b");
+
+        let config = HudConfig {
+            pinned_projects: vec![
+                project_a.to_string_lossy().to_string(),
+                project_b.to_string_lossy().to_string(),
+            ],
+            terminal_app: "Terminal".to_string(),
+        };
+        save_hud_config_with_storage(&storage, &config).expect("save config");
+
+        let projects_dir = claude_root.join("projects");
+        let encoded_a = encode_project_path(&project_a.to_string_lossy());
+        let encoded_b = encode_project_path(&project_b.to_string_lossy());
+        let claude_project_a = projects_dir.join(encoded_a);
+        let claude_project_b = projects_dir.join(encoded_b);
+        std::fs::create_dir_all(&claude_project_a).expect("create claude project a");
+        std::thread::sleep(Duration::from_millis(20));
+        std::fs::write(claude_project_a.join("session-a.jsonl"), "{}\n").expect("write session a");
+        std::thread::sleep(Duration::from_millis(20));
+        std::fs::create_dir_all(&claude_project_b).expect("create claude project b");
+        std::thread::sleep(Duration::from_millis(20));
+        std::fs::write(claude_project_b.join("session-b.jsonl"), "{}\n").expect("write session b");
+        std::thread::sleep(Duration::from_millis(20));
+        std::fs::write(claude_project_a.join("session-a.jsonl"), "{}\n{}\n")
+            .expect("append session a");
+
+        let projects = load_projects_with_storage(&storage).expect("load projects");
+
+        assert_eq!(projects.len(), 2);
+        assert_eq!(projects[0].path, project_a.to_string_lossy());
+        assert_eq!(projects[1].path, project_b.to_string_lossy());
+    }
+
+    #[test]
+    fn project_order_and_last_active_ignore_agent_session_files() {
+        let temp = tempdir().expect("tempdir");
+        let root = temp.path().join("capacitor");
+        let claude_root = temp.path().join("claude");
+        std::fs::create_dir_all(&root).expect("create root");
+        std::fs::create_dir_all(&claude_root).expect("create claude root");
+
+        let storage = StorageConfig::with_roots(root, claude_root.clone());
+
+        let human_project = temp.path().join("project-human");
+        let agent_only_project = temp.path().join("project-agent-only");
+        std::fs::create_dir_all(&human_project).expect("create human project");
+        std::fs::create_dir_all(&agent_only_project).expect("create agent project");
+        std::fs::write(human_project.join("CLAUDE.md"), "# Human").expect("write claude human");
+        std::fs::write(agent_only_project.join("CLAUDE.md"), "# Agent")
+            .expect("write claude agent");
+
+        let config = HudConfig {
+            pinned_projects: vec![
+                human_project.to_string_lossy().to_string(),
+                agent_only_project.to_string_lossy().to_string(),
+            ],
+            terminal_app: "Terminal".to_string(),
+        };
+        save_hud_config_with_storage(&storage, &config).expect("save config");
+
+        let projects_dir = claude_root.join("projects");
+        let human_encoded = encode_project_path(&human_project.to_string_lossy());
+        let agent_encoded = encode_project_path(&agent_only_project.to_string_lossy());
+        let human_claude_dir = projects_dir.join(human_encoded);
+        let agent_claude_dir = projects_dir.join(agent_encoded);
+        std::fs::create_dir_all(&human_claude_dir).expect("create human claude dir");
+        std::fs::create_dir_all(&agent_claude_dir).expect("create agent claude dir");
+
+        std::fs::write(human_claude_dir.join("session-human.jsonl"), "{}\n")
+            .expect("write human session");
+        std::thread::sleep(Duration::from_millis(20));
+        std::fs::write(agent_claude_dir.join("agent-0001.jsonl"), "{}\n")
+            .expect("write agent session");
+
+        let projects = load_projects_with_storage(&storage).expect("load projects");
+
+        assert_eq!(projects.len(), 2);
+        assert_eq!(
+            projects[0].path,
+            human_project.to_string_lossy(),
+            "A fresh agent transcript should not outrank real session activity."
+        );
+        assert_eq!(projects[1].path, agent_only_project.to_string_lossy());
+        assert_eq!(
+            projects[1].last_active, None,
+            "Projects with only agent transcripts should not report recent session activity."
+        );
     }
 }

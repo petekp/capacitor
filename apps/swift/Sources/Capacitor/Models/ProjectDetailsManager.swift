@@ -12,6 +12,7 @@ final class ProjectDetailsManager {
 
     private let descriptionsFilePath = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent(".capacitor/project-descriptions.json")
+    private let gitCommandExecutor: @Sendable (String, [String]) -> String?
 
     private(set) var projectIdeas: [String: [Idea]] = [:]
     private(set) var projectDescriptions: [String: String] = [:]
@@ -22,6 +23,14 @@ final class ProjectDetailsManager {
     private var lastIdeasCheck: Date = .distantPast
 
     private weak var engine: CoreRuntime?
+
+    init(
+        gitCommandExecutor: @escaping @Sendable (String, [String]) -> String? = { projectPath, arguments in
+            ProjectDetailsManager.runGitCommand(projectPath: projectPath, arguments: arguments)
+        },
+    ) {
+        self.gitCommandExecutor = gitCommandExecutor
+    }
 
     func configure(engine: CoreRuntime?) {
         self.engine = engine
@@ -242,6 +251,12 @@ final class ProjectDetailsManager {
         let lastCommitMessage: String?
     }
 
+    private struct GitSensemakingContext {
+        let recentFiles: [String]
+        let gitBranch: String?
+        let lastCommitMessage: String?
+    }
+
     private func gatherSensemakingContext(for project: Project, excluding ideaId: String) async -> SensemakingContext {
         // Get existing idea titles for uniqueness
         let existingTitles = await MainActor.run {
@@ -252,51 +267,80 @@ final class ProjectDetailsManager {
                 .joined(separator: "\n")
         }
 
-        // Get recent files from git
-        let recentFiles = getRecentFiles(for: project, limit: 5)
-
-        // Get git context
-        let gitBranch = getGitBranch(for: project)
-        let lastCommitMessage = getLastCommitMessage(for: project)
+        let gitContext = await Self.loadGitSensemakingContext(
+            projectPath: project.path,
+            limit: 5,
+            executor: gitCommandExecutor,
+        )
 
         return SensemakingContext(
             projectName: project.name,
             existingTitles: existingTitles,
-            recentFiles: recentFiles,
-            gitBranch: gitBranch,
-            lastCommitMessage: lastCommitMessage,
+            recentFiles: gitContext.recentFiles,
+            gitBranch: gitContext.gitBranch,
+            lastCommitMessage: gitContext.lastCommitMessage,
         )
     }
 
-    private func getRecentFiles(for project: Project, limit: Int) -> [String] {
-        let process = Process()
-        let pipe = Pipe()
+    private nonisolated static func loadGitSensemakingContext(
+        projectPath: String,
+        limit: Int,
+        executor: @escaping @Sendable (String, [String]) -> String?,
+    ) async -> GitSensemakingContext {
+        await _Concurrency.Task.detached(priority: .utility) {
+            GitSensemakingContext(
+                recentFiles: recentFiles(projectPath: projectPath, limit: limit, executor: executor),
+                gitBranch: gitBranch(projectPath: projectPath, executor: executor),
+                lastCommitMessage: lastCommitMessage(projectPath: projectPath, executor: executor),
+            )
+        }.value
+    }
 
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-        process.arguments = ["diff", "--name-only", "HEAD~3", "HEAD"]
-        process.currentDirectoryURL = URL(fileURLWithPath: project.path)
-        process.standardOutput = pipe
-        process.standardError = FileHandle.nullDevice
-
-        do {
-            try process.run()
-            process.waitUntilExit()
-
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            let output = String(data: data, encoding: .utf8) ?? ""
-            return output.split(separator: "\n").prefix(limit).map(String.init)
-        } catch {
+    private nonisolated static func recentFiles(
+        projectPath: String,
+        limit: Int,
+        executor: @escaping @Sendable (String, [String]) -> String?,
+    ) -> [String] {
+        guard let output = executor(projectPath, ["diff", "--name-only", "HEAD~3", "HEAD"]) else {
             return []
         }
+
+        return output.split(separator: "\n").prefix(limit).map(String.init)
     }
 
-    private func getGitBranch(for project: Project) -> String? {
+    private nonisolated static func gitBranch(
+        projectPath: String,
+        executor: @escaping @Sendable (String, [String]) -> String?,
+    ) -> String? {
+        trimmedGitOutput(
+            executor(projectPath, ["branch", "--show-current"]),
+        )
+    }
+
+    private nonisolated static func lastCommitMessage(
+        projectPath: String,
+        executor: @escaping @Sendable (String, [String]) -> String?,
+    ) -> String? {
+        trimmedGitOutput(
+            executor(projectPath, ["log", "-1", "--format=%s"]),
+        )
+    }
+
+    private nonisolated static func trimmedGitOutput(_ output: String?) -> String? {
+        let trimmed = output?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed?.isEmpty == false ? trimmed : nil
+    }
+
+    private nonisolated static func runGitCommand(
+        projectPath: String,
+        arguments: [String],
+    ) -> String? {
         let process = Process()
         let pipe = Pipe()
 
         process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-        process.arguments = ["branch", "--show-current"]
-        process.currentDirectoryURL = URL(fileURLWithPath: project.path)
+        process.arguments = arguments
+        process.currentDirectoryURL = URL(fileURLWithPath: projectPath)
         process.standardOutput = pipe
         process.standardError = FileHandle.nullDevice
 
@@ -305,34 +349,24 @@ final class ProjectDetailsManager {
             process.waitUntilExit()
 
             let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            let branch = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
-            return branch?.isEmpty == false ? branch : nil
+            guard process.terminationStatus == 0 else {
+                return nil
+            }
+            return String(data: data, encoding: .utf8)
         } catch {
             return nil
         }
     }
 
-    private func getLastCommitMessage(for project: Project) -> String? {
-        let process = Process()
-        let pipe = Pipe()
-
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-        process.arguments = ["log", "-1", "--format=%s"]
-        process.currentDirectoryURL = URL(fileURLWithPath: project.path)
-        process.standardOutput = pipe
-        process.standardError = FileHandle.nullDevice
-
-        do {
-            try process.run()
-            process.waitUntilExit()
-
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            let message = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
-            return message?.isEmpty == false ? message : nil
-        } catch {
-            return nil
+    #if DEBUG
+        func gatherSensemakingContextForTesting(
+            for project: Project,
+            excluding ideaId: String,
+        ) async -> (recentFiles: [String], gitBranch: String?, lastCommitMessage: String?) {
+            let context = await gatherSensemakingContext(for: project, excluding: ideaId)
+            return (context.recentFiles, context.gitBranch, context.lastCommitMessage)
         }
-    }
+    #endif
 
     private func buildSensemakingPrompt(rawInput: String, context: SensemakingContext) -> String {
         var contextParts: [String] = []

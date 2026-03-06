@@ -77,6 +77,37 @@ pub fn http_request(port: u16, method: &str, path: &str, body: Option<&str>) -> 
     try_http_request(port, method, path, body).expect("HTTP request failed")
 }
 
+/// Send a raw HTTP request string and return (status_code, body).
+pub fn raw_http_request(port: u16, request: &str) -> (u16, String) {
+    let mut stream =
+        TcpStream::connect(format!("127.0.0.1:{port}")).expect("connect for raw HTTP request");
+    stream
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .expect("set read timeout");
+    if let Err(err) = stream.write_all(request.as_bytes()) {
+        if err.kind() != std::io::ErrorKind::BrokenPipe {
+            panic!("write raw request: {err}");
+        }
+    }
+    let _ = stream.flush();
+    let _ = stream.shutdown(Shutdown::Write);
+
+    let mut buf = vec![0u8; 8192];
+    let mut total = 0;
+    loop {
+        match stream.read(&mut buf[total..]) {
+            Ok(0) => break,
+            Ok(n) => total += n,
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
+            Err(e) if e.kind() == std::io::ErrorKind::TimedOut => break,
+            Err(_) => break,
+        }
+    }
+    let response = String::from_utf8_lossy(&buf[..total]).to_string();
+
+    parse_http_response(&response)
+}
+
 /// Send an HTTP request, returning Err if the connection fails.
 fn try_http_request(
     port: u16,

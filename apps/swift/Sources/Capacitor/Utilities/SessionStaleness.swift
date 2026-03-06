@@ -1,5 +1,19 @@
 import Foundation
 
+struct SessionClock: Sendable {
+    let now: @Sendable () -> Date
+
+    init(now: @escaping @Sendable () -> Date = { Date() }) {
+        self.now = now
+    }
+
+    static let live = SessionClock()
+
+    static func fixed(_ date: Date) -> SessionClock {
+        SessionClock { date }
+    }
+}
+
 enum SessionStaleness {
     static let readyStaleThreshold: TimeInterval = 86400
 
@@ -19,6 +33,10 @@ enum SessionStaleness {
         return now.timeIntervalSince(date) > readyStaleThreshold
     }
 
+    static func isReadyStale(state: SessionState?, stateChangedAt: String?, clock: SessionClock) -> Bool {
+        isReadyStale(state: state, stateChangedAt: stateChangedAt, now: clock.now())
+    }
+
     static func isWorkingStale(state: SessionState?, updatedAt: String?, now: Date = Date()) -> Bool {
         guard state == .working,
               let updatedAt,
@@ -27,5 +45,9 @@ enum SessionStaleness {
             return false
         }
         return now.timeIntervalSince(date) > workingStaleThreshold
+    }
+
+    static func isWorkingStale(state: SessionState?, updatedAt: String?, clock: SessionClock) -> Bool {
+        isWorkingStale(state: state, updatedAt: updatedAt, now: clock.now())
     }
 }

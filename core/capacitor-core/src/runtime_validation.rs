@@ -327,32 +327,30 @@ pub fn extract_package_json_info(project_path: &str) -> Option<PackageInfo> {
 
 /// Extracts crate information from Cargo.toml if present.
 pub fn extract_cargo_toml_info(project_path: &str) -> Option<CargoInfo> {
-    use once_cell::sync::Lazy;
-    use regex::Regex;
-
-    // Match: name = "value" or name = 'value' with flexible whitespace
-    // Valid TOML allows: name="value", name = "value", name  =  "value"
-    static NAME_RE: Lazy<Regex> =
-        Lazy::new(|| Regex::new(r#"^\s*name\s*=\s*["']([^"']+)["']"#).unwrap());
-    static DESC_RE: Lazy<Regex> =
-        Lazy::new(|| Regex::new(r#"^\s*description\s*=\s*["']([^"']+)["']"#).unwrap());
-
     let cargo_toml_path = Path::new(project_path).join("Cargo.toml");
     let content = std::fs::read_to_string(&cargo_toml_path).ok()?;
 
     let mut name = None;
     let mut description = None;
+    let mut in_package_section = false;
 
     for line in content.lines() {
-        if name.is_none() {
-            if let Some(caps) = NAME_RE.captures(line) {
-                name = caps.get(1).map(|m| m.as_str().to_string());
-            }
+        let trimmed = line.trim();
+
+        if trimmed.starts_with('[') && trimmed.ends_with(']') {
+            in_package_section = trimmed == "[package]";
+            continue;
         }
-        if description.is_none() {
-            if let Some(caps) = DESC_RE.captures(line) {
-                description = caps.get(1).map(|m| m.as_str().to_string());
-            }
+
+        if !in_package_section {
+            continue;
+        }
+
+        if name.is_none() && trimmed.starts_with("name") {
+            name = parse_toml_string_value(trimmed);
+        }
+        if description.is_none() && trimmed.starts_with("description") {
+            description = parse_toml_string_value(trimmed);
         }
         if name.is_some() && description.is_some() {
             break;
@@ -365,6 +363,18 @@ pub fn extract_cargo_toml_info(project_path: &str) -> Option<CargoInfo> {
     } else {
         None
     }
+}
+
+fn parse_toml_string_value(line: &str) -> Option<String> {
+    let (_, raw_value) = line.split_once('=')?;
+    let value = raw_value.trim();
+    let quote = value.chars().next()?;
+    if quote != '"' && quote != '\'' {
+        return None;
+    }
+    let remainder = value.get(1..)?;
+    let end = remainder.find(quote)?;
+    Some(remainder[..end].to_string())
 }
 
 /// Generates CLAUDE.md content for a project.
@@ -1054,6 +1064,36 @@ name="no-spaces"
         assert!(info.is_some(), "Should parse name= with no spaces");
         let info = info.unwrap();
         assert_eq!(info.name, Some("no-spaces".to_string()));
+    }
+
+    #[test]
+    fn extracts_cargo_metadata_only_from_package_section() {
+        let tmp = create_test_dir();
+        create_file_with_content(
+            tmp.path(),
+            "Cargo.toml",
+            r#"[dependencies]
+name = "wrong-dependency-name"
+description = "wrong dependency description"
+
+[package]
+name = "correct-package-name"
+description = "correct package description"
+"#,
+        );
+
+        let info = extract_cargo_toml_info(tmp.path().to_str().unwrap());
+
+        assert!(
+            info.is_some(),
+            "Should parse package metadata from Cargo.toml"
+        );
+        let info = info.unwrap();
+        assert_eq!(info.name, Some("correct-package-name".to_string()));
+        assert_eq!(
+            info.description,
+            Some("correct package description".to_string())
+        );
     }
 
     // ========================================

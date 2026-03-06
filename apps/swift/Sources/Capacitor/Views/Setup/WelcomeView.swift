@@ -7,10 +7,7 @@ struct WelcomeView: View {
 
     @State private var manager = SetupRequirementsManager()
     @State private var checkID = UUID()
-
-    #if DEBUG
-        @State private var debugScenario: SetupPreviewScenario?
-    #endif
+    @State private var isUsingSetupPreviewMode = false
 
     private var userFirstName: String {
         NSFullUserName().components(separatedBy: " ").first ?? "there"
@@ -18,13 +15,11 @@ struct WelcomeView: View {
 
     var body: some View {
         PageScaffold {
-            // MARK: - Fixed header (debug picker only)
-
-            #if DEBUG
-                debugScenarioPicker
-            #else
-                EmptyView()
-            #endif
+            SetupDebugScenarioPicker(
+                manager: $manager,
+                checkID: $checkID,
+                isUsingPreviewMode: $isUsingSetupPreviewMode,
+            )
         } content: {
             // MARK: - Scrollable content: logo, greeting, then steps
 
@@ -70,6 +65,13 @@ struct WelcomeView: View {
             // MARK: - Fixed footer
 
             VStack(spacing: 16) {
+                if let initializationErrorMessage = manager.initializationErrorMessage {
+                    Text(initializationErrorMessage)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .multilineTextAlignment(.center)
+                }
+
                 if manager.hasBlockingError {
                     Text("Please resolve the issues above to continue")
                         .font(.caption)
@@ -90,9 +92,7 @@ struct WelcomeView: View {
             await manager.runChecks()
         }
         .onAppear {
-            #if DEBUG
-                guard debugScenario == nil else { return }
-            #endif
+            guard !isUsingSetupPreviewMode else { return }
             manager = SetupRequirementsManager()
             checkID = UUID()
         }
@@ -107,55 +107,7 @@ struct WelcomeView: View {
     // MARK: - Actions
 
     private func completeSetup() {
-        #if DEBUG
-            CapacitorApp.restoreOnboardingBackup()
-        #endif
-
+        AppDebugSupport.restoreOnboardingBackup()
         onComplete()
     }
 }
-
-// MARK: - Debug Scenario Picker
-
-#if DEBUG
-    extension WelcomeView {
-        private var debugScenarioPicker: some View {
-            VStack(spacing: 6) {
-                HStack(spacing: 6) {
-                    Image(systemName: "ant.fill")
-                        .font(.system(size: 9))
-                        .foregroundStyle(.white.opacity(0.5))
-
-                    Text("Setup State")
-                        .font(.system(size: 10, weight: .medium, design: .monospaced))
-                        .foregroundStyle(.white.opacity(0.5))
-
-                    Spacer()
-
-                    Picker("", selection: $debugScenario) {
-                        Text("Live").tag(SetupPreviewScenario?.none)
-                        Divider()
-                        ForEach(SetupPreviewScenario.allCases) { scenario in
-                            Text(scenario.rawValue).tag(Optional(scenario))
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    .controlSize(.mini)
-                    .frame(width: 140)
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
-            }
-            .padding(.top, 8)
-            .onChange(of: debugScenario) { _, newValue in
-                if let scenario = newValue {
-                    manager = .preview(scenario)
-                } else {
-                    manager = SetupRequirementsManager()
-                    checkID = UUID()
-                }
-            }
-        }
-    }
-#endif
