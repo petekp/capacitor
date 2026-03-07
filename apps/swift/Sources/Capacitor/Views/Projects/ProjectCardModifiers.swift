@@ -240,8 +240,6 @@ extension View {
     ) -> some View {
         contentShape(Rectangle())
             .onTapGesture(perform: onTap)
-            .accessibilityAddTraits(.isButton)
-            .accessibilityAction { onTap() }
             .focusable()
             .focusEffectDisabled()
             .onKeyPress(.return) {

@@ -1,5 +1,7 @@
 import Foundation
+import Observation
 
+@Observable
 @MainActor
 final class NavigationState {
     private(set) var destination: ShellNavigationDestination = .projectList
