@@ -5,6 +5,7 @@
 
 uniffi::setup_scaffolding!();
 
+mod clean;
 pub mod domain;
 pub mod ingest;
 pub mod query;
@@ -44,8 +45,8 @@ use runtime_sessions::ProjectStatus;
 use runtime_setup::{DependencyStatus, HookStatus, InstallResult, SetupChecker, SetupStatus};
 use runtime_storage::StorageConfig;
 use runtime_types::{
-    DashboardData, GlobalConfig, HookDiagnosticReport, HookIssue, HookTestResult, Plugin,
-    PluginManifest, SuggestedProject,
+    DashboardData, GlobalConfig, HookDiagnosticReport, HookTestResult, Plugin, PluginManifest,
+    SuggestedProject,
 };
 use runtime_validation::{create_claude_md, validate_project_path, ValidationResultFfi};
 use storage::{InMemorySnapshotStorage, JsonFileSnapshotStorage, SnapshotStorage};
@@ -75,6 +76,7 @@ pub struct CoreRuntime {
     state: std::sync::Mutex<reduce::ReducerState>,
     snapshot_storage: Arc<dyn SnapshotStorage>,
     app_storage: StorageConfig,
+    clean_shell: clean::CleanArchitectureShell,
 }
 
 impl CoreRuntime {
@@ -87,11 +89,16 @@ impl CoreRuntime {
             .map_err(CoreRuntimeError::from)?
             .map(reduce::ReducerState::from_snapshot)
             .unwrap_or_default();
+        let clean_shell = clean::CleanArchitectureShell::bootstrap(
+            Arc::clone(&snapshot_storage),
+            app_storage.clone(),
+        );
 
         Ok(Arc::new(Self {
             state: std::sync::Mutex::new(state),
             snapshot_storage,
             app_storage,
+            clean_shell,
         }))
     }
 
@@ -199,13 +206,9 @@ impl CoreRuntime {
         plugins.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
         Ok(plugins)
     }
-
-    fn test_state_file_io(&self) -> bool {
-        runtime_state::snapshot::runtime_health().unwrap_or(false)
-    }
 }
 
-fn heartbeat_status(
+pub(crate) fn heartbeat_status(
     age_secs: u64,
     threshold_secs: u64,
     grace_secs: u64,
@@ -224,7 +227,7 @@ fn heartbeat_status(
     }
 }
 
-fn has_active_runtime_session(
+pub(crate) fn has_active_runtime_session(
     snapshot: Option<&runtime_state::snapshot::RuntimeSessionsSnapshot>,
     max_age_secs: u64,
 ) -> bool {
@@ -297,8 +300,9 @@ impl CoreRuntime {
     }
 
     pub fn app_snapshot(&self) -> Result<AppSnapshot, CoreRuntimeError> {
-        let state = self.lock_state()?;
-        Ok(query::app_snapshot(&state))
+        self.clean_shell
+            .app_snapshot()
+            .map_err(|error| CoreRuntimeError::from(error.to_string()))
     }
 
     pub fn ingest_hook_event(
@@ -747,11 +751,11 @@ impl CoreRuntime {
     }
 
     pub fn check_setup_status(&self) -> SetupStatus {
-        self.setup_checker().check_setup_status()
+        self.clean_shell.check_setup_status()
     }
 
     pub fn check_dependency(&self, name: String) -> DependencyStatus {
-        self.setup_checker().check_dependency(&name)
+        self.clean_shell.check_dependency(&name)
     }
 
     pub fn install_hook_binary_from_path(
@@ -776,162 +780,19 @@ impl CoreRuntime {
     }
 
     pub fn get_hook_status(&self) -> HookStatus {
-        self.setup_checker().check_setup_status().hooks
+        self.clean_shell.get_hook_status()
     }
 
     pub fn check_hook_health(&self) -> runtime_types::HookHealthReport {
-        const HOOK_HEALTH_THRESHOLD_SECS: u64 = 60;
-        const HOOK_HEALTH_GRACE_SECS: u64 = 300;
-
-        let heartbeat_path = self.app_storage.root().join("hud-hook-heartbeat");
-        let threshold_secs = HOOK_HEALTH_THRESHOLD_SECS;
-
-        let (status, age) = match std::fs::metadata(&heartbeat_path) {
-            Ok(meta) => match meta.modified() {
-                Ok(mtime) => {
-                    let age_secs = mtime.elapsed().map(|d| d.as_secs()).unwrap_or(0);
-                    let has_active_session = if age_secs > threshold_secs {
-                        has_active_runtime_session(
-                            runtime_state::snapshot::sessions_snapshot().as_ref(),
-                            HOOK_HEALTH_GRACE_SECS,
-                        )
-                    } else {
-                        false
-                    };
-
-                    let status = heartbeat_status(
-                        age_secs,
-                        threshold_secs,
-                        HOOK_HEALTH_GRACE_SECS,
-                        has_active_session,
-                    );
-                    (status, Some(age_secs))
-                }
-                Err(e) => (
-                    runtime_types::HookHealthStatus::Unreadable {
-                        reason: e.to_string(),
-                    },
-                    None,
-                ),
-            },
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                (runtime_types::HookHealthStatus::Unknown, None)
-            }
-            Err(e) => (
-                runtime_types::HookHealthStatus::Unreadable {
-                    reason: e.to_string(),
-                },
-                None,
-            ),
-        };
-
-        runtime_types::HookHealthReport {
-            status,
-            heartbeat_path: heartbeat_path.display().to_string(),
-            threshold_secs,
-            last_heartbeat_age_secs: age,
-        }
+        self.clean_shell.check_hook_health()
     }
 
     pub fn get_hook_diagnostic(&self) -> HookDiagnosticReport {
-        let setup_status = self.check_setup_status();
-        let health = self.check_hook_health();
-
-        let binary_ok = setup_status
-            .dependencies
-            .iter()
-            .find(|d| d.name == "hud-hook")
-            .map(|d| d.found)
-            .unwrap_or(false);
-
-        let config_ok = matches!(setup_status.hooks, HookStatus::Installed { .. });
-        let firing_ok = matches!(health.status, runtime_types::HookHealthStatus::Healthy);
-        let is_first_run = matches!(health.status, runtime_types::HookHealthStatus::Unknown);
-
-        let primary_issue: Option<HookIssue> = match &setup_status.hooks {
-            HookStatus::PolicyBlocked { reason } => Some(HookIssue::PolicyBlocked {
-                reason: reason.clone(),
-            }),
-            HookStatus::SymlinkBroken { target, reason } => Some(HookIssue::SymlinkBroken {
-                target: target.clone(),
-                reason: reason.clone(),
-            }),
-            HookStatus::BinaryBroken { reason } => Some(HookIssue::BinaryBroken {
-                reason: reason.clone(),
-            }),
-            _ if !binary_ok => Some(HookIssue::BinaryMissing),
-            HookStatus::NotInstalled => Some(HookIssue::ConfigMissing),
-            HookStatus::Installed { .. } => match &health.status {
-                runtime_types::HookHealthStatus::Healthy => None,
-                runtime_types::HookHealthStatus::Unknown => Some(HookIssue::NotFiring {
-                    last_seen_secs: None,
-                }),
-                runtime_types::HookHealthStatus::Stale { last_seen_secs } => {
-                    Some(HookIssue::NotFiring {
-                        last_seen_secs: Some(*last_seen_secs),
-                    })
-                }
-                runtime_types::HookHealthStatus::Unreadable { .. } => None,
-            },
-        };
-
-        let can_auto_fix = !matches!(primary_issue, Some(HookIssue::PolicyBlocked { .. }));
-        let is_healthy = primary_issue.is_none();
-
-        let symlink_path = dirs::home_dir()
-            .map(|h| h.join(".local/bin/hud-hook"))
-            .unwrap_or_else(|| std::path::PathBuf::from("/usr/local/bin/hud-hook"));
-
-        let symlink_target = if symlink_path.is_symlink() {
-            std::fs::read_link(&symlink_path)
-                .ok()
-                .map(|p| p.to_string_lossy().to_string())
-        } else {
-            None
-        };
-
-        HookDiagnosticReport {
-            is_healthy,
-            primary_issue,
-            can_auto_fix,
-            is_first_run,
-            binary_ok,
-            config_ok,
-            firing_ok,
-            symlink_path: symlink_path.to_string_lossy().to_string(),
-            symlink_target,
-            last_heartbeat_age_secs: health.last_heartbeat_age_secs,
-        }
+        self.clean_shell.get_hook_diagnostic()
     }
 
     pub fn run_hook_test(&self) -> HookTestResult {
-        let health = self.check_hook_health();
-        let heartbeat_ok = matches!(health.status, runtime_types::HookHealthStatus::Healthy);
-        let heartbeat_age = health.last_heartbeat_age_secs;
-
-        let state_file_ok = self.test_state_file_io();
-        let success = heartbeat_ok && state_file_ok;
-        let message = if success {
-            "Hooks are working correctly".to_string()
-        } else if !heartbeat_ok {
-            match heartbeat_age {
-                Some(age) => format!(
-                    "Heartbeat stale ({}s ago). Start a Claude session to test.",
-                    age
-                ),
-                None => "No heartbeat detected. Start a Claude session to test hooks.".to_string(),
-            }
-        } else {
-            "Runtime health check failed. Ensure the runtime snapshot is available.".to_string()
-        };
-
-        HookTestResult {
-            success,
-            heartbeat_ok,
-            heartbeat_age_secs: heartbeat_age,
-            state_file_ok,
-            message,
-        }
+        self.clean_shell.run_hook_test()
     }
 }
 

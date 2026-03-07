@@ -191,6 +191,19 @@ struct QuickFeedbackContext: Equatable {
     let projectCount: Int
     let sessionStates: [String: ProjectSessionState]
     let activationTrace: String?
+
+    static let empty = QuickFeedbackContext(
+        appVersion: "unknown",
+        buildNumber: "unknown",
+        channel: .prod,
+        osVersion: "unknown",
+        runtimeStatus: nil,
+        activeProjectPath: nil,
+        activeSource: "none",
+        projectCount: 0,
+        sessionStates: [:],
+        activationTrace: nil,
+    )
 }
 
 struct QuickFeedbackPayload: Codable, Equatable {

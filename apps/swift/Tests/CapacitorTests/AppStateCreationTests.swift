@@ -6,18 +6,18 @@ final class AppStateCreationTests: XCTestCase {
     func testDiscoveredSessionDoesNotReactivateCancelledCreation() {
         let appState = AppState()
         let creationId = "creation-cancelled"
-        appState.activeCreations = [
+        appState.projectCreationCoordinator.setCreationsForTesting([
             makeCreation(id: creationId, status: .cancelled),
-        ]
+        ])
 
-        let applied = appState.applyDiscoveredSessionToCreationForTesting(
+        let applied = appState.projectCreationCoordinator.applyDiscoveredSessionToCreationForTesting(
             creationId,
             sessionId: "late-session",
         )
 
         XCTAssertFalse(applied, "terminal creation must not be reactivated by late monitor callback")
         XCTAssertEqual(
-            appState.activeCreations.first(where: { $0.id == creationId })?.status,
+            appState.projectCreationCoordinator.creations.first(where: { $0.id == creationId })?.status,
             .cancelled,
         )
     }
@@ -25,9 +25,9 @@ final class AppStateCreationTests: XCTestCase {
     func testCancelCreationCancelsTrackedMonitorTasks() {
         let appState = AppState()
         let creationId = "creation-in-progress"
-        appState.activeCreations = [
+        appState.projectCreationCoordinator.setCreationsForTesting([
             makeCreation(id: creationId, status: .inProgress),
-        ]
+        ])
 
         let sessionCancelled = expectation(description: "session monitor cancelled")
         let completionCancelled = expectation(description: "completion monitor cancelled")
@@ -52,16 +52,16 @@ final class AppStateCreationTests: XCTestCase {
             })
         }
 
-        appState.setCreationMonitorTasksForTesting(
+        appState.projectCreationCoordinator.setCreationMonitorTasksForTesting(
             creationId: creationId,
             sessionTask: sessionTask,
             completionTask: completionTask,
         )
 
-        appState.cancelCreation(creationId)
+        appState.projectCreationCoordinator.cancelCreation(creationId)
 
         wait(for: [sessionCancelled, completionCancelled], timeout: 1.0)
-        XCTAssertFalse(appState.hasCreationMonitorTasksForTesting(creationId: creationId))
+        XCTAssertFalse(appState.projectCreationCoordinator.hasCreationMonitorTasksForTesting(creationId: creationId))
     }
 
     private func makeCreation(id: String, status: CreationStatus) -> ProjectCreation {

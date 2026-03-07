@@ -182,7 +182,7 @@ final class SetupRequirementsManager {
     private(set) var initializationErrorMessage: String?
     private(set) var isRunningChecks = false
     var showShellInstructions = false
-    private let engine: CoreRuntime?
+    private let setupGateway: (any SetupGateway)?
     private weak var shellStateStore: ShellStateStore?
     private let isPreview: Bool
     private var lifecycle = SetupLifecycleState.initial()
@@ -200,19 +200,24 @@ final class SetupRequirementsManager {
     }
 
     init(
+        setupGateway: (any SetupGateway)? = nil,
         engine: CoreRuntime? = nil,
         shellStateStore: ShellStateStore? = nil,
         runtimeFactory: () throws -> CoreRuntime = { try CoreRuntime() },
     ) {
-        if let engine {
-            self.engine = engine
+        if let setupGateway {
+            self.setupGateway = setupGateway
+            initializationErrorMessage = nil
+        } else if let engine {
+            self.setupGateway = LiveSetupGateway(runtimeProvider: { engine })
             initializationErrorMessage = nil
         } else {
             do {
-                self.engine = try runtimeFactory()
+                let runtime = try runtimeFactory()
+                self.setupGateway = LiveSetupGateway(runtimeProvider: { runtime })
                 initializationErrorMessage = nil
             } catch {
-                self.engine = nil
+                self.setupGateway = nil
                 initializationErrorMessage = "Runtime initialization failed. Restart Capacitor and try again."
             }
         }
@@ -224,7 +229,7 @@ final class SetupRequirementsManager {
 
     /// Preview-only initializer: pre-bakes step states so previews are instant and deterministic.
     private init(previewSteps: [SetupStep]) {
-        engine = nil
+        setupGateway = nil
         shellStateStore = nil
         initializationErrorMessage = nil
         isPreview = true
@@ -239,11 +244,11 @@ final class SetupRequirementsManager {
     }
 
     func runChecks() async {
-        guard !isPreview, !isRunningChecks, let engine else { return }
+        guard !isPreview, !isRunningChecks, let setupGateway else { return }
         applyLifecycle(.checksStarted)
         defer { applyLifecycle(.checksFinished) }
 
-        let setupStatus = engine.checkSetupStatus()
+        guard let setupStatus = try? setupGateway.fetchSetupStatus() else { return }
 
         for dep in setupStatus.dependencies {
             await updateDependencyStatus(dep)
@@ -294,13 +299,13 @@ final class SetupRequirementsManager {
     }
 
     func retryStep(_ stepId: SetupStepID) async {
-        guard let engine else { return }
+        guard let setupGateway else { return }
         switch stepId {
         case .claude:
-            let dep = engine.checkDependency(name: stepId.rawValue)
+            guard let dep = try? setupGateway.checkDependency(name: stepId.rawValue) else { return }
             await updateDependencyStatus(dep)
         case .hooks:
-            let status = engine.getHookStatus()
+            guard let status = try? setupGateway.fetchHookStatus() else { return }
             await updateHookStatus(status)
         case .shell:
             updateShellStatus()
@@ -322,15 +327,15 @@ final class SetupRequirementsManager {
     }
 
     private func installHooks() async {
-        guard let engine else { return }
+        guard let setupGateway else { return }
         applyLifecycle(.hookInstallStarted)
 
-        if let hookInstallError = HookInstaller.ensureHooksInstalled(using: engine) {
+        if let hookInstallError = setupGateway.installHooks() {
             applyLifecycle(.hookInstallFinished(result: .failure(hookInstallError)))
             return
         }
 
-        let status = engine.getHookStatus()
+        guard let status = try? setupGateway.fetchHookStatus() else { return }
         applyLifecycle(.hookInstallFinished(result: .success(status)))
     }
 

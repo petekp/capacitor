@@ -69,7 +69,7 @@ enum AppDebugSupport {
 
                 Section("Tooltip Testing") {
                     Button("Show Drag-Drop Tip Now") {
-                        appState.pendingDragDropTip = true
+                        appState.projectActionState.pendingDragDropTip = true
                     }
                     Button("Reset Tip Flag (hasSeenDragDropTip)") {
                         UserDefaults.standard.removeObject(forKey: "hasSeenDragDropTip")
@@ -93,12 +93,12 @@ enum AppDebugSupport {
                 Divider()
 
                 Button("Clear All Projects (Empty State)") {
-                    for project in appState.projects {
-                        appState.removeProject(project.path)
+                    for project in appState.projectWorkflowState.legacyProjects {
+                        appState.projectActionState.removeProject(path: project.path)
                     }
                 }
                 Button("Connect Project via File Browser") {
-                    appState.connectProjectViaFileBrowser()
+                    appState.projectImportCoordinator.connectViaFileBrowser()
                 }
             }
         }

@@ -2,9 +2,7 @@ import SwiftUI
 
 #if DEBUG
     struct SetupDebugScenarioPicker: View {
-        @Binding var manager: SetupRequirementsManager
-        @Binding var checkID: UUID
-        @Binding var isUsingPreviewMode: Bool
+        @Bindable var setupWorkflowState: SetupWorkflowState
 
         @State private var debugScenario: SetupPreviewScenario?
 
@@ -39,21 +37,16 @@ import SwiftUI
             .padding(.top, 8)
             .onChange(of: debugScenario) { _, newValue in
                 if let scenario = newValue {
-                    isUsingPreviewMode = true
-                    manager = .preview(scenario)
+                    setupWorkflowState.activatePreview(scenario)
                 } else {
-                    isUsingPreviewMode = false
-                    manager = SetupRequirementsManager()
-                    checkID = UUID()
+                    setupWorkflowState.restoreLive()
                 }
             }
         }
     }
 #else
     struct SetupDebugScenarioPicker: View {
-        @Binding var manager: SetupRequirementsManager
-        @Binding var checkID: UUID
-        @Binding var isUsingPreviewMode: Bool
+        var setupWorkflowState: SetupWorkflowState
 
         var body: some View {
             EmptyView()

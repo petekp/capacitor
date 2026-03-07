@@ -27,10 +27,11 @@ struct ProjectCardDropDelegate: DropDelegate {
         else { return }
 
         withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-            appState.moveProject(
+            appState.projectListState.moveProject(
                 from: IndexSet(integer: fromIndex),
                 to: toIndex > fromIndex ? toIndex + 1 : toIndex,
                 in: groupProjects,
+                allProjects: appState.projectWorkflowState.legacyProjects,
                 group: group,
             )
         }
@@ -53,7 +54,7 @@ struct ProjectCardDropDelegate: DropDelegate {
         if isExternalFileDrag, info.hasItemsConforming(to: [.fileURL]) {
             appState.isFileDragOverCard = false
             let providers = info.itemProviders(for: [.fileURL])
-            appState.handleFileURLDrop(providers)
+            appState.projectImportCoordinator.handleFileURLDrop(providers)
             return true
         }
         draggedProject = nil

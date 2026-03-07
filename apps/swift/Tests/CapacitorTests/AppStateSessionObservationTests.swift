@@ -4,13 +4,102 @@ import XCTest
 
 @MainActor
 final class AppStateSessionObservationTests: XCTestCase {
+    func testProjectsObservationInvalidatesWhenWorkflowStateChanges() {
+        let workflowState = ProjectWorkflowState(
+            projectCatalogGateway: NoopProjectCatalogGateway(),
+        )
+        let appState = AppState(
+            navigationState: NavigationState(),
+            projectWorkflowState: workflowState,
+        )
+
+        let invalidated = expectation(description: "projects invalidated")
+        withObservationTracking {
+            _ = appState.projectWorkflowState.legacyProjects
+        } onChange: {
+            invalidated.fulfill()
+        }
+
+        workflowState.replaceProjectCatalog(
+            with: [
+                ShellProjectCatalogEntry(
+                    displayName: "Capacitor",
+                    path: "/Users/petepetrash/Code/capacitor",
+                ),
+            ],
+        )
+
+        wait(for: [invalidated], timeout: 0.5)
+    }
+
+    func testWorkflowSelectionObservationInvalidatesWhenSuggestedSelectionChanges() {
+        let workflowState = ProjectWorkflowState(
+            projectCatalogGateway: NoopProjectCatalogGateway(),
+        )
+        workflowState.replaceSuggestedProjectCatalog(
+            with: [
+                ShellSuggestedProjectCandidate(
+                    displayName: "Capacitor",
+                    path: "/Users/petepetrash/Code/capacitor",
+                ),
+            ],
+        )
+        let appState = AppState(
+            navigationState: NavigationState(),
+            projectWorkflowState: workflowState,
+        )
+        appState.cancelRuntimeAutomationForTesting()
+
+        let invalidated = expectation(description: "workflow selection invalidated")
+        withObservationTracking {
+            _ = appState.projectWorkflowState.selectedSuggestedProjectCount
+        } onChange: {
+            invalidated.fulfill()
+        }
+
+        workflowState.toggleSuggestedProjectSelection(path: "/Users/petepetrash/Code/capacitor")
+
+        wait(for: [invalidated], timeout: 0.5)
+    }
+
+    func testProjectListObservationInvalidatesWhenDormancyChanges() {
+        let workflowState = ProjectWorkflowState(
+            projectCatalogGateway: NoopProjectCatalogGateway(),
+        )
+        let projectListState = ProjectListState(
+            projectListPreferencesGateway: NoopProjectListPreferencesGateway(),
+        )
+        let appState = AppState(
+            navigationState: NavigationState(),
+            projectWorkflowState: workflowState,
+            projectListState: projectListState,
+        )
+        appState.cancelRuntimeAutomationForTesting()
+
+        let project = makeProject(name: "Capacitor", path: "/Users/petepetrash/Code/capacitor")
+        workflowState.replaceProjectCatalog(
+            with: [ShellProjectCatalogEntry(displayName: project.name, path: project.path)],
+        )
+
+        let invalidated = expectation(description: "project list invalidated")
+        withObservationTracking {
+            _ = appState.projectListState.visibleProjects(from: appState.projectWorkflowState.legacyProjects)
+        } onChange: {
+            invalidated.fulfill()
+        }
+
+        projectListState.moveToDormant(project)
+
+        wait(for: [invalidated], timeout: 0.5)
+    }
+
     func testAppStateSessionReadInvalidatesWhenSessionStateChanges() {
         let appState = AppState()
         let project = makeProject(name: "Capacitor", path: "/Users/petepetrash/Code/capacitor")
 
         let invalidated = expectation(description: "observation invalidated")
         withObservationTracking {
-            _ = appState.getSessionState(for: project)
+            _ = appState.sessionStateManager.getSessionState(for: project)
         } onChange: {
             invalidated.fulfill()
         }
@@ -31,14 +120,26 @@ final class AppStateSessionObservationTests: XCTestCase {
         wait(for: [invalidated], timeout: 0.5)
     }
 
-    func testOrderedGroupedProjectsInvalidatesWhenSessionStateChanges() {
-        let appState = AppState()
+    func testProjectListGroupingInvalidatesWhenSessionStateChanges() {
+        let projectListState = ProjectListState(
+            projectListPreferencesGateway: NoopProjectListPreferencesGateway(),
+        )
+        let appState = AppState(
+            navigationState: NavigationState(),
+            projectWorkflowState: ProjectWorkflowState(projectCatalogGateway: NoopProjectCatalogGateway()),
+            projectListState: projectListState,
+        )
         let project = makeProject(name: "Capacitor", path: "/Users/petepetrash/Code/capacitor")
-        appState.projects = [project]
+        appState.projectWorkflowState.replaceProjectCatalog(
+            with: [ShellProjectCatalogEntry(displayName: project.name, path: project.path)],
+        )
 
         let invalidated = expectation(description: "grouped projects invalidated")
         withObservationTracking {
-            _ = appState.orderedGroupedProjects(appState.projects)
+            _ = appState.projectListState.orderedGroupedProjects(
+                appState.projectListState.visibleProjects(from: appState.projectWorkflowState.legacyProjects),
+                sessionStates: appState.sessionStateManager.sessionStates,
+            )
         } onChange: {
             invalidated.fulfill()
         }
@@ -83,7 +184,9 @@ final class AppStateSessionObservationTests: XCTestCase {
     func testStaleRuntimeSnapshotDoesNotApplyShellState() async {
         let appState = AppState()
         let project = makeProject(name: "Capacitor", path: "/Users/petepetrash/Code/capacitor")
-        appState.projects = [project]
+        appState.projectWorkflowState.replaceProjectCatalog(
+            with: [ShellProjectCatalogEntry(displayName: project.name, path: project.path)],
+        )
 
         let baselineSnapshot = makeRuntimeSnapshot(
             projectPath: project.path,
@@ -122,7 +225,9 @@ final class AppStateSessionObservationTests: XCTestCase {
         let appState = AppState()
         appState.cancelRuntimeAutomationForTesting()
         let project = makeProject(name: "Capacitor", path: "/Users/petepetrash/Code/capacitor")
-        appState.projects = [project]
+        appState.projectWorkflowState.replaceProjectCatalog(
+            with: [ShellProjectCatalogEntry(displayName: project.name, path: project.path)],
+        )
         appState.sessionStateManager.setSessionStatesForTesting([
             project.path: ProjectSessionState(
                 state: .working,
@@ -152,7 +257,7 @@ final class AppStateSessionObservationTests: XCTestCase {
             errorDescription: "unavailable",
         )
 
-        XCTAssertEqual(appState.getSessionState(for: project)?.sessionId, "stale-session")
+        XCTAssertEqual(appState.sessionStateManager.getSessionState(for: project)?.sessionId, "stale-session")
         XCTAssertEqual(appState.shellStateStore.state?.shells["111"]?.cwd, "/stale")
 
         appState.handleRuntimeSnapshotFailureForTesting(
@@ -162,7 +267,7 @@ final class AppStateSessionObservationTests: XCTestCase {
         )
 
         XCTAssertNil(
-            appState.getSessionState(for: project),
+            appState.sessionStateManager.getSessionState(for: project),
             "second consecutive fresh failure should clear stale runtime-derived session state",
         )
         XCTAssertNil(
@@ -182,7 +287,9 @@ final class AppStateSessionObservationTests: XCTestCase {
         let appState = AppState()
         appState.cancelRuntimeAutomationForTesting()
         let project = makeProject(name: "Capacitor", path: "/Users/petepetrash/Code/capacitor")
-        appState.projects = [project]
+        appState.projectWorkflowState.replaceProjectCatalog(
+            with: [ShellProjectCatalogEntry(displayName: project.name, path: project.path)],
+        )
         appState.setRuntimeSnapshotGenerationForTesting(5)
 
         appState.handleRuntimeSnapshotFailureForTesting(
@@ -203,7 +310,7 @@ final class AppStateSessionObservationTests: XCTestCase {
             projects: [project],
         )
 
-        XCTAssertEqual(appState.getSessionState(for: project)?.sessionId, "fresh-session")
+        XCTAssertEqual(appState.sessionStateManager.getSessionState(for: project)?.sessionId, "fresh-session")
         XCTAssertEqual(appState.shellStateStore.state?.shells["111"]?.cwd, "/fresh")
 
         appState.handleRuntimeSnapshotFailureForTesting(
@@ -213,7 +320,7 @@ final class AppStateSessionObservationTests: XCTestCase {
         )
 
         XCTAssertEqual(
-            appState.getSessionState(for: project)?.sessionId,
+            appState.sessionStateManager.getSessionState(for: project)?.sessionId,
             "fresh-session",
             "a fresh snapshot should reset failure hysteresis so the next failure is held again",
         )
@@ -285,4 +392,29 @@ final class AppStateSessionObservationTests: XCTestCase {
         try Data(json.utf8).write(to: snapshotPath)
         return snapshotPath.path
     }
+}
+
+private struct NoopProjectCatalogGateway: ProjectCatalogGateway {
+    func loadProjects() throws -> [ShellProjectCatalogEntry] {
+        []
+    }
+
+    func loadSuggestedProjects() throws -> [ShellSuggestedProjectCandidate] {
+        []
+    }
+}
+
+@MainActor
+private final class NoopProjectListPreferencesGateway: ProjectListPreferencesGateway {
+    func loadDormantProjectPaths() -> Set<String> {
+        []
+    }
+
+    func saveDormantProjectPaths(_: Set<String>) {}
+    func loadProjectOrder() -> [String] {
+        []
+    }
+
+    func saveProjectOrder(_: [String]) {}
+    func migrateProjectOrderIfNeeded() {}
 }

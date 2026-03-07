@@ -18,10 +18,10 @@ import SwiftUI
 
                 ScrollView {
                     VStack(alignment: .leading, spacing: 10) {
-                        if let status = appState.runtimeStatus, status.isEnabled {
+                        if let status = appState.runtimeHealthState.status, status.isEnabled {
                             RuntimeStatusBadge(status: status)
                                 .padding(.bottom, 2)
-                            if let rollout = appState.routingRollout {
+                            if let rollout = appState.runtimeHealthState.routingRollout {
                                 RoutingRolloutBadge(rollout: rollout)
                                     .padding(.bottom, 2)
                             }

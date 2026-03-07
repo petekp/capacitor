@@ -48,12 +48,12 @@ struct ContentView: View {
                         originFrame: appState.captureModalOrigin,
                         containerSize: containerSize,
                         onCapture: { text in
-                            appState.captureIdea(for: project, text: text)
+                            appState.projectFeatureCoordinator.captureIdea(for: project, text: text)
                         },
                     )
                 }
 
-                if !appState.isLoading, appState.projects.isEmpty, !isDragHovered, !appState.isFileDragOverCard {
+                if !appState.dashboardState.isLoading, appState.projectWorkflowState.legacyProjects.isEmpty, !isDragHovered, !appState.isFileDragOverCard {
                     EmptyStateBorderGlow()
                         .transition(.opacity)
                 }
@@ -77,9 +77,9 @@ struct ContentView: View {
             }
             .coordinateSpace(name: "contentView")
         }
-        .onChange(of: appState.pendingDragDropTip) { _, pending in
+        .onChange(of: appState.projectActionState.pendingDragDropTip) { _, pending in
             guard pending, !hasSeenDragDropTip else {
-                appState.pendingDragDropTip = false
+                appState.projectActionState.pendingDragDropTip = false
                 return
             }
             // Wait for toast to dismiss, then show tip
@@ -87,12 +87,12 @@ struct ContentView: View {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
                     showDragDropTip = true
                     hasSeenDragDropTip = true
-                    appState.pendingDragDropTip = false
+                    appState.projectActionState.pendingDragDropTip = false
                 }
             } else {
                 showDragDropTip = true
                 hasSeenDragDropTip = true
-                appState.pendingDragDropTip = false
+                appState.projectActionState.pendingDragDropTip = false
             }
         }
         .onDrop(of: [UTType.fileURL], isTargeted: $isDragHovered) { providers in
@@ -161,34 +161,7 @@ struct ContentView: View {
     }
 
     private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
-        var urls: [URL] = []
-        let group = DispatchGroup()
-
-        for provider in providers {
-            guard provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) else {
-                continue
-            }
-
-            group.enter()
-            provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { data, _ in
-                defer { group.leave() }
-                guard let data = data as? Data,
-                      let url = URL(dataRepresentation: data, relativeTo: nil)
-                else {
-                    return
-                }
-                DispatchQueue.main.async {
-                    urls.append(url)
-                }
-            }
-        }
-
-        group.notify(queue: .main) {
-            if !urls.isEmpty {
-                appState.addProjectsFromDrop(urls)
-            }
-        }
-
+        appState.projectImportCoordinator.handleFileURLDrop(providers)
         return true
     }
 }

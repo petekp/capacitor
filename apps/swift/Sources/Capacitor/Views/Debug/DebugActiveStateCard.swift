@@ -10,11 +10,11 @@ import SwiftUI
                     .font(.caption)
                     .foregroundColor(.white.opacity(0.7))
 
-                Text("activeProject=\(appState.activeProjectPath ?? "nil")")
+                Text("activeProject=\(appState.activeProjectTrackingState.activeProjectPath ?? "nil")")
                     .font(.caption)
                     .foregroundColor(.white.opacity(0.9))
 
-                Text("activeSource=\(String(describing: appState.activeSource))")
+                Text("activeSource=\(String(describing: appState.activeProjectTrackingState.activeSource))")
                     .font(.caption)
                     .foregroundColor(.white.opacity(0.9))
             }

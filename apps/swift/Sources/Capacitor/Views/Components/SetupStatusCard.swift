@@ -3,7 +3,6 @@ import SwiftUI
 struct SetupStatusCard: View {
     let diagnostic: HookDiagnosticReport
     let onFix: () -> Void
-    let onRefresh: () -> Void
     let onTest: () -> HookTestResult
 
     @State private var isExpanded = false
@@ -212,7 +211,6 @@ struct SetupStatusCard: View {
                 onFix()
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                     isFixing = false
-                    onRefresh()
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
                         runHookTest()
                     }

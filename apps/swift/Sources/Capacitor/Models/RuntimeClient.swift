@@ -1,6 +1,6 @@
 import Foundation
 
-struct RuntimeHealth: Decodable {
+struct RuntimeHealth: Decodable, Sendable {
     let status: String
     let pid: Int
     let version: String
@@ -33,7 +33,7 @@ struct RuntimeHealth: Decodable {
     }
 }
 
-struct RuntimeSecurityHealth: Decodable {
+struct RuntimeSecurityHealth: Decodable, Sendable {
     let peerAuthMode: String
     let rejectedConnections: UInt64
 
@@ -43,7 +43,7 @@ struct RuntimeSecurityHealth: Decodable {
     }
 }
 
-struct RuntimeEngineHealth: Decodable {
+struct RuntimeEngineHealth: Decodable, Sendable {
     let activeConnections: UInt64
     let maxActiveConnections: UInt64
     let buildHash: String
@@ -55,7 +55,7 @@ struct RuntimeEngineHealth: Decodable {
     }
 }
 
-struct RuntimeRoutingHealth: Decodable {
+struct RuntimeRoutingHealth: Decodable, Sendable {
     let enabled: Bool
     let rollout: RuntimeRoutingRollout?
 
@@ -65,7 +65,7 @@ struct RuntimeRoutingHealth: Decodable {
     }
 }
 
-struct RuntimeRoutingRollout: Decodable {
+struct RuntimeRoutingRollout: Decodable, Sendable {
     let agreementGateTarget: Double
     let minComparisonsRequired: UInt64?
     let minWindowHoursRequired: UInt64?
@@ -101,7 +101,7 @@ struct RuntimeRoutingRollout: Decodable {
     }
 }
 
-struct RuntimeSession: Decodable {
+struct RuntimeSession: Decodable, Sendable {
     let sessionId: String
     let pid: UInt32
     let state: String
@@ -135,7 +135,7 @@ struct RuntimeSession: Decodable {
     }
 }
 
-struct RuntimeProjectState: Decodable {
+struct RuntimeProjectState: Decodable, Sendable {
     let projectId: String?
     let workspaceId: String?
     let projectPath: String
@@ -163,25 +163,25 @@ struct RuntimeProjectState: Decodable {
     }
 }
 
-struct RuntimeSnapshot {
+struct RuntimeSnapshot: Sendable {
     let projectStates: [RuntimeProjectState]
     let sessions: [RuntimeSession]
     let shellState: ShellCwdState
 }
 
-struct CoreRoutingTarget: Equatable {
+struct CoreRoutingTarget: Equatable, Sendable {
     let kind: String
     let value: String?
 }
 
-struct CoreRoutingEvidence: Equatable {
+struct CoreRoutingEvidence: Equatable, Sendable {
     let evidenceType: String
     let value: String
     let ageMs: UInt64
     let trustRank: UInt8
 }
 
-struct CoreRoutingSnapshot: Equatable {
+struct CoreRoutingSnapshot: Equatable, Sendable {
     let version: Int
     let workspaceId: String
     let projectPath: String
@@ -194,7 +194,7 @@ struct CoreRoutingSnapshot: Equatable {
     let updatedAt: String
 }
 
-struct CoreRoutingDiagnostics: Equatable {
+struct CoreRoutingDiagnostics: Equatable, Sendable {
     let snapshot: CoreRoutingSnapshot
     let signalAgesMs: [String: UInt64]
     let candidateTargets: [CoreRoutingTarget]
@@ -202,7 +202,7 @@ struct CoreRoutingDiagnostics: Equatable {
     let scopeResolution: String
 }
 
-struct RuntimeRoutingConfig: Decodable, Equatable {
+struct RuntimeRoutingConfig: Decodable, Equatable, Sendable {
     let tmuxSignalFreshMs: UInt64
     let shellSignalFreshMs: UInt64
     let shellRetentionHours: UInt64

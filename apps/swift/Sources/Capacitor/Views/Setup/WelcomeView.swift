@@ -3,11 +3,8 @@ import SwiftUI
 
 @MainActor
 struct WelcomeView: View {
+    @Bindable var setupWorkflowState: SetupWorkflowState
     var onComplete: () -> Void
-
-    @State private var manager = SetupRequirementsManager()
-    @State private var checkID = UUID()
-    @State private var isUsingSetupPreviewMode = false
 
     private var userFirstName: String {
         NSFullUserName().components(separatedBy: " ").first ?? "there"
@@ -15,11 +12,7 @@ struct WelcomeView: View {
 
     var body: some View {
         PageScaffold {
-            SetupDebugScenarioPicker(
-                manager: $manager,
-                checkID: $checkID,
-                isUsingPreviewMode: $isUsingSetupPreviewMode,
-            )
+            SetupDebugScenarioPicker(setupWorkflowState: setupWorkflowState)
         } content: {
             // MARK: - Scrollable content: logo, greeting, then steps
 
@@ -42,19 +35,19 @@ struct WelcomeView: View {
                 .padding(.top, 16)
 
                 VStack(spacing: 10) {
-                    ForEach(Array(manager.steps.enumerated()), id: \.element.id) { index, step in
+                    ForEach(Array(setupWorkflowState.steps.enumerated()), id: \.element.id) { index, step in
                         SetupStepRow(
                             step: step,
-                            isCurrentStep: manager.currentStepIndex == index,
+                            isCurrentStep: setupWorkflowState.currentStepIndex == index,
                             linkURL: step.id == .claude ? URL(string: "https://claude.ai/download") : nil,
                             onAction: {
                                 _Concurrency.Task {
-                                    await manager.executeStep(step.id)
+                                    await setupWorkflowState.executeStep(step.id)
                                 }
                             },
                             onRetry: {
                                 _Concurrency.Task {
-                                    await manager.retryStep(step.id)
+                                    await setupWorkflowState.retryStep(step.id)
                                 }
                             },
                         )
@@ -65,14 +58,14 @@ struct WelcomeView: View {
             // MARK: - Fixed footer
 
             VStack(spacing: 16) {
-                if let initializationErrorMessage = manager.initializationErrorMessage {
+                if let initializationErrorMessage = setupWorkflowState.initializationErrorMessage {
                     Text(initializationErrorMessage)
                         .font(.caption)
                         .foregroundStyle(.red)
                         .multilineTextAlignment(.center)
                 }
 
-                if manager.hasBlockingError {
+                if setupWorkflowState.hasBlockingError {
                     Text("Please resolve the issues above to continue")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -84,22 +77,21 @@ struct WelcomeView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
-                .disabled(!manager.allComplete)
+                .disabled(!setupWorkflowState.allComplete)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .task(id: checkID) {
-            await manager.runChecks()
+        .task(id: setupWorkflowState.checkID) {
+            await setupWorkflowState.runChecks()
         }
         .onAppear {
-            guard !isUsingSetupPreviewMode else { return }
-            manager = SetupRequirementsManager()
-            checkID = UUID()
+            guard !setupWorkflowState.isUsingPreviewMode else { return }
+            setupWorkflowState.restoreLive()
         }
-        .sheet(isPresented: $manager.showShellInstructions) {
+        .sheet(isPresented: $setupWorkflowState.showShellInstructions) {
             ShellInstructionsSheet(
-                isPresented: $manager.showShellInstructions,
-                onDismiss: { manager.dismissShellInstructions() },
+                isPresented: $setupWorkflowState.showShellInstructions,
+                onDismiss: { setupWorkflowState.dismissShellInstructions() },
             )
         }
     }

@@ -3,7 +3,6 @@ import Foundation
 protocol HookRuntimeInstalling {
     func installHookBinaryFromPath(sourcePath: String) throws -> InstallResult
     func installHooks() throws -> InstallResult
-    func getHookStatus() -> HookStatus
 }
 
 extension CoreRuntime: HookRuntimeInstalling {}
@@ -30,16 +29,10 @@ enum HookInstaller {
             if !result.success {
                 return result.message
             }
+            return nil
         } catch {
             return "Installation failed: \(error.localizedDescription)"
         }
-
-        let status = engine.getHookStatus()
-        if case .installed = status {
-            return nil
-        }
-
-        return "Hook install completed but status is \(String(describing: status))"
     }
 
     /// Installs the bundled hud-hook binary to ~/.local/bin/hud-hook.

@@ -7,8 +7,7 @@ struct HeaderView: View {
     @State private var isQuickFeedbackPresented = false
 
     private var isOnListView: Bool {
-        if case .list = appState.projectView { return true }
-        return false
+        appState.navigationState.destination == .projectList
     }
 
     var body: some View {
@@ -19,7 +18,7 @@ struct HeaderView: View {
                 // Use conditional to avoid dead zones from invisible views blocking window drag
                 if !isOnListView {
                     BackButton(title: "Projects") {
-                        appState.showProjectList()
+                        appState.projectFeatureCoordinator.showProjectList()
                     }
                     .transition(.opacity.animation(.easeInOut(duration: 0.15)))
                 }
@@ -55,7 +54,7 @@ struct HeaderView: View {
         }
         .sheet(isPresented: $isQuickFeedbackPresented) {
             QuickFeedbackSheet { draft, preferences, formSessionID, openGitHubIssue in
-                appState.submitQuickFeedback(
+                appState.quickFeedbackWorkflow.submit(
                     draft,
                     preferences: preferences,
                     formSessionID: formSessionID,

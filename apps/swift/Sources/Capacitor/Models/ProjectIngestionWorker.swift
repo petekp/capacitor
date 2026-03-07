@@ -14,34 +14,33 @@ actor ProjectIngestionWorker {
         case failed(name: String)
     }
 
-    private let engine: CoreRuntime
+    private let projectMutationGateway: any ProjectMutationGateway
 
-    init?() {
-        guard let engine = try? CoreRuntime() else { return nil }
-        self.engine = engine
+    init(projectMutationGateway: any ProjectMutationGateway) {
+        self.projectMutationGateway = projectMutationGateway
     }
 
-    static func decision(for path: String, result: ValidationResultFfi) -> IngestionDecision {
+    static func decision(for path: String, result: ShellProjectValidationResult) -> IngestionDecision {
         let name = URL(fileURLWithPath: path).lastPathComponent
 
-        switch result.resultType {
-        case "valid", "missing_claude_md":
+        switch result.kind {
+        case .valid, .missingClaudeMd:
             return .add(path: path)
-        case "suggest_parent":
+        case .suggestParent:
             if let suggested = result.suggestedPath {
                 let suggestedName = URL(fileURLWithPath: suggested).lastPathComponent
                 return .failed(name: "\(name) (use \(suggestedName))")
             }
             return .failed(name: "\(name) (use project root)")
-        case "not_a_project":
+        case .notAProject:
             return .failed(name: "\(name) (not a project)")
-        case "already_tracked":
+        case .alreadyTracked:
             return .alreadyTracked(path: result.path)
-        case "path_not_found":
+        case .pathNotFound:
             return .failed(name: "\(name) (not found)")
-        case "dangerous_path":
+        case .dangerousPath:
             return .failed(name: "\(name) (too broad)")
-        default:
+        case .unknown:
             return .failed(name: name)
         }
     }
@@ -61,21 +60,25 @@ actor ProjectIngestionWorker {
                 continue
             }
 
-            let result = engine.validateProject(path: path)
+            do {
+                let result = try projectMutationGateway.validateProject(path: path)
 
-            switch Self.decision(for: path, result: result) {
-            case let .add(path):
-                do {
-                    try engine.addProject(path: path)
-                    addedCount += 1
-                    addedPaths.append(path)
-                } catch {
-                    failedNames.append(URL(fileURLWithPath: path).lastPathComponent)
+                switch Self.decision(for: path, result: result) {
+                case let .add(path):
+                    do {
+                        try projectMutationGateway.addProject(path: path)
+                        addedCount += 1
+                        addedPaths.append(path)
+                    } catch {
+                        failedNames.append(URL(fileURLWithPath: path).lastPathComponent)
+                    }
+                case let .alreadyTracked(path):
+                    alreadyTrackedPaths.append(path)
+                case let .failed(name):
+                    failedNames.append(name)
                 }
-            case let .alreadyTracked(path):
-                alreadyTrackedPaths.append(path)
-            case let .failed(name):
-                failedNames.append(name)
+            } catch {
+                failedNames.append(URL(fileURLWithPath: path).lastPathComponent)
             }
 
             if index > 0, index % 5 == 0 {

@@ -2,9 +2,10 @@ import AppKit
 import SwiftUI
 
 @main
+@MainActor
 struct CapacitorApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-    @State private var appState = AppState()
+    @State private var appShell = AppShellContainer.live()
     @StateObject private var updaterController = UpdaterController()
     @AppStorage("floatingMode") private var floatingMode = true
     @AppStorage("alwaysOnTop") private var alwaysOnTop = false
@@ -16,24 +17,24 @@ struct CapacitorApp: App {
             ZStack {
                 if setupComplete {
                     ContentView()
-                        .environment(appState)
+                        .environment(appShell.appState)
                         .environment(\.floatingMode, floatingMode)
                         .environment(\.alwaysOnTop, alwaysOnTop)
                         .readReduceMotion()
-                        .modifier(LayoutModeFrameModifier(layoutMode: appState.layoutMode))
-                        .background(FloatingWindowConfigurator(enabled: floatingMode, alwaysOnTop: alwaysOnTop, anchoringOwnsLevel: appState.anchoringController.state.isAnchored))
-                        .background(WindowFrameConfigurator(layoutMode: appState.layoutMode))
-                        .background(AnchoringConfigurator(controller: appState.anchoringController, enabled: appState.isWindowAnchoringEnabled))
+                        .modifier(LayoutModeFrameModifier(layoutMode: appShell.appState.layoutMode))
+                        .background(FloatingWindowConfigurator(enabled: floatingMode, alwaysOnTop: alwaysOnTop, anchoringOwnsLevel: appShell.appState.anchoringController.state.isAnchored))
+                        .background(WindowFrameConfigurator(layoutMode: appShell.appState.layoutMode))
+                        .background(AnchoringConfigurator(controller: appShell.appState.anchoringController, enabled: appShell.appState.isWindowAnchoringEnabled))
                         .onAppear {
                             if let mode = LayoutMode(rawValue: layoutMode) {
-                                appState.layoutMode = mode
+                                appShell.appState.layoutMode = mode
                             }
                             // Refresh diagnostic after WelcomeView completes (hooks may have just been installed)
-                            appState.checkHookDiagnostic()
+                            appShell.setupActionState.refreshHookDiagnostic()
                         }
                         .onChange(of: layoutMode) { _, newValue in
                             if let mode = LayoutMode(rawValue: newValue) {
-                                appState.layoutMode = mode
+                                appShell.appState.layoutMode = mode
                             }
                         }
                         .transition(.asymmetric(
@@ -41,7 +42,7 @@ struct CapacitorApp: App {
                             removal: .identity,
                         ))
                 } else {
-                    WelcomeView(onComplete: {
+                    WelcomeView(setupWorkflowState: appShell.setupWorkflowState, onComplete: {
                         withAnimation(.easeInOut(duration: 0.4)) {
                             setupComplete = true
                         }
@@ -89,7 +90,7 @@ struct CapacitorApp: App {
 
             CommandGroup(replacing: .newItem) {
                 Button("Connect Project...") {
-                    appState.connectProjectViaFileBrowser()
+                    appShell.appState.projectImportCoordinator.connectViaFileBrowser()
                 }
                 .keyboardShortcut("O", modifiers: .command)
             }
@@ -105,14 +106,14 @@ struct CapacitorApp: App {
             CommandGroup(replacing: .toolbar) {
                 Button("Vertical Layout") {
                     layoutMode = "vertical"
-                    appState.layoutMode = .vertical
+                    appShell.appState.layoutMode = .vertical
                 }
                 .keyboardShortcut("1", modifiers: .command)
                 .disabled(layoutMode == "vertical")
 
                 Button("Dock Layout") {
                     layoutMode = "dock"
-                    appState.layoutMode = .dock
+                    appShell.appState.layoutMode = .dock
                 }
                 .keyboardShortcut("2", modifiers: .command)
                 .disabled(layoutMode == "dock")
@@ -137,7 +138,7 @@ struct CapacitorApp: App {
             // MARK: - Debug menu (DEBUG only)
 
             #if DEBUG
-                AppDebugCommands(appState: appState, setupComplete: $setupComplete)
+                AppDebugCommands(appState: appShell.appState, setupComplete: $setupComplete)
             #endif
         }
 
@@ -146,7 +147,7 @@ struct CapacitorApp: App {
         }
 
         #if DEBUG
-            AppDebugWindows(appState: appState)
+            AppDebugWindows(appState: appShell.appState)
         #endif
     }
 }
@@ -219,26 +220,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// Only shows WelcomeView if something genuinely needs user attention
     /// (e.g. Claude CLI not installed, hook install failed, policy blocked).
     private func validateHookSetup() {
-        guard let engine = try? CoreRuntime() else { return }
+        let startupCoordinator = SetupStartupCoordinator(setupGateway: LiveSetupGateway())
+        guard let startupOutcome = startupCoordinator.resolveLaunch() else { return }
 
-        // 1. Evaluate startup readiness from one canonical setup status snapshot.
-        let setupStatus = engine.checkSetupStatus()
-        switch SetupReadinessCoordinator.startupDecision(from: setupStatus) {
-        case .ready:
-            break
-        case let .showWelcome(event):
+        for event in startupOutcome.startupEvents {
             DebugLog.write(startup: event)
+        }
+
+        if startupOutcome.shouldShowWelcome {
+            if startupOutcome.startupEvents.contains(where: {
+                if case .hooksAutoRepairFailed = $0 {
+                    return true
+                }
+                return false
+            }) {
+                DebugLog.write(startup: .hooksAutoRepairFailedShowingWelcome)
+            }
             UserDefaults.standard.set(false, forKey: "setupComplete")
             return
-        case let .attemptHookRepair(event):
-            DebugLog.write(startup: event)
-            if attemptAutoRepair(engine: engine) {
-                DebugLog.write(startup: .hooksAutoRepairSucceeded)
-            } else {
-                DebugLog.write(startup: .hooksAutoRepairFailedShowingWelcome)
-                UserDefaults.standard.set(false, forKey: "setupComplete")
-                return
-            }
         }
 
         // 2. Auto-install shell integration if not already configured
@@ -258,15 +257,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             DebugLog.write(startup: .autoSetupComplete)
             UserDefaults.standard.set(true, forKey: "setupComplete")
         }
-    }
-
-    private func attemptAutoRepair(engine: CoreRuntime) -> Bool {
-        if let hookInstallError = HookInstaller.ensureHooksInstalled(using: engine) {
-            DebugLog.write(startup: .hooksAutoRepairFailed(error: hookInstallError))
-            return false
-        }
-
-        return true
     }
 
     /// When always-on-top is active, subsidiary windows (Settings, About, Sparkle

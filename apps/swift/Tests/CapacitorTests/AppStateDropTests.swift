@@ -9,7 +9,7 @@ final class AppStateDropTests: XCTestCase {
         let urlB = URL(fileURLWithPath: "/tmp/drop-b")
 
         let exp = expectation(description: "drop URLs collected")
-        appState.collectDroppedFileURLsForTesting(
+        appState.projectImportCoordinator.collectDroppedFileURLsForTesting(
             loaders: [
                 { completion in
                     DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.01) {

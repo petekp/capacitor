@@ -8,7 +8,7 @@ final class ProjectFeatureCoordinator {
     private let projectCreationEnabled: @MainActor () -> Bool
     private let llmFeaturesEnabled: @MainActor () -> Bool
 
-    private let writeProjectView: @MainActor (ProjectView) -> Void
+    private let writeNavigationDestination: @MainActor (ShellNavigationDestination) -> Void
     private let writeCaptureModalProject: @MainActor (Project?) -> Void
     private let writeCaptureModalOrigin: @MainActor (CGRect?) -> Void
     private let writeShowCaptureModal: @MainActor (Bool) -> Void
@@ -32,7 +32,7 @@ final class ProjectFeatureCoordinator {
         ideaCaptureEnabled: @escaping @MainActor () -> Bool,
         projectCreationEnabled: @escaping @MainActor () -> Bool,
         llmFeaturesEnabled: @escaping @MainActor () -> Bool,
-        writeProjectView: @escaping @MainActor (ProjectView) -> Void,
+        writeNavigationDestination: @escaping @MainActor (ShellNavigationDestination) -> Void,
         writeCaptureModalProject: @escaping @MainActor (Project?) -> Void,
         writeCaptureModalOrigin: @escaping @MainActor (CGRect?) -> Void,
         writeShowCaptureModal: @escaping @MainActor (Bool) -> Void,
@@ -52,7 +52,7 @@ final class ProjectFeatureCoordinator {
         self.ideaCaptureEnabled = ideaCaptureEnabled
         self.projectCreationEnabled = projectCreationEnabled
         self.llmFeaturesEnabled = llmFeaturesEnabled
-        self.writeProjectView = writeProjectView
+        self.writeNavigationDestination = writeNavigationDestination
         self.writeCaptureModalProject = writeCaptureModalProject
         self.writeCaptureModalOrigin = writeCaptureModalOrigin
         self.writeShowCaptureModal = writeShowCaptureModal
@@ -71,16 +71,16 @@ final class ProjectFeatureCoordinator {
 
     func showProjectDetail(_ project: Project) {
         guard projectDetailsEnabled() else { return }
-        writeProjectView(.detail(project))
+        writeNavigationDestination(.projectDetail(projectID: project.path))
     }
 
     func showNewIdea() {
         guard projectCreationEnabled() else { return }
-        writeProjectView(.newIdea)
+        writeNavigationDestination(.newIdea)
     }
 
     func showProjectList() {
-        writeProjectView(.list)
+        writeNavigationDestination(.projectList)
     }
 
     func showIdeaCaptureModal(for project: Project, from origin: CGRect? = nil) {

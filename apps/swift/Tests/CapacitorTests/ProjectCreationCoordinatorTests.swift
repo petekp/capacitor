@@ -65,13 +65,25 @@ final class ProjectCreationCoordinatorTests: XCTestCase {
         )
     }
 
-    private func makeCoordinator(claudeProjectsDirectory: URL) -> ProjectCreationCoordinator {
-        var creations: [ProjectCreation] = []
-        return ProjectCreationCoordinator(
+    func testRegisterCreatedProjectUsesMutationGatewayWhenAvailable() {
+        var registeredPaths: [String] = []
+        let coordinator = makeCoordinator(
+            claudeProjectsDirectory: FileManager.default.temporaryDirectory,
+            registerCreatedProject: { registeredPaths.append($0) },
+        )
+
+        coordinator.registerCreatedProjectForTesting("/tmp/projects/capacitor")
+
+        XCTAssertEqual(registeredPaths, ["/tmp/projects/capacitor"])
+    }
+
+    private func makeCoordinator(
+        claudeProjectsDirectory: URL,
+        registerCreatedProject: @escaping (String) throws -> Void = { _ in },
+    ) -> ProjectCreationCoordinator {
+        ProjectCreationCoordinator(
             ideaCaptureEnabled: { true },
-            readCreations: { creations },
-            writeCreations: { creations = $0 },
-            engineProvider: { nil },
+            registerCreatedProject: registerCreatedProject,
             dashboardReloader: {},
             claudeProjectsDirectoryProvider: { claudeProjectsDirectory },
         )

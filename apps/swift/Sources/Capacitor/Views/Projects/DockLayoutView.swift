@@ -10,12 +10,16 @@ struct DockLayoutView: View {
     @State private var showPageIndicator = false
     @State private var pageIndicatorHideTask: _Concurrency.Task<Void, Never>?
 
+    private var projectListState: ProjectListState {
+        appState.projectListState
+    }
+
     private var cardWidth: CGFloat {
         glassConfig.dockCardWidthRounded
     }
 
     private var nonPausedProjects: [Project] {
-        appState.projects.filter { !appState.isManuallyDormant($0) }
+        projectListState.visibleProjects(from: appState.projectWorkflowState.legacyProjects)
     }
 
     var body: some View {
@@ -29,9 +33,8 @@ struct DockLayoutView: View {
         let horizontalPadding = glassConfig.dockHorizontalPaddingRounded
         let verticalPadding = glassConfig.dockVerticalPaddingRounded
         let pageIndicatorSpacing = glassConfig.dockPageIndicatorSpacingRounded
-        let grouped = ProjectOrdering.orderedGroupedProjects(
+        let grouped = projectListState.orderedGroupedProjects(
             nonPausedProjects,
-            order: appState.projectOrder,
             sessionStates: sessionStates,
         )
         let activePaths = Set(grouped.active.map(\.path))
@@ -57,8 +60,8 @@ struct DockLayoutView: View {
                         LazyHStack(spacing: cardSpacing) {
                             ForEach(allProjects, id: \.path) { project in
                                 let sessionState = ProjectOrdering.sessionState(for: project.path, sessionStates: sessionStates)
-                                let projectStatus = appState.getProjectStatus(for: project)
-                                let flashState = appState.isFlashing(project)
+                                let projectStatus = appState.projectStatusCacheState.statuses[project.path]
+                                let flashState = appState.sessionStateManager.isFlashing(project)
                                 let isStale = SessionStaleness.isReadyStale(
                                     state: sessionState?.state,
                                     stateChangedAt: sessionState?.stateChangedAt,
@@ -157,7 +160,7 @@ struct DockLayoutView: View {
         activePaths: Set<String>,
         grouped: (active: [Project], idle: [Project]),
     ) -> some View {
-        let isActive = appState.activeProjectPath == project.path
+        let isActive = appState.activeProjectTrackingState.activeProjectPath == project.path
         let canShowDetails = appState.isProjectDetailsEnabled
         let canCaptureIdeas = appState.isIdeaCaptureEnabled
         let group: ActivityGroup = activePaths.contains(project.path) ? .active : .idle
@@ -171,12 +174,12 @@ struct DockLayoutView: View {
             isStale: isStale,
             isActive: isActive,
             onTap: {
-                appState.launchTerminal(for: project)
+                appState.projectActivationCoordinator.activate(project)
             },
-            onInfoTap: canShowDetails ? { appState.showProjectDetail(project) } : nil,
-            onMoveToDormant: { appState.moveToDormant(project) },
-            onCaptureIdea: canCaptureIdeas ? { frame in appState.showIdeaCaptureModal(for: project, from: frame) } : nil,
-            onRemove: { appState.removeProject(project.path) },
+            onInfoTap: canShowDetails ? { appState.projectFeatureCoordinator.showProjectDetail(project) } : nil,
+            onMoveToDormant: { projectListState.moveToDormant(project) },
+            onCaptureIdea: canCaptureIdeas ? { frame in appState.projectFeatureCoordinator.showIdeaCaptureModal(for: project, from: frame) } : nil,
+            onRemove: { appState.projectActionState.removeProject(path: project.path) },
             onDragStarted: {
                 draggedProject = project
                 return NSItemProvider(object: project.path as NSString)

@@ -1,5 +1,6 @@
 import Foundation
 
+@Observable
 @MainActor
 final class ProjectCreationCoordinator {
     private struct CreationMonitorHandle {
@@ -8,11 +9,10 @@ final class ProjectCreationCoordinator {
     }
 
     private let ideaCaptureEnabled: @MainActor () -> Bool
-    private let readCreations: @MainActor () -> [ProjectCreation]
-    private let writeCreations: @MainActor ([ProjectCreation]) -> Void
-    private let engineProvider: @MainActor () -> CoreRuntime?
+    private let registerCreatedProjectHandler: @MainActor (String) throws -> Void
     private let dashboardReloader: @MainActor () -> Void
     private let claudeProjectsDirectoryProvider: () -> URL
+    private(set) var creations: [ProjectCreation] = []
 
     @ObservationIgnored
     private var creationSessionMonitorTasks: [String: CreationMonitorHandle] = [:]
@@ -21,9 +21,7 @@ final class ProjectCreationCoordinator {
 
     init(
         ideaCaptureEnabled: @escaping @MainActor () -> Bool,
-        readCreations: @escaping @MainActor () -> [ProjectCreation],
-        writeCreations: @escaping @MainActor ([ProjectCreation]) -> Void,
-        engineProvider: @escaping @MainActor () -> CoreRuntime?,
+        registerCreatedProject: @escaping @MainActor (String) throws -> Void,
         dashboardReloader: @escaping @MainActor () -> Void,
         claudeProjectsDirectoryProvider: @escaping () -> URL = {
             FileManager.default.homeDirectoryForCurrentUser
@@ -31,9 +29,7 @@ final class ProjectCreationCoordinator {
         },
     ) {
         self.ideaCaptureEnabled = ideaCaptureEnabled
-        self.readCreations = readCreations
-        self.writeCreations = writeCreations
-        self.engineProvider = engineProvider
+        registerCreatedProjectHandler = registerCreatedProject
         self.dashboardReloader = dashboardReloader
         self.claudeProjectsDirectoryProvider = claudeProjectsDirectoryProvider
     }
@@ -46,10 +42,10 @@ final class ProjectCreationCoordinator {
             let data = try Data(contentsOf: creationsPath)
             let decoder = JSONDecoder()
             decoder.dateDecodingStrategy = .iso8601
-            let creations = try decoder.decode([ProjectCreation].self, from: data)
-            writeCreations(cleanupCompletedCreations(creations))
+            let loadedCreations = try decoder.decode([ProjectCreation].self, from: data)
+            creations = cleanupCompletedCreations(loadedCreations)
         } catch {
-            writeCreations([])
+            creations = []
         }
     }
 
@@ -116,7 +112,7 @@ final class ProjectCreationCoordinator {
     }
 
     func resumeCreation(_ id: String) {
-        guard let creation = readCreations().first(where: { $0.id == id }),
+        guard let creation = creations.first(where: { $0.id == id }),
               let sessionId = creation.sessionId,
               creation.status == .failed || creation.status == .cancelled
         else {
@@ -138,7 +134,7 @@ final class ProjectCreationCoordinator {
     }
 
     func canResumeCreation(_ id: String) -> Bool {
-        guard let creation = readCreations().first(where: { $0.id == id }) else {
+        guard let creation = creations.first(where: { $0.id == id }) else {
             return false
         }
         return creation.sessionId != nil &&
@@ -169,6 +165,10 @@ final class ProjectCreationCoordinator {
     }
 
     #if DEBUG
+        func registerCreatedProjectForTesting(_ projectPath: String) {
+            registerCreatedProject(projectPath)
+        }
+
         func applyDiscoveredSessionToCreationForTesting(_ creationId: String, sessionId: String) -> Bool {
             applyDiscoveredSessionToCreation(creationId, sessionId: sessionId)
         }
@@ -204,6 +204,10 @@ final class ProjectCreationCoordinator {
         func selectDiscoveredSessionIdForTesting(projectPath: String, existingSessions: Set<String>) -> String? {
             selectDiscoveredSessionId(projectPath: projectPath, existingSessions: existingSessions)
         }
+
+        func setCreationsForTesting(_ creations: [ProjectCreation]) {
+            self.creations = creations
+        }
     #endif
 
     private var creationsPath: URL {
@@ -212,9 +216,7 @@ final class ProjectCreationCoordinator {
     }
 
     private func mutateCreations(_ mutate: (inout [ProjectCreation]) -> Void) {
-        var creations = readCreations()
         mutate(&creations)
-        writeCreations(creations)
         saveCreationsIfNeeded(creations)
     }
 
@@ -244,7 +246,7 @@ final class ProjectCreationCoordinator {
     }
 
     private func applyDiscoveredSessionToCreation(_ creationId: String, sessionId: String) -> Bool {
-        guard let creation = readCreations().first(where: { $0.id == creationId }) else {
+        guard let creation = creations.first(where: { $0.id == creationId }) else {
             return false
         }
 
@@ -339,11 +341,7 @@ final class ProjectCreationCoordinator {
             )
         }
 
-        do {
-            try engineProvider()?.addProject(path: projectPath)
-        } catch {
-            // Continue even if adding to HUD fails
-        }
+        registerCreatedProject(projectPath)
 
         await MainActor.run {
             self.updateCreationProgress(creationId, phase: "building", message: "Claude is building your project in the terminal...", percentComplete: 50)
@@ -406,6 +404,14 @@ final class ProjectCreationCoordinator {
         """
 
         return prompt
+    }
+
+    private func registerCreatedProject(_ projectPath: String) {
+        do {
+            try registerCreatedProjectHandler(projectPath)
+        } catch {
+            // Continue even if adding to HUD fails
+        }
     }
 
     private func runClaudeForProject(projectPath: String, prompt: String, creationId: String) async throws -> String? {
@@ -551,7 +557,7 @@ final class ProjectCreationCoordinator {
                     return
                 }
 
-                guard let creation = readCreations().first(where: { $0.id == creationId }),
+                guard let creation = creations.first(where: { $0.id == creationId }),
                       creation.status == .inProgress
                 else {
                     return

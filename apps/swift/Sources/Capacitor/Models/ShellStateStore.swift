@@ -3,7 +3,7 @@ import os.log
 
 private let logger = Logger(subsystem: "com.capacitor.app", category: "ShellStateStore")
 
-struct ShellEntry: Codable, Equatable {
+struct ShellEntry: Codable, Equatable, Sendable {
     let cwd: String
     let tty: String
     let parentApp: String?
@@ -20,7 +20,7 @@ struct ShellEntry: Codable, Equatable {
     }
 }
 
-struct ShellCwdState: Codable {
+struct ShellCwdState: Codable, Sendable {
     let version: Int
     let shells: [String: ShellEntry]
 }

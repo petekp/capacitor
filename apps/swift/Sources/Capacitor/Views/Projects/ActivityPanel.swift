@@ -6,7 +6,7 @@ struct ActivityPanel: View {
 
     private var visibleCreations: [ProjectCreation] {
         let recent = Date().addingTimeInterval(-3600)
-        return appState.activeCreations.filter { creation in
+        return appState.projectCreationCoordinator.creations.filter { creation in
             switch creation.status {
             case .pending, .inProgress:
                 return true
@@ -133,7 +133,7 @@ struct CreationCard: View {
         HStack(spacing: 6) {
             switch creation.status {
             case .inProgress, .pending:
-                Button(action: { appState.cancelCreation(creation.id) }) {
+                Button(action: { appState.projectCreationCoordinator.cancelCreation(creation.id) }) {
                     Image(systemName: "xmark")
                         .font(AppTypography.labelMedium)
                         .foregroundColor(.white.opacity(isHovered ? 0.7 : 0.4))
@@ -149,8 +149,8 @@ struct CreationCard: View {
                 }
 
             case .failed, .cancelled:
-                if appState.canResumeCreation(creation.id) {
-                    Button(action: { appState.resumeCreation(creation.id) }) {
+                if appState.projectCreationCoordinator.canResumeCreation(creation.id) {
+                    Button(action: { appState.projectCreationCoordinator.resumeCreation(creation.id) }) {
                         HStack(spacing: 4) {
                             Image(systemName: "arrow.clockwise")
                                 .font(AppTypography.labelMedium)
@@ -186,8 +186,8 @@ struct CreationCard: View {
     }
 
     private func openProject() {
-        if let project = appState.projects.first(where: { $0.path == creation.path }) {
-            appState.launchTerminal(for: project)
+        if let project = appState.projectWorkflowState.legacyProjects.first(where: { $0.path == creation.path }) {
+            appState.projectActivationCoordinator.activate(project)
         } else {
             let projectURL = URL(fileURLWithPath: creation.path)
             let projectName = projectURL.lastPathComponent.isEmpty ? creation.path : projectURL.lastPathComponent
@@ -203,7 +203,7 @@ struct CreationCard: View {
                 stats: nil,
                 isMissing: false,
             )
-            appState.launchTerminal(for: adHocProject)
+            appState.projectActivationCoordinator.activate(adHocProject)
         }
     }
 

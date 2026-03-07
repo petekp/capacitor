@@ -37,13 +37,16 @@ struct ProjectsView: View {
     @State private var draggedProject: Project?
     @State private var rowOrderTracker = RowOrderTracker()
 
+    private var projectListState: ProjectListState {
+        appState.projectListState
+    }
+
     private var nonPausedProjects: [Project] {
-        appState.projects.filter { !appState.isManuallyDormant($0) }
+        projectListState.visibleProjects(from: appState.projectWorkflowState.legacyProjects)
     }
 
     private var pausedProjects: [Project] {
-        let paused = appState.projects.filter { appState.isManuallyDormant($0) }
-        return ProjectOrdering.orderedProjects(paused, customOrder: appState.projectOrder)
+        projectListState.pausedProjects(from: appState.projectWorkflowState.legacyProjects)
     }
 
     var body: some View {
@@ -85,21 +88,17 @@ struct ProjectsView: View {
         // Empty state: uses ScrollView with gradient mask for visual
         // consistency with the project list. Content flows naturally
         // (no .frame(maxHeight: .infinity) to avoid layout oscillation).
-        if !appState.isLoading, appState.projects.isEmpty {
+        if !appState.dashboardState.isLoading, appState.projectWorkflowState.legacyProjects.isEmpty {
             ScrollView {
                 VStack(spacing: 0) {
                     ProjectListDiagnosticsSection()
                         .padding(.horizontal, listHorizontalPadding)
                         .padding(.bottom, 6)
-                    if let diagnostic = appState.hookDiagnostic, diagnostic.shouldShowSetupCard {
+                    if let diagnostic = appState.setupActionState.hookDiagnostic, diagnostic.shouldShowSetupCard {
                         SetupStatusCard(
                             diagnostic: diagnostic,
-                            onFix: { appState.fixHooks() },
-                            onRefresh: {
-                                appState.checkHookDiagnostic()
-                                appState.refreshSessionStates()
-                            },
-                            onTest: { appState.testHooks() },
+                            onFix: { appState.setupActionState.fixHooks() },
+                            onTest: { appState.setupActionState.testHooks() },
                         )
                         .padding(.horizontal, listHorizontalPadding)
                         .padding(.bottom, 4)
@@ -124,20 +123,16 @@ struct ProjectsView: View {
                         ProjectListDiagnosticsSection()
                             .padding(.bottom, 6)
                         // Setup status card - show regardless of project state
-                        if let diagnostic = appState.hookDiagnostic, diagnostic.shouldShowSetupCard {
+                        if let diagnostic = appState.setupActionState.hookDiagnostic, diagnostic.shouldShowSetupCard {
                             SetupStatusCard(
                                 diagnostic: diagnostic,
-                                onFix: { appState.fixHooks() },
-                                onRefresh: {
-                                    appState.checkHookDiagnostic()
-                                    appState.refreshSessionStates()
-                                },
-                                onTest: { appState.testHooks() },
+                                onFix: { appState.setupActionState.fixHooks() },
+                                onTest: { appState.setupActionState.testHooks() },
                             )
                             .padding(.bottom, 4)
                         }
 
-                        if appState.isLoading {
+                        if appState.dashboardState.isLoading {
                             VStack(spacing: 8) {
                                 SkeletonCard()
                                 SkeletonCard()
@@ -145,9 +140,8 @@ struct ProjectsView: View {
                             }
                             .padding(.top, 8)
                         } else {
-                            let grouped = ProjectOrdering.orderedGroupedProjects(
+                            let grouped = projectListState.orderedGroupedProjects(
                                 nonPausedProjects,
-                                order: appState.projectOrder,
                                 sessionStates: sessionStates,
                             )
                             let activePaths = Set(grouped.active.map(\.path))
@@ -181,8 +175,8 @@ struct ProjectsView: View {
                                     }
 
                                     let sessionState = ProjectOrdering.sessionState(for: project.path, sessionStates: sessionStates)
-                                    let projectStatus = appState.getProjectStatus(for: project)
-                                    let flashState = appState.isFlashing(project)
+                                    let projectStatus = appState.projectStatusCacheState.statuses[project.path]
+                                    let flashState = appState.sessionStateManager.isFlashing(project)
                                     let isStale = SessionStaleness.isReadyStale(
                                         state: sessionState?.state,
                                         stateChangedAt: sessionState?.stateChangedAt,
@@ -286,20 +280,20 @@ struct ProjectsView: View {
             projectStatus: projectStatus,
             flashState: flashState,
             isStale: isStale,
-            isActive: appState.activeProjectPath == project.path,
+            isActive: appState.activeProjectTrackingState.activeProjectPath == project.path,
             onTap: {
-                appState.launchTerminal(for: project)
+                appState.projectActivationCoordinator.activate(project)
             },
-            onInfoTap: canShowDetails ? { appState.showProjectDetail(project) } : nil,
+            onInfoTap: canShowDetails ? { appState.projectFeatureCoordinator.showProjectDetail(project) } : nil,
             onMoveToDormant: {
                 withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
-                    appState.moveToDormant(project)
+                    projectListState.moveToDormant(project)
                 }
             },
-            onCaptureIdea: canCaptureIdeas ? { frame in appState.showIdeaCaptureModal(for: project, from: frame) } : nil,
+            onCaptureIdea: canCaptureIdeas ? { frame in appState.projectFeatureCoordinator.showIdeaCaptureModal(for: project, from: frame) } : nil,
             onRemove: {
                 withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
-                    appState.removeProject(project.path)
+                    appState.projectActionState.removeProject(path: project.path)
                 }
             },
             onDragStarted: {
@@ -325,17 +319,17 @@ struct ProjectsView: View {
         CompactProjectCardView(
             project: project,
             onTap: {
-                appState.launchTerminal(for: project)
+                appState.projectActivationCoordinator.activate(project)
             },
-            onInfoTap: appState.isProjectDetailsEnabled ? { appState.showProjectDetail(project) } : nil,
+            onInfoTap: appState.isProjectDetailsEnabled ? { appState.projectFeatureCoordinator.showProjectDetail(project) } : nil,
             onMoveToRecent: {
                 withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
-                    appState.moveToRecent(project)
+                    projectListState.moveToRecent(project)
                 }
             },
             onRemove: {
                 withAnimation(.spring(response: 0.2, dampingFraction: 0.8)) {
-                    appState.removeProject(project.path)
+                    appState.projectActionState.removeProject(path: project.path)
                 }
             },
             showSeparator: index < pausedProjects.count - 1,
@@ -349,13 +343,12 @@ struct ProjectsView: View {
 
     #if DEBUG
         private func debugRenderedProjects(sessionStates: [String: ProjectSessionState]) -> [Project] {
-            guard !appState.isLoading, !appState.projects.isEmpty else {
+            guard !appState.dashboardState.isLoading, !appState.projectWorkflowState.legacyProjects.isEmpty else {
                 return []
             }
 
-            let grouped = ProjectOrdering.orderedGroupedProjects(
+            let grouped = projectListState.orderedGroupedProjects(
                 nonPausedProjects,
-                order: appState.projectOrder,
                 sessionStates: sessionStates,
             )
             return grouped.active + grouped.idle
@@ -767,7 +760,7 @@ struct EmptyProjectsView: View {
             .opacity(appeared || reduceMotion ? 1 : 0)
             .offset(y: appeared || reduceMotion ? 0 : 8)
 
-            if !appState.suggestedProjects.isEmpty {
+            if !appState.projectWorkflowState.legacySuggestedProjects.isEmpty {
                 suggestedProjectsList
                     .opacity(appeared || reduceMotion ? 1 : 0)
                     .offset(y: appeared || reduceMotion ? 0 : 10)
@@ -785,8 +778,8 @@ struct EmptyProjectsView: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Drop zone for project folders")
         .onAppear {
-            if appState.suggestedProjects.isEmpty {
-                appState.refreshSuggestedProjects()
+            if appState.projectWorkflowState.legacySuggestedProjects.isEmpty {
+                appState.projectWorkflowState.refreshSuggestedProjects()
             }
             if !reduceMotion {
                 withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
@@ -812,7 +805,7 @@ struct EmptyProjectsView: View {
                     }
                 }
                 .onTapGesture {
-                    appState.connectProjectViaFileBrowser()
+                    appState.projectImportCoordinator.connectViaFileBrowser()
                 }
         }
         .font(AppTypography.onboardingSubtitle)
@@ -820,7 +813,7 @@ struct EmptyProjectsView: View {
 
     private var suggestedProjectsList: some View {
         VStack(spacing: 2) {
-            ForEach(appState.suggestedProjects, id: \.path) { suggestion in
+            ForEach(appState.projectWorkflowState.legacySuggestedProjects, id: \.path) { suggestion in
                 suggestionRow(suggestion)
             }
         }
@@ -828,15 +821,12 @@ struct EmptyProjectsView: View {
     }
 
     private func suggestionRow(_ suggestion: SuggestedProject) -> some View {
-        let isSelected = appState.selectedSuggestedPaths.contains(suggestion.path)
+        let workflowState = appState.projectWorkflowState
+        let isSelected = workflowState.isSuggestedProjectSelected(path: suggestion.path)
         let isHovered = hoveredPath == suggestion.path
         return Button {
             withAnimation(.easeOut(duration: 0.15)) {
-                if isSelected {
-                    appState.selectedSuggestedPaths.remove(suggestion.path)
-                } else {
-                    appState.selectedSuggestedPaths.insert(suggestion.path)
-                }
+                workflowState.toggleSuggestedProjectSelection(path: suggestion.path)
             }
         } label: {
             HStack(spacing: 10) {

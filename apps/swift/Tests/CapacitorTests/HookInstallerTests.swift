@@ -5,7 +5,6 @@ final class HookInstallerTests: XCTestCase {
     func testEnsureHooksInstalledStopsWhenBinaryInstallFails() {
         let runtime = StubHookRuntime(
             installHooksResult: .success(InstallResult(success: true, message: "ok", scriptPath: nil)),
-            hookStatus: .installed(version: "1.0.0"),
         )
 
         let message = HookInstaller.ensureHooksInstalled(
@@ -20,7 +19,6 @@ final class HookInstallerTests: XCTestCase {
     func testEnsureHooksInstalledReturnsInstallHooksFailureMessage() {
         let runtime = StubHookRuntime(
             installHooksResult: .success(InstallResult(success: false, message: "config write failed", scriptPath: nil)),
-            hookStatus: .notInstalled,
         )
 
         let message = HookInstaller.ensureHooksInstalled(
@@ -35,7 +33,6 @@ final class HookInstallerTests: XCTestCase {
     func testEnsureHooksInstalledReturnsThrownInstallError() {
         let runtime = StubHookRuntime(
             installHooksResult: .failure(StubError("boom")),
-            hookStatus: .notInstalled,
         )
 
         let message = HookInstaller.ensureHooksInstalled(
@@ -47,25 +44,9 @@ final class HookInstallerTests: XCTestCase {
         XCTAssertEqual(runtime.installHooksCallCount, 1)
     }
 
-    func testEnsureHooksInstalledRequiresInstalledStatusAfterSuccess() {
-        let runtime = StubHookRuntime(
-            installHooksResult: .success(InstallResult(success: true, message: "configured", scriptPath: nil)),
-            hookStatus: .policyBlocked(reason: "managed hooks disabled"),
-        )
-
-        let message = HookInstaller.ensureHooksInstalled(
-            using: runtime,
-            binaryInstallStep: { _ in nil },
-        )
-
-        XCTAssertNotNil(message)
-        XCTAssertTrue(message?.contains("policyBlocked") == true)
-    }
-
     func testEnsureHooksInstalledReturnsNilOnSuccess() {
         let runtime = StubHookRuntime(
             installHooksResult: .success(InstallResult(success: true, message: "configured", scriptPath: nil)),
-            hookStatus: .installed(version: "1.0.0"),
         )
 
         let message = HookInstaller.ensureHooksInstalled(
@@ -92,15 +73,12 @@ private struct StubError: LocalizedError {
 
 private final class StubHookRuntime: HookRuntimeInstalling {
     let installHooksResult: Result<InstallResult, Error>
-    let hookStatus: HookStatus
     var installHooksCallCount = 0
 
     init(
         installHooksResult: Result<InstallResult, Error>,
-        hookStatus: HookStatus,
     ) {
         self.installHooksResult = installHooksResult
-        self.hookStatus = hookStatus
     }
 
     func installHookBinaryFromPath(sourcePath _: String) throws -> InstallResult {
@@ -110,9 +88,5 @@ private final class StubHookRuntime: HookRuntimeInstalling {
     func installHooks() throws -> InstallResult {
         installHooksCallCount += 1
         return try installHooksResult.get()
-    }
-
-    func getHookStatus() -> HookStatus {
-        hookStatus
     }
 }

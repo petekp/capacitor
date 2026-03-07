@@ -36,18 +36,16 @@ struct NavigationContainer: View {
     }
 
     private var isListActive: Bool {
-        if case .list = appState.projectView { return true }
-        return false
+        appState.navigationState.destination == .projectList
     }
 
     private var isDetailActive: Bool {
-        if case .detail = appState.projectView { return true }
+        if case .projectDetail = appState.navigationState.destination { return true }
         return false
     }
 
     private var isNewIdeaActive: Bool {
-        if case .newIdea = appState.projectView { return true }
-        return false
+        appState.navigationState.destination == .newIdea
     }
 
     var body: some View {
@@ -85,20 +83,20 @@ struct NavigationContainer: View {
             .focusEffectDisabled()
             .onKeyPress(.escape) {
                 if !isListActive {
-                    appState.showProjectList()
+                    appState.projectFeatureCoordinator.showProjectList()
                     return .handled
                 }
                 return .ignored
             }
-            .onChange(of: appState.projectView) { oldValue, newValue in
+            .onChange(of: appState.navigationState.destination) { oldValue, newValue in
                 handleNavigation(from: oldValue, to: newValue)
             }
         }
     }
 
-    private func handleNavigation(from _: ProjectView, to newValue: ProjectView) {
+    private func handleNavigation(from _: ShellNavigationDestination, to newValue: ShellNavigationDestination) {
         switch newValue {
-        case .list:
+        case .projectList:
             withAnimation(navigationAnimation) {
                 if reduceMotion {
                     listOpacity = 1
@@ -111,16 +109,20 @@ struct NavigationContainer: View {
                 }
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + animationDuration + 0.1) {
-                if case .list = appState.projectView {
+                if appState.navigationState.destination == .projectList {
                     showDetail = false
                     showNewIdea = false
                     currentDetail = nil
                 }
             }
 
-        case let .detail(project):
+        case let .projectDetail(projectID):
             guard appState.isProjectDetailsEnabled else {
-                appState.showProjectList()
+                appState.projectFeatureCoordinator.showProjectList()
+                return
+            }
+            guard let project = appState.projectWorkflowState.legacyProjects.first(where: { $0.path == projectID }) else {
+                appState.projectFeatureCoordinator.showProjectList()
                 return
             }
             currentDetail = project
@@ -147,14 +149,14 @@ struct NavigationContainer: View {
 
             // Clean up other views after animation
             DispatchQueue.main.asyncAfter(deadline: .now() + animationDuration + 0.1) {
-                if case .detail = appState.projectView {
+                if case .projectDetail = appState.navigationState.destination {
                     showNewIdea = false
                 }
             }
 
         case .newIdea:
             guard appState.isProjectCreationEnabled else {
-                appState.showProjectList()
+                appState.projectFeatureCoordinator.showProjectList()
                 return
             }
             showNewIdea = true
@@ -180,11 +182,14 @@ struct NavigationContainer: View {
 
             // Clean up other views after animation
             DispatchQueue.main.asyncAfter(deadline: .now() + animationDuration + 0.1) {
-                if case .newIdea = appState.projectView {
+                if appState.navigationState.destination == .newIdea {
                     showDetail = false
                     currentDetail = nil
                 }
             }
+
+        case .setup:
+            break
         }
     }
 }

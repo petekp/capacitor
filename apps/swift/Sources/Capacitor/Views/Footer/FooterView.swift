@@ -58,10 +58,10 @@ struct FooterView: View {
     }
 
     private var mode: FooterMode {
-        if !appState.selectedSuggestedPaths.isEmpty {
+        if appState.projectWorkflowState.hasSelectedSuggestedProjects {
             return .connectCTA
         }
-        if !appState.isLoading, appState.projects.isEmpty {
+        if !appState.dashboardState.isLoading, appState.projectWorkflowState.legacyProjects.isEmpty {
             return .browse
         }
         return .normal
@@ -139,7 +139,7 @@ struct FooterView: View {
             PinButton(isPinned: $isPinned)
             Spacer()
             BrowseProjectsButton {
-                appState.connectProjectViaFileBrowser()
+                appState.projectImportCoordinator.connectViaFileBrowser()
             }
             Spacer()
             AddProjectPillButton()
@@ -149,9 +149,9 @@ struct FooterView: View {
     private var ctaContent: some View {
         HStack {
             Spacer()
-            ConnectProjectsCTAButton(count: appState.selectedSuggestedPaths.count) {
+            ConnectProjectsCTAButton(count: appState.projectWorkflowState.selectedSuggestedProjectCount) {
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                    appState.connectSelectedSuggestions()
+                    appState.projectActionState.connectSelectedSuggestions()
                 }
             }
             Spacer()
@@ -234,7 +234,7 @@ private struct AddProjectPillButton: View {
 
     var body: some View {
         Button {
-            appState.connectProjectViaFileBrowser()
+            appState.projectImportCoordinator.connectViaFileBrowser()
         } label: {
             Image(systemName: "folder.badge.plus")
                 .font(.system(size: 14, weight: .medium))

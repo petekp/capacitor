@@ -19,7 +19,7 @@ struct NewIdeaView: View {
         VStack(spacing: 0) {
             HStack {
                 BackButton(title: "Projects") {
-                    appState.showProjectList()
+                    appState.projectFeatureCoordinator.showProjectList()
                 }
 
                 Spacer()
@@ -48,7 +48,7 @@ struct NewIdeaView: View {
             }
         }
         .onExitCommand {
-            appState.showProjectList()
+            appState.projectFeatureCoordinator.showProjectList()
         }
     }
 
@@ -246,12 +246,12 @@ struct NewIdeaView: View {
             framework: framework.isEmpty ? nil : framework,
         )
 
-        appState.createProjectFromIdea(request) { result in
+        appState.projectFeatureCoordinator.createProjectFromIdea(request) { result in
             isCreating = false
 
             if result.success {
-                appState.loadDashboard()
-                appState.showProjectList()
+                appState.dashboardState.load()
+                appState.projectFeatureCoordinator.showProjectList()
             } else {
                 error = result.error ?? "Failed to create project"
             }

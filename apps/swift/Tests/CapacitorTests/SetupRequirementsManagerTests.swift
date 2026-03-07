@@ -139,4 +139,117 @@ final class SetupRequirementsManagerTests: XCTestCase {
             XCTFail("Expected hooks step to stay in .error state after runChecks, got \(hooksAfterRun.status)")
         }
     }
+
+    func testRunChecksReadsCanonicalStatusThroughSetupGateway() async {
+        let manager = SetupRequirementsManager(
+            setupGateway: StubSetupGateway(
+                setupStatus: SetupTestFixtures.setupStatus(
+                    dependencies: [SetupTestFixtures.claudeDependency(found: true)],
+                    hooks: .installed(version: "1.0.0"),
+                ),
+            ),
+            shellStateStore: nil,
+        )
+
+        await manager.runChecks()
+
+        XCTAssertEqual(
+            manager.steps.first(where: { $0.id == .claude })?.status,
+            .completed(detail: "Installed"),
+        )
+        XCTAssertEqual(
+            manager.steps.first(where: { $0.id == .hooks })?.status,
+            .completed(detail: "Connected"),
+        )
+    }
+
+    func testExecuteHooksStepInstallsThroughSetupGateway() async {
+        let manager = SetupRequirementsManager(
+            setupGateway: StubSetupGateway(
+                setupStatus: SetupTestFixtures.setupStatus(
+                    dependencies: [SetupTestFixtures.claudeDependency(found: true)],
+                    hooks: .notInstalled,
+                ),
+                hookStatus: .installed(version: "1.0.0"),
+                hookInstallError: nil,
+            ),
+            shellStateStore: nil,
+        )
+
+        await manager.executeStep(.hooks)
+
+        XCTAssertEqual(
+            manager.steps.first(where: { $0.id == .hooks })?.status,
+            .completed(detail: "Connected"),
+        )
+    }
+}
+
+private struct StubSetupGateway: SetupGateway {
+    let setupStatus: SetupStatus
+    let hookStatus: HookStatus
+    let hookInstallError: String?
+
+    init(
+        setupStatus: SetupStatus,
+        hookStatus: HookStatus = .notInstalled,
+        hookInstallError: String? = nil,
+    ) {
+        self.setupStatus = setupStatus
+        self.hookStatus = hookStatus
+        self.hookInstallError = hookInstallError
+    }
+
+    func checkReadiness() async throws -> ShellSetupReadiness {
+        ShellSetupReadiness(
+            stage: setupStatus.allReady ? .ready : .needsAttention,
+            blockingReason: setupStatus.blockingReason,
+            missingDependencies: setupStatus.dependencies.filter { $0.required && !$0.found }.map(\.name),
+            hookState: "stub",
+        )
+    }
+
+    func fetchHookDiagnostic() async throws -> HookDiagnosticReport {
+        SetupTestFixtures.hookDiagnosticReport(primaryIssue: nil, isHealthy: true)
+    }
+
+    func runHookTest() throws -> HookTestResult {
+        HookTestResult(
+            success: true,
+            heartbeatOk: true,
+            heartbeatAgeSecs: 1,
+            stateFileOk: true,
+            message: "ok",
+        )
+    }
+
+    func fetchStartupDecision() throws -> StartupSetupDecision {
+        .ready
+    }
+
+    func attemptHookAutoRepair() -> String? {
+        hookInstallError
+    }
+
+    func fetchSetupStatus() throws -> SetupStatus {
+        setupStatus
+    }
+
+    func checkDependency(name: String) throws -> DependencyStatus {
+        setupStatus.dependencies.first(where: { $0.name == name }) ?? DependencyStatus(
+            name: name,
+            required: true,
+            found: false,
+            path: nil,
+            installHint: nil,
+        )
+    }
+
+    func fetchHookStatus() throws -> HookStatus {
+        hookStatus
+    }
+
+    func installHooks() -> String? {
+        hookInstallError
+    }
 }

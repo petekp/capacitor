@@ -19,7 +19,7 @@ struct ProjectDetailView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack {
                         BackButton(title: "Projects") {
-                            appState.showProjectList()
+                            appState.projectFeatureCoordinator.showProjectList()
                         }
                         .accessibilityIdentifier(AccessibilityIdentifiers.backProjectsIdentifier)
 
@@ -34,9 +34,9 @@ struct ProjectDetailView: View {
 
                     if appState.isLlmFeaturesEnabled {
                         DescriptionSection(
-                            description: appState.getDescription(for: project),
-                            isGenerating: appState.isGeneratingDescription(for: project),
-                            onGenerate: { appState.generateDescription(for: project) },
+                            description: appState.projectFeatureCoordinator.getDescription(for: project),
+                            isGenerating: appState.projectFeatureCoordinator.isGeneratingDescription(for: project),
+                            onGenerate: { appState.projectFeatureCoordinator.generateDescription(for: project) },
                         )
                         .opacity(appeared ? 1 : 0)
                         .offset(y: appeared ? 0 : 12)
@@ -56,18 +56,18 @@ struct ProjectDetailView: View {
                             DetailSectionLabel(title: "IDEA QUEUE")
 
                             IdeaQueueView(
-                                ideas: appState.getIdeas(for: project),
-                                isGeneratingTitle: { appState.isGeneratingTitle(for: $0) },
+                                ideas: appState.projectFeatureCoordinator.getIdeas(for: project),
+                                isGeneratingTitle: { appState.projectFeatureCoordinator.isGeneratingTitle(for: $0) },
                                 onTapIdea: { idea, frame in
                                     selectedIdea = idea
                                     selectedIdeaFrame = frame
                                 },
                                 onReorder: { reorderedIdeas in
-                                    appState.reorderIdeas(reorderedIdeas, for: project)
+                                    appState.projectFeatureCoordinator.reorderIdeas(reorderedIdeas, for: project)
                                 },
                                 onRemove: { idea in
                                     withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                        appState.dismissIdea(idea, for: project)
+                                        appState.projectFeatureCoordinator.dismissIdea(idea, for: project)
                                     }
                                 },
                             )
@@ -77,8 +77,8 @@ struct ProjectDetailView: View {
                     }
 
                     Button(action: {
-                        appState.removeProject(project.path)
-                        appState.showProjectList()
+                        appState.projectActionState.removeProject(path: project.path)
+                        appState.projectFeatureCoordinator.showProjectList()
                     }) {
                         HStack(spacing: 6) {
                             Image(systemName: "minus.circle")
@@ -113,7 +113,7 @@ struct ProjectDetailView: View {
                     },
                     onRemove: { idea in
                         withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                            appState.dismissIdea(idea, for: project)
+                            appState.projectFeatureCoordinator.dismissIdea(idea, for: project)
                         }
                         selectedIdea = nil
                         selectedIdeaFrame = nil
@@ -127,7 +127,7 @@ struct ProjectDetailView: View {
             }
         }
         .onExitCommand {
-            appState.showProjectList()
+            appState.projectFeatureCoordinator.showProjectList()
         }
         .accessibilityIdentifier(AccessibilityIdentifiers.projectDetailsIdentifier(for: project))
     }

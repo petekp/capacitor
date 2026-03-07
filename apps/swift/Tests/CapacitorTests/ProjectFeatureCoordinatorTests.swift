@@ -6,7 +6,7 @@ import XCTest
 final class ProjectFeatureCoordinatorTests: XCTestCase {
     func testNavigationAndIdeaCaptureGatesAreOwnedByCoordinator() {
         let project = makeProject()
-        var projectView: ProjectView = .list
+        var navigationDestination: ShellNavigationDestination = .projectList
         var modalProject: Project?
         var modalOrigin: CGRect?
         var showCaptureModal = false
@@ -16,8 +16,7 @@ final class ProjectFeatureCoordinatorTests: XCTestCase {
             ideaCaptureEnabled: false,
             projectCreationEnabled: false,
             llmFeaturesEnabled: false,
-            projectView: { projectView },
-            setProjectView: { projectView = $0 },
+            setNavigationDestination: { navigationDestination = $0 },
             modalProject: { modalProject = $0 },
             modalOrigin: { modalOrigin = $0 },
             showCaptureModal: { showCaptureModal = $0 },
@@ -27,7 +26,7 @@ final class ProjectFeatureCoordinatorTests: XCTestCase {
         disabled.showNewIdea()
         disabled.showIdeaCaptureModal(for: project, from: CGRect(x: 1, y: 2, width: 3, height: 4))
 
-        XCTAssertEqual(projectView, .list)
+        XCTAssertEqual(navigationDestination, .projectList)
         XCTAssertNil(modalProject)
         XCTAssertNil(modalOrigin)
         XCTAssertFalse(showCaptureModal)
@@ -37,18 +36,17 @@ final class ProjectFeatureCoordinatorTests: XCTestCase {
             ideaCaptureEnabled: true,
             projectCreationEnabled: true,
             llmFeaturesEnabled: false,
-            projectView: { projectView },
-            setProjectView: { projectView = $0 },
+            setNavigationDestination: { navigationDestination = $0 },
             modalProject: { modalProject = $0 },
             modalOrigin: { modalOrigin = $0 },
             showCaptureModal: { showCaptureModal = $0 },
         )
 
         enabled.showProjectDetail(project)
-        XCTAssertEqual(projectView, .detail(project))
+        XCTAssertEqual(navigationDestination, .projectDetail(projectID: project.path))
 
         enabled.showNewIdea()
-        XCTAssertEqual(projectView, .newIdea)
+        XCTAssertEqual(navigationDestination, .newIdea)
 
         let origin = CGRect(x: 1, y: 2, width: 3, height: 4)
         enabled.showIdeaCaptureModal(for: project, from: origin)
@@ -189,8 +187,7 @@ final class ProjectFeatureCoordinatorTests: XCTestCase {
         ideaCaptureEnabled: Bool = true,
         projectCreationEnabled: Bool = true,
         llmFeaturesEnabled: Bool = true,
-        projectView _: @escaping () -> ProjectView = { .list },
-        setProjectView: @escaping (ProjectView) -> Void = { _ in },
+        setNavigationDestination: @escaping (ShellNavigationDestination) -> Void = { _ in },
         modalProject: @escaping (Project?) -> Void = { _ in },
         modalOrigin: @escaping (CGRect?) -> Void = { _ in },
         showCaptureModal: @escaping (Bool) -> Void = { _ in },
@@ -211,7 +208,7 @@ final class ProjectFeatureCoordinatorTests: XCTestCase {
             ideaCaptureEnabled: { ideaCaptureEnabled },
             projectCreationEnabled: { projectCreationEnabled },
             llmFeaturesEnabled: { llmFeaturesEnabled },
-            writeProjectView: setProjectView,
+            writeNavigationDestination: setNavigationDestination,
             writeCaptureModalProject: modalProject,
             writeCaptureModalOrigin: modalOrigin,
             writeShowCaptureModal: showCaptureModal,
