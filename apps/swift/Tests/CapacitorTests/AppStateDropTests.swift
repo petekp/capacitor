@@ -4,7 +4,7 @@ import XCTest
 @MainActor
 final class AppStateDropTests: XCTestCase {
     func testCollectDroppedFileURLsIncludesAsyncValidItems() {
-        let appState = AppState()
+        let appState = makeTestAppState()
         let urlA = URL(fileURLWithPath: "/tmp/drop-a")
         let urlB = URL(fileURLWithPath: "/tmp/drop-b")
 

@@ -56,7 +56,7 @@ final class ProjectMutationService {
     }
 
     func connectSelectedSuggestedProjects() -> ConnectSuggestedProjectsOutcome {
-        let selected = projectWorkflowState.selectedLegacySuggestedProjects
+        let selected = projectWorkflowState.selectedSuggestedProjectCandidates
         let outcome = connectSuggestedProjects(selected)
         projectWorkflowState.clearSuggestedProjectSelection()
         return outcome
@@ -146,7 +146,7 @@ final class ProjectMutationService {
         try projectMutationGateway.createProjectClaudeMd(projectPath: path)
     }
 
-    private func connectSuggestedProjects(_ suggestions: [SuggestedProject]) -> ConnectSuggestedProjectsOutcome {
+    private func connectSuggestedProjects(_ suggestions: [ShellSuggestedProjectCandidate]) -> ConnectSuggestedProjectsOutcome {
         guard !suggestions.isEmpty else {
             return ConnectSuggestedProjectsOutcome(connectedCount: 0)
         }

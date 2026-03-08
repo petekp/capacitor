@@ -2,8 +2,8 @@ import Foundation
 
 @MainActor
 final class ProjectActivationCoordinator {
-    private let activateTracking: (Project) -> Void
-    private let activateProject: (Project) -> Void
+    private let activateTracking: (ShellProjectReference) -> Void
+    private let activateProject: (ShellProjectReference) -> Void
 
     init(
         activeProjectTrackingState: ActiveProjectTrackingState,
@@ -13,26 +13,23 @@ final class ProjectActivationCoordinator {
             activeProjectTrackingState.activate(project)
         }
         activateProject = { project in
-            let reference = ShellProjectReference(
-                displayName: project.name,
-                path: project.path,
-            )
             _Concurrency.Task {
-                try? await activateProjectTerminal.execute(project: reference)
+                try? await activateProjectTerminal.execute(project: project)
             }
         }
     }
 
     init(
-        activateTracking: @escaping (Project) -> Void,
-        activateProject: @escaping (Project) -> Void,
+        activateTracking: @escaping (ShellProjectReference) -> Void,
+        activateProject: @escaping (ShellProjectReference) -> Void,
     ) {
         self.activateTracking = activateTracking
         self.activateProject = activateProject
     }
 
-    func activate(_ project: Project) {
-        activateTracking(project)
-        activateProject(project)
+    func activate(_ project: some ShellProjectReferenceProviding) {
+        let projectReference = project.shellProjectReference
+        activateTracking(projectReference)
+        activateProject(projectReference)
     }
 }

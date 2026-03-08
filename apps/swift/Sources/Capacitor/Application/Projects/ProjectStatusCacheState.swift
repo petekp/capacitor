@@ -5,13 +5,13 @@ import Foundation
 final class ProjectStatusCacheState {
     private(set) var statuses: [String: ProjectStatus] = [:]
 
-    func refresh(projects: [Project], engine: CoreRuntime?) {
+    func refresh(projectPaths: [String], engine: CoreRuntime?) {
         guard let engine else { return }
 
         var updated: [String: ProjectStatus] = [:]
-        for project in projects {
-            if let status = engine.getProjectStatus(projectPath: project.path) {
-                updated[project.path] = status
+        for projectPath in projectPaths {
+            if let status = engine.getProjectStatus(projectPath: projectPath) {
+                updated[projectPath] = status
             }
         }
 

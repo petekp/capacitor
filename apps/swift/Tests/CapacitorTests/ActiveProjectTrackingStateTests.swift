@@ -39,6 +39,19 @@ final class ActiveProjectTrackingStateTests: XCTestCase {
         XCTAssertEqual(trackingState.activeSource, .claude(sessionId: "session-1"))
     }
 
+    func testActivateSupportsShellProjectCatalogEntries() {
+        let sessionStateManager = SessionStateManager()
+        let trackingState = ActiveProjectTrackingState(sessionStateManager: sessionStateManager)
+        let project = ShellProjectCatalogEntry(displayName: "Capacitor", path: "/tmp/capacitor")
+
+        trackingState.updateProjects([project])
+        trackingState.activate(project)
+
+        XCTAssertEqual(trackingState.activeProjectPath, project.path)
+        XCTAssertEqual(trackingState.activeProject?.displayName, project.displayName)
+        XCTAssertEqual(trackingState.activeSource, .none)
+    }
+
     private func makeProject(name: String, path: String) -> Project {
         Project(
             name: name,

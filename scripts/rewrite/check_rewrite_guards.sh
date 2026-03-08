@@ -12,6 +12,7 @@ SLICES_FILE="$ROOT/rewrite/SLICES.yaml"
 MAP_FILE="$ROOT/rewrite/MAP.csv"
 
 failures=0
+budget_status_lines=()
 
 fail() {
   echo "FAIL: $*"
@@ -32,6 +33,32 @@ search_content() {
 contains_glob() {
   local input="$1"
   [[ "$input" == *"*"* || "$input" == *"?"* || "$input" == *"["* ]]
+}
+
+count_pattern_matches() {
+  local regex="$1"
+  shift
+
+  if command -v rg >/dev/null 2>&1; then
+    { rg -o --no-filename -e "$regex" "$@" 2>/dev/null || true; } | wc -l | tr -d ' '
+  else
+    { grep -Eo -- "$regex" "$@" 2>/dev/null || true; } | wc -l | tr -d ' '
+  fi
+}
+
+check_budget() {
+  local label="$1"
+  local budget="$2"
+  local regex="$3"
+  shift 3
+
+  local count
+  count="$(count_pattern_matches "$regex" "$@")"
+  budget_status_lines+=("$label: $count/$budget")
+
+  if (( count > budget )); then
+    fail "Budget exceeded for $label: $count > $budget"
+  fi
 }
 
 if [[ ! -f "$SLICES_FILE" ]]; then
@@ -226,6 +253,37 @@ done < <(
   ' "$SLICES_FILE"
 )
 
+# Freeze the current Rust/FFI finish-line seam so it can only shrink.
+check_budget \
+  "rust_clean_shell_scaffold_todos" \
+  0 \
+  'todo!\("Shell scaffold only"\)' \
+  core/capacitor-core/src/clean/*/application.rs
+
+check_budget \
+  "core_runtime_runtime_ideas_calls" \
+  0 \
+  'runtime_ideas::' \
+  core/capacitor-core/src/lib.rs
+
+check_budget \
+  "core_runtime_project_config_helper_calls" \
+  0 \
+  'load_hud_config_with_storage|save_hud_config_with_storage|load_projects_with_storage|runtime_projects::try_resolve_encoded_path|validate_project_path\(|create_claude_md\(' \
+  core/capacitor-core/src/lib.rs
+
+check_budget \
+  "core_runtime_setup_checker_calls" \
+  0 \
+  'setup_checker\(' \
+  core/capacitor-core/src/lib.rs
+
+check_budget \
+  "swift_project_catalog_bridge_calls" \
+  0 \
+  'ProjectCatalogBridge' \
+  apps/swift/Sources/Capacitor
+
 if [[ "$MODE" == "--status" ]]; then
   ruby -ryaml -e '
     data = YAML.load_file(ARGV[0]) || {}
@@ -246,6 +304,10 @@ if [[ "$MODE" == "--status" ]]; then
       puts "  active_slices: #{in_progress_ids.join(", ")}"
     end
   ' "$SLICES_FILE"
+
+  for entry in "${budget_status_lines[@]}"; do
+    echo "  $entry"
+  done
 fi
 
 if (( failures > 0 )); then

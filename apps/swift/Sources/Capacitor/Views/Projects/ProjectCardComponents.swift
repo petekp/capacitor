@@ -216,7 +216,7 @@ struct CompactingTrackingParameters {
 
 /// Builds the standard context menu for project cards
 struct ProjectContextMenu: View {
-    let project: Project
+    let project: ShellProjectCatalogEntry
     let onTap: () -> Void
     let onInfoTap: (() -> Void)?
     let onMoveToDormant: () -> Void

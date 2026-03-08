@@ -93,7 +93,7 @@ enum AppDebugSupport {
                 Divider()
 
                 Button("Clear All Projects (Empty State)") {
-                    for project in appState.projectWorkflowState.legacyProjects {
+                    for project in appState.projectWorkflowState.projectCatalog {
                         appState.projectActionState.removeProject(path: project.path)
                     }
                 }

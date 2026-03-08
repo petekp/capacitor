@@ -14,7 +14,7 @@ final class WorkstreamsManager: ObservableObject {
     typealias ListManagedWorktrees = (_ repoPath: String) throws -> [WorktreeService.Worktree]
     typealias CreateManagedWorktree = (_ repoPath: String, _ name: String) throws -> WorktreeService.Worktree
     typealias RemoveManagedWorktree = (_ repoPath: String, _ name: String, _ force: Bool, _ activePaths: Set<String>) throws -> Void
-    typealias OpenWorktree = (_ project: Project) -> Void
+    typealias OpenWorktree = (_ project: ShellProjectReference) -> Void
     typealias ActiveWorktreePathsProvider = () -> Set<String>
 
     @Published private(set) var states: [String: State] = [:]
@@ -50,11 +50,11 @@ final class WorkstreamsManager: ObservableObject {
         self.activeWorktreePathsProvider = activeWorktreePathsProvider
     }
 
-    func state(for project: Project) -> State {
+    func state(for project: some ShellProjectReferenceProviding) -> State {
         states[project.path] ?? State()
     }
 
-    func load(for project: Project) {
+    func load(for project: some ShellProjectReferenceProviding) {
         mutateState(for: project.path) {
             $0.isLoading = true
             $0.errorMessage = nil
@@ -76,7 +76,7 @@ final class WorkstreamsManager: ObservableObject {
         }
     }
 
-    func create(for project: Project) {
+    func create(for project: some ShellProjectReferenceProviding) {
         let current = state(for: project)
         var usedNames = Set(current.worktrees.map(\.name))
         var branchAlreadyExistsRetries = 0
@@ -118,7 +118,7 @@ final class WorkstreamsManager: ObservableObject {
         }
     }
 
-    func destroy(worktreeName: String, for project: Project, force: Bool = false) {
+    func destroy(worktreeName: String, for project: some ShellProjectReferenceProviding, force: Bool = false) {
         mutateState(for: project.path) {
             $0.destroyingNames.insert(worktreeName)
             $0.errorMessage = nil
@@ -160,7 +160,7 @@ final class WorkstreamsManager: ObservableObject {
     }
 
     func open(_ worktree: WorktreeService.Worktree) {
-        openWorktree(Self.makeWorktreeProject(worktree))
+        openWorktree(Self.makeWorktreeReference(worktree))
     }
 
     private func mutateState(for projectPath: String, _ mutate: (inout State) -> Void) {
@@ -171,7 +171,7 @@ final class WorkstreamsManager: ObservableObject {
 
     private static let maxCreateBranchAlreadyExistsRetries = 100
 
-    private static func nextWorktreeName(for project: Project, from names: Set<String>) -> String {
+    private static func nextWorktreeName(for project: some ShellProjectReferenceProviding, from names: Set<String>) -> String {
         let prefix = worktreePrefix(for: project)
         let used = Set(names.compactMap { name -> Int? in
             guard name.hasPrefix(prefix) else { return nil }
@@ -187,9 +187,10 @@ final class WorkstreamsManager: ObservableObject {
         return "\(prefix)\(candidate)"
     }
 
-    private static func worktreePrefix(for project: Project) -> String {
-        let rawName = project.name.trimmingCharacters(in: .whitespacesAndNewlines)
-        let source = rawName.isEmpty ? URL(fileURLWithPath: project.path).lastPathComponent : rawName
+    private static func worktreePrefix(for project: some ShellProjectReferenceProviding) -> String {
+        let reference = project.shellProjectReference
+        let rawName = reference.displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let source = rawName.isEmpty ? URL(fileURLWithPath: reference.path).lastPathComponent : rawName
         let slug = slugify(source)
         return "\(slug)-workstream-"
     }
@@ -227,18 +228,10 @@ final class WorkstreamsManager: ObservableObject {
         return normalizedOutput.contains("branch") && normalizedOutput.contains("already exists")
     }
 
-    private static func makeWorktreeProject(_ worktree: WorktreeService.Worktree) -> Project {
-        Project(
-            name: worktree.name,
+    private static func makeWorktreeReference(_ worktree: WorktreeService.Worktree) -> ShellProjectReference {
+        ShellProjectReference(
+            displayName: worktree.name,
             path: worktree.path,
-            displayPath: worktree.path,
-            lastActive: nil,
-            claudeMdPath: nil,
-            claudeMdPreview: nil,
-            hasLocalSettings: false,
-            taskCount: 0,
-            stats: nil,
-            isMissing: false,
         )
     }
 

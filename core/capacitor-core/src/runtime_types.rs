@@ -75,6 +75,22 @@ pub struct ProjectStats {
     pub last_activity: Option<String>,
 }
 
+/// Shell-native aggregated token usage statistics for a project catalog entry.
+#[derive(Debug, Serialize, Deserialize, Clone, Default, uniffi::Record)]
+pub struct ShellProjectStats {
+    pub total_input_tokens: u64,
+    pub total_output_tokens: u64,
+    pub total_cache_read_tokens: u64,
+    pub total_cache_creation_tokens: u64,
+    pub opus_messages: u32,
+    pub sonnet_messages: u32,
+    pub haiku_messages: u32,
+    pub session_count: u32,
+    pub latest_summary: Option<String>,
+    pub first_activity: Option<String>,
+    pub last_activity: Option<String>,
+}
+
 /// Cached file metadata for cache invalidation.
 #[derive(Debug, Serialize, Deserialize, Clone, Default, uniffi::Record)]
 pub struct CachedFileInfo {
@@ -116,6 +132,22 @@ pub struct Project {
     pub is_missing: bool,
 }
 
+/// A shell-native project catalog entry used by the Swift app shell.
+#[derive(Debug, Serialize, Deserialize, Clone, uniffi::Record)]
+pub struct ShellProjectCatalogEntry {
+    pub id: String,
+    pub display_name: String,
+    pub path: String,
+    pub display_path: String,
+    pub last_active_at: Option<String>,
+    pub claude_md_path: Option<String>,
+    pub claude_md_preview: Option<String>,
+    pub has_local_settings: bool,
+    pub task_count: u32,
+    pub stats: Option<ShellProjectStats>,
+    pub is_missing: bool,
+}
+
 /// A task/session from a project (represents Claude Code sessions).
 #[derive(Debug, Serialize, Deserialize, Clone, uniffi::Record)]
 pub struct Task {
@@ -148,6 +180,18 @@ pub struct SuggestedProject {
     pub has_project_indicators: bool,
 }
 
+/// A shell-native suggested project candidate used by the Swift app shell.
+#[derive(Debug, Serialize, Deserialize, Clone, uniffi::Record)]
+pub struct ShellSuggestedProjectCandidate {
+    pub id: String,
+    pub display_name: String,
+    pub path: String,
+    pub display_path: String,
+    pub task_count: u32,
+    pub has_claude_md: bool,
+    pub has_project_indicators: bool,
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // Artifact Types
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -171,7 +215,7 @@ pub struct Artifact {
 pub struct DashboardData {
     pub global: GlobalConfig,
     pub plugins: Vec<Plugin>,
-    pub projects: Vec<Project>,
+    pub projects: Vec<ShellProjectCatalogEntry>,
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

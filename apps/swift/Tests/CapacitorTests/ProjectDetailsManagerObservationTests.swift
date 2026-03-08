@@ -22,7 +22,7 @@ private final class BlockingState: @unchecked Sendable {
 final class ProjectDetailsManagerObservationTests: XCTestCase {
     func testGetIdeasObservationInvalidatesWhenIdeasReordered() {
         let manager = ProjectDetailsManager()
-        let project = makeProject(name: "Test", path: "/tmp/test")
+        let project = ShellProjectReference(displayName: "Test", path: "/tmp/test")
         let reorderedIdeas = [
             Idea(
                 id: "01JEXAMPLE00000000000000000",
@@ -72,7 +72,7 @@ final class ProjectDetailsManagerObservationTests: XCTestCase {
             }
         })
 
-        let project = makeProject(name: "Test", path: "/tmp/test")
+        let project = ShellProjectReference(displayName: "Test", path: "/tmp/test")
         let contextTask = _Concurrency.Task {
             await manager.gatherSensemakingContextForTesting(for: project, excluding: "ignored")
         }
@@ -91,20 +91,5 @@ final class ProjectDetailsManagerObservationTests: XCTestCase {
         XCTAssertEqual(context.recentFiles, ["Sources/App.swift", "README.md"])
         XCTAssertEqual(context.gitBranch, "feature/test")
         XCTAssertEqual(context.lastCommitMessage, "Improve loading")
-    }
-
-    private func makeProject(name: String, path: String) -> Project {
-        Project(
-            name: name,
-            path: path,
-            displayPath: path,
-            lastActive: nil,
-            claudeMdPath: nil,
-            claudeMdPreview: nil,
-            hasLocalSettings: false,
-            taskCount: 0,
-            stats: nil,
-            isMissing: false,
-        )
     }
 }

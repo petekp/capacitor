@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct WorkstreamsPanel: View {
-    let project: Project
+    let project: ShellProjectCatalogEntry
     @ObservedObject var manager: WorkstreamsManager
 
     private var state: WorkstreamsManager.State {

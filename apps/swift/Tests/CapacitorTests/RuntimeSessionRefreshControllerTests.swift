@@ -6,7 +6,7 @@ final class RuntimeSessionRefreshControllerTests: XCTestCase {
     func testStaleObservationDoesNotApplyShellState() async {
         let sessionStateManager = SessionStateManager()
         let shellStateStore = ShellStateStore()
-        let project = makeProject(name: "Capacitor", path: "/Users/petepetrash/Code/capacitor")
+        let project = ShellProjectReference(displayName: "Capacitor", path: "/Users/petepetrash/Code/capacitor")
         let controller = RuntimeSessionRefreshController(
             runtimeSupervisor: RuntimeSupervisor(runtimeGateway: StubRuntimeGateway()),
             sessionStateManager: sessionStateManager,
@@ -69,7 +69,7 @@ final class RuntimeSessionRefreshControllerTests: XCTestCase {
     func testSecondFreshFailureClearsRuntimeDerivedState() async {
         let sessionStateManager = SessionStateManager()
         let shellStateStore = ShellStateStore()
-        let project = makeProject(name: "Capacitor", path: "/Users/petepetrash/Code/capacitor")
+        let project = ShellProjectReference(displayName: "Capacitor", path: "/Users/petepetrash/Code/capacitor")
         let controller = RuntimeSessionRefreshController(
             runtimeSupervisor: RuntimeSupervisor(runtimeGateway: StubRuntimeGateway()),
             sessionStateManager: sessionStateManager,
@@ -116,21 +116,6 @@ final class RuntimeSessionRefreshControllerTests: XCTestCase {
 
         XCTAssertNil(sessionStateManager.getSessionState(for: project))
         XCTAssertNil(shellStateStore.state)
-    }
-
-    private func makeProject(name: String, path: String) -> Project {
-        Project(
-            name: name,
-            path: path,
-            displayPath: path,
-            lastActive: nil,
-            claudeMdPath: nil,
-            claudeMdPreview: nil,
-            hasLocalSettings: false,
-            taskCount: 0,
-            stats: nil,
-            isMissing: false,
-        )
     }
 
     private func makeRuntimeSnapshot(

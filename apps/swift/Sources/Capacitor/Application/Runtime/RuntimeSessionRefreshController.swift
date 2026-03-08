@@ -24,7 +24,7 @@ final class RuntimeSessionRefreshController {
         self.didUpdateContext = didUpdateContext
     }
 
-    func refresh(projects: [Project]) {
+    func refresh(projects: [some ProjectPathProviding]) {
         generation &+= 1
         let refreshGeneration = generation
         let correlationId = nextCorrelationId()
@@ -65,7 +65,7 @@ final class RuntimeSessionRefreshController {
         _ observation: ShellRuntimeObservation,
         refreshGeneration: UInt64,
         correlationId: String,
-        projects: [Project],
+        projects: [some ProjectPathProviding],
     ) -> Bool {
         guard refreshGeneration == generation else {
             DebugLog.write(
@@ -92,7 +92,7 @@ final class RuntimeSessionRefreshController {
         _ observation: ShellRuntimeObservation,
         refreshGeneration: UInt64,
         correlationId: String,
-        projects: [Project],
+        projects: [some ProjectPathProviding],
     ) async {
         let shouldApply = await MainActor.run {
             applySessionStateIfFresh(
@@ -150,7 +150,7 @@ final class RuntimeSessionRefreshController {
             _ observation: ShellRuntimeObservation,
             refreshGeneration: UInt64,
             correlationId: String,
-            projects: [Project],
+            projects: [some ProjectPathProviding],
         ) async {
             await applyObservationIfFresh(
                 observation,

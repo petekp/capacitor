@@ -26,6 +26,28 @@ final class ProjectListStateTests: XCTestCase {
         XCTAssertEqual(state.projectOrder, ["/tmp/intent", "/tmp/capacitor", "/tmp/paused"])
     }
 
+    func testDormantOverridesAndOrderingSupportShellCatalogEntries() {
+        let state = ProjectListState(
+            projectListPreferencesGateway: StubProjectListPreferencesGateway(
+                dormantPaths: ["/tmp/paused"],
+                projectOrder: ["/tmp/intent", "/tmp/capacitor", "/tmp/paused"],
+            ),
+        )
+        let capacitor = ShellProjectCatalogEntry(displayName: "Capacitor", path: "/tmp/capacitor")
+        let intent = ShellProjectCatalogEntry(displayName: "Intent", path: "/tmp/intent")
+        let paused = ShellProjectCatalogEntry(displayName: "Paused", path: "/tmp/paused")
+
+        XCTAssertEqual(
+            state.visibleProjects(from: [capacitor, intent, paused]).map(\.path),
+            ["/tmp/capacitor", "/tmp/intent"],
+        )
+        XCTAssertEqual(
+            state.pausedProjects(from: [capacitor, intent, paused]).map(\.path),
+            ["/tmp/paused"],
+        )
+        XCTAssertTrue(state.isManuallyDormant(paused))
+    }
+
     func testMoveProjectUpdatesGlobalOrderAndPersistsIt() {
         let preferences = StubProjectListPreferencesGateway(
             dormantPaths: [],

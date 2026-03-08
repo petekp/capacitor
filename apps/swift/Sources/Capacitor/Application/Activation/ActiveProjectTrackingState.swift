@@ -6,7 +6,7 @@ final class ActiveProjectTrackingState {
     @ObservationIgnored
     private let resolver: ActiveProjectResolver
 
-    private(set) var activeProject: Project?
+    private(set) var activeProject: ShellProjectReference?
     private(set) var activeSource: ActiveSource = .none
 
     var activeProjectPath: String? {
@@ -19,11 +19,11 @@ final class ActiveProjectTrackingState {
         activeSource = resolver.activeSource
     }
 
-    func updateProjects(_ projects: [Project]) {
+    func updateProjects(_ projects: [some ShellProjectReferenceProviding]) {
         resolver.updateProjects(projects)
     }
 
-    func activate(_ project: Project) {
+    func activate(_ project: some ShellProjectReferenceProviding) {
         resolver.setManualOverride(project)
         resolver.resolve()
         syncFromResolver()
@@ -41,7 +41,7 @@ final class ActiveProjectTrackingState {
         )
         if let activeProject {
             Telemetry.emit("active_project_resolution", "Resolved active project", payload: [
-                "project": activeProject.name,
+                "project": activeProject.displayName,
                 "path": activeProject.path,
                 "source": String(describing: activeSource),
             ])

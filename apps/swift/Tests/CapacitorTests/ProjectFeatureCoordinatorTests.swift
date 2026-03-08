@@ -7,7 +7,7 @@ final class ProjectFeatureCoordinatorTests: XCTestCase {
     func testNavigationAndIdeaCaptureGatesAreOwnedByCoordinator() {
         let project = makeProject()
         var navigationDestination: ShellNavigationDestination = .projectList
-        var modalProject: Project?
+        var modalProject: ShellProjectReference?
         var modalOrigin: CGRect?
         var showCaptureModal = false
 
@@ -50,13 +50,13 @@ final class ProjectFeatureCoordinatorTests: XCTestCase {
 
         let origin = CGRect(x: 1, y: 2, width: 3, height: 4)
         enabled.showIdeaCaptureModal(for: project, from: origin)
-        XCTAssertEqual(modalProject, project)
+        XCTAssertEqual(modalProject, project.shellProjectReference)
         XCTAssertEqual(modalOrigin, origin)
         XCTAssertTrue(showCaptureModal)
     }
 
     func testCoordinatorReturnsExpectedFeatureGuardResults() {
-        let project = makeProject()
+        let project = ShellProjectReference(displayName: "Capacitor", path: "/tmp/capacitor")
         let idea = makeIdea()
         let request = NewProjectRequest(
             name: "Caps",
@@ -106,7 +106,7 @@ final class ProjectFeatureCoordinatorTests: XCTestCase {
     }
 
     func testCoordinatorDelegatesEnabledFeatureWorkAndPropagatesDismissErrors() {
-        let project = makeProject()
+        let project = ShellProjectReference(displayName: "Capacitor", path: "/tmp/capacitor")
         let idea = makeIdea()
         let request = NewProjectRequest(
             name: "Caps",
@@ -118,9 +118,9 @@ final class ProjectFeatureCoordinatorTests: XCTestCase {
         let returnedIdeas = [idea]
 
         var capturedTexts: [String] = []
-        var checkedProjectSets: [[Project]] = []
+        var checkedProjectSets: [[ShellProjectReference]] = []
         var reorderedIdeaLists: [[Idea]] = []
-        var generatedDescriptions: [Project] = []
+        var generatedDescriptions: [ShellProjectReference] = []
         var createdRequests: [NewProjectRequest] = []
         var capturedError: String?
 
@@ -188,19 +188,19 @@ final class ProjectFeatureCoordinatorTests: XCTestCase {
         projectCreationEnabled: Bool = true,
         llmFeaturesEnabled: Bool = true,
         setNavigationDestination: @escaping (ShellNavigationDestination) -> Void = { _ in },
-        modalProject: @escaping (Project?) -> Void = { _ in },
+        modalProject: @escaping (ShellProjectReference?) -> Void = { _ in },
         modalOrigin: @escaping (CGRect?) -> Void = { _ in },
         showCaptureModal: @escaping (Bool) -> Void = { _ in },
         writeError: @escaping (String?) -> Void = { _ in },
-        captureIdeaHandler: @escaping (Project, String) -> Result<Void, Error> = { _, _ in .success(()) },
-        checkIdeasFileChangesHandler: @escaping ([Project]) -> Void = { _ in },
-        getIdeasHandler: @escaping (Project) -> [Idea] = { _ in [] },
+        captureIdeaHandler: @escaping (ShellProjectReference, String) -> Result<Void, Error> = { _, _ in .success(()) },
+        checkIdeasFileChangesHandler: @escaping ([ShellProjectReference]) -> Void = { _ in },
+        getIdeasHandler: @escaping (ShellProjectReference) -> [Idea] = { _ in [] },
         isGeneratingTitleHandler: @escaping (String) -> Bool = { _ in false },
-        dismissIdeaHandler: @escaping (Idea, Project) throws -> Void = { _, _ in },
-        reorderIdeasHandler: @escaping ([Idea], Project) -> Void = { _, _ in },
-        getDescriptionHandler: @escaping (Project) -> String? = { _ in nil },
-        isGeneratingDescriptionHandler: @escaping (Project) -> Bool = { _ in false },
-        generateDescriptionHandler: @escaping (Project) -> Void = { _ in },
+        dismissIdeaHandler: @escaping (Idea, ShellProjectReference) throws -> Void = { _, _ in },
+        reorderIdeasHandler: @escaping ([Idea], ShellProjectReference) -> Void = { _, _ in },
+        getDescriptionHandler: @escaping (ShellProjectReference) -> String? = { _ in nil },
+        isGeneratingDescriptionHandler: @escaping (ShellProjectReference) -> Bool = { _ in false },
+        generateDescriptionHandler: @escaping (ShellProjectReference) -> Void = { _ in },
         createProjectFromIdeaHandler: @escaping (NewProjectRequest, @escaping (CreateProjectResult) -> Void) -> Void = { _, _ in },
     ) -> ProjectFeatureCoordinator {
         ProjectFeatureCoordinator(

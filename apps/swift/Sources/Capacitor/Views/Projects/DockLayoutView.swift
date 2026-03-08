@@ -6,7 +6,7 @@ struct DockLayoutView: View {
     @Environment(\.floatingMode) private var floatingMode
     private let glassConfig = GlassConfig.shared
     @State private var scrolledID: String?
-    @State private var draggedProject: Project?
+    @State private var draggedProject: ShellProjectCatalogEntry?
     @State private var showPageIndicator = false
     @State private var pageIndicatorHideTask: _Concurrency.Task<Void, Never>?
 
@@ -18,8 +18,8 @@ struct DockLayoutView: View {
         glassConfig.dockCardWidthRounded
     }
 
-    private var nonPausedProjects: [Project] {
-        projectListState.visibleProjects(from: appState.projectWorkflowState.legacyProjects)
+    private var nonPausedProjects: [ShellProjectCatalogEntry] {
+        projectListState.visibleProjects(from: appState.projectWorkflowState.projectCatalog)
     }
 
     var body: some View {
@@ -141,7 +141,7 @@ struct DockLayoutView: View {
         .frame(maxHeight: .infinity)
     }
 
-    private func calculateCurrentPage(cardsPerPage: Int, in projects: [Project]) -> Int {
+    private func calculateCurrentPage(cardsPerPage: Int, in projects: [ShellProjectCatalogEntry]) -> Int {
         guard let scrolledID,
               let index = projects.firstIndex(where: { $0.path == scrolledID })
         else {
@@ -152,13 +152,13 @@ struct DockLayoutView: View {
 
     @ViewBuilder
     private func projectCard(
-        for project: Project,
+        for project: ShellProjectCatalogEntry,
         sessionState: ProjectSessionState?,
         projectStatus: ProjectStatus?,
         flashState: SessionState?,
         isStale: Bool,
         activePaths: Set<String>,
-        grouped: (active: [Project], idle: [Project]),
+        grouped: (active: [ShellProjectCatalogEntry], idle: [ShellProjectCatalogEntry]),
     ) -> some View {
         let isActive = appState.activeProjectTrackingState.activeProjectPath == project.path
         let canShowDetails = appState.isProjectDetailsEnabled
@@ -214,7 +214,7 @@ struct DockLayoutView: View {
         private static var lastSummary: String?
 
         static func summary(
-            for projects: [Project],
+            for projects: [ShellProjectCatalogEntry],
             sessionStates: [String: ProjectSessionState],
         ) -> String {
             if projects.isEmpty {
@@ -227,7 +227,7 @@ struct DockLayoutView: View {
                         for: project.path,
                         sessionStates: sessionStates,
                     )
-                    return "\(project.name):\(stateLabel(sessionState?.state))"
+                    return "\(project.displayName):\(stateLabel(sessionState?.state))"
                 }
                 .joined(separator: " | ")
         }
@@ -289,7 +289,7 @@ private struct PageIndicator: View {
 
 #Preview {
     DockLayoutView()
-        .environment(AppState())
+        .environment(AppShellContainer.live().appState)
         .frame(width: 800, height: 150)
         .preferredColorScheme(.dark)
 }

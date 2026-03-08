@@ -19,7 +19,7 @@ struct NavigationContainer: View {
     @State private var detailPosition: SlidePosition = .right
     @State private var newIdeaPosition: SlidePosition = .right
 
-    @State private var currentDetail: Project?
+    @State private var currentDetail: ShellProjectCatalogEntry?
     @State private var showDetail = false
     @State private var showNewIdea = false
 
@@ -121,7 +121,7 @@ struct NavigationContainer: View {
                 appState.projectFeatureCoordinator.showProjectList()
                 return
             }
-            guard let project = appState.projectWorkflowState.legacyProjects.first(where: { $0.path == projectID }) else {
+            guard let project = appState.projectWorkflowState.projectCatalog.first(where: { $0.path == projectID }) else {
                 appState.projectFeatureCoordinator.showProjectList()
                 return
             }

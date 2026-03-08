@@ -34,19 +34,19 @@ struct ProjectsView: View {
     @Environment(\.floatingMode) private var floatingMode
     private let glassConfig = GlassConfig.shared
     @State private var pausedCollapsed = true
-    @State private var draggedProject: Project?
+    @State private var draggedProject: ShellProjectCatalogEntry?
     @State private var rowOrderTracker = RowOrderTracker()
 
     private var projectListState: ProjectListState {
         appState.projectListState
     }
 
-    private var nonPausedProjects: [Project] {
-        projectListState.visibleProjects(from: appState.projectWorkflowState.legacyProjects)
+    private var nonPausedProjects: [ShellProjectCatalogEntry] {
+        projectListState.visibleProjects(from: appState.projectWorkflowState.projectCatalog)
     }
 
-    private var pausedProjects: [Project] {
-        projectListState.pausedProjects(from: appState.projectWorkflowState.legacyProjects)
+    private var pausedProjects: [ShellProjectCatalogEntry] {
+        projectListState.pausedProjects(from: appState.projectWorkflowState.projectCatalog)
     }
 
     var body: some View {
@@ -88,7 +88,7 @@ struct ProjectsView: View {
         // Empty state: uses ScrollView with gradient mask for visual
         // consistency with the project list. Content flows naturally
         // (no .frame(maxHeight: .infinity) to avoid layout oscillation).
-        if !appState.dashboardState.isLoading, appState.projectWorkflowState.legacyProjects.isEmpty {
+        if !appState.dashboardState.isLoading, appState.projectWorkflowState.projectCatalog.isEmpty {
             ScrollView {
                 VStack(spacing: 0) {
                     ProjectListDiagnosticsSection()
@@ -261,14 +261,14 @@ struct ProjectsView: View {
 
     @ViewBuilder
     private func activeProjectCard(
-        project: Project,
+        project: ShellProjectCatalogEntry,
         sessionState: ProjectSessionState?,
         projectStatus: ProjectStatus?,
         flashState: SessionState?,
         isStale: Bool,
         index: Int,
         group: ActivityGroup,
-        groupProjects: [Project],
+        groupProjects: [ShellProjectCatalogEntry],
         reorderZIndex: Double,
     ) -> some View {
         let canShowDetails = appState.isProjectDetailsEnabled
@@ -315,7 +315,7 @@ struct ProjectsView: View {
         )
     }
 
-    private func pausedProjectCard(project: Project, index: Int) -> some View {
+    private func pausedProjectCard(project: ShellProjectCatalogEntry, index: Int) -> some View {
         CompactProjectCardView(
             project: project,
             onTap: {
@@ -342,8 +342,8 @@ struct ProjectsView: View {
     }
 
     #if DEBUG
-        private func debugRenderedProjects(sessionStates: [String: ProjectSessionState]) -> [Project] {
-            guard !appState.dashboardState.isLoading, !appState.projectWorkflowState.legacyProjects.isEmpty else {
+        private func debugRenderedProjects(sessionStates: [String: ProjectSessionState]) -> [ShellProjectCatalogEntry] {
+            guard !appState.dashboardState.isLoading, !appState.projectWorkflowState.projectCatalog.isEmpty else {
                 return []
             }
 
@@ -362,7 +362,7 @@ struct ProjectsView: View {
         private static var lastSummary: String?
 
         static func summary(
-            for projects: [Project],
+            for projects: [ShellProjectCatalogEntry],
             sessionStates: [String: ProjectSessionState],
         ) -> String {
             if projects.isEmpty {
@@ -375,7 +375,7 @@ struct ProjectsView: View {
                         for: project.path,
                         sessionStates: sessionStates,
                     )
-                    return "\(project.name):\(stateLabel(sessionState?.state))"
+                    return "\(project.displayName):\(stateLabel(sessionState?.state))"
                 }
                 .joined(separator: " | ")
         }
@@ -409,12 +409,12 @@ struct ProjectsView: View {
 
 private extension View {
     func activeProjectCardModifiers(
-        project: Project,
+        project: ShellProjectCatalogEntry,
         sessionState: ProjectSessionState?,
         index: Int,
-        groupProjects: [Project],
+        groupProjects: [ShellProjectCatalogEntry],
         group: ActivityGroup,
-        draggedProject: Binding<Project?>,
+        draggedProject: Binding<ShellProjectCatalogEntry?>,
         appState: AppState,
         glassConfig: GlassConfig,
         reorderZIndex: Double,
@@ -444,7 +444,7 @@ private extension View {
     }
 
     func pausedProjectCardModifiers(
-        project: Project,
+        project: ShellProjectCatalogEntry,
         index: Int,
         glassConfig: GlassConfig,
     ) -> some View {
@@ -760,7 +760,7 @@ struct EmptyProjectsView: View {
             .opacity(appeared || reduceMotion ? 1 : 0)
             .offset(y: appeared || reduceMotion ? 0 : 8)
 
-            if !appState.projectWorkflowState.legacySuggestedProjects.isEmpty {
+            if !appState.projectWorkflowState.suggestedProjectCatalog.isEmpty {
                 suggestedProjectsList
                     .opacity(appeared || reduceMotion ? 1 : 0)
                     .offset(y: appeared || reduceMotion ? 0 : 10)
@@ -778,7 +778,7 @@ struct EmptyProjectsView: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Drop zone for project folders")
         .onAppear {
-            if appState.projectWorkflowState.legacySuggestedProjects.isEmpty {
+            if appState.projectWorkflowState.suggestedProjectCatalog.isEmpty {
                 appState.projectWorkflowState.refreshSuggestedProjects()
             }
             if !reduceMotion {
@@ -813,14 +813,14 @@ struct EmptyProjectsView: View {
 
     private var suggestedProjectsList: some View {
         VStack(spacing: 2) {
-            ForEach(appState.projectWorkflowState.legacySuggestedProjects, id: \.path) { suggestion in
+            ForEach(appState.projectWorkflowState.suggestedProjectCatalog, id: \.path) { suggestion in
                 suggestionRow(suggestion)
             }
         }
         .frame(maxWidth: 320)
     }
 
-    private func suggestionRow(_ suggestion: SuggestedProject) -> some View {
+    private func suggestionRow(_ suggestion: ShellSuggestedProjectCandidate) -> some View {
         let workflowState = appState.projectWorkflowState
         let isSelected = workflowState.isSuggestedProjectSelected(path: suggestion.path)
         let isHovered = hoveredPath == suggestion.path
@@ -839,7 +839,7 @@ struct EmptyProjectsView: View {
                     )
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(suggestion.name)
+                    Text(suggestion.displayName)
                         .font(.system(size: 13, weight: .medium))
                         .foregroundColor(.white.opacity(isSelected ? 0.9 : isHovered ? 0.7 : 0.55))
 

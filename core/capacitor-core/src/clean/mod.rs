@@ -1,8 +1,6 @@
 #![allow(dead_code)]
 
-pub(crate) mod activation;
 mod composition;
-pub(crate) mod feedback;
 pub(crate) mod ideas;
 pub(crate) mod kernel;
 pub(crate) mod projects;
@@ -34,14 +32,7 @@ mod tests {
             StorageConfig::default(),
         );
 
-        let _ = (
-            &shell.runtime,
-            &shell.setup,
-            &shell.activation,
-            &shell.projects,
-            &shell.ideas,
-            &shell.feedback,
-        );
+        let _ = (&shell.runtime, &shell.setup, &shell.projects, &shell.ideas);
     }
 
     #[test]

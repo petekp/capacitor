@@ -3660,3 +3660,563 @@ slices:
       - "Moving the runtime reliability guard out of .claude can change ratchet counts if the guard starts matching itself; mitigation is excluding the operational guard path explicitly."
       - "Removing tracked planning artifacts can break newcomer references if active docs still point at them; mitigation is updating all live script and doc references in the same slice."
     notes: "Deletes tracked audit/migration/exploration artifacts, removes the unreferenced agent changelog, makes runtime reliability guard operational instead of .claude-scoped, consolidates UniFFI artifacts to canonical Swift package paths, and removes confirmed-dead Swift wrappers/branches."
+
+  - id: RW-102
+    name: "Architecture Endgame Plan + Legacy Bridge Freeze"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-101
+    touched_paths:
+      - docs/audit/ARCHITECTURE_ENDGAME_PLAN_2026-03-07.md
+      - docs/audit/SUMMARY.md
+      - apps/swift/Tests/CapacitorTests/ArchitectureBoundaryTests.swift
+      - rewrite/DECISIONS.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added:
+        - docs/audit/ARCHITECTURE_ENDGAME_PLAN_2026-03-07.md
+      changed:
+        - docs/audit/SUMMARY.md
+        - apps/swift/Tests/CapacitorTests/ArchitectureBoundaryTests.swift
+        - rewrite/DECISIONS.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios:
+      - cold launch with setup complete
+      - connect project via file browser
+      - list -> detail -> new idea -> list navigation
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Source-level architecture ratchets can produce false positives when helper names drift; mitigation is keeping the ratchets file-local and allowlist-based."
+    notes: "Records the post-checkpoint endgame plan, classifies the `legacy*` project mirrors as migration debt while keeping `ProjectCatalogBridge` boundary-scoped, freezes the remaining legacy bridge files to an explicit allowlist, and caps AppState's convenience-init surface."
+
+  - id: RW-103
+    name: "Shell Project Consumer Cutover"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-102
+    touched_paths:
+      - apps/swift/Sources/Capacitor/Application/Activation/ActiveProjectTrackingState.swift
+      - apps/swift/Sources/Capacitor/Application/Projects/ProjectListState.swift
+      - apps/swift/Sources/Capacitor/Application/Projects/ProjectStatusCacheState.swift
+      - apps/swift/Sources/Capacitor/Application/Projects/ProjectWorkflowState.swift
+      - apps/swift/Sources/Capacitor/Application/Projects/DashboardLoader.swift
+      - apps/swift/Sources/Capacitor/Application/Projects/ProjectMutationService.swift
+      - apps/swift/Sources/Capacitor/Application/Runtime/RuntimeRefreshOrchestrator.swift
+      - apps/swift/Sources/Capacitor/Application/Runtime/RuntimeSessionRefreshController.swift
+      - apps/swift/Sources/Capacitor/Domain/Shared/ProjectPathProviding.swift
+      - apps/swift/Sources/Capacitor/Models/ActiveProjectResolver.swift
+      - apps/swift/Sources/Capacitor/Models/ProjectDetailsManager.swift
+      - apps/swift/Sources/Capacitor/Models/SessionStateManager.swift
+      - apps/swift/Sources/Capacitor/Models/AppState.swift
+      - apps/swift/Sources/Capacitor/Application/Activation/ActiveProjectTrackingState.swift
+      - apps/swift/Sources/Capacitor/Features/ProjectFeatureCoordinator.swift
+      - apps/swift/Tests/CapacitorTests/ProjectWorkflowStateTests.swift
+      - apps/swift/Tests/CapacitorTests/ProjectMutationServiceTests.swift
+      - apps/swift/Tests/CapacitorTests/DashboardLoaderTests.swift
+      - apps/swift/Tests/CapacitorTests/ProjectListStateTests.swift
+      - apps/swift/Tests/CapacitorTests/ProjectOrderingTests.swift
+      - apps/swift/Tests/CapacitorTests/ProjectStatusCacheStateTests.swift
+      - apps/swift/Tests/CapacitorTests/SessionStateManagerTests.swift
+      - apps/swift/Tests/CapacitorTests/RuntimeSessionRefreshControllerTests.swift
+      - apps/swift/Tests/CapacitorTests/RuntimeRefreshOrchestratorTests.swift
+      - apps/swift/Tests/CapacitorTests/ActiveProjectResolverTests.swift
+      - apps/swift/Tests/CapacitorTests/ActiveProjectTrackingStateTests.swift
+      - apps/swift/Tests/CapacitorTests/ProjectDetailsManagerObservationTests.swift
+      - apps/swift/Tests/CapacitorTests/ProjectFeatureCoordinatorTests.swift
+      - apps/swift/Tests/CapacitorTests/AppShellContainerTests.swift
+      - apps/swift/Tests/CapacitorTests/ArchitectureBoundaryTests.swift
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+      - apps/swift/Sources/Capacitor/Utilities/ProjectOrdering.swift
+    contracts:
+      added: []
+      changed:
+        - apps/swift/Sources/Capacitor/Application/Activation/ActiveProjectTrackingState.swift
+        - apps/swift/Sources/Capacitor/Application/Projects/ProjectListState.swift
+        - apps/swift/Sources/Capacitor/Application/Projects/ProjectStatusCacheState.swift
+        - apps/swift/Sources/Capacitor/Application/Projects/ProjectWorkflowState.swift
+        - apps/swift/Sources/Capacitor/Application/Projects/DashboardLoader.swift
+        - apps/swift/Sources/Capacitor/Application/Projects/ProjectMutationService.swift
+        - apps/swift/Sources/Capacitor/Application/Runtime/RuntimeRefreshOrchestrator.swift
+        - apps/swift/Sources/Capacitor/Application/Runtime/RuntimeSessionRefreshController.swift
+        - apps/swift/Sources/Capacitor/Domain/Shared/ProjectPathProviding.swift
+        - apps/swift/Sources/Capacitor/Models/ActiveProjectResolver.swift
+        - apps/swift/Sources/Capacitor/Models/ProjectDetailsManager.swift
+        - apps/swift/Sources/Capacitor/Models/SessionStateManager.swift
+        - apps/swift/Sources/Capacitor/Models/AppState.swift
+        - apps/swift/Sources/Capacitor/Application/Activation/ActiveProjectTrackingState.swift
+        - apps/swift/Sources/Capacitor/Features/ProjectFeatureCoordinator.swift
+        - apps/swift/Tests/CapacitorTests/ProjectWorkflowStateTests.swift
+        - apps/swift/Tests/CapacitorTests/ProjectMutationServiceTests.swift
+        - apps/swift/Tests/CapacitorTests/DashboardLoaderTests.swift
+        - apps/swift/Tests/CapacitorTests/ProjectListStateTests.swift
+        - apps/swift/Tests/CapacitorTests/ProjectOrderingTests.swift
+        - apps/swift/Tests/CapacitorTests/ProjectStatusCacheStateTests.swift
+        - apps/swift/Tests/CapacitorTests/SessionStateManagerTests.swift
+        - apps/swift/Tests/CapacitorTests/RuntimeSessionRefreshControllerTests.swift
+        - apps/swift/Tests/CapacitorTests/RuntimeRefreshOrchestratorTests.swift
+        - apps/swift/Tests/CapacitorTests/ActiveProjectResolverTests.swift
+        - apps/swift/Tests/CapacitorTests/ActiveProjectTrackingStateTests.swift
+        - apps/swift/Tests/CapacitorTests/ProjectDetailsManagerObservationTests.swift
+        - apps/swift/Tests/CapacitorTests/ProjectFeatureCoordinatorTests.swift
+        - apps/swift/Tests/CapacitorTests/AppShellContainerTests.swift
+        - apps/swift/Tests/CapacitorTests/ArchitectureBoundaryTests.swift
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+        - apps/swift/Sources/Capacitor/Utilities/ProjectOrdering.swift
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios:
+      - runtime refresh after launch
+      - live state update while coding
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Type cutovers across runtime/session helpers can break stale matching or active-project resolution if path identity changes; mitigation is preserving path-based assertions and runtime observation tests."
+    notes: "Completed the non-view shell cutover: selection, list/order, status cache, active-project/session lookup, runtime session apply, project details / idea-description helpers, and dashboard/AppState orchestration now work from shell/path contracts so the remaining legacy mirrors are confined to the view/debug layer."
+
+  - id: RW-104
+    name: "Project Workflow + SwiftUI Shell DTO Cutover"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-103
+    touched_paths:
+      - apps/swift/Sources/Capacitor/Application/Projects/DashboardLoader.swift
+      - apps/swift/Sources/Capacitor/Application/Projects/ProjectMutationService.swift
+      - apps/swift/Sources/Capacitor/Application/Projects/ProjectWorkflowState.swift
+      - apps/swift/Sources/Capacitor/Application/Activation/ProjectActivationCoordinator.swift
+      - apps/swift/Sources/Capacitor/Models/WorkstreamsManager.swift
+      - apps/swift/Sources/Capacitor/ContentView.swift
+      - apps/swift/Sources/Capacitor/Debug/AppDebugSupport.swift
+      - apps/swift/Sources/Capacitor/Support/Accessibility/AccessibilityIdentifiers.swift
+      - apps/swift/Sources/Capacitor/Views/Footer/FooterView.swift
+      - apps/swift/Sources/Capacitor/Views/Navigation/NavigationContainer.swift
+      - apps/swift/Sources/Capacitor/Views/Projects/ActivityPanel.swift
+      - apps/swift/Sources/Capacitor/Views/Projects/CompactProjectCardView.swift
+      - apps/swift/Sources/Capacitor/Views/Projects/DockLayoutView.swift
+      - apps/swift/Sources/Capacitor/Views/Projects/DockProjectCard.swift
+      - apps/swift/Sources/Capacitor/Views/Projects/ProjectCardComponents.swift
+      - apps/swift/Sources/Capacitor/Views/Projects/ProjectCardDropDelegate.swift
+      - apps/swift/Sources/Capacitor/Views/Projects/ProjectCardView.swift
+      - apps/swift/Sources/Capacitor/Views/Projects/ProjectDetailView.swift
+      - apps/swift/Sources/Capacitor/Views/Projects/ProjectsView.swift
+      - apps/swift/Sources/Capacitor/Views/Projects/WorkstreamsPanel.swift
+      - apps/swift/Tests/CapacitorTests/AppStateSessionObservationTests.swift
+      - apps/swift/Tests/CapacitorTests/ProjectActivationCoordinatorTests.swift
+      - apps/swift/Tests/CapacitorTests/WorkstreamsManagerTests.swift
+      - apps/swift/Tests/CapacitorTests/ProjectWorkflowStateTests.swift
+      - apps/swift/Tests/CapacitorTests/ArchitectureBoundaryTests.swift
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - apps/swift/Sources/Capacitor/Application/Projects/DashboardLoader.swift
+        - apps/swift/Sources/Capacitor/Application/Projects/ProjectMutationService.swift
+        - apps/swift/Sources/Capacitor/Application/Projects/ProjectWorkflowState.swift
+        - apps/swift/Sources/Capacitor/Application/Activation/ProjectActivationCoordinator.swift
+        - apps/swift/Sources/Capacitor/Models/WorkstreamsManager.swift
+        - apps/swift/Sources/Capacitor/ContentView.swift
+        - apps/swift/Sources/Capacitor/Debug/AppDebugSupport.swift
+        - apps/swift/Sources/Capacitor/Support/Accessibility/AccessibilityIdentifiers.swift
+        - apps/swift/Sources/Capacitor/Views/Footer/FooterView.swift
+        - apps/swift/Sources/Capacitor/Views/Navigation/NavigationContainer.swift
+        - apps/swift/Sources/Capacitor/Views/Projects/ActivityPanel.swift
+        - apps/swift/Sources/Capacitor/Views/Projects/CompactProjectCardView.swift
+        - apps/swift/Sources/Capacitor/Views/Projects/DockLayoutView.swift
+        - apps/swift/Sources/Capacitor/Views/Projects/DockProjectCard.swift
+        - apps/swift/Sources/Capacitor/Views/Projects/ProjectCardComponents.swift
+        - apps/swift/Sources/Capacitor/Views/Projects/ProjectCardDropDelegate.swift
+        - apps/swift/Sources/Capacitor/Views/Projects/ProjectCardView.swift
+        - apps/swift/Sources/Capacitor/Views/Projects/ProjectDetailView.swift
+        - apps/swift/Sources/Capacitor/Views/Projects/ProjectsView.swift
+        - apps/swift/Sources/Capacitor/Views/Projects/WorkstreamsPanel.swift
+        - apps/swift/Tests/CapacitorTests/AppStateSessionObservationTests.swift
+        - apps/swift/Tests/CapacitorTests/ProjectActivationCoordinatorTests.swift
+        - apps/swift/Tests/CapacitorTests/WorkstreamsManagerTests.swift
+        - apps/swift/Tests/CapacitorTests/ProjectWorkflowStateTests.swift
+        - apps/swift/Tests/CapacitorTests/ArchitectureBoundaryTests.swift
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios:
+      - connect project via file browser
+      - drag-drop project import
+      - list -> detail -> new idea -> list navigation
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "The project-detail navigation fix from 31a2f8c depends on project lookup by path; mitigation is keeping detail routing assertions and AX/manual verification in the slice."
+    notes: "Completed the SwiftUI shell DTO cutover. `legacySuggestedProjects`, `selectedLegacySuggestedProjects`, and `legacyProjects` are gone from Swift source, the view/debug layer now reads shell catalog entries directly, and `ProjectCatalogBridge` remains boundary-scoped until the upstream core/FFI DTO boundary changes."
+
+  - id: RW-105
+    name: "AppState Endgame Shrink"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-104
+    touched_paths:
+      - apps/swift/Sources/Capacitor/Composition/AppShellContainer.swift
+      - apps/swift/Sources/Capacitor/Composition/AppStateDependencies.swift
+      - apps/swift/Sources/Capacitor/Models/AppState.swift
+      - apps/swift/Sources/Capacitor/ContentView.swift
+      - apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift
+      - apps/swift/Sources/Capacitor/Adapters/Shell/LiveActivationGateway.swift
+      - apps/swift/Sources/Capacitor/Views/Projects/ActivityPanel.swift
+      - apps/swift/Sources/Capacitor/Views/Projects/DockLayoutView.swift
+      - apps/swift/Tests/CapacitorTests/AppStateCreationTests.swift
+      - apps/swift/Tests/CapacitorTests/AppStateDropTests.swift
+      - apps/swift/Tests/CapacitorTests/AppStateSessionObservationTests.swift
+      - apps/swift/Tests/CapacitorTests/AppStateTestSupport.swift
+      - apps/swift/Tests/CapacitorTests/ArchitectureBoundaryTests.swift
+      - apps/swift/Tests/CapacitorTests/ProjectWorkflowStateTests.swift
+      - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
+      - docs/audit/ARCHITECTURE_ENDGAME_PLAN_2026-03-07.md
+      - docs/audit/ARCHITECTURE_CHECKPOINT_2026-03-07.md
+      - rewrite/DECISIONS.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - apps/swift/Sources/Capacitor/Composition/AppShellContainer.swift
+        - apps/swift/Sources/Capacitor/Composition/AppStateDependencies.swift
+        - apps/swift/Sources/Capacitor/Models/AppState.swift
+        - apps/swift/Sources/Capacitor/ContentView.swift
+        - apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift
+        - apps/swift/Sources/Capacitor/Adapters/Shell/LiveActivationGateway.swift
+        - apps/swift/Sources/Capacitor/Views/Projects/ActivityPanel.swift
+        - apps/swift/Sources/Capacitor/Views/Projects/DockLayoutView.swift
+        - apps/swift/Tests/CapacitorTests/AppStateCreationTests.swift
+        - apps/swift/Tests/CapacitorTests/AppStateDropTests.swift
+        - apps/swift/Tests/CapacitorTests/AppStateSessionObservationTests.swift
+        - apps/swift/Tests/CapacitorTests/AppStateTestSupport.swift
+        - apps/swift/Tests/CapacitorTests/ArchitectureBoundaryTests.swift
+        - apps/swift/Tests/CapacitorTests/ProjectWorkflowStateTests.swift
+        - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
+        - docs/audit/ARCHITECTURE_ENDGAME_PLAN_2026-03-07.md
+        - docs/audit/ARCHITECTURE_CHECKPOINT_2026-03-07.md
+        - rewrite/DECISIONS.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios:
+      - cold launch with setup complete
+      - quick feedback sheet open/dismiss under AX
+      - alpha-stable launch hides project-detail affordances
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Future removal of ProjectCatalogBridge still depends on an upstream UniFFI/core DTO slice; RW-105 intentionally stops at freezing that boundary rather than inventing a new adapter layer in Swift."
+    notes: "Completed the AppState endgame shrink. Dead profile/tracking flags and duplicate local layout persistence are deleted, terminal activation is shell-reference-native, the remaining runtime test hook is path-generic, AppState convenience/live construction is gone, live-world assembly is confined to AppShellContainer plus AppStateTestSupport, and AppState retains only intentional outer-layer state plus local collaborator wiring for self-referential UI/composition closures."
+
+  - id: RW-106
+    name: "Rust Finish-Line Audit + Boundary Freeze"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-105
+    touched_paths:
+      - docs/audit/ARCHITECTURE_FINISH_LINE_AUDIT_2026-03-08.md
+      - docs/audit/SUMMARY.md
+      - rewrite/DECISIONS.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+      - scripts/rewrite/check_rewrite_guards.sh
+    contracts:
+      added:
+        - docs/audit/ARCHITECTURE_FINISH_LINE_AUDIT_2026-03-08.md
+      changed:
+        - docs/audit/SUMMARY.md
+        - rewrite/DECISIONS.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+        - scripts/rewrite/check_rewrite_guards.sh
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "The measured Rust seam mixes real finish-line debt with intentional compatibility code; follow-on slices must keep those categories separate so they do not delete user-data migrations by accident."
+    notes: "Captures the March 8 finish-line audit, freezes the current Rust/FFI residual seam with guard ratchets (`clean/*` scaffold todos plus direct legacy helper counts in CoreRuntime), and defines the follow-on slices needed to converge the Rust core and delete the remaining temporary Swift project bridge."
+
+  - id: RW-107
+    name: "Rust Projects Boundary Convergence"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-106
+    touched_paths:
+      - core/capacitor-core/src/lib.rs
+      - core/capacitor-core/src/clean/projects/*
+      - core/capacitor-core/src/runtime_projects.rs
+      - core/capacitor-core/src/runtime_config.rs
+      - core/capacitor-core/tests/ffi_contract.rs
+      - core/capacitor-core/tests/replay_diff.rs
+      - scripts/rewrite/check_rewrite_guards.sh
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - core/capacitor-core/src/lib.rs
+        - core/capacitor-core/src/clean/projects/*
+        - core/capacitor-core/src/runtime_projects.rs
+        - core/capacitor-core/src/runtime_config.rs
+        - core/capacitor-core/tests/ffi_contract.rs
+        - core/capacitor-core/tests/replay_diff.rs
+        - scripts/rewrite/check_rewrite_guards.sh
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios:
+      - full_corpus
+    smoke_scenarios:
+      - add_remove_project_flow
+    denylist_patterns:
+      - "content:core/capacitor-core/src/lib.rs::load_hud_config_with_storage"
+      - "content:core/capacitor-core/src/lib.rs::save_hud_config_with_storage"
+      - "content:core/capacitor-core/src/lib.rs::load_projects_with_storage"
+      - "content:core/capacitor-core/src/lib.rs::runtime_projects::try_resolve_encoded_path"
+      - "content:core/capacitor-core/src/lib.rs::validate_project_path\\("
+      - "content:core/capacitor-core/src/lib.rs::create_claude_md\\("
+      - "content:core/capacitor-core/src/clean/projects/application.rs::todo!\\(\"Shell scaffold only\"\\)"
+    deletion_targets: []
+    risks:
+      - "Project/catalog behavior currently mixes Claude filesystem reads, config mutation, validation, and dashboard projection in one FFI façade; the slice must reduce that mix without regressing project suggestion ranking or CLAUDE.md bootstrap behavior."
+    notes: "Completed the first Rust finish-line implementation slice. `CoreRuntime` now routes dashboard project reads, project suggestions, add/remove, validation, and CLAUDE.md bootstrap through the clean projects bounded context; `clean/projects/application.rs` no longer contains scaffold todos; the direct project/config helper budget in `lib.rs` dropped from 13 to 0; and the global clean-shell scaffold budget dropped from 12 to 9."
+
+  - id: RW-108
+    name: "Rust Ideas Boundary Convergence"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-107
+    touched_paths:
+      - core/capacitor-core/src/lib.rs
+      - core/capacitor-core/src/clean/ideas/*
+      - core/capacitor-core/src/runtime_ideas.rs
+      - core/capacitor-core/tests/ffi_contract.rs
+      - scripts/rewrite/check_rewrite_guards.sh
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - core/capacitor-core/src/lib.rs
+        - core/capacitor-core/src/clean/ideas/*
+        - core/capacitor-core/src/runtime_ideas.rs
+        - core/capacitor-core/tests/ffi_contract.rs
+        - scripts/rewrite/check_rewrite_guards.sh
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios:
+      - idea_capture_edit_order
+    denylist_patterns:
+      - "content:core/capacitor-core/src/lib.rs::runtime_ideas::"
+      - "content:core/capacitor-core/src/clean/ideas/application.rs::todo!\\(\"Shell scaffold only\"\\)"
+    deletion_targets: []
+    risks:
+      - "Idea persistence and workstream/project-creation adjacency may hide behavior that is not obvious from the current runtime_ideas call surface alone."
+    notes: "Completed the Rust ideas convergence slice. `CoreRuntime` now routes idea capture/load/update/order/file-path behavior through the clean ideas bounded context; `clean/ideas/application.rs` no longer contains scaffold todos; the direct `runtime_ideas::*` budget in `lib.rs` dropped from 9 to 0; and the global clean-shell scaffold budget dropped from 9 to 6 while also fixing a real description-replacement bug in the canonical markdown helper."
+
+  - id: RW-109
+    name: "Rust Setup Boundary Convergence"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-108
+    touched_paths:
+      - core/capacitor-core/src/lib.rs
+      - core/capacitor-core/src/clean/setup/*
+      - core/capacitor-core/src/runtime_setup.rs
+      - core/capacitor-core/tests/ffi_contract.rs
+      - scripts/rewrite/check_rewrite_guards.sh
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - core/capacitor-core/src/lib.rs
+        - core/capacitor-core/src/clean/setup/*
+        - core/capacitor-core/src/runtime_setup.rs
+        - core/capacitor-core/tests/ffi_contract.rs
+        - scripts/rewrite/check_rewrite_guards.sh
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios:
+      - hook_install_fix_flow
+    denylist_patterns:
+      - "content:core/capacitor-core/src/lib.rs::setup_checker\\("
+      - "content:core/capacitor-core/src/clean/setup/application.rs::todo!\\(\"Shell scaffold only\"\\)"
+    deletion_targets: []
+    risks:
+      - "Setup is where intentional legacy hook compatibility also lives; the slice must reduce direct SetupChecker ownership in CoreRuntime without deleting migration semantics that still protect real user settings."
+    notes: "Completed the Rust setup convergence slice. `CoreRuntime` now routes setup mutation through the clean setup service instead of owning `SetupChecker` directly; `clean/setup/application.rs` no longer contains scaffold todos; the direct `setup_checker(` budget in `lib.rs` dropped from 4 to 0; and the global clean-shell scaffold budget dropped from 6 to 4 while preserving runtime_setup's user-settings compatibility behavior."
+
+  - id: RW-110
+    name: "Rust Activation Boundary Convergence"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-109
+    touched_paths:
+      - rewrite/CHARTER.md
+      - rewrite/DECISIONS.md
+      - docs/audit/ARCHITECTURE_FINISH_LINE_AUDIT_2026-03-08.md
+      - core/capacitor-core/src/lib.rs
+      - core/capacitor-core/src/clean/composition.rs
+      - core/capacitor-core/src/clean/mod.rs
+      - core/capacitor-core/src/clean/activation/*
+      - core/capacitor-core/src/runtime_activation/*
+      - scripts/rewrite/check_rewrite_guards.sh
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - rewrite/CHARTER.md
+        - rewrite/DECISIONS.md
+        - docs/audit/ARCHITECTURE_FINISH_LINE_AUDIT_2026-03-08.md
+        - core/capacitor-core/src/lib.rs
+        - core/capacitor-core/src/clean/composition.rs
+        - core/capacitor-core/src/clean/mod.rs
+        - core/capacitor-core/src/clean/activation/*
+        - core/capacitor-core/src/runtime_activation/*
+        - scripts/rewrite/check_rewrite_guards.sh
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios:
+      - project_activation_and_trace_display
+    denylist_patterns:
+      - "core/capacitor-core/src/clean/activation/*"
+      - "core/capacitor-core/src/runtime_activation/*"
+    deletion_targets:
+      - core/capacitor-core/src/clean/activation/*
+      - core/capacitor-core/src/runtime_activation/*
+    risks:
+      - "Activation is the most cross-cutting finish-line slice because the charter says Rust owns activation planning while Swift still owns terminal/AX side effects; the slice must make that split explicit instead of moving logic back and forth."
+    notes: "Completed the activation ownership decision slice. Production activation is now explicitly Swift-owned, the dormant Rust clean activation shell and test-only runtime_activation planner are deleted, and the clean-shell scaffold budget drops again without opening a larger FFI activation redesign campaign."
+
+  - id: RW-111
+    name: "FFI DTO Cutover and Swift Project Bridge Deletion"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-110
+    touched_paths:
+      - core/capacitor-core/src/lib.rs
+      - core/capacitor-core/src/runtime_projects.rs
+      - core/capacitor-core/src/clean/projects/*
+      - core/capacitor-core/src/runtime_types.rs
+      - apps/swift/Sources/Capacitor/Adapters/CoreBridge/ProjectCatalogBridge.swift
+      - apps/swift/Sources/Capacitor/Adapters/CoreBridge/LiveProjectCatalogGateway.swift
+      - apps/swift/Sources/Capacitor/Application/Projects/DashboardLoader.swift
+      - apps/swift/Sources/Capacitor/Domain/Shared/ShellTypes.swift
+      - apps/swift/Sources/Capacitor/Bridge/capacitor_core.swift
+      - apps/swift/Sources/CapacitorCoreFFI/capacitor_coreFFI.h
+      - apps/swift/Sources/Capacitor/Domain/Shared/ProjectPathProviding.swift
+      - apps/swift/Tests/CapacitorTests/ArchitectureBoundaryTests.swift
+      - apps/swift/Tests/CapacitorTests/DashboardLoaderTests.swift
+      - apps/swift/Tests/CapacitorTests/ProjectCatalogBridgeTests.swift
+      - apps/swift/Tests/CapacitorTests/ProjectWorkflowStateTests.swift
+      - rewrite/DECISIONS.md
+      - docs/audit/ARCHITECTURE_FINISH_LINE_AUDIT_2026-03-08.md
+      - scripts/rewrite/check_rewrite_guards.sh
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - core/capacitor-core/src/lib.rs
+        - core/capacitor-core/src/runtime_projects.rs
+        - core/capacitor-core/src/clean/projects/*
+        - core/capacitor-core/src/runtime_types.rs
+        - apps/swift/Sources/Capacitor/Adapters/CoreBridge/ProjectCatalogBridge.swift
+        - apps/swift/Sources/Capacitor/Adapters/CoreBridge/LiveProjectCatalogGateway.swift
+        - apps/swift/Sources/Capacitor/Application/Projects/DashboardLoader.swift
+        - apps/swift/Sources/Capacitor/Domain/Shared/ShellTypes.swift
+        - apps/swift/Sources/Capacitor/Bridge/capacitor_core.swift
+        - apps/swift/Sources/CapacitorCoreFFI/capacitor_coreFFI.h
+        - apps/swift/Sources/Capacitor/Domain/Shared/ProjectPathProviding.swift
+        - apps/swift/Tests/CapacitorTests/ArchitectureBoundaryTests.swift
+        - apps/swift/Tests/CapacitorTests/DashboardLoaderTests.swift
+        - apps/swift/Tests/CapacitorTests/ProjectCatalogBridgeTests.swift
+        - apps/swift/Tests/CapacitorTests/ProjectWorkflowStateTests.swift
+        - rewrite/DECISIONS.md
+        - docs/audit/ARCHITECTURE_FINISH_LINE_AUDIT_2026-03-08.md
+        - scripts/rewrite/check_rewrite_guards.sh
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios:
+      - full_corpus
+    smoke_scenarios:
+      - add_remove_project_flow
+      - list -> detail -> new idea -> list navigation
+    denylist_patterns: []
+    deletion_targets:
+      - apps/swift/Sources/Capacitor/Adapters/CoreBridge/ProjectCatalogBridge.swift
+    risks:
+      - "The project DTO cutover is the slice most likely to surface accidental schema drift between Rust UniFFI output and Swift shell-native expectations."
+    notes: "Completed the FFI DTO cutover. Rust now exports shell-native project/catalog DTOs directly, the generated Swift bridge owns those DTO definitions, Swift keeps only thin convenience ergonomics/extensions for them, and the temporary ProjectCatalogBridge anti-corruption file is deleted."
+
+  - id: RW-112
+    name: "Finish-Line Dead Code Sweep and Final Checkpoint"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-111
+    touched_paths:
+      - core/capacitor-core/src/clean/composition.rs
+      - core/capacitor-core/src/clean/mod.rs
+      - core/capacitor-core/src/clean/feedback/*
+      - docs/audit/ARCHITECTURE_FINISH_LINE_AUDIT_2026-03-08.md
+      - docs/audit/ARCHITECTURE_CHECKPOINT_2026-03-08.md
+      - docs/audit/SUMMARY.md
+      - scripts/rewrite/check_rewrite_guards.sh
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - core/capacitor-core/src/clean/composition.rs
+        - core/capacitor-core/src/clean/mod.rs
+        - core/capacitor-core/src/clean/feedback/*
+        - docs/audit/ARCHITECTURE_FINISH_LINE_AUDIT_2026-03-08.md
+        - docs/audit/ARCHITECTURE_CHECKPOINT_2026-03-08.md
+        - docs/audit/SUMMARY.md
+        - scripts/rewrite/check_rewrite_guards.sh
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios:
+      - full_corpus
+    smoke_scenarios:
+      - cold launch with setup complete
+      - quick feedback sheet open/dismiss under AX
+      - project_activation_and_trace_display
+    denylist_patterns:
+      - "core/capacitor-core/src/clean/feedback/*"
+    deletion_targets:
+      - core/capacitor-core/src/clean/feedback/*
+    risks:
+      - "The final sweep should delete only paths made redundant by the new canonical architecture, not compatibility bridges that are still intentionally retained for user data/settings migration."
+    notes: "Completed the final sweep. The dead Rust clean feedback shell is deleted, the scaffold-todo budget is now zero, the final March 8 architecture checkpoint records the end state, and the rewrite control plane has no pending or in-progress slices."

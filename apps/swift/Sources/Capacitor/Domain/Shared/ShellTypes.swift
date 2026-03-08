@@ -19,19 +19,8 @@ struct ShellProjectReference: Identifiable, Hashable, Sendable {
     }
 }
 
-struct ShellProjectCatalogEntry: Identifiable, Hashable, Sendable {
-    let id: String
-    let displayName: String
-    let path: String
-    let displayPath: String
-    let lastActiveAt: String?
-    let claudeMdPath: String?
-    let claudeMdPreview: String?
-    let hasLocalSettings: Bool
-    let taskCount: UInt32
-    let stats: ShellProjectStats?
-    let isMissing: Bool
-
+extension ShellProjectCatalogEntry: @unchecked Sendable {}
+extension ShellProjectCatalogEntry {
     init(
         id: String? = nil,
         displayName: String,
@@ -45,43 +34,26 @@ struct ShellProjectCatalogEntry: Identifiable, Hashable, Sendable {
         stats: ShellProjectStats? = nil,
         isMissing: Bool = false,
     ) {
-        self.id = id ?? path
-        self.displayName = displayName
-        self.path = path
-        self.displayPath = displayPath ?? path
-        self.lastActiveAt = lastActiveAt
-        self.claudeMdPath = claudeMdPath
-        self.claudeMdPreview = claudeMdPreview
-        self.hasLocalSettings = hasLocalSettings
-        self.taskCount = taskCount
-        self.stats = stats
-        self.isMissing = isMissing
+        self.init(
+            id: id ?? path,
+            displayName: displayName,
+            path: path,
+            displayPath: displayPath ?? path,
+            lastActiveAt: lastActiveAt,
+            claudeMdPath: claudeMdPath,
+            claudeMdPreview: claudeMdPreview,
+            hasLocalSettings: hasLocalSettings,
+            taskCount: taskCount,
+            stats: stats,
+            isMissing: isMissing,
+        )
     }
 }
 
-struct ShellProjectStats: Hashable, Sendable {
-    let totalInputTokens: UInt64
-    let totalOutputTokens: UInt64
-    let totalCacheReadTokens: UInt64
-    let totalCacheCreationTokens: UInt64
-    let opusMessages: UInt32
-    let sonnetMessages: UInt32
-    let haikuMessages: UInt32
-    let sessionCount: UInt32
-    let latestSummary: String?
-    let firstActivity: String?
-    let lastActivity: String?
-}
+extension ShellProjectStats: @unchecked Sendable {}
 
-struct ShellSuggestedProjectCandidate: Identifiable, Hashable, Sendable {
-    let id: String
-    let displayName: String
-    let path: String
-    let displayPath: String
-    let taskCount: UInt32
-    let hasClaudeMd: Bool
-    let hasProjectIndicators: Bool
-
+extension ShellSuggestedProjectCandidate: @unchecked Sendable {}
+extension ShellSuggestedProjectCandidate {
     init(
         id: String? = nil,
         displayName: String,
@@ -91,13 +63,15 @@ struct ShellSuggestedProjectCandidate: Identifiable, Hashable, Sendable {
         hasClaudeMd: Bool = false,
         hasProjectIndicators: Bool = false,
     ) {
-        self.id = id ?? path
-        self.displayName = displayName
-        self.path = path
-        self.displayPath = displayPath ?? path
-        self.taskCount = taskCount
-        self.hasClaudeMd = hasClaudeMd
-        self.hasProjectIndicators = hasProjectIndicators
+        self.init(
+            id: id ?? path,
+            displayName: displayName,
+            path: path,
+            displayPath: displayPath ?? path,
+            taskCount: taskCount,
+            hasClaudeMd: hasClaudeMd,
+            hasProjectIndicators: hasProjectIndicators,
+        )
     }
 }
 

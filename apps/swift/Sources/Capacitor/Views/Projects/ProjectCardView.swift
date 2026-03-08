@@ -3,7 +3,7 @@ import SwiftUI
 // MARK: - Main Card View
 
 struct ProjectCardView: View {
-    let project: Project
+    let project: ShellProjectCatalogEntry
     let sessionState: ProjectSessionState?
     let projectStatus: ProjectStatus?
     let flashState: SessionState?
@@ -95,7 +95,7 @@ struct ProjectCardView: View {
         #if DEBUG
             let _ = ProjectCardRenderTelemetry.logIfChanged(
                 path: project.path,
-                name: project.name,
+                name: project.displayName,
                 state: sessionState?.state,
                 source: "ProjectCardView",
             )
@@ -204,7 +204,7 @@ struct ProjectCardView: View {
             .contextMenu { cardContextMenu }
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier(AccessibilityIdentifiers.projectCardIdentifier(for: project))
-            .accessibilityLabel(project.name)
+            .accessibilityLabel(project.displayName)
             .accessibilityValue(accessibilityStatusDescription)
             .accessibilityHint("Double-tap to open in terminal. Use actions menu for more options.")
             .accessibilityAction(named: "Open in Terminal", onTap)
@@ -368,7 +368,7 @@ struct ProjectCardView: View {
 // MARK: - Card Header Component
 
 private struct ProjectCardHeader: View {
-    let project: Project
+    let project: ShellProjectCatalogEntry
     let nameColor: Color
     let onInfoTap: (() -> Void)?
     let detailsAccessibilityIdentifier: String
@@ -383,14 +383,14 @@ private struct ProjectCardHeader: View {
 
             if let onInfoTap {
                 ClickableProjectTitle(
-                    name: project.name,
+                    name: project.displayName,
                     nameColor: nameColor,
                     isMissing: project.isMissing,
                     action: onInfoTap,
                     accessibilityIdentifier: detailsAccessibilityIdentifier,
                 )
             } else {
-                Text(project.name)
+                Text(project.displayName)
                     .font(AppTypography.cardTitle.monospaced())
                     .foregroundStyle(nameColor)
                     .strikethrough(project.isMissing, color: .white.opacity(0.3))

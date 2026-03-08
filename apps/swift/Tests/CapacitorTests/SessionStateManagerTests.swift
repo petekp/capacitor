@@ -17,6 +17,19 @@ final class SessionStateManagerTests: XCTestCase {
         XCTAssertNotNil(manager.getSessionState(for: project))
     }
 
+    func testApplyRuntimeProjectStatesSupportsShellProjectReferences() {
+        let manager = makeManager()
+        let project = ShellProjectReference(displayName: "Project", path: "/Users/pete/code/project")
+
+        manager.applyRuntimeProjectStates(
+            [makeRuntimeProjectState(projectPath: "/Users/Pete/Code/Project", state: "working", sessionId: "session-1")],
+            for: [project],
+            correlationId: "apply-shell-reference",
+        )
+
+        XCTAssertNotNil(manager.getSessionState(for: project))
+    }
+
     func testApplyRuntimeProjectStatesPrefersMostSpecificProject() {
         let manager = makeManager()
         let rootProject = makeProject("assistant-ui", path: "/Users/pete/Code/assistant-ui")
@@ -328,6 +341,27 @@ final class SessionStateManagerTests: XCTestCase {
         let state = manager.getSessionState(for: project)
 
         XCTAssertNotNil(state, "Equivalent normalized paths should resolve to existing session state.")
+        XCTAssertEqual(state?.sessionId, "session-symlink")
+    }
+
+    func testGetSessionStateSupportsShellProjectReferences() throws {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+
+        let realProjectPath = tempDir.appendingPathComponent("workspace")
+        let symlinkPath = tempDir.appendingPathComponent("workspace-link")
+        try FileManager.default.createDirectory(at: realProjectPath, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(atPath: symlinkPath.path, withDestinationPath: realProjectPath.path)
+
+        let manager = makeManager()
+        manager.setSessionStatesForTesting([
+            symlinkPath.path + "/": makeSessionState(state: .ready, sessionId: "session-symlink"),
+        ])
+
+        let project = ShellProjectReference(displayName: "workspace", path: realProjectPath.path.uppercased())
+        let state = manager.getSessionState(for: project)
+
+        XCTAssertNotNil(state)
         XCTAssertEqual(state?.sessionId, "session-symlink")
     }
 

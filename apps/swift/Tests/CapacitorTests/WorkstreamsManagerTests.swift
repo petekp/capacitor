@@ -23,6 +23,24 @@ final class WorkstreamsManagerTests: XCTestCase {
         XCTAssertNil(state.errorMessage)
     }
 
+    func testLoadSupportsShellProjectCatalogEntries() {
+        let project = ShellProjectCatalogEntry(displayName: "repo", path: "/tmp/repo")
+        let expected = [
+            makeWorktree(path: "/tmp/repo/.capacitor/worktrees/workstream-1"),
+        ]
+
+        let manager = WorkstreamsManager(
+            listManagedWorktrees: { _ in expected },
+        )
+
+        manager.load(for: project)
+        let state = manager.state(for: project)
+
+        XCTAssertEqual(state.worktrees, expected)
+        XCTAssertFalse(state.isLoading)
+        XCTAssertNil(state.errorMessage)
+    }
+
     func testLoadStoresErrorMessageOnFailure() {
         let project = makeProject(path: "/tmp/repo")
         let manager = WorkstreamsManager(
@@ -298,7 +316,7 @@ final class WorkstreamsManagerTests: XCTestCase {
     }
 
     func testOpenSendsWorktreeShapedProjectToTerminalLauncher() {
-        var openedProject: Project?
+        var openedProject: ShellProjectReference?
         let manager = WorkstreamsManager(
             openWorktree: { project in
                 openedProject = project
@@ -308,9 +326,8 @@ final class WorkstreamsManagerTests: XCTestCase {
         let worktree = makeWorktree(path: "/tmp/repo/.capacitor/worktrees/workstream-9")
         manager.open(worktree)
 
-        XCTAssertEqual(openedProject?.name, "workstream-9")
+        XCTAssertEqual(openedProject?.displayName, "workstream-9")
         XCTAssertEqual(openedProject?.path, worktree.path)
-        XCTAssertEqual(openedProject?.displayPath, worktree.path)
     }
 
     private static func makeProject(path: String) -> Project {

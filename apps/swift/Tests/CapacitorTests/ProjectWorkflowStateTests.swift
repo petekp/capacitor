@@ -17,22 +17,6 @@ final class ProjectWorkflowStateTests: XCTestCase {
 
         XCTAssertEqual(workflowState.projectCatalog, [project])
         XCTAssertEqual(workflowState.suggestedProjectCatalog, [suggestion])
-        XCTAssertEqual(
-            workflowState.projects,
-            [ShellProjectReference(displayName: project.displayName, path: project.path)],
-        )
-        XCTAssertEqual(
-            workflowState.suggestedProjects,
-            [ShellProjectReference(displayName: suggestion.displayName, path: suggestion.path)],
-        )
-        XCTAssertEqual(
-            workflowState.legacyProjects,
-            [makeProject(name: "Capacitor", path: "/tmp/capacitor")],
-        )
-        XCTAssertEqual(
-            workflowState.legacySuggestedProjects,
-            [makeSuggestedProject(name: "Intent", path: "/tmp/intent")],
-        )
     }
 
     func testAppStateRefreshSuggestedProjectsUsesSharedWorkflowState() {
@@ -43,7 +27,7 @@ final class ProjectWorkflowStateTests: XCTestCase {
                 suggestedProjects: [suggestion],
             ),
         )
-        let appState = AppState(
+        let appState = makeTestAppState(
             navigationState: NavigationState(),
             projectWorkflowState: workflowState,
         )
@@ -53,15 +37,10 @@ final class ProjectWorkflowStateTests: XCTestCase {
 
         XCTAssertTrue(appState.projectWorkflowState === workflowState)
         XCTAssertEqual(workflowState.suggestedProjectCatalog, [suggestion])
-        XCTAssertEqual(appState.projectWorkflowState.legacySuggestedProjects, [makeSuggestedProject(name: "Capacitor", path: "/tmp/capacitor")])
-        XCTAssertEqual(
-            workflowState.suggestedProjects,
-            [ShellProjectReference(displayName: suggestion.displayName, path: suggestion.path)],
-        )
     }
 
-    func testReplaceProjectCatalogPreservesLegacyProjectDetailsForDashboardBridgeEntries() {
-        let project = makeProject(name: "Capacitor", path: "/tmp/capacitor", stats: makeProjectStats())
+    func testReplaceProjectCatalogPreservesShellProjectDetailsForDashboardEntries() {
+        let project = makeProjectCatalogEntry(name: "Capacitor", path: "/tmp/capacitor", stats: makeShellProjectStats())
         let workflowState = ProjectWorkflowState(
             projectCatalogGateway: StubProjectCatalogGateway(
                 projects: [],
@@ -69,23 +48,16 @@ final class ProjectWorkflowStateTests: XCTestCase {
             ),
         )
 
-        workflowState.replaceProjectCatalog(
-            with: ProjectCatalogBridge.projectCatalogEntries(from: [project]),
-        )
+        workflowState.replaceProjectCatalog(with: [project])
 
-        XCTAssertEqual(workflowState.legacyProjects, [project])
         XCTAssertEqual(
             workflowState.projectCatalog,
             [makeProjectCatalogEntry(name: "Capacitor", path: "/tmp/capacitor", stats: makeShellProjectStats())],
         )
-        XCTAssertEqual(
-            workflowState.projects,
-            [ShellProjectReference(displayName: project.name, path: project.path)],
-        )
     }
 
-    func testReplaceSuggestedProjectCatalogPreservesLegacySuggestionDetailsForBridgeCandidates() {
-        let suggestion = makeSuggestedProject(name: "Intent", path: "/tmp/intent")
+    func testReplaceSuggestedProjectCatalogPreservesSuggestionDetails() {
+        let suggestion = makeSuggestedProjectCandidate(name: "Intent", path: "/tmp/intent")
         let workflowState = ProjectWorkflowState(
             projectCatalogGateway: StubProjectCatalogGateway(
                 projects: [],
@@ -93,18 +65,11 @@ final class ProjectWorkflowStateTests: XCTestCase {
             ),
         )
 
-        workflowState.replaceSuggestedProjectCatalog(
-            with: ProjectCatalogBridge.suggestedProjectCandidates(from: [suggestion]),
-        )
+        workflowState.replaceSuggestedProjectCatalog(with: [suggestion])
 
-        XCTAssertEqual(workflowState.legacySuggestedProjects, [suggestion])
         XCTAssertEqual(
             workflowState.suggestedProjectCatalog,
             [makeSuggestedProjectCandidate(name: "Intent", path: "/tmp/intent")],
-        )
-        XCTAssertEqual(
-            workflowState.suggestedProjects,
-            [ShellProjectReference(displayName: suggestion.name, path: suggestion.path)],
         )
     }
 
@@ -126,11 +91,8 @@ final class ProjectWorkflowStateTests: XCTestCase {
         XCTAssertEqual(workflowState.selectedSuggestedPaths, [first.path, second.path])
         XCTAssertEqual(workflowState.selectedSuggestedProjectCount, 2)
         XCTAssertEqual(
-            workflowState.selectedLegacySuggestedProjects,
-            [
-                makeSuggestedProject(name: "Capacitor", path: "/tmp/capacitor"),
-                makeSuggestedProject(name: "Intent", path: "/tmp/intent"),
-            ],
+            workflowState.selectedSuggestedProjectCandidates,
+            [first, second],
         )
 
         workflowState.toggleSuggestedProjectSelection(path: first.path)
@@ -158,40 +120,14 @@ final class ProjectWorkflowStateTests: XCTestCase {
 
         XCTAssertEqual(workflowState.selectedSuggestedPaths, [second.path])
         XCTAssertEqual(
-            workflowState.selectedLegacySuggestedProjects,
-            [makeSuggestedProject(name: "Intent", path: "/tmp/intent")],
+            workflowState.selectedSuggestedProjectCandidates,
+            [second],
         )
 
         workflowState.clearSuggestedProjects()
 
         XCTAssertTrue(workflowState.selectedSuggestedPaths.isEmpty)
         XCTAssertEqual(workflowState.selectedSuggestedProjectCount, 0)
-    }
-
-    private func makeProject(name: String, path: String, stats: ProjectStats? = nil) -> Project {
-        Project(
-            name: name,
-            path: path,
-            displayPath: path,
-            lastActive: nil,
-            claudeMdPath: nil,
-            claudeMdPreview: nil,
-            hasLocalSettings: false,
-            taskCount: 0,
-            stats: stats,
-            isMissing: false,
-        )
-    }
-
-    private func makeSuggestedProject(name: String, path: String) -> SuggestedProject {
-        SuggestedProject(
-            path: path,
-            displayPath: path,
-            name: name,
-            taskCount: 0,
-            hasClaudeMd: false,
-            hasProjectIndicators: true,
-        )
     }
 
     private func makeProjectCatalogEntry(
@@ -221,22 +157,6 @@ final class ProjectWorkflowStateTests: XCTestCase {
             taskCount: 0,
             hasClaudeMd: false,
             hasProjectIndicators: true,
-        )
-    }
-
-    private func makeProjectStats() -> ProjectStats {
-        ProjectStats(
-            totalInputTokens: 10,
-            totalOutputTokens: 20,
-            totalCacheReadTokens: 30,
-            totalCacheCreationTokens: 40,
-            opusMessages: 1,
-            sonnetMessages: 2,
-            haikuMessages: 3,
-            sessionCount: 4,
-            latestSummary: "Latest",
-            firstActivity: "2026-03-01T00:00:00Z",
-            lastActivity: "2026-03-05T00:00:00Z",
         )
     }
 

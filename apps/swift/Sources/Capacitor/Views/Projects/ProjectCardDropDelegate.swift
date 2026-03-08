@@ -2,10 +2,10 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct ProjectCardDropDelegate: DropDelegate {
-    let project: Project
-    let groupProjects: [Project]
+    let project: ShellProjectCatalogEntry
+    let groupProjects: [ShellProjectCatalogEntry]
     let group: ActivityGroup
-    @Binding var draggedProject: Project?
+    @Binding var draggedProject: ShellProjectCatalogEntry?
     let appState: AppState
 
     private var isExternalFileDrag: Bool {
@@ -31,7 +31,7 @@ struct ProjectCardDropDelegate: DropDelegate {
                 from: IndexSet(integer: fromIndex),
                 to: toIndex > fromIndex ? toIndex + 1 : toIndex,
                 in: groupProjects,
-                allProjects: appState.projectWorkflowState.legacyProjects,
+                allProjects: appState.projectWorkflowState.projectCatalog,
                 group: group,
             )
         }

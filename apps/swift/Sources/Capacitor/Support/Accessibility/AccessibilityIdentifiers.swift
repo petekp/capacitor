@@ -3,17 +3,17 @@ import Foundation
 enum AccessibilityIdentifiers {
     static let backProjectsIdentifier = "ax.nav.back-projects"
 
-    static func projectCardIdentifier(for project: Project) -> String {
+    static func projectCardIdentifier(for project: some ShellProjectReferenceProviding) -> String {
         "ax.project-card.\(slug(for: project))"
     }
 
-    static func projectDetailsIdentifier(for project: Project) -> String {
+    static func projectDetailsIdentifier(for project: some ShellProjectReferenceProviding) -> String {
         "ax.project-details.\(slug(for: project))"
     }
 
-    static func slug(for project: Project) -> String {
+    static func slug(for project: some ShellProjectReferenceProviding) -> String {
         let candidate = URL(fileURLWithPath: project.path).lastPathComponent
-        let source = candidate.isEmpty ? project.name : candidate
+        let source = candidate.isEmpty ? project.shellProjectReference.displayName : candidate
 
         let slug = source
             .lowercased()

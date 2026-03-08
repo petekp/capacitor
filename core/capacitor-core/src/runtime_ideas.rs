@@ -699,13 +699,20 @@ fn update_description_in_content(
                 }
                 description_replaced = true;
             }
-        } else if in_target_idea && !description_replaced {
-            // Skip old description lines until we hit --- or next heading
+        } else if in_target_idea {
+            // Skip old description lines until we hit --- or the next heading.
             if line.trim() == "---" || line.starts_with("### ") || line.starts_with("## ") {
                 in_target_idea = false;
                 updated_lines.push(line.to_string());
+            } else if !description_replaced {
+                // We have not yet inserted the new description because the metadata block did not
+                // terminate with a blank line. Insert it once before continuing to skip the old body.
+                if !new_description.trim().is_empty() {
+                    updated_lines.push(new_description.trim().to_string());
+                    updated_lines.push(String::new());
+                }
+                description_replaced = true;
             }
-            // Otherwise skip the old description line
         } else {
             updated_lines.push(line.to_string());
         }
@@ -829,6 +836,20 @@ mod tests {
 
         let ideas = load_ideas_with_storage(&storage, project_path).unwrap();
         assert_eq!(ideas[0].status, "in-progress");
+    }
+
+    #[test]
+    fn test_update_idea_description_replaces_existing_body() {
+        let temp_root = TempDir::new().unwrap();
+        let storage = StorageConfig::with_root(temp_root.path().to_path_buf());
+        let project_path = "/test/project";
+
+        let id = capture_idea_with_storage(&storage, project_path, "Original body").unwrap();
+        update_idea_description_with_storage(&storage, project_path, &id, "Replacement body")
+            .unwrap();
+
+        let ideas = load_ideas_with_storage(&storage, project_path).unwrap();
+        assert_eq!(ideas[0].description, "Replacement body");
     }
 
     #[test]

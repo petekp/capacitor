@@ -21,7 +21,7 @@ The important distinction versus the March 6, 2026 checkpoint is that the remain
 - modal/drag/toast/error state
 - shell collaborator references composed into the UI layer
 - a small amount of debug/test-only forwarding
-- layout persistence and a few harmless outer-edge helpers
+- local collaborator wiring for outer-layer services that close over `AppState` UI state
 
 That is qualitatively different from the previous god-object shape.
 
@@ -29,21 +29,24 @@ That is qualitatively different from the previous god-object shape.
 
 | Check | Result | Evidence |
 |---|---|---|
-| `swift test` | PASS | `366 tests, 0 failures` |
+| `swift test` | PASS | `394 tests, 0 failures` |
 | `swift build` | PASS | completed successfully |
 | `cargo check -p capacitor-core` | PASS | completed successfully |
 | `cargo test -p capacitor-core clean::tests::` | PASS | `6 passed, 0 failed` |
 | `cargo test -p capacitor-core ffi_` | PASS | `6 passed, 0 failed` |
+| `./scripts/rewrite/check_rewrite_guards.sh --status` | PASS | `active_slices: none` |
+| `bash scripts/ci/test-surface-audit.sh --check` | PASS | completed successfully |
 
 ## Architecture Enforcement Snapshot
 
 Current enforcement signal:
 
-- `ArchitectureBoundaryTests.swift` is now 284 lines of shell ratchets
-- `AppState.swift` is down to 591 lines
+- `ArchitectureBoundaryTests.swift` is now 816 lines of shell ratchets
+- `AppState.swift` is down to 528 lines
 - direct runtime snapshot transport bypasses in Swift: `0`
 - direct `appState.*` project/setup/runtime action façade usage in Swift views: `0`
 - helper-level direct setup reads in `HookInstaller.swift`: `0`
+- rewrite guard active slices: `none`
 
 The remaining `HookInstaller.ensureHooksInstalled(...)` call is the allowed adapter call in `LiveSetupGateway.swift`.
 
@@ -51,11 +54,11 @@ The remaining `HookInstaller.ensureHooksInstalled(...)` call is the allowed adap
 
 What `AppState` still owns, and why that is acceptable:
 
-- layout mode persistence
 - error / toast / drag-hover / capture-modal UI state
 - debug activation trace
 - top-level references to shell-owned state/coordinator objects for SwiftUI environment access
 - debug-only forwarding into runtime refresh and project-creation test hooks
+- local collaborator wiring inside `configureCollaborators(...)` while live-world construction remains in `AppShellContainer`
 
 What `AppState` no longer owns:
 
@@ -75,11 +78,11 @@ What `AppState` no longer owns:
 
 ## Residual Cleanup
 
-These are now cleanup items, not blockers:
+The March 7 endgame cleanup is now closed:
 
-1. Decide whether any remaining debug/test-only forwarding on `AppState` should move to narrower test harnesses.
-2. Decide whether additional collaborator construction currently done inside `AppState.commonInit(...)` should be hoisted fully into composition for readability.
-3. Replace the user-run smoke checklist with app automation if desired.
+1. debug/test-only `AppState` forwarding was narrowed to explicit test support where it still earns its keep
+2. live-world construction is confined to `AppShellContainer` and test support, while `AppState` retains only local collaborator wiring for outer-layer services that close over `AppState`-owned UI state
+3. the user-run smoke checklist remains optional future automation work, not an architecture blocker
 
 None of those residuals change the architectural verdict.
 

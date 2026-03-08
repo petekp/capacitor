@@ -1,7 +1,9 @@
 use crate::clean::setup::domain::{
     SetupAction, SetupPlan, SetupReadiness, SetupRequirement, SetupRequirementKind,
 };
-use crate::runtime_setup::{DependencyStatus, HookStatus, SetupChecker, SetupStatus};
+use crate::runtime_setup::{
+    DependencyStatus, HookStatus, InstallResult, SetupChecker, SetupStatus,
+};
 use crate::runtime_storage::StorageConfig;
 use crate::runtime_types::{HookDiagnosticReport, HookHealthReport, HookHealthStatus, HookIssue};
 
@@ -213,8 +215,53 @@ impl SetupMutatorPort for LiveSetupMutator {
     }
 
     fn install_hook_bundle(&self, plan: &SetupPlan) -> Result<(), SetupPortError> {
-        let _ = (&self.app_storage, plan);
-        Err(SetupPortError::Unimplemented)
+        for action in &plan.actions {
+            match action {
+                SetupAction::InstallHookBinary => {
+                    return Err(SetupPortError::Message(
+                        "InstallHookBinary requires an explicit source path".to_string(),
+                    ));
+                }
+                SetupAction::InstallHooks => {
+                    let result = self.install_hooks()?;
+                    if !result.success {
+                        return Err(SetupPortError::Message(result.message));
+                    }
+                }
+                SetupAction::InstallShellSnippet => {
+                    return Err(SetupPortError::Message(
+                        "InstallShellSnippet is not implemented in the Rust setup mutator"
+                            .to_string(),
+                    ));
+                }
+                SetupAction::RepairPermissions => {
+                    return Err(SetupPortError::Message(
+                        "RepairPermissions is not implemented in the Rust setup mutator"
+                            .to_string(),
+                    ));
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn install_binary_from_path(&self, source_path: &str) -> Result<InstallResult, SetupPortError> {
+        self.setup_checker()
+            .install_binary_from_path(source_path)
+            .map_err(|error| SetupPortError::from(error.to_string()))
+    }
+
+    fn install_hooks(&self) -> Result<InstallResult, SetupPortError> {
+        self.setup_checker()
+            .install_hooks()
+            .map_err(|error| SetupPortError::from(error.to_string()))
+    }
+
+    fn remove_hooks(&self) -> Result<InstallResult, SetupPortError> {
+        self.setup_checker()
+            .remove_hooks()
+            .map_err(|error| SetupPortError::from(error.to_string()))
     }
 }
 
@@ -227,5 +274,29 @@ impl LiveSetupInspector {
 impl LiveSetupMutator {
     fn setup_checker(&self) -> SetupChecker {
         SetupChecker::new(self.app_storage.clone())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    fn live_setup_mutator_reports_missing_binary_source_and_empty_remove_as_canonical_results() {
+        let temp = tempdir().expect("temp dir");
+        let storage =
+            StorageConfig::with_roots(temp.path().join(".capacitor"), temp.path().join(".claude"));
+        let mutator = LiveSetupMutator::new(storage);
+
+        let binary_result = mutator
+            .install_binary_from_path("/definitely/missing/hud-hook")
+            .expect("install binary from path");
+        assert!(!binary_result.success);
+        assert!(binary_result.message.contains("Source binary not found"));
+
+        let remove_result = mutator.remove_hooks().expect("remove hooks");
+        assert!(remove_result.success);
+        assert!(remove_result.message.contains("nothing to remove"));
     }
 }

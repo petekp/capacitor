@@ -186,22 +186,14 @@ struct CreationCard: View {
     }
 
     private func openProject() {
-        if let project = appState.projectWorkflowState.legacyProjects.first(where: { $0.path == creation.path }) {
+        if let project = appState.projectWorkflowState.projectCatalog.first(where: { $0.path == creation.path }) {
             appState.projectActivationCoordinator.activate(project)
         } else {
             let projectURL = URL(fileURLWithPath: creation.path)
             let projectName = projectURL.lastPathComponent.isEmpty ? creation.path : projectURL.lastPathComponent
-            let adHocProject = Project(
-                name: projectName,
+            let adHocProject = ShellProjectReference(
+                displayName: projectName,
                 path: creation.path,
-                displayPath: creation.path,
-                lastActive: nil,
-                claudeMdPath: nil,
-                claudeMdPreview: nil,
-                hasLocalSettings: false,
-                taskCount: 0,
-                stats: nil,
-                isMissing: false,
             )
             appState.projectActivationCoordinator.activate(adHocProject)
         }
@@ -243,7 +235,7 @@ struct CreationCard: View {
 
 #Preview {
     ActivityPanel()
-        .environment(AppState())
+        .environment(AppShellContainer.live().appState)
         .frame(width: 300)
         .padding()
         .background(Color.hudBackground)

@@ -24,16 +24,16 @@ enum ProjectOrdering {
 
     /// Returns projects split into (active, idle) groups using one global persisted order.
     /// Active projects always render first, while preserving relative order from `order`.
-    static func orderedGroupedProjects(
-        _ projects: [Project],
+    static func orderedGroupedProjects<ProjectType: ProjectPathProviding>(
+        _ projects: [ProjectType],
         order: [String],
         sessionStates: [String: ProjectSessionState],
         now: Date = Date(),
-    ) -> (active: [Project], idle: [Project]) {
+    ) -> (active: [ProjectType], idle: [ProjectType]) {
         let globallyOrdered = orderedProjects(projects, customOrder: order)
 
-        var activeProjects: [Project] = []
-        var idleProjects: [Project] = []
+        var activeProjects: [ProjectType] = []
+        var idleProjects: [ProjectType] = []
         activeProjects.reserveCapacity(globallyOrdered.count)
         idleProjects.reserveCapacity(globallyOrdered.count)
 
@@ -100,10 +100,13 @@ enum ProjectOrdering {
         }
     }
 
-    static func orderedProjects(_ projects: [Project], customOrder: [String]) -> [Project] {
+    static func orderedProjects<ProjectType: ProjectPathProviding>(
+        _ projects: [ProjectType],
+        customOrder: [String],
+    ) -> [ProjectType] {
         guard !customOrder.isEmpty else { return projects }
 
-        var result: [Project] = []
+        var result: [ProjectType] = []
         var remaining = projects
 
         for path in customOrder {
@@ -116,12 +119,12 @@ enum ProjectOrdering {
         return result
     }
 
-    static func movedGlobalOrder(
+    static func movedGlobalOrder<ProjectType: ProjectPathProviding>(
         from source: IndexSet,
         to destination: Int,
-        in projectList: [Project],
+        in projectList: [ProjectType],
         globalOrder: [String],
-        allProjects: [Project],
+        allProjects: [ProjectType],
     ) -> [String] {
         guard !projectList.isEmpty else {
             return uniquePaths(globalOrder)
@@ -148,7 +151,11 @@ enum ProjectOrdering {
         return result
     }
 
-    static func movedOrder(from source: IndexSet, to destination: Int, in projectList: [Project]) -> [String] {
+    static func movedOrder(
+        from source: IndexSet,
+        to destination: Int,
+        in projectList: [some ProjectPathProviding],
+    ) -> [String] {
         movedGlobalOrder(
             from: source,
             to: destination,

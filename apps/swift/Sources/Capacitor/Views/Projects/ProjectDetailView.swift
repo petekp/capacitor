@@ -3,7 +3,7 @@ import SwiftUI
 struct ProjectDetailView: View {
     @Environment(AppState.self) var appState: AppState
     @Environment(\.floatingMode) private var floatingMode
-    let project: Project
+    let project: ShellProjectCatalogEntry
 
     @State private var appeared = false
     @State private var selectedIdea: Idea?
@@ -26,7 +26,7 @@ struct ProjectDetailView: View {
                         Spacer()
                     }
 
-                    Text(project.name)
+                    Text(project.displayName)
                         .font(AppTypography.pageTitle.monospaced())
                         .foregroundColor(.white)
                         .opacity(appeared ? 1 : 0)

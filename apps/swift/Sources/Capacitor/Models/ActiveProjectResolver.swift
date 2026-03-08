@@ -16,11 +16,11 @@ final class ActiveProjectResolver {
     private let logger = Logger(subsystem: "com.capacitor.app", category: "ActiveProjectResolver")
     private let sessionStateManager: SessionStateManager
 
-    private(set) var activeProject: Project?
+    private(set) var activeProject: ShellProjectReference?
     private(set) var activeSource: ActiveSource = .none
 
-    private var projects: [Project] = []
-    private var manualOverride: Project?
+    private var projects: [ShellProjectReference] = []
+    private var manualOverride: ShellProjectReference?
 
     init(sessionStateManager: SessionStateManager) {
         self.sessionStateManager = sessionStateManager
@@ -28,20 +28,21 @@ final class ActiveProjectResolver {
 
     // MARK: - Public API
 
-    func updateProjects(_ projects: [Project]) {
-        self.projects = projects
+    func updateProjects(_ projects: [some ShellProjectReferenceProviding]) {
+        self.projects = projects.map(\.shellProjectReference)
     }
 
     /// Set a manual override for the active project.
     /// The override persists until:
     /// - User clicks on a different project
     /// - User navigates to a project directory that has an active Claude session
-    func setManualOverride(_ project: Project) {
-        manualOverride = project
-        logger.info("Manual override set: \(project.path, privacy: .public)")
+    func setManualOverride(_ project: some ShellProjectReferenceProviding) {
+        let projectReference = project.shellProjectReference
+        manualOverride = projectReference
+        logger.info("Manual override set: \(projectReference.path, privacy: .public)")
         Telemetry.emit("active_project_override", "Manual override set", payload: [
-            "project": project.name,
-            "path": project.path,
+            "project": projectReference.displayName,
+            "path": projectReference.path,
         ])
     }
 
@@ -57,7 +58,7 @@ final class ActiveProjectResolver {
             logger.info("Resolve result: activeProject=\(override.path, privacy: .public) source=manualOverride")
             DebugLog.write("ActiveProjectResolver.result activeProject=\(override.path) source=manualOverride")
             Telemetry.emit("active_project_resolution", "Manual override active", payload: [
-                "project": override.name,
+                "project": override.displayName,
                 "path": override.path,
                 "source": "manualOverride",
             ])
@@ -71,7 +72,7 @@ final class ActiveProjectResolver {
             logger.info("Resolve result: activeProject=\(project.path, privacy: .public) source=claude session=\(sessionId, privacy: .public)")
             DebugLog.write("ActiveProjectResolver.result activeProject=\(project.path) source=claude session=\(sessionId)")
             Telemetry.emit("active_project_resolution", "Claude session active", payload: [
-                "project": project.name,
+                "project": project.displayName,
                 "path": project.path,
                 "source": "claude",
                 "session_id": sessionId,
@@ -90,9 +91,9 @@ final class ActiveProjectResolver {
 
     // MARK: - Private Resolution
 
-    private func findActiveClaudeSession() -> (Project, String)? {
-        var activeSessions: [(Project, String, Date)] = []
-        var readySessions: [(Project, String, Date)] = []
+    private func findActiveClaudeSession() -> (ShellProjectReference, String)? {
+        var activeSessions: [(ShellProjectReference, String, Date)] = []
+        var readySessions: [(ShellProjectReference, String, Date)] = []
         var sessionSummary: [String] = []
         for project in projects {
             guard let sessionState = sessionStateManager.getSessionState(for: project),

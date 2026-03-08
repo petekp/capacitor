@@ -4,7 +4,7 @@ import XCTest
 @MainActor
 final class AppStateCreationTests: XCTestCase {
     func testDiscoveredSessionDoesNotReactivateCancelledCreation() {
-        let appState = AppState()
+        let appState = makeTestAppState()
         let creationId = "creation-cancelled"
         appState.projectCreationCoordinator.setCreationsForTesting([
             makeCreation(id: creationId, status: .cancelled),
@@ -23,7 +23,7 @@ final class AppStateCreationTests: XCTestCase {
     }
 
     func testCancelCreationCancelsTrackedMonitorTasks() {
-        let appState = AppState()
+        let appState = makeTestAppState()
         let creationId = "creation-in-progress"
         appState.projectCreationCoordinator.setCreationsForTesting([
             makeCreation(id: creationId, status: .inProgress),

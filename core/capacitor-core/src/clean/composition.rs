@@ -8,11 +8,6 @@ use crate::runtime_types::{
 };
 use crate::storage::SnapshotStorage;
 
-use super::activation::{application::ActivationService, infrastructure::LiveActivationAdapter};
-use super::feedback::{
-    application::FeedbackService,
-    infrastructure::{LiveFeedbackSink, LiveTelemetrySink},
-};
 use super::ideas::{
     application::IdeaService,
     infrastructure::{LiveIdeaRepository, LiveWorktreePort},
@@ -33,10 +28,8 @@ use super::setup::{
 pub(crate) struct CleanArchitectureShell {
     pub(crate) runtime: RuntimeService,
     pub(crate) setup: SetupService,
-    pub(crate) activation: ActivationService,
     pub(crate) projects: ProjectCatalogService,
     pub(crate) ideas: IdeaService,
-    pub(crate) feedback: FeedbackService,
 }
 
 impl CleanArchitectureShell {
@@ -52,21 +45,16 @@ impl CleanArchitectureShell {
         ));
         let setup_inspector = Arc::new(LiveSetupInspector::new(app_storage.clone()));
         let setup_mutator = Arc::new(LiveSetupMutator::new(app_storage.clone()));
-        let activation_adapter = Arc::new(LiveActivationAdapter::new(app_storage.clone()));
         let project_catalog_store = Arc::new(LiveProjectCatalogStore::new(app_storage.clone()));
         let workspace_inspector = Arc::new(LiveWorkspaceInspector::new(app_storage.clone()));
         let idea_repository = Arc::new(LiveIdeaRepository::new(app_storage.clone()));
         let worktree_port = Arc::new(LiveWorktreePort::new(app_storage.clone()));
-        let feedback_sink = Arc::new(LiveFeedbackSink::new(app_storage.clone()));
-        let telemetry_sink = Arc::new(LiveTelemetrySink::new(app_storage));
 
         Self {
             runtime: RuntimeService::new(runtime_snapshot_store, runtime_ingress),
             setup: SetupService::new(setup_inspector, setup_mutator),
-            activation: ActivationService::new(activation_adapter.clone(), activation_adapter),
             projects: ProjectCatalogService::new(project_catalog_store, workspace_inspector),
             ideas: IdeaService::new(idea_repository, worktree_port),
-            feedback: FeedbackService::new(feedback_sink, telemetry_sink),
         }
     }
 

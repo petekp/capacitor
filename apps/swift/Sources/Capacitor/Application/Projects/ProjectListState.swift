@@ -27,19 +27,19 @@ final class ProjectListState {
         setProjectOrder(order, reason: reason)
     }
 
-    func visibleProjects(from projects: [Project]) -> [Project] {
+    func visibleProjects<ProjectType: ProjectPathProviding>(from projects: [ProjectType]) -> [ProjectType] {
         projects.filter { !manuallyDormant.contains($0.path) }
     }
 
-    func pausedProjects(from projects: [Project]) -> [Project] {
+    func pausedProjects<ProjectType: ProjectPathProviding>(from projects: [ProjectType]) -> [ProjectType] {
         let paused = projects.filter { manuallyDormant.contains($0.path) }
         return ProjectOrdering.orderedProjects(paused, customOrder: projectOrder)
     }
 
-    func orderedGroupedProjects(
-        _ projects: [Project],
+    func orderedGroupedProjects<ProjectType: ProjectPathProviding>(
+        _ projects: [ProjectType],
         sessionStates: [String: ProjectSessionState],
-    ) -> (active: [Project], idle: [Project]) {
+    ) -> (active: [ProjectType], idle: [ProjectType]) {
         ProjectOrdering.orderedGroupedProjects(
             projects,
             order: projectOrder,
@@ -47,19 +47,19 @@ final class ProjectListState {
         )
     }
 
-    func orderedProjects(
-        _ projects: [Project],
+    func orderedProjects<ProjectType: ProjectPathProviding>(
+        _ projects: [ProjectType],
         sessionStates: [String: ProjectSessionState],
-    ) -> [Project] {
+    ) -> [ProjectType] {
         let grouped = orderedGroupedProjects(projects, sessionStates: sessionStates)
         return grouped.active + grouped.idle
     }
 
-    func moveProject(
+    func moveProject<ProjectType: ProjectPathProviding>(
         from source: IndexSet,
         to destination: Int,
-        in projectList: [Project],
-        allProjects: [Project],
+        in projectList: [ProjectType],
+        allProjects: [ProjectType],
         group: ActivityGroup,
     ) {
         let newOrder = ProjectOrdering.movedGlobalOrder(
@@ -107,7 +107,7 @@ final class ProjectListState {
     }
 
     func reconcileProjectGroups(
-        projects: [Project],
+        projects: [some ProjectPathProviding],
         sessionStates: [String: ProjectSessionState],
     ) {
         let currentProjectPaths = projects.map(\.path)
@@ -188,11 +188,11 @@ final class ProjectListState {
         }
     }
 
-    func moveToDormant(_ project: Project) {
+    func moveToDormant(_ project: some ProjectPathProviding) {
         movePathToDormant(project.path)
     }
 
-    func moveToRecent(_ project: Project) {
+    func moveToRecent(_ project: some ProjectPathProviding) {
         movePathToRecent(project.path)
     }
 
@@ -208,7 +208,7 @@ final class ProjectListState {
         setManuallyDormant(newDormant)
     }
 
-    func isManuallyDormant(_ project: Project) -> Bool {
+    func isManuallyDormant(_ project: some ProjectPathProviding) -> Bool {
         isManuallyDormant(path: project.path)
     }
 

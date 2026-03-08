@@ -39,7 +39,8 @@ final class ProjectDetailsManager {
 
     // MARK: - Idea Capture
 
-    func captureIdea(for project: Project, text: String) -> Result<Void, Error> {
+    func captureIdea(for project: some ShellProjectReferenceProviding, text: String) -> Result<Void, Error> {
+        let projectReference = project.shellProjectReference
         guard let engine else {
             return .failure(NSError(domain: "HUD", code: 1, userInfo: [
                 NSLocalizedDescriptionKey: "Engine not initialized",
@@ -47,42 +48,44 @@ final class ProjectDetailsManager {
         }
 
         do {
-            let ideaId = try engine.captureIdea(projectPath: project.path, ideaText: text)
-            loadIdeas(for: project)
-            sensemakeIdea(ideaId: ideaId, rawInput: text, project: project)
+            let ideaId = try engine.captureIdea(projectPath: projectReference.path, ideaText: text)
+            loadIdeas(for: projectReference)
+            sensemakeIdea(ideaId: ideaId, rawInput: text, project: projectReference)
             return .success(())
         } catch {
             return .failure(error)
         }
     }
 
-    func loadIdeas(for project: Project) {
+    func loadIdeas(for project: some ShellProjectReferenceProviding) {
+        let projectReference = project.shellProjectReference
         guard let engine else { return }
 
         do {
-            let ideas = try engine.loadIdeas(projectPath: project.path)
+            let ideas = try engine.loadIdeas(projectPath: projectReference.path)
 
             // Apply saved order (self-healing: missing IDs skipped, new ideas appended)
-            let orderedIdeas = applyIdeasOrder(ideas: ideas, for: project)
-            projectIdeas[project.path] = orderedIdeas
+            let orderedIdeas = applyIdeasOrder(ideas: ideas, for: projectReference)
+            projectIdeas[projectReference.path] = orderedIdeas
 
             // Track mtime for change detection (ideas now in global storage)
-            let ideasFilePath = engine.getIdeasFilePath(projectPath: project.path)
+            let ideasFilePath = engine.getIdeasFilePath(projectPath: projectReference.path)
             if let attrs = try? FileManager.default.attributesOfItem(atPath: ideasFilePath),
                let mtime = attrs[.modificationDate] as? Date
             {
-                ideaFileMtimes[project.path] = mtime
+                ideaFileMtimes[projectReference.path] = mtime
             }
         } catch {
-            projectIdeas[project.path] = []
+            projectIdeas[projectReference.path] = []
         }
     }
 
-    private func applyIdeasOrder(ideas: [Idea], for project: Project) -> [Idea] {
+    private func applyIdeasOrder(ideas: [Idea], for project: some ShellProjectReferenceProviding) -> [Idea] {
+        let projectReference = project.shellProjectReference
         guard let engine else { return ideas }
 
         do {
-            let orderedIds = try engine.loadIdeasOrder(projectPath: project.path)
+            let orderedIds = try engine.loadIdeasOrder(projectPath: projectReference.path)
             guard !orderedIds.isEmpty else { return ideas }
 
             // Build lookup for O(1) access
@@ -115,14 +118,14 @@ final class ProjectDetailsManager {
         }
     }
 
-    func loadAllIdeas(for projects: [Project]) {
+    func loadAllIdeas(for projects: [some ShellProjectReferenceProviding]) {
         for project in projects {
             loadIdeas(for: project)
         }
     }
 
     func loadAllIdeasIncrementally(
-        for projects: [Project],
+        for projects: [some ShellProjectReferenceProviding],
         batchSize: Int = 2,
     ) async {
         guard batchSize > 0 else {
@@ -138,7 +141,7 @@ final class ProjectDetailsManager {
         }
     }
 
-    func checkIdeasFileChanges(for projects: [Project]) {
+    func checkIdeasFileChanges(for projects: [some ShellProjectReferenceProviding]) {
         let now = Date()
         guard now.timeIntervalSince(lastIdeasCheck) >= Constants.ideasCheckIntervalSeconds else { return }
         lastIdeasCheck = now
@@ -146,7 +149,8 @@ final class ProjectDetailsManager {
         guard let engine else { return }
 
         for project in projects {
-            let ideasFilePath = engine.getIdeasFilePath(projectPath: project.path)
+            let projectReference = project.shellProjectReference
+            let ideasFilePath = engine.getIdeasFilePath(projectPath: projectReference.path)
 
             guard let attrs = try? FileManager.default.attributesOfItem(atPath: ideasFilePath),
                   let currentMtime = attrs[.modificationDate] as? Date
@@ -154,17 +158,17 @@ final class ProjectDetailsManager {
                 continue
             }
 
-            if let lastKnownMtime = ideaFileMtimes[project.path] {
+            if let lastKnownMtime = ideaFileMtimes[projectReference.path] {
                 if currentMtime > lastKnownMtime {
-                    loadIdeas(for: project)
+                    loadIdeas(for: projectReference)
                 }
             } else {
-                loadIdeas(for: project)
+                loadIdeas(for: projectReference)
             }
         }
     }
 
-    func getIdeas(for project: Project) -> [Idea] {
+    func getIdeas(for project: some ProjectPathProviding) -> [Idea] {
         projectIdeas[project.path] ?? []
     }
 
@@ -172,23 +176,25 @@ final class ProjectDetailsManager {
         generatingTitleForIdeas.contains(ideaId)
     }
 
-    func updateIdeaStatus(for project: Project, idea: Idea, newStatus: String) throws {
+    func updateIdeaStatus(for project: some ShellProjectReferenceProviding, idea: Idea, newStatus: String) throws {
+        let projectReference = project.shellProjectReference
         try engine?.updateIdeaStatus(
-            projectPath: project.path,
+            projectPath: projectReference.path,
             ideaId: idea.id,
             newStatus: newStatus,
         )
-        loadIdeas(for: project)
+        loadIdeas(for: projectReference)
     }
 
-    func reorderIdeas(_ reorderedIdeas: [Idea], for project: Project) {
-        projectIdeas[project.path] = reorderedIdeas
+    func reorderIdeas(_ reorderedIdeas: [Idea], for project: some ShellProjectReferenceProviding) {
+        let projectReference = project.shellProjectReference
+        projectIdeas[projectReference.path] = reorderedIdeas
 
         // Persist order to disk asynchronously
         let ideaIds = reorderedIdeas.map(\.id)
         _Concurrency.Task {
             do {
-                try engine?.saveIdeasOrder(projectPath: project.path, ideaIds: ideaIds)
+                try engine?.saveIdeasOrder(projectPath: projectReference.path, ideaIds: ideaIds)
             } catch {
                 // Silently fail - order will be regenerated from ULID sort
             }
@@ -203,7 +209,7 @@ final class ProjectDetailsManager {
         let confidence: Double?
     }
 
-    private func sensemakeIdea(ideaId: String, rawInput: String, project: Project) {
+    private func sensemakeIdea(ideaId: String, rawInput: String, project: ShellProjectReference) {
         generatingTitleForIdeas.insert(ideaId)
 
         _Concurrency.Task {
@@ -257,7 +263,7 @@ final class ProjectDetailsManager {
         let lastCommitMessage: String?
     }
 
-    private func gatherSensemakingContext(for project: Project, excluding ideaId: String) async -> SensemakingContext {
+    private func gatherSensemakingContext(for project: ShellProjectReference, excluding ideaId: String) async -> SensemakingContext {
         // Get existing idea titles for uniqueness
         let existingTitles = await MainActor.run {
             getIdeas(for: project)
@@ -274,7 +280,7 @@ final class ProjectDetailsManager {
         )
 
         return SensemakingContext(
-            projectName: project.name,
+            projectName: project.displayName,
             existingTitles: existingTitles,
             recentFiles: gitContext.recentFiles,
             gitBranch: gitContext.gitBranch,
@@ -360,10 +366,10 @@ final class ProjectDetailsManager {
 
     #if DEBUG
         func gatherSensemakingContextForTesting(
-            for project: Project,
+            for project: some ShellProjectReferenceProviding,
             excluding ideaId: String,
         ) async -> (recentFiles: [String], gitBranch: String?, lastCommitMessage: String?) {
-            let context = await gatherSensemakingContext(for: project, excluding: ideaId)
+            let context = await gatherSensemakingContext(for: project.shellProjectReference, excluding: ideaId)
             return (context.recentFiles, context.gitBranch, context.lastCommitMessage)
         }
     #endif
@@ -452,42 +458,43 @@ final class ProjectDetailsManager {
         }
     }
 
-    func getDescription(for project: Project) -> String? {
+    func getDescription(for project: some ProjectPathProviding) -> String? {
         projectDescriptions[project.path]
     }
 
-    func isGeneratingDescription(for project: Project) -> Bool {
+    func isGeneratingDescription(for project: some ProjectPathProviding) -> Bool {
         generatingDescriptionFor.contains(project.path)
     }
 
-    func generateDescription(for project: Project) {
-        guard !generatingDescriptionFor.contains(project.path) else { return }
-        generatingDescriptionFor.insert(project.path)
+    func generateDescription(for project: some ShellProjectReferenceProviding) {
+        let projectReference = project.shellProjectReference
+        guard !generatingDescriptionFor.contains(projectReference.path) else { return }
+        generatingDescriptionFor.insert(projectReference.path)
 
         _Concurrency.Task {
             do {
-                let claudeMdPath = "\(project.path)/CLAUDE.md"
+                let claudeMdPath = "\(projectReference.path)/CLAUDE.md"
                 let claudeMdContent: String = if FileManager.default.fileExists(atPath: claudeMdPath) {
                     try String(contentsOfFile: claudeMdPath, encoding: .utf8)
                 } else {
-                    "Project: \(project.name)\nPath: \(project.path)"
+                    "Project: \(projectReference.displayName)\nPath: \(projectReference.path)"
                 }
 
                 let description = try await generateWithHaiku(
-                    prompt: buildDescriptionPrompt(claudeMd: claudeMdContent, projectName: project.name),
+                    prompt: buildDescriptionPrompt(claudeMd: claudeMdContent, projectName: projectReference.displayName),
                     stripTrailingPunctuation: false,
                 )
 
                 await MainActor.run {
-                    projectDescriptions[project.path] = description
+                    projectDescriptions[projectReference.path] = description
                     saveProjectDescriptions()
-                    generatingDescriptionFor.remove(project.path)
+                    generatingDescriptionFor.remove(projectReference.path)
                 }
             } catch {
                 await MainActor.run {
-                    projectDescriptions[project.path] = "A project at \(project.path)"
+                    projectDescriptions[projectReference.path] = "A project at \(projectReference.path)"
                     saveProjectDescriptions()
-                    generatingDescriptionFor.remove(project.path)
+                    generatingDescriptionFor.remove(projectReference.path)
                 }
             }
         }

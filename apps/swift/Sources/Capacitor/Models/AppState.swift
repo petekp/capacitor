@@ -28,14 +28,11 @@ enum AppFeatureError: LocalizedError {
 class AppState {
     // MARK: - Layout Mode
 
-    var layoutMode: LayoutMode = .vertical {
-        didSet { saveLayoutMode() }
-    }
+    var layoutMode: LayoutMode = .vertical
 
     // MARK: - Build Channel + Feature Flags
 
     private(set) var channel: AppChannel = AppConfig.defaultChannel
-    private(set) var profile: AppProfile = .stable
     private(set) var featureFlags: FeatureFlags = .defaults(for: .stable)
     var isIdeaCaptureEnabled: Bool {
         featureFlags.ideaCapture
@@ -78,7 +75,7 @@ class AppState {
     // MARK: - Modal State for Idea Capture
 
     var showCaptureModal = false
-    var captureModalProject: Project?
+    var captureModalProject: ShellProjectReference?
     var captureModalOrigin: CGRect?
 
     // MARK: - Managers (extracted for cleaner architecture)
@@ -122,53 +119,8 @@ class AppState {
 
     // MARK: - Private State
 
-    private let layoutModeKey = "layoutMode"
     private var engine: CoreRuntime?
     private(set) var sessionStateRevision = 0
-    private(set) var didStartShellTrackingForTesting = false
-
-    // MARK: - Initialization
-
-    convenience init() {
-        self.init(dependencies: .live())
-    }
-
-    convenience init(navigationState: NavigationState) {
-        self.init(dependencies: .live(navigationState: navigationState))
-    }
-
-    convenience init(navigationState: NavigationState, projectWorkflowState: ProjectWorkflowState) {
-        self.init(dependencies: .live(
-            navigationState: navigationState,
-            projectWorkflowState: projectWorkflowState,
-        ))
-    }
-
-    convenience init(
-        navigationState: NavigationState,
-        projectWorkflowState: ProjectWorkflowState,
-        projectListState: ProjectListState,
-    ) {
-        self.init(dependencies: .live(
-            navigationState: navigationState,
-            projectWorkflowState: projectWorkflowState,
-            projectListState: projectListState,
-        ))
-    }
-
-    convenience init(
-        navigationState: NavigationState,
-        projectWorkflowState: ProjectWorkflowState,
-        projectListState: ProjectListState,
-        projectMutationGateway: any ProjectMutationGateway,
-    ) {
-        self.init(dependencies: .live(
-            navigationState: navigationState,
-            projectWorkflowState: projectWorkflowState,
-            projectListState: projectListState,
-            projectMutationGateway: projectMutationGateway,
-        ))
-    }
 
     init(
         dependencies: AppStateDependencies,
@@ -181,7 +133,7 @@ class AppState {
         DebugLog.write(
             "AppState.init start runtimeEnabled=\(RuntimeClient.shared.isEnabled) home=\(FileManager.default.homeDirectoryForCurrentUser.path)",
         )
-        commonInit(
+        configureCollaborators(
             projectMutationGateway: dependencies.projectMutationGateway,
             runtimeSupervisor: dependencies.runtimeSupervisor,
             setupSupervisor: dependencies.setupSupervisor,
@@ -196,24 +148,24 @@ class AppState {
         ActivateProjectTerminalUseCase(activationGateway: UnavailableActivationGateway())
     }
 
-    private func commonInit(
+    /// This self-wiring stays local because these collaborators read and write AppState-owned
+    /// UI/composition state; live adapter selection remains in AppShellContainer.
+    private func configureCollaborators(
         projectMutationGateway: any ProjectMutationGateway,
         runtimeSupervisor _: RuntimeSupervisor,
         setupSupervisor _: SetupSupervisor,
         activateProjectTerminal: ActivateProjectTerminalUseCase? = nil,
     ) {
         DebugLog.write(
-            "AppState.init commonInit runtimeEnabled=\(RuntimeClient.shared.isEnabled) home=\(FileManager.default.homeDirectoryForCurrentUser.path)",
+            "AppState.init configureCollaborators runtimeEnabled=\(RuntimeClient.shared.isEnabled) home=\(FileManager.default.homeDirectoryForCurrentUser.path)",
         )
         let config = AppConfig.current()
         #if DEBUG
             AlphaChannelGuardrail.enforceOrExit(channel: config.channel)
         #endif
         channel = config.channel
-        profile = config.profile
-        DebugLog.write("AppState.init config channel=\(channel.rawValue) profile=\(profile.rawValue)")
+        DebugLog.write("AppState.init config channel=\(channel.rawValue)")
         featureFlags = config.featureFlags
-        loadLayoutMode()
 
         runtimeHealthState = RuntimeHealthState(runtimeSupervisor: runtimeSupervisor)
         projectStatusCacheState = ProjectStatusCacheState()
@@ -232,7 +184,7 @@ class AppState {
                     runtimeStatus: runtimeHealthState.status,
                     activeProjectPath: activeProjectTrackingState.activeProjectPath,
                     activeSource: activeProjectTrackingState.activeSource,
-                    projectCount: projectWorkflowState.legacyProjects.count,
+                    projectCount: projectWorkflowState.projectCatalog.count,
                     sessionStates: sessionStateManager.sessionStates,
                     activationTrace: activationTrace,
                 )
@@ -330,7 +282,7 @@ class AppState {
             projectListState: projectListState,
             sessionStateManager: sessionStateManager,
             projectsProvider: { [weak self] in
-                self?.projectWorkflowState.legacyProjects ?? []
+                self?.projectWorkflowState.projectCatalog.map(\.shellProjectReference) ?? []
             },
         )
         if runtimeAutomationController == nil {
@@ -358,8 +310,7 @@ class AppState {
                 },
                 startShellTracking: { [weak self] in
                     guard let self else { return }
-                    didStartShellTrackingForTesting = true
-                    activeProjectTrackingState.updateProjects(projectWorkflowState.legacyProjects)
+                    activeProjectTrackingState.updateProjects(projectWorkflowState.projectCatalog)
                 },
                 writeError: { [weak self] in
                     self?.error = $0
@@ -375,7 +326,7 @@ class AppState {
                 },
                 checkIdeasFileChanges: { [weak self] in
                     guard let self else { return }
-                    projectFeatureCoordinator.checkIdeasFileChanges(for: projectWorkflowState.legacyProjects)
+                    projectFeatureCoordinator.checkIdeasFileChanges(for: projectWorkflowState.projectCatalog)
                 },
                 refreshSetupDiagnostics: { [weak self] in
                     self?.setupActionState.refreshHookDiagnostic()
@@ -525,7 +476,7 @@ class AppState {
             _ snapshot: RuntimeSnapshot,
             refreshGeneration: UInt64,
             correlationId: String,
-            projects: [Project],
+            projects: [some ProjectPathProviding],
         ) async {
             await runtimeSessionRefreshController.applyObservationForTesting(
                 ShellRuntimeObservation(
@@ -570,21 +521,7 @@ class AppState {
             // Yield one frame so connect-state -> list transition can complete first.
             await _Concurrency.Task.yield()
             guard isIdeaCaptureEnabled else { return }
-            await projectDetailsManager.loadAllIdeasIncrementally(for: projectWorkflowState.legacyProjects)
+            await projectDetailsManager.loadAllIdeasIncrementally(for: projectWorkflowState.projectCatalog)
         }
-    }
-
-    // MARK: - Layout Mode Persistence
-
-    private func loadLayoutMode() {
-        if let rawValue = UserDefaults.standard.string(forKey: layoutModeKey),
-           let mode = LayoutMode(rawValue: rawValue)
-        {
-            layoutMode = mode
-        }
-    }
-
-    private func saveLayoutMode() {
-        UserDefaults.standard.set(layoutMode.rawValue, forKey: layoutModeKey)
     }
 }

@@ -9,21 +9,21 @@ final class ProjectFeatureCoordinator {
     private let llmFeaturesEnabled: @MainActor () -> Bool
 
     private let writeNavigationDestination: @MainActor (ShellNavigationDestination) -> Void
-    private let writeCaptureModalProject: @MainActor (Project?) -> Void
+    private let writeCaptureModalProject: @MainActor (ShellProjectReference?) -> Void
     private let writeCaptureModalOrigin: @MainActor (CGRect?) -> Void
     private let writeShowCaptureModal: @MainActor (Bool) -> Void
     private let writeError: @MainActor (String?) -> Void
 
-    private let captureIdeaHandler: @MainActor (Project, String) -> Result<Void, Error>
-    private let checkIdeasFileChangesHandler: @MainActor ([Project]) -> Void
-    private let getIdeasHandler: @MainActor (Project) -> [Idea]
+    private let captureIdeaHandler: @MainActor (ShellProjectReference, String) -> Result<Void, Error>
+    private let checkIdeasFileChangesHandler: @MainActor ([ShellProjectReference]) -> Void
+    private let getIdeasHandler: @MainActor (ShellProjectReference) -> [Idea]
     private let isGeneratingTitleHandler: @MainActor (String) -> Bool
-    private let dismissIdeaHandler: @MainActor (Idea, Project) throws -> Void
-    private let reorderIdeasHandler: @MainActor ([Idea], Project) -> Void
+    private let dismissIdeaHandler: @MainActor (Idea, ShellProjectReference) throws -> Void
+    private let reorderIdeasHandler: @MainActor ([Idea], ShellProjectReference) -> Void
 
-    private let getDescriptionHandler: @MainActor (Project) -> String?
-    private let isGeneratingDescriptionHandler: @MainActor (Project) -> Bool
-    private let generateDescriptionHandler: @MainActor (Project) -> Void
+    private let getDescriptionHandler: @MainActor (ShellProjectReference) -> String?
+    private let isGeneratingDescriptionHandler: @MainActor (ShellProjectReference) -> Bool
+    private let generateDescriptionHandler: @MainActor (ShellProjectReference) -> Void
 
     private let createProjectFromIdeaHandler: @MainActor (NewProjectRequest, @escaping (CreateProjectResult) -> Void) -> Void
 
@@ -33,19 +33,19 @@ final class ProjectFeatureCoordinator {
         projectCreationEnabled: @escaping @MainActor () -> Bool,
         llmFeaturesEnabled: @escaping @MainActor () -> Bool,
         writeNavigationDestination: @escaping @MainActor (ShellNavigationDestination) -> Void,
-        writeCaptureModalProject: @escaping @MainActor (Project?) -> Void,
+        writeCaptureModalProject: @escaping @MainActor (ShellProjectReference?) -> Void,
         writeCaptureModalOrigin: @escaping @MainActor (CGRect?) -> Void,
         writeShowCaptureModal: @escaping @MainActor (Bool) -> Void,
         writeError: @escaping @MainActor (String?) -> Void,
-        captureIdeaHandler: @escaping @MainActor (Project, String) -> Result<Void, Error>,
-        checkIdeasFileChangesHandler: @escaping @MainActor ([Project]) -> Void,
-        getIdeasHandler: @escaping @MainActor (Project) -> [Idea],
+        captureIdeaHandler: @escaping @MainActor (ShellProjectReference, String) -> Result<Void, Error>,
+        checkIdeasFileChangesHandler: @escaping @MainActor ([ShellProjectReference]) -> Void,
+        getIdeasHandler: @escaping @MainActor (ShellProjectReference) -> [Idea],
         isGeneratingTitleHandler: @escaping @MainActor (String) -> Bool,
-        dismissIdeaHandler: @escaping @MainActor (Idea, Project) throws -> Void,
-        reorderIdeasHandler: @escaping @MainActor ([Idea], Project) -> Void,
-        getDescriptionHandler: @escaping @MainActor (Project) -> String?,
-        isGeneratingDescriptionHandler: @escaping @MainActor (Project) -> Bool,
-        generateDescriptionHandler: @escaping @MainActor (Project) -> Void,
+        dismissIdeaHandler: @escaping @MainActor (Idea, ShellProjectReference) throws -> Void,
+        reorderIdeasHandler: @escaping @MainActor ([Idea], ShellProjectReference) -> Void,
+        getDescriptionHandler: @escaping @MainActor (ShellProjectReference) -> String?,
+        isGeneratingDescriptionHandler: @escaping @MainActor (ShellProjectReference) -> Bool,
+        generateDescriptionHandler: @escaping @MainActor (ShellProjectReference) -> Void,
         createProjectFromIdeaHandler: @escaping @MainActor (NewProjectRequest, @escaping (CreateProjectResult) -> Void) -> Void,
     ) {
         self.projectDetailsEnabled = projectDetailsEnabled
@@ -69,7 +69,7 @@ final class ProjectFeatureCoordinator {
         self.createProjectFromIdeaHandler = createProjectFromIdeaHandler
     }
 
-    func showProjectDetail(_ project: Project) {
+    func showProjectDetail(_ project: some ProjectPathProviding) {
         guard projectDetailsEnabled() else { return }
         writeNavigationDestination(.projectDetail(projectID: project.path))
     }
@@ -83,28 +83,28 @@ final class ProjectFeatureCoordinator {
         writeNavigationDestination(.projectList)
     }
 
-    func showIdeaCaptureModal(for project: Project, from origin: CGRect? = nil) {
+    func showIdeaCaptureModal(for project: some ShellProjectReferenceProviding, from origin: CGRect? = nil) {
         guard ideaCaptureEnabled() else { return }
-        writeCaptureModalProject(project)
+        writeCaptureModalProject(project.shellProjectReference)
         writeCaptureModalOrigin(origin)
         writeShowCaptureModal(true)
     }
 
-    func captureIdea(for project: Project, text: String) -> Result<Void, Error> {
+    func captureIdea(for project: some ShellProjectReferenceProviding, text: String) -> Result<Void, Error> {
         guard ideaCaptureEnabled() else {
             return .failure(AppFeatureError.ideaCaptureDisabled)
         }
-        return captureIdeaHandler(project, text)
+        return captureIdeaHandler(project.shellProjectReference, text)
     }
 
-    func checkIdeasFileChanges(for projects: [Project]) {
+    func checkIdeasFileChanges(for projects: [some ShellProjectReferenceProviding]) {
         guard ideaCaptureEnabled() else { return }
-        checkIdeasFileChangesHandler(projects)
+        checkIdeasFileChangesHandler(projects.map(\.shellProjectReference))
     }
 
-    func getIdeas(for project: Project) -> [Idea] {
+    func getIdeas(for project: some ShellProjectReferenceProviding) -> [Idea] {
         guard ideaCaptureEnabled() else { return [] }
-        return getIdeasHandler(project)
+        return getIdeasHandler(project.shellProjectReference)
     }
 
     func isGeneratingTitle(for ideaId: String) -> Bool {
@@ -112,33 +112,33 @@ final class ProjectFeatureCoordinator {
         return isGeneratingTitleHandler(ideaId)
     }
 
-    func dismissIdea(_ idea: Idea, for project: Project) {
+    func dismissIdea(_ idea: Idea, for project: some ShellProjectReferenceProviding) {
         guard ideaCaptureEnabled() else { return }
         do {
-            try dismissIdeaHandler(idea, project)
+            try dismissIdeaHandler(idea, project.shellProjectReference)
         } catch {
             writeError("Failed to dismiss idea: \(error.localizedDescription)")
         }
     }
 
-    func reorderIdeas(_ reorderedIdeas: [Idea], for project: Project) {
+    func reorderIdeas(_ reorderedIdeas: [Idea], for project: some ShellProjectReferenceProviding) {
         guard ideaCaptureEnabled() else { return }
-        reorderIdeasHandler(reorderedIdeas, project)
+        reorderIdeasHandler(reorderedIdeas, project.shellProjectReference)
     }
 
-    func getDescription(for project: Project) -> String? {
+    func getDescription(for project: some ShellProjectReferenceProviding) -> String? {
         guard llmFeaturesEnabled() else { return nil }
-        return getDescriptionHandler(project)
+        return getDescriptionHandler(project.shellProjectReference)
     }
 
-    func isGeneratingDescription(for project: Project) -> Bool {
+    func isGeneratingDescription(for project: some ShellProjectReferenceProviding) -> Bool {
         guard llmFeaturesEnabled() else { return false }
-        return isGeneratingDescriptionHandler(project)
+        return isGeneratingDescriptionHandler(project.shellProjectReference)
     }
 
-    func generateDescription(for project: Project) {
+    func generateDescription(for project: some ShellProjectReferenceProviding) {
         guard llmFeaturesEnabled() else { return }
-        generateDescriptionHandler(project)
+        generateDescriptionHandler(project.shellProjectReference)
     }
 
     func createProjectFromIdea(_ request: NewProjectRequest, completion: @escaping (CreateProjectResult) -> Void) {

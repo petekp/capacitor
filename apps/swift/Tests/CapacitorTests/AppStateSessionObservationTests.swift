@@ -8,14 +8,14 @@ final class AppStateSessionObservationTests: XCTestCase {
         let workflowState = ProjectWorkflowState(
             projectCatalogGateway: NoopProjectCatalogGateway(),
         )
-        let appState = AppState(
+        let appState = makeTestAppState(
             navigationState: NavigationState(),
             projectWorkflowState: workflowState,
         )
 
         let invalidated = expectation(description: "projects invalidated")
         withObservationTracking {
-            _ = appState.projectWorkflowState.legacyProjects
+            _ = appState.projectWorkflowState.projectCatalog
         } onChange: {
             invalidated.fulfill()
         }
@@ -44,7 +44,7 @@ final class AppStateSessionObservationTests: XCTestCase {
                 ),
             ],
         )
-        let appState = AppState(
+        let appState = makeTestAppState(
             navigationState: NavigationState(),
             projectWorkflowState: workflowState,
         )
@@ -69,7 +69,7 @@ final class AppStateSessionObservationTests: XCTestCase {
         let projectListState = ProjectListState(
             projectListPreferencesGateway: NoopProjectListPreferencesGateway(),
         )
-        let appState = AppState(
+        let appState = makeTestAppState(
             navigationState: NavigationState(),
             projectWorkflowState: workflowState,
             projectListState: projectListState,
@@ -83,7 +83,7 @@ final class AppStateSessionObservationTests: XCTestCase {
 
         let invalidated = expectation(description: "project list invalidated")
         withObservationTracking {
-            _ = appState.projectListState.visibleProjects(from: appState.projectWorkflowState.legacyProjects)
+            _ = appState.projectListState.visibleProjects(from: appState.projectWorkflowState.projectCatalog)
         } onChange: {
             invalidated.fulfill()
         }
@@ -94,7 +94,7 @@ final class AppStateSessionObservationTests: XCTestCase {
     }
 
     func testAppStateSessionReadInvalidatesWhenSessionStateChanges() {
-        let appState = AppState()
+        let appState = makeTestAppState()
         let project = makeProject(name: "Capacitor", path: "/Users/petepetrash/Code/capacitor")
 
         let invalidated = expectation(description: "observation invalidated")
@@ -124,7 +124,7 @@ final class AppStateSessionObservationTests: XCTestCase {
         let projectListState = ProjectListState(
             projectListPreferencesGateway: NoopProjectListPreferencesGateway(),
         )
-        let appState = AppState(
+        let appState = makeTestAppState(
             navigationState: NavigationState(),
             projectWorkflowState: ProjectWorkflowState(projectCatalogGateway: NoopProjectCatalogGateway()),
             projectListState: projectListState,
@@ -137,7 +137,7 @@ final class AppStateSessionObservationTests: XCTestCase {
         let invalidated = expectation(description: "grouped projects invalidated")
         withObservationTracking {
             _ = appState.projectListState.orderedGroupedProjects(
-                appState.projectListState.visibleProjects(from: appState.projectWorkflowState.legacyProjects),
+                appState.projectListState.visibleProjects(from: appState.projectWorkflowState.projectCatalog),
                 sessionStates: appState.sessionStateManager.sessionStates,
             )
         } onChange: {
@@ -161,7 +161,7 @@ final class AppStateSessionObservationTests: XCTestCase {
     }
 
     func testSessionStateRevisionIncrementsWhenSessionStateChanges() {
-        let appState = AppState()
+        let appState = makeTestAppState()
         let project = makeProject(name: "Capacitor", path: "/Users/petepetrash/Code/capacitor")
         let initialRevision = appState.sessionStateRevision
 
@@ -182,7 +182,7 @@ final class AppStateSessionObservationTests: XCTestCase {
     }
 
     func testStaleRuntimeSnapshotDoesNotApplyShellState() async {
-        let appState = AppState()
+        let appState = makeTestAppState()
         let project = makeProject(name: "Capacitor", path: "/Users/petepetrash/Code/capacitor")
         appState.projectWorkflowState.replaceProjectCatalog(
             with: [ShellProjectCatalogEntry(displayName: project.name, path: project.path)],
@@ -207,11 +207,12 @@ final class AppStateSessionObservationTests: XCTestCase {
             shellCwd: "/stale",
             shellPid: "111",
         )
+        let projectReference = ShellProjectReference(displayName: project.name, path: project.path)
         await appState.applyRuntimeSnapshotForTesting(
             staleSnapshot,
             refreshGeneration: 1,
             correlationId: "stale",
-            projects: [project],
+            projects: [projectReference],
         )
 
         XCTAssertEqual(
@@ -222,7 +223,7 @@ final class AppStateSessionObservationTests: XCTestCase {
     }
 
     func testRepeatedRuntimeSnapshotFailuresClearStaleActivityAfterThreshold() async {
-        let appState = AppState()
+        let appState = makeTestAppState()
         appState.cancelRuntimeAutomationForTesting()
         let project = makeProject(name: "Capacitor", path: "/Users/petepetrash/Code/capacitor")
         appState.projectWorkflowState.replaceProjectCatalog(
@@ -284,7 +285,7 @@ final class AppStateSessionObservationTests: XCTestCase {
             try? FileManager.default.removeItem(atPath: snapshotPath)
         }
 
-        let appState = AppState()
+        let appState = makeTestAppState()
         appState.cancelRuntimeAutomationForTesting()
         let project = makeProject(name: "Capacitor", path: "/Users/petepetrash/Code/capacitor")
         appState.projectWorkflowState.replaceProjectCatalog(
@@ -298,6 +299,7 @@ final class AppStateSessionObservationTests: XCTestCase {
             errorDescription: "unavailable",
         )
 
+        let projectReference = ShellProjectReference(displayName: project.name, path: project.path)
         await appState.applyRuntimeSnapshotForTesting(
             makeRuntimeSnapshot(
                 projectPath: project.path,
@@ -307,7 +309,7 @@ final class AppStateSessionObservationTests: XCTestCase {
             ),
             refreshGeneration: 5,
             correlationId: "success",
-            projects: [project],
+            projects: [projectReference],
         )
 
         XCTAssertEqual(appState.sessionStateManager.getSessionState(for: project)?.sessionId, "fresh-session")

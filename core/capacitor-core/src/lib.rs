@@ -10,8 +10,6 @@ pub mod domain;
 pub mod ingest;
 pub mod query;
 pub mod reduce;
-#[cfg(test)]
-mod runtime_activation;
 pub mod runtime_artifacts;
 pub mod runtime_boundaries;
 pub mod runtime_config;
@@ -39,16 +37,15 @@ use domain::{
     MutationOutcome, ProjectMutationKind,
 };
 use runtime_artifacts::{count_artifacts_in_dir, count_hooks_in_dir};
-use runtime_config::{load_hud_config_with_storage, resolve_symlink, save_hud_config_with_storage};
-use runtime_projects::{has_project_indicators, load_projects_with_storage};
+use runtime_config::resolve_symlink;
 use runtime_sessions::ProjectStatus;
-use runtime_setup::{DependencyStatus, HookStatus, InstallResult, SetupChecker, SetupStatus};
+use runtime_setup::{DependencyStatus, HookStatus, InstallResult, SetupStatus};
 use runtime_storage::StorageConfig;
 use runtime_types::{
     DashboardData, GlobalConfig, HookDiagnosticReport, HookTestResult, Plugin, PluginManifest,
-    SuggestedProject,
+    ShellSuggestedProjectCandidate,
 };
-use runtime_validation::{create_claude_md, validate_project_path, ValidationResultFfi};
+use runtime_validation::ValidationResultFfi;
 use storage::{InMemorySnapshotStorage, JsonFileSnapshotStorage, SnapshotStorage};
 
 #[derive(Debug, thiserror::Error, uniffi::Error)]
@@ -114,10 +111,6 @@ impl CoreRuntime {
         self.snapshot_storage
             .save_snapshot(snapshot)
             .map_err(CoreRuntimeError::from)
-    }
-
-    fn setup_checker(&self) -> SetupChecker {
-        SetupChecker::new(self.app_storage.clone())
     }
 
     fn list_plugins_internal(&self) -> Result<Vec<Plugin>, CoreRuntimeError> {
@@ -500,7 +493,12 @@ impl CoreRuntime {
         };
 
         let plugins = self.list_plugins_internal().unwrap_or_default();
-        let projects = load_projects_with_storage(&self.app_storage).unwrap_or_default();
+        let projects = self
+            .clean_shell
+            .projects
+            .refresh_project_catalog()
+            .map_err(|error| CoreRuntimeError::from(error.to_string()))?
+            .projects;
 
         Ok(DashboardData {
             global,
@@ -509,128 +507,51 @@ impl CoreRuntime {
         })
     }
 
-    pub fn get_suggested_projects(&self) -> Result<Vec<SuggestedProject>, CoreRuntimeError> {
-        let projects_dir = self.app_storage.claude_root().join("projects");
-        if !projects_dir.exists() {
-            return Ok(Vec::new());
-        }
-
-        let config = load_hud_config_with_storage(&self.app_storage);
-        let pinned_set: std::collections::HashSet<_> = config.pinned_projects.iter().collect();
-
-        let mut suggestions: Vec<(SuggestedProject, u32)> = Vec::new();
-
-        if let Ok(entries) = fs_err::read_dir(&projects_dir) {
-            for entry in entries.filter_map(|e| e.ok()) {
-                if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
-                    continue;
-                }
-
-                let encoded_name = entry.file_name().to_string_lossy().to_string();
-                if let Some(real_path) = runtime_projects::try_resolve_encoded_path(&encoded_name) {
-                    if pinned_set.contains(&real_path) {
-                        continue;
-                    }
-
-                    let project_path = PathBuf::from(&real_path);
-
-                    if let Ok(home) = std::env::var("HOME") {
-                        if real_path == home {
-                            continue;
-                        }
-                    }
-
-                    let is_child_of_pinned = config
-                        .pinned_projects
-                        .iter()
-                        .any(|pinned| project_path.starts_with(pinned));
-                    if is_child_of_pinned {
-                        continue;
-                    }
-
-                    let has_indicators = has_project_indicators(&project_path);
-                    let has_claude_md = project_path.join("CLAUDE.md").exists();
-
-                    if !has_indicators && !has_claude_md {
-                        continue;
-                    }
-
-                    let task_count = fs_err::read_dir(entry.path())
-                        .map(|entries| {
-                            entries
-                                .filter_map(|e| e.ok())
-                                .take(100)
-                                .filter(|e| e.path().extension().is_some_and(|ext| ext == "jsonl"))
-                                .count() as u32
-                        })
-                        .unwrap_or(0);
-
-                    let display_path = if real_path.starts_with("/Users/") {
-                        format!(
-                            "~/{}",
-                            real_path.split('/').skip(3).collect::<Vec<_>>().join("/")
-                        )
-                    } else {
-                        real_path.clone()
-                    };
-
-                    let name = real_path
-                        .split('/')
-                        .next_back()
-                        .unwrap_or(&real_path)
-                        .to_string();
-
-                    suggestions.push((
-                        SuggestedProject {
-                            path: real_path,
-                            display_path,
-                            name,
-                            task_count,
-                            has_claude_md,
-                            has_project_indicators: has_indicators,
-                        },
-                        task_count,
-                    ));
-                }
-            }
-        }
-
-        suggestions.sort_by(|a, b| b.1.cmp(&a.1));
-        Ok(suggestions.into_iter().take(8).map(|(s, _)| s).collect())
+    pub fn get_suggested_projects(
+        &self,
+    ) -> Result<Vec<ShellSuggestedProjectCandidate>, CoreRuntimeError> {
+        self.clean_shell
+            .projects
+            .suggest_projects()
+            .map_err(|error| CoreRuntimeError::from(error.to_string()))
     }
 
     pub fn add_project(&self, path: String) -> Result<(), CoreRuntimeError> {
-        let mut config = load_hud_config_with_storage(&self.app_storage);
-
-        if !std::path::Path::new(&path).exists() {
-            return Err(CoreRuntimeError::from(format!(
-                "Path does not exist: {path}"
-            )));
-        }
-
-        if config.pinned_projects.contains(&path) {
-            return Err(CoreRuntimeError::from(format!(
-                "Project already pinned: {path}"
-            )));
-        }
-
-        config.pinned_projects.push(path);
-        save_hud_config_with_storage(&self.app_storage, &config).map_err(CoreRuntimeError::from)
+        self.clean_shell
+            .projects
+            .connect_project(&clean::projects::domain::ConnectProjectRequest {
+                path,
+                display_name: None,
+            })
+            .map_err(|error| CoreRuntimeError::from(error.to_string()))
     }
 
     pub fn remove_project(&self, path: String) -> Result<(), CoreRuntimeError> {
-        let mut config = load_hud_config_with_storage(&self.app_storage);
-        config.pinned_projects.retain(|p| p != &path);
-        save_hud_config_with_storage(&self.app_storage, &config).map_err(CoreRuntimeError::from)
+        self.clean_shell
+            .projects
+            .remove_project(&path)
+            .map_err(|error| CoreRuntimeError::from(error.to_string()))
     }
 
     pub fn validate_project(&self, path: String) -> ValidationResultFfi {
-        let config = load_hud_config_with_storage(&self.app_storage);
-        validate_project_path(&path, &config.pinned_projects).into()
+        self.clean_shell
+            .projects
+            .validate_project(&path)
+            .unwrap_or_else(|error| ValidationResultFfi {
+                result_type: "not_a_project".to_string(),
+                path,
+                suggested_path: None,
+                reason: Some(error.to_string()),
+                has_claude_md: false,
+                has_other_markers: false,
+            })
     }
 
     pub fn create_project_claude_md(&self, project_path: String) -> Result<(), CoreRuntimeError> {
-        create_claude_md(&project_path).map_err(|error| CoreRuntimeError::from(error.to_string()))
+        self.clean_shell
+            .projects
+            .create_project_claude_md(&project_path)
+            .map_err(|error| CoreRuntimeError::from(error.to_string()))
     }
 
     pub fn get_project_status(&self, project_path: String) -> Option<ProjectStatus> {
@@ -642,7 +563,12 @@ impl CoreRuntime {
         project_path: String,
         idea_text: String,
     ) -> Result<String, CoreRuntimeError> {
-        runtime_ideas::capture_idea_with_storage(&self.app_storage, &project_path, &idea_text)
+        self.clean_shell
+            .ideas
+            .capture_idea(&clean::ideas::domain::CaptureIdeaRequest {
+                project_path,
+                idea_text,
+            })
             .map_err(|error| CoreRuntimeError::from(error.to_string()))
     }
 
@@ -650,7 +576,10 @@ impl CoreRuntime {
         &self,
         project_path: String,
     ) -> Result<Vec<runtime_types::Idea>, CoreRuntimeError> {
-        runtime_ideas::load_ideas_with_storage(&self.app_storage, &project_path)
+        self.clean_shell
+            .ideas
+            .load_idea_backlog(&project_path)
+            .map(|backlog| backlog.ideas)
             .map_err(|error| CoreRuntimeError::from(error.to_string()))
     }
 
@@ -660,13 +589,14 @@ impl CoreRuntime {
         idea_id: String,
         new_status: String,
     ) -> Result<(), CoreRuntimeError> {
-        runtime_ideas::update_idea_status_with_storage(
-            &self.app_storage,
-            &project_path,
-            &idea_id,
-            &new_status,
-        )
-        .map_err(|error| CoreRuntimeError::from(error.to_string()))
+        self.clean_shell
+            .ideas
+            .update_idea_status(&clean::ideas::domain::IdeaFieldUpdateRequest {
+                project_path,
+                idea_id,
+                new_value: new_status,
+            })
+            .map_err(|error| CoreRuntimeError::from(error.to_string()))
     }
 
     pub fn update_idea_effort(
@@ -675,13 +605,14 @@ impl CoreRuntime {
         idea_id: String,
         new_effort: String,
     ) -> Result<(), CoreRuntimeError> {
-        runtime_ideas::update_idea_effort_with_storage(
-            &self.app_storage,
-            &project_path,
-            &idea_id,
-            &new_effort,
-        )
-        .map_err(|error| CoreRuntimeError::from(error.to_string()))
+        self.clean_shell
+            .ideas
+            .update_idea_effort(&clean::ideas::domain::IdeaFieldUpdateRequest {
+                project_path,
+                idea_id,
+                new_value: new_effort,
+            })
+            .map_err(|error| CoreRuntimeError::from(error.to_string()))
     }
 
     pub fn update_idea_triage(
@@ -690,13 +621,14 @@ impl CoreRuntime {
         idea_id: String,
         new_triage: String,
     ) -> Result<(), CoreRuntimeError> {
-        runtime_ideas::update_idea_triage_with_storage(
-            &self.app_storage,
-            &project_path,
-            &idea_id,
-            &new_triage,
-        )
-        .map_err(|error| CoreRuntimeError::from(error.to_string()))
+        self.clean_shell
+            .ideas
+            .update_idea_triage(&clean::ideas::domain::IdeaFieldUpdateRequest {
+                project_path,
+                idea_id,
+                new_value: new_triage,
+            })
+            .map_err(|error| CoreRuntimeError::from(error.to_string()))
     }
 
     pub fn update_idea_title(
@@ -705,13 +637,14 @@ impl CoreRuntime {
         idea_id: String,
         new_title: String,
     ) -> Result<(), CoreRuntimeError> {
-        runtime_ideas::update_idea_title_with_storage(
-            &self.app_storage,
-            &project_path,
-            &idea_id,
-            &new_title,
-        )
-        .map_err(|error| CoreRuntimeError::from(error.to_string()))
+        self.clean_shell
+            .ideas
+            .update_idea_title(&clean::ideas::domain::IdeaFieldUpdateRequest {
+                project_path,
+                idea_id,
+                new_value: new_title,
+            })
+            .map_err(|error| CoreRuntimeError::from(error.to_string()))
     }
 
     pub fn update_idea_description(
@@ -720,13 +653,14 @@ impl CoreRuntime {
         idea_id: String,
         new_description: String,
     ) -> Result<(), CoreRuntimeError> {
-        runtime_ideas::update_idea_description_with_storage(
-            &self.app_storage,
-            &project_path,
-            &idea_id,
-            &new_description,
-        )
-        .map_err(|error| CoreRuntimeError::from(error.to_string()))
+        self.clean_shell
+            .ideas
+            .update_idea_description(&clean::ideas::domain::IdeaFieldUpdateRequest {
+                project_path,
+                idea_id,
+                new_value: new_description,
+            })
+            .map_err(|error| CoreRuntimeError::from(error.to_string()))
     }
 
     pub fn save_ideas_order(
@@ -734,20 +668,24 @@ impl CoreRuntime {
         project_path: String,
         idea_ids: Vec<String>,
     ) -> Result<(), CoreRuntimeError> {
-        runtime_ideas::save_ideas_order_with_storage(&self.app_storage, &project_path, idea_ids)
+        self.clean_shell
+            .ideas
+            .save_ideas_order(&clean::ideas::domain::IdeasOrderRequest {
+                project_path,
+                idea_ids,
+            })
             .map_err(|error| CoreRuntimeError::from(error.to_string()))
     }
 
     pub fn load_ideas_order(&self, project_path: String) -> Result<Vec<String>, CoreRuntimeError> {
-        runtime_ideas::load_ideas_order_with_storage(&self.app_storage, &project_path)
+        self.clean_shell
+            .ideas
+            .load_ideas_order(&project_path)
             .map_err(|error| CoreRuntimeError::from(error.to_string()))
     }
 
     pub fn get_ideas_file_path(&self, project_path: String) -> String {
-        self.app_storage
-            .project_ideas_file(&project_path)
-            .to_string_lossy()
-            .to_string()
+        self.clean_shell.ideas.ideas_file_path(&project_path)
     }
 
     pub fn check_setup_status(&self) -> SetupStatus {
@@ -762,19 +700,22 @@ impl CoreRuntime {
         &self,
         source_path: String,
     ) -> Result<InstallResult, CoreRuntimeError> {
-        self.setup_checker()
+        self.clean_shell
+            .setup
             .install_binary_from_path(&source_path)
             .map_err(|error| CoreRuntimeError::from(error.to_string()))
     }
 
     pub fn install_hooks(&self) -> Result<InstallResult, CoreRuntimeError> {
-        self.setup_checker()
+        self.clean_shell
+            .setup
             .install_hooks()
             .map_err(|error| CoreRuntimeError::from(error.to_string()))
     }
 
     pub fn remove_hooks(&self) -> Result<InstallResult, CoreRuntimeError> {
-        self.setup_checker()
+        self.clean_shell
+            .setup
             .remove_hooks()
             .map_err(|error| CoreRuntimeError::from(error.to_string()))
     }
@@ -805,7 +746,7 @@ mod tests {
     };
     use crate::runtime_state::snapshot::{RuntimeSessionRecord, RuntimeSessionsSnapshot};
     use crate::runtime_storage::StorageConfig;
-    use crate::runtime_types::HookHealthStatus;
+    use crate::runtime_types::{HookHealthStatus, HudConfig};
     use crate::storage::InMemorySnapshotStorage;
     use chrono::{Duration, Utc};
     use std::fs::{self, File};
@@ -988,6 +929,184 @@ mod tests {
         assert!(report.last_heartbeat_age_secs.is_some_and(|age| age >= 120));
     }
 
+    #[test]
+    fn core_runtime_load_dashboard_reads_projects_via_projects_boundary() {
+        let temp = setup_project_catalog_env();
+        let runtime = make_runtime_for_storage(&temp.storage);
+        let pinned_path = temp.temp.path().join("dashboard-project");
+        fs::create_dir_all(&pinned_path).expect("create dashboard project");
+        fs::write(pinned_path.join("CLAUDE.md"), "# Dashboard").expect("write claude md");
+
+        let config_path = temp.storage.projects_file();
+        fs::create_dir_all(config_path.parent().expect("config parent"))
+            .expect("create config parent");
+        fs::write(
+            &config_path,
+            serde_json::to_string_pretty(&HudConfig {
+                pinned_projects: vec![pinned_path.to_string_lossy().to_string()],
+                terminal_app: "Ghostty".to_string(),
+            })
+            .expect("serialize config"),
+        )
+        .expect("write config");
+
+        let dashboard = runtime.load_dashboard().expect("load dashboard");
+
+        assert_eq!(dashboard.projects.len(), 1);
+        assert_eq!(dashboard.projects[0].path, pinned_path.to_string_lossy());
+    }
+
+    #[test]
+    fn core_runtime_project_catalog_mutation_and_suggestions_flow_through_projects_boundary() {
+        let temp = setup_project_catalog_env();
+        let runtime = make_runtime_for_storage(&temp.storage);
+
+        let suggested_path = temp.temp.path().join("suggested-project");
+        fs::create_dir_all(&suggested_path).expect("create suggested project");
+        fs::write(
+            suggested_path.join("Cargo.toml"),
+            "[package]\nname = \"suggested-project\"\n",
+        )
+        .expect("write cargo toml");
+
+        let encoded =
+            crate::runtime_projects::encode_project_path(suggested_path.to_string_lossy().as_ref());
+        let claude_project_dir = temp.storage.claude_projects_dir().join(encoded);
+        fs::create_dir_all(&claude_project_dir).expect("create claude project dir");
+        fs::write(claude_project_dir.join("session-1.jsonl"), "{}\n").expect("write session");
+
+        let suggestions = runtime
+            .get_suggested_projects()
+            .expect("get suggested projects");
+        assert_eq!(suggestions.len(), 1);
+        assert_eq!(suggestions[0].path, suggested_path.to_string_lossy());
+
+        runtime
+            .add_project(suggested_path.to_string_lossy().to_string())
+            .expect("add project");
+
+        let validation = runtime.validate_project(suggested_path.to_string_lossy().to_string());
+        assert_eq!(validation.result_type, "already_tracked");
+
+        runtime
+            .create_project_claude_md(suggested_path.to_string_lossy().as_ref().to_string())
+            .expect("create claude md");
+        assert!(suggested_path.join("CLAUDE.md").exists());
+
+        runtime
+            .remove_project(suggested_path.to_string_lossy().to_string())
+            .expect("remove project");
+        let config: HudConfig = serde_json::from_str(
+            &fs::read_to_string(temp.storage.projects_file()).expect("read config"),
+        )
+        .expect("parse config");
+        assert!(!config
+            .pinned_projects
+            .contains(&suggested_path.to_string_lossy().to_string()));
+    }
+
+    #[test]
+    fn core_runtime_idea_crud_and_order_flow_through_ideas_boundary() {
+        let temp = setup_project_catalog_env();
+        let runtime = make_runtime_for_storage(&temp.storage);
+        let project_path = "/tmp/idea-boundary-project";
+
+        let idea_id = runtime
+            .capture_idea(project_path.to_string(), "ship the finish line".to_string())
+            .expect("capture idea");
+
+        let ideas = runtime
+            .load_ideas(project_path.to_string())
+            .expect("load ideas");
+        assert_eq!(ideas.len(), 1);
+        assert_eq!(ideas[0].id, idea_id);
+
+        runtime
+            .update_idea_status(
+                project_path.to_string(),
+                idea_id.clone(),
+                "done".to_string(),
+            )
+            .expect("update status");
+        runtime
+            .update_idea_effort(
+                project_path.to_string(),
+                idea_id.clone(),
+                "medium".to_string(),
+            )
+            .expect("update effort");
+        runtime
+            .update_idea_triage(
+                project_path.to_string(),
+                idea_id.clone(),
+                "validated".to_string(),
+            )
+            .expect("update triage");
+        runtime
+            .update_idea_title(
+                project_path.to_string(),
+                idea_id.clone(),
+                "Ship the finish line".to_string(),
+            )
+            .expect("update title");
+        runtime
+            .update_idea_description(
+                project_path.to_string(),
+                idea_id.clone(),
+                "Ship the finish line slice".to_string(),
+            )
+            .expect("update description");
+        runtime
+            .save_ideas_order(project_path.to_string(), vec![idea_id.clone()])
+            .expect("save ideas order");
+
+        let reloaded_ideas = runtime
+            .load_ideas(project_path.to_string())
+            .expect("reload ideas");
+        assert_eq!(reloaded_ideas[0].status, "done");
+        assert_eq!(reloaded_ideas[0].effort, "medium");
+        assert_eq!(reloaded_ideas[0].triage, "validated");
+        assert_eq!(reloaded_ideas[0].title, "Ship the finish line");
+        assert_eq!(reloaded_ideas[0].description, "Ship the finish line slice");
+
+        let order = runtime
+            .load_ideas_order(project_path.to_string())
+            .expect("load ideas order");
+        assert_eq!(order, vec![idea_id.clone()]);
+
+        assert_eq!(
+            runtime.get_ideas_file_path(project_path.to_string()),
+            temp.storage
+                .project_ideas_file(project_path)
+                .to_string_lossy()
+        );
+    }
+
+    #[test]
+    fn core_runtime_setup_mutation_flow_through_setup_boundary() {
+        let temp = setup_project_catalog_env();
+        let runtime = make_runtime_for_storage(&temp.storage);
+
+        let binary_result = runtime
+            .install_hook_binary_from_path("/definitely/missing/hud-hook".to_string())
+            .expect("install hook binary from path");
+        assert!(!binary_result.success);
+        assert!(binary_result.message.contains("Source binary not found"));
+
+        fs::write(
+            temp.storage.claude_settings_file(),
+            r#"{"disableAllHooks":true}"#,
+        )
+        .expect("write policy-blocked settings");
+        let install_result = runtime.install_hooks().expect("install hooks");
+        assert!(!install_result.success);
+        assert!(install_result.message.contains("Cannot install hooks"));
+
+        let remove_result = runtime.remove_hooks().expect("remove hooks");
+        assert!(remove_result.success);
+        assert!(remove_result.message.contains("No hook entries found"));
+    }
+
     fn make_runtime_session_record(
         session_id: &str,
         state: &str,
@@ -1034,9 +1153,27 @@ mod tests {
     }
 
     fn make_runtime_with_storage(env: &HookHealthTestEnv) -> Arc<CoreRuntime> {
+        make_runtime_for_storage(&env.storage)
+    }
+
+    struct ProjectCatalogTestEnv {
+        temp: TempDir,
+        storage: StorageConfig,
+    }
+
+    fn setup_project_catalog_env() -> ProjectCatalogTestEnv {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let storage =
+            StorageConfig::with_roots(temp.path().join(".capacitor"), temp.path().join(".claude"));
+        fs::create_dir_all(storage.root()).expect("create capacitor root");
+        fs::create_dir_all(storage.claude_projects_dir()).expect("create claude projects root");
+        ProjectCatalogTestEnv { temp, storage }
+    }
+
+    fn make_runtime_for_storage(storage: &StorageConfig) -> Arc<CoreRuntime> {
         CoreRuntime::from_storage(
             Arc::new(InMemorySnapshotStorage::default()),
-            env.storage.clone(),
+            storage.clone(),
         )
         .expect("runtime")
     }

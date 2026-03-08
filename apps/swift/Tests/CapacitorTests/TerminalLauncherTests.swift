@@ -490,6 +490,35 @@ final class TerminalLauncherTests: XCTestCase {
         XCTAssertEqual(results.first?.success, false)
     }
 
+    func testLaunchTerminalSupportsShellProjectReference() async {
+        let project = ShellProjectReference(
+            displayName: "shell-project",
+            path: "/Users/pete/Code/shell-project",
+        )
+        var results: [TerminalActivationResult] = []
+
+        let launcher = TerminalLauncher(
+            appleScript: StubAppleScriptClient(shouldSucceed: true),
+            fallbackTmuxSessionResolver: { path in
+                URL(fileURLWithPath: path).lastPathComponent
+            },
+            activateProjectSessionOverride: { _, _ in true },
+        )
+
+        launcher.onActivationResult = { result in
+            results.append(result)
+        }
+
+        launcher.launchTerminal(for: project)
+        _ = await assertEventually(timeout: 1.0, context: "Expected shell-reference result") {
+            results.count == 1
+        }
+
+        XCTAssertEqual(results.first?.projectName, project.displayName)
+        XCTAssertEqual(results.first?.projectPath, project.path)
+        XCTAssertEqual(results.first?.success, true)
+    }
+
     // MARK: - Unified Activation Tests
 
     // S3: Session exists → just switch

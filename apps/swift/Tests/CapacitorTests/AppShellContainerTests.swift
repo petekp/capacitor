@@ -17,8 +17,8 @@ final class AppShellContainerTests: XCTestCase {
         XCTAssertTrue(container.appState.navigationState === container.navigationState)
         XCTAssertNil(container.runtimeSupervisor.projection)
         XCTAssertNil(container.runtimeSupervisor.observation)
-        XCTAssertEqual(container.projectWorkflowState.projects, [])
-        XCTAssertEqual(container.projectWorkflowState.suggestedProjects, [])
+        XCTAssertEqual(container.projectWorkflowState.projectCatalog, [])
+        XCTAssertEqual(container.projectWorkflowState.suggestedProjectCatalog, [])
         XCTAssertEqual(container.navigationState.destination, .projectList)
         XCTAssertNil(container.setupSupervisor.readiness)
     }

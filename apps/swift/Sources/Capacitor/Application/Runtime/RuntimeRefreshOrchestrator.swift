@@ -7,7 +7,7 @@ final class RuntimeRefreshOrchestrator {
     private let activeProjectTrackingState: ActiveProjectTrackingState
     private let projectListState: ProjectListState
     private let sessionStateManager: SessionStateManager
-    private let projectsProvider: () -> [Project]
+    private let projectsProvider: () -> [ShellProjectReference]
 
     init(
         projectStatusCacheState: ProjectStatusCacheState,
@@ -15,7 +15,7 @@ final class RuntimeRefreshOrchestrator {
         activeProjectTrackingState: ActiveProjectTrackingState,
         projectListState: ProjectListState,
         sessionStateManager: SessionStateManager,
-        projectsProvider: @escaping () -> [Project],
+        projectsProvider: @escaping () -> [ShellProjectReference],
     ) {
         self.projectStatusCacheState = projectStatusCacheState
         self.runtimeSessionRefreshController = runtimeSessionRefreshController
@@ -27,7 +27,7 @@ final class RuntimeRefreshOrchestrator {
 
     func refreshSessionStates(engine: CoreRuntime?) {
         let projects = projectsProvider()
-        projectStatusCacheState.refresh(projects: projects, engine: engine)
+        projectStatusCacheState.refresh(projectPaths: projects.map(\.path), engine: engine)
         runtimeSessionRefreshController.refresh(projects: projects)
     }
 

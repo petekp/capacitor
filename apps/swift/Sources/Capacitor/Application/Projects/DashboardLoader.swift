@@ -4,17 +4,17 @@ import Foundation
 struct DashboardLoader {
     private let loadDashboardData: () throws -> DashboardData
     private let projectWorkflowState: ProjectWorkflowState
-    private let updateActiveProjects: ([Project]) -> Void
+    private let updateActiveProjects: ([ShellProjectCatalogEntry]) -> Void
     private let refreshRuntimeSessions: () -> Void
-    private let loadIdeas: ([Project]) -> Void
+    private let loadIdeas: ([ShellProjectCatalogEntry]) -> Void
     private let refreshSuggestedProjects: () -> Void
 
     init(
         loadDashboardData: @escaping () throws -> DashboardData,
         projectWorkflowState: ProjectWorkflowState,
-        updateActiveProjects: @escaping ([Project]) -> Void,
+        updateActiveProjects: @escaping ([ShellProjectCatalogEntry]) -> Void,
         refreshRuntimeSessions: @escaping () -> Void,
-        loadIdeas: @escaping ([Project]) -> Void,
+        loadIdeas: @escaping ([ShellProjectCatalogEntry]) -> Void,
         refreshSuggestedProjects: @escaping () -> Void,
     ) {
         self.loadDashboardData = loadDashboardData
@@ -28,11 +28,11 @@ struct DashboardLoader {
     func load(hydrateIdeas: Bool) throws -> DashboardData {
         let dashboard = try loadDashboardData()
         projectWorkflowState.replaceProjectCatalog(
-            with: ProjectCatalogBridge.projectCatalogEntries(from: dashboard.projects),
+            with: dashboard.projects,
         )
 
-        let projects = projectWorkflowState.legacyProjects
-        let suggestedProjects = projectWorkflowState.legacySuggestedProjects
+        let projects = projectWorkflowState.projectCatalog
+        let suggestedProjects = projectWorkflowState.suggestedProjectCatalog
 
         if projects.isEmpty, suggestedProjects.isEmpty {
             refreshSuggestedProjects()

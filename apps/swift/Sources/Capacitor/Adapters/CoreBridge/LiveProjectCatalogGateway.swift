@@ -8,17 +8,10 @@ struct LiveProjectCatalogGateway: ProjectCatalogGateway {
     }
 
     func loadProjects() throws -> [ShellProjectCatalogEntry] {
-        try ProjectCatalogBridge.projectCatalogEntries(
-            from: runtimeProvider()
-                .loadDashboard()
-                .projects,
-        )
+        try runtimeProvider().loadDashboard().projects
     }
 
     func loadSuggestedProjects() throws -> [ShellSuggestedProjectCandidate] {
-        try ProjectCatalogBridge.suggestedProjectCandidates(
-            from: runtimeProvider()
-                .getSuggestedProjects(),
-        )
+        try runtimeProvider().getSuggestedProjects()
     }
 }

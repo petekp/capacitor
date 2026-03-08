@@ -6,8 +6,8 @@ Operational procedure lives in `rewrite/PLAYBOOK.md`.
 Capacitor is being rewritten to converge on one authoritative core and one clear UI shell. The rewrite optimizes for simplicity, coherence, and deletion of redundant paths.
 
 ## Invariants
-1. Rust owns business rules, normalization, state derivation, and activation planning.
-2. Swift owns rendering, user intent capture, and macOS-specific side effects.
+1. Rust owns business rules, normalization, and state derivation.
+2. Swift owns rendering, user intent capture, activation planning, and macOS-specific side effects.
 3. No duplicate domain policy is allowed across Rust and Swift.
 4. Each migration slice must delete replaced logic in the same PR.
 5. Confidence comes from replay-diff + end-to-end smoke checks, not manual confidence.

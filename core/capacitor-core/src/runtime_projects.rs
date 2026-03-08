@@ -10,7 +10,9 @@ use crate::runtime_config::{
 };
 use crate::runtime_stats::compute_project_stats;
 use crate::runtime_storage::StorageConfig;
-use crate::runtime_types::{Project, StatsCache};
+use crate::runtime_types::{
+    ShellProjectCatalogEntry, ShellProjectStats, ShellSuggestedProjectCandidate, StatsCache,
+};
 use fs_err as fs;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
@@ -178,12 +180,28 @@ pub fn try_resolve_encoded_path(encoded_name: &str) -> Option<String> {
     None
 }
 
-/// Builds a Project from a filesystem path.
+fn shell_project_stats(stats: crate::runtime_types::ProjectStats) -> ShellProjectStats {
+    ShellProjectStats {
+        total_input_tokens: stats.total_input_tokens,
+        total_output_tokens: stats.total_output_tokens,
+        total_cache_read_tokens: stats.total_cache_read_tokens,
+        total_cache_creation_tokens: stats.total_cache_creation_tokens,
+        opus_messages: stats.opus_messages,
+        sonnet_messages: stats.sonnet_messages,
+        haiku_messages: stats.haiku_messages,
+        session_count: stats.session_count,
+        latest_summary: stats.latest_summary,
+        first_activity: stats.first_activity,
+        last_activity: stats.last_activity,
+    }
+}
+
+/// Builds a shell-native catalog entry from a filesystem path.
 pub fn build_project_from_path(
     path: &str,
     claude_dir: &Path,
     stats_cache: &mut StatsCache,
-) -> Option<Project> {
+) -> Option<ShellProjectCatalogEntry> {
     let project_path = PathBuf::from(path);
     if !project_path.exists() {
         return None;
@@ -223,11 +241,12 @@ pub fn build_project_from_path(
 
     let stats = compute_project_stats(&projects_dir, &encoded_name, stats_cache, path);
 
-    Some(Project {
-        name: project_name,
+    Some(ShellProjectCatalogEntry {
+        id: path.to_string(),
+        display_name: project_name,
         path: path.to_string(),
         display_path,
-        last_active,
+        last_active_at: last_active,
         claude_md_path: if claude_md_exists {
             Some(claude_md_path.to_string_lossy().to_string())
         } else {
@@ -236,13 +255,13 @@ pub fn build_project_from_path(
         claude_md_preview,
         has_local_settings,
         task_count,
-        stats: Some(stats),
+        stats: Some(shell_project_stats(stats)),
         is_missing: false,
     })
 }
 
-/// Builds a minimal Project for a path that no longer exists on disk.
-fn build_missing_project(path: &str) -> Project {
+/// Builds a minimal shell-native catalog entry for a path that no longer exists on disk.
+fn build_missing_project(path: &str) -> ShellProjectCatalogEntry {
     let display_path = if path.starts_with("/Users/") {
         format!(
             "~/{}",
@@ -254,11 +273,12 @@ fn build_missing_project(path: &str) -> Project {
 
     let project_name = path.split('/').next_back().unwrap_or(path).to_string();
 
-    Project {
-        name: project_name,
+    ShellProjectCatalogEntry {
+        id: path.to_string(),
+        display_name: project_name,
         path: path.to_string(),
         display_path,
-        last_active: None,
+        last_active_at: None,
         claude_md_path: None,
         claude_md_preview: None,
         has_local_settings: false,
@@ -271,17 +291,19 @@ fn build_missing_project(path: &str) -> Project {
 /// Loads all pinned projects, sorted by most recent activity.
 /// Missing projects (where the directory no longer exists) are included
 /// with is_missing=true so they can be displayed with a warning indicator.
-pub fn load_projects() -> Result<Vec<Project>, String> {
+pub fn load_projects() -> Result<Vec<ShellProjectCatalogEntry>, String> {
     load_projects_with_storage(&StorageConfig::default())
 }
 
-pub fn load_projects_with_storage(storage: &StorageConfig) -> Result<Vec<Project>, String> {
+pub fn load_projects_with_storage(
+    storage: &StorageConfig,
+) -> Result<Vec<ShellProjectCatalogEntry>, String> {
     let claude_dir = storage.claude_root();
     let config = load_hud_config_with_storage(storage);
     let projects_dir = claude_dir.join("projects");
     let mut stats_cache = load_stats_cache_with_storage(storage);
 
-    let mut projects: Vec<(Project, SystemTime)> = Vec::new();
+    let mut projects: Vec<(ShellProjectCatalogEntry, SystemTime)> = Vec::new();
 
     for path in &config.pinned_projects {
         let project = if let Some(p) = build_project_from_path(path, claude_dir, &mut stats_cache) {
@@ -304,11 +326,108 @@ pub fn load_projects_with_storage(storage: &StorageConfig) -> Result<Vec<Project
     Ok(projects.into_iter().map(|(p, _)| p).collect())
 }
 
+pub fn suggest_projects_with_storage(
+    storage: &StorageConfig,
+) -> Result<Vec<ShellSuggestedProjectCandidate>, String> {
+    let projects_dir = storage.claude_projects_dir();
+    if !projects_dir.exists() {
+        return Ok(Vec::new());
+    }
+
+    let config = load_hud_config_with_storage(storage);
+    let pinned_set: std::collections::HashSet<_> = config.pinned_projects.iter().collect();
+
+    let mut suggestions: Vec<(ShellSuggestedProjectCandidate, u32)> = Vec::new();
+
+    if let Ok(entries) = fs::read_dir(&projects_dir) {
+        for entry in entries.filter_map(|e| e.ok()) {
+            if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                continue;
+            }
+
+            let encoded_name = entry.file_name().to_string_lossy().to_string();
+            if let Some(real_path) = try_resolve_encoded_path(&encoded_name) {
+                if pinned_set.contains(&real_path) {
+                    continue;
+                }
+
+                let project_path = PathBuf::from(&real_path);
+
+                if let Ok(home) = std::env::var("HOME") {
+                    if real_path == home {
+                        continue;
+                    }
+                }
+
+                let is_child_of_pinned = config
+                    .pinned_projects
+                    .iter()
+                    .any(|pinned| project_path.starts_with(pinned));
+                if is_child_of_pinned {
+                    continue;
+                }
+
+                let has_indicators = has_project_indicators(&project_path);
+                let has_claude_md = project_path.join("CLAUDE.md").exists();
+
+                if !has_indicators && !has_claude_md {
+                    continue;
+                }
+
+                let task_count = fs::read_dir(entry.path())
+                    .map(|entries| {
+                        entries
+                            .filter_map(|e| e.ok())
+                            .take(100)
+                            .filter(|e| e.path().extension().is_some_and(|ext| ext == "jsonl"))
+                            .count() as u32
+                    })
+                    .unwrap_or(0);
+
+                let display_path = if real_path.starts_with("/Users/") {
+                    format!(
+                        "~/{}",
+                        real_path.split('/').skip(3).collect::<Vec<_>>().join("/")
+                    )
+                } else {
+                    real_path.clone()
+                };
+
+                let name = real_path
+                    .split('/')
+                    .next_back()
+                    .unwrap_or(&real_path)
+                    .to_string();
+
+                suggestions.push((
+                    ShellSuggestedProjectCandidate {
+                        id: real_path.clone(),
+                        display_name: name,
+                        path: real_path,
+                        display_path,
+                        task_count,
+                        has_claude_md,
+                        has_project_indicators: has_indicators,
+                    },
+                    task_count,
+                ));
+            }
+        }
+    }
+
+    suggestions.sort_by(|a, b| b.1.cmp(&a.1));
+    Ok(suggestions
+        .into_iter()
+        .take(8)
+        .map(|(suggestion, _)| suggestion)
+        .collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::runtime_config::save_hud_config_with_storage;
     use crate::runtime_types::HudConfig;
-    use crate::save_hud_config_with_storage;
     use std::time::Duration;
     use tempfile::tempdir;
 
@@ -435,7 +554,7 @@ mod tests {
         );
         assert_eq!(projects[1].path, agent_only_project.to_string_lossy());
         assert_eq!(
-            projects[1].last_active, None,
+            projects[1].last_active_at, None,
             "Projects with only agent transcripts should not report recent session activity."
         );
     }

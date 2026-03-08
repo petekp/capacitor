@@ -88,6 +88,43 @@ final class ActiveProjectResolverTests: XCTestCase {
         XCTAssertEqual(resolver.activeSource, .none)
     }
 
+    func testResolverSupportsShellProjectCatalogEntries() {
+        let projectA = ShellProjectCatalogEntry(displayName: "A", path: "/tmp/project-a")
+        let projectB = ShellProjectCatalogEntry(displayName: "B", path: "/tmp/project-b")
+
+        let sessionStateManager = SessionStateManager()
+        sessionStateManager.setSessionStatesForTesting([
+            projectA.path: ProjectSessionState(
+                state: .working,
+                stateChangedAt: nil,
+                updatedAt: "2026-02-02T19:00:00Z",
+                sessionId: "session-a",
+                workingOn: nil,
+                context: nil,
+                thinking: nil,
+                hasSession: true,
+            ),
+            projectB.path: ProjectSessionState(
+                state: .ready,
+                stateChangedAt: nil,
+                updatedAt: "2026-02-02T19:05:00Z",
+                sessionId: "session-b",
+                workingOn: nil,
+                context: nil,
+                thinking: nil,
+                hasSession: true,
+            ),
+        ])
+
+        let resolver = ActiveProjectResolver(sessionStateManager: sessionStateManager)
+        resolver.updateProjects([projectA, projectB])
+        resolver.resolve()
+
+        XCTAssertEqual(resolver.activeProject?.path, projectA.path)
+        XCTAssertEqual(resolver.activeProject?.displayName, projectA.displayName)
+        XCTAssertEqual(resolver.activeSource, .claude(sessionId: "session-a"))
+    }
+
     private func makeProject(name: String, path: String) -> Project {
         Project(
             name: name,

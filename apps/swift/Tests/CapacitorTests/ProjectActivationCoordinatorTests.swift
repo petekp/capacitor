@@ -27,6 +27,30 @@ final class ProjectActivationCoordinatorTests: XCTestCase {
         )
     }
 
+    func testActivateSupportsShellProjectCatalogEntries() {
+        let project = ShellProjectCatalogEntry(displayName: "Capacitor", path: "/tmp/capacitor")
+        var steps: [String] = []
+
+        let coordinator = ProjectActivationCoordinator(
+            activateTracking: { receivedProject in
+                steps.append("track:\(receivedProject.path)")
+            },
+            activateProject: { receivedProject in
+                steps.append("activate:\(receivedProject.path)")
+            },
+        )
+
+        coordinator.activate(project)
+
+        XCTAssertEqual(
+            steps,
+            [
+                "track:/tmp/capacitor",
+                "activate:/tmp/capacitor",
+            ],
+        )
+    }
+
     private func makeProject(path: String) -> Project {
         Project(
             name: "Capacitor",

@@ -37,7 +37,7 @@ final class RuntimeRefreshOrchestratorTests: XCTestCase {
             activeProjectTrackingState: activeTracking,
             projectListState: projectListState,
             sessionStateManager: sessionStateManager,
-            projectsProvider: { [project] },
+            projectsProvider: { [project.shellProjectReference] },
         )
 
         let paths = orchestrator.activeWorktreePathsForGuardrails()

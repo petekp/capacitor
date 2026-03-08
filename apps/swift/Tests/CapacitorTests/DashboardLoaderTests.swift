@@ -5,6 +5,8 @@ import XCTest
 final class DashboardLoaderTests: XCTestCase {
     func testLoadReplacesProjectCatalog() {
         let workflowState = ProjectWorkflowState(projectCatalogGateway: NoopProjectCatalogGateway())
+        var activeProjects: [ShellProjectCatalogEntry] = []
+        var ideaLoadProjects: [ShellProjectCatalogEntry] = []
         let loader = DashboardLoader(
             loadDashboardData: {
                 DashboardData(
@@ -21,11 +23,11 @@ final class DashboardLoaderTests: XCTestCase {
                     ),
                     plugins: [],
                     projects: [
-                        Project(
-                            name: "Capacitor",
+                        ShellProjectCatalogEntry(
+                            displayName: "Capacitor",
                             path: "/tmp/capacitor",
                             displayPath: "/tmp/capacitor",
-                            lastActive: nil,
+                            lastActiveAt: nil,
                             claudeMdPath: nil,
                             claudeMdPreview: nil,
                             hasLocalSettings: false,
@@ -37,16 +39,18 @@ final class DashboardLoaderTests: XCTestCase {
                 )
             },
             projectWorkflowState: workflowState,
-            updateActiveProjects: { _ in },
+            updateActiveProjects: { activeProjects = $0 },
             refreshRuntimeSessions: {},
-            loadIdeas: { _ in },
+            loadIdeas: { ideaLoadProjects = $0 },
             refreshSuggestedProjects: {},
         )
 
-        let dashboard = try? loader.load(hydrateIdeas: false)
+        let dashboard = try? loader.load(hydrateIdeas: true)
 
         XCTAssertEqual(dashboard?.projects.count, 1)
-        XCTAssertEqual(workflowState.legacyProjects.first?.path, "/tmp/capacitor")
+        XCTAssertEqual(workflowState.projectCatalog.first?.path, "/tmp/capacitor")
+        XCTAssertEqual(activeProjects.map(\.path), ["/tmp/capacitor"])
+        XCTAssertEqual(ideaLoadProjects.map(\.path), ["/tmp/capacitor"])
     }
 }
 

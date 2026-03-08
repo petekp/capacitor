@@ -61,7 +61,7 @@ struct FooterView: View {
         if appState.projectWorkflowState.hasSelectedSuggestedProjects {
             return .connectCTA
         }
-        if !appState.dashboardState.isLoading, appState.projectWorkflowState.legacyProjects.isEmpty {
+        if !appState.dashboardState.isLoading, appState.projectWorkflowState.projectCatalog.isEmpty {
             return .browse
         }
         return .normal

@@ -317,16 +317,17 @@ final class TerminalLauncher {
         return true
     }
 
-    func launchTerminal(for project: Project) {
+    func launchTerminal(for project: some ShellProjectReferenceProviding) {
+        let projectReference = project.shellProjectReference
         latestLaunchRequestID &+= 1
         let requestID = latestLaunchRequestID
         launchTask?.cancel()
         launchTask = _Concurrency.Task { [weak self] in
-            await self?.launchTerminalAsync(for: project, requestID: requestID)
+            await self?.launchTerminalAsync(for: projectReference, requestID: requestID)
         }
     }
 
-    private func launchTerminalAsync(for project: Project, requestID: UInt64) async {
+    private func launchTerminalAsync(for project: ShellProjectReference, requestID: UInt64) async {
         guard shouldProcessLaunchRequest(requestID) else {
             debugLog("launchTerminalAsync ignored stale request id=\(requestID) path=\(project.path)")
             return
@@ -354,13 +355,13 @@ final class TerminalLauncher {
         }
 
         Telemetry.emit("activation_outcome", "unified_v2", payload: [
-            "project": project.name,
+            "project": project.displayName,
             "path": project.path,
             "session": sessionName,
             "success": success,
         ])
         onActivationResult?(TerminalActivationResult(
-            projectName: project.name,
+            projectName: project.displayName,
             projectPath: project.path,
             success: success,
             usedFallback: false,
@@ -369,7 +370,7 @@ final class TerminalLauncher {
 
     /// Resolve a tmux session name for a project.
     /// Prefers an existing tmux session matching the project path; falls back to project slug.
-    private func resolveSessionName(for project: Project) async -> String {
+    private func resolveSessionName(for project: ShellProjectReference) async -> String {
         if let resolver = fallbackTmuxSessionResolver,
            let resolved = await resolver(project.path),
            !resolved.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty

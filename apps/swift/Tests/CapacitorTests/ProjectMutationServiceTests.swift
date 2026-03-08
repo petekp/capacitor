@@ -68,6 +68,7 @@ final class ProjectMutationServiceTests: XCTestCase {
         )
         workflowState.replaceSuggestedProjectCatalog(with: [first, second])
         workflowState.toggleSuggestedProjectSelection(path: first.path)
+        XCTAssertEqual(workflowState.selectedSuggestedProjectCandidates, [first])
 
         let gateway = StubProjectMutationGateway()
         var reloadRequests: [ReloadRequest] = []

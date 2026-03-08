@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct DockProjectCard: View {
-    let project: Project
+    let project: ShellProjectCatalogEntry
     let sessionState: ProjectSessionState?
     let projectStatus: ProjectStatus?
     let flashState: SessionState?
@@ -107,7 +107,7 @@ struct DockProjectCard: View {
         #if DEBUG
             let _ = DockProjectCardRenderTelemetry.logIfChanged(
                 path: project.path,
-                name: project.name,
+                name: project.displayName,
                 state: sessionState?.state,
             )
         #endif
@@ -221,7 +221,7 @@ struct DockProjectCard: View {
             .onDrag {
                 onDragStarted?() ?? NSItemProvider(object: project.path as NSString)
             } preview: {
-                Text(project.name)
+                Text(project.displayName)
                     .font(AppTypography.sectionTitle.monospaced())
                     .padding(8)
                     .background(Color.hudCard.opacity(0.9))
@@ -246,7 +246,7 @@ struct DockProjectCard: View {
             }
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier(AccessibilityIdentifiers.projectCardIdentifier(for: project))
-            .accessibilityLabel(project.name)
+            .accessibilityLabel(project.displayName)
             .accessibilityValue(statusDescription)
     }
 
@@ -256,7 +256,7 @@ struct DockProjectCard: View {
                 HStack(spacing: 6) {
                     if let onInfoTap {
                         ClickableProjectTitle(
-                            name: project.name,
+                            name: project.displayName,
                             nameColor: .white.opacity(0.9),
                             isMissing: project.isMissing,
                             action: onInfoTap,
@@ -265,7 +265,7 @@ struct DockProjectCard: View {
                         )
                         .lineLimit(1)
                     } else {
-                        Text(project.name)
+                        Text(project.displayName)
                             .font(AppTypography.sectionTitle.monospaced())
                             .foregroundStyle(.white.opacity(0.9))
                             .strikethrough(project.isMissing, color: .white.opacity(0.3))

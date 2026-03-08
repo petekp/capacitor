@@ -44,7 +44,7 @@ struct ContentView: View {
                 {
                     IdeaCaptureModalOverlay(
                         isPresented: $appState.showCaptureModal,
-                        projectName: project.name,
+                        projectName: project.displayName,
                         originFrame: appState.captureModalOrigin,
                         containerSize: containerSize,
                         onCapture: { text in
@@ -53,7 +53,7 @@ struct ContentView: View {
                     )
                 }
 
-                if !appState.dashboardState.isLoading, appState.projectWorkflowState.legacyProjects.isEmpty, !isDragHovered, !appState.isFileDragOverCard {
+                if !appState.dashboardState.isLoading, appState.projectWorkflowState.projectCatalog.isEmpty, !isDragHovered, !appState.isFileDragOverCard {
                     EmptyStateBorderGlow()
                         .transition(.opacity)
                 }
@@ -193,5 +193,5 @@ private struct MarchingAntsBorder: View {
 
 #Preview {
     ContentView()
-        .environment(AppState())
+        .environment(AppShellContainer.live().appState)
 }

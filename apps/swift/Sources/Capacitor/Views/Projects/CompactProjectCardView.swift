@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct CompactProjectCardView: View {
-    let project: Project
+    let project: ShellProjectCatalogEntry
     let onTap: () -> Void
     let onInfoTap: (() -> Void)?
     let onMoveToRecent: () -> Void
@@ -16,7 +16,7 @@ struct CompactProjectCardView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
-                Text(project.name)
+                Text(project.displayName)
                     .font(AppTypography.bodySecondary)
                     .foregroundColor(.white.opacity(isHovered ? 0.8 : 0.5))
                     .lineLimit(1)

@@ -47,10 +47,37 @@ final class ProjectOrderingTests: XCTestCase {
         XCTAssertEqual(ordered.map(\.path), ["/tmp/c", "/tmp/a", "/tmp/b"])
     }
 
+    func testOrderedProjectsSupportsShellCatalogEntries() {
+        let projectA = ShellProjectCatalogEntry(displayName: "A", path: "/tmp/a")
+        let projectB = ShellProjectCatalogEntry(displayName: "B", path: "/tmp/b")
+        let projectC = ShellProjectCatalogEntry(displayName: "C", path: "/tmp/c")
+
+        let ordered = ProjectOrdering.orderedProjects(
+            [projectA, projectB, projectC],
+            customOrder: ["/tmp/c", "/tmp/a"],
+        )
+
+        XCTAssertEqual(ordered.map(\.path), ["/tmp/c", "/tmp/a", "/tmp/b"])
+    }
+
     func testMovedOrderOnlyUsesProvidedList() {
         let projectA = makeProject("A", path: "/tmp/a")
         let projectB = makeProject("B", path: "/tmp/b")
         let projectC = makeProject("C", path: "/tmp/c")
+
+        let moved = ProjectOrdering.movedOrder(
+            from: IndexSet(integer: 2),
+            to: 0,
+            in: [projectA, projectB, projectC],
+        )
+
+        XCTAssertEqual(moved, ["/tmp/c", "/tmp/a", "/tmp/b"])
+    }
+
+    func testMovedOrderSupportsShellCatalogEntries() {
+        let projectA = ShellProjectCatalogEntry(displayName: "A", path: "/tmp/a")
+        let projectB = ShellProjectCatalogEntry(displayName: "B", path: "/tmp/b")
+        let projectC = ShellProjectCatalogEntry(displayName: "C", path: "/tmp/c")
 
         let moved = ProjectOrdering.movedOrder(
             from: IndexSet(integer: 2),

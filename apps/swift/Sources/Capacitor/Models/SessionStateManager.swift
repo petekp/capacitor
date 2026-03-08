@@ -31,7 +31,7 @@ final class SessionStateManager {
     }
 
     private struct ProjectMatchInfo {
-        let project: Project
+        let projectPath: String
         let normalizedPath: String
         let depth: Int
         let repoInfo: GitRepositoryInfo?
@@ -98,7 +98,7 @@ final class SessionStateManager {
     /// Used by the consolidated AppSnapshot tick in AppState.
     func applyRuntimeProjectStates(
         _ runtimeProjects: [RuntimeProjectState],
-        for projects: [Project],
+        for projects: [some ProjectPathProviding],
         correlationId: String? = nil,
     ) {
         applyGeneration &+= 1
@@ -118,7 +118,7 @@ final class SessionStateManager {
 
     private func applyRuntimeProjectStatesInternal(
         _ runtimeProjects: [RuntimeProjectState],
-        projects: [Project],
+        projects: [some ProjectPathProviding],
         correlationId: String,
         requestGeneration: UInt64,
     ) {
@@ -316,13 +316,13 @@ final class SessionStateManager {
         }
     }
 
-    func isFlashing(_ project: Project) -> SessionState? {
+    func isFlashing(_ project: some ProjectPathProviding) -> SessionState? {
         flashingProjects[project.path]
     }
 
     // MARK: - State Retrieval
 
-    func getSessionState(for project: Project) -> ProjectSessionState? {
+    func getSessionState(for project: some ProjectPathProviding) -> ProjectSessionState? {
         if let direct = sessionStates[project.path] {
             return direct
         }
@@ -331,7 +331,7 @@ final class SessionStateManager {
         return sessionStates.first(where: { PathNormalizer.normalize($0.key) == normalizedPath })?.value
     }
 
-    func getSessionAttribution(for project: Project) -> SessionAttribution? {
+    func getSessionAttribution(for project: some ProjectPathProviding) -> SessionAttribution? {
         if let direct = sessionAttributions[project.path] {
             return direct
         }
@@ -340,7 +340,7 @@ final class SessionStateManager {
         return sessionAttributions.first(where: { PathNormalizer.normalize($0.key) == normalizedPath })?.value
     }
 
-    func getPreferredSessionId(for project: Project) -> String? {
+    func getPreferredSessionId(for project: some ProjectPathProviding) -> String? {
         if let direct = latestSessionIds[project.path] {
             return direct
         }
@@ -355,7 +355,7 @@ final class SessionStateManager {
 
     private nonisolated func mergeRuntimeProjectStates(
         _ states: [RuntimeProjectState],
-        projects: [Project],
+        projects: [some ProjectPathProviding],
         now: Date,
     ) -> MergeResult {
         let homeNormalized = PathNormalizer.normalize(NSHomeDirectory())
@@ -372,7 +372,7 @@ final class SessionStateManager {
                 ?? WorkspaceIdentity.fromPath(project.path)
             projectInfos.append(
                 ProjectMatchInfo(
-                    project: project,
+                    projectPath: project.path,
                     normalizedPath: normalized,
                     depth: depth,
                     repoInfo: repoInfo,
@@ -429,7 +429,7 @@ final class SessionStateManager {
                    let candidates = pinnedProjectsByRepoKey[repoInfo.commonDir ?? repoInfo.repoRoot]
                 {
                     for candidate in candidates {
-                        let projectPath = candidate.project.path
+                        let projectPath = candidate.projectPath
                         let candidateBest = BestProjectState(state: state, priority: .repoFallback)
                         if let existing = bestStates[projectPath] {
                             if shouldReplace(existing: existing, with: candidateBest, now: now) {
@@ -446,7 +446,7 @@ final class SessionStateManager {
                 continue
             }
 
-            let projectPath = match.project.path
+            let projectPath = match.projectPath
             let candidateBest = BestProjectState(state: state, priority: .direct)
             if let existing = bestStates[projectPath] {
                 if shouldReplace(existing: existing, with: candidateBest, now: now) {
