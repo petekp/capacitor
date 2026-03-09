@@ -1,8 +1,8 @@
 #!/bin/bash
-# Sync capacitor-hook binary from repo to installed location
-# The binary is called directly by Claude Code hooks (no wrapper script needed)
+# Sync the canonical `capacitor-hook` binary into ~/.local/bin for local use.
+# The binary is called directly by Claude Code hooks; there is no wrapper script.
 
-set -e
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -17,6 +17,19 @@ if [ "$(uname -m)" != "arm64" ]; then
     exit 1
 fi
 INSTALLED_BINARY="$HOME/.local/bin/capacitor-hook"
+
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+    cat <<'USAGE'
+Usage: ./scripts/sync-hooks.sh [--force|-f]
+
+Updates ~/.local/bin/capacitor-hook from either:
+  1. target/release/capacitor-hook (preferred)
+  2. an installed app bundle fallback
+
+Use --force to rebuild the repo binary before syncing.
+USAGE
+    exit 0
+fi
 
 # Verify binary actually runs (not just exists)
 # Returns: 0 = works, 1 = needs codesign, 2 = fatal
@@ -97,6 +110,12 @@ if [[ -z "$SOURCE_BINARY" ]]; then
             break
         fi
     done
+fi
+
+if [[ -z "$SOURCE_BINARY" ]]; then
+    echo "ERROR: Could not find a capacitor-hook binary in the repo build or app bundle." >&2
+    echo "Try: cargo build -p capacitor-hook --release" >&2
+    exit 1
 fi
 
 # Install binary (symlink to avoid macOS code signature issues)

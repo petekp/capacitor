@@ -1,5 +1,7 @@
 #!/bin/bash
-# Runtime reliability guard — enforces ratchet budgets for the holistic reliability program.
+# Runtime reliability guard.
+# Enforces frozen budgets for reliability-sensitive patterns after the
+# architecture cleanup. This script should point only at live paths.
 # Run: bash scripts/ci/runtime-reliability-guard.sh [--status]
 set -uo pipefail
 
@@ -108,7 +110,7 @@ echo "── Holistic Reliability Ratchets ──"
 echo ""
 
 # Calibrated baseline counts as of 2026-03-05 (must only go down)
-check_budget "Setup fatalError path"           'fatalError("Failed to create CoreRuntime")' 0 "apps/swift/Sources/Capacitor/Models/SetupRequirements.swift"
+check_budget "Setup fatalError path"           'fatalError\("Failed to create CoreRuntime"\)' 0 "apps/swift/Sources/Capacitor/Application/Setup/SetupWorkflowState.swift"
 check_budget "verify_hook_binary handle arg"   'arg("handle")'                                0 "core/capacitor-core/src/runtime_setup.rs"
 check_budget "hook_types CLAUDE_PROJECT_DIR fallback" 'std::env::var("CLAUDE_PROJECT_DIR")'  0 "core/capacitor-hook/src/hook_types.rs"
 check_budget "hook_types PWD fallback"         'std::env::var("PWD")'                          0 "core/capacitor-hook/src/hook_types.rs"

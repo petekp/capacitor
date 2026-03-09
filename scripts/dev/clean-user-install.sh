@@ -11,9 +11,9 @@
 # - ~/.claude/ directory (belongs to Claude Code)
 # - Claude Code sessions or transcripts
 #
-# Usage: ./clean-user-install.sh [--dry-run]
+# Usage: ./scripts/dev/clean-user-install.sh [--dry-run]
 
-set -e
+set -euo pipefail
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -21,10 +21,13 @@ YELLOW='\033[1;33m'
 NC='\033[0m'
 
 DRY_RUN=false
-if [[ "$1" == "--dry-run" ]]; then
+if [[ "${1:-}" == "--dry-run" ]]; then
     DRY_RUN=true
     echo -e "${YELLOW}DRY RUN MODE - No changes will be made${NC}"
     echo ""
+elif [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+    echo "Usage: ./scripts/dev/clean-user-install.sh [--dry-run]"
+    exit 0
 fi
 
 echo -e "${GREEN}========================================${NC}"
@@ -60,7 +63,7 @@ fi
 SETTINGS_FILE="$HOME/.claude/settings.json"
 if [[ -f "$SETTINGS_FILE" ]]; then
     if grep -q "capacitor-hook" "$SETTINGS_FILE" 2>/dev/null; then
-        echo -e "${YELLOW}Found:${NC} HUD hooks in ~/.claude/settings.json"
+        echo -e "${YELLOW}Found:${NC} Capacitor hooks in ~/.claude/settings.json"
         ITEMS_TO_CLEAN+=("hooks-in-settings")
     fi
 fi
@@ -115,12 +118,22 @@ for item in "${ITEMS_TO_CLEAN[@]}"; do
         "hooks-in-settings")
             echo -n "Removing hooks from ~/.claude/settings.json... "
             if [[ "$DRY_RUN" == "false" ]]; then
-                # Use jq to remove all hooks that reference capacitor-hook
                 if command -v jq &> /dev/null; then
-                    # Remove the entire hooks object to start fresh
-                    # (User can reconfigure via "Fix All" in the app)
-                    jq 'del(.hooks)' "$SETTINGS_FILE" > "$SETTINGS_FILE.tmp" && \
-                        mv "$SETTINGS_FILE.tmp" "$SETTINGS_FILE"
+                    jq '
+                        def is_capacitor_hook:
+                            ((.hooks // []) | any(
+                                (.url // "") == "http://127.0.0.1:7474/hook" or
+                                ((.command // "") | contains("capacitor-hook"))
+                            ));
+                        if .hooks then
+                            .hooks |= with_entries(
+                                .value |= map(select(is_capacitor_hook | not)) |
+                                select(.value | length > 0)
+                            )
+                        else
+                            .
+                        end
+                    ' "$SETTINGS_FILE" > "$SETTINGS_FILE.tmp" && mv "$SETTINGS_FILE.tmp" "$SETTINGS_FILE"
                 else
                     echo -e "${YELLOW}skipped (jq not installed)${NC}"
                     continue

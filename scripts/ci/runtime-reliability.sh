@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Canonical runtime-reliability wrapper used by CI and nightly verification.
+# `ci` runs the blocking reliability gates. `nightly` runs those same gates
+# plus the soak benchmark report.
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
