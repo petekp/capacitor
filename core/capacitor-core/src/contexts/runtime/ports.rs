@@ -1,4 +1,4 @@
-use crate::clean::runtime::domain::{RuntimeHealth, RuntimeObservation};
+use crate::contexts::runtime::domain::{RuntimeHealth, RuntimeObservation};
 use crate::domain::AppSnapshot;
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]

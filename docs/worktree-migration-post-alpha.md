@@ -67,7 +67,7 @@ Migrate Capacitor from its bespoke worktree lifecycle to Claude Code's native `-
 
 ### Phase 5: Cleanup
 - Delete obsolete bespoke worktree service paths.
-- Rewrite test suites around new behavior.
+- Architecture test suites around new behavior.
 - Remove stale comments/documentation referring to managed marker paths.
 
 ### Phase 6: Verification

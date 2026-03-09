@@ -5,7 +5,7 @@
 
 uniffi::setup_scaffolding!();
 
-mod clean;
+mod contexts;
 pub mod domain;
 pub mod ingest;
 pub mod query;
@@ -73,7 +73,7 @@ pub struct CoreRuntime {
     state: std::sync::Mutex<reduce::ReducerState>,
     snapshot_storage: Arc<dyn SnapshotStorage>,
     app_storage: StorageConfig,
-    clean_shell: clean::CleanArchitectureShell,
+    context_services: contexts::ContextServices,
 }
 
 impl CoreRuntime {
@@ -86,7 +86,7 @@ impl CoreRuntime {
             .map_err(CoreRuntimeError::from)?
             .map(reduce::ReducerState::from_snapshot)
             .unwrap_or_default();
-        let clean_shell = clean::CleanArchitectureShell::bootstrap(
+        let context_services = contexts::ContextServices::bootstrap(
             Arc::clone(&snapshot_storage),
             app_storage.clone(),
         );
@@ -95,7 +95,7 @@ impl CoreRuntime {
             state: std::sync::Mutex::new(state),
             snapshot_storage,
             app_storage,
-            clean_shell,
+            context_services,
         }))
     }
 
@@ -293,7 +293,7 @@ impl CoreRuntime {
     }
 
     pub fn app_snapshot(&self) -> Result<AppSnapshot, CoreRuntimeError> {
-        self.clean_shell
+        self.context_services
             .app_snapshot()
             .map_err(|error| CoreRuntimeError::from(error.to_string()))
     }
@@ -494,7 +494,7 @@ impl CoreRuntime {
 
         let plugins = self.list_plugins_internal().unwrap_or_default();
         let projects = self
-            .clean_shell
+            .context_services
             .projects
             .refresh_project_catalog()
             .map_err(|error| CoreRuntimeError::from(error.to_string()))?
@@ -510,16 +510,16 @@ impl CoreRuntime {
     pub fn get_suggested_projects(
         &self,
     ) -> Result<Vec<ShellSuggestedProjectCandidate>, CoreRuntimeError> {
-        self.clean_shell
+        self.context_services
             .projects
             .suggest_projects()
             .map_err(|error| CoreRuntimeError::from(error.to_string()))
     }
 
     pub fn add_project(&self, path: String) -> Result<(), CoreRuntimeError> {
-        self.clean_shell
+        self.context_services
             .projects
-            .connect_project(&clean::projects::domain::ConnectProjectRequest {
+            .connect_project(&contexts::projects::domain::ConnectProjectRequest {
                 path,
                 display_name: None,
             })
@@ -527,14 +527,14 @@ impl CoreRuntime {
     }
 
     pub fn remove_project(&self, path: String) -> Result<(), CoreRuntimeError> {
-        self.clean_shell
+        self.context_services
             .projects
             .remove_project(&path)
             .map_err(|error| CoreRuntimeError::from(error.to_string()))
     }
 
     pub fn validate_project(&self, path: String) -> ValidationResultFfi {
-        self.clean_shell
+        self.context_services
             .projects
             .validate_project(&path)
             .unwrap_or_else(|error| ValidationResultFfi {
@@ -548,7 +548,7 @@ impl CoreRuntime {
     }
 
     pub fn create_project_claude_md(&self, project_path: String) -> Result<(), CoreRuntimeError> {
-        self.clean_shell
+        self.context_services
             .projects
             .create_project_claude_md(&project_path)
             .map_err(|error| CoreRuntimeError::from(error.to_string()))
@@ -563,9 +563,9 @@ impl CoreRuntime {
         project_path: String,
         idea_text: String,
     ) -> Result<String, CoreRuntimeError> {
-        self.clean_shell
+        self.context_services
             .ideas
-            .capture_idea(&clean::ideas::domain::CaptureIdeaRequest {
+            .capture_idea(&contexts::ideas::domain::CaptureIdeaRequest {
                 project_path,
                 idea_text,
             })
@@ -576,7 +576,7 @@ impl CoreRuntime {
         &self,
         project_path: String,
     ) -> Result<Vec<runtime_types::Idea>, CoreRuntimeError> {
-        self.clean_shell
+        self.context_services
             .ideas
             .load_idea_backlog(&project_path)
             .map(|backlog| backlog.ideas)
@@ -589,9 +589,9 @@ impl CoreRuntime {
         idea_id: String,
         new_status: String,
     ) -> Result<(), CoreRuntimeError> {
-        self.clean_shell
+        self.context_services
             .ideas
-            .update_idea_status(&clean::ideas::domain::IdeaFieldUpdateRequest {
+            .update_idea_status(&contexts::ideas::domain::IdeaFieldUpdateRequest {
                 project_path,
                 idea_id,
                 new_value: new_status,
@@ -605,9 +605,9 @@ impl CoreRuntime {
         idea_id: String,
         new_effort: String,
     ) -> Result<(), CoreRuntimeError> {
-        self.clean_shell
+        self.context_services
             .ideas
-            .update_idea_effort(&clean::ideas::domain::IdeaFieldUpdateRequest {
+            .update_idea_effort(&contexts::ideas::domain::IdeaFieldUpdateRequest {
                 project_path,
                 idea_id,
                 new_value: new_effort,
@@ -621,9 +621,9 @@ impl CoreRuntime {
         idea_id: String,
         new_triage: String,
     ) -> Result<(), CoreRuntimeError> {
-        self.clean_shell
+        self.context_services
             .ideas
-            .update_idea_triage(&clean::ideas::domain::IdeaFieldUpdateRequest {
+            .update_idea_triage(&contexts::ideas::domain::IdeaFieldUpdateRequest {
                 project_path,
                 idea_id,
                 new_value: new_triage,
@@ -637,9 +637,9 @@ impl CoreRuntime {
         idea_id: String,
         new_title: String,
     ) -> Result<(), CoreRuntimeError> {
-        self.clean_shell
+        self.context_services
             .ideas
-            .update_idea_title(&clean::ideas::domain::IdeaFieldUpdateRequest {
+            .update_idea_title(&contexts::ideas::domain::IdeaFieldUpdateRequest {
                 project_path,
                 idea_id,
                 new_value: new_title,
@@ -653,9 +653,9 @@ impl CoreRuntime {
         idea_id: String,
         new_description: String,
     ) -> Result<(), CoreRuntimeError> {
-        self.clean_shell
+        self.context_services
             .ideas
-            .update_idea_description(&clean::ideas::domain::IdeaFieldUpdateRequest {
+            .update_idea_description(&contexts::ideas::domain::IdeaFieldUpdateRequest {
                 project_path,
                 idea_id,
                 new_value: new_description,
@@ -668,9 +668,9 @@ impl CoreRuntime {
         project_path: String,
         idea_ids: Vec<String>,
     ) -> Result<(), CoreRuntimeError> {
-        self.clean_shell
+        self.context_services
             .ideas
-            .save_ideas_order(&clean::ideas::domain::IdeasOrderRequest {
+            .save_ideas_order(&contexts::ideas::domain::IdeasOrderRequest {
                 project_path,
                 idea_ids,
             })
@@ -678,62 +678,62 @@ impl CoreRuntime {
     }
 
     pub fn load_ideas_order(&self, project_path: String) -> Result<Vec<String>, CoreRuntimeError> {
-        self.clean_shell
+        self.context_services
             .ideas
             .load_ideas_order(&project_path)
             .map_err(|error| CoreRuntimeError::from(error.to_string()))
     }
 
     pub fn get_ideas_file_path(&self, project_path: String) -> String {
-        self.clean_shell.ideas.ideas_file_path(&project_path)
+        self.context_services.ideas.ideas_file_path(&project_path)
     }
 
     pub fn check_setup_status(&self) -> SetupStatus {
-        self.clean_shell.check_setup_status()
+        self.context_services.check_setup_status()
     }
 
     pub fn check_dependency(&self, name: String) -> DependencyStatus {
-        self.clean_shell.check_dependency(&name)
+        self.context_services.check_dependency(&name)
     }
 
     pub fn install_hook_binary_from_path(
         &self,
         source_path: String,
     ) -> Result<InstallResult, CoreRuntimeError> {
-        self.clean_shell
+        self.context_services
             .setup
             .install_binary_from_path(&source_path)
             .map_err(|error| CoreRuntimeError::from(error.to_string()))
     }
 
     pub fn install_hooks(&self) -> Result<InstallResult, CoreRuntimeError> {
-        self.clean_shell
+        self.context_services
             .setup
             .install_hooks()
             .map_err(|error| CoreRuntimeError::from(error.to_string()))
     }
 
     pub fn remove_hooks(&self) -> Result<InstallResult, CoreRuntimeError> {
-        self.clean_shell
+        self.context_services
             .setup
             .remove_hooks()
             .map_err(|error| CoreRuntimeError::from(error.to_string()))
     }
 
     pub fn get_hook_status(&self) -> HookStatus {
-        self.clean_shell.get_hook_status()
+        self.context_services.get_hook_status()
     }
 
     pub fn check_hook_health(&self) -> runtime_types::HookHealthReport {
-        self.clean_shell.check_hook_health()
+        self.context_services.check_hook_health()
     }
 
     pub fn get_hook_diagnostic(&self) -> HookDiagnosticReport {
-        self.clean_shell.get_hook_diagnostic()
+        self.context_services.get_hook_diagnostic()
     }
 
     pub fn run_hook_test(&self) -> HookTestResult {
-        self.clean_shell.run_hook_test()
+        self.context_services.run_hook_test()
     }
 }
 

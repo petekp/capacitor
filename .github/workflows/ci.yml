@@ -10,19 +10,19 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  rewrite-guards:
-    name: Rewrite Guards
+  architecture-guards:
+    name: Architecture Guards
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Run rewrite guard status
-        run: ./scripts/rewrite/check_rewrite_guards.sh --status
+      - name: Run architecture guard status
+        run: ./scripts/architecture/check_architecture_guards.sh --status
 
-      - name: Run rewrite guard checks
-        run: ./scripts/rewrite/check_rewrite_guards.sh
+      - name: Run architecture guard checks
+        run: ./scripts/architecture/check_architecture_guards.sh
 
       - name: Run test surface audit
         run: bash scripts/ci/test-surface-audit.sh --check
@@ -30,7 +30,7 @@ jobs:
   test-scripts:
     name: Test Release Scripts
     runs-on: macos-14
-    needs: rewrite-guards
+    needs: architecture-guards
     steps:
       - uses: actions/checkout@v4
 
@@ -43,7 +43,7 @@ jobs:
   test-rust:
     name: Test Rust
     runs-on: macos-14
-    needs: rewrite-guards
+    needs: architecture-guards
     steps:
       - uses: actions/checkout@v4
 
@@ -79,7 +79,7 @@ jobs:
   test-hook:
     name: Test Hook Binary
     runs-on: macos-14
-    needs: rewrite-guards
+    needs: architecture-guards
     steps:
       - uses: actions/checkout@v4
 
@@ -109,7 +109,7 @@ jobs:
   runtime-reliability:
     name: Runtime Reliability Gate
     runs-on: macos-14
-    needs: rewrite-guards
+    needs: architecture-guards
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4

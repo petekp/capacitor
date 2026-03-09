@@ -1,6 +1,6 @@
-# Rewrite Decisions Log
+# Architecture Decisions Log
 
-This file records architecture decisions that are locked for the rewrite.
+This file records architecture decisions that are locked for the architecture.
 
 ## D-001: No Daemon Core
 - Date: 2026-02-28
@@ -30,7 +30,7 @@ This file records architecture decisions that are locked for the rewrite.
 - Date: 2026-02-28
 - Status: accepted
 - Decision: Breaking internal API changes are allowed when they reduce complexity and improve architecture.
-- Why: Single-user product with explicit rewrite intent.
+- Why: Single-user product with explicit architecture intent.
 
 ## D-006: Project Model Mirrors Are Cleanup Debt, Not Compatibility Policy
 - Date: 2026-03-07
@@ -47,19 +47,19 @@ This file records architecture decisions that are locked for the rewrite.
 ## D-008: No Parallel Rust Ownership Inside `CoreRuntime`
 - Date: 2026-03-08
 - Status: accepted
-- Decision: For each bounded context in `capacitor-core`, production behavior must either route through the `clean/*` service layer or the unused scaffold must be deleted. `CoreRuntime` may remain the UniFFI façade, but it must not permanently keep direct legacy helper ownership beside dormant clean-shell application services.
-- Why: The remaining finish-line debt is not another Swift shell problem. It is parallel ownership inside the Rust core. Leaving both direct `runtime_*` / config / setup-helper paths and scaffold-only clean services in place preserves ambiguity, blocks deletion, and prevents the repo from ever reaching one canonical architecture.
+- Decision: For each bounded context in `capacitor-core`, production behavior must either route through the `contexts/*` service layer or the unused scaffold must be deleted. `CoreRuntime` may remain the UniFFI façade, but it must not permanently keep direct legacy helper ownership beside dormant bounded-context application services.
+- Why: The remaining finish-line debt is not another Swift shell problem. It is parallel ownership inside the Rust core. Leaving both direct `runtime_*` / config / setup-helper paths and scaffold-only context services in place preserves ambiguity, blocks deletion, and prevents the repo from ever reaching one canonical architecture.
 
 ## D-009: Rust Plans Activation; Swift Executes Terminal Side Effects
 - Date: 2026-03-08
 - Status: accepted
 - Decision: Finish-line activation ownership will be singular: Rust owns activation planning and returns the activation decision contract, while Swift owns execution of terminal, AX, AppleScript, tmux, and app-focus side effects. `TerminalLauncher` should shrink toward an executor over Rust-provided actions rather than remain the planner of record.
-- Why: The repo already contains a large tested pure activation planner in `core/capacitor-core/src/runtime_activation`, while production activation still routes through `LiveActivationGateway` + `TerminalLauncher` in Swift. Deleting the Rust activation path would throw away the more explicit planning model and contradict the rewrite charter. The cleaner finish line is to promote that planner into production via FFI and stop duplicating planning policy in Swift.
+- Why: The repo already contains a large tested pure activation planner in `core/capacitor-core/src/runtime_activation`, while production activation still routes through `LiveActivationGateway` + `TerminalLauncher` in Swift. Deleting the Rust activation path would throw away the more explicit planning model and contradict the architecture charter. The cleaner finish line is to promote that planner into production via FFI and stop duplicating planning policy in Swift.
 
 ## D-010: Production Activation Ownership Remains Swift-Owned
 - Date: 2026-03-08
 - Status: accepted
-- Decision: Supersede D-009 for the finish-line campaign. Production activation planning/execution remains Swift-owned, and the dormant Rust clean activation shell plus the test-only `runtime_activation` planner are deleted instead of promoted through FFI.
+- Decision: Supersede D-009 for the finish-line campaign. Production activation planning/execution remains Swift-owned, and the dormant Rust activation bounded context shell plus the test-only `runtime_activation` planner are deleted instead of promoted through FFI.
 - Why: Production activation already lives entirely in Swift (`LiveActivationGateway` + `TerminalLauncher`), while the Rust activation path is non-production scaffold/test-only logic. Promoting Rust would require a larger FFI/bindings and Swift executor redesign campaign. The lowest-risk finish-line move is one production owner in Swift plus deletion of the unused Rust path.
 
 ## D-011: Project Catalog FFI Boundary Is Now Shell-Native
@@ -92,16 +92,16 @@ This file records architecture decisions that are locked for the rewrite.
 - Decision: The namespace-purity tranche begins by rehoming low-risk leaf files out of `Models/` before touching high-blast-radius runtime/activation implementations. First targets are pure presentation/setup/runtime value files and isolated helpers such as `HookPresentationPolicy`, `HookDiagnosticPresentation`, `SetupStepCatalog`, `SetupReadinessCoordinator`, `RuntimeStatus`, `WindowFrameStore`, `GhosttyAXReader`, and `ShellSetupInstructions`.
 - Why: This lowers the `Models/*.swift` budget quickly without risking runtime regressions, and it creates a clean pattern for later, higher-risk moves.
 
-## D-016: The Existing Rewrite Control Plane Remains Canonical Through The True Ending
+## D-016: The Existing Architecture Control Plane Remains Canonical Through The True Ending
 - Date: 2026-03-08
 - Status: accepted
-- Decision: Continue the finish-line work inside the existing `rewrite/CHARTER.md`, `rewrite/DECISIONS.md`, `rewrite/SLICES.yaml`, `rewrite/MAP.csv`, and `rewrite/HANDOFF.md` artifacts rather than opening a parallel migration ledger.
+- Decision: Continue the finish-line work inside the existing `architecture/CHARTER.md`, `architecture/DECISIONS.md`, `architecture/SLICES.yaml`, `architecture/MAP.csv`, and `architecture/HANDOFF.md` artifacts rather than opening a parallel migration ledger.
 - Why: A second ledger would split authority, break ratchet continuity, and recreate the drift problems the control plane exists to prevent.
 
 ## D-017: The True Ending Requires Truthful Ratchets, Truthful Docs, And Zero Accidental Namespace Debt
 - Date: 2026-03-08
 - Status: accepted
-- Decision: The codebase is not considered finished while any of these remain: ratchets pointing at deleted paths or inflated budgets, actionable-looking historical checkpoint docs, or residual Swift namespace debt such as the nested `Models/WindowAnchoring/*` subtree. The finish line also includes an explicit decision on whether `rewrite/` remains permanent governance or is archived.
+- Decision: The codebase is not considered finished while any of these remain: ratchets pointing at deleted paths or inflated budgets, actionable-looking historical checkpoint docs, or residual Swift namespace debt such as the nested `Models/WindowAnchoring/*` subtree. The finish line also includes an explicit decision on whether `architecture/` remains permanent governance or is archived.
 - Why: After convergence and namespace purity, the remaining risk is no longer structural confusion between old and new architecture. It is misleading operational residue that makes the repo look cleaner than it is.
 
 ## D-018: Window Anchoring Is Support Infrastructure, Not Model-Layer Code
@@ -116,19 +116,31 @@ This file records architecture decisions that are locked for the rewrite.
 - Decision: `Composition/AppState.swift` remains the single top-level SwiftUI shell environment object and may aggregate references to canonical application/support/composition collaborators, as long as it does not resume owning construction, duplicate policy, or duplicated lifecycle state.
 - Why: The remaining `AppState` surface is broad but intentional. The file is now small, builds nothing, and mainly exposes already-canonical state objects to views/tests. Further splitting would mostly relocate references without deleting meaningful complexity.
 
-## D-020: Rewrite Control Plane Becomes Permanent Governance, Not Archived Migration Debris
+## D-020: Architecture Control Plane Becomes Permanent Governance, Not Archived Migration Debris
 - Date: 2026-03-08
 - Status: accepted
-- Decision: Keep `rewrite/CHARTER.md`, `rewrite/DECISIONS.md`, `rewrite/SLICES.yaml`, `rewrite/MAP.csv`, `rewrite/HANDOFF.md`, and their guard scripts as the repo’s ongoing architecture-governance surface rather than archiving them after the finish-line tranche.
+- Decision: Keep `architecture/CHARTER.md`, `architecture/DECISIONS.md`, `architecture/SLICES.yaml`, `architecture/MAP.csv`, `architecture/HANDOFF.md`, and their guard scripts as the repo’s ongoing architecture-governance surface rather than archiving them after the finish-line tranche.
 - Why: The ratchets and decision history still provide durable value after migration. Archiving them while they remain the source of CI truth would split authority and recreate drift.
 
 ## D-021: Unlinked Audit Scaffolds And Orphaned Metadata Files Are Dead Code
 - Date: 2026-03-08
 - Status: accepted
-- Decision: Delete analysis-stage audit scaffolds and stray Finder metadata files when they have zero inbound references from current docs, code, CI, or rewrite governance. Keep unreferenced but plausibly intentional manual utilities as review-only until their role is explicitly retired.
+- Decision: Delete analysis-stage audit scaffolds and stray Finder metadata files when they have zero inbound references from current docs, code, CI, or architecture governance. Keep unreferenced but plausibly intentional manual utilities as review-only until their role is explicitly retired.
 - Why: A repo can be migration-complete and still not be pristine if it carries orphaned analysis artifacts and filesystem cruft. Those files consume attention without serving a live purpose.
+
+## D-022: Migration-Shaped Names Must Be Renamed Or Archived
+- Date: 2026-03-08
+- Status: accepted
+- Decision: The repo is not pristine while active code or governance still carries migration-era namespace names like `contexts/` and `architecture/`. Live Rust bounded contexts must move to a permanent namespace, and the repo-level governance surface must adopt a permanent architecture name.
+- Why: Even when the behavior is correct, migration-shaped names keep advertising an intermediate state instead of the steady-state system.
+
+## D-023: Rust `contexts/` Becomes `contexts/`
+- Date: 2026-03-08
+- Status: accepted
+- Decision: Rename `core/capacitor-core/src/clean` to `core/capacitor-core/src/contexts`, and rename `CleanArchitectureShell` to a neutral service/composition name.
+- Why: The subsystem is live production code, not a temporary bounded-context experiment. `contexts/` is a durable name for bounded-context services without prescribing a specific dogma.
 
 ## Change Control
 1. New decisions must be appended with a unique ID.
 2. Reversals require a superseding decision entry, not silent edits.
-3. Any decision change must reference affected slices in `rewrite/SLICES.yaml`.
+3. Any decision change must reference affected slices in `architecture/SLICES.yaml`.

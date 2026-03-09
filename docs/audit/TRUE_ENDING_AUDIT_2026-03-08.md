@@ -11,8 +11,8 @@ Finish the repo cleanup by deleting the remaining misleading residue: stale hist
 
 ## Method
 
-- Re-read the existing rewrite control plane in `rewrite/`.
-- Ran `scripts/rewrite/check_rewrite_guards.sh --status`.
+- Re-read the existing architecture control plane in `architecture/`.
+- Ran `scripts/architecture/check_architecture_guards.sh --status`.
 - Re-ran the retargeted `scripts/ci/runtime-reliability-guard.sh --status`.
 - Enumerated the remaining Swift files under `apps/swift/Sources/Capacitor/Models/`.
 - Counted actionable historical-checkpoint `TODO (user-run)` rows.
@@ -59,7 +59,7 @@ Measured on March 8, 2026 after `NP-303`.
 
 - `docs/audit/SUMMARY.md`
 - `docs/audit/ARCHITECTURE_CHECKPOINT_2026-03-08.md`
-- `rewrite/HANDOFF.md`
+- `architecture/HANDOFF.md`
 
 These files are important for clarity, but they follow the real cleanup slices rather than drive them.
 
@@ -160,16 +160,16 @@ Closed state after TE-405:
 - the remaining `AppState` collaborator surface is explicitly accepted as intentional SwiftUI shell-environment access
 - finish-line cleanup does not require splitting `AppState` further unless it resumes owning policy or construction
 
-### TE-406: Rewrite End-State Decision
+### TE-406: Architecture End-State Decision
 
 Outcome:
 
-- explicitly decide whether `rewrite/` remains permanent governance or is archived as migration history
+- explicitly decide whether `architecture/` remains permanent governance or is archived as migration history
 - close the finish-line tranche truthfully
 
 Status: completed.
 
 Closed state after TE-406:
 
-- `rewrite/` remains the permanent architecture-governance surface
+- `architecture/` remains the permanent architecture-governance surface
 - the finish-line tranche is complete with no pending slices in the control plane

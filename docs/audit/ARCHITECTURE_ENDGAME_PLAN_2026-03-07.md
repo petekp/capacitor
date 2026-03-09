@@ -7,7 +7,7 @@ This document started as the remaining-slices plan for the March 7 cleanup push.
 
 ## Mission Outcome
 
-The Swift clean-architecture migration is complete at the app layer:
+The Swift bounded-context migration is complete at the app layer:
 
 1. SwiftUI is an outer delivery layer over shell-owned state and services.
 2. `AppState` is thin outer UI/composition glue, not a policy center.

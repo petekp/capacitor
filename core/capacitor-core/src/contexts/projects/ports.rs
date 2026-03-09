@@ -1,4 +1,4 @@
-use crate::clean::projects::domain::{ConnectProjectRequest, ProjectCatalogSnapshot};
+use crate::contexts::projects::domain::{ConnectProjectRequest, ProjectCatalogSnapshot};
 use crate::runtime_types::ShellSuggestedProjectCandidate;
 use crate::runtime_validation::ValidationResultFfi;
 

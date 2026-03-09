@@ -81,4 +81,4 @@ Then remove the live call in the next slice and ratchet from `1` to `0`.
 ## Final Decisions
 
 - `Composition/AppState.swift` remains the intentional SwiftUI shell-environment hub.
-- `rewrite/` remains the repo’s permanent architecture-governance surface rather than archived migration debris.
+- `architecture/` remains the repo’s permanent architecture-governance surface rather than archived migration debris.

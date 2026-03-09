@@ -18,7 +18,7 @@ Scope: full repo, focused on docs/scripts/source artifacts after the closed fini
 
 Evidence:
 
-- zero inbound references from current docs, CI workflows, rewrite governance, app source, or Rust source
+- zero inbound references from current docs, CI workflows, architecture governance, app source, or Rust source
 - no active runtime/build/test role
 
 ## Intentional Manual Utilities

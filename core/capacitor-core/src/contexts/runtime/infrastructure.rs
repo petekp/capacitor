@@ -70,7 +70,7 @@ impl RuntimeIngressPort for LiveRuntimeIngressPort {
             snapshot_authoritative,
             hook_ingress_available,
             diagnostics,
-            checked_at: crate::clean::kernel::Timestamp(crate::domain::now_rfc3339()),
+            checked_at: crate::contexts::kernel::Timestamp(crate::domain::now_rfc3339()),
         })
     }
 }

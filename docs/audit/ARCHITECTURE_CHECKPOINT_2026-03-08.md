@@ -15,7 +15,7 @@ This checkpoint is intentionally narrower and more truthful than the earlier Mar
 | Check | Result | Evidence |
 |---|---|---|
 | `swift test` | PASS | `390 tests, 0 failures` |
-| `./scripts/rewrite/check_rewrite_guards.sh --status` | PASS | `pending: 0`, `in_progress: 0`, all ratchets green |
+| `./scripts/architecture/check_architecture_guards.sh --status` | PASS | `pending: 0`, `in_progress: 0`, all ratchets green |
 
 ## What The Closed Tranche Proved
 

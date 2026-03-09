@@ -25,14 +25,14 @@ use super::setup::{
     infrastructure::{LiveSetupInspector, LiveSetupMutator},
 };
 
-pub(crate) struct CleanArchitectureShell {
+pub(crate) struct ContextServices {
     pub(crate) runtime: RuntimeService,
     pub(crate) setup: SetupService,
     pub(crate) projects: ProjectCatalogService,
     pub(crate) ideas: IdeaService,
 }
 
-impl CleanArchitectureShell {
+impl ContextServices {
     pub(crate) fn bootstrap(
         snapshot_storage: Arc<dyn SnapshotStorage>,
         app_storage: StorageConfig,

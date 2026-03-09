@@ -8,7 +8,7 @@ Scope: `core/`, `apps/swift/Tests/CapacitorTests/`, `tests/`, `services/ingest-w
 1. Inventory all tests by interface and leverage.
 2. Flag tests asserting implementation details instead of behavior contracts.
 3. Freeze current weak-pattern surface with a CI guard so debt cannot grow.
-4. Define next rewrite slices to pay debt down deterministically.
+4. Define next architecture slices to pay debt down deterministically.
 
 ## Current Metrics (After RW-098)
 
@@ -113,7 +113,7 @@ Static bats source checks that do not execute behavior have been removed from th
 52. RW-065 removed remaining private ISO8601 formatter duplicates in `Telemetry`, `QuickFeedback`, and `DiagnosticsSnapshotLogger`, routing all timestamp formatting through canonical date helpers.
 53. RW-066 removed dead `CapacitorConfig` persistence fields/mutations (`setupCompletedAt`, `hooksVersion`, `markSetupComplete`) and deleted the redundant setup-complete write path in `WelcomeView`.
 54. RW-067 introduced a canonical `HookSetupCopy` mapper for setup-step status copy, setup-card presentation copy, and startup hook diagnostics messaging, replacing duplicated hook-status text branches across `SetupRequirements`, `HookDiagnosticPresentation`, and `AppDelegate` with focused contract tests.
-55. RW-068 moved the remaining `Utils/*` files into explicit `Support/*` namespaces (`Config`, `Accessibility`, `Health`, `Updates`), deleted `Utils/`, and added a rewrite denylist to prevent ambiguous utility sprawl from re-entering the active codebase.
+55. RW-068 moved the remaining `Utils/*` files into explicit `Support/*` namespaces (`Config`, `Accessibility`, `Health`, `Updates`), deleted `Utils/`, and added a architecture denylist to prevent ambiguous utility sprawl from re-entering the active codebase.
 56. RW-069 introduced a canonical `SetupStepCatalog` and rewired runtime + preview setup step construction through that single factory surface, eliminating repeated step literals and locking metadata/status contracts with focused catalog tests.
 57. RW-070 moved pure pathing/identity helpers (`GitRepositoryInfo`, `PathNormalizer`, `WorkspaceIdentity`) from ambiguous `Helpers/` into `Support/Pathing`, keeping only IO-oriented adapters in `Helpers/` and reducing role confusion for new contributors/agents.
 58. RW-071 introduced a startup `SetupReadinessCoordinator` decision surface (driven by `checkSetupStatus()`), rewired `AppDelegate.validateHookSetup` to consume it, and added focused coordinator tests so startup/setup policy no longer diverges across independent branches.
@@ -133,7 +133,7 @@ Static bats source checks that do not execute behavior have been removed from th
 72. RW-085 converged remaining setup presentation scenario tables (`HookPresentationPolicyTests`, `HookDiagnosticPresentationTests`) onto the shared labeled harness, removing parallel scenario struct patterns while preserving explicit projected expectation records.
 73. RW-086 pruned duplicate scenario rows from setup/hook contract suites and kept one-row-per-branch semantics by adding a healthy visibility branch case while removing duplicate branch-equivalent rows.
 74. RW-087 extended shared labeled scenario records beyond setup suites by replacing ad-hoc local scenario structs in `RuntimeClientTests`, improving scenario-definition consistency across contract suites.
-75. RW-088 added an explicit scenario-coverage checklist to the rewrite playbook so table-driven suites maintain one-row-per-branch rigor and avoid branch-equivalent duplicate regrowth.
+75. RW-088 added an explicit scenario-coverage checklist to the architecture playbook so table-driven suites maintain one-row-per-branch rigor and avoid branch-equivalent duplicate regrowth.
 76. RW-089 extended shared labeled scenario record usage into `ActivationActionExecutorTests` and `TerminalLauncherTests`, increasing non-setup suite consistency without changing behavior coverage.
 77. RW-090 tightened the CI test-surface budget by freezing local Swift `struct Scenario` declarations at `4` (current level), preventing scenario-struct proliferation while preserving existing contracts.
 78. RW-091 removed all remaining local `struct Scenario` declarations (all were in `ActivationActionExecutorTests`) and ratcheted the CI budget to `0`, eliminating this duplication vector entirely.

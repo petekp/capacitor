@@ -103,7 +103,7 @@ What is wrong:
 
 Assessment:
 
-- This is the codebase’s biggest clean-architecture weakness.
+- This is the codebase’s biggest bounded-context weakness.
 - The system has workflows, but not first-class use-case objects.
 
 ### 4. Component Cohesion

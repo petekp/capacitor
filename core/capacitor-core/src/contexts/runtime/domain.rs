@@ -1,4 +1,6 @@
-use crate::clean::kernel::{CorrelationId, ProjectRef, SessionId, TerminalCoordinate, Timestamp};
+use crate::contexts::kernel::{
+    CorrelationId, ProjectRef, SessionId, TerminalCoordinate, Timestamp,
+};
 use crate::domain::{AppSnapshot, DiagnosticsSummary};
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -44,8 +46,8 @@ impl From<AppSnapshot> for RuntimeProjection {
             .projects
             .iter()
             .map(|project| ProjectRef {
-                id: crate::clean::kernel::ProjectId(project.project_id.clone()),
-                workspace_id: crate::clean::kernel::WorkspaceId(project.workspace_id.clone()),
+                id: crate::contexts::kernel::ProjectId(project.project_id.clone()),
+                workspace_id: crate::contexts::kernel::WorkspaceId(project.workspace_id.clone()),
                 path: project.project_path.clone(),
                 display_name: project.display_name.clone(),
             })
@@ -57,8 +59,10 @@ impl From<AppSnapshot> for RuntimeProjection {
             .map(|session| RuntimeSessionState {
                 session_id: SessionId(session.session_id.clone()),
                 project: Some(ProjectRef {
-                    id: crate::clean::kernel::ProjectId(session.project_id.clone()),
-                    workspace_id: crate::clean::kernel::WorkspaceId(session.workspace_id.clone()),
+                    id: crate::contexts::kernel::ProjectId(session.project_id.clone()),
+                    workspace_id: crate::contexts::kernel::WorkspaceId(
+                        session.workspace_id.clone(),
+                    ),
                     path: session.project_path.clone(),
                     display_name: session.project_path.clone(),
                 }),
@@ -80,7 +84,7 @@ impl From<AppSnapshot> for RuntimeProjection {
             .iter()
             .map(|shell| TerminalCoordinate {
                 application: shell.parent_app.clone(),
-                tty: Some(crate::clean::kernel::TtyHandle(shell.tty.clone())),
+                tty: Some(crate::contexts::kernel::TtyHandle(shell.tty.clone())),
                 tmux_session: shell.tmux_session.clone(),
             })
             .collect();

@@ -1,6 +1,6 @@
-# Capacitor Rewrite Playbook
+# Capacitor Architecture Playbook
 
-This playbook describes the exact slice-based process used for the large Capacitor rewrite. Use it for any future architecture migration where we want maximum confidence and zero vestigial drift.
+This playbook describes the exact slice-based process used for the large Capacitor architecture. Use it for any future architecture migration where we want maximum confidence and zero vestigial drift.
 
 ## 1) Goals
 
@@ -11,20 +11,20 @@ This playbook describes the exact slice-based process used for the large Capacit
 
 ## 2) Operating Artifacts (Required)
 
-1. `rewrite/CHARTER.md`  
+1. `architecture/CHARTER.md`  
    Mission, invariants, non-goals, guardrails.
-2. `rewrite/DECISIONS.md`  
+2. `architecture/DECISIONS.md`  
    Locked architecture decisions and reversals.
-3. `rewrite/SLICES.yaml`  
-   Machine-checkable rewrite ledger.
-4. `rewrite/MAP.csv`  
+3. `architecture/SLICES.yaml`  
+   Machine-checkable architecture ledger.
+4. `architecture/MAP.csv`  
    Source-of-truth path mapping (`current_path` -> `target_path`) and deletion intent.
-5. `scripts/rewrite/check_rewrite_guards.sh`  
+5. `scripts/architecture/check_architecture_guards.sh`  
    Enforces mapping, denylist, and deletion targets.
 
 If any artifact is missing, create it before implementation work.
 
-## 3) Rewrite Bootstrap (PR-000 Equivalent)
+## 3) Architecture Bootstrap (PR-000 Equivalent)
 
 1. Lock decisions first in `DECISIONS.md`.
 2. Define global acceptance in `SLICES.yaml`:
@@ -61,7 +61,7 @@ Each `SLICES.yaml` entry must include at minimum:
 1. Mark slice `in_progress`.
 2. Ensure all intended files are in `MAP.csv`.
 3. Run:
-   - `./scripts/rewrite/check_rewrite_guards.sh --status`
+   - `./scripts/architecture/check_architecture_guards.sh --status`
 
 ### B. Build (TDD-first for behavior changes)
 
@@ -74,8 +74,8 @@ Each `SLICES.yaml` entry must include at minimum:
 
 Run the slice’s acceptance suite:
 
-1. Rewrite guards:
-   - `./scripts/rewrite/check_rewrite_guards.sh`
+1. Architecture guards:
+   - `./scripts/architecture/check_architecture_guards.sh`
 2. Rust/Swift/unit/integration checks relevant to touched surfaces.
 3. Replay-diff scenarios for determinism and behavior parity.
 4. E2E smoke scenarios for user-visible workflow parity.
@@ -136,10 +136,10 @@ No “temporary” adapter without:
 
 ### Session Start Ritual
 
-1. Read `rewrite/CHARTER.md`
-2. Read `rewrite/DECISIONS.md`
-3. Read all `in_progress` slices in `rewrite/SLICES.yaml`
-4. Run `./scripts/rewrite/check_rewrite_guards.sh --status`
+1. Read `architecture/CHARTER.md`
+2. Read `architecture/DECISIONS.md`
+3. Read all `in_progress` slices in `architecture/SLICES.yaml`
+4. Run `./scripts/architecture/check_architecture_guards.sh --status`
 
 ### Session End Ritual
 
@@ -175,7 +175,7 @@ This format is mandatory for continuity across context compaction.
 6. `SLICES.yaml` + `MAP.csv` updated.
 7. Docs reflect current architecture only.
 
-## 13) Closeout (End of Rewrite Program)
+## 13) Closeout (End of Architecture Program)
 
 1. Run full guard, full tests, replay corpus, smoke suite.
 2. Run vestigial grep sweeps for removed surfaces.
@@ -187,8 +187,8 @@ This format is mandatory for continuity across context compaction.
 
 ```bash
 # Status + guardrails
-./scripts/rewrite/check_rewrite_guards.sh --status
-./scripts/rewrite/check_rewrite_guards.sh
+./scripts/architecture/check_architecture_guards.sh --status
+./scripts/architecture/check_architecture_guards.sh
 
 # Core verification (example baseline)
 cargo test

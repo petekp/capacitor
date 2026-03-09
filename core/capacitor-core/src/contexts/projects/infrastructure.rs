@@ -23,7 +23,7 @@ impl ProjectCatalogStore for LiveProjectCatalogStore {
     fn load_catalog(&self) -> Result<ProjectCatalogSnapshot, ProjectPortError> {
         Ok(ProjectCatalogSnapshot {
             projects: load_projects_with_storage(&self.app_storage)?,
-            refreshed_at: crate::clean::kernel::Timestamp(now_rfc3339()),
+            refreshed_at: crate::contexts::kernel::Timestamp(now_rfc3339()),
         })
     }
 

@@ -7,13 +7,13 @@ pub(crate) mod projects;
 pub(crate) mod runtime;
 pub(crate) mod setup;
 
-pub(crate) use composition::CleanArchitectureShell;
+pub(crate) use composition::ContextServices;
 
 #[cfg(test)]
 mod tests {
     use std::sync::{Arc, Mutex, OnceLock};
 
-    use super::CleanArchitectureShell;
+    use super::ContextServices;
     use crate::domain::{
         AppSnapshot, DiagnosticsSummary, ProjectSummary, RoutingStatus, RoutingTargetKind,
         RoutingView, SessionState, SessionSummary, ShellSignal,
@@ -27,7 +27,7 @@ mod tests {
 
     #[test]
     fn bootstrap_creates_all_context_services() {
-        let shell = CleanArchitectureShell::bootstrap(
+        let shell = ContextServices::bootstrap(
             Arc::new(InMemorySnapshotStorage::default()),
             StorageConfig::default(),
         );
@@ -42,7 +42,7 @@ mod tests {
         crate::storage::SnapshotStorage::save_snapshot(&*storage, &snapshot)
             .expect("save snapshot");
 
-        let shell = CleanArchitectureShell::bootstrap(storage, StorageConfig::default());
+        let shell = ContextServices::bootstrap(storage, StorageConfig::default());
         let loaded = shell.app_snapshot().expect("load snapshot from shell");
 
         assert_eq!(loaded.projects.len(), 1);
@@ -59,7 +59,7 @@ mod tests {
             temp_dir.path().join(".capacitor"),
             temp_dir.path().join(".claude"),
         );
-        let shell = CleanArchitectureShell::bootstrap(
+        let shell = ContextServices::bootstrap(
             Arc::new(InMemorySnapshotStorage::default()),
             storage.clone(),
         );
@@ -81,7 +81,7 @@ mod tests {
             temp_dir.path().join(".capacitor"),
             temp_dir.path().join(".claude"),
         );
-        let shell = CleanArchitectureShell::bootstrap(
+        let shell = ContextServices::bootstrap(
             Arc::new(InMemorySnapshotStorage::default()),
             storage.clone(),
         );
@@ -104,7 +104,7 @@ mod tests {
             "CAPACITOR_CORE_SNAPSHOT",
             temp.snapshot_path.to_str().expect("snapshot path"),
         );
-        let shell = CleanArchitectureShell::bootstrap(
+        let shell = ContextServices::bootstrap(
             Arc::new(InMemorySnapshotStorage::default()),
             temp.storage.clone(),
         );
@@ -129,7 +129,7 @@ mod tests {
             temp.snapshot_path.to_str().expect("snapshot path"),
         );
         write_heartbeat(&temp.heartbeat_path);
-        let shell = CleanArchitectureShell::bootstrap(
+        let shell = ContextServices::bootstrap(
             Arc::new(InMemorySnapshotStorage::default()),
             temp.storage.clone(),
         );

@@ -78,7 +78,7 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use super::*;
-    use crate::clean::kernel::Timestamp;
+    use crate::contexts::kernel::Timestamp;
     use crate::runtime_types::{ShellProjectCatalogEntry, ShellSuggestedProjectCandidate};
     use crate::runtime_validation::ValidationResultFfi;
 

@@ -8,12 +8,12 @@ This audit starts the post-finish-line pristine sweep. The migration is closed; 
 ## Scope
 
 - Swift app source and supporting docs/scripts
-- current docs and rewrite control plane
+- current docs and architecture control plane
 - orphaned artifacts with zero inbound references
 
 ## Method
 
-- Scanned `docs/audit`, `scripts`, `.claude`, `.github`, `rewrite`, `apps/swift`, and `core` for inbound file-path references.
+- Scanned `docs/audit`, `scripts`, `.claude`, `.github`, `architecture`, `apps/swift`, and `core` for inbound file-path references.
 - Classified candidates with zero inbound references as confirmed dead only when they were not clearly intentional user-facing/manual utilities.
 - Kept unreferenced but plausibly intentional manual utilities in a review-only bucket rather than deleting them speculatively.
 
@@ -28,7 +28,7 @@ This audit starts the post-finish-line pristine sweep. The migration is closed; 
 
 Why confirmed:
 
-- zero inbound references from `docs`, `rewrite`, `.github`, `scripts`, `apps/swift`, or `core`
+- zero inbound references from `docs`, `architecture`, `.github`, `scripts`, `apps/swift`, or `core`
 - they are analysis scaffolds from the pre-convergence architectural audit, not current guidance
 
 ### Orphaned Filesystem Metadata
@@ -47,7 +47,7 @@ Why confirmed:
 
 Why confirmed:
 
-- zero inbound references from docs, CI workflows, rewrite governance, or source
+- zero inbound references from docs, CI workflows, architecture governance, or source
 - not called by any wrapper or workflow
 - tests an internal diagnostic CLI but is not wired into any active verification surface
 

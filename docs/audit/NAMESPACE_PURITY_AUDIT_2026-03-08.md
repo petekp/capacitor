@@ -74,7 +74,7 @@ Outcome:
 
 - move the 8 low-risk leaf files out of `Models/`
 - lower the `Models/*.swift` budget from `17` to `9`
-- prove no behavior change with the full Swift suite and rewrite guard
+- prove no behavior change with the full Swift suite and architecture guard
 
 Status: completed.
 

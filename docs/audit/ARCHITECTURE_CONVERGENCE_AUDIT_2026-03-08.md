@@ -11,8 +11,8 @@ Converge the Swift app onto one canonical architecture by deleting transitional 
 
 ## Method
 
-- Re-read the existing rewrite control plane in `rewrite/`.
-- Ran the rewrite guard baseline.
+- Re-read the existing architecture control plane in `architecture/`.
+- Ran the architecture guard baseline.
 - Diffed PR `#27` against `main` to explain the additive migration shape.
 - Traced live references from `Application`, `Adapters`, `Composition`, and production views into legacy `Models` / `Features` code.
 - Counted the residual seams that still bind the new shell to the old substrate.

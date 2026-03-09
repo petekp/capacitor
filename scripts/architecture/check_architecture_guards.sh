@@ -8,8 +8,8 @@ if [[ "$MODE" != "check" && "$MODE" != "--status" ]]; then
 fi
 
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
-SLICES_FILE="$ROOT/rewrite/SLICES.yaml"
-MAP_FILE="$ROOT/rewrite/MAP.csv"
+SLICES_FILE="$ROOT/architecture/SLICES.yaml"
+MAP_FILE="$ROOT/architecture/MAP.csv"
 
 failures=0
 budget_status_lines=()
@@ -109,11 +109,11 @@ check_glob_budget() {
 }
 
 if [[ ! -f "$SLICES_FILE" ]]; then
-  fail "Missing rewrite slices file: $SLICES_FILE"
+  fail "Missing architecture slices file: $SLICES_FILE"
 fi
 
 if [[ ! -f "$MAP_FILE" ]]; then
-  fail "Missing rewrite map file: $MAP_FILE"
+  fail "Missing architecture map file: $MAP_FILE"
 fi
 
 if (( failures > 0 )); then
@@ -192,7 +192,7 @@ if (( ${#changed_files[@]} > 0 )); then
     fi
 
     if [[ "$mapped" == false ]]; then
-      fail "Touched file is not mapped in rewrite/MAP.csv: $file"
+      fail "Touched file is not mapped in architecture/MAP.csv: $file"
     fi
   done
 fi
@@ -302,10 +302,10 @@ done < <(
 
 # Freeze the current Rust/FFI finish-line seam so it can only shrink.
 check_budget \
-  "rust_clean_shell_scaffold_todos" \
+  "rust_context_services_scaffold_todos" \
   0 \
   'todo!\("Shell scaffold only"\)' \
-  core/capacitor-core/src/clean/*/application.rs
+  core/capacitor-core/src/contexts/*/application.rs
 
 check_budget \
   "core_runtime_runtime_ideas_calls" \
@@ -414,7 +414,7 @@ if [[ "$MODE" == "--status" ]]; then
     slices = data.fetch("slices", [])
     counts = slices.group_by { |slice| slice["status"].to_s }
 
-    puts "Rewrite Guard Status"
+    puts "Architecture Guard Status"
     puts "  total_slices: #{slices.length}"
     puts "  pending: #{counts.fetch("pending", []).length}"
     puts "  in_progress: #{counts.fetch("in_progress", []).length}"
@@ -435,8 +435,8 @@ if [[ "$MODE" == "--status" ]]; then
 fi
 
 if (( failures > 0 )); then
-  echo "Rewrite guard checks failed with $failures error(s)."
+  echo "Architecture guard checks failed with $failures error(s)."
   exit 1
 fi
 
-echo "Rewrite guard checks passed."
+echo "Architecture guard checks passed."

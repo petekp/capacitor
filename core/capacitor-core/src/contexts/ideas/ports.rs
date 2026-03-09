@@ -1,4 +1,4 @@
-use crate::clean::ideas::domain::{
+use crate::contexts::ideas::domain::{
     CaptureIdeaRequest, IdeaBacklog, IdeaFieldUpdateRequest, IdeasOrderRequest, WorkstreamPlan,
 };
 

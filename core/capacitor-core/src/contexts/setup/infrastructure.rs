@@ -1,4 +1,4 @@
-use crate::clean::setup::domain::{
+use crate::contexts::setup::domain::{
     SetupAction, SetupPlan, SetupReadiness, SetupRequirement, SetupRequirementKind,
 };
 use crate::runtime_setup::{
@@ -38,7 +38,7 @@ impl SetupInspectorPort for LiveSetupInspector {
                     detail: dependency.install_hint.clone(),
                 })
                 .collect(),
-            checked_at: crate::clean::kernel::Timestamp(crate::domain::now_rfc3339()),
+            checked_at: crate::contexts::kernel::Timestamp(crate::domain::now_rfc3339()),
         })
     }
 
@@ -210,7 +210,7 @@ impl SetupMutatorPort for LiveSetupMutator {
 
         Ok(SetupPlan {
             actions,
-            generated_at: crate::clean::kernel::Timestamp(crate::domain::now_rfc3339()),
+            generated_at: crate::contexts::kernel::Timestamp(crate::domain::now_rfc3339()),
         })
     }
 

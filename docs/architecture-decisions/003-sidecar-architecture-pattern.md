@@ -34,4 +34,4 @@ Tradeoffs:
 
 1. Replay-diff tests lock reducer determinism.
 2. AX smoke and release bundle verification gate user-visible flows.
-3. Rewrite guards block reintroduction of removed legacy surfaces.
+3. Architecture guards block reintroduction of removed legacy surfaces.

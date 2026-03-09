@@ -79,8 +79,8 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use super::*;
-    use crate::clean::kernel::Timestamp;
-    use crate::clean::setup::domain::{SetupAction, SetupRequirement, SetupRequirementKind};
+    use crate::contexts::kernel::Timestamp;
+    use crate::contexts::setup::domain::{SetupAction, SetupRequirement, SetupRequirementKind};
 
     #[derive(Default)]
     struct StubSetupInspector;

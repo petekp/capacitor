@@ -194,8 +194,8 @@ fn ffi_mutate_project_validates_and_applies_add_rename_remove() {
     let added = mutate_project(
         &runtime,
         ProjectMutationKind::Add,
-        "/tmp/rewrite-contract",
-        Some("rewrite-contract"),
+        "/tmp/context-contract",
+        Some("context-contract"),
     );
     assert!(added.ok);
     assert_eq!(added.message, "project added");
@@ -203,8 +203,8 @@ fn ffi_mutate_project_validates_and_applies_add_rename_remove() {
     let renamed = mutate_project(
         &runtime,
         ProjectMutationKind::Rename,
-        "/tmp/rewrite-contract",
-        Some("rewrite-contract-renamed"),
+        "/tmp/context-contract",
+        Some("context-contract-renamed"),
     );
     assert!(renamed.ok);
     assert_eq!(renamed.message, "project renamed");
@@ -213,14 +213,14 @@ fn ffi_mutate_project_validates_and_applies_add_rename_remove() {
     let project = snapshot_after_rename
         .projects
         .iter()
-        .find(|project| project.project_path == "/tmp/rewrite-contract")
+        .find(|project| project.project_path == "/tmp/context-contract")
         .expect("project exists");
-    assert_eq!(project.display_name, "rewrite-contract-renamed");
+    assert_eq!(project.display_name, "context-contract-renamed");
 
     let removed = mutate_project(
         &runtime,
         ProjectMutationKind::Remove,
-        "/tmp/rewrite-contract",
+        "/tmp/context-contract",
         None,
     );
     assert!(removed.ok);
@@ -230,7 +230,7 @@ fn ffi_mutate_project_validates_and_applies_add_rename_remove() {
     assert!(snapshot_after_remove
         .projects
         .iter()
-        .all(|project| project.project_path != "/tmp/rewrite-contract"));
+        .all(|project| project.project_path != "/tmp/context-contract"));
 }
 
 #[test]
@@ -240,7 +240,7 @@ fn ffi_mutate_idea_and_worktree_update_command_envelope_contracts() {
     let idea = runtime
         .mutate_idea(MutateIdeaCommand {
             kind: IdeaMutationKind::Add,
-            project_path: "/tmp/rewrite-contract".to_string(),
+            project_path: "/tmp/context-contract".to_string(),
             idea_id: "idea-1".to_string(),
             title: Some("Idea".to_string()),
             description: Some("Description".to_string()),
@@ -249,13 +249,13 @@ fn ffi_mutate_idea_and_worktree_update_command_envelope_contracts() {
         .expect("idea mutation");
     assert!(idea.ok);
     assert!(idea.message.contains(
-        "idea mutation accepted kind=Add project_path=/tmp/rewrite-contract idea_id=idea-1"
+        "idea mutation accepted kind=Add project_path=/tmp/context-contract idea_id=idea-1"
     ));
 
     let worktree = runtime
         .mutate_worktree(MutateWorktreeCommand {
             kind: WorktreeMutationKind::Create,
-            repo_path: "/tmp/rewrite-contract".to_string(),
+            repo_path: "/tmp/context-contract".to_string(),
             worktree_name: "feature-1".to_string(),
             force: true,
         })
@@ -263,7 +263,7 @@ fn ffi_mutate_idea_and_worktree_update_command_envelope_contracts() {
     assert!(worktree.ok);
     assert!(
         worktree.message.contains(
-            "worktree mutation accepted kind=Create repo_path=/tmp/rewrite-contract worktree_name=feature-1 force=true",
+            "worktree mutation accepted kind=Create repo_path=/tmp/context-contract worktree_name=feature-1 force=true",
         )
     );
 

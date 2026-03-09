@@ -9,12 +9,12 @@ This audit started the follow-on campaign required to reach the actual finish li
 The important distinction is scope:
 
 - the Swift shell migration is complete
-- the overall rewrite direction is unchanged
+- the overall architecture direction is unchanged
 - the remaining finish-line work is concentrated in Rust and the UniFFI boundary
 
 ## Mission
 
-Finish the clean-architecture rewrite by eliminating the remaining parallel ownership inside `capacitor-core`, slimming the UniFFI boundary to shell-native contracts, and deleting transitional bridges that only exist because Rust and Swift still meet on partially legacy DTOs.
+Finish the bounded-context architecture by eliminating the remaining parallel ownership inside `capacitor-core`, slimming the UniFFI boundary to shell-native contracts, and deleting transitional bridges that only exist because Rust and Swift still meet on partially legacy DTOs.
 
 ## What Is Already True
 
@@ -24,7 +24,7 @@ High-confidence completed work:
 - `hud-hook` ingests directly into `capacitor-core`
 - `hud-core` is deleted
 - Swift is on the outer-shell architecture and no longer competes with the Rust core for application policy
-- replay-diff, FFI contract coverage, rewrite guards, and architecture ratchets are already in place
+- replay-diff, FFI contract coverage, architecture guards, and architecture ratchets are already in place
 
 This matters because the finish-line campaign is not a rescue. It is a convergence campaign.
 
@@ -34,9 +34,9 @@ This matters because the finish-line campaign is not a rescue. It is a convergen
 
 - `core/capacitor-core/src/lib.rs`
   Why: still the broad public UniFFI façade; most finish-line deletion or convergence flows through here
-- `core/capacitor-core/src/clean/composition.rs`
+- `core/capacitor-core/src/contexts/composition.rs`
   Why: intended canonical composition root for bounded contexts
-- `core/capacitor-core/src/clean/*/application.rs`
+- `core/capacitor-core/src/contexts/*/application.rs`
   Why: these files define whether each bounded context becomes a real canonical path or remains dead scaffold
 - `core/capacitor-core/tests/ffi_contract.rs`
   Why: best place to lock boundary behavior while the DTO cutover happens
@@ -63,7 +63,7 @@ Measured on March 8, 2026.
 
 | Pattern | Current count | Why it matters | Ratchet |
 | --- | ---: | --- | --- |
-| `todo!("Shell scaffold only")` in `core/capacitor-core/src/clean/*/application.rs` | 2 | only feedback bounded-context scaffold remains | freeze at `<= 2` now; drive to `0` |
+| `todo!("Shell scaffold only")` in `core/capacitor-core/src/contexts/*/application.rs` | 2 | only feedback bounded-context scaffold remains | freeze at `<= 2` now; drive to `0` |
 | `runtime_ideas::` call sites in `core/capacitor-core/src/lib.rs` | 0 | idea behavior no longer bypasses the bounded-context service layer | keep at `0` |
 | direct project/config helper calls in `core/capacitor-core/src/lib.rs` (`load_hud_config_with_storage`, `save_hud_config_with_storage`, `load_projects_with_storage`, `runtime_projects::try_resolve_encoded_path`, `validate_project_path`, `create_claude_md`) | 0 | project/catalog behavior no longer bypasses the bounded-context service layer | keep at `0` |
 | `setup_checker(` call sites in `core/capacitor-core/src/lib.rs` | 0 | setup mutation no longer bypasses the bounded-context service layer | keep at `0` |
@@ -86,8 +86,8 @@ These are not blockers to the finish-line campaign unless we explicitly choose a
 ## Hard Conclusions
 
 1. The remaining architecture debt is not “Swift still owns policy.” That part is already solved.
-2. The main unfinished problem is parallel ownership inside the Rust core: `CoreRuntime` still exposes direct helper paths while the `clean/*` bounded-context shell exists beside it.
-3. The finish line requires a hard choice per bounded context: route production behavior through the clean service layer, or delete the scaffold. Parallel ownership is not an acceptable steady state.
+2. The main unfinished problem is parallel ownership inside the Rust core: `CoreRuntime` still exposes direct helper paths while the `contexts/*` bounded-context shell exists beside it.
+3. The finish line requires a hard choice per bounded context: route production behavior through the contexts service layer, or delete the scaffold. Parallel ownership is not an acceptable steady state.
 4. The highest-value deletion lever is the project/catalog boundary, because that is what ultimately removes Swift’s `ProjectCatalogBridge`.
 5. Compatibility bridges in `runtime_setup`, `runtime_storage`, and config migration are not finish-line blockers by themselves. They only become targets if we choose a separate breaking-change compatibility purge.
 
@@ -108,8 +108,8 @@ Status: completed.
 Outcome:
 
 - direct project/config helper count in `lib.rs` is now `0`
-- `clean/projects/application.rs` no longer contains scaffold todos
-- `CoreRuntime` routes project catalog, suggestion, add/remove, validation, and CLAUDE.md bootstrap through the clean projects path
+- `contexts/projects/application.rs` no longer contains scaffold todos
+- `CoreRuntime` routes project catalog, suggestion, add/remove, validation, and CLAUDE.md bootstrap through the projects bounded context path
 
 ### RW-108: Rust Ideas Boundary Convergence
 
@@ -118,7 +118,7 @@ Status: completed.
 Outcome:
 
 - direct `runtime_ideas::` count in `lib.rs` is now `0`
-- `clean/ideas/application.rs` no longer contains scaffold todos
+- `contexts/ideas/application.rs` no longer contains scaffold todos
 - the canonical markdown helper bug around description replacement was fixed while converging the path
 
 ### RW-109: Rust Setup Boundary Convergence
@@ -128,8 +128,8 @@ Status: completed.
 Outcome:
 
 - direct `setup_checker(` count in `lib.rs` is now `0`
-- `clean/setup/application.rs` no longer contains scaffold todos
-- setup mutation is converged on the clean setup service without deleting intentional runtime_setup compatibility semantics
+- `contexts/setup/application.rs` no longer contains scaffold todos
+- setup mutation is converged on the setup bounded context service without deleting intentional runtime_setup compatibility semantics
 
 ### RW-110: Rust Activation Boundary Convergence
 
@@ -138,7 +138,7 @@ Status: completed.
 Outcome:
 
 - production activation ownership is explicitly Swift-owned
-- the dormant Rust clean activation shell is deleted
+- the dormant Rust activation bounded context shell is deleted
 - the test-only `runtime_activation` planner is deleted
 - the finish-line campaign is narrowed to real production convergence instead of preserving non-production activation ideas
 
@@ -181,7 +181,7 @@ Goal:
 
 Acceptance:
 
-- no scaffold-only clean application service remains
+- no scaffold-only contexts application service remains
 - no deleted-boundary names are reintroduced
 - docs describe one canonical architecture, not a transition
 
@@ -191,9 +191,9 @@ This maps old finish-line patterns to their target ownership.
 
 | Current pattern | Target pattern |
 | --- | --- |
-| `CoreRuntime` method body directly calling `runtime_ideas::*` | `CoreRuntime` delegates to `clean/ideas` service or the unused scaffold is deleted |
-| `CoreRuntime` method body directly calling `load_hud_config_with_storage` / `save_hud_config_with_storage` / `load_projects_with_storage` | `CoreRuntime` delegates to `clean/projects` service |
-| `CoreRuntime` method body directly calling `SetupChecker` mutators | `CoreRuntime` delegates to `clean/setup` service |
+| `CoreRuntime` method body directly calling `runtime_ideas::*` | `CoreRuntime` delegates to `contexts/ideas` service or the unused scaffold is deleted |
+| `CoreRuntime` method body directly calling `load_hud_config_with_storage` / `save_hud_config_with_storage` / `load_projects_with_storage` | `CoreRuntime` delegates to `contexts/projects` service |
+| `CoreRuntime` method body directly calling `SetupChecker` mutators | `CoreRuntime` delegates to `contexts/setup` service |
 | Swift using `ProjectCatalogBridge` to reshape legacy project DTOs | Rust exports shell-native DTOs so Swift deletes the bridge |
 | bounded-context `application.rs` with `todo!("Shell scaffold only")` | bounded-context service owns production behavior, or the dead scaffold is deleted |
 

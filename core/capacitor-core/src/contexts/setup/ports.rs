@@ -1,4 +1,4 @@
-use crate::clean::setup::domain::{SetupPlan, SetupReadiness};
+use crate::contexts::setup::domain::{SetupPlan, SetupReadiness};
 use crate::runtime_setup::{DependencyStatus, HookStatus, InstallResult, SetupStatus};
 use crate::runtime_types::{HookDiagnosticReport, HookHealthReport};
 

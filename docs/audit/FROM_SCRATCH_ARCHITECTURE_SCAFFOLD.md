@@ -2,7 +2,7 @@
 
 Date: 2026-03-06
 
-This document is the shell-level module map for a clean-slate Capacitor.
+This document is the shell-level module map for a from-scratch Capacitor.
 It is intentionally structural rather than behavioral. The goal is to lock
 down dependency direction, seams, and composition before migrating logic.
 
@@ -18,7 +18,7 @@ If Capacitor were rebuilt from scratch, the center of gravity would be:
 
 The shell added in this branch stages that target alongside the existing app:
 
-- Rust gets a non-public `clean/` namespace so UniFFI contracts stay stable.
+- Rust gets a non-public `contexts/` namespace so UniFFI contracts stay stable.
 - Swift gets new `Composition`, `Application`, `Domain`, and `Adapters` namespaces
   inside the existing executable target so behavior does not change.
 
@@ -29,17 +29,17 @@ architecture has drifted.
 
 ### Rust Core
 
-1. `clean/kernel`
+1. `contexts/kernel`
    Shared identities and value objects. Imports nothing else from the project.
-2. `clean/<context>/domain`
-   Domain records and invariants for one bounded context. May depend only on `clean/kernel`.
-3. `clean/<context>/ports`
-   Application-owned interfaces. May depend only on `clean/kernel` and that context's `domain`.
-4. `clean/<context>/application`
-   Use cases and service orchestration. May depend only on `clean/kernel`, that context's `domain`, and that context's `ports`.
-5. `clean/<context>/infrastructure`
+2. `contexts/<context>/domain`
+   Domain records and invariants for one bounded context. May depend only on `contexts/kernel`.
+3. `contexts/<context>/ports`
+   Application-owned interfaces. May depend only on `contexts/kernel` and that context's `domain`.
+4. `contexts/<context>/application`
+   Use cases and service orchestration. May depend only on `contexts/kernel`, that context's `domain`, and that context's `ports`.
+5. `contexts/<context>/infrastructure`
    Adapters over current storage/config/runtime helpers. May depend on current crate infrastructure plus that context's ports/domain.
-6. `clean/composition`
+6. `contexts/composition`
    The only place allowed to wire concrete adapters into use cases.
 
 ### Swift App Shell
@@ -68,10 +68,10 @@ Responsibility:
 - report runtime health
 
 Rust shell:
-- `clean/runtime/domain`
-- `clean/runtime/ports`
-- `clean/runtime/application`
-- `clean/runtime/infrastructure`
+- `contexts/runtime/domain`
+- `contexts/runtime/ports`
+- `contexts/runtime/application`
+- `contexts/runtime/infrastructure`
 
 Primary use cases:
 - `RefreshRuntimeProjection`
@@ -86,10 +86,10 @@ Responsibility:
 - expose explicit setup plans instead of implicit startup behavior
 
 Rust shell:
-- `clean/setup/domain`
-- `clean/setup/ports`
-- `clean/setup/application`
-- `clean/setup/infrastructure`
+- `contexts/setup/domain`
+- `contexts/setup/ports`
+- `contexts/setup/application`
+- `contexts/setup/infrastructure`
 
 Primary use cases:
 - `CheckSetupReadiness`
@@ -104,10 +104,10 @@ Responsibility:
 - expose routing decisions as explicit contracts
 
 Rust shell:
-- `clean/activation/domain`
-- `clean/activation/ports`
-- `clean/activation/application`
-- `clean/activation/infrastructure`
+- `contexts/activation/domain`
+- `contexts/activation/ports`
+- `contexts/activation/application`
+- `contexts/activation/infrastructure`
 
 Swift shell:
 - `Application/Activation`
@@ -125,10 +125,10 @@ Responsibility:
 - expose project workflow state to the UI
 
 Rust shell:
-- `clean/projects/domain`
-- `clean/projects/ports`
-- `clean/projects/application`
-- `clean/projects/infrastructure`
+- `contexts/projects/domain`
+- `contexts/projects/ports`
+- `contexts/projects/application`
+- `contexts/projects/infrastructure`
 
 Swift shell:
 - `Application/Projects`
@@ -147,10 +147,10 @@ Responsibility:
 - isolate idea persistence from presentation
 
 Rust shell:
-- `clean/ideas/domain`
-- `clean/ideas/ports`
-- `clean/ideas/application`
-- `clean/ideas/infrastructure`
+- `contexts/ideas/domain`
+- `contexts/ideas/ports`
+- `contexts/ideas/application`
+- `contexts/ideas/infrastructure`
 
 Swift shell:
 - `Application/Ideas`
@@ -168,10 +168,10 @@ Responsibility:
 - keep reporting concerns out of UI/application policy
 
 Rust shell:
-- `clean/feedback/domain`
-- `clean/feedback/ports`
-- `clean/feedback/application`
-- `clean/feedback/infrastructure`
+- `contexts/feedback/domain`
+- `contexts/feedback/ports`
+- `contexts/feedback/application`
+- `contexts/feedback/infrastructure`
 
 Swift shell:
 - `Application/Feedback`
@@ -188,7 +188,7 @@ Primary use cases:
 `CoreRuntime` remains the UniFFI façade for now.
 The staged composition root lives at:
 
-- `core/capacitor-core/src/clean/composition.rs`
+- `core/capacitor-core/src/contexts/composition.rs`
 
 That root wires current storage/config seams into bounded-context services
 without changing the exported FFI surface.
@@ -205,7 +205,7 @@ It will eventually replace direct `AppState()` construction, but not in this she
 
 The scaffold is intentionally ahead of implementation. The next migration slices should be:
 
-1. Route `CoreRuntime` method bodies through `clean/composition`.
+1. Route `CoreRuntime` method bodies through `contexts/composition`.
 2. Replace direct `AppState()` assembly with `Composition/AppShellContainer`.
 3. Move `AppState` responsibilities into:
    - `RuntimeSupervisor`

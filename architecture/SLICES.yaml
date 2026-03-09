@@ -5,24 +5,24 @@ global_acceptance:
   legacy_deletion_same_pr: required
 slices:
   - id: RW-000
-    name: "Rewrite Control Plane"
+    name: "Architecture Control Plane"
     owner: "agent/session"
     status: "done" # pending|in_progress|blocked|done
     depends_on: []
     touched_paths:
-      - rewrite/CHARTER.md
-      - rewrite/DECISIONS.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
-      - scripts/rewrite/check_rewrite_guards.sh
+      - architecture/CHARTER.md
+      - architecture/DECISIONS.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
+      - scripts/architecture/check_architecture_guards.sh
       - .github/workflows/ci.yml
     contracts:
       added:
-        - rewrite/CHARTER.md
-        - rewrite/DECISIONS.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
-        - scripts/rewrite/check_rewrite_guards.sh
+        - architecture/CHARTER.md
+        - architecture/DECISIONS.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
+        - scripts/architecture/check_architecture_guards.sh
       changed:
         - .github/workflows/ci.yml
       removed: []
@@ -108,7 +108,7 @@ slices:
       - apps/swift/Tests/CapacitorTests/SessionStateManagerTests.swift
       - apps/swift/Tests/CapacitorTests/ShellStateStoreRoutingStatusTests.swift
       - apps/swift/Tests/CapacitorTests/AppStateRuntimeStartupRegressionTests.swift
-      - scripts/rewrite/check_rewrite_guards.sh
+      - scripts/architecture/check_architecture_guards.sh
     contracts:
       added:
         - core/capacitor-core/tests/replay_diff.rs
@@ -129,7 +129,7 @@ slices:
         - apps/swift/Tests/CapacitorTests/SessionStateManagerTests.swift
         - apps/swift/Tests/CapacitorTests/ShellStateStoreRoutingStatusTests.swift
         - apps/swift/Tests/CapacitorTests/AppStateRuntimeStartupRegressionTests.swift
-        - scripts/rewrite/check_rewrite_guards.sh
+        - scripts/architecture/check_architecture_guards.sh
       removed: []
     replay_scenarios:
       - session_state_transition_chain
@@ -379,13 +379,13 @@ slices:
     depends_on:
       - RW-004
     touched_paths:
-      - rewrite/MAP.csv
-      - rewrite/SLICES.yaml
+      - architecture/MAP.csv
+      - architecture/SLICES.yaml
     contracts:
       added: []
       changed:
-        - rewrite/MAP.csv
-        - rewrite/SLICES.yaml
+        - architecture/MAP.csv
+        - architecture/SLICES.yaml
       removed: []
     replay_scenarios:
       - full_corpus
@@ -430,8 +430,8 @@ slices:
       - docs/PRE_RELEASE_CHECKLIST.md
       - docs/manual-qa/automated-demo-vertical-slice.md
       - tests/dev-scripts/restart-app-demo-env.bats
-      - rewrite/MAP.csv
-      - rewrite/SLICES.yaml
+      - architecture/MAP.csv
+      - architecture/SLICES.yaml
     contracts:
       added:
         - apps/swift/Sources/Capacitor/Utils/AccessibilityIdentifiers.swift
@@ -449,8 +449,8 @@ slices:
         - apps/swift/Sources/Capacitor/Bridge/capacitor_core.swift
         - apps/swift/bindings/capacitor_core.swift
         - docs/PRE_RELEASE_CHECKLIST.md
-        - rewrite/MAP.csv
-        - rewrite/SLICES.yaml
+        - architecture/MAP.csv
+        - architecture/SLICES.yaml
       removed:
         - apps/swift/Sources/Capacitor/Utils/DemoAccessibility.swift
         - apps/swift/Sources/Capacitor/Utils/DemoConfig.swift
@@ -502,16 +502,16 @@ slices:
     depends_on:
       - RW-006
     touched_paths:
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
-      - scripts/rewrite/check_rewrite_guards.sh
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
+      - scripts/architecture/check_architecture_guards.sh
       - .github/workflows/ci.yml
     contracts:
       added: []
       changed:
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
-        - scripts/rewrite/check_rewrite_guards.sh
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
+        - scripts/architecture/check_architecture_guards.sh
         - .github/workflows/ci.yml
       removed: []
     replay_scenarios: []
@@ -707,8 +707,8 @@ slices:
       - docs/architecture-decisions/006-hierarchical-evidence-matching-state-detection.md
       - docs/transparent-ui/capacitor-interfaces-explorer.html
       - docs/worktree-migration-post-alpha.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
       - .claude/**
     contracts:
       added: []
@@ -728,8 +728,8 @@ slices:
         - docs/architecture-decisions/006-hierarchical-evidence-matching-state-detection.md
         - docs/transparent-ui/capacitor-interfaces-explorer.html
         - docs/worktree-migration-post-alpha.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed:
         - core/hud-core
     replay_scenarios:
@@ -759,17 +759,17 @@ slices:
       - apps/swift/bindings/hud_coreFFI.modulemap
     risks:
       - "Manual exploratory UX-only checks remain inherently non-deterministic; automated AX smoke plus tests are the enforced confidence baseline."
-    notes: "Hard-delete migration closed with passing rewrite guards, cargo test, session-state gate, non-demo AX smoke, bats suites, release build, and app-bundle verification."
+    notes: "Hard-delete migration closed with passing architecture guards, cargo test, session-state gate, non-demo AX smoke, bats suites, release build, and app-bundle verification."
 
   - id: RW-012
-    name: "Post-Rewrite Vestigial Cleanup Sweep"
+    name: "Post-Architecture Vestigial Cleanup Sweep"
     owner: "agent/session"
     status: "done"
     depends_on:
       - RW-011
     touched_paths:
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
       - apps/swift/Sources/Capacitor/Views/Settings/SettingsView.swift
       - apps/swift/Sources/Capacitor/Views/Setup/ShellInstructionsSheet.swift
       - scripts/dev/clean-user-install.sh
@@ -787,8 +787,8 @@ slices:
     contracts:
       added: []
       changed:
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
         - apps/swift/Sources/Capacitor/Views/Settings/SettingsView.swift
         - apps/swift/Sources/Capacitor/Views/Setup/ShellInstructionsSheet.swift
         - scripts/dev/clean-user-install.sh
@@ -819,23 +819,23 @@ slices:
     notes: "Comprehensive vestigial cleanup sweep removed stale runtime/daemon-era docs and model artifacts, normalized remaining docs/copy to direct runtime terminology, and regenerated UniFFI bindings to purge stale generated wording."
 
   - id: RW-013
-    name: "Rewrite Process Playbook"
+    name: "Architecture Process Playbook"
     owner: "agent/session"
     status: "done"
     depends_on:
       - RW-012
     touched_paths:
-      - rewrite/PLAYBOOK.md
-      - rewrite/CHARTER.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/PLAYBOOK.md
+      - architecture/CHARTER.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added:
-        - rewrite/PLAYBOOK.md
+        - architecture/PLAYBOOK.md
       changed:
-        - rewrite/CHARTER.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/CHARTER.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios: []
@@ -843,7 +843,7 @@ slices:
     deletion_targets: []
     risks:
       - "Process docs can drift from enforcement scripts; keep this playbook aligned with check_rewrite_guards.sh semantics."
-    notes: "Adds a canonical playbook for running future major refactors with the same slice-first rigor, evidence gates, and anti-vestigial controls used in the core rewrite."
+    notes: "Adds a canonical playbook for running future major refactors with the same slice-first rigor, evidence gates, and anti-vestigial controls used in the core architecture."
 
   - id: RW-014
     name: "Test Surface Audit and Guardrails"
@@ -852,19 +852,19 @@ slices:
     depends_on:
       - RW-013
     touched_paths:
-      - rewrite/TEST_AUDIT.md
+      - architecture/TEST_AUDIT.md
       - scripts/ci/test-surface-audit.sh
       - .github/workflows/ci.yml
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added:
-        - rewrite/TEST_AUDIT.md
+        - architecture/TEST_AUDIT.md
         - scripts/ci/test-surface-audit.sh
       changed:
         - .github/workflows/ci.yml
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios: []
@@ -873,7 +873,7 @@ slices:
     risks:
       - "Frozen debt budgets can hide value-neutral churn; ratchet metrics downward only when replacement behavior tests land."
       - "Audit script must stay macOS-compatible (bash 3.2) to avoid false CI failures."
-    notes: "Applies rewrite playbook rigor to tests: inventories leverage, records weak patterns, freezes anti-pattern growth in CI, and defines next debt-paydown slices."
+    notes: "Applies architecture playbook rigor to tests: inventories leverage, records weak patterns, freezes anti-pattern growth in CI, and defines next debt-paydown slices."
 
   - id: RW-015
     name: "80/20 Test Surface Prune"
@@ -889,18 +889,18 @@ slices:
       - apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift
       - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
       - scripts/ci/test-surface-audit.sh
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
         - apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift
         - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
         - scripts/ci/test-surface-audit.sh
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed:
         - apps/swift/Tests/CapacitorTests/ProjectCardIdentityRegressionTests.swift
         - apps/swift/Tests/CapacitorTests/AppStateProjectIngestionPerformanceRegressionTests.swift
@@ -931,17 +931,17 @@ slices:
     touched_paths:
       - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
       - scripts/ci/test-surface-audit.sh
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
         - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
         - scripts/ci/test-surface-audit.sh
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios: []
@@ -963,17 +963,17 @@ slices:
     touched_paths:
       - tests/dev-scripts/channel-profile-guardrails.bats
       - scripts/ci/test-surface-audit.sh
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
         - tests/dev-scripts/channel-profile-guardrails.bats
         - scripts/ci/test-surface-audit.sh
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios: []
@@ -999,16 +999,16 @@ slices:
       - apps/swift/Tests/CapacitorTests/ProjectCardStateResolutionRegressionTests.swift
       - apps/swift/Tests/CapacitorTests/ProjectListRoutingVisibilityRegressionTests.swift
       - scripts/ci/test-surface-audit.sh
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
         - scripts/ci/test-surface-audit.sh
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed:
         - apps/swift/Tests/CapacitorTests/AccessibilityIdentifiersRegressionTests.swift
         - apps/swift/Tests/CapacitorTests/ActivityPanelTerminalRoutingRegressionTests.swift
@@ -1052,16 +1052,16 @@ slices:
     touched_paths:
       - tests/release-scripts/release-flow-guardrails.bats
       - scripts/ci/test-surface-audit.sh
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
         - scripts/ci/test-surface-audit.sh
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed:
         - tests/release-scripts/release-flow-guardrails.bats
     replay_scenarios: []
@@ -1085,17 +1085,17 @@ slices:
     touched_paths:
       - apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift
       - core/capacitor-core/tests/ffi_contract.rs
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
         - apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift
         - core/capacitor-core/tests/ffi_contract.rs
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios: []
@@ -1113,16 +1113,16 @@ slices:
       - RW-020
     touched_paths:
       - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
         - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios: []
@@ -1140,16 +1140,16 @@ slices:
       - RW-021
     touched_paths:
       - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
         - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios: []
@@ -1167,16 +1167,16 @@ slices:
       - RW-022
     touched_paths:
       - core/capacitor-core/tests/ffi_contract.rs
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
         - core/capacitor-core/tests/ffi_contract.rs
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios: []
@@ -1194,16 +1194,16 @@ slices:
       - RW-022
     touched_paths:
       - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
         - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios: []
@@ -1221,16 +1221,16 @@ slices:
       - RW-024
     touched_paths:
       - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
         - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios: []
@@ -1248,16 +1248,16 @@ slices:
       - RW-025
     touched_paths:
       - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
         - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios: []
@@ -1275,16 +1275,16 @@ slices:
       - RW-023
     touched_paths:
       - core/capacitor-core/tests/ffi_contract.rs
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
         - core/capacitor-core/tests/ffi_contract.rs
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios: []
@@ -1302,16 +1302,16 @@ slices:
       - RW-026
     touched_paths:
       - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
         - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios: []
@@ -1329,16 +1329,16 @@ slices:
       - RW-027
     touched_paths:
       - core/capacitor-core/tests/replay_diff.rs
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
         - core/capacitor-core/tests/replay_diff.rs
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios: []
@@ -1356,16 +1356,16 @@ slices:
       - RW-028
     touched_paths:
       - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
         - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios: []
@@ -1383,16 +1383,16 @@ slices:
       - RW-030
     touched_paths:
       - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
         - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios: []
@@ -1410,16 +1410,16 @@ slices:
       - RW-028
     touched_paths:
       - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
         - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios: []
@@ -1437,16 +1437,16 @@ slices:
       - RW-031
     touched_paths:
       - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
         - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios: []
@@ -1466,17 +1466,17 @@ slices:
     touched_paths:
       - apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift
       - core/capacitor-core/tests/replay_diff.rs
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
         - apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift
         - core/capacitor-core/tests/replay_diff.rs
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios:
       - replay_diff_corpus_matches_expected_and_is_deterministic
@@ -1495,16 +1495,16 @@ slices:
       - RW-031
     touched_paths:
       - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
         - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios: []
@@ -1522,16 +1522,16 @@ slices:
       - RW-034
     touched_paths:
       - apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
         - apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios: []
@@ -1549,16 +1549,16 @@ slices:
       - RW-032
     touched_paths:
       - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
         - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios: []
@@ -1576,16 +1576,16 @@ slices:
       - RW-035
     touched_paths:
       - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
         - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios: []
@@ -1603,16 +1603,16 @@ slices:
       - RW-027
     touched_paths:
       - core/capacitor-core/tests/ffi_contract.rs
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
         - core/capacitor-core/tests/ffi_contract.rs
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios: []
@@ -1630,16 +1630,16 @@ slices:
       - RW-038
     touched_paths:
       - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
         - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios: []
@@ -1659,18 +1659,18 @@ slices:
       - core/capacitor-core/tests/common.rs
       - core/capacitor-core/tests/ffi_contract.rs
       - core/capacitor-core/tests/replay_diff.rs
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added:
         - core/capacitor-core/tests/common.rs
       changed:
         - core/capacitor-core/tests/ffi_contract.rs
         - core/capacitor-core/tests/replay_diff.rs
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios:
       - replay_diff_hook_event_type_deserialization_is_stable
@@ -1689,16 +1689,16 @@ slices:
       - RW-036
     touched_paths:
       - apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
         - apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios: []
@@ -1716,16 +1716,16 @@ slices:
       - RW-040
     touched_paths:
       - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
         - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios: []
@@ -1743,16 +1743,16 @@ slices:
       - RW-037
     touched_paths:
       - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
         - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios: []
@@ -1770,16 +1770,16 @@ slices:
       - RW-040
     touched_paths:
       - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
         - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios: []
@@ -1797,16 +1797,16 @@ slices:
       - RW-044
     touched_paths:
       - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
         - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios: []
@@ -1824,16 +1824,16 @@ slices:
       - RW-042
     touched_paths:
       - apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
         - apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios: []
@@ -1851,16 +1851,16 @@ slices:
       - RW-046
     touched_paths:
       - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
         - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios: []
@@ -1878,16 +1878,16 @@ slices:
       - RW-043
     touched_paths:
       - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
         - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios: []
@@ -1905,16 +1905,16 @@ slices:
       - RW-048
     touched_paths:
       - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
         - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios: []
@@ -1932,14 +1932,14 @@ slices:
       - RW-050
     touched_paths:
       - .gitignore
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
         - .gitignore
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios: []
@@ -1959,18 +1959,18 @@ slices:
       - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
       - apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift
       - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
         - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
         - apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift
         - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios: []
@@ -1988,16 +1988,16 @@ slices:
       - RW-052
     touched_paths:
       - apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
         - apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios: []
@@ -2015,16 +2015,16 @@ slices:
       - RW-052
     touched_paths:
       - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
         - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios: []
@@ -2042,16 +2042,16 @@ slices:
       - RW-052
     touched_paths:
       - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
         - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios: []
@@ -2069,14 +2069,14 @@ slices:
       - RW-053
     touched_paths:
       - core/capacitor-core/src/runtime_setup.rs
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
         - core/capacitor-core/src/runtime_setup.rs
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios: []
@@ -2094,16 +2094,16 @@ slices:
       - RW-056
     touched_paths:
       - core/capacitor-core/src/runtime_setup.rs
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
         - core/capacitor-core/src/runtime_setup.rs
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios: []
@@ -2122,17 +2122,17 @@ slices:
     touched_paths:
       - apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift
       - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
         - apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift
         - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios: []
@@ -2155,9 +2155,9 @@ slices:
       - apps/swift/bindings/capacitor_core.swift
       - apps/swift/bindings/capacitor_coreFFI.h
       - apps/swift/Sources/Capacitor/Bridge/capacitor_core.swift
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
@@ -2167,9 +2167,9 @@ slices:
         - apps/swift/bindings/capacitor_core.swift
         - apps/swift/bindings/capacitor_coreFFI.h
         - apps/swift/Sources/Capacitor/Bridge/capacitor_core.swift
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios: []
@@ -2188,17 +2188,17 @@ slices:
     touched_paths:
       - tests/dev-scripts/channel-profile-guardrails.bats
       - tests/release-scripts/bump-version.bats
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
         - tests/dev-scripts/channel-profile-guardrails.bats
         - tests/release-scripts/bump-version.bats
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios: []
@@ -2220,9 +2220,9 @@ slices:
       - apps/swift/Sources/Capacitor/Composition/AppState.swift
       - apps/swift/Sources/Capacitor/Models/SetupRequirements.swift
       - apps/swift/Tests/CapacitorTests/HookInstallerTests.swift
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added:
         - apps/swift/Tests/CapacitorTests/HookInstallerTests.swift
@@ -2231,9 +2231,9 @@ slices:
         - apps/swift/Sources/Capacitor/App.swift
         - apps/swift/Sources/Capacitor/Composition/AppState.swift
         - apps/swift/Sources/Capacitor/Models/SetupRequirements.swift
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios: []
@@ -2258,9 +2258,9 @@ slices:
       - apps/swift/Sources/Capacitor/Helpers/RuntimeDateParser.swift
       - apps/swift/Tests/CapacitorTests/RuntimeDateParserTests.swift
       - apps/swift/Tests/CapacitorTests/DateFormattingTests.swift
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added:
         - apps/swift/Tests/CapacitorTests/DateFormattingTests.swift
@@ -2270,9 +2270,9 @@ slices:
         - apps/swift/Sources/Capacitor/Support/RuntimeClient.swift
         - apps/swift/Sources/Capacitor/Utilities/DiagnosticsSnapshotLogger.swift
         - apps/swift/Sources/Capacitor/Utilities/ProjectOrdering.swift
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed:
         - apps/swift/Sources/Capacitor/Helpers/RuntimeDateParser.swift
         - apps/swift/Tests/CapacitorTests/RuntimeDateParserTests.swift
@@ -2297,9 +2297,9 @@ slices:
       - apps/swift/Sources/Capacitor/Utilities/DebugLog.swift
       - apps/swift/Sources/Capacitor/Support/RuntimeClient.swift
       - apps/swift/Sources/Capacitor/Bridge/UniFFIExtensions.swift
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
@@ -2307,9 +2307,9 @@ slices:
         - apps/swift/Sources/Capacitor/Utilities/DebugLog.swift
         - apps/swift/Sources/Capacitor/Support/RuntimeClient.swift
         - apps/swift/Sources/Capacitor/Bridge/UniFFIExtensions.swift
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios: []
@@ -2328,17 +2328,17 @@ slices:
     touched_paths:
       - apps/swift/Sources/Capacitor/Utils/CapacitorConfig.swift
       - apps/swift/Tests/CapacitorTests/CapacitorConfigTests.swift
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added:
         - apps/swift/Tests/CapacitorTests/CapacitorConfigTests.swift
       changed:
         - apps/swift/Sources/Capacitor/Utils/CapacitorConfig.swift
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios: []
@@ -2359,9 +2359,9 @@ slices:
       - apps/swift/Sources/Capacitor/Utilities/Telemetry.swift
       - apps/swift/Sources/Capacitor/Utilities/QuickFeedback.swift
       - apps/swift/Sources/Capacitor/Utilities/DiagnosticsSnapshotLogger.swift
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
@@ -2369,9 +2369,9 @@ slices:
         - apps/swift/Sources/Capacitor/Utilities/Telemetry.swift
         - apps/swift/Sources/Capacitor/Utilities/QuickFeedback.swift
         - apps/swift/Sources/Capacitor/Utilities/DiagnosticsSnapshotLogger.swift
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios: []
@@ -2390,17 +2390,17 @@ slices:
     touched_paths:
       - apps/swift/Sources/Capacitor/Utils/CapacitorConfig.swift
       - apps/swift/Sources/Capacitor/Views/Setup/WelcomeView.swift
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
         - apps/swift/Sources/Capacitor/Utils/CapacitorConfig.swift
         - apps/swift/Sources/Capacitor/Views/Setup/WelcomeView.swift
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios: []
@@ -2423,9 +2423,9 @@ slices:
       - apps/swift/Sources/Capacitor/App.swift
       - apps/swift/Sources/Capacitor/Views/Setup/SetupStepRow.swift
       - apps/swift/Tests/CapacitorTests/HookSetupCopyTests.swift
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added:
         - apps/swift/Sources/Capacitor/Models/HookSetupCopy.swift
@@ -2435,9 +2435,9 @@ slices:
         - apps/swift/Sources/Capacitor/Models/SetupRequirements.swift
         - apps/swift/Sources/Capacitor/App.swift
         - apps/swift/Sources/Capacitor/Views/Setup/SetupStepRow.swift
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios: []
@@ -2466,9 +2466,9 @@ slices:
       - apps/swift/Sources/Capacitor/Support/Config/CapacitorConfig.swift
       - apps/swift/Sources/Capacitor/Support/Health/ClaudeMdHealth.swift
       - apps/swift/Sources/Capacitor/Support/Updates/UpdaterController.swift
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added:
         - apps/swift/Sources/Capacitor/Support/Accessibility/AccessibilityIdentifiers.swift
@@ -2478,9 +2478,9 @@ slices:
         - apps/swift/Sources/Capacitor/Support/Health/ClaudeMdHealth.swift
         - apps/swift/Sources/Capacitor/Support/Updates/UpdaterController.swift
       changed:
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed:
         - apps/swift/Sources/Capacitor/Utils/AccessibilityIdentifiers.swift
         - apps/swift/Sources/Capacitor/Utils/AlphaChannelGuardrail.swift
@@ -2516,9 +2516,9 @@ slices:
       - apps/swift/Sources/Capacitor/Models/SetupRequirements.swift
       - apps/swift/Sources/Capacitor/Views/Setup/SetupStepRow.swift
       - apps/swift/Tests/CapacitorTests/SetupStepCatalogTests.swift
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added:
         - apps/swift/Sources/Capacitor/Models/SetupStepCatalog.swift
@@ -2526,9 +2526,9 @@ slices:
       changed:
         - apps/swift/Sources/Capacitor/Models/SetupRequirements.swift
         - apps/swift/Sources/Capacitor/Views/Setup/SetupStepRow.swift
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios: []
@@ -2551,18 +2551,18 @@ slices:
       - apps/swift/Sources/Capacitor/Support/Pathing/GitRepositoryInfo.swift
       - apps/swift/Sources/Capacitor/Support/Pathing/PathNormalizer.swift
       - apps/swift/Sources/Capacitor/Support/Pathing/WorkspaceIdentity.swift
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added:
         - apps/swift/Sources/Capacitor/Support/Pathing/GitRepositoryInfo.swift
         - apps/swift/Sources/Capacitor/Support/Pathing/PathNormalizer.swift
         - apps/swift/Sources/Capacitor/Support/Pathing/WorkspaceIdentity.swift
       changed:
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed:
         - apps/swift/Sources/Capacitor/Helpers/GitRepositoryInfo.swift
         - apps/swift/Sources/Capacitor/Helpers/PathNormalizer.swift
@@ -2591,18 +2591,18 @@ slices:
       - apps/swift/Sources/Capacitor/Models/SetupReadinessCoordinator.swift
       - apps/swift/Sources/Capacitor/App.swift
       - apps/swift/Tests/CapacitorTests/SetupReadinessCoordinatorTests.swift
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added:
         - apps/swift/Sources/Capacitor/Models/SetupReadinessCoordinator.swift
         - apps/swift/Tests/CapacitorTests/SetupReadinessCoordinatorTests.swift
       changed:
         - apps/swift/Sources/Capacitor/App.swift
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios: []
@@ -2627,9 +2627,9 @@ slices:
       - apps/swift/Sources/Capacitor/Views/Setup/SetupStepRow.swift
       - apps/swift/Tests/CapacitorTests/HookSetupCopyTests.swift
       - apps/swift/Tests/CapacitorTests/HookPresentationPolicyTests.swift
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added:
         - apps/swift/Sources/Capacitor/Models/HookPresentationPolicy.swift
@@ -2639,9 +2639,9 @@ slices:
         - apps/swift/Sources/Capacitor/Models/SetupRequirements.swift
         - apps/swift/Sources/Capacitor/Models/SetupReadinessCoordinator.swift
         - apps/swift/Sources/Capacitor/Views/Setup/SetupStepRow.swift
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed:
         - apps/swift/Sources/Capacitor/Models/HookSetupCopy.swift
         - apps/swift/Tests/CapacitorTests/HookSetupCopyTests.swift
@@ -2671,9 +2671,9 @@ slices:
       - apps/swift/Tests/CapacitorTests/DebugLogTests.swift
       - apps/swift/Tests/CapacitorTests/HookPresentationPolicyTests.swift
       - apps/swift/Tests/CapacitorTests/SetupReadinessCoordinatorTests.swift
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
@@ -2684,9 +2684,9 @@ slices:
         - apps/swift/Tests/CapacitorTests/DebugLogTests.swift
         - apps/swift/Tests/CapacitorTests/HookPresentationPolicyTests.swift
         - apps/swift/Tests/CapacitorTests/SetupReadinessCoordinatorTests.swift
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios:
@@ -2709,8 +2709,8 @@ slices:
       - .github/workflows/ci.yml
       - .gitignore
       - scripts/ci/test-surface-audit.sh
-      - rewrite/CHARTER.md
-      - rewrite/PLAYBOOK.md
+      - architecture/CHARTER.md
+      - architecture/PLAYBOOK.md
       - apps/swift/Tests/CapacitorTests/AccessibilityIdentifiersRegressionTests.swift
       - apps/swift/Tests/CapacitorTests/ActivityPanelTerminalRoutingRegressionTests.swift
       - apps/swift/Tests/CapacitorTests/AppStateFileBrowserRegressionTests.swift
@@ -2724,20 +2724,20 @@ slices:
       - apps/swift/Tests/CapacitorTests/ProjectCardStateResolutionRegressionTests.swift
       - apps/swift/Tests/CapacitorTests/ProjectListRoutingVisibilityRegressionTests.swift
       - tests/release-scripts/release-flow-guardrails.bats
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added:
         - scripts/ci/test-surface-audit.sh
-        - rewrite/PLAYBOOK.md
+        - architecture/PLAYBOOK.md
       changed:
         - .github/workflows/ci.yml
         - .gitignore
-        - rewrite/CHARTER.md
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/CHARTER.md
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed:
         - apps/swift/Tests/CapacitorTests/AccessibilityIdentifiersRegressionTests.swift
         - apps/swift/Tests/CapacitorTests/ActivityPanelTerminalRoutingRegressionTests.swift
@@ -2776,7 +2776,7 @@ slices:
       - tests/release-scripts/release-flow-guardrails.bats
     risks:
       - "Removing source-shape regression tests can miss style-level regressions; mitigated by contract-level runtime tests and CI audit ceilings."
-    notes: "Deletes low-leverage source-inspection regression suites, codifies the rewrite process playbook, and enforces test debt ceilings in CI via `test-surface-audit.sh`."
+    notes: "Deletes low-leverage source-inspection regression suites, codifies the architecture process playbook, and enforces test debt ceilings in CI via `test-surface-audit.sh`."
 
   - id: RW-075
     name: "Canonical Rust FFI and Replay Test Fixtures"
@@ -2788,18 +2788,18 @@ slices:
       - core/capacitor-core/tests/common.rs
       - core/capacitor-core/tests/ffi_contract.rs
       - core/capacitor-core/tests/replay_diff.rs
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added:
         - core/capacitor-core/tests/common.rs
         - core/capacitor-core/tests/ffi_contract.rs
       changed:
         - core/capacitor-core/tests/replay_diff.rs
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios:
       - multi-project with nested monorepo and worktrees
@@ -2823,9 +2823,9 @@ slices:
       - apps/swift/Sources/Capacitor/Views/Setup/WelcomeView.swift
       - apps/swift/Tests/CapacitorTests/SetupStepCatalogTests.swift
       - apps/swift/Tests/CapacitorTests/SetupRequirementsManagerTests.swift
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added:
         - apps/swift/Tests/CapacitorTests/SetupRequirementsManagerTests.swift
@@ -2834,9 +2834,9 @@ slices:
         - apps/swift/Sources/Capacitor/Models/SetupStepCatalog.swift
         - apps/swift/Sources/Capacitor/Views/Setup/WelcomeView.swift
         - apps/swift/Tests/CapacitorTests/SetupStepCatalogTests.swift
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios:
@@ -2859,17 +2859,17 @@ slices:
     touched_paths:
       - tests/release-scripts/bump-version.bats
       - tests/release-scripts/generate-appcast.bats
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
         - tests/release-scripts/bump-version.bats
         - tests/release-scripts/generate-appcast.bats
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios:
@@ -2889,17 +2889,17 @@ slices:
     touched_paths:
       - apps/swift/Sources/Capacitor/Models/SetupRequirements.swift
       - apps/swift/Tests/CapacitorTests/SetupPreviewScenarioTests.swift
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added:
         - apps/swift/Tests/CapacitorTests/SetupPreviewScenarioTests.swift
       changed:
         - apps/swift/Sources/Capacitor/Models/SetupRequirements.swift
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios:
@@ -2919,17 +2919,17 @@ slices:
     touched_paths:
       - apps/swift/Tests/CapacitorTests/HookPresentationPolicyTests.swift
       - apps/swift/Tests/CapacitorTests/SetupReadinessCoordinatorTests.swift
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
         - apps/swift/Tests/CapacitorTests/HookPresentationPolicyTests.swift
         - apps/swift/Tests/CapacitorTests/SetupReadinessCoordinatorTests.swift
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios:
@@ -2952,9 +2952,9 @@ slices:
       - apps/swift/Tests/CapacitorTests/HookPresentationPolicyTests.swift
       - apps/swift/Tests/CapacitorTests/SetupPreviewScenarioTests.swift
       - apps/swift/Tests/CapacitorTests/SetupStepCatalogTests.swift
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added:
         - apps/swift/Tests/CapacitorTests/SetupStatusCopyContractTests.swift
@@ -2962,9 +2962,9 @@ slices:
         - apps/swift/Tests/CapacitorTests/HookPresentationPolicyTests.swift
         - apps/swift/Tests/CapacitorTests/SetupPreviewScenarioTests.swift
         - apps/swift/Tests/CapacitorTests/SetupStepCatalogTests.swift
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios:
@@ -2986,18 +2986,18 @@ slices:
       - apps/swift/Tests/CapacitorTests/SetupTestFixtures.swift
       - apps/swift/Tests/CapacitorTests/HookDiagnosticPresentationTests.swift
       - apps/swift/Tests/CapacitorTests/SetupReadinessCoordinatorTests.swift
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added:
         - apps/swift/Tests/CapacitorTests/SetupTestFixtures.swift
       changed:
         - apps/swift/Tests/CapacitorTests/HookDiagnosticPresentationTests.swift
         - apps/swift/Tests/CapacitorTests/SetupReadinessCoordinatorTests.swift
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios:
@@ -3017,16 +3017,16 @@ slices:
       - RW-081
     touched_paths:
       - apps/swift/Tests/CapacitorTests/HookDiagnosticPresentationTests.swift
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
         - apps/swift/Tests/CapacitorTests/HookDiagnosticPresentationTests.swift
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios:
@@ -3048,18 +3048,18 @@ slices:
       - apps/swift/Tests/CapacitorTests/SetupScenarioHarness.swift
       - apps/swift/Tests/CapacitorTests/SetupReadinessCoordinatorTests.swift
       - apps/swift/Tests/CapacitorTests/SetupStatusCopyContractTests.swift
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added:
         - apps/swift/Tests/CapacitorTests/SetupScenarioHarness.swift
       changed:
         - apps/swift/Tests/CapacitorTests/SetupReadinessCoordinatorTests.swift
         - apps/swift/Tests/CapacitorTests/SetupStatusCopyContractTests.swift
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios:
@@ -3080,17 +3080,17 @@ slices:
     touched_paths:
       - apps/swift/Tests/CapacitorTests/SetupScenarioHarness.swift
       - apps/swift/Tests/CapacitorTests/SetupRequirementsManagerTests.swift
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
         - apps/swift/Tests/CapacitorTests/SetupScenarioHarness.swift
         - apps/swift/Tests/CapacitorTests/SetupRequirementsManagerTests.swift
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios:
@@ -3111,17 +3111,17 @@ slices:
     touched_paths:
       - apps/swift/Tests/CapacitorTests/HookPresentationPolicyTests.swift
       - apps/swift/Tests/CapacitorTests/HookDiagnosticPresentationTests.swift
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
         - apps/swift/Tests/CapacitorTests/HookPresentationPolicyTests.swift
         - apps/swift/Tests/CapacitorTests/HookDiagnosticPresentationTests.swift
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios:
@@ -3142,17 +3142,17 @@ slices:
     touched_paths:
       - apps/swift/Tests/CapacitorTests/HookDiagnosticPresentationTests.swift
       - apps/swift/Tests/CapacitorTests/SetupStatusCopyContractTests.swift
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
         - apps/swift/Tests/CapacitorTests/HookDiagnosticPresentationTests.swift
         - apps/swift/Tests/CapacitorTests/SetupStatusCopyContractTests.swift
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios:
@@ -3172,16 +3172,16 @@ slices:
       - RW-086
     touched_paths:
       - apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
         - apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios:
@@ -3200,24 +3200,24 @@ slices:
     depends_on:
       - RW-087
     touched_paths:
-      - rewrite/PLAYBOOK.md
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/PLAYBOOK.md
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
-        - rewrite/PLAYBOOK.md
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/PLAYBOOK.md
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios: []
     denylist_patterns: []
     deletion_targets: []
     risks:
-      - "Checklist-only guardrails can drift from practice if not referenced during slice reviews; mitigation is embedding it in the rewrite playbook and audit loop."
+      - "Checklist-only guardrails can drift from practice if not referenced during slice reviews; mitigation is embedding it in the architecture playbook and audit loop."
     notes: "Adds a lightweight table-driven scenario-coverage checklist to prevent branch-equivalent duplicate scenario rows from regrowing."
 
   - id: RW-089
@@ -3229,17 +3229,17 @@ slices:
     touched_paths:
       - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
       - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
         - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
         - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios:
@@ -3259,16 +3259,16 @@ slices:
       - RW-089
     touched_paths:
       - scripts/ci/test-surface-audit.sh
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
         - scripts/ci/test-surface-audit.sh
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios: []
@@ -3287,17 +3287,17 @@ slices:
     touched_paths:
       - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
       - scripts/ci/test-surface-audit.sh
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
         - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
         - scripts/ci/test-surface-audit.sh
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios:
@@ -3318,17 +3318,17 @@ slices:
     touched_paths:
       - apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift
       - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
         - apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift
         - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios:
@@ -3348,16 +3348,16 @@ slices:
       - RW-092
     touched_paths:
       - scripts/ci/test-surface-audit.sh
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
         - scripts/ci/test-surface-audit.sh
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios: []
@@ -3375,16 +3375,16 @@ slices:
       - RW-093
     touched_paths:
       - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
         - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios:
@@ -3405,17 +3405,17 @@ slices:
     touched_paths:
       - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
       - scripts/ci/test-surface-audit.sh
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
         - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
         - scripts/ci/test-surface-audit.sh
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios:
@@ -3435,16 +3435,16 @@ slices:
       - RW-095
     touched_paths:
       - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
         - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios:
@@ -3467,9 +3467,9 @@ slices:
       - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
       - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
       - scripts/ci/test-surface-audit.sh
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
@@ -3478,9 +3478,9 @@ slices:
         - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
         - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
         - scripts/ci/test-surface-audit.sh
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios:
@@ -3504,8 +3504,8 @@ slices:
       - apps/swift/Tests/CapacitorTests/HookInstallerTests.swift
       - apps/swift/Tests/CapacitorTests/SetupReadinessCoordinatorTests.swift
       - apps/swift/Tests/CapacitorTests/SetupStatusCopyContractTests.swift
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
     contracts:
       added: []
       changed:
@@ -3514,8 +3514,8 @@ slices:
         - apps/swift/Tests/CapacitorTests/HookInstallerTests.swift
         - apps/swift/Tests/CapacitorTests/SetupReadinessCoordinatorTests.swift
         - apps/swift/Tests/CapacitorTests/SetupStatusCopyContractTests.swift
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
       removed: []
     replay_scenarios: []
     smoke_scenarios: []
@@ -3534,17 +3534,17 @@ slices:
     touched_paths:
       - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
       - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
-      - rewrite/TEST_AUDIT.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/TEST_AUDIT.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
         - apps/swift/Tests/CapacitorTests/ActivationActionExecutorTests.swift
         - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
-        - rewrite/TEST_AUDIT.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/TEST_AUDIT.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios:
@@ -3557,33 +3557,33 @@ slices:
     notes: "Expands makeExecutor() to five remaining manual-setup tests in ActivationActionExecutorTests, consolidates assertAction to delegate to actionMatches in TerminalLauncherTests, and concludes RuntimeClientTests is already well-consolidated. Marks practical completion of the test audit program."
 
   - id: RW-100
-    name: "Post-Rewrite Reliability Migration Guard Sync"
+    name: "Post-Architecture Reliability Migration Guard Sync"
     owner: "agent/session"
     status: "done"
     depends_on:
       - RW-099
     touched_paths:
       - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
-      - scripts/rewrite/check_rewrite_guards.sh
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
+      - scripts/architecture/check_architecture_guards.sh
     contracts:
       added: []
       changed:
         - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
-        - scripts/rewrite/check_rewrite_guards.sh
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
+        - scripts/architecture/check_architecture_guards.sh
       removed: []
     replay_scenarios: []
     smoke_scenarios:
       - click project card and restore terminal/tmux context
-      - run rewrite guards in GitHub Actions without ripgrep preinstalled
+      - run architecture guards in GitHub Actions without ripgrep preinstalled
     denylist_patterns: []
     deletion_targets: []
     risks:
-      - "Backfilling governance coverage can hide stale assumptions if future migrations skip the rewrite ledger again; mitigation is keeping CI bound to the same portable guard script."
-    notes: "Makes rewrite guard path matching directory-aware, adds grep fallback for content denylist checks, backfills rewrite MAP coverage for the post-rewrite reliability migration artifacts, and removes the last Task.sleep from TerminalLauncherTests so the denylist remains enforceable."
+      - "Backfilling governance coverage can hide stale assumptions if future migrations skip the architecture ledger again; mitigation is keeping CI bound to the same portable guard script."
+    notes: "Makes architecture guard path matching directory-aware, adds grep fallback for content denylist checks, backfills architecture MAP coverage for the post-architecture reliability migration artifacts, and removes the last Task.sleep from TerminalLauncherTests so the denylist remains enforceable."
 
   - id: RW-101
     name: "Repo Hygiene Sweep for Local Artifacts and FFI Duplicates"
@@ -3613,8 +3613,8 @@ slices:
       - scripts/ci/runtime-reliability.sh
       - scripts/ci/runtime-reliability-guard.sh
       - scripts/ci/terminal-simplification-guard.sh
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added:
         - scripts/ci/runtime-reliability-guard.sh
@@ -3633,8 +3633,8 @@ slices:
         - scripts/dev/restart-app.sh
         - scripts/ci/runtime-reliability.sh
         - scripts/ci/terminal-simplification-guard.sh
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed:
         - AGENT_CHANGELOG.md
         - .claude/docs/audit
@@ -3671,18 +3671,18 @@ slices:
       - docs/audit/ARCHITECTURE_ENDGAME_PLAN_2026-03-07.md
       - docs/audit/SUMMARY.md
       - apps/swift/Tests/CapacitorTests/ArchitectureBoundaryTests.swift
-      - rewrite/DECISIONS.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/DECISIONS.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added:
         - docs/audit/ARCHITECTURE_ENDGAME_PLAN_2026-03-07.md
       changed:
         - docs/audit/SUMMARY.md
         - apps/swift/Tests/CapacitorTests/ArchitectureBoundaryTests.swift
-        - rewrite/DECISIONS.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/DECISIONS.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios:
@@ -3732,8 +3732,8 @@ slices:
       - apps/swift/Tests/CapacitorTests/ProjectFeatureCoordinatorTests.swift
       - apps/swift/Tests/CapacitorTests/AppShellContainerTests.swift
       - apps/swift/Tests/CapacitorTests/ArchitectureBoundaryTests.swift
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
       - apps/swift/Sources/Capacitor/Utilities/ProjectOrdering.swift
     contracts:
       added: []
@@ -3768,8 +3768,8 @@ slices:
         - apps/swift/Tests/CapacitorTests/ProjectFeatureCoordinatorTests.swift
         - apps/swift/Tests/CapacitorTests/AppShellContainerTests.swift
         - apps/swift/Tests/CapacitorTests/ArchitectureBoundaryTests.swift
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
         - apps/swift/Sources/Capacitor/Utilities/ProjectOrdering.swift
       removed: []
     replay_scenarios: []
@@ -3814,8 +3814,8 @@ slices:
       - apps/swift/Tests/CapacitorTests/WorkstreamsManagerTests.swift
       - apps/swift/Tests/CapacitorTests/ProjectWorkflowStateTests.swift
       - apps/swift/Tests/CapacitorTests/ArchitectureBoundaryTests.swift
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
@@ -3844,8 +3844,8 @@ slices:
         - apps/swift/Tests/CapacitorTests/WorkstreamsManagerTests.swift
         - apps/swift/Tests/CapacitorTests/ProjectWorkflowStateTests.swift
         - apps/swift/Tests/CapacitorTests/ArchitectureBoundaryTests.swift
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios:
@@ -3882,9 +3882,9 @@ slices:
       - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
       - docs/audit/ARCHITECTURE_ENDGAME_PLAN_2026-03-07.md
       - docs/audit/ARCHITECTURE_CHECKPOINT_2026-03-07.md
-      - rewrite/DECISIONS.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/DECISIONS.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
@@ -3905,9 +3905,9 @@ slices:
         - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
         - docs/audit/ARCHITECTURE_ENDGAME_PLAN_2026-03-07.md
         - docs/audit/ARCHITECTURE_CHECKPOINT_2026-03-07.md
-        - rewrite/DECISIONS.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/DECISIONS.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios:
@@ -3929,19 +3929,19 @@ slices:
     touched_paths:
       - docs/audit/ARCHITECTURE_FINISH_LINE_AUDIT_2026-03-08.md
       - docs/audit/SUMMARY.md
-      - rewrite/DECISIONS.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
-      - scripts/rewrite/check_rewrite_guards.sh
+      - architecture/DECISIONS.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
+      - scripts/architecture/check_architecture_guards.sh
     contracts:
       added:
         - docs/audit/ARCHITECTURE_FINISH_LINE_AUDIT_2026-03-08.md
       changed:
         - docs/audit/SUMMARY.md
-        - rewrite/DECISIONS.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
-        - scripts/rewrite/check_rewrite_guards.sh
+        - architecture/DECISIONS.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
+        - scripts/architecture/check_architecture_guards.sh
       removed: []
     replay_scenarios: []
     smoke_scenarios: []
@@ -3949,7 +3949,7 @@ slices:
     deletion_targets: []
     risks:
       - "The measured Rust seam mixes real finish-line debt with intentional compatibility code; follow-on slices must keep those categories separate so they do not delete user-data migrations by accident."
-    notes: "Captures the March 8 finish-line audit, freezes the current Rust/FFI residual seam with guard ratchets (`clean/*` scaffold todos plus direct legacy helper counts in CoreRuntime), and defines the follow-on slices needed to converge the Rust core and delete the remaining temporary Swift project bridge."
+    notes: "Captures the March 8 finish-line audit, freezes the current Rust/FFI residual seam with guard ratchets (`contexts/*` scaffold todos plus direct legacy helper counts in CoreRuntime), and defines the follow-on slices needed to converge the Rust core and delete the remaining temporary Swift project bridge."
 
   - id: RW-107
     name: "Rust Projects Boundary Convergence"
@@ -3959,26 +3959,26 @@ slices:
       - RW-106
     touched_paths:
       - core/capacitor-core/src/lib.rs
-      - core/capacitor-core/src/clean/projects/*
+      - core/capacitor-core/src/contexts/projects/*
       - core/capacitor-core/src/runtime_projects.rs
       - core/capacitor-core/src/runtime_config.rs
       - core/capacitor-core/tests/ffi_contract.rs
       - core/capacitor-core/tests/replay_diff.rs
-      - scripts/rewrite/check_rewrite_guards.sh
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - scripts/architecture/check_architecture_guards.sh
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
         - core/capacitor-core/src/lib.rs
-        - core/capacitor-core/src/clean/projects/*
+        - core/capacitor-core/src/contexts/projects/*
         - core/capacitor-core/src/runtime_projects.rs
         - core/capacitor-core/src/runtime_config.rs
         - core/capacitor-core/tests/ffi_contract.rs
         - core/capacitor-core/tests/replay_diff.rs
-        - scripts/rewrite/check_rewrite_guards.sh
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - scripts/architecture/check_architecture_guards.sh
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios:
       - full_corpus
@@ -3991,11 +3991,11 @@ slices:
       - "content:core/capacitor-core/src/lib.rs::runtime_projects::try_resolve_encoded_path"
       - "content:core/capacitor-core/src/lib.rs::validate_project_path\\("
       - "content:core/capacitor-core/src/lib.rs::create_claude_md\\("
-      - "content:core/capacitor-core/src/clean/projects/application.rs::todo!\\(\"Shell scaffold only\"\\)"
+      - "content:core/capacitor-core/src/contexts/projects/application.rs::todo!\\(\"Shell scaffold only\"\\)"
     deletion_targets: []
     risks:
       - "Project/catalog behavior currently mixes Claude filesystem reads, config mutation, validation, and dashboard projection in one FFI façade; the slice must reduce that mix without regressing project suggestion ranking or CLAUDE.md bootstrap behavior."
-    notes: "Completed the first Rust finish-line implementation slice. `CoreRuntime` now routes dashboard project reads, project suggestions, add/remove, validation, and CLAUDE.md bootstrap through the clean projects bounded context; `clean/projects/application.rs` no longer contains scaffold todos; the direct project/config helper budget in `lib.rs` dropped from 13 to 0; and the global clean-shell scaffold budget dropped from 12 to 9."
+    notes: "Completed the first Rust finish-line implementation slice. `CoreRuntime` now routes dashboard project reads, project suggestions, add/remove, validation, and CLAUDE.md bootstrap through the projects bounded context bounded context; `contexts/projects/application.rs` no longer contains scaffold todos; the direct project/config helper budget in `lib.rs` dropped from 13 to 0; and the global bounded-context scaffold budget dropped from 12 to 9."
 
   - id: RW-108
     name: "Rust Ideas Boundary Convergence"
@@ -4005,33 +4005,33 @@ slices:
       - RW-107
     touched_paths:
       - core/capacitor-core/src/lib.rs
-      - core/capacitor-core/src/clean/ideas/*
+      - core/capacitor-core/src/contexts/ideas/*
       - core/capacitor-core/src/runtime_ideas.rs
       - core/capacitor-core/tests/ffi_contract.rs
-      - scripts/rewrite/check_rewrite_guards.sh
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - scripts/architecture/check_architecture_guards.sh
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
         - core/capacitor-core/src/lib.rs
-        - core/capacitor-core/src/clean/ideas/*
+        - core/capacitor-core/src/contexts/ideas/*
         - core/capacitor-core/src/runtime_ideas.rs
         - core/capacitor-core/tests/ffi_contract.rs
-        - scripts/rewrite/check_rewrite_guards.sh
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - scripts/architecture/check_architecture_guards.sh
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios:
       - idea_capture_edit_order
     denylist_patterns:
       - "content:core/capacitor-core/src/lib.rs::runtime_ideas::"
-      - "content:core/capacitor-core/src/clean/ideas/application.rs::todo!\\(\"Shell scaffold only\"\\)"
+      - "content:core/capacitor-core/src/contexts/ideas/application.rs::todo!\\(\"Shell scaffold only\"\\)"
     deletion_targets: []
     risks:
       - "Idea persistence and workstream/project-creation adjacency may hide behavior that is not obvious from the current runtime_ideas call surface alone."
-    notes: "Completed the Rust ideas convergence slice. `CoreRuntime` now routes idea capture/load/update/order/file-path behavior through the clean ideas bounded context; `clean/ideas/application.rs` no longer contains scaffold todos; the direct `runtime_ideas::*` budget in `lib.rs` dropped from 9 to 0; and the global clean-shell scaffold budget dropped from 9 to 6 while also fixing a real description-replacement bug in the canonical markdown helper."
+    notes: "Completed the Rust ideas convergence slice. `CoreRuntime` now routes idea capture/load/update/order/file-path behavior through the ideas bounded context bounded context; `contexts/ideas/application.rs` no longer contains scaffold todos; the direct `runtime_ideas::*` budget in `lib.rs` dropped from 9 to 0; and the global bounded-context scaffold budget dropped from 9 to 6 while also fixing a real description-replacement bug in the canonical markdown helper."
 
   - id: RW-109
     name: "Rust Setup Boundary Convergence"
@@ -4041,33 +4041,33 @@ slices:
       - RW-108
     touched_paths:
       - core/capacitor-core/src/lib.rs
-      - core/capacitor-core/src/clean/setup/*
+      - core/capacitor-core/src/contexts/setup/*
       - core/capacitor-core/src/runtime_setup.rs
       - core/capacitor-core/tests/ffi_contract.rs
-      - scripts/rewrite/check_rewrite_guards.sh
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - scripts/architecture/check_architecture_guards.sh
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
         - core/capacitor-core/src/lib.rs
-        - core/capacitor-core/src/clean/setup/*
+        - core/capacitor-core/src/contexts/setup/*
         - core/capacitor-core/src/runtime_setup.rs
         - core/capacitor-core/tests/ffi_contract.rs
-        - scripts/rewrite/check_rewrite_guards.sh
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - scripts/architecture/check_architecture_guards.sh
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios:
       - hook_install_fix_flow
     denylist_patterns:
       - "content:core/capacitor-core/src/lib.rs::setup_checker\\("
-      - "content:core/capacitor-core/src/clean/setup/application.rs::todo!\\(\"Shell scaffold only\"\\)"
+      - "content:core/capacitor-core/src/contexts/setup/application.rs::todo!\\(\"Shell scaffold only\"\\)"
     deletion_targets: []
     risks:
       - "Setup is where intentional legacy hook compatibility also lives; the slice must reduce direct SetupChecker ownership in CoreRuntime without deleting migration semantics that still protect real user settings."
-    notes: "Completed the Rust setup convergence slice. `CoreRuntime` now routes setup mutation through the clean setup service instead of owning `SetupChecker` directly; `clean/setup/application.rs` no longer contains scaffold todos; the direct `setup_checker(` budget in `lib.rs` dropped from 4 to 0; and the global clean-shell scaffold budget dropped from 6 to 4 while preserving runtime_setup's user-settings compatibility behavior."
+    notes: "Completed the Rust setup convergence slice. `CoreRuntime` now routes setup mutation through the setup bounded context service instead of owning `SetupChecker` directly; `contexts/setup/application.rs` no longer contains scaffold todos; the direct `setup_checker(` budget in `lib.rs` dropped from 4 to 0; and the global bounded-context scaffold budget dropped from 6 to 4 while preserving runtime_setup's user-settings compatibility behavior."
 
   - id: RW-110
     name: "Rust Activation Boundary Convergence"
@@ -4076,44 +4076,44 @@ slices:
     depends_on:
       - RW-109
     touched_paths:
-      - rewrite/CHARTER.md
-      - rewrite/DECISIONS.md
+      - architecture/CHARTER.md
+      - architecture/DECISIONS.md
       - docs/audit/ARCHITECTURE_FINISH_LINE_AUDIT_2026-03-08.md
       - core/capacitor-core/src/lib.rs
-      - core/capacitor-core/src/clean/composition.rs
-      - core/capacitor-core/src/clean/mod.rs
-      - core/capacitor-core/src/clean/activation/*
+      - core/capacitor-core/src/contexts/composition.rs
+      - core/capacitor-core/src/contexts/mod.rs
+      - core/capacitor-core/src/contexts/activation/*
       - core/capacitor-core/src/runtime_activation/*
-      - scripts/rewrite/check_rewrite_guards.sh
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - scripts/architecture/check_architecture_guards.sh
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
-        - rewrite/CHARTER.md
-        - rewrite/DECISIONS.md
+        - architecture/CHARTER.md
+        - architecture/DECISIONS.md
         - docs/audit/ARCHITECTURE_FINISH_LINE_AUDIT_2026-03-08.md
         - core/capacitor-core/src/lib.rs
-        - core/capacitor-core/src/clean/composition.rs
-        - core/capacitor-core/src/clean/mod.rs
-        - core/capacitor-core/src/clean/activation/*
+        - core/capacitor-core/src/contexts/composition.rs
+        - core/capacitor-core/src/contexts/mod.rs
+        - core/capacitor-core/src/contexts/activation/*
         - core/capacitor-core/src/runtime_activation/*
-        - scripts/rewrite/check_rewrite_guards.sh
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - scripts/architecture/check_architecture_guards.sh
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios:
       - project_activation_and_trace_display
     denylist_patterns:
-      - "core/capacitor-core/src/clean/activation/*"
+      - "core/capacitor-core/src/contexts/activation/*"
       - "core/capacitor-core/src/runtime_activation/*"
     deletion_targets:
-      - core/capacitor-core/src/clean/activation/*
+      - core/capacitor-core/src/contexts/activation/*
       - core/capacitor-core/src/runtime_activation/*
     risks:
       - "Activation is the most cross-cutting finish-line slice because the charter says Rust owns activation planning while Swift still owns terminal/AX side effects; the slice must make that split explicit instead of moving logic back and forth."
-    notes: "Completed the activation ownership decision slice. Production activation is now explicitly Swift-owned, the dormant Rust clean activation shell and test-only runtime_activation planner are deleted, and the clean-shell scaffold budget drops again without opening a larger FFI activation redesign campaign."
+    notes: "Completed the activation ownership decision slice. Production activation is now explicitly Swift-owned, the dormant Rust activation bounded context shell and test-only runtime_activation planner are deleted, and the bounded-context scaffold budget drops again without opening a larger FFI activation redesign campaign."
 
   - id: RW-111
     name: "FFI DTO Cutover and Swift Project Bridge Deletion"
@@ -4124,7 +4124,7 @@ slices:
     touched_paths:
       - core/capacitor-core/src/lib.rs
       - core/capacitor-core/src/runtime_projects.rs
-      - core/capacitor-core/src/clean/projects/*
+      - core/capacitor-core/src/contexts/projects/*
       - core/capacitor-core/src/runtime_types.rs
       - apps/swift/Sources/Capacitor/Adapters/CoreBridge/ProjectCatalogBridge.swift
       - apps/swift/Sources/Capacitor/Adapters/CoreBridge/LiveProjectCatalogGateway.swift
@@ -4137,17 +4137,17 @@ slices:
       - apps/swift/Tests/CapacitorTests/DashboardLoaderTests.swift
       - apps/swift/Tests/CapacitorTests/ProjectCatalogBridgeTests.swift
       - apps/swift/Tests/CapacitorTests/ProjectWorkflowStateTests.swift
-      - rewrite/DECISIONS.md
+      - architecture/DECISIONS.md
       - docs/audit/ARCHITECTURE_FINISH_LINE_AUDIT_2026-03-08.md
-      - scripts/rewrite/check_rewrite_guards.sh
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - scripts/architecture/check_architecture_guards.sh
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
         - core/capacitor-core/src/lib.rs
         - core/capacitor-core/src/runtime_projects.rs
-        - core/capacitor-core/src/clean/projects/*
+        - core/capacitor-core/src/contexts/projects/*
         - core/capacitor-core/src/runtime_types.rs
         - apps/swift/Sources/Capacitor/Adapters/CoreBridge/ProjectCatalogBridge.swift
         - apps/swift/Sources/Capacitor/Adapters/CoreBridge/LiveProjectCatalogGateway.swift
@@ -4160,11 +4160,11 @@ slices:
         - apps/swift/Tests/CapacitorTests/DashboardLoaderTests.swift
         - apps/swift/Tests/CapacitorTests/ProjectCatalogBridgeTests.swift
         - apps/swift/Tests/CapacitorTests/ProjectWorkflowStateTests.swift
-        - rewrite/DECISIONS.md
+        - architecture/DECISIONS.md
         - docs/audit/ARCHITECTURE_FINISH_LINE_AUDIT_2026-03-08.md
-        - scripts/rewrite/check_rewrite_guards.sh
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - scripts/architecture/check_architecture_guards.sh
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios:
       - full_corpus
@@ -4185,27 +4185,27 @@ slices:
     depends_on:
       - RW-111
     touched_paths:
-      - core/capacitor-core/src/clean/composition.rs
-      - core/capacitor-core/src/clean/mod.rs
-      - core/capacitor-core/src/clean/feedback/*
+      - core/capacitor-core/src/contexts/composition.rs
+      - core/capacitor-core/src/contexts/mod.rs
+      - core/capacitor-core/src/contexts/feedback/*
       - docs/audit/ARCHITECTURE_FINISH_LINE_AUDIT_2026-03-08.md
       - docs/audit/ARCHITECTURE_CHECKPOINT_2026-03-08.md
       - docs/audit/SUMMARY.md
-      - scripts/rewrite/check_rewrite_guards.sh
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - scripts/architecture/check_architecture_guards.sh
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
-        - core/capacitor-core/src/clean/composition.rs
-        - core/capacitor-core/src/clean/mod.rs
-        - core/capacitor-core/src/clean/feedback/*
+        - core/capacitor-core/src/contexts/composition.rs
+        - core/capacitor-core/src/contexts/mod.rs
+        - core/capacitor-core/src/contexts/feedback/*
         - docs/audit/ARCHITECTURE_FINISH_LINE_AUDIT_2026-03-08.md
         - docs/audit/ARCHITECTURE_CHECKPOINT_2026-03-08.md
         - docs/audit/SUMMARY.md
-        - scripts/rewrite/check_rewrite_guards.sh
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - scripts/architecture/check_architecture_guards.sh
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios:
       - full_corpus
@@ -4214,12 +4214,12 @@ slices:
       - quick feedback sheet open/dismiss under AX
       - project_activation_and_trace_display
     denylist_patterns:
-      - "core/capacitor-core/src/clean/feedback/*"
+      - "core/capacitor-core/src/contexts/feedback/*"
     deletion_targets:
-      - core/capacitor-core/src/clean/feedback/*
+      - core/capacitor-core/src/contexts/feedback/*
     risks:
       - "The final sweep should delete only paths made redundant by the new canonical architecture, not compatibility bridges that are still intentionally retained for user data/settings migration."
-    notes: "Completed the final sweep. The dead Rust clean feedback shell is deleted, the scaffold-todo budget is now zero, the final March 8 architecture checkpoint records the end state, and the rewrite control plane has no pending or in-progress slices."
+    notes: "Completed the final sweep. The dead Rust feedback bounded context shell is deleted, the scaffold-todo budget is now zero, the final March 8 architecture checkpoint records the end state, and the architecture control plane has no pending or in-progress slices."
 
   - id: RW-200
     name: "Convergence Audit and Ratchet Reset"
@@ -4228,29 +4228,29 @@ slices:
     depends_on:
       - RW-112
     touched_paths:
-      - rewrite/CHARTER.md
-      - rewrite/DECISIONS.md
+      - architecture/CHARTER.md
+      - architecture/DECISIONS.md
       - docs/audit/ARCHITECTURE_CONVERGENCE_AUDIT_2026-03-08.md
       - docs/audit/CONVERGENCE_REFERENCE_2026-03-08.md
       - docs/audit/ARCHITECTURE_FINISH_LINE_AUDIT_2026-03-08.md
       - docs/audit/SUMMARY.md
-      - scripts/rewrite/check_rewrite_guards.sh
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
-      - rewrite/HANDOFF.md
+      - scripts/architecture/check_architecture_guards.sh
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
+      - architecture/HANDOFF.md
     contracts:
       added:
         - docs/audit/ARCHITECTURE_CONVERGENCE_AUDIT_2026-03-08.md
         - docs/audit/CONVERGENCE_REFERENCE_2026-03-08.md
-        - rewrite/HANDOFF.md
+        - architecture/HANDOFF.md
       changed:
-        - rewrite/CHARTER.md
-        - rewrite/DECISIONS.md
+        - architecture/CHARTER.md
+        - architecture/DECISIONS.md
         - docs/audit/ARCHITECTURE_FINISH_LINE_AUDIT_2026-03-08.md
         - docs/audit/SUMMARY.md
-        - scripts/rewrite/check_rewrite_guards.sh
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - scripts/architecture/check_architecture_guards.sh
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios: []
@@ -4270,15 +4270,15 @@ slices:
       - tmp/review-package/*
       - apps/swift/Sources/Capacitor/Views/Components/RuntimeStatusCard.swift
       - apps/swift/Sources/Capacitor/Views/Components/ProgressiveBlurView.swift
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
-      - rewrite/HANDOFF.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
+      - architecture/HANDOFF.md
     contracts:
       added: []
       changed:
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
-        - rewrite/HANDOFF.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
+        - architecture/HANDOFF.md
       removed:
         - tmp/review-package/*
         - apps/swift/Sources/Capacitor/Views/Components/RuntimeStatusCard.swift
@@ -4321,9 +4321,9 @@ slices:
       - apps/swift/Tests/CapacitorTests/ProjectPresentationStateTests.swift
       - apps/swift/Tests/CapacitorTests/ProjectFeatureCoordinatorTests.swift
       - apps/swift/Tests/CapacitorTests/ArchitectureBoundaryTests.swift
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
-      - rewrite/HANDOFF.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
+      - architecture/HANDOFF.md
     contracts:
       added:
         - apps/swift/Sources/Capacitor/Application/Projects/ProjectPresentationState.swift
@@ -4339,9 +4339,9 @@ slices:
         - apps/swift/Sources/Capacitor/Views/Projects/ProjectDetailView.swift
         - apps/swift/Sources/Capacitor/Views/Projects/ProjectsView.swift
         - apps/swift/Tests/CapacitorTests/ArchitectureBoundaryTests.swift
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
-        - rewrite/HANDOFF.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
+        - architecture/HANDOFF.md
       removed:
         - apps/swift/Sources/Capacitor/Features/ProjectFeatureCoordinator.swift
         - apps/swift/Tests/CapacitorTests/ProjectFeatureCoordinatorTests.swift
@@ -4374,8 +4374,8 @@ slices:
       - apps/swift/Sources/Capacitor/Views/Setup/*
       - apps/swift/Tests/CapacitorTests/Setup*
       - apps/swift/Tests/CapacitorTests/ArchitectureBoundaryTests.swift
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
@@ -4385,9 +4385,9 @@ slices:
         - apps/swift/Sources/Capacitor/Views/Setup/*
         - apps/swift/Tests/CapacitorTests/Setup*
         - apps/swift/Tests/CapacitorTests/ArchitectureBoundaryTests.swift
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
-        - rewrite/HANDOFF.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
+        - architecture/HANDOFF.md
       removed:
         - apps/swift/Sources/Capacitor/Models/SetupRequirements.swift
         - apps/swift/Tests/CapacitorTests/SetupRequirementsManagerTests.swift
@@ -4436,9 +4436,9 @@ slices:
       - apps/swift/Tests/CapacitorTests/RuntimeRefreshOrchestratorTests.swift
       - apps/swift/Tests/CapacitorTests/ActiveProjectResolverTests.swift
       - apps/swift/Tests/CapacitorTests/ProjectIngestionWorkerTests.swift
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
-      - rewrite/HANDOFF.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
+      - architecture/HANDOFF.md
     contracts:
       added:
         - apps/swift/Sources/Capacitor/Application/Runtime/RuntimeStatePorts.swift
@@ -4463,9 +4463,9 @@ slices:
         - apps/swift/Tests/CapacitorTests/ArchitectureBoundaryTests.swift
         - apps/swift/Tests/CapacitorTests/RuntimeSessionRefreshControllerTests.swift
         - apps/swift/Tests/CapacitorTests/RuntimeRefreshOrchestratorTests.swift
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
-        - rewrite/HANDOFF.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
+        - architecture/HANDOFF.md
       removed:
         - apps/swift/Sources/Capacitor/Models/ActiveProjectResolver.swift
         - apps/swift/Sources/Capacitor/Models/ProjectIngestionWorker.swift
@@ -4502,9 +4502,9 @@ slices:
       - apps/swift/Sources/Capacitor/Composition/AppShellContainer.swift
       - apps/swift/Tests/CapacitorTests/AppStateTestSupport.swift
       - apps/swift/Tests/CapacitorTests/ArchitectureBoundaryTests.swift
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
-      - rewrite/HANDOFF.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
+      - architecture/HANDOFF.md
     contracts:
       added:
         - apps/swift/Sources/Capacitor/Composition/AppStateServices.swift
@@ -4513,9 +4513,9 @@ slices:
         - apps/swift/Sources/Capacitor/Composition/AppShellContainer.swift
         - apps/swift/Tests/CapacitorTests/AppStateTestSupport.swift
         - apps/swift/Tests/CapacitorTests/ArchitectureBoundaryTests.swift
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
-        - rewrite/HANDOFF.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
+        - architecture/HANDOFF.md
       removed: []
     replay_scenarios: []
     smoke_scenarios:
@@ -4528,7 +4528,7 @@ slices:
       - "content:apps/swift/Sources/Capacitor/Composition/AppState.swift::runtimeAutomationController\\.startBootstrap\\("
     deletion_targets: []
     risks:
-      - "AppState is still the highest-coupling Swift file; this slice needs disciplined incremental deletion rather than a blind rewrite."
+      - "AppState is still the highest-coupling Swift file; this slice needs disciplined incremental deletion rather than a blind architecture."
     notes: "Completed the first AppState endgame cut. `AppState` no longer assembles the collaborator graph or starts bootstrap/creation workflows itself; `AppStateServices` now builds the service graph in composition, `AppShellContainer` and test support install/start that graph explicitly, and architecture ratchets now freeze the removed assembly path."
 
   - id: RW-206
@@ -4554,10 +4554,10 @@ slices:
       - docs/audit/ARCHITECTURE_CHECKPOINT_2026-03-08.md
       - docs/audit/ARCHITECTURE_CONVERGENCE_AUDIT_2026-03-08.md
       - docs/audit/SUMMARY.md
-      - scripts/rewrite/check_rewrite_guards.sh
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
-      - rewrite/HANDOFF.md
+      - scripts/architecture/check_architecture_guards.sh
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
+      - architecture/HANDOFF.md
     contracts:
       added:
         - apps/swift/Tests/CapacitorTests/ArchitectureTestSupport.swift
@@ -4572,10 +4572,10 @@ slices:
         - docs/audit/ARCHITECTURE_CHECKPOINT_2026-03-08.md
         - docs/audit/ARCHITECTURE_CONVERGENCE_AUDIT_2026-03-08.md
         - docs/audit/SUMMARY.md
-        - scripts/rewrite/check_rewrite_guards.sh
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
-        - rewrite/HANDOFF.md
+        - scripts/architecture/check_architecture_guards.sh
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
+        - architecture/HANDOFF.md
       removed:
         - apps/swift/Sources/Capacitor/Debug/ProjectListDiagnosticsSection.swift
         - apps/swift/Sources/Capacitor/Views/Debug/DebugSessionStateCard.swift
@@ -4605,23 +4605,23 @@ slices:
     depends_on:
       - RW-206
     touched_paths:
-      - rewrite/DECISIONS.md
+      - architecture/DECISIONS.md
       - docs/audit/NAMESPACE_PURITY_AUDIT_2026-03-08.md
       - docs/audit/NAMESPACE_PURITY_REFERENCE_2026-03-08.md
       - docs/audit/SUMMARY.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
-      - rewrite/HANDOFF.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
+      - architecture/HANDOFF.md
     contracts:
       added:
         - docs/audit/NAMESPACE_PURITY_AUDIT_2026-03-08.md
         - docs/audit/NAMESPACE_PURITY_REFERENCE_2026-03-08.md
       changed:
-        - rewrite/DECISIONS.md
+        - architecture/DECISIONS.md
         - docs/audit/SUMMARY.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
-        - rewrite/HANDOFF.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
+        - architecture/HANDOFF.md
       removed: []
     replay_scenarios: []
     smoke_scenarios: []
@@ -4653,10 +4653,10 @@ slices:
       - docs/audit/NAMESPACE_PURITY_AUDIT_2026-03-08.md
       - docs/audit/NAMESPACE_PURITY_REFERENCE_2026-03-08.md
       - docs/audit/SUMMARY.md
-      - scripts/rewrite/check_rewrite_guards.sh
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
-      - rewrite/HANDOFF.md
+      - scripts/architecture/check_architecture_guards.sh
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
+      - architecture/HANDOFF.md
     contracts:
       added:
         - apps/swift/Sources/Capacitor/Application/Setup/HookDiagnosticPresentation.swift
@@ -4670,10 +4670,10 @@ slices:
       changed:
         - docs/audit/NAMESPACE_PURITY_AUDIT_2026-03-08.md
         - docs/audit/NAMESPACE_PURITY_REFERENCE_2026-03-08.md
-        - scripts/rewrite/check_rewrite_guards.sh
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
-        - rewrite/HANDOFF.md
+        - scripts/architecture/check_architecture_guards.sh
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
+        - architecture/HANDOFF.md
       removed:
         - apps/swift/Sources/Capacitor/Models/HookDiagnosticPresentation.swift
         - apps/swift/Sources/Capacitor/Models/HookPresentationPolicy.swift
@@ -4723,10 +4723,10 @@ slices:
       - apps/swift/Tests/CapacitorTests/*
       - docs/audit/NAMESPACE_PURITY_AUDIT_2026-03-08.md
       - docs/audit/NAMESPACE_PURITY_REFERENCE_2026-03-08.md
-      - scripts/rewrite/check_rewrite_guards.sh
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
-      - rewrite/HANDOFF.md
+      - scripts/architecture/check_architecture_guards.sh
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
+      - architecture/HANDOFF.md
     contracts:
       added:
         - apps/swift/Sources/Capacitor/Application/Projects/ProjectDetailsManager.swift
@@ -4738,10 +4738,10 @@ slices:
         - docs/audit/NAMESPACE_PURITY_AUDIT_2026-03-08.md
         - docs/audit/NAMESPACE_PURITY_REFERENCE_2026-03-08.md
         - docs/audit/ARCHITECTURE_CHECKPOINT_2026-03-08.md
-        - scripts/rewrite/check_rewrite_guards.sh
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
-        - rewrite/HANDOFF.md
+        - scripts/architecture/check_architecture_guards.sh
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
+        - architecture/HANDOFF.md
       removed:
         - apps/swift/Sources/Capacitor/Models/ProjectDetailsManager.swift
         - apps/swift/Sources/Capacitor/Models/ProjectCreationCoordinator.swift
@@ -4789,10 +4789,10 @@ slices:
       - docs/audit/NAMESPACE_PURITY_REFERENCE_2026-03-08.md
       - docs/worktree-migration-post-alpha.md
       - scripts/ci/runtime-reliability-guard.sh
-      - scripts/rewrite/check_rewrite_guards.sh
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
-      - rewrite/HANDOFF.md
+      - scripts/architecture/check_architecture_guards.sh
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
+      - architecture/HANDOFF.md
     contracts:
       added:
         - apps/swift/Sources/Capacitor/Support/RuntimeClient.swift
@@ -4814,10 +4814,10 @@ slices:
         - docs/audit/NAMESPACE_PURITY_REFERENCE_2026-03-08.md
         - docs/worktree-migration-post-alpha.md
         - scripts/ci/runtime-reliability-guard.sh
-        - scripts/rewrite/check_rewrite_guards.sh
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
-        - rewrite/HANDOFF.md
+        - scripts/architecture/check_architecture_guards.sh
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
+        - architecture/HANDOFF.md
       removed:
         - apps/swift/Sources/Capacitor/Models/RuntimeClient.swift
         - apps/swift/Sources/Capacitor/Models/SessionStateManager.swift
@@ -4856,29 +4856,29 @@ slices:
     depends_on:
       - NP-303
     touched_paths:
-      - rewrite/CHARTER.md
-      - rewrite/DECISIONS.md
+      - architecture/CHARTER.md
+      - architecture/DECISIONS.md
       - docs/audit/TRUE_ENDING_AUDIT_2026-03-08.md
       - docs/audit/TRUE_ENDING_REFERENCE_2026-03-08.md
       - docs/audit/SUMMARY.md
-      - scripts/rewrite/check_rewrite_guards.sh
+      - scripts/architecture/check_architecture_guards.sh
       - scripts/ci/runtime-reliability-guard.sh
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
-      - rewrite/HANDOFF.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
+      - architecture/HANDOFF.md
     contracts:
       added:
         - docs/audit/TRUE_ENDING_AUDIT_2026-03-08.md
         - docs/audit/TRUE_ENDING_REFERENCE_2026-03-08.md
       changed:
-        - rewrite/CHARTER.md
-        - rewrite/DECISIONS.md
+        - architecture/CHARTER.md
+        - architecture/DECISIONS.md
         - docs/audit/SUMMARY.md
-        - scripts/rewrite/check_rewrite_guards.sh
+        - scripts/architecture/check_architecture_guards.sh
         - scripts/ci/runtime-reliability-guard.sh
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
-        - rewrite/HANDOFF.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
+        - architecture/HANDOFF.md
       removed: []
     replay_scenarios: []
     smoke_scenarios: []
@@ -4900,10 +4900,10 @@ slices:
       - docs/audit/ARCHITECTURE_CHECKPOINT_2026-03-08.md
       - docs/audit/SUMMARY.md
       - docs/audit/TRUE_ENDING_AUDIT_2026-03-08.md
-      - scripts/rewrite/check_rewrite_guards.sh
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
-      - rewrite/HANDOFF.md
+      - scripts/architecture/check_architecture_guards.sh
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
+      - architecture/HANDOFF.md
     contracts:
       added: []
       changed:
@@ -4912,10 +4912,10 @@ slices:
         - docs/audit/ARCHITECTURE_CHECKPOINT_2026-03-08.md
         - docs/audit/SUMMARY.md
         - docs/audit/TRUE_ENDING_AUDIT_2026-03-08.md
-        - scripts/rewrite/check_rewrite_guards.sh
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
-        - rewrite/HANDOFF.md
+        - scripts/architecture/check_architecture_guards.sh
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
+        - architecture/HANDOFF.md
       removed: []
     replay_scenarios: []
     smoke_scenarios:
@@ -4941,10 +4941,10 @@ slices:
       - apps/swift/Sources/Capacitor/Views/*
       - docs/audit/TRUE_ENDING_AUDIT_2026-03-08.md
       - docs/audit/TRUE_ENDING_REFERENCE_2026-03-08.md
-      - scripts/rewrite/check_rewrite_guards.sh
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
-      - rewrite/HANDOFF.md
+      - scripts/architecture/check_architecture_guards.sh
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
+      - architecture/HANDOFF.md
     contracts:
       added:
         - apps/swift/Sources/Capacitor/Support/WindowAnchoring/AnchorTypes.swift
@@ -4953,10 +4953,10 @@ slices:
       changed:
         - docs/audit/TRUE_ENDING_AUDIT_2026-03-08.md
         - docs/audit/TRUE_ENDING_REFERENCE_2026-03-08.md
-        - scripts/rewrite/check_rewrite_guards.sh
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
-        - rewrite/HANDOFF.md
+        - scripts/architecture/check_architecture_guards.sh
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
+        - architecture/HANDOFF.md
       removed:
         - apps/swift/Sources/Capacitor/Models/WindowAnchoring/AnchorTypes.swift
         - apps/swift/Sources/Capacitor/Models/WindowAnchoring/WindowAnchoringController.swift
@@ -4988,9 +4988,9 @@ slices:
       - scripts/ci/runtime-reliability-guard.sh
       - docs/audit/TRUE_ENDING_AUDIT_2026-03-08.md
       - docs/audit/TRUE_ENDING_REFERENCE_2026-03-08.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
-      - rewrite/HANDOFF.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
+      - architecture/HANDOFF.md
     contracts:
       added: []
       changed:
@@ -4999,9 +4999,9 @@ slices:
         - scripts/ci/runtime-reliability-guard.sh
         - docs/audit/TRUE_ENDING_AUDIT_2026-03-08.md
         - docs/audit/TRUE_ENDING_REFERENCE_2026-03-08.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
-        - rewrite/HANDOFF.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
+        - architecture/HANDOFF.md
       removed: []
     replay_scenarios: []
     smoke_scenarios:
@@ -5029,9 +5029,9 @@ slices:
       - scripts/ci/runtime-reliability-guard.sh
       - docs/audit/TRUE_ENDING_AUDIT_2026-03-08.md
       - docs/audit/TRUE_ENDING_REFERENCE_2026-03-08.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
-      - rewrite/HANDOFF.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
+      - architecture/HANDOFF.md
     contracts:
       added: []
       changed:
@@ -5042,9 +5042,9 @@ slices:
         - scripts/ci/runtime-reliability-guard.sh
         - docs/audit/TRUE_ENDING_AUDIT_2026-03-08.md
         - docs/audit/TRUE_ENDING_REFERENCE_2026-03-08.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
-        - rewrite/HANDOFF.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
+        - architecture/HANDOFF.md
       removed: []
     replay_scenarios: []
     smoke_scenarios:
@@ -5068,19 +5068,19 @@ slices:
       - apps/swift/Sources/Capacitor/Composition/AppState.swift
       - docs/audit/TRUE_ENDING_AUDIT_2026-03-08.md
       - docs/audit/TRUE_ENDING_REFERENCE_2026-03-08.md
-      - rewrite/DECISIONS.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
-      - rewrite/HANDOFF.md
+      - architecture/DECISIONS.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
+      - architecture/HANDOFF.md
     contracts:
       added: []
       changed:
-        - rewrite/DECISIONS.md
+        - architecture/DECISIONS.md
         - docs/audit/TRUE_ENDING_AUDIT_2026-03-08.md
         - docs/audit/TRUE_ENDING_REFERENCE_2026-03-08.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
-        - rewrite/HANDOFF.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
+        - architecture/HANDOFF.md
       removed: []
     replay_scenarios: []
     smoke_scenarios:
@@ -5092,7 +5092,7 @@ slices:
     notes: "Closed as an explicit architectural decision. `Composition/AppState.swift` remains the intentional SwiftUI shell-environment hub; no further split is required unless it resumes owning policy or construction."
 
   - id: TE-406
-    name: "Rewrite End-State Decision"
+    name: "Architecture End-State Decision"
     owner: "agent/session"
     status: "done"
     depends_on:
@@ -5102,25 +5102,25 @@ slices:
       - TE-404
       - TE-405
     touched_paths:
-      - rewrite/CHARTER.md
-      - rewrite/DECISIONS.md
-      - rewrite/HANDOFF.md
+      - architecture/CHARTER.md
+      - architecture/DECISIONS.md
+      - architecture/HANDOFF.md
       - docs/audit/TRUE_ENDING_AUDIT_2026-03-08.md
       - docs/audit/TRUE_ENDING_REFERENCE_2026-03-08.md
       - docs/audit/SUMMARY.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
     contracts:
       added: []
       changed:
-        - rewrite/CHARTER.md
-        - rewrite/DECISIONS.md
-        - rewrite/HANDOFF.md
+        - architecture/CHARTER.md
+        - architecture/DECISIONS.md
+        - architecture/HANDOFF.md
         - docs/audit/TRUE_ENDING_AUDIT_2026-03-08.md
         - docs/audit/TRUE_ENDING_REFERENCE_2026-03-08.md
         - docs/audit/SUMMARY.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
       removed: []
     replay_scenarios: []
     smoke_scenarios:
@@ -5128,8 +5128,8 @@ slices:
     denylist_patterns: []
     deletion_targets: []
     risks:
-      - "Closing the campaign without deciding the fate of `rewrite/` would leave a different kind of ambiguity behind."
-    notes: "Completed the explicit end-state decision. `rewrite/` remains the permanent architecture-governance surface, and the finish-line tranche is closed with no pending slices."
+      - "Closing the campaign without deciding the fate of `architecture/` would leave a different kind of ambiguity behind."
+    notes: "Completed the explicit end-state decision. `architecture/` remains the permanent architecture-governance surface, and the finish-line tranche is closed with no pending slices."
 
   - id: DC-500
     name: "Dead Code Sweep Audit"
@@ -5141,20 +5141,20 @@ slices:
       - .claude/dead-code-report.md
       - docs/audit/DEAD_CODE_SWEEP_AUDIT_2026-03-08.md
       - docs/audit/SUMMARY.md
-      - rewrite/DECISIONS.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
-      - rewrite/HANDOFF.md
+      - architecture/DECISIONS.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
+      - architecture/HANDOFF.md
     contracts:
       added:
         - .claude/dead-code-report.md
         - docs/audit/DEAD_CODE_SWEEP_AUDIT_2026-03-08.md
       changed:
         - docs/audit/SUMMARY.md
-        - rewrite/DECISIONS.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
-        - rewrite/HANDOFF.md
+        - architecture/DECISIONS.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
+        - architecture/HANDOFF.md
       removed: []
     replay_scenarios: []
     smoke_scenarios: []
@@ -5180,17 +5180,17 @@ slices:
       - docs/audit/03-core-components.md
       - .claude/dead-code-report.md
       - docs/audit/DEAD_CODE_SWEEP_AUDIT_2026-03-08.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
-      - rewrite/HANDOFF.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
+      - architecture/HANDOFF.md
     contracts:
       added: []
       changed:
         - .claude/dead-code-report.md
         - docs/audit/DEAD_CODE_SWEEP_AUDIT_2026-03-08.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
-        - rewrite/HANDOFF.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
+        - architecture/HANDOFF.md
       removed:
         - .claude/.DS_Store
         - scripts/.DS_Store
@@ -5233,18 +5233,18 @@ slices:
       - assets/README.md
       - .claude/dead-code-report.md
       - docs/audit/DEAD_CODE_SWEEP_AUDIT_2026-03-08.md
-      - rewrite/SLICES.yaml
-      - rewrite/MAP.csv
-      - rewrite/HANDOFF.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
+      - architecture/HANDOFF.md
     contracts:
       added: []
       changed:
         - assets/README.md
         - .claude/dead-code-report.md
         - docs/audit/DEAD_CODE_SWEEP_AUDIT_2026-03-08.md
-        - rewrite/SLICES.yaml
-        - rewrite/MAP.csv
-        - rewrite/HANDOFF.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
+        - architecture/HANDOFF.md
       removed:
         - scripts/utils/fetch-cc-docs.ts
     replay_scenarios: []
@@ -5257,3 +5257,127 @@ slices:
     risks:
       - "Utility scripts are easy to misclassify. This slice only deletes the docs-fetch utility because it has no live output path or references and keeps the icon utility by documenting it explicitly."
     notes: "Deleted the final confirmed dead utility script and documented the retained icon-generation utility so it is intentional rather than orphaned."
+
+  - id: SM-600
+    name: "Structure Modernization Audit"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - DC-502
+    touched_paths:
+      - architecture/DECISIONS.md
+      - docs/audit/STRUCTURE_MODERNIZATION_AUDIT_2026-03-08.md
+      - docs/audit/STRUCTURE_MODERNIZATION_REFERENCE_2026-03-08.md
+      - docs/audit/SUMMARY.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
+      - architecture/HANDOFF.md
+    contracts:
+      added:
+        - docs/audit/STRUCTURE_MODERNIZATION_AUDIT_2026-03-08.md
+        - docs/audit/STRUCTURE_MODERNIZATION_REFERENCE_2026-03-08.md
+      changed:
+        - architecture/DECISIONS.md
+        - docs/audit/SUMMARY.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
+        - architecture/HANDOFF.md
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Renaming migration-shaped namespaces is mechanically simple but repo-wide in blast radius. The audit must keep the Rust code rename separate from the governance-surface rename."
+    notes: "Records the remaining migration-shaped structure names and opens the final modernization tranche."
+
+  - id: SM-601
+    name: "Rust Context Namespace Rename"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - SM-600
+    touched_paths:
+      - core/capacitor-core/src/clean/*
+      - core/capacitor-core/src/contexts/*
+      - core/capacitor-core/src/lib.rs
+      - core/capacitor-core/tests/*
+      - docs/audit/STRUCTURE_MODERNIZATION_AUDIT_2026-03-08.md
+      - docs/audit/STRUCTURE_MODERNIZATION_REFERENCE_2026-03-08.md
+      - docs/audit/ARCHITECTURE_FINISH_LINE_AUDIT_2026-03-08.md
+      - docs/audit/FROM_SCRATCH_ARCHITECTURE_SCAFFOLD.md
+      - scripts/architecture/check_architecture_guards.sh
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
+      - architecture/HANDOFF.md
+    contracts:
+      added: []
+      changed:
+        - core/capacitor-core/src/contexts/*
+        - core/capacitor-core/src/lib.rs
+        - docs/audit/STRUCTURE_MODERNIZATION_AUDIT_2026-03-08.md
+        - docs/audit/STRUCTURE_MODERNIZATION_REFERENCE_2026-03-08.md
+        - docs/audit/ARCHITECTURE_FINISH_LINE_AUDIT_2026-03-08.md
+        - docs/audit/FROM_SCRATCH_ARCHITECTURE_SCAFFOLD.md
+        - scripts/architecture/check_architecture_guards.sh
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
+        - architecture/HANDOFF.md
+      removed: []
+    replay_scenarios:
+      - replay_diff
+    smoke_scenarios:
+      - rust_tests
+    denylist_patterns:
+      - core/capacitor-core/src/clean/*
+      - "content:core/capacitor-core/src/lib.rs::mod clean;"
+      - "content:core/capacitor-core/src/lib.rs::clean::"
+      - "content:core/capacitor-core/src/lib.rs::clean_shell"
+    deletion_targets:
+      - core/capacitor-core/src/clean/*
+    risks:
+      - "This is a broad mechanical rename across code, tests, docs, and guards. The actual behavior should not change, but stale module paths will break compilation immediately."
+    notes: "Completed the Rust namespace modernization. The live bounded-context code now lives under `contexts/`, the shell/composition type is `ContextServices`, and the old `clean/` code paths are frozen at zero."
+
+  - id: SM-602
+    name: "Governance Surface Rename"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - SM-601
+    touched_paths:
+      - rewrite/*
+      - architecture/*
+      - .github/workflows/*
+      - docs/*
+      - scripts/*
+      - .claude/*
+      - README.md
+      - architecture/SLICES.yaml
+      - architecture/MAP.csv
+      - architecture/HANDOFF.md
+    contracts:
+      added: []
+      changed:
+        - architecture/*
+        - .github/workflows/*
+        - docs/*
+        - scripts/*
+        - .claude/*
+        - README.md
+        - architecture/SLICES.yaml
+        - architecture/MAP.csv
+        - architecture/HANDOFF.md
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios:
+      - rewrite_guard_status
+      - runtime_reliability_guard_status
+    denylist_patterns:
+      - rewrite/*
+      - scripts/rewrite/check_rewrite_guards.sh
+    deletion_targets:
+      - rewrite/*
+    risks:
+      - "This touches CI and every path-based governance reference in the repo. The rename should happen only after the Rust namespace rename is stable."
+    notes: "Completed the governance-surface modernization. The permanent repo-level governance namespace is now `architecture/`, the guard script moved to `scripts/architecture/check_architecture_guards.sh`, and active `rewrite/` path usage is frozen at zero."
