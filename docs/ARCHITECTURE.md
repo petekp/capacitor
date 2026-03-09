@@ -1,47 +1,54 @@
-# Capacitor Architecture (Runtime-Snapshot Model)
+# Capacitor Architecture (Dedicated Runtime Service)
 
 ## Principles
 
-1. One persisted runtime truth: Rust owns hook ingest, reducer/query policy, and snapshot persistence.
-2. One production owner per behavior: Swift owns UI projection, lifecycle orchestration, activation, and macOS integrations.
-3. Data-first boundary: runtime snapshots cross the Rust/Swift seam, then Swift applies deterministic projection rules before rendering.
+1. One application boundary: the local runtime service owns ingest, state derivation, and typed runtime reads.
+2. One production owner per behavior: Rust owns runtime semantics; Swift owns presentation, orchestration, and macOS side effects.
+3. One semantic path: hook adapters, shell adapters, and UI reads all converge on the same runtime service state.
 
 ## Runtime Flow
 
-1. Claude Code hook events invoke `hud-hook`.
-2. `hud-hook` normalizes events and writes them to `capacitor-core`.
-3. `capacitor-core` applies reducer logic and persists `~/.capacitor/runtime/app_snapshot.json`.
-4. Swift reads snapshot-shaped data through `RuntimeClient`.
-5. `AppState`, `SessionStateManager`, and `ShellStateStore` apply freshness guards, attribution, and hysteresis before updating visible UI state.
+1. Claude Code hook events reach `hud-hook serve` over `/hook`.
+2. `hud-hook serve` hosts the local runtime service and normalizes adapter input into the canonical `capacitor-core` runtime.
+3. `capacitor-core` applies ingest, reducer, and projection logic, then persists runtime artifacts for durability and replay.
+4. The Swift app reads runtime state from authenticated `/runtime/*` endpoints exposed by the service.
+5. `AppState`, `SessionStateManager`, and `ShellStateStore` apply presentation-only freshness guards and hysteresis before updating visible UI state.
 
 ## Ownership
 
 - Rust (`core/capacitor-core`):
   - Path normalization and workspace identity
-  - Hook event normalization and reducer/query state derivation
-  - Snapshot persistence
+  - Hook and shell ingest normalization
+  - Reducer/query state derivation
+  - Runtime persistence and replay artifacts
   - Runtime setup validation and hook-health evaluation
+- Runtime service shell (`core/hud-hook`):
+  - Local authenticated runtime-service process
+  - Claude `/hook` adapter ingress
+  - Shell `cwd` forwarding
+  - Typed `/runtime/*` read and ingest endpoints
 - Swift (`apps/swift/Sources/Capacitor`):
-  - Snapshot projection and stabilization (`SessionStateManager`, `ShellStateStore`, `AppState`)
+  - Runtime-service supervision and reconnect/adoption
+  - Runtime snapshot projection and stabilization (`SessionStateManager`, `ShellStateStore`, `AppState`)
   - SwiftUI views + interaction flows
   - macOS automation (AppleScript/AX, window activation)
   - Terminal activation ownership
-  - Setup/hook-server lifecycle orchestration
-  - Feature-policy coordinators for creation, ideas, and debug surfaces
+  - Setup and feature-policy coordinators
 
 ## Boundaries
 
-- FFI boundary: `capacitor-core` UniFFI exports for app-facing APIs.
-- Hook ingest boundary: `hud-hook` CLI -> `capacitor-core` command ingestion.
-- No separate runtime process boundary: socket process removed.
+- Runtime boundary: authenticated local HTTP service hosted by `hud-hook serve`
+- FFI boundary: `capacitor-core` UniFFI exports for app-facing setup and non-runtime APIs
+- Adapter boundary: Claude `/hook` and shell `cwd` inputs forward into the runtime service; they do not own lifecycle semantics
 
 ## Repository Shape
 
-- `core/capacitor-core/`: canonical reducer/query/storage runtime + FFI APIs
-- `core/hud-hook/`: hook/CWD ingest adapter
-- `apps/swift/`: menubar application, projection layer, lifecycle supervisors, and feature coordinators
+- `core/capacitor-core/`: canonical ingest, reducer, query, storage, and FFI runtime
+- `core/hud-hook/`: runtime-service shell plus hook/shell adapters
+- `apps/swift/`: menubar application, runtime-service client/supervisor, projection layer, and feature coordinators
 
 ## Non-Goals
 
-- Backward compatibility with legacy IPC/launchd flows
-- Maintaining parallel policy implementations across Rust and Swift
+- Reintroducing parallel runtime policy paths across Rust and Swift
+- Treating snapshot-file reads as the primary app/runtime boundary
+- Backward compatibility with daemon-era IPC or launchd ownership models

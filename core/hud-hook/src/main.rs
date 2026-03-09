@@ -4,7 +4,7 @@
 //!
 //! ## Subcommands
 //!
-//! - `serve`: HTTP hook server — receives hook events via POST from Claude Code
+//! - `serve`: local runtime service — receives hook events and serves runtime reads
 //! - `cwd`: Shell CWD tracking (called by shell precmd hooks)
 
 mod cwd;
@@ -41,7 +41,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Run HTTP hook server (receives hook events via POST)
+    /// Run the local runtime service for hook ingress and runtime reads
     Serve {
         /// Port to listen on
         #[arg(long, default_value = "7474")]

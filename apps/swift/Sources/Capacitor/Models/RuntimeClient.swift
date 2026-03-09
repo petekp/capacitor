@@ -216,6 +216,224 @@ struct RuntimeRoutingConfig: Decodable, Equatable {
     }
 }
 
+struct RuntimeServiceConnection: Equatable {
+    let baseURL: URL
+    let bearerToken: String
+
+    private enum Constants {
+        static let portEnv = "CAPACITOR_RUNTIME_SERVICE_PORT"
+        static let tokenEnv = "CAPACITOR_RUNTIME_SERVICE_TOKEN"
+        static let connectionRelativePath = ".capacitor/runtime/runtime-service.json"
+    }
+
+    private struct ConnectionRecord: Decodable {
+        let port: UInt16
+        let authToken: String
+
+        enum CodingKeys: String, CodingKey {
+            case port
+            case authToken = "auth_token"
+        }
+    }
+
+    static func current(
+        fileManager: FileManager = .default,
+        processInfo: ProcessInfo = .processInfo,
+    ) -> RuntimeServiceConnection? {
+        if let port = processInfo.environment[Constants.portEnv]
+            .flatMap({ UInt16($0.trimmingCharacters(in: .whitespacesAndNewlines)) }),
+            let token = processInfo.environment[Constants.tokenEnv]?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+            !token.isEmpty
+        {
+            return RuntimeServiceConnection(
+                baseURL: URL(string: "http://127.0.0.1:\(port)")!,
+                bearerToken: token,
+            )
+        }
+
+        let connectionURL = fileManager.homeDirectoryForCurrentUser
+            .appendingPathComponent(Constants.connectionRelativePath)
+        guard let data = try? Data(contentsOf: connectionURL),
+              let record = try? JSONDecoder().decode(ConnectionRecord.self, from: data)
+        else {
+            return nil
+        }
+
+        return RuntimeServiceConnection(
+            baseURL: URL(string: "http://127.0.0.1:\(record.port)")!,
+            bearerToken: record.authToken,
+        )
+    }
+}
+
+private struct SnapshotPayload: Decodable {
+    let projects: [SnapshotProjectPayload]
+    let sessions: [SnapshotSessionPayload]
+    let shells: [SnapshotShellPayload]
+    let routing: [SnapshotRoutingPayload]
+
+    init(_ snapshot: AppSnapshot) {
+        projects = snapshot.projects.map(SnapshotProjectPayload.init)
+        sessions = snapshot.sessions.map(SnapshotSessionPayload.init)
+        shells = snapshot.shells.map(SnapshotShellPayload.init)
+        routing = snapshot.routing.map(SnapshotRoutingPayload.init)
+    }
+}
+
+private struct SnapshotProjectPayload: Decodable {
+    let projectId: String?
+    let workspaceId: String?
+    let projectPath: String
+    let state: String
+    let updatedAt: String
+    let stateChangedAt: String
+    let representativeSessionId: String?
+    let latestSessionId: String?
+    let sessionCount: UInt64
+    let activeCount: UInt64
+    let hasSession: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case projectId = "project_id"
+        case workspaceId = "workspace_id"
+        case projectPath = "project_path"
+        case state
+        case updatedAt = "updated_at"
+        case stateChangedAt = "state_changed_at"
+        case representativeSessionId = "representative_session_id"
+        case latestSessionId = "latest_session_id"
+        case sessionCount = "session_count"
+        case activeCount = "active_count"
+        case hasSession = "has_session"
+    }
+
+    init(_ project: ProjectSummary) {
+        projectId = project.projectId
+        workspaceId = project.workspaceId
+        projectPath = project.projectPath
+        state = RuntimeClient.snapshotSessionStateString(project.state)
+        updatedAt = project.updatedAt
+        stateChangedAt = project.stateChangedAt
+        representativeSessionId = project.representativeSessionId
+        latestSessionId = project.latestSessionId
+        sessionCount = project.sessionCount
+        activeCount = project.activeCount
+        hasSession = project.hasSession
+    }
+}
+
+private struct SnapshotSessionPayload: Decodable {
+    let sessionId: String
+    let pid: UInt32
+    let cwd: String
+    let projectId: String
+    let projectPath: String
+    let workspaceId: String
+    let state: String
+    let stateChangedAt: String
+    let updatedAt: String
+    let lastEvent: String?
+    let lastActivityAt: String?
+    let toolsInFlight: UInt32
+    let readyReason: String?
+
+    enum CodingKeys: String, CodingKey {
+        case sessionId = "session_id"
+        case pid
+        case cwd
+        case projectId = "project_id"
+        case projectPath = "project_path"
+        case workspaceId = "workspace_id"
+        case state
+        case stateChangedAt = "state_changed_at"
+        case updatedAt = "updated_at"
+        case lastEvent = "last_event"
+        case lastActivityAt = "last_activity_at"
+        case toolsInFlight = "tools_in_flight"
+        case readyReason = "ready_reason"
+    }
+
+    init(_ session: SessionSummary) {
+        sessionId = session.sessionId
+        pid = session.pid
+        cwd = session.cwd
+        projectId = session.projectId
+        projectPath = session.projectPath
+        workspaceId = session.workspaceId
+        state = RuntimeClient.snapshotSessionStateString(session.state)
+        stateChangedAt = session.stateChangedAt
+        updatedAt = session.updatedAt
+        lastEvent = session.lastEvent
+        lastActivityAt = session.lastActivityAt
+        toolsInFlight = session.toolsInFlight
+        readyReason = session.readyReason
+    }
+}
+
+private struct SnapshotShellPayload: Decodable {
+    let pid: UInt32
+    let cwd: String
+    let tty: String
+    let parentApp: String
+    let tmuxSession: String?
+    let tmuxClientTty: String?
+    let updatedAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case pid
+        case cwd
+        case tty
+        case parentApp = "parent_app"
+        case tmuxSession = "tmux_session"
+        case tmuxClientTty = "tmux_client_tty"
+        case updatedAt = "updated_at"
+    }
+
+    init(_ shell: ShellSignal) {
+        pid = shell.pid
+        cwd = shell.cwd
+        tty = shell.tty
+        parentApp = shell.parentApp
+        tmuxSession = shell.tmuxSession
+        tmuxClientTty = shell.tmuxClientTty
+        updatedAt = shell.updatedAt
+    }
+}
+
+private struct SnapshotRoutingPayload: Decodable {
+    let workspaceId: String
+    let projectPath: String
+    let status: String
+    let targetKind: String
+    let targetValue: String?
+    let reasonCode: String
+    let reason: String
+    let updatedAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case workspaceId = "workspace_id"
+        case projectPath = "project_path"
+        case status
+        case targetKind = "target_kind"
+        case targetValue = "target_value"
+        case reasonCode = "reason_code"
+        case reason
+        case updatedAt = "updated_at"
+    }
+
+    init(_ route: RoutingView) {
+        workspaceId = route.workspaceId
+        projectPath = route.projectPath
+        status = RuntimeClient.snapshotRoutingStatusString(route.status)
+        targetKind = RuntimeClient.snapshotRoutingTargetKindString(route.targetKind)
+        targetValue = route.targetValue
+        reasonCode = route.reasonCode
+        reason = route.reason
+        updatedAt = route.updatedAt
+    }
+}
+
 enum RuntimeClientError: Error {
     case disabled
     case invalidResponse
@@ -228,27 +446,38 @@ final class RuntimeClient {
 
     private enum Constants {
         static let enabledEnv = "CAPACITOR_RUNTIME_ENABLED"
-        static let coreSnapshotEnv = "CAPACITOR_CORE_SNAPSHOT"
-        static let coreSnapshotReadEnabledEnv = "CAPACITOR_CORE_SNAPSHOT_READ_ENABLED"
-        static let coreSnapshotRelativePath = ".capacitor/runtime/app_snapshot.json"
-        static let protocolVersion = 1
         static let tmuxSignalFreshMs: UInt64 = 5000
         static let shellSignalFreshMs: UInt64 = 600_000
         static let shellRetentionHours: UInt64 = 24
         static let tmuxPollIntervalMs: UInt64 = 1000
     }
 
-    private let coreSnapshotPathOverride: String?
     private let isEnabledOverride: Bool?
+    private let runtimeServiceConnectionOverride: RuntimeServiceConnection?
+    private let loadRuntimeServiceConnection: () -> RuntimeServiceConnection?
+    private let sendRequest: (URLRequest) async throws -> (Data, URLResponse)
 
-    init(coreSnapshotPathOverride: String? = nil, isEnabledOverride: Bool? = nil) {
-        self.coreSnapshotPathOverride = coreSnapshotPathOverride
+    init(
+        isEnabledOverride: Bool? = nil,
+        runtimeServiceConnectionOverride: RuntimeServiceConnection? = nil,
+        loadRuntimeServiceConnection: @escaping () -> RuntimeServiceConnection? = { RuntimeServiceConnection.current() },
+        sendRequest: @escaping (URLRequest) async throws -> (Data, URLResponse) = { request in
+            try await URLSession.shared.data(for: request)
+        },
+    ) {
         self.isEnabledOverride = isEnabledOverride
+        self.runtimeServiceConnectionOverride = runtimeServiceConnectionOverride
+        self.loadRuntimeServiceConnection = loadRuntimeServiceConnection
+        self.sendRequest = sendRequest
     }
 
     private init() {
-        coreSnapshotPathOverride = nil
         isEnabledOverride = nil
+        runtimeServiceConnectionOverride = nil
+        loadRuntimeServiceConnection = { RuntimeServiceConnection.current() }
+        sendRequest = { request in
+            try await URLSession.shared.data(for: request)
+        }
     }
 
     var isEnabled: Bool {
@@ -263,50 +492,35 @@ final class RuntimeClient {
     }
 
     func fetchHealth() async throws -> RuntimeHealth {
-        let snapshot = try requireSnapshot(operation: "fetchHealth")
-        return RuntimeHealth(
-            status: "ok",
-            pid: Int(ProcessInfo.processInfo.processIdentifier),
-            version: "core-snapshot-v1",
-            protocolVersion: Constants.protocolVersion,
-            runtime: RuntimeEngineHealth(
-                activeConnections: UInt64(snapshot.sessions.count),
-                maxActiveConnections: UInt64(max(snapshot.sessions.count, 1)),
-                buildHash: "core-snapshot",
-            ),
-            routing: RuntimeRoutingHealth(
-                enabled: true,
-                rollout: nil,
-            ),
-        )
+        try await fetchServiceHealth()
     }
 
     func fetchShellState() async throws -> ShellCwdState {
-        let snapshot = try requireSnapshot(operation: "fetchShellState")
+        let snapshot = try await requireSnapshot(operation: "fetchShellState")
         guard let shellState = mapShellState(snapshot, operation: "fetchShellState") else {
             throw RuntimeClientError.invalidResponse
         }
-        DebugLog.write("RuntimeClient.fetchShellState source=core_snapshot shells=\(shellState.shells.count)")
+        DebugLog.write("RuntimeClient.fetchShellState source=\(runtimeSourceLabel) shells=\(shellState.shells.count)")
         return shellState
     }
 
     func fetchSessions() async throws -> [RuntimeSession] {
-        let snapshot = try requireSnapshot(operation: "fetchSessions")
+        let snapshot = try await requireSnapshot(operation: "fetchSessions")
         let sessions = mapSessions(snapshot)
-        DebugLog.write("RuntimeClient.fetchSessions source=core_snapshot count=\(sessions.count)")
+        DebugLog.write("RuntimeClient.fetchSessions source=\(runtimeSourceLabel) count=\(sessions.count)")
         return sessions
     }
 
     func fetchProjectStates(correlationId: String? = nil) async throws -> [RuntimeProjectState] {
-        let snapshot = try requireSnapshot(correlationId: correlationId, operation: "fetchProjectStates")
+        let snapshot = try await requireSnapshot(correlationId: correlationId, operation: "fetchProjectStates")
         let states = mapProjectStates(snapshot)
         let cid = correlationId ?? "none"
-        DebugLog.write("RuntimeClient.fetchProjectStates source=core_snapshot cid=\(cid) count=\(states.count)")
+        DebugLog.write("RuntimeClient.fetchProjectStates source=\(runtimeSourceLabel) cid=\(cid) count=\(states.count)")
         return states
     }
 
     func fetchRuntimeSnapshot(correlationId: String? = nil) async throws -> RuntimeSnapshot {
-        let snapshot = try requireSnapshot(correlationId: correlationId, operation: "fetchRuntimeSnapshot")
+        let snapshot = try await requireSnapshot(correlationId: correlationId, operation: "fetchRuntimeSnapshot")
         let projectStates = mapProjectStates(snapshot)
         let sessions = mapSessions(snapshot)
         guard let shellState = mapShellState(
@@ -319,7 +533,7 @@ final class RuntimeClient {
 
         let cid = correlationId ?? "none"
         DebugLog.write(
-            "RuntimeClient.fetchRuntimeSnapshot source=core_snapshot cid=\(cid) projects=\(projectStates.count) sessions=\(sessions.count) shells=\(shellState.shells.count)",
+            "RuntimeClient.fetchRuntimeSnapshot source=\(runtimeSourceLabel) cid=\(cid) projects=\(projectStates.count) sessions=\(sessions.count) shells=\(shellState.shells.count)",
         )
 
         return RuntimeSnapshot(
@@ -330,7 +544,7 @@ final class RuntimeClient {
     }
 
     func fetchCoreRoutingSnapshot(projectPath: String, workspaceId: String?) async throws -> CoreRoutingSnapshot {
-        let snapshot = try requireSnapshot(operation: "fetchRoutingSnapshot")
+        let snapshot = try await requireSnapshot(operation: "fetchRoutingSnapshot")
         let resolved = resolveRoutingView(
             for: snapshot,
             projectPath: projectPath,
@@ -359,14 +573,14 @@ final class RuntimeClient {
             target: CoreRoutingTarget(kind: "none", value: nil),
             confidence: "low",
             reasonCode: "NO_TRUSTED_EVIDENCE",
-            reason: "No routing evidence available in core snapshot",
+            reason: "No routing evidence available in runtime service snapshot",
             evidence: [],
             updatedAt: currentISO8601Timestamp(),
         )
     }
 
     func fetchCoreRoutingDiagnostics(projectPath: String, workspaceId: String?) async throws -> CoreRoutingDiagnostics {
-        let snapshot = try requireSnapshot(operation: "fetchRoutingDiagnostics")
+        let snapshot = try await requireSnapshot(operation: "fetchRoutingDiagnostics")
         let resolved = resolveRoutingView(
             for: snapshot,
             projectPath: projectPath,
@@ -387,7 +601,7 @@ final class RuntimeClient {
     }
 
     func fetchRuntimeConfig() async throws -> RuntimeRoutingConfig {
-        _ = try requireSnapshot(operation: "fetchRuntimeConfig")
+        _ = try await requireSnapshot(operation: "fetchRuntimeConfig")
         return RuntimeRoutingConfig(
             tmuxSignalFreshMs: Constants.tmuxSignalFreshMs,
             shellSignalFreshMs: Constants.shellSignalFreshMs,
@@ -396,88 +610,85 @@ final class RuntimeClient {
         )
     }
 
+    private let runtimeSourceLabel = "runtime_service"
+
     private func requireSnapshot(
         correlationId: String? = nil,
         operation: String,
-    ) throws -> AppSnapshot {
+    ) async throws -> SnapshotPayload {
         guard isEnabled else {
             throw RuntimeClientError.disabled
         }
 
-        if let snapshot = loadSnapshot(correlationId: correlationId, operation: operation) {
-            return snapshot
-        }
-
-        throw RuntimeClientError.runtimeUnavailable(
-            "Core runtime snapshot unavailable at \(coreSnapshotPath())",
-        )
+        return try await loadRuntimeServiceSnapshot(correlationId: correlationId, operation: operation)
     }
 
-    private func coreSnapshotPath() -> String {
-        if let override = coreSnapshotPathOverride?.trimmingCharacters(in: .whitespacesAndNewlines), !override.isEmpty {
-            return override
-        }
-
-        if let envOverride = getenv(Constants.coreSnapshotEnv) {
-            let path = String(cString: envOverride).trimmingCharacters(in: .whitespacesAndNewlines)
-            if !path.isEmpty {
-                return path
-            }
-        }
-
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
-        return (home as NSString).appendingPathComponent(Constants.coreSnapshotRelativePath)
-    }
-
-    private func isCoreSnapshotReadEnabled() -> Bool {
-        guard let raw = getenv(Constants.coreSnapshotReadEnabledEnv) else {
-            return true
-        }
-
-        let value = String(cString: raw).trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if ["0", "false", "no", "off"].contains(value) {
-            return false
-        }
-        if ["1", "true", "yes", "on"].contains(value) {
-            return true
-        }
-        return true
-    }
-
-    private func loadSnapshot(
+    private func loadRuntimeServiceSnapshot(
         correlationId: String? = nil,
         operation: String,
-    ) -> AppSnapshot? {
-        guard isCoreSnapshotReadEnabled() else {
-            let cid = correlationId ?? "none"
-            DebugLog.write("RuntimeClient.\(operation) source=core_snapshot_disabled cid=\(cid)")
-            return nil
-        }
-
-        let path = coreSnapshotPath()
-        guard FileManager.default.fileExists(atPath: path) else {
-            return nil
-        }
+    ) async throws -> SnapshotPayload {
+        let request = try runtimeServiceRequest(path: "/runtime/snapshot")
 
         do {
-            let runtime = try CoreRuntime.newWithSnapshotFile(snapshotFile: path)
-            return try runtime.appSnapshot()
+            let (data, response) = try await sendRequest(request)
+            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+                throw RuntimeClientError.runtimeUnavailable(
+                    "Runtime service snapshot request failed for \(request.url?.absoluteString ?? "unknown")",
+                )
+            }
+            return try JSONDecoder().decode(SnapshotPayload.self, from: data)
+        } catch let error as RuntimeClientError {
+            throw error
         } catch {
             let cid = correlationId ?? "none"
             DebugLog.write(
-                "RuntimeClient.\(operation) source=core_snapshot_ffi_error cid=\(cid) path=\(path) error=\(error)",
+                "RuntimeClient.\(operation) source=runtime_service_error cid=\(cid) error=\(error)",
             )
-            return nil
+            throw RuntimeClientError.runtimeUnavailable(
+                "Runtime service snapshot unavailable: \(error.localizedDescription)",
+            )
         }
     }
 
-    private func mapProjectStates(_ snapshot: AppSnapshot) -> [RuntimeProjectState] {
+    private func fetchServiceHealth() async throws -> RuntimeHealth {
+        let request = try runtimeServiceRequest(path: "/health")
+
+        do {
+            let (data, response) = try await sendRequest(request)
+            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+                throw RuntimeClientError.runtimeUnavailable(
+                    "Runtime service health request failed for \(request.url?.absoluteString ?? "unknown")",
+                )
+            }
+            return try JSONDecoder().decode(RuntimeHealth.self, from: data)
+        } catch let error as RuntimeClientError {
+            throw error
+        } catch {
+            throw RuntimeClientError.runtimeUnavailable(
+                "Runtime service health unavailable: \(error.localizedDescription)",
+            )
+        }
+    }
+
+    private func runtimeServiceRequest(path: String) throws -> URLRequest {
+        guard let connection = runtimeServiceConnectionOverride ?? loadRuntimeServiceConnection() else {
+            throw RuntimeClientError.runtimeUnavailable("Runtime service connection unavailable")
+        }
+
+        let normalizedPath = path.hasPrefix("/") ? String(path.dropFirst()) : path
+        let url = connection.baseURL.appendingPathComponent(normalizedPath)
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(connection.bearerToken)", forHTTPHeaderField: "Authorization")
+        return request
+    }
+
+    private func mapProjectStates(_ snapshot: SnapshotPayload) -> [RuntimeProjectState] {
         snapshot.projects.map { project in
             RuntimeProjectState(
                 projectId: project.projectId,
                 workspaceId: project.workspaceId,
                 projectPath: project.projectPath,
-                state: sessionStateString(project.state),
+                state: project.state,
                 updatedAt: project.updatedAt,
                 stateChangedAt: project.stateChangedAt,
                 sessionId: project.representativeSessionId,
@@ -489,12 +700,12 @@ final class RuntimeClient {
         }
     }
 
-    private func mapSessions(_ snapshot: AppSnapshot) -> [RuntimeSession] {
+    private func mapSessions(_ snapshot: SnapshotPayload) -> [RuntimeSession] {
         snapshot.sessions.map { session in
             RuntimeSession(
                 sessionId: session.sessionId,
                 pid: session.pid,
-                state: sessionStateString(session.state),
+                state: session.state,
                 cwd: session.cwd,
                 projectId: session.projectId,
                 workspaceId: session.workspaceId,
@@ -511,7 +722,7 @@ final class RuntimeClient {
     }
 
     private func mapShellState(
-        _ snapshot: AppSnapshot,
+        _ snapshot: SnapshotPayload,
         correlationId: String? = nil,
         operation: String,
     ) -> ShellCwdState? {
@@ -520,7 +731,7 @@ final class RuntimeClient {
             guard let updatedAt = parseISO8601Date(signal.updatedAt) else {
                 let cid = correlationId ?? "none"
                 DebugLog.write(
-                    "RuntimeClient.\(operation) source=core_snapshot_map_error cid=\(cid) pid=\(signal.pid) invalid_updated_at=\(signal.updatedAt)",
+                    "RuntimeClient.\(operation) source=\(runtimeSourceLabel)_map_error cid=\(cid) pid=\(signal.pid) invalid_updated_at=\(signal.updatedAt)",
                 )
                 return nil
             }
@@ -539,10 +750,10 @@ final class RuntimeClient {
     }
 
     private func resolveRoutingView(
-        for snapshot: AppSnapshot,
+        for snapshot: SnapshotPayload,
         projectPath: String,
         workspaceId: String?,
-    ) -> (route: RoutingView?, scope: String) {
+    ) -> (route: SnapshotRoutingPayload?, scope: String) {
         let trimmedWorkspaceId = workspaceId?.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedProjectPath = PathNormalizer.normalize(projectPath)
 
@@ -562,13 +773,13 @@ final class RuntimeClient {
     }
 
     private func mapCoreRoutingSnapshot(
-        _ route: RoutingView,
+        _ route: SnapshotRoutingPayload,
         projectPath: String,
         workspaceId _: String?,
-        snapshot: AppSnapshot,
+        snapshot: SnapshotPayload,
     ) -> CoreRoutingSnapshot {
-        let normalizedStatus = routingStatusString(route.status)
-        let normalizedTargetKind = routingTargetKindString(route.targetKind)
+        let normalizedStatus = route.status
+        let normalizedTargetKind = route.targetKind
         let reasonCode = normalizeReasonCode(route.reasonCode)
         let evidence = tmuxClientEvidence(route: route, snapshot: snapshot)
 
@@ -603,10 +814,10 @@ final class RuntimeClient {
     }
 
     private func tmuxClientEvidence(
-        route: RoutingView,
-        snapshot: AppSnapshot,
+        route: SnapshotRoutingPayload,
+        snapshot: SnapshotPayload,
     ) -> [CoreRoutingEvidence] {
-        guard route.targetKind == .tmuxSession,
+        guard route.targetKind == "tmux_session",
               let target = route.targetValue,
               !target.isEmpty
         else {
@@ -643,7 +854,7 @@ final class RuntimeClient {
             }
     }
 
-    private func sessionStateString(_ state: SessionState) -> String {
+    fileprivate static func snapshotSessionStateString(_ state: SessionState) -> String {
         switch state {
         case .working:
             "working"
@@ -658,7 +869,7 @@ final class RuntimeClient {
         }
     }
 
-    private func routingStatusString(_ status: RoutingStatus) -> String {
+    fileprivate static func snapshotRoutingStatusString(_ status: RoutingStatus) -> String {
         switch status {
         case .attached:
             "attached"
@@ -669,7 +880,7 @@ final class RuntimeClient {
         }
     }
 
-    private func routingTargetKindString(_ kind: RoutingTargetKind) -> String {
+    fileprivate static func snapshotRoutingTargetKindString(_ kind: RoutingTargetKind) -> String {
         switch kind {
         case .tmuxSession:
             "tmux_session"

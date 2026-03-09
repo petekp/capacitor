@@ -7,6 +7,8 @@ uniffi::setup_scaffolding!();
 
 pub mod domain;
 pub mod ingest;
+pub mod observation;
+pub mod projection;
 pub mod query;
 pub mod reduce;
 #[cfg(test)]
@@ -14,10 +16,12 @@ mod runtime_activation;
 pub mod runtime_artifacts;
 pub mod runtime_boundaries;
 pub mod runtime_config;
+pub mod runtime_contracts;
 pub mod runtime_error;
 pub mod runtime_ideas;
 pub mod runtime_patterns;
 pub mod runtime_projects;
+pub mod runtime_service;
 pub mod runtime_sessions;
 pub mod runtime_setup;
 pub mod runtime_state;

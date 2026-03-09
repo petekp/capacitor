@@ -1,7 +1,10 @@
+mod observation_journal;
+
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::domain::AppSnapshot;
+pub use observation_journal::{InMemoryObservationJournalStore, ObservationJournalStore};
 
 pub trait SnapshotStorage: Send + Sync {
     fn load_snapshot(&self) -> Result<Option<AppSnapshot>, String>;

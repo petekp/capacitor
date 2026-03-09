@@ -171,14 +171,7 @@ final class AppStateSessionObservationTests: XCTestCase {
         )
     }
 
-    func testSuccessfulFreshSnapshotResetsRuntimeFailureHysteresis() async throws {
-        let snapshotPath = try makeCoreSnapshotFixturePath()
-        setenv("CAPACITOR_CORE_SNAPSHOT", snapshotPath, 1)
-        addTeardownBlock {
-            unsetenv("CAPACITOR_CORE_SNAPSHOT")
-            try? FileManager.default.removeItem(atPath: snapshotPath)
-        }
-
+    func testSuccessfulFreshSnapshotResetsRuntimeFailureHysteresis() async {
         let appState = AppState()
         appState.cancelRuntimeAutomationForTesting()
         let project = makeProject(name: "Capacitor", path: "/Users/petepetrash/Code/capacitor")
@@ -273,16 +266,5 @@ final class AppStateSessionObservationTests: XCTestCase {
                 ],
             ),
         )
-    }
-
-    private func makeCoreSnapshotFixturePath() throws -> String {
-        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
-        let snapshotPath = tempDir.appendingPathComponent("app_snapshot.json")
-        let json = """
-        {"projects":[{"project_id":"/tmp/core-project/.git","workspace_id":"workspace-core","project_path":"/tmp/core-project","display_name":"core-project","state":"working","updated_at":"2026-02-28T19:00:00Z","state_changed_at":"2026-02-28T19:00:00Z","representative_session_id":"session-core","latest_session_id":"session-core","session_count":1,"active_count":1,"has_session":true}],"sessions":[{"session_id":"session-core","pid":4242,"cwd":"/tmp/core-project","project_id":"/tmp/core-project/.git","project_path":"/tmp/core-project","workspace_id":"workspace-core","state":"working","state_changed_at":"2026-02-28T19:00:00Z","updated_at":"2026-02-28T19:00:00Z","last_event":"user_prompt_submit","last_activity_at":"2026-02-28T19:00:00Z","tools_in_flight":1,"ready_reason":null}],"shells":[{"pid":4242,"cwd":"/tmp/core-project","tty":"/dev/ttys001","parent_app":"Ghostty","tmux_session":"core","updated_at":"2026-02-28T19:00:00Z"}],"routing":[],"diagnostics":{"events_ingested":7,"sessions_tracked":1,"shell_signals_tracked":1,"events_skipped":0,"stale_events_skipped":0,"informational_events_skipped":0,"reducer_events_skipped":0,"last_error":null},"generated_at":"2026-02-28T19:00:00Z"}
-        """
-        try Data(json.utf8).write(to: snapshotPath)
-        return snapshotPath.path
     }
 }

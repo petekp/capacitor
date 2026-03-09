@@ -24,6 +24,21 @@ This playbook describes the exact slice-based process used for the large Capacit
 
 If any artifact is missing, create it before implementation work.
 
+## 2b) Artifact Placement Policy
+
+Use tracked docs for durable migration knowledge:
+
+1. `docs/plans/` for forward-looking migration and design packages.
+2. `docs/audits/` for durable architecture audits, review packages, and system findings that future sessions should inherit.
+
+Use `.claude/*` only for local scratch:
+
+1. temporary explorations
+2. session-local notes
+3. work artifacts that are intentionally not repo truth
+
+Do not let important migration reasoning live only in `.claude/*` if future sessions will need it.
+
 ## 3) Rewrite Bootstrap (PR-000 Equivalent)
 
 1. Lock decisions first in `DECISIONS.md`.

@@ -76,8 +76,9 @@ struct HookServerManagerDependencies {
     var isProcessAlive: (Int32) -> Bool
     var isManagedServerProcess: (Int32, String) -> Bool
     var terminatePid: (Int32) -> Void
+    var loadRuntimeServiceConnection: (UInt16) -> RuntimeServiceConnection?
     var launchProcess: (String, UInt16, [String: String]) throws -> any HookServerProcessControlling
-    var fetchHealth: (UInt16) async -> Bool
+    var fetchHealth: (UInt16, String?) async -> Bool
 }
 
 private final class LiveHookServerProcess: HookServerProcessControlling {
@@ -153,6 +154,7 @@ final class HookServerManager {
     private var healthCheckToken: UUID?
     private var lifecycleGeneration: UInt64 = 0
     private var stopRequested = false
+    private var healthAuthorizationToken: String?
     private let port: UInt16
     private let binaryPath: String
     private let dependencies: HookServerManagerDependencies
@@ -191,8 +193,17 @@ final class HookServerManager {
             if dependencies.isProcessAlive(stalePid),
                dependencies.isManagedServerProcess(stalePid, binaryPath)
             {
+                guard let connection = dependencies.loadRuntimeServiceConnection(port) else {
+                    DebugLog.write("HookServerManager: missing runtime service connection for pid \(stalePid), relaunching")
+                    dependencies.removePidFile(pidFilePath)
+                    start()
+                    return
+                }
+                beginLifecycleObservation(
+                    adoptedPid: stalePid,
+                    healthAuthorizationToken: connection.bearerToken,
+                )
                 DebugLog.write("HookServerManager: adopting existing server pid \(stalePid) on port \(port)")
-                beginLifecycleObservation(adoptedPid: stalePid)
                 return
             }
 
@@ -225,9 +236,10 @@ final class HookServerManager {
 
         let token = UUID()
         healthCheckToken = token
+        let authToken = healthAuthorizationToken
         healthCheckTask = _Concurrency.Task { [weak self] in
             guard let self else { return }
-            let healthy = await dependencies.fetchHealth(port)
+            let healthy = await dependencies.fetchHealth(port, authToken)
             await MainActor.run {
                 self.finishHealthCheck(healthy: healthy, token: token, generation: generation)
             }
@@ -244,6 +256,7 @@ final class HookServerManager {
 
         process = nil
         adoptedPid = nil
+        healthAuthorizationToken = nil
         _ = applyLifecycle(.stopRequested)
 
         ownedProcess?.terminate()
@@ -264,6 +277,11 @@ final class HookServerManager {
 
         var environment = ProcessInfo.processInfo.environment
         environment["CAPACITOR_CORE_ENABLED"] = "1"
+        let authToken = UUID().uuidString
+        environment["CAPACITOR_RUNTIME_SERVICE_BOOTSTRAP"] = "1"
+        environment["CAPACITOR_RUNTIME_SERVICE_PORT"] = String(port)
+        environment["CAPACITOR_RUNTIME_SERVICE_TOKEN"] = authToken
+        healthAuthorizationToken = authToken
 
         do {
             let launchedProcess = try dependencies.launchProcess(binaryPath, port, environment)
@@ -279,11 +297,12 @@ final class HookServerManager {
         }
     }
 
-    private func beginLifecycleObservation(adoptedPid: Int32) {
+    private func beginLifecycleObservation(adoptedPid: Int32, healthAuthorizationToken: String?) {
         lifecycleGeneration &+= 1
         cancelHealthCheck()
         process = nil
         self.adoptedPid = adoptedPid
+        self.healthAuthorizationToken = healthAuthorizationToken
         _ = applyLifecycle(.adoptedExistingProcess)
     }
 
@@ -360,16 +379,20 @@ final class HookServerManager {
 
     private var pidFilePath: String {
         FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".capacitor/runtime/hud-hook-serve-\(port).pid").path
+            .appendingPathComponent(".capacitor/runtime/runtime-service-\(port).pid").path
     }
 
-    nonisolated static func fetchHealth(port: UInt16) async -> Bool {
+    nonisolated static func fetchHealth(port: UInt16, authToken: String?) async -> Bool {
         guard let url = URL(string: "http://127.0.0.1:\(port)\(healthPath)") else {
             return false
         }
 
         do {
-            let (data, response) = try await URLSession.shared.data(from: url)
+            var request = URLRequest(url: url)
+            if let authToken {
+                request.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
+            }
+            let (data, response) = try await URLSession.shared.data(for: request)
             guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
                 return false
             }
@@ -406,11 +429,14 @@ extension HookServerManagerDependencies {
         terminatePid: { pid in
             _ = kill(pid, SIGTERM)
         },
+        loadRuntimeServiceConnection: { _ in
+            RuntimeServiceConnection.current()
+        },
         launchProcess: { binaryPath, port, environment in
             try LiveHookServerProcess(binaryPath: binaryPath, port: port, environment: environment)
         },
-        fetchHealth: { port in
-            await HookServerManager.fetchHealth(port: port)
+        fetchHealth: { port, authToken in
+            await HookServerManager.fetchHealth(port: port, authToken: authToken)
         },
     )
 }

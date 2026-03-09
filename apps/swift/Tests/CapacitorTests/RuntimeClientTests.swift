@@ -6,14 +6,62 @@ final class RuntimeClientTests: XCTestCase {
     override func tearDown() {
         super.tearDown()
         unsetenv("CAPACITOR_RUNTIME_ENABLED")
-        unsetenv("CAPACITOR_CORE_SNAPSHOT")
-        unsetenv("CAPACITOR_CORE_SNAPSHOT_READ_ENABLED")
     }
 
     func testIsEnabledDefaultsToTrueWhenEnvMissing() {
         unsetenv("CAPACITOR_RUNTIME_ENABLED")
         let client = RuntimeClient()
         XCTAssertTrue(client.isEnabled)
+    }
+
+    func testServiceModeWithoutConnectionReturnsRuntimeUnavailable() async throws {
+        let client = RuntimeClient(loadRuntimeServiceConnection: { nil })
+
+        do {
+            _ = try await client.fetchRuntimeSnapshot(correlationId: "service")
+            XCTFail("expected runtimeUnavailable in service mode")
+        } catch let error as RuntimeClientError {
+            switch error {
+            case let .runtimeUnavailable(message):
+                XCTAssertTrue(message.contains("connection unavailable"), "message mismatch: \(message)")
+            default:
+                XCTFail("unexpected RuntimeClientError: \(error)")
+            }
+        }
+    }
+
+    func testServiceModeFetchRuntimeSnapshotUsesRuntimeServiceSnapshot() async throws {
+        var capturedRequest: URLRequest?
+        let client = try RuntimeClient(
+            isEnabledOverride: true,
+            runtimeServiceConnectionOverride: RuntimeServiceConnection(
+                baseURL: XCTUnwrap(URL(string: "http://127.0.0.1:7812")),
+                bearerToken: "service-secret",
+            ),
+            sendRequest: { request in
+                capturedRequest = request
+                let response = try XCTUnwrap(
+                    HTTPURLResponse(
+                        url: request.url!,
+                        statusCode: 200,
+                        httpVersion: nil,
+                        headerFields: ["Content-Type": "application/json"],
+                    ),
+                )
+                return (Self.makeDefaultCoreSnapshot(), response)
+            },
+        )
+
+        let snapshot = try await client.fetchRuntimeSnapshot(correlationId: "service-runtime")
+
+        XCTAssertEqual(capturedRequest?.url?.path, "/runtime/snapshot")
+        XCTAssertEqual(
+            capturedRequest?.value(forHTTPHeaderField: "Authorization"),
+            "Bearer service-secret",
+        )
+        XCTAssertEqual(snapshot.projectStates.count, 1)
+        XCTAssertEqual(snapshot.sessions.first?.sessionId, "session-core")
+        XCTAssertEqual(snapshot.shellState.shells.count, 1)
     }
 
     func testFetchProjectStatesUsesCoreSnapshotWhenAvailable() async throws {
@@ -73,13 +121,9 @@ final class RuntimeClientTests: XCTestCase {
 
         let scenarios: [LabeledExpectationScenario<() throws -> RuntimeClient, ExpectedError>] = [
             LabeledExpectationScenario(
-                label: "snapshot_missing",
+                label: "service_connection_missing",
                 input: {
-                    let missingPath = FileManager.default.temporaryDirectory
-                        .appendingPathComponent(UUID().uuidString)
-                        .appendingPathComponent("missing_snapshot.json")
-                        .path
-                    return RuntimeClient(coreSnapshotPathOverride: missingPath)
+                    RuntimeClient(loadRuntimeServiceConnection: { nil })
                 },
                 expected: .runtimeUnavailable,
             ),
@@ -93,10 +137,9 @@ final class RuntimeClientTests: XCTestCase {
                 expected: .invalidResponse,
             ),
             LabeledExpectationScenario(
-                label: "snapshot_read_disabled",
+                label: "service_snapshot_non_200",
                 input: { [self] in
-                    setenv("CAPACITOR_CORE_SNAPSHOT_READ_ENABLED", "0", 1)
-                    return try makeClient()
+                    try makeClient(responseStatusCode: 503)
                 },
                 expected: .runtimeUnavailable,
             ),
@@ -104,7 +147,6 @@ final class RuntimeClientTests: XCTestCase {
 
         for scenario in scenarios {
             let context = scenarioContext(scenario.label)
-            unsetenv("CAPACITOR_CORE_SNAPSHOT_READ_ENABLED")
             let client = try scenario.input()
 
             do {
@@ -116,7 +158,7 @@ final class RuntimeClientTests: XCTestCase {
                     break
                 case let (.runtimeUnavailable, .runtimeUnavailable(message)):
                     XCTAssertTrue(
-                        message.contains("Core runtime snapshot unavailable"),
+                        message.contains("Runtime service"),
                         "\(context) message mismatch",
                     )
                 default:
@@ -290,20 +332,41 @@ final class RuntimeClientTests: XCTestCase {
 
         XCTAssertEqual(health.status, "ok")
         XCTAssertEqual(health.protocolVersion, 1)
-        XCTAssertTrue(health.version.contains("core-snapshot"))
+        XCTAssertTrue(health.version.contains("runtime-service"))
     }
 
-    private func writeCoreSnapshot(_ data: Data) throws -> String {
-        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
-        let snapshotPath = tempDir.appendingPathComponent("app_snapshot.json")
-        try data.write(to: snapshotPath)
-        return snapshotPath.path
-    }
+    private func makeClient(
+        coreSnapshot: Data? = nil,
+        responseStatusCode: Int = 200,
+    ) throws -> RuntimeClient {
+        RuntimeClient(
+            runtimeServiceConnectionOverride: RuntimeServiceConnection(
+                baseURL: URL(string: "http://127.0.0.1:7812")!,
+                bearerToken: "service-secret",
+            ),
+            sendRequest: { request in
+                let response = try XCTUnwrap(
+                    HTTPURLResponse(
+                        url: request.url!,
+                        statusCode: responseStatusCode,
+                        httpVersion: nil,
+                        headerFields: ["Content-Type": "application/json"],
+                    ),
+                )
 
-    private func makeClient(coreSnapshot: Data? = nil) throws -> RuntimeClient {
-        let snapshotPath = try writeCoreSnapshot(coreSnapshot ?? Self.makeDefaultCoreSnapshot())
-        return RuntimeClient(coreSnapshotPathOverride: snapshotPath)
+                switch request.url?.path {
+                case "/health":
+                    let json = """
+                    {"status":"ok","pid":4242,"version":"runtime-service-v1","protocol_version":1}
+                    """
+                    return (Data(json.utf8), response)
+                case "/runtime/snapshot":
+                    return (coreSnapshot ?? Self.makeDefaultCoreSnapshot(), response)
+                default:
+                    return (Data(), response)
+                }
+            },
+        )
     }
 
     private func assertAttachedTmuxRoute(

@@ -80,6 +80,19 @@ check_file_contains() {
     fi
 }
 
+check_file_lacks() {
+    local name="$1"
+    local path="$2"
+    local pattern="$3"
+
+    if grep -q "$pattern" "$path"; then
+        printf "${RED}DENYLIST${NC} %-42s path=%s pattern=%s\n" "$name" "$path" "$pattern"
+        FAILURES=$((FAILURES + 1))
+    else
+        printf "${GREEN}CLEAR${NC} %-44s pattern absent\n" "$name"
+    fi
+}
+
 echo "═══════════════════════════════════════════════════════════════"
 echo "  Runtime Reliability Guard"
 echo "═══════════════════════════════════════════════════════════════"
@@ -88,9 +101,9 @@ echo ""
 echo "── Legacy HTTP Hook Ratchets ──"
 echo ""
 
-# Legacy hook migration ratchets (kept to prevent regression)
+# Hook transport ratchets (kept to prevent regression)
 check_budget "HOOK_COMMAND constant"           'HOOK_COMMAND.*=.*hud-hook handle'  0
-check_budget "type.*command.*hook creation"    '"command"\.to_string()'            1  "core/"
+check_budget "managed command hook creation"   '"command"\.to_string()'            3  "core/"
 check_budget "hud-hook handle references"      'hud-hook handle'                   14
 check_budget "LEGACY_STATE_TRACKER_MARKER"     'LEGACY_STATE_TRACKER_MARKER'       2  "core/"
 check_budget "hud-state-tracker refs"          'hud-state-tracker'                 5
@@ -120,6 +133,8 @@ check_budget "Terminal outputData append"      'outputData\.append('            
 check_budget "AppState dragdrop group.leave"   'group\.leave()'                                1 "apps/swift/Sources/Capacitor/Models/AppState.swift"
 check_budget "SessionStateManager global metadata fallback" 'if stabilized == merged'          0 "apps/swift/Sources/Capacitor/Models/SessionStateManager.swift"
 check_budget "Session tests fixed 2026 dates"  '2026-02-28'                                    0 "apps/swift/Tests/CapacitorTests/SessionStateManagerTests.swift"
+check_budget "hud-hook runtime client local transport" 'LocalRuntimeHost|RuntimeTransport::Local|InProcessSnapshot|ExternalServicePrototype' 0 "core/hud-hook/src/runtime_client.rs"
+check_budget "Swift runtime client core_snapshot labels" 'core_snapshot' 0 "apps/swift/Sources/Capacitor/Models/RuntimeClient.swift"
 
 echo ""
 echo "── Denylist (should always be 0) ──"
@@ -132,6 +147,12 @@ check_denylist "App.swift concrete debug windows" 'DebugProjectListPanel|UITunin
 check_denylist "ProjectsView concrete debug cards" 'DebugActiveStateCard|DebugActivationTraceCard|debugShowProjectListDiagnostics' "apps/swift/Sources/Capacitor/Views/Projects/ProjectsView.swift"
 check_denylist "WelcomeView setup preview internals" 'debugScenario|\.preview\(' "apps/swift/Sources/Capacitor/Views/Setup/WelcomeView.swift"
 check_path_absent "Debug-owned GlassConfig path" "apps/swift/Sources/Capacitor/Views/Debug/UITuningPanel/GlassConfig.swift"
+check_file_contains "Architecture doc service title" "docs/ARCHITECTURE.md" 'Dedicated Runtime Service'
+check_file_contains "Release matrix service scope" "docs/SESSION_STATE_RELEASE_MATRIX.md" 'Runtime Service + Operations'
+check_file_lacks "Architecture doc snapshot title" "docs/ARCHITECTURE.md" 'Runtime-Snapshot Model'
+check_file_lacks "Architecture doc no-process claim" "docs/ARCHITECTURE.md" 'No separate runtime process boundary'
+check_file_lacks "Architecture doc socket removal claim" "docs/ARCHITECTURE.md" 'socket process removed'
+check_file_lacks "Release matrix snapshot architecture wording" "docs/SESSION_STATE_RELEASE_MATRIX.md" 'runtime-snapshot architecture'
 
 echo ""
 echo "── Operational Verification Wiring ──"

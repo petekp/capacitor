@@ -28,7 +28,8 @@ apps/swift/*.app
 apps/swift/Capacitor.app/
 apps/swift/resource_bundle_accessor-*
 
-# Claude local state (not shared)
+# Claude local state and scratch working notes (not shared)
+# Durable migration and audit artifacts belong under docs/plans/ and docs/audits/.
 .claude/hud-status.json
 .claude/settings.local.json
 .claude/archive/

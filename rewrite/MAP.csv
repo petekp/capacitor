@@ -732,3 +732,89 @@ RW-101,repo-hygiene-hookserver-tests-rw101,apps/swift/Tests/CapacitorTests/HookS
 RW-101,repo-hygiene-projectcreation-tests-rw101,apps/swift/Tests/CapacitorTests/ProjectCreationCoordinatorTests.swift,apps/swift/Tests/CapacitorTests/ProjectCreationCoordinatorTests.swift,done,false,Add regression coverage for provider-based session file path resolution
 RW-101,rewrite-ledger-rw101,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record repo hygiene cleanup slice and deletion targets
 RW-101,rewrite-map-rw101,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track repo hygiene cleanup paths for guard enforcement
+RW-102,hook-runtime-design-package-rw102,docs/plans/2026-03-09-hook-runtime-pre-migration-design-package.md,docs/plans/2026-03-09-hook-runtime-pre-migration-design-package.md,done,false,Lock the reviewed target architecture before migration
+RW-102,hook-runtime-capability-matrix-rw102,docs/plans/2026-03-09-hook-runtime-capability-matrix.md,docs/plans/2026-03-09-hook-runtime-capability-matrix.md,done,false,Record the current Claude contract and target policy matrix
+RW-102,hook-runtime-stress-test-rw102,docs/plans/2026-03-09-hook-runtime-stress-test.md,docs/plans/2026-03-09-hook-runtime-stress-test.md,done,false,Record pre-mortem assumptions, risks, and experiments
+RW-102,rewrite-decisions-rw102,rewrite/DECISIONS.md,rewrite/DECISIONS.md,done,false,Lock mature hook/runtime migration decisions
+RW-102,rewrite-ledger-rw102,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record review-and-lock slice and seed next slices
+RW-102,rewrite-map-rw102,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track review-and-lock path mappings
+RW-103,claude-hook-contract-mod-rw103,,core/capacitor-core/src/runtime_contracts/mod.rs,done,false,Export the checked-in Claude hook contract API
+RW-103,claude-hook-contract-artifact-rw103,,core/capacitor-core/src/runtime_contracts/claude_hooks.rs,done,false,Add machine-checkable Claude hook capability artifact
+RW-103,claude-hook-install-health-rw103,core/capacitor-core/src/runtime_setup.rs,core/capacitor-core/src/runtime_setup.rs,done,false,Drive install and health validation from shared contract artifact
+RW-103,claude-hook-diagnostic-contract-rw103,core/capacitor-core/src/lib.rs,core/capacitor-core/src/lib.rs,done,false,Expose the shared contract module from the core crate
+RW-103,claude-hook-contract-tests-rw103,,core/capacitor-core/tests/claude_hook_contract.rs,done,false,Add contract tests for event and transport legality
+RW-103,hook-runtime-capability-matrix-doc-rw103,docs/plans/2026-03-09-hook-runtime-capability-matrix.md,docs/plans/2026-03-09-hook-runtime-capability-matrix.md,done,false,Keep the human-readable matrix synchronized with the checked-in contract artifact
+RW-103,rewrite-ledger-rw103,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Track machine-checkable contract slice
+RW-103,rewrite-map-rw103,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track machine-checkable contract path mappings
+RW-104,observation-domain-rw104,,core/capacitor-core/src/observation/mod.rs,done,false,Add canonical observation input model scaffold
+RW-104,projection-domain-rw104,,core/capacitor-core/src/projection/mod.rs,done,false,Add deterministic read-model projector scaffold
+RW-104,observation-journal-storage-rw104,,core/capacitor-core/src/storage/observation_journal.rs,done,false,Add in-memory observation journal seam for the scaffold
+RW-104,runtime-storage-evolution-rw104,core/capacitor-core/src/storage/mod.rs,core/capacitor-core/src/storage/mod.rs,done,false,Export the observation journal seam alongside snapshot storage
+RW-104,core-runtime-observation-integration-rw104,core/capacitor-core/src/lib.rs,core/capacitor-core/src/lib.rs,done,false,Wire observation and projection modules through the core crate surface
+RW-104,replay-diff-observation-rw104,core/capacitor-core/tests/replay_diff.rs,core/capacitor-core/tests/replay_diff.rs,done,false,Extend replay coverage to exercise observation and projection scaffold types
+RW-104,rewrite-ledger-rw104,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Track observation journal slice
+RW-104,rewrite-map-rw104,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track observation journal path mappings
+RW-105,runtime-host-boundary-rw105,,core/capacitor-core/src/runtime_host/mod.rs,done,false,Prototype host-agnostic runtime boundary in core
+RW-105,ingress-adapter-evolution-rw105,core/hud-hook/src/runtime_client.rs,core/hud-hook/src/runtime_client.rs,done,false,Refit hud-hook ingress adapter around the runtime host abstraction
+RW-105,swift-runtime-host-mode-rw105,,apps/swift/Sources/Capacitor/Models/RuntimeHostMode.swift,done,false,Add a shared Swift runtime host mode seam
+RW-105,swift-runtime-boundary-rw105,apps/swift/Sources/Capacitor/Models/RuntimeClient.swift,apps/swift/Sources/Capacitor/Models/RuntimeClient.swift,done,false,Adapt Swift runtime client to the prototype host boundary
+RW-105,swift-hookserver-boundary-rw105,apps/swift/Sources/Capacitor/Models/HookServerManager.swift,apps/swift/Sources/Capacitor/Models/HookServerManager.swift,done,false,Adapt hook-server supervision to the prototype boundary
+RW-105,swift-runtime-boundary-tests-rw105,apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift,apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift,done,false,Exercise the host boundary through RuntimeClient tests
+RW-105,swift-hookserver-boundary-tests-rw105,apps/swift/Tests/CapacitorTests/HookServerManagerTests.swift,apps/swift/Tests/CapacitorTests/HookServerManagerTests.swift,done,false,Exercise the host boundary through HookServerManager tests
+RW-105,rewrite-ledger-rw105,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Track runtime boundary prototype slice
+RW-105,rewrite-map-rw105,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track runtime boundary prototype path mappings
+RW-106,replay-diff-shadow-parity-rw106,core/capacitor-core/tests/replay_diff.rs,core/capacitor-core/tests/replay_diff.rs,done,false,Add explicit shadow parity and cutover diff coverage
+RW-106,replay-fixture-shadow-parity-rw106,core/capacitor-core/tests/fixtures/replay/*,core/capacitor-core/tests/fixtures/replay/*,done,false,Reuse the existing replay corpus for shadow parity comparison
+RW-106,runtime-reliability-guard-rw106,scripts/ci/runtime-reliability-guard.sh,scripts/ci/runtime-reliability-guard.sh,done,false,Ratchet intentional managed command-hook creation at the new baseline
+RW-106,runtime-reliability-shadow-rw106,scripts/ci/runtime-reliability.sh,scripts/ci/runtime-reliability.sh,done,false,Gate migration cutover on shadow parity evidence
+RW-106,session-state-release-matrix-rw106,docs/SESSION_STATE_RELEASE_MATRIX.md,docs/SESSION_STATE_RELEASE_MATRIX.md,done,false,Document cutover criteria and parity expectations
+RW-106,rewrite-ledger-rw106,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Track shadow parity slice
+RW-106,rewrite-map-rw106,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track shadow parity path mappings
+RW-108,artifact-policy-gitignore-rw108,.gitignore,.gitignore,done,false,Clarify that `.claude/*` is local scratch while durable migration artifacts live under docs/
+RW-108,audit-docs-readme-rw108,,docs/audits/README.md,done,false,Create tracked home for durable audit outputs
+RW-108,claude-hook-audit-doc-rw108,,docs/audits/2026-03-09-claude-hook-integration-audit.md,done,false,Restore the current hook integration audit as a tracked durable artifact
+RW-108,hook-runtime-design-package-link-rw108,docs/plans/2026-03-09-hook-runtime-pre-migration-design-package.md,docs/plans/2026-03-09-hook-runtime-pre-migration-design-package.md,done,false,Link the migration package to the tracked audit surface
+RW-108,rewrite-decisions-rw108,rewrite/DECISIONS.md,rewrite/DECISIONS.md,done,false,Lock durable audit artifact placement policy
+RW-108,rewrite-playbook-rw108,rewrite/PLAYBOOK.md,rewrite/PLAYBOOK.md,done,false,Document placement policy for future audit-and-migrate sessions
+RW-108,rewrite-ledger-rw108,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record artifact policy refinement slice
+RW-108,rewrite-map-rw108,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track artifact policy refinement path mappings
+RW-109,dedicated-runtime-service-adr-rw109,,docs/architecture-decisions/004-dedicated-local-runtime-service.md,done,false,Record the dedicated local runtime service choice as an ADR
+RW-109,hook-runtime-design-package-process-lock-rw109,docs/plans/2026-03-09-hook-runtime-pre-migration-design-package.md,docs/plans/2026-03-09-hook-runtime-pre-migration-design-package.md,done,false,Resolve the process model fork in the design package
+RW-109,rewrite-decisions-rw109,rewrite/DECISIONS.md,rewrite/DECISIONS.md,done,false,Supersede the open process-boundary posture with a dedicated service decision
+RW-109,rewrite-ledger-rw109,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Record dedicated runtime service decision lock slice
+RW-109,rewrite-map-rw109,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track dedicated runtime service decision lock path mappings
+RW-110,capacitor-core-runtime-service-export-rw110,core/capacitor-core/src/lib.rs,core/capacitor-core/src/lib.rs,done,false,Expose the runtime service bootstrap surface from capacitor-core
+RW-110,runtime-service-bootstrap-rw110,,core/capacitor-core/src/runtime_service/*,done,false,Bootstrap the dedicated local runtime service
+RW-110,runtime-host-service-target-rw110,core/capacitor-core/src/runtime_host/mod.rs,core/capacitor-core/src/runtime_host/mod.rs,done,false,Teach the runtime host abstraction to target the service
+RW-110,hud-hook-serve-service-bridge-rw110,core/hud-hook/src/serve.rs,core/hud-hook/src/serve.rs,done,false,Bridge hud-hook serve into the dedicated runtime service boundary
+RW-110,hud-hook-serve-bootstrap-test-support-rw110,core/hud-hook/tests/common/mod.rs,core/hud-hook/tests/common/mod.rs,done,false,Support authenticated runtime service bootstrap integration tests
+RW-110,hud-hook-serve-bootstrap-tests-rw110,core/hud-hook/tests/serve_integration.rs,core/hud-hook/tests/serve_integration.rs,done,false,Verify authenticated runtime service bootstrap health behavior
+RW-110,swift-hookserver-service-bootstrap-rw110,apps/swift/Sources/Capacitor/Models/HookServerManager.swift,apps/swift/Sources/Capacitor/Models/HookServerManager.swift,done,false,Supervise the dedicated runtime service lifecycle from Swift
+RW-110,swift-hookserver-service-bootstrap-tests-rw110,apps/swift/Tests/CapacitorTests/HookServerManagerTests.swift,apps/swift/Tests/CapacitorTests/HookServerManagerTests.swift,done,false,Verify servicePrototype bootstrap supervision and authenticated health checks
+RW-110,rewrite-ledger-rw110,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Track dedicated runtime service bootstrap slice
+RW-110,rewrite-map-rw110,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track dedicated runtime service bootstrap path mappings
+RW-111,runtime-service-api-rw111,,core/capacitor-core/src/runtime_service/*,done,false,Extend the runtime service contract with connection discovery and ingress/read endpoints
+RW-111,hud-hook-service-client-rw111,core/hud-hook/src/runtime_client.rs,core/hud-hook/src/runtime_client.rs,done,false,Cut hud-hook ingress over to the dedicated runtime service
+RW-111,hud-hook-service-routes-rw111,core/hud-hook/src/serve.rs,core/hud-hook/src/serve.rs,done,false,Serve authenticated runtime ingress and snapshot routes from the runtime service
+RW-111,hud-hook-main-service-mode-rw111,core/hud-hook/src/main.rs,core/hud-hook/src/main.rs,done,false,Align hud-hook CLI surface with the dedicated runtime service cutover
+RW-111,hud-hook-service-test-support-rw111,core/hud-hook/tests/common/mod.rs,core/hud-hook/tests/common/mod.rs,done,false,Support runtime service ingress and snapshot integration tests
+RW-111,hud-hook-service-integration-tests-rw111,core/hud-hook/tests/serve_integration.rs,core/hud-hook/tests/serve_integration.rs,done,false,Verify service ingress and runtime snapshot behavior
+RW-111,swift-runtime-service-client-rw111,apps/swift/Sources/Capacitor/Models/RuntimeClient.swift,apps/swift/Sources/Capacitor/Models/RuntimeClient.swift,done,false,Cut Swift runtime reads over to the dedicated runtime service
+RW-111,swift-hookserver-service-cutover-rw111,apps/swift/Sources/Capacitor/Models/HookServerManager.swift,apps/swift/Sources/Capacitor/Models/HookServerManager.swift,done,false,Cut Swift supervision over to the dedicated runtime service
+RW-111,swift-runtime-host-mode-rw111,apps/swift/Sources/Capacitor/Models/RuntimeHostMode.swift,apps/swift/Sources/Capacitor/Models/RuntimeHostMode.swift,done,false,Promote service mode from prototype to active cutover option
+RW-111,swift-runtime-service-tests-rw111,apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift,apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift,done,false,Verify Swift runtime service client behavior
+RW-111,swift-hookserver-service-tests-rw111,apps/swift/Tests/CapacitorTests/HookServerManagerTests.swift,apps/swift/Tests/CapacitorTests/HookServerManagerTests.swift,done,false,Verify service lifecycle supervision and cutover behavior
+RW-111,rewrite-ledger-rw111,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Track ingress and client cutover slice
+RW-111,rewrite-map-rw111,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track ingress and client cutover path mappings
+RW-112,hud-hook-runtime-client-delete-rw112,core/hud-hook/src/runtime_client.rs,core/hud-hook/src/runtime_client.rs,done,false,Delete remaining in-process runtime-host assumptions after service cutover
+RW-112,hud-hook-runtime-registration-rw112,core/hud-hook/src/serve.rs,core/hud-hook/src/serve.rs,done,false,Keep the service process on the registered runtime path after snapshot fallback removal
+RW-112,swift-runtime-client-cleanup-rw112,apps/swift/Sources/Capacitor/Models/RuntimeClient.swift,apps/swift/Sources/Capacitor/Models/RuntimeClient.swift,done,false,Delete snapshot-host fallback assumptions after service cutover
+RW-112,swift-hookserver-cleanup-rw112,apps/swift/Sources/Capacitor/Models/HookServerManager.swift,apps/swift/Sources/Capacitor/Models/HookServerManager.swift,done,false,Remove in-process ingress ownership assumptions after service cutover
+RW-112,swift-runtime-host-mode-cleanup-rw112,apps/swift/Sources/Capacitor/Models/RuntimeHostMode.swift,apps/swift/Sources/Capacitor/Models/RuntimeHostMode.swift,done,false,Collapse runtime host mode to the service steady state
+RW-112,swift-runtime-client-tests-rw112,apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift,apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift,done,false,Verify the service-only Swift runtime client steady state
+RW-112,swift-hookserver-tests-rw112,apps/swift/Tests/CapacitorTests/HookServerManagerTests.swift,apps/swift/Tests/CapacitorTests/HookServerManagerTests.swift,done,false,Verify the service-only supervisor steady state
+RW-112,architecture-doc-service-cutover-rw112,docs/ARCHITECTURE.md,docs/ARCHITECTURE.md,done,false,Publish the dedicated runtime service architecture as current state
+RW-112,session-state-matrix-service-cutover-rw112,docs/SESSION_STATE_RELEASE_MATRIX.md,docs/SESSION_STATE_RELEASE_MATRIX.md,done,false,Update operational evidence and cutover criteria after service adoption
+RW-112,runtime-reliability-guard-service-cutover-rw112,scripts/ci/runtime-reliability-guard.sh,scripts/ci/runtime-reliability-guard.sh,done,false,Ratchet away prototype-only assumptions once the service is live
+RW-112,rewrite-ledger-rw112,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Track removal of in-process runtime host assumptions
+RW-112,rewrite-map-rw112,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track removal-slice path mappings

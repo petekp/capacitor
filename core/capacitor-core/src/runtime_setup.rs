@@ -11,6 +11,9 @@
 //! and only mutates Capacitor-managed hook entries while preserving unrelated user settings.
 //! Installer writes are atomic (temp + rename) to avoid corrupting settings.
 
+use crate::runtime_contracts::{
+    managed_hook_event_contracts, ClaudeHookEventContract, HookTransport,
+};
 use crate::runtime_error::HudFfiError;
 use crate::runtime_storage::StorageConfig;
 use fs_err as fs;
@@ -26,26 +29,6 @@ const HOOK_HTTP_URL: &str = "http://127.0.0.1:7474/hook";
 
 /// Legacy marker for detecting old command-based hooks during cleanup/removal.
 const LEGACY_STATE_TRACKER_MARKER: &str = "hud-state-tracker";
-
-/// Hook event configuration: (event_name, needs_matcher)
-/// - `needs_matcher`: Tool events like PreToolUse/PostToolUse/PostToolUseFailure/PermissionRequest
-///   need `matcher: "*"` to match all tools.
-const HUD_HOOK_EVENTS: [(&str, bool); 14] = [
-    ("SessionStart", false),
-    ("SessionEnd", false),
-    ("UserPromptSubmit", false),
-    ("PreToolUse", true),
-    ("PostToolUse", true),
-    ("PostToolUseFailure", true),
-    ("PermissionRequest", true),
-    ("Stop", false),
-    ("PreCompact", false),
-    ("Notification", false),
-    ("SubagentStart", false),
-    ("SubagentStop", false),
-    ("TeammateIdle", false),
-    ("TaskCompleted", false),
-];
 
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct DependencyStatus {
@@ -266,7 +249,7 @@ impl SetupChecker {
             return HookStatus::BinaryBroken { reason };
         }
 
-        // Check if hooks are registered in settings
+        // Check if hooks are registered in settings and match the current contract.
         if !self.hooks_registered_in_settings() {
             return HookStatus::NotInstalled;
         }
@@ -396,10 +379,10 @@ impl SetupChecker {
             None => return false,
         };
 
-        for (event, needs_matcher) in HUD_HOOK_EVENTS {
+        for contract in managed_hook_event_contracts() {
             let has_hook = hooks
-                .get(event)
-                .map(|h| self.has_hud_hook_with_correct_config(h, needs_matcher))
+                .get(contract.event_name)
+                .map(|h| self.has_hud_hook_with_correct_config(h, contract))
                 .unwrap_or(false);
 
             if !has_hook {
@@ -410,16 +393,24 @@ impl SetupChecker {
         true
     }
 
-    fn has_hud_hook_with_correct_config(&self, hooks: &[HookConfig], needs_matcher: bool) -> bool {
+    fn has_hud_hook_with_correct_config(
+        &self,
+        hooks: &[HookConfig],
+        contract: &ClaudeHookEventContract,
+    ) -> bool {
         for hook_config in hooks {
             let has_managed_hook = hook_config
                 .hooks
                 .as_ref()
-                .map(|inner| inner.iter().any(is_managed_hook))
+                .map(|inner| {
+                    inner
+                        .iter()
+                        .any(|hook| inner_hook_matches_managed_contract(hook, contract))
+                })
                 .unwrap_or(false);
 
             if has_managed_hook {
-                if needs_matcher {
+                if contract.needs_matcher {
                     let matcher_ok = hook_config
                         .matcher
                         .as_ref()
@@ -482,32 +473,31 @@ impl SetupChecker {
         true
     }
 
-    /// Normalizes existing Capacitor-managed hooks to HTTP form.
+    /// Normalizes existing Capacitor-managed hooks to the current contract shape.
     ///
-    /// If an old command-based hook is found, it's upgraded in-place to an HTTP hook.
-    /// HTTP hooks that are already in canonical form are left as-is.
-    fn normalize_hud_hook_config(&self, hook_config: &mut HookConfig, needs_matcher: bool) -> bool {
+    /// Legacy managed command hooks and outdated managed transport choices are
+    /// rewritten in-place to the contract's current managed transport.
+    fn normalize_hud_hook_config(
+        &self,
+        hook_config: &mut HookConfig,
+        contract: &ClaudeHookEventContract,
+    ) -> bool {
         let mut has_hud_hook = false;
 
         if let Some(inner_hooks) = hook_config.hooks.as_mut() {
             for hook in inner_hooks.iter_mut() {
-                if is_hud_hook_url(hook.url.as_deref()) {
+                if inner_hook_matches_managed_contract(hook, contract) {
                     has_hud_hook = true;
                     continue;
                 }
-                if is_hud_hook_command(hook.command.as_deref()) {
-                    // Upgrade command hook → HTTP hook
-                    hook.hook_type = Some("http".to_string());
-                    hook.url = Some(HOOK_HTTP_URL.to_string());
-                    hook.command = None;
-                    hook.async_hook = None;
-                    hook.timeout = None;
+                if is_managed_hook(hook) {
+                    apply_managed_contract(hook, contract);
                     has_hud_hook = true;
                 }
             }
         }
 
-        if has_hud_hook && needs_matcher {
+        if has_hud_hook && contract.needs_matcher {
             let matcher_ok = hook_config
                 .matcher
                 .as_ref()
@@ -686,10 +676,10 @@ impl SetupChecker {
         })
     }
 
-    /// Registers HTTP hooks in settings.json for all managed events.
+    /// Registers managed hooks in settings.json for all contract-managed events.
     ///
-    /// Migrates any legacy flat entries, normalizes existing command hooks to HTTP,
-    /// and adds HTTP hook entries for any events that don't have one yet.
+    /// Migrates any legacy flat entries, normalizes existing managed hooks to the
+    /// current transport contract, and adds any missing managed hook entries.
     pub(crate) fn register_hooks_in_settings(&self) -> Result<(), HudFfiError> {
         let settings_path = self.storage.claude_settings_file();
         let mut settings = if settings_path.exists() {
@@ -709,33 +699,26 @@ impl SetupChecker {
             }
         }
 
-        for (event, needs_matcher) in HUD_HOOK_EVENTS {
-            let event_hooks = hooks.entry(event.to_string()).or_default();
+        for contract in managed_hook_event_contracts() {
+            let event_hooks = hooks.entry(contract.event_name.to_string()).or_default();
 
-            // Normalize any existing HUD hook entries (upgrades command → HTTP),
-            // then check if we already have one
+            // Normalize any existing managed entries to the current contract,
+            // then check if we already have a conforming one.
             let mut already_has_hud_hook = false;
             for hook_config in event_hooks.iter_mut() {
-                if self.normalize_hud_hook_config(hook_config, needs_matcher) {
+                if self.normalize_hud_hook_config(hook_config, contract) {
                     already_has_hud_hook = true;
                 }
             }
 
             if !already_has_hud_hook {
                 let hook_config = HookConfig {
-                    matcher: if needs_matcher {
+                    matcher: if contract.needs_matcher {
                         Some(serde_json::Value::String("*".to_string()))
                     } else {
                         None
                     },
-                    hooks: Some(vec![InnerHook {
-                        hook_type: Some("http".to_string()),
-                        command: None,
-                        url: Some(HOOK_HTTP_URL.to_string()),
-                        async_hook: None,
-                        timeout: None,
-                        other: HashMap::new(),
-                    }]),
+                    hooks: Some(vec![managed_inner_hook(contract)]),
                     other: HashMap::new(),
                 };
 
@@ -848,7 +831,7 @@ fn which_with_fallback(binary: &str, fallback_paths: &[&str]) -> Option<String> 
     None
 }
 
-/// Check if a command is the HUD hook binary.
+/// Check if a command is the legacy `hud-hook handle` command form.
 fn is_hud_hook_command(cmd: Option<&str>) -> bool {
     let command = match cmd {
         Some(c) => c.trim(),
@@ -885,7 +868,8 @@ fn is_managed_hook_command(cmd: Option<&str>) -> bool {
     let Some(command) = cmd else {
         return false;
     };
-    is_hud_hook_command(Some(command))
+    is_current_managed_hook_command(Some(command))
+        || is_hud_hook_command(Some(command))
         || command.contains("CAPACITOR_HOOK_MARKER=1")
         || command.contains(LEGACY_STATE_TRACKER_MARKER)
 }
@@ -906,6 +890,84 @@ fn is_managed_hook(hook: &InnerHook) -> bool {
             .map(str::trim)
             .filter(|c| !c.is_empty()),
     ) || is_hud_hook_url(hook.url.as_deref())
+}
+
+fn managed_command_hook_command() -> String {
+    format!(
+        "/bin/sh -c '/usr/bin/curl -fsS --connect-timeout 1 --max-time 1 -X POST \"{url}\" -H \"Content-Type: application/json\" --data-binary @- >/dev/null 2>&1 || true'",
+        url = HOOK_HTTP_URL
+    )
+}
+
+fn is_current_managed_hook_command(cmd: Option<&str>) -> bool {
+    let Some(command) = cmd else {
+        return false;
+    };
+    command.trim() == managed_command_hook_command()
+}
+
+fn managed_inner_hook(contract: &ClaudeHookEventContract) -> InnerHook {
+    match contract
+        .managed_transport
+        .expect("managed hook contract must declare a transport")
+    {
+        HookTransport::Http => InnerHook {
+            hook_type: Some("http".to_string()),
+            command: None,
+            url: Some(HOOK_HTTP_URL.to_string()),
+            async_hook: None,
+            timeout: None,
+            other: HashMap::new(),
+        },
+        HookTransport::Command => InnerHook {
+            hook_type: Some("command".to_string()),
+            command: Some(managed_command_hook_command()),
+            url: None,
+            async_hook: None,
+            timeout: None,
+            other: HashMap::new(),
+        },
+        HookTransport::Prompt | HookTransport::Agent => {
+            panic!("managed hook transport must be command or http")
+        }
+    }
+}
+
+fn apply_managed_contract(hook: &mut InnerHook, contract: &ClaudeHookEventContract) {
+    match contract
+        .managed_transport
+        .expect("managed hook contract must declare a transport")
+    {
+        HookTransport::Http => {
+            hook.hook_type = Some("http".to_string());
+            hook.url = Some(HOOK_HTTP_URL.to_string());
+            hook.command = None;
+            hook.async_hook = None;
+            hook.timeout = None;
+        }
+        HookTransport::Command => {
+            hook.hook_type = Some("command".to_string());
+            hook.command = Some(managed_command_hook_command());
+            hook.url = None;
+            hook.async_hook = None;
+            hook.timeout = None;
+        }
+        HookTransport::Prompt | HookTransport::Agent => {
+            panic!("managed hook transport must be command or http")
+        }
+    }
+}
+
+fn inner_hook_matches_managed_contract(
+    hook: &InnerHook,
+    contract: &ClaudeHookEventContract,
+) -> bool {
+    match contract.managed_transport {
+        Some(HookTransport::Http) => is_hud_hook_url(hook.url.as_deref()),
+        Some(HookTransport::Command) => is_current_managed_hook_command(hook.command.as_deref()),
+        Some(HookTransport::Prompt | HookTransport::Agent) => false,
+        None => false,
+    }
 }
 
 fn is_shell_assignment_token(token: &str) -> bool {
@@ -1070,6 +1132,35 @@ mod tests {
     }
 
     #[test]
+    fn test_register_hooks_in_settings_uses_command_for_command_only_events_and_http_for_http_events(
+    ) {
+        let (_temp, storage) = setup_test_env();
+        let checker = SetupChecker::new(storage.clone());
+
+        checker.register_hooks_in_settings().unwrap();
+
+        let settings_content = fs::read_to_string(storage.claude_settings_file()).unwrap();
+        let settings: serde_json::Value = serde_json::from_str(&settings_content).unwrap();
+
+        assert_eq!(
+            settings["hooks"]["SessionStart"][0]["hooks"][0]["type"],
+            "command"
+        );
+        assert!(settings["hooks"]["SessionStart"][0]["hooks"][0]["command"]
+            .as_str()
+            .is_some_and(|value| value.contains("/usr/bin/curl") && value.contains("/hook")));
+
+        assert_eq!(
+            settings["hooks"]["PreToolUse"][0]["hooks"][0]["type"],
+            "http"
+        );
+        assert_eq!(
+            settings["hooks"]["PreToolUse"][0]["hooks"][0]["url"],
+            HOOK_HTTP_URL
+        );
+    }
+
+    #[test]
     fn test_register_hooks_migrates_legacy_flat_entries() {
         let (_temp, storage) = setup_test_env();
         let checker = SetupChecker::new(storage.clone());
@@ -1108,14 +1199,14 @@ mod tests {
             settings["hooks"]["CustomEvent"][0]["hooks"][0]["command"],
             "custom.sh"
         );
-        // Legacy command hooks get normalized to HTTP hooks
+        // Legacy managed command hooks get normalized to the current contract shape.
         assert_eq!(
             settings["hooks"]["SessionStart"][0]["hooks"][0]["type"],
-            "http"
+            "command"
         );
         assert_eq!(
-            settings["hooks"]["SessionStart"][0]["hooks"][0]["url"],
-            HOOK_HTTP_URL
+            settings["hooks"]["SessionStart"][0]["hooks"][0]["command"],
+            managed_command_hook_command()
         );
         assert!(checker.hooks_registered_in_settings());
     }
@@ -1361,17 +1452,93 @@ mod tests {
         // Write settings with tool events but missing matcher
         let missing_matcher = r#"{
             "hooks": {
-                "SessionStart": [{"hooks": [{"type": "command", "command": "hud-hook handle"}]}],
-                "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "hud-hook handle"}]}],
-                "PostToolUse": [{"hooks": [{"type": "command", "command": "hud-hook handle"}]}],
-                "PostToolUseFailure": [{"hooks": [{"type": "command", "command": "hud-hook handle"}]}],
-                "Stop": [{"hooks": [{"type": "command", "command": "hud-hook handle"}]}]
+                "SessionStart": [{"hooks": [{"type": "command", "command": "/bin/sh -c '/usr/bin/curl -fsS --connect-timeout 1 --max-time 1 -X POST \"http://127.0.0.1:7474/hook\" -H \"Content-Type: application/json\" --data-binary @- >/dev/null 2>&1 || true'"}]}],
+                "SessionEnd": [{"hooks": [{"type": "command", "command": "/bin/sh -c '/usr/bin/curl -fsS --connect-timeout 1 --max-time 1 -X POST \"http://127.0.0.1:7474/hook\" -H \"Content-Type: application/json\" --data-binary @- >/dev/null 2>&1 || true'"}]}],
+                "UserPromptSubmit": [{"hooks": [{"type": "http", "url": "http://127.0.0.1:7474/hook"}]}],
+                "PreToolUse": [{"hooks": [{"type": "http", "url": "http://127.0.0.1:7474/hook"}]}],
+                "PostToolUse": [{"hooks": [{"type": "http", "url": "http://127.0.0.1:7474/hook"}]}],
+                "PostToolUseFailure": [{"hooks": [{"type": "http", "url": "http://127.0.0.1:7474/hook"}]}],
+                "PermissionRequest": [{"hooks": [{"type": "http", "url": "http://127.0.0.1:7474/hook"}]}],
+                "Stop": [{"hooks": [{"type": "http", "url": "http://127.0.0.1:7474/hook"}]}],
+                "PreCompact": [{"hooks": [{"type": "command", "command": "/bin/sh -c '/usr/bin/curl -fsS --connect-timeout 1 --max-time 1 -X POST \"http://127.0.0.1:7474/hook\" -H \"Content-Type: application/json\" --data-binary @- >/dev/null 2>&1 || true'"}]}],
+                "Notification": [{"hooks": [{"type": "command", "command": "/bin/sh -c '/usr/bin/curl -fsS --connect-timeout 1 --max-time 1 -X POST \"http://127.0.0.1:7474/hook\" -H \"Content-Type: application/json\" --data-binary @- >/dev/null 2>&1 || true'"}]}],
+                "SubagentStart": [{"hooks": [{"type": "command", "command": "/bin/sh -c '/usr/bin/curl -fsS --connect-timeout 1 --max-time 1 -X POST \"http://127.0.0.1:7474/hook\" -H \"Content-Type: application/json\" --data-binary @- >/dev/null 2>&1 || true'"}]}],
+                "SubagentStop": [{"hooks": [{"type": "http", "url": "http://127.0.0.1:7474/hook"}]}],
+                "TeammateIdle": [{"hooks": [{"type": "command", "command": "/bin/sh -c '/usr/bin/curl -fsS --connect-timeout 1 --max-time 1 -X POST \"http://127.0.0.1:7474/hook\" -H \"Content-Type: application/json\" --data-binary @- >/dev/null 2>&1 || true'"}]}],
+                "TaskCompleted": [{"hooks": [{"type": "http", "url": "http://127.0.0.1:7474/hook"}]}]
             }
         }"#;
         fs::write(storage.claude_settings_file(), missing_matcher).unwrap();
 
         // hooks_registered_in_settings should return false since matcher is missing
         assert!(!checker.hooks_registered_in_settings());
+    }
+
+    #[test]
+    fn test_hooks_registered_rejects_http_transport_for_command_only_event() {
+        let (_temp, storage) = setup_test_env();
+        let checker = SetupChecker::new(storage.clone());
+
+        let invalid = format!(
+            r#"{{
+                "hooks": {{
+                    "SessionStart": [{{
+                        "hooks": [{{"type": "http", "url": "{hook_url}"}}]
+                    }}],
+                    "SessionEnd": [{{
+                        "hooks": [{{"type": "command", "command": "{command}"}}]
+                    }}],
+                    "UserPromptSubmit": [{{
+                        "hooks": [{{"type": "http", "url": "{hook_url}"}}]
+                    }}],
+                    "PreToolUse": [{{
+                        "matcher": "*",
+                        "hooks": [{{"type": "http", "url": "{hook_url}"}}]
+                    }}],
+                    "PostToolUse": [{{
+                        "matcher": "*",
+                        "hooks": [{{"type": "http", "url": "{hook_url}"}}]
+                    }}],
+                    "PostToolUseFailure": [{{
+                        "matcher": "*",
+                        "hooks": [{{"type": "http", "url": "{hook_url}"}}]
+                    }}],
+                    "PermissionRequest": [{{
+                        "matcher": "*",
+                        "hooks": [{{"type": "http", "url": "{hook_url}"}}]
+                    }}],
+                    "Stop": [{{
+                        "hooks": [{{"type": "http", "url": "{hook_url}"}}]
+                    }}],
+                    "PreCompact": [{{
+                        "hooks": [{{"type": "command", "command": "{command}"}}]
+                    }}],
+                    "Notification": [{{
+                        "hooks": [{{"type": "command", "command": "{command}"}}]
+                    }}],
+                    "SubagentStart": [{{
+                        "hooks": [{{"type": "command", "command": "{command}"}}]
+                    }}],
+                    "SubagentStop": [{{
+                        "hooks": [{{"type": "http", "url": "{hook_url}"}}]
+                    }}],
+                    "TeammateIdle": [{{
+                        "hooks": [{{"type": "command", "command": "{command}"}}]
+                    }}],
+                    "TaskCompleted": [{{
+                        "hooks": [{{"type": "http", "url": "{hook_url}"}}]
+                    }}]
+                }}
+            }}"#,
+            hook_url = HOOK_HTTP_URL,
+            command = managed_command_hook_command(),
+        );
+        fs::write(storage.claude_settings_file(), invalid).unwrap();
+
+        assert!(
+            !checker.hooks_registered_in_settings(),
+            "SessionStart is command-only and should reject HTTP configuration"
+        );
     }
 
     #[test]
@@ -1416,7 +1583,10 @@ mod tests {
             other: HashMap::new(),
         };
 
-        let normalized = checker.normalize_hud_hook_config(&mut hook_config, false);
+        let contract = managed_hook_event_contracts()
+            .find(|contract| contract.event_name == "SessionStart")
+            .expect("managed contract exists");
+        let normalized = checker.normalize_hud_hook_config(&mut hook_config, contract);
         assert!(!normalized);
 
         let hook = hook_config
@@ -1451,7 +1621,7 @@ mod tests {
             "someOtherSetting": "value",
             "hooks": {
                 "SessionStart": [
-                    {"hooks": [{"type": "command", "command": "CAPACITOR_HOOK_MARKER=1 $HOME/.local/bin/hud-hook handle"}]},
+                    {"hooks": [{"type": "command", "command": "/bin/sh -c '/usr/bin/curl -fsS --connect-timeout 1 --max-time 1 -X POST \"http://127.0.0.1:7474/hook\" -H \"Content-Type: application/json\" --data-binary @- >/dev/null 2>&1 || true'"}]},
                     {"hooks": [{"type": "command", "command": "custom-start.sh"}]}
                 ],
                 "SessionEnd": [

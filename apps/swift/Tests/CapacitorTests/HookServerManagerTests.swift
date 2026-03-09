@@ -70,7 +70,7 @@ final class HookServerManagerTests: XCTestCase {
                     }
                     return process
                 },
-                fetchHealth: { _ in
+                fetchHealth: { _, _ in
                     await withCheckedContinuation { checkedContinuation in
                         continuation = checkedContinuation
                     }
@@ -139,6 +139,12 @@ final class HookServerManagerTests: XCTestCase {
                 isProcessAlive: { _ in true },
                 isManagedServerProcess: { _, _ in true },
                 terminatePid: { terminatedPids.append($0) },
+                loadRuntimeServiceConnection: { _ in
+                    RuntimeServiceConnection(
+                        baseURL: URL(string: "http://127.0.0.1:8125")!,
+                        bearerToken: "persisted-token",
+                    )
+                },
                 launchProcess: { _, _, _ in
                     launchCount += 1
                     return FakeHookServerProcess(pid: 77)
@@ -157,16 +163,115 @@ final class HookServerManagerTests: XCTestCase {
         XCTAssertEqual(launchCount, 0)
     }
 
+    func testStartIfNeededLaunchesServiceBootstrap() {
+        var launchCount = 0
+        var capturedEnvironment: [String: String] = [:]
+
+        let manager = HookServerManager(
+            port: 8126,
+            binaryPath: "/tmp/hud-hook",
+            dependencies: makeDependencies(
+                launchProcess: { _, _, environment in
+                    launchCount += 1
+                    capturedEnvironment = environment
+                    return FakeHookServerProcess(pid: 88)
+                },
+            ),
+        )
+
+        manager.startIfNeeded()
+
+        XCTAssertEqual(launchCount, 1)
+        XCTAssertEqual(manager.status, .starting)
+        XCTAssertEqual(capturedEnvironment["CAPACITOR_RUNTIME_SERVICE_BOOTSTRAP"], "1")
+        XCTAssertEqual(capturedEnvironment["CAPACITOR_RUNTIME_SERVICE_PORT"], "8126")
+        XCTAssertNotNil(capturedEnvironment["CAPACITOR_RUNTIME_SERVICE_TOKEN"])
+        XCTAssertNil(capturedEnvironment["CAPACITOR_RUNTIME_HOST_MODE"])
+    }
+
+    func testServiceHealthCheckUsesBootstrapAuthToken() async {
+        let process = FakeHookServerProcess(pid: 91)
+        var receivedAuthToken: String?
+
+        let manager = HookServerManager(
+            port: 8127,
+            binaryPath: "/tmp/hud-hook",
+            dependencies: makeDependencies(
+                launchProcess: { _, _, _ in process },
+                fetchHealth: { _, authToken in
+                    receivedAuthToken = authToken
+                    return true
+                },
+            ),
+        )
+
+        manager.startIfNeeded()
+        manager.checkHealth()
+
+        for _ in 0 ..< 20 where receivedAuthToken == nil {
+            await _Concurrency.Task.yield()
+        }
+
+        for _ in 0 ..< 20 where manager.status != .running {
+            await _Concurrency.Task.yield()
+        }
+
+        XCTAssertNotNil(receivedAuthToken)
+        XCTAssertEqual(manager.status, .running)
+    }
+
+    func testServiceModeAdoptsExistingRuntimeServiceAndUsesPersistedAuthToken() async {
+        var launchCount = 0
+        var receivedAuthToken: String?
+
+        let manager = HookServerManager(
+            port: 8128,
+            binaryPath: "/tmp/hud-hook",
+            dependencies: makeDependencies(
+                readPidFile: { _ in 654 },
+                isProcessAlive: { _ in true },
+                isManagedServerProcess: { _, _ in true },
+                loadRuntimeServiceConnection: { _ in
+                    RuntimeServiceConnection(
+                        baseURL: URL(string: "http://127.0.0.1:8128")!,
+                        bearerToken: "persisted-token",
+                    )
+                },
+                launchProcess: { _, _, _ in
+                    launchCount += 1
+                    return FakeHookServerProcess(pid: 92)
+                },
+                fetchHealth: { _, authToken in
+                    receivedAuthToken = authToken
+                    return true
+                },
+            ),
+        )
+
+        manager.startIfNeeded()
+        XCTAssertEqual(launchCount, 0)
+        XCTAssertEqual(manager.status, .starting)
+
+        manager.checkHealth()
+        for _ in 0 ..< 20 where receivedAuthToken == nil || manager.status != .running {
+            await _Concurrency.Task.yield()
+        }
+
+        XCTAssertEqual(receivedAuthToken, "persisted-token")
+        XCTAssertEqual(manager.status, .running)
+    }
+
     private func makeDependencies(
         readPidFile: @escaping (String) -> Int32? = { _ in nil },
         removePidFile: @escaping (String) -> Void = { _ in },
         isProcessAlive: @escaping (Int32) -> Bool = { _ in true },
         isManagedServerProcess: @escaping (Int32, String) -> Bool = { _, _ in true },
         terminatePid: @escaping (Int32) -> Void = { _ in },
+        loadRuntimeServiceConnection: @escaping (UInt16) -> RuntimeServiceConnection? = { _ in nil },
         launchProcess: @escaping (String, UInt16, [String: String]) throws -> any HookServerProcessControlling = { _, _, _ in
             FakeHookServerProcess(pid: 11)
         },
-        fetchHealth: @escaping (UInt16) async -> Bool = { _ in true },
+        fetchHealth: @escaping (UInt16, String?) async -> Bool = { _, _ in true },
     ) -> HookServerManagerDependencies {
         HookServerManagerDependencies(
             isExecutableFile: { _ in true },
@@ -175,6 +280,7 @@ final class HookServerManagerTests: XCTestCase {
             isProcessAlive: isProcessAlive,
             isManagedServerProcess: isManagedServerProcess,
             terminatePid: terminatePid,
+            loadRuntimeServiceConnection: loadRuntimeServiceConnection,
             launchProcess: launchProcess,
             fetchHealth: fetchHealth,
         )

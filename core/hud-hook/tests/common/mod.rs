@@ -45,6 +45,29 @@ impl ServerGuard {
         Self { child }
     }
 
+    /// Spawn `hud-hook serve` in runtime-service bootstrap mode.
+    pub fn spawn_service_bootstrap(
+        port: u16,
+        home: &Path,
+        snapshot_path: &Path,
+        auth_token: &str,
+    ) -> Self {
+        let child = Command::new(env!("CARGO_BIN_EXE_hud-hook"))
+            .args(["serve", "--port", &port.to_string()])
+            .env("HOME", home)
+            .env("CAPACITOR_CORE_SNAPSHOT", snapshot_path)
+            .env("CAPACITOR_CORE_ENABLED", "1")
+            .env("CAPACITOR_RUNTIME_SERVICE_BOOTSTRAP", "1")
+            .env("CAPACITOR_RUNTIME_SERVICE_PORT", port.to_string())
+            .env("CAPACITOR_RUNTIME_SERVICE_TOKEN", auth_token)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("spawn hud-hook serve bootstrap");
+
+        Self { child }
+    }
+
     /// Wait for the server's /health endpoint to respond, panics after timeout.
     ///
     /// Uses the health endpoint rather than raw TCP connect because the PID file
@@ -54,6 +77,26 @@ impl ServerGuard {
         let deadline = Instant::now() + Duration::from_secs(5);
         while Instant::now() < deadline {
             if let Ok((200, body)) = try_http_request(port, "GET", "/health", None) {
+                if body.contains("\"ok\"") {
+                    return;
+                }
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        panic!("Server on port {port} did not become healthy within 5s");
+    }
+
+    pub fn wait_ready_with_auth(port: u16, auth_token: &str) {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let header_value = format!("Bearer {auth_token}");
+        while Instant::now() < deadline {
+            if let Ok((200, body)) = try_http_request_with_headers(
+                port,
+                "GET",
+                "/health",
+                &[("Authorization", header_value.as_str())],
+                None,
+            ) {
                 if body.contains("\"ok\"") {
                     return;
                 }
@@ -75,6 +118,16 @@ impl Drop for ServerGuard {
 /// Panics if the connection fails — use `try_http_request` for polling.
 pub fn http_request(port: u16, method: &str, path: &str, body: Option<&str>) -> (u16, String) {
     try_http_request(port, method, path, body).expect("HTTP request failed")
+}
+
+pub fn http_request_with_headers(
+    port: u16,
+    method: &str,
+    path: &str,
+    headers: &[(&str, &str)],
+    body: Option<&str>,
+) -> (u16, String) {
+    try_http_request_with_headers(port, method, path, headers, body).expect("HTTP request failed")
 }
 
 /// Send a raw HTTP request string and return (status_code, body).
@@ -115,11 +168,26 @@ fn try_http_request(
     path: &str,
     body: Option<&str>,
 ) -> Result<(u16, String), std::io::Error> {
+    try_http_request_with_headers(port, method, path, &[], body)
+}
+
+fn try_http_request_with_headers(
+    port: u16,
+    method: &str,
+    path: &str,
+    headers: &[(&str, &str)],
+    body: Option<&str>,
+) -> Result<(u16, String), std::io::Error> {
     let body_bytes = body.unwrap_or("");
+    let header_blob = headers
+        .iter()
+        .map(|(name, value)| format!("{name}: {value}\r\n"))
+        .collect::<String>();
     let request = format!(
         "{method} {path} HTTP/1.1\r\n\
          Host: 127.0.0.1:{port}\r\n\
          Content-Type: application/json\r\n\
+         {header_blob}\
          Content-Length: {}\r\n\
          Connection: close\r\n\
          \r\n\
@@ -186,4 +254,16 @@ fn parse_http_response(response: &str) -> (u16, String) {
 pub fn read_snapshot(snapshot_path: &Path) -> serde_json::Value {
     let payload = std::fs::read_to_string(snapshot_path).expect("read snapshot file");
     serde_json::from_str(&payload).expect("valid snapshot json")
+}
+
+/// Run `hud-hook cwd` with a specific HOME and return the exit status.
+pub fn run_cwd(home: &Path, path: &str, pid: u32, tty: &str) -> std::process::ExitStatus {
+    Command::new(env!("CARGO_BIN_EXE_hud-hook"))
+        .args(["cwd", path, &pid.to_string(), tty])
+        .env("HOME", home)
+        .env("CAPACITOR_CORE_ENABLED", "1")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .expect("run hud-hook cwd")
 }

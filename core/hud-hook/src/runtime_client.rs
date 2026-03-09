@@ -1,24 +1,30 @@
-//! Runtime client helper for sending hook events directly into capacitor-core.
+//! Runtime client helper for sending hook and shell events into the local runtime service.
 //!
-//! This replaces legacy IPC with direct CoreRuntime ingestion while preserving
-//! hook-facing behavior and gating semantics.
+//! Outside the service process this client discovers the authenticated local
+//! runtime endpoint. Inside `hud-hook serve` it reuses the registered runtime
+//! instance directly so the adapter and runtime stay on one semantic path.
 
 use capacitor_core::{
     domain::{HookEventType, IngestHookEventCommand, IngestShellSignalCommand},
+    runtime_service::{RuntimeServiceEndpoint, RUNTIME_SERVICE_DEFAULT_PORT},
     runtime_types::ParentApp,
     CoreRuntime,
 };
 use chrono::Utc;
 use rand::RngCore;
-use std::fs::{self, OpenOptions};
-use std::os::fd::AsRawFd;
-use std::path::{Path, PathBuf};
+use std::sync::{Arc, OnceLock};
 
 const ENABLE_ENV: &str = "CAPACITOR_CORE_ENABLED";
-const SNAPSHOT_ENV: &str = "CAPACITOR_CORE_SNAPSHOT";
-const DEFAULT_SNAPSHOT_RELATIVE_PATH: &str = ".capacitor/runtime/app_snapshot.json";
 
 use crate::hook_types::{HookEvent, HookInput};
+
+static REGISTERED_SERVICE_RUNTIME: OnceLock<Arc<CoreRuntime>> = OnceLock::new();
+
+pub fn register_service_runtime(runtime: Arc<CoreRuntime>) -> Result<(), String> {
+    REGISTERED_SERVICE_RUNTIME
+        .set(runtime)
+        .map_err(|_| "runtime service already registered in this process".to_string())
+}
 
 pub fn send_handle_event(
     event: &HookEvent,
@@ -81,102 +87,47 @@ pub fn runtime_enabled() -> bool {
 }
 
 fn send_event(command: IngestHookEventCommand) -> Result<(), String> {
-    with_runtime_lock(|runtime| {
-        runtime
-            .ingest_hook_event(command.clone())
-            .map_err(|error| error.to_string())
+    match runtime_transport()? {
+        RuntimeTransport::Service(endpoint) => endpoint.ingest_hook_event(&command).map(|_| ()),
+        RuntimeTransport::RegisteredService(runtime) => runtime
+            .ingest_hook_event(command)
             .map(|_| ())
-    })
+            .map_err(|error| error.to_string()),
+    }
 }
 
 fn send_shell_signal(command: IngestShellSignalCommand) -> Result<(), String> {
-    with_runtime_lock(|runtime| {
-        runtime
-            .ingest_shell_signal(command.clone())
-            .map_err(|error| error.to_string())
+    match runtime_transport()? {
+        RuntimeTransport::Service(endpoint) => endpoint.ingest_shell_signal(&command).map(|_| ()),
+        RuntimeTransport::RegisteredService(runtime) => runtime
+            .ingest_shell_signal(command)
             .map(|_| ())
-    })
+            .map_err(|error| error.to_string()),
+    }
 }
 
-fn with_runtime_lock<F>(mut operation: F) -> Result<(), String>
-where
-    F: FnMut(&CoreRuntime) -> Result<(), String>,
-{
+enum RuntimeTransport {
+    Service(RuntimeServiceEndpoint),
+    RegisteredService(Arc<CoreRuntime>),
+}
+
+fn runtime_transport() -> Result<RuntimeTransport, String> {
     if !runtime_enabled() {
         return Err("Core runtime disabled".to_string());
     }
 
-    let snapshot_path = snapshot_path()?;
-    let _lock = RuntimeFileLock::acquire(&snapshot_path)?;
-
-    let runtime = CoreRuntime::new_with_snapshot_file(snapshot_path.to_string_lossy().to_string())
-        .map_err(|error| error.to_string())?;
-
-    operation(runtime.as_ref())
-}
-
-fn snapshot_path() -> Result<PathBuf, String> {
-    if let Ok(path) = std::env::var(SNAPSHOT_ENV) {
-        let trimmed = path.trim();
-        if !trimmed.is_empty() {
-            return Ok(PathBuf::from(trimmed));
-        }
+    if let Some(runtime) = REGISTERED_SERVICE_RUNTIME.get() {
+        return Ok(RuntimeTransport::RegisteredService(Arc::clone(runtime)));
     }
 
+    runtime_service_endpoint()?
+        .map(RuntimeTransport::Service)
+        .ok_or_else(|| "runtime service endpoint unavailable".to_string())
+}
+
+fn runtime_service_endpoint() -> Result<Option<RuntimeServiceEndpoint>, String> {
     let home = dirs::home_dir().ok_or("Cannot determine home directory")?;
-    Ok(home.join(DEFAULT_SNAPSHOT_RELATIVE_PATH))
-}
-
-struct RuntimeFileLock {
-    file: std::fs::File,
-}
-
-impl RuntimeFileLock {
-    fn acquire(snapshot_path: &Path) -> Result<Self, String> {
-        let lock_path = snapshot_path.with_extension("lock");
-
-        if let Some(parent) = lock_path.parent() {
-            fs::create_dir_all(parent)
-                .map_err(|error| format!("Failed to create lock dir: {error}"))?;
-        }
-
-        let file = OpenOptions::new()
-            .create(true)
-            .truncate(false)
-            .read(true)
-            .write(true)
-            .open(&lock_path)
-            .map_err(|error| format!("Failed to open lock file: {error}"))?;
-
-        let lock_result = {
-            // SAFETY: `flock` is called with a valid file descriptor obtained from `File`.
-            // We hold the file handle for the lifetime of `RuntimeFileLock`, so the descriptor
-            // stays valid while locked.
-            #[allow(unsafe_code)]
-            unsafe {
-                libc::flock(file.as_raw_fd(), libc::LOCK_EX)
-            }
-        };
-
-        if lock_result != 0 {
-            return Err(format!(
-                "Failed to acquire runtime lock: {}",
-                std::io::Error::last_os_error()
-            ));
-        }
-
-        Ok(Self { file })
-    }
-}
-
-impl Drop for RuntimeFileLock {
-    fn drop(&mut self) {
-        // SAFETY: descriptor is valid while `self.file` is alive.
-        #[allow(unsafe_code)]
-        unsafe {
-            libc::flock(self.file.as_raw_fd(), libc::LOCK_UN);
-        }
-    }
+    RuntimeServiceEndpoint::discover(&home, RUNTIME_SERVICE_DEFAULT_PORT)
 }
 
 fn event_type_for_hook(event: &HookEvent) -> Option<HookEventType> {

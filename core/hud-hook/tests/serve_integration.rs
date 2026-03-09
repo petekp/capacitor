@@ -6,7 +6,8 @@
 mod common;
 
 use common::{
-    free_port, http_request, raw_http_request, read_snapshot, unique_temp_dir, ServerGuard,
+    free_port, http_request, http_request_with_headers, raw_http_request, read_snapshot, run_cwd,
+    unique_temp_dir, ServerGuard,
 };
 use std::fs;
 
@@ -22,6 +23,124 @@ fn health_endpoint_returns_ok() {
     let (status, body) = http_request(port, "GET", "/health", None);
     assert_eq!(status, 200);
     assert!(body.contains(r#""status":"ok"#), "body: {body}");
+}
+
+#[test]
+fn bootstrap_health_requires_auth_and_reports_service_mode() {
+    let temp_dir = unique_temp_dir("serve-bootstrap-health");
+    let snapshot_path = temp_dir.join("snapshot.json");
+    let runtime_dir = temp_dir.join(".capacitor/runtime");
+    let port = free_port();
+    let auth_token = "secret-token";
+
+    let _server = ServerGuard::spawn_service_bootstrap(port, &temp_dir, &snapshot_path, auth_token);
+    ServerGuard::wait_ready_with_auth(port, auth_token);
+
+    let (unauthorized_status, unauthorized_body) = http_request(port, "GET", "/health", None);
+    assert_eq!(unauthorized_status, 401, "body: {unauthorized_body}");
+
+    let authorization = format!("Bearer {auth_token}");
+    let (status, body) = http_request_with_headers(
+        port,
+        "GET",
+        "/health",
+        &[("Authorization", authorization.as_str())],
+        None,
+    );
+    assert_eq!(status, 200, "body: {body}");
+    assert!(body.contains(r#""status":"ok""#), "body: {body}");
+    assert!(
+        body.contains(r#""service_mode":"bootstrap_only""#),
+        "body: {body}"
+    );
+    assert!(body.contains(r#""auth_mode":"bearer""#), "body: {body}");
+
+    let token_path = runtime_dir.join(format!("runtime-service-{port}.token"));
+    let persisted_token = fs::read_to_string(&token_path).expect("read runtime service token");
+    assert_eq!(persisted_token, auth_token);
+}
+
+#[test]
+fn cwd_command_discovers_runtime_service_and_runtime_snapshot_reports_shell_state() {
+    let temp_dir = unique_temp_dir("serve-runtime-snapshot");
+    let snapshot_path = temp_dir.join("snapshot.json");
+    let port = free_port();
+    let auth_token = "snapshot-token";
+
+    let _server = ServerGuard::spawn_service_bootstrap(port, &temp_dir, &snapshot_path, auth_token);
+    ServerGuard::wait_ready_with_auth(port, auth_token);
+
+    let status = run_cwd(
+        &temp_dir,
+        "/tmp/runtime-service-project",
+        4242,
+        "/dev/ttys123",
+    );
+    assert!(
+        status.success(),
+        "hud-hook cwd should succeed via runtime service"
+    );
+
+    let authorization = format!("Bearer {auth_token}");
+    let (snapshot_status, snapshot_body) = http_request_with_headers(
+        port,
+        "GET",
+        "/runtime/snapshot",
+        &[("Authorization", authorization.as_str())],
+        None,
+    );
+    assert_eq!(snapshot_status, 200, "body: {snapshot_body}");
+
+    let snapshot_json: serde_json::Value =
+        serde_json::from_str(&snapshot_body).expect("runtime snapshot json");
+    assert_eq!(snapshot_json["shells"].as_array().map(Vec::len), Some(1));
+    assert_eq!(snapshot_json["shells"][0]["pid"].as_u64(), Some(4242));
+    assert_eq!(
+        snapshot_json["shells"][0]["cwd"].as_str(),
+        Some("/tmp/runtime-service-project")
+    );
+}
+
+#[test]
+fn hook_endpoint_and_runtime_snapshot_share_service_runtime_state() {
+    let temp_dir = unique_temp_dir("serve-runtime-hook");
+    let snapshot_path = temp_dir.join("snapshot.json");
+    let port = free_port();
+    let auth_token = "hook-token";
+
+    let _server = ServerGuard::spawn_service_bootstrap(port, &temp_dir, &snapshot_path, auth_token);
+    ServerGuard::wait_ready_with_auth(port, auth_token);
+
+    let payload = serde_json::json!({
+        "hook_event_name": "UserPromptSubmit",
+        "session_id": "runtime-service-session",
+        "cwd": "/tmp/runtime-service-project"
+    });
+
+    let (hook_status, hook_body) = http_request(port, "POST", "/hook", Some(&payload.to_string()));
+    assert_eq!(hook_status, 200, "body: {hook_body}");
+
+    let authorization = format!("Bearer {auth_token}");
+    let (snapshot_status, snapshot_body) = http_request_with_headers(
+        port,
+        "GET",
+        "/runtime/snapshot",
+        &[("Authorization", authorization.as_str())],
+        None,
+    );
+    assert_eq!(snapshot_status, 200, "body: {snapshot_body}");
+
+    let snapshot_json: serde_json::Value =
+        serde_json::from_str(&snapshot_body).expect("runtime snapshot json");
+    assert_eq!(snapshot_json["sessions"].as_array().map(Vec::len), Some(1));
+    assert_eq!(
+        snapshot_json["sessions"][0]["session_id"].as_str(),
+        Some("runtime-service-session")
+    );
+    assert_eq!(
+        snapshot_json["sessions"][0]["state"].as_str(),
+        Some("working")
+    );
 }
 
 #[test]

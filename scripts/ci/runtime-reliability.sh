@@ -20,6 +20,12 @@ run_replay_gate() {
   bash scripts/ci/session-state-gate.sh
 }
 
+run_shadow_parity_gate() {
+  echo ""
+  echo "[runtime-reliability] shadow parity gate"
+  cargo test -p capacitor-core --test replay_diff replay_diff_shadow_snapshot_read_model_matches_runtime_snapshot
+}
+
 run_soak_bench() {
   echo ""
   echo "[runtime-reliability] hem shadow soak bench"
@@ -31,11 +37,13 @@ case "${mode}" in
     echo "Runtime reliability suite (pre-merge CI)"
     run_guard
     run_replay_gate
+    run_shadow_parity_gate
     ;;
   nightly)
     echo "Runtime reliability suite (nightly)"
     run_guard
     run_replay_gate
+    run_shadow_parity_gate
     run_soak_bench
     ;;
   *)

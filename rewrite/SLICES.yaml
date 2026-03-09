@@ -3660,3 +3660,396 @@ slices:
       - "Moving the runtime reliability guard out of .claude can change ratchet counts if the guard starts matching itself; mitigation is excluding the operational guard path explicitly."
       - "Removing tracked planning artifacts can break newcomer references if active docs still point at them; mitigation is updating all live script and doc references in the same slice."
     notes: "Deletes tracked audit/migration/exploration artifacts, removes the unreferenced agent changelog, makes runtime reliability guard operational instead of .claude-scoped, consolidates UniFFI artifacts to canonical Swift package paths, and removes confirmed-dead Swift wrappers/branches."
+
+  - id: RW-102
+    name: "Hook Runtime Review-and-Lock Package"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-101
+    touched_paths:
+      - docs/plans/2026-03-09-hook-runtime-pre-migration-design-package.md
+      - docs/plans/2026-03-09-hook-runtime-capability-matrix.md
+      - docs/plans/2026-03-09-hook-runtime-stress-test.md
+      - rewrite/DECISIONS.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added:
+        - docs/plans/2026-03-09-hook-runtime-pre-migration-design-package.md
+        - docs/plans/2026-03-09-hook-runtime-capability-matrix.md
+        - docs/plans/2026-03-09-hook-runtime-stress-test.md
+      changed:
+        - rewrite/DECISIONS.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios:
+      - rewrite guard status passes after design package lock
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "The process-boundary decision remains intentionally open; later slices must not treat a helper process as already approved."
+      - "The capability matrix is sourced from current Claude docs and may need refresh if the upstream contract changes before implementation starts."
+    notes: "Locks the pre-migration design package, capability matrix, stress-test appendix, and rewrite decisions that are mature enough to govern the migration before implementation begins."
+
+  - id: RW-103
+    name: "Machine-Checkable Claude Hook Contract"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-102
+    touched_paths:
+      - core/capacitor-core/src/runtime_contracts/mod.rs
+      - core/capacitor-core/src/runtime_contracts/claude_hooks.rs
+      - core/capacitor-core/src/runtime_setup.rs
+      - core/capacitor-core/src/lib.rs
+      - core/capacitor-core/tests/claude_hook_contract.rs
+      - docs/plans/2026-03-09-hook-runtime-capability-matrix.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added:
+        - core/capacitor-core/src/runtime_contracts/mod.rs
+        - core/capacitor-core/src/runtime_contracts/claude_hooks.rs
+        - core/capacitor-core/tests/claude_hook_contract.rs
+      changed:
+        - core/capacitor-core/src/runtime_setup.rs
+        - core/capacitor-core/src/lib.rs
+        - docs/plans/2026-03-09-hook-runtime-capability-matrix.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios:
+      - hook install fix flow
+      - hook health reflects invalid event and transport combinations
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Upstream Claude hook docs may change while the artifact is being authored; mitigation is recording the checked date and making the artifact versioned."
+    notes: "Adds a checked-in Claude hook contract module, switches managed hook install and health validation to the shared artifact, introduces a mixed transport policy that uses command forwarding for command-only events, and adds contract coverage plus targeted runtime_setup regression tests."
+
+  - id: RW-104
+    name: "Observation Journal and Read Model Scaffold"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-102
+      - RW-103
+    touched_paths:
+      - core/capacitor-core/src/observation/mod.rs
+      - core/capacitor-core/src/projection/mod.rs
+      - core/capacitor-core/src/storage/mod.rs
+      - core/capacitor-core/src/storage/observation_journal.rs
+      - core/capacitor-core/src/lib.rs
+      - core/capacitor-core/tests/replay_diff.rs
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added:
+        - core/capacitor-core/src/observation/mod.rs
+        - core/capacitor-core/src/projection/mod.rs
+        - core/capacitor-core/src/storage/observation_journal.rs
+      changed:
+        - core/capacitor-core/src/storage/mod.rs
+        - core/capacitor-core/src/lib.rs
+        - core/capacitor-core/tests/replay_diff.rs
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios:
+      - session_state_transition_chain
+      - hook_burst_out_of_order
+    smoke_scenarios:
+      - live state update while coding
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Dual-store complexity can grow if derived snapshots remain too long; mitigation is making the observation journal authoritative from the first slice that introduces it."
+    notes: "Adds a host-agnostic observation envelope, an in-memory observation journal seam, and a snapshot read-model projector scaffold. Replay-oriented tests now exercise the new structure, while the existing snapshot/reducer pipeline remains the runtime authority."
+
+  - id: RW-105
+    name: "Host-Agnostic Runtime Boundary Prototype"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-102
+      - RW-103
+      - RW-104
+    touched_paths:
+      - core/capacitor-core/src/runtime_host/mod.rs
+      - core/hud-hook/src/runtime_client.rs
+      - apps/swift/Sources/Capacitor/Models/RuntimeHostMode.swift
+      - apps/swift/Sources/Capacitor/Models/RuntimeClient.swift
+      - apps/swift/Sources/Capacitor/Models/HookServerManager.swift
+      - apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift
+      - apps/swift/Tests/CapacitorTests/HookServerManagerTests.swift
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added:
+        - core/capacitor-core/src/runtime_host/mod.rs
+        - apps/swift/Sources/Capacitor/Models/RuntimeHostMode.swift
+      changed:
+        - core/hud-hook/src/runtime_client.rs
+        - apps/swift/Sources/Capacitor/Models/RuntimeClient.swift
+        - apps/swift/Sources/Capacitor/Models/HookServerManager.swift
+        - apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift
+        - apps/swift/Tests/CapacitorTests/HookServerManagerTests.swift
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios:
+      - session_state_transition_chain
+    smoke_scenarios:
+      - app restart while Claude continues working
+      - hook install fix flow
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "The prototype can be misread as approval for a dedicated service mode even though that mode is intentionally non-functional; mitigation is keeping the prototype branch explicit and test-covered as unavailable/skip-only."
+    notes: "Introduces a host-agnostic runtime boundary on both Rust and Swift surfaces. The active mode remains the current in-process/snapshot path, while the service prototype mode now exists as an explicit, test-covered boundary that does not yet own ingress or reads."
+
+  - id: RW-106
+    name: "Shadow Parity Harness and Cutover Criteria"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-103
+      - RW-104
+    touched_paths:
+      - core/capacitor-core/tests/replay_diff.rs
+      - core/capacitor-core/tests/fixtures/replay/*
+      - scripts/ci/runtime-reliability-guard.sh
+      - scripts/ci/runtime-reliability.sh
+      - docs/SESSION_STATE_RELEASE_MATRIX.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - core/capacitor-core/tests/replay_diff.rs
+        - core/capacitor-core/tests/fixtures/replay/*
+        - scripts/ci/runtime-reliability-guard.sh
+        - scripts/ci/runtime-reliability.sh
+        - docs/SESSION_STATE_RELEASE_MATRIX.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios:
+      - session_state_transition_chain
+      - hook_burst_out_of_order
+      - activation_routing_attached_detached_unavailable
+    smoke_scenarios:
+      - live state update while coding
+      - click project card and restore terminal/tmux context
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Shadow mode can produce noisy, unactionable diffs unless comparison outputs are normalized at the reason-code level."
+      - "The runtime reliability ratchets must evolve with intentional contract changes or the operational wrapper will fail for the wrong reason."
+    notes: "Adds an explicit shadow parity diff harness to replay tests, wires the parity check into the runtime reliability wrapper, updates the release matrix to require parity evidence, and ratchets command-hook creation at the new contract-correct baseline."
+
+  - id: RW-108
+    name: "Durable Audit Artifact Policy Refinement"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-102
+    touched_paths:
+      - .gitignore
+      - docs/audits/README.md
+      - docs/audits/2026-03-09-claude-hook-integration-audit.md
+      - docs/plans/2026-03-09-hook-runtime-pre-migration-design-package.md
+      - rewrite/DECISIONS.md
+      - rewrite/PLAYBOOK.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added:
+        - docs/audits/README.md
+        - docs/audits/2026-03-09-claude-hook-integration-audit.md
+      changed:
+        - .gitignore
+        - docs/plans/2026-03-09-hook-runtime-pre-migration-design-package.md
+        - rewrite/DECISIONS.md
+        - rewrite/PLAYBOOK.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios:
+      - rewrite guard status passes after audit artifact policy refinement
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Future sessions may confuse local scratch and durable docs unless the distinction stays explicit in rewrite guidance and ignore comments."
+    notes: "Refines the recent repo-hygiene policy by keeping `.claude/*` local-only while restoring a tracked home for durable audit outputs under `docs/audits/`."
+
+  - id: RW-109
+    name: "Dedicated Runtime Service Decision Lock"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-105
+      - RW-106
+    touched_paths:
+      - docs/architecture-decisions/004-dedicated-local-runtime-service.md
+      - docs/plans/2026-03-09-hook-runtime-pre-migration-design-package.md
+      - rewrite/DECISIONS.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added:
+        - docs/architecture-decisions/004-dedicated-local-runtime-service.md
+      changed:
+        - docs/plans/2026-03-09-hook-runtime-pre-migration-design-package.md
+        - rewrite/DECISIONS.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios:
+      - rewrite guard status passes after process model decision lock
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "If the service split stalls, the repo could carry a locked target without an implementation runway; mitigation is seeding explicit service-cutover slices in the same turn."
+    notes: "Locks the process model decision in favor of a dedicated local runtime service and records it in both rewrite governance and ADR form."
+
+  - id: RW-110
+    name: "Dedicated Runtime Service Bootstrap"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-109
+      - RW-105
+    touched_paths:
+      - core/capacitor-core/src/lib.rs
+      - core/capacitor-core/src/runtime_service/*
+      - core/capacitor-core/src/runtime_host/mod.rs
+      - core/hud-hook/src/serve.rs
+      - core/hud-hook/tests/common/mod.rs
+      - core/hud-hook/tests/serve_integration.rs
+      - apps/swift/Sources/Capacitor/Models/HookServerManager.swift
+      - apps/swift/Tests/CapacitorTests/HookServerManagerTests.swift
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added:
+        - core/capacitor-core/src/runtime_service/*
+      changed:
+        - core/capacitor-core/src/lib.rs
+        - core/capacitor-core/src/runtime_host/mod.rs
+        - core/hud-hook/src/serve.rs
+        - apps/swift/Sources/Capacitor/Models/HookServerManager.swift
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios:
+      - session_state_transition_chain
+    smoke_scenarios:
+      - runtime service starts independently of UI and answers health checks
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "This slice can recreate daemon-era ambiguity if the service boundary is too broad; mitigation is keeping it local-only and strictly observational."
+      - "Bootstrap supervision intentionally stays single-session for now; continuity/adoption across app restarts remains deferred to RW-111 and RW-112 to avoid sneaking in cutover semantics."
+    notes: "Bootstraps the dedicated local runtime service through an authenticated health shell, teaches runtime_host to probe that bootstrap path, and keeps ingress/query semantics on the current snapshot-backed path."
+
+  - id: RW-111
+    name: "Ingress And Client Cutover To Runtime Service"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-110
+      - RW-106
+    touched_paths:
+      - core/capacitor-core/src/runtime_service/*
+      - core/hud-hook/src/runtime_client.rs
+      - core/hud-hook/src/serve.rs
+      - core/hud-hook/src/main.rs
+      - core/hud-hook/tests/common/mod.rs
+      - core/hud-hook/tests/serve_integration.rs
+      - apps/swift/Sources/Capacitor/Models/RuntimeClient.swift
+      - apps/swift/Sources/Capacitor/Models/HookServerManager.swift
+      - apps/swift/Sources/Capacitor/Models/RuntimeHostMode.swift
+      - apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift
+      - apps/swift/Tests/CapacitorTests/HookServerManagerTests.swift
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - core/capacitor-core/src/runtime_service/*
+        - core/hud-hook/src/runtime_client.rs
+        - core/hud-hook/src/serve.rs
+        - core/hud-hook/src/main.rs
+        - apps/swift/Sources/Capacitor/Models/RuntimeClient.swift
+        - apps/swift/Sources/Capacitor/Models/HookServerManager.swift
+        - apps/swift/Sources/Capacitor/Models/RuntimeHostMode.swift
+        - apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift
+        - apps/swift/Tests/CapacitorTests/HookServerManagerTests.swift
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios:
+      - session_state_transition_chain
+      - hook_burst_out_of_order
+    smoke_scenarios:
+      - hook install fix flow
+      - app restart while Claude continues working
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "The cutover could leave reads and writes on different hosts if only part of the boundary moves; mitigation is treating ingress and client cutover as one vertical slice."
+      - "A cold launch can still observe one snapshot-backed read before the service connection record exists; RW-112 remains responsible for deleting the remaining snapshot-era assumptions instead of hiding them behind fallback magic."
+    notes: "Cuts shell ingress and Swift runtime reads onto the authenticated local runtime service, keeps Claude's `/hook` adapter inside the service process on the same in-memory runtime instance, and adds service adoption via persisted connection metadata for app restarts."
+
+  - id: RW-112
+    name: "Remove In-Process Runtime Host Assumptions"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-111
+      - RW-106
+    touched_paths:
+      - core/hud-hook/src/runtime_client.rs
+      - core/hud-hook/src/serve.rs
+      - apps/swift/Sources/Capacitor/Models/RuntimeClient.swift
+      - apps/swift/Sources/Capacitor/Models/HookServerManager.swift
+      - apps/swift/Sources/Capacitor/Models/RuntimeHostMode.swift
+      - apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift
+      - apps/swift/Tests/CapacitorTests/HookServerManagerTests.swift
+      - docs/ARCHITECTURE.md
+      - docs/SESSION_STATE_RELEASE_MATRIX.md
+      - scripts/ci/runtime-reliability-guard.sh
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - core/hud-hook/src/runtime_client.rs
+        - core/hud-hook/src/serve.rs
+        - apps/swift/Sources/Capacitor/Models/RuntimeClient.swift
+        - apps/swift/Sources/Capacitor/Models/HookServerManager.swift
+        - apps/swift/Sources/Capacitor/Models/RuntimeHostMode.swift
+        - docs/ARCHITECTURE.md
+        - docs/SESSION_STATE_RELEASE_MATRIX.md
+        - scripts/ci/runtime-reliability-guard.sh
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios:
+      - session_state_transition_chain
+      - activation_routing_attached_detached_unavailable
+    smoke_scenarios:
+      - runtime service survives UI restart
+      - click project card and restore terminal/tmux context
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Deleting the in-process assumptions too early could break recovery or fallback paths; mitigation is requiring the service cutover and parity gates to stay green first."
+    notes: "Removes service-client snapshot fallback assumptions, makes service supervision the only active runtime host path, updates architecture docs to the dedicated runtime service steady state, and ratchets CI against stale snapshot-era wording and client transports."
