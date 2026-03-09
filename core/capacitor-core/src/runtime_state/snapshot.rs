@@ -188,9 +188,6 @@ fn is_more_recent(left: &RuntimeSessionRecord, right: &RuntimeSessionRecord) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::{Mutex, OnceLock};
-
-    static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
     struct EnvGuard {
         key: &'static str,
@@ -219,10 +216,6 @@ mod tests {
                 std::env::remove_var(self.key);
             }
         }
-    }
-
-    fn env_lock() -> std::sync::MutexGuard<'static, ()> {
-        ENV_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap()
     }
 
     fn make_session_record(
@@ -300,28 +293,28 @@ mod tests {
 
     #[test]
     fn runtime_enabled_defaults_to_true_when_env_missing() {
-        let _guard = env_lock();
+        let _guard = crate::test_support::env_lock();
         let _unset = EnvGuard::unset(ENABLE_ENV);
         assert!(runtime_enabled());
     }
 
     #[test]
     fn runtime_enabled_is_false_when_env_zero() {
-        let _guard = env_lock();
+        let _guard = crate::test_support::env_lock();
         let _set = EnvGuard::set(ENABLE_ENV, "0");
         assert!(!runtime_enabled());
     }
 
     #[test]
     fn runtime_enabled_is_true_when_env_one() {
-        let _guard = env_lock();
+        let _guard = crate::test_support::env_lock();
         let _set = EnvGuard::set(ENABLE_ENV, "1");
         assert!(runtime_enabled());
     }
 
     #[test]
     fn sessions_snapshot_does_not_assume_alive_state() {
-        let _guard = env_lock();
+        let _guard = crate::test_support::env_lock();
         let tempdir = tempfile::tempdir().expect("tempdir");
         let snapshot_path = tempdir.path().join("snapshot.json");
         let snapshot = serde_json::json!({

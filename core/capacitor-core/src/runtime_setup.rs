@@ -982,10 +982,7 @@ fn matcher_matches_all_tools(matcher: &serde_json::Value) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::{Mutex, OnceLock};
     use tempfile::TempDir;
-
-    static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
     struct EnvVarGuard {
         key: &'static str,
@@ -1008,13 +1005,6 @@ mod tests {
                 std::env::remove_var(self.key);
             }
         }
-    }
-
-    fn env_lock() -> std::sync::MutexGuard<'static, ()> {
-        ENV_LOCK
-            .get_or_init(|| Mutex::new(()))
-            .lock()
-            .expect("env lock poisoned")
     }
 
     #[cfg(unix)]
@@ -1191,7 +1181,7 @@ mod tests {
 
     #[test]
     fn test_install_hooks_checks_binary() {
-        let _guard = env_lock();
+        let _guard = crate::test_support::env_lock();
         let (temp, storage) = setup_test_env();
         let home = temp.path();
         let _home_guard = EnvVarGuard::set("HOME", home);
@@ -1206,7 +1196,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn test_verify_hook_binary_rejects_unsupported_cli_shape() {
-        let _guard = env_lock();
+        let _guard = crate::test_support::env_lock();
         let (temp, storage) = setup_test_env();
         let home = temp.path();
         let _home_guard = EnvVarGuard::set("HOME", home);
@@ -1236,7 +1226,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn test_verify_hook_binary_accepts_supported_cli_shape_from_help_output() {
-        let _guard = env_lock();
+        let _guard = crate::test_support::env_lock();
         let (temp, storage) = setup_test_env();
         let home = temp.path();
         let _home_guard = EnvVarGuard::set("HOME", home);
@@ -1265,7 +1255,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn test_verify_hook_binary_rejects_help_output_missing_required_subcommand() {
-        let _guard = env_lock();
+        let _guard = crate::test_support::env_lock();
         let (temp, storage) = setup_test_env();
         let home = temp.path();
         let _home_guard = EnvVarGuard::set("HOME", home);

@@ -177,21 +177,8 @@ jobs:
       - name: SwiftFormat lint
         run: ./scripts/ci/swiftformat-lint.sh
 
-      - name: Build Rust library
-        run: cargo build -p capacitor-core --release
-
-      - name: Fix dylib install_name
-        run: install_name_tool -id "@rpath/libcapacitor_core.dylib" target/release/libcapacitor_core.dylib
-
-      - name: Build Swift and copy dylib
-        working-directory: apps/swift
-        run: |
-          swift build
-          cp ../../target/release/libcapacitor_core.dylib "$(swift build --show-bin-path)/"
-
       - name: Run Swift tests
-        working-directory: apps/swift
-        run: swift test
+        run: ./scripts/ci/run-swift-tests.sh
 
   build-smoke-test:
     name: Build Smoke Test

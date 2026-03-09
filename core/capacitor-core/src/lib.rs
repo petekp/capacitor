@@ -26,6 +26,8 @@ pub mod runtime_storage;
 pub mod runtime_types;
 pub mod runtime_validation;
 pub mod storage;
+#[cfg(test)]
+mod test_support;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -948,11 +950,9 @@ mod tests {
     use crate::storage::InMemorySnapshotStorage;
     use chrono::{Duration, Utc};
     use std::fs::{self, File};
-    use std::sync::{Arc, Mutex, OnceLock};
+    use std::sync::Arc;
     use std::time::{Duration as StdDuration, SystemTime};
     use tempfile::TempDir;
-
-    static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
     struct EnvVarGuard {
         key: &'static str,
@@ -974,13 +974,6 @@ mod tests {
             } else {
                 std::env::remove_var(self.key);
             }
-        }
-    }
-
-    fn env_lock() -> std::sync::MutexGuard<'static, ()> {
-        match ENV_LOCK.get_or_init(|| Mutex::new(())).lock() {
-            Ok(guard) => guard,
-            Err(poisoned) => poisoned.into_inner(),
         }
     }
 
@@ -1081,7 +1074,7 @@ mod tests {
 
     #[test]
     fn check_hook_health_treats_recent_waiting_session_as_grace_healthy() {
-        let _guard = env_lock();
+        let _guard = crate::test_support::env_lock();
         let temp = setup_hook_health_env();
         let _snapshot_env = EnvVarGuard::set(
             "CAPACITOR_CORE_SNAPSHOT",
@@ -1102,7 +1095,7 @@ mod tests {
 
     #[test]
     fn check_hook_health_does_not_extend_grace_for_ready_sessions() {
-        let _guard = env_lock();
+        let _guard = crate::test_support::env_lock();
         let temp = setup_hook_health_env();
         let _snapshot_env = EnvVarGuard::set(
             "CAPACITOR_CORE_SNAPSHOT",
