@@ -109,8 +109,8 @@ fi
 #
 # For a true fresh-install test, remove Capacitor hook registrations from
 # ~/.claude/settings.json. This filters out both:
-#   - Legacy wrapper script references (hud-state-tracker.sh)
-#   - Current binary references (hud-hook)
+#   - Canonical HTTP hook entries (http://127.0.0.1:7474/hook)
+#   - Older command-style hud-hook entries
 #
 # We do NOT uninstall the binary here—the app's onboarding flow will
 # detect that hooks aren't configured and offer to add them.
@@ -119,16 +119,19 @@ echo "→ Removing Capacitor hook registrations from settings.json..."
 SETTINGS_FILE="$HOME/.claude/settings.json"
 if [[ -f "$SETTINGS_FILE" ]]; then
     if command -v jq &>/dev/null; then
-        # Filter out hook configs that contain "hud-hook" or "hud-state-tracker" in any command
-        # Then remove any hook events that become empty arrays
+        # Filter out Capacitor-managed HTTP hook entries and any older
+        # command-style hud-hook entries. Then remove hook events that
+        # become empty arrays.
         jq '
+            def is_capacitor_hook:
+                ((.hooks // []) | any(
+                    (.url // "") == "http://127.0.0.1:7474/hook" or
+                    ((.command // "") | contains("hud-hook"))
+                ));
             if .hooks then
                 .hooks |= with_entries(
                     .value |= map(
-                        select(
-                            .hooks == null or
-                            (.hooks | map(.command // "" | (contains("hud-hook") or contains("hud-state-tracker"))) | any | not)
-                        )
+                        select(is_capacitor_hook | not)
                     ) |
                     select(.value | length > 0)
                 )

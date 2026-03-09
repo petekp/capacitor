@@ -24,9 +24,6 @@ use tempfile::NamedTempFile;
 /// Default HTTP hook endpoint for the local `hud-hook serve` server.
 const HOOK_HTTP_URL: &str = "http://127.0.0.1:7474/hook";
 
-/// Legacy marker for detecting old command-based hooks during cleanup/removal.
-const LEGACY_STATE_TRACKER_MARKER: &str = "hud-state-tracker";
-
 /// Hook event configuration: (event_name, needs_matcher)
 /// - `needs_matcher`: Tool events like PreToolUse/PostToolUse/PostToolUseFailure/PermissionRequest
 ///   need `matcher: "*"` to match all tools.
@@ -436,72 +433,17 @@ impl SetupChecker {
         false
     }
 
-    fn migrate_legacy_flat_hook_config(&self, hook_config: &mut HookConfig) -> bool {
-        if hook_config.hooks.is_some() {
-            return false;
-        }
-
-        let command = hook_config
-            .other
-            .get("command")
-            .and_then(|value| value.as_str())
-            .map(str::to_string);
-        let Some(command) = command else {
-            return false;
-        };
-
-        let hook_type = hook_config
-            .other
-            .get("type")
-            .and_then(|value| value.as_str())
-            .map(str::to_string);
-        let async_hook = hook_config
-            .other
-            .get("async")
-            .and_then(|value| value.as_bool());
-        let timeout = hook_config
-            .other
-            .get("timeout")
-            .and_then(|value| value.as_u64())
-            .and_then(|value| u32::try_from(value).ok());
-
-        hook_config.hooks = Some(vec![InnerHook {
-            hook_type,
-            command: Some(command),
-            url: None,
-            async_hook,
-            timeout,
-            other: HashMap::new(),
-        }]);
-
-        hook_config.other.remove("type");
-        hook_config.other.remove("command");
-        hook_config.other.remove("async");
-        hook_config.other.remove("timeout");
-
-        true
-    }
-
-    /// Normalizes existing Capacitor-managed hooks to HTTP form.
-    ///
-    /// If an old command-based hook is found, it's upgraded in-place to an HTTP hook.
-    /// HTTP hooks that are already in canonical form are left as-is.
-    fn normalize_hud_hook_config(&self, hook_config: &mut HookConfig, needs_matcher: bool) -> bool {
+    /// Ensures a canonical HTTP hook config still satisfies matcher requirements.
+    fn ensure_canonical_hud_hook_config(
+        &self,
+        hook_config: &mut HookConfig,
+        needs_matcher: bool,
+    ) -> bool {
         let mut has_hud_hook = false;
 
-        if let Some(inner_hooks) = hook_config.hooks.as_mut() {
-            for hook in inner_hooks.iter_mut() {
+        if let Some(inner_hooks) = hook_config.hooks.as_ref() {
+            for hook in inner_hooks {
                 if is_hud_hook_url(hook.url.as_deref()) {
-                    has_hud_hook = true;
-                    continue;
-                }
-                if is_hud_hook_command(hook.command.as_deref()) {
-                    // Upgrade command hook → HTTP hook
-                    hook.hook_type = Some("http".to_string());
-                    hook.url = Some(HOOK_HTTP_URL.to_string());
-                    hook.command = None;
-                    hook.async_hook = None;
-                    hook.timeout = None;
                     has_hud_hook = true;
                 }
             }
@@ -519,6 +461,25 @@ impl SetupChecker {
         }
 
         has_hud_hook
+    }
+
+    fn reject_noncanonical_hook_entries(
+        &self,
+        hooks: &HashMap<String, Vec<HookConfig>>,
+    ) -> Result<(), HudFfiError> {
+        for (event, event_hooks) in hooks {
+            if event_hooks
+                .iter()
+                .any(|hook_config| hook_config.hooks.is_none())
+            {
+                return Err(HudFfiError::General {
+                    message: format!(
+                        "Unsupported non-canonical hook entry for {event}. Remove outdated command-style hooks and try again."
+                    ),
+                });
+            }
+        }
+        Ok(())
     }
 
     /// Installs the hook binary from a given source path to ~/.local/bin/hud-hook.
@@ -688,8 +649,8 @@ impl SetupChecker {
 
     /// Registers HTTP hooks in settings.json for all managed events.
     ///
-    /// Migrates any legacy flat entries, normalizes existing command hooks to HTTP,
-    /// and adds HTTP hook entries for any events that don't have one yet.
+    /// Rejects unsupported hook shapes and adds canonical HTTP hook entries for
+    /// any managed events that do not already have one.
     pub(crate) fn register_hooks_in_settings(&self) -> Result<(), HudFfiError> {
         let settings_path = self.storage.claude_settings_file();
         let mut settings = if settings_path.exists() {
@@ -699,24 +660,15 @@ impl SetupChecker {
         };
 
         let hooks = settings.hooks.get_or_insert_with(HashMap::new);
-
-        // Migrate legacy flat hook entries ({"type":"command","command":"..."})
-        // into the modern nested form ({"hooks":[...]}). Claude Code now rejects
-        // event entries without a `hooks` array.
-        for event_hooks in hooks.values_mut() {
-            for hook_config in event_hooks.iter_mut() {
-                self.migrate_legacy_flat_hook_config(hook_config);
-            }
-        }
+        self.reject_noncanonical_hook_entries(hooks)?;
 
         for (event, needs_matcher) in HUD_HOOK_EVENTS {
             let event_hooks = hooks.entry(event.to_string()).or_default();
 
-            // Normalize any existing HUD hook entries (upgrades command → HTTP),
-            // then check if we already have one
+            // Keep canonical HTTP hook entries in canonical matcher form.
             let mut already_has_hud_hook = false;
             for hook_config in event_hooks.iter_mut() {
-                if self.normalize_hud_hook_config(hook_config, needs_matcher) {
+                if self.ensure_canonical_hud_hook_config(hook_config, needs_matcher) {
                     already_has_hud_hook = true;
                 }
             }
@@ -747,20 +699,10 @@ impl SetupChecker {
     }
 
     fn hook_config_contains_managed_hook(&self, hook_config: &HookConfig) -> bool {
-        if let Some(inner_hooks) = &hook_config.hooks {
-            if inner_hooks.iter().any(is_managed_hook) {
-                return true;
-            }
-        }
-
-        // Legacy flat format: check "command" in other fields
         hook_config
-            .other
-            .get("command")
-            .and_then(|value| value.as_str())
-            .map(str::trim)
-            .filter(|command| !command.is_empty())
-            .map(|command| is_managed_hook_command(Some(command)))
+            .hooks
+            .as_ref()
+            .map(|inner_hooks| inner_hooks.iter().any(is_managed_hook))
             .unwrap_or(false)
     }
 
@@ -848,48 +790,6 @@ fn which_with_fallback(binary: &str, fallback_paths: &[&str]) -> Option<String> 
     None
 }
 
-/// Check if a command is the HUD hook binary.
-fn is_hud_hook_command(cmd: Option<&str>) -> bool {
-    let command = match cmd {
-        Some(c) => c.trim(),
-        None => return false,
-    };
-    if command.is_empty() {
-        return false;
-    }
-
-    let mut tokens = command.split_whitespace().peekable();
-
-    while let Some(token) = tokens.peek().copied() {
-        if is_shell_assignment_token(token) {
-            let _ = tokens.next();
-            continue;
-        }
-        break;
-    }
-
-    let executable = match tokens.next() {
-        Some(token) => token,
-        None => return false,
-    };
-
-    let executable_basename = executable.rsplit('/').next().unwrap_or(executable);
-    if executable_basename != "hud-hook" {
-        return false;
-    }
-
-    matches!(tokens.next(), Some("handle"))
-}
-
-fn is_managed_hook_command(cmd: Option<&str>) -> bool {
-    let Some(command) = cmd else {
-        return false;
-    };
-    is_hud_hook_command(Some(command))
-        || command.contains("CAPACITOR_HOOK_MARKER=1")
-        || command.contains(LEGACY_STATE_TRACKER_MARKER)
-}
-
 /// Check if a URL is the HUD hook HTTP endpoint.
 fn is_hud_hook_url(url: Option<&str>) -> bool {
     match url {
@@ -898,33 +798,9 @@ fn is_hud_hook_url(url: Option<&str>) -> bool {
     }
 }
 
-/// Check if an InnerHook is managed by Capacitor (either command or HTTP).
+/// Check if an InnerHook is the canonical Capacitor-managed HTTP hook.
 fn is_managed_hook(hook: &InnerHook) -> bool {
-    is_managed_hook_command(
-        hook.command
-            .as_deref()
-            .map(str::trim)
-            .filter(|c| !c.is_empty()),
-    ) || is_hud_hook_url(hook.url.as_deref())
-}
-
-fn is_shell_assignment_token(token: &str) -> bool {
-    let Some((name, _value)) = token.split_once('=') else {
-        return false;
-    };
-    if name.is_empty() {
-        return false;
-    }
-
-    let mut chars = name.chars();
-    let Some(first) = chars.next() else {
-        return false;
-    };
-    if !(first.is_ascii_alphabetic() || first == '_') {
-        return false;
-    }
-
-    chars.all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+    is_hud_hook_url(hook.url.as_deref())
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -1070,57 +946,6 @@ mod tests {
     }
 
     #[test]
-    fn test_register_hooks_migrates_legacy_flat_entries() {
-        let (_temp, storage) = setup_test_env();
-        let checker = SetupChecker::new(storage.clone());
-
-        let legacy = r#"{
-            "hooks": {
-                "SessionStart": [{"type": "command", "command": "$HOME/.local/bin/hud-hook handle"}],
-                "SessionEnd": [{"type": "command", "command": "$HOME/.local/bin/hud-hook handle"}],
-                "CustomEvent": [{"type": "command", "command": "custom.sh"}]
-            }
-        }"#;
-        fs::write(storage.claude_settings_file(), legacy).unwrap();
-
-        checker.register_hooks_in_settings().unwrap();
-
-        let settings_content = fs::read_to_string(storage.claude_settings_file()).unwrap();
-        let settings: serde_json::Value = serde_json::from_str(&settings_content).unwrap();
-
-        for event in ["SessionStart", "SessionEnd", "CustomEvent"] {
-            let entries = settings["hooks"][event]
-                .as_array()
-                .unwrap_or_else(|| panic!("{event} should be an array"));
-            assert!(
-                entries.iter().all(|entry| entry["hooks"].is_array()),
-                "{event} should only contain entries with `hooks` arrays after normalization"
-            );
-            assert!(
-                entries
-                    .iter()
-                    .all(|entry| entry["command"].is_null() && entry["type"].is_null()),
-                "{event} should not retain legacy top-level command/type fields"
-            );
-        }
-
-        assert_eq!(
-            settings["hooks"]["CustomEvent"][0]["hooks"][0]["command"],
-            "custom.sh"
-        );
-        // Legacy command hooks get normalized to HTTP hooks
-        assert_eq!(
-            settings["hooks"]["SessionStart"][0]["hooks"][0]["type"],
-            "http"
-        );
-        assert_eq!(
-            settings["hooks"]["SessionStart"][0]["hooks"][0]["url"],
-            HOOK_HTTP_URL
-        );
-        assert!(checker.hooks_registered_in_settings());
-    }
-
-    #[test]
     fn test_register_hooks_preserves_object_matcher_entries() {
         let (_temp, storage) = setup_test_env();
         let checker = SetupChecker::new(storage.clone());
@@ -1164,6 +989,25 @@ mod tests {
     }
 
     #[test]
+    fn test_register_hooks_rejects_unsupported_flat_command_entries() {
+        let (_temp, storage) = setup_test_env();
+        let checker = SetupChecker::new(storage.clone());
+
+        let existing = r#"{
+            "hooks": {
+                "SessionStart": [{"type": "command", "command": "$HOME/.local/bin/hud-hook handle"}]
+            }
+        }"#;
+        fs::write(storage.claude_settings_file(), existing).unwrap();
+
+        let result = checker.register_hooks_in_settings();
+        assert!(result.is_err(), "flat command entries should be rejected");
+
+        let settings_content = fs::read_to_string(storage.claude_settings_file()).unwrap();
+        assert_eq!(settings_content, existing);
+    }
+
+    #[test]
     fn test_policy_blocks_disable_all_hooks() {
         let (_temp, storage) = setup_test_env();
 
@@ -1191,26 +1035,16 @@ mod tests {
 
     #[test]
     fn test_install_hooks_checks_binary() {
-        let (_temp, storage) = setup_test_env();
+        let _guard = env_lock();
+        let (temp, storage) = setup_test_env();
+        let home = temp.path();
+        let _home_guard = EnvVarGuard::set("HOME", home);
         let checker = SetupChecker::new(storage);
 
         let result = checker.install_hooks().unwrap();
 
-        // Binary check happens before settings registration
-        // If binary exists on system, it will succeed; if not, it fails gracefully
-        let binary_path = dirs::home_dir()
-            .map(|h| h.join(".local/bin/hud-hook"))
-            .unwrap_or_else(|| PathBuf::from("/usr/local/bin/hud-hook"));
-
-        if binary_path.exists() {
-            // Binary exists, should succeed (or fail on verification)
-            // Just verify it doesn't panic and returns a result
-            assert!(result.success || result.message.contains("broken"));
-        } else {
-            // Binary missing, should fail gracefully with helpful message
-            assert!(!result.success);
-            assert!(result.message.contains("not found"));
-        }
+        assert!(!result.success);
+        assert!(result.message.contains("not found"));
     }
 
     #[cfg(unix)]
@@ -1354,7 +1188,7 @@ mod tests {
         // Write settings with only SessionStart (missing others)
         let partial = r#"{
             "hooks": {
-                "SessionStart": [{"hooks": [{"type": "command", "command": "hud-hook handle"}]}]
+                "SessionStart": [{"hooks": [{"type": "http", "url": "http://127.0.0.1:7474/hook"}]}]
             }
         }"#;
         fs::write(storage.claude_settings_file(), partial).unwrap();
@@ -1371,73 +1205,17 @@ mod tests {
         // Write settings with tool events but missing matcher
         let missing_matcher = r#"{
             "hooks": {
-                "SessionStart": [{"hooks": [{"type": "command", "command": "hud-hook handle"}]}],
-                "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "hud-hook handle"}]}],
-                "PostToolUse": [{"hooks": [{"type": "command", "command": "hud-hook handle"}]}],
-                "PostToolUseFailure": [{"hooks": [{"type": "command", "command": "hud-hook handle"}]}],
-                "Stop": [{"hooks": [{"type": "command", "command": "hud-hook handle"}]}]
+                "SessionStart": [{"hooks": [{"type": "http", "url": "http://127.0.0.1:7474/hook"}]}],
+                "UserPromptSubmit": [{"hooks": [{"type": "http", "url": "http://127.0.0.1:7474/hook"}]}],
+                "PostToolUse": [{"hooks": [{"type": "http", "url": "http://127.0.0.1:7474/hook"}]}],
+                "PostToolUseFailure": [{"hooks": [{"type": "http", "url": "http://127.0.0.1:7474/hook"}]}],
+                "Stop": [{"hooks": [{"type": "http", "url": "http://127.0.0.1:7474/hook"}]}]
             }
         }"#;
         fs::write(storage.claude_settings_file(), missing_matcher).unwrap();
 
         // hooks_registered_in_settings should return false since matcher is missing
         assert!(!checker.hooks_registered_in_settings());
-    }
-
-    #[test]
-    fn test_is_hud_hook_command_uses_strict_identity_matching() {
-        let cases = [
-            (
-                "CAPACITOR_CORE_ENABLED=1 $HOME/.local/bin/hud-hook handle",
-                true,
-            ),
-            ("$HOME/.local/bin/hud-hook handle", true),
-            ("hud-hook handle", true),
-            ("echo hud-hook handle", false),
-            ("custom-hud-hook-wrapper handle", false),
-            ("python -c \"print('hud-hook')\"", false),
-        ];
-
-        for (cmd, expected) in cases {
-            assert_eq!(
-                is_hud_hook_command(Some(cmd)),
-                expected,
-                "command mismatch for: {cmd}"
-            );
-        }
-    }
-
-    #[test]
-    fn test_normalize_hud_hook_config_does_not_rewrite_unrelated_commands() {
-        let (_temp, storage) = setup_test_env();
-        let checker = SetupChecker::new(storage);
-
-        let original = "echo hud-hook handle".to_string();
-        let mut hook_config = HookConfig {
-            matcher: None,
-            hooks: Some(vec![InnerHook {
-                hook_type: Some("command".to_string()),
-                command: Some(original.clone()),
-                url: None,
-                async_hook: None,
-                timeout: None,
-                other: HashMap::new(),
-            }]),
-            other: HashMap::new(),
-        };
-
-        let normalized = checker.normalize_hud_hook_config(&mut hook_config, false);
-        assert!(!normalized);
-
-        let hook = hook_config
-            .hooks
-            .as_ref()
-            .and_then(|hooks| hooks.first())
-            .expect("hook exists");
-        // Unrelated command should not be modified
-        assert_eq!(hook.command.as_deref(), Some(original.as_str()));
-        assert_eq!(hook.async_hook, None);
-        assert_eq!(hook.timeout, None);
     }
 
     #[test]
@@ -1461,11 +1239,11 @@ mod tests {
             "someOtherSetting": "value",
             "hooks": {
                 "SessionStart": [
-                    {"hooks": [{"type": "command", "command": "CAPACITOR_HOOK_MARKER=1 $HOME/.local/bin/hud-hook handle"}]},
+                    {"hooks": [{"type": "http", "url": "http://127.0.0.1:7474/hook"}]},
                     {"hooks": [{"type": "command", "command": "custom-start.sh"}]}
                 ],
                 "SessionEnd": [
-                    {"type": "command", "command": "hud-state-tracker"}
+                    {"hooks": [{"type": "http", "url": "http://127.0.0.1:7474/hook"}]}
                 ],
                 "PostToolUse": [
                     {"matcher": {"tools": ["BashTool"]}, "hooks": [{"type": "command", "command": "custom-post-tool.sh"}]}
@@ -1488,11 +1266,40 @@ mod tests {
         );
         assert!(
             settings["hooks"]["SessionEnd"].is_null(),
-            "legacy-only SessionEnd should be removed entirely"
+            "managed SessionEnd should be removed entirely"
         );
         assert_eq!(
             settings["hooks"]["PostToolUse"][0]["hooks"][0]["command"],
             "custom-post-tool.sh"
+        );
+    }
+
+    #[test]
+    fn test_remove_hooks_preserves_unsupported_flat_command_entries() {
+        let (_temp, storage) = setup_test_env();
+        let checker = SetupChecker::new(storage.clone());
+
+        let existing = r#"{
+            "hooks": {
+                "SessionStart": [{"type": "command", "command": "$HOME/.local/bin/hud-hook handle"}],
+                "SessionEnd": [{"hooks": [{"type": "http", "url": "http://127.0.0.1:7474/hook"}]}]
+            }
+        }"#;
+        fs::write(storage.claude_settings_file(), existing).unwrap();
+
+        let result = checker.remove_hooks().unwrap();
+        assert!(result.success);
+        assert!(result.message.contains("Removed 1"));
+
+        let settings_content = fs::read_to_string(storage.claude_settings_file()).unwrap();
+        let settings: serde_json::Value = serde_json::from_str(&settings_content).unwrap();
+        assert_eq!(
+            settings["hooks"]["SessionStart"][0]["command"],
+            "$HOME/.local/bin/hud-hook handle"
+        );
+        assert!(
+            settings["hooks"]["SessionEnd"].is_null(),
+            "canonical HTTP hook should be removed entirely"
         );
     }
 

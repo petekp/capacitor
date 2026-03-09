@@ -15,8 +15,8 @@ final class ProjectOrderStoreTests: XCTestCase {
         XCTAssertEqual(loaded, ["/tmp/a", "/tmp/b"])
     }
 
-    func testLoadFallsBackToLegacySplitOrder() throws {
-        let suiteName = "ProjectOrderStoreTests-legacy-split-\(UUID().uuidString)"
+    func testLoadIgnoresRetiredSplitOrderKeys() throws {
+        let suiteName = "ProjectOrderStoreTests-retired-split-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defer {
             defaults.removePersistentDomain(forName: suiteName)
@@ -27,7 +27,7 @@ final class ProjectOrderStoreTests: XCTestCase {
 
         let loaded = ProjectOrderStore.load(from: defaults)
 
-        XCTAssertEqual(loaded, ["/tmp/a", "/tmp/b", "/tmp/c"])
+        XCTAssertEqual(loaded, [])
     }
 
     func testLoadReturnsEmptyArrayByDefault() throws {

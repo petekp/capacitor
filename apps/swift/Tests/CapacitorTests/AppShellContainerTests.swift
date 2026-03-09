@@ -3,7 +3,7 @@ import XCTest
 
 @MainActor
 final class AppShellContainerTests: XCTestCase {
-    func testLiveContainerBuildsLegacyAppStateAndDefaultShellState() {
+    func testLiveContainerBuildsAppStateAndDefaultShellState() {
         let container = AppShellContainer.live()
 
         XCTAssertEqual(container.appState.activeProjectTrackingState.activeSource, .none)

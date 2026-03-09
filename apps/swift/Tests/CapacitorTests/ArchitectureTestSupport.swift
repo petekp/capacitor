@@ -56,7 +56,7 @@ extension ArchitectureAssertions {
     func assertSwiftFiles(
         under relativeDirectory: String,
         containing snippet: String,
-        allowedFiles: [String],
+        expectedFiles: [String],
         file: StaticString = #filePath,
         line: UInt = #line,
     ) throws {
@@ -71,7 +71,7 @@ extension ArchitectureAssertions {
 
         XCTAssertEqual(
             matchingFiles.sorted(),
-            allowedFiles.sorted(),
+            expectedFiles.sorted(),
             "Unexpected file set containing \(snippet)",
             file: file,
             line: line,

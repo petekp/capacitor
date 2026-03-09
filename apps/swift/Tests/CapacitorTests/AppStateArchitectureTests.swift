@@ -246,7 +246,7 @@ final class AppStateArchitectureTests: XCTestCase, ArchitectureAssertions {
         try assertSwiftFiles(
             under: "apps/swift/Sources/Capacitor",
             containing: "= AppState(",
-            allowedFiles: [
+            expectedFiles: [
                 "apps/swift/Sources/Capacitor/Composition/AppShellContainer.swift",
             ],
         )
@@ -254,7 +254,7 @@ final class AppStateArchitectureTests: XCTestCase, ArchitectureAssertions {
         try assertSwiftFiles(
             under: "apps/swift/Tests/CapacitorTests",
             containing: "= AppState(",
-            allowedFiles: [
+            expectedFiles: [
                 "apps/swift/Tests/CapacitorTests/AppStateTestSupport.swift",
                 "apps/swift/Tests/CapacitorTests/AppStateArchitectureTests.swift",
             ],

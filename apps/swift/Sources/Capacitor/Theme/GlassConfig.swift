@@ -408,7 +408,7 @@ class GlassConfig {
     /// State Preview
     var previewState: PreviewState = .none
 
-    // MARK: - Layout-Aware Accessors (unified - layout param kept for API compatibility)
+    // MARK: - Layout-Aware Accessors (unified; layout param kept for call-site stability)
 
     func rippleSpeed(for _: LayoutMode) -> Double {
         rippleSpeed

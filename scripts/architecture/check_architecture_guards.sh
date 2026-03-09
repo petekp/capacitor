@@ -92,7 +92,7 @@ check_path_absent() {
   count="$(count_glob_matches "$pattern")"
   budget_status_lines+=("$label: $count/0")
   if (( count > 0 )); then
-    fail "Legacy path still present for $label: $pattern"
+    fail "Retired path still present for $label: $pattern"
   fi
 }
 
@@ -104,7 +104,7 @@ check_content_absent() {
   count="$(count_pattern_matches "$regex" "$file")"
   budget_status_lines+=("$label: $count/0")
   if (( count > 0 )); then
-    fail "Legacy content still present for $label in $file"
+    fail "Retired content still present for $label in $file"
   fi
 }
 
@@ -214,21 +214,21 @@ check_budget \
   docs/archive/audit/ARCHITECTURE_CHECKPOINT_2026-03-06.md \
   docs/archive/audit/ARCHITECTURE_CHECKPOINT_2026-03-07.md
 
-check_path_absent "legacy_review_package" 'tmp/review-package/*'
-check_path_absent "legacy_swift_features" 'apps/swift/Sources/Capacitor/Features/*'
+check_path_absent "retired_review_package" 'tmp/review-package/*'
+check_path_absent "retired_swift_features" 'apps/swift/Sources/Capacitor/Features/*'
 
 check_content_absent \
-  "legacy_appstate_runtime_refresh" \
+  "retired_appstate_runtime_refresh" \
   "$ROOT/apps/swift/Sources/Capacitor/Composition/AppState.swift" \
   'sessionStateManager\.refreshSessionStates\(|shellStateStore\.stopPolling\(|fetch(ProjectStates|Sessions|ShellState)\('
 
 check_content_absent \
-  "legacy_session_state_fetch" \
+  "retired_session_state_fetch" \
   "$ROOT/apps/swift/Sources/Capacitor/Application/Runtime/SessionStateManager.swift" \
   'fetchProjectStates\('
 
 check_content_absent \
-  "legacy_shell_state_fetch" \
+  "retired_shell_state_fetch" \
   "$ROOT/apps/swift/Sources/Capacitor/Application/Runtime/ShellStateStore.swift" \
   'fetchShellState\('
 

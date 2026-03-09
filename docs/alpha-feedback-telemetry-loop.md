@@ -69,7 +69,7 @@ Remote ingest hardening:
 - Non-allowlisted events are dropped with HTTP `202` and not stored.
 - Duplicate diagnostics in a short window are dropped with HTTP `202` (`reason=duplicate_throttled`).
 - Worker scheduled retention prunes telemetry to keep storage bounded:
-  - legacy non-allowlisted telemetry: 1 day
+  - pre-allowlist non-allowlisted telemetry: 1 day
   - high-volume interaction telemetry: 30 days
   - diagnostics/submission telemetry: 90 days
 

@@ -1,6 +1,6 @@
 //! Runtime client helper for sending hook events directly into capacitor-core.
 //!
-//! This replaces legacy IPC with direct CoreRuntime ingestion while preserving
+//! This sends hook events directly into CoreRuntime while preserving
 //! hook-facing behavior and gating semantics.
 
 use capacitor_core::{

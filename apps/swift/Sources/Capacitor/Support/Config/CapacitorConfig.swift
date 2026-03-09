@@ -14,7 +14,6 @@ actor CapacitorConfig {
 
     struct Config: Codable {
         var claudePath: String?
-        var tmuxPath: String?
     }
 
     private init(configURL: URL = CapacitorConfig.defaultURL) {

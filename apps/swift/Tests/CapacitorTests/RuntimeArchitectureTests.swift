@@ -23,10 +23,10 @@ final class RuntimeArchitectureTests: XCTestCase, ArchitectureAssertions {
         )
     }
 
-    func testSetupWorkflowStateOwnsSetupWithoutLegacyManagerFile() throws {
+    func testSetupWorkflowStateOwnsSetupWithoutSetupRequirementsManagerFile() throws {
         XCTAssertFalse(
             FileManager.default.fileExists(atPath: repositoryRootURL().appendingPathComponent("apps/swift/Sources/Capacitor/Models/SetupRequirements.swift").path),
-            "SetupRequirements.swift should be deleted once setup ownership moves fully into Application.",
+            "SetupRequirements.swift must remain absent because setup ownership lives in Application.",
         )
 
         try assertFile(
@@ -43,7 +43,7 @@ final class RuntimeArchitectureTests: XCTestCase, ArchitectureAssertions {
         try assertSwiftFiles(
             under: "apps/swift/Sources/Capacitor",
             containing: "SetupRequirementsManager",
-            allowedFiles: [],
+            expectedFiles: [],
         )
     }
 
@@ -71,7 +71,7 @@ final class RuntimeArchitectureTests: XCTestCase, ArchitectureAssertions {
 
         XCTAssertFalse(
             FileManager.default.fileExists(atPath: repositoryRootURL().appendingPathComponent("apps/swift/Sources/Capacitor/Models/ActiveProjectResolver.swift").path),
-            "ActiveProjectResolver.swift should be deleted once tracking owns its own resolution behavior.",
+            "ActiveProjectResolver.swift must remain absent because tracking owns its own resolution behavior.",
         )
 
         try assertFile(
@@ -138,7 +138,7 @@ final class RuntimeArchitectureTests: XCTestCase, ArchitectureAssertions {
         )
     }
 
-    func testTerminalActivationBoundaryDoesNotReconstructLegacyProjects() throws {
+    func testTerminalActivationBoundaryDoesNotReconstructProjectModels() throws {
         try assertFile(
             "apps/swift/Sources/Capacitor/Support/TerminalLauncher.swift",
             omits: [
@@ -162,19 +162,19 @@ final class RuntimeArchitectureTests: XCTestCase, ArchitectureAssertions {
         try assertSwiftFiles(
             under: "apps/swift/Sources/Capacitor/Composition",
             containing: "TerminalLauncher",
-            allowedFiles: [],
+            expectedFiles: [],
         )
 
         try assertSwiftFiles(
             under: "apps/swift/Sources/Capacitor/Adapters",
             containing: "RuntimeClient",
-            allowedFiles: [],
+            expectedFiles: [],
         )
 
         try assertSwiftFiles(
             under: "apps/swift/Sources/Capacitor/Utilities",
             containing: "RuntimeClient",
-            allowedFiles: [],
+            expectedFiles: [],
         )
     }
 }

@@ -214,7 +214,7 @@ final class GhosttyAXReaderTests: XCTestCase {
     func testBestGhosttyTabMatchIgnoresNonPathDecoratedTitle() {
         let windows = [
             window(index: 0, tabs: [
-                tab(title: "🔔 tool-ui:1:2.1.50 - \"✳ Tooling Migration Setup\"", index: 0),
+                tab(title: "🔔 tool-ui:1:2.1.50 - \"✳ Tooling Workspace Setup\"", index: 0),
             ]),
         ]
 

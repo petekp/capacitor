@@ -22,3 +22,10 @@ It may expose canonical collaborators, but it does not own construction or dupli
 
 `architecture/` is the permanent architecture-governance surface.
 Detailed program history lives under `docs/archive/`.
+
+## Internal Runtime Formats Use Canonical Forms Only
+
+Capacitor does not preserve internal backward-compatibility paths for retired
+storage encodings or retired hook configuration shapes.
+Active code reads and writes only the canonical project-path encoding and the
+canonical HTTP hook format.

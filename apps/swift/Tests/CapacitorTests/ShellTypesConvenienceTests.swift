@@ -1,7 +1,7 @@
 @testable import Capacitor
 import XCTest
 
-final class ProjectCatalogBridgeTests: XCTestCase {
+final class ShellTypesConvenienceTests: XCTestCase {
     func testShellProjectCatalogEntryConvenienceInitializerPreservesCatalogFields() {
         let entry = ShellProjectCatalogEntry(
             displayName: "Capacitor",

@@ -85,15 +85,13 @@ echo "  Runtime Reliability Guard"
 echo "═══════════════════════════════════════════════════════════════"
 echo ""
 
-echo "── Legacy HTTP Hook Ratchets ──"
+echo "── Hook Command Ratchets ──"
 echo ""
 
-# Legacy hook compatibility ratchets (kept to prevent regression)
+# Command-hook surface ratchets kept to prevent regression.
 check_budget "HOOK_COMMAND constant"           'HOOK_COMMAND.*=.*hud-hook handle'  0
-check_budget "type.*command.*hook creation"    '"command"\.to_string()'            1  "core/"
-check_budget "hud-hook handle references"      'hud-hook handle'                   14
-check_budget "LEGACY_STATE_TRACKER_MARKER"     'LEGACY_STATE_TRACKER_MARKER'       2  "core/"
-check_budget "hud-state-tracker refs"          'hud-state-tracker'                 5
+check_budget "type.*command.*hook creation"    '"command"\.to_string()'            0  "core/"
+check_budget "hud-hook handle references"      'hud-hook handle'                   3  "core/"
 check_budget "stdin reading in handle.rs"      'stdin'                             0  "core/hud-hook/src/handle.rs"
 check_budget "Commands::Handle"                'Handle'                            0  "core/hud-hook/src/main.rs"
 check_budget "handle::run() caller"            'handle::run()'                     0  "core/hud-hook/src/main.rs"

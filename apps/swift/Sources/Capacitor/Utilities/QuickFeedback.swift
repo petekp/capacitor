@@ -133,7 +133,7 @@ struct QuickFeedbackDraft: Equatable {
         stepsToReproduce: "",
     )
 
-    static func legacy(message: String) -> QuickFeedbackDraft {
+    static func messageOnly(_ message: String) -> QuickFeedbackDraft {
         QuickFeedbackDraft(
             category: .other,
             impact: .medium,
@@ -531,7 +531,7 @@ struct QuickFeedbackSubmitter {
         openGitHubIssue: Bool = true,
     ) async -> QuickFeedbackSubmissionOutcome {
         await submit(
-            draft: QuickFeedbackDraft.legacy(message: message),
+            draft: QuickFeedbackDraft.messageOnly(message),
             context: context,
             preferences: preferences,
             openGitHubIssue: openGitHubIssue,

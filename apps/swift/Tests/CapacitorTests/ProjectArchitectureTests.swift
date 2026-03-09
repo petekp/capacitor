@@ -64,29 +64,29 @@ final class ProjectArchitectureTests: XCTestCase, ArchitectureAssertions {
         )
     }
 
-    func testLegacyProjectBridgeUsageIsConfinedToAllowlistedFiles() throws {
+    func testRetiredProjectBridgeSurfaceIsAbsent() throws {
         try assertSwiftFiles(
             under: "apps/swift/Sources/Capacitor",
             containing: "projectWorkflowState.legacyProjects",
-            allowedFiles: [],
+            expectedFiles: [],
         )
 
         try assertSwiftFiles(
             under: "apps/swift/Sources/Capacitor",
             containing: "projectWorkflowState.legacySuggestedProjects",
-            allowedFiles: [],
+            expectedFiles: [],
         )
 
         try assertSwiftFiles(
             under: "apps/swift/Sources/Capacitor",
             containing: "selectedLegacySuggestedProjects",
-            allowedFiles: [],
+            expectedFiles: [],
         )
 
         try assertSwiftFiles(
             under: "apps/swift/Sources/Capacitor",
             containing: "ProjectCatalogBridge",
-            allowedFiles: [],
+            expectedFiles: [],
         )
     }
 
@@ -104,7 +104,7 @@ final class ProjectArchitectureTests: XCTestCase, ArchitectureAssertions {
         )
     }
 
-    func testProjectWorkflowStateDoesNotExposeLegacyProjectMirrors() throws {
+    func testProjectWorkflowStateDoesNotExposeRetiredProjectMirrors() throws {
         try assertFile(
             "apps/swift/Sources/Capacitor/Application/Projects/ProjectWorkflowState.swift",
             omits: [
@@ -150,7 +150,7 @@ final class ProjectArchitectureTests: XCTestCase, ArchitectureAssertions {
 
         XCTAssertFalse(
             FileManager.default.fileExists(atPath: repositoryRootURL().appendingPathComponent("apps/swift/Sources/Capacitor/Models/ProjectIngestionWorker.swift").path),
-            "ProjectIngestionWorker.swift should be deleted once project mutation owns import batching directly.",
+            "ProjectIngestionWorker.swift must remain absent because project mutation owns import batching directly.",
         )
 
         try assertFile(
@@ -181,7 +181,7 @@ final class ProjectArchitectureTests: XCTestCase, ArchitectureAssertions {
 
         XCTAssertFalse(
             FileManager.default.fileExists(atPath: repositoryRootURL().appendingPathComponent("apps/swift/Sources/Capacitor/Features/ProjectFeatureCoordinator.swift").path),
-            "ProjectFeatureCoordinator.swift should be deleted once the canonical application-owned presentation state exists.",
+            "ProjectFeatureCoordinator.swift must remain absent because application-owned presentation state is canonical.",
         )
 
         try assertFile(
@@ -209,13 +209,13 @@ final class ProjectArchitectureTests: XCTestCase, ArchitectureAssertions {
         try assertSwiftFiles(
             under: "apps/swift/Sources/Capacitor",
             containing: "ProjectFeatureCoordinator",
-            allowedFiles: [],
+            expectedFiles: [],
         )
 
         try assertSwiftFiles(
             under: "apps/swift/Sources/Capacitor",
             containing: "projectFeatureCoordinator",
-            allowedFiles: [],
+            expectedFiles: [],
         )
     }
 }

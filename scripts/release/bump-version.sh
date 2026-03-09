@@ -90,7 +90,7 @@ APP_SWIFT="$PROJECT_ROOT/apps/swift/Sources/Capacitor/App.swift"
 if [ -f "$APP_SWIFT" ]; then
     echo -e "${YELLOW}Updating App.swift fallback version...${NC}"
     sed -i '' "s/return \"[0-9]*\.[0-9]*\.[0-9]*\"  *\/\/ Ultimate fallback/return \"$NEW_VERSION\" \/\/ Ultimate fallback/" "$APP_SWIFT"
-    # Alternative pattern without the comment (backwards compatibility)
+    # Alternate file shape without the inline comment
     sed -i '' "s/return \"[0-9]*\.[0-9]*\.[0-9]*\"\$/return \"$NEW_VERSION\"/" "$APP_SWIFT"
     echo -e "${GREEN}✓ App.swift fallback version updated${NC}"
 fi
