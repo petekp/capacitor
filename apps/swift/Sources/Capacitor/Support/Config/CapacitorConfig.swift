@@ -9,12 +9,6 @@ actor CapacitorConfig {
         return capacitorDir.appendingPathComponent("runtime-config.json")
     }
 
-    nonisolated static var legacyURL: URL {
-        let capacitorDir = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".capacitor")
-        return capacitorDir.appendingPathComponent("config.json")
-    }
-
     private let configURL: URL
     private var cachedConfig: Config?
 
@@ -34,16 +28,12 @@ actor CapacitorConfig {
             return cached
         }
 
-        let sourceURL: URL
-        if FileManager.default.fileExists(atPath: configURL.path) {
-            sourceURL = configURL
-        } else if FileManager.default.fileExists(atPath: Self.legacyURL.path) {
-            sourceURL = Self.legacyURL
-        } else {
+        guard FileManager.default.fileExists(atPath: configURL.path) else {
             let defaultConfig = Config()
             cachedConfig = defaultConfig
             return defaultConfig
         }
+        let sourceURL = configURL
 
         do {
             let data = try Data(contentsOf: sourceURL)
@@ -51,11 +41,6 @@ actor CapacitorConfig {
             decoder.dateDecodingStrategy = .iso8601
             let config = try decoder.decode(Config.self, from: data)
             cachedConfig = config
-
-            // One-way migrate off legacy config.json to avoid clobbering AppConfig file semantics.
-            if sourceURL != configURL {
-                await save(config)
-            }
 
             return config
         } catch {

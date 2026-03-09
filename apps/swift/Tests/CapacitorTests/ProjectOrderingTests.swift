@@ -339,60 +339,6 @@ final class ProjectOrderingTests: XCTestCase {
         XCTAssertEqual(moved, ["/tmp/c", "/tmp/b", "/tmp/a", "/tmp/d"])
     }
 
-    // MARK: - Migration
-
-    func testMigrateIfNeededCopiesLegacyOrderToGlobal() throws {
-        let suiteName = "test-migration-\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        defaults.set(["/tmp/a", "/tmp/b", "/tmp/c"], forKey: "customProjectOrder")
-
-        ProjectOrderStore.migrateIfNeeded(from: defaults)
-
-        let globalOrder = defaults.array(forKey: "projectOrder.global") as? [String] ?? []
-        let migrated = defaults.bool(forKey: "projectOrder.migrated.v3")
-
-        XCTAssertEqual(globalOrder, ["/tmp/a", "/tmp/b", "/tmp/c"])
-        XCTAssertTrue(migrated)
-
-        defaults.removePersistentDomain(forName: suiteName)
-    }
-
-    func testMigrateIfNeededDoesNotRunTwice() throws {
-        let suiteName = "test-migration-idempotent-\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        defaults.set(["/tmp/a"], forKey: "customProjectOrder")
-
-        ProjectOrderStore.migrateIfNeeded(from: defaults)
-
-        // Change global order after migration
-        defaults.set(["/tmp/z"], forKey: "projectOrder.global")
-
-        // Run migration again — should be no-op
-        ProjectOrderStore.migrateIfNeeded(from: defaults)
-
-        let globalOrder = defaults.array(forKey: "projectOrder.global") as? [String] ?? []
-        XCTAssertEqual(globalOrder, ["/tmp/z"], "Migration should not overwrite after first run")
-
-        defaults.removePersistentDomain(forName: suiteName)
-    }
-
-    func testMigrateIfNeededHandlesEmptyLegacy() throws {
-        let suiteName = "test-migration-empty-\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        // No legacy key set
-
-        ProjectOrderStore.migrateIfNeeded(from: defaults)
-
-        let globalOrder = defaults.array(forKey: "projectOrder.global") as? [String]
-        let migrated = defaults.bool(forKey: "projectOrder.migrated.v3")
-
-        // No global order set (legacy was empty), but migration flag should be set
-        XCTAssertNil(globalOrder)
-        XCTAssertTrue(migrated)
-
-        defaults.removePersistentDomain(forName: suiteName)
-    }
-
     // MARK: - Store load/save
 
     func testStoreLoadAndSaveGlobalOrder() throws {

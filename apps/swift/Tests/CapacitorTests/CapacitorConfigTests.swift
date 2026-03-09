@@ -11,6 +11,5 @@ final class CapacitorConfigTests: XCTestCase {
 
     func testRuntimeConfigPathDoesNotCollideWithAppConfigPath() {
         XCTAssertNotEqual(CapacitorConfig.defaultURL.path, AppConfig.ConfigFile.defaultURL.path)
-        XCTAssertEqual(CapacitorConfig.legacyURL.path, AppConfig.ConfigFile.defaultURL.path)
     }
 }

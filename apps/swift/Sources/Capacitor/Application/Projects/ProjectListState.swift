@@ -14,7 +14,6 @@ final class ProjectListState {
 
     init(projectListPreferencesGateway: any ProjectListPreferencesGateway) {
         self.projectListPreferencesGateway = projectListPreferencesGateway
-        projectListPreferencesGateway.migrateProjectOrderIfNeeded()
         manuallyDormant = projectListPreferencesGateway.loadDormantProjectPaths()
         projectOrder = projectListPreferencesGateway.loadProjectOrder()
     }

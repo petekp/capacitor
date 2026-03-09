@@ -17,8 +17,4 @@ final class LiveProjectListPreferencesGateway: ProjectListPreferencesGateway {
     func saveProjectOrder(_ order: [String]) {
         ProjectOrderStore.save(order)
     }
-
-    func migrateProjectOrderIfNeeded() {
-        ProjectOrderStore.migrateIfNeeded()
-    }
 }

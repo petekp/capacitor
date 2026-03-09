@@ -30,7 +30,7 @@ printf "[MANUAL-TEST][END] session-state %s\n" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" 
 
 ## Required Log Evidence (SS-P0)
 
-- App debug log slice reference:
+- App debug log reference:
 - Classification coverage summary present (`SS-P0-1`): yes/no
 - Stop-gate origin/age checks present (`SS-P0-2`): yes/no
 

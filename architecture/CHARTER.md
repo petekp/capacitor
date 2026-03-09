@@ -1,59 +1,27 @@
 # Capacitor Architecture Charter
 
-Operational procedure lives in `architecture/PLAYBOOK.md`.
-
 ## Purpose
-Capacitor is in a finish-line campaign to reach one authoritative core, one clear UI shell, truthful ratchets, truthful active documentation, and no residual migration namespaces or vestigial operational guidance. The architecture optimizes for simplicity, coherence, and deletion of redundant paths.
-The `architecture/` control plane remains the canonical architecture-governance surface after tranche closure unless a future superseding governance system is explicitly adopted.
+
+Capacitor has one Rust core, one Swift shell, and one small permanent architecture governance surface.
+
+This charter records the enduring constraints that keep the repo coherent.
 
 ## Invariants
-1. Rust owns business rules, normalization, and state derivation.
-2. Swift owns rendering, user intent capture, activation planning, and macOS-specific side effects.
-3. No duplicate domain policy is allowed across Rust and Swift.
-4. No tracked review-package or checkpoint snapshot artifacts may remain in the live tree.
-5. `apps/swift/Sources/Capacitor/Models` and `apps/swift/Sources/Capacitor/Features` are migration-debt directories whose Swift file counts may only decrease.
-6. Each migration slice must delete replaced logic in the same PR.
-7. Confidence comes from replay-diff + end-to-end smoke checks, not manual confidence.
-8. Historical docs may remain only as archive material with no actionable `TODO (user-run)` tables or stale live-path claims.
-9. CI ratchets must point at live files and truthful budgets; a passing guard against deleted paths is a bug, not a green signal.
 
-## Non-Goals
-1. Backward compatibility with legacy internal APIs.
-2. Supporting non-macOS platforms.
-3. Keeping daemon-era abstractions once replacement lands.
+1. Rust owns domain semantics, persisted runtime truth, and file-backed system behavior.
+2. Swift owns rendering, interaction flow, and macOS-specific side effects.
+3. Domain policy is not duplicated across Rust and Swift.
+4. Live code uses permanent namespaces only.
+5. Historical material lives under `docs/archive/`, not in the active repo surface.
+
+## Current Structure
+
+- Rust bounded contexts: `core/capacitor-core/src/contexts/`
+- Swift app shell: `apps/swift/Sources/Capacitor/`
+- Architecture governance: `architecture/`
 
 ## Guardrails
-1. Every touched file must be mapped in `architecture/MAP.csv`.
-2. Denylist patterns for active slices are hard CI failures.
-3. Slices marked `done` cannot retain any declared deletion targets.
-4. No temporary adapters without an owning slice and explicit removal target.
-5. New shell layers (`Application`, `Adapters`, `Composition`, `Domain`) may not accumulate more legacy-type dependencies than the ratcheted budgets recorded in CI.
-6. Historical docs may remain only when they are clearly labeled as historical and superseded by the latest convergence audit.
-7. The existing `architecture/` control plane remains the single source of truth until a final archival decision is recorded explicitly.
 
-## Slice Completion Criteria
-A slice is complete only when all are true:
-1. Replay-diff checks for that slice pass.
-2. E2E smoke checks for that slice pass.
-3. Replacement call sites are migrated.
-4. Legacy deletion targets are removed.
-5. Ratchet budgets do not increase.
-6. `architecture/SLICES.yaml` and `architecture/MAP.csv` are updated.
-
-## Session Protocol
-Session start:
-1. Read `architecture/CHARTER.md`.
-2. Read `architecture/DECISIONS.md`.
-3. Read all `in_progress` slices in `architecture/SLICES.yaml`.
-4. Run `scripts/architecture/check_architecture_guards.sh --status`.
-
-Session end:
-1. Update slice status, touched paths, and risks.
-2. Record exact next command/test sequence.
-3. Do not mark a slice `done` unless deletion targets are gone.
-
-## Handoff Format
-1. What changed
-2. What is now true
-3. What remains
-4. Exact next command/test sequence
+1. `scripts/architecture/check_architecture_guards.sh` must pass in CI.
+2. Retired directory surfaces must remain absent.
+3. Permanent architectural changes must be reflected in `architecture/DECISIONS.md`.

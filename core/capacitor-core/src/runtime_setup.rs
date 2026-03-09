@@ -1094,7 +1094,7 @@ mod tests {
                 .unwrap_or_else(|| panic!("{event} should be an array"));
             assert!(
                 entries.iter().all(|entry| entry["hooks"].is_array()),
-                "{event} should only contain entries with `hooks` arrays after migration"
+                "{event} should only contain entries with `hooks` arrays after normalization"
             );
             assert!(
                 entries

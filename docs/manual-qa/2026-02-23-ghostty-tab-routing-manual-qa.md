@@ -7,7 +7,7 @@
 
 ## Why This Report Exists
 
-This report tracks manual verification for the Ghostty routing migration from window-title matching to deterministic tab-level AX targeting.
+This report tracks manual verification for the Ghostty routing change from window-title matching to deterministic tab-level AX targeting.
 
 ## Required Focus Areas
 
@@ -29,7 +29,7 @@ Run the canonical host-hygiene and daemon checks from `docs/TERMINAL_ACTIVATION_
 | GT-3 | Tab press blocked/fails | `window_raise` | TODO | |
 | GT-4 | No deterministic tab/window route | `app_activate_fallback` | TODO | |
 | GT-5 | AX unavailable | `app_activate_fallback` | PASS | Reproduced repeatedly for `assistant-ui`; logs consistently show `activateGhosttyWithAXRouting ax unavailable tty=<none> path=/Users/petepetrash/Code/aui/assistant-ui`. |
-| GT-6 | No-client attached tmux + Ghostty running | Reuse path, no launch fan-out | PARTIAL | `tool-ui` click under marker `ghostty-tab-focus-repro-tool-ui` followed ensure/reuse path (`ensureTmuxSession` + `activateFirstRunningTerminal`), with no launch fan-out in slice. |
+| GT-6 | No-client attached tmux + Ghostty running | Reuse path, no launch fan-out | PARTIAL | `tool-ui` click under marker `ghostty-tab-focus-repro-tool-ui` followed ensure/reuse path (`ensureTmuxSession` + `activateFirstRunningTerminal`), with no launch fan-out in this change. |
 
 ## Required Log Markers
 

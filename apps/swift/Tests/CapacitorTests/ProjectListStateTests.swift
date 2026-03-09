@@ -152,8 +152,4 @@ private final class StubProjectListPreferencesGateway: ProjectListPreferencesGat
     func saveProjectOrder(_ order: [String]) {
         savedProjectOrders.append(order)
     }
-
-    func migrateProjectOrderIfNeeded() {
-        didMigrateProjectOrder = true
-    }
 }

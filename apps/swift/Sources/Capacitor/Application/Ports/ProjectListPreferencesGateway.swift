@@ -6,5 +6,4 @@ protocol ProjectListPreferencesGateway {
     func saveDormantProjectPaths(_ paths: Set<String>)
     func loadProjectOrder() -> [String]
     func saveProjectOrder(_ order: [String])
-    func migrateProjectOrderIfNeeded()
 }

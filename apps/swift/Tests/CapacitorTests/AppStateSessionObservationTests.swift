@@ -418,5 +418,4 @@ private final class NoopProjectListPreferencesGateway: ProjectListPreferencesGat
     }
 
     func saveProjectOrder(_: [String]) {}
-    func migrateProjectOrderIfNeeded() {}
 }

@@ -73,7 +73,6 @@ private struct RuntimeRefreshNoopProjectListPreferencesGateway: ProjectListPrefe
     }
 
     func saveProjectOrder(_: [String]) {}
-    func migrateProjectOrderIfNeeded() {}
 }
 
 private struct RuntimeRefreshStubGateway: RuntimeGateway {

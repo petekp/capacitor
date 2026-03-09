@@ -88,7 +88,7 @@ echo ""
 echo "── Legacy HTTP Hook Ratchets ──"
 echo ""
 
-# Legacy hook migration ratchets (kept to prevent regression)
+# Legacy hook compatibility ratchets (kept to prevent regression)
 check_budget "HOOK_COMMAND constant"           'HOOK_COMMAND.*=.*hud-hook handle'  0
 check_budget "type.*command.*hook creation"    '"command"\.to_string()'            1  "core/"
 check_budget "hud-hook handle references"      'hud-hook handle'                   14

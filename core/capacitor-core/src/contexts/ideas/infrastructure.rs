@@ -146,7 +146,7 @@ mod tests {
         let idea_id = repository
             .capture_idea(&CaptureIdeaRequest {
                 project_path: project_path.to_string(),
-                idea_text: "ship the slice".to_string(),
+                idea_text: "ship the release".to_string(),
             })
             .expect("capture idea");
 
@@ -180,14 +180,14 @@ mod tests {
             .update_idea_title(&IdeaFieldUpdateRequest {
                 project_path: project_path.to_string(),
                 idea_id: idea_id.clone(),
-                new_value: "Ship the slice".to_string(),
+                new_value: "Ship the release".to_string(),
             })
             .expect("update title");
         repository
             .update_idea_description(&IdeaFieldUpdateRequest {
                 project_path: project_path.to_string(),
                 idea_id: idea_id.clone(),
-                new_value: "Ship the finish-line slice".to_string(),
+                new_value: "Ship the release note".to_string(),
             })
             .expect("update description");
 
@@ -208,10 +208,10 @@ mod tests {
         assert_eq!(updated_backlog.ideas[0].status, "done");
         assert_eq!(updated_backlog.ideas[0].effort, "medium");
         assert_eq!(updated_backlog.ideas[0].triage, "validated");
-        assert_eq!(updated_backlog.ideas[0].title, "Ship the slice");
+        assert_eq!(updated_backlog.ideas[0].title, "Ship the release");
         assert_eq!(
             updated_backlog.ideas[0].description,
-            "Ship the finish-line slice"
+            "Ship the release note"
         );
         assert_eq!(
             repository.ideas_file_path(project_path),

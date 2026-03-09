@@ -1012,7 +1012,7 @@ mod tests {
         let project_path = "/tmp/idea-boundary-project";
 
         let idea_id = runtime
-            .capture_idea(project_path.to_string(), "ship the finish line".to_string())
+            .capture_idea(project_path.to_string(), "ship the release".to_string())
             .expect("capture idea");
 
         let ideas = runtime
@@ -1046,14 +1046,14 @@ mod tests {
             .update_idea_title(
                 project_path.to_string(),
                 idea_id.clone(),
-                "Ship the finish line".to_string(),
+                "Ship the release".to_string(),
             )
             .expect("update title");
         runtime
             .update_idea_description(
                 project_path.to_string(),
                 idea_id.clone(),
-                "Ship the finish line slice".to_string(),
+                "Ship the release note".to_string(),
             )
             .expect("update description");
         runtime
@@ -1066,8 +1066,8 @@ mod tests {
         assert_eq!(reloaded_ideas[0].status, "done");
         assert_eq!(reloaded_ideas[0].effort, "medium");
         assert_eq!(reloaded_ideas[0].triage, "validated");
-        assert_eq!(reloaded_ideas[0].title, "Ship the finish line");
-        assert_eq!(reloaded_ideas[0].description, "Ship the finish line slice");
+        assert_eq!(reloaded_ideas[0].title, "Ship the release");
+        assert_eq!(reloaded_ideas[0].description, "Ship the release note");
 
         let order = runtime
             .load_ideas_order(project_path.to_string())

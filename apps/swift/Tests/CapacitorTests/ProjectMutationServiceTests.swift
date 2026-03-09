@@ -219,8 +219,6 @@ private final class StubProjectListPreferencesGateway: ProjectListPreferencesGat
     }
 
     func saveProjectOrder(_: [String]) {}
-
-    func migrateProjectOrderIfNeeded() {}
 }
 
 private final class StubProjectMutationGateway: ProjectMutationGateway {
