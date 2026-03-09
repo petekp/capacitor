@@ -716,6 +716,7 @@ RW-101,repo-hygiene-claude-explorations-delete-rw101,.claude/explorations/*,,don
 RW-101,repo-hygiene-claude-migration-delete-rw101,.claude/migration/*,,done,true,Delete tracked migration planning artifacts after extracting the live guard script
 RW-101,repo-hygiene-runtime-guard-rw101,scripts/ci/runtime-reliability-guard.sh,scripts/ci/runtime-reliability-guard.sh,done,false,Promote runtime reliability guard to tracked operational script outside .claude
 RW-101,repo-hygiene-runtime-wrapper-rw101,scripts/ci/runtime-reliability.sh,scripts/ci/runtime-reliability.sh,done,false,Rewire runtime reliability wrapper to the tracked guard script
+RW-101,repo-hygiene-swift-test-wrapper-rw101,scripts/ci/run-swift-tests.sh,scripts/ci/run-swift-tests.sh,done,false,Canonical Swift CI wrapper that stages the Rust dylib and regenerated UniFFI bindings before swift test
 RW-101,repo-hygiene-terminal-guard-comment-rw101,scripts/ci/terminal-simplification-guard.sh,scripts/ci/terminal-simplification-guard.sh,done,false,Remove stale migration-path comment from simplification guard
 RW-101,repo-hygiene-session-matrix-rw101,docs/SESSION_STATE_RELEASE_MATRIX.md,docs/SESSION_STATE_RELEASE_MATRIX.md,done,false,Update operational docs to reference runtime reliability guard naming
 RW-101,repo-hygiene-bootstrap-rw101,scripts/bootstrap.sh,scripts/bootstrap.sh,done,false,Generate UniFFI artifacts into a temp directory and copy only canonical Swift package outputs
