@@ -1,28 +1,55 @@
 # Gotchas Reference
 
-Detailed implementation gotchas for Capacitor development. See `/Users/petepetrash/Code/capacitor/CLAUDE.md` for the short version.
+This file is the implementation-hazard companion to `CLAUDE.md` and
+`.claude/docs/debugging-guide.md`.
 
-For multi-step debugging procedures, see `/Users/petepetrash/Code/capacitor/.claude/docs/debugging-guide.md`.
+Architecture source of truth lives in:
+
+- `architecture/CHARTER.md`
+- `architecture/DECISIONS.md`
+- `docs/architecture/OVERVIEW.md`
+- `docs/architecture/REFERENCE.md`
 
 ## Rust
 
-### Formatting Required
-CI enforces `cargo fmt`. Always run it before committing.
+### Formatting is mandatory
 
-### Release dylib Required for Swift Runs
-Swift links against the release Rust dylib. After Rust changes:
+CI enforces `cargo fmt`. Run it before committing.
+
+### Swift links the release Rust dylib
+
+Default workflow after Rust changes:
+
+```bash
+./scripts/dev/restart-app.sh
+```
+
+Fallback surgery only, when you are debugging the build pipeline itself:
+
 ```bash
 cargo build -p capacitor-core --release
-cp target/release/libcapacitor_core.dylib apps/swift/.build/arm64-apple-macosx/debug/
+cd apps/swift
+SWIFT_BIN_PATH="$(swift build --show-bin-path)"
+cp ../../target/release/libcapacitor_core.dylib "$SWIFT_BIN_PATH/"
 ```
 
-### hud-hook Symlink (Not Copy)
-Copying adhoc-signed Rust binaries to `~/.local/bin/` can trigger Gatekeeper `SIGKILL` (exit 137). Use a symlink:
+### Use the installed `capacitor-hook` binary, not ad hoc copies
+
+Copying adhoc-signed Rust binaries into `~/.local/bin/` can trigger Gatekeeper
+`SIGKILL` (exit 137). Prefer the canonical installer flow:
+
 ```bash
-ln -s target/release/hud-hook ~/.local/bin/hud-hook
+./scripts/sync-hooks.sh --force
 ```
 
-### UniFFI Bindings Must Be Regenerated After FFI Type Changes
+If you must inspect the path directly, the installed binary is:
+
+```bash
+~/.local/bin/capacitor-hook
+```
+
+### UniFFI bindings must be regenerated after FFI type changes
+
 ```bash
 cargo build -p capacitor-core --release
 cargo run -p capacitor-core --bin uniffi-bindgen generate \
@@ -31,54 +58,102 @@ cargo run -p capacitor-core --bin uniffi-bindgen generate \
   --out-dir apps/swift/bindings
 cp apps/swift/bindings/capacitor_core.swift apps/swift/Sources/Capacitor/Bridge/
 ```
-If skipped, Swift can fail with "extra argument ... in call" or checksum mismatch errors.
+
+If you skip this, Swift can fail with checksum mismatches or mismatched call shapes.
+
+### Managed hook config is canonical HTTP-only
+
+Capacitor now accepts only the canonical nested HTTP hook format that points at
+the local hook server. Flat command-style hook entries are rejected by the core.
+Do not add ad hoc command-hook fallbacks to fix setup problems.
 
 ## Swift
 
-### OSLog Is Not Reliable in Unsigned Debug Runs
-For `swift run`, prefer stderr or `DebugLog.write(...)`. See the debugging guide for capture steps.
+### `OSLog` is unreliable in unsigned debug runs
 
-### UniFFI `Task` Shadows Swift `Task`
+For `swift run`, prefer `DebugLog.write(...)`, stderr, and
+`./scripts/dev/agent-observe.sh`.
+
+### UniFFI `Task` shadows Swift `Task`
+
 Generated bindings define `Task`. Use `_Concurrency.Task` explicitly in app code.
 
-### GeometryReader + Observed State Can Trigger Layout Loops
-Capture observable values into local `let` constants before entering `GeometryReader`/layout callbacks.
+### `GeometryReader` plus observed state can trigger layout loops
 
-### TimelineView + Material Blur Can Overload WindowServer
-Avoid `TimelineView(.animation)` for blur-heavy surfaces; prefer state-driven `withAnimation` loops.
+Capture observable values into local `let` constants before entering
+`GeometryReader` or layout callbacks.
 
-### XCTest Expectations + Actor Continuations Crash in Loops (Swift 6.2)
-Creating `XCTestExpectation` + `fulfillment(of:)` inside a `for` loop in an `async` test method,
-combined with `CheckedContinuation` stored in an actor, triggers "freed pointer was not the last
-allocation" (SIGABRT). Fix: unroll the loop into separate sequential blocks, each with its own scope.
+### `TimelineView(.animation)` plus heavy blur can overload WindowServer
 
-### Incremental Build Can Leave Stale Binary
-When no Swift files changed, force a rebuild:
+Prefer state-driven animation loops over perpetual `TimelineView(.animation)` for
+blur-heavy surfaces.
+
+### Incremental builds can leave a stale app binary
+
+When Swift looks unchanged but runtime behavior disagrees, force a rebuild:
+
 ```bash
 ./scripts/dev/restart-alpha-stable.sh --force
 ```
 
-## Runtime + Activation
+## Runtime And Activation
 
-### Rust Resolver Owns Activation Decisions
-Activation decision logic belongs in Rust (`core/capacitor-core/src/runtime_activation/`). Swift only executes returned actions.
+### Rust owns persisted truth; Swift owns projection and execution
 
-### Tmux Client TTY Must Be Queried at Activation Time
-Do not trust previously captured tmux client tty values. Query fresh with:
+Do not move snapshot truth, setup policy, or file-backed semantics into Swift.
+Do not move terminal activation execution into Rust.
+
+### `AppState` is the shell environment hub, not a policy dumping ground
+
+`AppState` may expose canonical collaborators to views, but it should not
+recreate live-world assembly, duplicate domain rules, or become a façade for
+every workflow.
+
+### Production activation flow lives in Swift
+
+The live activation flow is owned by Swift and currently centered on:
+
+- `apps/swift/Sources/Capacitor/Models/AppState.swift`
+- `apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift`
+- `apps/swift/Sources/Capacitor/Models/GhosttyAXReader.swift`
+
+Rust owns runtime truth and hook ingest. It does not own live terminal activation execution.
+
+### Query tmux client TTY at activation time
+
+Do not trust previously captured TTYs blindly. Query fresh when you need to
+reason about active tmux clients:
+
 ```bash
 tmux list-clients -F '#{client_tty} #{session_name}'
 ```
-When multiple Ghostty tabs are attached to different tmux sessions, prefer a client already
-viewing the target session. This makes `switch-client` a no-op and avoids the AX title
-propagation race (Ghostty updates titles asynchronously after session switches).
 
-### Matching Rules: Exact for Identity, Parent/Child for UI Focus
-Use exact identity matching for project/session ownership; use parent/child path matching only for focus UX.
+### Use exact identity for ownership; use parent/child only for focus UX
 
-## Hooks
+Project/session ownership should use exact or normalized identity matching.
+Parent/child path matching is only for UI focus and activation heuristics.
 
-### Hook Config Requires Both `async` and `timeout`
-Claude Code hook entries must include both fields or validation fails.
+## Hooks And First-Run Testing
 
-### First-Run Testing
-Use `/Users/petepetrash/Code/capacitor/scripts/dev/reset-for-testing.sh` to reset prefs, runtime state, and hook registrations.
+### Shell snippets must call `capacitor-hook cwd`
+
+The source of truth for shell integration text is:
+
+- `apps/swift/Sources/Capacitor/Application/Setup/ShellSetupInstructions.swift`
+- `apps/swift/Sources/Capacitor/Views/Setup/ShellInstructionsSheet.swift`
+
+Relevant verification tests:
+
+- `apps/swift/Tests/CapacitorTests/HookInstallerTests.swift`
+- `apps/swift/Tests/CapacitorTests/ShellSetupInstructionsTests.swift`
+
+### First-run testing should reset both prefs and runtime state
+
+Use:
+
+```bash
+./scripts/dev/reset-for-testing.sh
+```
+
+That script resets app prefs, runtime state, installed hook configuration, and
+development bundle state so onboarding can be tested honestly.

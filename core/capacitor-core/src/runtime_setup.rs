@@ -1191,26 +1191,16 @@ mod tests {
 
     #[test]
     fn test_install_hooks_checks_binary() {
-        let (_temp, storage) = setup_test_env();
+        let _guard = env_lock();
+        let (temp, storage) = setup_test_env();
+        let home = temp.path();
+        let _home_guard = EnvVarGuard::set("HOME", home);
         let checker = SetupChecker::new(storage);
 
         let result = checker.install_hooks().unwrap();
 
-        // Binary check happens before settings registration
-        // If binary exists on system, it will succeed; if not, it fails gracefully
-        let binary_path = dirs::home_dir()
-            .map(|h| h.join(".local/bin/hud-hook"))
-            .unwrap_or_else(|| PathBuf::from("/usr/local/bin/hud-hook"));
-
-        if binary_path.exists() {
-            // Binary exists, should succeed (or fail on verification)
-            // Just verify it doesn't panic and returns a result
-            assert!(result.success || result.message.contains("broken"));
-        } else {
-            // Binary missing, should fail gracefully with helpful message
-            assert!(!result.success);
-            assert!(result.message.contains("not found"));
-        }
+        assert!(!result.success);
+        assert!(result.message.contains("not found"));
     }
 
     #[cfg(unix)]

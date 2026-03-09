@@ -1,36 +1,87 @@
 # Release Guide
 
-Complete procedures for building, notarizing, and distributing Capacitor releases.
+Use this guide for agent-run release preparation and verification.
+
+Source of truth for the active app architecture still lives in:
+
+- `architecture/CHARTER.md`
+- `architecture/DECISIONS.md`
+- `docs/architecture/OVERVIEW.md`
+- `docs/architecture/REFERENCE.md`
+
+Source of truth for release mechanics lives in the scripts themselves:
+
+- `scripts/release/release.sh`
+- `scripts/release/bump-version.sh`
+- `scripts/release/build-distribution.sh`
+- `scripts/release/verify-app-bundle.sh`
+- `scripts/release/create-dmg.sh`
+- `scripts/release/generate-appcast.sh`
+
+## Preflight Before Any Release Work
+
+The worktree should be clean, and these commands should pass before you build release assets:
+
+```bash
+git status --short
+scripts/architecture/check_architecture_guards.sh --status
+scripts/ci/runtime-reliability-guard.sh --status
+cargo test -p capacitor-core
+cargo test -p capacitor-hook
+cd apps/swift && swift test
+```
+
+For honest first-run validation, test from a reset or isolated environment rather
+than from a long-lived dev machine state.
 
 ## Quick Release Workflow
 
-```bash
-./scripts/release/bump-version.sh patch          # Bump version
-./scripts/release/build-distribution.sh --channel alpha --skip-notarization  # Build without notarize
-./scripts/release/verify-app-bundle.sh           # VERIFY before release!
-./scripts/release/build-distribution.sh --channel alpha  # Full build + notarize
-./scripts/release/create-dmg.sh                  # Create + notarize DMG
-./scripts/release/generate-appcast.sh --sign     # Update Sparkle feed (must sign!)
+Default path:
 
-gh release create v0.x.x \
-  dist/Capacitor-v0.x.x-arm64.dmg \
-  dist/Capacitor-v0.x.x-arm64.zip \
-  dist/appcast.xml \
-  --title "Capacitor v0.x.x" \
-  --notes "Release notes"
+```bash
+./scripts/release/release.sh patch
 ```
 
-**IMPORTANT:** See `docs/PRE_RELEASE_CHECKLIST.md` for the full verification checklist. Test from an isolated location (`/tmp`) before releasing—dev environment masks issues.
+Use `./scripts/release/release.sh --dry-run` for a full rehearsal without pushing or publishing.
+That script is the canonical end-to-end release workflow. It also checks for a dirty
+worktree and will prompt before continuing when you are not in version-bump mode.
+
+Individual release scripts are for surgical debugging, not the default path:
+
+```bash
+./scripts/release/bump-version.sh patch
+./scripts/release/build-distribution.sh --channel alpha --skip-notarization
+./scripts/release/verify-app-bundle.sh
+./scripts/release/build-distribution.sh --channel alpha
+./scripts/release/create-dmg.sh
+./scripts/release/generate-appcast.sh --sign
+```
+
+For the broader human checklist, also see `docs/PRE_RELEASE_CHECKLIST.md`, but do
+not let an old dated report override the current scripts or current verification output.
+
+## What `build-distribution.sh` Must Produce
+
+The release app bundle must include:
+
+- `Capacitor` app executable
+- `libcapacitor_core.dylib`
+- `Sparkle.framework`
+- `Capacitor_Capacitor.bundle`
+- bundled `capacitor-hook` binary in `Contents/Resources/`
+- fresh UniFFI Swift bindings
+
+If any of those are missing, the build is incomplete even if the app launches locally.
 
 ## One-Time Setup
 
-### Install Hook Binary
+### Install the hook binary for local release testing
 
 ```bash
 ./scripts/sync-hooks.sh --force
 ```
 
-### Store Notarization Credentials
+### Store notarization credentials
 
 ```bash
 xcrun notarytool store-credentials "Capacitor" \
@@ -39,14 +90,35 @@ xcrun notarytool store-credentials "Capacitor" \
   --password "app-specific-password"
 ```
 
-See `docs/NOTARIZATION_SETUP.md` for full guide.
+See `docs/NOTARIZATION_SETUP.md` for the full setup guide.
+
+## Agent Verification Checklist
+
+After building release assets:
+
+```bash
+./scripts/release/verify-app-bundle.sh
+bats tests/capacitor-hook/capacitor-hook-smoke.bats
+```
+
+Then validate the app from a fresh state:
+
+```bash
+./scripts/dev/reset-for-testing.sh
+```
+
+Key things to confirm manually:
+
+- app launches from the built bundle, not from a stale dev build
+- bundled `capacitor-hook` installs successfully on first run
+- runtime snapshot updates after shell integration runs
+- Sparkle metadata and version/build numbers match the intended release
 
 ## Release Gotchas
 
-- **Sparkle.framework must be bundled** — Swift Package Manager links but doesn't embed frameworks. The build script copies it to `Contents/Frameworks/` and signs it.
-- **Private repos break auto-updates** — Sparkle fetches appcast.xml anonymously; private GitHub repos return 404. Repo must be public for updates to work.
-- **UniFFI bindings must be regenerated for releases** — The build script auto-regenerates Swift bindings from the Rust dylib. If you see "UniFFI API checksum mismatch" crashes, the bindings are stale.
-- **SPM resource bundle must be copied** — `Bundle.module` only works when running via SPM. The build script copies `Capacitor_Capacitor.bundle` to `Contents/Resources/`.
-- **ZIP archives must exclude AppleDouble files** — macOS extended attributes create `._*` files that break code signatures. The build script uses `ditto --norsrc --noextattr`. If users see "app is damaged", check for `._*` files.
-- **Sparkle compares build numbers, not version strings** — The `sparkle:version` field must match `CFBundleVersion` (numeric build number like `202601261256`), not `CFBundleShortVersionString` (marketing version like `0.1.24`). String comparison makes "0.1.24" < "202601260928", so updates won't be offered. Use `sparkle:shortVersionString` for the display version.
-- **Never manually upload individual release assets** — The v0.1.24 incident: DMG was built from a stale `apps/swift/Capacitor.app` with version 0.1.23, while the ZIP was rebuilt fresh with 0.1.24. Users who downloaded the "v0.1.24 DMG" got 0.1.23, triggering an immediate update prompt. Always run the complete `./scripts/release/release.sh` workflow, or rebuild ALL artifacts fresh if doing manual steps.
+- `Sparkle.framework` must be embedded and signed. SPM link success is not enough.
+- The build script regenerates UniFFI bindings. Do not hand-edit generated bindings before release.
+- `capacitor-hook` must be bundled in `Contents/Resources/` or first-run install will fail.
+- ZIP archives must exclude AppleDouble files. If users see "app is damaged", inspect for `._*` files.
+- Sparkle compares numeric build numbers, not marketing version strings.
+- Never upload a partially rebuilt asset set. Rebuild all artifacts together or not at all.

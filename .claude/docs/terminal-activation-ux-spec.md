@@ -1,174 +1,112 @@
-# Terminal Activation UX Spec v2
+# Terminal Activation UX Spec
 
-> Canonical path: `.claude/docs/terminal-activation-ux-spec.md`
-> Supersedes: `docs/TERMINAL_ACTIVATION_UX_SPEC.md`, `docs/TERMINAL_ACTIVATION_MANUAL_TESTING.md`
-> Date: 2026-03-01
+This is the active source of truth for terminal activation behavior.
+Historical activation material belongs in `docs/archive/` and should not guide new code.
+
+## Source Of Truth Files
+
+When changing activation behavior, read these first:
+
+- `apps/swift/Sources/Capacitor/Models/AppState.swift`
+- `apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift`
+- `apps/swift/Sources/Capacitor/Models/GhosttyAXReader.swift`
+
+Production ownership note:
+
+- Swift owns live terminal activation flow and execution.
+- Rust owns runtime inputs and persisted truth, not terminal-UI execution.
 
 ## Core Model
 
-**Single-client, session-swapping architecture.** Capacitor manages one tmux client in one Ghostty tab. Card clicks swap the tmux session within that tab. New tabs and windows are only created when no tmux-attached tab exists.
+Capacitor uses a single-client, session-swapping model:
 
-### Decision Tree
+- one remembered managed TTY when available
+- one tmux-attached Ghostty tab when possible
+- session switching within that client before opening any new terminal surface
+- terminal activation execution in Swift, not in Rust
 
-Every card click executes this algorithm:
+## Decision Tree
 
-```
-1. Resolve a tmux client to use:
-   a. Is there a remembered Capacitor-managed TTY that is still alive?
-      → YES: use it.
-      → NO: continue.
-   b. Is there ANY tmux client attached in any Ghostty tab?
-      → YES: adopt it (remember its TTY as managed).
-      → NO: continue.
-   c. Does a detached tmux session already exist for this project?
-      → YES (auto-attach):
-        - Ghostty running? Type `tmux attach-session -t <session>` into the
-          active tab (no new tab). Remember TTY. Done (skip step 2).
-        - Ghostty not running? Launch Ghostty with
-          `tmux attach-session -t <session>`. Remember TTY. Done (skip step 2).
-      → NO (fresh launch):
-        - Ghostty running? Open new tab, run
-          `tmux new-session -s <session> -c <project-path>`.
-          Remember TTY. Done (skip step 2).
-        - Ghostty not running? Launch Ghostty with
-          `tmux new-session -s <session> -c <project-path>`.
-          Remember TTY. Done (skip step 2).
+Every card click follows this flow:
 
-2. Switch session on the resolved client:
-   a. Does a tmux session for this project already exist?
-      → YES: `tmux switch-client -c <tty> -t <session>`.
-      → NO: `tmux new -d -s <session> -c <project-path>`,
-        then `tmux switch-client -c <tty> -t <session>`.
+```text
+1. Resolve a tmux client to use.
+   - Reuse the remembered managed TTY if it is still alive.
+   - Otherwise adopt any existing tmux-attached Ghostty tab.
+   - Otherwise, if a detached tmux session already exists, attach to it.
+   - Otherwise create a new tmux session in a new tab or newly launched Ghostty.
 
-3. Focus the terminal:
-   a. AX-route to the managed tab (Ghostty) or TTY-discover the owning app
-      (iTerm / Terminal.app).
-   b. Activate the terminal app to the foreground.
+2. Ensure the target session exists.
+   - If the session exists, switch the resolved client to it.
+   - If it does not, create it silently and then switch to it.
+
+3. Focus the terminal.
+   - Ghostty: AX-route to the managed tab when possible.
+   - iTerm / Terminal.app: use TTY-discovery app activation.
 ```
 
 ## Behavioral Invariants
 
 | # | Name | Rule |
 |---|------|------|
-| B1 | No tab/window proliferation | A card click must never create a new Ghostty tab or window if a tmux-attached tab already exists. |
-| B2 | Session-swap not client-swap | Switching projects means `tmux switch-client`, not opening a new tmux client. |
-| B3 | Create-on-demand | If no tmux session exists for a project, create one silently before switching. |
-| B4 | Always activate | Every card click brings the terminal to the foreground and focuses the managed tab. |
-| B5 | Latest-intent-wins | Rapid clicks: only the most recent click's session switch executes; stale requests are discarded. |
-| B6 | Managed-TTY affinity | Remember which TTY Capacitor is using. Reuse it until it dies. |
-| B7 | Graceful recovery | If the managed TTY disappears, adopt any other tmux client. If none exist, create a new tab. |
-| B8 | Multi-terminal support | Ghostty gets full AX tab routing. iTerm/Terminal.app get TTY-discovery activation. |
-| B9 | Auto-attach detached sessions | If no tmux client exists but a detached session does, attach to it in the current Ghostty tab — don't open a new tab. New tabs only when no session exists at all. |
+| B1 | No tab proliferation | A click must not create a new Ghostty tab or window if a tmux-attached tab already exists. |
+| B2 | Session swap over client swap | Project switching means `tmux switch-client`, not spawning another tmux client. |
+| B3 | Create on demand | Missing tmux sessions are created silently before switch. |
+| B4 | Always activate | Every click brings the correct terminal surface to the foreground. |
+| B5 | Latest intent wins | Rapid clicks discard stale requests. |
+| B6 | Managed-TTY affinity | Reuse the remembered TTY until it dies. |
+| B7 | Graceful recovery | If the managed TTY is gone, adopt another client or create a new surface. |
+| B8 | Multi-terminal support | Ghostty gets AX tab routing; iTerm and Terminal.app get TTY-based activation. |
+| B9 | Auto-attach detached sessions | If no tmux client exists but a detached session does, attach to it instead of opening a new tab. |
 
 ## Scenario Matrix
 
-| ID | Starting State | User Action | Expected Behavior |
-|----|---------------|-------------|-------------------|
-| S1 | No Ghostty, no tmux sessions | Click project A | Launch Ghostty → create session A → attach → remember TTY |
-| S2 | No Ghostty, detached session A exists | Click project A | Launch Ghostty → `tmux attach-session -t A` → remember TTY |
-| S3 | Managed tab on session A | Click project B (session exists) | `switch-client -t B` → AX focus tab → activate Ghostty |
-| S4 | Managed tab on session A | Click project B (no session) | Create session B → `switch-client -t B` → AX focus → activate |
-| S5 | Managed tab on session A | Click project A (same) | No-op or idempotent switch → AX focus → activate |
-| S6 | Managed tab closed by user | Click any project | Detect TTY gone → find any other tmux client → adopt → switch |
-| S7 | Managed tab closed, no clients, no sessions | Click any project | Open new tab → `tmux new-session -s <session> -c <path>` → remember new TTY |
-| S8 | Rapid click A then B (<200ms) | — | Only B executes; A discarded via staleness guard |
-| S9 | Core snapshot unavailable | Click any project | Tmux session-name fallback → ensure + switch. Last resort: launch |
-| S10 | Ghostty running (idle shell tab), no tmux clients, detached session A | Click project A | Auto-attach: type `tmux attach-session -t A` into current tab (no new tab) → remember TTY |
+| ID | Starting State | Expected Behavior |
+|----|---------------|-------------------|
+| S1 | No terminal, no tmux session | Launch terminal, create session, remember TTY |
+| S2 | No terminal, detached session exists | Launch terminal and attach to existing session |
+| S3 | Managed tab on session A, session B exists | `switch-client` to B and focus terminal |
+| S4 | Managed tab on session A, session B missing | Create B, `switch-client` to B, focus terminal |
+| S5 | Managed tab already on target session | Idempotent activation and focus |
+| S6 | Managed tab closed, another client exists | Adopt replacement client and switch |
+| S7 | Managed tab closed, no clients, no session | Open new tab or terminal and create session |
+| S8 | Rapid click A then B | Only B executes |
+| S9 | Snapshot unavailable | Use fallback session resolution and ensure + switch flow |
+| S10 | Ghostty running, no clients, detached session exists | Attach in current tab without opening a new one |
 
-## AX Routing Strategy
+## Ghostty Routing
 
-### Ghostty (full AX routing)
+Ghostty uses AX-driven tab focus after tmux resolution:
 
-After session switch:
-
-1. Find the managed tab by matching TTY or tmux session title in Ghostty's AX tree.
-2. `AXPress` the matched tab to focus it.
-3. If tab press fails, `AXRaise` the window.
-4. If both fail, `activateAppByName("Ghostty")`.
-
-### iTerm / Terminal.app (TTY discovery)
-
-1. Use TTY-discovery to identify which app owns the managed TTY.
-2. Activate that app via `NSWorkspace`.
-3. No tab-level routing (app-level activation only).
-
-### Future: iTerm / Terminal.app AX Routing
-
-Investigate AX tree structure for tab-level focus parity with Ghostty. Track as a separate enhancement.
+1. Match the managed tab by TTY or tmux session title.
+2. Prefer `AXPress` on the matched tab.
+3. Fall back to `AXRaise` on the owning window.
+4. Fall back again to app activation if AX focus is unavailable.
 
 ## Managed-TTY Lifecycle
 
-```
-                    ┌─────────────────────┐
-                    │  No managed TTY     │
-                    │  (app launch / cold) │
-                    └─────────┬───────────┘
-                              │ card click
-                              ▼
-                    ┌─────────────────────┐
-          ┌────────│  Resolve TTY        │────────┐
-          │        └─────────────────────┘        │
-          │ found any client                      │ no clients
-          ▼                                       ▼
-┌──────────────────┐              ┌───────────────────────┐
-│ Adopt client TTY │              │ tmux has-session -t ?  │
-│ Remember as      │              └───────┬───────┬───────┘
-│ managed TTY      │                      │       │
-└────────┬─────────┘               exists │       │ doesn't exist
-         │                                ▼       ▼
-         │                    ┌────────────┐  ┌──────────────┐
-         │                    │ Auto-attach │  │ Open new tab │
-         │                    │ tmux attach │  │ tmux new -s  │
-         │                    │ (reuse tab) │  │ -c <path>    │
-         │                    └──────┬─────┘  └──────┬───────┘
-         │                           │               │
-         └──────────┬────────────────┴───────────────┘
-                    │
-                    ▼
-          ┌──────────────────┐
-          │  Managed TTY     │◄──── card clicks use this
-          │  (active)        │      for switch-client
-          └────────┬─────────┘
-                   │ TTY dies (tab closed)
-                   ▼
-          ┌──────────────────┐
-          │  Managed TTY     │──► back to Resolve TTY
-          │  (stale)         │    on next card click
-          └──────────────────┘
+The managed TTY is revalidated on every activation attempt.
+If it is stale, clear it and re-enter resolution instead of trying to switch a dead client.
+
+## Verification
+
+When changing activation behavior, run:
+
+```bash
+./scripts/dev/agent-observe.sh paths
+./scripts/dev/agent-observe.sh snapshot
+cd apps/swift && swift test --filter 'TerminalLauncherTests|GhosttyAXReaderTests'
 ```
 
-Staleness detection: before each `tmux switch-client -c <tty>`, verify the TTY is still alive. If not, clear it and re-enter resolution.
+Use `./scripts/dev/agent-observe.sh tail app` while reproducing if you need the
+live `TerminalLauncher` log surface. Use `routing-snapshot <project_path>` when
+you need to compare runtime evidence against activation decisions.
 
-## Deprecated
+## Coverage Expectations
 
-This spec supersedes:
+These test files are the minimum activation coverage surface:
 
-- `docs/TERMINAL_ACTIVATION_UX_SPEC.md` — high-level, references old daemon architecture
-- `docs/TERMINAL_ACTIVATION_MANUAL_TESTING.md` — references daemon IPC, outdated scenarios
+- `apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift`
+- `apps/swift/Tests/CapacitorTests/GhosttyAXReaderTests.swift`
 
-Deprecated concepts:
-
-- Rust resolver choosing between distinct action kinds (`SwitchTmuxSession` vs `LaunchNewTerminal` vs `EnsureTmuxSession`) as independent strategies. The new model uses one unified flow on the Swift side.
-- Tab-per-project model (each project gets its own Ghostty tab).
-- Daemon-based routing IPC.
-
-Retained from old spec:
-
-- Latest-intent-wins / staleness guard (now B5).
-- Reuse-first principle (now B1, B2).
-- Single-fallback rule (now B7).
-
-## Test Coverage
-
-Automated tests must cover:
-
-1. `apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift` — unified activation flow, auto-attach, managed-TTY lifecycle
-2. `apps/swift/Tests/CapacitorTests/GhosttyAXReaderTests.swift` — AX tab/window matching, window title session matching
-3. `core/capacitor-core/src/` — Rust resolver unit tests (telemetry only)
-
-Each scenario in the matrix (S1–S10) should have at least one corresponding automated test.
-
-Key auto-attach tests (B9 / D-010):
-- `testUnifiedActivationAutoAttachesWhenSessionExists` — S10: no client + session exists → attach
-- `testUnifiedActivationLaunchesNewWhenNoSessionExists` — S7: no client + no session → new tab
-- `testUnifiedActivationSkipsAutoAttachWhenClientExists` — client exists → normal switch-client flow
+Each scenario in the matrix should map to at least one automated test.
