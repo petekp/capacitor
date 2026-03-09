@@ -2,6 +2,13 @@
 
 This checklist ensures distributed builds work on fresh installations. **Complete every step before publishing.**
 
+Current source-of-truth docs:
+
+- `architecture/CHARTER.md`
+- `architecture/DECISIONS.md`
+- `docs/architecture/OVERVIEW.md`
+- `docs/architecture/REFERENCE.md`
+
 ## Why This Exists
 
 The dev environment masks problems:
@@ -20,7 +27,7 @@ The dev environment masks problems:
 If the release includes changes to terminal activation, tmux switching, or Ghostty AX routing, reference:
 
 - `.claude/docs/terminal-activation-ux-spec.md` (canonical UX contract)
-- `docs/manual-qa/2026-02-23-ghostty-tab-routing-manual-qa.md` (Ghostty tab-routing artifact template/report)
+- `docs/manual-qa/terminal-activation-template.md` (reusable QA evidence template)
 
 Required sign-off artifacts:
 
@@ -164,6 +171,11 @@ open /Volumes/Capacitor/Capacitor.app
 3. **Check resource bundle loading logs**:
    ```bash
    log show --predicate 'subsystem == "com.capacitor.app" AND category == "ResourceBundle"' --last 5m
+   ```
+
+4. **Check current runtime/debug paths**:
+   ```bash
+   ./scripts/dev/agent-observe.sh paths
    ```
 
 ### If crash only happens on other machines

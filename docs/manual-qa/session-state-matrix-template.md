@@ -14,8 +14,9 @@
 Example marker commands:
 
 ```bash
-printf "[MANUAL-TEST][START] session-state %s\n" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> ~/.capacitor/daemon/app-debug.log
-printf "[MANUAL-TEST][END] session-state %s\n" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> ~/.capacitor/daemon/app-debug.log
+./scripts/dev/agent-observe.sh paths
+printf "[MANUAL-TEST][START] session-state %s\n" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> ~/.capacitor/runtime/app-debug.log
+printf "[MANUAL-TEST][END] session-state %s\n" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> ~/.capacitor/runtime/app-debug.log
 ```
 
 ## Scenario Results
@@ -39,7 +40,7 @@ printf "[MANUAL-TEST][END] session-state %s\n" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" 
 Run:
 
 ```bash
-rg -n "silent drop|indefinite working|stale override|duplicate override" ~/.capacitor/daemon/app-debug.log
+rg -n "silent drop|indefinite working|stale override|duplicate override" ~/.capacitor/runtime/app-debug.log
 ```
 
 - Forbidden signals detected: yes/no

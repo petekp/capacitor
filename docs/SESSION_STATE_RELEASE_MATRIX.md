@@ -4,6 +4,13 @@
 - Scope: Hook ingest -> `capacitor-core` reducer/query -> persisted runtime snapshot -> Swift projection/stabilization (`AppState`, `SessionStateManager`, `ShellStateStore`), plus the operational checks that keep replay and soak verification wired into CI
 - Policy: `P0` blocking, `P1/P2` triage-required
 
+Current architecture references:
+
+- `architecture/CHARTER.md`
+- `architecture/DECISIONS.md`
+- `docs/architecture/OVERVIEW.md`
+- `docs/architecture/REFERENCE.md`
+
 ## Purpose
 
 This gate protects session-state correctness in the runtime-snapshot architecture:
@@ -49,7 +56,7 @@ Any failure here requires explicit triage ownership and risk note before release
 For releases touching hook ingest, reducer/query behavior, runtime snapshot projection, or Swift-side session/shell projection and freshness logic:
 
 1. Attach `scripts/ci/session-state-gate.sh` output, or the equivalent section from `scripts/ci/runtime-reliability.sh`.
-2. Attach relevant runtime logs from `~/.capacitor/runtime/` (snapshot and diagnostics context).
+2. Attach relevant runtime logs from `~/.capacitor/runtime/` (snapshot and diagnostics context). Use `./scripts/dev/agent-observe.sh paths` if you need the exact local paths.
 3. If the change affects Swift-side projection/stabilization, attach the relevant `swift test` evidence as well.
 4. Document any non-blocking triage failures with owner and due date.
 
