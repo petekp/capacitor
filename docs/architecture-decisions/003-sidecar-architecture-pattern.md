@@ -1,6 +1,11 @@
 # ADR-003: Runtime Snapshot Architecture
 
-**Status:** Accepted  
+Superseded in steady state by [ADR-004](004-dedicated-local-runtime-service.md), which promotes
+the authenticated local runtime service to the live application boundary. Keep this ADR as the
+record of the intermediate simplification phase that collapsed daemon-era surfaces down to one
+runtime model before the dedicated service cutover.
+
+**Status:** Superseded by ADR-004  
 **Date:** 2026-02-28
 
 ## Context
@@ -10,7 +15,7 @@ That increased drift, duplicated policy, and made debugging difficult.
 
 ## Decision
 
-Adopt a single runtime-snapshot architecture:
+Adopt a single runtime-snapshot architecture for the post-daemon simplification phase:
 
 1. `capacitor-core` is the persisted runtime authority for hook ingest, reducer/query policy, and snapshot persistence.
 2. `hud-hook` is a thin ingest adapter into `capacitor-core`.
@@ -21,7 +26,7 @@ Adopt a single runtime-snapshot architecture:
 
 Positive:
 
-1. One persisted runtime truth plus one deterministic Swift projection layer for visible session/project/routing state.
+1. One persisted runtime truth plus one deterministic Swift projection layer for visible session/project/routing state during the interim cutover phase.
 2. Simpler failure model and easier debugging.
 3. Smaller API surface and fewer translation layers.
 

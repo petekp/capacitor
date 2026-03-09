@@ -1,11 +1,11 @@
 import Foundation
 import SwiftUI
 
-/// Projects runtime snapshot state into the UI-facing session model for projects.
+/// Projects runtime service snapshot state into the UI-facing session model for projects.
 ///
-/// Rust remains authoritative for hook ingest, reducer/query policy, and persisted snapshot
-/// contents. This layer owns the deterministic Swift-side projection rules that turn runtime
-/// project states into view state:
+/// Rust remains authoritative for hook ingest, reducer/query policy, and persisted runtime
+/// artifact contents. This layer owns the deterministic Swift-side projection rules that turn
+/// runtime service project states into view state:
 /// - project/session matching and attribution
 /// - stale-working normalization using the injected session clock
 /// - empty-snapshot and idle-transition hysteresis

@@ -13,7 +13,7 @@
 //! ## Usage Flow
 //!
 //! ```text
-//! Swift: fetches runtime shell state snapshot
+//! Swift: fetches the runtime service shell-state snapshot
 //!    │
 //!    ▼
 //! Swift: queries tmux context (list-windows, list-clients)
@@ -39,10 +39,10 @@ use trace::DecisionTraceFfi;
 // FFI Types
 // ═══════════════════════════════════════════════════════════════════════════════
 
-/// Shell state as returned by the runtime snapshot.
+/// Shell state as returned by the runtime service snapshot payload.
 ///
 /// This is the FFI-safe version of the shell state. Swift fetches the runtime
-/// snapshot and converts it to this type before passing to Rust.
+/// service snapshot and converts it to this type before passing to Rust.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ShellCwdStateFfi {
     pub version: u32,
@@ -232,7 +232,7 @@ fn resolve_activation_internal(
     let action_path = normalize_path_for_actions(project_path);
     let mut trace: Option<DecisionTraceFfi> = None;
 
-    // Priority 1: Find existing shell in runtime snapshot.
+    // Priority 1: Find an existing shell in the runtime service snapshot.
     if let Some(state) = shell_state {
         let policy = SelectionPolicy {
             prefer_tmux: tmux_context.has_attached_client,
@@ -381,7 +381,7 @@ fn paths_match_excluding_home(shell_path: &str, project_path: &str, home_dir: &s
     policy::match_type_excluding_home(&shell_path, &project_path, &home_dir).is_some()
 }
 
-/// Resolve activation for an existing shell found in the runtime snapshot.
+/// Resolve activation for an existing shell found in the runtime service snapshot.
 fn resolve_for_existing_shell(
     pid: u32,
     shell: &ShellEntryFfi,

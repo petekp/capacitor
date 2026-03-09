@@ -92,8 +92,8 @@ killall cfprefsd 2>/dev/null && echo "  ✓ Refreshed preferences cache" || true
 #
 # ~/.capacitor/ is our namespace (sidecar architecture - we never write to
 # ~/.claude/). Contains:
-#   - runtime/app_snapshot.json: canonical runtime snapshot
-#   - runtime/: runtime logs and lock files
+#   - runtime/app_snapshot.json: persisted runtime artifact for recovery/debugging
+#   - runtime/: runtime service logs, tokens, and lock files
 #   - config.json/projects.json: app preferences + pinned projects
 # ─────────────────────────────────────────────────────────────────────────────
 echo "→ Clearing ~/.capacitor/ (runtime state)..."

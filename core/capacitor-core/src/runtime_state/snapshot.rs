@@ -333,7 +333,9 @@ mod tests {
     use crate::runtime_service::{RUNTIME_SERVICE_PORT_ENV, RUNTIME_SERVICE_TOKEN_ENV};
     use std::sync::{Mutex, OnceLock};
 
-    const LEGACY_SNAPSHOT_ENV: &str = "CAPACITOR_CORE_SNAPSHOT";
+    // Legacy env sentinel used to prove live runtime reads ignore the old
+    // artifact-path boundary, even when a stale value is still present.
+    const IGNORED_LEGACY_SNAPSHOT_ENV: &str = "CAPACITOR_CORE_SNAPSHOT";
 
     static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
@@ -507,8 +509,10 @@ mod tests {
         );
 
         let _enable = EnvGuard::set(ENABLE_ENV, "1");
-        let _legacy_snapshot =
-            EnvGuard::set(LEGACY_SNAPSHOT_ENV, "/tmp/legacy-runtime-snapshot.json");
+        let _legacy_snapshot = EnvGuard::set(
+            IGNORED_LEGACY_SNAPSHOT_ENV,
+            "/tmp/legacy-runtime-snapshot.json",
+        );
         let _port = EnvGuard::set(
             RUNTIME_SERVICE_PORT_ENV,
             &runtime_service.port().to_string(),
@@ -540,8 +544,10 @@ mod tests {
         );
 
         let _enable = EnvGuard::set(ENABLE_ENV, "1");
-        let _legacy_snapshot =
-            EnvGuard::set(LEGACY_SNAPSHOT_ENV, "/tmp/legacy-runtime-snapshot.json");
+        let _legacy_snapshot = EnvGuard::set(
+            IGNORED_LEGACY_SNAPSHOT_ENV,
+            "/tmp/legacy-runtime-snapshot.json",
+        );
         let _port = EnvGuard::set(
             RUNTIME_SERVICE_PORT_ENV,
             &runtime_service.port().to_string(),

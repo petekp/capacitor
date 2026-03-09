@@ -962,6 +962,7 @@ mod tests {
     use tempfile::TempDir;
 
     static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    const IGNORED_LEGACY_SNAPSHOT_ENV: &str = "CAPACITOR_CORE_SNAPSHOT";
 
     struct EnvVarGuard {
         key: &'static str,
@@ -1101,7 +1102,7 @@ mod tests {
             vec![make_snapshot_session("waiting", 45, Some(true))],
         );
         let _legacy_snapshot = EnvVarGuard::set(
-            "CAPACITOR_CORE_SNAPSHOT",
+            IGNORED_LEGACY_SNAPSHOT_ENV,
             temp.snapshot_path.to_str().expect("snapshot path"),
         );
         let _service_port = EnvVarGuard::set(
@@ -1132,7 +1133,7 @@ mod tests {
             vec![make_snapshot_session("ready", 30, Some(true))],
         );
         let _legacy_snapshot = EnvVarGuard::set(
-            "CAPACITOR_CORE_SNAPSHOT",
+            IGNORED_LEGACY_SNAPSHOT_ENV,
             temp.snapshot_path.to_str().expect("snapshot path"),
         );
         let _service_port = EnvVarGuard::set(

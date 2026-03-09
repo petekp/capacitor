@@ -39,7 +39,7 @@ Required sign-off artifacts:
 
 ### 0.5 Session State Reliability QA (When Runtime or Swift Projection Logic Changed)
 
-If the release includes changes to hook ingest, reducer/query/session transitions, runtime snapshot projection, or Swift-side session/shell projection and hysteresis behavior, run:
+If the release includes changes to hook ingest, reducer/query/session transitions, local runtime service snapshot projection, or Swift-side session/shell projection and hysteresis behavior, run:
 
 - `docs/SESSION_STATE_RELEASE_MATRIX.md` (canonical session-state gate)
 - `docs/manual-qa/session-state-matrix-template.md` (manual evidence template)
