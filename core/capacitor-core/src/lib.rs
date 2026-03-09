@@ -934,7 +934,7 @@ impl CoreRuntime {
             success,
             heartbeat_ok,
             heartbeat_age_secs: heartbeat_age,
-            state_file_ok: runtime_service_ok,
+            runtime_service_ok,
             message,
         }
     }

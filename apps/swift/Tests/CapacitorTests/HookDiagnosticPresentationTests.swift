@@ -3,6 +3,18 @@ import XCTest
 
 @MainActor
 final class HookDiagnosticPresentationTests: XCTestCase {
+    func testHookTestResultUsesRuntimeServiceNaming() {
+        let result = HookTestResult(
+            success: true,
+            heartbeatOk: true,
+            heartbeatAgeSecs: 12,
+            runtimeServiceOk: true,
+            message: "ok",
+        )
+
+        XCTAssertTrue(result.runtimeServiceOk)
+    }
+
     func testSetupCardVisibilityScenariosMatchContract() {
         let scenarios: [LabeledExpectationScenario<HookDiagnosticReport, Bool>] = [
             LabeledExpectationScenario(

@@ -646,7 +646,7 @@ class AppState {
                 success: false,
                 heartbeatOk: false,
                 heartbeatAgeSecs: nil,
-                stateFileOk: false,
+                runtimeServiceOk: false,
                 message: "Engine not initialized",
             )
         }

@@ -332,7 +332,7 @@ pub struct HookTestResult {
     /// Age of the heartbeat file in seconds (None if file doesn't exist)
     pub heartbeat_age_secs: Option<u64>,
     /// True if the local runtime service health check passed
-    pub state_file_ok: bool,
+    pub runtime_service_ok: bool,
     /// Human-readable summary message for display
     pub message: String,
 }
