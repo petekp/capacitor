@@ -39,15 +39,16 @@ capacitor/
 └── .claude/docs/                 # Local engineering runbooks
 ```
 
-## Core Principle: Runtime Snapshot Architecture
+## Core Principle: Local Runtime Service Architecture
 
 **Capacitor observes Claude Code—it doesn't replace it.**
 
 - Read from `~/.claude/` — transcripts, config (Claude's namespace)
-- Write to `~/.capacitor/` — runtime snapshot, logs, and state (our namespace)
+- Write to `~/.capacitor/` — runtime service artifacts, logs, and state (our namespace)
 - Never call Anthropic API directly — invoke `claude` CLI instead
-- Treat a fresh runtime snapshot as the canonical runtime input, then apply deterministic
-  Swift-side projection and stabilization before rendering.
+- Treat the authenticated local runtime service as the live runtime boundary
+- Treat persisted runtime artifacts as storage/debug outputs, not app-facing truth
+- Apply deterministic Swift-side projection and stabilization after service reads.
 
 ## Key Files
 
@@ -65,9 +66,10 @@ capacitor/
 
 ## State Tracking
 
-Hooks → **hud-hook** → **capacitor-core snapshot** → Swift reads runtime snapshot
+Hooks → **hud-hook runtime service** → authenticated `/health` + `/runtime/snapshot` → Swift + tooling
 
-- **Runtime snapshot:** `~/.capacitor/runtime/app_snapshot.json`
+- **Live runtime boundary:** local runtime service bootstrap (`~/.capacitor/runtime/runtime-service.json`)
+- **Persisted runtime artifact:** `~/.capacitor/runtime/app_snapshot.json`
 - **Runtime logs/artifacts:** `~/.capacitor/runtime/`
 - **Hook binary:** `~/.local/bin/hud-hook`
 
@@ -89,6 +91,8 @@ Full command reference: `./scripts/dev/agent-observe.sh help`
 Debugging guide: `.claude/docs/debugging-guide.md`
 
 Optional browser UI: `node scripts/transparent-ui-server.mjs` (localhost:9133)
+
+`agent-observe.sh` and `transparent-ui-server.mjs` query the runtime service first when credentials are discoverable. They only fall back to persisted artifacts when the service bootstrap is unavailable and you need offline/debug context.
 
 ## Common Gotchas
 

@@ -1101,7 +1101,9 @@ mod tests {
 
     #[test]
     fn test_check_hooks_not_installed() {
-        let (_temp, storage) = setup_test_env();
+        let _guard = env_lock();
+        let (temp, storage) = setup_test_env();
+        let _home_guard = EnvVarGuard::set("HOME", temp.path());
         let checker = SetupChecker::new(storage);
         let status = checker.check_hooks_status();
         assert!(matches!(status, HookStatus::NotInstalled));

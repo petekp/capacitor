@@ -657,7 +657,7 @@ class AppState {
 
     func ensureRuntimeReady() {
         didAttemptRuntimeHealthCheckForTesting = true
-        // Hard cutover mode: runtime state is sourced from the core snapshot file.
+        // Hard cutover mode: live runtime state comes from the local runtime service.
         // No legacy launchd lifecycle orchestration remains in AppState.
         checkRuntimeHealth()
     }
@@ -686,7 +686,7 @@ class AppState {
                     self.runtimeStatus = RuntimeStatus(
                         isEnabled: true,
                         isHealthy: health.status == "ok",
-                        message: "Core runtime snapshot mode",
+                        message: "Local runtime service healthy",
                         pid: health.pid,
                         version: health.version,
                     )
@@ -704,7 +704,7 @@ class AppState {
                     self.runtimeStatus = RuntimeStatus(
                         isEnabled: true,
                         isHealthy: false,
-                        message: "Core runtime snapshot unavailable",
+                        message: "Local runtime service unavailable",
                         pid: nil,
                         version: nil,
                     )

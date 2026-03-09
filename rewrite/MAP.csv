@@ -815,6 +815,8 @@ RW-112,swift-runtime-client-tests-rw112,apps/swift/Tests/CapacitorTests/RuntimeC
 RW-112,swift-hookserver-tests-rw112,apps/swift/Tests/CapacitorTests/HookServerManagerTests.swift,apps/swift/Tests/CapacitorTests/HookServerManagerTests.swift,done,false,Verify the service-only supervisor steady state
 RW-112,architecture-doc-service-cutover-rw112,docs/ARCHITECTURE.md,docs/ARCHITECTURE.md,done,false,Publish the dedicated runtime service architecture as current state
 RW-112,session-state-matrix-service-cutover-rw112,docs/SESSION_STATE_RELEASE_MATRIX.md,docs/SESSION_STATE_RELEASE_MATRIX.md,done,false,Update operational evidence and cutover criteria after service adoption
+RW-112,service-drift-audit-rw112,,docs/audits/2026-03-09-capacitor-core-snapshot-usage-audit.md,done,false,Record the post-cutover CAPACITOR_CORE_SNAPSHOT drift audit as a durable artifact
+RW-112,agent-observe-service-first-test-rw112,scripts/ci/test-agent-observe.sh,scripts/ci/test-agent-observe.sh,done,false,Guard runtime-service-first observability behavior against artifact-boundary regressions
 RW-112,runtime-reliability-guard-service-cutover-rw112,scripts/ci/runtime-reliability-guard.sh,scripts/ci/runtime-reliability-guard.sh,done,false,Ratchet away prototype-only assumptions once the service is live
 RW-112,rewrite-ledger-rw112,rewrite/SLICES.yaml,rewrite/SLICES.yaml,done,false,Track removal of in-process runtime host assumptions
 RW-112,rewrite-map-rw112,rewrite/MAP.csv,rewrite/MAP.csv,done,false,Track removal-slice path mappings

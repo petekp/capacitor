@@ -11,8 +11,19 @@ FIXTURE_DIR=$(mktemp -d)
 SNAPSHOT_PATH="$FIXTURE_DIR/app_snapshot.json"
 APP_LOG_PATH="$FIXTURE_DIR/app-debug.log"
 HEARTBEAT_PATH="$FIXTURE_DIR/hud-hook-heartbeat"
+SERVICE_PID=""
+SERVICE_PORT=""
+SERVICE_AUTH_TOKEN=""
 
-trap 'rm -rf "$FIXTURE_DIR"' EXIT
+cleanup() {
+  if [[ -n "$SERVICE_PID" ]]; then
+    kill "$SERVICE_PID" >/dev/null 2>&1 || true
+    wait "$SERVICE_PID" >/dev/null 2>&1 || true
+  fi
+  rm -rf "$FIXTURE_DIR"
+}
+
+trap cleanup EXIT
 
 pass_count=0
 fail_count=0
@@ -52,6 +63,17 @@ assert_json_field() {
   else
     fail "$label" "json field '$field' missing or null"
   fi
+}
+
+free_port() {
+  python3 - <<'PY'
+import socket
+
+sock = socket.socket()
+sock.bind(("127.0.0.1", 0))
+print(sock.getsockname()[1])
+sock.close()
+PY
 }
 
 # ── Fixture: snapshot with a stuck session + a healthy session ──
@@ -194,9 +216,90 @@ write_fixture_heartbeat() {
   touch -t "$(date -v-60S '+%Y%m%d%H%M.%S')" "$HEARTBEAT_PATH"
 }
 
+start_mock_runtime_service() {
+  SERVICE_PORT="$(free_port)"
+  SERVICE_AUTH_TOKEN="observe-test-token"
+
+  python3 -u - "$SERVICE_PORT" "$SERVICE_AUTH_TOKEN" "$SNAPSHOT_PATH" <<'PY' >/dev/null 2>&1 &
+import http.server
+import json
+import pathlib
+import sys
+
+port = int(sys.argv[1])
+auth_token = sys.argv[2]
+snapshot_path = pathlib.Path(sys.argv[3])
+
+class Handler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.headers.get("Authorization") != f"Bearer {auth_token}":
+            self.send_response(401)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(b'{"error":"unauthorized"}')
+            return
+
+        if self.path == "/health":
+            body = {
+                "status": "ok",
+                "pid": 4242,
+                "version": "runtime-service-test",
+                "protocol_version": 1,
+            }
+        elif self.path == "/runtime/snapshot":
+            body = json.loads(snapshot_path.read_text())
+        else:
+            self.send_response(404)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(b'{"error":"not_found"}')
+            return
+
+        payload = json.dumps(body).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+
+    def log_message(self, *_args):
+        return
+
+server = http.server.ThreadingHTTPServer(("127.0.0.1", port), Handler)
+server.serve_forever()
+PY
+  SERVICE_PID=$!
+
+  local ready=0
+  for _ in $(seq 1 40); do
+    if curl -fsS \
+      -H "Authorization: Bearer $SERVICE_AUTH_TOKEN" \
+      "http://127.0.0.1:${SERVICE_PORT}/health" >/dev/null 2>&1; then
+      ready=1
+      break
+    fi
+    sleep 0.1
+  done
+
+  if [[ "$ready" -ne 1 ]]; then
+    fail "mock runtime service startup" "service did not become ready"
+    exit 1
+  fi
+}
+
+stop_mock_runtime_service() {
+  if [[ -n "$SERVICE_PID" ]]; then
+    kill "$SERVICE_PID" >/dev/null 2>&1 || true
+    wait "$SERVICE_PID" >/dev/null 2>&1 || true
+    SERVICE_PID=""
+    SERVICE_PORT=""
+    SERVICE_AUTH_TOKEN=""
+  fi
+}
+
 # ── Set env to use fixture paths ──
 
-export CAPACITOR_CORE_SNAPSHOT="$SNAPSHOT_PATH"
+export CAPACITOR_RUNTIME_ARTIFACT_PATH="$SNAPSHOT_PATH"
 export CAPACITOR_APP_DEBUG_LOG="$APP_LOG_PATH"
 export CAPACITOR_RUNTIME_STDERR_LOG="$FIXTURE_DIR/runtime.stderr.log"
 export CAPACITOR_RUNTIME_STDOUT_LOG="$FIXTURE_DIR/runtime.stdout.log"
@@ -205,6 +308,34 @@ export CAPACITOR_HEARTBEAT_PATH="$HEARTBEAT_PATH"
 # ── Tests ──
 
 echo "agent-observe.sh diagnostic tests"
+echo ""
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# T0: service-first runtime health + snapshot reads
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+echo "T0: service-first runtime observability"
+write_fixture_snapshot
+start_mock_runtime_service
+
+health_output=$(
+  CAPACITOR_RUNTIME_ARTIFACT_PATH="$FIXTURE_DIR/missing-snapshot.json" \
+  CAPACITOR_RUNTIME_SERVICE_PORT="$SERVICE_PORT" \
+  CAPACITOR_RUNTIME_SERVICE_TOKEN="$SERVICE_AUTH_TOKEN" \
+  "$OBSERVE" health 2>&1 || true
+)
+assert_json_field "$health_output" '.status == "ok"' "health prefers runtime service"
+assert_json_field "$health_output" '.pid == 4242' "health includes service pid"
+
+projects_output=$(
+  CAPACITOR_RUNTIME_ARTIFACT_PATH="$FIXTURE_DIR/missing-snapshot.json" \
+  CAPACITOR_RUNTIME_SERVICE_PORT="$SERVICE_PORT" \
+  CAPACITOR_RUNTIME_SERVICE_TOKEN="$SERVICE_AUTH_TOKEN" \
+  "$OBSERVE" projects 2>&1 || true
+)
+assert_json_field "$projects_output" 'length == 2' "projects prefers runtime service snapshot"
+assert_contains "$projects_output" "healthy-project" "projects includes service snapshot payload"
+
+stop_mock_runtime_service
 echo ""
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

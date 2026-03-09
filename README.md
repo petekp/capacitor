@@ -49,7 +49,7 @@ Ghostty is the only supported terminal right now.
 
 Capacitor is a sidecar. It watches what Claude Code is doing without getting in the way.
 
-On first launch, it installs a small hook binary (`~/.local/bin/hud-hook`) and adds entries to Claude Code's `~/.claude/settings.json`. Hook events are written directly into the Rust runtime snapshot (`~/.capacitor/runtime/app_snapshot.json`). The Swift app reads that snapshot, applies deterministic projection/stabilization, and then renders visible state.
+On first launch, it installs a small hook binary (`~/.local/bin/hud-hook`) and adds entries to Claude Code's `~/.claude/settings.json`. Hook events flow into a local runtime service, which owns live runtime reads and persists runtime artifacts under `~/.capacitor/runtime/` (including `app_snapshot.json`). The Swift app and dev tooling query the runtime service for live state, while the persisted artifact remains a debugging and recovery aid.
 
 It doesn't call the Anthropic API directly. It observes local Claude Code activity and manages its own local runtime state.
 
@@ -101,7 +101,7 @@ Terminal switching uses AppleScript, so macOS will ask for Automation access the
 
 **Terminal switching broken?** You probably dismissed the Automation permission prompt. Go to System Settings > Privacy & Security > Automation and grant it.
 
-**Runtime issues?** If something seems off, check runtime artifacts in `~/.capacitor/runtime/` (for example `app_snapshot.json` and `app-debug.log`).
+**Runtime issues?** If something seems off, start with the local runtime service health (`./scripts/dev/agent-observe.sh health`) and then inspect runtime artifacts in `~/.capacitor/runtime/` (for example `app_snapshot.json` and `app-debug.log`) if you need persisted-state context.
 
 For coding-agent debugging in this repo, use:
 

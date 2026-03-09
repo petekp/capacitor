@@ -321,8 +321,8 @@ pub struct HookHealthReport {
 
 /// Result of running a comprehensive hook system test.
 ///
-/// This verifies both the heartbeat (hooks are firing) and runtime health.
-/// Used by the "Test Hooks" button in the UI.
+/// This verifies both the heartbeat (hooks are firing) and local runtime
+/// service health. Used by the "Test Hooks" button in the UI.
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct HookTestResult {
     /// True if all tests passed
@@ -331,7 +331,7 @@ pub struct HookTestResult {
     pub heartbeat_ok: bool,
     /// Age of the heartbeat file in seconds (None if file doesn't exist)
     pub heartbeat_age_secs: Option<u64>,
-    /// True if runtime health check passed
+    /// True if the local runtime service health check passed
     pub state_file_ok: bool,
     /// Human-readable summary message for display
     pub message: String,
