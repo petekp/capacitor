@@ -5,13 +5,13 @@ import XCTest
 final class RuntimeRefreshOrchestratorTests: XCTestCase {
     func testActiveWorktreePathsIncludeWorkingSessionsAndActiveProject() {
         let sessionStateManager = SessionStateManager()
-        let activeTracking = ActiveProjectTrackingState(sessionStateManager: sessionStateManager)
+        let activeTracking = ActiveProjectTrackingState(projectSessionReader: sessionStateManager)
         let projectListState = ProjectListState(projectListPreferencesGateway: RuntimeRefreshNoopProjectListPreferencesGateway())
         let projectStatusCacheState = ProjectStatusCacheState()
         let runtimeSessionRefreshController = RuntimeSessionRefreshController(
             runtimeSupervisor: RuntimeSupervisor(runtimeGateway: RuntimeRefreshStubGateway()),
-            sessionStateManager: sessionStateManager,
-            shellStateStore: ShellStateStore(),
+            sessionStateProjector: sessionStateManager,
+            shellStateProjector: ShellStateStore(),
             didUpdateContext: {},
         )
 
@@ -36,7 +36,7 @@ final class RuntimeRefreshOrchestratorTests: XCTestCase {
             runtimeSessionRefreshController: runtimeSessionRefreshController,
             activeProjectTrackingState: activeTracking,
             projectListState: projectListState,
-            sessionStateManager: sessionStateManager,
+            sessionStateProjector: sessionStateManager,
             projectsProvider: { [project.shellProjectReference] },
         )
 

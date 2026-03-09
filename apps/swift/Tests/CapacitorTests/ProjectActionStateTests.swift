@@ -145,7 +145,7 @@ final class ProjectActionStateTests: XCTestCase {
             projectMutationGateway: gateway,
             projectWorkflowState: workflowState,
             projectListState: projectListState,
-            projectIngestionWorker: ProjectIngestionWorker(projectMutationGateway: gateway),
+            projectImportProcessor: LiveProjectImportBatchProcessor(projectMutationGateway: gateway),
         )
         let actionState = ProjectActionState(
             projectMutationService: service,

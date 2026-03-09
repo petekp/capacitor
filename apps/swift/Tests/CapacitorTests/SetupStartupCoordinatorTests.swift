@@ -5,6 +5,7 @@ final class SetupStartupCoordinatorTests: XCTestCase {
     func testResolveLaunchShowsWelcomeForBlockingDecision() {
         let coordinator = SetupStartupCoordinator(
             setupGateway: StubStartupSetupGateway(startupDecision: .showWelcome(event: .claudeMissing)),
+            shellIntegrationInstaller: StubSetupShellIntegrationInstaller(shellType: .unsupported, isSnippetInstalled: true),
         )
 
         let outcome = coordinator.resolveLaunch()
@@ -19,6 +20,7 @@ final class SetupStartupCoordinatorTests: XCTestCase {
                 startupDecision: .attemptHookRepair(event: .hooksNeedAutoRepair(status: .notInstalled)),
                 autoRepairErrorMessage: nil,
             ),
+            shellIntegrationInstaller: StubSetupShellIntegrationInstaller(shellType: .unsupported, isSnippetInstalled: true),
         )
 
         let outcome = coordinator.resolveLaunch()
@@ -39,6 +41,7 @@ final class SetupStartupCoordinatorTests: XCTestCase {
                 startupDecision: .attemptHookRepair(event: .hooksNeedAutoRepair(status: .notInstalled)),
                 autoRepairErrorMessage: "install failed",
             ),
+            shellIntegrationInstaller: StubSetupShellIntegrationInstaller(shellType: .unsupported, isSnippetInstalled: true),
         )
 
         let outcome = coordinator.resolveLaunch()
@@ -51,6 +54,22 @@ final class SetupStartupCoordinatorTests: XCTestCase {
                 .hooksAutoRepairFailed(error: "install failed"),
             ],
         )
+    }
+
+    func testResolveLaunchInstallsShellIntegrationWhenReadyAndNeeded() {
+        let coordinator = SetupStartupCoordinator(
+            setupGateway: StubStartupSetupGateway(startupDecision: .ready),
+            shellIntegrationInstaller: StubSetupShellIntegrationInstaller(
+                shellType: .zsh,
+                isSnippetInstalled: false,
+                installResult: .success(()),
+            ),
+        )
+
+        let outcome = coordinator.resolveLaunch()
+
+        XCTAssertEqual(outcome?.shouldShowWelcome, false)
+        XCTAssertEqual(outcome?.startupEvents, [.shellIntegrationInstalled(configFile: "~/.zshrc")])
     }
 }
 
@@ -114,5 +133,25 @@ private struct StubStartupSetupGateway: SetupGateway {
 
     func installHooks() -> String? {
         autoRepairErrorMessage
+    }
+}
+
+private struct StubSetupShellIntegrationInstaller: SetupShellIntegrationInstalling {
+    let shellType: ShellType
+    let isSnippetInstalled: Bool
+    let installResult: Result<Void, ShellInstallError>
+
+    init(
+        shellType: ShellType,
+        isSnippetInstalled: Bool,
+        installResult: Result<Void, ShellInstallError> = .success(()),
+    ) {
+        self.shellType = shellType
+        self.isSnippetInstalled = isSnippetInstalled
+        self.installResult = installResult
+    }
+
+    func installSnippet() -> Result<Void, ShellInstallError> {
+        installResult
     }
 }

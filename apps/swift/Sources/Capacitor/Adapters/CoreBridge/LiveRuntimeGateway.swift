@@ -1,14 +1,14 @@
 import Foundation
 
 struct LiveRuntimeGateway: RuntimeGateway {
-    private let runtimeClient: RuntimeClient
+    private let snapshotReader: any RuntimeSnapshotReading
 
-    init(runtimeClient: RuntimeClient = .shared) {
-        self.runtimeClient = runtimeClient
+    init(snapshotReader: any RuntimeSnapshotReading = CoreRuntimeSnapshotReader.shared) {
+        self.snapshotReader = snapshotReader
     }
 
     func fetchObservation(correlationId: String?) async throws -> ShellRuntimeObservation {
-        let snapshot = try await runtimeClient.fetchRuntimeSnapshot(correlationId: correlationId)
+        let snapshot = try await snapshotReader.fetchRuntimeSnapshot(correlationId: correlationId)
         return ShellRuntimeObservation(
             projectStates: snapshot.projectStates,
             sessions: snapshot.sessions,
@@ -17,7 +17,7 @@ struct LiveRuntimeGateway: RuntimeGateway {
     }
 
     func fetchHealthStatus() async throws -> ShellRuntimeHealthStatus {
-        guard runtimeClient.isEnabled else {
+        guard snapshotReader.isEnabled else {
             return ShellRuntimeHealthStatus(
                 isEnabled: false,
                 isHealthy: false,
@@ -29,7 +29,7 @@ struct LiveRuntimeGateway: RuntimeGateway {
         }
 
         do {
-            let health = try await runtimeClient.fetchHealth()
+            let health = try await snapshotReader.fetchHealth()
             return ShellRuntimeHealthStatus(
                 isEnabled: true,
                 isHealthy: health.status == "ok",

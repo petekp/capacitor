@@ -19,7 +19,7 @@ struct ProjectDetailView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack {
                         BackButton(title: "Projects") {
-                            appState.projectFeatureCoordinator.showProjectList()
+                            appState.navigationState.showProjectList()
                         }
                         .accessibilityIdentifier(AccessibilityIdentifiers.backProjectsIdentifier)
 
@@ -34,9 +34,9 @@ struct ProjectDetailView: View {
 
                     if appState.isLlmFeaturesEnabled {
                         DescriptionSection(
-                            description: appState.projectFeatureCoordinator.getDescription(for: project),
-                            isGenerating: appState.projectFeatureCoordinator.isGeneratingDescription(for: project),
-                            onGenerate: { appState.projectFeatureCoordinator.generateDescription(for: project) },
+                            description: appState.projectPresentationState.description(for: project),
+                            isGenerating: appState.projectPresentationState.isGeneratingDescription(for: project),
+                            onGenerate: { appState.projectPresentationState.generateDescription(for: project) },
                         )
                         .opacity(appeared ? 1 : 0)
                         .offset(y: appeared ? 0 : 12)
@@ -56,18 +56,18 @@ struct ProjectDetailView: View {
                             DetailSectionLabel(title: "IDEA QUEUE")
 
                             IdeaQueueView(
-                                ideas: appState.projectFeatureCoordinator.getIdeas(for: project),
-                                isGeneratingTitle: { appState.projectFeatureCoordinator.isGeneratingTitle(for: $0) },
+                                ideas: appState.projectPresentationState.ideas(for: project),
+                                isGeneratingTitle: { appState.projectPresentationState.isGeneratingTitle(for: $0) },
                                 onTapIdea: { idea, frame in
                                     selectedIdea = idea
                                     selectedIdeaFrame = frame
                                 },
                                 onReorder: { reorderedIdeas in
-                                    appState.projectFeatureCoordinator.reorderIdeas(reorderedIdeas, for: project)
+                                    appState.projectPresentationState.reorderIdeas(reorderedIdeas, for: project)
                                 },
                                 onRemove: { idea in
                                     withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                        appState.projectFeatureCoordinator.dismissIdea(idea, for: project)
+                                        appState.projectPresentationState.dismissIdea(idea, for: project)
                                     }
                                 },
                             )
@@ -78,7 +78,7 @@ struct ProjectDetailView: View {
 
                     Button(action: {
                         appState.projectActionState.removeProject(path: project.path)
-                        appState.projectFeatureCoordinator.showProjectList()
+                        appState.navigationState.showProjectList()
                     }) {
                         HStack(spacing: 6) {
                             Image(systemName: "minus.circle")
@@ -113,7 +113,7 @@ struct ProjectDetailView: View {
                     },
                     onRemove: { idea in
                         withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                            appState.projectFeatureCoordinator.dismissIdea(idea, for: project)
+                            appState.projectPresentationState.dismissIdea(idea, for: project)
                         }
                         selectedIdea = nil
                         selectedIdeaFrame = nil
@@ -127,7 +127,7 @@ struct ProjectDetailView: View {
             }
         }
         .onExitCommand {
-            appState.projectFeatureCoordinator.showProjectList()
+            appState.navigationState.showProjectList()
         }
         .accessibilityIdentifier(AccessibilityIdentifiers.projectDetailsIdentifier(for: project))
     }

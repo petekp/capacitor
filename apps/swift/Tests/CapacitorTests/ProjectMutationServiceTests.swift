@@ -140,7 +140,7 @@ final class ProjectMutationServiceTests: XCTestCase {
             scheduleDeferredIdeaHydration: {
                 deferredIdeaHydrationCount += 1
             },
-            projectIngestionWorker: ProjectIngestionWorker(projectMutationGateway: gateway),
+            projectImportProcessor: LiveProjectImportBatchProcessor(projectMutationGateway: gateway),
         )
 
         let outcome = await service.importProjectsFromDrop(paths: [validPath, trackedPath])

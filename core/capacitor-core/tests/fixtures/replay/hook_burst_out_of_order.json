@@ -30,7 +30,7 @@
         "pid": 777,
         "project_path": "/Users/pete/Code/capacitor",
         "cwd": "/Users/pete/Code/capacitor",
-        "file_path": "apps/swift/Sources/Capacitor/Models/AppState.swift",
+        "file_path": "apps/swift/Sources/Capacitor/Composition/AppState.swift",
         "workspace_id": null,
         "notification_type": null,
         "stop_hook_active": null,

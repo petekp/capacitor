@@ -59,7 +59,7 @@ What is good:
 
 - `hud-hook` is a thin ingress adapter into `capacitor-core`, not a second policy engine. See [core/hud-hook/src/main.rs](/Users/petepetrash/Code/capacitor/core/hud-hook/src/main.rs) and [core/hud-hook/src/handle.rs](/Users/petepetrash/Code/capacitor/core/hud-hook/src/handle.rs).
 - Core runtime types are plain records and enums, which is the right shape for boundary crossing. See [core/capacitor-core/src/domain/types.rs](/Users/petepetrash/Code/capacitor/core/capacitor-core/src/domain/types.rs).
-- `RuntimeClient` is an adapter over snapshot/file access, not raw UI code reaching into persistence. See [apps/swift/Sources/Capacitor/Models/RuntimeClient.swift](/Users/petepetrash/Code/capacitor/apps/swift/Sources/Capacitor/Models/RuntimeClient.swift).
+- `RuntimeClient` is an adapter over snapshot/file access, not raw UI code reaching into persistence. See [apps/swift/Sources/Capacitor/Support/RuntimeClient.swift](/Users/petepetrash/Code/capacitor/apps/swift/Sources/Capacitor/Support/RuntimeClient.swift).
 
 What is wrong:
 
@@ -97,9 +97,9 @@ A clean system has one workflow per use case, with narrow orchestration units.
 
 What is wrong:
 
-- `AppState` owns runtime bootstrap, polling, feature gating, project ingestion, navigation, activation, feedback, and orchestration. See [apps/swift/Sources/Capacitor/Models/AppState.swift](/Users/petepetrash/Code/capacitor/apps/swift/Sources/Capacitor/Models/AppState.swift).
-- `ProjectDetailsManager` mixes idea loading, file change watching, title generation, description generation, persistence ordering, and git context gathering. See [apps/swift/Sources/Capacitor/Models/ProjectDetailsManager.swift](/Users/petepetrash/Code/capacitor/apps/swift/Sources/Capacitor/Models/ProjectDetailsManager.swift).
-- `TerminalLauncher` mixes routing policy, terminal detection, AppleScript execution, tmux behavior, AX fallback logic, and telemetry emission. See [apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift](/Users/petepetrash/Code/capacitor/apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift).
+- `AppState` owns runtime bootstrap, polling, feature gating, project ingestion, navigation, activation, feedback, and orchestration. See [apps/swift/Sources/Capacitor/Composition/AppState.swift](/Users/petepetrash/Code/capacitor/apps/swift/Sources/Capacitor/Composition/AppState.swift).
+- `ProjectDetailsManager` mixes idea loading, file change watching, title generation, description generation, persistence ordering, and git context gathering. See [apps/swift/Sources/Capacitor/Application/Projects/ProjectDetailsManager.swift](/Users/petepetrash/Code/capacitor/apps/swift/Sources/Capacitor/Application/Projects/ProjectDetailsManager.swift).
+- `TerminalLauncher` mixes routing policy, terminal detection, AppleScript execution, tmux behavior, AX fallback logic, and telemetry emission. See [apps/swift/Sources/Capacitor/Support/TerminalLauncher.swift](/Users/petepetrash/Code/capacitor/apps/swift/Sources/Capacitor/Support/TerminalLauncher.swift).
 
 Assessment:
 
@@ -176,7 +176,7 @@ What is good:
 
 What is weak:
 
-- SwiftUI and application-policy state are intertwined in the Swift layer. `AppState` imports `SwiftUI` and directly owns application workflow logic. See [apps/swift/Sources/Capacitor/Models/AppState.swift](/Users/petepetrash/Code/capacitor/apps/swift/Sources/Capacitor/Models/AppState.swift).
+- SwiftUI and application-policy state are intertwined in the Swift layer. `AppState` imports `SwiftUI` and directly owns application workflow logic. See [apps/swift/Sources/Capacitor/Composition/AppState.swift](/Users/petepetrash/Code/capacitor/apps/swift/Sources/Capacitor/Composition/AppState.swift).
 - The Swift package structure is mostly `Models`, `Views`, `Utilities`, `Support`, which screams implementation shape more than domain. See the directory layout under [apps/swift/Sources/Capacitor](/Users/petepetrash/Code/capacitor/apps/swift/Sources/Capacitor).
 
 Assessment:

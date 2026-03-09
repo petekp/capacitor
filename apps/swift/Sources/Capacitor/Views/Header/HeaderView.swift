@@ -18,7 +18,7 @@ struct HeaderView: View {
                 // Use conditional to avoid dead zones from invisible views blocking window drag
                 if !isOnListView {
                     BackButton(title: "Projects") {
-                        appState.projectFeatureCoordinator.showProjectList()
+                        appState.navigationState.showProjectList()
                     }
                     .transition(.opacity.animation(.easeInOut(duration: 0.15)))
                 }

@@ -176,9 +176,9 @@ struct DockLayoutView: View {
             onTap: {
                 appState.projectActivationCoordinator.activate(project)
             },
-            onInfoTap: canShowDetails ? { appState.projectFeatureCoordinator.showProjectDetail(project) } : nil,
+            onInfoTap: canShowDetails ? { appState.navigationState.showProjectDetail(project.shellProjectReference) } : nil,
             onMoveToDormant: { projectListState.moveToDormant(project) },
-            onCaptureIdea: canCaptureIdeas ? { frame in appState.projectFeatureCoordinator.showIdeaCaptureModal(for: project, from: frame) } : nil,
+            onCaptureIdea: canCaptureIdeas ? { frame in appState.projectPresentationState.showIdeaCaptureModal(for: project, from: frame) } : nil,
             onRemove: { appState.projectActionState.removeProject(path: project.path) },
             onDragStarted: {
                 draggedProject = project

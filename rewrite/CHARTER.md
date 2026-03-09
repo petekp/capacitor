@@ -3,14 +3,19 @@
 Operational procedure lives in `rewrite/PLAYBOOK.md`.
 
 ## Purpose
-Capacitor is being rewritten to converge on one authoritative core and one clear UI shell. The rewrite optimizes for simplicity, coherence, and deletion of redundant paths.
+Capacitor is in a finish-line campaign to reach one authoritative core, one clear UI shell, truthful ratchets, truthful active documentation, and no residual migration namespaces or vestigial operational guidance. The rewrite optimizes for simplicity, coherence, and deletion of redundant paths.
+The `rewrite/` control plane remains the canonical architecture-governance surface after tranche closure unless a future superseding governance system is explicitly adopted.
 
 ## Invariants
 1. Rust owns business rules, normalization, and state derivation.
 2. Swift owns rendering, user intent capture, activation planning, and macOS-specific side effects.
 3. No duplicate domain policy is allowed across Rust and Swift.
-4. Each migration slice must delete replaced logic in the same PR.
-5. Confidence comes from replay-diff + end-to-end smoke checks, not manual confidence.
+4. No tracked review-package or checkpoint snapshot artifacts may remain in the live tree.
+5. `apps/swift/Sources/Capacitor/Models` and `apps/swift/Sources/Capacitor/Features` are migration-debt directories whose Swift file counts may only decrease.
+6. Each migration slice must delete replaced logic in the same PR.
+7. Confidence comes from replay-diff + end-to-end smoke checks, not manual confidence.
+8. Historical docs may remain only as archive material with no actionable `TODO (user-run)` tables or stale live-path claims.
+9. CI ratchets must point at live files and truthful budgets; a passing guard against deleted paths is a bug, not a green signal.
 
 ## Non-Goals
 1. Backward compatibility with legacy internal APIs.
@@ -22,6 +27,9 @@ Capacitor is being rewritten to converge on one authoritative core and one clear
 2. Denylist patterns for active slices are hard CI failures.
 3. Slices marked `done` cannot retain any declared deletion targets.
 4. No temporary adapters without an owning slice and explicit removal target.
+5. New shell layers (`Application`, `Adapters`, `Composition`, `Domain`) may not accumulate more legacy-type dependencies than the ratcheted budgets recorded in CI.
+6. Historical docs may remain only when they are clearly labeled as historical and superseded by the latest convergence audit.
+7. The existing `rewrite/` control plane remains the single source of truth until a final archival decision is recorded explicitly.
 
 ## Slice Completion Criteria
 A slice is complete only when all are true:
@@ -29,7 +37,8 @@ A slice is complete only when all are true:
 2. E2E smoke checks for that slice pass.
 3. Replacement call sites are migrated.
 4. Legacy deletion targets are removed.
-5. `rewrite/SLICES.yaml` and `rewrite/MAP.csv` are updated.
+5. Ratchet budgets do not increase.
+6. `rewrite/SLICES.yaml` and `rewrite/MAP.csv` are updated.
 
 ## Session Protocol
 Session start:

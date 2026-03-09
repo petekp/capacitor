@@ -48,7 +48,7 @@ struct ContentView: View {
                         originFrame: appState.captureModalOrigin,
                         containerSize: containerSize,
                         onCapture: { text in
-                            appState.projectFeatureCoordinator.captureIdea(for: project, text: text)
+                            appState.projectPresentationState.captureIdea(for: project, text: text)
                         },
                     )
                 }

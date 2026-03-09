@@ -2,23 +2,23 @@ import Foundation
 
 @MainActor
 final class LiveActivationGateway: ActivationGateway {
-    private let terminalLauncher: TerminalLauncher
+    private let shellProjectActivator: any ShellProjectActivating
 
     init() {
-        terminalLauncher = TerminalLauncher()
+        shellProjectActivator = ShellActivationExecutor()
     }
 
-    init(terminalLauncher: TerminalLauncher) {
-        self.terminalLauncher = terminalLauncher
+    init(shellProjectActivator: any ShellProjectActivating) {
+        self.shellProjectActivator = shellProjectActivator
     }
 
     func activate(_ request: ShellActivationRequest) async throws -> ShellActivationDecision {
-        terminalLauncher.launchTerminal(for: request.project)
+        shellProjectActivator.activate(request.project)
 
         return ShellActivationDecision(
             disposition: .launched,
             project: request.project,
-            reason: "Delegated to TerminalLauncher",
+            reason: "Delegated to shell activation executor",
         )
     }
 }

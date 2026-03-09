@@ -9,8 +9,8 @@ final class RuntimeSessionRefreshControllerTests: XCTestCase {
         let project = ShellProjectReference(displayName: "Capacitor", path: "/Users/petepetrash/Code/capacitor")
         let controller = RuntimeSessionRefreshController(
             runtimeSupervisor: RuntimeSupervisor(runtimeGateway: StubRuntimeGateway()),
-            sessionStateManager: sessionStateManager,
-            shellStateStore: shellStateStore,
+            sessionStateProjector: sessionStateManager,
+            shellStateProjector: shellStateStore,
             didUpdateContext: {},
         )
 
@@ -72,8 +72,8 @@ final class RuntimeSessionRefreshControllerTests: XCTestCase {
         let project = ShellProjectReference(displayName: "Capacitor", path: "/Users/petepetrash/Code/capacitor")
         let controller = RuntimeSessionRefreshController(
             runtimeSupervisor: RuntimeSupervisor(runtimeGateway: StubRuntimeGateway()),
-            sessionStateManager: sessionStateManager,
-            shellStateStore: shellStateStore,
+            sessionStateProjector: sessionStateManager,
+            shellStateProjector: shellStateStore,
             didUpdateContext: {},
         )
 

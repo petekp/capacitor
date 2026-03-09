@@ -56,11 +56,12 @@ capacitor/
 | CoreRuntime facade | `core/capacitor-core/src/lib.rs` |
 | Runtime/domain types | `core/capacitor-core/src/domain/types.rs` |
 | Runtime setup + validation | `core/capacitor-core/src/runtime_setup.rs` |
-| App composition root | `apps/swift/Sources/Capacitor/Models/AppState.swift` |
-| Session projection + hysteresis | `apps/swift/Sources/Capacitor/Models/SessionStateManager.swift` |
-| Project creation coordinator | `apps/swift/Sources/Capacitor/Models/ProjectCreationCoordinator.swift` |
+| Live composition root | `apps/swift/Sources/Capacitor/Composition/AppShellContainer.swift` |
+| App shell composition state | `apps/swift/Sources/Capacitor/Composition/AppState.swift` |
+| Session projection + hysteresis | `apps/swift/Sources/Capacitor/Application/Runtime/SessionStateManager.swift` |
+| Project creation coordinator | `apps/swift/Sources/Capacitor/Application/Projects/ProjectCreationCoordinator.swift` |
 | Shell CWD tracking | `core/hud-hook/src/cwd.rs` |
-| Terminal activation | `apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift` |
+| Terminal activation | `apps/swift/Sources/Capacitor/Support/TerminalLauncher.swift` |
 | UniFFI bindings | `apps/swift/Sources/Capacitor/Bridge/capacitor_core.swift` |
 
 ## State Tracking

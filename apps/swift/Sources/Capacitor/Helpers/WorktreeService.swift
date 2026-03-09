@@ -267,9 +267,28 @@ struct WorktreeService {
         process.standardOutput = stdoutPipe
         process.standardError = stderrPipe
 
+        let semaphore = DispatchSemaphore(value: 0)
+        let resultBox = LockedResultBox(
+            GitCommandResult(exitCode: 1, stdout: "", stderr: "git command did not complete"),
+        )
+
+        process.terminationHandler = { process in
+            let stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
+            let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+            resultBox.set(
+                GitCommandResult(
+                    exitCode: process.terminationStatus,
+                    stdout: String(data: stdoutData, encoding: .utf8) ?? "",
+                    stderr: String(data: stderrData, encoding: .utf8) ?? "",
+                ),
+            )
+            semaphore.signal()
+        }
+
         do {
             try process.run()
-            process.waitUntilExit()
+            semaphore.wait()
+            return resultBox.get()
         } catch {
             return GitCommandResult(
                 exitCode: 1,
@@ -277,14 +296,26 @@ struct WorktreeService {
                 stderr: error.localizedDescription,
             )
         }
+    }
+}
 
-        let stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-        let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+private final class LockedResultBox<T> {
+    private let lock = NSLock()
+    private var value: T
 
-        return GitCommandResult(
-            exitCode: process.terminationStatus,
-            stdout: String(data: stdoutData, encoding: .utf8) ?? "",
-            stderr: String(data: stderrData, encoding: .utf8) ?? "",
-        )
+    init(_ value: T) {
+        self.value = value
+    }
+
+    func get() -> T {
+        lock.lock()
+        defer { lock.unlock() }
+        return value
+    }
+
+    func set(_ newValue: T) {
+        lock.lock()
+        value = newValue
+        lock.unlock()
     }
 }

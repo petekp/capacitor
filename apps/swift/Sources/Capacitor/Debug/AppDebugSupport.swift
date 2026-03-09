@@ -34,16 +34,11 @@ enum AppDebugSupport {
     struct AppDebugCommands: Commands {
         let appState: AppState
         @Binding var setupComplete: Bool
-        @AppStorage("debugShowProjectListDiagnostics") private var debugShowProjectListDiagnostics = true
 
         var body: some Commands {
             CommandMenu("Debug") {
                 ProjectDebugPanelMenuButton()
                 UITuningPanelMenuButton()
-
-                Divider()
-
-                Toggle("Show Diagnostics in Project List", isOn: $debugShowProjectListDiagnostics)
 
                 Divider()
 

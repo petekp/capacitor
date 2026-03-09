@@ -4,7 +4,6 @@ import SwiftUI
     @MainActor
     struct DebugProjectListPanel: View {
         @Environment(AppState.self) var appState: AppState
-        @AppStorage("debugShowProjectListDiagnostics") private var debugShowProjectListDiagnostics = true
         @State private var panelSize = CGSize(width: 360, height: 520)
 
         private let cornerRadius: CGFloat = 12
@@ -28,8 +27,6 @@ import SwiftUI
                         }
 
                         DebugActiveStateCard()
-                        DebugSessionStateCard()
-                        DebugShellStateCard()
                         DebugActivationTraceCard()
                     }
                     .padding(12)
@@ -55,10 +52,6 @@ import SwiftUI
                 }
 
                 Spacer()
-
-                Toggle("Show in List", isOn: $debugShowProjectListDiagnostics)
-                    .toggleStyle(.switch)
-                    .font(.system(size: 11, weight: .medium))
             }
             .padding(12)
         }

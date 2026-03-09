@@ -29,3 +29,15 @@ The application icon in Apple's .icns format.
 
 ### dmg-background.png
 Background image for DMG installer window (660x400 recommended).
+
+## Utility Script
+
+### apply-icon-mask.swift
+
+If you need to regenerate the macOS iconset from the raw `assets/Mac/*.png` source images, use:
+
+```bash
+swift scripts/utils/apply-icon-mask.swift
+```
+
+This produces the rounded macOS-style images under `assets/AppIcon.iconset/`, which can then be converted to `AppIcon.icns`.

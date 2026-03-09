@@ -83,7 +83,7 @@ struct NavigationContainer: View {
             .focusEffectDisabled()
             .onKeyPress(.escape) {
                 if !isListActive {
-                    appState.projectFeatureCoordinator.showProjectList()
+                    appState.navigationState.showProjectList()
                     return .handled
                 }
                 return .ignored
@@ -118,11 +118,11 @@ struct NavigationContainer: View {
 
         case let .projectDetail(projectID):
             guard appState.isProjectDetailsEnabled else {
-                appState.projectFeatureCoordinator.showProjectList()
+                appState.navigationState.showProjectList()
                 return
             }
             guard let project = appState.projectWorkflowState.projectCatalog.first(where: { $0.path == projectID }) else {
-                appState.projectFeatureCoordinator.showProjectList()
+                appState.navigationState.showProjectList()
                 return
             }
             currentDetail = project
@@ -156,7 +156,7 @@ struct NavigationContainer: View {
 
         case .newIdea:
             guard appState.isProjectCreationEnabled else {
-                appState.projectFeatureCoordinator.showProjectList()
+                appState.navigationState.showProjectList()
                 return
             }
             showNewIdea = true

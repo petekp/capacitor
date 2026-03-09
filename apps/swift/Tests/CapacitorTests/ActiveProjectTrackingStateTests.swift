@@ -5,7 +5,7 @@ import XCTest
 final class ActiveProjectTrackingStateTests: XCTestCase {
     func testActivatePrefersManualOverride() {
         let sessionStateManager = SessionStateManager()
-        let trackingState = ActiveProjectTrackingState(sessionStateManager: sessionStateManager)
+        let trackingState = ActiveProjectTrackingState(projectSessionReader: sessionStateManager)
         let project = makeProject(name: "Capacitor", path: "/tmp/capacitor")
 
         trackingState.updateProjects([project])
@@ -30,7 +30,7 @@ final class ActiveProjectTrackingStateTests: XCTestCase {
                 hasSession: true,
             ),
         ])
-        let trackingState = ActiveProjectTrackingState(sessionStateManager: sessionStateManager)
+        let trackingState = ActiveProjectTrackingState(projectSessionReader: sessionStateManager)
 
         trackingState.updateProjects([project])
         trackingState.refreshAfterSessionUpdate()
@@ -41,7 +41,7 @@ final class ActiveProjectTrackingStateTests: XCTestCase {
 
     func testActivateSupportsShellProjectCatalogEntries() {
         let sessionStateManager = SessionStateManager()
-        let trackingState = ActiveProjectTrackingState(sessionStateManager: sessionStateManager)
+        let trackingState = ActiveProjectTrackingState(projectSessionReader: sessionStateManager)
         let project = ShellProjectCatalogEntry(displayName: "Capacitor", path: "/tmp/capacitor")
 
         trackingState.updateProjects([project])
@@ -49,6 +49,17 @@ final class ActiveProjectTrackingStateTests: XCTestCase {
 
         XCTAssertEqual(trackingState.activeProjectPath, project.path)
         XCTAssertEqual(trackingState.activeProject?.displayName, project.displayName)
+        XCTAssertEqual(trackingState.activeSource, .none)
+    }
+
+    func testRefreshAfterSessionUpdateReturnsNoneWhenNoProjectHasSession() {
+        let sessionStateManager = SessionStateManager()
+        let trackingState = ActiveProjectTrackingState(projectSessionReader: sessionStateManager)
+        trackingState.updateProjects([makeProject(name: "Capacitor", path: "/tmp/capacitor")])
+
+        trackingState.refreshAfterSessionUpdate()
+
+        XCTAssertNil(trackingState.activeProject)
         XCTAssertEqual(trackingState.activeSource, .none)
     }
 

@@ -24,17 +24,34 @@ func makeTestAppState(
     let resolvedSetupSupervisor = setupSupervisor ?? SetupSupervisor(
         setupGateway: LiveSetupGateway(),
     )
+    let resolvedProjectMutationGateway = projectMutationGateway ?? LiveProjectMutationGateway()
 
-    return AppState(
+    let appState = AppState(
         dependencies: AppStateDependencies(
             navigationState: resolvedNavigationState,
             projectWorkflowState: resolvedProjectWorkflowState,
             projectListState: resolvedProjectListState,
-            projectMutationGateway: projectMutationGateway ?? LiveProjectMutationGateway(),
+            projectMutationGateway: resolvedProjectMutationGateway,
             runtimeSupervisor: resolvedRuntimeSupervisor,
             setupSupervisor: resolvedSetupSupervisor,
             runtimeAutomationController: runtimeAutomationController,
             activateProjectTerminal: activateProjectTerminal,
         ),
     )
+
+    let services = AppStateServiceAssembler.makeServices(
+        appState: appState,
+        projectMutationGateway: resolvedProjectMutationGateway,
+        runtimeSupervisor: resolvedRuntimeSupervisor,
+        setupSupervisor: resolvedSetupSupervisor,
+        activateProjectTerminal: activateProjectTerminal,
+        runtimeAutomationController: runtimeAutomationController,
+    )
+    appState.installServices(services)
+    if appState.isIdeaCaptureEnabled {
+        services.projectCreationCoordinator.loadCreations()
+    }
+    services.runtimeAutomationController.startBootstrap()
+
+    return appState
 }

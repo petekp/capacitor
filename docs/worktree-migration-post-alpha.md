@@ -16,9 +16,9 @@ Migrate Capacitor from its bespoke worktree lifecycle to Claude Code's native `-
 ## Impacted areas
 - Swift:
   - `apps/swift/Sources/Capacitor/Helpers/WorktreeService.swift`
-  - `apps/swift/Sources/Capacitor/Models/WorkstreamsManager.swift`
+  - `apps/swift/Sources/Capacitor/Application/Projects/WorkstreamsManager.swift`
   - `apps/swift/Sources/Capacitor/Views/Projects/WorkstreamsPanel.swift`
-  - `apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift`
+  - `apps/swift/Sources/Capacitor/Support/TerminalLauncher.swift`
 - Rust:
   - `core/capacitor-core/src/activation/policy.rs`
   - `core/capacitor-core/src/activation.rs` tests

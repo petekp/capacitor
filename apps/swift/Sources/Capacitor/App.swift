@@ -240,19 +240,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        // 2. Auto-install shell integration if not already configured
-        let shellType = ShellType.current
-        if shellType != .unsupported, !shellType.isSnippetInstalled {
-            switch shellType.installSnippet() {
-            case .success:
-                DebugLog.write(startup: .shellIntegrationInstalled(configFile: shellType.configFile))
-            case let .failure(error):
-                // Non-blocking — shell integration is optional
-                DebugLog.write(startup: .shellIntegrationSkipped(reason: error.localizedDescription))
-            }
-        }
-
-        // 3. Everything is ready — skip the setup screen
+        // 2. Everything is ready — skip the setup screen
         if !UserDefaults.standard.bool(forKey: "setupComplete") {
             DebugLog.write(startup: .autoSetupComplete)
             UserDefaults.standard.set(true, forKey: "setupComplete")

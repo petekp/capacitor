@@ -29,11 +29,11 @@ slices:
     replay_scenarios: []
     smoke_scenarios: []
     denylist_patterns:
-      - "content:apps/swift/Sources/Capacitor/Models/AppState.swift::sessionStateManager\\.refreshSessionStates\\("
-      - "content:apps/swift/Sources/Capacitor/Models/AppState.swift::shellStateStore\\.stopPolling\\("
-      - "content:apps/swift/Sources/Capacitor/Models/AppState.swift::fetch(ProjectStates|Sessions|ShellState)\\("
-      - "content:apps/swift/Sources/Capacitor/Models/SessionStateManager.swift::fetchProjectStates\\("
-      - "content:apps/swift/Sources/Capacitor/Models/ShellStateStore.swift::fetchShellState\\("
+      - "content:apps/swift/Sources/Capacitor/Composition/AppState.swift::sessionStateManager\\.refreshSessionStates\\("
+      - "content:apps/swift/Sources/Capacitor/Composition/AppState.swift::shellStateStore\\.stopPolling\\("
+      - "content:apps/swift/Sources/Capacitor/Composition/AppState.swift::fetch(ProjectStates|Sessions|ShellState)\\("
+      - "content:apps/swift/Sources/Capacitor/Application/Runtime/SessionStateManager.swift::fetchProjectStates\\("
+      - "content:apps/swift/Sources/Capacitor/Application/Runtime/ShellStateStore.swift::fetchShellState\\("
     deletion_targets: []
     risks:
       - "Guard script assumes schema version 1 for SLICES.yaml"
@@ -100,10 +100,10 @@ slices:
       - core/capacitor-core/tests/replay_diff.rs
       - core/capacitor-core/tests/fixtures/replay/multi_project_monorepo_worktree.json
       - core/capacitor-core/tests/fixtures/replay/hook_burst_out_of_order.json
-      - apps/swift/Sources/Capacitor/Models/RuntimeClient.swift
-      - apps/swift/Sources/Capacitor/Models/AppState.swift
-      - apps/swift/Sources/Capacitor/Models/SessionStateManager.swift
-      - apps/swift/Sources/Capacitor/Models/ShellStateStore.swift
+      - apps/swift/Sources/Capacitor/Support/RuntimeClient.swift
+      - apps/swift/Sources/Capacitor/Composition/AppState.swift
+      - apps/swift/Sources/Capacitor/Application/Runtime/SessionStateManager.swift
+      - apps/swift/Sources/Capacitor/Application/Runtime/ShellStateStore.swift
       - apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift
       - apps/swift/Tests/CapacitorTests/SessionStateManagerTests.swift
       - apps/swift/Tests/CapacitorTests/ShellStateStoreRoutingStatusTests.swift
@@ -121,10 +121,10 @@ slices:
         - core/hud-hook/src/handle.rs
         - core/hud-hook/src/cwd.rs
         - core/hud-hook/tests/session_state_mapping_gate.rs
-        - apps/swift/Sources/Capacitor/Models/RuntimeClient.swift
-        - apps/swift/Sources/Capacitor/Models/AppState.swift
-        - apps/swift/Sources/Capacitor/Models/SessionStateManager.swift
-        - apps/swift/Sources/Capacitor/Models/ShellStateStore.swift
+        - apps/swift/Sources/Capacitor/Support/RuntimeClient.swift
+        - apps/swift/Sources/Capacitor/Composition/AppState.swift
+        - apps/swift/Sources/Capacitor/Application/Runtime/SessionStateManager.swift
+        - apps/swift/Sources/Capacitor/Application/Runtime/ShellStateStore.swift
         - apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift
         - apps/swift/Tests/CapacitorTests/SessionStateManagerTests.swift
         - apps/swift/Tests/CapacitorTests/ShellStateStoreRoutingStatusTests.swift
@@ -138,11 +138,11 @@ slices:
       - add_remove_project_flow
       - hook_install_fix_flow
     denylist_patterns:
-      - "content:apps/swift/Sources/Capacitor/Models/AppState.swift::sessionStateManager\\.refreshSessionStates\\("
-      - "content:apps/swift/Sources/Capacitor/Models/AppState.swift::shellStateStore\\.stopPolling\\("
-      - "content:apps/swift/Sources/Capacitor/Models/AppState.swift::fetch(ProjectStates|Sessions|ShellState)\\("
-      - "content:apps/swift/Sources/Capacitor/Models/SessionStateManager.swift::fetchProjectStates\\("
-      - "content:apps/swift/Sources/Capacitor/Models/ShellStateStore.swift::fetchShellState\\("
+      - "content:apps/swift/Sources/Capacitor/Composition/AppState.swift::sessionStateManager\\.refreshSessionStates\\("
+      - "content:apps/swift/Sources/Capacitor/Composition/AppState.swift::shellStateStore\\.stopPolling\\("
+      - "content:apps/swift/Sources/Capacitor/Composition/AppState.swift::fetch(ProjectStates|Sessions|ShellState)\\("
+      - "content:apps/swift/Sources/Capacitor/Application/Runtime/SessionStateManager.swift::fetchProjectStates\\("
+      - "content:apps/swift/Sources/Capacitor/Application/Runtime/ShellStateStore.swift::fetchShellState\\("
     deletion_targets: []
     risks:
       - "Direct-core ingest now serializes through file locks; high-frequency hook storms may still need stronger transactional storage."
@@ -155,12 +155,12 @@ slices:
     depends_on:
       - RW-002
     touched_paths:
-      - apps/swift/Sources/Capacitor/Models/RuntimeClient.swift
-      - apps/swift/Sources/Capacitor/Models/AppState.swift
-      - apps/swift/Sources/Capacitor/Models/ShellStateStore.swift
+      - apps/swift/Sources/Capacitor/Support/RuntimeClient.swift
+      - apps/swift/Sources/Capacitor/Composition/AppState.swift
+      - apps/swift/Sources/Capacitor/Application/Runtime/ShellStateStore.swift
       - apps/swift/Sources/Capacitor/Models/RuntimeStatus.swift
       - apps/swift/Sources/Capacitor/Models/ActiveProjectResolver.swift
-      - apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift
+      - apps/swift/Sources/Capacitor/Support/TerminalLauncher.swift
       - apps/swift/Sources/Capacitor/Models/ShellSetupInstructions.swift
       - apps/swift/Sources/Capacitor/Helpers/RuntimeDateParser.swift
       - apps/swift/Sources/Capacitor/Utilities/DiagnosticsSnapshotLogger.swift
@@ -190,12 +190,12 @@ slices:
     contracts:
       added: []
       changed:
-        - apps/swift/Sources/Capacitor/Models/RuntimeClient.swift
-        - apps/swift/Sources/Capacitor/Models/AppState.swift
-        - apps/swift/Sources/Capacitor/Models/ShellStateStore.swift
+        - apps/swift/Sources/Capacitor/Support/RuntimeClient.swift
+        - apps/swift/Sources/Capacitor/Composition/AppState.swift
+        - apps/swift/Sources/Capacitor/Application/Runtime/ShellStateStore.swift
         - apps/swift/Sources/Capacitor/Models/RuntimeStatus.swift
         - apps/swift/Sources/Capacitor/Models/ActiveProjectResolver.swift
-        - apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift
+        - apps/swift/Sources/Capacitor/Support/TerminalLauncher.swift
         - apps/swift/Sources/Capacitor/Models/ShellSetupInstructions.swift
         - apps/swift/Sources/Capacitor/Helpers/RuntimeDateParser.swift
         - apps/swift/Sources/Capacitor/Utilities/DiagnosticsSnapshotLogger.swift
@@ -229,24 +229,24 @@ slices:
       - click_project_restore_terminal
       - idea_capture_edit_order
     denylist_patterns:
-      - "content:apps/swift/Sources/Capacitor/Models/AppState.swift::DaemonService\\.enableForCurrentProcess\\("
-      - "content:apps/swift/Sources/Capacitor/Models/AppState.swift::DaemonService\\.ensureRunning\\("
-      - "content:apps/swift/Sources/Capacitor/Models/AppState.swift::daemonRecoveryDecider\\.shouldAttemptRecovery"
-      - "content:apps/swift/Sources/Capacitor/Models/RuntimeClient.swift::performRequest\\("
-      - "content:apps/swift/Sources/Capacitor/Models/RuntimeClient.swift::sendAndReceivePosix\\("
-      - "content:apps/swift/Sources/Capacitor/Models/RuntimeClient.swift::CAPACITOR_DAEMON_SOCKET"
-      - "content:apps/swift/Sources/Capacitor/Models/RuntimeClient.swift::CAPACITOR_DAEMON_ENABLED"
+      - "content:apps/swift/Sources/Capacitor/Composition/AppState.swift::DaemonService\\.enableForCurrentProcess\\("
+      - "content:apps/swift/Sources/Capacitor/Composition/AppState.swift::DaemonService\\.ensureRunning\\("
+      - "content:apps/swift/Sources/Capacitor/Composition/AppState.swift::daemonRecoveryDecider\\.shouldAttemptRecovery"
+      - "content:apps/swift/Sources/Capacitor/Support/RuntimeClient.swift::performRequest\\("
+      - "content:apps/swift/Sources/Capacitor/Support/RuntimeClient.swift::sendAndReceivePosix\\("
+      - "content:apps/swift/Sources/Capacitor/Support/RuntimeClient.swift::CAPACITOR_DAEMON_SOCKET"
+      - "content:apps/swift/Sources/Capacitor/Support/RuntimeClient.swift::CAPACITOR_DAEMON_ENABLED"
       - "content:apps/swift/Sources/Capacitor/Models/ShellSetupInstructions.swift::CAPACITOR_DAEMON_ENABLED"
-      - "content:apps/swift/Sources/Capacitor/Models/RuntimeClient.swift::struct DaemonRoutingSnapshot"
-      - "content:apps/swift/Sources/Capacitor/Models/RuntimeClient.swift::struct DaemonRoutingDiagnostics"
-      - "content:apps/swift/Sources/Capacitor/Models/RuntimeClient.swift::func fetchRoutingSnapshot\\("
-      - "content:apps/swift/Sources/Capacitor/Models/RuntimeClient.swift::func fetchRoutingDiagnostics\\("
-      - "content:apps/swift/Sources/Capacitor/Models/ShellStateStore.swift::areRoutingSnapshot"
-      - "content:apps/swift/Sources/Capacitor/Models/ShellStateStore.swift::fetchRoutingSnapshot\\("
-      - "content:apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift::DaemonClient\\.shared\\.fetchRoutingSnapshot\\("
-      - "content:apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift::fetchCoreRoutingSnapshot"
-      - "content:apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift::activationActionFromAERSnapshot"
-      - "content:apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift::legacyActivationDecisionFromRoutingSnapshot"
+      - "content:apps/swift/Sources/Capacitor/Support/RuntimeClient.swift::struct DaemonRoutingSnapshot"
+      - "content:apps/swift/Sources/Capacitor/Support/RuntimeClient.swift::struct DaemonRoutingDiagnostics"
+      - "content:apps/swift/Sources/Capacitor/Support/RuntimeClient.swift::func fetchRoutingSnapshot\\("
+      - "content:apps/swift/Sources/Capacitor/Support/RuntimeClient.swift::func fetchRoutingDiagnostics\\("
+      - "content:apps/swift/Sources/Capacitor/Application/Runtime/ShellStateStore.swift::areRoutingSnapshot"
+      - "content:apps/swift/Sources/Capacitor/Application/Runtime/ShellStateStore.swift::fetchRoutingSnapshot\\("
+      - "content:apps/swift/Sources/Capacitor/Support/TerminalLauncher.swift::DaemonClient\\.shared\\.fetchRoutingSnapshot\\("
+      - "content:apps/swift/Sources/Capacitor/Support/TerminalLauncher.swift::fetchCoreRoutingSnapshot"
+      - "content:apps/swift/Sources/Capacitor/Support/TerminalLauncher.swift::activationActionFromAERSnapshot"
+      - "content:apps/swift/Sources/Capacitor/Support/TerminalLauncher.swift::legacyActivationDecisionFromRoutingSnapshot"
       - "content:apps/swift/Sources/Capacitor/Views/Debug/DebugShellStateCard.swift::DaemonRoutingDiagnostics"
       - "content:apps/swift/Sources/Capacitor/Views/Debug/DebugShellStateCard.swift::fetchRoutingDiagnostics\\("
       - "apps/swift/Sources/Capacitor/Models/DaemonClient.swift"
@@ -406,7 +406,7 @@ slices:
     depends_on:
       - RW-005
     touched_paths:
-      - apps/swift/Sources/Capacitor/Models/AppState.swift
+      - apps/swift/Sources/Capacitor/Composition/AppState.swift
       - apps/swift/Sources/Capacitor/App.swift
       - apps/swift/Sources/Capacitor/Views/Header/HeaderView.swift
       - apps/swift/Sources/Capacitor/Views/Projects/ProjectCardView.swift
@@ -437,7 +437,7 @@ slices:
         - apps/swift/Sources/Capacitor/Utils/AccessibilityIdentifiers.swift
         - scripts/ax/ax_runner.swift
       changed:
-        - apps/swift/Sources/Capacitor/Models/AppState.swift
+        - apps/swift/Sources/Capacitor/Composition/AppState.swift
         - apps/swift/Sources/Capacitor/App.swift
         - apps/swift/Sources/Capacitor/Views/Header/HeaderView.swift
         - apps/swift/Sources/Capacitor/Views/Projects/ProjectCardView.swift
@@ -469,9 +469,9 @@ slices:
       - release_bundle_and_isolated_launch
     denylist_patterns:
       - "scripts/demo"
-      - "content:apps/swift/Sources/Capacitor/Models/AppState.swift::DemoConfig"
-      - "content:apps/swift/Sources/Capacitor/Models/AppState.swift::DemoFixtures"
-      - "content:apps/swift/Sources/Capacitor/Models/AppState.swift::CAPACITOR_DEMO_"
+      - "content:apps/swift/Sources/Capacitor/Composition/AppState.swift::DemoConfig"
+      - "content:apps/swift/Sources/Capacitor/Composition/AppState.swift::DemoFixtures"
+      - "content:apps/swift/Sources/Capacitor/Composition/AppState.swift::CAPACITOR_DEMO_"
       - "content:apps/swift/Sources/Capacitor/App.swift::DemoConfig"
       - "content:scripts/dev/restart-app.sh::CAPACITOR_DEMO_"
       - 'content:scripts/ci/non-demo-ax-smoke.sh::scripts/demo/ax_runner\.swift'
@@ -625,12 +625,12 @@ slices:
       - apps/swift/Sources/Capacitor/App.swift
       - apps/swift/Sources/Capacitor/Helpers/HookInstaller.swift
       - apps/swift/Sources/Capacitor/Models/ActivationConfig.swift
-      - apps/swift/Sources/Capacitor/Models/AppState.swift
+      - apps/swift/Sources/Capacitor/Composition/AppState.swift
       - apps/swift/Sources/Capacitor/Models/ProjectDetailsManager.swift
       - apps/swift/Sources/Capacitor/Models/ProjectIngestionWorker.swift
-      - apps/swift/Sources/Capacitor/Models/RuntimeClient.swift
+      - apps/swift/Sources/Capacitor/Support/RuntimeClient.swift
       - apps/swift/Sources/Capacitor/Models/SetupRequirements.swift
-      - apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift
+      - apps/swift/Sources/Capacitor/Support/TerminalLauncher.swift
       - apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift
     contracts:
       added:
@@ -643,12 +643,12 @@ slices:
         - apps/swift/Sources/Capacitor/App.swift
         - apps/swift/Sources/Capacitor/Helpers/HookInstaller.swift
         - apps/swift/Sources/Capacitor/Models/ActivationConfig.swift
-        - apps/swift/Sources/Capacitor/Models/AppState.swift
+        - apps/swift/Sources/Capacitor/Composition/AppState.swift
         - apps/swift/Sources/Capacitor/Models/ProjectDetailsManager.swift
         - apps/swift/Sources/Capacitor/Models/ProjectIngestionWorker.swift
-        - apps/swift/Sources/Capacitor/Models/RuntimeClient.swift
+        - apps/swift/Sources/Capacitor/Support/RuntimeClient.swift
         - apps/swift/Sources/Capacitor/Models/SetupRequirements.swift
-        - apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift
+        - apps/swift/Sources/Capacitor/Support/TerminalLauncher.swift
         - apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift
         - apps/swift/bindings/capacitor_core.swift
         - apps/swift/bindings/capacitor_coreFFI.h
@@ -666,12 +666,12 @@ slices:
       - fresh_install_setup_flow
       - project_activation_and_trace_display
     denylist_patterns:
-      - "content:apps/swift/Sources/Capacitor/Models/RuntimeClient.swift::CoreRuntimeSnapshot"
-      - "content:apps/swift/Sources/Capacitor/Models/RuntimeClient.swift::CoreRuntimeProjectState"
-      - "content:apps/swift/Sources/Capacitor/Models/RuntimeClient.swift::CoreRuntimeSessionState"
-      - "content:apps/swift/Sources/Capacitor/Models/RuntimeClient.swift::CoreRuntimeShellSignal"
-      - "content:apps/swift/Sources/Capacitor/Models/RuntimeClient.swift::CoreRuntimeRoutingView"
-      - "content:apps/swift/Sources/Capacitor/Models/RuntimeClient.swift::CoreRuntimeDiagnostics"
+      - "content:apps/swift/Sources/Capacitor/Support/RuntimeClient.swift::CoreRuntimeSnapshot"
+      - "content:apps/swift/Sources/Capacitor/Support/RuntimeClient.swift::CoreRuntimeProjectState"
+      - "content:apps/swift/Sources/Capacitor/Support/RuntimeClient.swift::CoreRuntimeSessionState"
+      - "content:apps/swift/Sources/Capacitor/Support/RuntimeClient.swift::CoreRuntimeShellSignal"
+      - "content:apps/swift/Sources/Capacitor/Support/RuntimeClient.swift::CoreRuntimeRoutingView"
+      - "content:apps/swift/Sources/Capacitor/Support/RuntimeClient.swift::CoreRuntimeDiagnostics"
     deletion_targets:
       - apps/swift/Sources/HudCoreFFI
       - apps/swift/Sources/Capacitor/Bridge/hud_core.swift
@@ -2217,7 +2217,7 @@ slices:
     touched_paths:
       - apps/swift/Sources/Capacitor/Helpers/HookInstaller.swift
       - apps/swift/Sources/Capacitor/App.swift
-      - apps/swift/Sources/Capacitor/Models/AppState.swift
+      - apps/swift/Sources/Capacitor/Composition/AppState.swift
       - apps/swift/Sources/Capacitor/Models/SetupRequirements.swift
       - apps/swift/Tests/CapacitorTests/HookInstallerTests.swift
       - rewrite/TEST_AUDIT.md
@@ -2229,7 +2229,7 @@ slices:
       changed:
         - apps/swift/Sources/Capacitor/Helpers/HookInstaller.swift
         - apps/swift/Sources/Capacitor/App.swift
-        - apps/swift/Sources/Capacitor/Models/AppState.swift
+        - apps/swift/Sources/Capacitor/Composition/AppState.swift
         - apps/swift/Sources/Capacitor/Models/SetupRequirements.swift
         - rewrite/TEST_AUDIT.md
         - rewrite/SLICES.yaml
@@ -2252,7 +2252,7 @@ slices:
     touched_paths:
       - apps/swift/Sources/Capacitor/Utilities/DateFormatting.swift
       - apps/swift/Sources/Capacitor/Models/ActiveProjectResolver.swift
-      - apps/swift/Sources/Capacitor/Models/RuntimeClient.swift
+      - apps/swift/Sources/Capacitor/Support/RuntimeClient.swift
       - apps/swift/Sources/Capacitor/Utilities/DiagnosticsSnapshotLogger.swift
       - apps/swift/Sources/Capacitor/Utilities/ProjectOrdering.swift
       - apps/swift/Sources/Capacitor/Helpers/RuntimeDateParser.swift
@@ -2267,7 +2267,7 @@ slices:
       changed:
         - apps/swift/Sources/Capacitor/Utilities/DateFormatting.swift
         - apps/swift/Sources/Capacitor/Models/ActiveProjectResolver.swift
-        - apps/swift/Sources/Capacitor/Models/RuntimeClient.swift
+        - apps/swift/Sources/Capacitor/Support/RuntimeClient.swift
         - apps/swift/Sources/Capacitor/Utilities/DiagnosticsSnapshotLogger.swift
         - apps/swift/Sources/Capacitor/Utilities/ProjectOrdering.swift
         - rewrite/TEST_AUDIT.md
@@ -2295,7 +2295,7 @@ slices:
     touched_paths:
       - apps/swift/Sources/Capacitor/Utilities/DateFormatting.swift
       - apps/swift/Sources/Capacitor/Utilities/DebugLog.swift
-      - apps/swift/Sources/Capacitor/Models/RuntimeClient.swift
+      - apps/swift/Sources/Capacitor/Support/RuntimeClient.swift
       - apps/swift/Sources/Capacitor/Bridge/UniFFIExtensions.swift
       - rewrite/TEST_AUDIT.md
       - rewrite/SLICES.yaml
@@ -2305,7 +2305,7 @@ slices:
       changed:
         - apps/swift/Sources/Capacitor/Utilities/DateFormatting.swift
         - apps/swift/Sources/Capacitor/Utilities/DebugLog.swift
-        - apps/swift/Sources/Capacitor/Models/RuntimeClient.swift
+        - apps/swift/Sources/Capacitor/Support/RuntimeClient.swift
         - apps/swift/Sources/Capacitor/Bridge/UniFFIExtensions.swift
         - rewrite/TEST_AUDIT.md
         - rewrite/SLICES.yaml
@@ -3602,7 +3602,7 @@ slices:
       - apps/swift/Sources/Capacitor/Bridge/capacitor_coreFFI.modulemap
       - apps/swift/Sources/CapacitorCoreFFI/*
       - apps/swift/bindings/*
-      - apps/swift/Sources/Capacitor/Models/AppState.swift
+      - apps/swift/Sources/Capacitor/Composition/AppState.swift
       - apps/swift/Sources/Capacitor/Models/HookServerManager.swift
       - apps/swift/Sources/Capacitor/Models/ProjectCreationCoordinator.swift
       - apps/swift/Tests/CapacitorTests/HookServerManagerTests.swift
@@ -3623,7 +3623,7 @@ slices:
         - .gitignore
         - README.md
         - apps/swift/Sources/CapacitorCoreFFI/module.modulemap
-        - apps/swift/Sources/Capacitor/Models/AppState.swift
+        - apps/swift/Sources/Capacitor/Composition/AppState.swift
         - apps/swift/Sources/Capacitor/Models/HookServerManager.swift
         - apps/swift/Sources/Capacitor/Models/ProjectCreationCoordinator.swift
         - apps/swift/Tests/CapacitorTests/HookServerManagerTests.swift
@@ -3713,8 +3713,8 @@ slices:
       - apps/swift/Sources/Capacitor/Domain/Shared/ProjectPathProviding.swift
       - apps/swift/Sources/Capacitor/Models/ActiveProjectResolver.swift
       - apps/swift/Sources/Capacitor/Models/ProjectDetailsManager.swift
-      - apps/swift/Sources/Capacitor/Models/SessionStateManager.swift
-      - apps/swift/Sources/Capacitor/Models/AppState.swift
+      - apps/swift/Sources/Capacitor/Application/Runtime/SessionStateManager.swift
+      - apps/swift/Sources/Capacitor/Composition/AppState.swift
       - apps/swift/Sources/Capacitor/Application/Activation/ActiveProjectTrackingState.swift
       - apps/swift/Sources/Capacitor/Features/ProjectFeatureCoordinator.swift
       - apps/swift/Tests/CapacitorTests/ProjectWorkflowStateTests.swift
@@ -3749,8 +3749,8 @@ slices:
         - apps/swift/Sources/Capacitor/Domain/Shared/ProjectPathProviding.swift
         - apps/swift/Sources/Capacitor/Models/ActiveProjectResolver.swift
         - apps/swift/Sources/Capacitor/Models/ProjectDetailsManager.swift
-        - apps/swift/Sources/Capacitor/Models/SessionStateManager.swift
-        - apps/swift/Sources/Capacitor/Models/AppState.swift
+        - apps/swift/Sources/Capacitor/Application/Runtime/SessionStateManager.swift
+        - apps/swift/Sources/Capacitor/Composition/AppState.swift
         - apps/swift/Sources/Capacitor/Application/Activation/ActiveProjectTrackingState.swift
         - apps/swift/Sources/Capacitor/Features/ProjectFeatureCoordinator.swift
         - apps/swift/Tests/CapacitorTests/ProjectWorkflowStateTests.swift
@@ -3793,7 +3793,7 @@ slices:
       - apps/swift/Sources/Capacitor/Application/Projects/ProjectMutationService.swift
       - apps/swift/Sources/Capacitor/Application/Projects/ProjectWorkflowState.swift
       - apps/swift/Sources/Capacitor/Application/Activation/ProjectActivationCoordinator.swift
-      - apps/swift/Sources/Capacitor/Models/WorkstreamsManager.swift
+      - apps/swift/Sources/Capacitor/Application/Projects/WorkstreamsManager.swift
       - apps/swift/Sources/Capacitor/ContentView.swift
       - apps/swift/Sources/Capacitor/Debug/AppDebugSupport.swift
       - apps/swift/Sources/Capacitor/Support/Accessibility/AccessibilityIdentifiers.swift
@@ -3823,7 +3823,7 @@ slices:
         - apps/swift/Sources/Capacitor/Application/Projects/ProjectMutationService.swift
         - apps/swift/Sources/Capacitor/Application/Projects/ProjectWorkflowState.swift
         - apps/swift/Sources/Capacitor/Application/Activation/ProjectActivationCoordinator.swift
-        - apps/swift/Sources/Capacitor/Models/WorkstreamsManager.swift
+        - apps/swift/Sources/Capacitor/Application/Projects/WorkstreamsManager.swift
         - apps/swift/Sources/Capacitor/ContentView.swift
         - apps/swift/Sources/Capacitor/Debug/AppDebugSupport.swift
         - apps/swift/Sources/Capacitor/Support/Accessibility/AccessibilityIdentifiers.swift
@@ -3867,9 +3867,9 @@ slices:
     touched_paths:
       - apps/swift/Sources/Capacitor/Composition/AppShellContainer.swift
       - apps/swift/Sources/Capacitor/Composition/AppStateDependencies.swift
-      - apps/swift/Sources/Capacitor/Models/AppState.swift
+      - apps/swift/Sources/Capacitor/Composition/AppState.swift
       - apps/swift/Sources/Capacitor/ContentView.swift
-      - apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift
+      - apps/swift/Sources/Capacitor/Support/TerminalLauncher.swift
       - apps/swift/Sources/Capacitor/Adapters/Shell/LiveActivationGateway.swift
       - apps/swift/Sources/Capacitor/Views/Projects/ActivityPanel.swift
       - apps/swift/Sources/Capacitor/Views/Projects/DockLayoutView.swift
@@ -3890,9 +3890,9 @@ slices:
       changed:
         - apps/swift/Sources/Capacitor/Composition/AppShellContainer.swift
         - apps/swift/Sources/Capacitor/Composition/AppStateDependencies.swift
-        - apps/swift/Sources/Capacitor/Models/AppState.swift
+        - apps/swift/Sources/Capacitor/Composition/AppState.swift
         - apps/swift/Sources/Capacitor/ContentView.swift
-        - apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift
+        - apps/swift/Sources/Capacitor/Support/TerminalLauncher.swift
         - apps/swift/Sources/Capacitor/Adapters/Shell/LiveActivationGateway.swift
         - apps/swift/Sources/Capacitor/Views/Projects/ActivityPanel.swift
         - apps/swift/Sources/Capacitor/Views/Projects/DockLayoutView.swift
@@ -4220,3 +4220,1040 @@ slices:
     risks:
       - "The final sweep should delete only paths made redundant by the new canonical architecture, not compatibility bridges that are still intentionally retained for user data/settings migration."
     notes: "Completed the final sweep. The dead Rust clean feedback shell is deleted, the scaffold-todo budget is now zero, the final March 8 architecture checkpoint records the end state, and the rewrite control plane has no pending or in-progress slices."
+
+  - id: RW-200
+    name: "Convergence Audit and Ratchet Reset"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-112
+    touched_paths:
+      - rewrite/CHARTER.md
+      - rewrite/DECISIONS.md
+      - docs/audit/ARCHITECTURE_CONVERGENCE_AUDIT_2026-03-08.md
+      - docs/audit/CONVERGENCE_REFERENCE_2026-03-08.md
+      - docs/audit/ARCHITECTURE_FINISH_LINE_AUDIT_2026-03-08.md
+      - docs/audit/SUMMARY.md
+      - scripts/rewrite/check_rewrite_guards.sh
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+      - rewrite/HANDOFF.md
+    contracts:
+      added:
+        - docs/audit/ARCHITECTURE_CONVERGENCE_AUDIT_2026-03-08.md
+        - docs/audit/CONVERGENCE_REFERENCE_2026-03-08.md
+        - rewrite/HANDOFF.md
+      changed:
+        - rewrite/CHARTER.md
+        - rewrite/DECISIONS.md
+        - docs/audit/ARCHITECTURE_FINISH_LINE_AUDIT_2026-03-08.md
+        - docs/audit/SUMMARY.md
+        - scripts/rewrite/check_rewrite_guards.sh
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "The new ratchets freeze current Swift seam counts; later slices must deliberately lower them instead of renaming debt without deleting it."
+    notes: "Starts the post-migration convergence campaign, supersedes the narrower March 8 finish-line interpretation for Swift, records the measured mixed-ownership seam counts, and freezes those seams with CI budgets so they can only shrink."
+
+  - id: RW-201
+    name: "Hygiene Reset"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-200
+    touched_paths:
+      - tmp/review-package/*
+      - apps/swift/Sources/Capacitor/Views/Components/RuntimeStatusCard.swift
+      - apps/swift/Sources/Capacitor/Views/Components/ProgressiveBlurView.swift
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+      - rewrite/HANDOFF.md
+    contracts:
+      added: []
+      changed:
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+        - rewrite/HANDOFF.md
+      removed:
+        - tmp/review-package/*
+        - apps/swift/Sources/Capacitor/Views/Components/RuntimeStatusCard.swift
+        - apps/swift/Sources/Capacitor/Views/Components/ProgressiveBlurView.swift
+    replay_scenarios: []
+    smoke_scenarios:
+      - swift_unit_tests
+    denylist_patterns:
+      - "tmp/review-package/*"
+      - "apps/swift/Sources/Capacitor/Views/Components/RuntimeStatusCard.swift"
+      - "apps/swift/Sources/Capacitor/Views/Components/ProgressiveBlurView.swift"
+    deletion_targets:
+      - tmp/review-package/*
+      - apps/swift/Sources/Capacitor/Views/Components/RuntimeStatusCard.swift
+      - apps/swift/Sources/Capacitor/Views/Components/ProgressiveBlurView.swift
+    risks: []
+    notes: "Deletes tracked review-package artifacts and confirmed-unreferenced Swift components so the convergence campaign starts from a smaller, less misleading tree."
+
+  - id: RW-202
+    name: "Feature Facade Deletion"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-201
+    touched_paths:
+      - apps/swift/Sources/Capacitor/Application/Projects/ProjectPresentationState.swift
+      - apps/swift/Sources/Capacitor/Features/ProjectFeatureCoordinator.swift
+      - apps/swift/Sources/Capacitor/Composition/AppState.swift
+      - apps/swift/Sources/Capacitor/Composition/AppShellContainer.swift
+      - apps/swift/Sources/Capacitor/ContentView.swift
+      - apps/swift/Sources/Capacitor/Views/Header/HeaderView.swift
+      - apps/swift/Sources/Capacitor/Views/Navigation/NavigationContainer.swift
+      - apps/swift/Sources/Capacitor/Views/Projects/DockLayoutView.swift
+      - apps/swift/Sources/Capacitor/Views/Projects/NewIdeaView.swift
+      - apps/swift/Sources/Capacitor/Views/Projects/ProjectDetailView.swift
+      - apps/swift/Sources/Capacitor/Views/Projects/ProjectsView.swift
+      - apps/swift/Sources/Capacitor/Views/Navigation/*
+      - apps/swift/Sources/Capacitor/Views/Header/*
+      - apps/swift/Sources/Capacitor/Views/Projects/*
+      - apps/swift/Tests/CapacitorTests/ProjectPresentationStateTests.swift
+      - apps/swift/Tests/CapacitorTests/ProjectFeatureCoordinatorTests.swift
+      - apps/swift/Tests/CapacitorTests/ArchitectureBoundaryTests.swift
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+      - rewrite/HANDOFF.md
+    contracts:
+      added:
+        - apps/swift/Sources/Capacitor/Application/Projects/ProjectPresentationState.swift
+        - apps/swift/Tests/CapacitorTests/ProjectPresentationStateTests.swift
+      changed:
+        - apps/swift/Sources/Capacitor/Composition/AppState.swift
+        - apps/swift/Sources/Capacitor/Composition/AppShellContainer.swift
+        - apps/swift/Sources/Capacitor/ContentView.swift
+        - apps/swift/Sources/Capacitor/Views/Header/HeaderView.swift
+        - apps/swift/Sources/Capacitor/Views/Navigation/NavigationContainer.swift
+        - apps/swift/Sources/Capacitor/Views/Projects/DockLayoutView.swift
+        - apps/swift/Sources/Capacitor/Views/Projects/NewIdeaView.swift
+        - apps/swift/Sources/Capacitor/Views/Projects/ProjectDetailView.swift
+        - apps/swift/Sources/Capacitor/Views/Projects/ProjectsView.swift
+        - apps/swift/Tests/CapacitorTests/ArchitectureBoundaryTests.swift
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+        - rewrite/HANDOFF.md
+      removed:
+        - apps/swift/Sources/Capacitor/Features/ProjectFeatureCoordinator.swift
+        - apps/swift/Tests/CapacitorTests/ProjectFeatureCoordinatorTests.swift
+    replay_scenarios: []
+    smoke_scenarios:
+      - list -> detail -> new idea -> list navigation
+      - idea_capture_edit_order
+    denylist_patterns:
+      - "apps/swift/Sources/Capacitor/Features/ProjectFeatureCoordinator.swift"
+      - "apps/swift/Tests/CapacitorTests/ProjectFeatureCoordinatorTests.swift"
+    deletion_targets:
+      - apps/swift/Sources/Capacitor/Features/ProjectFeatureCoordinator.swift
+      - apps/swift/Tests/CapacitorTests/ProjectFeatureCoordinatorTests.swift
+    risks:
+      - "Navigation and idea-capture flows currently route through the feature façade from multiple views; this slice must replace that surface atomically."
+    notes: "Completed the feature façade deletion. Navigation now routes directly through `NavigationState`, the canonical `ProjectPresentationState` owns the former detail/idea/project-creation presentation surface, the migration-era `ProjectFeatureCoordinator` source/test files are deleted, and the feature-layer/file-count ratchets are reduced to zero."
+
+  - id: RW-203
+    name: "Setup Convergence"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-202
+    touched_paths:
+      - apps/swift/Sources/Capacitor/Application/Setup/*
+      - apps/swift/Sources/Capacitor/Models/SetupRequirements.swift
+      - apps/swift/Sources/Capacitor/Models/ShellSetupInstructions.swift
+      - apps/swift/Sources/Capacitor/Composition/AppShellContainer.swift
+      - apps/swift/Sources/Capacitor/App.swift
+      - apps/swift/Sources/Capacitor/Views/Setup/*
+      - apps/swift/Tests/CapacitorTests/Setup*
+      - apps/swift/Tests/CapacitorTests/ArchitectureBoundaryTests.swift
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - apps/swift/Sources/Capacitor/Application/Setup/*
+        - apps/swift/Sources/Capacitor/Composition/AppShellContainer.swift
+        - apps/swift/Sources/Capacitor/App.swift
+        - apps/swift/Sources/Capacitor/Views/Setup/*
+        - apps/swift/Tests/CapacitorTests/Setup*
+        - apps/swift/Tests/CapacitorTests/ArchitectureBoundaryTests.swift
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+        - rewrite/HANDOFF.md
+      removed:
+        - apps/swift/Sources/Capacitor/Models/SetupRequirements.swift
+        - apps/swift/Tests/CapacitorTests/SetupRequirementsManagerTests.swift
+    replay_scenarios: []
+    smoke_scenarios:
+      - cold_launch_with_setup_complete
+      - hook_install_fix_flow
+    denylist_patterns:
+      - "apps/swift/Sources/Capacitor/Models/SetupRequirements.swift"
+      - "apps/swift/Tests/CapacitorTests/SetupRequirementsManagerTests.swift"
+    deletion_targets:
+      - apps/swift/Sources/Capacitor/Models/SetupRequirements.swift
+    risks:
+      - "Setup spans startup, diagnostics, repair actions, and shell-integration install, so this slice must keep first-run behavior coherent while deleting the manager wrapper."
+    notes: "Completed setup convergence. `SetupWorkflowState` now owns setup lifecycle state, gateway-driven checks, preview scenarios, and shell-instruction routing directly from `Application/Setup`; `SetupRequirements.swift` and `SetupRequirementsManagerTests.swift` are deleted; and shell-integration install now routes through `SetupStartupCoordinator` instead of living ad hoc in `App.swift`."
+
+  - id: RW-204
+    name: "Runtime and Activation Dependency Convergence"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-203
+    touched_paths:
+      - apps/swift/Sources/Capacitor/Application/Runtime/RuntimeStatePorts.swift
+      - apps/swift/Sources/Capacitor/Application/Activation/*
+      - apps/swift/Sources/Capacitor/Application/Projects/*
+      - apps/swift/Sources/Capacitor/Application/Runtime/*
+      - apps/swift/Sources/Capacitor/Adapters/CoreBridge/*
+      - apps/swift/Sources/Capacitor/Adapters/Shell/*
+      - apps/swift/Sources/Capacitor/Composition/AppShellContainer.swift
+      - apps/swift/Sources/Capacitor/Composition/AppState.swift
+      - apps/swift/Sources/Capacitor/Support/RuntimeSnapshotReader.swift
+      - apps/swift/Sources/Capacitor/Support/ShellActivationExecutor.swift
+      - apps/swift/Sources/Capacitor/Models/ActiveProjectResolver.swift
+      - apps/swift/Sources/Capacitor/Models/ProjectIngestionWorker.swift
+      - apps/swift/Sources/Capacitor/Support/RuntimeClient.swift
+      - apps/swift/Sources/Capacitor/Application/Runtime/SessionStateManager.swift
+      - apps/swift/Sources/Capacitor/Application/Runtime/ShellStateStore.swift
+      - apps/swift/Sources/Capacitor/Support/TerminalLauncher.swift
+      - apps/swift/Sources/Capacitor/Utilities/DiagnosticsSnapshotLogger.swift
+      - apps/swift/Tests/CapacitorTests/ActiveProjectTrackingStateTests.swift
+      - apps/swift/Tests/CapacitorTests/ProjectActionStateTests.swift
+      - apps/swift/Tests/CapacitorTests/ProjectMutationServiceTests.swift
+      - apps/swift/Tests/CapacitorTests/ArchitectureBoundaryTests.swift
+      - apps/swift/Tests/CapacitorTests/RuntimeSessionRefreshControllerTests.swift
+      - apps/swift/Tests/CapacitorTests/RuntimeRefreshOrchestratorTests.swift
+      - apps/swift/Tests/CapacitorTests/ActiveProjectResolverTests.swift
+      - apps/swift/Tests/CapacitorTests/ProjectIngestionWorkerTests.swift
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+      - rewrite/HANDOFF.md
+    contracts:
+      added:
+        - apps/swift/Sources/Capacitor/Application/Runtime/RuntimeStatePorts.swift
+        - apps/swift/Sources/Capacitor/Support/RuntimeSnapshotReader.swift
+        - apps/swift/Sources/Capacitor/Support/ShellActivationExecutor.swift
+      changed:
+        - apps/swift/Sources/Capacitor/Application/Activation/*
+        - apps/swift/Sources/Capacitor/Application/Projects/*
+        - apps/swift/Sources/Capacitor/Application/Runtime/*
+        - apps/swift/Sources/Capacitor/Adapters/CoreBridge/*
+        - apps/swift/Sources/Capacitor/Adapters/Shell/*
+        - apps/swift/Sources/Capacitor/Composition/AppShellContainer.swift
+        - apps/swift/Sources/Capacitor/Composition/AppState.swift
+        - apps/swift/Sources/Capacitor/Support/RuntimeClient.swift
+        - apps/swift/Sources/Capacitor/Application/Runtime/SessionStateManager.swift
+        - apps/swift/Sources/Capacitor/Application/Runtime/ShellStateStore.swift
+        - apps/swift/Sources/Capacitor/Support/TerminalLauncher.swift
+        - apps/swift/Sources/Capacitor/Utilities/DiagnosticsSnapshotLogger.swift
+        - apps/swift/Tests/CapacitorTests/ActiveProjectTrackingStateTests.swift
+        - apps/swift/Tests/CapacitorTests/ProjectActionStateTests.swift
+        - apps/swift/Tests/CapacitorTests/ProjectMutationServiceTests.swift
+        - apps/swift/Tests/CapacitorTests/ArchitectureBoundaryTests.swift
+        - apps/swift/Tests/CapacitorTests/RuntimeSessionRefreshControllerTests.swift
+        - apps/swift/Tests/CapacitorTests/RuntimeRefreshOrchestratorTests.swift
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+        - rewrite/HANDOFF.md
+      removed:
+        - apps/swift/Sources/Capacitor/Models/ActiveProjectResolver.swift
+        - apps/swift/Sources/Capacitor/Models/ProjectIngestionWorker.swift
+        - apps/swift/Tests/CapacitorTests/ActiveProjectResolverTests.swift
+        - apps/swift/Tests/CapacitorTests/ProjectIngestionWorkerTests.swift
+    replay_scenarios:
+      - full_corpus
+    smoke_scenarios:
+      - project_activation_and_trace_display
+      - click_project_restore_terminal
+    denylist_patterns:
+      - "apps/swift/Sources/Capacitor/Models/ActiveProjectResolver.swift"
+      - "apps/swift/Sources/Capacitor/Models/ProjectIngestionWorker.swift"
+      - "apps/swift/Tests/CapacitorTests/ActiveProjectResolverTests.swift"
+      - "apps/swift/Tests/CapacitorTests/ProjectIngestionWorkerTests.swift"
+    deletion_targets:
+      - apps/swift/Sources/Capacitor/Models/ActiveProjectResolver.swift
+      - apps/swift/Sources/Capacitor/Models/ProjectIngestionWorker.swift
+      - apps/swift/Tests/CapacitorTests/ActiveProjectResolverTests.swift
+      - apps/swift/Tests/CapacitorTests/ProjectIngestionWorkerTests.swift
+    risks:
+      - "Activation, runtime snapshots, session attribution, and terminal execution are tightly coupled; this slice must separate ownership without regressing interactive behavior."
+    notes: "Completed runtime and activation dependency convergence. `Application` no longer names `ActiveProjectResolver`, `ProjectIngestionWorker`, `SessionStateManager`, or `ShellStateStore`; `Adapters`/`Composition`/`Utilities` no longer name `RuntimeClient` or `TerminalLauncher`; the deleted resolver/ingestion-worker files are denylisted; and the remaining runtime/activation behavior now flows through canonical ports and support boundaries."
+
+  - id: RW-205
+    name: "AppState Endgame"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-204
+    touched_paths:
+      - apps/swift/Sources/Capacitor/Composition/AppStateServices.swift
+      - apps/swift/Sources/Capacitor/Composition/AppState.swift
+      - apps/swift/Sources/Capacitor/Composition/AppShellContainer.swift
+      - apps/swift/Tests/CapacitorTests/AppStateTestSupport.swift
+      - apps/swift/Tests/CapacitorTests/ArchitectureBoundaryTests.swift
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+      - rewrite/HANDOFF.md
+    contracts:
+      added:
+        - apps/swift/Sources/Capacitor/Composition/AppStateServices.swift
+      changed:
+        - apps/swift/Sources/Capacitor/Composition/AppState.swift
+        - apps/swift/Sources/Capacitor/Composition/AppShellContainer.swift
+        - apps/swift/Tests/CapacitorTests/AppStateTestSupport.swift
+        - apps/swift/Tests/CapacitorTests/ArchitectureBoundaryTests.swift
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+        - rewrite/HANDOFF.md
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios:
+      - add_remove_project_flow
+      - list -> detail -> new idea -> list navigation
+    denylist_patterns:
+      - "content:apps/swift/Sources/Capacitor/Composition/AppState.swift::configureCollaborators\\("
+      - "content:apps/swift/Sources/Capacitor/Composition/AppState.swift::RuntimeAutomationComposer\\.makeController\\("
+      - "content:apps/swift/Sources/Capacitor/Composition/AppState.swift::projectCreationCoordinator\\.loadCreations\\("
+      - "content:apps/swift/Sources/Capacitor/Composition/AppState.swift::runtimeAutomationController\\.startBootstrap\\("
+    deletion_targets: []
+    risks:
+      - "AppState is still the highest-coupling Swift file; this slice needs disciplined incremental deletion rather than a blind rewrite."
+    notes: "Completed the first AppState endgame cut. `AppState` no longer assembles the collaborator graph or starts bootstrap/creation workflows itself; `AppStateServices` now builds the service graph in composition, `AppShellContainer` and test support install/start that graph explicitly, and architecture ratchets now freeze the removed assembly path."
+
+  - id: RW-206
+    name: "Final Vestigial Sweep and Canonical Checkpoint"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-205
+    touched_paths:
+      - apps/swift/Sources/Capacitor/Debug/AppDebugSupport.swift
+      - apps/swift/Sources/Capacitor/Debug/ProjectListDiagnosticsSection.swift
+      - apps/swift/Sources/Capacitor/Views/Debug/DebugProjectListPanel.swift
+      - apps/swift/Sources/Capacitor/Views/Debug/DebugSessionStateCard.swift
+      - apps/swift/Sources/Capacitor/Views/Debug/DebugShellStateCard.swift
+      - apps/swift/Sources/Capacitor/Views/Projects/ProjectsView.swift
+      - apps/swift/Tests/CapacitorTests/ArchitectureBoundaryTests.swift
+      - apps/swift/Tests/CapacitorTests/ArchitectureTestSupport.swift
+      - apps/swift/Tests/CapacitorTests/AppStateArchitectureTests.swift
+      - apps/swift/Tests/CapacitorTests/ProjectArchitectureTests.swift
+      - apps/swift/Tests/CapacitorTests/SetupArchitectureTests.swift
+      - apps/swift/Tests/CapacitorTests/RuntimeArchitectureTests.swift
+      - apps/swift/Tests/CapacitorTests/ArchitectureBoundaryTests.swift
+      - docs/audit/ARCHITECTURE_CHECKPOINT_2026-03-08.md
+      - docs/audit/ARCHITECTURE_CONVERGENCE_AUDIT_2026-03-08.md
+      - docs/audit/SUMMARY.md
+      - scripts/rewrite/check_rewrite_guards.sh
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+      - rewrite/HANDOFF.md
+    contracts:
+      added:
+        - apps/swift/Tests/CapacitorTests/ArchitectureTestSupport.swift
+        - apps/swift/Tests/CapacitorTests/AppStateArchitectureTests.swift
+        - apps/swift/Tests/CapacitorTests/ProjectArchitectureTests.swift
+        - apps/swift/Tests/CapacitorTests/SetupArchitectureTests.swift
+        - apps/swift/Tests/CapacitorTests/RuntimeArchitectureTests.swift
+      changed:
+        - apps/swift/Sources/Capacitor/Debug/AppDebugSupport.swift
+        - apps/swift/Sources/Capacitor/Views/Debug/DebugProjectListPanel.swift
+        - apps/swift/Sources/Capacitor/Views/Projects/ProjectsView.swift
+        - docs/audit/ARCHITECTURE_CHECKPOINT_2026-03-08.md
+        - docs/audit/ARCHITECTURE_CONVERGENCE_AUDIT_2026-03-08.md
+        - docs/audit/SUMMARY.md
+        - scripts/rewrite/check_rewrite_guards.sh
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+        - rewrite/HANDOFF.md
+      removed:
+        - apps/swift/Sources/Capacitor/Debug/ProjectListDiagnosticsSection.swift
+        - apps/swift/Sources/Capacitor/Views/Debug/DebugSessionStateCard.swift
+        - apps/swift/Sources/Capacitor/Views/Debug/DebugShellStateCard.swift
+        - apps/swift/Tests/CapacitorTests/ArchitectureBoundaryTests.swift
+    replay_scenarios: []
+    smoke_scenarios:
+      - swift_unit_tests
+    denylist_patterns:
+      - "apps/swift/Sources/Capacitor/Debug/ProjectListDiagnosticsSection.swift"
+      - "apps/swift/Sources/Capacitor/Views/Debug/DebugSessionStateCard.swift"
+      - "apps/swift/Sources/Capacitor/Views/Debug/DebugShellStateCard.swift"
+      - "apps/swift/Tests/CapacitorTests/ArchitectureBoundaryTests.swift"
+    deletion_targets:
+      - apps/swift/Sources/Capacitor/Debug/ProjectListDiagnosticsSection.swift
+      - apps/swift/Sources/Capacitor/Views/Debug/DebugSessionStateCard.swift
+      - apps/swift/Sources/Capacitor/Views/Debug/DebugShellStateCard.swift
+      - apps/swift/Tests/CapacitorTests/ArchitectureBoundaryTests.swift
+    risks:
+      - "Historical docs and debug surfaces need explicit human judgment to avoid deleting intentionally useful tooling while chasing purity."
+    notes: "Completed the final vestigial sweep for the declared convergence tranche. Temporary debug surfaces are deleted, the broad transition-era architecture boundary monolith is replaced with smaller canonical ratchet files, and the stale March 8 checkpoint is rewritten to describe the actual closed state of the tranche."
+
+  - id: NP-300
+    name: "Namespace Purity Audit and Budget Freeze"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - RW-206
+    touched_paths:
+      - rewrite/DECISIONS.md
+      - docs/audit/NAMESPACE_PURITY_AUDIT_2026-03-08.md
+      - docs/audit/NAMESPACE_PURITY_REFERENCE_2026-03-08.md
+      - docs/audit/SUMMARY.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+      - rewrite/HANDOFF.md
+    contracts:
+      added:
+        - docs/audit/NAMESPACE_PURITY_AUDIT_2026-03-08.md
+        - docs/audit/NAMESPACE_PURITY_REFERENCE_2026-03-08.md
+      changed:
+        - rewrite/DECISIONS.md
+        - docs/audit/SUMMARY.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+        - rewrite/HANDOFF.md
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns: []
+    deletion_targets: []
+    risks: []
+    notes: "Starts the namespace-purity tranche, records the remaining naming/location debt under `Models/`, and freezes the current `Models/*.swift` budget before the first low-risk rehome slice."
+
+  - id: NP-301
+    name: "Leaf Model Rehome"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - NP-300
+    touched_paths:
+      - apps/swift/Sources/Capacitor/Models/HookDiagnosticPresentation.swift
+      - apps/swift/Sources/Capacitor/Models/HookPresentationPolicy.swift
+      - apps/swift/Sources/Capacitor/Models/SetupStepCatalog.swift
+      - apps/swift/Sources/Capacitor/Models/SetupReadinessCoordinator.swift
+      - apps/swift/Sources/Capacitor/Models/ShellSetupInstructions.swift
+      - apps/swift/Sources/Capacitor/Models/RuntimeStatus.swift
+      - apps/swift/Sources/Capacitor/Models/WindowFrameStore.swift
+      - apps/swift/Sources/Capacitor/Models/GhosttyAXReader.swift
+      - apps/swift/Sources/Capacitor/Application/Setup/*
+      - apps/swift/Sources/Capacitor/Application/Runtime/*
+      - apps/swift/Sources/Capacitor/Support/*
+      - apps/swift/Tests/CapacitorTests/*
+      - docs/audit/ARCHITECTURE_CHECKPOINT_2026-03-08.md
+      - docs/audit/NAMESPACE_PURITY_AUDIT_2026-03-08.md
+      - docs/audit/NAMESPACE_PURITY_REFERENCE_2026-03-08.md
+      - docs/audit/SUMMARY.md
+      - scripts/rewrite/check_rewrite_guards.sh
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+      - rewrite/HANDOFF.md
+    contracts:
+      added:
+        - apps/swift/Sources/Capacitor/Application/Setup/HookDiagnosticPresentation.swift
+        - apps/swift/Sources/Capacitor/Application/Setup/HookPresentationPolicy.swift
+        - apps/swift/Sources/Capacitor/Application/Setup/SetupStepCatalog.swift
+        - apps/swift/Sources/Capacitor/Application/Setup/SetupReadinessCoordinator.swift
+        - apps/swift/Sources/Capacitor/Application/Setup/ShellSetupInstructions.swift
+        - apps/swift/Sources/Capacitor/Application/Runtime/RuntimeStatus.swift
+        - apps/swift/Sources/Capacitor/Support/WindowFrameStore.swift
+        - apps/swift/Sources/Capacitor/Support/GhosttyAXReader.swift
+      changed:
+        - docs/audit/NAMESPACE_PURITY_AUDIT_2026-03-08.md
+        - docs/audit/NAMESPACE_PURITY_REFERENCE_2026-03-08.md
+        - scripts/rewrite/check_rewrite_guards.sh
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+        - rewrite/HANDOFF.md
+      removed:
+        - apps/swift/Sources/Capacitor/Models/HookDiagnosticPresentation.swift
+        - apps/swift/Sources/Capacitor/Models/HookPresentationPolicy.swift
+        - apps/swift/Sources/Capacitor/Models/SetupStepCatalog.swift
+        - apps/swift/Sources/Capacitor/Models/SetupReadinessCoordinator.swift
+        - apps/swift/Sources/Capacitor/Models/ShellSetupInstructions.swift
+        - apps/swift/Sources/Capacitor/Models/RuntimeStatus.swift
+        - apps/swift/Sources/Capacitor/Models/WindowFrameStore.swift
+        - apps/swift/Sources/Capacitor/Models/GhosttyAXReader.swift
+    replay_scenarios: []
+    smoke_scenarios:
+      - swift_unit_tests
+    denylist_patterns:
+      - "apps/swift/Sources/Capacitor/Models/HookDiagnosticPresentation.swift"
+      - "apps/swift/Sources/Capacitor/Models/HookPresentationPolicy.swift"
+      - "apps/swift/Sources/Capacitor/Models/SetupStepCatalog.swift"
+      - "apps/swift/Sources/Capacitor/Models/SetupReadinessCoordinator.swift"
+      - "apps/swift/Sources/Capacitor/Models/ShellSetupInstructions.swift"
+      - "apps/swift/Sources/Capacitor/Models/RuntimeStatus.swift"
+      - "apps/swift/Sources/Capacitor/Models/WindowFrameStore.swift"
+      - "apps/swift/Sources/Capacitor/Models/GhosttyAXReader.swift"
+    deletion_targets:
+      - apps/swift/Sources/Capacitor/Models/HookDiagnosticPresentation.swift
+      - apps/swift/Sources/Capacitor/Models/HookPresentationPolicy.swift
+      - apps/swift/Sources/Capacitor/Models/SetupStepCatalog.swift
+      - apps/swift/Sources/Capacitor/Models/SetupReadinessCoordinator.swift
+      - apps/swift/Sources/Capacitor/Models/ShellSetupInstructions.swift
+      - apps/swift/Sources/Capacitor/Models/RuntimeStatus.swift
+      - apps/swift/Sources/Capacitor/Models/WindowFrameStore.swift
+      - apps/swift/Sources/Capacitor/Models/GhosttyAXReader.swift
+    risks:
+      - "This slice should remain a pure path-namespace cleanup. If behavior starts changing, split the work."
+    notes: "Completed the first namespace-purity slice. Eight low-risk leaf files are rehomed out of `Models/`, the `Models` file-count ratchet is reduced from `17` to `9`, and the old paths are frozen at zero with deletion targets and denylist protection."
+
+  - id: NP-302
+    name: "Medium-Risk Model Rehome"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - NP-301
+    touched_paths:
+      - apps/swift/Sources/Capacitor/Models/ProjectDetailsManager.swift
+      - apps/swift/Sources/Capacitor/Models/ProjectCreationCoordinator.swift
+      - apps/swift/Sources/Capacitor/Models/HookServerManager.swift
+      - apps/swift/Sources/Capacitor/Application/Projects/*
+      - apps/swift/Sources/Capacitor/Support/*
+      - apps/swift/Tests/CapacitorTests/*
+      - docs/audit/NAMESPACE_PURITY_AUDIT_2026-03-08.md
+      - docs/audit/NAMESPACE_PURITY_REFERENCE_2026-03-08.md
+      - scripts/rewrite/check_rewrite_guards.sh
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+      - rewrite/HANDOFF.md
+    contracts:
+      added:
+        - apps/swift/Sources/Capacitor/Application/Projects/ProjectDetailsManager.swift
+        - apps/swift/Sources/Capacitor/Application/Projects/ProjectCreationCoordinator.swift
+        - apps/swift/Sources/Capacitor/Support/HookServerManager.swift
+      changed:
+        - apps/swift/Tests/CapacitorTests/ProjectArchitectureTests.swift
+        - apps/swift/Tests/CapacitorTests/AppStateArchitectureTests.swift
+        - docs/audit/NAMESPACE_PURITY_AUDIT_2026-03-08.md
+        - docs/audit/NAMESPACE_PURITY_REFERENCE_2026-03-08.md
+        - docs/audit/ARCHITECTURE_CHECKPOINT_2026-03-08.md
+        - scripts/rewrite/check_rewrite_guards.sh
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+        - rewrite/HANDOFF.md
+      removed:
+        - apps/swift/Sources/Capacitor/Models/ProjectDetailsManager.swift
+        - apps/swift/Sources/Capacitor/Models/ProjectCreationCoordinator.swift
+        - apps/swift/Sources/Capacitor/Models/HookServerManager.swift
+    replay_scenarios: []
+    smoke_scenarios:
+      - swift_unit_tests
+    denylist_patterns:
+      - "apps/swift/Sources/Capacitor/Models/ProjectDetailsManager.swift"
+      - "apps/swift/Sources/Capacitor/Models/ProjectCreationCoordinator.swift"
+      - "apps/swift/Sources/Capacitor/Models/HookServerManager.swift"
+    deletion_targets:
+      - apps/swift/Sources/Capacitor/Models/ProjectDetailsManager.swift
+      - apps/swift/Sources/Capacitor/Models/ProjectCreationCoordinator.swift
+      - apps/swift/Sources/Capacitor/Models/HookServerManager.swift
+    risks:
+      - "These files are canonical implementations, not dead wrappers, so this slice must preserve behavior while changing ownership and path names."
+    notes: "Completed the medium-risk namespace rehome. `ProjectDetailsManager`, `ProjectCreationCoordinator`, and `HookServerManager` are no longer under `Models/`, the `Models` file-count ratchet is reduced from `9` to `6`, and the old paths are frozen at zero."
+
+  - id: NP-303
+    name: "Runtime Implementation Rehome"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - NP-302
+    touched_paths:
+      - CLAUDE.md
+      - core/capacitor-core/tests/fixtures/replay/hook_burst_out_of_order.json
+      - apps/swift/Sources/Capacitor/Support/RuntimeClient.swift
+      - apps/swift/Sources/Capacitor/Application/Runtime/SessionStateManager.swift
+      - apps/swift/Sources/Capacitor/Application/Runtime/ShellStateStore.swift
+      - apps/swift/Sources/Capacitor/Support/TerminalLauncher.swift
+      - apps/swift/Sources/Capacitor/Application/Projects/WorkstreamsManager.swift
+      - apps/swift/Sources/Capacitor/Composition/AppState.swift
+      - apps/swift/Sources/Capacitor/Application/Runtime/*
+      - apps/swift/Sources/Capacitor/Application/Projects/*
+      - apps/swift/Sources/Capacitor/Composition/*
+      - apps/swift/Sources/Capacitor/Support/*
+      - apps/swift/Tests/CapacitorTests/*
+      - docs/audit/ARCHITECTURE_CHECKPOINT_2026-03-08.md
+      - docs/audit/ARCHITECTURE_CONVERGENCE_AUDIT_2026-03-08.md
+      - docs/audit/CLEAN_ARCHITECTURE_ASSESSMENT.md
+      - docs/audit/CONVERGENCE_REFERENCE_2026-03-08.md
+      - docs/audit/NAMESPACE_PURITY_AUDIT_2026-03-08.md
+      - docs/audit/NAMESPACE_PURITY_REFERENCE_2026-03-08.md
+      - docs/worktree-migration-post-alpha.md
+      - scripts/ci/runtime-reliability-guard.sh
+      - scripts/rewrite/check_rewrite_guards.sh
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+      - rewrite/HANDOFF.md
+    contracts:
+      added:
+        - apps/swift/Sources/Capacitor/Support/RuntimeClient.swift
+        - apps/swift/Sources/Capacitor/Application/Runtime/SessionStateManager.swift
+        - apps/swift/Sources/Capacitor/Application/Runtime/ShellStateStore.swift
+        - apps/swift/Sources/Capacitor/Support/TerminalLauncher.swift
+        - apps/swift/Sources/Capacitor/Application/Projects/WorkstreamsManager.swift
+        - apps/swift/Sources/Capacitor/Composition/AppState.swift
+      changed:
+        - CLAUDE.md
+        - core/capacitor-core/tests/fixtures/replay/hook_burst_out_of_order.json
+        - apps/swift/Tests/CapacitorTests/AppStateArchitectureTests.swift
+        - apps/swift/Tests/CapacitorTests/RuntimeArchitectureTests.swift
+        - docs/audit/ARCHITECTURE_CHECKPOINT_2026-03-08.md
+        - docs/audit/ARCHITECTURE_CONVERGENCE_AUDIT_2026-03-08.md
+        - docs/audit/CLEAN_ARCHITECTURE_ASSESSMENT.md
+        - docs/audit/CONVERGENCE_REFERENCE_2026-03-08.md
+        - docs/audit/NAMESPACE_PURITY_AUDIT_2026-03-08.md
+        - docs/audit/NAMESPACE_PURITY_REFERENCE_2026-03-08.md
+        - docs/worktree-migration-post-alpha.md
+        - scripts/ci/runtime-reliability-guard.sh
+        - scripts/rewrite/check_rewrite_guards.sh
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+        - rewrite/HANDOFF.md
+      removed:
+        - apps/swift/Sources/Capacitor/Models/RuntimeClient.swift
+        - apps/swift/Sources/Capacitor/Models/SessionStateManager.swift
+        - apps/swift/Sources/Capacitor/Models/ShellStateStore.swift
+        - apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift
+        - apps/swift/Sources/Capacitor/Models/WorkstreamsManager.swift
+        - apps/swift/Sources/Capacitor/Models/AppState.swift
+    replay_scenarios:
+      - full_corpus
+    smoke_scenarios:
+      - swift_unit_tests
+      - project_activation_and_trace_display
+      - click_project_restore_terminal
+    denylist_patterns:
+      - "apps/swift/Sources/Capacitor/Models/RuntimeClient.swift"
+      - "apps/swift/Sources/Capacitor/Models/SessionStateManager.swift"
+      - "apps/swift/Sources/Capacitor/Models/ShellStateStore.swift"
+      - "apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift"
+      - "apps/swift/Sources/Capacitor/Models/WorkstreamsManager.swift"
+      - "apps/swift/Sources/Capacitor/Models/AppState.swift"
+    deletion_targets:
+      - apps/swift/Sources/Capacitor/Models/RuntimeClient.swift
+      - apps/swift/Sources/Capacitor/Models/SessionStateManager.swift
+      - apps/swift/Sources/Capacitor/Models/ShellStateStore.swift
+      - apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift
+      - apps/swift/Sources/Capacitor/Models/WorkstreamsManager.swift
+      - apps/swift/Sources/Capacitor/Models/AppState.swift
+    risks:
+      - "This is the highest-blast-radius namespace slice because it touches the core runtime/shell implementation files that still back the new boundaries."
+    notes: "Completed the high-blast-radius namespace rehome. `RuntimeClient`, `TerminalLauncher`, `SessionStateManager`, `ShellStateStore`, `WorkstreamsManager`, and `AppState` now live under canonical `Support`, `Application`, or `Composition` namespaces, the top-level `Models/*.swift` budget is reduced from `6` to `0`, and the old paths are frozen at zero."
+
+  - id: TE-400
+    name: "True Ending Audit and Ratchet Reset"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - NP-303
+    touched_paths:
+      - rewrite/CHARTER.md
+      - rewrite/DECISIONS.md
+      - docs/audit/TRUE_ENDING_AUDIT_2026-03-08.md
+      - docs/audit/TRUE_ENDING_REFERENCE_2026-03-08.md
+      - docs/audit/SUMMARY.md
+      - scripts/rewrite/check_rewrite_guards.sh
+      - scripts/ci/runtime-reliability-guard.sh
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+      - rewrite/HANDOFF.md
+    contracts:
+      added:
+        - docs/audit/TRUE_ENDING_AUDIT_2026-03-08.md
+        - docs/audit/TRUE_ENDING_REFERENCE_2026-03-08.md
+      changed:
+        - rewrite/CHARTER.md
+        - rewrite/DECISIONS.md
+        - docs/audit/SUMMARY.md
+        - scripts/rewrite/check_rewrite_guards.sh
+        - scripts/ci/runtime-reliability-guard.sh
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+        - rewrite/HANDOFF.md
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Finish-line cleanup risks collapsing several kinds of debt together. The audit must keep namespace, docs, reliability, and control-plane closure as separate slices."
+    notes: "Starts the true-ending tranche inside the existing control plane, records the remaining finish-line debt, and freezes the next cleanup surfaces with truthful ratchets."
+
+  - id: TE-401
+    name: "Historical Checkpoint Quarantine"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - TE-400
+    touched_paths:
+      - docs/audit/ARCHITECTURE_CHECKPOINT_2026-03-06.md
+      - docs/audit/ARCHITECTURE_CHECKPOINT_2026-03-07.md
+      - docs/audit/ARCHITECTURE_CHECKPOINT_2026-03-08.md
+      - docs/audit/SUMMARY.md
+      - docs/audit/TRUE_ENDING_AUDIT_2026-03-08.md
+      - scripts/rewrite/check_rewrite_guards.sh
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+      - rewrite/HANDOFF.md
+    contracts:
+      added: []
+      changed:
+        - docs/audit/ARCHITECTURE_CHECKPOINT_2026-03-06.md
+        - docs/audit/ARCHITECTURE_CHECKPOINT_2026-03-07.md
+        - docs/audit/ARCHITECTURE_CHECKPOINT_2026-03-08.md
+        - docs/audit/SUMMARY.md
+        - docs/audit/TRUE_ENDING_AUDIT_2026-03-08.md
+        - scripts/rewrite/check_rewrite_guards.sh
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+        - rewrite/HANDOFF.md
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios:
+      - rewrite_guard_status
+    denylist_patterns:
+      - "content:docs/audit/ARCHITECTURE_CHECKPOINT_2026-03-06.md::TODO \\(user-run\\)"
+      - "content:docs/audit/ARCHITECTURE_CHECKPOINT_2026-03-07.md::TODO \\(user-run\\)"
+    deletion_targets: []
+    risks:
+      - "Historical docs should remain discoverable, but they must stop presenting unexecuted checklists and deleted-path references as live guidance."
+    notes: "Completed the historical-checkpoint quarantine. The March 6 and March 7 checkpoints now remain in-tree only as archived stubs, the actionable-looking TODO tables are gone, and the historical-doc ratchet is reduced from `14` to `0`."
+
+  - id: TE-402
+    name: "Window Anchoring Rehome"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - TE-400
+    touched_paths:
+      - apps/swift/Sources/Capacitor/Models/WindowAnchoring/*
+      - apps/swift/Sources/Capacitor/Support/WindowAnchoring/*
+      - apps/swift/Sources/Capacitor/Composition/*
+      - apps/swift/Sources/Capacitor/Views/*
+      - docs/audit/TRUE_ENDING_AUDIT_2026-03-08.md
+      - docs/audit/TRUE_ENDING_REFERENCE_2026-03-08.md
+      - scripts/rewrite/check_rewrite_guards.sh
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+      - rewrite/HANDOFF.md
+    contracts:
+      added:
+        - apps/swift/Sources/Capacitor/Support/WindowAnchoring/AnchorTypes.swift
+        - apps/swift/Sources/Capacitor/Support/WindowAnchoring/WindowAnchoringController.swift
+        - apps/swift/Sources/Capacitor/Support/WindowAnchoring/WindowBoundsProvider.swift
+      changed:
+        - docs/audit/TRUE_ENDING_AUDIT_2026-03-08.md
+        - docs/audit/TRUE_ENDING_REFERENCE_2026-03-08.md
+        - scripts/rewrite/check_rewrite_guards.sh
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+        - rewrite/HANDOFF.md
+      removed:
+        - apps/swift/Sources/Capacitor/Models/WindowAnchoring/AnchorTypes.swift
+        - apps/swift/Sources/Capacitor/Models/WindowAnchoring/WindowAnchoringController.swift
+        - apps/swift/Sources/Capacitor/Models/WindowAnchoring/WindowBoundsProvider.swift
+    replay_scenarios: []
+    smoke_scenarios:
+      - swift_unit_tests
+    denylist_patterns:
+      - apps/swift/Sources/Capacitor/Models/WindowAnchoring/AnchorTypes.swift
+      - apps/swift/Sources/Capacitor/Models/WindowAnchoring/WindowAnchoringController.swift
+      - apps/swift/Sources/Capacitor/Models/WindowAnchoring/WindowBoundsProvider.swift
+    deletion_targets:
+      - apps/swift/Sources/Capacitor/Models/WindowAnchoring/AnchorTypes.swift
+      - apps/swift/Sources/Capacitor/Models/WindowAnchoring/WindowAnchoringController.swift
+      - apps/swift/Sources/Capacitor/Models/WindowAnchoring/WindowBoundsProvider.swift
+    risks:
+      - "The move is namespace-only, but these types are wired into composition and UI glow rendering, so stale path references will break compilation or docs silently."
+    notes: "Completed the final Swift namespace rehome. `WindowAnchoringController`, `WindowBoundsProvider`, and their anchor support types now live under `Support/WindowAnchoring/`, the residual nested `Models` budget is reduced from `3` to `0`, and the old paths are frozen at zero."
+
+  - id: TE-403
+    name: "Hook Server Startup Probe Deblocking"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - TE-400
+    touched_paths:
+      - apps/swift/Sources/Capacitor/Support/HookServerManager.swift
+      - apps/swift/Tests/CapacitorTests/HookServerManagerTests.swift
+      - scripts/ci/runtime-reliability-guard.sh
+      - docs/audit/TRUE_ENDING_AUDIT_2026-03-08.md
+      - docs/audit/TRUE_ENDING_REFERENCE_2026-03-08.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+      - rewrite/HANDOFF.md
+    contracts:
+      added: []
+      changed:
+        - apps/swift/Sources/Capacitor/Support/HookServerManager.swift
+        - apps/swift/Tests/CapacitorTests/HookServerManagerTests.swift
+        - scripts/ci/runtime-reliability-guard.sh
+        - docs/audit/TRUE_ENDING_AUDIT_2026-03-08.md
+        - docs/audit/TRUE_ENDING_REFERENCE_2026-03-08.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+        - rewrite/HANDOFF.md
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios:
+      - swift_unit_tests
+    denylist_patterns:
+      - "content:apps/swift/Sources/Capacitor/Support/HookServerManager.swift::waitUntilExit\\("
+    deletion_targets: []
+    risks:
+      - "This is live startup/lifecycle code. The slice needs tests first and must preserve existing adoption semantics while removing main-thread blocking."
+    notes: "Completed the hook-server startup probe cleanup. Live process discovery no longer uses `waitUntilExit()`, stop semantics dominate late probe completions, and the `HookServer waitUntilExit` budget is reduced from `1` to `0`."
+
+  - id: TE-404
+    name: "Remaining Subprocess Reliability Cleanup"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - TE-400
+    touched_paths:
+      - apps/swift/Sources/Capacitor/Application/Projects/ProjectDetailsManager.swift
+      - apps/swift/Sources/Capacitor/Support/TerminalLauncher.swift
+      - apps/swift/Sources/Capacitor/Helpers/WorktreeService.swift
+      - apps/swift/Tests/CapacitorTests/ProjectDetailsManagerObservationTests.swift
+      - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
+      - apps/swift/Tests/CapacitorTests/WorktreeServiceTests.swift
+      - scripts/ci/runtime-reliability-guard.sh
+      - docs/audit/TRUE_ENDING_AUDIT_2026-03-08.md
+      - docs/audit/TRUE_ENDING_REFERENCE_2026-03-08.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+      - rewrite/HANDOFF.md
+    contracts:
+      added: []
+      changed:
+        - apps/swift/Sources/Capacitor/Application/Projects/ProjectDetailsManager.swift
+        - apps/swift/Sources/Capacitor/Support/TerminalLauncher.swift
+        - apps/swift/Sources/Capacitor/Helpers/WorktreeService.swift
+        - apps/swift/Tests/CapacitorTests/ProjectDetailsManagerObservationTests.swift
+        - scripts/ci/runtime-reliability-guard.sh
+        - docs/audit/TRUE_ENDING_AUDIT_2026-03-08.md
+        - docs/audit/TRUE_ENDING_REFERENCE_2026-03-08.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+        - rewrite/HANDOFF.md
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios:
+      - swift_unit_tests
+    denylist_patterns:
+      - "content:apps/swift/Sources/Capacitor/Application/Projects/ProjectDetailsManager.swift::waitUntilExit\\("
+      - "content:apps/swift/Sources/Capacitor/Support/TerminalLauncher.swift::outputData\\.append\\("
+      - "content:apps/swift/Sources/Capacitor/Helpers/WorktreeService.swift::waitUntilExit\\("
+    deletion_targets: []
+    risks:
+      - "This slice spans three subprocess call sites with different semantics: git context loading, terminal I/O capture, and worktree porcelain parsing. The contracts need to be reduced without smearing everything into one helper blindly."
+    notes: "Completed the remaining live subprocess cleanup. `ProjectDetailsManager`, `TerminalLauncher`, and `WorktreeService` no longer carry the ratcheted subprocess debt, and all three reliability budgets are reduced to `0`."
+
+  - id: TE-405
+    name: "AppState Surface Decision"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - TE-400
+    touched_paths:
+      - apps/swift/Sources/Capacitor/Composition/AppState.swift
+      - docs/audit/TRUE_ENDING_AUDIT_2026-03-08.md
+      - docs/audit/TRUE_ENDING_REFERENCE_2026-03-08.md
+      - rewrite/DECISIONS.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+      - rewrite/HANDOFF.md
+    contracts:
+      added: []
+      changed:
+        - rewrite/DECISIONS.md
+        - docs/audit/TRUE_ENDING_AUDIT_2026-03-08.md
+        - docs/audit/TRUE_ENDING_REFERENCE_2026-03-08.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+        - rewrite/HANDOFF.md
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios:
+      - swift_unit_tests
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "AppState is the SwiftUI environment root. Any shrink must distinguish intentional shell state from accidental service-locator surface rather than blindly moving fields around."
+    notes: "Closed as an explicit architectural decision. `Composition/AppState.swift` remains the intentional SwiftUI shell-environment hub; no further split is required unless it resumes owning policy or construction."
+
+  - id: TE-406
+    name: "Rewrite End-State Decision"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - TE-401
+      - TE-402
+      - TE-403
+      - TE-404
+      - TE-405
+    touched_paths:
+      - rewrite/CHARTER.md
+      - rewrite/DECISIONS.md
+      - rewrite/HANDOFF.md
+      - docs/audit/TRUE_ENDING_AUDIT_2026-03-08.md
+      - docs/audit/TRUE_ENDING_REFERENCE_2026-03-08.md
+      - docs/audit/SUMMARY.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+    contracts:
+      added: []
+      changed:
+        - rewrite/CHARTER.md
+        - rewrite/DECISIONS.md
+        - rewrite/HANDOFF.md
+        - docs/audit/TRUE_ENDING_AUDIT_2026-03-08.md
+        - docs/audit/TRUE_ENDING_REFERENCE_2026-03-08.md
+        - docs/audit/SUMMARY.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios:
+      - rewrite_guard_status
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Closing the campaign without deciding the fate of `rewrite/` would leave a different kind of ambiguity behind."
+    notes: "Completed the explicit end-state decision. `rewrite/` remains the permanent architecture-governance surface, and the finish-line tranche is closed with no pending slices."
+
+  - id: DC-500
+    name: "Dead Code Sweep Audit"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - TE-406
+    touched_paths:
+      - .claude/dead-code-report.md
+      - docs/audit/DEAD_CODE_SWEEP_AUDIT_2026-03-08.md
+      - docs/audit/SUMMARY.md
+      - rewrite/DECISIONS.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+      - rewrite/HANDOFF.md
+    contracts:
+      added:
+        - .claude/dead-code-report.md
+        - docs/audit/DEAD_CODE_SWEEP_AUDIT_2026-03-08.md
+      changed:
+        - docs/audit/SUMMARY.md
+        - rewrite/DECISIONS.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+        - rewrite/HANDOFF.md
+      removed: []
+    replay_scenarios: []
+    smoke_scenarios: []
+    denylist_patterns: []
+    deletion_targets: []
+    risks:
+      - "Unreferenced manual utilities are easy to over-delete. The audit must keep them as review-only unless their role is explicitly retired."
+    notes: "Recorded the confirmed dead artifacts separately from zero-reference but plausibly intentional manual utilities."
+
+  - id: DC-501
+    name: "Orphaned Artifact Deletion"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - DC-500
+    touched_paths:
+      - .claude/.DS_Store
+      - scripts/.DS_Store
+      - scripts/ci/test-agent-observe.sh
+      - docs/audit/00-analysis-plan.md
+      - docs/audit/01-system-context.md
+      - docs/audit/02-container-diagram.md
+      - docs/audit/03-core-components.md
+      - .claude/dead-code-report.md
+      - docs/audit/DEAD_CODE_SWEEP_AUDIT_2026-03-08.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+      - rewrite/HANDOFF.md
+    contracts:
+      added: []
+      changed:
+        - .claude/dead-code-report.md
+        - docs/audit/DEAD_CODE_SWEEP_AUDIT_2026-03-08.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+        - rewrite/HANDOFF.md
+      removed:
+        - .claude/.DS_Store
+        - scripts/.DS_Store
+        - scripts/ci/test-agent-observe.sh
+        - docs/audit/00-analysis-plan.md
+        - docs/audit/01-system-context.md
+        - docs/audit/02-container-diagram.md
+        - docs/audit/03-core-components.md
+    replay_scenarios: []
+    smoke_scenarios:
+      - rewrite_guard_status
+    denylist_patterns:
+      - .claude/.DS_Store
+      - scripts/.DS_Store
+      - scripts/ci/test-agent-observe.sh
+      - docs/audit/00-analysis-plan.md
+      - docs/audit/01-system-context.md
+      - docs/audit/02-container-diagram.md
+      - docs/audit/03-core-components.md
+    deletion_targets:
+      - .claude/.DS_Store
+      - scripts/.DS_Store
+      - scripts/ci/test-agent-observe.sh
+      - docs/audit/00-analysis-plan.md
+      - docs/audit/01-system-context.md
+      - docs/audit/02-container-diagram.md
+      - docs/audit/03-core-components.md
+    risks:
+      - "Deleting unlinked artifacts is low risk, but historical docs should only be removed when they are genuinely orphaned and not part of the intentional archive index."
+    notes: "Deleted the confirmed dead audit scaffolds, Finder metadata, and unreferenced CI harness, and froze those paths at zero."
+
+  - id: DC-502
+    name: "Final Orphaned Utility Cleanup"
+    owner: "agent/session"
+    status: "done"
+    depends_on:
+      - DC-501
+    touched_paths:
+      - scripts/utils/fetch-cc-docs.ts
+      - assets/README.md
+      - .claude/dead-code-report.md
+      - docs/audit/DEAD_CODE_SWEEP_AUDIT_2026-03-08.md
+      - rewrite/SLICES.yaml
+      - rewrite/MAP.csv
+      - rewrite/HANDOFF.md
+    contracts:
+      added: []
+      changed:
+        - assets/README.md
+        - .claude/dead-code-report.md
+        - docs/audit/DEAD_CODE_SWEEP_AUDIT_2026-03-08.md
+        - rewrite/SLICES.yaml
+        - rewrite/MAP.csv
+        - rewrite/HANDOFF.md
+      removed:
+        - scripts/utils/fetch-cc-docs.ts
+    replay_scenarios: []
+    smoke_scenarios:
+      - rewrite_guard_status
+    denylist_patterns:
+      - scripts/utils/fetch-cc-docs.ts
+    deletion_targets:
+      - scripts/utils/fetch-cc-docs.ts
+    risks:
+      - "Utility scripts are easy to misclassify. This slice only deletes the docs-fetch utility because it has no live output path or references and keeps the icon utility by documenting it explicitly."
+    notes: "Deleted the final confirmed dead utility script and documented the retained icon-generation utility so it is intentional rather than orphaned."

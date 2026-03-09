@@ -18,6 +18,29 @@ private final class BlockingState: @unchecked Sendable {
     }
 }
 
+private actor AsyncGate {
+    private var isOpen = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func wait() async {
+        if isOpen {
+            return
+        }
+
+        await withCheckedContinuation { continuation in
+            waiters.append(continuation)
+        }
+    }
+
+    func open() {
+        guard !isOpen else { return }
+        isOpen = true
+        let continuations = waiters
+        waiters.removeAll()
+        continuations.forEach { $0.resume() }
+    }
+}
+
 @MainActor
 final class ProjectDetailsManagerObservationTests: XCTestCase {
     func testGetIdeasObservationInvalidatesWhenIdeasReordered() {
@@ -51,13 +74,13 @@ final class ProjectDetailsManagerObservationTests: XCTestCase {
     func testGatherSensemakingContextDoesNotBlockMainActorWhileGitContextLoads() async {
         let commandStarted = expectation(description: "git command started")
         let mainActorAvailable = expectation(description: "main actor still available")
-        let unblockCommand = DispatchSemaphore(value: 0)
+        let unblockCommand = AsyncGate()
         let blockingState = BlockingState()
 
         let manager = ProjectDetailsManager(gitCommandExecutor: { _, arguments in
             if blockingState.takeShouldBlock() {
                 commandStarted.fulfill()
-                unblockCommand.wait()
+                await unblockCommand.wait()
             }
 
             switch arguments {
@@ -85,7 +108,7 @@ final class ProjectDetailsManagerObservationTests: XCTestCase {
 
         await fulfillment(of: [mainActorAvailable], timeout: 0.2)
 
-        unblockCommand.signal()
+        await unblockCommand.open()
         let context = await contextTask.value
 
         XCTAssertEqual(context.recentFiles, ["Sources/App.swift", "README.md"])

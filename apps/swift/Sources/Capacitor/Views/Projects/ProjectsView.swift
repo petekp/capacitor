@@ -91,9 +91,6 @@ struct ProjectsView: View {
         if !appState.dashboardState.isLoading, appState.projectWorkflowState.projectCatalog.isEmpty {
             ScrollView {
                 VStack(spacing: 0) {
-                    ProjectListDiagnosticsSection()
-                        .padding(.horizontal, listHorizontalPadding)
-                        .padding(.bottom, 6)
                     if let diagnostic = appState.setupActionState.hookDiagnostic, diagnostic.shouldShowSetupCard {
                         SetupStatusCard(
                             diagnostic: diagnostic,
@@ -120,8 +117,6 @@ struct ProjectsView: View {
             ScrollView {
                 ScrollViewReader { scrollProxy in
                     LazyVStack(spacing: cardListSpacing) {
-                        ProjectListDiagnosticsSection()
-                            .padding(.bottom, 6)
                         // Setup status card - show regardless of project state
                         if let diagnostic = appState.setupActionState.hookDiagnostic, diagnostic.shouldShowSetupCard {
                             SetupStatusCard(
@@ -284,13 +279,13 @@ struct ProjectsView: View {
             onTap: {
                 appState.projectActivationCoordinator.activate(project)
             },
-            onInfoTap: canShowDetails ? { appState.projectFeatureCoordinator.showProjectDetail(project) } : nil,
+            onInfoTap: canShowDetails ? { appState.navigationState.showProjectDetail(project.shellProjectReference) } : nil,
             onMoveToDormant: {
                 withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
                     projectListState.moveToDormant(project)
                 }
             },
-            onCaptureIdea: canCaptureIdeas ? { frame in appState.projectFeatureCoordinator.showIdeaCaptureModal(for: project, from: frame) } : nil,
+            onCaptureIdea: canCaptureIdeas ? { frame in appState.projectPresentationState.showIdeaCaptureModal(for: project, from: frame) } : nil,
             onRemove: {
                 withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
                     appState.projectActionState.removeProject(path: project.path)
@@ -321,7 +316,7 @@ struct ProjectsView: View {
             onTap: {
                 appState.projectActivationCoordinator.activate(project)
             },
-            onInfoTap: appState.isProjectDetailsEnabled ? { appState.projectFeatureCoordinator.showProjectDetail(project) } : nil,
+            onInfoTap: appState.isProjectDetailsEnabled ? { appState.navigationState.showProjectDetail(project.shellProjectReference) } : nil,
             onMoveToRecent: {
                 withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
                     projectListState.moveToRecent(project)

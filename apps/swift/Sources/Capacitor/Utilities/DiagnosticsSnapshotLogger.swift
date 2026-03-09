@@ -99,7 +99,7 @@ enum DiagnosticsSnapshotLogger {
         }.sorted { $0.projectPath < $1.projectPath }
 
         _Concurrency.Task { @MainActor in
-            let runtimeSessions = await (try? RuntimeClient.shared.fetchSessions()) ?? []
+            let runtimeSessions = await (try? CoreRuntimeSnapshotReader.shared.fetchSessions()) ?? []
             let runtimeSnapshots = runtimeSessions.map { session in
                 RuntimeSessionSnapshot(
                     sessionId: session.sessionId,

@@ -3,8 +3,8 @@ import Foundation
 @MainActor
 final class RuntimeSessionRefreshController {
     private let runtimeSupervisor: RuntimeSupervisor
-    private let sessionStateManager: SessionStateManager
-    private let shellStateStore: ShellStateStore
+    private let sessionStateProjector: any RuntimeSessionStateProjecting
+    private let shellStateProjector: any RuntimeShellStateProjecting
     private let didUpdateContext: @MainActor () -> Void
 
     private var refreshTask: _Concurrency.Task<Void, Never>?
@@ -14,13 +14,13 @@ final class RuntimeSessionRefreshController {
 
     init(
         runtimeSupervisor: RuntimeSupervisor,
-        sessionStateManager: SessionStateManager,
-        shellStateStore: ShellStateStore,
+        sessionStateProjector: any RuntimeSessionStateProjecting,
+        shellStateProjector: any RuntimeShellStateProjecting,
         didUpdateContext: @escaping @MainActor () -> Void,
     ) {
         self.runtimeSupervisor = runtimeSupervisor
-        self.sessionStateManager = sessionStateManager
-        self.shellStateStore = shellStateStore
+        self.sessionStateProjector = sessionStateProjector
+        self.shellStateProjector = shellStateProjector
         self.didUpdateContext = didUpdateContext
     }
 
@@ -74,9 +74,9 @@ final class RuntimeSessionRefreshController {
             return false
         }
 
-        sessionStateManager.applyRuntimeProjectStates(
+        sessionStateProjector.applyRuntimeProjectStates(
             observation.projectStates,
-            for: projects,
+            for: projects.map(\.path),
             correlationId: correlationId,
         )
         consecutiveFailures = 0
@@ -105,7 +105,7 @@ final class RuntimeSessionRefreshController {
 
         guard shouldApply else { return }
 
-        await shellStateStore.applyRuntimeShellState(
+        await shellStateProjector.applyRuntimeShellState(
             observation.shellState,
             correlationId: correlationId,
         )
@@ -133,8 +133,8 @@ final class RuntimeSessionRefreshController {
             DebugLog.write(
                 "RuntimeSessionRefreshController.failure source=runtime_snapshot_error_clear cid=\(correlationId) failures=\(consecutiveFailures)",
             )
-            sessionStateManager.clearRuntimeProjectStates()
-            shellStateStore.clearRuntimeShellState(correlationId: correlationId)
+            sessionStateProjector.clearRuntimeProjectStates()
+            shellStateProjector.clearRuntimeShellState(correlationId: correlationId)
         }
 
         didUpdateContext()

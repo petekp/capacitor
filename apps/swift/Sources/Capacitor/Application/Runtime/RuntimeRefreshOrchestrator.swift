@@ -6,7 +6,7 @@ final class RuntimeRefreshOrchestrator {
     private let runtimeSessionRefreshController: RuntimeSessionRefreshController
     private let activeProjectTrackingState: ActiveProjectTrackingState
     private let projectListState: ProjectListState
-    private let sessionStateManager: SessionStateManager
+    private let sessionStateProjector: any RuntimeSessionStateProjecting
     private let projectsProvider: () -> [ShellProjectReference]
 
     init(
@@ -14,14 +14,14 @@ final class RuntimeRefreshOrchestrator {
         runtimeSessionRefreshController: RuntimeSessionRefreshController,
         activeProjectTrackingState: ActiveProjectTrackingState,
         projectListState: ProjectListState,
-        sessionStateManager: SessionStateManager,
+        sessionStateProjector: any RuntimeSessionStateProjecting,
         projectsProvider: @escaping () -> [ShellProjectReference],
     ) {
         self.projectStatusCacheState = projectStatusCacheState
         self.runtimeSessionRefreshController = runtimeSessionRefreshController
         self.activeProjectTrackingState = activeProjectTrackingState
         self.projectListState = projectListState
-        self.sessionStateManager = sessionStateManager
+        self.sessionStateProjector = sessionStateProjector
         self.projectsProvider = projectsProvider
     }
 
@@ -36,14 +36,14 @@ final class RuntimeRefreshOrchestrator {
         activeProjectTrackingState.refreshAfterSessionUpdate()
         projectListState.reconcileProjectGroups(
             projects: projects,
-            sessionStates: sessionStateManager.sessionStates,
+            sessionStates: sessionStateProjector.sessionStates,
         )
     }
 
     func activeWorktreePathsForGuardrails() -> Set<String> {
         var paths: Set<String> = []
 
-        for (projectPath, state) in sessionStateManager.sessionStates where state.state == .working {
+        for (projectPath, state) in sessionStateProjector.sessionStates where state.state == .working {
             paths.insert(PathNormalizer.normalize(projectPath))
         }
 

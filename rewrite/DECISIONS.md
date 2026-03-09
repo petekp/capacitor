@@ -68,6 +68,66 @@ This file records architecture decisions that are locked for the rewrite.
 - Decision: The app-facing FFI project/catalog boundary now exports shell-native DTOs (`ShellProjectCatalogEntry`, `ShellProjectStats`, `ShellSuggestedProjectCandidate`) directly. Swift keeps only thin ergonomics/extensions around those generated types and deletes `ProjectCatalogBridge`.
 - Why: The earlier bridge existed only because the UniFFI/core boundary was still legacy-shaped. Once the Rust core exports shell-native catalog DTOs directly, keeping a second Swift catalog type system would reintroduce needless translation and vestigial architecture.
 
+## D-012: The Real Finish Line Is Zero Transitional Swift Ownership
+- Date: 2026-03-08
+- Status: accepted
+- Decision: Supersede the narrower interpretation of the March 8 finish-line checkpoint for Swift. The codebase is not considered converged while `Application`, `Adapters`, or `Composition` still wrap legacy `Models` / `Features` ownership, while tracked review artifacts remain in-tree, or while confirmed-dead migration debris is retained.
+- Why: A migration is not actually complete when the new architecture sits on top of the old substrate. That state still imposes extra reading cost, ambiguous ownership, and future agent drift.
+
+## D-013: Mixed-Ownership Seams Must Be Ratcheted Numerically
+- Date: 2026-03-08
+- Status: accepted
+- Decision: Freeze the measured Swift convergence seams with numeric CI budgets: top-level file counts in `Models` / `Features`, and references from new shell layers to legacy types such as `SetupRequirementsManager`, `ActiveProjectResolver`, `ProjectIngestionWorker`, `SessionStateManager`, `ShellStateStore`, `RuntimeClient`, and `TerminalLauncher`. These counts may only decrease.
+- Why: Agents are good at adding architecture and poor at deleting substrate. Numeric ratchets turn "this still feels transitional" into a deterministic pass/fail signal.
+
+## D-014: Namespace Purity Is A New Tranche, Not Unfinished Convergence
+- Date: 2026-03-08
+- Status: accepted
+- Decision: After `RW-206`, the remaining `Models/` debt is treated as naming/location debt rather than mixed-ownership debt. Continuing to remove those legacy path names is a new namespace-purity tranche, not unfinished convergence work.
+- Why: The convergence tranche eliminated the actual transitional seams. What remains is that several canonical implementations still physically live under `Models/`, which hurts readability but no longer creates parallel ownership in the new shell layers.
+
+## D-015: Namespace Purity Starts With Low-Risk Leaf Rehomes
+- Date: 2026-03-08
+- Status: accepted
+- Decision: The namespace-purity tranche begins by rehoming low-risk leaf files out of `Models/` before touching high-blast-radius runtime/activation implementations. First targets are pure presentation/setup/runtime value files and isolated helpers such as `HookPresentationPolicy`, `HookDiagnosticPresentation`, `SetupStepCatalog`, `SetupReadinessCoordinator`, `RuntimeStatus`, `WindowFrameStore`, `GhosttyAXReader`, and `ShellSetupInstructions`.
+- Why: This lowers the `Models/*.swift` budget quickly without risking runtime regressions, and it creates a clean pattern for later, higher-risk moves.
+
+## D-016: The Existing Rewrite Control Plane Remains Canonical Through The True Ending
+- Date: 2026-03-08
+- Status: accepted
+- Decision: Continue the finish-line work inside the existing `rewrite/CHARTER.md`, `rewrite/DECISIONS.md`, `rewrite/SLICES.yaml`, `rewrite/MAP.csv`, and `rewrite/HANDOFF.md` artifacts rather than opening a parallel migration ledger.
+- Why: A second ledger would split authority, break ratchet continuity, and recreate the drift problems the control plane exists to prevent.
+
+## D-017: The True Ending Requires Truthful Ratchets, Truthful Docs, And Zero Accidental Namespace Debt
+- Date: 2026-03-08
+- Status: accepted
+- Decision: The codebase is not considered finished while any of these remain: ratchets pointing at deleted paths or inflated budgets, actionable-looking historical checkpoint docs, or residual Swift namespace debt such as the nested `Models/WindowAnchoring/*` subtree. The finish line also includes an explicit decision on whether `rewrite/` remains permanent governance or is archived.
+- Why: After convergence and namespace purity, the remaining risk is no longer structural confusion between old and new architecture. It is misleading operational residue that makes the repo look cleaner than it is.
+
+## D-018: Window Anchoring Is Support Infrastructure, Not Model-Layer Code
+- Date: 2026-03-08
+- Status: accepted
+- Decision: `WindowAnchoringController`, `WindowBoundsProvider`, and their anchor-support types belong under `Support/WindowAnchoring/`, not under `Models/`.
+- Why: The subsystem is AppKit/window-management infrastructure. Keeping it under `Models/` is pure namespace debt with no architectural upside.
+
+## D-019: AppState Remains The Intentional SwiftUI Shell Environment Hub
+- Date: 2026-03-08
+- Status: accepted
+- Decision: `Composition/AppState.swift` remains the single top-level SwiftUI shell environment object and may aggregate references to canonical application/support/composition collaborators, as long as it does not resume owning construction, duplicate policy, or duplicated lifecycle state.
+- Why: The remaining `AppState` surface is broad but intentional. The file is now small, builds nothing, and mainly exposes already-canonical state objects to views/tests. Further splitting would mostly relocate references without deleting meaningful complexity.
+
+## D-020: Rewrite Control Plane Becomes Permanent Governance, Not Archived Migration Debris
+- Date: 2026-03-08
+- Status: accepted
+- Decision: Keep `rewrite/CHARTER.md`, `rewrite/DECISIONS.md`, `rewrite/SLICES.yaml`, `rewrite/MAP.csv`, `rewrite/HANDOFF.md`, and their guard scripts as the repo’s ongoing architecture-governance surface rather than archiving them after the finish-line tranche.
+- Why: The ratchets and decision history still provide durable value after migration. Archiving them while they remain the source of CI truth would split authority and recreate drift.
+
+## D-021: Unlinked Audit Scaffolds And Orphaned Metadata Files Are Dead Code
+- Date: 2026-03-08
+- Status: accepted
+- Decision: Delete analysis-stage audit scaffolds and stray Finder metadata files when they have zero inbound references from current docs, code, CI, or rewrite governance. Keep unreferenced but plausibly intentional manual utilities as review-only until their role is explicitly retired.
+- Why: A repo can be migration-complete and still not be pristine if it carries orphaned analysis artifacts and filesystem cruft. Those files consume attention without serving a live purpose.
+
 ## Change Control
 1. New decisions must be appended with a unique ID.
 2. Reversals require a superseding decision entry, not silent edits.

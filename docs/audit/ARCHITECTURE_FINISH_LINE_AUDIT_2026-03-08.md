@@ -1,5 +1,7 @@
 # Architecture Finish-Line Audit
 
+Historical note: this document records the narrower Rust/FFI finish-line campaign that closed on March 8, 2026. The current Swift convergence standard is tracked in [ARCHITECTURE_CONVERGENCE_AUDIT_2026-03-08.md](/Users/petepetrash/Code/capacitor/docs/audit/ARCHITECTURE_CONVERGENCE_AUDIT_2026-03-08.md).
+
 Date: 2026-03-08
 
 This audit started the follow-on campaign required to reach the actual finish line after the Swift shell migration closed on March 7, 2026. It now tracks the remaining finish-line position after `RW-107` through `RW-110`.

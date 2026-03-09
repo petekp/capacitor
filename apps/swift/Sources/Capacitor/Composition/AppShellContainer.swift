@@ -23,8 +23,8 @@ struct AppShellContainer {
         let setupGateway = LiveSetupGateway()
         let ideaGateway = LiveIdeaGateway()
         let feedbackGateway = LiveFeedbackGateway()
-        let terminalLauncher = TerminalLauncher()
-        let activationGateway = LiveActivationGateway(terminalLauncher: terminalLauncher)
+        let shellActivationExecutor = ShellActivationExecutor()
+        let activationGateway = LiveActivationGateway(shellProjectActivator: shellActivationExecutor)
         let activateProjectTerminal = ActivateProjectTerminalUseCase(activationGateway: activationGateway)
         let navigationState = NavigationState()
         let projectWorkflowState = ProjectWorkflowState(projectCatalogGateway: projectCatalogGateway)
@@ -42,18 +42,37 @@ struct AppShellContainer {
             runtimeAutomationController: nil,
             activateProjectTerminal: activateProjectTerminal,
         ))
-        terminalLauncher.preferredTerminalAppResolver = { [weak appState] clientTty, projectPath, sessionName in
+        let services = AppStateServiceAssembler.makeServices(
+            appState: appState,
+            projectMutationGateway: projectMutationGateway,
+            runtimeSupervisor: runtimeSupervisor,
+            setupSupervisor: setupSupervisor,
+            activateProjectTerminal: activateProjectTerminal,
+            runtimeAutomationController: nil,
+        )
+        appState.installServices(services)
+        if appState.isIdeaCaptureEnabled {
+            services.projectCreationCoordinator.loadCreations()
+        }
+        services.runtimeAutomationController.startBootstrap()
+        setupWorkflowState.setShellIntegrationActivityProvider { [weak appState] in
+            guard let shellState = appState?.shellStateStore.state else {
+                return false
+            }
+            return !shellState.shells.isEmpty
+        }
+        shellActivationExecutor.preferredTerminalAppResolver = { [weak appState] clientTty, projectPath, sessionName in
             guard let shellState = appState?.shellStateStore.state else {
                 return nil
             }
-            return TerminalLauncher.resolvePreferredTerminalApp(
+            return ShellActivationExecutor.resolvePreferredTerminalApp(
                 clientTty: clientTty,
                 projectPath: projectPath,
                 sessionName: sessionName,
                 shellState: shellState,
             )
         }
-        terminalLauncher.onActivationResult = { [weak appState] result in
+        shellActivationExecutor.onActivationResult = { [weak appState] result in
             guard let appState else { return }
             appState.activationTrace = [
                 "project=\(result.projectName)",
@@ -74,10 +93,10 @@ struct AppShellContainer {
             runtimeSupervisor: runtimeSupervisor,
             projectWorkflowState: projectWorkflowState,
             projectListState: projectListState,
-            projectActionState: appState.projectActionState,
+            projectActionState: services.projectActionState,
             navigationState: navigationState,
             setupSupervisor: setupSupervisor,
-            setupActionState: appState.setupActionState,
+            setupActionState: services.setupActionState,
             setupWorkflowState: setupWorkflowState,
             activateProjectTerminal: activateProjectTerminal,
             ideaCaptureWorkflow: IdeaCaptureWorkflow(ideaGateway: ideaGateway),
