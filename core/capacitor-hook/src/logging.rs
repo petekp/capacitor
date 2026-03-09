@@ -1,6 +1,6 @@
-//! Structured logging for hud-hook using tracing.
+//! Structured logging for capacitor-hook using tracing.
 //!
-//! Logs to `~/.capacitor/hud-hook-debug.{date}.log` with automatic daily rotation.
+//! Logs to `~/.capacitor/capacitor-hook-debug.{date}.log` with automatic daily rotation.
 //! Keeps 7 days of logs. Log level can be controlled via `RUST_LOG` env var.
 //!
 //! Falls back to stderr logging if file appender creation fails.
@@ -19,7 +19,7 @@ pub fn init() -> Option<WorkerGuard> {
     let _ = fs::create_dir_all(&capacitor_dir);
 
     let env_filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("hud_hook=debug,capacitor_core=warn"));
+        .unwrap_or_else(|_| EnvFilter::new("capacitor_hook=debug,capacitor_core=warn"));
 
     match create_file_appender(&capacitor_dir) {
         Ok(file_appender) => {
@@ -59,7 +59,7 @@ fn create_file_appender(
 ) -> Result<RollingFileAppender, tracing_appender::rolling::InitError> {
     RollingFileAppender::builder()
         .rotation(Rotation::DAILY)
-        .filename_prefix("hud-hook-debug")
+        .filename_prefix("capacitor-hook-debug")
         .filename_suffix("log")
         .max_log_files(7)
         .build(capacitor_dir)

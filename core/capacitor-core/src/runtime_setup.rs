@@ -21,13 +21,13 @@ use std::path::PathBuf;
 use std::process::Command;
 use tempfile::NamedTempFile;
 
-/// Default HTTP hook endpoint for the local `hud-hook serve` server.
+/// Default HTTP hook endpoint for the local `capacitor-hook serve` server.
 const HOOK_HTTP_URL: &str = "http://127.0.0.1:7474/hook";
 
 /// Hook event configuration: (event_name, needs_matcher)
 /// - `needs_matcher`: Tool events like PreToolUse/PostToolUse/PostToolUseFailure/PermissionRequest
 ///   need `matcher: "*"` to match all tools.
-const HUD_HOOK_EVENTS: [(&str, bool); 14] = [
+const CAPACITOR_HOOK_EVENTS: [(&str, bool); 14] = [
     ("SessionStart", false),
     ("SessionEnd", false),
     ("UserPromptSubmit", false),
@@ -160,24 +160,24 @@ impl SetupChecker {
 
     fn check_all_dependencies(&self) -> Vec<DependencyStatus> {
         vec![
-            self.check_hud_hook(),
+            self.check_capacitor_hook(),
             self.check_tmux(),
             self.check_claude(),
         ]
     }
 
-    fn check_hud_hook(&self) -> DependencyStatus {
+    fn check_capacitor_hook(&self) -> DependencyStatus {
         // Check for the Rust hook handler binary
-        let path = which("hud-hook").or_else(|| {
+        let path = which("capacitor-hook").or_else(|| {
             // Also check the standard install location
             dirs::home_dir()
-                .map(|h| h.join(".local/bin/hud-hook"))
+                .map(|h| h.join(".local/bin/capacitor-hook"))
                 .filter(|p| p.exists())
                 .map(|p| p.to_string_lossy().to_string())
         });
 
         DependencyStatus {
-            name: "hud-hook".to_string(),
+            name: "capacitor-hook".to_string(),
             required: true,
             found: path.is_some(),
             path,
@@ -298,8 +298,8 @@ impl SetupChecker {
 
     fn get_hook_binary_path(&self) -> PathBuf {
         dirs::home_dir()
-            .map(|h| h.join(".local/bin/hud-hook"))
-            .unwrap_or_else(|| PathBuf::from("/usr/local/bin/hud-hook"))
+            .map(|h| h.join(".local/bin/capacitor-hook"))
+            .unwrap_or_else(|| PathBuf::from("/usr/local/bin/capacitor-hook"))
     }
 
     /// Verifies the hook binary actually runs (not just exists).
@@ -393,10 +393,10 @@ impl SetupChecker {
             None => return false,
         };
 
-        for (event, needs_matcher) in HUD_HOOK_EVENTS {
+        for (event, needs_matcher) in CAPACITOR_HOOK_EVENTS {
             let has_hook = hooks
                 .get(event)
-                .map(|h| self.has_hud_hook_with_correct_config(h, needs_matcher))
+                .map(|h| self.has_capacitor_hook_with_correct_config(h, needs_matcher))
                 .unwrap_or(false);
 
             if !has_hook {
@@ -407,7 +407,11 @@ impl SetupChecker {
         true
     }
 
-    fn has_hud_hook_with_correct_config(&self, hooks: &[HookConfig], needs_matcher: bool) -> bool {
+    fn has_capacitor_hook_with_correct_config(
+        &self,
+        hooks: &[HookConfig],
+        needs_matcher: bool,
+    ) -> bool {
         for hook_config in hooks {
             let has_managed_hook = hook_config
                 .hooks
@@ -434,22 +438,22 @@ impl SetupChecker {
     }
 
     /// Ensures a canonical HTTP hook config still satisfies matcher requirements.
-    fn ensure_canonical_hud_hook_config(
+    fn ensure_canonical_capacitor_hook_config(
         &self,
         hook_config: &mut HookConfig,
         needs_matcher: bool,
     ) -> bool {
-        let mut has_hud_hook = false;
+        let mut has_capacitor_hook = false;
 
         if let Some(inner_hooks) = hook_config.hooks.as_ref() {
             for hook in inner_hooks {
-                if is_hud_hook_url(hook.url.as_deref()) {
-                    has_hud_hook = true;
+                if is_capacitor_hook_url(hook.url.as_deref()) {
+                    has_capacitor_hook = true;
                 }
             }
         }
 
-        if has_hud_hook && needs_matcher {
+        if has_capacitor_hook && needs_matcher {
             let matcher_ok = hook_config
                 .matcher
                 .as_ref()
@@ -460,7 +464,7 @@ impl SetupChecker {
             }
         }
 
-        has_hud_hook
+        has_capacitor_hook
     }
 
     fn reject_noncanonical_hook_entries(
@@ -482,7 +486,7 @@ impl SetupChecker {
         Ok(())
     }
 
-    /// Installs the hook binary from a given source path to ~/.local/bin/hud-hook.
+    /// Installs the hook binary from a given source path to ~/.local/bin/capacitor-hook.
     ///
     /// This is the "core" side of binary installation - it handles:
     /// - Creating ~/.local/bin if needed
@@ -521,7 +525,7 @@ impl SetupChecker {
             })?
             .join(".local/bin");
 
-        let dest_path = dest_dir.join("hud-hook");
+        let dest_path = dest_dir.join("capacitor-hook");
 
         // Check if symlink already points to the correct target
         if dest_path.is_symlink() {
@@ -662,18 +666,18 @@ impl SetupChecker {
         let hooks = settings.hooks.get_or_insert_with(HashMap::new);
         self.reject_noncanonical_hook_entries(hooks)?;
 
-        for (event, needs_matcher) in HUD_HOOK_EVENTS {
+        for (event, needs_matcher) in CAPACITOR_HOOK_EVENTS {
             let event_hooks = hooks.entry(event.to_string()).or_default();
 
             // Keep canonical HTTP hook entries in canonical matcher form.
-            let mut already_has_hud_hook = false;
+            let mut already_has_capacitor_hook = false;
             for hook_config in event_hooks.iter_mut() {
-                if self.ensure_canonical_hud_hook_config(hook_config, needs_matcher) {
-                    already_has_hud_hook = true;
+                if self.ensure_canonical_capacitor_hook_config(hook_config, needs_matcher) {
+                    already_has_capacitor_hook = true;
                 }
             }
 
-            if !already_has_hud_hook {
+            if !already_has_capacitor_hook {
                 let hook_config = HookConfig {
                     matcher: if needs_matcher {
                         Some(serde_json::Value::String("*".to_string()))
@@ -791,7 +795,7 @@ fn which_with_fallback(binary: &str, fallback_paths: &[&str]) -> Option<String> 
 }
 
 /// Check if a URL is the HUD hook HTTP endpoint.
-fn is_hud_hook_url(url: Option<&str>) -> bool {
+fn is_capacitor_hook_url(url: Option<&str>) -> bool {
     match url {
         Some(u) => u.trim() == HOOK_HTTP_URL,
         None => false,
@@ -800,7 +804,7 @@ fn is_hud_hook_url(url: Option<&str>) -> bool {
 
 /// Check if an InnerHook is the canonical Capacitor-managed HTTP hook.
 fn is_managed_hook(hook: &InnerHook) -> bool {
-    is_hud_hook_url(hook.url.as_deref())
+    is_capacitor_hook_url(hook.url.as_deref())
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -995,7 +999,7 @@ mod tests {
 
         let existing = r#"{
             "hooks": {
-                "SessionStart": [{"type": "command", "command": "$HOME/.local/bin/hud-hook handle"}]
+                "SessionStart": [{"type": "command", "command": "$HOME/.local/bin/capacitor-hook handle"}]
             }
         }"#;
         fs::write(storage.claude_settings_file(), existing).unwrap();
@@ -1057,7 +1061,7 @@ mod tests {
 
         let bin_dir = home.join(".local/bin");
         fs::create_dir_all(&bin_dir).expect("create bin dir");
-        let binary_path = bin_dir.join("hud-hook");
+        let binary_path = bin_dir.join("capacitor-hook");
         write_executable_script(
             &binary_path,
             "#!/bin/sh\n\
@@ -1087,7 +1091,7 @@ mod tests {
 
         let bin_dir = home.join(".local/bin");
         fs::create_dir_all(&bin_dir).expect("create bin dir");
-        let binary_path = bin_dir.join("hud-hook");
+        let binary_path = bin_dir.join("capacitor-hook");
         write_executable_script(
             &binary_path,
             "#!/bin/sh\n\
@@ -1116,7 +1120,7 @@ mod tests {
 
         let bin_dir = home.join(".local/bin");
         fs::create_dir_all(&bin_dir).expect("create bin dir");
-        let binary_path = bin_dir.join("hud-hook");
+        let binary_path = bin_dir.join("capacitor-hook");
         write_executable_script(
             &binary_path,
             "#!/bin/sh\n\
@@ -1281,7 +1285,7 @@ mod tests {
 
         let existing = r#"{
             "hooks": {
-                "SessionStart": [{"type": "command", "command": "$HOME/.local/bin/hud-hook handle"}],
+                "SessionStart": [{"type": "command", "command": "$HOME/.local/bin/capacitor-hook handle"}],
                 "SessionEnd": [{"hooks": [{"type": "http", "url": "http://127.0.0.1:7474/hook"}]}]
             }
         }"#;
@@ -1295,7 +1299,7 @@ mod tests {
         let settings: serde_json::Value = serde_json::from_str(&settings_content).unwrap();
         assert_eq!(
             settings["hooks"]["SessionStart"][0]["command"],
-            "$HOME/.local/bin/hud-hook handle"
+            "$HOME/.local/bin/capacitor-hook handle"
         );
         assert!(
             settings["hooks"]["SessionEnd"].is_null(),
@@ -1338,7 +1342,7 @@ mod tests {
     }
 
     // NOTE: test_install_binary_success and test_install_binary_returns_path_on_success
-    // have been removed because they MODIFY THE REAL ~/.local/bin/hud-hook file.
+    // have been removed because they MODIFY THE REAL ~/.local/bin/capacitor-hook file.
     // This caused production bugs where the real hook binary was replaced with a dummy
     // test script, breaking session tracking for all users.
     //

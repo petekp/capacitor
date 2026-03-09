@@ -12,7 +12,7 @@
 #
 # What stays intact:
 #   - Other ~/.claude/ config (Claude Code's own settings, other hooks)
-#   - Hook binary (~/.local/bin/hud-hook)
+#   - Hook binary (~/.local/bin/capacitor-hook)
 #   - Source code and git state
 #
 # Usage: ./scripts/dev/reset-for-testing.sh
@@ -110,7 +110,7 @@ fi
 # For a true fresh-install test, remove Capacitor hook registrations from
 # ~/.claude/settings.json. This filters out both:
 #   - Canonical HTTP hook entries (http://127.0.0.1:7474/hook)
-#   - Older command-style hud-hook entries
+#   - Older command-style capacitor-hook entries
 #
 # We do NOT uninstall the binary here—the app's onboarding flow will
 # detect that hooks aren't configured and offer to add them.
@@ -120,13 +120,13 @@ SETTINGS_FILE="$HOME/.claude/settings.json"
 if [[ -f "$SETTINGS_FILE" ]]; then
     if command -v jq &>/dev/null; then
         # Filter out Capacitor-managed HTTP hook entries and any older
-        # command-style hud-hook entries. Then remove hook events that
+        # command-style capacitor-hook entries. Then remove hook events that
         # become empty arrays.
         jq '
             def is_capacitor_hook:
                 ((.hooks // []) | any(
                     (.url // "") == "http://127.0.0.1:7474/hook" or
-                    ((.command // "") | contains("hud-hook"))
+                    ((.command // "") | contains("capacitor-hook"))
                 ));
             if .hooks then
                 .hooks |= with_entries(
@@ -149,47 +149,47 @@ else
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Step 5: Remove installed hud-hook binary
+# Step 5: Remove installed capacitor-hook binary
 #
 # For true first-time experience testing, we remove the binary from ~/.local/bin.
 # The app's onboarding flow should install it from the bundled copy.
 # ─────────────────────────────────────────────────────────────────────────────
 echo ""
-echo "→ Removing installed hud-hook binary (for true first-time experience)..."
-if [ -f "$HOME/.local/bin/hud-hook" ]; then
-    rm "$HOME/.local/bin/hud-hook"
-    echo "  ✓ Removed ~/.local/bin/hud-hook"
+echo "→ Removing installed capacitor-hook binary (for true first-time experience)..."
+if [ -f "$HOME/.local/bin/capacitor-hook" ]; then
+    rm "$HOME/.local/bin/capacitor-hook"
+    echo "  ✓ Removed ~/.local/bin/capacitor-hook"
 else
-    echo "  ✓ ~/.local/bin/hud-hook already removed"
+    echo "  ✓ ~/.local/bin/capacitor-hook already removed"
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Step 6: Build and bundle hud-hook for development
+# Step 6: Build and bundle capacitor-hook for development
 #
-# In release builds, hud-hook is bundled in Contents/Resources/. For dev builds,
+# In release builds, capacitor-hook is bundled in Contents/Resources/. For dev builds,
 # we copy it to the Swift build directory so Bundle.main can find it.
 # ─────────────────────────────────────────────────────────────────────────────
 echo ""
-echo "→ Building hud-hook for development bundle..."
+echo "→ Building capacitor-hook for development bundle..."
 cd "$REPO_ROOT"
-cargo build -p hud-hook --release 2>&1 | tail -3
-echo "  ✓ hud-hook built"
+cargo build -p capacitor-hook --release 2>&1 | tail -3
+echo "  ✓ capacitor-hook built"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Step 7: Rebuild Swift app and bundle hud-hook
+# Step 7: Rebuild Swift app and bundle capacitor-hook
 #
 # Ensures we're testing the current code, not a stale build.
-# Copy hud-hook to Swift build directory so Bundle.main can find it.
+# Copy capacitor-hook to Swift build directory so Bundle.main can find it.
 # ─────────────────────────────────────────────────────────────────────────────
 echo ""
 echo "→ Building Swift app..."
 cd "$REPO_ROOT/apps/swift"
 swift build 2>&1 | tail -3
 
-# Copy hud-hook to Swift build directory (mimics release bundle structure)
+# Copy capacitor-hook to Swift build directory (mimics release bundle structure)
 SWIFT_DEBUG_DIR=$(swift build --show-bin-path)
-cp "$REPO_ROOT/target/release/hud-hook" "$SWIFT_DEBUG_DIR/"
-echo "  ✓ Swift build complete (hud-hook bundled)"
+cp "$REPO_ROOT/target/release/capacitor-hook" "$SWIFT_DEBUG_DIR/"
+echo "  ✓ Swift build complete (capacitor-hook bundled)"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Step 8: Launch the app

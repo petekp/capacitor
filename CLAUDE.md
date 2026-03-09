@@ -34,7 +34,7 @@ cargo build -p capacitor-core --release && cd apps/swift && swift build
 ```
 capacitor/
 ├── core/capacitor-core/src/      # Rust runtime: ingest/, reduce/, query/, activate/, storage/
-├── core/hud-hook/src/            # Rust CLI hook handler
+├── core/capacitor-hook/src/            # Rust CLI hook handler
 ├── apps/swift/Sources/Capacitor/ # Swift app shell, projection/stabilization, lifecycle coordinators, and macOS integrations
 └── .claude/docs/                 # Local engineering runbooks
 ```
@@ -60,17 +60,17 @@ capacitor/
 | App shell composition state | `apps/swift/Sources/Capacitor/Composition/AppState.swift` |
 | Session projection + hysteresis | `apps/swift/Sources/Capacitor/Application/Runtime/SessionStateManager.swift` |
 | Project creation coordinator | `apps/swift/Sources/Capacitor/Application/Projects/ProjectCreationCoordinator.swift` |
-| Shell CWD tracking | `core/hud-hook/src/cwd.rs` |
+| Shell CWD tracking | `core/capacitor-hook/src/cwd.rs` |
 | Terminal activation | `apps/swift/Sources/Capacitor/Support/TerminalLauncher.swift` |
 | UniFFI bindings | `apps/swift/Sources/Capacitor/Bridge/capacitor_core.swift` |
 
 ## State Tracking
 
-Hooks → **hud-hook** → **capacitor-core snapshot** → Swift reads runtime snapshot
+Hooks → **capacitor-hook** → **capacitor-core snapshot** → Swift reads runtime snapshot
 
 - **Runtime snapshot:** `~/.capacitor/runtime/app_snapshot.json`
 - **Runtime logs/artifacts:** `~/.capacitor/runtime/`
-- **Hook binary:** `~/.local/bin/hud-hook`
+- **Hook binary:** `~/.local/bin/capacitor-hook`
 
 **Resolution:** Rust owns runtime ingest/reduce/query truth; Swift owns freshness guards,
 projection hysteresis, shell/session composition, and macOS-facing lifecycle behavior.
@@ -96,7 +96,7 @@ Optional browser UI: `node scripts/transparent-ui-server.mjs` (localhost:9133)
 - **Rebuild after Swift changes** — Run `./scripts/dev/restart-alpha-stable.sh` by default to verify changes compile and render in stable profile (use frontier only when explicitly requested)
 - **Always run `cargo fmt`** — CI enforces formatting
 - **Dev builds need dylib** — After Rust rebuilds: `cp target/release/libcapacitor_core.dylib apps/swift/.build/arm64-apple-macosx/debug/`
-- **Hook symlink, not copy** — Use `ln -s target/release/hud-hook ~/.local/bin/hud-hook` (copying triggers Gatekeeper SIGKILL)
+- **Hook symlink, not copy** — Use `ln -s target/release/capacitor-hook ~/.local/bin/capacitor-hook` (copying triggers Gatekeeper SIGKILL)
 - **UniFFI Task shadows Swift Task** — Use `_Concurrency.Task` explicitly in async code
 - **Swift app links release Rust core** — After any `core/capacitor-core` change, run `cargo build -p capacitor-core --release` before `swift run`
 

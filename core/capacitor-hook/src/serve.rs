@@ -16,7 +16,7 @@ pub fn run(port: u16) -> Result<(), String> {
     let server =
         tiny_http::Server::http(&addr).map_err(|e| format!("Failed to bind {addr}: {e}"))?;
 
-    tracing::info!(port, "hud-hook serve listening");
+    tracing::info!(port, "capacitor-hook serve listening");
 
     let _pid_guard = PidFile::write(port)?;
 
@@ -174,7 +174,7 @@ impl PidFile {
         fs_err::create_dir_all(&runtime_dir)
             .map_err(|e| format!("Failed to create runtime dir: {e}"))?;
 
-        let path = runtime_dir.join(format!("hud-hook-serve-{port}.pid"));
+        let path = runtime_dir.join(format!("capacitor-hook-serve-{port}.pid"));
         let pid = std::process::id();
 
         fs_err::write(&path, pid.to_string())

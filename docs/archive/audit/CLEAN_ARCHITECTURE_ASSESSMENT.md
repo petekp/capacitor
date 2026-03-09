@@ -57,14 +57,14 @@ Clean Architecture asks whether dependencies point toward policy or toward mecha
 
 What is good:
 
-- `hud-hook` is a thin ingress adapter into `capacitor-core`, not a second policy engine. See [core/hud-hook/src/main.rs](/Users/petepetrash/Code/capacitor/core/hud-hook/src/main.rs) and [core/hud-hook/src/handle.rs](/Users/petepetrash/Code/capacitor/core/hud-hook/src/handle.rs).
+- `capacitor-hook` is a thin ingress adapter into `capacitor-core`, not a second policy engine. See [core/capacitor-hook/src/main.rs](/Users/petepetrash/Code/capacitor/core/capacitor-hook/src/main.rs) and [core/capacitor-hook/src/handle.rs](/Users/petepetrash/Code/capacitor/core/capacitor-hook/src/handle.rs).
 - Core runtime types are plain records and enums, which is the right shape for boundary crossing. See [core/capacitor-core/src/domain/types.rs](/Users/petepetrash/Code/capacitor/core/capacitor-core/src/domain/types.rs).
 - `RuntimeClient` is an adapter over snapshot/file access, not raw UI code reaching into persistence. See [apps/swift/Sources/Capacitor/Support/RuntimeClient.swift](/Users/petepetrash/Code/capacitor/apps/swift/Sources/Capacitor/Support/RuntimeClient.swift).
 
 What is wrong:
 
 - `CoreRuntime` violates inward dependency discipline at the object level by mixing runtime policy, setup/config mutation, project catalog logic, plugin discovery, and idea services in one façade. See [core/capacitor-core/src/lib.rs](/Users/petepetrash/Code/capacitor/core/capacitor-core/src/lib.rs).
-- The default `CoreRuntime()` constructor is in-memory while `hud-hook` uses file-backed storage, which means the same abstraction points at different realities depending on who calls it. See [core/capacitor-core/src/lib.rs](/Users/petepetrash/Code/capacitor/core/capacitor-core/src/lib.rs#L276) and [core/hud-hook/src/runtime_client.rs](/Users/petepetrash/Code/capacitor/core/hud-hook/src/runtime_client.rs#L101).
+- The default `CoreRuntime()` constructor is in-memory while `capacitor-hook` uses file-backed storage, which means the same abstraction points at different realities depending on who calls it. See [core/capacitor-core/src/lib.rs](/Users/petepetrash/Code/capacitor/core/capacitor-core/src/lib.rs#L276) and [core/capacitor-hook/src/runtime_client.rs](/Users/petepetrash/Code/capacitor/core/capacitor-hook/src/runtime_client.rs#L101).
 - `check_hook_health()` reads global snapshot state rather than the runtime instance’s storage abstraction, so the abstraction boundary is nominal rather than real. See [core/capacitor-core/src/lib.rs](/Users/petepetrash/Code/capacitor/core/capacitor-core/src/lib.rs#L782).
 
 Assessment:
@@ -132,7 +132,7 @@ Boundaries matter only if crossing them changes what code is allowed to know.
 What is good:
 
 - The runtime snapshot is a meaningful architectural boundary.
-- `hud-hook` is a real adapter boundary, not just a folder name.
+- `capacitor-hook` is a real adapter boundary, not just a folder name.
 - Optional ingest worker is outside the core runtime truth path.
 
 What is wrong:
@@ -153,7 +153,7 @@ Adapters should hide infrastructure and translate boundary data.
 What is good:
 
 - `RuntimeClient` is a solid interface adapter.
-- `hud-hook` is a solid ingress adapter.
+- `capacitor-hook` is a solid ingress adapter.
 - The worker normalizes inbound telemetry/feedback before persistence. See [services/ingest-worker/src/lib.js](/Users/petepetrash/Code/capacitor/services/ingest-worker/src/lib.js).
 
 What is weak:
@@ -209,7 +209,7 @@ Assessment:
 
 ### Best-aligned layer
 
-`hud-hook` -> `capacitor-core` reducer -> snapshot persistence
+`capacitor-hook` -> `capacitor-core` reducer -> snapshot persistence
 
 Why:
 

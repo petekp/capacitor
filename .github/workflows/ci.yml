@@ -97,14 +97,14 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
-      - name: Build hud-hook (release)
-        run: cargo build -p hud-hook --release
+      - name: Build capacitor-hook (release)
+        run: cargo build -p capacitor-hook --release
 
       - name: Install bats
         run: brew install bats-core
 
-      - name: Run hud-hook smoke tests
-        run: bats tests/hud-hook/hud-hook-smoke.bats
+      - name: Run capacitor-hook smoke tests
+        run: bats tests/capacitor-hook/capacitor-hook-smoke.bats
 
   runtime-reliability:
     name: Runtime Reliability Gate

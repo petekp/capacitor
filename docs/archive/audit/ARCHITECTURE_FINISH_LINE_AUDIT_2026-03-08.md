@@ -21,7 +21,7 @@ Finish the bounded-context architecture by eliminating the remaining parallel ow
 High-confidence completed work:
 
 - daemon IPC is gone as the primary runtime path
-- `hud-hook` ingests directly into `capacitor-core`
+- `capacitor-hook` ingests directly into `capacitor-core`
 - `hud-core` is deleted
 - Swift is on the outer-shell architecture and no longer competes with the Rust core for application policy
 - replay-diff, FFI contract coverage, architecture guards, and architecture ratchets are already in place

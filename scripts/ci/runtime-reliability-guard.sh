@@ -89,12 +89,12 @@ echo "── Hook Command Ratchets ──"
 echo ""
 
 # Command-hook surface ratchets kept to prevent regression.
-check_budget "HOOK_COMMAND constant"           'HOOK_COMMAND.*=.*hud-hook handle'  0
+check_budget "HOOK_COMMAND constant"           'HOOK_COMMAND.*=.*capacitor-hook handle'  0
 check_budget "type.*command.*hook creation"    '"command"\.to_string()'            0  "core/"
-check_budget "hud-hook handle references"      'hud-hook handle'                   3  "core/"
-check_budget "stdin reading in handle.rs"      'stdin'                             0  "core/hud-hook/src/handle.rs"
-check_budget "Commands::Handle"                'Handle'                            0  "core/hud-hook/src/main.rs"
-check_budget "handle::run() caller"            'handle::run()'                     0  "core/hud-hook/src/main.rs"
+check_budget "capacitor-hook handle references"      'capacitor-hook handle'                   3  "core/"
+check_budget "stdin reading in handle.rs"      'stdin'                             0  "core/capacitor-hook/src/handle.rs"
+check_budget "Commands::Handle"                'Handle'                            0  "core/capacitor-hook/src/main.rs"
+check_budget "handle::run() caller"            'handle::run()'                     0  "core/capacitor-hook/src/main.rs"
 check_budget "register_http_hooks_in_settings" 'register_http_hooks_in_settings'   0  "core/"
 check_budget "install_http_hooks FFI"          'install_http_hooks'                0
 check_budget "installHttpHooks Swift"          'installHttpHooks'                  0  "apps/"
@@ -110,8 +110,8 @@ echo ""
 # Calibrated baseline counts as of 2026-03-05 (must only go down)
 check_budget "Setup fatalError path"           'fatalError("Failed to create CoreRuntime")' 0 "apps/swift/Sources/Capacitor/Models/SetupRequirements.swift"
 check_budget "verify_hook_binary handle arg"   'arg("handle")'                                0 "core/capacitor-core/src/runtime_setup.rs"
-check_budget "hook_types CLAUDE_PROJECT_DIR fallback" 'std::env::var("CLAUDE_PROJECT_DIR")'  0 "core/hud-hook/src/hook_types.rs"
-check_budget "hook_types PWD fallback"         'std::env::var("PWD")'                          0 "core/hud-hook/src/hook_types.rs"
+check_budget "hook_types CLAUDE_PROJECT_DIR fallback" 'std::env::var("CLAUDE_PROJECT_DIR")'  0 "core/capacitor-hook/src/hook_types.rs"
+check_budget "hook_types PWD fallback"         'std::env::var("PWD")'                          0 "core/capacitor-hook/src/hook_types.rs"
 check_budget "HookServer waitUntilExit"        'waitUntilExit()'                               0 "apps/swift/Sources/Capacitor/Support/HookServerManager.swift"
 check_budget "ProjectDetails waitUntilExit"    'waitUntilExit()'                               0 "apps/swift/Sources/Capacitor/Application/Projects/ProjectDetailsManager.swift"
 check_budget "Terminal outputData append"      'outputData\.append('                           0 "apps/swift/Sources/Capacitor/Support/TerminalLauncher.swift"

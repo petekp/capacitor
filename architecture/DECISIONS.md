@@ -29,3 +29,10 @@ Capacitor does not preserve internal backward-compatibility paths for retired
 storage encodings or retired hook configuration shapes.
 Active code reads and writes only the canonical project-path encoding and the
 canonical HTTP hook format.
+
+## Hook Adapter Uses `capacitor-hook`
+
+The hook ingest adapter, installed binary, bundled resource, and supporting
+paths use the `capacitor-hook` name.
+The earlier internal hook label is retired and must not reappear in active
+code, scripts, or documentation.

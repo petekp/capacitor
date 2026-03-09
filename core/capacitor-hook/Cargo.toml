@@ -1,5 +1,5 @@
 [package]
-name = "hud-hook"
+name = "capacitor-hook"
 description = "CLI hook handler for Capacitor session state tracking"
 version.workspace = true
 edition.workspace = true
@@ -8,7 +8,7 @@ license.workspace = true
 authors.workspace = true
 
 [[bin]]
-name = "hud-hook"
+name = "capacitor-hook"
 path = "src/main.rs"
 
 [dependencies]

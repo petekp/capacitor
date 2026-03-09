@@ -175,7 +175,7 @@ fi
 if [ "$SWIFT_ONLY" = true ]; then
     echo "Skipping Rust build (--swift-only)"
 else
-    cargo build -p capacitor-core -p hud-hook --release || { echo "Rust build failed"; exit 1; }
+    cargo build -p capacitor-core -p capacitor-hook --release || { echo "Rust build failed"; exit 1; }
 fi
 
 # Rust post-build steps (skip if --swift-only)
@@ -207,12 +207,12 @@ if [ "$SWIFT_ONLY" != true ]; then
     cp "$PROJECT_ROOT/target/release/libcapacitor_core.dylib" "$SWIFT_DEBUG_DIR/"
 fi
 
-# Copy hud-hook binary so Bundle.main can find it (matches release bundle structure).
+# Copy capacitor-hook binary so Bundle.main can find it (matches release bundle structure).
 # Prefer the repo build to avoid stale ~/.local/bin binaries.
-if [ -f "$PROJECT_ROOT/target/release/hud-hook" ]; then
-    cp "$PROJECT_ROOT/target/release/hud-hook" "$SWIFT_DEBUG_DIR/"
-elif [ -f "$HOME/.local/bin/hud-hook" ]; then
-    cp "$HOME/.local/bin/hud-hook" "$SWIFT_DEBUG_DIR/"
+if [ -f "$PROJECT_ROOT/target/release/capacitor-hook" ]; then
+    cp "$PROJECT_ROOT/target/release/capacitor-hook" "$SWIFT_DEBUG_DIR/"
+elif [ -f "$HOME/.local/bin/capacitor-hook" ]; then
+    cp "$HOME/.local/bin/capacitor-hook" "$SWIFT_DEBUG_DIR/"
 fi
 
 
@@ -306,8 +306,8 @@ fi
 cp "$DEBUG_BIN" "$DEBUG_APP/Contents/MacOS/Capacitor"
 
 # Ensure bundled helpers are present.
-if [ -f "$SWIFT_DEBUG_DIR/hud-hook" ]; then
-    cp "$SWIFT_DEBUG_DIR/hud-hook" "$DEBUG_APP/Contents/Resources/"
+if [ -f "$SWIFT_DEBUG_DIR/capacitor-hook" ]; then
+    cp "$SWIFT_DEBUG_DIR/capacitor-hook" "$DEBUG_APP/Contents/Resources/"
 fi
 
 # Replace SPM resource bundle with the freshly-built one.
@@ -334,8 +334,8 @@ if ! otool -l "$DEBUG_APP_BIN" | grep -q "@loader_path/../Frameworks"; then
 fi
 
 # Give helper binaries stable ad-hoc identifiers instead of hash-based defaults.
-if [ -f "$DEBUG_APP/Contents/Resources/hud-hook" ]; then
-    codesign --force --sign "$SIGNING_IDENTITY" --identifier com.capacitor.hud-hook "$DEBUG_APP/Contents/Resources/hud-hook"
+if [ -f "$DEBUG_APP/Contents/Resources/capacitor-hook" ]; then
+    codesign --force --sign "$SIGNING_IDENTITY" --identifier com.capacitor.capacitor-hook "$DEBUG_APP/Contents/Resources/capacitor-hook"
 fi
 
 # Ad-hoc sign the debug bundle so LaunchServices will open it reliably.

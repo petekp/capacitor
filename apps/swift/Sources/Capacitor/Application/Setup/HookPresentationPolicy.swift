@@ -53,7 +53,7 @@ enum HookPresentationPolicy {
         case let .policyBlocked(reason):
             return "\(reason) Remove this setting to enable session tracking."
         case .binaryMissing:
-            return "Install hooks to place `hud-hook` at `~/.local/bin/hud-hook`."
+            return "Install hooks to place `capacitor-hook` at `~/.local/bin/capacitor-hook`."
         case let .binaryBroken(reason):
             return "Reinstall hooks, then retry Test Hooks. Details: \(reason)"
         case let .symlinkBroken(target, reason):

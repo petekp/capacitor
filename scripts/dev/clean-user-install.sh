@@ -44,9 +44,9 @@ if [[ -d "/Applications/Capacitor.app" ]]; then
 fi
 
 # 2. Check for hook binary
-if [[ -f "$HOME/.local/bin/hud-hook" ]]; then
-    ITEMS_TO_CLEAN+=("$HOME/.local/bin/hud-hook")
-    echo -e "${YELLOW}Found:${NC} ~/.local/bin/hud-hook"
+if [[ -f "$HOME/.local/bin/capacitor-hook" ]]; then
+    ITEMS_TO_CLEAN+=("$HOME/.local/bin/capacitor-hook")
+    echo -e "${YELLOW}Found:${NC} ~/.local/bin/capacitor-hook"
 fi
 
 
@@ -59,7 +59,7 @@ fi
 # 4. Check for hooks in settings.json
 SETTINGS_FILE="$HOME/.claude/settings.json"
 if [[ -f "$SETTINGS_FILE" ]]; then
-    if grep -q "hud-hook" "$SETTINGS_FILE" 2>/dev/null; then
+    if grep -q "capacitor-hook" "$SETTINGS_FILE" 2>/dev/null; then
         echo -e "${YELLOW}Found:${NC} HUD hooks in ~/.claude/settings.json"
         ITEMS_TO_CLEAN+=("hooks-in-settings")
     fi
@@ -115,7 +115,7 @@ for item in "${ITEMS_TO_CLEAN[@]}"; do
         "hooks-in-settings")
             echo -n "Removing hooks from ~/.claude/settings.json... "
             if [[ "$DRY_RUN" == "false" ]]; then
-                # Use jq to remove all hooks that reference hud-hook
+                # Use jq to remove all hooks that reference capacitor-hook
                 if command -v jq &> /dev/null; then
                     # Remove the entire hooks object to start fresh
                     # (User can reconfigure via "Fix All" in the app)

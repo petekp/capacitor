@@ -42,7 +42,7 @@ enum SetupTestFixtures {
         binaryOk: Bool = true,
         configOk: Bool = false,
         firingOk: Bool = false,
-        symlinkPath: String = "/tmp/hud-hook",
+        symlinkPath: String = "/tmp/capacitor-hook",
         symlinkTarget: String? = nil,
         lastHeartbeatAgeSecs: UInt64? = nil,
     ) -> HookDiagnosticReport {

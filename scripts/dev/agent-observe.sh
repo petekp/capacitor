@@ -8,7 +8,7 @@ APP_LOG_PATH="${CAPACITOR_APP_DEBUG_LOG:-${RUNTIME_DIR}/app-debug.log}"
 RUNTIME_STDERR_LOG_PATH="${CAPACITOR_RUNTIME_STDERR_LOG:-${RUNTIME_DIR}/runtime.stderr.log}"
 RUNTIME_STDOUT_LOG_PATH="${CAPACITOR_RUNTIME_STDOUT_LOG:-${RUNTIME_DIR}/runtime.stdout.log}"
 TRANSPARENT_UI_BASE_URL="${CAPACITOR_TRANSPARENT_UI_BASE_URL:-http://localhost:9133}"
-HEARTBEAT_PATH="${CAPACITOR_HEARTBEAT_PATH:-${CAP_HOME}/hud-hook-heartbeat}"
+HEARTBEAT_PATH="${CAPACITOR_HEARTBEAT_PATH:-${CAP_HOME}/capacitor-hook-heartbeat}"
 
 usage() {
   cat <<'USAGE'
@@ -338,7 +338,7 @@ case "$command" in
     ;;
   hooks)
     echo "Hook binary:"
-    hook_path="${HOME}/.local/bin/hud-hook"
+    hook_path="${HOME}/.local/bin/capacitor-hook"
     if [[ -L "$hook_path" ]]; then
       target=$(readlink "$hook_path")
       if [[ -x "$hook_path" ]]; then
@@ -370,7 +370,7 @@ case "$command" in
     echo ""
     echo "Recent hook events (from debug log):"
     if [[ -f "$APP_LOG_PATH" ]]; then
-      grep -i -E 'hook|hud-hook|shell.integration|startup' "$APP_LOG_PATH" | tail -n 20
+      grep -i -E 'hook|capacitor-hook|shell.integration|startup' "$APP_LOG_PATH" | tail -n 20
     else
       echo "  (no debug log found)"
     fi

@@ -22,7 +22,7 @@ bash scripts/ci/session-state-gate.sh
 The script enforces:
 
 1. `SS-P0-1` hook mapping integrity  
-   `cargo test -p hud-hook --test session_state_mapping_gate session_state_mapping_gate_ss_p0`
+   `cargo test -p capacitor-hook --test session_state_mapping_gate session_state_mapping_gate_ss_p0`
 2. `SS-P0-2` replay-diff determinism  
    `cargo test -p capacitor-core --test replay_diff replay_diff_corpus_matches_expected_and_is_deterministic`
 3. Core reducer/query baseline suites  

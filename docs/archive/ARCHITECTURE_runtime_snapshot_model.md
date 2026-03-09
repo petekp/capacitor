@@ -8,8 +8,8 @@
 
 ## Runtime Flow
 
-1. Claude Code hook events invoke `hud-hook`.
-2. `hud-hook` normalizes events and writes them to `capacitor-core`.
+1. Claude Code hook events invoke `capacitor-hook`.
+2. `capacitor-hook` normalizes events and writes them to `capacitor-core`.
 3. `capacitor-core` applies reducer logic and persists `~/.capacitor/runtime/app_snapshot.json`.
 4. Swift reads snapshot-shaped data through `RuntimeClient`.
 5. `AppState`, `SessionStateManager`, and `ShellStateStore` apply freshness guards, attribution, and hysteresis before updating visible UI state.
@@ -32,13 +32,13 @@
 ## Boundaries
 
 - FFI boundary: `capacitor-core` UniFFI exports for app-facing APIs.
-- Hook ingest boundary: `hud-hook` CLI -> `capacitor-core` command ingestion.
+- Hook ingest boundary: `capacitor-hook` CLI -> `capacitor-core` command ingestion.
 - No separate runtime process boundary: socket process removed.
 
 ## Repository Shape
 
 - `core/capacitor-core/`: canonical reducer/query/storage runtime + FFI APIs
-- `core/hud-hook/`: hook/CWD ingest adapter
+- `core/capacitor-hook/`: hook/CWD ingest adapter
 - `apps/swift/`: menubar application, projection layer, lifecycle supervisors, and feature coordinators
 
 ## Non-Goals

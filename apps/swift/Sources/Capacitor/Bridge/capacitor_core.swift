@@ -1884,7 +1884,7 @@ public struct HookDiagnosticReport {
     public var configOk: Bool
     public var firingOk: Bool
     /**
-     * Path to the hook binary/symlink (e.g., ~/.local/bin/hud-hook)
+     * Path to the hook binary/symlink (e.g., ~/.local/bin/capacitor-hook)
      */
     public var symlinkPath: String
     /**
@@ -1915,7 +1915,7 @@ public struct HookDiagnosticReport {
             * Detailed status for checklist display
             */ binaryOk: Bool, configOk: Bool, firingOk: Bool,
         /* 
-            * Path to the hook binary/symlink (e.g., ~/.local/bin/hud-hook)
+            * Path to the hook binary/symlink (e.g., ~/.local/bin/capacitor-hook)
             */ symlinkPath: String,
         /* 
             * Target of the symlink if it is one, None if regular file or doesn't exist
@@ -5772,15 +5772,15 @@ public enum HookIssue {
      */
     case policyBlocked(reason: String)
     /**
-     * The hud-hook binary is not installed
+     * The capacitor-hook binary is not installed
      */
     case binaryMissing
     /**
-     * The hud-hook binary exists but crashes (e.g., macOS codesigning)
+     * The capacitor-hook binary exists but crashes (e.g., macOS codesigning)
      */
     case binaryBroken(reason: String)
     /**
-     * The hud-hook symlink exists but points to a missing target (app moved, cargo clean, etc.)
+     * The capacitor-hook symlink exists but points to a missing target (app moved, cargo clean, etc.)
      */
     case symlinkBroken(target: String, reason: String)
     /**

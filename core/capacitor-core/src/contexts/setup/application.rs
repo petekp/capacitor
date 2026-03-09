@@ -140,7 +140,7 @@ mod tests {
                 binary_ok: false,
                 config_ok: false,
                 firing_ok: false,
-                symlink_path: "/tmp/hud-hook".to_string(),
+                symlink_path: "/tmp/capacitor-hook".to_string(),
                 symlink_target: None,
                 last_heartbeat_age_secs: None,
             }
@@ -194,7 +194,7 @@ mod tests {
             Ok(InstallResult {
                 success: true,
                 message: "hooks installed".to_string(),
-                script_path: Some("/tmp/hud-hook".to_string()),
+                script_path: Some("/tmp/capacitor-hook".to_string()),
             })
         }
 
@@ -232,7 +232,7 @@ mod tests {
         );
 
         let binary_result = service
-            .install_binary_from_path("/tmp/hud-hook")
+            .install_binary_from_path("/tmp/capacitor-hook")
             .expect("install binary from path");
         assert!(binary_result.success);
         assert_eq!(
@@ -241,7 +241,7 @@ mod tests {
                 .lock()
                 .expect("installed paths")
                 .as_slice(),
-            ["/tmp/hud-hook"],
+            ["/tmp/capacitor-hook"],
         );
 
         let install_result = service.install_hooks().expect("install hooks");

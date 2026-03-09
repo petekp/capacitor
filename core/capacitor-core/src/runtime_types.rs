@@ -389,11 +389,11 @@ pub struct HookTestResult {
 pub enum HookIssue {
     /// Hooks disabled by policy (disableAllHooks or allowManagedHooksOnly)
     PolicyBlocked { reason: String },
-    /// The hud-hook binary is not installed
+    /// The capacitor-hook binary is not installed
     BinaryMissing,
-    /// The hud-hook binary exists but crashes (e.g., macOS codesigning)
+    /// The capacitor-hook binary exists but crashes (e.g., macOS codesigning)
     BinaryBroken { reason: String },
-    /// The hud-hook symlink exists but points to a missing target (app moved, cargo clean, etc.)
+    /// The capacitor-hook symlink exists but points to a missing target (app moved, cargo clean, etc.)
     SymlinkBroken { target: String, reason: String },
     /// Hook configuration missing or incomplete in settings.json
     ConfigMissing,
@@ -419,7 +419,7 @@ pub struct HookDiagnosticReport {
     pub binary_ok: bool,
     pub config_ok: bool,
     pub firing_ok: bool,
-    /// Path to the hook binary/symlink (e.g., ~/.local/bin/hud-hook)
+    /// Path to the hook binary/symlink (e.g., ~/.local/bin/capacitor-hook)
     pub symlink_path: String,
     /// Target of the symlink if it is one, None if regular file or doesn't exist
     pub symlink_target: Option<String>,

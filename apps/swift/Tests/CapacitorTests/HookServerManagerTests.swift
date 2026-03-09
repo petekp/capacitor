@@ -61,7 +61,7 @@ final class HookServerManagerTests: XCTestCase {
 
         let manager = HookServerManager(
             port: 8123,
-            binaryPath: "/tmp/hud-hook",
+            binaryPath: "/tmp/capacitor-hook",
             dependencies: makeDependencies(
                 findManagedServerProcessForPort: { _, _ in nil },
                 launchProcess: { _, _, _ in
@@ -109,7 +109,7 @@ final class HookServerManagerTests: XCTestCase {
 
         let manager = HookServerManager(
             port: 8124,
-            binaryPath: "/tmp/hud-hook",
+            binaryPath: "/tmp/capacitor-hook",
             dependencies: makeDependencies(
                 readPidFile: { _ in 999 },
                 removePidFile: { removedPidFilePaths.append($0) },
@@ -137,7 +137,7 @@ final class HookServerManagerTests: XCTestCase {
 
         let manager = HookServerManager(
             port: 8125,
-            binaryPath: "/tmp/hud-hook",
+            binaryPath: "/tmp/capacitor-hook",
             dependencies: makeDependencies(
                 readPidFile: { _ in 321 },
                 isProcessAlive: { _ in true },
@@ -169,12 +169,12 @@ final class HookServerManagerTests: XCTestCase {
 
         let manager = HookServerManager(
             port: 8126,
-            binaryPath: "/tmp/hud-hook",
+            binaryPath: "/tmp/capacitor-hook",
             dependencies: makeDependencies(
                 readPidFile: { _ in nil },
                 findManagedServerProcessForPort: { port, path in
                     XCTAssertEqual(port, 8126)
-                    XCTAssertEqual(path, "/tmp/hud-hook")
+                    XCTAssertEqual(path, "/tmp/capacitor-hook")
                     return await withCheckedContinuation { checkedContinuation in
                         continuation = checkedContinuation
                     }
@@ -217,7 +217,7 @@ final class HookServerManagerTests: XCTestCase {
 
         let manager = HookServerManager(
             port: 8127,
-            binaryPath: "/tmp/hud-hook",
+            binaryPath: "/tmp/capacitor-hook",
             dependencies: makeDependencies(
                 readPidFile: { _ in nil },
                 findManagedServerProcessForPort: { _, _ in
@@ -254,8 +254,8 @@ final class HookServerManagerTests: XCTestCase {
         try FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: temp) }
 
-        let realBinary = temp.appendingPathComponent("hud-hook-real")
-        let symlinkBinary = temp.appendingPathComponent("hud-hook-link")
+        let realBinary = temp.appendingPathComponent("capacitor-hook-real")
+        let symlinkBinary = temp.appendingPathComponent("capacitor-hook-link")
 
         FileManager.default.createFile(atPath: realBinary.path, contents: Data("binary".utf8))
         try FileManager.default.createSymbolicLink(at: symlinkBinary, withDestinationURL: realBinary)

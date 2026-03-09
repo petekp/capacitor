@@ -49,7 +49,7 @@ Ghostty is the only supported terminal right now.
 
 Capacitor is a sidecar. It watches what Claude Code is doing without getting in the way.
 
-On first launch, it installs a small hook binary (`~/.local/bin/hud-hook`) and adds entries to Claude Code's `~/.claude/settings.json`. Hook events are written directly into the Rust runtime snapshot (`~/.capacitor/runtime/app_snapshot.json`). The Swift app reads that snapshot, applies deterministic projection/stabilization, and then renders visible state.
+On first launch, it installs a small hook binary (`~/.local/bin/capacitor-hook`) and adds entries to Claude Code's `~/.claude/settings.json`. Hook events are written directly into the Rust runtime snapshot (`~/.capacitor/runtime/app_snapshot.json`). The Swift app reads that snapshot, applies deterministic projection/stabilization, and then renders visible state.
 
 It doesn't call the Anthropic API directly. It observes local Claude Code activity and manages its own local runtime state.
 
@@ -117,8 +117,8 @@ To remove everything:
 1. Quit the app
 2. `rm -rf /Applications/Capacitor.app`
 3. `rm -rf ~/.capacitor`
-4. `rm ~/.local/bin/hud-hook`
-5. Remove `hud-hook` entries from `~/.claude/settings.json`
+4. `rm ~/.local/bin/capacitor-hook`
+5. Remove `capacitor-hook` entries from `~/.claude/settings.json`
 6. Optionally: `defaults delete com.capacitor.app`
 
 ## License

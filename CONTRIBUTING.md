@@ -53,7 +53,7 @@ For Rust-only work, cargo works fine:
 
 ```bash
 cargo build -p capacitor-core --release
-cargo build -p hud-hook --release
+cargo build -p capacitor-hook --release
 ```
 
 ## Testing
@@ -78,7 +78,7 @@ Pre-commit hooks run `cargo fmt --check` and `cargo test` automatically, so you'
 ```
 capacitor/
 ├── core/capacitor-core/  # Canonical runtime ingest/reduce/query + snapshot storage + UniFFI
-├── core/hud-hook/        # Rust CLI hook/CWD ingest adapter
+├── core/capacitor-hook/        # Rust CLI hook/CWD ingest adapter
 ├── apps/swift/           # SwiftUI app, projection/stabilization layer, and macOS integrations
 └── scripts/              # Dev, CI, and release scripts
 ```

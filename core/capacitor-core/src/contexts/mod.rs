@@ -295,7 +295,7 @@ mod tests {
         let temp = tempfile::tempdir().expect("temp dir");
         let storage =
             StorageConfig::with_roots(temp.path().join(".capacitor"), temp.path().join(".claude"));
-        let heartbeat_path = storage.root().join("hud-hook-heartbeat");
+        let heartbeat_path = storage.root().join("capacitor-hook-heartbeat");
         std::fs::create_dir_all(storage.root()).expect("create app storage dir");
         let snapshot_path = temp.path().join("missing-runtime-snapshot.json");
 

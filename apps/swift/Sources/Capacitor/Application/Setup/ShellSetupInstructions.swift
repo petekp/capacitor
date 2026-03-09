@@ -30,9 +30,9 @@ enum ShellType: String, CaseIterable {
         case .zsh:
             """
             # Capacitor shell integration
-            if [[ -x "$HOME/.local/bin/hud-hook" ]]; then
+            if [[ -x "$HOME/.local/bin/capacitor-hook" ]]; then
               _capacitor_precmd() {
-                CAPACITOR_RUNTIME_ENABLED=1 "$HOME/.local/bin/hud-hook" cwd "$PWD" "$$" "$(tty)" 2>/dev/null &!
+                CAPACITOR_RUNTIME_ENABLED=1 "$HOME/.local/bin/capacitor-hook" cwd "$PWD" "$$" "$(tty)" 2>/dev/null &!
               }
               precmd_functions+=(_capacitor_precmd)
             fi
@@ -40,9 +40,9 @@ enum ShellType: String, CaseIterable {
         case .bash:
             """
             # Capacitor shell integration
-            if [[ -x "$HOME/.local/bin/hud-hook" ]]; then
+            if [[ -x "$HOME/.local/bin/capacitor-hook" ]]; then
               _capacitor_prompt() {
-                CAPACITOR_RUNTIME_ENABLED=1 "$HOME/.local/bin/hud-hook" cwd "$PWD" "$$" "$(tty)" 2>/dev/null &
+                CAPACITOR_RUNTIME_ENABLED=1 "$HOME/.local/bin/capacitor-hook" cwd "$PWD" "$$" "$(tty)" 2>/dev/null &
               }
               PROMPT_COMMAND="_capacitor_prompt${PROMPT_COMMAND:+; $PROMPT_COMMAND}"
             fi
@@ -50,9 +50,9 @@ enum ShellType: String, CaseIterable {
         case .fish:
             """
             # Capacitor shell integration
-            if test -x "$HOME/.local/bin/hud-hook"
+            if test -x "$HOME/.local/bin/capacitor-hook"
               function _capacitor_postexec --on-event fish_postexec
-                CAPACITOR_RUNTIME_ENABLED=1 "$HOME/.local/bin/hud-hook" cwd "$PWD" "$fish_pid" (tty) 2>/dev/null &
+                CAPACITOR_RUNTIME_ENABLED=1 "$HOME/.local/bin/capacitor-hook" cwd "$PWD" "$fish_pid" (tty) 2>/dev/null &
               end
             end
             """

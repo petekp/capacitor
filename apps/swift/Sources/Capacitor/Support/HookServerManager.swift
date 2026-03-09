@@ -121,7 +121,7 @@ private final class LiveHookServerProcess: HookServerProcessControlling {
     }
 }
 
-/// Manages the lifecycle of the `hud-hook serve` HTTP server process.
+/// Manages the lifecycle of the `capacitor-hook serve` HTTP server process.
 ///
 /// Keeps a single long-lived HTTP server that receives hook events via POST
 /// from Claude Code. The Swift app spawns the server at startup and monitors
@@ -170,7 +170,7 @@ final class HookServerManager {
         self.port = port
         self.dependencies = dependencies
         self.binaryPath = binaryPath ?? FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".local/bin/hud-hook").path
+            .appendingPathComponent(".local/bin/capacitor-hook").path
     }
 
     // MARK: - Lifecycle
@@ -402,7 +402,7 @@ final class HookServerManager {
 
     private var pidFilePath: String {
         FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".capacitor/runtime/hud-hook-serve-\(port).pid").path
+            .appendingPathComponent(".capacitor/runtime/capacitor-hook-serve-\(port).pid").path
     }
 
     nonisolated static func fetchHealth(port: UInt16) async -> Bool {

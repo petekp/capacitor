@@ -6,7 +6,7 @@
 //! ## Usage
 //!
 //! ```bash
-//! hud-hook cwd /path/to/project 12345 /dev/ttys003
+//! capacitor-hook cwd /path/to/project 12345 /dev/ttys003
 //! ```
 //!
 //! ## Performance
@@ -353,7 +353,7 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .expect("current time should be after epoch")
             .as_nanos();
-        std::env::temp_dir().join(format!("hud-hook-cwd-{suffix}-{nanos}"))
+        std::env::temp_dir().join(format!("capacitor-hook-cwd-{suffix}-{nanos}"))
     }
 
     #[test]

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Sync hud-hook binary from repo to installed location
+# Sync capacitor-hook binary from repo to installed location
 # The binary is called directly by Claude Code hooks (no wrapper script needed)
 
 set -e
@@ -16,7 +16,7 @@ if [ "$(uname -m)" != "arm64" ]; then
     fi
     exit 1
 fi
-INSTALLED_BINARY="$HOME/.local/bin/hud-hook"
+INSTALLED_BINARY="$HOME/.local/bin/capacitor-hook"
 
 # Verify binary actually runs (not just exists)
 # Returns: 0 = works, 1 = needs codesign, 2 = fatal
@@ -48,7 +48,7 @@ echo ""
 
 # Determine binary source: repo build (preferred) or app bundle (fallback)
 # Priority order:
-#   1. $REPO_ROOT/target/release/hud-hook (dev build)
+#   1. $REPO_ROOT/target/release/capacitor-hook (dev build)
 #   2. /Applications/Capacitor.app (system-wide install)
 #   3. ~/Applications/Capacitor.app (user install)
 echo "Finding binary source..."
@@ -56,8 +56,8 @@ SOURCE_BINARY=""
 SOURCE_TYPE=""
 
 # Prefer repo build unless explicitly overridden.
-if [[ "${HUD_HOOK_SOURCE:-repo}" != "app" ]]; then
-    REPO_BINARY="$REPO_ROOT/target/release/hud-hook"
+if [[ "${CAPACITOR_HOOK_SOURCE:-repo}" != "app" ]]; then
+    REPO_BINARY="$REPO_ROOT/target/release/capacitor-hook"
 
     # Check/build binary
     NEED_BUILD=false
@@ -71,8 +71,8 @@ if [[ "${HUD_HOOK_SOURCE:-repo}" != "app" ]]; then
     fi
 
     if [[ "$NEED_BUILD" == "true" ]]; then
-        echo "  Building hud-hook binary..."
-        (cd "$REPO_ROOT" && cargo build -p hud-hook --release)
+        echo "  Building capacitor-hook binary..."
+        (cd "$REPO_ROOT" && cargo build -p capacitor-hook --release)
         echo "  ✓ Binary built"
     fi
 
@@ -84,8 +84,8 @@ if [[ "${HUD_HOOK_SOURCE:-repo}" != "app" ]]; then
 fi
 
 APP_LOCATIONS=(
-    "/Applications/Capacitor.app/Contents/Resources/hud-hook"
-    "$HOME/Applications/Capacitor.app/Contents/Resources/hud-hook"
+    "/Applications/Capacitor.app/Contents/Resources/capacitor-hook"
+    "$HOME/Applications/Capacitor.app/Contents/Resources/capacitor-hook"
 )
 
 if [[ -z "$SOURCE_BINARY" ]]; then
@@ -155,7 +155,7 @@ case $? in
 esac
 
 echo ""
-echo "Done! The hud-hook binary is ready."
+echo "Done! The capacitor-hook binary is ready."
 echo ""
 echo "To configure Claude Code hooks, run the app and use the 'Fix All' button."
-echo "The app starts 'hud-hook serve' and registers HTTP hooks automatically."
+echo "The app starts 'capacitor-hook serve' and registers HTTP hooks automatically."

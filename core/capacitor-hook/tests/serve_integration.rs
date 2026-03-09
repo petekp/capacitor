@@ -1,4 +1,4 @@
-//! Integration tests for `hud-hook serve`.
+//! Integration tests for `capacitor-hook serve`.
 //!
 //! Spawns the server binary on a random port, exercises the HTTP endpoints,
 //! and verifies that hook events flow through to the snapshot file.
@@ -247,7 +247,7 @@ fn pid_file_is_written() {
     let server = ServerGuard::spawn(port, &temp_dir, &snapshot_path);
     ServerGuard::wait_ready(port);
 
-    let pid_file = runtime_dir.join(format!("hud-hook-serve-{port}.pid"));
+    let pid_file = runtime_dir.join(format!("capacitor-hook-serve-{port}.pid"));
     assert!(pid_file.exists(), "PID file should exist at {pid_file:?}");
 
     let pid_contents = fs::read_to_string(&pid_file).expect("read pid file");

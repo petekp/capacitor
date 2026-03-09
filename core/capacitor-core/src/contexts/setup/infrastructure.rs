@@ -31,7 +31,7 @@ impl SetupInspectorPort for LiveSetupInspector {
                 .map(|dependency| SetupRequirement {
                     kind: match dependency.name.as_str() {
                         "claude" => Some(SetupRequirementKind::ClaudeCli),
-                        "hud-hook" => Some(SetupRequirementKind::HookBinary),
+                        "capacitor-hook" => Some(SetupRequirementKind::HookBinary),
                         _ => None,
                     },
                     satisfied: dependency.found || !dependency.required,
@@ -58,7 +58,7 @@ impl SetupInspectorPort for LiveSetupInspector {
         const HOOK_HEALTH_THRESHOLD_SECS: u64 = 60;
         const HOOK_HEALTH_GRACE_SECS: u64 = 300;
 
-        let heartbeat_path = self.app_storage.root().join("hud-hook-heartbeat");
+        let heartbeat_path = self.app_storage.root().join("capacitor-hook-heartbeat");
         let threshold_secs = HOOK_HEALTH_THRESHOLD_SECS;
 
         let (status, age) = match std::fs::metadata(&heartbeat_path) {
@@ -118,7 +118,7 @@ impl SetupInspectorPort for LiveSetupInspector {
         let binary_ok = setup_status
             .dependencies
             .iter()
-            .find(|dependency| dependency.name == "hud-hook")
+            .find(|dependency| dependency.name == "capacitor-hook")
             .map(|dependency| dependency.found)
             .unwrap_or(false);
 
@@ -155,8 +155,8 @@ impl SetupInspectorPort for LiveSetupInspector {
         let is_healthy = primary_issue.is_none();
 
         let symlink_path = dirs::home_dir()
-            .map(|home| home.join(".local/bin/hud-hook"))
-            .unwrap_or_else(|| std::path::PathBuf::from("/usr/local/bin/hud-hook"));
+            .map(|home| home.join(".local/bin/capacitor-hook"))
+            .unwrap_or_else(|| std::path::PathBuf::from("/usr/local/bin/capacitor-hook"));
 
         let symlink_target = if symlink_path.is_symlink() {
             std::fs::read_link(&symlink_path)
@@ -199,7 +199,7 @@ impl SetupMutatorPort for LiveSetupMutator {
         if status
             .dependencies
             .iter()
-            .any(|dependency| dependency.name == "hud-hook" && !dependency.found)
+            .any(|dependency| dependency.name == "capacitor-hook" && !dependency.found)
         {
             actions.push(SetupAction::InstallHookBinary);
         }
@@ -290,7 +290,7 @@ mod tests {
         let mutator = LiveSetupMutator::new(storage);
 
         let binary_result = mutator
-            .install_binary_from_path("/definitely/missing/hud-hook")
+            .install_binary_from_path("/definitely/missing/capacitor-hook")
             .expect("install binary from path");
         assert!(!binary_result.success);
         assert!(binary_result.message.contains("Source binary not found"));

@@ -102,7 +102,7 @@ fn session_state_mapping_gate_ss_p0_1_exhaustive_known_hook_events_map_to_expect
 
     // Each case gets its own server instance to isolate state
     for case in cases {
-        let temp_dir = unique_temp_dir("hud-hook-mapping-gate");
+        let temp_dir = unique_temp_dir("capacitor-hook-mapping-gate");
         let snapshot_path = temp_dir.join("snapshot.json");
         let port = free_port();
 
@@ -112,7 +112,7 @@ fn session_state_mapping_gate_ss_p0_1_exhaustive_known_hook_events_map_to_expect
         let mut input = json!({
             "hook_event_name": case.hook_event_name,
             "session_id": "session-gate",
-            "cwd": "/tmp/hud-hook-gate"
+            "cwd": "/tmp/capacitor-hook-gate"
         });
 
         if let (Some(target), Some(patch)) = (input.as_object_mut(), case.input_patch.as_object()) {
@@ -151,7 +151,7 @@ fn session_state_mapping_gate_ss_p0_1_exhaustive_known_hook_events_map_to_expect
 
 #[test]
 fn session_state_mapping_gate_ss_p0_1_unknown_event_is_unhandled_unknown_and_not_persisted() {
-    let temp_dir = unique_temp_dir("hud-hook-mapping-unknown");
+    let temp_dir = unique_temp_dir("capacitor-hook-mapping-unknown");
     let snapshot_path = temp_dir.join("snapshot.json");
     let port = free_port();
 
@@ -163,7 +163,7 @@ fn session_state_mapping_gate_ss_p0_1_unknown_event_is_unhandled_unknown_and_not
         &json!({
             "hook_event_name": "SomeFutureHookEvent",
             "session_id": "session-gate",
-            "cwd": "/tmp/hud-hook-gate"
+            "cwd": "/tmp/capacitor-hook-gate"
         }),
     );
 
@@ -176,7 +176,7 @@ fn session_state_mapping_gate_ss_p0_1_unknown_event_is_unhandled_unknown_and_not
 
 #[test]
 fn session_state_mapping_gate_ss_p1_1_subagent_stop_is_isolated_from_parent_state() {
-    let temp_dir = unique_temp_dir("hud-hook-subagent-stop");
+    let temp_dir = unique_temp_dir("capacitor-hook-subagent-stop");
     let snapshot_path = temp_dir.join("snapshot.json");
     let port = free_port();
 
@@ -188,7 +188,7 @@ fn session_state_mapping_gate_ss_p1_1_subagent_stop_is_isolated_from_parent_stat
         &json!({
             "hook_event_name": "UserPromptSubmit",
             "session_id": "session-gate",
-            "cwd": "/tmp/hud-hook-gate"
+            "cwd": "/tmp/capacitor-hook-gate"
         }),
     );
     assert_eq!(status1, 200);
@@ -198,7 +198,7 @@ fn session_state_mapping_gate_ss_p1_1_subagent_stop_is_isolated_from_parent_stat
         &json!({
             "hook_event_name": "Stop",
             "session_id": "session-gate",
-            "cwd": "/tmp/hud-hook-gate",
+            "cwd": "/tmp/capacitor-hook-gate",
             "stop_hook_active": false,
             "agent_id": "agent-123"
         }),
@@ -212,7 +212,7 @@ fn session_state_mapping_gate_ss_p1_1_subagent_stop_is_isolated_from_parent_stat
 
 #[test]
 fn session_state_mapping_gate_ss_p1_2_unknown_notification_type_is_non_mutating_but_persisted() {
-    let temp_dir = unique_temp_dir("hud-hook-unknown-notification");
+    let temp_dir = unique_temp_dir("capacitor-hook-unknown-notification");
     let snapshot_path = temp_dir.join("snapshot.json");
     let port = free_port();
 
@@ -224,7 +224,7 @@ fn session_state_mapping_gate_ss_p1_2_unknown_notification_type_is_non_mutating_
         &json!({
             "hook_event_name": "Notification",
             "session_id": "session-gate",
-            "cwd": "/tmp/hud-hook-gate",
+            "cwd": "/tmp/capacitor-hook-gate",
             "notification_type": "some_future_notification"
         }),
     );
@@ -237,7 +237,7 @@ fn session_state_mapping_gate_ss_p1_2_unknown_notification_type_is_non_mutating_
 
 #[test]
 fn session_state_mapping_gate_ss_p2_2_cli_determinism_same_input_yields_same_state_projection() {
-    let temp_dir = unique_temp_dir("hud-hook-determinism");
+    let temp_dir = unique_temp_dir("capacitor-hook-determinism");
 
     for idx in 0..2 {
         let snapshot_path = temp_dir.join(format!("snapshot-{}.json", idx));
@@ -251,7 +251,7 @@ fn session_state_mapping_gate_ss_p2_2_cli_determinism_same_input_yields_same_sta
             &json!({
                 "hook_event_name": "TaskCompleted",
                 "session_id": "session-gate",
-                "cwd": "/tmp/hud-hook-gate"
+                "cwd": "/tmp/capacitor-hook-gate"
             }),
         );
         assert_eq!(status, 200, "task completed run {} should succeed", idx);

@@ -9,7 +9,7 @@ extension CoreRuntime: HookRuntimeInstalling {}
 
 enum HookInstaller {
     private static let targetPath = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent(".local/bin/hud-hook").path
+        .appendingPathComponent(".local/bin/capacitor-hook").path
 
     typealias BinaryInstallStep = (_ engine: any HookRuntimeInstalling) -> String?
 
@@ -35,7 +35,7 @@ enum HookInstaller {
         }
     }
 
-    /// Installs the bundled hud-hook binary to ~/.local/bin/hud-hook.
+    /// Installs the bundled capacitor-hook binary to ~/.local/bin/capacitor-hook.
     ///
     /// This is the client-side helper that:
     /// 1. Finds the bundled binary in the app bundle (platform-specific)
@@ -75,17 +75,17 @@ enum HookInstaller {
         return fileManager.isExecutableFile(atPath: targetPath)
     }
 
-    /// Finds the bundled hud-hook binary in the app bundle.
+    /// Finds the bundled capacitor-hook binary in the app bundle.
     ///
     /// Checks both Bundle.main.url(forResource:) and the Resources directory
     /// directly, to handle both SPM development and distributed app scenarios.
     private static func findBundledBinary() -> String? {
-        if let bundledBinary = Bundle.main.url(forResource: "hud-hook", withExtension: nil) {
+        if let bundledBinary = Bundle.main.url(forResource: "capacitor-hook", withExtension: nil) {
             return bundledBinary.path
         }
 
         if let resourcesPath = Bundle.main.resourcePath {
-            let resourcesBinary = URL(fileURLWithPath: resourcesPath).appendingPathComponent("hud-hook")
+            let resourcesBinary = URL(fileURLWithPath: resourcesPath).appendingPathComponent("capacitor-hook")
             if FileManager.default.fileExists(atPath: resourcesBinary.path) {
                 return resourcesBinary.path
             }

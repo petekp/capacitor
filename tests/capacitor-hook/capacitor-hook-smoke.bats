@@ -1,23 +1,23 @@
 #!/usr/bin/env bats
 
-# Smoke tests for the hud-hook binary.
-# Run with: bats tests/hud-hook/hud-hook-smoke.bats
+# Smoke tests for the capacitor-hook binary.
+# Run with: bats tests/capacitor-hook/capacitor-hook-smoke.bats
 
 setup() {
     PROJECT_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
-    HUD_HOOK_BIN="$PROJECT_ROOT/target/release/hud-hook"
+    CAPACITOR_HOOK_BIN="$PROJECT_ROOT/target/release/capacitor-hook"
 }
 
-@test "hud-hook --help shows usage" {
-    run "$HUD_HOOK_BIN" --help
+@test "capacitor-hook --help shows usage" {
+    run "$CAPACITOR_HOOK_BIN" --help
     [ "$status" -eq 0 ]
-    [[ "$output" == *"hud-hook"* ]]
+    [[ "$output" == *"capacitor-hook"* ]]
 }
 
-@test "hud-hook serve starts and responds to health check" {
+@test "capacitor-hook serve starts and responds to health check" {
     # Start server on a random high port
     local port=17474
-    "$HUD_HOOK_BIN" serve --port "$port" &
+    "$CAPACITOR_HOOK_BIN" serve --port "$port" &
     local server_pid=$!
     trap "kill $server_pid 2>/dev/null; wait $server_pid 2>/dev/null" EXIT
 
@@ -38,8 +38,8 @@ setup() {
     trap - EXIT
 }
 
-@test "hud-hook cwd fails fast when runtime disabled" {
-    run env CAPACITOR_CORE_ENABLED=0 "$HUD_HOOK_BIN" cwd /tmp 123 /dev/ttys001
+@test "capacitor-hook cwd fails fast when runtime disabled" {
+    run env CAPACITOR_CORE_ENABLED=0 "$CAPACITOR_HOOK_BIN" cwd /tmp 123 /dev/ttys001
     [ "$status" -eq 1 ]
     [[ "$output" == *"Core runtime disabled"* ]]
 }

@@ -195,6 +195,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "capacitor-hook"
+version = "0.2.0-alpha.3"
+dependencies = [
+ "capacitor-core",
+ "chrono",
+ "clap",
+ "dirs",
+ "fs-err 3.3.0",
+ "libc",
+ "rand 0.8.5",
+ "serde",
+ "serde_json",
+ "sysinfo",
+ "thiserror 2.0.18",
+ "tiny_http",
+ "tracing",
+ "tracing-appender",
+ "tracing-subscriber",
+ "wait-timeout",
+]
+
+[[package]]
 name = "cargo-platform"
 version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -481,28 +503,6 @@ name = "httpdate"
 version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "df3b46402a9d5adb4c86a0cf463f42e19994e3ee891101b1841f30a545cb49a9"
-
-[[package]]
-name = "hud-hook"
-version = "0.2.0-alpha.3"
-dependencies = [
- "capacitor-core",
- "chrono",
- "clap",
- "dirs",
- "fs-err 3.3.0",
- "libc",
- "rand 0.8.5",
- "serde",
- "serde_json",
- "sysinfo",
- "thiserror 2.0.18",
- "tiny_http",
- "tracing",
- "tracing-appender",
- "tracing-subscriber",
- "wait-timeout",
-]
 
 [[package]]
 name = "iana-time-zone"

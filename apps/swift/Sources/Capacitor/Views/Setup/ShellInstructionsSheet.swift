@@ -90,7 +90,7 @@ struct ShellInstructionsSheet: View {
                 .foregroundStyle(.primary)
 
             VStack(alignment: .leading, spacing: 4) {
-                bulletRow("Runs hud-hook cwd after each prompt to report your current directory, PID, and TTY.")
+                bulletRow("Runs capacitor-hook cwd after each prompt to report your current directory, PID, and TTY.")
                 bulletRow("Sends that metadata to the local runtime so Capacitor can map activity to projects.")
                 bulletRow("Does not change your prompt text. Remove it any time from \(shellType.configFile).")
             }

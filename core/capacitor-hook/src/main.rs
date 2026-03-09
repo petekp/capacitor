@@ -1,4 +1,4 @@
-//! hud-hook: CLI hook handler for Capacitor session state tracking.
+//! capacitor-hook: CLI hook handler for Capacitor session state tracking.
 //!
 //! Rust binary that handles Claude Code hook events and updates session state.
 //!
@@ -31,7 +31,7 @@ pub(crate) mod test_support {
 }
 
 #[derive(Parser)]
-#[command(name = "hud-hook")]
+#[command(name = "capacitor-hook")]
 #[command(about = "Capacitor session state tracker")]
 #[command(version)]
 struct Cli {
@@ -71,14 +71,14 @@ fn main() {
     match cli.command {
         Commands::Serve { port } => {
             if let Err(e) = serve::run(port) {
-                tracing::error!(error = %e, "hud-hook serve failed");
+                tracing::error!(error = %e, "capacitor-hook serve failed");
                 std::process::exit(1);
             }
         }
         Commands::Cwd { path, pid, tty } => {
             if let Err(e) = cwd::run(&path, pid, &tty) {
-                eprintln!("hud-hook cwd failed: {e}");
-                tracing::warn!(error = %e, "hud-hook cwd failed");
+                eprintln!("capacitor-hook cwd failed: {e}");
+                tracing::warn!(error = %e, "capacitor-hook cwd failed");
                 std::process::exit(1);
             }
         }

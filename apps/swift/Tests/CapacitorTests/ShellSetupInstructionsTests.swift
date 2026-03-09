@@ -6,7 +6,7 @@ final class ShellSetupInstructionsTests: XCTestCase {
         let snippet = ShellType.zsh.snippet
         XCTAssertTrue(snippet.contains("Capacitor shell integration"))
         XCTAssertTrue(snippet.contains("CAPACITOR_RUNTIME_ENABLED=1"))
-        XCTAssertTrue(snippet.contains("hud-hook"))
+        XCTAssertTrue(snippet.contains("capacitor-hook"))
         XCTAssertTrue(snippet.contains("precmd_functions+=(_capacitor_precmd)"))
     }
 
@@ -14,7 +14,7 @@ final class ShellSetupInstructionsTests: XCTestCase {
         let snippet = ShellType.bash.snippet
         XCTAssertTrue(snippet.contains("Capacitor shell integration"))
         XCTAssertTrue(snippet.contains("CAPACITOR_RUNTIME_ENABLED=1"))
-        XCTAssertTrue(snippet.contains("hud-hook"))
+        XCTAssertTrue(snippet.contains("capacitor-hook"))
         XCTAssertTrue(snippet.contains("PROMPT_COMMAND"))
     }
 
@@ -22,7 +22,7 @@ final class ShellSetupInstructionsTests: XCTestCase {
         let snippet = ShellType.fish.snippet
         XCTAssertTrue(snippet.contains("Capacitor shell integration"))
         XCTAssertTrue(snippet.contains("CAPACITOR_RUNTIME_ENABLED=1"))
-        XCTAssertTrue(snippet.contains("hud-hook"))
+        XCTAssertTrue(snippet.contains("capacitor-hook"))
         XCTAssertTrue(snippet.contains("fish_postexec"))
     }
 

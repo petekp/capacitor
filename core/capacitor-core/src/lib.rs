@@ -1088,7 +1088,7 @@ mod tests {
         let runtime = make_runtime_for_storage(&temp.storage);
 
         let binary_result = runtime
-            .install_hook_binary_from_path("/definitely/missing/hud-hook".to_string())
+            .install_hook_binary_from_path("/definitely/missing/capacitor-hook".to_string())
             .expect("install hook binary from path");
         assert!(!binary_result.success);
         assert!(binary_result.message.contains("Source binary not found"));
@@ -1146,7 +1146,7 @@ mod tests {
         let storage = StorageConfig::with_roots(capacitor_root.clone(), claude_root);
         HookHealthTestEnv {
             snapshot_path: temp.path().join("app_snapshot.json"),
-            heartbeat_path: capacitor_root.join("hud-hook-heartbeat"),
+            heartbeat_path: capacitor_root.join("capacitor-hook-heartbeat"),
             storage,
             _temp: temp,
         }

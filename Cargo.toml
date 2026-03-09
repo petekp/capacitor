@@ -1,7 +1,7 @@
 [workspace]
 members = [
     "core/capacitor-core",
-    "core/hud-hook",
+    "core/capacitor-hook",
 ]
 resolver = "2"
 

@@ -285,7 +285,7 @@ fn process_event(
 }
 
 fn touch_heartbeat(home: &Path) {
-    let heartbeat_path = home.join(".capacitor/hud-hook-heartbeat");
+    let heartbeat_path = home.join(".capacitor/capacitor-hook-heartbeat");
 
     if let Some(parent) = heartbeat_path.parent() {
         let _ = fs::create_dir_all(parent);
@@ -330,7 +330,7 @@ mod tests {
         let _guard = env_lock();
         let _enabled = EnvGuard::set("CAPACITOR_CORE_ENABLED", "1");
         let temp_dir = std::env::temp_dir().join(format!(
-            "hud-hook-test-{}",
+            "capacitor-hook-test-{}",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
@@ -381,7 +381,7 @@ mod tests {
         let _guard = env_lock();
         let _enabled = EnvGuard::set("CAPACITOR_CORE_ENABLED", "1");
         let temp_dir = std::env::temp_dir().join(format!(
-            "hud-hook-test-{}",
+            "capacitor-hook-test-{}",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()

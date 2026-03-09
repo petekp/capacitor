@@ -1,10 +1,11 @@
-//! Shared test helpers for hud-hook integration tests.
+//! Shared test helpers for capacitor-hook integration tests.
 #![allow(dead_code)]
 
 use std::io::{Read as _, Write as _};
 use std::net::{Shutdown, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+use std::sync::{Mutex, MutexGuard, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 /// Create a unique temporary directory with a descriptive prefix.
@@ -24,15 +25,25 @@ pub fn free_port() -> u16 {
     listener.local_addr().expect("local addr").port()
 }
 
-/// Guard that kills the hud-hook server process on drop.
+/// Guard that kills the capacitor-hook server process on drop.
 pub struct ServerGuard {
     pub child: Child,
+    _server_lock: MutexGuard<'static, ()>,
+}
+
+fn server_lock() -> MutexGuard<'static, ()> {
+    static SERVER_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    SERVER_LOCK
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .expect("server lock poisoned")
 }
 
 impl ServerGuard {
-    /// Spawn `hud-hook serve` on the given port with custom HOME and snapshot path.
+    /// Spawn `capacitor-hook serve` on the given port with custom HOME and snapshot path.
     pub fn spawn(port: u16, home: &Path, snapshot_path: &Path) -> Self {
-        let child = Command::new(env!("CARGO_BIN_EXE_hud-hook"))
+        let server_lock = server_lock();
+        let child = Command::new(env!("CARGO_BIN_EXE_capacitor-hook"))
             .args(["serve", "--port", &port.to_string()])
             .env("HOME", home)
             .env("CAPACITOR_CORE_SNAPSHOT", snapshot_path)
@@ -40,9 +51,12 @@ impl ServerGuard {
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()
-            .expect("spawn hud-hook serve");
+            .expect("spawn capacitor-hook serve");
 
-        Self { child }
+        Self {
+            child,
+            _server_lock: server_lock,
+        }
     }
 
     /// Wait for the server's /health endpoint to respond, panics after timeout.
@@ -51,7 +65,9 @@ impl ServerGuard {
     /// is written after bind but before the request loop starts. A successful
     /// health response guarantees all server initialization is complete.
     pub fn wait_ready(port: u16) {
-        let deadline = Instant::now() + Duration::from_secs(5);
+        // Pre-commit and CI can be briefly CPU-starved while multiple Rust test
+        // binaries compile and launch together, so allow a wider startup window.
+        let deadline = Instant::now() + Duration::from_secs(10);
         while Instant::now() < deadline {
             if let Ok((200, body)) = try_http_request(port, "GET", "/health", None) {
                 if body.contains("\"ok\"") {
@@ -60,7 +76,7 @@ impl ServerGuard {
             }
             std::thread::sleep(Duration::from_millis(50));
         }
-        panic!("Server on port {port} did not become healthy within 5s");
+        panic!("Server on port {port} did not become healthy within 10s");
     }
 }
 

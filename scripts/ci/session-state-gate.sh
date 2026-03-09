@@ -33,7 +33,7 @@ TRIAGE_FAILURES=0
 
 run_blocking \
   "SS-P0-1 hook mapping integrity" \
-  cargo test -p hud-hook --test session_state_mapping_gate session_state_mapping_gate_ss_p0
+  cargo test -p capacitor-hook --test session_state_mapping_gate session_state_mapping_gate_ss_p0
 
 run_blocking \
   "SS-P0-2 replay-diff determinism" \
