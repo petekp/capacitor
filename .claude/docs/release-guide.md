@@ -4,10 +4,10 @@ Use this guide for agent-run release preparation and verification.
 
 Source of truth for the active app architecture still lives in:
 
-- `architecture/CHARTER.md`
-- `architecture/DECISIONS.md`
-- `docs/architecture/OVERVIEW.md`
-- `docs/architecture/REFERENCE.md`
+- `CLAUDE.md`
+- `docs/ARCHITECTURE.md`
+- `docs/architecture-decisions/004-dedicated-local-runtime-service.md`
+- `docs/channel-profile-workflow.md`
 
 Source of truth for release mechanics lives in the scripts themselves:
 
@@ -24,10 +24,10 @@ The worktree should be clean, and these commands should pass before you build re
 
 ```bash
 git status --short
-scripts/architecture/check_architecture_guards.sh --status
-scripts/ci/runtime-reliability-guard.sh --status
+./scripts/rewrite/check_rewrite_guards.sh --status
+./scripts/ci/runtime-reliability-guard.sh --status
 cargo test -p capacitor-core
-cargo test -p capacitor-hook
+cargo test -p hud-hook
 cd apps/swift && swift test
 ```
 
@@ -68,7 +68,7 @@ The release app bundle must include:
 - `libcapacitor_core.dylib`
 - `Sparkle.framework`
 - `Capacitor_Capacitor.bundle`
-- bundled `capacitor-hook` binary in `Contents/Resources/`
+- bundled `hud-hook` binary in `Contents/Resources/`
 - fresh UniFFI Swift bindings
 
 If any of those are missing, the build is incomplete even if the app launches locally.
@@ -98,7 +98,7 @@ After building release assets:
 
 ```bash
 ./scripts/release/verify-app-bundle.sh
-bats tests/capacitor-hook/capacitor-hook-smoke.bats
+./scripts/ci/runtime-reliability.sh ci
 ```
 
 Then validate the app from a fresh state:
@@ -110,15 +110,15 @@ Then validate the app from a fresh state:
 Key things to confirm manually:
 
 - app launches from the built bundle, not from a stale dev build
-- bundled `capacitor-hook` installs successfully on first run
-- runtime snapshot updates after shell integration runs
+- bundled `hud-hook` installs successfully on first run
+- runtime service starts and persisted runtime artifacts update after shell integration runs
 - Sparkle metadata and version/build numbers match the intended release
 
 ## Release Gotchas
 
 - `Sparkle.framework` must be embedded and signed. SPM link success is not enough.
 - The build script regenerates UniFFI bindings. Do not hand-edit generated bindings before release.
-- `capacitor-hook` must be bundled in `Contents/Resources/` or first-run install will fail.
+- `hud-hook` must be bundled in `Contents/Resources/` or first-run install will fail.
 - ZIP archives must exclude AppleDouble files. If users see "app is damaged", inspect for `._*` files.
 - Sparkle compares numeric build numbers, not marketing version strings.
 - Never upload a partially rebuilt asset set. Rebuild all artifacts together or not at all.
