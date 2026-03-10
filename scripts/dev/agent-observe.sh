@@ -93,6 +93,29 @@ print(auth_token)
 PY
 }
 
+load_runtime_service_connection() {
+  local connection_path="$1"
+  local connection_port=""
+  local connection_token=""
+  local line=""
+
+  while IFS= read -r line; do
+    if [[ -z "$connection_port" ]]; then
+      connection_port="$line"
+    elif [[ -z "$connection_token" ]]; then
+      connection_token="$line"
+      break
+    fi
+  done < <(read_runtime_service_connection "$connection_path" 2>/dev/null || true)
+
+  if [[ -n "$connection_port" && -n "$connection_token" ]]; then
+    printf '%s\n%s\n' "$connection_port" "$connection_token"
+    return 0
+  fi
+
+  return 1
+}
+
 discover_runtime_service() {
   if [[ "$RUNTIME_SERVICE_DISCOVERY_DONE" -eq 1 ]]; then
     [[ -n "$RUNTIME_SERVICE_PORT" && -n "$RUNTIME_SERVICE_TOKEN" ]]
@@ -114,15 +137,35 @@ discover_runtime_service() {
     return 1
   fi
 
+  local explicit_artifact_override explicit_connection_override
+  explicit_artifact_override="$(trim_whitespace "${CAPACITOR_RUNTIME_ARTIFACT_PATH-}")"
+  explicit_connection_override="$(trim_whitespace "${CAPACITOR_RUNTIME_SERVICE_CONNECTION_PATH-}")"
+
+  if [[ -n "$explicit_artifact_override" && -z "$explicit_connection_override" ]]; then
+    return 1
+  fi
+
   if [[ -f "$RUNTIME_SERVICE_CONNECTION_PATH" ]]; then
-    local connection=()
-    if mapfile -t connection < <(read_runtime_service_connection "$RUNTIME_SERVICE_CONNECTION_PATH" 2>/dev/null); then
-      if [[ "${#connection[@]}" -ge 2 && -n "${connection[0]}" && -n "${connection[1]}" ]]; then
-        RUNTIME_SERVICE_PORT="${connection[0]}"
-        RUNTIME_SERVICE_TOKEN="${connection[1]}"
-        RUNTIME_SERVICE_SOURCE="connection_file"
-        return 0
+    local connection_port=""
+    local connection_token=""
+    local line_index=0
+    local line=""
+
+    while IFS= read -r line; do
+      if [[ "$line_index" -eq 0 ]]; then
+        connection_port="$line"
+      elif [[ "$line_index" -eq 1 ]]; then
+        connection_token="$line"
+        break
       fi
+      line_index=$((line_index + 1))
+    done < <(load_runtime_service_connection "$RUNTIME_SERVICE_CONNECTION_PATH" 2>/dev/null || true)
+
+    if [[ -n "$connection_port" && -n "$connection_token" ]]; then
+      RUNTIME_SERVICE_PORT="$connection_port"
+      RUNTIME_SERVICE_TOKEN="$connection_token"
+      RUNTIME_SERVICE_SOURCE="connection_file"
+      return 0
     fi
   fi
 

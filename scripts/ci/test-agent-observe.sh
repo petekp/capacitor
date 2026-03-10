@@ -11,6 +11,8 @@ FIXTURE_DIR=$(mktemp -d)
 SNAPSHOT_PATH="$FIXTURE_DIR/app_snapshot.json"
 APP_LOG_PATH="$FIXTURE_DIR/app-debug.log"
 HEARTBEAT_PATH="$FIXTURE_DIR/hud-hook-heartbeat"
+RUNTIME_SERVICE_CONNECTION_PATH="$FIXTURE_DIR/runtime-service.json"
+MISSING_RUNTIME_SERVICE_CONNECTION_PATH="$FIXTURE_DIR/missing-runtime-service.json"
 SERVICE_PID=""
 SERVICE_PORT=""
 SERVICE_AUTH_TOKEN=""
@@ -297,9 +299,19 @@ stop_mock_runtime_service() {
   fi
 }
 
+write_runtime_service_connection() {
+  cat > "$RUNTIME_SERVICE_CONNECTION_PATH" <<JSON
+{
+  "port": $SERVICE_PORT,
+  "auth_token": "$SERVICE_AUTH_TOKEN"
+}
+JSON
+}
+
 # ── Set env to use fixture paths ──
 
 export CAPACITOR_RUNTIME_ARTIFACT_PATH="$SNAPSHOT_PATH"
+export CAPACITOR_RUNTIME_SERVICE_CONNECTION_PATH="$MISSING_RUNTIME_SERVICE_CONNECTION_PATH"
 export CAPACITOR_APP_DEBUG_LOG="$APP_LOG_PATH"
 export CAPACITOR_RUNTIME_STDERR_LOG="$FIXTURE_DIR/runtime.stderr.log"
 export CAPACITOR_RUNTIME_STDOUT_LOG="$FIXTURE_DIR/runtime.stdout.log"
@@ -334,6 +346,24 @@ projects_output=$(
 )
 assert_json_field "$projects_output" 'length == 2' "projects prefers runtime service snapshot"
 assert_contains "$projects_output" "healthy-project" "projects includes service snapshot payload"
+
+write_runtime_service_connection
+
+connection_health_output=$(
+  CAPACITOR_RUNTIME_ARTIFACT_PATH="$FIXTURE_DIR/missing-snapshot.json" \
+  CAPACITOR_RUNTIME_SERVICE_CONNECTION_PATH="$RUNTIME_SERVICE_CONNECTION_PATH" \
+  "$OBSERVE" health 2>&1 || true
+)
+assert_not_contains "$connection_health_output" "mapfile: command not found" "connection-file discovery avoids bash-4-only builtins"
+assert_json_field "$connection_health_output" '.status == "ok"' "health prefers runtime service via connection file"
+
+connection_projects_output=$(
+  CAPACITOR_RUNTIME_ARTIFACT_PATH="$FIXTURE_DIR/missing-snapshot.json" \
+  CAPACITOR_RUNTIME_SERVICE_CONNECTION_PATH="$RUNTIME_SERVICE_CONNECTION_PATH" \
+  "$OBSERVE" projects 2>&1 || true
+)
+assert_json_field "$connection_projects_output" 'length == 2' "projects prefer runtime service snapshot via connection file"
+assert_contains "$connection_projects_output" "healthy-project" "connection-file discovery returns service snapshot payload"
 
 stop_mock_runtime_service
 echo ""
