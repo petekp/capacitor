@@ -300,8 +300,6 @@ fn touch_heartbeat(home: &Path) {
 mod tests {
     use super::*;
     use crate::test_support::env_lock;
-    use std::collections::BTreeMap;
-
     struct EnvGuard {
         key: &'static str,
         prior: Option<String>,
@@ -340,36 +338,14 @@ mod tests {
         let hook_input = HookInput {
             hook_event_name: Some("Stop".to_string()),
             session_id: Some("session-1".to_string()),
-            transcript_path: None,
             cwd: Some("/repo".to_string()),
-            permission_mode: None,
-            trigger: None,
-            prompt: None,
-            custom_instructions: None,
             notification_type: None,
-            message: None,
-            title: None,
             stop_hook_active: Some(false),
-            last_assistant_message: None,
             tool_name: None,
-            tool_use_id: None,
             tool_input: None,
             tool_response: None,
-            error: None,
-            is_interrupt: None,
-            permission_suggestions: None,
-            source: None,
-            reason: None,
-            model: None,
             agent_id: Some("agent-123".to_string()),
-            agent_type: None,
-            agent_transcript_path: None,
             teammate_name: None,
-            team_name: None,
-            task_id: None,
-            task_subject: None,
-            task_description: None,
-            extra: BTreeMap::new(),
         };
 
         let result = handle_hook_input_with_home(hook_input, &temp_dir);
@@ -391,36 +367,14 @@ mod tests {
         let hook_input = HookInput {
             hook_event_name: Some("SomeFutureHookEvent".to_string()),
             session_id: Some("session-1".to_string()),
-            transcript_path: None,
             cwd: Some("/repo".to_string()),
-            permission_mode: None,
-            trigger: None,
-            prompt: None,
-            custom_instructions: None,
             notification_type: None,
-            message: None,
-            title: None,
             stop_hook_active: None,
-            last_assistant_message: None,
             tool_name: None,
-            tool_use_id: None,
             tool_input: None,
             tool_response: None,
-            error: None,
-            is_interrupt: None,
-            permission_suggestions: None,
-            source: None,
-            reason: None,
-            model: None,
             agent_id: None,
-            agent_type: None,
-            agent_transcript_path: None,
             teammate_name: None,
-            team_name: None,
-            task_id: None,
-            task_subject: None,
-            task_description: None,
-            extra: BTreeMap::new(),
         };
 
         let result = handle_hook_input_with_home(hook_input, &temp_dir);

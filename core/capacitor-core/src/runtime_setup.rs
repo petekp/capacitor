@@ -907,53 +907,49 @@ fn is_current_managed_hook_command(cmd: Option<&str>) -> bool {
 }
 
 fn managed_inner_hook(contract: &ClaudeHookEventContract) -> InnerHook {
-    match contract
+    let transport = contract
         .managed_transport
-        .expect("managed hook contract must declare a transport")
-    {
-        HookTransport::Http => InnerHook {
+        .expect("managed hook contract must declare a transport");
+    if transport == HookTransport::Http {
+        InnerHook {
             hook_type: Some("http".to_string()),
             command: None,
             url: Some(HOOK_HTTP_URL.to_string()),
             async_hook: None,
             timeout: None,
             other: HashMap::new(),
-        },
-        HookTransport::Command => InnerHook {
+        }
+    } else {
+        debug_assert_eq!(transport, HookTransport::Command);
+        InnerHook {
             hook_type: Some("command".to_string()),
             command: Some(managed_command_hook_command()),
             url: None,
             async_hook: None,
             timeout: None,
             other: HashMap::new(),
-        },
-        HookTransport::Prompt | HookTransport::Agent => {
-            panic!("managed hook transport must be command or http")
         }
     }
 }
 
 fn apply_managed_contract(hook: &mut InnerHook, contract: &ClaudeHookEventContract) {
-    match contract
+    let transport = contract
         .managed_transport
-        .expect("managed hook contract must declare a transport")
-    {
-        HookTransport::Http => {
-            hook.hook_type = Some("http".to_string());
-            hook.url = Some(HOOK_HTTP_URL.to_string());
-            hook.command = None;
-            hook.async_hook = None;
-            hook.timeout = None;
-        }
-        HookTransport::Command => {
+        .expect("managed hook contract must declare a transport");
+    if transport == HookTransport::Http {
+        hook.hook_type = Some("http".to_string());
+        hook.url = Some(HOOK_HTTP_URL.to_string());
+        hook.command = None;
+        hook.async_hook = None;
+        hook.timeout = None;
+    } else {
+        debug_assert_eq!(transport, HookTransport::Command);
+        {
             hook.hook_type = Some("command".to_string());
             hook.command = Some(managed_command_hook_command());
             hook.url = None;
             hook.async_hook = None;
             hook.timeout = None;
-        }
-        HookTransport::Prompt | HookTransport::Agent => {
-            panic!("managed hook transport must be command or http")
         }
     }
 }
@@ -962,12 +958,14 @@ fn inner_hook_matches_managed_contract(
     hook: &InnerHook,
     contract: &ClaudeHookEventContract,
 ) -> bool {
-    match contract.managed_transport {
-        Some(HookTransport::Http) => is_hud_hook_url(hook.url.as_deref()),
-        Some(HookTransport::Command) => is_current_managed_hook_command(hook.command.as_deref()),
-        Some(HookTransport::Prompt | HookTransport::Agent) => false,
-        None => false,
+    if let Some(transport) = contract.managed_transport {
+        if transport == HookTransport::Http {
+            return is_hud_hook_url(hook.url.as_deref());
+        }
+        debug_assert_eq!(transport, HookTransport::Command);
+        return is_current_managed_hook_command(hook.command.as_deref());
     }
+    false
 }
 
 fn is_shell_assignment_token(token: &str) -> bool {

@@ -234,8 +234,6 @@ fn parent_app_string(app: ParentApp) -> String {
 mod tests {
     use super::*;
     use crate::hook_types::{HookEvent, HookInput, ToolInput};
-    use std::collections::BTreeMap;
-
     #[test]
     fn parse_bool_handles_common_flags() {
         assert_eq!(parse_bool("1"), Some(true));
@@ -270,40 +268,17 @@ mod tests {
         let hook_input = HookInput {
             hook_event_name: Some("PermissionRequest".to_string()),
             session_id: Some("session-1".to_string()),
-            transcript_path: None,
             cwd: Some("/repo".to_string()),
-            permission_mode: None,
-            trigger: None,
-            prompt: None,
-            custom_instructions: None,
             notification_type: None,
-            message: None,
-            title: None,
             stop_hook_active: None,
-            last_assistant_message: None,
             tool_name: Some("Read".to_string()),
-            tool_use_id: None,
             tool_input: Some(ToolInput {
                 file_path: Some(" src/main.rs ".to_string()),
                 path: None,
-                extra: BTreeMap::new(),
             }),
             tool_response: None,
-            error: None,
-            is_interrupt: None,
-            permission_suggestions: None,
-            source: None,
-            reason: None,
-            model: None,
             agent_id: None,
-            agent_type: None,
-            agent_transcript_path: None,
             teammate_name: None,
-            team_name: None,
-            task_id: None,
-            task_subject: None,
-            task_description: None,
-            extra: BTreeMap::new(),
         };
 
         let event = HookEvent::PermissionRequest;

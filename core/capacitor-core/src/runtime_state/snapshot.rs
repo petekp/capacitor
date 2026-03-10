@@ -5,7 +5,6 @@
 
 use crate::domain::AppSnapshot;
 use crate::runtime_service::{RuntimeServiceEndpoint, RUNTIME_SERVICE_DEFAULT_PORT};
-use chrono::{DateTime, Utc};
 use serde::Deserialize;
 
 const ENABLE_ENV: &str = "CAPACITOR_CORE_ENABLED";
@@ -44,34 +43,6 @@ impl RuntimeSessionsSnapshot {
     #[cfg(test)]
     pub(crate) fn from_sessions(sessions: Vec<RuntimeSessionRecord>) -> Self {
         Self { sessions }
-    }
-
-    pub fn latest_for_project(&self, project_path: &str) -> Option<&RuntimeSessionRecord> {
-        let home_dir = dirs::home_dir().map(|path| path.to_string_lossy().to_string());
-        let mut best: Option<&RuntimeSessionRecord> = None;
-
-        for session in &self.sessions {
-            let matches = crate::runtime_state::path_utils::path_is_parent_or_self_excluding_home(
-                project_path,
-                &session.project_path,
-                home_dir.as_deref(),
-            );
-
-            if !matches {
-                continue;
-            }
-
-            let is_newer = match best {
-                None => true,
-                Some(existing) => is_more_recent(session, existing),
-            };
-
-            if is_newer {
-                best = Some(session);
-            }
-        }
-
-        best
     }
 }
 
@@ -143,12 +114,6 @@ fn parse_bool(value: &str) -> Option<bool> {
     }
 }
 
-fn parse_rfc3339(value: &str) -> Option<DateTime<Utc>> {
-    DateTime::parse_from_rfc3339(value)
-        .ok()
-        .map(|dt| dt.with_timezone(&Utc))
-}
-
 fn session_state_label(state: crate::domain::SessionState) -> &'static str {
     match state {
         crate::domain::SessionState::Working => "working",
@@ -156,19 +121,6 @@ fn session_state_label(state: crate::domain::SessionState) -> &'static str {
         crate::domain::SessionState::Idle => "idle",
         crate::domain::SessionState::Compacting => "compacting",
         crate::domain::SessionState::Waiting => "waiting",
-    }
-}
-
-fn is_more_recent(left: &RuntimeSessionRecord, right: &RuntimeSessionRecord) -> bool {
-    let left_ts = parse_rfc3339(&left.updated_at).or_else(|| parse_rfc3339(&left.state_changed_at));
-    let right_ts =
-        parse_rfc3339(&right.updated_at).or_else(|| parse_rfc3339(&right.state_changed_at));
-
-    match (left_ts, right_ts) {
-        (Some(left), Some(right)) => left > right,
-        (Some(_), None) => true,
-        (None, Some(_)) => false,
-        (None, None) => false,
     }
 }
 
@@ -375,27 +327,6 @@ mod tests {
         }
     }
 
-    fn make_session_record(
-        session_id: &str,
-        project_path: &str,
-        updated_at: &str,
-    ) -> RuntimeSessionRecord {
-        RuntimeSessionRecord {
-            session_id: session_id.to_string(),
-            pid: 123,
-            state: "working".to_string(),
-            cwd: project_path.to_string(),
-            project_path: project_path.to_string(),
-            updated_at: updated_at.to_string(),
-            state_changed_at: updated_at.to_string(),
-            last_event: None,
-            last_activity_at: None,
-            tools_in_flight: 0,
-            ready_reason: None,
-            is_alive: None,
-        }
-    }
-
     #[test]
     fn sessions_snapshot_parses_entries() {
         let value = serde_json::json!([
@@ -415,37 +346,6 @@ mod tests {
             serde_json::from_value(value).expect("parse sessions");
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].session_id, "session-1");
-    }
-
-    #[test]
-    fn latest_for_project_matches_subpath() {
-        let snapshot = RuntimeSessionsSnapshot::from_sessions(vec![make_session_record(
-            "session-1",
-            "/Users/pete/Code/assistant-ui/packages/web",
-            "2026-02-01T00:00:00Z",
-        )]);
-
-        let selected = snapshot
-            .latest_for_project("/Users/pete/Code/assistant-ui")
-            .expect("expected parent project to match child session path");
-
-        assert_eq!(
-            selected.project_path,
-            "/Users/pete/Code/assistant-ui/packages/web"
-        );
-    }
-
-    #[test]
-    fn latest_for_project_does_not_match_parent_path() {
-        let snapshot = RuntimeSessionsSnapshot::from_sessions(vec![make_session_record(
-            "session-1",
-            "/Users/pete/Code/assistant-ui",
-            "2026-02-01T00:00:00Z",
-        )]);
-
-        let selected = snapshot.latest_for_project("/Users/pete/Code/assistant-ui/packages/web");
-
-        assert!(selected.is_none());
     }
 
     #[test]

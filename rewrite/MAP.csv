@@ -717,7 +717,13 @@ RW-101,repo-hygiene-claude-migration-delete-rw101,.claude/migration/*,,done,true
 RW-101,repo-hygiene-runtime-guard-rw101,scripts/ci/runtime-reliability-guard.sh,scripts/ci/runtime-reliability-guard.sh,done,false,Promote runtime reliability guard to tracked operational script outside .claude
 RW-101,repo-hygiene-runtime-wrapper-rw101,scripts/ci/runtime-reliability.sh,scripts/ci/runtime-reliability.sh,done,false,Rewire runtime reliability wrapper to the tracked guard script
 RW-101,repo-hygiene-terminal-guard-comment-rw101,scripts/ci/terminal-simplification-guard.sh,scripts/ci/terminal-simplification-guard.sh,done,false,Remove stale migration-path comment from simplification guard
+RW-101,repo-hygiene-fetch-cc-docs-delete-rw101,scripts/utils/fetch-cc-docs.ts,,done,true,Delete orphaned Claude Code docs fetch utility that is no longer wired into repo workflows
 RW-101,repo-hygiene-session-matrix-rw101,docs/SESSION_STATE_RELEASE_MATRIX.md,docs/SESSION_STATE_RELEASE_MATRIX.md,done,false,Update operational docs to reference runtime reliability guard naming
+RW-101,repo-hygiene-project-card-components-rw101,apps/swift/Sources/Capacitor/Views/Projects/ProjectCardComponents.swift,apps/swift/Sources/Capacitor/Views/Projects/ProjectCardComponents.swift,done,false,Prune unused shared background and blocker badge helpers from project card components
+RW-101,repo-hygiene-sticky-section-rw101,apps/swift/Sources/Capacitor/Views/Debug/UITuningPanel/StickySection.swift,apps/swift/Sources/Capacitor/Views/Debug/UITuningPanel/StickySection.swift,done,false,Prune unused blend-mode tuning helpers from the debug tuning panel
+RW-101,repo-hygiene-apps-www-readme-delete-rw101,apps/www/README.md,,done,true,Delete unreferenced create-next-app scaffold README from the marketing site package
+RW-101,repo-hygiene-landing-page-plan-delete-rw101,docs/plans/2026-03-03-landing-page.md,,done,true,Delete stale landing-page implementation plan after the work shipped
+RW-101,repo-hygiene-landing-page-design-delete-rw101,docs/plans/2026-03-03-landing-page-design.md,,done,true,Delete stale landing-page design artifact after the work shipped
 RW-101,repo-hygiene-bootstrap-rw101,scripts/bootstrap.sh,scripts/bootstrap.sh,done,false,Generate UniFFI artifacts into a temp directory and copy only canonical Swift package outputs
 RW-101,repo-hygiene-restart-app-rw101,scripts/dev/restart-app.sh,scripts/dev/restart-app.sh,done,false,Generate UniFFI artifacts into a temp directory during restart flow and copy only canonical outputs
 RW-101,repo-hygiene-capacitorcoreffi-header-rw101,apps/swift/Sources/CapacitorCoreFFI/capacitor_coreFFI.h,apps/swift/Sources/CapacitorCoreFFI/capacitor_coreFFI.h,done,false,Move the canonical FFI header into the system library target directory

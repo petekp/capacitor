@@ -1,82 +1,32 @@
 use serde::Deserialize;
-use serde_json::Value;
-use std::collections::BTreeMap;
 
-// Fields are populated by serde deserialization from Claude Code hook payloads.
-// Many are not read directly in Rust but must exist for correct deserialization.
-#[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
 pub struct HookInput {
     pub hook_event_name: Option<String>,
     pub session_id: Option<String>,
-    #[serde(default)]
-    pub transcript_path: Option<String>,
     pub cwd: Option<String>,
-    #[serde(default)]
-    pub permission_mode: Option<String>,
-    pub trigger: Option<String>,
-    #[serde(default)]
-    pub prompt: Option<String>,
-    #[serde(default)]
-    pub custom_instructions: Option<String>,
     pub notification_type: Option<String>,
-    #[serde(default)]
-    pub message: Option<String>,
-    #[serde(default)]
-    pub title: Option<String>,
     pub stop_hook_active: Option<bool>,
-    #[serde(default)]
-    pub last_assistant_message: Option<String>,
     pub tool_name: Option<String>,
-    pub tool_use_id: Option<String>,
     #[serde(default)]
     pub tool_input: Option<ToolInput>,
     #[serde(default)]
     pub tool_response: Option<ToolResponse>,
-    #[serde(default)]
-    pub error: Option<String>,
-    #[serde(default)]
-    pub is_interrupt: Option<bool>,
-    #[serde(default)]
-    pub permission_suggestions: Option<Value>,
-    #[serde(default)]
-    pub source: Option<Value>,
-    #[serde(default)]
-    pub reason: Option<Value>,
-    #[serde(default)]
-    pub model: Option<String>,
     pub agent_id: Option<String>,
     #[serde(default)]
-    pub agent_type: Option<String>,
-    pub agent_transcript_path: Option<String>,
-    #[serde(default)]
     pub teammate_name: Option<String>,
-    #[serde(default)]
-    pub team_name: Option<String>,
-    #[serde(default)]
-    pub task_id: Option<String>,
-    #[serde(default)]
-    pub task_subject: Option<String>,
-    #[serde(default)]
-    pub task_description: Option<String>,
-    #[serde(default, flatten)]
-    pub extra: BTreeMap<String, Value>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, serde::Serialize)]
 pub struct ToolInput {
     pub file_path: Option<String>,
     pub path: Option<String>,
-    #[serde(default, flatten)]
-    pub extra: BTreeMap<String, Value>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, serde::Serialize)]
 pub struct ToolResponse {
     #[serde(rename = "filePath")]
     pub file_path: Option<String>,
-    #[serde(default, flatten)]
-    pub extra: BTreeMap<String, Value>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
