@@ -16,14 +16,12 @@ It is not the architecture source of truth by itself. Read in this order:
 - `core/hud-hook/` hosts the local runtime service and adapts Claude hook + shell-cwd inputs into `capacitor-core`.
 - Swift owns projection, interaction flow, terminal activation execution, and macOS integrations.
 - `apps/swift/Sources/Capacitor/Models/AppState.swift` is the shell environment hub. It exposes collaborators but does not own live-world assembly or duplicate domain policy.
-- Historical migration context lives in tracked audits/plans and git history. Do not treat older migration artifacts as active architecture guidance.
 
 ## Default Verification Set
 
 Run these before calling an architecture or runtime change complete:
 
 ```bash
-./scripts/rewrite/check_rewrite_guards.sh --status
 ./scripts/ci/runtime-reliability-guard.sh --status
 cargo test -p capacitor-core
 cargo test -p hud-hook

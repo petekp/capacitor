@@ -24,7 +24,6 @@ The worktree should be clean, and these commands should pass before you build re
 
 ```bash
 git status --short
-./scripts/rewrite/check_rewrite_guards.sh --status
 ./scripts/ci/runtime-reliability-guard.sh --status
 cargo test -p capacitor-core
 cargo test -p hud-hook

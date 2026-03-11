@@ -189,12 +189,15 @@ async function readRuntimeHealth(runtimeSnapshot) {
   }
 
   return {
-    status: "healthy",
+    status: "degraded",
     pid: null,
-    version: "artifact-fallback",
+    version: "artifact-debug",
     generated_at: runtimeSnapshot.generated_at,
     source: "artifact_file",
-    endpoint: null
+    endpoint: null,
+    mode: "artifact_debug",
+    live_boundary_available: false,
+    warning: "runtime_service_unavailable"
   };
 }
 

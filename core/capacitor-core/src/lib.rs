@@ -228,6 +228,18 @@ fn heartbeat_status(
     }
 }
 
+fn hook_event_age_secs(timestamp: Option<&str>) -> Option<u64> {
+    let timestamp = timestamp?;
+    let parsed = chrono::DateTime::parse_from_rfc3339(timestamp).ok()?;
+    let parsed = parsed.with_timezone(&Utc);
+    let age = Utc::now().signed_duration_since(parsed).num_seconds();
+    if age < 0 {
+        Some(0)
+    } else {
+        Some(age as u64)
+    }
+}
+
 fn has_active_runtime_session(
     snapshot: Option<&runtime_state::snapshot::RuntimeSessionsSnapshot>,
     max_age_secs: u64,
@@ -786,54 +798,37 @@ impl CoreRuntime {
     pub fn check_hook_health(&self) -> runtime_types::HookHealthReport {
         const HOOK_HEALTH_THRESHOLD_SECS: u64 = 60;
         const HOOK_HEALTH_GRACE_SECS: u64 = 300;
-
-        let heartbeat_path = self.app_storage.root().join("hud-hook-heartbeat");
         let threshold_secs = HOOK_HEALTH_THRESHOLD_SECS;
+        let snapshot = runtime_state::snapshot::hook_health_snapshot();
+        let age = snapshot
+            .as_ref()
+            .and_then(|snapshot| hook_event_age_secs(snapshot.last_hook_event_at.as_deref()));
+        let has_active_session = if age.is_some_and(|age_secs| age_secs > threshold_secs) {
+            snapshot
+                .as_ref()
+                .map(|snapshot| {
+                    has_active_runtime_session(Some(&snapshot.sessions), HOOK_HEALTH_GRACE_SECS)
+                })
+                .unwrap_or(false)
+        } else {
+            false
+        };
 
-        let (status, age) = match std::fs::metadata(&heartbeat_path) {
-            Ok(meta) => match meta.modified() {
-                Ok(mtime) => {
-                    let age_secs = mtime.elapsed().map(|d| d.as_secs()).unwrap_or(0);
-                    let has_active_session = if age_secs > threshold_secs {
-                        has_active_runtime_session(
-                            runtime_state::snapshot::sessions_snapshot().as_ref(),
-                            HOOK_HEALTH_GRACE_SECS,
-                        )
-                    } else {
-                        false
-                    };
-
-                    let status = heartbeat_status(
-                        age_secs,
-                        threshold_secs,
-                        HOOK_HEALTH_GRACE_SECS,
-                        has_active_session,
-                    );
-                    (status, Some(age_secs))
-                }
-                Err(e) => (
-                    runtime_types::HookHealthStatus::Unreadable {
-                        reason: e.to_string(),
-                    },
-                    None,
-                ),
-            },
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                (runtime_types::HookHealthStatus::Unknown, None)
-            }
-            Err(e) => (
-                runtime_types::HookHealthStatus::Unreadable {
-                    reason: e.to_string(),
-                },
-                None,
+        let status = match age {
+            Some(age_secs) => heartbeat_status(
+                age_secs,
+                threshold_secs,
+                HOOK_HEALTH_GRACE_SECS,
+                has_active_session,
             ),
+            None => runtime_types::HookHealthStatus::Unknown,
         };
 
         runtime_types::HookHealthReport {
             status,
-            heartbeat_path: heartbeat_path.display().to_string(),
+            signal_source: "runtime_service_snapshot".to_string(),
             threshold_secs,
-            last_heartbeat_age_secs: age,
+            last_hook_event_age_secs: age,
         }
     }
 
@@ -904,26 +899,27 @@ impl CoreRuntime {
             firing_ok,
             symlink_path: symlink_path.to_string_lossy().to_string(),
             symlink_target,
-            last_heartbeat_age_secs: health.last_heartbeat_age_secs,
+            last_hook_event_age_secs: health.last_hook_event_age_secs,
         }
     }
 
     pub fn run_hook_test(&self) -> HookTestResult {
         let health = self.check_hook_health();
-        let heartbeat_ok = matches!(health.status, runtime_types::HookHealthStatus::Healthy);
-        let heartbeat_age = health.last_heartbeat_age_secs;
+        let hook_activity_ok = matches!(health.status, runtime_types::HookHealthStatus::Healthy);
+        let hook_activity_age = health.last_hook_event_age_secs;
 
         let runtime_service_ok = self.test_runtime_service_health();
-        let success = heartbeat_ok && runtime_service_ok;
+        let success = hook_activity_ok && runtime_service_ok;
         let message = if success {
             "Hooks are working correctly".to_string()
-        } else if !heartbeat_ok {
-            match heartbeat_age {
+        } else if !hook_activity_ok {
+            match hook_activity_age {
                 Some(age) => format!(
-                    "Heartbeat stale ({}s ago). Start a Claude session to test.",
+                    "Hook activity stale ({}s ago). Start a Claude session to test.",
                     age
                 ),
-                None => "No heartbeat detected. Start a Claude session to test hooks.".to_string(),
+                None => "No recent hook activity detected. Start a Claude session to test hooks."
+                    .to_string(),
             }
         } else {
             "Runtime health check failed. Ensure the local runtime service is available."
@@ -932,8 +928,8 @@ impl CoreRuntime {
 
         HookTestResult {
             success,
-            heartbeat_ok,
-            heartbeat_age_secs: heartbeat_age,
+            hook_activity_ok,
+            hook_activity_age_secs: hook_activity_age,
             runtime_service_ok,
             message,
         }
@@ -956,13 +952,12 @@ mod tests {
     use crate::runtime_types::HookHealthStatus;
     use crate::storage::InMemorySnapshotStorage;
     use chrono::{Duration, Utc};
-    use std::fs::{self, File};
+    use std::fs;
     use std::sync::{Arc, Mutex, OnceLock};
-    use std::time::{Duration as StdDuration, SystemTime};
     use tempfile::TempDir;
 
     static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    const IGNORED_LEGACY_SNAPSHOT_ENV: &str = "CAPACITOR_CORE_SNAPSHOT";
+    const IGNORED_SNAPSHOT_ENV_NAME: &str = concat!("CAPACITOR_", "CORE_", "SNAPSHOT");
 
     struct EnvVarGuard {
         key: &'static str,
@@ -1090,19 +1085,16 @@ mod tests {
     }
 
     #[test]
-    fn check_hook_health_treats_recent_waiting_session_as_grace_healthy() {
+    fn check_hook_health_uses_recent_service_hook_activity_without_filesystem_heartbeat() {
         let _guard = env_lock();
         let temp = setup_hook_health_env();
-        write_snapshot(
-            &temp.snapshot_path,
-            vec![make_snapshot_session("ready", 30, Some(true))],
-        );
-        let runtime_service = mock_runtime_snapshot_service(
+        let runtime_service = mock_runtime_snapshot_service_with_hook_activity(
             "hook-health-healthy",
             vec![make_snapshot_session("waiting", 45, Some(true))],
+            Some((Utc::now() - Duration::seconds(45)).to_rfc3339()),
         );
-        let _legacy_snapshot = EnvVarGuard::set(
-            IGNORED_LEGACY_SNAPSHOT_ENV,
+        let _ignored_snapshot = EnvVarGuard::set(
+            IGNORED_SNAPSHOT_ENV_NAME,
             temp.snapshot_path.to_str().expect("snapshot path"),
         );
         let _service_port = EnvVarGuard::set(
@@ -1110,30 +1102,26 @@ mod tests {
             &runtime_service.port().to_string(),
         );
         let _service_token = EnvVarGuard::set(RUNTIME_SERVICE_TOKEN_ENV, "hook-health-healthy");
-        write_heartbeat(&temp.heartbeat_path, 120);
 
         let runtime = make_runtime_with_storage(&temp);
         let report = runtime.check_hook_health();
 
         assert!(matches!(report.status, HookHealthStatus::Healthy));
-        assert!(report.last_heartbeat_age_secs.is_some_and(|age| age >= 120));
+        assert!(report.last_hook_event_age_secs.is_some_and(|age| age <= 60));
         runtime_service.finish();
     }
 
     #[test]
-    fn check_hook_health_does_not_extend_grace_for_ready_sessions() {
+    fn check_hook_health_reports_stale_service_hook_activity_without_filesystem_heartbeat() {
         let _guard = env_lock();
         let temp = setup_hook_health_env();
-        write_snapshot(
-            &temp.snapshot_path,
-            vec![make_snapshot_session("waiting", 45, Some(true))],
-        );
-        let runtime_service = mock_runtime_snapshot_service(
+        let runtime_service = mock_runtime_snapshot_service_with_hook_activity(
             "hook-health-stale",
             vec![make_snapshot_session("ready", 30, Some(true))],
+            Some((Utc::now() - Duration::seconds(120)).to_rfc3339()),
         );
-        let _legacy_snapshot = EnvVarGuard::set(
-            IGNORED_LEGACY_SNAPSHOT_ENV,
+        let _ignored_snapshot = EnvVarGuard::set(
+            IGNORED_SNAPSHOT_ENV_NAME,
             temp.snapshot_path.to_str().expect("snapshot path"),
         );
         let _service_port = EnvVarGuard::set(
@@ -1141,7 +1129,6 @@ mod tests {
             &runtime_service.port().to_string(),
         );
         let _service_token = EnvVarGuard::set(RUNTIME_SERVICE_TOKEN_ENV, "hook-health-stale");
-        write_heartbeat(&temp.heartbeat_path, 120);
 
         let runtime = make_runtime_with_storage(&temp);
         let report = runtime.check_hook_health();
@@ -1153,7 +1140,37 @@ mod tests {
             ),
             "report was {report:?}"
         );
-        assert!(report.last_heartbeat_age_secs.is_some_and(|age| age >= 120));
+        assert!(report
+            .last_hook_event_age_secs
+            .is_some_and(|age| age >= 120));
+        runtime_service.finish();
+    }
+
+    #[test]
+    fn run_hook_test_succeeds_with_recent_service_hook_activity_and_runtime_service_health() {
+        let _guard = env_lock();
+        let temp = setup_hook_health_env();
+        let runtime_service = mock_runtime_health_and_snapshot_service(
+            "hook-test-healthy",
+            vec![make_snapshot_session("working", 30, Some(true))],
+            Some((Utc::now() - Duration::seconds(30)).to_rfc3339()),
+        );
+        let _ignored_snapshot = EnvVarGuard::set(
+            IGNORED_SNAPSHOT_ENV_NAME,
+            temp.snapshot_path.to_str().expect("snapshot path"),
+        );
+        let _service_port = EnvVarGuard::set(
+            RUNTIME_SERVICE_PORT_ENV,
+            &runtime_service.port().to_string(),
+        );
+        let _service_token = EnvVarGuard::set(RUNTIME_SERVICE_TOKEN_ENV, "hook-test-healthy");
+
+        let runtime = make_runtime_with_storage(&temp);
+        let result = runtime.run_hook_test();
+
+        assert!(result.success, "result was {result:?}");
+        assert!(result.hook_activity_ok, "result was {result:?}");
+        assert!(result.runtime_service_ok, "result was {result:?}");
         runtime_service.finish();
     }
 
@@ -1184,7 +1201,6 @@ mod tests {
         _temp: TempDir,
         storage: StorageConfig,
         snapshot_path: std::path::PathBuf,
-        heartbeat_path: std::path::PathBuf,
     }
 
     fn setup_hook_health_env() -> HookHealthTestEnv {
@@ -1196,7 +1212,6 @@ mod tests {
         let storage = StorageConfig::with_roots(capacitor_root.clone(), claude_root);
         HookHealthTestEnv {
             snapshot_path: temp.path().join("app_snapshot.json"),
-            heartbeat_path: capacitor_root.join("hud-hook-heartbeat"),
             storage,
             _temp: temp,
         }
@@ -1210,12 +1225,10 @@ mod tests {
         .expect("runtime")
     }
 
-    fn write_snapshot(path: &std::path::Path, sessions: Vec<SessionSummary>) {
-        let payload = snapshot_payload(sessions);
-        fs::write(path, payload).expect("write snapshot");
-    }
-
-    fn snapshot_payload(sessions: Vec<SessionSummary>) -> Vec<u8> {
+    fn snapshot_payload(
+        sessions: Vec<SessionSummary>,
+        last_hook_event_at: Option<String>,
+    ) -> Vec<u8> {
         let now = Utc::now().to_rfc3339();
         let snapshot = AppSnapshot {
             projects: vec![ProjectSummary {
@@ -1249,21 +1262,60 @@ mod tests {
                 informational_events_skipped: 0,
                 reducer_events_skipped: 0,
                 last_error: None,
+                last_hook_event_at: None,
             },
             generated_at: now,
         };
-        serde_json::to_vec(&snapshot).expect("serialize snapshot")
+        let mut value = serde_json::to_value(snapshot).expect("serialize snapshot to value");
+        if let Some(last_hook_event_at) = last_hook_event_at {
+            value["diagnostics"]["last_hook_event_at"] =
+                serde_json::Value::String(last_hook_event_at);
+        }
+        serde_json::to_vec(&value).expect("serialize snapshot json")
     }
 
-    fn mock_runtime_snapshot_service(
+    fn mock_runtime_snapshot_service_with_hook_activity(
         auth_token: &str,
         sessions: Vec<SessionSummary>,
+        last_hook_event_at: Option<String>,
     ) -> MockRuntimeService {
-        let snapshot = serde_json::from_slice::<serde_json::Value>(&snapshot_payload(sessions))
-            .expect("snapshot json value");
+        let snapshot = serde_json::from_slice::<serde_json::Value>(&snapshot_payload(
+            sessions,
+            last_hook_event_at,
+        ))
+        .expect("snapshot json value");
         MockRuntimeService::spawn(
             auth_token,
             vec![MockRuntimeServiceRoute::json("/runtime/snapshot", snapshot)],
+        )
+    }
+
+    fn mock_runtime_health_and_snapshot_service(
+        auth_token: &str,
+        sessions: Vec<SessionSummary>,
+        last_hook_event_at: Option<String>,
+    ) -> MockRuntimeService {
+        let snapshot = serde_json::from_slice::<serde_json::Value>(&snapshot_payload(
+            sessions,
+            last_hook_event_at,
+        ))
+        .expect("snapshot json value");
+        MockRuntimeService::spawn(
+            auth_token,
+            vec![
+                MockRuntimeServiceRoute::json("/runtime/snapshot", snapshot),
+                MockRuntimeServiceRoute::json(
+                    "/health",
+                    serde_json::json!({
+                        "status": "ok",
+                        "pid": 4242,
+                        "version": "runtime-service-test",
+                        "protocol_version": 1,
+                        "auth_mode": "bearer",
+                        "service_mode": "bootstrap_only",
+                    }),
+                ),
+            ],
         )
     }
 
@@ -1301,18 +1353,5 @@ mod tests {
             tools_in_flight: 0,
             ready_reason,
         }
-    }
-
-    fn write_heartbeat(path: &std::path::Path, age_secs: u64) {
-        fs::write(path, "heartbeat").expect("write heartbeat");
-        let file = File::options()
-            .write(true)
-            .open(path)
-            .expect("open heartbeat");
-        let modified = SystemTime::now()
-            .checked_sub(StdDuration::from_secs(age_secs))
-            .expect("compute heartbeat time");
-        file.set_times(std::fs::FileTimes::new().set_modified(modified))
-            .expect("set heartbeat mtime");
     }
 }

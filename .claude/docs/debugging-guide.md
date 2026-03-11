@@ -26,7 +26,6 @@ Start here before opening source files:
 
 ```bash
 ./scripts/dev/agent-observe.sh diagnose
-./scripts/rewrite/check_rewrite_guards.sh --status
 ./scripts/ci/runtime-reliability-guard.sh --status
 ```
 

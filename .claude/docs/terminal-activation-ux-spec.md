@@ -1,7 +1,6 @@
 # Terminal Activation UX Spec
 
 This is the active source of truth for terminal activation behavior.
-Historical activation material lives in tracked audits/manual-QA artifacts and git history. It should not guide new code.
 
 ## Source Of Truth Files
 

@@ -71,8 +71,9 @@ export function normalizeFeedbackID(candidate) {
  */
 export function normalizeFeedbackSubmission(body, request) {
   const app = asObject(body.app);
+  const form = asObject(body.form);
   const privacy = asObject(body.privacy);
-  const daemon = asObject(body.daemon);
+  const runtime = asObject(body.runtime);
   const projectContext = asObject(body.projectContext);
   const sessionSummary = asObject(projectContext.sessionSummary);
   const activationSignal = asObject(body.activationSignal);
@@ -80,16 +81,16 @@ export function normalizeFeedbackSubmission(body, request) {
   return {
     feedback_id: normalizeFeedbackID(body.feedback_id),
     submitted_at: asString(body.submittedAt) || new Date().toISOString(),
-    feedback_text: (asString(body.feedback) || "").trim(),
+    feedback_text: (asString(form.summary) || "").trim(),
     app_version: asString(app.version),
     build_number: asString(app.buildNumber),
     channel: asString(app.channel),
     os_version: asString(app.osVersion),
     include_telemetry: asBoolInt(privacy.includeTelemetry),
     include_project_paths: asBoolInt(privacy.includeProjectPaths),
-    daemon_enabled: daemon.enabled === undefined ? null : asBoolInt(daemon.enabled),
-    daemon_healthy: daemon.healthy === undefined ? null : asBoolInt(daemon.healthy),
-    daemon_version: asString(daemon.version),
+    runtime_enabled: runtime.enabled === undefined ? null : asBoolInt(runtime.enabled),
+    runtime_healthy: runtime.healthy === undefined ? null : asBoolInt(runtime.healthy),
+    runtime_version: asString(runtime.version),
     active_source: asString(projectContext.activeSource),
     project_count: asInteger(projectContext.projectCount),
     session_total: asInteger(sessionSummary.total),

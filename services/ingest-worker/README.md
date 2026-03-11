@@ -19,11 +19,13 @@ Cloudflare Worker + D1 ingestion backend for Capacitor alpha feedback + telemetr
 - `quick_feedback_submitted`
 - `activation_decision`
 - `activation_outcome`
-- `daemon_ipc_error`
+- `runtime_transport_error`
 - `routing_snapshot_refresh_error`
 
 Other telemetry event types return `202` with a dropped response and are not written to D1.
-Duplicate diagnostics (`activation_*` / daemon routing errors) within a short window are also dropped with `202` and `reason=duplicate_throttled`.
+Duplicate diagnostics (`activation_*` / runtime transport errors) within a short window are also dropped with `202` and `reason=duplicate_throttled`.
+
+Feedback normalization persists the runtime health snapshot in `runtime_enabled`, `runtime_healthy`, and `runtime_version` columns.
 
 Telemetry retention is enforced by a scheduled worker task:
 
@@ -60,6 +62,8 @@ npx wrangler d1 create capacitor-alpha
 npx wrangler d1 migrations apply capacitor-alpha --remote
 ```
 
+This applies the runtime-era feedback column rename migration for existing deployments (`daemon_*` -> `runtime_*`) as part of the same migration history.
+
 5. Set the ingest key secret:
 
 ```bash
@@ -75,6 +79,7 @@ npm run deploy
 ## Local dev
 
 ```bash
+npx wrangler d1 migrations apply capacitor-alpha --local
 npm run dev
 ```
 

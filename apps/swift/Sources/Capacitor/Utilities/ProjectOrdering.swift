@@ -207,44 +207,16 @@ enum ProjectOrdering {
 
 enum ProjectOrderStore {
     private static let globalOrderKey = "projectOrder.global"
-    private static let migrationKey = "projectOrder.migrated.v3"
-
-    /// Legacy key (pre-v2)
-    private static let legacyOrderKey = "customProjectOrder"
-    private static let legacyActiveOrderKey = "projectOrder.active"
-    private static let legacyIdleOrderKey = "projectOrder.idle"
-    private static let legacyMigrationKey = "projectOrder.migrated.v2"
 
     static func load(from defaults: UserDefaults = .standard) -> [String] {
         if let global = defaults.array(forKey: globalOrderKey) as? [String] {
             return uniquePaths(global)
         }
-
-        let legacyActive = defaults.array(forKey: legacyActiveOrderKey) as? [String] ?? []
-        let legacyIdle = defaults.array(forKey: legacyIdleOrderKey) as? [String] ?? []
-        if !legacyActive.isEmpty || !legacyIdle.isEmpty {
-            return uniquePaths(legacyActive + legacyIdle)
-        }
-
-        let legacyOrder = defaults.array(forKey: legacyOrderKey) as? [String] ?? []
-        return uniquePaths(legacyOrder)
+        return []
     }
 
     static func save(_ order: [String], to defaults: UserDefaults = .standard) {
         defaults.set(uniquePaths(order), forKey: globalOrderKey)
-    }
-
-    /// Migrates from pre-v3 keys to single global order.
-    static func migrateIfNeeded(from defaults: UserDefaults = .standard) {
-        guard !defaults.bool(forKey: migrationKey) else { return }
-
-        let migratedOrder = load(from: defaults)
-        if !migratedOrder.isEmpty {
-            save(migratedOrder, to: defaults)
-        }
-
-        defaults.set(true, forKey: migrationKey)
-        defaults.set(true, forKey: legacyMigrationKey)
     }
 
     private static func uniquePaths(_ paths: [String]) -> [String] {

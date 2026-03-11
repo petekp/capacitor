@@ -90,9 +90,9 @@ For coding-agent runtime debugging, use the canonical diagnostic CLI:
 Full command reference: `./scripts/dev/agent-observe.sh help`
 Debugging guide: `.claude/docs/debugging-guide.md`
 
-Optional browser UI: `node scripts/transparent-ui-server.mjs` (localhost:9133)
+Optional browser UI + local telemetry sink: `node scripts/transparent-ui-server.mjs` (localhost:9133)
 
-`agent-observe.sh` and `transparent-ui-server.mjs` query the runtime service first when credentials are discoverable. They only fall back to persisted artifacts when the service bootstrap is unavailable and you need offline/debug context.
+`agent-observe.sh` and `transparent-ui-server.mjs` query the runtime service first when credentials are discoverable. They only fall back to persisted artifacts when the service bootstrap is unavailable and you need offline/debug context, and that artifact mode should be treated as degraded rather than healthy live runtime.
 
 ## Common Gotchas
 

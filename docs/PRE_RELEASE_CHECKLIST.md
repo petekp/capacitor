@@ -20,11 +20,10 @@ The dev environment masks problems:
 If the release includes changes to terminal activation, tmux switching, or Ghostty AX routing, reference:
 
 - `.claude/docs/terminal-activation-ux-spec.md` (canonical UX contract)
-- `docs/manual-qa/2026-02-23-ghostty-tab-routing-manual-qa.md` (Ghostty tab-routing artifact template/report)
 
 Required sign-off artifacts:
 
-- [ ] Manual QA report attached to PR/issue (using canonical reporting template)
+- [ ] Manual QA report attached to PR/issue using the current UX contract and required sign-off fields below
 - [ ] All P0 scenarios pass (or explicit triage documented)
 - [ ] Reuse scenarios show no unexpected `launchNewTerminal`
 - [ ] Ghostty multi-tab/multi-window scenarios show deterministic AX routing (`tab_press` preferred, `window_raise` fallback)

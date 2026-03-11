@@ -20,20 +20,20 @@ usage() {
   cat <<'USAGE'
 Usage: scripts/dev/agent-observe.sh <command> [args...]
 
-Runtime observability helper for Capacitor (runtime-service first).
+Runtime observability helper for Capacitor (runtime-service first; artifact fallback is offline/debug-only).
 
 Commands:
   check                                  Validate runtime service/artifact observability paths
   paths                                  Print canonical paths + endpoint roots
-  health                                 Runtime health (`/health` first, artifact fallback)
+  health                                 Runtime health (artifact mode is degraded debug-only)
   sessions                               Print runtime session summaries
   projects                               Print runtime project summaries
   shells                                 Print runtime shell summaries
   activity [limit]                       Print most recent session activity (default limit=50)
   routing-snapshot <project_path> [ws]   Print routing entry for a project/workspace
   routing-diagnostics                    Print diagnostics summary
-  snapshot                               Print full runtime snapshot payload
-  briefing                               Agent briefing from runtime snapshot (self-sufficient)
+  snapshot                               Print full runtime snapshot payload (service or artifact-debug)
+  briefing                               Agent briefing from live runtime or artifact-debug snapshot
   telemetry [limit]                      Transparent UI: GET /telemetry
   stream                                 Transparent UI: GET /telemetry-stream (SSE passthrough)
   tail <app|runtime-stderr|runtime-stdout> Tail key logs
@@ -235,6 +235,29 @@ http_get_json() {
   curl -fsS "$url" | pretty_print_json
 }
 
+print_artifact_health() {
+  if command -v jq >/dev/null 2>&1 && [[ -f "$RUNTIME_ARTIFACT_PATH" ]]; then
+    jq '{
+      ok: true,
+      status: "degraded",
+      source: "artifact_file",
+      mode: "artifact_debug",
+      live_boundary_available: false,
+      warning: "runtime_service_unavailable",
+      generated_at: .generated_at,
+      sessions: (.sessions | length),
+      projects: (.projects | length)
+    }' "$RUNTIME_ARTIFACT_PATH"
+  else
+    if [[ -f "$RUNTIME_ARTIFACT_PATH" ]]; then
+      printf '{"ok":true,"status":"degraded","source":"artifact_file","mode":"artifact_debug","live_boundary_available":false,"warning":"runtime_service_unavailable"}\n'
+    else
+      printf '{"ok":false,"status":"unavailable","source":"artifact_file","mode":"artifact_debug","live_boundary_available":false,"error":"runtime_artifact_missing"}\n'
+      exit 1
+    fi
+  fi
+}
+
 check() {
   local ok=1
 
@@ -248,6 +271,7 @@ check() {
     fi
   else
     echo "Runtime service: not discovered"
+    echo "  degraded (artifact debug only; live runtime service unavailable)"
   fi
 
   echo "Runtime artifact: $RUNTIME_ARTIFACT_PATH"
@@ -336,15 +360,8 @@ case "$command" in
   health)
     if discover_runtime_service; then
       runtime_service_get "/health" | pretty_print_json
-    elif command -v jq >/dev/null 2>&1 && [[ -f "$RUNTIME_ARTIFACT_PATH" ]]; then
-      jq '{ok:true,status:"healthy",source:"artifact_file",generated_at:.generated_at,sessions:(.sessions|length),projects:(.projects|length)}' "$RUNTIME_ARTIFACT_PATH"
     else
-      if [[ -f "$RUNTIME_ARTIFACT_PATH" ]]; then
-        printf '{"ok":true,"status":"healthy","source":"artifact_file"}\n'
-      else
-        printf '{"ok":false,"status":"unavailable","source":"artifact_file","error":"runtime_artifact_missing"}\n'
-        exit 1
-      fi
+      print_artifact_health
     fi
     ;;
   sessions)

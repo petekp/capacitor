@@ -69,13 +69,13 @@ Remote ingest hardening:
 - Non-allowlisted events are dropped with HTTP `202` and not stored.
 - Duplicate diagnostics in a short window are dropped with HTTP `202` (`reason=duplicate_throttled`).
 - Worker scheduled retention prunes telemetry to keep storage bounded:
-  - legacy non-allowlisted telemetry: 1 day
+  - non-allowlisted telemetry: 1 day
   - high-volume interaction telemetry: 30 days
   - diagnostics/submission telemetry: 90 days
 
 D1 schema is in:
 
-- `/Users/petepetrash/Code/capacitor/services/ingest-worker/migrations/0001_initial.sql`
+- `/Users/petepetrash/Code/capacitor/services/ingest-worker/migrations/`
 
 ## Weekly triage
 

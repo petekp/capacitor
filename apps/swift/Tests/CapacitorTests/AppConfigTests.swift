@@ -176,7 +176,7 @@ final class AppConfigTests: XCTestCase {
         let overridden = AppConfig.resolve(
             environment: [
                 "CAPACITOR_PROFILE": "frontier",
-                "CAPACITOR_FEATURES_ENABLED": "legacyFlagOne,legacyFlagTwo",
+                "CAPACITOR_FEATURES_ENABLED": "olderFlagOne,olderFlagTwo",
             ],
             info: [:],
             configFile: nil,

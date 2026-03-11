@@ -210,7 +210,6 @@ class AppState {
         refreshAERoutingRuntimeFlags(with: nil)
         loadLayoutMode()
         loadDormantOverrides()
-        ProjectOrderStore.migrateIfNeeded()
         loadProjectOrder()
 
         activeProjectResolver = ActiveProjectResolver(
@@ -644,8 +643,8 @@ class AppState {
         guard let engine else {
             return HookTestResult(
                 success: false,
-                heartbeatOk: false,
-                heartbeatAgeSecs: nil,
+                hookActivityOk: false,
+                hookActivityAgeSecs: nil,
                 runtimeServiceOk: false,
                 message: "Engine not initialized",
             )
@@ -806,18 +805,6 @@ class AppState {
                 )
             }
         }
-    }
-
-    func submitQuickFeedback(
-        _ message: String,
-        preferences overridePreferences: QuickFeedbackPreferences? = nil,
-    ) {
-        submitQuickFeedback(
-            QuickFeedbackDraft.legacy(message: message),
-            preferences: overridePreferences,
-            formSessionID: nil,
-            openGitHubIssue: true,
-        )
     }
 
     private func refreshAERoutingRuntimeFlags(with health: RuntimeHealth?) {
@@ -1302,12 +1289,6 @@ class AppState {
             order: projectOrder,
             sessionStates: sessionStateManager.sessionStates,
         )
-    }
-
-    /// Flat ordered list for backward compatibility (active then idle).
-    func orderedProjects(_ projects: [Project]) -> [Project] {
-        let grouped = orderedGroupedProjects(projects)
-        return grouped.active + grouped.idle
     }
 
     func moveProject(from source: IndexSet, to destination: Int, in projectList: [Project], group: ActivityGroup) {

@@ -62,9 +62,9 @@ enum HookPresentationPolicy {
             return "Install/update Claude hooks in `~/.claude/settings.json`."
         case let .notFiring(lastSeenSecs):
             if let lastSeenSecs {
-                return "No recent hook heartbeat (last seen \(lastSeenSecs)s ago). Trigger a Claude event, then run Test Hooks."
+                return "No recent hook activity (last seen \(lastSeenSecs)s ago). Trigger a Claude event, then run Test Hooks."
             }
-            return "No hook heartbeat detected yet. Start a Claude session and trigger one event, then run Test Hooks."
+            return "No hook activity detected yet. Start a Claude session and trigger one event, then run Test Hooks."
         }
     }
 }

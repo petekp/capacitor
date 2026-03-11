@@ -61,11 +61,12 @@ cp apps/swift/bindings/capacitor_core.swift apps/swift/Sources/Capacitor/Bridge/
 
 If you skip this, Swift can fail with checksum mismatches or mismatched call shapes.
 
-### Managed hook config is canonical HTTP-only
+### Managed hook config must match the current mixed transport contract
 
-Capacitor now accepts only the canonical nested HTTP hook format that points at
-the local hook server. Flat command-style hook entries are rejected by the core.
-Do not add ad hoc command-hook fallbacks to fix setup problems.
+Capacitor accepts only the canonical nested managed hook format from the current
+event/type contract. Do not add ad hoc hook fallbacks or alternate config shapes
+to patch setup problems. The live ingress flows through the local hook endpoint
+into the runtime service.
 
 ## Swift
 

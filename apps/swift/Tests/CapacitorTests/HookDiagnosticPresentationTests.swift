@@ -6,8 +6,8 @@ final class HookDiagnosticPresentationTests: XCTestCase {
     func testHookTestResultUsesRuntimeServiceNaming() {
         let result = HookTestResult(
             success: true,
-            heartbeatOk: true,
-            heartbeatAgeSecs: 12,
+            hookActivityOk: true,
+            hookActivityAgeSecs: 12,
             runtimeServiceOk: true,
             message: "ok",
         )
@@ -32,7 +32,7 @@ final class HookDiagnosticPresentationTests: XCTestCase {
                 input: SetupTestFixtures.hookDiagnosticReport(
                     primaryIssue: .notFiring(lastSeenSecs: 120),
                     configOk: true,
-                    lastHeartbeatAgeSecs: 120,
+                    lastHookEventAgeSecs: 120,
                 ),
                 expected: false,
             ),

@@ -8,7 +8,7 @@
 //! ```text
 //! SessionStart           → ready
 //! UserPromptSubmit       → working
-//! PreToolUse/PostToolUse/PostToolUseFailure → working  (heartbeat if already working)
+//! PreToolUse/PostToolUse/PostToolUseFailure → working  (refresh if already working)
 //! PermissionRequest      → waiting
 //! Notification           → ready/waiting (idle_prompt|auth_success => ready, permission_prompt|elicitation_dialog => waiting)
 //! TaskCompleted          → ready    (main agent only)
@@ -18,7 +18,6 @@
 //! ```
 
 use capacitor_core::domain::SessionState;
-use fs_err as fs;
 use std::path::Path;
 
 use crate::hook_types::{HookEvent, HookInput};
@@ -32,6 +31,7 @@ pub(crate) fn handle_hook_input(hook_input: HookInput) -> Result<(), String> {
 }
 
 fn handle_hook_input_with_home(hook_input: HookInput, home: &Path) -> Result<(), String> {
+    let _ = home;
     let event = match hook_input.to_event() {
         Some(e) => e,
         None => return Ok(()),
@@ -119,7 +119,6 @@ fn handle_hook_input_with_home(hook_input: HookInput, home: &Path) -> Result<(),
         &cwd,
     );
     if runtime_sent {
-        touch_heartbeat(home);
         tracing::debug!(
             gate_id = SESSION_STATE_GATE_ID,
             scenario_id = SESSION_STATE_MAPPING_SCENARIO_ID,
@@ -139,7 +138,7 @@ fn handle_hook_input_with_home(hook_input: HookInput, home: &Path) -> Result<(),
 #[derive(Debug, PartialEq, Clone, Copy)]
 enum Action {
     Upsert,
-    Heartbeat,
+    Refresh,
     Delete,
     Skip,
 }
@@ -190,7 +189,7 @@ fn classify_hook_event(
 fn action_label(action: Action) -> &'static str {
     match action {
         Action::Upsert => "upsert",
-        Action::Heartbeat => "heartbeat",
+        Action::Refresh => "refresh",
         Action::Delete => "delete",
         Action::Skip => "skip",
     }
@@ -222,7 +221,7 @@ fn process_event(
 
         HookEvent::PreToolUse { .. } => {
             if current_state == Some(SessionState::Working) {
-                (Action::Heartbeat, None, None)
+                (Action::Refresh, None, None)
             } else {
                 (Action::Upsert, Some(SessionState::Working), None)
             }
@@ -230,7 +229,7 @@ fn process_event(
 
         HookEvent::PostToolUse { .. } => {
             if current_state == Some(SessionState::Working) {
-                (Action::Heartbeat, None, None)
+                (Action::Refresh, None, None)
             } else {
                 (Action::Upsert, Some(SessionState::Working), None)
             }
@@ -238,7 +237,7 @@ fn process_event(
 
         HookEvent::PostToolUseFailure { .. } => {
             if current_state == Some(SessionState::Working) {
-                (Action::Heartbeat, None, None)
+                (Action::Refresh, None, None)
             } else {
                 (Action::Upsert, Some(SessionState::Working), None)
             }
@@ -282,18 +281,6 @@ fn process_event(
         // and unknown future events are recognized but don't affect session state.
         _ => (Action::Skip, None, None),
     }
-}
-
-fn touch_heartbeat(home: &Path) {
-    let heartbeat_path = home.join(".capacitor/hud-hook-heartbeat");
-
-    if let Some(parent) = heartbeat_path.parent() {
-        let _ = fs::create_dir_all(parent);
-    }
-
-    // Core diagnostics only check the file's mtime, not its contents.
-    // The HTTP server is single-threaded so truncate is safe (no concurrent writers).
-    let _ = fs::write(&heartbeat_path, b"");
 }
 
 #[cfg(test)]

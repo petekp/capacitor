@@ -36,11 +36,11 @@ The script enforces:
 - Pre-merge CI runs `./scripts/ci/runtime-reliability.sh ci`
 - Nightly/scheduled verification runs `./scripts/ci/runtime-reliability.sh nightly <report-path>`
 
-`runtime-reliability.sh` is the stable operational wrapper. It always runs the runtime reliability guard, replay gate, and shadow parity gate. Nightly mode additionally runs the HEM shadow soak benchmark.
+`runtime-reliability.sh` is the stable operational wrapper. It always runs the runtime reliability guard and replay gate. Nightly mode additionally runs the HEM shadow soak benchmark.
 
 ## P1/P2 Non-Blocking (Triage Required)
 
-The gate script also runs compatibility checks:
+The gate script also runs replay contract checks:
 
 1. Replay hook event type compatibility
 2. Replay mutation variant compatibility
@@ -53,7 +53,7 @@ For releases touching hook ingest, runtime-service behavior, reducer/query logic
 
 1. Attach `scripts/ci/session-state-gate.sh` output, or the equivalent section from `scripts/ci/runtime-reliability.sh`.
 2. Attach relevant runtime-service health and log evidence from `~/.capacitor/runtime/`.
-3. If the change affects runtime projections or derived read models, attach shadow parity evidence from `replay_diff_shadow_snapshot_read_model_matches_runtime_snapshot`.
+3. If the change affects runtime projections or derived read models, attach the relevant replay-diff evidence.
 4. If the change affects Swift-side projection/stabilization, attach the relevant `swift test` evidence as well.
 5. Document any non-blocking triage failures with owner and due date.
 

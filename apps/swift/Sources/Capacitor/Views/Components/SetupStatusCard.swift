@@ -139,7 +139,7 @@ struct SetupStatusCard: View {
                 detailRow(label: "→ Target", value: formatPath(target))
             }
 
-            detailRow(label: "Last seen", value: formatHeartbeatAge(diagnostic.lastHeartbeatAgeSecs))
+            detailRow(label: "Last seen", value: formatLastSeenAge(diagnostic.lastHookEventAgeSecs))
         }
     }
 
@@ -165,7 +165,7 @@ struct SetupStatusCard: View {
         return path
     }
 
-    private func formatHeartbeatAge(_ ageSecs: UInt64?) -> String {
+    private func formatLastSeenAge(_ ageSecs: UInt64?) -> String {
         guard let age = ageSecs else {
             return "Never"
         }

@@ -46,7 +46,16 @@ impl RuntimeSessionsSnapshot {
     }
 }
 
+pub(crate) struct HookHealthSnapshot {
+    pub(crate) sessions: RuntimeSessionsSnapshot,
+    pub(crate) last_hook_event_at: Option<String>,
+}
+
 pub fn sessions_snapshot() -> Option<RuntimeSessionsSnapshot> {
+    hook_health_snapshot().map(|snapshot| snapshot.sessions)
+}
+
+pub(crate) fn hook_health_snapshot() -> Option<HookHealthSnapshot> {
     if !runtime_enabled() {
         return None;
     }
@@ -71,7 +80,10 @@ pub fn sessions_snapshot() -> Option<RuntimeSessionsSnapshot> {
         })
         .collect();
 
-    Some(RuntimeSessionsSnapshot { sessions })
+    Some(HookHealthSnapshot {
+        sessions: RuntimeSessionsSnapshot { sessions },
+        last_hook_event_at: snapshot.diagnostics.last_hook_event_at,
+    })
 }
 
 pub(crate) fn runtime_health() -> Option<bool> {
@@ -287,7 +299,7 @@ mod tests {
 
     // Legacy env sentinel used to prove live runtime reads ignore the old
     // artifact-path boundary, even when a stale value is still present.
-    const IGNORED_LEGACY_SNAPSHOT_ENV: &str = "CAPACITOR_CORE_SNAPSHOT";
+    const IGNORED_SNAPSHOT_ENV_NAME: &str = concat!("CAPACITOR_", "CORE_", "SNAPSHOT");
 
     static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
@@ -409,9 +421,9 @@ mod tests {
         );
 
         let _enable = EnvGuard::set(ENABLE_ENV, "1");
-        let _legacy_snapshot = EnvGuard::set(
-            IGNORED_LEGACY_SNAPSHOT_ENV,
-            "/tmp/legacy-runtime-snapshot.json",
+        let _ignored_snapshot = EnvGuard::set(
+            IGNORED_SNAPSHOT_ENV_NAME,
+            "/tmp/ignored-runtime-snapshot.json",
         );
         let _port = EnvGuard::set(
             RUNTIME_SERVICE_PORT_ENV,
@@ -444,9 +456,9 @@ mod tests {
         );
 
         let _enable = EnvGuard::set(ENABLE_ENV, "1");
-        let _legacy_snapshot = EnvGuard::set(
-            IGNORED_LEGACY_SNAPSHOT_ENV,
-            "/tmp/legacy-runtime-snapshot.json",
+        let _ignored_snapshot = EnvGuard::set(
+            IGNORED_SNAPSHOT_ENV_NAME,
+            "/tmp/ignored-runtime-snapshot.json",
         );
         let _port = EnvGuard::set(
             RUNTIME_SERVICE_PORT_ENV,

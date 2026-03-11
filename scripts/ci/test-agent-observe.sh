@@ -7,6 +7,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 OBSERVE="$REPO_ROOT/scripts/dev/agent-observe.sh"
+TRANSPARENT_UI="$REPO_ROOT/scripts/transparent-ui-server.mjs"
 FIXTURE_DIR=$(mktemp -d)
 SNAPSHOT_PATH="$FIXTURE_DIR/app_snapshot.json"
 APP_LOG_PATH="$FIXTURE_DIR/app-debug.log"
@@ -16,11 +17,17 @@ MISSING_RUNTIME_SERVICE_CONNECTION_PATH="$FIXTURE_DIR/missing-runtime-service.js
 SERVICE_PID=""
 SERVICE_PORT=""
 SERVICE_AUTH_TOKEN=""
+TRANSPARENT_UI_PID=""
+TRANSPARENT_UI_PORT=""
 
 cleanup() {
   if [[ -n "$SERVICE_PID" ]]; then
     kill "$SERVICE_PID" >/dev/null 2>&1 || true
     wait "$SERVICE_PID" >/dev/null 2>&1 || true
+  fi
+  if [[ -n "$TRANSPARENT_UI_PID" ]]; then
+    kill "$TRANSPARENT_UI_PID" >/dev/null 2>&1 || true
+    wait "$TRANSPARENT_UI_PID" >/dev/null 2>&1 || true
   fi
   rm -rf "$FIXTURE_DIR"
 }
@@ -299,6 +306,39 @@ stop_mock_runtime_service() {
   fi
 }
 
+start_transparent_ui() {
+  TRANSPARENT_UI_PORT="$(free_port)"
+
+  PORT="$TRANSPARENT_UI_PORT" \
+  CAPACITOR_RUNTIME_ARTIFACT_PATH="$SNAPSHOT_PATH" \
+  CAPACITOR_RUNTIME_SERVICE_CONNECTION_PATH="$MISSING_RUNTIME_SERVICE_CONNECTION_PATH" \
+  node "$TRANSPARENT_UI" >/dev/null 2>&1 &
+  TRANSPARENT_UI_PID=$!
+
+  local ready=0
+  for _ in $(seq 1 40); do
+    if curl -fsS "http://127.0.0.1:${TRANSPARENT_UI_PORT}/runtime-snapshot" >/dev/null 2>&1; then
+      ready=1
+      break
+    fi
+    sleep 0.1
+  done
+
+  if [[ "$ready" -ne 1 ]]; then
+    fail "transparent-ui startup" "server did not become ready"
+    exit 1
+  fi
+}
+
+stop_transparent_ui() {
+  if [[ -n "$TRANSPARENT_UI_PID" ]]; then
+    kill "$TRANSPARENT_UI_PID" >/dev/null 2>&1 || true
+    wait "$TRANSPARENT_UI_PID" >/dev/null 2>&1 || true
+    TRANSPARENT_UI_PID=""
+    TRANSPARENT_UI_PORT=""
+  fi
+}
+
 write_runtime_service_connection() {
   cat > "$RUNTIME_SERVICE_CONNECTION_PATH" <<JSON
 {
@@ -323,9 +363,32 @@ echo "agent-observe.sh diagnostic tests"
 echo ""
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# T0: artifact-only observability is degraded, not healthy
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+echo "T0: artifact-only mode is degraded"
+write_fixture_snapshot
+
+artifact_health_output=$("$OBSERVE" health 2>&1 || true)
+assert_json_field "$artifact_health_output" '.status == "degraded"' "artifact-only health is degraded"
+assert_json_field "$artifact_health_output" '.mode == "artifact_debug"' "artifact-only health reports debug mode"
+assert_json_field "$artifact_health_output" '.live_boundary_available == false' "artifact-only health marks live boundary unavailable"
+
+artifact_check_output=$("$OBSERVE" check 2>&1 || true)
+assert_contains "$artifact_check_output" "degraded" "check reports degraded runtime service status when only artifact exists"
+assert_contains "$artifact_check_output" "artifact debug only" "check labels artifact-only mode as debug-only"
+
+start_transparent_ui
+artifact_snapshot_output=$(curl -fsS "http://127.0.0.1:${TRANSPARENT_UI_PORT}/runtime-snapshot")
+assert_json_field "$artifact_snapshot_output" '.health.status == "degraded"' "transparent-ui reports degraded health in artifact-only mode"
+assert_json_field "$artifact_snapshot_output" '.health.mode == "artifact_debug"' "transparent-ui exposes artifact debug mode"
+assert_json_field "$artifact_snapshot_output" '.runtime_source == "artifact_file"' "transparent-ui still identifies artifact source"
+stop_transparent_ui
+echo ""
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # T0: service-first runtime health + snapshot reads
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-echo "T0: service-first runtime observability"
+echo "T1: service-first runtime observability"
 write_fixture_snapshot
 start_mock_runtime_service
 
@@ -371,7 +434,7 @@ echo ""
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # T1: Enriched stuck sessions in diagnose
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-echo "T1: diagnose — enriched stuck session output"
+echo "T2: diagnose — enriched stuck session output"
 write_fixture_snapshot
 
 output=$("$OBSERVE" diagnose 2>&1)
@@ -389,7 +452,7 @@ echo ""
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # T2: session detail command
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-echo "T2: session — full session detail"
+echo "T3: session — full session detail"
 write_fixture_snapshot
 
 output=$("$OBSERVE" session sess-stuck-1 2>&1)
@@ -409,7 +472,7 @@ echo ""
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # T3: heartbeat age in hooks
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-echo "T3: hooks — heartbeat age"
+echo "T4: hooks — heartbeat age"
 write_fixture_snapshot
 write_fixture_heartbeat
 
@@ -422,7 +485,7 @@ echo ""
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # T4: shell-audit command
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-echo "T4: shell-audit"
+echo "T5: shell-audit"
 write_fixture_snapshot
 
 output=$("$OBSERVE" shell-audit 2>&1)
@@ -436,7 +499,7 @@ echo ""
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # T5: wider error patterns
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-echo "T5: errors — wider pattern matching"
+echo "T6: errors — wider pattern matching"
 write_fixture_log
 
 output=$("$OBSERVE" errors 20 2>&1)
@@ -456,7 +519,7 @@ echo ""
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # T6: activation-traces command
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-echo "T6: activation-traces"
+echo "T7: activation-traces"
 write_fixture_log
 
 output=$("$OBSERVE" activation-traces 2>&1)
@@ -472,7 +535,7 @@ echo ""
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # Existing commands still work (regression)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-echo "T7: regression — existing commands"
+echo "T8: regression — existing commands"
 write_fixture_snapshot
 
 "$OBSERVE" check >/dev/null 2>&1 && pass "check" || fail "check" "exited non-zero"

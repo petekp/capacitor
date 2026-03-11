@@ -1634,10 +1634,11 @@ public struct DiagnosticsSummary {
     public var informationalEventsSkipped: UInt64
     public var reducerEventsSkipped: UInt64
     public var lastError: String?
+    public var lastHookEventAt: String?
 
     /// Default memberwise initializers are never public by default, so we
     /// declare one manually.
-    public init(eventsIngested: UInt64, sessionsTracked: UInt64, shellSignalsTracked: UInt64, eventsSkipped: UInt64, staleEventsSkipped: UInt64, informationalEventsSkipped: UInt64, reducerEventsSkipped: UInt64, lastError: String?) {
+    public init(eventsIngested: UInt64, sessionsTracked: UInt64, shellSignalsTracked: UInt64, eventsSkipped: UInt64, staleEventsSkipped: UInt64, informationalEventsSkipped: UInt64, reducerEventsSkipped: UInt64, lastError: String?, lastHookEventAt: String?) {
         self.eventsIngested = eventsIngested
         self.sessionsTracked = sessionsTracked
         self.shellSignalsTracked = shellSignalsTracked
@@ -1646,6 +1647,7 @@ public struct DiagnosticsSummary {
         self.informationalEventsSkipped = informationalEventsSkipped
         self.reducerEventsSkipped = reducerEventsSkipped
         self.lastError = lastError
+        self.lastHookEventAt = lastHookEventAt
     }
 }
 
@@ -1675,6 +1677,9 @@ extension DiagnosticsSummary: Equatable, Hashable {
         if lhs.lastError != rhs.lastError {
             return false
         }
+        if lhs.lastHookEventAt != rhs.lastHookEventAt {
+            return false
+        }
         return true
     }
 
@@ -1687,6 +1692,7 @@ extension DiagnosticsSummary: Equatable, Hashable {
         hasher.combine(informationalEventsSkipped)
         hasher.combine(reducerEventsSkipped)
         hasher.combine(lastError)
+        hasher.combine(lastHookEventAt)
     }
 }
 
@@ -1704,7 +1710,8 @@ public struct FfiConverterTypeDiagnosticsSummary: FfiConverterRustBuffer {
                 staleEventsSkipped: FfiConverterUInt64.read(from: &buf),
                 informationalEventsSkipped: FfiConverterUInt64.read(from: &buf),
                 reducerEventsSkipped: FfiConverterUInt64.read(from: &buf),
-                lastError: FfiConverterOptionString.read(from: &buf)
+                lastError: FfiConverterOptionString.read(from: &buf),
+                lastHookEventAt: FfiConverterOptionString.read(from: &buf)
             )
     }
 
@@ -1717,6 +1724,7 @@ public struct FfiConverterTypeDiagnosticsSummary: FfiConverterRustBuffer {
         FfiConverterUInt64.write(value.informationalEventsSkipped, into: &buf)
         FfiConverterUInt64.write(value.reducerEventsSkipped, into: &buf)
         FfiConverterOptionString.write(value.lastError, into: &buf)
+        FfiConverterOptionString.write(value.lastHookEventAt, into: &buf)
     }
 }
 
@@ -1874,7 +1882,7 @@ public struct HookDiagnosticReport {
      */
     public var canAutoFix: Bool
     /**
-     * Whether this appears to be a first-time setup (no heartbeat ever seen)
+     * Whether this appears to be a first-time setup (no hook activity seen yet)
      */
     public var isFirstRun: Bool
     /**
@@ -1892,9 +1900,9 @@ public struct HookDiagnosticReport {
      */
     public var symlinkTarget: String?
     /**
-     * Age of last heartbeat in seconds (for "last seen X ago" display)
+     * Age of last hook activity in seconds (for "last seen X ago" display)
      */
-    public var lastHeartbeatAgeSecs: UInt64?
+    public var lastHookEventAgeSecs: UInt64?
 
     /// Default memberwise initializers are never public by default, so we
     /// declare one manually.
@@ -1909,7 +1917,7 @@ public struct HookDiagnosticReport {
             * True if "Fix All" can resolve the issue
             */ canAutoFix: Bool,
         /* 
-            * Whether this appears to be a first-time setup (no heartbeat ever seen)
+            * Whether this appears to be a first-time setup (no hook activity seen yet)
             */ isFirstRun: Bool,
         /* 
             * Detailed status for checklist display
@@ -1921,8 +1929,8 @@ public struct HookDiagnosticReport {
             * Target of the symlink if it is one, None if regular file or doesn't exist
             */ symlinkTarget: String?,
         /* 
-            * Age of last heartbeat in seconds (for "last seen X ago" display)
-            */ lastHeartbeatAgeSecs: UInt64?
+            * Age of last hook activity in seconds (for "last seen X ago" display)
+            */ lastHookEventAgeSecs: UInt64?
     ) {
         self.isHealthy = isHealthy
         self.primaryIssue = primaryIssue
@@ -1933,7 +1941,7 @@ public struct HookDiagnosticReport {
         self.firingOk = firingOk
         self.symlinkPath = symlinkPath
         self.symlinkTarget = symlinkTarget
-        self.lastHeartbeatAgeSecs = lastHeartbeatAgeSecs
+        self.lastHookEventAgeSecs = lastHookEventAgeSecs
     }
 }
 
@@ -1966,7 +1974,7 @@ extension HookDiagnosticReport: Equatable, Hashable {
         if lhs.symlinkTarget != rhs.symlinkTarget {
             return false
         }
-        if lhs.lastHeartbeatAgeSecs != rhs.lastHeartbeatAgeSecs {
+        if lhs.lastHookEventAgeSecs != rhs.lastHookEventAgeSecs {
             return false
         }
         return true
@@ -1982,7 +1990,7 @@ extension HookDiagnosticReport: Equatable, Hashable {
         hasher.combine(firingOk)
         hasher.combine(symlinkPath)
         hasher.combine(symlinkTarget)
-        hasher.combine(lastHeartbeatAgeSecs)
+        hasher.combine(lastHookEventAgeSecs)
     }
 }
 
@@ -2002,7 +2010,7 @@ public struct FfiConverterTypeHookDiagnosticReport: FfiConverterRustBuffer {
                 firingOk: FfiConverterBool.read(from: &buf),
                 symlinkPath: FfiConverterString.read(from: &buf),
                 symlinkTarget: FfiConverterOptionString.read(from: &buf),
-                lastHeartbeatAgeSecs: FfiConverterOptionUInt64.read(from: &buf)
+                lastHookEventAgeSecs: FfiConverterOptionUInt64.read(from: &buf)
             )
     }
 
@@ -2016,7 +2024,7 @@ public struct FfiConverterTypeHookDiagnosticReport: FfiConverterRustBuffer {
         FfiConverterBool.write(value.firingOk, into: &buf)
         FfiConverterString.write(value.symlinkPath, into: &buf)
         FfiConverterOptionString.write(value.symlinkTarget, into: &buf)
-        FfiConverterOptionUInt64.write(value.lastHeartbeatAgeSecs, into: &buf)
+        FfiConverterOptionUInt64.write(value.lastHookEventAgeSecs, into: &buf)
     }
 }
 
@@ -2035,21 +2043,21 @@ public func FfiConverterTypeHookDiagnosticReport_lower(_ value: HookDiagnosticRe
 }
 
 /**
- * Full health report for the hook binary.
+ * Full health report for hook activity freshness.
  */
 public struct HookHealthReport {
     public var status: HookHealthStatus
-    public var heartbeatPath: String
+    public var signalSource: String
     public var thresholdSecs: UInt64
-    public var lastHeartbeatAgeSecs: UInt64?
+    public var lastHookEventAgeSecs: UInt64?
 
     /// Default memberwise initializers are never public by default, so we
     /// declare one manually.
-    public init(status: HookHealthStatus, heartbeatPath: String, thresholdSecs: UInt64, lastHeartbeatAgeSecs: UInt64?) {
+    public init(status: HookHealthStatus, signalSource: String, thresholdSecs: UInt64, lastHookEventAgeSecs: UInt64?) {
         self.status = status
-        self.heartbeatPath = heartbeatPath
+        self.signalSource = signalSource
         self.thresholdSecs = thresholdSecs
-        self.lastHeartbeatAgeSecs = lastHeartbeatAgeSecs
+        self.lastHookEventAgeSecs = lastHookEventAgeSecs
     }
 }
 
@@ -2058,13 +2066,13 @@ extension HookHealthReport: Equatable, Hashable {
         if lhs.status != rhs.status {
             return false
         }
-        if lhs.heartbeatPath != rhs.heartbeatPath {
+        if lhs.signalSource != rhs.signalSource {
             return false
         }
         if lhs.thresholdSecs != rhs.thresholdSecs {
             return false
         }
-        if lhs.lastHeartbeatAgeSecs != rhs.lastHeartbeatAgeSecs {
+        if lhs.lastHookEventAgeSecs != rhs.lastHookEventAgeSecs {
             return false
         }
         return true
@@ -2072,9 +2080,9 @@ extension HookHealthReport: Equatable, Hashable {
 
     public func hash(into hasher: inout Hasher) {
         hasher.combine(status)
-        hasher.combine(heartbeatPath)
+        hasher.combine(signalSource)
         hasher.combine(thresholdSecs)
-        hasher.combine(lastHeartbeatAgeSecs)
+        hasher.combine(lastHookEventAgeSecs)
     }
 }
 
@@ -2086,17 +2094,17 @@ public struct FfiConverterTypeHookHealthReport: FfiConverterRustBuffer {
         return
             try HookHealthReport(
                 status: FfiConverterTypeHookHealthStatus.read(from: &buf),
-                heartbeatPath: FfiConverterString.read(from: &buf),
+                signalSource: FfiConverterString.read(from: &buf),
                 thresholdSecs: FfiConverterUInt64.read(from: &buf),
-                lastHeartbeatAgeSecs: FfiConverterOptionUInt64.read(from: &buf)
+                lastHookEventAgeSecs: FfiConverterOptionUInt64.read(from: &buf)
             )
     }
 
     public static func write(_ value: HookHealthReport, into buf: inout [UInt8]) {
         FfiConverterTypeHookHealthStatus.write(value.status, into: &buf)
-        FfiConverterString.write(value.heartbeatPath, into: &buf)
+        FfiConverterString.write(value.signalSource, into: &buf)
         FfiConverterUInt64.write(value.thresholdSecs, into: &buf)
-        FfiConverterOptionUInt64.write(value.lastHeartbeatAgeSecs, into: &buf)
+        FfiConverterOptionUInt64.write(value.lastHookEventAgeSecs, into: &buf)
     }
 }
 
@@ -2117,7 +2125,7 @@ public func FfiConverterTypeHookHealthReport_lower(_ value: HookHealthReport) ->
 /**
  * Result of running a comprehensive hook system test.
  *
- * This verifies both the heartbeat (hooks are firing) and local runtime
+ * This verifies both recent hook activity and local runtime
  * service health. Used by the "Test Hooks" button in the UI.
  */
 public struct HookTestResult {
@@ -2126,13 +2134,13 @@ public struct HookTestResult {
      */
     public var success: Bool
     /**
-     * True if heartbeat file is recent (hooks are firing)
+     * True if recent hook activity is present
      */
-    public var heartbeatOk: Bool
+    public var hookActivityOk: Bool
     /**
-     * Age of the heartbeat file in seconds (None if file doesn't exist)
+     * Age of the last hook activity event in seconds (None if unavailable)
      */
-    public var heartbeatAgeSecs: UInt64?
+    public var hookActivityAgeSecs: UInt64?
     /**
      * True if the local runtime service health check passed
      */
@@ -2149,11 +2157,11 @@ public struct HookTestResult {
          * True if all tests passed
          */ success: Bool,
         /* 
-            * True if heartbeat file is recent (hooks are firing)
-            */ heartbeatOk: Bool,
+            * True if recent hook activity is present
+            */ hookActivityOk: Bool,
         /* 
-            * Age of the heartbeat file in seconds (None if file doesn't exist)
-            */ heartbeatAgeSecs: UInt64?,
+            * Age of the last hook activity event in seconds (None if unavailable)
+            */ hookActivityAgeSecs: UInt64?,
         /* 
             * True if the local runtime service health check passed
             */ runtimeServiceOk: Bool,
@@ -2162,8 +2170,8 @@ public struct HookTestResult {
             */ message: String
     ) {
         self.success = success
-        self.heartbeatOk = heartbeatOk
-        self.heartbeatAgeSecs = heartbeatAgeSecs
+        self.hookActivityOk = hookActivityOk
+        self.hookActivityAgeSecs = hookActivityAgeSecs
         self.runtimeServiceOk = runtimeServiceOk
         self.message = message
     }
@@ -2174,10 +2182,10 @@ extension HookTestResult: Equatable, Hashable {
         if lhs.success != rhs.success {
             return false
         }
-        if lhs.heartbeatOk != rhs.heartbeatOk {
+        if lhs.hookActivityOk != rhs.hookActivityOk {
             return false
         }
-        if lhs.heartbeatAgeSecs != rhs.heartbeatAgeSecs {
+        if lhs.hookActivityAgeSecs != rhs.hookActivityAgeSecs {
             return false
         }
         if lhs.runtimeServiceOk != rhs.runtimeServiceOk {
@@ -2191,8 +2199,8 @@ extension HookTestResult: Equatable, Hashable {
 
     public func hash(into hasher: inout Hasher) {
         hasher.combine(success)
-        hasher.combine(heartbeatOk)
-        hasher.combine(heartbeatAgeSecs)
+        hasher.combine(hookActivityOk)
+        hasher.combine(hookActivityAgeSecs)
         hasher.combine(runtimeServiceOk)
         hasher.combine(message)
     }
@@ -2206,8 +2214,8 @@ public struct FfiConverterTypeHookTestResult: FfiConverterRustBuffer {
         return
             try HookTestResult(
                 success: FfiConverterBool.read(from: &buf),
-                heartbeatOk: FfiConverterBool.read(from: &buf),
-                heartbeatAgeSecs: FfiConverterOptionUInt64.read(from: &buf),
+                hookActivityOk: FfiConverterBool.read(from: &buf),
+                hookActivityAgeSecs: FfiConverterOptionUInt64.read(from: &buf),
                 runtimeServiceOk: FfiConverterBool.read(from: &buf),
                 message: FfiConverterString.read(from: &buf)
             )
@@ -2215,8 +2223,8 @@ public struct FfiConverterTypeHookTestResult: FfiConverterRustBuffer {
 
     public static func write(_ value: HookTestResult, into buf: inout [UInt8]) {
         FfiConverterBool.write(value.success, into: &buf)
-        FfiConverterBool.write(value.heartbeatOk, into: &buf)
-        FfiConverterOptionUInt64.write(value.heartbeatAgeSecs, into: &buf)
+        FfiConverterBool.write(value.hookActivityOk, into: &buf)
+        FfiConverterOptionUInt64.write(value.hookActivityAgeSecs, into: &buf)
         FfiConverterBool.write(value.runtimeServiceOk, into: &buf)
         FfiConverterString.write(value.message, into: &buf)
     }
@@ -5308,11 +5316,11 @@ extension HookEventType: Equatable, Hashable {}
 
 public enum HookHealthStatus {
     /**
-     * Hooks are firing normally (heartbeat within threshold)
+     * Hooks are firing normally (recent hook activity within threshold)
      */
     case healthy
     /**
-     * No heartbeat file exists (hooks never fired or file deleted)
+     * No recent hook activity has been observed yet
      */
     case unknown
     /**
@@ -5412,7 +5420,7 @@ public enum HookIssue {
      */
     case configMissing
     /**
-     * Hooks are installed but not firing (heartbeat stale or missing)
+     * Hooks are installed but not firing (activity stale or missing)
      */
     case notFiring(lastSeenSecs: UInt64?)
 }
