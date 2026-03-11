@@ -331,15 +331,6 @@ final class SessionStateManager {
         return sessionStates.first(where: { PathNormalizer.normalize($0.key) == normalizedPath })?.value
     }
 
-    func getSessionAttribution(for project: Project) -> SessionAttribution? {
-        if let direct = sessionAttributions[project.path] {
-            return direct
-        }
-
-        let normalizedPath = PathNormalizer.normalize(project.path)
-        return sessionAttributions.first(where: { PathNormalizer.normalize($0.key) == normalizedPath })?.value
-    }
-
     func getPreferredSessionId(for project: Project) -> String? {
         if let direct = latestSessionIds[project.path] {
             return direct

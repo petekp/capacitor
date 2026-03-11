@@ -1,12 +1,9 @@
-//! Artifact discovery and parsing for Claude Code plugins.
+//! Artifact discovery for Claude Code plugins.
 //!
 //! This module handles:
 //! - Counting artifacts (skills, commands, agents)
-//! - Parsing frontmatter from markdown files
 //! - Collecting artifact metadata
-//! - Frontmatter parsing is best-effort; missing fields default to empty strings.
 
-use crate::runtime_patterns::{RE_FRONTMATTER, RE_FRONTMATTER_DESC, RE_FRONTMATTER_NAME};
 use std::path::Path;
 use walkdir::WalkDir;
 
@@ -56,26 +53,4 @@ pub fn count_hooks_in_dir(dir: &Path) -> u32 {
     } else {
         0
     }
-}
-
-/// Parses YAML frontmatter from markdown content.
-///
-/// Returns (name, description) tuple if frontmatter exists.
-pub fn parse_frontmatter(content: &str) -> Option<(String, String)> {
-    let caps = RE_FRONTMATTER.captures(content)?;
-    let frontmatter = caps.get(1)?.as_str();
-
-    let name = RE_FRONTMATTER_NAME
-        .captures(frontmatter)
-        .and_then(|c| c.get(1))
-        .map(|m| m.as_str().trim().to_string())
-        .unwrap_or_default();
-
-    let description = RE_FRONTMATTER_DESC
-        .captures(frontmatter)
-        .and_then(|c| c.get(1))
-        .map(|m| m.as_str().trim().to_string())
-        .unwrap_or_default();
-
-    Some((name, description))
 }

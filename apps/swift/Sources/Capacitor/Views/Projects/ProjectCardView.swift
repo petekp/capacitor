@@ -467,64 +467,6 @@ struct CardActionButtons: View {
     }
 }
 
-// MARK: - Ticker Text Component
-
-private struct TickerText: View {
-    let text: String
-    let isShimmering: Bool
-
-    var body: some View {
-        Text(text)
-            .font(AppTypography.body)
-            .foregroundColor(.white.opacity(0.6))
-            .lineLimit(2)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .transition(.asymmetric(
-                insertion: .move(edge: .bottom).combined(with: .opacity),
-                removal: .move(edge: .top).combined(with: .opacity),
-            ))
-            .overlay {
-                if isShimmering {
-                    ShimmerEffect()
-                        .mask(
-                            Text(text)
-                                .font(AppTypography.body)
-                                .lineLimit(2)
-                                .frame(maxWidth: .infinity, alignment: .leading),
-                        )
-                }
-            }
-            .id(text)
-    }
-}
-
-// MARK: - Shimmer Effect
-
-private struct ShimmerEffect: View {
-    @State private var phase: CGFloat = 0
-
-    var body: some View {
-        GeometryReader { _ in
-            LinearGradient(
-                gradient: Gradient(stops: [
-                    .init(color: .white.opacity(0), location: 0),
-                    .init(color: .white.opacity(0), location: phase - 0.2),
-                    .init(color: .white.opacity(0.4), location: phase),
-                    .init(color: .white.opacity(0), location: phase + 0.2),
-                    .init(color: .white.opacity(0), location: 1),
-                ]),
-                startPoint: .leading,
-                endPoint: .trailing,
-            )
-            .onAppear {
-                withAnimation(.linear(duration: 2.0).repeatForever(autoreverses: false)) {
-                    phase = 1.2
-                }
-            }
-        }
-    }
-}
-
 // Note: StaleBadge and StatusIndicator are in ProjectCardComponents.swift
 
 // Note: View modifiers and glow effects are in separate files:

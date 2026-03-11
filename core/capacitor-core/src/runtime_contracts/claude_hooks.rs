@@ -151,10 +151,3 @@ pub fn find_claude_hook_event_contract(
         .iter()
         .find(|contract| contract.event_name == event_name)
 }
-
-pub fn find_managed_hook_event_contract(
-    event_name: &str,
-) -> Option<&'static ClaudeHookEventContract> {
-    find_claude_hook_event_contract(event_name)
-        .filter(|contract| contract.managed_transport.is_some())
-}

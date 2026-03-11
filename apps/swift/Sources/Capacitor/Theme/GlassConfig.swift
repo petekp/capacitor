@@ -682,13 +682,6 @@ class GlassConfig {
         }
     }
 
-    /// Computes the inner corner radius for nested elements.
-    /// Use this when an element is inset from the card edge.
-    /// Formula: innerRadius = max(0, outerRadius - inset)
-    func cardInsetCornerRadius(for layout: LayoutMode, inset: CGFloat) -> CGFloat {
-        max(0, cardCornerRadius(for: layout) - inset)
-    }
-
     func reset() {
         panelTintOpacity = 0.46
         panelCornerRadius = 13.99

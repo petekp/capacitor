@@ -14,7 +14,6 @@ final class ProjectFeatureCoordinatorTests: XCTestCase {
         let disabled = makeCoordinator(
             projectDetailsEnabled: false,
             ideaCaptureEnabled: false,
-            projectCreationEnabled: false,
             llmFeaturesEnabled: false,
             projectView: { projectView },
             setProjectView: { projectView = $0 },
@@ -24,7 +23,6 @@ final class ProjectFeatureCoordinatorTests: XCTestCase {
         )
 
         disabled.showProjectDetail(project)
-        disabled.showNewIdea()
         disabled.showIdeaCaptureModal(for: project, from: CGRect(x: 1, y: 2, width: 3, height: 4))
 
         XCTAssertEqual(projectView, .list)
@@ -35,7 +33,6 @@ final class ProjectFeatureCoordinatorTests: XCTestCase {
         let enabled = makeCoordinator(
             projectDetailsEnabled: true,
             ideaCaptureEnabled: true,
-            projectCreationEnabled: true,
             llmFeaturesEnabled: false,
             projectView: { projectView },
             setProjectView: { projectView = $0 },
@@ -47,9 +44,6 @@ final class ProjectFeatureCoordinatorTests: XCTestCase {
         enabled.showProjectDetail(project)
         XCTAssertEqual(projectView, .detail(project))
 
-        enabled.showNewIdea()
-        XCTAssertEqual(projectView, .newIdea)
-
         let origin = CGRect(x: 1, y: 2, width: 3, height: 4)
         enabled.showIdeaCaptureModal(for: project, from: origin)
         XCTAssertEqual(modalProject, project)
@@ -60,22 +54,13 @@ final class ProjectFeatureCoordinatorTests: XCTestCase {
     func testCoordinatorReturnsExpectedFeatureGuardResults() {
         let project = makeProject()
         let idea = makeIdea()
-        let request = NewProjectRequest(
-            name: "Caps",
-            description: "desc",
-            location: "/tmp",
-            language: "swift",
-            framework: nil,
-        )
 
         var dismissCalls = 0
         var capturedError: String?
-        var createdResults: [CreateProjectResult] = []
 
         let disabled = makeCoordinator(
             projectDetailsEnabled: false,
             ideaCaptureEnabled: false,
-            projectCreationEnabled: false,
             llmFeaturesEnabled: false,
             writeError: { capturedError = $0 },
             dismissIdeaHandler: { _, _ in dismissCalls += 1 },
@@ -100,30 +85,17 @@ final class ProjectFeatureCoordinatorTests: XCTestCase {
         disabled.dismissIdea(idea, for: project)
         XCTAssertEqual(dismissCalls, 0)
         XCTAssertNil(capturedError)
-
-        disabled.createProjectFromIdea(request) { createdResults.append($0) }
-        XCTAssertEqual(createdResults.count, 1)
-        XCTAssertFalse(createdResults[0].success)
-        XCTAssertEqual(createdResults[0].error, AppFeatureError.projectCreationDisabled.errorDescription)
     }
 
     func testCoordinatorDelegatesEnabledFeatureWorkAndPropagatesDismissErrors() {
         let project = makeProject()
         let idea = makeIdea()
-        let request = NewProjectRequest(
-            name: "Caps",
-            description: "desc",
-            location: "/tmp",
-            language: "swift",
-            framework: nil,
-        )
         let returnedIdeas = [idea]
 
         var capturedTexts: [String] = []
         var checkedProjectSets: [[Project]] = []
         var reorderedIdeaLists: [[Idea]] = []
         var generatedDescriptions: [Project] = []
-        var createdRequests: [NewProjectRequest] = []
         var capturedError: String?
 
         struct ExpectedError: LocalizedError {
@@ -135,7 +107,6 @@ final class ProjectFeatureCoordinatorTests: XCTestCase {
         let coordinator = makeCoordinator(
             projectDetailsEnabled: true,
             ideaCaptureEnabled: true,
-            projectCreationEnabled: true,
             llmFeaturesEnabled: true,
             writeError: { capturedError = $0 },
             captureIdeaHandler: { _, text in
@@ -150,10 +121,6 @@ final class ProjectFeatureCoordinatorTests: XCTestCase {
             getDescriptionHandler: { _ in "Generated" },
             isGeneratingDescriptionHandler: { _ in true },
             generateDescriptionHandler: { generatedDescriptions.append($0) },
-            createProjectFromIdeaHandler: { request, completion in
-                createdRequests.append(request)
-                completion(CreateProjectResult(success: true, projectPath: "/tmp/caps", sessionId: "sess", error: nil))
-            },
         )
 
         let captureResult = coordinator.captureIdea(for: project, text: "hello")
@@ -177,17 +144,11 @@ final class ProjectFeatureCoordinatorTests: XCTestCase {
         XCTAssertTrue(coordinator.isGeneratingDescription(for: project))
         coordinator.generateDescription(for: project)
         XCTAssertEqual(generatedDescriptions, [project])
-
-        var result: CreateProjectResult?
-        coordinator.createProjectFromIdea(request) { result = $0 }
-        XCTAssertEqual(createdRequests, [request])
-        XCTAssertEqual(result, CreateProjectResult(success: true, projectPath: "/tmp/caps", sessionId: "sess", error: nil))
     }
 
     private func makeCoordinator(
         projectDetailsEnabled: Bool = true,
         ideaCaptureEnabled: Bool = true,
-        projectCreationEnabled: Bool = true,
         llmFeaturesEnabled: Bool = true,
         projectView _: @escaping () -> ProjectView = { .list },
         setProjectView: @escaping (ProjectView) -> Void = { _ in },
@@ -204,12 +165,10 @@ final class ProjectFeatureCoordinatorTests: XCTestCase {
         getDescriptionHandler: @escaping (Project) -> String? = { _ in nil },
         isGeneratingDescriptionHandler: @escaping (Project) -> Bool = { _ in false },
         generateDescriptionHandler: @escaping (Project) -> Void = { _ in },
-        createProjectFromIdeaHandler: @escaping (NewProjectRequest, @escaping (CreateProjectResult) -> Void) -> Void = { _, _ in },
     ) -> ProjectFeatureCoordinator {
         ProjectFeatureCoordinator(
             projectDetailsEnabled: { projectDetailsEnabled },
             ideaCaptureEnabled: { ideaCaptureEnabled },
-            projectCreationEnabled: { projectCreationEnabled },
             llmFeaturesEnabled: { llmFeaturesEnabled },
             writeProjectView: setProjectView,
             writeCaptureModalProject: modalProject,
@@ -225,7 +184,6 @@ final class ProjectFeatureCoordinatorTests: XCTestCase {
             getDescriptionHandler: getDescriptionHandler,
             isGeneratingDescriptionHandler: isGeneratingDescriptionHandler,
             generateDescriptionHandler: generateDescriptionHandler,
-            createProjectFromIdeaHandler: createProjectFromIdeaHandler,
         )
     }
 

@@ -10,11 +10,10 @@ enum LayoutMode: String, CaseIterable {
 enum ProjectView: Equatable {
     case list
     case detail(Project)
-    case newIdea
 
     static func == (lhs: ProjectView, rhs: ProjectView) -> Bool {
         switch (lhs, rhs) {
-        case (.list, .list), (.newIdea, .newIdea):
+        case (.list, .list):
             true
         case let (.detail(p1), .detail(p2)):
             p1.path == p2.path
@@ -27,7 +26,6 @@ enum ProjectView: Equatable {
 enum AppFeatureError: LocalizedError {
     case ideaCaptureDisabled
     case projectDetailsDisabled
-    case projectCreationDisabled
 
     var errorDescription: String? {
         switch self {
@@ -35,8 +33,6 @@ enum AppFeatureError: LocalizedError {
             "Idea capture is disabled for this build."
         case .projectDetailsDisabled:
             "Project details are disabled for this build."
-        case .projectCreationDisabled:
-            "Project creation is disabled for this build."
         }
     }
 }
@@ -250,9 +246,6 @@ class AppState {
             ideaCaptureEnabled: { [weak self] in
                 self?.isIdeaCaptureEnabled ?? false
             },
-            projectCreationEnabled: { [weak self] in
-                self?.isProjectCreationEnabled ?? false
-            },
             llmFeaturesEnabled: { [weak self] in
                 self?.isLlmFeaturesEnabled ?? false
             },
@@ -297,9 +290,6 @@ class AppState {
             },
             generateDescriptionHandler: { [weak self] project in
                 self?.projectDetailsManager.generateDescription(for: project)
-            },
-            createProjectFromIdeaHandler: { [weak self] request, completion in
-                self?.projectCreationCoordinator.createProjectFromIdea(request, completion: completion)
             },
         )
         sessionStateManager.onVisualStateChanged = { [weak self] in
@@ -1169,18 +1159,6 @@ class AppState {
         return engine.validateProject(path: path)
     }
 
-    /// Creates a CLAUDE.md file for a project.
-    func createClaudeMd(for path: String) -> Bool {
-        guard let engine else { return false }
-        do {
-            try engine.createProjectClaudeMd(projectPath: path)
-            return true
-        } catch {
-            self.error = error.localizedDescription
-            return false
-        }
-    }
-
     // MARK: - Session State Access (delegating to manager)
 
     func getSessionState(for project: Project) -> ProjectSessionState? {
@@ -1239,10 +1217,6 @@ class AppState {
 
     func showProjectDetail(_ project: Project) {
         projectFeatureCoordinator.showProjectDetail(project)
-    }
-
-    func showNewIdea() {
-        projectFeatureCoordinator.showNewIdea()
     }
 
     func showProjectList() {
@@ -1508,9 +1482,5 @@ class AppState {
 
     func canResumeCreation(_ id: String) -> Bool {
         projectCreationCoordinator.canResumeCreation(id)
-    }
-
-    func createProjectFromIdea(_ request: NewProjectRequest, completion: @escaping (CreateProjectResult) -> Void) {
-        projectFeatureCoordinator.createProjectFromIdea(request, completion: completion)
     }
 }

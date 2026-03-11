@@ -2,7 +2,7 @@
 //!
 //! These patterns are compiled once on first use and reused throughout
 //! the application for efficient parsing of JSONL session files and
-//! markdown frontmatter.
+//! markdown metadata.
 //! Update these when Claude log or plugin formats change.
 
 // All regex patterns in this module are compile-time literals that are guaranteed
@@ -29,14 +29,3 @@ pub static RE_SUMMARY: Lazy<Regex> =
     Lazy::new(|| Regex::new(r#""type":"summary","summary":"([^"]+)""#).unwrap());
 pub static RE_TIMESTAMP: Lazy<Regex> =
     Lazy::new(|| Regex::new(r#""timestamp":"(\d{4}-\d{2}-\d{2}T[^"]+)""#).unwrap());
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// Frontmatter Parsing Regexes
-// ═══════════════════════════════════════════════════════════════════════════════
-
-pub static RE_FRONTMATTER: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"(?s)^---\s*\n(.*?)\n---").unwrap());
-pub static RE_FRONTMATTER_NAME: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"(?m)^name:\s*(.+)$").unwrap());
-pub static RE_FRONTMATTER_DESC: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"(?m)^description:\s*(.+)$").unwrap());

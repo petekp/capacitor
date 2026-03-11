@@ -5,7 +5,6 @@ import Foundation
 final class ProjectFeatureCoordinator {
     private let projectDetailsEnabled: @MainActor () -> Bool
     private let ideaCaptureEnabled: @MainActor () -> Bool
-    private let projectCreationEnabled: @MainActor () -> Bool
     private let llmFeaturesEnabled: @MainActor () -> Bool
 
     private let writeProjectView: @MainActor (ProjectView) -> Void
@@ -25,12 +24,9 @@ final class ProjectFeatureCoordinator {
     private let isGeneratingDescriptionHandler: @MainActor (Project) -> Bool
     private let generateDescriptionHandler: @MainActor (Project) -> Void
 
-    private let createProjectFromIdeaHandler: @MainActor (NewProjectRequest, @escaping (CreateProjectResult) -> Void) -> Void
-
     init(
         projectDetailsEnabled: @escaping @MainActor () -> Bool,
         ideaCaptureEnabled: @escaping @MainActor () -> Bool,
-        projectCreationEnabled: @escaping @MainActor () -> Bool,
         llmFeaturesEnabled: @escaping @MainActor () -> Bool,
         writeProjectView: @escaping @MainActor (ProjectView) -> Void,
         writeCaptureModalProject: @escaping @MainActor (Project?) -> Void,
@@ -46,11 +42,9 @@ final class ProjectFeatureCoordinator {
         getDescriptionHandler: @escaping @MainActor (Project) -> String?,
         isGeneratingDescriptionHandler: @escaping @MainActor (Project) -> Bool,
         generateDescriptionHandler: @escaping @MainActor (Project) -> Void,
-        createProjectFromIdeaHandler: @escaping @MainActor (NewProjectRequest, @escaping (CreateProjectResult) -> Void) -> Void,
     ) {
         self.projectDetailsEnabled = projectDetailsEnabled
         self.ideaCaptureEnabled = ideaCaptureEnabled
-        self.projectCreationEnabled = projectCreationEnabled
         self.llmFeaturesEnabled = llmFeaturesEnabled
         self.writeProjectView = writeProjectView
         self.writeCaptureModalProject = writeCaptureModalProject
@@ -66,17 +60,11 @@ final class ProjectFeatureCoordinator {
         self.getDescriptionHandler = getDescriptionHandler
         self.isGeneratingDescriptionHandler = isGeneratingDescriptionHandler
         self.generateDescriptionHandler = generateDescriptionHandler
-        self.createProjectFromIdeaHandler = createProjectFromIdeaHandler
     }
 
     func showProjectDetail(_ project: Project) {
         guard projectDetailsEnabled() else { return }
         writeProjectView(.detail(project))
-    }
-
-    func showNewIdea() {
-        guard projectCreationEnabled() else { return }
-        writeProjectView(.newIdea)
     }
 
     func showProjectList() {
@@ -139,18 +127,5 @@ final class ProjectFeatureCoordinator {
     func generateDescription(for project: Project) {
         guard llmFeaturesEnabled() else { return }
         generateDescriptionHandler(project)
-    }
-
-    func createProjectFromIdea(_ request: NewProjectRequest, completion: @escaping (CreateProjectResult) -> Void) {
-        guard projectCreationEnabled() else {
-            completion(CreateProjectResult(
-                success: false,
-                projectPath: "",
-                sessionId: nil,
-                error: AppFeatureError.projectCreationDisabled.errorDescription ?? "Project creation is disabled.",
-            ))
-            return
-        }
-        createProjectFromIdeaHandler(request, completion)
     }
 }

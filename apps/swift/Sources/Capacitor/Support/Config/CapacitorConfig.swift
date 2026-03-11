@@ -76,10 +76,6 @@ actor CapacitorConfig {
 
     // MARK: - Accessors
 
-    func getClaudePath() async -> String? {
-        await load().claudePath
-    }
-
     func setClaudePath(_ path: String) async {
         var config = await load()
         config.claudePath = path

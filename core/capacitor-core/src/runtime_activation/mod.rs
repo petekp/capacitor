@@ -1,28 +1,22 @@
-//! Terminal activation resolution for the Swift UI.
+//! Spec-only terminal activation model retained for regression testing.
 //!
-//! This module contains the pure decision logic for terminal activation.
-//! Given the current shell state and tmux context, it determines what
-//! action(s) Swift should take to activate the correct terminal.
+//! This module is compiled only under `#[cfg(test)]` and is not part of the
+//! production activation path. Swift owns live terminal activation now; this
+//! Rust subtree survives as a pure decision-model harness for historical
+//! scenarios and edge-case regression tests.
 //!
 //! ## Design Principles
 //!
 //! 1. **Pure functions** — No side effects, no process spawning, no macOS APIs
 //! 2. **Testable** — All logic can be unit tested without mocking
-//! 3. **FFI-safe** — All types are UniFFI-compatible
+//! 3. **Deterministic** — Serves as a stable fixture corpus for activation policy
 //!
-//! ## Usage Flow
+//! ## Historical Context
 //!
 //! ```text
-//! Swift: fetches the runtime service shell-state snapshot
-//!    │
-//!    ▼
-//! Swift: queries tmux context (list-windows, list-clients)
-//!    │
-//!    ▼
-//! Rust: resolve_activation(project_path, shell_state, tmux_context)
-//!    │
-//!    ▼
-//! Swift: executes returned ActivationAction
+//! Previously: Swift queried tmux and delegated activation resolution to Rust.
+//! Today:      Swift owns live activation directly.
+//! Here:       Rust remains only as a spec harness exercised by tests.
 //! ```
 
 mod policy;
