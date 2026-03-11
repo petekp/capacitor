@@ -5,8 +5,11 @@ import os from "os";
 import path from "path";
 
 const PORT = Number(process.env.PORT || 9133);
-const SNAPSHOT_PATH = process.env.CAPACITOR_CORE_SNAPSHOT
-  || path.join(os.homedir(), ".capacitor", "runtime", "app_snapshot.json");
+const RUNTIME_DIR = path.join(os.homedir(), ".capacitor", "runtime");
+const RUNTIME_ARTIFACT_PATH = process.env.CAPACITOR_RUNTIME_ARTIFACT_PATH
+  || path.join(RUNTIME_DIR, "app_snapshot.json");
+const RUNTIME_SERVICE_CONNECTION_PATH = process.env.CAPACITOR_RUNTIME_SERVICE_CONNECTION_PATH
+  || path.join(RUNTIME_DIR, "runtime-service.json");
 const TELEMETRY_LIMIT = Number(process.env.CAPACITOR_TELEMETRY_LIMIT || 500);
 const BRIEFING_SHELL_LIMIT = Number(process.env.CAPACITOR_BRIEFING_SHELL_LIMIT || 25);
 
@@ -70,10 +73,66 @@ function parseRoutingParams(url) {
   return { projectPath, workspaceId };
 }
 
-async function readRuntimeSnapshot() {
-  const payload = await fs.readFile(SNAPSHOT_PATH, "utf8");
-  const snapshot = JSON.parse(payload);
+function trimString(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
 
+async function discoverRuntimeServiceConnection() {
+  const envPort = trimString(process.env.CAPACITOR_RUNTIME_SERVICE_PORT);
+  const envToken = trimString(process.env.CAPACITOR_RUNTIME_SERVICE_TOKEN);
+  if (envPort && envToken) {
+    return {
+      baseURL: `http://127.0.0.1:${envPort}`,
+      authToken: envToken,
+      source: "env"
+    };
+  }
+
+  try {
+    const payload = JSON.parse(await fs.readFile(RUNTIME_SERVICE_CONNECTION_PATH, "utf8"));
+    const port = trimString(String(payload.port ?? ""));
+    const authToken = trimString(payload.auth_token);
+    if (port && authToken) {
+      return {
+        baseURL: `http://127.0.0.1:${port}`,
+        authToken,
+        source: "connection_file"
+      };
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+function requestJson(url, headers = {}) {
+  return new Promise((resolve, reject) => {
+    const request = http.request(url, { method: "GET", headers }, res => {
+      let body = "";
+      res.on("data", chunk => {
+        body += chunk.toString("utf8");
+      });
+      res.on("end", () => {
+        if ((res.statusCode || 500) !== 200) {
+          reject(new Error(`HTTP ${res.statusCode || 500}: ${body || "request failed"}`));
+          return;
+        }
+
+        try {
+          resolve(JSON.parse(body));
+        } catch (error) {
+          reject(error);
+        }
+      });
+    });
+
+    request.on("error", reject);
+    request.end();
+  });
+}
+
+function normalizeRuntimeSnapshot(snapshot) {
   return {
     projects: Array.isArray(snapshot.projects) ? snapshot.projects : [],
     sessions: Array.isArray(snapshot.sessions) ? snapshot.sessions : [],
@@ -83,6 +142,62 @@ async function readRuntimeSnapshot() {
       ? snapshot.diagnostics
       : null,
     generated_at: typeof snapshot.generated_at === "string" ? snapshot.generated_at : null
+  };
+}
+
+async function readArtifactSnapshot() {
+  const payload = await fs.readFile(RUNTIME_ARTIFACT_PATH, "utf8");
+  return normalizeRuntimeSnapshot(JSON.parse(payload));
+}
+
+async function readRuntimeSnapshot() {
+  const runtimeService = await discoverRuntimeServiceConnection();
+  if (runtimeService) {
+    const snapshot = await requestJson(
+      `${runtimeService.baseURL}/runtime/snapshot`,
+      { Authorization: `Bearer ${runtimeService.authToken}` }
+    );
+    return {
+      ...normalizeRuntimeSnapshot(snapshot),
+      source: "runtime_service",
+      runtime_service: {
+        base_url: runtimeService.baseURL,
+        source: runtimeService.source
+      }
+    };
+  }
+
+  return {
+    ...await readArtifactSnapshot(),
+    source: "artifact_file",
+    runtime_service: null
+  };
+}
+
+async function readRuntimeHealth(runtimeSnapshot) {
+  if (runtimeSnapshot.source === "runtime_service" && runtimeSnapshot.runtime_service) {
+    const connection = await discoverRuntimeServiceConnection();
+    const health = await requestJson(
+      `${connection.baseURL}/health`,
+      { Authorization: `Bearer ${connection.authToken}` }
+    );
+    return {
+      ...health,
+      source: "runtime_service",
+      endpoint: `${connection.baseURL}/health`
+    };
+  }
+
+  return {
+    status: "degraded",
+    pid: null,
+    version: "artifact-debug",
+    generated_at: runtimeSnapshot.generated_at,
+    source: "artifact_file",
+    endpoint: null,
+    mode: "artifact_debug",
+    live_boundary_available: false,
+    warning: "runtime_service_unavailable"
   };
 }
 
@@ -145,6 +260,7 @@ function findRoutingEntry(routing, projectPath, workspaceId) {
 async function buildSnapshot(options = {}) {
   try {
     const runtime = await readRuntimeSnapshot();
+    const health = await readRuntimeHealth(runtime);
 
     const shellState = normalizeShells(runtime.shells, {
       mode: options.shellsMode || "all",
@@ -165,12 +281,7 @@ async function buildSnapshot(options = {}) {
         .sort((a, b) => parseTimestamp(b?.updated_at) - parseTimestamp(a?.updated_at))
         .slice(0, 120),
       shell_state: shellState,
-      health: {
-        status: "healthy",
-        pid: null,
-        version: "core-runtime",
-        generated_at: runtime.generated_at
-      },
+      health,
       routing: {
         project_path: projectPath,
         workspace_id: workspaceId || null,
@@ -179,14 +290,19 @@ async function buildSnapshot(options = {}) {
         rollout: null,
         health: null
       },
-      snapshot_path: SNAPSHOT_PATH
+      runtime_source: runtime.source,
+      runtime_service: runtime.runtime_service,
+      artifact_path: RUNTIME_ARTIFACT_PATH,
+      runtime_snapshot_location: runtime.source === "runtime_service" && runtime.runtime_service
+        ? `${runtime.runtime_service.base_url}/runtime/snapshot`
+        : RUNTIME_ARTIFACT_PATH
     };
   } catch (error) {
     return {
       ok: false,
       error: String(error),
       timestamp: new Date().toISOString(),
-      snapshot_path: SNAPSHOT_PATH
+      artifact_path: RUNTIME_ARTIFACT_PATH
     };
   }
 }
@@ -233,7 +349,9 @@ async function buildBriefing(options = {}) {
       runtime: {
         status: health && typeof health.status === "string" ? health.status : "unknown",
         generated_at: health && typeof health.generated_at === "string" ? health.generated_at : null,
-        snapshot_path: SNAPSHOT_PATH
+        source: snapshot.runtime_source || "unknown",
+        artifact_path: RUNTIME_ARTIFACT_PATH,
+        snapshot_location: snapshot.runtime_snapshot_location || RUNTIME_ARTIFACT_PATH
       },
       routing: {
         project_path: routing.project_path || null,
@@ -403,13 +521,16 @@ const server = http.createServer(async (req, res) => {
       routingDiagnostics: "/routing-diagnostics",
       agentBriefing: "/agent-briefing"
     },
-    snapshotPath: SNAPSHOT_PATH
+    runtimeSource: "inspect /runtime-snapshot for live source metadata",
+    artifactPath: RUNTIME_ARTIFACT_PATH,
+    runtimeServiceConnectionPath: RUNTIME_SERVICE_CONNECTION_PATH
   });
 });
 
 server.listen(PORT, () => {
   console.log(`transparent-ui server listening on http://localhost:${PORT}`);
-  console.log(`runtime snapshot: ${SNAPSHOT_PATH}`);
+  console.log(`runtime artifact: ${RUNTIME_ARTIFACT_PATH}`);
+  console.log(`runtime service connection: ${RUNTIME_SERVICE_CONNECTION_PATH}`);
 });
 
 setInterval(() => {

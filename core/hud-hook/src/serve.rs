@@ -16,8 +16,8 @@ use capacitor_core::{
 use crate::hook_types::HookInput;
 
 static SHUTDOWN: AtomicBool = AtomicBool::new(false);
-const SNAPSHOT_ENV: &str = "CAPACITOR_CORE_SNAPSHOT";
-const DEFAULT_SNAPSHOT_RELATIVE_PATH: &str = ".capacitor/runtime/app_snapshot.json";
+const RUNTIME_ARTIFACT_PATH_ENV: &str = "CAPACITOR_RUNTIME_ARTIFACT_PATH";
+const DEFAULT_RUNTIME_ARTIFACT_RELATIVE_PATH: &str = ".capacitor/runtime/app_snapshot.json";
 const MAX_BODY_BYTES: u64 = 1_024 * 1_024;
 
 struct RuntimeServerState {
@@ -28,9 +28,9 @@ struct RuntimeServerState {
 impl RuntimeServerState {
     fn new(port: u16) -> Result<Self, String> {
         let bootstrap = RuntimeServiceBootstrap::from_env(port)?;
-        let snapshot_path = snapshot_path()?;
+        let artifact_path = runtime_artifact_path()?;
         let runtime =
-            CoreRuntime::new_with_snapshot_file(snapshot_path.to_string_lossy().to_string())
+            CoreRuntime::new_with_snapshot_file(artifact_path.to_string_lossy().to_string())
                 .map_err(|error| error.to_string())?;
         crate::runtime_client::register_service_runtime(Arc::clone(&runtime))?;
 
@@ -303,8 +303,8 @@ where
     let _ = request.respond(response);
 }
 
-fn snapshot_path() -> Result<PathBuf, String> {
-    if let Ok(path) = std::env::var(SNAPSHOT_ENV) {
+fn runtime_artifact_path() -> Result<PathBuf, String> {
+    if let Ok(path) = std::env::var(RUNTIME_ARTIFACT_PATH_ENV) {
         let trimmed = path.trim();
         if !trimmed.is_empty() {
             return Ok(PathBuf::from(trimmed));
@@ -312,7 +312,7 @@ fn snapshot_path() -> Result<PathBuf, String> {
     }
 
     let home = dirs::home_dir().ok_or("Cannot determine home directory")?;
-    Ok(home.join(DEFAULT_SNAPSHOT_RELATIVE_PATH))
+    Ok(home.join(DEFAULT_RUNTIME_ARTIFACT_RELATIVE_PATH))
 }
 
 fn json_error(status: u16, message: &str) -> tiny_http::ResponseBox {

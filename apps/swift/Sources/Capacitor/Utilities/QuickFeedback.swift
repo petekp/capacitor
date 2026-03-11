@@ -133,18 +133,6 @@ struct QuickFeedbackDraft: Equatable {
         stepsToReproduce: "",
     )
 
-    static func legacy(message: String) -> QuickFeedbackDraft {
-        QuickFeedbackDraft(
-            category: .other,
-            impact: .medium,
-            reproducibility: .notApplicable,
-            summary: message,
-            details: "",
-            expectedBehavior: "",
-            stepsToReproduce: "",
-        )
-    }
-
     var canSubmit: Bool {
         !normalized().summary.isEmpty
     }
@@ -259,7 +247,6 @@ struct QuickFeedbackPayload: Codable, Equatable {
     }
 
     let feedbackID: String
-    let feedback: String
     let form: FormSnapshot
     let submittedAt: String
     let app: AppSnapshot
@@ -270,7 +257,6 @@ struct QuickFeedbackPayload: Codable, Equatable {
 
     enum CodingKeys: String, CodingKey {
         case feedbackID = "feedback_id"
-        case feedback
         case form
         case submittedAt
         case app
@@ -351,7 +337,6 @@ enum QuickFeedbackPayloadBuilder {
 
         return QuickFeedbackPayload(
             feedbackID: feedbackID,
-            feedback: normalizedDraft.summary,
             form: QuickFeedbackPayload.FormSnapshot(
                 category: normalizedDraft.category.rawValue,
                 impact: normalizedDraft.impact.rawValue,
@@ -508,20 +493,6 @@ struct QuickFeedbackSubmitter {
             endpointAttempted: endpointAttempted,
             endpointSucceeded: endpointSucceeded,
             endpointError: endpointError,
-        )
-    }
-
-    func submit(
-        message: String,
-        context: QuickFeedbackContext,
-        preferences: QuickFeedbackPreferences,
-        openGitHubIssue: Bool = true,
-    ) async -> QuickFeedbackSubmissionOutcome {
-        await submit(
-            draft: QuickFeedbackDraft.legacy(message: message),
-            context: context,
-            preferences: preferences,
-            openGitHubIssue: openGitHubIssue,
         )
     }
 

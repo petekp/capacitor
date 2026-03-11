@@ -5,10 +5,10 @@ This file is the implementation-hazard companion to `CLAUDE.md` and
 
 Architecture source of truth lives in:
 
-- `architecture/CHARTER.md`
-- `architecture/DECISIONS.md`
-- `docs/architecture/OVERVIEW.md`
-- `docs/architecture/REFERENCE.md`
+- `CLAUDE.md`
+- `docs/ARCHITECTURE.md`
+- `docs/architecture-decisions/004-dedicated-local-runtime-service.md`
+- `docs/channel-profile-workflow.md`
 
 ## Rust
 
@@ -21,7 +21,7 @@ CI enforces `cargo fmt`. Run it before committing.
 Default workflow after Rust changes:
 
 ```bash
-./scripts/dev/restart-app.sh
+./scripts/dev/restart-alpha-stable.sh
 ```
 
 Fallback surgery only, when you are debugging the build pipeline itself:
@@ -33,7 +33,7 @@ SWIFT_BIN_PATH="$(swift build --show-bin-path)"
 cp ../../target/release/libcapacitor_core.dylib "$SWIFT_BIN_PATH/"
 ```
 
-### Use the installed `capacitor-hook` binary, not ad hoc copies
+### Use the installed `hud-hook` binary, not ad hoc copies
 
 Copying adhoc-signed Rust binaries into `~/.local/bin/` can trigger Gatekeeper
 `SIGKILL` (exit 137). Prefer the canonical installer flow:
@@ -45,7 +45,7 @@ Copying adhoc-signed Rust binaries into `~/.local/bin/` can trigger Gatekeeper
 If you must inspect the path directly, the installed binary is:
 
 ```bash
-~/.local/bin/capacitor-hook
+~/.local/bin/hud-hook
 ```
 
 ### UniFFI bindings must be regenerated after FFI type changes
@@ -61,11 +61,12 @@ cp apps/swift/bindings/capacitor_core.swift apps/swift/Sources/Capacitor/Bridge/
 
 If you skip this, Swift can fail with checksum mismatches or mismatched call shapes.
 
-### Managed hook config is canonical HTTP-only
+### Managed hook config must match the current mixed transport contract
 
-Capacitor now accepts only the canonical nested HTTP hook format that points at
-the local hook server. Flat command-style hook entries are rejected by the core.
-Do not add ad hoc command-hook fallbacks to fix setup problems.
+Capacitor accepts only the canonical nested managed hook format from the current
+event/type contract. Do not add ad hoc hook fallbacks or alternate config shapes
+to patch setup problems. The live ingress flows through the local hook endpoint
+into the runtime service.
 
 ## Swift
 
@@ -135,11 +136,11 @@ Parent/child path matching is only for UI focus and activation heuristics.
 
 ## Hooks And First-Run Testing
 
-### Shell snippets must call `capacitor-hook cwd`
+### Shell snippets must call `hud-hook cwd`
 
 The source of truth for shell integration text is:
 
-- `apps/swift/Sources/Capacitor/Application/Setup/ShellSetupInstructions.swift`
+- `apps/swift/Sources/Capacitor/Models/ShellSetupInstructions.swift`
 - `apps/swift/Sources/Capacitor/Views/Setup/ShellInstructionsSheet.swift`
 
 Relevant verification tests:

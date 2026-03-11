@@ -118,16 +118,7 @@ impl StorageConfig {
     /// Example: ~/.capacitor/projects/p2_%2FUsers%2Fpete%2FCode%2Fmy-project/
     pub fn project_data_dir(&self, project_path: &str) -> PathBuf {
         let encoded = Self::encode_path(project_path);
-        let new_path = self.root.join("projects").join(&encoded);
-
-        let legacy_encoded = Self::encode_path_legacy(project_path);
-        let legacy_path = self.root.join("projects").join(legacy_encoded);
-
-        if legacy_path.exists() && !new_path.exists() {
-            legacy_path
-        } else {
-            new_path
-        }
+        self.root.join("projects").join(encoded)
     }
 
     /// Path to a project's ideas file.
@@ -174,24 +165,17 @@ impl StorageConfig {
     }
 
     /// Decodes an encoded path back to the original filesystem path.
-    /// Supports both v2 (lossless) and legacy (lossy) encodings.
-    /// For reliable resolution, use `try_resolve_encoded_path` which checks filesystem.
+    /// Only the versioned lossless encoding is supported.
     pub fn decode_path(encoded: &str) -> String {
         if let Some(stripped) = encoded.strip_prefix(Self::ENCODED_PREFIX) {
             return decode_percent(stripped);
         }
 
-        if encoded.is_empty() || !encoded.starts_with('-') {
-            return encoded.to_string();
-        }
-
-        // Legacy reversal: replace leading `-` and subsequent `-` with `/`.
-        // This is lossy if the original path contained `-`.
-        format!("/{}", &encoded[1..].replace('-', "/"))
+        encoded.to_string()
     }
 
     /// Attempts to resolve an encoded path to a real filesystem path.
-    /// Checks the filesystem to handle ambiguous cases (paths with `-` in names).
+    /// Only the versioned lossless encoding is supported.
     pub fn try_resolve_encoded_path(encoded: &str) -> Option<String> {
         if encoded.is_empty() {
             return None;
@@ -203,32 +187,6 @@ impl StorageConfig {
                 return Some(decoded);
             }
             return None;
-        }
-
-        if !encoded.starts_with('-') {
-            return None;
-        }
-
-        let without_leading = &encoded[1..];
-        let parts: Vec<&str> = without_leading.split('-').collect();
-
-        // Try progressively longer path prefixes
-        for num_parts in 1..=parts.len() {
-            let prefix = parts[..num_parts].join("/");
-            let candidate = format!("/{}", prefix);
-
-            if PathBuf::from(&candidate).exists() {
-                if num_parts == parts.len() {
-                    return Some(candidate);
-                }
-
-                // Try the rest as a hyphenated suffix
-                let suffix = parts[num_parts..].join("-");
-                let full_candidate = format!("{}/{}", candidate, suffix);
-                if PathBuf::from(&full_candidate).exists() {
-                    return Some(full_candidate);
-                }
-            }
         }
 
         None
@@ -252,10 +210,6 @@ impl StorageConfig {
             }
         }
         out
-    }
-
-    fn encode_path_legacy(path: &str) -> String {
-        path.replace('/', "-")
     }
 
     // ─────────────────────────────────────────────────────────────────────────────
@@ -314,7 +268,6 @@ fn to_hex(n: u8) -> char {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
     use tempfile::TempDir;
 
     // ─────────────────────────────────────────────────────────────────────────────
@@ -459,19 +412,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_project_data_dir_prefers_legacy_when_present() {
-        let temp = TempDir::new().unwrap();
-        let config = StorageConfig::with_root(temp.path().to_path_buf());
-
-        let project_path = "/Users/pete/Code/my-project";
-        let legacy_encoded = StorageConfig::encode_path_legacy(project_path);
-        let legacy_dir = temp.path().join("projects").join(&legacy_encoded);
-        fs::create_dir_all(&legacy_dir).unwrap();
-
-        assert_eq!(config.project_data_dir(project_path), legacy_dir);
-    }
-
     // ─────────────────────────────────────────────────────────────────────────────
     // Claude Path Tests
     // ─────────────────────────────────────────────────────────────────────────────
@@ -538,10 +478,10 @@ mod tests {
     }
 
     #[test]
-    fn test_decode_path_legacy() {
+    fn test_decode_path_non_versioned_input_is_passthrough() {
         assert_eq!(
             StorageConfig::decode_path("-Users-pete-Code-foo"),
-            "/Users/pete/Code/foo"
+            "-Users-pete-Code-foo"
         );
     }
 

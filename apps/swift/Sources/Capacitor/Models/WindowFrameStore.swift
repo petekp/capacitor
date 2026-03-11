@@ -103,10 +103,4 @@ final class WindowFrameStore {
             frameBeforeCompact = nil
         }
     }
-
-    /// Resets compact state when window is manually resized
-    func resetCompactState() {
-        compactState = .normal
-        frameBeforeCompact = nil
-    }
 }

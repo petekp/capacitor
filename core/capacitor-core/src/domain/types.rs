@@ -123,6 +123,8 @@ pub struct DiagnosticsSummary {
     #[serde(default)]
     pub reducer_events_skipped: u64,
     pub last_error: Option<String>,
+    #[serde(default)]
+    pub last_hook_event_at: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Record)]

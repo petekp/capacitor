@@ -35,7 +35,7 @@ import SwiftUI
                 }
 
                 if sessions.isEmpty {
-                    Text("No sessions returned by runtime snapshot.")
+                    Text("No sessions returned by the runtime service snapshot.")
                         .font(.caption)
                         .foregroundColor(.white.opacity(0.6))
                 } else {

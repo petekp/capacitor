@@ -31,7 +31,9 @@ test("normalizeFeedbackSubmission extracts structured fields", () => {
   const body = {
     feedback_id: "fb-123",
     submittedAt: "2026-02-16T12:00:00.000Z",
-    feedback: "Issue with routing",
+    form: {
+      summary: "Issue with routing",
+    },
     app: {
       version: "0.2.0",
       buildNumber: "42",
@@ -69,6 +71,39 @@ test("normalizeFeedbackSubmission extracts structured fields", () => {
   assert.equal(normalized.include_project_paths, 0);
   assert.equal(normalized.project_count, 3);
   assert.equal(normalized.source_ip, "203.0.113.10");
+});
+
+test("normalizeFeedbackSubmission uses runtime snapshot fields and ignores legacy daemon fields", () => {
+  const request = requestWithHeaders({
+    "cf-connecting-ip": "203.0.113.10",
+    "user-agent": "Capacitor/0.2",
+  });
+
+  const body = {
+    feedback_id: "fb-123",
+    submittedAt: "2026-02-16T12:00:00.000Z",
+    form: {
+      summary: "Issue with routing",
+    },
+    runtime: {
+      enabled: true,
+      healthy: false,
+      version: "1.2.3",
+    },
+    daemon: {
+      enabled: false,
+      healthy: true,
+      version: "legacy-daemon",
+    },
+  };
+
+  const normalized = normalizeFeedbackSubmission(body, request);
+  assert.equal(normalized.runtime_enabled, 1);
+  assert.equal(normalized.runtime_healthy, 0);
+  assert.equal(normalized.runtime_version, "1.2.3");
+  assert.equal(Object.hasOwn(normalized, "daemon_enabled"), false);
+  assert.equal(Object.hasOwn(normalized, "daemon_healthy"), false);
+  assert.equal(Object.hasOwn(normalized, "daemon_version"), false);
 });
 
 test("normalizeTelemetryEvent links feedback id from payload", () => {

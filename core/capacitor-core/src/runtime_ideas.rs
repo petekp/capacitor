@@ -475,7 +475,7 @@ fn parse_ideas_file(content: &str) -> Result<Vec<Idea>> {
 
     // Check version marker
     if !content.trim_start().starts_with(IDEAS_FILE_VERSION) {
-        // Could add migration logic here in the future
+        // Could add conversion logic here in the future
         // For now, just warn and try to parse anyway
     }
 

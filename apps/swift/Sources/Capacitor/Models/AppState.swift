@@ -10,11 +10,10 @@ enum LayoutMode: String, CaseIterable {
 enum ProjectView: Equatable {
     case list
     case detail(Project)
-    case newIdea
 
     static func == (lhs: ProjectView, rhs: ProjectView) -> Bool {
         switch (lhs, rhs) {
-        case (.list, .list), (.newIdea, .newIdea):
+        case (.list, .list):
             true
         case let (.detail(p1), .detail(p2)):
             p1.path == p2.path
@@ -27,7 +26,6 @@ enum ProjectView: Equatable {
 enum AppFeatureError: LocalizedError {
     case ideaCaptureDisabled
     case projectDetailsDisabled
-    case projectCreationDisabled
 
     var errorDescription: String? {
         switch self {
@@ -35,8 +33,6 @@ enum AppFeatureError: LocalizedError {
             "Idea capture is disabled for this build."
         case .projectDetailsDisabled:
             "Project details are disabled for this build."
-        case .projectCreationDisabled:
-            "Project creation is disabled for this build."
         }
     }
 }
@@ -210,7 +206,6 @@ class AppState {
         refreshAERoutingRuntimeFlags(with: nil)
         loadLayoutMode()
         loadDormantOverrides()
-        ProjectOrderStore.migrateIfNeeded()
         loadProjectOrder()
 
         activeProjectResolver = ActiveProjectResolver(
@@ -250,9 +245,6 @@ class AppState {
             },
             ideaCaptureEnabled: { [weak self] in
                 self?.isIdeaCaptureEnabled ?? false
-            },
-            projectCreationEnabled: { [weak self] in
-                self?.isProjectCreationEnabled ?? false
             },
             llmFeaturesEnabled: { [weak self] in
                 self?.isLlmFeaturesEnabled ?? false
@@ -298,9 +290,6 @@ class AppState {
             },
             generateDescriptionHandler: { [weak self] project in
                 self?.projectDetailsManager.generateDescription(for: project)
-            },
-            createProjectFromIdeaHandler: { [weak self] request, completion in
-                self?.projectCreationCoordinator.createProjectFromIdea(request, completion: completion)
             },
         )
         sessionStateManager.onVisualStateChanged = { [weak self] in
@@ -644,9 +633,9 @@ class AppState {
         guard let engine else {
             return HookTestResult(
                 success: false,
-                heartbeatOk: false,
-                heartbeatAgeSecs: nil,
-                stateFileOk: false,
+                hookActivityOk: false,
+                hookActivityAgeSecs: nil,
+                runtimeServiceOk: false,
                 message: "Engine not initialized",
             )
         }
@@ -657,7 +646,7 @@ class AppState {
 
     func ensureRuntimeReady() {
         didAttemptRuntimeHealthCheckForTesting = true
-        // Hard cutover mode: runtime state is sourced from the core snapshot file.
+        // Hard cutover mode: live runtime state comes from the local runtime service.
         // No legacy launchd lifecycle orchestration remains in AppState.
         checkRuntimeHealth()
     }
@@ -686,7 +675,7 @@ class AppState {
                     self.runtimeStatus = RuntimeStatus(
                         isEnabled: true,
                         isHealthy: health.status == "ok",
-                        message: "Core runtime snapshot mode",
+                        message: "Local runtime service healthy",
                         pid: health.pid,
                         version: health.version,
                     )
@@ -704,7 +693,7 @@ class AppState {
                     self.runtimeStatus = RuntimeStatus(
                         isEnabled: true,
                         isHealthy: false,
-                        message: "Core runtime snapshot unavailable",
+                        message: "Local runtime service unavailable",
                         pid: nil,
                         version: nil,
                     )
@@ -806,18 +795,6 @@ class AppState {
                 )
             }
         }
-    }
-
-    func submitQuickFeedback(
-        _ message: String,
-        preferences overridePreferences: QuickFeedbackPreferences? = nil,
-    ) {
-        submitQuickFeedback(
-            QuickFeedbackDraft.legacy(message: message),
-            preferences: overridePreferences,
-            formSessionID: nil,
-            openGitHubIssue: true,
-        )
     }
 
     private func refreshAERoutingRuntimeFlags(with health: RuntimeHealth?) {
@@ -1182,18 +1159,6 @@ class AppState {
         return engine.validateProject(path: path)
     }
 
-    /// Creates a CLAUDE.md file for a project.
-    func createClaudeMd(for path: String) -> Bool {
-        guard let engine else { return false }
-        do {
-            try engine.createProjectClaudeMd(projectPath: path)
-            return true
-        } catch {
-            self.error = error.localizedDescription
-            return false
-        }
-    }
-
     // MARK: - Session State Access (delegating to manager)
 
     func getSessionState(for project: Project) -> ProjectSessionState? {
@@ -1254,10 +1219,6 @@ class AppState {
         projectFeatureCoordinator.showProjectDetail(project)
     }
 
-    func showNewIdea() {
-        projectFeatureCoordinator.showNewIdea()
-    }
-
     func showProjectList() {
         projectFeatureCoordinator.showProjectList()
     }
@@ -1302,12 +1263,6 @@ class AppState {
             order: projectOrder,
             sessionStates: sessionStateManager.sessionStates,
         )
-    }
-
-    /// Flat ordered list for backward compatibility (active then idle).
-    func orderedProjects(_ projects: [Project]) -> [Project] {
-        let grouped = orderedGroupedProjects(projects)
-        return grouped.active + grouped.idle
     }
 
     func moveProject(from source: IndexSet, to destination: Int, in projectList: [Project], group: ActivityGroup) {
@@ -1527,9 +1482,5 @@ class AppState {
 
     func canResumeCreation(_ id: String) -> Bool {
         projectCreationCoordinator.canResumeCreation(id)
-    }
-
-    func createProjectFromIdea(_ request: NewProjectRequest, completion: @escaping (CreateProjectResult) -> Void) {
-        projectFeatureCoordinator.createProjectFromIdea(request, completion: completion)
     }
 }

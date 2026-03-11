@@ -23,6 +23,7 @@ pub struct ReducerState {
     pub informational_events_skipped: u64,
     pub reducer_events_skipped: u64,
     pub last_error: Option<String>,
+    pub last_hook_event_at: Option<String>,
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -65,6 +66,7 @@ impl ReducerState {
             informational_events_skipped: snapshot.diagnostics.informational_events_skipped,
             reducer_events_skipped: snapshot.diagnostics.reducer_events_skipped,
             last_error: snapshot.diagnostics.last_error,
+            last_hook_event_at: snapshot.diagnostics.last_hook_event_at,
         }
     }
 
@@ -87,6 +89,12 @@ impl ReducerState {
                 message: "missing session_id".to_string(),
             };
         }
+
+        self.last_hook_event_at = Some(if command.recorded_at.is_empty() {
+            now_rfc3339()
+        } else {
+            command.recorded_at.clone()
+        });
 
         let current = self.sessions.get(&command.session_id).cloned();
         if is_event_stale(current.as_ref(), &command) {
@@ -197,6 +205,7 @@ impl ReducerState {
                 informational_events_skipped: self.informational_events_skipped,
                 reducer_events_skipped: self.reducer_events_skipped,
                 last_error: self.last_error.clone(),
+                last_hook_event_at: self.last_hook_event_at.clone(),
             },
             generated_at: now_rfc3339(),
         }

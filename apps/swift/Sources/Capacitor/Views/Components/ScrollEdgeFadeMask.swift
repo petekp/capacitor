@@ -120,22 +120,6 @@ private struct ProjectListScrollMaskModifier: ViewModifier {
 }
 
 extension View {
-    func scrollEdgeFadeMask(
-        topInset: CGFloat = 0,
-        bottomInset: CGFloat = 0,
-        topFade: CGFloat,
-        bottomFade: CGFloat,
-    ) -> some View {
-        mask(
-            ScrollEdgeFadeMask(
-                topInset: topInset,
-                bottomInset: bottomInset,
-                topFade: topFade,
-                bottomFade: bottomFade,
-            ),
-        )
-    }
-
     func projectListScrollMask(
         scrollbarWidth: CGFloat,
         topInset: CGFloat = 0,

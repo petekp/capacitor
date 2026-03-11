@@ -49,7 +49,7 @@ Ghostty is the only supported terminal right now.
 
 Capacitor is a sidecar. It watches what Claude Code is doing without getting in the way.
 
-On first launch, it installs a small hook binary (`~/.local/bin/hud-hook`) and adds entries to Claude Code's `~/.claude/settings.json`. Hook events are written directly into the Rust runtime snapshot (`~/.capacitor/runtime/app_snapshot.json`). The Swift app reads that snapshot, applies deterministic projection/stabilization, and then renders visible state.
+On first launch, it installs a small hook binary (`~/.local/bin/hud-hook`) and adds entries to Claude Code's `~/.claude/settings.json`. Hook events flow into a local runtime service, which owns live runtime reads and persists runtime artifacts under `~/.capacitor/runtime/` (including `app_snapshot.json`). The Swift app and dev tooling query the runtime service for live state, while the persisted artifact remains a debugging and recovery aid.
 
 It doesn't call the Anthropic API directly. It observes local Claude Code activity and manages its own local runtime state.
 
@@ -57,7 +57,7 @@ It doesn't call the Anthropic API directly. It observes local Claude Code activi
 
 Capacitor reads from `~/.claude/` (transcripts, settings) and writes its own state to `~/.capacitor/`. It also adds hook entries to `~/.claude/settings.json` but doesn't touch your other settings.
 
-By default, data stays on your machine. There's a local debug endpoint (`localhost:9133`) that only does anything if you run the dev UI yourself.
+By default, data stays on your machine. If you run `node scripts/transparent-ui-server.mjs`, Capacitor exposes a local debug/telemetry sink on `localhost:9133` for browser inspection and local telemetry capture. That service is optional and not part of the app's live runtime boundary.
 
 Optional remote ingest is supported only when telemetry env vars are configured (for example: `CAPACITOR_FEEDBACK_API_URL` / `CAPACITOR_TELEMETRY_URL` with `CAPACITOR_INGEST_KEY`). In that mode, feedback submissions and a limited allowlist of diagnostic telemetry events can be sent to your configured endpoint.
 
@@ -101,7 +101,7 @@ Terminal switching uses AppleScript, so macOS will ask for Automation access the
 
 **Terminal switching broken?** You probably dismissed the Automation permission prompt. Go to System Settings > Privacy & Security > Automation and grant it.
 
-**Runtime issues?** If something seems off, check runtime artifacts in `~/.capacitor/runtime/` (for example `app_snapshot.json` and `app-debug.log`).
+**Runtime issues?** If something seems off, start with the local runtime service health (`./scripts/dev/agent-observe.sh health`). If that command reports degraded artifact mode, treat it as offline/debug context only and inspect `~/.capacitor/runtime/` (for example `app_snapshot.json` and `app-debug.log`) as persisted-state evidence, not live runtime truth.
 
 For coding-agent debugging in this repo, use:
 

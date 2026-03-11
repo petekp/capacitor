@@ -7,12 +7,32 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 OBSERVE="$REPO_ROOT/scripts/dev/agent-observe.sh"
+TRANSPARENT_UI="$REPO_ROOT/scripts/transparent-ui-server.mjs"
 FIXTURE_DIR=$(mktemp -d)
 SNAPSHOT_PATH="$FIXTURE_DIR/app_snapshot.json"
 APP_LOG_PATH="$FIXTURE_DIR/app-debug.log"
 HEARTBEAT_PATH="$FIXTURE_DIR/hud-hook-heartbeat"
+RUNTIME_SERVICE_CONNECTION_PATH="$FIXTURE_DIR/runtime-service.json"
+MISSING_RUNTIME_SERVICE_CONNECTION_PATH="$FIXTURE_DIR/missing-runtime-service.json"
+SERVICE_PID=""
+SERVICE_PORT=""
+SERVICE_AUTH_TOKEN=""
+TRANSPARENT_UI_PID=""
+TRANSPARENT_UI_PORT=""
 
-trap 'rm -rf "$FIXTURE_DIR"' EXIT
+cleanup() {
+  if [[ -n "$SERVICE_PID" ]]; then
+    kill "$SERVICE_PID" >/dev/null 2>&1 || true
+    wait "$SERVICE_PID" >/dev/null 2>&1 || true
+  fi
+  if [[ -n "$TRANSPARENT_UI_PID" ]]; then
+    kill "$TRANSPARENT_UI_PID" >/dev/null 2>&1 || true
+    wait "$TRANSPARENT_UI_PID" >/dev/null 2>&1 || true
+  fi
+  rm -rf "$FIXTURE_DIR"
+}
+
+trap cleanup EXIT
 
 pass_count=0
 fail_count=0
@@ -52,6 +72,17 @@ assert_json_field() {
   else
     fail "$label" "json field '$field' missing or null"
   fi
+}
+
+free_port() {
+  python3 - <<'PY'
+import socket
+
+sock = socket.socket()
+sock.bind(("127.0.0.1", 0))
+print(sock.getsockname()[1])
+sock.close()
+PY
 }
 
 # ── Fixture: snapshot with a stuck session + a healthy session ──
@@ -194,9 +225,133 @@ write_fixture_heartbeat() {
   touch -t "$(date -v-60S '+%Y%m%d%H%M.%S')" "$HEARTBEAT_PATH"
 }
 
+start_mock_runtime_service() {
+  SERVICE_PORT="$(free_port)"
+  SERVICE_AUTH_TOKEN="observe-test-token"
+
+  python3 -u - "$SERVICE_PORT" "$SERVICE_AUTH_TOKEN" "$SNAPSHOT_PATH" <<'PY' >/dev/null 2>&1 &
+import http.server
+import json
+import pathlib
+import sys
+
+port = int(sys.argv[1])
+auth_token = sys.argv[2]
+snapshot_path = pathlib.Path(sys.argv[3])
+
+class Handler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.headers.get("Authorization") != f"Bearer {auth_token}":
+            self.send_response(401)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(b'{"error":"unauthorized"}')
+            return
+
+        if self.path == "/health":
+            body = {
+                "status": "ok",
+                "pid": 4242,
+                "version": "runtime-service-test",
+                "protocol_version": 1,
+            }
+        elif self.path == "/runtime/snapshot":
+            body = json.loads(snapshot_path.read_text())
+        else:
+            self.send_response(404)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(b'{"error":"not_found"}')
+            return
+
+        payload = json.dumps(body).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+
+    def log_message(self, *_args):
+        return
+
+server = http.server.ThreadingHTTPServer(("127.0.0.1", port), Handler)
+server.serve_forever()
+PY
+  SERVICE_PID=$!
+
+  local ready=0
+  for _ in $(seq 1 40); do
+    if curl -fsS \
+      -H "Authorization: Bearer $SERVICE_AUTH_TOKEN" \
+      "http://127.0.0.1:${SERVICE_PORT}/health" >/dev/null 2>&1; then
+      ready=1
+      break
+    fi
+    sleep 0.1
+  done
+
+  if [[ "$ready" -ne 1 ]]; then
+    fail "mock runtime service startup" "service did not become ready"
+    exit 1
+  fi
+}
+
+stop_mock_runtime_service() {
+  if [[ -n "$SERVICE_PID" ]]; then
+    kill "$SERVICE_PID" >/dev/null 2>&1 || true
+    wait "$SERVICE_PID" >/dev/null 2>&1 || true
+    SERVICE_PID=""
+    SERVICE_PORT=""
+    SERVICE_AUTH_TOKEN=""
+  fi
+}
+
+start_transparent_ui() {
+  TRANSPARENT_UI_PORT="$(free_port)"
+
+  PORT="$TRANSPARENT_UI_PORT" \
+  CAPACITOR_RUNTIME_ARTIFACT_PATH="$SNAPSHOT_PATH" \
+  CAPACITOR_RUNTIME_SERVICE_CONNECTION_PATH="$MISSING_RUNTIME_SERVICE_CONNECTION_PATH" \
+  node "$TRANSPARENT_UI" >/dev/null 2>&1 &
+  TRANSPARENT_UI_PID=$!
+
+  local ready=0
+  for _ in $(seq 1 40); do
+    if curl -fsS "http://127.0.0.1:${TRANSPARENT_UI_PORT}/runtime-snapshot" >/dev/null 2>&1; then
+      ready=1
+      break
+    fi
+    sleep 0.1
+  done
+
+  if [[ "$ready" -ne 1 ]]; then
+    fail "transparent-ui startup" "server did not become ready"
+    exit 1
+  fi
+}
+
+stop_transparent_ui() {
+  if [[ -n "$TRANSPARENT_UI_PID" ]]; then
+    kill "$TRANSPARENT_UI_PID" >/dev/null 2>&1 || true
+    wait "$TRANSPARENT_UI_PID" >/dev/null 2>&1 || true
+    TRANSPARENT_UI_PID=""
+    TRANSPARENT_UI_PORT=""
+  fi
+}
+
+write_runtime_service_connection() {
+  cat > "$RUNTIME_SERVICE_CONNECTION_PATH" <<JSON
+{
+  "port": $SERVICE_PORT,
+  "auth_token": "$SERVICE_AUTH_TOKEN"
+}
+JSON
+}
+
 # ── Set env to use fixture paths ──
 
-export CAPACITOR_CORE_SNAPSHOT="$SNAPSHOT_PATH"
+export CAPACITOR_RUNTIME_ARTIFACT_PATH="$SNAPSHOT_PATH"
+export CAPACITOR_RUNTIME_SERVICE_CONNECTION_PATH="$MISSING_RUNTIME_SERVICE_CONNECTION_PATH"
 export CAPACITOR_APP_DEBUG_LOG="$APP_LOG_PATH"
 export CAPACITOR_RUNTIME_STDERR_LOG="$FIXTURE_DIR/runtime.stderr.log"
 export CAPACITOR_RUNTIME_STDOUT_LOG="$FIXTURE_DIR/runtime.stdout.log"
@@ -208,9 +363,78 @@ echo "agent-observe.sh diagnostic tests"
 echo ""
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# T0: artifact-only observability is degraded, not healthy
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+echo "T0: artifact-only mode is degraded"
+write_fixture_snapshot
+
+artifact_health_output=$("$OBSERVE" health 2>&1 || true)
+assert_json_field "$artifact_health_output" '.status == "degraded"' "artifact-only health is degraded"
+assert_json_field "$artifact_health_output" '.mode == "artifact_debug"' "artifact-only health reports debug mode"
+assert_json_field "$artifact_health_output" '.live_boundary_available == false' "artifact-only health marks live boundary unavailable"
+
+artifact_check_output=$("$OBSERVE" check 2>&1 || true)
+assert_contains "$artifact_check_output" "degraded" "check reports degraded runtime service status when only artifact exists"
+assert_contains "$artifact_check_output" "artifact debug only" "check labels artifact-only mode as debug-only"
+
+start_transparent_ui
+artifact_snapshot_output=$(curl -fsS "http://127.0.0.1:${TRANSPARENT_UI_PORT}/runtime-snapshot")
+assert_json_field "$artifact_snapshot_output" '.health.status == "degraded"' "transparent-ui reports degraded health in artifact-only mode"
+assert_json_field "$artifact_snapshot_output" '.health.mode == "artifact_debug"' "transparent-ui exposes artifact debug mode"
+assert_json_field "$artifact_snapshot_output" '.runtime_source == "artifact_file"' "transparent-ui still identifies artifact source"
+stop_transparent_ui
+echo ""
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# T0: service-first runtime health + snapshot reads
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+echo "T1: service-first runtime observability"
+write_fixture_snapshot
+start_mock_runtime_service
+
+health_output=$(
+  CAPACITOR_RUNTIME_ARTIFACT_PATH="$FIXTURE_DIR/missing-snapshot.json" \
+  CAPACITOR_RUNTIME_SERVICE_PORT="$SERVICE_PORT" \
+  CAPACITOR_RUNTIME_SERVICE_TOKEN="$SERVICE_AUTH_TOKEN" \
+  "$OBSERVE" health 2>&1 || true
+)
+assert_json_field "$health_output" '.status == "ok"' "health prefers runtime service"
+assert_json_field "$health_output" '.pid == 4242' "health includes service pid"
+
+projects_output=$(
+  CAPACITOR_RUNTIME_ARTIFACT_PATH="$FIXTURE_DIR/missing-snapshot.json" \
+  CAPACITOR_RUNTIME_SERVICE_PORT="$SERVICE_PORT" \
+  CAPACITOR_RUNTIME_SERVICE_TOKEN="$SERVICE_AUTH_TOKEN" \
+  "$OBSERVE" projects 2>&1 || true
+)
+assert_json_field "$projects_output" 'length == 2' "projects prefers runtime service snapshot"
+assert_contains "$projects_output" "healthy-project" "projects includes service snapshot payload"
+
+write_runtime_service_connection
+
+connection_health_output=$(
+  CAPACITOR_RUNTIME_ARTIFACT_PATH="$FIXTURE_DIR/missing-snapshot.json" \
+  CAPACITOR_RUNTIME_SERVICE_CONNECTION_PATH="$RUNTIME_SERVICE_CONNECTION_PATH" \
+  "$OBSERVE" health 2>&1 || true
+)
+assert_not_contains "$connection_health_output" "mapfile: command not found" "connection-file discovery avoids bash-4-only builtins"
+assert_json_field "$connection_health_output" '.status == "ok"' "health prefers runtime service via connection file"
+
+connection_projects_output=$(
+  CAPACITOR_RUNTIME_ARTIFACT_PATH="$FIXTURE_DIR/missing-snapshot.json" \
+  CAPACITOR_RUNTIME_SERVICE_CONNECTION_PATH="$RUNTIME_SERVICE_CONNECTION_PATH" \
+  "$OBSERVE" projects 2>&1 || true
+)
+assert_json_field "$connection_projects_output" 'length == 2' "projects prefer runtime service snapshot via connection file"
+assert_contains "$connection_projects_output" "healthy-project" "connection-file discovery returns service snapshot payload"
+
+stop_mock_runtime_service
+echo ""
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # T1: Enriched stuck sessions in diagnose
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-echo "T1: diagnose — enriched stuck session output"
+echo "T2: diagnose — enriched stuck session output"
 write_fixture_snapshot
 
 output=$("$OBSERVE" diagnose 2>&1)
@@ -228,7 +452,7 @@ echo ""
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # T2: session detail command
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-echo "T2: session — full session detail"
+echo "T3: session — full session detail"
 write_fixture_snapshot
 
 output=$("$OBSERVE" session sess-stuck-1 2>&1)
@@ -248,7 +472,7 @@ echo ""
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # T3: heartbeat age in hooks
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-echo "T3: hooks — heartbeat age"
+echo "T4: hooks — heartbeat age"
 write_fixture_snapshot
 write_fixture_heartbeat
 
@@ -261,7 +485,7 @@ echo ""
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # T4: shell-audit command
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-echo "T4: shell-audit"
+echo "T5: shell-audit"
 write_fixture_snapshot
 
 output=$("$OBSERVE" shell-audit 2>&1)
@@ -275,7 +499,7 @@ echo ""
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # T5: wider error patterns
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-echo "T5: errors — wider pattern matching"
+echo "T6: errors — wider pattern matching"
 write_fixture_log
 
 output=$("$OBSERVE" errors 20 2>&1)
@@ -295,7 +519,7 @@ echo ""
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # T6: activation-traces command
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-echo "T6: activation-traces"
+echo "T7: activation-traces"
 write_fixture_log
 
 output=$("$OBSERVE" activation-traces 2>&1)
@@ -311,7 +535,7 @@ echo ""
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # Existing commands still work (regression)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-echo "T7: regression — existing commands"
+echo "T8: regression — existing commands"
 write_fixture_snapshot
 
 "$OBSERVE" check >/dev/null 2>&1 && pass "check" || fail "check" "exited non-zero"

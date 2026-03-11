@@ -9,12 +9,6 @@ actor CapacitorConfig {
         return capacitorDir.appendingPathComponent("runtime-config.json")
     }
 
-    nonisolated static var legacyURL: URL {
-        let capacitorDir = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".capacitor")
-        return capacitorDir.appendingPathComponent("config.json")
-    }
-
     private let configURL: URL
     private var cachedConfig: Config?
 
@@ -23,7 +17,7 @@ actor CapacitorConfig {
         var tmuxPath: String?
     }
 
-    private init(configURL: URL = CapacitorConfig.defaultURL) {
+    init(configURL: URL = CapacitorConfig.defaultURL) {
         self.configURL = configURL
     }
 
@@ -34,28 +28,18 @@ actor CapacitorConfig {
             return cached
         }
 
-        let sourceURL: URL
-        if FileManager.default.fileExists(atPath: configURL.path) {
-            sourceURL = configURL
-        } else if FileManager.default.fileExists(atPath: Self.legacyURL.path) {
-            sourceURL = Self.legacyURL
-        } else {
+        if !FileManager.default.fileExists(atPath: configURL.path) {
             let defaultConfig = Config()
             cachedConfig = defaultConfig
             return defaultConfig
         }
 
         do {
-            let data = try Data(contentsOf: sourceURL)
+            let data = try Data(contentsOf: configURL)
             let decoder = JSONDecoder()
             decoder.dateDecodingStrategy = .iso8601
             let config = try decoder.decode(Config.self, from: data)
             cachedConfig = config
-
-            // One-way migrate off legacy config.json to avoid clobbering AppConfig file semantics.
-            if sourceURL != configURL {
-                await save(config)
-            }
 
             return config
         } catch {
@@ -91,10 +75,6 @@ actor CapacitorConfig {
     }
 
     // MARK: - Accessors
-
-    func getClaudePath() async -> String? {
-        await load().claudePath
-    }
 
     func setClaudePath(_ path: String) async {
         var config = await load()

@@ -44,10 +44,4 @@ final class ReadyChimeGate {
         )
         return true
     }
-
-    #if DEBUG
-        func resetForTesting() {
-            lastKnownStateByProject = [:]
-        }
-    #endif
 }

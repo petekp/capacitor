@@ -40,7 +40,7 @@ import SwiftUI
                 }
 
                 if shellState?.shells.isEmpty ?? true {
-                    Text("No shell state entries returned by core snapshot runtime.")
+                    Text("No shell state entries returned by the runtime service snapshot.")
                         .font(.caption)
                         .foregroundColor(.white.opacity(0.6))
                 } else if let shells = shellState?.shells {

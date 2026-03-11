@@ -297,42 +297,42 @@ pub struct CreateProjectResult {
 // Hook Health Types
 // ═══════════════════════════════════════════════════════════════════════════════
 
-/// The health status of the hook binary based on heartbeat freshness.
+/// The health status of the hook binary based on service-owned hook activity freshness.
 #[derive(Debug, Clone, PartialEq, uniffi::Enum)]
 pub enum HookHealthStatus {
-    /// Hooks are firing normally (heartbeat within threshold)
+    /// Hooks are firing normally (recent hook activity within threshold)
     Healthy,
-    /// No heartbeat file exists (hooks never fired or file deleted)
+    /// No recent hook activity has been observed yet
     Unknown,
-    /// Heartbeat is stale (hooks stopped firing)
+    /// Hook activity is stale (hooks stopped firing)
     Stale { last_seen_secs: u64 },
-    /// Heartbeat file exists but can't be read
+    /// Hook activity state could not be read
     Unreadable { reason: String },
 }
 
-/// Full health report for the hook binary.
+/// Full health report for hook activity freshness.
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct HookHealthReport {
     pub status: HookHealthStatus,
-    pub heartbeat_path: String,
+    pub signal_source: String,
     pub threshold_secs: u64,
-    pub last_heartbeat_age_secs: Option<u64>,
+    pub last_hook_event_age_secs: Option<u64>,
 }
 
 /// Result of running a comprehensive hook system test.
 ///
-/// This verifies both the heartbeat (hooks are firing) and runtime health.
-/// Used by the "Test Hooks" button in the UI.
+/// This verifies both recent hook activity and local runtime
+/// service health. Used by the "Test Hooks" button in the UI.
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct HookTestResult {
     /// True if all tests passed
     pub success: bool,
-    /// True if heartbeat file is recent (hooks are firing)
-    pub heartbeat_ok: bool,
-    /// Age of the heartbeat file in seconds (None if file doesn't exist)
-    pub heartbeat_age_secs: Option<u64>,
-    /// True if runtime health check passed
-    pub state_file_ok: bool,
+    /// True if recent hook activity is present
+    pub hook_activity_ok: bool,
+    /// Age of the last hook activity event in seconds (None if unavailable)
+    pub hook_activity_age_secs: Option<u64>,
+    /// True if the local runtime service health check passed
+    pub runtime_service_ok: bool,
     /// Human-readable summary message for display
     pub message: String,
 }
@@ -353,7 +353,7 @@ pub enum HookIssue {
     SymlinkBroken { target: String, reason: String },
     /// Hook configuration missing or incomplete in settings.json
     ConfigMissing,
-    /// Hooks are installed but not firing (heartbeat stale or missing)
+    /// Hooks are installed but not firing (activity stale or missing)
     NotFiring { last_seen_secs: Option<u64> },
 }
 
@@ -369,7 +369,7 @@ pub struct HookDiagnosticReport {
     pub primary_issue: Option<HookIssue>,
     /// True if "Fix All" can resolve the issue
     pub can_auto_fix: bool,
-    /// Whether this appears to be a first-time setup (no heartbeat ever seen)
+    /// Whether this appears to be a first-time setup (no hook activity seen yet)
     pub is_first_run: bool,
     /// Detailed status for checklist display
     pub binary_ok: bool,
@@ -379,8 +379,8 @@ pub struct HookDiagnosticReport {
     pub symlink_path: String,
     /// Target of the symlink if it is one, None if regular file or doesn't exist
     pub symlink_target: Option<String>,
-    /// Age of last heartbeat in seconds (for "last seen X ago" display)
-    pub last_heartbeat_age_secs: Option<u64>,
+    /// Age of last hook activity in seconds (for "last seen X ago" display)
+    pub last_hook_event_age_secs: Option<u64>,
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

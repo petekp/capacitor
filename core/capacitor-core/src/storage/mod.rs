@@ -169,6 +169,7 @@ mod tests {
                 informational_events_skipped: 0,
                 reducer_events_skipped: 0,
                 last_error: None,
+                last_hook_event_at: Some("2026-02-28T00:00:00Z".to_string()),
             },
             generated_at: "2026-02-28T00:00:00Z".to_string(),
         }

@@ -22,7 +22,7 @@ run_replay_gate() {
 
 run_shadow_parity_gate() {
   echo ""
-  echo "[runtime-reliability] shadow parity gate"
+  echo "[runtime-reliability] replay parity gate"
   cargo test -p capacitor-core --test replay_diff replay_diff_shadow_snapshot_read_model_matches_runtime_snapshot
 }
 

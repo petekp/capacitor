@@ -1,11 +1,11 @@
 import Foundation
 import SwiftUI
 
-/// Projects runtime snapshot state into the UI-facing session model for projects.
+/// Projects runtime service snapshot state into the UI-facing session model for projects.
 ///
-/// Rust remains authoritative for hook ingest, reducer/query policy, and persisted snapshot
-/// contents. This layer owns the deterministic Swift-side projection rules that turn runtime
-/// project states into view state:
+/// Rust remains authoritative for hook ingest, reducer/query policy, and persisted runtime
+/// artifact contents. This layer owns the deterministic Swift-side projection rules that turn
+/// runtime service project states into view state:
 /// - project/session matching and attribution
 /// - stale-working normalization using the injected session clock
 /// - empty-snapshot and idle-transition hysteresis
@@ -329,15 +329,6 @@ final class SessionStateManager {
 
         let normalizedPath = PathNormalizer.normalize(project.path)
         return sessionStates.first(where: { PathNormalizer.normalize($0.key) == normalizedPath })?.value
-    }
-
-    func getSessionAttribution(for project: Project) -> SessionAttribution? {
-        if let direct = sessionAttributions[project.path] {
-            return direct
-        }
-
-        let normalizedPath = PathNormalizer.normalize(project.path)
-        return sessionAttributions.first(where: { PathNormalizer.normalize($0.key) == normalizedPath })?.value
     }
 
     func getPreferredSessionId(for project: Project) -> String? {

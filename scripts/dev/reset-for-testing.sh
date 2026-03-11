@@ -92,8 +92,8 @@ killall cfprefsd 2>/dev/null && echo "  ✓ Refreshed preferences cache" || true
 #
 # ~/.capacitor/ is our namespace (sidecar architecture - we never write to
 # ~/.claude/). Contains:
-#   - runtime/app_snapshot.json: canonical runtime snapshot
-#   - runtime/: runtime logs and lock files
+#   - runtime/app_snapshot.json: persisted runtime artifact for recovery/debugging
+#   - runtime/: runtime service logs, tokens, and lock files
 #   - config.json/projects.json: app preferences + pinned projects
 # ─────────────────────────────────────────────────────────────────────────────
 echo "→ Clearing ~/.capacitor/ (runtime state)..."
@@ -109,25 +109,26 @@ fi
 #
 # For a true fresh-install test, remove Capacitor hook registrations from
 # ~/.claude/settings.json. This filters out both:
-#   - Legacy wrapper script references (hud-state-tracker.sh)
-#   - Current binary references (hud-hook)
+#   - Current managed command hooks that POST to the local hook endpoint
+#   - Current managed HTTP hooks that target the local hook endpoint
 #
 # We do NOT uninstall the binary here—the app's onboarding flow will
 # detect that hooks aren't configured and offer to add them.
 # ─────────────────────────────────────────────────────────────────────────────
 echo "→ Removing Capacitor hook registrations from settings.json..."
 SETTINGS_FILE="$HOME/.claude/settings.json"
+HOOK_HTTP_URL="http://127.0.0.1:7474/hook"
 if [[ -f "$SETTINGS_FILE" ]]; then
     if command -v jq &>/dev/null; then
-        # Filter out hook configs that contain "hud-hook" or "hud-state-tracker" in any command
-        # Then remove any hook events that become empty arrays
+        # Filter out hook configs that contain the current managed command or HTTP hook endpoint.
+        # Then remove any hook events that become empty arrays.
         jq '
             if .hooks then
                 .hooks |= with_entries(
                     .value |= map(
                         select(
                             .hooks == null or
-                            (.hooks | map(.command // "" | (contains("hud-hook") or contains("hud-state-tracker"))) | any | not)
+                            (.hooks | map(((.command // "") | contains($hook_url)) or ((.url // "") == $hook_url)) | any | not)
                         )
                     ) |
                     select(.value | length > 0)
@@ -135,7 +136,7 @@ if [[ -f "$SETTINGS_FILE" ]]; then
             else
                 .
             end
-        ' "$SETTINGS_FILE" > "${SETTINGS_FILE}.tmp" && mv "${SETTINGS_FILE}.tmp" "$SETTINGS_FILE"
+        ' --arg hook_url "$HOOK_HTTP_URL" "$SETTINGS_FILE" > "${SETTINGS_FILE}.tmp" && mv "${SETTINGS_FILE}.tmp" "$SETTINGS_FILE"
         echo "  ✓ Removed Capacitor hook registrations"
     else
         echo "  ⚠ jq not available, skipping settings.json cleanup"

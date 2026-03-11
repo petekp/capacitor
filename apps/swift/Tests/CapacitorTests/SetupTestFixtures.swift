@@ -44,7 +44,7 @@ enum SetupTestFixtures {
         firingOk: Bool = false,
         symlinkPath: String = "/tmp/hud-hook",
         symlinkTarget: String? = nil,
-        lastHeartbeatAgeSecs: UInt64? = nil,
+        lastHookEventAgeSecs: UInt64? = nil,
     ) -> HookDiagnosticReport {
         HookDiagnosticReport(
             isHealthy: isHealthy,
@@ -56,7 +56,7 @@ enum SetupTestFixtures {
             firingOk: firingOk,
             symlinkPath: symlinkPath,
             symlinkTarget: symlinkTarget,
-            lastHeartbeatAgeSecs: lastHeartbeatAgeSecs,
+            lastHookEventAgeSecs: lastHookEventAgeSecs,
         )
     }
 }

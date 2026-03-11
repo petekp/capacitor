@@ -268,13 +268,6 @@ fn build_missing_project(path: &str) -> Project {
     }
 }
 
-/// Loads all pinned projects, sorted by most recent activity.
-/// Missing projects (where the directory no longer exists) are included
-/// with is_missing=true so they can be displayed with a warning indicator.
-pub fn load_projects() -> Result<Vec<Project>, String> {
-    load_projects_with_storage(&StorageConfig::default())
-}
-
 pub fn load_projects_with_storage(storage: &StorageConfig) -> Result<Vec<Project>, String> {
     let claude_dir = storage.claude_root();
     let config = load_hud_config_with_storage(storage);

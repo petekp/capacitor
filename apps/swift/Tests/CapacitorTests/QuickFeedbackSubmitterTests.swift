@@ -46,7 +46,6 @@ final class QuickFeedbackSubmitterTests: XCTestCase {
         )
 
         XCTAssertEqual(payload.feedbackID, "fb-test-001")
-        XCTAssertEqual(payload.feedback, draft.summary)
         XCTAssertEqual(payload.app.channel, "alpha")
         XCTAssertEqual(payload.projectContext.sessionSummary.working, 1)
         XCTAssertEqual(payload.projectContext.sessionSummary.ready, 1)
@@ -129,12 +128,13 @@ final class QuickFeedbackSubmitterTests: XCTestCase {
         let bodyData = try XCTUnwrap(request.httpBody)
         let json = try XCTUnwrap(JSONSerialization.jsonObject(with: bodyData) as? [String: Any])
         XCTAssertEqual(json["feedback_id"] as? String, "fb-test-123")
-        XCTAssertEqual(json["feedback"] as? String, "App gets stuck after switching projects")
+        XCTAssertNil(json["feedback"])
 
         let form = try XCTUnwrap(json["form"] as? [String: Any])
         XCTAssertEqual(form["category"] as? String, "bug")
         XCTAssertEqual(form["impact"] as? String, "high")
         XCTAssertEqual(form["reproducibility"] as? String, "often")
+        XCTAssertEqual(form["summary"] as? String, "App gets stuck after switching projects")
 
         let issueURL = try XCTUnwrap(openedURL)
         XCTAssertEqual(issueURL.host, "github.com")

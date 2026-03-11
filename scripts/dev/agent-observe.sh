@@ -3,31 +3,37 @@ set -euo pipefail
 
 CAP_HOME="${CAPACITOR_HOME:-$HOME/.capacitor}"
 RUNTIME_DIR="${CAP_HOME}/runtime"
-SNAPSHOT_PATH="${CAPACITOR_CORE_SNAPSHOT:-${RUNTIME_DIR}/app_snapshot.json}"
+RUNTIME_ARTIFACT_PATH="${CAPACITOR_RUNTIME_ARTIFACT_PATH:-${RUNTIME_DIR}/app_snapshot.json}"
+RUNTIME_SERVICE_CONNECTION_PATH="${CAPACITOR_RUNTIME_SERVICE_CONNECTION_PATH:-${RUNTIME_DIR}/runtime-service.json}"
 APP_LOG_PATH="${CAPACITOR_APP_DEBUG_LOG:-${RUNTIME_DIR}/app-debug.log}"
 RUNTIME_STDERR_LOG_PATH="${CAPACITOR_RUNTIME_STDERR_LOG:-${RUNTIME_DIR}/runtime.stderr.log}"
 RUNTIME_STDOUT_LOG_PATH="${CAPACITOR_RUNTIME_STDOUT_LOG:-${RUNTIME_DIR}/runtime.stdout.log}"
 TRANSPARENT_UI_BASE_URL="${CAPACITOR_TRANSPARENT_UI_BASE_URL:-http://localhost:9133}"
 HEARTBEAT_PATH="${CAPACITOR_HEARTBEAT_PATH:-${CAP_HOME}/hud-hook-heartbeat}"
 
+RUNTIME_SERVICE_DISCOVERY_DONE=0
+RUNTIME_SERVICE_PORT=""
+RUNTIME_SERVICE_TOKEN=""
+RUNTIME_SERVICE_SOURCE=""
+
 usage() {
   cat <<'USAGE'
 Usage: scripts/dev/agent-observe.sh <command> [args...]
 
-Runtime observability helper for Capacitor (direct-core mode).
+Runtime observability helper for Capacitor (runtime-service first; artifact fallback is offline/debug-only).
 
 Commands:
-  check                                  Validate local runtime observability paths
+  check                                  Validate runtime service/artifact observability paths
   paths                                  Print canonical paths + endpoint roots
-  health                                 Derived runtime health from snapshot presence/parseability
+  health                                 Runtime health (artifact mode is degraded debug-only)
   sessions                               Print runtime session summaries
   projects                               Print runtime project summaries
   shells                                 Print runtime shell summaries
   activity [limit]                       Print most recent session activity (default limit=50)
   routing-snapshot <project_path> [ws]   Print routing entry for a project/workspace
   routing-diagnostics                    Print diagnostics summary
-  snapshot                               Print full runtime snapshot payload
-  briefing                                Agent briefing from snapshot (self-sufficient)
+  snapshot                               Print full runtime snapshot payload (service or artifact-debug)
+  briefing                               Agent briefing from live runtime or artifact-debug snapshot
   telemetry [limit]                      Transparent UI: GET /telemetry
   stream                                 Transparent UI: GET /telemetry-stream (SSE passthrough)
   tail <app|runtime-stderr|runtime-stdout> Tail key logs
@@ -58,13 +64,160 @@ pretty_print_json() {
   fi
 }
 
-read_snapshot() {
-  if [[ ! -f "$SNAPSHOT_PATH" ]]; then
-    echo "Runtime snapshot not found: $SNAPSHOT_PATH" >&2
+trim_whitespace() {
+  local value="${1:-}"
+  value="${value#"${value%%[![:space:]]*}"}"
+  value="${value%"${value##*[![:space:]]}"}"
+  printf '%s' "$value"
+}
+
+read_runtime_service_connection() {
+  local connection_path="$1"
+  python3 - "$connection_path" <<'PY'
+import json
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+if not path.exists():
+    raise SystemExit(1)
+
+payload = json.loads(path.read_text())
+port = payload.get("port")
+auth_token = (payload.get("auth_token") or "").strip()
+if port is None or not auth_token:
+    raise SystemExit(1)
+
+print(port)
+print(auth_token)
+PY
+}
+
+load_runtime_service_connection() {
+  local connection_path="$1"
+  local connection_port=""
+  local connection_token=""
+  local line=""
+
+  while IFS= read -r line; do
+    if [[ -z "$connection_port" ]]; then
+      connection_port="$line"
+    elif [[ -z "$connection_token" ]]; then
+      connection_token="$line"
+      break
+    fi
+  done < <(read_runtime_service_connection "$connection_path" 2>/dev/null || true)
+
+  if [[ -n "$connection_port" && -n "$connection_token" ]]; then
+    printf '%s\n%s\n' "$connection_port" "$connection_token"
+    return 0
+  fi
+
+  return 1
+}
+
+discover_runtime_service() {
+  if [[ "$RUNTIME_SERVICE_DISCOVERY_DONE" -eq 1 ]]; then
+    [[ -n "$RUNTIME_SERVICE_PORT" && -n "$RUNTIME_SERVICE_TOKEN" ]]
+    return
+  fi
+
+  RUNTIME_SERVICE_DISCOVERY_DONE=1
+
+  local env_port env_token
+  env_port="$(trim_whitespace "${CAPACITOR_RUNTIME_SERVICE_PORT:-}")"
+  env_token="$(trim_whitespace "${CAPACITOR_RUNTIME_SERVICE_TOKEN:-}")"
+  if [[ -n "$env_port" || -n "$env_token" ]]; then
+    if [[ -n "$env_port" && -n "$env_token" ]]; then
+      RUNTIME_SERVICE_PORT="$env_port"
+      RUNTIME_SERVICE_TOKEN="$env_token"
+      RUNTIME_SERVICE_SOURCE="env"
+      return 0
+    fi
+    return 1
+  fi
+
+  local explicit_artifact_override explicit_connection_override
+  explicit_artifact_override="$(trim_whitespace "${CAPACITOR_RUNTIME_ARTIFACT_PATH-}")"
+  explicit_connection_override="$(trim_whitespace "${CAPACITOR_RUNTIME_SERVICE_CONNECTION_PATH-}")"
+
+  if [[ -n "$explicit_artifact_override" && -z "$explicit_connection_override" ]]; then
+    return 1
+  fi
+
+  if [[ -f "$RUNTIME_SERVICE_CONNECTION_PATH" ]]; then
+    local connection_port=""
+    local connection_token=""
+    local line_index=0
+    local line=""
+
+    while IFS= read -r line; do
+      if [[ "$line_index" -eq 0 ]]; then
+        connection_port="$line"
+      elif [[ "$line_index" -eq 1 ]]; then
+        connection_token="$line"
+        break
+      fi
+      line_index=$((line_index + 1))
+    done < <(load_runtime_service_connection "$RUNTIME_SERVICE_CONNECTION_PATH" 2>/dev/null || true)
+
+    if [[ -n "$connection_port" && -n "$connection_token" ]]; then
+      RUNTIME_SERVICE_PORT="$connection_port"
+      RUNTIME_SERVICE_TOKEN="$connection_token"
+      RUNTIME_SERVICE_SOURCE="connection_file"
+      return 0
+    fi
+  fi
+
+  return 1
+}
+
+runtime_service_base_url() {
+  discover_runtime_service || return 1
+  printf 'http://127.0.0.1:%s' "$RUNTIME_SERVICE_PORT"
+}
+
+runtime_source_label() {
+  if discover_runtime_service; then
+    printf 'runtime_service'
+  else
+    printf 'artifact_file'
+  fi
+}
+
+runtime_snapshot_location() {
+  if discover_runtime_service; then
+    printf '%s/runtime/snapshot' "$(runtime_service_base_url)"
+  else
+    printf '%s' "$RUNTIME_ARTIFACT_PATH"
+  fi
+}
+
+runtime_service_get() {
+  local path="$1"
+  local base_url
+  base_url="$(runtime_service_base_url)" || return 1
+  require_cmd curl
+  curl -fsS \
+    -H "Authorization: Bearer ${RUNTIME_SERVICE_TOKEN}" \
+    "${base_url}${path}"
+}
+
+read_artifact_snapshot() {
+  if [[ ! -f "$RUNTIME_ARTIFACT_PATH" ]]; then
+    echo "Runtime artifact not found: $RUNTIME_ARTIFACT_PATH" >&2
     exit 1
   fi
 
-  cat "$SNAPSHOT_PATH"
+  cat "$RUNTIME_ARTIFACT_PATH"
+}
+
+read_snapshot() {
+  if discover_runtime_service; then
+    runtime_service_get "/runtime/snapshot"
+  else
+    read_artifact_snapshot
+  fi
 }
 
 snapshot_query() {
@@ -82,15 +235,51 @@ http_get_json() {
   curl -fsS "$url" | pretty_print_json
 }
 
+print_artifact_health() {
+  if command -v jq >/dev/null 2>&1 && [[ -f "$RUNTIME_ARTIFACT_PATH" ]]; then
+    jq '{
+      ok: true,
+      status: "degraded",
+      source: "artifact_file",
+      mode: "artifact_debug",
+      live_boundary_available: false,
+      warning: "runtime_service_unavailable",
+      generated_at: .generated_at,
+      sessions: (.sessions | length),
+      projects: (.projects | length)
+    }' "$RUNTIME_ARTIFACT_PATH"
+  else
+    if [[ -f "$RUNTIME_ARTIFACT_PATH" ]]; then
+      printf '{"ok":true,"status":"degraded","source":"artifact_file","mode":"artifact_debug","live_boundary_available":false,"warning":"runtime_service_unavailable"}\n'
+    else
+      printf '{"ok":false,"status":"unavailable","source":"artifact_file","mode":"artifact_debug","live_boundary_available":false,"error":"runtime_artifact_missing"}\n'
+      exit 1
+    fi
+  fi
+}
+
 check() {
   local ok=1
 
-  echo "Snapshot: $SNAPSHOT_PATH"
-  if [[ -f "$SNAPSHOT_PATH" ]]; then
-    echo "  ok (snapshot exists)"
+  if discover_runtime_service; then
+    echo "Runtime service: $(runtime_service_base_url) (${RUNTIME_SERVICE_SOURCE})"
+    if runtime_service_get "/health" >/dev/null 2>&1; then
+      echo "  ok (service reachable)"
+    else
+      echo "  unreachable"
+      ok=0
+    fi
+  else
+    echo "Runtime service: not discovered"
+    echo "  degraded (artifact debug only; live runtime service unavailable)"
+  fi
+
+  echo "Runtime artifact: $RUNTIME_ARTIFACT_PATH"
+  if [[ -f "$RUNTIME_ARTIFACT_PATH" ]]; then
+    echo "  ok (artifact exists)"
     if command -v jq >/dev/null 2>&1; then
-      if jq . "$SNAPSHOT_PATH" >/dev/null 2>&1; then
-        echo "  ok (snapshot parses)"
+      if jq . "$RUNTIME_ARTIFACT_PATH" >/dev/null 2>&1; then
+        echo "  ok (artifact parses)"
       else
         echo "  invalid json"
         ok=0
@@ -98,7 +287,9 @@ check() {
     fi
   else
     echo "  missing"
-    ok=0
+    if ! discover_runtime_service; then
+      ok=0
+    fi
   fi
 
   echo "App log: $APP_LOG_PATH"
@@ -117,11 +308,20 @@ check() {
 
 paths() {
   cat <<PATHS
-snapshot_path=$SNAPSHOT_PATH
+runtime_source=$(runtime_source_label)
+runtime_artifact_path=$RUNTIME_ARTIFACT_PATH
+runtime_snapshot_location=$(runtime_snapshot_location)
+runtime_service_connection_path=$RUNTIME_SERVICE_CONNECTION_PATH
 app_log_path=$APP_LOG_PATH
 runtime_stderr_log_path=$RUNTIME_STDERR_LOG_PATH
 runtime_stdout_log_path=$RUNTIME_STDOUT_LOG_PATH
 PATHS
+  if discover_runtime_service; then
+    cat <<PATHS
+runtime_service_base_url=$(runtime_service_base_url)
+runtime_service_source=$RUNTIME_SERVICE_SOURCE
+PATHS
+  fi
 }
 
 routing_snapshot() {
@@ -158,15 +358,10 @@ case "$command" in
     paths
     ;;
   health)
-    if command -v jq >/dev/null 2>&1 && [[ -f "$SNAPSHOT_PATH" ]]; then
-      jq '{ok:true,status:"healthy",generated_at:.generated_at,sessions:(.sessions|length),projects:(.projects|length)}' "$SNAPSHOT_PATH"
+    if discover_runtime_service; then
+      runtime_service_get "/health" | pretty_print_json
     else
-      if [[ -f "$SNAPSHOT_PATH" ]]; then
-        printf '{"ok":true,"status":"healthy"}\n'
-      else
-        printf '{"ok":false,"status":"unavailable","error":"snapshot_missing"}\n'
-        exit 1
-      fi
+      print_artifact_health
     fi
     ;;
   sessions)
@@ -268,20 +463,22 @@ case "$command" in
     echo "Observability smoke checks passed."
     ;;
   freshness)
-    if [[ ! -f "$SNAPSHOT_PATH" ]]; then
-      echo '{"ok":false,"error":"snapshot_missing","age_seconds":null}' | pretty_print_json
+    snapshot_payload="$(read_snapshot 2>/dev/null || true)"
+    if [[ -z "$snapshot_payload" ]]; then
+      echo "{\"ok\":false,\"error\":\"runtime_snapshot_unavailable\",\"source\":\"$(runtime_source_label)\",\"age_seconds\":null}" | pretty_print_json
       exit 1
     fi
     if command -v jq >/dev/null 2>&1; then
-      jq 'def parse_ts: sub("\\.[0-9]+"; "") | sub("\\+00:00$"; "Z") | fromdateiso8601;
+      echo "$snapshot_payload" | jq --arg source "$(runtime_source_label)" 'def parse_ts: sub("\\.[0-9]+"; "") | sub("\\+00:00$"; "Z") | fromdateiso8601;
       {
         ok: true,
+        source: $source,
         generated_at: .generated_at,
         age_seconds: (now - (.generated_at | parse_ts) | floor),
         stale: ((now - (.generated_at | parse_ts)) > 30)
-      }' "$SNAPSHOT_PATH" 2>/dev/null || echo '{"ok":true,"age_seconds":null,"note":"could not parse generated_at"}' | pretty_print_json
+      }' 2>/dev/null || echo '{"ok":true,"age_seconds":null,"note":"could not parse generated_at"}' | pretty_print_json
     else
-      stat -f "%m" "$SNAPSHOT_PATH" 2>/dev/null || echo "jq required for detailed freshness"
+      echo "jq required for detailed freshness"
     fi
     ;;
   session)
@@ -384,6 +581,11 @@ case "$command" in
     grep -E 'ActivationTrace ' "$APP_LOG_PATH" | tail -n "$limit"
     ;;
   diagnose)
+    snapshot_payload=""
+    if command -v jq >/dev/null 2>&1; then
+      snapshot_payload="$(read_snapshot 2>/dev/null || true)"
+    fi
+
     echo "=== Capacitor Diagnostics ==="
     echo ""
 
@@ -396,8 +598,8 @@ case "$command" in
     echo ""
 
     echo "--- Stuck Sessions ---"
-    if command -v jq >/dev/null 2>&1 && [[ -f "$SNAPSHOT_PATH" ]]; then
-      stuck=$(jq 'def parse_ts: sub("\\.[0-9]+"; "") | sub("\\+00:00$"; "Z") | fromdateiso8601;
+    if [[ -n "$snapshot_payload" ]]; then
+      stuck=$(echo "$snapshot_payload" | jq 'def parse_ts: sub("\\.[0-9]+"; "") | sub("\\+00:00$"; "Z") | fromdateiso8601;
       [.sessions[] | select(.state == "working") | select(
         (.updated_at // "" | length) > 0 and
         ((now - ((.updated_at // "1970-01-01T00:00:00Z") | parse_ts)) > 30)
@@ -411,7 +613,7 @@ case "$command" in
         last_activity_at: (.last_activity_at // "unknown"),
         age_seconds: ((now - ((.updated_at // "1970-01-01T00:00:00Z") | parse_ts)) | floor),
         pid_alive: (if .pid > 0 then "check: kill -0 \(.pid)" else "no_pid" end)
-      }]' "$SNAPSHOT_PATH" 2>/dev/null)
+      }]' 2>/dev/null)
       count=$(echo "$stuck" | jq 'length' 2>/dev/null || echo "0")
       if [[ "$count" -gt 0 ]]; then
         echo "  WARNING: $count potentially stuck session(s):"
@@ -420,13 +622,13 @@ case "$command" in
         echo "  ok (no stuck sessions)"
       fi
     else
-      echo "  (requires jq + snapshot)"
+      echo "  (requires jq + runtime snapshot)"
     fi
     echo ""
 
     echo "--- Skip Counters ---"
-    if command -v jq >/dev/null 2>&1 && [[ -f "$SNAPSHOT_PATH" ]]; then
-      jq '.diagnostics | {
+    if [[ -n "$snapshot_payload" ]]; then
+      echo "$snapshot_payload" | jq '.diagnostics | {
         events_skipped,
         stale_events_skipped,
         informational_events_skipped,
@@ -434,9 +636,9 @@ case "$command" in
         skip_rate: (if .events_ingested > 0 then
           "\((.events_skipped * 100 / .events_ingested))%"
         else "n/a" end)
-      }' "$SNAPSHOT_PATH" 2>/dev/null || echo "  (skip counters not available in this snapshot)"
+      }' 2>/dev/null || echo "  (skip counters not available in this snapshot)"
     else
-      echo "  (requires jq + snapshot)"
+      echo "  (requires jq + runtime snapshot)"
     fi
     echo ""
 
@@ -458,10 +660,10 @@ case "$command" in
     echo ""
 
     echo "--- Routing Summary ---"
-    if command -v jq >/dev/null 2>&1 && [[ -f "$SNAPSHOT_PATH" ]]; then
-      jq '.routing | map({project_path, status, target_kind, reason_code})' "$SNAPSHOT_PATH" 2>/dev/null || echo "  (parse error)"
+    if [[ -n "$snapshot_payload" ]]; then
+      echo "$snapshot_payload" | jq '.routing | map({project_path, status, target_kind, reason_code})' 2>/dev/null || echo "  (parse error)"
     else
-      echo "  (requires jq + snapshot)"
+      echo "  (requires jq + runtime snapshot)"
     fi
     echo ""
     echo "=== End Diagnostics ==="

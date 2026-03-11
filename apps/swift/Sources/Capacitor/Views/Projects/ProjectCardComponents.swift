@@ -269,62 +269,6 @@ struct ProjectContextMenu: View {
     }
 }
 
-// MARK: - Shared Card Background
-
-/// Parameterized card background supporting both floating and solid modes
-struct ProjectCardBackground: View {
-    let isHovered: Bool
-    var layoutMode: LayoutMode = .vertical
-
-    @Environment(\.floatingMode) private var floatingMode
-
-    #if DEBUG
-        var config: GlassConfig?
-    #endif
-
-    private var cornerRadius: CGFloat {
-        GlassConfig.shared.cardCornerRadius(for: layoutMode)
-    }
-
-    var body: some View {
-        if floatingMode {
-            floatingBackground
-        } else {
-            solidBackground
-        }
-    }
-
-    private var floatingBackground: some View {
-        #if DEBUG
-            if let config {
-                DarkFrostedCard(isHovered: isHovered, layoutMode: layoutMode, config: config)
-            } else {
-                DarkFrostedCard(isHovered: isHovered, layoutMode: layoutMode)
-            }
-        #else
-            DarkFrostedCard(isHovered: isHovered, layoutMode: layoutMode)
-        #endif
-    }
-
-    private var solidBackground: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: cornerRadius)
-                .fill(Color.hudCard)
-
-            VStack(spacing: 0) {
-                LinearGradient(
-                    colors: [.white.opacity(isHovered ? 0.08 : 0.04), .clear],
-                    startPoint: .top,
-                    endPoint: .bottom,
-                )
-                .frame(height: 1)
-                Spacer()
-            }
-            .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
-        }
-    }
-}
-
 // MARK: - Clickable Project Title
 
 struct ClickableProjectTitle: View {
@@ -606,20 +550,4 @@ enum ShaderCache {
         let bundle = ResourceBundle.bundle ?? Bundle.main
         return .bundle(bundle)
     }()
-}
-
-/// Blocker indicator badge
-struct BlockerBadge: View {
-    var style: BadgeStyle = .normal
-
-    enum BadgeStyle {
-        case normal
-        case compact
-    }
-
-    var body: some View {
-        Image(systemName: "exclamationmark.triangle.fill")
-            .font(style == .compact ? AppTypography.label : AppTypography.captionSmall)
-            .foregroundStyle(.orange)
-    }
 }

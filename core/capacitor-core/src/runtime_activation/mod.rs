@@ -1,28 +1,22 @@
-//! Terminal activation resolution for the Swift UI.
+//! Spec-only terminal activation model retained for regression testing.
 //!
-//! This module contains the pure decision logic for terminal activation.
-//! Given the current shell state and tmux context, it determines what
-//! action(s) Swift should take to activate the correct terminal.
+//! This module is compiled only under `#[cfg(test)]` and is not part of the
+//! production activation path. Swift owns live terminal activation now; this
+//! Rust subtree survives as a pure decision-model harness for historical
+//! scenarios and edge-case regression tests.
 //!
 //! ## Design Principles
 //!
 //! 1. **Pure functions** — No side effects, no process spawning, no macOS APIs
 //! 2. **Testable** — All logic can be unit tested without mocking
-//! 3. **FFI-safe** — All types are UniFFI-compatible
+//! 3. **Deterministic** — Serves as a stable fixture corpus for activation policy
 //!
-//! ## Usage Flow
+//! ## Historical Context
 //!
 //! ```text
-//! Swift: fetches runtime shell state snapshot
-//!    │
-//!    ▼
-//! Swift: queries tmux context (list-windows, list-clients)
-//!    │
-//!    ▼
-//! Rust: resolve_activation(project_path, shell_state, tmux_context)
-//!    │
-//!    ▼
-//! Swift: executes returned ActivationAction
+//! Previously: Swift queried tmux and delegated activation resolution to Rust.
+//! Today:      Swift owns live activation directly.
+//! Here:       Rust remains only as a spec harness exercised by tests.
 //! ```
 
 mod policy;
@@ -39,10 +33,10 @@ use trace::DecisionTraceFfi;
 // FFI Types
 // ═══════════════════════════════════════════════════════════════════════════════
 
-/// Shell state as returned by the runtime snapshot.
+/// Shell state as returned by the runtime service snapshot payload.
 ///
 /// This is the FFI-safe version of the shell state. Swift fetches the runtime
-/// snapshot and converts it to this type before passing to Rust.
+/// service snapshot and converts it to this type before passing to Rust.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ShellCwdStateFfi {
     pub version: u32,
@@ -232,7 +226,7 @@ fn resolve_activation_internal(
     let action_path = normalize_path_for_actions(project_path);
     let mut trace: Option<DecisionTraceFfi> = None;
 
-    // Priority 1: Find existing shell in runtime snapshot.
+    // Priority 1: Find an existing shell in the runtime service snapshot.
     if let Some(state) = shell_state {
         let policy = SelectionPolicy {
             prefer_tmux: tmux_context.has_attached_client,
@@ -381,7 +375,7 @@ fn paths_match_excluding_home(shell_path: &str, project_path: &str, home_dir: &s
     policy::match_type_excluding_home(&shell_path, &project_path, &home_dir).is_some()
 }
 
-/// Resolve activation for an existing shell found in the runtime snapshot.
+/// Resolve activation for an existing shell found in the runtime service snapshot.
 fn resolve_for_existing_shell(
     pid: u32,
     shell: &ShellEntryFfi,

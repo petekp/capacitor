@@ -1,41 +1,4 @@
-import AppKit
 import SwiftUI
-
-// MARK: - First Mouse Click Support for Popovers
-
-/// Enables click-through for inactive windows (fixes popover two-click issue).
-/// Must be applied directly to buttons, not containers.
-/// See: https://christiantietze.de/posts/2024/04/enable-swiftui-button-click-through-inactive-windows/
-private struct ClickThroughBackdrop<Content: View>: NSViewRepresentable {
-    final class Backdrop: NSHostingView<Content> {
-        override func acceptsFirstMouse(for _: NSEvent?) -> Bool {
-            true
-        }
-    }
-
-    let content: Content
-
-    init(_ content: Content) {
-        self.content = content
-    }
-
-    func makeNSView(context _: Context) -> Backdrop {
-        let backdrop = Backdrop(rootView: content)
-        backdrop.translatesAutoresizingMaskIntoConstraints = false
-        return backdrop
-    }
-
-    func updateNSView(_ nsView: Backdrop, context _: Context) {
-        nsView.rootView = content
-    }
-}
-
-private extension View {
-    /// Enables this view to receive clicks even when its window is inactive.
-    func acceptClickThrough() -> some View {
-        ClickThroughBackdrop(self)
-    }
-}
 
 // MARK: - Footer View
 

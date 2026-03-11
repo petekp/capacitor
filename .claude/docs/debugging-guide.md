@@ -1,22 +1,23 @@
 # Debugging Guide
 
 Use this guide for runtime and activation debugging only.
-Architecture source of truth lives in `architecture/CHARTER.md`,
-`architecture/DECISIONS.md`, `docs/architecture/OVERVIEW.md`, and
-`docs/architecture/REFERENCE.md`.
+Architecture source of truth lives in `CLAUDE.md`,
+`docs/ARCHITECTURE.md`, and
+`docs/architecture-decisions/004-dedicated-local-runtime-service.md`.
 
 ## Runtime Model
 
-Capacitor is runtime-snapshot based:
+Capacitor is runtime-service based:
 
-1. `capacitor-hook` ingests hook events and shell cwd signals.
-2. `capacitor-core` reduces them into the canonical runtime snapshot.
-3. Swift reads typed snapshot data and applies projection and stabilization before rendering.
+1. `hud-hook serve` receives Claude hook events and shell cwd signals.
+2. `capacitor-core` reduces them into the canonical runtime state and persists runtime artifacts.
+3. Swift reads typed snapshot data from authenticated `/runtime/*` service endpoints and applies projection and stabilization before rendering.
 
 Canonical runtime inputs and paths:
 
-- Hook binary: `~/.local/bin/capacitor-hook`
-- Snapshot: `~/.capacitor/runtime/app_snapshot.json`
+- Hook binary: `~/.local/bin/hud-hook`
+- Runtime service connection: `~/.capacitor/runtime/runtime-service.json`
+- Persisted runtime artifact: `~/.capacitor/runtime/app_snapshot.json`
 - Runtime directory: `~/.capacitor/runtime/`
 
 ## First Response Checklist
@@ -25,8 +26,7 @@ Start here before opening source files:
 
 ```bash
 ./scripts/dev/agent-observe.sh diagnose
-scripts/architecture/check_architecture_guards.sh --status
-scripts/ci/runtime-reliability-guard.sh --status
+./scripts/ci/runtime-reliability-guard.sh --status
 ```
 
 If the problem smells like reducer correctness:
@@ -38,7 +38,7 @@ cargo test -p capacitor-core --test replay_diff
 If the problem smells like hook-event mapping or ingest:
 
 ```bash
-cargo test -p capacitor-hook --test session_state_mapping_gate
+cargo test -p hud-hook --test session_state_mapping_gate
 ```
 
 If the problem smells like Swift projection or activation:
@@ -90,7 +90,7 @@ When the terminal opens, focuses the wrong target, or fails to switch sessions:
 cd apps/swift && swift test --filter 'TerminalLauncherTests|GhosttyAXReaderTests'
 ```
 
-The reliable activation evidence is the app debug log plus the runtime snapshot.
+The reliable activation evidence is the app debug log plus the runtime service snapshot payload.
 Do not assume `activation-traces` is populated in normal production flows.
 
 ## Hook Debugging
@@ -101,7 +101,7 @@ When session or shell updates stop arriving:
 2. Verify the installed binary:
 
 ```bash
-~/.local/bin/capacitor-hook --help
+~/.local/bin/hud-hook --help
 ```
 
 3. If the binary is missing or stale, run:
@@ -111,7 +111,7 @@ When session or shell updates stop arriving:
 ```
 
 4. Verify hook install state in the app setup UI or via setup diagnostics.
-5. Confirm that shell cwd changes produce new snapshot data.
+5. Confirm that shell cwd changes produce new runtime snapshot data.
 
 ## Event Loss Debugging
 
@@ -138,7 +138,7 @@ Use this order:
 
 1. `./scripts/dev/agent-observe.sh diagnose`
 2. `cargo test -p capacitor-core --test replay_diff`
-3. `cargo test -p capacitor-hook --test session_state_mapping_gate`
+3. `cargo test -p hud-hook --test session_state_mapping_gate`
 4. `bash scripts/ci/session-state-gate.sh`
 5. Capture the snapshot payload and relevant app-log lines before changing code
 
