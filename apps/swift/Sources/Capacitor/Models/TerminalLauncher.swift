@@ -674,8 +674,6 @@ enum TerminalScripts {
                         $0.bundleIdentifier == SupportedTerminalApp.ghostty.bundleId
                     }
                 },
-                activateApp: { false },
-                runBashScript: { _ in },
             )
             return driver.launchCommandScript(projectPath: projectPath, command: command)
         }

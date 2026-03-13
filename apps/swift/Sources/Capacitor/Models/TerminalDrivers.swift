@@ -18,8 +18,6 @@ final class GhosttyTerminalDriver: TerminalDriver {
     let app: SupportedTerminalApp = .ghostty
     private let automationClient: GhosttyAutomationClient
     private let isRunning: () -> Bool
-    private let activateApp: () -> Bool
-    private let runBashScript: (String) -> Void
     private var terminalIDByClientTTY: [String: String] = [:]
 
     private(set) var lastFailureReason: TerminalActivationFailureReason?
@@ -27,13 +25,9 @@ final class GhosttyTerminalDriver: TerminalDriver {
     init(
         automationClient: GhosttyAutomationClient,
         isRunning: @escaping () -> Bool,
-        activateApp: @escaping () -> Bool,
-        runBashScript: @escaping (String) -> Void,
     ) {
         self.automationClient = automationClient
         self.isRunning = isRunning
-        self.activateApp = activateApp
-        self.runBashScript = runBashScript
     }
 
     func focus(
@@ -103,51 +97,25 @@ final class GhosttyTerminalDriver: TerminalDriver {
             return false
         }
 
-        if isRunning() {
-            if let path = projectPath {
-                runBashScript("open -a Ghostty.app \(shellEscape(path))")
-            } else {
-                runBashScript("open -a Ghostty.app")
-            }
+        let configuration = GhosttySurfaceConfigurationOptions(
+            initialWorkingDirectory: projectPath,
+            initialInput: command,
+        )
 
-            let applescriptSafe = command
-                .replacingOccurrences(of: "\\", with: "\\\\")
-                .replacingOccurrences(of: "\"", with: "\\\"")
-            let script = """
-            osascript <<'APPLESCRIPT'
-            delay 1.0
-            tell application "System Events"
-                tell process "Ghostty"
-                    keystroke "\(applescriptSafe)"
-                    delay 0.05
-                    keystroke return
-                end tell
-            end tell
-            APPLESCRIPT
-            """
-            runBashScript(script)
+        switch automationClient.createWindow(configuration: configuration) {
+        case .success:
             return true
+        case let .failure(reason):
+            lastFailureReason = reason
+            return false
         }
-
-        let escapedTmuxCmd = bashDoubleQuoteEscape(command)
-        runBashScript("open -a Ghostty.app --args -e sh -c \"\(escapedTmuxCmd)\"")
-        return true
     }
 
     func launchCommandScript(projectPath: String, command: String) -> String {
-        let escapedPath = bashDoubleQuoteEscape(projectPath)
-        let escapedCommand = bashDoubleQuoteEscape(command)
-
-        return """
-        PROJECT_PATH="\(escapedPath)"
-        CLAUDE_CMD="\(escapedCommand)"
-
-        if [ -d "/Applications/Ghostty.app" ]; then
-            open -a Ghostty.app --args --working-directory="$PROJECT_PATH" -e bash -c "$CLAUDE_CMD"
-        else
-            echo "Ghostty not installed at /Applications/Ghostty.app" >&2
-        fi
-        """
+        ghosttyCreateWindowShellScript(configuration: GhosttySurfaceConfigurationOptions(
+            initialWorkingDirectory: projectPath,
+            initialInput: command,
+        ))
     }
 
     private func executeRoute(_ route: GhosttyRouteMatch, clientTty: String?) -> Bool {
@@ -348,8 +316,6 @@ struct TerminalDriverRegistry {
         ghostty = GhosttyTerminalDriver(
             automationClient: ghosttyAutomationClient,
             isRunning: { isTerminalRunning(.ghostty) },
-            activateApp: { activateApp(.ghostty) },
-            runBashScript: runBashScript,
         )
         iTerm = ScriptedTerminalDriver(
             app: .iTerm,

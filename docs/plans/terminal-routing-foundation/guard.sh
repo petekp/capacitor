@@ -26,7 +26,7 @@ DUPLICATE_ENTRYPOINT_BUDGET=0
 direct_tmux_count="$(count_matches_excluding 'tmux (switch-client|select-window|select-pane|new-session|list-clients|list-windows|display-message)' 'apps/swift/Sources/Capacitor/Models/TmuxRouter.swift' apps/swift/Sources/Capacitor/Models)"
 terminal_switch_count="$(count_matches 'case \.ghostty|case \.iTerm|case \.terminal' apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift)"
 raw_route_shape_count="$(count_matches 'target_kind|target_value' apps/swift core)"
-host_focus_applescript_count="$(count_matches_excluding 'tell application "iTerm2"|tell application "Terminal"|tell process "Ghostty"' 'apps/swift/Sources/Capacitor/Models/TerminalDrivers.swift' apps/swift/Sources/Capacitor/Models)"
+host_focus_applescript_count="$(count_matches_excluding 'tell application "iTerm2"|tell application "Terminal"' 'apps/swift/Sources/Capacitor/Models/TerminalDrivers.swift' apps/swift/Sources/Capacitor/Models)"
 duplicate_entrypoint_count="$(count_matches 'performUnifiedActivation\(|activateProjectSession\(' apps/swift/Sources/Capacitor/Models)"
 
 print_status() {

@@ -35,7 +35,7 @@ Current terminal support:
 - iTerm via TTY-based tab reuse
 - Terminal.app via TTY-based tab reuse
 
-**Known rough edges:** Ghostty routing depends on Ghostty's native AppleScript support in Ghostty 1.3+. If Ghostty AppleScript is disabled (`macos-applescript = false`) or macOS Automation access is denied, Capacitor will not be able to switch Ghostty surfaces. Ghostty launch still stays on the proven `open` path rather than native surface creation.
+**Known rough edges:** Ghostty routing and launch both depend on Ghostty's native AppleScript support in Ghostty 1.3+. If Ghostty AppleScript is disabled (`macos-applescript = false`) or macOS Automation access is denied, Capacitor will not be able to switch or create Ghostty surfaces natively.
 
 ## Install
 

@@ -718,17 +718,6 @@ final class TerminalLauncherTests: XCTestCase {
         XCTAssertTrue(script.contains("claude --resume"))
     }
 
-    func testLaunchWithCommandSupportsGhosttyOpenLaunch() {
-        let script = TerminalScripts.launchWithCommand(
-            projectPath: "/Users/pete/Code/capacitor",
-            command: "claude --resume",
-            preferredApp: .ghostty,
-        )
-
-        XCTAssertTrue(script.contains("open -a Ghostty.app --args --working-directory"))
-        XCTAssertTrue(script.contains("CLAUDE_CMD=\"claude --resume\""))
-    }
-
     func testLaunchWithCommandSupportsTerminalApp() {
         let script = TerminalScripts.launchWithCommand(
             projectPath: "/Users/pete/Code/capacitor",

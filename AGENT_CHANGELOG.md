@@ -14,6 +14,30 @@ Capacitor now uses an app-owned local runtime service (`hud-hook serve`) as the 
 
 ## Timeline
 
+### 2026-03-13 — Ghostty Native Launch Migration Finished
+
+**What changed:** `GhosttyTerminalDriver.launch(...)` and `TerminalScripts.launchWithCommand(...)` now create native Ghostty windows through `GhosttyAutomationClient` using `new surface configuration`, `initial working directory`, and `initial input`. The legacy Ghostty `open` plus `System Events` keystroke launch path is gone.
+
+**Why:** The 2026-03-13 live matrix superseded the earlier “native launch not viable” conclusion, and the remaining launch gap was small enough to close cleanly in one follow-up slice.
+
+**Agent impact:** If you touch Ghostty launch or resume, keep raw AppleScript in `GhosttyAutomationClient.swift`, use `new window` as the launch primitive, and use `initial input` rather than post-create `input text`.
+
+**Deprecated:** Ghostty-specific `open` launch scripts, Ghostty-specific `System Events` keystroke launch, and treating D5’s launch reversal as current truth.
+
+---
+
+### 2026-03-13 — Ghostty Native Surface Creation Retest
+
+**What changed:** Re-ran a live Ghostty 1.3.0 matrix against the native AppleScript surface-creation API. In both the running-app and cold-start cases, `new window` and the running-app `new tab` path honored `initial working directory`, `initial input`, and `command`, and both `initial input` and `command` successfully launched attached tmux sessions. Post-create `input text` did not produce reliable side effects.
+
+**Why:** The prior Ghostty migration notes concluded that native surface creation was not ready, but the routing migration left launch on the legacy `open` path only because that older live evidence was negative.
+
+**Agent impact:** This retest is the evidence behind the shipped native-launch follow-up. Native Ghostty surface creation is viable for the launch/resume behaviors we need; do not depend on post-create `input text`.
+
+**Deprecated:** Treating the older “native Ghostty surface creation is not ready on 1.3.0” result as current truth.
+
+---
+
 ### 2026-03 — Terminal Routing Foundation Closeout
 
 **What changed:** Terminal-routing-foundation is fully closed out. Shared-session project lookup now uses `tmux list-panes` so non-active panes are discoverable, project-card AX clicks use deterministic named actions, and live proof now covers Ghostty same-tab, Ghostty cross-tab, detached-session reuse, stale-pane fallback, plus iTerm and Terminal.app host-driver focus.

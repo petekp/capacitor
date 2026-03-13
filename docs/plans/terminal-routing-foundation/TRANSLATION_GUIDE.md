@@ -15,5 +15,5 @@
 
 - `CoreRoutingTarget` should be treated as explicit metadata, not as a generic `value` slot.
 - A successful session switch with a stale pane id is still considered a successful activation, by design.
-- Ghostty launch remains on the proven `open -a Ghostty.app` path even though routing is native.
+- Ghostty routing and launch both depend on Ghostty 1.3+ AppleScript support; if Ghostty automation is unavailable, Capacitor cannot natively switch or create Ghostty surfaces.
 - The new bridge is generated; manual edits to `apps/swift/Sources/Capacitor/Bridge/capacitor_core.swift` should be treated as disposable.

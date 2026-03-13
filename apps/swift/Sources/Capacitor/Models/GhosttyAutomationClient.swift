@@ -31,8 +31,14 @@ enum GhosttyAutomationSupportStatus: Equatable {
     case unsupported(TerminalActivationFailureReason)
 }
 
+struct GhosttySurfaceConfigurationOptions: Equatable {
+    let initialWorkingDirectory: String?
+    let initialInput: String?
+}
+
 protocol GhosttyAutomationClient {
     func supportStatus() -> GhosttyAutomationSupportStatus
+    func createWindow(configuration: GhosttySurfaceConfigurationOptions) -> Result<Void, TerminalActivationFailureReason>
     func readSnapshot() -> Result<GhosttyAppSnapshot, TerminalActivationFailureReason>
     func selectTab(id: String, inWindowID windowID: String) -> Result<Void, TerminalActivationFailureReason>
     func focusTerminal(id: String) -> Result<Void, TerminalActivationFailureReason>
@@ -121,6 +127,10 @@ struct DefaultGhosttyAutomationClient: GhosttyAutomationClient {
         }
 
         return .supported(version)
+    }
+
+    func createWindow(configuration: GhosttySurfaceConfigurationOptions) -> Result<Void, TerminalActivationFailureReason> {
+        runAction(Self.makeCreateWindowScript(configuration: configuration))
     }
 
     func readSnapshot() -> Result<GhosttyAppSnapshot, TerminalActivationFailureReason> {
@@ -316,6 +326,10 @@ struct DefaultGhosttyAutomationClient: GhosttyAutomationClient {
         """
     }
 
+    private static func makeCreateWindowScript(configuration: GhosttySurfaceConfigurationOptions) -> String {
+        ghosttyCreateWindowAppleScript(configuration: configuration)
+    }
+
     private static let supportProbeScript = """
     tell application "Ghostty"
         count of windows
@@ -383,6 +397,40 @@ struct DefaultGhosttyAutomationClient: GhosttyAutomationClient {
             return ""
         end try
     end safeText
+    """
+}
+
+func ghosttyCreateWindowAppleScript(configuration: GhosttySurfaceConfigurationOptions) -> String {
+    var lines = [
+        "tell application \"Ghostty\"",
+        "    set launchConfig to new surface configuration",
+    ]
+
+    if let workingDirectory = configuration.initialWorkingDirectory?.trimmingCharacters(in: .whitespacesAndNewlines),
+       !workingDirectory.isEmpty
+    {
+        lines.append("    set initial working directory of launchConfig to \"\(appleScriptEscape(workingDirectory))\"")
+    }
+
+    if let initialInput = configuration.initialInput?.trimmingCharacters(in: .whitespacesAndNewlines),
+       !initialInput.isEmpty
+    {
+        // `initial input` pastes text into the launched shell, so append a return
+        // to preserve the current shell-first launch semantics.
+        lines.append("    set initial input of launchConfig to \"\(appleScriptEscape(initialInput))\" & linefeed")
+    }
+
+    lines.append("    new window with configuration launchConfig")
+    lines.append("end tell")
+
+    return lines.joined(separator: "\n")
+}
+
+func ghosttyCreateWindowShellScript(configuration: GhosttySurfaceConfigurationOptions) -> String {
+    """
+    osascript <<'APPLESCRIPT'
+    \(ghosttyCreateWindowAppleScript(configuration: configuration))
+    APPLESCRIPT
     """
 }
 
