@@ -1,97 +1,94 @@
 # Dead Code Sweep Report
 
 **Scope:** full codebase
-**Date:** 2026-03-11
-**Status:** safe cleanup completed; ambiguous areas investigated and narrowed
-**Code removed in this pass:** 1,331 lines across 25 files
+**Date:** 2026-03-13
+**Estimated removable lines:** ~565 confirmed, ~990 additional lines need review
+
+## Inventory
+
+- Languages: Swift, Rust, JavaScript/TypeScript, Bash/Bats
+- Entry points:
+  - `apps/swift/Sources/Capacitor/App.swift`
+  - `core/hud-hook/src/main.rs`
+  - `core/capacitor-core/src/lib.rs`
+  - `services/ingest-worker/src/index.js`
+  - `apps/www/app/page.tsx`
+- Build / test surfaces:
+  - SwiftPM in `apps/swift/Package.swift`
+  - Cargo workspace in `Cargo.toml`
+  - Wrangler worker in `services/ingest-worker/package.json`
+  - Next.js app in `apps/www/package.json`
+  - GitHub Actions in `.github/workflows/ci.yml`
+- Packages / units:
+  - Swift macOS app
+  - Rust library crate: `core/capacitor-core`
+  - Rust binary crate: `core/hud-hook`
+  - Cloudflare worker: `services/ingest-worker`
+  - Next.js site: `apps/www`
+- Estimated LOC:
+  - ~137,374 lines across tracked `.swift`, `.rs`, `.js`, `.ts(x)`, `.mjs`, `.sh`, and `.bats` files
+  - Note: this includes large generated FFI bridge code, so it overstates hand-written logic
 
 ## Removed
 
-### Swift
+### Removed After Approval
 
-- Deleted orphaned files:
-  - `apps/swift/Sources/Capacitor/Views/Components/ProgressiveBlurView.swift`
-  - `apps/swift/Sources/Capacitor/Views/Projects/NewIdeaView.swift`
+- `scripts/ci/test-agent-observe.sh` — 565 lines
+  - Removed on 2026-03-13 after approval
+  - Rationale: standalone bash harness with zero references from workflows, docs, or any other script
 
-- Removed dead helper clusters:
-  - `TickerText` / `ShimmerEffect` from `apps/swift/Sources/Capacitor/Views/Projects/ProjectCardView.swift`
-  - `ClickThroughBackdrop` / `acceptClickThrough()` from `apps/swift/Sources/Capacitor/Views/Footer/FooterView.swift`
+## Confirmed Dead (high confidence)
 
-- Removed zero-callsite Swift APIs:
-  - `AppState.createClaudeMd(for:)`
-  - `SessionStateManager.getSessionAttribution(for:)`
-  - `CapacitorConfig.getClaudePath()`
-  - `WindowFrameStore.resetCompactState()`
-  - `ReadyChimeGate.resetForTesting()`
-  - `View.scrollEdgeFadeMask(...)`
-  - `GlassConfig.cardInsetCornerRadius(for:inset:)`
+### Orphaned Files
 
-- Removed the unreachable start-new-project route and wrapper chain:
-  - `ProjectView.newIdea`
-  - `showNewIdea()` wrappers
-  - `createProjectFromIdea(...)` wrappers
-  - dead creation-initiation code inside `ProjectCreationCoordinator`
+- None currently pending in the approved category.
 
-### Rust
+## Needs Review (uncertain)
 
-- Deleted orphaned module:
-  - `core/capacitor-core/src/runtime_state/path_utils.rs`
+### Orphaned / Manual Utility Candidates
 
-- Removed unused Rust helpers and wrapper layers:
-  - `parse_frontmatter()` from `runtime_artifacts.rs`
-  - `find_managed_hook_event_contract()` from `runtime_contracts/claude_hooks.rs`
-  - default-storage wrapper APIs from `runtime_config.rs`
-  - `load_projects()` from `runtime_projects.rs`
-  - unused frontmatter regexes from `runtime_patterns.rs`
+- `scripts/utils/apply-icon-mask.swift` — 256 lines
+  - What it is: Swift utility that generates masked iconset assets
+  - Why it appears dead:
+    - zero references from workflows, docs, or other scripts
+    - output assets already exist under `assets/AppIcon.iconset`
+    - no release/build script currently calls it
+  - Why not confirmed:
+    - could still be an intentional manual asset-regeneration tool
+  - Confidence: needs review
 
-- Removed redundant manifest entry:
-  - duplicate `chrono.workspace = true` from `core/capacitor-core/Cargo.toml`
+- `apps/www/` package — ~242 lines of app/config code plus static assets
+  - What it is: standalone Next.js site with its own `package.json`
+  - Why it appears dead:
+    - no references from root docs, workflows, release scripts, or contributor guidance beyond the package’s own files
+    - no repo-level automation builds, tests, or deploys it
+  - Why not confirmed:
+    - it is a self-contained package with valid entry points (`next dev/build/start`) and may intentionally be maintained out-of-band
+  - Confidence: needs review
 
-## Deeper Investigation
+### Test-Only Production Surface
 
-### `NewIdea` / project creation
+- `core/capacitor-core/src/projection/mod.rs` — 169 lines
+  - What it is: `SnapshotReadModelProjector` and associated projection structs
+  - Why it appears dead:
+    - repo-wide usage is limited to the module’s own unit tests and `core/capacitor-core/tests/replay_diff.rs`
+    - no live workspace production path calls into the projector
+  - Why not confirmed:
+    - the `projection` module is publicly exported from `capacitor-core`, so external consumers are theoretically possible
+    - even if external consumers do not exist, this may be intentional architecture scaffolding for replay validation
+  - Confidence: needs review
 
-**Verdict:** the start-new-project path was dead, but creation tracking/resume is still live.
+## Scanned But Not Flagged
 
-What remains intentionally:
-- `ActivityPanel`
-- persisted `activeCreations`
-- `ProjectCreationCoordinator` resume/cancel/session-monitor flow
+- `scripts/ci/swiftformat-lint.sh` is live via `.github/workflows/ci.yml`
+- `scripts/ci/test-surface-audit.sh` is live via `.github/workflows/ci.yml`
+- `services/ingest-worker` dependency surface did not show any confirmed orphaned packages
+- `cargo check --workspace --all-targets` did not surface obvious dead-code warnings
+- Swift source scan produced many low-reference symbols, but most resolved to legitimate entry points, views, generated FFI helpers, or convention-driven test coverage
 
-What was removed:
-- the unreachable UI route and initiation pipeline that had no production caller
+## Recommended Cleanup Order
 
-### Rust `runtime_activation`
-
-**Verdict:** not production code, but still a useful spec harness.
-
-What changed:
-- kept the subtree
-- updated its module header to state clearly that it is test-only and no longer part of live activation
-
-Reason:
-- the tests still provide useful regression coverage
-- the real problem was stale ownership/docs drift, not pure deadness
-
-### Still Ambiguous
-
-- `scripts/utils/apply-icon-mask.swift`
-  - likely dead one-off utility
-
-- `scripts/ci/test-agent-observe.sh`
-  - dormant, but plausibly useful as a manual harness
-
-- `ghosttyWindowTitleMatchesSession(...)`
-  - looks like an unwired fallback; still covered only by tests
-
-## Verification
-
-- `cargo check --workspace --all-targets`
-- `cargo clippy --workspace --all-targets -- -D warnings`
-- `swift build`
-- `swift test`
-- `cargo machete`
-
-Notes:
-- `cargo test --workspace` passed after the first cleanup pass.
-- `core/hud-hook/tests/serve_integration` still shows an existing 5-second readiness timeout flake in full-suite mode, but isolated reruns pass.
+1. Remove the confirmed orphaned script `scripts/ci/test-agent-observe.sh`
+2. Decide whether the manual icon tool `scripts/utils/apply-icon-mask.swift` should be kept as unsupported-but-useful tooling or deleted
+3. Decide whether `apps/www` is an intentional standalone package
+4. Decide whether the Rust `projection` module is intended test-only scaffolding or production-bound architecture
