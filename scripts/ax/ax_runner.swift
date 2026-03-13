@@ -260,18 +260,31 @@ private func findElement(
     in appElement: AXUIElement,
 ) -> AXUIElement? {
     var queue = childElements(of: appElement)
+    var visited = Set<CFHashCode>()
     if queue.isEmpty {
         queue = [appElement]
     }
 
     while !queue.isEmpty {
         let current = queue.removeFirst()
+        let identity = CFHash(current)
+        if visited.contains(identity) {
+            continue
+        }
+        visited.insert(identity)
+
         if let value = copyAttribute(current, name: kAXIdentifierAttribute as CFString) as? String,
            value == identifier
         {
             return current
         }
-        queue.append(contentsOf: childElements(of: current))
+
+        for child in childElements(of: current) {
+            let childIdentity = CFHash(child)
+            if !visited.contains(childIdentity) {
+                queue.append(child)
+            }
+        }
     }
 
     return nil
@@ -296,7 +309,12 @@ private func waitForWindow(in appElement: AXUIElement, timeout: TimeInterval, bu
     let deadline = Date().addingTimeInterval(timeout)
     while Date() < deadline {
         if let windows = copyAttribute(appElement, name: kAXWindowsAttribute as CFString) as? [AXUIElement],
-           !windows.isEmpty
+           windows.contains(where: {
+               if let role = copyAttribute($0, name: kAXRoleAttribute as CFString) as? String {
+                   return role == kAXWindowRole as String
+               }
+               return false
+           })
         {
             return
         }
@@ -421,6 +439,32 @@ private func activateApp(_ app: NSRunningApplication) {
     }
 }
 
+private func actionNames(for element: AXUIElement) -> [String] {
+    var names: CFArray?
+    guard AXUIElementCopyActionNames(element, &names) == .success,
+          let names = names as? [String]
+    else {
+        return []
+    }
+    return names
+}
+
+private func preferredDeterministicAction(identifier: String, actionNames: [String]) -> String? {
+    if let namedOpenAction = actionNames.first(where: { $0.localizedCaseInsensitiveContains("open in terminal") }) {
+        return namedOpenAction
+    }
+
+    // Project cards frequently expose only custom named actions instead of a reliable
+    // hittable frame or AXPress path. Prefer that explicit action when available.
+    if identifier.hasPrefix("ax.project-card."),
+       let firstNamedAction = actionNames.first(where: { $0.localizedCaseInsensitiveContains("name:") })
+    {
+        return firstNamedAction
+    }
+
+    return nil
+}
+
 private func performClick(
     identifier: String,
     app: NSRunningApplication,
@@ -429,6 +473,23 @@ private func performClick(
     visible: Bool,
 ) throws {
     let element = try waitForElement(identifier: identifier, in: appElement, timeout: timeout)
+    let names = actionNames(for: element)
+
+    if let action = preferredDeterministicAction(identifier: identifier, actionNames: names) {
+        let result = AXUIElementPerformAction(element, action as CFString)
+        if result == .success {
+            log("step.click.named_action", [
+                "identifier": identifier,
+                "action": action.replacingOccurrences(of: "\n", with: " | "),
+            ])
+            return
+        }
+        log("step.click.named_action_fallback", [
+            "identifier": identifier,
+            "action": action.replacingOccurrences(of: "\n", with: " | "),
+            "status": result.rawValue,
+        ])
+    }
 
     if visible {
         if let point = elementCenterPoint(element) {

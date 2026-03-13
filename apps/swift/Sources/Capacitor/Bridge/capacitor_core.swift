@@ -2636,17 +2636,19 @@ public struct IngestShellSignalCommand {
     public var parentApp: String
     public var tmuxSession: String?
     public var tmuxClientTty: String?
+    public var tmuxPane: String?
     public var recordedAt: String
 
     /// Default memberwise initializers are never public by default, so we
     /// declare one manually.
-    public init(pid: UInt32, cwd: String, tty: String, parentApp: String, tmuxSession: String?, tmuxClientTty: String?, recordedAt: String) {
+    public init(pid: UInt32, cwd: String, tty: String, parentApp: String, tmuxSession: String?, tmuxClientTty: String?, tmuxPane: String?, recordedAt: String) {
         self.pid = pid
         self.cwd = cwd
         self.tty = tty
         self.parentApp = parentApp
         self.tmuxSession = tmuxSession
         self.tmuxClientTty = tmuxClientTty
+        self.tmuxPane = tmuxPane
         self.recordedAt = recordedAt
     }
 }
@@ -2671,6 +2673,9 @@ extension IngestShellSignalCommand: Equatable, Hashable {
         if lhs.tmuxClientTty != rhs.tmuxClientTty {
             return false
         }
+        if lhs.tmuxPane != rhs.tmuxPane {
+            return false
+        }
         if lhs.recordedAt != rhs.recordedAt {
             return false
         }
@@ -2684,6 +2689,7 @@ extension IngestShellSignalCommand: Equatable, Hashable {
         hasher.combine(parentApp)
         hasher.combine(tmuxSession)
         hasher.combine(tmuxClientTty)
+        hasher.combine(tmuxPane)
         hasher.combine(recordedAt)
     }
 }
@@ -2701,6 +2707,7 @@ public struct FfiConverterTypeIngestShellSignalCommand: FfiConverterRustBuffer {
                 parentApp: FfiConverterString.read(from: &buf),
                 tmuxSession: FfiConverterOptionString.read(from: &buf),
                 tmuxClientTty: FfiConverterOptionString.read(from: &buf),
+                tmuxPane: FfiConverterOptionString.read(from: &buf),
                 recordedAt: FfiConverterString.read(from: &buf)
             )
     }
@@ -2712,6 +2719,7 @@ public struct FfiConverterTypeIngestShellSignalCommand: FfiConverterRustBuffer {
         FfiConverterString.write(value.parentApp, into: &buf)
         FfiConverterOptionString.write(value.tmuxSession, into: &buf)
         FfiConverterOptionString.write(value.tmuxClientTty, into: &buf)
+        FfiConverterOptionString.write(value.tmuxPane, into: &buf)
         FfiConverterString.write(value.recordedAt, into: &buf)
     }
 }
@@ -4222,24 +4230,107 @@ public func FfiConverterTypeProjectSummary_lower(_ value: ProjectSummary) -> Rus
     return FfiConverterTypeProjectSummary.lower(value)
 }
 
+public struct RoutingTarget {
+    public var kind: RoutingTargetKind
+    public var terminalApp: String?
+    public var sessionName: String?
+    public var paneId: String?
+    public var hostTty: String?
+
+    /// Default memberwise initializers are never public by default, so we
+    /// declare one manually.
+    public init(kind: RoutingTargetKind, terminalApp: String?, sessionName: String?, paneId: String?, hostTty: String?) {
+        self.kind = kind
+        self.terminalApp = terminalApp
+        self.sessionName = sessionName
+        self.paneId = paneId
+        self.hostTty = hostTty
+    }
+}
+
+extension RoutingTarget: Equatable, Hashable {
+    public static func == (lhs: RoutingTarget, rhs: RoutingTarget) -> Bool {
+        if lhs.kind != rhs.kind {
+            return false
+        }
+        if lhs.terminalApp != rhs.terminalApp {
+            return false
+        }
+        if lhs.sessionName != rhs.sessionName {
+            return false
+        }
+        if lhs.paneId != rhs.paneId {
+            return false
+        }
+        if lhs.hostTty != rhs.hostTty {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(kind)
+        hasher.combine(terminalApp)
+        hasher.combine(sessionName)
+        hasher.combine(paneId)
+        hasher.combine(hostTty)
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRoutingTarget: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RoutingTarget {
+        return
+            try RoutingTarget(
+                kind: FfiConverterTypeRoutingTargetKind.read(from: &buf),
+                terminalApp: FfiConverterOptionString.read(from: &buf),
+                sessionName: FfiConverterOptionString.read(from: &buf),
+                paneId: FfiConverterOptionString.read(from: &buf),
+                hostTty: FfiConverterOptionString.read(from: &buf)
+            )
+    }
+
+    public static func write(_ value: RoutingTarget, into buf: inout [UInt8]) {
+        FfiConverterTypeRoutingTargetKind.write(value.kind, into: &buf)
+        FfiConverterOptionString.write(value.terminalApp, into: &buf)
+        FfiConverterOptionString.write(value.sessionName, into: &buf)
+        FfiConverterOptionString.write(value.paneId, into: &buf)
+        FfiConverterOptionString.write(value.hostTty, into: &buf)
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRoutingTarget_lift(_ buf: RustBuffer) throws -> RoutingTarget {
+    return try FfiConverterTypeRoutingTarget.lift(buf)
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRoutingTarget_lower(_ value: RoutingTarget) -> RustBuffer {
+    return FfiConverterTypeRoutingTarget.lower(value)
+}
+
 public struct RoutingView {
     public var workspaceId: String
     public var projectPath: String
     public var status: RoutingStatus
-    public var targetKind: RoutingTargetKind
-    public var targetValue: String?
+    public var target: RoutingTarget
     public var reasonCode: String
     public var reason: String
     public var updatedAt: String
 
     /// Default memberwise initializers are never public by default, so we
     /// declare one manually.
-    public init(workspaceId: String, projectPath: String, status: RoutingStatus, targetKind: RoutingTargetKind, targetValue: String?, reasonCode: String, reason: String, updatedAt: String) {
+    public init(workspaceId: String, projectPath: String, status: RoutingStatus, target: RoutingTarget, reasonCode: String, reason: String, updatedAt: String) {
         self.workspaceId = workspaceId
         self.projectPath = projectPath
         self.status = status
-        self.targetKind = targetKind
-        self.targetValue = targetValue
+        self.target = target
         self.reasonCode = reasonCode
         self.reason = reason
         self.updatedAt = updatedAt
@@ -4257,10 +4348,7 @@ extension RoutingView: Equatable, Hashable {
         if lhs.status != rhs.status {
             return false
         }
-        if lhs.targetKind != rhs.targetKind {
-            return false
-        }
-        if lhs.targetValue != rhs.targetValue {
+        if lhs.target != rhs.target {
             return false
         }
         if lhs.reasonCode != rhs.reasonCode {
@@ -4279,8 +4367,7 @@ extension RoutingView: Equatable, Hashable {
         hasher.combine(workspaceId)
         hasher.combine(projectPath)
         hasher.combine(status)
-        hasher.combine(targetKind)
-        hasher.combine(targetValue)
+        hasher.combine(target)
         hasher.combine(reasonCode)
         hasher.combine(reason)
         hasher.combine(updatedAt)
@@ -4297,8 +4384,7 @@ public struct FfiConverterTypeRoutingView: FfiConverterRustBuffer {
                 workspaceId: FfiConverterString.read(from: &buf),
                 projectPath: FfiConverterString.read(from: &buf),
                 status: FfiConverterTypeRoutingStatus.read(from: &buf),
-                targetKind: FfiConverterTypeRoutingTargetKind.read(from: &buf),
-                targetValue: FfiConverterOptionString.read(from: &buf),
+                target: FfiConverterTypeRoutingTarget.read(from: &buf),
                 reasonCode: FfiConverterString.read(from: &buf),
                 reason: FfiConverterString.read(from: &buf),
                 updatedAt: FfiConverterString.read(from: &buf)
@@ -4309,8 +4395,7 @@ public struct FfiConverterTypeRoutingView: FfiConverterRustBuffer {
         FfiConverterString.write(value.workspaceId, into: &buf)
         FfiConverterString.write(value.projectPath, into: &buf)
         FfiConverterTypeRoutingStatus.write(value.status, into: &buf)
-        FfiConverterTypeRoutingTargetKind.write(value.targetKind, into: &buf)
-        FfiConverterOptionString.write(value.targetValue, into: &buf)
+        FfiConverterTypeRoutingTarget.write(value.target, into: &buf)
         FfiConverterString.write(value.reasonCode, into: &buf)
         FfiConverterString.write(value.reason, into: &buf)
         FfiConverterString.write(value.updatedAt, into: &buf)
@@ -4572,17 +4657,19 @@ public struct ShellSignal {
     public var parentApp: String
     public var tmuxSession: String?
     public var tmuxClientTty: String?
+    public var tmuxPane: String?
     public var updatedAt: String
 
     /// Default memberwise initializers are never public by default, so we
     /// declare one manually.
-    public init(pid: UInt32, cwd: String, tty: String, parentApp: String, tmuxSession: String?, tmuxClientTty: String?, updatedAt: String) {
+    public init(pid: UInt32, cwd: String, tty: String, parentApp: String, tmuxSession: String?, tmuxClientTty: String?, tmuxPane: String?, updatedAt: String) {
         self.pid = pid
         self.cwd = cwd
         self.tty = tty
         self.parentApp = parentApp
         self.tmuxSession = tmuxSession
         self.tmuxClientTty = tmuxClientTty
+        self.tmuxPane = tmuxPane
         self.updatedAt = updatedAt
     }
 }
@@ -4607,6 +4694,9 @@ extension ShellSignal: Equatable, Hashable {
         if lhs.tmuxClientTty != rhs.tmuxClientTty {
             return false
         }
+        if lhs.tmuxPane != rhs.tmuxPane {
+            return false
+        }
         if lhs.updatedAt != rhs.updatedAt {
             return false
         }
@@ -4620,6 +4710,7 @@ extension ShellSignal: Equatable, Hashable {
         hasher.combine(parentApp)
         hasher.combine(tmuxSession)
         hasher.combine(tmuxClientTty)
+        hasher.combine(tmuxPane)
         hasher.combine(updatedAt)
     }
 }
@@ -4637,6 +4728,7 @@ public struct FfiConverterTypeShellSignal: FfiConverterRustBuffer {
                 parentApp: FfiConverterString.read(from: &buf),
                 tmuxSession: FfiConverterOptionString.read(from: &buf),
                 tmuxClientTty: FfiConverterOptionString.read(from: &buf),
+                tmuxPane: FfiConverterOptionString.read(from: &buf),
                 updatedAt: FfiConverterString.read(from: &buf)
             )
     }
@@ -4648,6 +4740,7 @@ public struct FfiConverterTypeShellSignal: FfiConverterRustBuffer {
         FfiConverterString.write(value.parentApp, into: &buf)
         FfiConverterOptionString.write(value.tmuxSession, into: &buf)
         FfiConverterOptionString.write(value.tmuxClientTty, into: &buf)
+        FfiConverterOptionString.write(value.tmuxPane, into: &buf)
         FfiConverterString.write(value.updatedAt, into: &buf)
     }
 }
@@ -5311,7 +5404,7 @@ extension HookEventType: Equatable, Hashable {}
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 /* 
- * The health status of the hook binary based on heartbeat freshness.
+ * The health status of the hook binary based on service-owned hook activity freshness.
  */
 
 public enum HookHealthStatus {
@@ -5324,11 +5417,11 @@ public enum HookHealthStatus {
      */
     case unknown
     /**
-     * Heartbeat is stale (hooks stopped firing)
+     * Hook activity is stale (hooks stopped firing)
      */
     case stale(lastSeenSecs: UInt64)
     /**
-     * Heartbeat file exists but can't be read
+     * Hook activity state could not be read
      */
     case unreadable(reason: String)
 }
@@ -5916,6 +6009,7 @@ extension RoutingStatus: Equatable, Hashable {}
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 
 public enum RoutingTargetKind {
+    case tmuxPane
     case tmuxSession
     case terminalApp
     case none
@@ -5930,11 +6024,13 @@ public struct FfiConverterTypeRoutingTargetKind: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RoutingTargetKind {
         let variant: Int32 = try readInt(&buf)
         switch variant {
-        case 1: return .tmuxSession
+        case 1: return .tmuxPane
 
-        case 2: return .terminalApp
+        case 2: return .tmuxSession
 
-        case 3: return .none
+        case 3: return .terminalApp
+
+        case 4: return .none
 
         default: throw UniffiInternalError.unexpectedEnumCase
         }
@@ -5942,14 +6038,17 @@ public struct FfiConverterTypeRoutingTargetKind: FfiConverterRustBuffer {
 
     public static func write(_ value: RoutingTargetKind, into buf: inout [UInt8]) {
         switch value {
-        case .tmuxSession:
+        case .tmuxPane:
             writeInt(&buf, Int32(1))
 
-        case .terminalApp:
+        case .tmuxSession:
             writeInt(&buf, Int32(2))
 
-        case .none:
+        case .terminalApp:
             writeInt(&buf, Int32(3))
+
+        case .none:
+            writeInt(&buf, Int32(4))
         }
     }
 }

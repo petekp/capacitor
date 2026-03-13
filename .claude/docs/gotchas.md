@@ -116,7 +116,7 @@ The live activation flow is owned by Swift and currently centered on:
 
 - `apps/swift/Sources/Capacitor/Models/AppState.swift`
 - `apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift`
-- `apps/swift/Sources/Capacitor/Models/GhosttyAXReader.swift`
+- `apps/swift/Sources/Capacitor/Models/GhosttyAutomationClient.swift`
 
 Rust owns runtime truth and hook ingest. It does not own live terminal activation execution.
 

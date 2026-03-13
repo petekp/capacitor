@@ -9,13 +9,33 @@ struct ShellEntry: Codable, Equatable {
     let parentApp: String?
     let tmuxSession: String?
     let tmuxClientTty: String?
+    let tmuxPane: String?
     let updatedAt: Date
+
+    init(
+        cwd: String,
+        tty: String,
+        parentApp: String?,
+        tmuxSession: String?,
+        tmuxClientTty: String?,
+        tmuxPane: String? = nil,
+        updatedAt: Date,
+    ) {
+        self.cwd = cwd
+        self.tty = tty
+        self.parentApp = parentApp
+        self.tmuxSession = tmuxSession
+        self.tmuxClientTty = tmuxClientTty
+        self.tmuxPane = tmuxPane
+        self.updatedAt = updatedAt
+    }
 
     enum CodingKeys: String, CodingKey {
         case cwd, tty
         case parentApp = "parent_app"
         case tmuxSession = "tmux_session"
         case tmuxClientTty = "tmux_client_tty"
+        case tmuxPane = "tmux_pane"
         case updatedAt = "updated_at"
     }
 }

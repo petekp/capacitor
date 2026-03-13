@@ -67,7 +67,7 @@ pub fn send_shell_cwd_event(
     tmux_session: Option<String>,
     tmux_client_tty: Option<String>,
     _proc_start: Option<u64>,
-    _tmux_pane: Option<String>,
+    tmux_pane: Option<String>,
 ) -> Result<(), String> {
     let command = IngestShellSignalCommand {
         pid,
@@ -76,6 +76,7 @@ pub fn send_shell_cwd_event(
         parent_app: parent_app_string(parent_app),
         tmux_session,
         tmux_client_tty,
+        tmux_pane,
         recorded_at: Utc::now().to_rfc3339(),
     };
 

@@ -31,6 +31,7 @@ pub fn normalize_shell_signal(command: IngestShellSignalCommand) -> IngestShellS
         parent_app: command.parent_app.trim().to_string(),
         tmux_session: normalize_optional_text(command.tmux_session),
         tmux_client_tty: normalize_optional_text(command.tmux_client_tty),
+        tmux_pane: normalize_optional_text(command.tmux_pane),
         recorded_at: command.recorded_at.trim().to_string(),
     }
 }
@@ -61,8 +62,8 @@ fn normalize_optional_text(value: Option<String>) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::normalize_hook_event;
-    use crate::domain::{HookEventType, IngestHookEventCommand};
+    use super::{normalize_hook_event, normalize_shell_signal};
+    use crate::domain::{HookEventType, IngestHookEventCommand, IngestShellSignalCommand};
 
     #[test]
     fn normalize_hook_event_cleans_optional_fields() {
@@ -93,5 +94,26 @@ mod tests {
         assert_eq!(normalized.workspace_id, None);
         assert_eq!(normalized.tool_name, None);
         assert_eq!(normalized.teammate_name, None);
+    }
+
+    #[test]
+    fn normalize_shell_signal_cleans_tmux_fields() {
+        let normalized = normalize_shell_signal(IngestShellSignalCommand {
+            pid: 42,
+            cwd: " /repo/ ".to_string(),
+            tty: " /dev/ttys001 ".to_string(),
+            parent_app: " Ghostty ".to_string(),
+            tmux_session: Some(" repo ".to_string()),
+            tmux_client_tty: Some(" /dev/ttys099 ".to_string()),
+            tmux_pane: Some(" %42 ".to_string()),
+            recorded_at: " 2026-02-28T00:00:00Z ".to_string(),
+        });
+
+        assert_eq!(normalized.cwd, "/repo");
+        assert_eq!(normalized.tty, "/dev/ttys001");
+        assert_eq!(normalized.parent_app, "Ghostty");
+        assert_eq!(normalized.tmux_session.as_deref(), Some("repo"));
+        assert_eq!(normalized.tmux_client_tty.as_deref(), Some("/dev/ttys099"));
+        assert_eq!(normalized.tmux_pane.as_deref(), Some("%42"));
     }
 }

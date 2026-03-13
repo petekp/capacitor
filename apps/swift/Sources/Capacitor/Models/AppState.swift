@@ -144,6 +144,7 @@ class AppState {
 
     let anchoringController = WindowAnchoringController()
     let shellStateStore = ShellStateStore()
+    let routingStateStore = RoutingStateStore()
     let terminalLauncher = TerminalLauncher()
     let sessionStateManager = SessionStateManager()
     let hookServerManager = HookServerManager()
@@ -212,10 +213,59 @@ class AppState {
             sessionStateManager: sessionStateManager,
         )
         terminalLauncher.preferredTerminalAppResolver = { [weak self] clientTty, projectPath, sessionName in
-            guard let shellState = self?.shellStateStore.state else {
+            guard let self else {
+                return nil
+            }
+
+            if let routedApp = routingStateStore
+                .routingView(projectPath: projectPath, workspaceId: nil)?
+                .target
+                .terminalApp,
+                let app = SupportedTerminalApp.from(parentApp: routedApp)
+            {
+                return app
+            }
+
+            guard let shellState = shellStateStore.state else {
                 return nil
             }
             return TerminalLauncher.resolvePreferredTerminalApp(
+                clientTty: clientTty,
+                projectPath: projectPath,
+                sessionName: sessionName,
+                shellState: shellState,
+            )
+        }
+        terminalLauncher.preferredRoutingSessionResolver = { [weak self] projectPath in
+            guard let route = self?.routingStateStore.routingView(projectPath: projectPath, workspaceId: nil) else {
+                return nil
+            }
+            guard route.target.kind == "tmux_session" || route.target.kind == "tmux_pane" else {
+                return nil
+            }
+            return route.target.sessionName
+        }
+        terminalLauncher.preferredHostTtyResolver = { [weak self] projectPath, sessionName in
+            guard let route = self?.routingStateStore.routingView(projectPath: projectPath, workspaceId: nil) else {
+                return nil
+            }
+            guard sessionName == nil || route.target.sessionName == sessionName else {
+                return nil
+            }
+            return route.target.hostTty
+        }
+        terminalLauncher.preferredTmuxPaneResolver = { [weak self] clientTty, projectPath, sessionName in
+            if let route = self?.routingStateStore.routingView(projectPath: projectPath, workspaceId: nil),
+               route.target.kind == "tmux_pane",
+               let paneId = route.target.paneId,
+               sessionName == nil || route.target.sessionName == sessionName
+            {
+                return paneId
+            }
+            guard let shellState = self?.shellStateStore.state else {
+                return nil
+            }
+            return TerminalLauncher.resolvePreferredTmuxPane(
                 clientTty: clientTty,
                 projectPath: projectPath,
                 sessionName: sessionName,
@@ -301,7 +351,7 @@ class AppState {
             guard let self else { return }
             if !result.success {
                 toast = ToastMessage(
-                    "Couldn’t activate Ghostty.",
+                    result.failureReason?.userMessage ?? "Couldn’t activate Ghostty.",
                     isError: true,
                 )
             }
@@ -483,7 +533,7 @@ class AppState {
         consecutiveRuntimeSnapshotFailures = 0
 
         DebugLog.write(
-            "AppState.refreshSessionStates source=runtime_snapshot_apply cid=\(correlationId) projects=\(snapshot.projectStates.count) sessions=\(snapshot.sessions.count) shells=\(snapshot.shellState.shells.count)",
+            "AppState.refreshSessionStates source=runtime_snapshot_apply cid=\(correlationId) projects=\(snapshot.projectStates.count) sessions=\(snapshot.sessions.count) shells=\(snapshot.shellState.shells.count) routing=\(snapshot.routingViews.count)",
         )
         updatePostSessionRefreshContext()
         return true
@@ -508,6 +558,10 @@ class AppState {
 
         await shellStateStore.applyRuntimeShellState(
             snapshot.shellState,
+            correlationId: correlationId,
+        )
+        await routingStateStore.applyRuntimeRoutingViews(
+            snapshot.routingViews,
             correlationId: correlationId,
         )
     }
@@ -536,6 +590,7 @@ class AppState {
             )
             sessionStateManager.clearRuntimeProjectStates()
             shellStateStore.clearRuntimeShellState(correlationId: correlationId)
+            routingStateStore.clearRuntimeRoutingViews(correlationId: correlationId)
         }
 
         updatePostSessionRefreshContext()

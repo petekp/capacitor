@@ -29,10 +29,11 @@
   - Typed `/runtime/*` read and ingest endpoints
 - Swift (`apps/swift/Sources/Capacitor`):
   - Runtime-service supervision and reconnect/adoption
-  - Runtime snapshot projection and stabilization (`SessionStateManager`, `ShellStateStore`, `AppState`)
+  - Runtime snapshot projection and stabilization (`SessionStateManager`, `ShellStateStore`, `RoutingStateStore`, `AppState`)
   - SwiftUI views + interaction flows
-  - macOS automation (AppleScript/AX, window activation)
-  - Terminal activation ownership
+  - Activation orchestration (`TerminalActivationCoordinator`)
+  - tmux execution and client/session/pane routing (`TmuxRouter`)
+  - Terminal host automation (`TerminalDriver` implementations, `GhosttyAutomationClient`)
   - Setup and feature-policy coordinators
 
 ## Boundaries
@@ -46,6 +47,14 @@
 - `core/capacitor-core/`: canonical ingest, reducer, query, storage, and FFI runtime
 - `core/hud-hook/`: runtime-service shell plus hook/shell adapters
 - `apps/swift/`: menubar application, runtime-service client/supervisor, projection layer, and feature coordinators
+
+## Activation Boundaries
+
+- Rust derives canonical routing targets from shell and session evidence.
+- `AppState` applies routing state from the periodic runtime snapshot and feeds route preferences into activation.
+- `TerminalActivationCoordinator` owns request arbitration, stale-request suppression, and activation outcome reporting.
+- `TmuxRouter` is the only place raw tmux command strings are built or executed.
+- `TerminalDriver` implementations own host-terminal focus and launch behavior for Ghostty, iTerm, and Terminal.app.
 
 ## Non-Goals
 

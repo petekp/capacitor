@@ -83,11 +83,11 @@ When the terminal opens, focuses the wrong target, or fails to switch sessions:
 5. Check the current activation source files:
    - `apps/swift/Sources/Capacitor/Models/AppState.swift`
    - `apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift`
-   - `apps/swift/Sources/Capacitor/Models/GhosttyAXReader.swift`
+   - `apps/swift/Sources/Capacitor/Models/GhosttyAutomationClient.swift`
 6. Run the focused Swift tests:
 
 ```bash
-cd apps/swift && swift test --filter 'TerminalLauncherTests|GhosttyAXReaderTests'
+cd apps/swift && swift test --filter 'TerminalLauncherTests|Ghostty.*Tests'
 ```
 
 The reliable activation evidence is the app debug log plus the runtime service snapshot payload.

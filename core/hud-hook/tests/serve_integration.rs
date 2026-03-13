@@ -11,6 +11,69 @@ use common::{
 };
 use std::fs;
 
+fn seeded_snapshot_without_routing() -> serde_json::Value {
+    serde_json::json!({
+        "projects": [
+            {
+                "project_path": "/tmp/runtime-service-project",
+                "project_id": "/tmp/runtime-service-project/.git",
+                "workspace_id": "workspace-runtime-service-project",
+                "display_name": "runtime-service-project",
+                "state": "ready",
+                "state_changed_at": "2026-03-12T00:00:00Z",
+                "updated_at": "2026-03-12T00:00:00Z",
+                "representative_session_id": "runtime-service-session",
+                "latest_session_id": "runtime-service-session",
+                "session_count": 1,
+                "active_count": 0,
+                "has_session": true
+            }
+        ],
+        "sessions": [
+            {
+                "session_id": "runtime-service-session",
+                "pid": 4242,
+                "cwd": "/tmp/runtime-service-project",
+                "project_id": "/tmp/runtime-service-project/.git",
+                "project_path": "/tmp/runtime-service-project",
+                "workspace_id": "workspace-runtime-service-project",
+                "state": "ready",
+                "state_changed_at": "2026-03-12T00:00:00Z",
+                "updated_at": "2026-03-12T00:00:00Z",
+                "last_event": "session_start",
+                "last_activity_at": "2026-03-12T00:00:00Z",
+                "tools_in_flight": 0,
+                "ready_reason": null
+            }
+        ],
+        "shells": [
+            {
+                "pid": 4242,
+                "cwd": "/tmp/runtime-service-project",
+                "tty": "/dev/ttys123",
+                "parent_app": "ghostty",
+                "tmux_session": "runtime-service-project",
+                "tmux_client_tty": "/dev/ttys111",
+                "tmux_pane": null,
+                "updated_at": "2026-03-12T00:00:00Z"
+            }
+        ],
+        "routing": [],
+        "diagnostics": {
+            "events_ingested": 2,
+            "sessions_tracked": 1,
+            "shell_signals_tracked": 1,
+            "events_skipped": 0,
+            "stale_events_skipped": 0,
+            "informational_events_skipped": 0,
+            "reducer_events_skipped": 0,
+            "last_error": null,
+            "last_hook_event_at": "2026-03-12T00:00:00Z"
+        },
+        "generated_at": "2026-03-12T00:00:00Z"
+    })
+}
+
 #[test]
 fn health_endpoint_returns_ok() {
     let temp_dir = unique_temp_dir("serve-health");
@@ -140,6 +203,58 @@ fn hook_endpoint_and_runtime_snapshot_share_service_runtime_state() {
     assert_eq!(
         snapshot_json["sessions"][0]["state"].as_str(),
         Some("working")
+    );
+}
+
+#[test]
+fn runtime_snapshot_recomputes_routing_from_seeded_snapshot_on_startup() {
+    let temp_dir = unique_temp_dir("serve-runtime-recompute-routing");
+    let snapshot_path = temp_dir.join("snapshot.json");
+    let port = free_port();
+    let auth_token = "recompute-token";
+
+    fs::write(
+        &snapshot_path,
+        serde_json::to_vec_pretty(&seeded_snapshot_without_routing())
+            .expect("serialize seeded snapshot"),
+    )
+    .expect("write seeded snapshot");
+
+    let _server = ServerGuard::spawn_service_bootstrap(port, &temp_dir, &snapshot_path, auth_token);
+    ServerGuard::wait_ready_with_auth(port, auth_token);
+
+    let authorization = format!("Bearer {auth_token}");
+    let (snapshot_status, snapshot_body) = http_request_with_headers(
+        port,
+        "GET",
+        "/runtime/snapshot",
+        &[("Authorization", authorization.as_str())],
+        None,
+    );
+    assert_eq!(snapshot_status, 200, "body: {snapshot_body}");
+
+    let snapshot_json: serde_json::Value =
+        serde_json::from_str(&snapshot_body).expect("runtime snapshot json");
+    assert_eq!(snapshot_json["routing"].as_array().map(Vec::len), Some(1));
+    assert_eq!(
+        snapshot_json["routing"][0]["project_path"].as_str(),
+        Some("/tmp/runtime-service-project")
+    );
+    assert_eq!(
+        snapshot_json["routing"][0]["target"]["kind"].as_str(),
+        Some("tmux_session")
+    );
+    assert_eq!(
+        snapshot_json["routing"][0]["target"]["session_name"].as_str(),
+        Some("runtime-service-project")
+    );
+    assert_eq!(
+        snapshot_json["routing"][0]["target"]["host_tty"].as_str(),
+        Some("/dev/ttys111")
+    );
+    assert_eq!(
+        snapshot_json["routing"][0]["reason_code"].as_str(),
+        Some("TMUX_SESSION_ATTACHED")
     );
 }
 

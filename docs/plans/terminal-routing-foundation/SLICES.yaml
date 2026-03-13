@@ -1,0 +1,158 @@
+slices:
+  - id: slice-000
+    name: Audit and freeze
+    status: done
+    depends_on: []
+    touch_roots:
+      - docs/plans/terminal-routing-foundation
+      - docs/audits/terminal-routing-foundation
+    deletion_targets: []
+    verification:
+      - bash docs/plans/terminal-routing-foundation/guard.sh --status
+
+  - id: slice-001
+    name: Rust tmux pane contract and reducer routing
+    status: done
+    depends_on:
+      - slice-000
+    touch_roots:
+      - core/hud-hook/src
+      - core/capacitor-core/src
+      - core/capacitor-core/tests
+    deletion_targets:
+      - old sibling route shape fields `target_kind`
+      - old sibling route shape fields `target_value`
+    verification:
+      - cargo test -p capacitor-core ffi_ingest_shell_signal_derives_tmux_pane_routing -- --nocapture
+      - cargo test -p hud-hook runtime_client -- --nocapture
+
+  - id: slice-002
+    name: Swift runtime snapshot and routing state migration
+    status: done
+    depends_on:
+      - slice-001
+    touch_roots:
+      - apps/swift/Sources/Capacitor/Models
+      - apps/swift/Tests/CapacitorTests
+    deletion_targets:
+      - runtime client decoding of raw `target_kind`
+      - runtime client decoding of raw `target_value`
+    verification:
+      - swift test --filter 'RuntimeClientTests|RoutingStateStoreTests|AppStateSessionObservationTests|TerminalLauncherTests'
+
+  - id: slice-003
+    name: Route-first pane-aware activation
+    status: done
+    depends_on:
+      - slice-002
+    touch_roots:
+      - apps/swift/Sources/Capacitor/Models
+      - apps/swift/Tests/CapacitorTests
+    deletion_targets:
+      - session-only pane-blind activation path inside `TerminalLauncher`
+    verification:
+      - swift test --filter TerminalLauncherTests
+      - swift test --filter 'RuntimeClientTests|RoutingStateStoreTests|AppStateSessionObservationTests|TerminalLauncherTests'
+
+  - id: slice-004
+    name: Shared activation core extraction
+    status: done
+    depends_on:
+      - slice-003
+    touch_roots:
+      - apps/swift/Sources/Capacitor/Models
+      - apps/swift/Tests/CapacitorTests
+    deletion_targets:
+      - direct tmux command literals outside `TmuxRouter`
+      - terminal-specific focus branches inside `TerminalLauncher`
+      - embedded `SupportedTerminalApp` taxonomy inside `TerminalLauncher`
+    verification:
+      - swift test
+
+  - id: slice-005
+    name: Driver extraction and cleanup
+    status: done
+    depends_on:
+      - slice-004
+    touch_roots:
+      - apps/swift/Sources/Capacitor/Models
+      - apps/swift/Tests/CapacitorTests
+      - docs/ARCHITECTURE.md
+    deletion_targets:
+      - inline terminal-host AppleScript focus blocks outside driver types
+      - terminal launch scripts that do not delegate to drivers
+      - duplicate activation orchestration helpers outside the final coordinator
+    verification:
+      - swift test
+      - cargo test -p capacitor-core
+
+  - id: slice-006-live-routing-proof
+    name: Live routing proof and route-derivation fix
+    status: done
+    depends_on:
+      - slice-005
+    touch_roots:
+      - core/capacitor-core/src
+      - core/capacitor-core/tests
+      - apps/swift/Sources/Capacitor/Models
+      - apps/swift/Tests/CapacitorTests
+      - docs/plans/terminal-routing-foundation
+    deletion_targets:
+      - route-derivation gaps that drop fresh tmux shells before `tmux_pane` routing is emitted
+      - ad hoc debugging notes that are superseded by a deterministic live-routing proof
+    verification:
+      - cargo test -p capacitor-core ffi_ingest_shell_signal_derives_tmux_pane_routing -- --nocapture
+      - swift test --filter 'RuntimeClientTests|RoutingStateStoreTests|AppStateSessionObservationTests|TerminalLauncherTests'
+      - bash docs/plans/terminal-routing-foundation/guard.sh
+      - CONNECTION="$HOME/.capacitor/runtime/runtime-service.json"; TOKEN="$(jq -er '.auth_token' "$CONNECTION")"; PORT="$(jq -er '.port' "$CONNECTION")"; curl -s -H "Authorization: Bearer ${TOKEN}" "http://127.0.0.1:${PORT}/runtime/snapshot" | jq '{routing_count: (.routing | length), routing: .routing, fresh_tmux_shells: ([.shells[] | select(.tmux_session != null) | {cwd,parent_app,tmux_session,tmux_client_tty,tty,updated_at}] | sort_by(.updated_at) | reverse | .[:20])}'
+
+  - id: slice-007-ghostty-pane-smoke
+    name: Ghostty pane-routing smoke and evidence capture
+    status: done
+    depends_on:
+      - slice-006-live-routing-proof
+    touch_roots:
+      - docs/plans/terminal-routing-foundation
+      - docs/manual-qa
+      - /Users/petepetrash/.capacitor/runtime
+    deletion_targets:
+      - unsupported claims that Ghostty pane routing is proven without same-tab/cross-tab/detached-session/stale-pane evidence
+    verification:
+      - bash docs/plans/terminal-routing-foundation/guard.sh
+      - CONNECTION="$HOME/.capacitor/runtime/runtime-service.json"; TOKEN="$(jq -er '.auth_token' "$CONNECTION")"; PORT="$(jq -er '.port' "$CONNECTION")"; curl -s -H "Authorization: Bearer ${TOKEN}" "http://127.0.0.1:${PORT}/runtime/snapshot" | jq '.routing'
+
+  - id: slice-008-host-driver-smoke
+    name: iTerm and Terminal host-driver proof
+    status: done
+    depends_on:
+      - slice-006-live-routing-proof
+    touch_roots:
+      - apps/swift/Sources/Capacitor/Models
+      - apps/swift/Tests/CapacitorTests
+      - docs/plans/terminal-routing-foundation
+      - /Users/petepetrash/.capacitor/runtime
+    deletion_targets:
+      - rollout notes that claim host-driver coverage without one live iTerm proof and one live Terminal proof
+    verification:
+      - swift test --filter TerminalLauncherTests
+      - bash docs/plans/terminal-routing-foundation/guard.sh
+
+  - id: slice-009-convergence
+    name: Closeout convergence and ship gate
+    status: done
+    depends_on:
+      - slice-007-ghostty-pane-smoke
+      - slice-008-host-driver-smoke
+    touch_roots:
+      - docs/plans/terminal-routing-foundation
+      - docs/audits/terminal-routing-foundation
+      - docs/ARCHITECTURE.md
+      - README.md
+    deletion_targets:
+      - stale migration notes that describe the pre-coordinator launcher architecture
+      - any remaining route-context heuristics that ignore explicit route metadata
+    verification:
+      - swift test
+      - cargo test -p capacitor-core
+      - bash docs/plans/terminal-routing-foundation/guard.sh
+      - bash docs/plans/terminal-routing-foundation/SHIP_CHECKLIST.md

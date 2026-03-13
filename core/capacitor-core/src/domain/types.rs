@@ -72,6 +72,8 @@ pub struct ShellSignal {
     pub parent_app: String,
     pub tmux_session: Option<String>,
     pub tmux_client_tty: Option<String>,
+    #[serde(default)]
+    pub tmux_pane: Option<String>,
     pub updated_at: String,
 }
 
@@ -91,10 +93,22 @@ pub enum RoutingStatus {
 )]
 #[serde(rename_all = "snake_case")]
 pub enum RoutingTargetKind {
+    TmuxPane,
     TmuxSession,
     TerminalApp,
     #[default]
     None,
+}
+
+#[derive(
+    Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Record, Default,
+)]
+pub struct RoutingTarget {
+    pub kind: RoutingTargetKind,
+    pub terminal_app: Option<String>,
+    pub session_name: Option<String>,
+    pub pane_id: Option<String>,
+    pub host_tty: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Record)]
@@ -102,8 +116,7 @@ pub struct RoutingView {
     pub workspace_id: String,
     pub project_path: String,
     pub status: RoutingStatus,
-    pub target_kind: RoutingTargetKind,
-    pub target_value: Option<String>,
+    pub target: RoutingTarget,
     pub reason_code: String,
     pub reason: String,
     pub updated_at: String,
@@ -212,6 +225,8 @@ pub struct IngestShellSignalCommand {
     pub parent_app: String,
     pub tmux_session: Option<String>,
     pub tmux_client_tty: Option<String>,
+    #[serde(default)]
+    pub tmux_pane: Option<String>,
     pub recorded_at: String,
 }
 

@@ -95,6 +95,10 @@ final class AppStateSessionObservationTests: XCTestCase {
             baselineSnapshot.shellState,
             correlationId: "baseline",
         )
+        await appState.routingStateStore.applyRuntimeRoutingViews(
+            baselineSnapshot.routingViews,
+            correlationId: "baseline",
+        )
 
         appState.setRuntimeSnapshotGenerationForTesting(2)
 
@@ -115,6 +119,11 @@ final class AppStateSessionObservationTests: XCTestCase {
             appState.shellStateStore.state?.shells["111"]?.cwd,
             "/baseline",
             "stale generation should not mutate shell state",
+        )
+        XCTAssertEqual(
+            appState.routingStateStore.routingView(projectPath: project.path, workspaceId: nil)?.target.sessionName,
+            "baseline-session",
+            "stale generation should not mutate routing state",
         )
     }
 
@@ -169,6 +178,10 @@ final class AppStateSessionObservationTests: XCTestCase {
             appState.shellStateStore.state,
             "second consecutive fresh failure should clear stale runtime-derived shell state",
         )
+        XCTAssertTrue(
+            appState.routingStateStore.routesByWorkspaceID.isEmpty,
+            "second consecutive fresh failure should clear stale runtime-derived routing state",
+        )
     }
 
     func testSuccessfulFreshSnapshotResetsRuntimeFailureHysteresis() async {
@@ -211,6 +224,10 @@ final class AppStateSessionObservationTests: XCTestCase {
             "a fresh snapshot should reset failure hysteresis so the next failure is held again",
         )
         XCTAssertEqual(appState.shellStateStore.state?.shells["111"]?.cwd, "/fresh")
+        XCTAssertEqual(
+            appState.routingStateStore.routingView(projectPath: project.path, workspaceId: nil)?.target.sessionName,
+            "fresh-session",
+        )
     }
 
     private func makeProject(name: String, path: String) -> Project {
@@ -265,6 +282,17 @@ final class AppStateSessionObservationTests: XCTestCase {
                     ),
                 ],
             ),
+            routingViews: [
+                RuntimeRoutingView(
+                    workspaceId: projectPath,
+                    projectPath: projectPath,
+                    status: "attached",
+                    target: CoreRoutingTarget(kind: "tmux_session", sessionName: sessionId),
+                    reasonCode: "TMUX_SESSION_ATTACHED",
+                    reason: "Attached tmux session",
+                    updatedAt: timestamp,
+                ),
+            ],
         )
     }
 }

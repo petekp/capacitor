@@ -5,7 +5,7 @@ mod common;
 use capacitor_core::domain::{
     HookEventType, IdeaMutationKind, IngestHookEventCommand, IngestShellSignalCommand,
     MutateIdeaCommand, MutateProjectCommand, MutateWorktreeCommand, ProjectMutationKind,
-    WorktreeMutationKind,
+    RoutingTargetKind, WorktreeMutationKind,
 };
 use capacitor_core::CoreRuntime;
 
@@ -21,6 +21,7 @@ fn valid_shell_signal_command() -> IngestShellSignalCommand {
         parent_app: "Ghostty".to_string(),
         tmux_session: Some("core".to_string()),
         tmux_client_tty: Some("/dev/ttys099".to_string()),
+        tmux_pane: Some("%42".to_string()),
         recorded_at: "2026-02-28T19:00:00Z".to_string(),
     }
 }
@@ -100,6 +101,12 @@ fn ffi_constructor_loads_snapshot_file_shape() {
     assert_eq!(snapshot.routing.len(), 1);
     assert_eq!(snapshot.projects[0].project_path, "/tmp/core-project");
     assert_eq!(snapshot.sessions[0].session_id, "session-core");
+    assert_eq!(snapshot.routing[0].target.kind, RoutingTargetKind::TmuxPane);
+    assert_eq!(snapshot.routing[0].target.pane_id.as_deref(), Some("%42"));
+    assert_eq!(
+        snapshot.routing[0].target.session_name.as_deref(),
+        Some("core")
+    );
     assert_eq!(snapshot.diagnostics.events_ingested, 7);
 }
 
@@ -181,6 +188,31 @@ fn ffi_ingest_shell_signal_validates_required_fields() {
     }
 
     assert_last_error(&runtime, "ingest_shell_signal missing cwd or tty");
+}
+
+#[test]
+fn ffi_ingest_shell_signal_derives_tmux_pane_routing() {
+    let runtime = CoreRuntime::new().expect("runtime");
+    runtime
+        .ingest_hook_event(valid_hook_event_command())
+        .expect("hook event outcome");
+
+    let outcome = runtime
+        .ingest_shell_signal(valid_shell_signal_command())
+        .expect("shell signal outcome");
+
+    assert!(outcome.ok);
+
+    let snapshot = snapshot(&runtime);
+    let route = snapshot
+        .routing
+        .iter()
+        .find(|route| route.project_path == "/tmp/core-project")
+        .expect("route");
+    assert_eq!(route.target.kind, RoutingTargetKind::TmuxPane);
+    assert_eq!(route.target.pane_id.as_deref(), Some("%42"));
+    assert_eq!(route.target.session_name.as_deref(), Some("core"));
+    assert_eq!(route.reason_code, "TMUX_PANE_ATTACHED");
 }
 
 #[test]
@@ -313,6 +345,7 @@ fn fixture_snapshot_json() -> &'static str {
       "tty": "/dev/ttys001",
       "parent_app": "Ghostty",
       "tmux_session": "core",
+      "tmux_pane": "%42",
       "updated_at": "2026-02-28T19:00:00Z"
     }
   ],
@@ -321,10 +354,15 @@ fn fixture_snapshot_json() -> &'static str {
       "workspace_id": "workspace-core",
       "project_path": "/tmp/core-project",
       "status": "attached",
-      "target_kind": "tmux_session",
-      "target_value": "caps",
-      "reason_code": "tmux_client_attached",
-      "reason": "Attached tmux client",
+      "target": {
+        "kind": "tmux_pane",
+        "terminal_app": "Ghostty",
+        "session_name": "core",
+        "pane_id": "%42",
+        "host_tty": null
+      },
+      "reason_code": "TMUX_PANE_ATTACHED",
+      "reason": "Matched tmux pane '%42'",
       "updated_at": "2026-02-28T19:00:00Z"
     }
   ],

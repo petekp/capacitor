@@ -41,7 +41,9 @@ final class TerminalLauncherTests: XCTestCase {
         let shouldSucceed: Bool
         private(set) var checkedScripts: [String] = []
         private(set) var booleanScripts: [String] = []
+        private(set) var outputScripts: [String] = []
         var booleanResult: Bool?
+        var outputResults: [AppleScriptExecutionResult] = []
 
         init(shouldSucceed: Bool) {
             self.shouldSucceed = shouldSucceed
@@ -57,184 +59,14 @@ final class TerminalLauncherTests: XCTestCase {
             booleanScripts.append(script)
             return booleanResult
         }
-    }
 
-    @MainActor
-    private final class StubGhosttyWindowReader: GhosttyWindowReader {
-        var readResult: GhosttyWindowReadResult = .windows([])
-        private(set) var raisedWindowCount = 0
-        private(set) var focusedTabs: [GhosttyTabSnapshot] = []
-        var raiseWindowResult = true
-        var focusTabResult = true
-
-        func readWindows() -> GhosttyWindowReadResult {
-            readResult
+        func runOutput(_ script: String) -> AppleScriptExecutionResult {
+            outputScripts.append(script)
+            if outputResults.isEmpty {
+                return AppleScriptExecutionResult(success: shouldSucceed, output: nil, error: nil)
+            }
+            return outputResults.removeFirst()
         }
-
-        func raiseWindow(_: AXUIElement) -> Bool {
-            raisedWindowCount += 1
-            return raiseWindowResult
-        }
-
-        func focusTab(_ tab: GhosttyTabSnapshot, in _: AXUIElement) -> Bool {
-            focusedTabs.append(tab)
-            return focusTabResult
-        }
-    }
-
-    func testResolveGhosttyAXRoutingPrefersTabPressWhenProjectMatchExists() {
-        let reader = StubGhosttyWindowReader()
-        let windows = [
-            makeGhosttyWindow(index: 0, isMain: true, tabs: [
-                makeGhosttyTab(title: "/Users/pete/Code/other", index: 0),
-                makeGhosttyTab(title: "/Users/pete/Code/capacitor", index: 1, isSelected: true),
-            ]),
-        ]
-
-        let outcome = TerminalLauncher.resolveGhosttyAXRouting(
-            windows: windows,
-            projectPath: "/Users/pete/Code/capacitor",
-            ghosttyWindowReader: reader,
-        )
-
-        XCTAssertEqual(outcome, .tabPress)
-        XCTAssertEqual(reader.focusedTabs.count, 1)
-        XCTAssertEqual(reader.focusedTabs.first?.index, 1)
-        XCTAssertEqual(reader.raisedWindowCount, 0)
-    }
-
-    func testResolveGhosttyAXRoutingFallsBackToWindowRaiseWhenTabPressFails() {
-        let reader = StubGhosttyWindowReader()
-        reader.focusTabResult = false
-        let windows = [
-            makeGhosttyWindow(index: 0, isMain: true, tabs: [
-                makeGhosttyTab(title: "/Users/pete/Code/capacitor", index: 0, isSelected: true),
-            ]),
-        ]
-
-        let outcome = TerminalLauncher.resolveGhosttyAXRouting(
-            windows: windows,
-            projectPath: "/Users/pete/Code/capacitor",
-            ghosttyWindowReader: reader,
-        )
-
-        XCTAssertEqual(outcome, .windowRaise)
-        XCTAssertEqual(reader.focusedTabs.count, 1)
-        XCTAssertEqual(reader.raisedWindowCount, 1)
-    }
-
-    func testResolveGhosttyAXRoutingRaisesMainWindowWhenNoDeterministicTabMatch() {
-        let reader = StubGhosttyWindowReader()
-        let windows = [
-            makeGhosttyWindow(index: 2, isMain: false, tabs: [
-                makeGhosttyTab(title: "/Users/pete/Code/other", index: 0),
-            ]),
-            makeGhosttyWindow(index: 1, isMain: true, tabs: [
-                makeGhosttyTab(title: "/Users/pete/Code/unrelated", index: 0),
-            ]),
-        ]
-
-        let outcome = TerminalLauncher.resolveGhosttyAXRouting(
-            windows: windows,
-            projectPath: "/Users/pete/Code/capacitor",
-            ghosttyWindowReader: reader,
-        )
-
-        XCTAssertEqual(outcome, .windowRaise)
-        XCTAssertEqual(reader.focusedTabs.count, 0)
-        XCTAssertEqual(reader.raisedWindowCount, 1)
-    }
-
-    func testResolveGhosttyAXRoutingReturnsNilWhenNothingCanBeRaised() {
-        let reader = StubGhosttyWindowReader()
-        reader.raiseWindowResult = false
-        let windows = [
-            makeGhosttyWindow(index: 0, isMain: false, tabs: []),
-        ]
-
-        let outcome = TerminalLauncher.resolveGhosttyAXRouting(
-            windows: windows,
-            projectPath: nil,
-            ghosttyWindowReader: reader,
-        )
-
-        XCTAssertNil(outcome)
-        XCTAssertEqual(reader.focusedTabs.count, 0)
-        XCTAssertEqual(reader.raisedWindowCount, 1)
-    }
-
-    /// Reproduces the AX routing race: after `tmux switch-client -t new-session`,
-    /// the tab title still shows the OLD session name because Ghostty hasn't
-    /// processed the title escape sequence yet. The routing falls to window_raise
-    /// instead of tab_press, leaving the wrong tab visible.
-    func testResolveGhosttyAXRoutingFallsToWindowRaiseWhenTitleShowsStaleSession() {
-        let reader = StubGhosttyWindowReader()
-        // Tab 0: tmux tab still showing OLD session title (stale after switch-client)
-        // Tab 1: non-tmux tab (e.g., running pnpm dev)
-        let windows = [
-            makeGhosttyWindow(index: 0, isMain: true, tabs: [
-                makeGhosttyTab(title: "capacitor: ~/Code/capacitor", index: 0, isSelected: false),
-                makeGhosttyTab(title: "pnpm dev", index: 1, isSelected: true),
-            ]),
-        ]
-
-        // We just switched to "agentic-canvas-v2" but the title hasn't propagated yet
-        let outcome = TerminalLauncher.resolveGhosttyAXRouting(
-            windows: windows,
-            projectPath: "/Users/pete/Code/agentic-canvas-v2",
-            tmuxSessionHint: "agentic-canvas-v2",
-            ghosttyWindowReader: reader,
-        )
-
-        // BUG: Without a title match, routing falls to window_raise instead of
-        // focusing the tmux tab (index 0). The user sees the wrong tab.
-        XCTAssertEqual(outcome, .windowRaise, "Stale title causes window_raise instead of tab_press")
-        XCTAssertEqual(reader.focusedTabs.count, 0, "No tab was focused because the title didn't match")
-        XCTAssertEqual(reader.raisedWindowCount, 1)
-    }
-
-    /// After `tmux switch-client`, once the title propagates, the hint match works.
-    func testResolveGhosttyAXRoutingMatchesAfterTitlePropagates() {
-        let reader = StubGhosttyWindowReader()
-        // Tab 0: tmux tab has now updated its title to the NEW session
-        let windows = [
-            makeGhosttyWindow(index: 0, isMain: true, tabs: [
-                makeGhosttyTab(title: "agentic-canvas-v2: ~/Code/agentic-canvas-v2", index: 0, isSelected: false),
-                makeGhosttyTab(title: "pnpm dev", index: 1, isSelected: true),
-            ]),
-        ]
-
-        let outcome = TerminalLauncher.resolveGhosttyAXRouting(
-            windows: windows,
-            projectPath: "/Users/pete/Code/agentic-canvas-v2",
-            tmuxSessionHint: "agentic-canvas-v2",
-            ghosttyWindowReader: reader,
-        )
-
-        XCTAssertEqual(outcome, .tabPress, "Once title propagates, hint match correctly focuses the tmux tab")
-        XCTAssertEqual(reader.focusedTabs.count, 1)
-        XCTAssertEqual(reader.focusedTabs.first?.index, 0)
-    }
-
-    func testResolveGhosttyAXRoutingUsesTmuxSessionHintWhenProjectSlugDiffers() {
-        let reader = StubGhosttyWindowReader()
-        let windows = [
-            makeGhosttyWindow(index: 0, isMain: true, tabs: [
-                makeGhosttyTab(title: "mcp-app-studio:1:2.1.50 - \"✳ Fullscreen Transition Performance\"", index: 0, isSelected: false),
-                makeGhosttyTab(title: "pnpm dev", index: 1, isSelected: true),
-            ]),
-        ]
-
-        let outcome = TerminalLauncher.resolveGhosttyAXRouting(
-            windows: windows,
-            projectPath: "/Users/pete/Code/aui/mcp-app-studio-starter",
-            tmuxSessionHint: "mcp-app-studio",
-            ghosttyWindowReader: reader,
-        )
-
-        XCTAssertEqual(outcome, .tabPress)
-        XCTAssertEqual(reader.focusedTabs.count, 1)
-        XCTAssertEqual(reader.focusedTabs.first?.index, 0)
     }
 
     func testBestTmuxSessionForPathDoesNotMatchParentRepoForWorktreePath() {
@@ -263,6 +95,33 @@ final class TerminalLauncherTests: XCTestCase {
         )
 
         XCTAssertNil(session)
+    }
+
+    func testFindSessionForPathUsesAllPanesSoSharedSessionNonActivePaneIsFound() async {
+        var commands: [String] = []
+        let expectedCommand = "tmux list-panes -a -F '#{session_name}\t#{pane_current_path}' 2>/dev/null"
+        let router = TmuxRouter(
+            runScript: { cmd in
+                commands.append(cmd)
+                guard cmd == expectedCommand else {
+                    return (1, nil)
+                }
+
+                return (
+                    0,
+                    """
+                    dev\t/Users/pete/Code/pete-2025
+                    dev\t/Users/pete/Code/aui/mcp-app-studio-starter
+                    """,
+                )
+            },
+            homeDirectoryProvider: { "/Users/pete" },
+        )
+
+        let session = await router.findSessionForPath("/Users/pete/Code/aui/mcp-app-studio-starter")
+
+        XCTAssertEqual(session, "dev")
+        XCTAssertEqual(commands, [expectedCommand])
     }
 
     func testRunBashScriptWithResultHandlesLargeOutputWithoutDeadlock() {
@@ -490,6 +349,30 @@ final class TerminalLauncherTests: XCTestCase {
         XCTAssertEqual(results.first?.success, false)
     }
 
+    func testLaunchTerminalPrefersRoutingSessionResolverOverFallbackResolver() async {
+        let project = makeProject(name: "project-a", path: "/Users/pete/Code/project-a")
+        let exp = expectation(description: "launch result")
+        var resolvedSession: String?
+
+        let launcher = TerminalLauncher(
+            appleScript: StubAppleScriptClient(shouldSucceed: true),
+            fallbackTmuxSessionResolver: { _ in "fallback-session" },
+            activateProjectSessionOverride: { sessionName, _ in
+                resolvedSession = sessionName
+                return true
+            },
+        )
+        launcher.preferredRoutingSessionResolver = { _ in "routed-session" }
+        launcher.onActivationResult = { _ in
+            exp.fulfill()
+        }
+
+        launcher.launchTerminal(for: project)
+        await fulfillment(of: [exp], timeout: 1.0)
+
+        XCTAssertEqual(resolvedSession, "routed-session")
+    }
+
     // MARK: - Unified Activation Tests
 
     // S3: Session exists → just switch
@@ -535,17 +418,18 @@ final class TerminalLauncherTests: XCTestCase {
     /// No clients at all → launch terminal
     func testUnifiedActivationLaunchesWhenNoClients() async {
         var launched = false
-        let ok = await TerminalLauncher.performUnifiedActivation(
+        let ok = await TerminalActivationCoordinator.runActivationFlow(
             sessionName: "my-project",
             projectPath: "/path/to/project",
             resolveAnyClientTty: { nil },
-            ensureAndSwitch: { _, _, _ in XCTFail("should not be called"); return false },
+            ensureAndSwitch: { _, _, _, _ in XCTFail("should not be called"); return false },
             launchTerminalWithTmux: { session, path in
                 XCTAssertEqual(session, "my-project")
                 XCTAssertEqual(path, "/path/to/project")
                 launched = true
+                return true
             },
-            activateTerminal: { _, _, _ in XCTFail("should not be called"); return false },
+            activateTerminal: { _, _, _ in XCTFail("should not be called"); return .failed(nil) },
             pollForNewClient: { "/dev/ttys050" },
         )
         XCTAssertTrue(ok)
@@ -555,39 +439,43 @@ final class TerminalLauncherTests: XCTestCase {
     /// Client exists → switch + focus
     func testUnifiedActivationSwitchesWhenClientExists() async {
         var switchedSession: String?
+        var switchedPane: String?
         var terminalActivated = false
-        let ok = await TerminalLauncher.performUnifiedActivation(
+        let ok = await TerminalActivationCoordinator.runActivationFlow(
             sessionName: "other-project",
             projectPath: "/other",
             resolveAnyClientTty: { "/dev/ttys001" },
-            ensureAndSwitch: { session, _, tty in
+            ensureAndSwitch: { session, _, tty, targetPane in
                 switchedSession = session
+                switchedPane = targetPane
                 XCTAssertEqual(tty, "/dev/ttys001")
                 return true
             },
-            launchTerminalWithTmux: { _, _ in XCTFail("should not launch") },
-            activateTerminal: { _, _, _ in terminalActivated = true; return true },
+            launchTerminalWithTmux: { _, _ in XCTFail("should not launch"); return false },
+            activateTerminal: { _, _, _ in terminalActivated = true; return .focused },
+            resolveTargetPane: { _ in "%2" },
         )
         XCTAssertTrue(ok)
         XCTAssertEqual(switchedSession, "other-project")
+        XCTAssertEqual(switchedPane, "%2")
         XCTAssertTrue(terminalActivated)
     }
 
     /// Session doesn't exist → ensureAndSwitch creates + switches
     func testUnifiedActivationCreatesSessionWhenMissing() async {
         var ensureCalled = false
-        let ok = await TerminalLauncher.performUnifiedActivation(
+        let ok = await TerminalActivationCoordinator.runActivationFlow(
             sessionName: "new-proj",
             projectPath: "/new",
             resolveAnyClientTty: { "/dev/ttys001" },
-            ensureAndSwitch: { session, path, _ in
+            ensureAndSwitch: { session, path, _, _ in
                 ensureCalled = true
                 XCTAssertEqual(session, "new-proj")
                 XCTAssertEqual(path, "/new")
                 return true
             },
-            launchTerminalWithTmux: { _, _ in XCTFail("should not launch") },
-            activateTerminal: { _, _, _ in true },
+            launchTerminalWithTmux: { _, _ in XCTFail("should not launch"); return false },
+            activateTerminal: { _, _, _ in .focused },
         )
         XCTAssertTrue(ok)
         XCTAssertTrue(ensureCalled)
@@ -595,13 +483,13 @@ final class TerminalLauncherTests: XCTestCase {
 
     /// Switch fails → returns false
     func testUnifiedActivationReturnsFalseWhenSwitchFails() async {
-        let ok = await TerminalLauncher.performUnifiedActivation(
+        let ok = await TerminalActivationCoordinator.runActivationFlow(
             sessionName: "broken",
             projectPath: "/broken",
             resolveAnyClientTty: { "/dev/ttys001" },
-            ensureAndSwitch: { _, _, _ in false },
-            launchTerminalWithTmux: { _, _ in },
-            activateTerminal: { _, _, _ in true },
+            ensureAndSwitch: { _, _, _, _ in false },
+            launchTerminalWithTmux: { _, _ in true },
+            activateTerminal: { _, _, _ in .focused },
         )
         XCTAssertFalse(ok)
     }
@@ -610,86 +498,16 @@ final class TerminalLauncherTests: XCTestCase {
     /// (activateTerminal returns false), the flow should launch a fresh terminal.
     func testUnifiedActivationLaunchesWhenTerminalGone() async {
         var launched = false
-        let ok = await TerminalLauncher.performUnifiedActivation(
+        let ok = await TerminalActivationCoordinator.runActivationFlow(
             sessionName: "my-project",
             projectPath: "/path/to/project",
             resolveAnyClientTty: { "/dev/ttys001" },
-            ensureAndSwitch: { _, _, _ in true },
-            launchTerminalWithTmux: { _, _ in launched = true },
-            activateTerminal: { _, _, _ in false }, // Terminal focus FAILS (tab gone)
+            ensureAndSwitch: { _, _, _, _ in true },
+            launchTerminalWithTmux: { _, _ in launched = true; return true },
+            activateTerminal: { _, _, _ in .relaunchNeeded }, // Terminal focus FAILS (tab gone)
         )
         XCTAssertTrue(ok, "Should succeed via fresh launch")
         XCTAssertTrue(launched, "Should launch new terminal when focus fails")
-    }
-
-    // MARK: - Auto-Attach (Detached Session Reuse)
-
-    /// When no tmux client exists but a session is already running (detached),
-    /// the flow should attach to the existing session instead of launching
-    /// a brand-new terminal tab.
-    func testUnifiedActivationAutoAttachesWhenSessionExists() async {
-        var attached = false
-        let ok = await TerminalLauncher.performUnifiedActivation(
-            sessionName: "capacitor",
-            projectPath: "/path/to/capacitor",
-            resolveAnyClientTty: { nil },
-            hasExistingSession: { name in name == "capacitor" },
-            ensureAndSwitch: { _, _, _ in XCTFail("should not be called"); return false },
-            launchTerminalWithTmux: { _, _ in XCTFail("should not launch new — should auto-attach") },
-            attachToExistingSession: { session in
-                XCTAssertEqual(session, "capacitor")
-                attached = true
-            },
-            activateTerminal: { _, _, _ in XCTFail("should not be called"); return false },
-            pollForNewClient: { "/dev/ttys060" },
-        )
-        XCTAssertTrue(ok)
-        XCTAssertTrue(attached, "Should auto-attach to existing detached session")
-    }
-
-    /// When no tmux client exists and no session exists for the project,
-    /// the flow should launch a new terminal (not try to attach).
-    func testUnifiedActivationLaunchesNewWhenNoSessionExists() async {
-        var launched = false
-        var attachCalled = false
-        let ok = await TerminalLauncher.performUnifiedActivation(
-            sessionName: "brand-new",
-            projectPath: "/path/to/brand-new",
-            resolveAnyClientTty: { nil },
-            hasExistingSession: { _ in false },
-            ensureAndSwitch: { _, _, _ in XCTFail("should not be called"); return false },
-            launchTerminalWithTmux: { session, path in
-                XCTAssertEqual(session, "brand-new")
-                XCTAssertEqual(path, "/path/to/brand-new")
-                launched = true
-            },
-            attachToExistingSession: { _ in attachCalled = true },
-            activateTerminal: { _, _, _ in XCTFail("should not be called"); return false },
-            pollForNewClient: { "/dev/ttys070" },
-        )
-        XCTAssertTrue(ok)
-        XCTAssertTrue(launched, "Should launch new terminal when no session exists")
-        XCTAssertFalse(attachCalled, "Should NOT auto-attach when session doesn't exist")
-    }
-
-    /// When a tmux client already exists, auto-attach logic is skipped entirely —
-    /// the normal switch-client flow handles it.
-    func testUnifiedActivationSkipsAutoAttachWhenClientExists() async {
-        var switched = false
-        var attachCalled = false
-        let ok = await TerminalLauncher.performUnifiedActivation(
-            sessionName: "proj",
-            projectPath: "/proj",
-            resolveAnyClientTty: { "/dev/ttys001" },
-            hasExistingSession: { _ in XCTFail("should not check session when client exists"); return true },
-            ensureAndSwitch: { _, _, _ in switched = true; return true },
-            launchTerminalWithTmux: { _, _ in XCTFail("should not launch") },
-            attachToExistingSession: { _ in attachCalled = true },
-            activateTerminal: { _, _, _ in true },
-        )
-        XCTAssertTrue(ok)
-        XCTAssertTrue(switched, "Should use normal switch-client flow")
-        XCTAssertFalse(attachCalled, "Should NOT auto-attach when client exists")
     }
 
     /// Create fails → return false
@@ -733,6 +551,21 @@ final class TerminalLauncherTests: XCTestCase {
             },
         )
         XCTAssertEqual(tty, "/dev/ttys001", "Should fall back to first client when no session matches")
+    }
+
+    func testResolveClientTtyPrefersExplicitHostTtyWhenAttached() async {
+        let tty = await TerminalLauncher.resolveAnyTmuxClientTty(
+            preferredHostTty: "/dev/ttys002",
+            targetSession: "capacitor",
+            runScript: { cmd in
+                if cmd.contains("display-message") {
+                    return (1, nil)
+                }
+                return (0, "/dev/ttys001 other-project\n/dev/ttys002 capacitor\n")
+            },
+        )
+
+        XCTAssertEqual(tty, "/dev/ttys002")
     }
 
     func testResolvePreferredTerminalAppPrefersClientTtyMatch() {
@@ -793,6 +626,86 @@ final class TerminalLauncherTests: XCTestCase {
         XCTAssertEqual(app, .terminal)
     }
 
+    func testResolvePreferredTmuxPanePrefersExactProjectPathInSharedSession() {
+        let shellState = ShellCwdState(
+            version: 1,
+            shells: [
+                "300": ShellEntry(
+                    cwd: "/Users/pete/Code/capacitor",
+                    tty: "/dev/ttys030",
+                    parentApp: "Ghostty",
+                    tmuxSession: "shared",
+                    tmuxClientTty: "/dev/ttys001",
+                    tmuxPane: "%1",
+                    updatedAt: Date(timeIntervalSince1970: 1_700_000_300),
+                ),
+                "301": ShellEntry(
+                    cwd: "/Users/pete/Code/sanctuary",
+                    tty: "/dev/ttys031",
+                    parentApp: "Ghostty",
+                    tmuxSession: "shared",
+                    tmuxClientTty: "/dev/ttys001",
+                    tmuxPane: "%2",
+                    updatedAt: Date(timeIntervalSince1970: 1_700_000_400),
+                ),
+            ],
+        )
+
+        let pane = TerminalLauncher.resolvePreferredTmuxPane(
+            clientTty: "/dev/ttys001",
+            projectPath: "/Users/pete/Code/sanctuary",
+            sessionName: "shared",
+            shellState: shellState,
+        )
+
+        XCTAssertEqual(pane, "%2")
+    }
+
+    func testEnsureAndSwitchSelectsPaneAfterSwitchingSession() async {
+        var commands: [String] = []
+        let ok = await TerminalLauncher.ensureSessionAndSwitch(
+            sessionName: "shared",
+            projectPath: "/Users/pete/Code/sanctuary",
+            clientTty: "/dev/ttys001",
+            targetPane: "%2",
+            runScript: { cmd in
+                commands.append(cmd)
+                return (0, nil)
+            },
+        )
+
+        XCTAssertTrue(ok)
+        XCTAssertEqual(commands.count, 3, "switch-client -> select-window -> select-pane")
+        XCTAssertTrue(commands[0].contains("switch-client"))
+        XCTAssertTrue(commands[1].contains("select-window"))
+        XCTAssertTrue(commands[1].contains("%2"))
+        XCTAssertTrue(commands[2].contains("select-pane"))
+        XCTAssertTrue(commands[2].contains("%2"))
+    }
+
+    func testEnsureAndSwitchFallsBackToSessionWhenPaneSelectionFails() async {
+        var commands: [String] = []
+        let ok = await TerminalLauncher.ensureSessionAndSwitch(
+            sessionName: "shared",
+            projectPath: "/Users/pete/Code/sanctuary",
+            clientTty: "/dev/ttys001",
+            targetPane: "%does-not-exist",
+            runScript: { cmd in
+                commands.append(cmd)
+                if cmd.contains("select-pane") {
+                    return (1, "pane not found")
+                }
+                return (0, nil)
+            },
+        )
+
+        XCTAssertTrue(ok, "Session activation should still succeed when pane selection is stale")
+        XCTAssertEqual(commands.count, 3, "switch-client -> select-window -> select-pane")
+        XCTAssertTrue(commands[0].contains("switch-client"))
+        XCTAssertTrue(commands[1].contains("select-window"))
+        XCTAssertTrue(commands[2].contains("select-pane"))
+    }
+
     func testLaunchWithCommandSupportsITerm() {
         let script = TerminalScripts.launchWithCommand(
             projectPath: "/Users/pete/Code/capacitor",
@@ -805,6 +718,17 @@ final class TerminalLauncherTests: XCTestCase {
         XCTAssertTrue(script.contains("claude --resume"))
     }
 
+    func testLaunchWithCommandSupportsGhosttyOpenLaunch() {
+        let script = TerminalScripts.launchWithCommand(
+            projectPath: "/Users/pete/Code/capacitor",
+            command: "claude --resume",
+            preferredApp: .ghostty,
+        )
+
+        XCTAssertTrue(script.contains("open -a Ghostty.app --args --working-directory"))
+        XCTAssertTrue(script.contains("CLAUDE_CMD=\"claude --resume\""))
+    }
+
     func testLaunchWithCommandSupportsTerminalApp() {
         let script = TerminalScripts.launchWithCommand(
             projectPath: "/Users/pete/Code/capacitor",
@@ -815,6 +739,18 @@ final class TerminalLauncherTests: XCTestCase {
         XCTAssertTrue(script.contains("open -b com.apple.Terminal"))
         XCTAssertTrue(script.contains("tell process \"Terminal\""))
         XCTAssertTrue(script.contains("claude --resume"))
+    }
+
+    func testMakeAttachCommandReusesExistingSessionWhenLaunchingWithoutClient() {
+        let command = TmuxRouter.makeAttachCommand(
+            session: "capacitor",
+            projectPath: "/Users/pete/Code/capacitor",
+        )
+
+        XCTAssertEqual(
+            command,
+            "tmux new-session -A -s 'capacitor' -c '/Users/pete/Code/capacitor'",
+        )
     }
 
     // MARK: - Helpers
@@ -886,23 +822,5 @@ final class TerminalLauncherTests: XCTestCase {
                     $0.contains(projectPath)
             }
         }
-    }
-
-    private func makeGhosttyTab(title: String?, index: Int, isSelected: Bool = false) -> GhosttyTabSnapshot {
-        GhosttyTabSnapshot(
-            element: AXUIElementCreateSystemWide(),
-            title: title,
-            index: index,
-            isSelected: isSelected,
-        )
-    }
-
-    private func makeGhosttyWindow(index: Int, isMain: Bool, tabs: [GhosttyTabSnapshot]) -> GhosttyWindowSnapshot {
-        GhosttyWindowSnapshot(
-            element: AXUIElementCreateSystemWide(),
-            index: index,
-            tabs: tabs,
-            isMain: isMain,
-        )
     }
 }

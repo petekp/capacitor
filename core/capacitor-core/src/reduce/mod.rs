@@ -6,9 +6,10 @@ use chrono::{DateTime, Utc};
 use crate::domain::{
     display_name, normalize_path_for_matching, now_rfc3339, resolve_project_identity, workspace_id,
     AppSnapshot, DiagnosticsSummary, HookEventType, IngestHookEventCommand,
-    IngestShellSignalCommand, MutationOutcome, ProjectSummary, SessionState, SessionSummary,
-    ShellSignal,
+    IngestShellSignalCommand, MutationOutcome, ProjectSummary, RoutingStatus, RoutingTarget,
+    RoutingTargetKind, RoutingView, SessionState, SessionSummary, ShellSignal,
 };
+use crate::runtime_types::ParentApp;
 
 const STALE_EVENT_GRACE_SECS: i64 = 5;
 
@@ -36,38 +37,45 @@ enum SessionUpdate {
 impl ReducerState {
     #[must_use]
     pub fn from_snapshot(snapshot: AppSnapshot) -> Self {
+        let AppSnapshot {
+            projects: snapshot_projects,
+            sessions: snapshot_sessions,
+            shells: snapshot_shells,
+            routing: _,
+            diagnostics,
+            generated_at: _,
+        } = snapshot;
+
         let mut projects = BTreeMap::new();
-        for project in snapshot.projects {
+        for project in snapshot_projects {
             projects.insert(project.project_path.clone(), project);
         }
 
         let mut sessions = HashMap::new();
-        for session in snapshot.sessions {
+        for session in snapshot_sessions {
             sessions.insert(session.session_id.clone(), session);
         }
 
         let mut shells = HashMap::new();
-        for shell in snapshot.shells {
+        for shell in snapshot_shells {
             shells.insert(shell.pid, shell);
         }
 
-        let mut routing = BTreeMap::new();
-        for view in snapshot.routing {
-            routing.insert(view.workspace_id.clone(), view);
-        }
-
-        Self {
+        let mut state = Self {
             projects,
             sessions,
             shells,
-            routing,
-            events_ingested: snapshot.diagnostics.events_ingested,
-            stale_events_skipped: snapshot.diagnostics.stale_events_skipped,
-            informational_events_skipped: snapshot.diagnostics.informational_events_skipped,
-            reducer_events_skipped: snapshot.diagnostics.reducer_events_skipped,
-            last_error: snapshot.diagnostics.last_error,
-            last_hook_event_at: snapshot.diagnostics.last_hook_event_at,
-        }
+            routing: BTreeMap::new(),
+            events_ingested: diagnostics.events_ingested,
+            stale_events_skipped: diagnostics.stale_events_skipped,
+            informational_events_skipped: diagnostics.informational_events_skipped,
+            reducer_events_skipped: diagnostics.reducer_events_skipped,
+            last_error: diagnostics.last_error,
+            last_hook_event_at: diagnostics.last_hook_event_at,
+        };
+        state.recompute_projects();
+        state.recompute_routing();
+        state
     }
 
     #[must_use]
@@ -121,6 +129,7 @@ impl ReducerState {
         }
 
         self.recompute_projects();
+        self.recompute_routing();
 
         match update {
             SessionUpdate::Upsert(_) => MutationOutcome {
@@ -163,9 +172,11 @@ impl ReducerState {
             parent_app: command.parent_app,
             tmux_session: command.tmux_session,
             tmux_client_tty: command.tmux_client_tty,
+            tmux_pane: command.tmux_pane,
             updated_at,
         };
         self.shells.insert(shell.pid, shell);
+        self.recompute_routing();
 
         MutationOutcome {
             ok: true,
@@ -286,6 +297,29 @@ impl ReducerState {
 
         self.projects = next;
     }
+
+    fn recompute_routing(&mut self) {
+        let mut next = BTreeMap::new();
+
+        for project in self
+            .projects
+            .values()
+            .filter(|project| project.session_count > 0)
+        {
+            let sessions = self
+                .sessions
+                .values()
+                .filter(|session| session.project_path == project.project_path)
+                .collect::<Vec<_>>();
+            let route = derive_routing_view(project, &sessions, self.shells.values());
+            next.insert(
+                routing_key(route.workspace_id.as_str(), route.project_path.as_str()),
+                route,
+            );
+        }
+
+        self.routing = next;
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -299,6 +333,196 @@ struct ReducedProjectState {
     updated_at: String,
     session_count: u64,
     active_count: u64,
+}
+
+fn derive_routing_view<'a>(
+    project: &ProjectSummary,
+    sessions: &[&SessionSummary],
+    shells: impl Iterator<Item = &'a ShellSignal>,
+) -> RoutingView {
+    let shell = select_shell_for_project(project, sessions, shells);
+    let (status, target, reason_code, reason, updated_at) = match shell {
+        Some(shell) => routing_for_shell(shell),
+        None => (
+            RoutingStatus::Unavailable,
+            RoutingTarget::default(),
+            "NO_TRUSTED_EVIDENCE".to_string(),
+            "No routing evidence available".to_string(),
+            project.updated_at.clone(),
+        ),
+    };
+
+    RoutingView {
+        workspace_id: project.workspace_id.clone(),
+        project_path: project.project_path.clone(),
+        status,
+        target,
+        reason_code,
+        reason,
+        updated_at,
+    }
+}
+
+fn select_shell_for_project<'a>(
+    project: &ProjectSummary,
+    sessions: &[&SessionSummary],
+    shells: impl Iterator<Item = &'a ShellSignal>,
+) -> Option<&'a ShellSignal> {
+    let session_pids = sessions
+        .iter()
+        .map(|session| session.pid)
+        .filter(|pid| *pid > 0)
+        .collect::<Vec<_>>();
+
+    shells
+        .filter(|shell| shell_matches_project(shell, project.project_path.as_str(), &session_pids))
+        .max_by(|left, right| {
+            compare_shell_candidates(left, right, project.project_path.as_str(), &session_pids)
+        })
+}
+
+fn compare_shell_candidates(
+    left: &ShellSignal,
+    right: &ShellSignal,
+    project_path: &str,
+    session_pids: &[u32],
+) -> Ordering {
+    shell_match_rank(left, project_path, session_pids)
+        .cmp(&shell_match_rank(right, project_path, session_pids))
+        .then_with(|| shell_target_rank(left).cmp(&shell_target_rank(right)))
+        .then_with(|| compare_timestamp_strings(&left.updated_at, &right.updated_at))
+        .then_with(|| left.pid.cmp(&right.pid))
+}
+
+fn shell_matches_project(shell: &ShellSignal, project_path: &str, session_pids: &[u32]) -> bool {
+    shell_match_rank(shell, project_path, session_pids) > 0
+}
+
+fn shell_match_rank(shell: &ShellSignal, project_path: &str, session_pids: &[u32]) -> u8 {
+    if session_pids.contains(&shell.pid) {
+        2
+    } else if paths_match(shell.cwd.as_str(), project_path) {
+        1
+    } else {
+        0
+    }
+}
+
+fn shell_target_rank(shell: &ShellSignal) -> u8 {
+    if shell.tmux_pane.is_some() {
+        3
+    } else if shell.tmux_session.is_some() {
+        2
+    } else if routing_parent_app(shell.parent_app.as_str()).is_some() {
+        1
+    } else {
+        0
+    }
+}
+
+fn routing_for_shell(
+    shell: &ShellSignal,
+) -> (RoutingStatus, RoutingTarget, String, String, String) {
+    if let Some(pane) = shell.tmux_pane.as_ref() {
+        let status = if shell
+            .tmux_client_tty
+            .as_ref()
+            .is_some_and(|tty| !tty.trim().is_empty())
+        {
+            RoutingStatus::Attached
+        } else {
+            RoutingStatus::Detached
+        };
+        return (
+            status,
+            RoutingTarget {
+                kind: RoutingTargetKind::TmuxPane,
+                terminal_app: routing_parent_app(shell.parent_app.as_str()),
+                session_name: shell.tmux_session.clone(),
+                pane_id: Some(pane.clone()),
+                host_tty: shell.tmux_client_tty.clone(),
+            },
+            match status {
+                RoutingStatus::Attached => "TMUX_PANE_ATTACHED".to_string(),
+                RoutingStatus::Detached => "TMUX_PANE_DETACHED".to_string(),
+                RoutingStatus::Unavailable => "TMUX_PANE_UNAVAILABLE".to_string(),
+            },
+            format!("Matched tmux pane '{pane}'"),
+            shell.updated_at.clone(),
+        );
+    }
+
+    if let Some(session) = shell.tmux_session.as_ref() {
+        let status = if shell
+            .tmux_client_tty
+            .as_ref()
+            .is_some_and(|tty| !tty.trim().is_empty())
+        {
+            RoutingStatus::Attached
+        } else {
+            RoutingStatus::Detached
+        };
+        return (
+            status,
+            RoutingTarget {
+                kind: RoutingTargetKind::TmuxSession,
+                terminal_app: routing_parent_app(shell.parent_app.as_str()),
+                session_name: Some(session.clone()),
+                pane_id: None,
+                host_tty: shell.tmux_client_tty.clone(),
+            },
+            match status {
+                RoutingStatus::Attached => "TMUX_SESSION_ATTACHED".to_string(),
+                RoutingStatus::Detached => "TMUX_SESSION_DETACHED".to_string(),
+                RoutingStatus::Unavailable => "TMUX_SESSION_UNAVAILABLE".to_string(),
+            },
+            format!("Matched tmux session '{session}'"),
+            shell.updated_at.clone(),
+        );
+    }
+
+    if let Some(parent_app) = routing_parent_app(shell.parent_app.as_str()) {
+        return (
+            RoutingStatus::Detached,
+            RoutingTarget {
+                kind: RoutingTargetKind::TerminalApp,
+                terminal_app: Some(parent_app.clone()),
+                session_name: None,
+                pane_id: None,
+                host_tty: None,
+            },
+            "TERMINAL_APP_DETACHED".to_string(),
+            format!("Matched terminal app '{parent_app}'"),
+            shell.updated_at.clone(),
+        );
+    }
+
+    (
+        RoutingStatus::Unavailable,
+        RoutingTarget::default(),
+        "NO_TRUSTED_EVIDENCE".to_string(),
+        "No routing evidence available".to_string(),
+        shell.updated_at.clone(),
+    )
+}
+
+fn routing_parent_app(value: &str) -> Option<String> {
+    let normalized = ParentApp::from_string(value);
+    if matches!(normalized, ParentApp::Unknown | ParentApp::Tmux) {
+        return None;
+    }
+
+    serde_json::to_string(&normalized)
+        .ok()
+        .map(|value| value.trim_matches('"').to_string())
+}
+
+fn routing_key(workspace_id: &str, project_path: &str) -> String {
+    if workspace_id.trim().is_empty() {
+        project_path.to_string()
+    } else {
+        workspace_id.to_string()
+    }
 }
 
 fn reduce_project_sessions(
@@ -729,6 +953,19 @@ fn is_event_stale(current: Option<&SessionSummary>, event: &IngestHookEventComma
     current_time.signed_duration_since(event_time).num_seconds() > STALE_EVENT_GRACE_SECS
 }
 
+fn paths_match(left: &str, right: &str) -> bool {
+    let shell_path = normalize_path_for_matching(left);
+    let project_path = normalize_path_for_matching(right);
+
+    if shell_path == project_path {
+        return true;
+    }
+
+    shell_path
+        .strip_prefix(project_path.as_str())
+        .is_some_and(|rest| rest.starts_with('/'))
+}
+
 fn compare_timestamp_strings(left: &str, right: &str) -> Ordering {
     match (parse_rfc3339(left), parse_rfc3339(right)) {
         (Some(left), Some(right)) => left.cmp(&right),
@@ -749,7 +986,7 @@ mod tests {
     use super::ReducerState;
     use crate::domain::{
         default_workspace_id, HookEventType, IngestHookEventCommand, IngestShellSignalCommand,
-        SessionState,
+        RoutingStatus, RoutingTargetKind, SessionState,
     };
 
     fn event_base(event_type: HookEventType) -> IngestHookEventCommand {
@@ -903,6 +1140,7 @@ mod tests {
             parent_app: "ghostty".to_string(),
             tmux_session: Some("cap".to_string()),
             tmux_client_tty: Some("/dev/ttys099".to_string()),
+            tmux_pane: Some("%42".to_string()),
             recorded_at: "2026-02-28T00:00:00Z".to_string(),
         });
 
@@ -915,6 +1153,193 @@ mod tests {
                 .and_then(|shell| shell.tmux_client_tty.as_deref()),
             Some("/dev/ttys099")
         );
+        assert_eq!(
+            state
+                .shells
+                .get(&4242)
+                .and_then(|shell| shell.tmux_pane.as_deref()),
+            Some("%42")
+        );
+    }
+
+    #[test]
+    fn routing_prefers_tmux_pane_targets_for_matching_shells() {
+        let mut state = ReducerState::default();
+
+        let _ = state.apply_hook_event(event_base(HookEventType::UserPromptSubmit));
+        let _ = state.apply_shell_signal(IngestShellSignalCommand {
+            pid: 1234,
+            cwd: "/repo".to_string(),
+            tty: "/dev/ttys001".to_string(),
+            parent_app: "ghostty".to_string(),
+            tmux_session: Some("repo".to_string()),
+            tmux_client_tty: Some("/dev/ttys099".to_string()),
+            tmux_pane: Some("%42".to_string()),
+            recorded_at: "2026-02-28T00:00:00Z".to_string(),
+        });
+
+        let snapshot = state.snapshot();
+        let route = snapshot
+            .routing
+            .iter()
+            .find(|route| route.project_path == "/repo")
+            .expect("route");
+
+        assert_eq!(route.status, RoutingStatus::Attached);
+        assert_eq!(route.target.kind, RoutingTargetKind::TmuxPane);
+        assert_eq!(route.target.pane_id.as_deref(), Some("%42"));
+        assert_eq!(route.target.session_name.as_deref(), Some("repo"));
+        assert_eq!(route.target.host_tty.as_deref(), Some("/dev/ttys099"));
+        assert_eq!(route.reason_code, "TMUX_PANE_ATTACHED");
+    }
+
+    #[test]
+    fn routing_falls_back_to_tmux_session_when_pane_missing() {
+        let mut state = ReducerState::default();
+
+        let _ = state.apply_hook_event(event_base(HookEventType::UserPromptSubmit));
+        let _ = state.apply_shell_signal(IngestShellSignalCommand {
+            pid: 1234,
+            cwd: "/repo".to_string(),
+            tty: "/dev/ttys001".to_string(),
+            parent_app: "ghostty".to_string(),
+            tmux_session: Some("repo".to_string()),
+            tmux_client_tty: Some("/dev/ttys099".to_string()),
+            tmux_pane: None,
+            recorded_at: "2026-02-28T00:00:00Z".to_string(),
+        });
+
+        let route = state
+            .snapshot()
+            .routing
+            .into_iter()
+            .find(|route| route.project_path == "/repo")
+            .expect("route");
+
+        assert_eq!(route.status, RoutingStatus::Attached);
+        assert_eq!(route.target.kind, RoutingTargetKind::TmuxSession);
+        assert_eq!(route.target.session_name.as_deref(), Some("repo"));
+        assert_eq!(route.target.host_tty.as_deref(), Some("/dev/ttys099"));
+        assert_eq!(route.reason_code, "TMUX_SESSION_ATTACHED");
+    }
+
+    #[test]
+    fn routing_marks_projects_unavailable_until_shell_evidence_arrives() {
+        let mut state = ReducerState::default();
+
+        let _ = state.apply_hook_event(event_base(HookEventType::UserPromptSubmit));
+
+        let route = state
+            .snapshot()
+            .routing
+            .into_iter()
+            .find(|route| route.project_path == "/repo")
+            .expect("route");
+
+        assert_eq!(route.status, RoutingStatus::Unavailable);
+        assert_eq!(route.target.kind, RoutingTargetKind::None);
+        assert_eq!(route.target.session_name, None);
+        assert_eq!(route.target.pane_id, None);
+        assert_eq!(route.reason_code, "NO_TRUSTED_EVIDENCE");
+    }
+
+    #[test]
+    fn routing_does_not_match_parent_directory_shells_to_descendant_projects() {
+        let mut state = ReducerState::default();
+
+        let mut attune = event_base(HookEventType::UserPromptSubmit);
+        attune.session_id = "session-attune".to_string();
+        attune.pid = Some(4100);
+        attune.project_path = "/users/petepetrash/code/attune".to_string();
+        attune.cwd = Some("/users/petepetrash/code/attune".to_string());
+        attune.recorded_at = "2026-03-13T02:35:00Z".to_string();
+        let _ = state.apply_hook_event(attune);
+
+        let mut pete = event_base(HookEventType::UserPromptSubmit);
+        pete.session_id = "session-pete".to_string();
+        pete.pid = Some(4200);
+        pete.project_path = "/users/petepetrash/code/pete-2025".to_string();
+        pete.cwd = Some("/users/petepetrash/code/pete-2025".to_string());
+        pete.recorded_at = "2026-03-13T02:35:01Z".to_string();
+        let _ = state.apply_hook_event(pete);
+
+        let _ = state.apply_shell_signal(IngestShellSignalCommand {
+            pid: 9999,
+            cwd: "/users/petepetrash/code".to_string(),
+            tty: "/dev/ttys009".to_string(),
+            parent_app: "tmux".to_string(),
+            tmux_session: Some("sanctuary".to_string()),
+            tmux_client_tty: Some("/dev/ttys026".to_string()),
+            tmux_pane: Some("%27".to_string()),
+            recorded_at: "2026-03-13T02:35:59Z".to_string(),
+        });
+        let _ = state.apply_shell_signal(IngestShellSignalCommand {
+            pid: 4200,
+            cwd: "/users/petepetrash/code/pete-2025".to_string(),
+            tty: "/dev/ttys005".to_string(),
+            parent_app: "tmux".to_string(),
+            tmux_session: Some("dev".to_string()),
+            tmux_client_tty: Some("/dev/ttys009".to_string()),
+            tmux_pane: Some("%0".to_string()),
+            recorded_at: "2026-03-13T02:40:41Z".to_string(),
+        });
+
+        let snapshot = state.snapshot();
+
+        let attune_route = snapshot
+            .routing
+            .iter()
+            .find(|route| route.project_path == "/users/petepetrash/code/attune")
+            .expect("attune route");
+        assert_eq!(attune_route.status, RoutingStatus::Unavailable);
+        assert_eq!(attune_route.target.kind, RoutingTargetKind::None);
+        assert_eq!(attune_route.reason_code, "NO_TRUSTED_EVIDENCE");
+
+        let pete_route = snapshot
+            .routing
+            .iter()
+            .find(|route| route.project_path == "/users/petepetrash/code/pete-2025")
+            .expect("pete route");
+        assert_eq!(pete_route.status, RoutingStatus::Attached);
+        assert_eq!(pete_route.target.kind, RoutingTargetKind::TmuxPane);
+        assert_eq!(pete_route.target.pane_id.as_deref(), Some("%0"));
+        assert_eq!(pete_route.target.session_name.as_deref(), Some("dev"));
+        assert_eq!(pete_route.target.host_tty.as_deref(), Some("/dev/ttys009"));
+    }
+
+    #[test]
+    fn routing_still_matches_shells_inside_project_subdirectories() {
+        let mut state = ReducerState::default();
+
+        let mut event = event_base(HookEventType::UserPromptSubmit);
+        event.project_path = "/users/petepetrash/code/capacitor".to_string();
+        event.cwd = Some("/users/petepetrash/code/capacitor".to_string());
+        event.recorded_at = "2026-03-13T02:45:00Z".to_string();
+        let _ = state.apply_hook_event(event);
+
+        let _ = state.apply_shell_signal(IngestShellSignalCommand {
+            pid: 1234,
+            cwd: "/users/petepetrash/code/capacitor/apps/swift".to_string(),
+            tty: "/dev/ttys021".to_string(),
+            parent_app: "tmux".to_string(),
+            tmux_session: Some("capacitor".to_string()),
+            tmux_client_tty: Some("/dev/ttys022".to_string()),
+            tmux_pane: Some("%21".to_string()),
+            recorded_at: "2026-03-13T02:45:30Z".to_string(),
+        });
+
+        let route = state
+            .snapshot()
+            .routing
+            .into_iter()
+            .find(|route| route.project_path == "/users/petepetrash/code/capacitor")
+            .expect("route");
+
+        assert_eq!(route.status, RoutingStatus::Attached);
+        assert_eq!(route.target.kind, RoutingTargetKind::TmuxPane);
+        assert_eq!(route.target.pane_id.as_deref(), Some("%21"));
+        assert_eq!(route.target.session_name.as_deref(), Some("capacitor"));
+        assert_eq!(route.target.host_tty.as_deref(), Some("/dev/ttys022"));
     }
 
     #[test]

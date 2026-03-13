@@ -17,7 +17,7 @@ The dev environment masks problems:
 
 ### 0. Terminal Activation QA (When Activation/Routing Changed)
 
-If the release includes changes to terminal activation, tmux switching, or Ghostty AX routing, reference:
+If the release includes changes to terminal activation, tmux switching, or Ghostty native AppleScript routing, reference:
 
 - `.claude/docs/terminal-activation-ux-spec.md` (canonical UX contract)
 
@@ -26,7 +26,7 @@ Required sign-off artifacts:
 - [ ] Manual QA report attached to PR/issue using the current UX contract and required sign-off fields below
 - [ ] All P0 scenarios pass (or explicit triage documented)
 - [ ] Reuse scenarios show no unexpected `launchNewTerminal`
-- [ ] Ghostty multi-tab/multi-window scenarios show deterministic AX routing (`tab_press` preferred, `window_raise` fallback)
+- [ ] Ghostty multi-tab/multi-window scenarios show deterministic native routing (`focus` preferred, `activate window` fallback)
 - [ ] Host-hygiene gate enforced for P1 evidence (controlled terminal density or explicit isolation strategy documented)
 - [ ] P2 edge/failure scenarios reviewed (fixed or explicitly accepted with rationale)
 - [ ] UX POV summary included in report:

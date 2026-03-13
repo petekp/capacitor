@@ -56,8 +56,8 @@ impl SnapshotReadModelProjector {
 mod tests {
     use super::SnapshotReadModelProjector;
     use crate::domain::{
-        AppSnapshot, DiagnosticsSummary, ProjectSummary, RoutingStatus, RoutingTargetKind,
-        RoutingView, SessionState, SessionSummary, ShellSignal,
+        AppSnapshot, DiagnosticsSummary, ProjectSummary, RoutingStatus, RoutingTarget,
+        RoutingTargetKind, RoutingView, SessionState, SessionSummary, ShellSignal,
     };
     use crate::observation::ObservationRecord;
 
@@ -99,14 +99,20 @@ mod tests {
                 parent_app: "ghostty".to_string(),
                 tmux_session: None,
                 tmux_client_tty: None,
+                tmux_pane: None,
                 updated_at: "2026-03-09T12:00:00Z".to_string(),
             }],
             routing: vec![RoutingView {
                 workspace_id: "workspace".to_string(),
                 project_path: "/repo".to_string(),
                 status: RoutingStatus::Detached,
-                target_kind: RoutingTargetKind::TerminalApp,
-                target_value: Some("ghostty".to_string()),
+                target: RoutingTarget {
+                    kind: RoutingTargetKind::TerminalApp,
+                    terminal_app: Some("ghostty".to_string()),
+                    session_name: None,
+                    pane_id: None,
+                    host_tty: None,
+                },
                 reason_code: "fallback".to_string(),
                 reason: "fallback".to_string(),
                 updated_at: "2026-03-09T12:00:00Z".to_string(),
@@ -149,6 +155,7 @@ mod tests {
                 parent_app: "ghostty".to_string(),
                 tmux_session: None,
                 tmux_client_tty: None,
+                tmux_pane: None,
                 recorded_at: "2026-03-09T12:00:00Z".to_string(),
             },
         )];

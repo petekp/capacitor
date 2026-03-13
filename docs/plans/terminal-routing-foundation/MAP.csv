@@ -1,0 +1,20 @@
+path,area,leverage,role,notes
+core/hud-hook/src/cwd.rs,hook,high,source_of_tmux_context,Discovers TMUX_PANE and forwards shell context
+core/hud-hook/src/runtime_client.rs,hook,high,adapter_boundary,Builds shell signal commands for runtime ingest
+core/capacitor-core/src/domain/types.rs,runtime,high,canonical_contract,Defines ShellSignal and RoutingView wire shapes
+core/capacitor-core/src/reduce/mod.rs,runtime,high,route_derivation,Derives project/session/routing state from shell signals
+core/capacitor-core/tests/ffi_contract.rs,runtime,high,contract_guard,Proves route and shell shapes through public runtime API
+apps/swift/Sources/Capacitor/Bridge/capacitor_core.swift,bridge,high,generated_contract,Must be regenerated after Rust API changes
+apps/swift/Sources/Capacitor/Models/RuntimeClient.swift,swift_runtime,high,snapshot_decoder,Maps runtime snapshot payloads into Swift models
+apps/swift/Sources/Capacitor/Models/RoutingStateStore.swift,swift_runtime,high,routing_cache,Canonical in-memory route state for activation
+apps/swift/Sources/Capacitor/Models/AppState.swift,swift_runtime,high,snapshot_orchestration,Applies routing, shell, and session snapshots together
+apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift,activation,high,current_entrypoint,Still owns live activation and needs further extraction
+apps/swift/Sources/Capacitor/Models/TmuxRouter.swift,activation,high,tmux_boundary,Canonical tmux execution and command-building boundary
+apps/swift/Sources/Capacitor/Models/TerminalDrivers.swift,activation,high,terminal_boundary,Driver-owned host focus and launch behavior for supported terminals
+apps/swift/Sources/Capacitor/Models/TerminalActivationCoordinator.swift,activation,high,orchestration_boundary,Canonical request arbitration and activation flow coordinator
+apps/swift/Sources/Capacitor/Models/SupportedTerminalApp.swift,activation,medium,terminal_taxonomy,Shared terminal app taxonomy extracted out of the launcher
+apps/swift/Sources/Capacitor/Models/GhosttyAutomationClient.swift,activation,high,ghostty_adapter,Current Ghostty-specific native routing adapter
+apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift,tests,high,behavior_guard,Primary pane-routing regression suite
+apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift,tests,high,wire_shape_guard,Protects snapshot decoding and route mapping
+docs/ARCHITECTURE.md,docs,medium,system_boundary_doc,Must reflect final Rust-versus-Swift ownership split
+docs/plans/ghostty-applescript/DECISIONS.md,docs,medium,prior_context,Contains prior Ghostty-specific migration decisions that still constrain this work

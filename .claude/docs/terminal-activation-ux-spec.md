@@ -8,7 +8,7 @@ When changing activation behavior, read these first:
 
 - `apps/swift/Sources/Capacitor/Models/AppState.swift`
 - `apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift`
-- `apps/swift/Sources/Capacitor/Models/GhosttyAXReader.swift`
+- `apps/swift/Sources/Capacitor/Models/GhosttyAutomationClient.swift`
 
 Production ownership note:
 
@@ -40,7 +40,7 @@ Every card click follows this flow:
    - If it does not, create it silently and then switch to it.
 
 3. Focus the terminal.
-   - Ghostty: AX-route to the managed tab when possible.
+   - Ghostty: use Ghostty's native AppleScript window/tab/terminal model when possible.
    - iTerm / Terminal.app: use TTY-discovery app activation.
 ```
 
@@ -55,7 +55,7 @@ Every card click follows this flow:
 | B5 | Latest intent wins | Rapid clicks discard stale requests. |
 | B6 | Managed-TTY affinity | Reuse the remembered TTY until it dies. |
 | B7 | Graceful recovery | If the managed TTY is gone, adopt another client or create a new surface. |
-| B8 | Multi-terminal support | Ghostty gets AX tab routing; iTerm and Terminal.app get TTY-based activation. |
+| B8 | Multi-terminal support | Ghostty gets native AppleScript routing; iTerm and Terminal.app get TTY-based activation. |
 | B9 | Auto-attach detached sessions | If no tmux client exists but a detached session does, attach to it instead of opening a new tab. |
 
 ## Scenario Matrix
@@ -75,12 +75,13 @@ Every card click follows this flow:
 
 ## Ghostty Routing
 
-Ghostty uses AX-driven tab focus after tmux resolution:
+Ghostty uses native AppleScript routing after tmux resolution:
 
-1. Match the managed tab by TTY or tmux session title.
-2. Prefer `AXPress` on the matched tab.
-3. Fall back to `AXRaise` on the owning window.
-4. Fall back again to app activation if AX focus is unavailable.
+1. Prefer a cached Ghostty terminal ID for the active tmux client when available.
+2. Otherwise match the best terminal by working directory, then terminal/tab/window title metadata.
+3. Select the matched tab when needed, then `focus` the target terminal.
+4. Fall back to `activate window` only when the best deterministic match is window-level.
+5. If no deterministic Ghostty surface can be matched, relaunch a Ghostty surface rather than guessing across unrelated tabs.
 
 ## Managed-TTY Lifecycle
 
@@ -94,7 +95,7 @@ When changing activation behavior, run:
 ```bash
 ./scripts/dev/agent-observe.sh paths
 ./scripts/dev/agent-observe.sh snapshot
-cd apps/swift && swift test --filter 'TerminalLauncherTests|GhosttyAXReaderTests'
+cd apps/swift && swift test --filter 'TerminalLauncherTests|Ghostty.*Tests'
 ```
 
 Use `./scripts/dev/agent-observe.sh tail app` while reproducing if you need the
@@ -106,6 +107,6 @@ you need to compare runtime evidence against activation decisions.
 These test files are the minimum activation coverage surface:
 
 - `apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift`
-- `apps/swift/Tests/CapacitorTests/GhosttyAXReaderTests.swift`
+- `apps/swift/Tests/CapacitorTests/GhosttyAutomationClientTests.swift`
 
 Each scenario in the matrix should map to at least one automated test.

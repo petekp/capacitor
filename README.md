@@ -22,15 +22,20 @@ Capacitor is in early alpha. Expect rough edges. [Report issues here.](https://g
 
 ## How terminal switching works
 
-When you click a project card, Capacitor tries to get you back to the right Ghostty/tmux context:
+When you click a project card, Capacitor tries to get you back to the right terminal/tmux context:
 
+- Prefer the terminal app already hosting the matching live client or shell
 - Reuse an attached tmux client when possible
 - Switch to the correct tmux session or pane
-- Fall back to opening a fresh Ghostty tab only when reuse fails
+- Fall back to opening a fresh terminal only when reuse fails
 
-Ghostty is the only supported terminal right now.
+Current terminal support:
 
-**Known rough edges:** Ghostty routing uses Accessibility tab targeting first, then window raise fallback. If Accessibility is unavailable or no deterministic tab match exists, Capacitor falls back to generic Ghostty activation.
+- Ghostty 1.3+ with native AppleScript routing
+- iTerm via TTY-based tab reuse
+- Terminal.app via TTY-based tab reuse
+
+**Known rough edges:** Ghostty routing depends on Ghostty's native AppleScript support in Ghostty 1.3+. If Ghostty AppleScript is disabled (`macos-applescript = false`) or macOS Automation access is denied, Capacitor will not be able to switch Ghostty surfaces. Ghostty launch still stays on the proven `open` path rather than native surface creation.
 
 ## Install
 
@@ -65,7 +70,7 @@ The "Include anonymized telemetry" toggle in Settings controls whether app metad
 
 ## Permissions
 
-Terminal switching uses AppleScript, so macOS will ask for Automation access the first time you click a project card. If you dismiss the prompt, terminal switching won't work. You can re-grant it later in System Settings > Privacy & Security > Automation.
+Terminal switching uses AppleScript, so macOS will ask for Automation access the first time you click a project card. If you dismiss the prompt, Capacitor won't be able to control the terminal app you're using. You can re-grant it later in System Settings > Privacy & Security > Automation.
 
 ## Settings
 
@@ -92,6 +97,7 @@ Terminal switching uses AppleScript, so macOS will ask for Automation access the
 
 - Apple Silicon Mac (`arm64`)
 - macOS 14+
+- At least one supported terminal: Ghostty 1.3+ with AppleScript enabled, iTerm, or Terminal.app
 - Claude Code installed
 - `tmux` recommended (Capacitor can restore exact pane context)
 
@@ -99,7 +105,7 @@ Terminal switching uses AppleScript, so macOS will ask for Automation access the
 
 **Projects not showing up?** Check the hooks status indicator in the app. If it says something's wrong, click "Fix All."
 
-**Terminal switching broken?** You probably dismissed the Automation permission prompt. Go to System Settings > Privacy & Security > Automation and grant it.
+**Terminal switching broken?** Check Automation access for the terminal app you use in System Settings > Privacy & Security > Automation. If you use Ghostty, also confirm `macos-applescript = true`.
 
 **Runtime issues?** If something seems off, start with the local runtime service health (`./scripts/dev/agent-observe.sh health`). If that command reports degraded artifact mode, treat it as offline/debug context only and inspect `~/.capacitor/runtime/` (for example `app_snapshot.json` and `app-debug.log`) as persisted-state evidence, not live runtime truth.
 

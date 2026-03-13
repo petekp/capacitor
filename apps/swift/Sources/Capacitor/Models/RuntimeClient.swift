@@ -167,11 +167,37 @@ struct RuntimeSnapshot {
     let projectStates: [RuntimeProjectState]
     let sessions: [RuntimeSession]
     let shellState: ShellCwdState
+    let routingViews: [RuntimeRoutingView]
 }
 
-struct CoreRoutingTarget: Equatable {
+struct CoreRoutingTarget: Decodable, Equatable {
     let kind: String
-    let value: String?
+    let terminalApp: String?
+    let sessionName: String?
+    let paneId: String?
+    let hostTty: String?
+
+    enum CodingKeys: String, CodingKey {
+        case kind
+        case terminalApp = "terminal_app"
+        case sessionName = "session_name"
+        case paneId = "pane_id"
+        case hostTty = "host_tty"
+    }
+
+    init(
+        kind: String,
+        terminalApp: String? = nil,
+        sessionName: String? = nil,
+        paneId: String? = nil,
+        hostTty: String? = nil,
+    ) {
+        self.kind = kind
+        self.terminalApp = terminalApp
+        self.sessionName = sessionName
+        self.paneId = paneId
+        self.hostTty = hostTty
+    }
 }
 
 struct CoreRoutingEvidence: Equatable {
@@ -378,6 +404,7 @@ private struct SnapshotShellPayload: Decodable {
     let parentApp: String
     let tmuxSession: String?
     let tmuxClientTty: String?
+    let tmuxPane: String?
     let updatedAt: String
 
     enum CodingKeys: String, CodingKey {
@@ -387,6 +414,7 @@ private struct SnapshotShellPayload: Decodable {
         case parentApp = "parent_app"
         case tmuxSession = "tmux_session"
         case tmuxClientTty = "tmux_client_tty"
+        case tmuxPane = "tmux_pane"
         case updatedAt = "updated_at"
     }
 
@@ -397,6 +425,7 @@ private struct SnapshotShellPayload: Decodable {
         parentApp = shell.parentApp
         tmuxSession = shell.tmuxSession
         tmuxClientTty = shell.tmuxClientTty
+        tmuxPane = shell.tmuxPane
         updatedAt = shell.updatedAt
     }
 }
@@ -405,8 +434,7 @@ private struct SnapshotRoutingPayload: Decodable {
     let workspaceId: String
     let projectPath: String
     let status: String
-    let targetKind: String
-    let targetValue: String?
+    let target: CoreRoutingTarget
     let reasonCode: String
     let reason: String
     let updatedAt: String
@@ -415,8 +443,7 @@ private struct SnapshotRoutingPayload: Decodable {
         case workspaceId = "workspace_id"
         case projectPath = "project_path"
         case status
-        case targetKind = "target_kind"
-        case targetValue = "target_value"
+        case target
         case reasonCode = "reason_code"
         case reason
         case updatedAt = "updated_at"
@@ -426,8 +453,7 @@ private struct SnapshotRoutingPayload: Decodable {
         workspaceId = route.workspaceId
         projectPath = route.projectPath
         status = RuntimeClient.snapshotRoutingStatusString(route.status)
-        targetKind = RuntimeClient.snapshotRoutingTargetKindString(route.targetKind)
-        targetValue = route.targetValue
+        target = CoreRoutingTarget(route.target)
         reasonCode = route.reasonCode
         reason = route.reason
         updatedAt = route.updatedAt
@@ -540,6 +566,7 @@ final class RuntimeClient {
             projectStates: projectStates,
             sessions: sessions,
             shellState: shellState,
+            routingViews: mapRoutingViews(snapshot),
         )
     }
 
@@ -570,7 +597,7 @@ final class RuntimeClient {
             workspaceId: fallbackWorkspaceId,
             projectPath: normalizedPath,
             status: "unavailable",
-            target: CoreRoutingTarget(kind: "none", value: nil),
+            target: CoreRoutingTarget(kind: "none"),
             confidence: "low",
             reasonCode: "NO_TRUSTED_EVIDENCE",
             reason: "No routing evidence available in runtime service snapshot",
@@ -742,11 +769,26 @@ final class RuntimeClient {
                 parentApp: signal.parentApp,
                 tmuxSession: signal.tmuxSession,
                 tmuxClientTty: signal.tmuxClientTty,
+                tmuxPane: signal.tmuxPane,
                 updatedAt: updatedAt,
             )
         }
 
         return ShellCwdState(version: 1, shells: shells)
+    }
+
+    private func mapRoutingViews(_ snapshot: SnapshotPayload) -> [RuntimeRoutingView] {
+        snapshot.routing.map { route in
+            RuntimeRoutingView(
+                workspaceId: route.workspaceId,
+                projectPath: route.projectPath,
+                status: route.status,
+                target: route.target,
+                reasonCode: normalizeReasonCode(route.reasonCode),
+                reason: route.reason,
+                updatedAt: route.updatedAt,
+            )
+        }
     }
 
     private func resolveRoutingView(
@@ -779,7 +821,6 @@ final class RuntimeClient {
         snapshot: SnapshotPayload,
     ) -> CoreRoutingSnapshot {
         let normalizedStatus = route.status
-        let normalizedTargetKind = route.targetKind
         let reasonCode = normalizeReasonCode(route.reasonCode)
         let evidence = tmuxClientEvidence(route: route, snapshot: snapshot)
 
@@ -796,7 +837,7 @@ final class RuntimeClient {
             workspaceId: route.workspaceId,
             projectPath: PathNormalizer.normalize(projectPath),
             status: normalizedStatus,
-            target: CoreRoutingTarget(kind: normalizedTargetKind, value: route.targetValue),
+            target: route.target,
             confidence: confidence,
             reasonCode: reasonCode,
             reason: route.reason,
@@ -817,41 +858,110 @@ final class RuntimeClient {
         route: SnapshotRoutingPayload,
         snapshot: SnapshotPayload,
     ) -> [CoreRoutingEvidence] {
-        guard route.targetKind == "tmux_session",
-              let target = route.targetValue,
-              !target.isEmpty
+        guard route.target.kind == "tmux_session" || route.target.kind == "tmux_pane"
         else {
             return []
         }
 
-        let now = Date()
-        return snapshot.shells
-            .filter { $0.tmuxSession == target }
-            .compactMap { shell in
-                let ageMs: UInt64
-                if let updatedAt = parseISO8601Date(shell.updatedAt) {
-                    let interval = max(0, now.timeIntervalSince(updatedAt))
-                    ageMs = UInt64((interval * 1000).rounded())
-                } else {
-                    ageMs = 0
-                }
-
-                let tty = shell.tty.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !tty.isEmpty else { return nil }
-
-                return CoreRoutingEvidence(
-                    evidenceType: "tmux_client",
-                    value: tty,
-                    ageMs: ageMs,
-                    trustRank: 0,
-                )
+        func normalizedValue(_ value: String?) -> String? {
+            guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !trimmed.isEmpty
+            else {
+                return nil
             }
-            .sorted { left, right in
-                if left.trustRank != right.trustRank {
-                    return left.trustRank < right.trustRank
+            return trimmed
+        }
+
+        let now = Date()
+        let sessionName = normalizedValue(route.target.sessionName)
+        let hostTty = normalizedValue(route.target.hostTty)
+
+        guard sessionName != nil || hostTty != nil else {
+            return []
+        }
+
+        func ageMs(from value: String) -> UInt64 {
+            guard let updatedAt = parseISO8601Date(value) else {
+                return 0
+            }
+            let interval = max(0, now.timeIntervalSince(updatedAt))
+            return UInt64((interval * 1000).rounded())
+        }
+
+        func makeTmuxClientEvidence(
+            value: String,
+            ageMs: UInt64,
+            preferredHostTty: String?,
+        ) -> CoreRoutingEvidence {
+            let trustRank: UInt8 = if let preferredHostTty {
+                preferredHostTty == value ? 0 : 1
+            } else {
+                0
+            }
+
+            return CoreRoutingEvidence(
+                evidenceType: "tmux_client",
+                value: value,
+                ageMs: ageMs,
+                trustRank: trustRank,
+            )
+        }
+
+        func shouldReplace(
+            current: CoreRoutingEvidence,
+            candidate: CoreRoutingEvidence,
+        ) -> Bool {
+            if candidate.trustRank != current.trustRank {
+                return candidate.trustRank < current.trustRank
+            }
+            if candidate.ageMs != current.ageMs {
+                return candidate.ageMs < current.ageMs
+            }
+            return candidate.value < current.value
+        }
+
+        var evidenceByValue: [String: CoreRoutingEvidence] = [:]
+
+        if let hostTty {
+            let routeEvidence = makeTmuxClientEvidence(
+                value: hostTty,
+                ageMs: ageMs(from: route.updatedAt),
+                preferredHostTty: hostTty,
+            )
+            evidenceByValue[hostTty] = routeEvidence
+        }
+
+        if let sessionName {
+            for shell in snapshot.shells where shell.tmuxSession == sessionName {
+                guard let clientTty = normalizedValue(shell.tmuxClientTty) else {
+                    continue
                 }
+
+                let candidate = makeTmuxClientEvidence(
+                    value: clientTty,
+                    ageMs: ageMs(from: shell.updatedAt),
+                    preferredHostTty: hostTty,
+                )
+
+                if let current = evidenceByValue[clientTty] {
+                    if shouldReplace(current: current, candidate: candidate) {
+                        evidenceByValue[clientTty] = candidate
+                    }
+                } else {
+                    evidenceByValue[clientTty] = candidate
+                }
+            }
+        }
+
+        return evidenceByValue.values.sorted { left, right in
+            if left.trustRank != right.trustRank {
+                return left.trustRank < right.trustRank
+            }
+            if left.ageMs != right.ageMs {
                 return left.ageMs < right.ageMs
             }
+            return left.value < right.value
+        }
     }
 
     fileprivate static func snapshotSessionStateString(_ state: SessionState) -> String {
@@ -882,6 +992,8 @@ final class RuntimeClient {
 
     fileprivate static func snapshotRoutingTargetKindString(_ kind: RoutingTargetKind) -> String {
         switch kind {
+        case .tmuxPane:
+            "tmux_pane"
         case .tmuxSession:
             "tmux_session"
         case .terminalApp:
@@ -889,5 +1001,15 @@ final class RuntimeClient {
         case .none:
             "none"
         }
+    }
+}
+
+private extension CoreRoutingTarget {
+    init(_ target: RoutingTarget) {
+        kind = RuntimeClient.snapshotRoutingTargetKindString(target.kind)
+        terminalApp = target.terminalApp
+        sessionName = target.sessionName
+        paneId = target.paneId
+        hostTty = target.hostTty
     }
 }
