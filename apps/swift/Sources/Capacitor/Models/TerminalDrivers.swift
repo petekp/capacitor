@@ -97,9 +97,9 @@ final class GhosttyTerminalDriver: TerminalDriver {
             return false
         }
 
-        let configuration = GhosttySurfaceConfigurationOptions(
-            initialWorkingDirectory: projectPath,
-            initialInput: command,
+        let configuration = ghosttyLaunchConfiguration(
+            projectPath: projectPath,
+            command: command,
         )
 
         switch automationClient.createWindow(configuration: configuration) {
@@ -112,10 +112,12 @@ final class GhosttyTerminalDriver: TerminalDriver {
     }
 
     func launchCommandScript(projectPath: String, command: String) -> String {
-        ghosttyCreateWindowShellScript(configuration: GhosttySurfaceConfigurationOptions(
-            initialWorkingDirectory: projectPath,
-            initialInput: command,
-        ))
+        terminalLaunchCommandScript(
+            app: app,
+            projectPath: projectPath,
+            command: command,
+            isRunning: isRunning(),
+        )
     }
 
     private func executeRoute(_ route: GhosttyRouteMatch, clientTty: String?) -> Bool {
@@ -222,27 +224,12 @@ final class ScriptedTerminalDriver: TerminalDriver {
     }
 
     func launchCommandScript(projectPath: String, command: String) -> String {
-        let escapedPath = bashDoubleQuoteEscape(projectPath)
-        let escapedCommand = bashDoubleQuoteEscape(command)
-        let delay = isRunning() ? "1.0" : "2.5"
-
-        return """
-        PROJECT_PATH="\(escapedPath)"
-        CLAUDE_CMD="\(escapedCommand)"
-
-        open -b \(app.bundleId) "$PROJECT_PATH"
-
-        osascript <<'APPLESCRIPT'
-        delay \(delay)
-        tell application "System Events"
-            tell process "\(app.processName)"
-                keystroke "\(escapedCommand)"
-                delay 0.05
-                keystroke return
-            end tell
-        end tell
-        APPLESCRIPT
-        """
+        terminalLaunchCommandScript(
+            app: app,
+            projectPath: projectPath,
+            command: command,
+            isRunning: isRunning(),
+        )
     }
 
     private func focusTerminalTabByTty(_ tty: String) -> Bool {
@@ -299,6 +286,64 @@ final class ScriptedTerminalDriver: TerminalDriver {
         DebugLog.write("[ScriptedTerminalDriver] app=\(app.processName) tty=\(tty) matched=\(matched)")
         return matched
     }
+}
+
+private func ghosttyLaunchConfiguration(projectPath: String?, command: String) -> GhosttySurfaceConfigurationOptions {
+    GhosttySurfaceConfigurationOptions(
+        initialWorkingDirectory: projectPath,
+        initialInput: command,
+    )
+}
+
+func terminalLaunchCommandScript(
+    app: SupportedTerminalApp,
+    projectPath: String,
+    command: String,
+    isRunning: Bool,
+) -> String {
+    switch app {
+    case .ghostty:
+        ghosttyCreateWindowShellScript(configuration: ghosttyLaunchConfiguration(
+            projectPath: projectPath,
+            command: command,
+        ))
+    case .iTerm, .terminal:
+        scriptedTerminalLaunchCommandScript(
+            app: app,
+            projectPath: projectPath,
+            command: command,
+            isRunning: isRunning,
+        )
+    }
+}
+
+private func scriptedTerminalLaunchCommandScript(
+    app: SupportedTerminalApp,
+    projectPath: String,
+    command: String,
+    isRunning: Bool,
+) -> String {
+    let escapedPath = bashDoubleQuoteEscape(projectPath)
+    let escapedCommand = bashDoubleQuoteEscape(command)
+    let delay = isRunning ? "1.0" : "2.5"
+
+    return """
+    PROJECT_PATH="\(escapedPath)"
+    CLAUDE_CMD="\(escapedCommand)"
+
+    open -b \(app.bundleId) "$PROJECT_PATH"
+
+    osascript <<'APPLESCRIPT'
+    delay \(delay)
+    tell application "System Events"
+        tell process "\(app.processName)"
+            keystroke "\(escapedCommand)"
+            delay 0.05
+            keystroke return
+        end tell
+    end tell
+    APPLESCRIPT
+    """
 }
 
 struct TerminalDriverRegistry {

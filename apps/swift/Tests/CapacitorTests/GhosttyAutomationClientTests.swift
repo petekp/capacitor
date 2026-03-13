@@ -209,6 +209,62 @@ final class GhosttyAutomationClientTests: XCTestCase {
         XCTAssertNil(match)
     }
 
+    func testBestGhosttyRouteMatchKeepsPathMatchingCaseSensitive() {
+        let snapshot = GhosttyAppSnapshot(windows: [
+            GhosttyWindowSnapshot(
+                id: "window-1",
+                name: "Ghostty",
+                isFront: true,
+                tabs: [
+                    GhosttyTabSnapshot(
+                        id: "tab-1",
+                        name: "caps",
+                        index: 1,
+                        isSelected: true,
+                        terminals: [
+                            GhosttyTerminalSnapshot(
+                                id: "term-upper",
+                                name: "caps",
+                                workingDirectory: "/Users/pete/Code/Foo",
+                            ),
+                        ],
+                        focusedTerminalID: "term-upper",
+                    ),
+                ],
+            ),
+            GhosttyWindowSnapshot(
+                id: "window-2",
+                name: "Ghostty",
+                isFront: false,
+                tabs: [
+                    GhosttyTabSnapshot(
+                        id: "tab-2",
+                        name: "caps",
+                        index: 1,
+                        isSelected: false,
+                        terminals: [
+                            GhosttyTerminalSnapshot(
+                                id: "term-lower",
+                                name: "caps",
+                                workingDirectory: "/Users/pete/Code/foo",
+                            ),
+                        ],
+                        focusedTerminalID: "term-lower",
+                    ),
+                ],
+            ),
+        ])
+
+        let match = bestGhosttyRouteMatch(
+            snapshot: snapshot,
+            projectPath: "/Users/pete/Code/foo",
+            homeDirectory: "/Users/pete",
+        )
+
+        XCTAssertEqual(match?.terminal?.id, "term-lower")
+        XCTAssertEqual(match?.source, .terminalWorkingDirectory)
+    }
+
     func testSupportStatusRejectsUnsupportedVersion() {
         let client = DefaultGhosttyAutomationClient(
             appleScript: StubAppleScriptClient(),

@@ -465,12 +465,6 @@ final class TerminalLauncher {
         return bestMatch?.pane
     }
 
-    // MARK: - Ghostty Window Detection
-
-    private func isGhosttyRunningInternal() -> Bool {
-        isTerminalRunning(.ghostty)
-    }
-
     // MARK: - Terminal Focus After Tmux Switch
 
     private func activateTerminalAfterTmuxSwitch(
@@ -530,10 +524,6 @@ final class TerminalLauncher {
     @discardableResult
     private func runAppleScriptChecked(_ script: String) -> Bool {
         appleScript.runChecked(script)
-    }
-
-    private func runAppleScriptBoolean(_ script: String) -> Bool? {
-        appleScript.runBoolean(script)
     }
 
     private func runBashScript(_ script: String) {
@@ -666,29 +656,13 @@ enum TerminalScripts {
         preferredApp: SupportedTerminalApp? = nil,
     ) -> String {
         let app = preferredApp ?? SupportedTerminalApp.detectAvailable()
-        if app == .ghostty {
-            let driver = GhosttyTerminalDriver(
-                automationClient: DefaultGhosttyAutomationClient(appleScript: DefaultAppleScriptClient()),
-                isRunning: {
-                    NSWorkspace.shared.runningApplications.contains {
-                        $0.bundleIdentifier == SupportedTerminalApp.ghostty.bundleId
-                    }
-                },
-            )
-            return driver.launchCommandScript(projectPath: projectPath, command: command)
-        }
-
-        let driver = ScriptedTerminalDriver(
+        return terminalLaunchCommandScript(
             app: app,
-            appleScript: DefaultAppleScriptClient(),
-            isRunning: {
-                NSWorkspace.shared.runningApplications.contains {
-                    $0.bundleIdentifier == app.bundleId
-                }
+            projectPath: projectPath,
+            command: command,
+            isRunning: NSWorkspace.shared.runningApplications.contains {
+                $0.bundleIdentifier == app.bundleId
             },
-            activateApp: { false },
-            runBashScript: { _ in },
         )
-        return driver.launchCommandScript(projectPath: projectPath, command: command)
     }
 }

@@ -20,7 +20,8 @@ Capacitor now reliably returns project cards to the right tmux session or pane a
 ## Important Notes
 
 - Ghostty native routing stays in place.
-- Ghostty native launch is still deferred; launch remains on the proven `open` path.
+- At the time this routing-foundation closeout was written, Ghostty native launch was still deferred.
+- Current shipped behavior is the 2026-03-13 follow-up Ghostty native launch migration: launch now uses native `new window` surface creation with `initial input`.
 - The local runtime service remains the authoritative live runtime boundary. Persisted runtime artifacts are for debugging and recovery, not live reads.
 
 ## Evidence

@@ -1,5 +1,7 @@
 # Charter
 
+> Historical plan note. This charter captures the routing-foundation scope before the 2026-03-13 follow-up Ghostty native launch migration. Current shipped Ghostty behavior now includes native launch.
+
 ## Mission
 Rebuild Capacitor terminal activation into one pane-aware, route-first system that Rust derives and Swift executes across Ghostty, iTerm, and Terminal.app.
 
@@ -8,7 +10,7 @@ Rebuild Capacitor terminal activation into one pane-aware, route-first system th
 - Swift is the single owner of tmux execution and macOS terminal automation.
 - No parallel activation policy paths may remain after the migration.
 - Ghostty native routing stays in place.
-- Ghostty native launch stays deferred until upstream surface creation is reliable.
+- Within this migration, native Ghostty launch remained out of scope until upstream surface creation proved reliable.
 - Ghostty AX routing must not reappear.
 - Internal route-contract breaking changes are allowed if all in-repo consumers move in the same slice.
 
@@ -16,7 +18,7 @@ Rebuild Capacitor terminal activation into one pane-aware, route-first system th
 - Reintroducing the Ghostty AX reader or any compatibility shim for it.
 - Preserving the old `target_kind` / `target_value` route shape.
 - Supporting terminals beyond Ghostty, iTerm, and Terminal.app in this migration.
-- Replacing Ghostty’s launch path with native surface creation before that API proves reliable in live smoke tests.
+- Replacing Ghostty’s launch path with native surface creation during this migration before that API proves reliable in live smoke tests.
 
 ## Guardrails
 - Every migration slice must define deletion targets before implementation.

@@ -1,6 +1,7 @@
 # Ghostty Routing Smoke - 2026-03-10
 
 > Historical note. The project-card AX automation limitation in this session was resolved on 2026-03-13. The authoritative closeout proof now lives in `docs/manual-qa/terminal-routing-closeout-2026-03-12.md`.
+> Historical note. The negative Ghostty native-launch result in this session was superseded on 2026-03-13 by `docs/manual-qa/ghostty-native-surface-matrix-2026-03-13.md`, and current shipped behavior now uses native Ghostty launch.
 
 ## Automated Checks Completed
 
@@ -18,7 +19,7 @@
   - WindowServer still reports an onscreen `Capacitor` window, so the remaining blocker is AX exposure of the debug app window, not app startup
 - Live Ghostty AppleScript smoke:
   - `focus terminal id ...` successfully reselected an existing project tab
-  - native Ghostty surface creation produced inert `👻` tabs/windows on local Ghostty 1.3.0, so launch remains on the proven `open` path
+  - native Ghostty surface creation produced inert `👻` tabs/windows on local Ghostty 1.3.0, so the launch flow stayed on the prior path in this session
 
 ## Manual Checks Remaining
 
@@ -35,9 +36,10 @@
    Expected: Capacitor shows the explicit Ghostty automation failure message.
 
 5. Trigger the project creation / resume flow that uses `TerminalScripts.launchWithCommand`.
-   Expected: Ghostty launches the resume command through the current proven open-based path.
+   Expected in this 2026-03-10 session: Ghostty launches the resume command through the then-current launch path.
 
 ## Notes
 
 - Native Ghostty routing is the shipped change.
-- Native Ghostty launch is intentionally not shipped yet.
+- In this 2026-03-10 session, native Ghostty launch had not shipped yet.
+- Current shipped behavior is the later 2026-03-13 native Ghostty launch migration.

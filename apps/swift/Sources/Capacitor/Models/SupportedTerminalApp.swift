@@ -6,6 +6,29 @@ enum SupportedTerminalApp: CaseIterable, Equatable {
     case iTerm
     case terminal
 
+    private var fallbackApplicationPaths: [String] {
+        let homeApplications = NSHomeDirectory() + "/Applications"
+
+        switch self {
+        case .ghostty:
+            return [
+                homeApplications + "/Ghostty.app",
+                "/Applications/Ghostty.app",
+            ]
+        case .iTerm:
+            return [
+                homeApplications + "/iTerm.app",
+                "/Applications/iTerm.app",
+            ]
+        case .terminal:
+            return [
+                "/System/Applications/Utilities/Terminal.app",
+                "/Applications/Utilities/Terminal.app",
+                "/Applications/Terminal.app",
+            ]
+        }
+    }
+
     var processName: String {
         switch self {
         case .ghostty: "Ghostty"
@@ -43,19 +66,54 @@ enum SupportedTerminalApp: CaseIterable, Equatable {
         }
     }
 
-    static func detectAvailable() -> SupportedTerminalApp {
-        let runningApps = NSWorkspace.shared.runningApplications.compactMap { app in
-            SupportedTerminalApp.allCases.first(where: { $0.bundleId == app.bundleIdentifier })
+    func applicationURL(
+        runningApplicationURLsByBundleIdentifier: [String: URL] = Self.runningApplicationURLsByBundleIdentifier(),
+        workspaceURLResolver: (String) -> URL? = { NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0) },
+        fileExistsAtPath: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) },
+    ) -> URL? {
+        if let runningURL = runningApplicationURLsByBundleIdentifier[bundleId] {
+            return runningURL
         }
-        if let running = runningApps.first {
-            return running
+
+        if let workspaceURL = workspaceURLResolver(bundleId) {
+            return workspaceURL
         }
-        if FileManager.default.fileExists(atPath: "/Applications/Ghostty.app") {
-            return .ghostty
+
+        for path in fallbackApplicationPaths where fileExistsAtPath(path) {
+            return URL(fileURLWithPath: path)
         }
-        if FileManager.default.fileExists(atPath: "/Applications/iTerm.app") {
-            return .iTerm
+
+        return nil
+    }
+
+    static func detectAvailable(
+        runningBundleIdentifiers: [String] = NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier),
+        installationURLResolver: (SupportedTerminalApp) -> URL? = { $0.applicationURL() },
+    ) -> SupportedTerminalApp {
+        for app in SupportedTerminalApp.allCases where runningBundleIdentifiers.contains(app.bundleId) {
+            return app
         }
+
+        for app in SupportedTerminalApp.allCases where installationURLResolver(app) != nil {
+            return app
+        }
+
         return .terminal
+    }
+
+    private static func runningApplicationURLsByBundleIdentifier() -> [String: URL] {
+        var applicationURLs: [String: URL] = [:]
+
+        for app in NSWorkspace.shared.runningApplications {
+            guard let bundleIdentifier = app.bundleIdentifier,
+                  let bundleURL = app.bundleURL
+            else {
+                continue
+            }
+
+            applicationURLs[bundleIdentifier] = bundleURL
+        }
+
+        return applicationURLs
     }
 }

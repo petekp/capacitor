@@ -283,13 +283,10 @@ struct DefaultGhosttyAutomationClient: GhosttyAutomationClient {
         return .success(())
     }
 
-    private static func installedGhosttyVersion() -> String? {
-        let bundleURL = NSWorkspace.shared.runningApplications.first(where: {
-            $0.bundleIdentifier == "com.mitchellh.ghostty"
-        })?.bundleURL
-
-        let bundle = bundleURL.flatMap(Bundle.init(url:))
-            ?? Bundle(path: "/Applications/Ghostty.app")
+    static func installedGhosttyVersion(
+        bundleURLResolver: () -> URL? = { SupportedTerminalApp.ghostty.applicationURL() },
+    ) -> String? {
+        let bundle = bundleURLResolver().flatMap(Bundle.init(url:))
 
         return bundle?.infoDictionary?["CFBundleShortVersionString"] as? String
             ?? bundle?.infoDictionary?["CFBundleVersion"] as? String
@@ -654,8 +651,14 @@ private func ghosttyTitleCandidate(
     homeDirectory: String,
     tmuxSessionHint: String?,
 ) -> GhosttyTitleMatch? {
-    let normalizedTitle = normalizeGhosttyPath(title, homeDirectory: homeDirectory)
-    if let pathMatch = ghosttyPathRankAndDistance(shellPath: normalizedTitle, projectPath: projectPath, homeDir: homeDirectory) {
+    let normalizedTitle = normalizeGhosttyPath(title, homeDirectory: homeDirectory).lowercased()
+    let caseInsensitiveProjectPath = projectPath.lowercased()
+    let caseInsensitiveHomeDirectory = homeDirectory.lowercased()
+    if let pathMatch = ghosttyPathRankAndDistance(
+        shellPath: normalizedTitle,
+        projectPath: caseInsensitiveProjectPath,
+        homeDir: caseInsensitiveHomeDirectory,
+    ) {
         return GhosttyTitleMatch(
             source: source,
             priority: pathBase + pathMatch.rank,
@@ -717,7 +720,7 @@ private func normalizeGhosttyPath(_ path: String, homeDirectory: String) -> Stri
         return "/"
     }
 
-    return normalized.lowercased()
+    return normalized
 }
 
 private func extractPathCandidate(fromTitle title: String) -> String {
