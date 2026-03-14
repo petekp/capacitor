@@ -23,7 +23,7 @@ final class RoutingStateStore {
     func applyRuntimeRoutingViews(
         _ routingViews: [RuntimeRoutingView],
         correlationId: String? = nil,
-    ) async {
+    ) {
         routesByWorkspaceID = Dictionary(
             uniqueKeysWithValues: routingViews.map { ($0.workspaceId, $0) },
         )

@@ -111,7 +111,7 @@
 
   <p><strong>Swift</strong> (<code>apps/swift/</code>) owns everything that must be native to macOS: the SwiftUI view layer, window management, terminal automation via AppleScript, and the projection/hysteresis logic that turns raw state into stable UI. Swift is the <em>source of truth</em> for user experience.</p>
 
-  <p>The boundary between them is a local HTTP service. The Rust binary <code>hud-hook</code> runs a small server on <code>127.0.0.1:7474</code> that exposes the current state via <code>GET /runtime/snapshot</code>. Swift polls this endpoint every two seconds. There's also a UniFFI bridge for non-runtime APIs (setup checks, project CRUD, dashboard loading), but for live session state, the HTTP service is the canonical path.</p>
+  <p>The boundary between them has two paths. For live session state, <code>hud-hook serve</code> exposes an authenticated local HTTP service (default port <code>127.0.0.1:7474</code>, discovered via <code>~/.capacitor/runtime/runtime-service.json</code>) and Swift polls <code>GET /runtime/snapshot</code> every two seconds. For non-runtime APIs (setup checks, project CRUD, dashboard loading), Swift talks to the Rust core in-process via UniFFI.</p>
 
   <p>This split means you can test the entire domain model&thinsp;&mdash;&thinsp;every state transition, every edge case in project identity&thinsp;&mdash;&thinsp;with <code>cargo test</code>, no Xcode required. And you can iterate on the UI with <code>swift build</code> without touching Rust, as long as the dylib is already built.</p>
 </section>
@@ -230,7 +230,7 @@
 
   <p>And the informational ones it acknowledges but skips: <code>SubagentStart</code>, <code>SubagentStop</code>, <code>TeammateIdle</code>, <code>WorktreeCreate</code>, <code>WorktreeRemove</code>, <code>ConfigChange</code>. These are recognized so they don't trigger &ldquo;unknown event&rdquo; warnings, but they don't change session state.</p>
 
-  <p>Hooks arrive as HTTP POST requests to the <code>hud-hook</code> server. The hook configuration is installed into Claude Code's <code>~/.claude/settings.json</code> by Capacitor's setup process, pointing each hook type at <code>http://127.0.0.1:7474/runtime/ingest/hook-event</code>.</p>
+  <p>Hooks arrive as HTTP POST requests to the <code>hud-hook</code> server. The hook configuration is installed into Claude Code's <code>~/.claude/settings.json</code> by Capacitor's setup process, pointing each hook type at <code>http://127.0.0.1:7474/hook</code>&thinsp;&mdash;&thinsp;the adapter route that normalizes hook payloads and forwards them into the runtime service pipeline.</p>
 </section>
 
 
@@ -550,7 +550,7 @@
     <h2 class="section-title">The Runtime Service</h2>
   </div>
 
-  <p>The Rust core doesn't run inside the Swift app. It runs as a separate process&thinsp;&mdash;&thinsp;<code>hud-hook serve</code>&thinsp;&mdash;&thinsp;that listens on <code>127.0.0.1:7474</code> and handles both hook event ingestion and snapshot queries.</p>
+  <p>The live runtime service runs as a separate process&thinsp;&mdash;&thinsp;<code>hud-hook serve</code>&thinsp;&mdash;&thinsp;that listens on <code>127.0.0.1:7474</code> by default and handles hook event ingestion plus snapshot queries. That service does <em>not</em> replace the in-process UniFFI bridge: Swift still instantiates <code>CoreRuntime</code> for setup, project CRUD, dashboard loading, and other non-live operations.</p>
 
   <div class="code-block">
     <div class="code-header">
@@ -576,7 +576,7 @@
 
   <p>The server uses <code>tiny_http</code>&thinsp;&mdash;&thinsp;a minimal, zero-dependency HTTP server. It polls with a 500ms timeout so it can check the shutdown flag between requests, enabling graceful SIGTERM handling.</p>
 
-  <p>The dispatch table maps routes to handlers:</p>
+  <p>The dispatch table maps both the authenticated runtime endpoints and the unauthenticated hook adapter route:</p>
 
   <div class="code-block">
     <div class="code-header">
@@ -590,6 +590,7 @@
         (&amp;<span class="ty">Get</span>,  <span class="st">"/runtime/snapshot"</span>)             => <span class="fn">handle_runtime_snapshot</span>(<span class="cm">/*...*/</span>),
         (&amp;<span class="ty">Post</span>, <span class="st">"/runtime/ingest/hook-event"</span>)   => <span class="fn">handle_runtime_ingest_hook_event</span>(<span class="cm">/*...*/</span>),
         (&amp;<span class="ty">Post</span>, <span class="st">"/runtime/ingest/shell-signal"</span>) => <span class="fn">handle_runtime_ingest_shell_signal</span>(<span class="cm">/*...*/</span>),
+        (&amp;<span class="ty">Post</span>, <span class="st">"/hook"</span>)                        => <span class="fn">handle_hook</span>(<span class="cm">/*...*/</span>),
         _                                      => { <span class="fn">json_error</span>(<span class="nb">404</span>, <span class="st">"not found"</span>); }
     }
 }</code></pre>

@@ -73,7 +73,7 @@ jobs:
   test-hook:
     name: Test Hook Binary
     runs-on: macos-14
-    needs: rewrite-guards
+    needs: test-surface-audit
     steps:
       - uses: actions/checkout@v4
 
@@ -103,7 +103,7 @@ jobs:
   runtime-reliability:
     name: Runtime Reliability Gate
     runs-on: macos-14
-    needs: rewrite-guards
+    needs: test-surface-audit
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4

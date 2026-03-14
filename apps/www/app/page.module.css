@@ -79,6 +79,17 @@
   opacity: 0.9;
 }
 
+.guideLink {
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  text-decoration: underline;
+  text-underline-offset: 0.2rem;
+}
+
+.guideLink:hover {
+  color: var(--text-primary);
+}
+
 .meta {
   font-size: 1rem;
   color: var(--text-secondary);

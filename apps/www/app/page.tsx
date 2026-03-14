@@ -2,7 +2,7 @@ import styles from "./page.module.css";
 import Image from "next/image";
 
 const DOWNLOAD_URL =
-  "https://github.com/nicepete/capacitor/releases/latest";
+  "https://github.com/petekp/capacitor/releases/latest";
 
 export default function Home() {
   return (
@@ -34,12 +34,17 @@ export default function Home() {
         Download for macOS
       </a>
 
+      <a href="/guide" className={styles.guideLink}>
+        Read the Literate Guide
+      </a>
+
       <p className={styles.meta}>v0.2.0-alpha · Apple Silicon</p>
 
       <div className={styles.divider} />
 
       <footer className={styles.footer}>
-        <a href="https://github.com/nicepete/capacitor">GitHub</a>
+        <a href="https://github.com/petekp/capacitor">GitHub</a>
+        <a href="/guide">Guide</a>
         <span>macOS 14+</span>
         <span>Alpha</span>
       </footer>

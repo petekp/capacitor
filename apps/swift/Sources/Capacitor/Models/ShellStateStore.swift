@@ -58,7 +58,7 @@ final class ShellStateStore {
 
     init() {}
 
-    func applyRuntimeShellState(_ runtimeState: ShellCwdState, correlationId: String? = nil) async {
+    func applyRuntimeShellState(_ runtimeState: ShellCwdState, correlationId: String? = nil) {
         state = runtimeState
         let summary = runtimeState.shells.map { pid, entry in
             "\(pid) cwd=\(entry.cwd) tty=\(entry.tty) updated=\(entry.updatedAt)"

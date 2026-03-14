@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - 'apps/guide/**'
+      - 'apps/www/public/guide/**'
   workflow_dispatch:
 
 permissions:
@@ -22,15 +22,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - name: Install and build
-        working-directory: apps/guide
+      - name: Stage guide artifact
         run: |
-          npm ci
-          npm run build
+          mkdir -p dist-guide
+          cp -R apps/www/public/guide/. dist-guide/
 
       - uses: actions/upload-pages-artifact@v3
         with:

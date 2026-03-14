@@ -3,7 +3,7 @@ import XCTest
 
 @MainActor
 final class ShellStateStoreRoutingStatusTests: XCTestCase {
-    func testApplyRuntimeShellStateSetsStoreState() async {
+    func testApplyRuntimeShellStateSetsStoreState() {
         let store = ShellStateStore()
         let shellState = ShellCwdState(
             version: 1,
@@ -19,14 +19,14 @@ final class ShellStateStoreRoutingStatusTests: XCTestCase {
             ],
         )
 
-        await store.applyRuntimeShellState(shellState, correlationId: "shell-apply-test")
+        store.applyRuntimeShellState(shellState, correlationId: "shell-apply-test")
 
         XCTAssertEqual(store.state?.version, 1)
         XCTAssertEqual(store.state?.shells["4242"]?.cwd, "/tmp/core-project")
         XCTAssertEqual(store.state?.shells["4242"]?.tmuxSession, "core")
     }
 
-    func testApplyRuntimeShellStateReplacesPreviousState() async {
+    func testApplyRuntimeShellStateReplacesPreviousState() {
         let store = ShellStateStore()
         let initialState = ShellCwdState(
             version: 1,
@@ -42,7 +42,7 @@ final class ShellStateStoreRoutingStatusTests: XCTestCase {
             ],
         )
 
-        await store.applyRuntimeShellState(initialState, correlationId: "initial")
+        store.applyRuntimeShellState(initialState, correlationId: "initial")
 
         let nextState = ShellCwdState(
             version: 1,
@@ -58,7 +58,7 @@ final class ShellStateStoreRoutingStatusTests: XCTestCase {
             ],
         )
 
-        await store.applyRuntimeShellState(nextState, correlationId: "next")
+        store.applyRuntimeShellState(nextState, correlationId: "next")
 
         XCTAssertNil(store.state?.shells["100"])
         XCTAssertEqual(store.state?.shells["200"]?.cwd, "/tmp/new")

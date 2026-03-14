@@ -91,11 +91,11 @@ final class AppStateSessionObservationTests: XCTestCase {
             shellCwd: "/baseline",
             shellPid: "111",
         )
-        await appState.shellStateStore.applyRuntimeShellState(
+        appState.shellStateStore.applyRuntimeShellState(
             baselineSnapshot.shellState,
             correlationId: "baseline",
         )
-        await appState.routingStateStore.applyRuntimeRoutingViews(
+        appState.routingStateStore.applyRuntimeRoutingViews(
             baselineSnapshot.routingViews,
             correlationId: "baseline",
         )
@@ -127,7 +127,7 @@ final class AppStateSessionObservationTests: XCTestCase {
         )
     }
 
-    func testRepeatedRuntimeSnapshotFailuresClearStaleActivityAfterThreshold() async {
+    func testRepeatedRuntimeSnapshotFailuresClearStaleActivityAfterThreshold() {
         let appState = AppState()
         appState.cancelRuntimeAutomationForTesting()
         let project = makeProject(name: "Capacitor", path: "/Users/petepetrash/Code/capacitor")
@@ -144,7 +144,7 @@ final class AppStateSessionObservationTests: XCTestCase {
                 hasSession: true,
             ),
         ])
-        await appState.shellStateStore.applyRuntimeShellState(
+        appState.shellStateStore.applyRuntimeShellState(
             makeRuntimeSnapshot(
                 projectPath: project.path,
                 sessionId: "stale-session",

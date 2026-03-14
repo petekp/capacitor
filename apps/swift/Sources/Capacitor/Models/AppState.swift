@@ -473,22 +473,32 @@ class AppState {
     }
 
     @MainActor
-    private func applySessionStateIfFresh(
+    private func applyRuntimeSnapshotIfFresh(
         _ snapshot: RuntimeSnapshot,
         refreshGeneration: UInt64,
         correlationId: String,
         projects: [Project],
-    ) -> Bool {
+    ) async {
         guard refreshGeneration == runtimeSnapshotGeneration else {
             DebugLog.write(
                 "AppState.refreshSessionStates source=runtime_snapshot_drop_stale cid=\(correlationId) generation=\(refreshGeneration) current=\(runtimeSnapshotGeneration)",
             )
-            return false
+            return
         }
+
+        guard !_Concurrency.Task.isCancelled else { return }
 
         sessionStateManager.applyRuntimeProjectStates(
             snapshot.projectStates,
             for: projects,
+            correlationId: correlationId,
+        )
+        shellStateStore.applyRuntimeShellState(
+            snapshot.shellState,
+            correlationId: correlationId,
+        )
+        routingStateStore.applyRuntimeRoutingViews(
+            snapshot.routingViews,
             correlationId: correlationId,
         )
         consecutiveRuntimeSnapshotFailures = 0
@@ -497,34 +507,6 @@ class AppState {
             "AppState.refreshSessionStates source=runtime_snapshot_apply cid=\(correlationId) projects=\(snapshot.projectStates.count) sessions=\(snapshot.sessions.count) shells=\(snapshot.shellState.shells.count) routing=\(snapshot.routingViews.count)",
         )
         updatePostSessionRefreshContext()
-        return true
-    }
-
-    private func applyRuntimeSnapshotIfFresh(
-        _ snapshot: RuntimeSnapshot,
-        refreshGeneration: UInt64,
-        correlationId: String,
-        projects: [Project],
-    ) async {
-        let shouldApply = await MainActor.run {
-            applySessionStateIfFresh(
-                snapshot,
-                refreshGeneration: refreshGeneration,
-                correlationId: correlationId,
-                projects: projects,
-            )
-        }
-
-        guard shouldApply else { return }
-
-        await shellStateStore.applyRuntimeShellState(
-            snapshot.shellState,
-            correlationId: correlationId,
-        )
-        await routingStateStore.applyRuntimeRoutingViews(
-            snapshot.routingViews,
-            correlationId: correlationId,
-        )
     }
 
     @MainActor

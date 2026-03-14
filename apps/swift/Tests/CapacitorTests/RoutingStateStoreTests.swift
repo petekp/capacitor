@@ -3,7 +3,7 @@ import XCTest
 
 @MainActor
 final class RoutingStateStoreTests: XCTestCase {
-    func testApplyRuntimeRoutingViewsStoresRoutesByWorkspace() async {
+    func testApplyRuntimeRoutingViewsStoresRoutesByWorkspace() {
         let store = RoutingStateStore()
         let route = RuntimeRoutingView(
             workspaceId: "workspace-core",
@@ -15,7 +15,7 @@ final class RoutingStateStoreTests: XCTestCase {
             updatedAt: "2026-03-11T21:00:00Z",
         )
 
-        await store.applyRuntimeRoutingViews([route], correlationId: "routing-apply")
+        store.applyRuntimeRoutingViews([route], correlationId: "routing-apply")
 
         XCTAssertEqual(
             store.routingView(projectPath: "/tmp/core-project", workspaceId: "workspace-core"),
@@ -23,7 +23,7 @@ final class RoutingStateStoreTests: XCTestCase {
         )
     }
 
-    func testRoutingViewFallsBackToProjectPathLookup() async {
+    func testRoutingViewFallsBackToProjectPathLookup() {
         let store = RoutingStateStore()
         let route = RuntimeRoutingView(
             workspaceId: "workspace-core",
@@ -35,7 +35,7 @@ final class RoutingStateStoreTests: XCTestCase {
             updatedAt: "2026-03-11T21:00:00Z",
         )
 
-        await store.applyRuntimeRoutingViews([route], correlationId: "routing-project-path")
+        store.applyRuntimeRoutingViews([route], correlationId: "routing-project-path")
 
         XCTAssertEqual(
             store.routingView(projectPath: "/tmp/core-project/", workspaceId: nil),
@@ -43,9 +43,9 @@ final class RoutingStateStoreTests: XCTestCase {
         )
     }
 
-    func testClearRuntimeRoutingViewsEmptiesState() async {
+    func testClearRuntimeRoutingViewsEmptiesState() {
         let store = RoutingStateStore()
-        await store.applyRuntimeRoutingViews([
+        store.applyRuntimeRoutingViews([
             RuntimeRoutingView(
                 workspaceId: "workspace-core",
                 projectPath: "/tmp/core-project",
