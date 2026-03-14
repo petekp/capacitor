@@ -113,3 +113,47 @@
 - Ghostty stale-pane fallback proof captured
 - One live iTerm activation proof captured
 - One live Terminal activation proof captured
+
+## 2026-03-13 Host Adapter Follow-Up
+
+### Root Cause
+
+- The new host-adapter launch refactor surfaced a real live bug in the retained host launch mechanism.
+- iTerm and Terminal.app both selected the correct app and came frontmost, but the old `System Events` keystroke path was still too brittle for no-client attach-or-create proof.
+- In Terminal.app, the live buffer captured a mangled tmux command:
+  - expected: `tmux new-session -A -s 'capacitor' -c '/Users/petepetrash/Code/capacitor'`
+  - actual: `tmux newsession A s 'capacitor' c '/Users/petepetrash/Code/capacitor'`
+- The fix was to keep the same open-plus-delay launch strategy but replace `System Events` keystrokes with direct app automation:
+  - iTerm: `write text`
+  - Terminal.app: `do script ... in front window`
+
+### Additional Automated Checks Completed
+
+- `cd apps/swift && swift test --filter 'TerminalLauncherTests|ITermTerminalDriverTests|TerminalAppTerminalDriverTests'`
+- `bash scripts/dev/restart-app.sh --alpha --swift-only`
+
+### Final Host-Adapter Live Evidence
+
+- iTerm no-client attach-or-create proof:
+  - starting from zero tmux clients and a fresh iTerm shell on `pete-2025`, clicking `ax.project-card.pete-2025` logged `[TerminalLauncher] launchTerminalWithTmuxSession app=iTerm2 session=dev path=/Users/petepetrash/Code/pete-2025`.
+  - iTerm2 became frontmost.
+  - tmux client `/dev/ttys041` attached to session `dev`.
+- iTerm existing-client focus proof:
+  - with tmux client `/dev/ttys041` already attached to `dev`, clicking `ax.project-card.pete-2025` kept iTerm2 frontmost and logged `[ITermTerminalDriver] tty=/dev/ttys041 matched=true`.
+- Terminal.app no-client attach-or-create proof:
+  - starting from zero tmux clients and a fresh Terminal shell on `capacitor`, clicking `ax.project-card.capacitor` logged `[TerminalLauncher] launchTerminalWithTmuxSession app=Terminal session=capacitor path=/Users/petepetrash/Code/capacitor`.
+  - Terminal became frontmost.
+  - tmux client `/dev/ttys042` attached to session `capacitor`.
+- Terminal.app existing-client focus proof:
+  - with tmux client `/dev/ttys042` already attached to `capacitor`, clicking `ax.project-card.capacitor` kept Terminal frontmost and logged `[TerminalAppTerminalDriver] tty=/dev/ttys042 matched=true`.
+
+### Manual Gate Status After Host Adapter Follow-Up
+
+- Ghostty same-tab route proof captured
+- Ghostty cross-tab route proof captured
+- Ghostty detached-session reuse proof captured
+- Ghostty stale-pane fallback proof captured
+- iTerm no-client attach-or-create proof captured
+- iTerm existing-client focus proof captured
+- Terminal.app no-client attach-or-create proof captured
+- Terminal.app existing-client focus proof captured

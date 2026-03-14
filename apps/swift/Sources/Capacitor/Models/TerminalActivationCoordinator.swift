@@ -40,7 +40,7 @@ final class TerminalActivationCoordinator {
         projectPath: String,
         resolveAnyClientTty: () async -> String?,
         ensureAndSwitch: (String, String, String, String?) async -> Bool,
-        launchTerminalWithTmux: (String, String) -> Bool,
+        launchTerminalWithTmux: (String, String) async -> Bool,
         activateTerminal: (String?, String, String?) async -> TerminalFocusResult,
         resolveTargetPane: ((String?) -> String?)? = nil,
         pollForNewClient: (() async -> String?)? = nil,
@@ -49,7 +49,7 @@ final class TerminalActivationCoordinator {
 
         guard let clientTty else {
             debugLog("runActivationFlow noClient, launching attach-or-create session=\(sessionName)")
-            guard launchTerminalWithTmux(sessionName, projectPath) else {
+            guard await launchTerminalWithTmux(sessionName, projectPath) else {
                 return false
             }
             if let poll = pollForNewClient {
@@ -71,7 +71,7 @@ final class TerminalActivationCoordinator {
             return true
         case .relaunchNeeded:
             debugLog("runActivationFlow terminal gone for tty=\(clientTty), relaunching")
-            guard launchTerminalWithTmux(sessionName, projectPath) else {
+            guard await launchTerminalWithTmux(sessionName, projectPath) else {
                 return false
             }
             if let poll = pollForNewClient {

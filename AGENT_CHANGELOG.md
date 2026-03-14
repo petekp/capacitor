@@ -4,15 +4,28 @@
 
 ## Current State Summary
 
-Capacitor now uses an app-owned local runtime service (`hud-hook serve`) as the authoritative runtime boundary. Rust (`core/capacitor-core`) owns ingest, reducer, and route derivation; Swift owns presentation and macOS side effects through `RoutingStateStore`, `TerminalActivationCoordinator`, `TmuxRouter`, `TerminalDriver` implementations, and `GhosttyAutomationClient`. Terminal switching is route-first, pane-aware, and proven live across Ghostty, iTerm, and Terminal.app.
+Capacitor now uses an app-owned local runtime service (`hud-hook serve`) as the authoritative runtime boundary. Rust (`core/capacitor-core`) owns ingest, reducer, and route derivation; Swift owns presentation and macOS side effects through `RoutingStateStore`, `TerminalActivationCoordinator`, `TmuxRouter`, first-class `TerminalDriver` implementations for Ghostty, iTerm, and Terminal.app, and `GhosttyAutomationClient`. Terminal switching is route-first, pane-aware, and proven live across Ghostty, iTerm, and Terminal.app, and host-terminal launch no longer relies on brittle `System Events` keystrokes.
 
 ## Stale Information Detected
 
 | Location | States | Reality | Since |
 |----------|--------|---------|-------|
 | `docs/manual-qa/ghostty-routing-smoke-2026-03-10.md` | Project-card AX automation was effectively GUI-only in that session | `scripts/ax/ax_runner.swift` now triggers project cards deterministically via the named `Open in Terminal` accessibility action; authoritative closeout proof lives in `docs/manual-qa/terminal-routing-closeout-2026-03-12.md` | 2026-03-13 |
+| `docs/manual-qa/terminal-routing-closeout-2026-03-12.md` (2026-03-13 convergence subsection) | Host-terminal proof references `[ScriptedTerminalDriver]` log labels | The 2026-03-13 host-adapter follow-up section in the same file is the current authority; host proof now uses `[ITermTerminalDriver]` and `[TerminalAppTerminalDriver]` after the host-adapter split and launch-path fix | 2026-03-13 |
 
 ## Timeline
+
+### 2026-03-13 — First-Class Host Adapters Closed Out
+
+**What changed:** `ScriptedTerminalDriver` was removed and replaced with `ITermTerminalDriver` and `TerminalAppTerminalDriver`. `TerminalActivationFailureReason` moved into a terminal-neutral home, AppState now uses terminal-aware failure copy, and the host launch path stopped using `System Events` keystrokes. iTerm now injects commands with `write text`; Terminal.app now uses `do script ... in front window`. Live proof now covers no-client attach-or-create plus existing-client focus for both host terminals.
+
+**Why:** The Ghostty cleanup raised the quality bar, but iTerm and Terminal.app were still structurally second-class and still reported blind launch success. Live QA on the first host-adapter pass exposed a real bug where the retained Terminal keystroke path mangled `tmux new-session -A ...` into `tmux newsession A ...`, which forced the final switch to direct app automation.
+
+**Agent impact:** Treat iTerm and Terminal.app as first-class driver owners, not as variants of a shared generic host bucket. If you touch host launch behavior, keep the current open-plus-delay strategy but use direct app automation, not `System Events` keystrokes. If you touch failure UX, use the shared `TerminalActivationFailureReason` model and keep fallback copy terminal-neutral.
+
+**Deprecated:** `ScriptedTerminalDriver`, host launch via `System Events` keystrokes, and assuming a successful host launch because `open -b ...` fired.
+
+---
 
 ### 2026-03-13 — Ghostty Native Launch Migration Finished
 
@@ -78,9 +91,11 @@ Capacitor now uses an app-owned local runtime service (`hud-hook serve`) as the 
 |-------|------------|------------------|
 | Treat `~/.capacitor/runtime/app_snapshot.json` as live runtime truth | Query the authenticated runtime service using `runtime-service.json` | 2026-03 |
 | Add terminal-specific focus logic directly in `TerminalLauncher` or views | Put host automation behind `TerminalDriver` implementations | 2026-03 |
+| Add or restore a shared generic host-terminal driver | Keep iTerm and Terminal.app as separate concrete drivers with shared pure helpers only | 2026-03-13 |
+| Use `System Events` keystrokes to deliver host launch commands | Use iTerm `write text` or Terminal.app `do script ... in front window` | 2026-03-13 |
 | Use `tmux list-windows` to infer which shared session owns a project path | Use pane-level data via `tmux list-panes` | 2026-03 |
 | Rely on mouse-center visibility alone for project-card AX automation | Prefer the named `Open in Terminal` accessibility action when available | 2026-03 |
 
 ## Trajectory
 
-The routing migration is complete. Near-term work should bias toward polish, release readiness, and documentation cleanup rather than more activation architecture churn.
+The routing and host-adapter migrations are complete. Near-term work should bias toward release hygiene, changelog or release-note maintenance, and targeted UX polish rather than more terminal-activation architecture churn.

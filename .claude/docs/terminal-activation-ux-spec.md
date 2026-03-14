@@ -8,6 +8,7 @@ When changing activation behavior, read these first:
 
 - `apps/swift/Sources/Capacitor/Models/AppState.swift`
 - `apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift`
+- `apps/swift/Sources/Capacitor/Models/TerminalDrivers.swift`
 - `apps/swift/Sources/Capacitor/Models/GhosttyAutomationClient.swift`
 
 Production ownership note:
@@ -41,7 +42,7 @@ Every card click follows this flow:
 
 3. Focus the terminal.
    - Ghostty: use Ghostty's native AppleScript window/tab/terminal model when possible.
-   - iTerm / Terminal.app: use TTY-discovery app activation.
+   - iTerm / Terminal.app: use first-class TTY-based host drivers.
 ```
 
 ## Behavioral Invariants
@@ -108,5 +109,9 @@ These test files are the minimum activation coverage surface:
 
 - `apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift`
 - `apps/swift/Tests/CapacitorTests/GhosttyAutomationClientTests.swift`
+- `apps/swift/Tests/CapacitorTests/GhosttyTerminalDriverTests.swift`
+- `apps/swift/Tests/CapacitorTests/ITermTerminalDriverTests.swift`
+- `apps/swift/Tests/CapacitorTests/TerminalAppTerminalDriverTests.swift`
+- `apps/swift/Tests/CapacitorTests/AppStateTerminalActivationTests.swift`
 
 Each scenario in the matrix should map to at least one automated test.

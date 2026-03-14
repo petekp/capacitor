@@ -2,11 +2,11 @@
 
 **Scope:** full codebase
 **Date:** 2026-03-13
-**Estimated removable lines:** ~565 confirmed, ~990 additional lines need review
+**Estimated removable lines:** ~1,760 lines still need review
 
 ## Inventory
 
-- Languages: Swift, Rust, JavaScript/TypeScript, Bash/Bats
+- Languages: Swift, Rust, JavaScript or TypeScript, Bash
 - Entry points:
   - `apps/swift/Sources/Capacitor/App.swift`
   - `core/hud-hook/src/main.rs`
@@ -18,16 +18,12 @@
   - Cargo workspace in `Cargo.toml`
   - Wrangler worker in `services/ingest-worker/package.json`
   - Next.js app in `apps/www/package.json`
-  - GitHub Actions in `.github/workflows/ci.yml`
 - Packages / units:
   - Swift macOS app
   - Rust library crate: `core/capacitor-core`
   - Rust binary crate: `core/hud-hook`
   - Cloudflare worker: `services/ingest-worker`
   - Next.js site: `apps/www`
-- Estimated LOC:
-  - ~137,374 lines across tracked `.swift`, `.rs`, `.js`, `.ts(x)`, `.mjs`, `.sh`, and `.bats` files
-  - Note: this includes large generated FFI bridge code, so it overstates hand-written logic
 
 ## Removed
 
@@ -37,11 +33,21 @@
   - Removed on 2026-03-13 after approval
   - Rationale: standalone bash harness with zero references from workflows, docs, or any other script
 
+- Swift terminal-layer dead-code cluster — ~50 lines plus matching no-op test stubs
+  - Removed on 2026-03-13 after approval
+  - Removed items:
+    - unused private `telemetry(...)` helper in `apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift`
+    - unused `bashDoubleQuoteEscape(...)` helper in `apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift`
+    - dead `AppleScriptClient` methods `run(_:)`, `runChecked(_:)`, and `runBoolean(_:)`
+    - matching dead `DefaultAppleScriptClient` implementations
+    - matching dead test stubs in the Swift terminal tests
+    - dead `HostTerminalOperation.activateApplication` enum case in `apps/swift/Sources/Capacitor/Models/TerminalActivationFailure.swift`
+  - Verification:
+    - `cd apps/swift && swift test`
+
 ## Confirmed Dead (high confidence)
 
-### Orphaned Files
-
-- None currently pending in the approved category.
+- No confirmed-dead items currently pending after the approved Swift terminal-layer cleanup.
 
 ## Needs Review (uncertain)
 
@@ -51,44 +57,59 @@
   - What it is: Swift utility that generates masked iconset assets
   - Why it appears dead:
     - zero references from workflows, docs, or other scripts
-    - output assets already exist under `assets/AppIcon.iconset`
-    - no release/build script currently calls it
+    - tracked output assets already exist under `assets/AppIcon.iconset`
   - Why not confirmed:
     - could still be an intentional manual asset-regeneration tool
   - Confidence: needs review
 
-- `apps/www/` package — ~242 lines of app/config code plus static assets
-  - What it is: standalone Next.js site with its own `package.json`
+- manual script surfaces with little or no external documentation:
+  - `scripts/dev/clean-user-install.sh`
+  - `scripts/dev/run-tests.sh`
+  - `scripts/release/release.sh`
+  - What they are: operator-facing scripts that appear to be intended for manual use
+  - Why they appear suspicious:
+    - they have little or no references from README, CLAUDE.md, docs, or workflows
+    - current references are mostly self-documenting usage comments
+  - Why not confirmed:
+    - each script is a coherent end-to-end workflow and could still be intentionally invoked by humans out-of-band
+  - Confidence: needs review
+
+- `apps/www/` package — 1,344 tracked lines total, roughly a few hundred lines of actual site code plus lockfile and assets
+  - What it is: standalone Next.js app with its own `package.json`
   - Why it appears dead:
-    - no references from root docs, workflows, release scripts, or contributor guidance beyond the package’s own files
+    - no root README, CLAUDE.md, or CI references point contributors or automation at it
     - no repo-level automation builds, tests, or deploys it
   - Why not confirmed:
-    - it is a self-contained package with valid entry points (`next dev/build/start`) and may intentionally be maintained out-of-band
+    - it is a self-contained package with valid entry points (`next dev/build/start`) and could be intentionally maintained out-of-band
   - Confidence: needs review
 
 ### Test-Only Production Surface
 
 - `core/capacitor-core/src/projection/mod.rs` — 169 lines
-  - What it is: `SnapshotReadModelProjector` and associated projection structs
+  - What it is: `SnapshotReadModelProjector` and related projection structs
   - Why it appears dead:
-    - repo-wide usage is limited to the module’s own unit tests and `core/capacitor-core/tests/replay_diff.rs`
-    - no live workspace production path calls into the projector
+    - in-repo usage is limited to the module’s own tests and `core/capacitor-core/tests/replay_diff.rs`
+    - no live production path in this repository appears to call the projector
   - Why not confirmed:
-    - the `projection` module is publicly exported from `capacitor-core`, so external consumers are theoretically possible
-    - even if external consumers do not exist, this may be intentional architecture scaffolding for replay validation
+    - the `projection` module is publicly exported from `capacitor-core`
+    - this may be intentional replay-validation scaffolding or external-consumer API
   - Confidence: needs review
 
 ## Scanned But Not Flagged
 
-- `scripts/ci/swiftformat-lint.sh` is live via `.github/workflows/ci.yml`
-- `scripts/ci/test-surface-audit.sh` is live via `.github/workflows/ci.yml`
-- `services/ingest-worker` dependency surface did not show any confirmed orphaned packages
-- `cargo check --workspace --all-targets` did not surface obvious dead-code warnings
-- Swift source scan produced many low-reference symbols, but most resolved to legitimate entry points, views, generated FFI helpers, or convention-driven test coverage
+- `apps/swift/Sources/Capacitor/Views/Components/PageScaffold.swift` is live via `apps/swift/Sources/Capacitor/Views/Setup/WelcomeView.swift`
+- `services/ingest-worker` is referenced by docs and has a coherent script surface
+- `scripts/dev/agent-observe.sh` is noisy but live throughout current docs and QA workflows
+- `apps/www` generated `.next/` and `node_modules/` content was excluded from analysis; only tracked package files were considered
+- no intentionally skipped or obviously orphaned test suites were found in `apps/swift/Tests`, `core/*/tests`, `services/ingest-worker/test`, or `tests/`
 
 ## Recommended Cleanup Order
 
-1. Remove the confirmed orphaned script `scripts/ci/test-agent-observe.sh`
-2. Decide whether the manual icon tool `scripts/utils/apply-icon-mask.swift` should be kept as unsupported-but-useful tooling or deleted
-3. Decide whether `apps/www` is an intentional standalone package
-4. Decide whether the Rust `projection` module is intended test-only scaffolding or production-bound architecture
+1. Remove the confirmed-dead Swift terminal-layer cluster:
+   - `telemetry(...)`
+   - `bashDoubleQuoteEscape(...)`
+   - dead `AppleScriptClient` methods plus their dead stubs
+   - dead `HostTerminalOperation.activateApplication` case
+2. Decide whether `scripts/utils/apply-icon-mask.swift` is intentional manual tooling or stale
+3. Decide whether `apps/www` is intentionally maintained or should be removed from the repo
+4. Decide whether the Rust `projection` module is intentionally public scaffolding or removable test-only code

@@ -1,0 +1,217 @@
+slices:
+  - id: HSTA-00
+    name: Audit and control plane
+    status: done
+    dependencies: []
+    touched_paths:
+      - docs/plans/terminal-host-adapters/CHARTER.md
+      - docs/plans/terminal-host-adapters/DECISIONS.md
+      - docs/plans/terminal-host-adapters/SLICES.yaml
+      - docs/plans/terminal-host-adapters/MAP.csv
+      - docs/plans/terminal-host-adapters/TRANSLATION_GUIDE.md
+      - docs/plans/terminal-host-adapters/SHIP_CHECKLIST.md
+      - docs/plans/terminal-host-adapters/HANDOFF.md
+      - docs/plans/terminal-host-adapters/guard.sh
+      - docs/audits/terminal-host-adapters/AUDIT.md
+    contracts:
+      added:
+        - Migration control plane for the Option 2 host-terminal adapter split
+      changed: []
+      removed: []
+    denylist_patterns: []
+    deletion_targets: []
+    replay_scenarios:
+      - Existing iTerm TTY activation
+      - Existing Terminal.app TTY activation
+    smoke_scenarios:
+      - Project-card activation through iTerm
+      - Project-card activation through Terminal.app
+    risks:
+      - None yet. This slice is planning-only.
+    notes:
+      - No production code changes. This slice records the final architecture direction, failure-model choice, and migration order.
+
+  - id: HSTA-01
+    name: iTerm adapter and generalized failure model
+    status: done
+    dependencies:
+      - HSTA-00
+    touched_paths:
+      - apps/swift/Sources/Capacitor/Models/TerminalActivationFailure.swift
+      - apps/swift/Sources/Capacitor/Models/TerminalDrivers.swift
+      - apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift
+      - apps/swift/Sources/Capacitor/Models/TerminalActivationCoordinator.swift
+      - apps/swift/Sources/Capacitor/Models/GhosttyAutomationClient.swift
+      - apps/swift/Sources/Capacitor/Models/AppState.swift
+      - apps/swift/Sources/Capacitor/Models/SupportedTerminalApp.swift
+      - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
+      - apps/swift/Tests/CapacitorTests/AppStateTerminalActivationTests.swift
+      - apps/swift/Tests/CapacitorTests/ITermTerminalDriverTests.swift
+      - apps/swift/Tests/CapacitorTests/GhosttyTerminalDriverTests.swift
+    contracts:
+      added:
+        - `ITermTerminalDriver`
+        - terminal-neutral `TerminalActivationFailureReason`
+        - `HostTerminalOperation`
+      changed:
+        - `TerminalDriver.launch(...)` becomes async and checked
+        - iTerm focus distinguishes no-match from AppleScript execution failure
+        - `AppState` uses a generic terminal fallback toast when no failure reason exists
+      removed:
+        - iTerm ownership from `ScriptedTerminalDriver`
+    denylist_patterns:
+      - 'private let iTerm: ScriptedTerminalDriver'
+      - 'iTerm = ScriptedTerminalDriver'
+      - 'case \.iTerm:'
+    deletion_targets:
+      - iTerm-specific focus branch inside `ScriptedTerminalDriver`
+      - iTerm-specific registry wiring to `ScriptedTerminalDriver`
+    docs_to_update:
+      - .claude/docs/terminal-activation-ux-spec.md
+    residue_queries:
+      - pattern: 'Couldn’t activate Ghostty\.'
+        scope: 'apps/swift/Sources/Capacitor/Models'
+        reason: 'No active non-Ghostty failure path should fall back to Ghostty copy.'
+    verification_commands:
+      - command: "cd apps/swift && swift test --filter 'ITermTerminalDriverTests|TerminalLauncherTests|AppState.*Tests'"
+        expect: "iTerm focus, iTerm launch failure propagation, and toast copy tests pass."
+      - command: "cd apps/swift && swift test --filter GhosttyTerminalDriverTests"
+        expect: "Ghostty driver remains green while the common failure model moves."
+    replay_scenarios:
+      - iTerm focus matched by TTY
+      - iTerm focus no-match returns relaunch
+      - iTerm AppleScript failure returns typed failure
+      - iTerm launch shell failure returns typed failure
+    smoke_scenarios:
+      - Project-card activation chooses the iTerm driver after tmux switch
+    manual_checks: []
+    risks:
+      - Async launch signatures fan out into the coordinator and launcher.
+      - Moving `TerminalActivationFailureReason` can create broad compile churn if not done first.
+    notes:
+      - Completed on 2026-03-13 with a new terminal-neutral failure model, checked async host launch, and a dedicated iTerm driver plus toast coverage.
+
+  - id: HSTA-02
+    name: Terminal.app adapter and shared-driver deletion
+    status: done
+    dependencies:
+      - HSTA-01
+    touched_paths:
+      - apps/swift/Sources/Capacitor/Models/TerminalDrivers.swift
+      - apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift
+      - apps/swift/Sources/Capacitor/Models/ProjectCreationCoordinator.swift
+      - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
+      - apps/swift/Tests/CapacitorTests/TerminalAppTerminalDriverTests.swift
+      - apps/swift/Tests/CapacitorTests/ProjectCreationCoordinatorTests.swift
+      - apps/swift/Tests/CapacitorTests/GhosttyTerminalDriverTests.swift
+    contracts:
+      added:
+        - `TerminalAppTerminalDriver`
+      changed:
+        - `TerminalScripts.launchWithCommand(...)` delegates host launch script generation to concrete driver-owned builders
+        - project-resume launch still uses the same script-building API with the new ownership model
+      removed:
+        - `ScriptedTerminalDriver`
+    denylist_patterns:
+      - 'final class ScriptedTerminalDriver'
+      - '\[ScriptedTerminalDriver\]'
+      - 'private let terminal: ScriptedTerminalDriver'
+      - 'terminal = ScriptedTerminalDriver'
+      - 'case \.terminal:'
+    deletion_targets:
+      - `ScriptedTerminalDriver`
+      - shared host-terminal switch branches inside `TerminalDrivers.swift`
+    docs_to_update:
+      - .claude/docs/terminal-activation-ux-spec.md
+      - docs/ARCHITECTURE.md
+    residue_queries:
+      - pattern: 'ScriptedTerminalDriver'
+        scope: 'apps/swift/Sources apps/swift/Tests .claude/docs docs/ARCHITECTURE.md'
+        reason: 'The shared host-driver owner must be gone after the second host adapter lands.'
+    verification_commands:
+      - command: "cd apps/swift && swift test --filter 'TerminalAppTerminalDriverTests|TerminalLauncherTests|ProjectCreationCoordinatorTests'"
+        expect: "Terminal.app focus, launch, and resume launch-script coverage pass."
+      - command: "cd apps/swift && swift test --filter 'ITermTerminalDriverTests|GhosttyTerminalDriverTests'"
+        expect: "Other terminal drivers remain green."
+    replay_scenarios:
+      - Terminal.app focus matched by TTY
+      - Terminal.app focus no-match returns relaunch
+      - Terminal.app AppleScript failure returns typed failure
+      - Terminal.app launch shell failure returns typed failure
+    smoke_scenarios:
+      - Project-card activation chooses the Terminal.app driver after tmux switch
+      - Project creation resume script still targets Terminal.app correctly
+    manual_checks: []
+    risks:
+      - The shared script-building helpers can quietly regrow into another generic owner if they are allowed to hold behavior.
+      - Project creation and resume rely on script generation without going through the live registry path.
+    notes:
+      - Completed on 2026-03-13. `ScriptedTerminalDriver` was deleted and replaced by `TerminalAppTerminalDriver` plus pure shared shell-script helpers.
+
+  - id: HSTA-03
+    name: Host-adapter convergence, docs, and live proof
+    status: done
+    dependencies:
+      - HSTA-02
+    touched_paths:
+      - .claude/docs/terminal-activation-ux-spec.md
+      - docs/ARCHITECTURE.md
+      - docs/manual-qa/terminal-routing-closeout-2026-03-12.md
+      - docs/plans/terminal-host-adapters/HANDOFF.md
+      - docs/plans/terminal-host-adapters/guard.sh
+      - docs/plans/terminal-host-adapters/SHIP_CHECKLIST.md
+      - docs/audits/terminal-host-adapters/AUDIT.md
+    contracts:
+      added:
+        - Live iTerm and Terminal.app proof for the new first-class driver labels
+      changed:
+        - Current docs describe concrete host drivers and checked failure handling
+      removed:
+        - active documentation that implies host terminals still share one generic driver
+    denylist_patterns:
+      - 'Couldn’t activate Ghostty\.'
+      - '\[ScriptedTerminalDriver\]'
+    deletion_targets:
+      - Ghostty-biased fallback copy in active docs and source
+    docs_to_update:
+      - .claude/docs/terminal-activation-ux-spec.md
+      - docs/ARCHITECTURE.md
+      - docs/manual-qa/terminal-routing-closeout-2026-03-12.md
+    residue_queries:
+      - pattern: 'host terminals still share one generic driver|generic host driver'
+        scope: '.claude/docs docs/ARCHITECTURE.md'
+        reason: 'Current docs must reflect the new ownership model.'
+    verification_commands:
+      - command: "bash docs/plans/terminal-host-adapters/guard.sh"
+        expect: "Host-adapter ratchets are at or below budget."
+      - command: "bash docs/plans/terminal-routing-foundation/guard.sh"
+        expect: "The earlier routing migration still passes."
+      - command: "cd apps/swift && swift test"
+        expect: "Full Swift suite passes after the adapter split."
+      - command: "cargo test -p capacitor-core"
+        expect: "No routing-regression leaks across the Swift-only migration."
+    replay_scenarios:
+      - iTerm activation with an attached tmux client
+      - Terminal.app activation with an attached tmux client
+      - no-client attach-or-create launch for both host terminals
+    smoke_scenarios:
+      - Live iTerm frontmost proof
+      - Live Terminal.app frontmost proof
+    manual_checks:
+      - surface: iTerm
+        check: Seed an attached tmux client, click the matching project card, and confirm the frontmost surface plus the new iTerm-specific driver log label.
+        expected: Existing iTerm client becomes frontmost without creating an extra surface.
+      - surface: Terminal.app
+        check: Seed an attached tmux client, click the matching project card, and confirm the frontmost surface plus the new Terminal.app-specific driver log label.
+        expected: Existing Terminal.app client becomes frontmost without creating an extra surface.
+      - surface: iTerm
+        check: Close all iTerm clients for a known detached session, click the project card, and confirm attach-or-create behavior.
+        expected: Capacitor launches or attaches via the iTerm driver and lands in the target tmux session.
+      - surface: Terminal.app
+        check: Close all Terminal.app clients for a known detached session, click the project card, and confirm attach-or-create behavior.
+        expected: Capacitor launches or attaches via the Terminal.app driver and lands in the target tmux session.
+    risks:
+      - Historical manual QA docs contain old log labels and must be updated carefully so they remain true historical evidence.
+      - AppleScript and `System Events` behavior is still environment-dependent and cannot be fully automated.
+    notes:
+      - Completed on 2026-03-13. Live proof was refreshed after replacing the brittle `System Events` host launch path with direct app automation for iTerm and Terminal.app.

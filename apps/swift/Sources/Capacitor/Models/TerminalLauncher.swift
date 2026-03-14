@@ -4,21 +4,11 @@ import os.log
 
 private let logger = Logger(subsystem: "com.capacitor.app", category: "TerminalLauncher")
 
-private func telemetry(_ message: String, payload: [String: Any] = [:]) {
-    let output = "[TELEMETRY] \(message)\n"
-    FileHandle.standardError.write(Data(output.utf8))
-    DebugLog.write("[TerminalLauncher] \(message)")
-    Telemetry.emit("activation_log", message, payload: payload)
-}
-
 func debugLog(_ message: String) {
     DebugLog.write("[TerminalLauncher] \(message)")
 }
 
 protocol AppleScriptClient {
-    func run(_ script: String)
-    func runChecked(_ script: String) -> Bool
-    func runBoolean(_ script: String) -> Bool?
     func runOutput(_ script: String) -> AppleScriptExecutionResult
 }
 
@@ -29,38 +19,6 @@ struct AppleScriptExecutionResult: Equatable {
 }
 
 private struct DefaultAppleScriptClient: AppleScriptClient {
-    func run(_ script: String) {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        process.arguments = ["-e", script]
-        try? process.run()
-    }
-
-    func runChecked(_ script: String) -> Bool {
-        runOutput(script).success
-    }
-
-    func runBoolean(_ script: String) -> Bool? {
-        let result = runOutput(script)
-        guard result.success else {
-            return nil
-        }
-
-        let output = result.output?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
-
-        switch output {
-        case "true":
-            return true
-        case "false":
-            return false
-        default:
-            debugLog("runAppleScriptBoolean unexpectedOutput=\(output ?? "<nil>")")
-            return nil
-        }
-    }
-
     func runOutput(_ script: String) -> AppleScriptExecutionResult {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
@@ -101,16 +59,6 @@ private struct DefaultAppleScriptClient: AppleScriptClient {
 /// Example: "foo'bar" becomes "'foo'\''bar'"
 func shellEscape(_ s: String) -> String {
     "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'"
-}
-
-/// Escapes a string for safe interpolation into a bash double-quoted string.
-/// Escapes: backslash, double quote, dollar sign, and backticks.
-/// Example: "foo$bar" becomes "foo\$bar"
-func bashDoubleQuoteEscape(_ s: String) -> String {
-    s.replacingOccurrences(of: "\\", with: "\\\\")
-        .replacingOccurrences(of: "\"", with: "\\\"")
-        .replacingOccurrences(of: "$", with: "\\$")
-        .replacingOccurrences(of: "`", with: "\\`")
 }
 
 // MARK: - Terminal Launcher
@@ -157,8 +105,9 @@ final class TerminalLauncher {
         appleScript: appleScript,
         ghosttyAutomationClient: ghosttyAutomationClient,
         isTerminalRunning: { [weak self] app in self?.isTerminalRunning(app) ?? false },
-        activateApp: { [weak self] app in self?.activateApp(app) ?? false },
-        runBashScript: { [weak self] script in self?.runBashScript(script) },
+        runShell: { script in
+            await Self.runBashScriptWithResult(script)
+        },
     )
     private var tmuxRouter: TmuxRouter {
         TmuxRouter(
@@ -273,7 +222,8 @@ final class TerminalLauncher {
                 )
             },
             launchTerminalWithTmux: { [weak self] session, path in
-                self?.launchTerminalWithTmuxSession(session, projectPath: path) ?? false
+                guard let self else { return false }
+                return await launchTerminalWithTmuxSession(session, projectPath: path)
             },
             activateTerminal: { [weak self] tty, path, sessionHint in
                 guard let self else { return .failed(nil) }
@@ -305,7 +255,7 @@ final class TerminalLauncher {
 
     // MARK: - Tmux Helpers
 
-    private func launchTerminalWithTmuxSession(_ session: String, projectPath: String? = nil) -> Bool {
+    private func launchTerminalWithTmuxSession(_ session: String, projectPath: String? = nil) async -> Bool {
         let app = preferredTerminalApp(
             clientTty: nil,
             projectPath: projectPath ?? "",
@@ -314,7 +264,7 @@ final class TerminalLauncher {
         debugLog("launchTerminalWithTmuxSession app=\(app.processName) session=\(session) path=\(projectPath ?? "default")")
         let driver = driverRegistry.driver(for: app)
         let tmuxCommand = TmuxRouter.makeAttachCommand(session: session, projectPath: projectPath)
-        let launched = driver.launch(command: tmuxCommand, projectPath: projectPath)
+        let launched = await driver.launch(command: tmuxCommand, projectPath: projectPath)
         if !launched {
             pendingActivationFailureReason = driver.lastFailureReason
         }
@@ -491,18 +441,6 @@ final class TerminalLauncher {
         return result
     }
 
-    // MARK: - App Activation Helpers
-
-    @discardableResult
-    private func activateApp(_ app: SupportedTerminalApp) -> Bool {
-        // Use AppleScript for reliable activation - NSRunningApplication.activate()
-        // can silently fail when SwiftUI windows steal focus back.
-        logger.debug("Activating '\(app.processName)' via AppleScript")
-        let result = runAppleScriptChecked("tell application \"\(app.processName)\" to activate")
-        debugLog("activateApp app=\(app.processName) result=\(result)")
-        return result
-    }
-
     private func preferredTerminalApp(
         clientTty: String?,
         projectPath: String,
@@ -518,29 +456,6 @@ final class TerminalLauncher {
     }
 
     // MARK: - Script Execution
-
-    /// Runs AppleScript and returns success/failure based on exit code.
-    /// Use this for critical activation paths where failure should trigger fallback.
-    @discardableResult
-    private func runAppleScriptChecked(_ script: String) -> Bool {
-        appleScript.runChecked(script)
-    }
-
-    private func runBashScript(_ script: String) {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/bash")
-        process.arguments = ["-c", script]
-
-        var env = ProcessInfo.processInfo.environment
-        env["PATH"] = Constants.homebrewPaths + ":" + (env["PATH"] ?? "")
-        process.environment = env
-
-        try? process.run()
-    }
-
-    private func runBashScriptWithResultAsync(_ script: String) async -> (exitCode: Int32, output: String?) {
-        await Self.runBashScriptWithResult(script)
-    }
 
     static func runBashScriptWithResult(_ script: String) async -> (exitCode: Int32, output: String?) {
         if _Concurrency.Task.isCancelled {

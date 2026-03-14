@@ -54,7 +54,8 @@
 - `AppState` applies routing state from the periodic runtime snapshot and feeds route preferences into activation.
 - `TerminalActivationCoordinator` owns request arbitration, stale-request suppression, and activation outcome reporting.
 - `TmuxRouter` is the only place raw tmux command strings are built or executed.
-- `TerminalDriver` implementations own host-terminal focus and launch behavior for Ghostty, iTerm, and Terminal.app.
+- `GhosttyTerminalDriver` plus `GhosttyAutomationClient` own Ghostty's native routing and launch behavior.
+- `ITermTerminalDriver` and `TerminalAppTerminalDriver` own their TTY-based host focus and launch behavior, including typed failure mapping.
 
 ## Non-Goals
 

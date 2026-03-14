@@ -1,26 +1,6 @@
 import AppKit
 import Foundation
 
-enum TerminalActivationFailureReason: Equatable, Error {
-    case ghosttyUnsupportedVersion(String?)
-    case ghosttyAutomationUnavailable(String?)
-
-    var userMessage: String {
-        switch self {
-        case let .ghosttyUnsupportedVersion(version):
-            if let version, !version.isEmpty {
-                return "Ghostty \(version) is unsupported. Capacitor requires Ghostty 1.3 or newer."
-            }
-            return "Ghostty 1.3 or newer is required for terminal switching."
-        case let .ghosttyAutomationUnavailable(detail):
-            if let detail, !detail.isEmpty {
-                return "Ghostty AppleScript automation is unavailable. Make sure Ghostty 1.3+ is installed, `macos-applescript` is enabled, and macOS Automation access is granted. (\(detail))"
-            }
-            return "Ghostty AppleScript automation is unavailable. Make sure Ghostty 1.3+ is installed, `macos-applescript` is enabled, and macOS Automation access is granted."
-        }
-    }
-}
-
 enum GhosttyAppleScriptDelimiters {
     static let field = String(UnicodeScalar(31)!)
     static let row = String(UnicodeScalar(30)!)

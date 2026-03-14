@@ -37,6 +37,14 @@ enum SupportedTerminalApp: CaseIterable, Equatable {
         }
     }
 
+    var displayName: String {
+        switch self {
+        case .ghostty: "Ghostty"
+        case .iTerm: "iTerm"
+        case .terminal: "Terminal.app"
+        }
+    }
+
     var bundleId: String {
         switch self {
         case .ghostty: "com.mitchellh.ghostty"

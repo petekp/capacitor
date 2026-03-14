@@ -10,7 +10,7 @@ protocol TerminalDriver: AnyObject {
         tmuxSessionHint: String?,
     ) async -> TerminalActivationCoordinator.TerminalFocusResult
 
-    func launch(command: String, projectPath: String?) -> Bool
+    func launch(command: String, projectPath: String?) async -> Bool
     func launchCommandScript(projectPath: String, command: String) -> String
 }
 
@@ -86,7 +86,7 @@ final class GhosttyTerminalDriver: TerminalDriver {
         }
     }
 
-    func launch(command: String, projectPath: String?) -> Bool {
+    func launch(command: String, projectPath: String?) async -> Bool {
         lastFailureReason = nil
 
         switch automationClient.supportStatus() {
@@ -156,27 +156,22 @@ final class GhosttyTerminalDriver: TerminalDriver {
     }
 }
 
-final class ScriptedTerminalDriver: TerminalDriver {
-    let app: SupportedTerminalApp
+final class ITermTerminalDriver: TerminalDriver {
+    let app: SupportedTerminalApp = .iTerm
     private let appleScript: AppleScriptClient
     private let isRunning: () -> Bool
-    private let activateApp: () -> Bool
-    private let runBashScript: (String) -> Void
+    private let runShell: (String) async -> (exitCode: Int32, output: String?)
 
     private(set) var lastFailureReason: TerminalActivationFailureReason?
 
     init(
-        app: SupportedTerminalApp,
         appleScript: AppleScriptClient,
         isRunning: @escaping () -> Bool,
-        activateApp: @escaping () -> Bool,
-        runBashScript: @escaping (String) -> Void,
+        runShell: @escaping (String) async -> (exitCode: Int32, output: String?),
     ) {
-        self.app = app
         self.appleScript = appleScript
         self.isRunning = isRunning
-        self.activateApp = activateApp
-        self.runBashScript = runBashScript
+        self.runShell = runShell
     }
 
     func focus(
@@ -186,105 +181,174 @@ final class ScriptedTerminalDriver: TerminalDriver {
     ) async -> TerminalActivationCoordinator.TerminalFocusResult {
         lastFailureReason = nil
 
-        if let clientTty, focusTerminalTabByTty(clientTty) {
-            return .focused
+        guard let resolvedTTY = clientTty?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .nilIfEmpty
+        else {
+            return .relaunchNeeded
         }
 
-        _ = activateApp()
-        return .relaunchNeeded
+        guard isRunning() else {
+            DebugLog.write("[ITermTerminalDriver] not running tty=\(resolvedTTY)")
+            return .relaunchNeeded
+        }
+
+        switch hostFocusResult(
+            app: app,
+            result: appleScript.runOutput(iTermFocusScript(for: resolvedTTY)),
+        ) {
+        case .success(true):
+            DebugLog.write("[ITermTerminalDriver] tty=\(resolvedTTY) matched=true")
+            return .focused
+        case .success(false):
+            DebugLog.write("[ITermTerminalDriver] tty=\(resolvedTTY) matched=false")
+            return .relaunchNeeded
+        case let .failure(reason):
+            lastFailureReason = reason
+            DebugLog.write("[ITermTerminalDriver] tty=\(resolvedTTY) focusFailed reason=\(reason)")
+            return .failed(reason)
+        }
     }
 
-    func launch(command: String, projectPath: String?) -> Bool {
+    func launch(command: String, projectPath: String?) async -> Bool {
         lastFailureReason = nil
-        let isRunning = isRunning()
-        if let path = projectPath {
-            runBashScript("open -b \(app.bundleId) \(shellEscape(path))")
-        } else {
-            runBashScript("open -b \(app.bundleId)")
-        }
 
-        let delay = isRunning ? 1.0 : 2.5
-        let applescriptSafe = command
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-        let script = """
-        osascript <<'APPLESCRIPT'
-        delay \(delay)
-        tell application "System Events"
-            tell process "\(app.processName)"
-                keystroke "\(applescriptSafe)"
-                delay 0.05
-                keystroke return
-            end tell
-        end tell
-        APPLESCRIPT
-        """
-        runBashScript(script)
-        return true
+        switch await runHostLaunch(
+            app: app,
+            isRunning: isRunning(),
+            command: command,
+            projectPath: projectPath,
+            runShell: runShell,
+        ) {
+        case .success:
+            return true
+        case let .failure(reason):
+            lastFailureReason = reason
+            return false
+        }
     }
 
     func launchCommandScript(projectPath: String, command: String) -> String {
-        terminalLaunchCommandScript(
-            app: app,
+        iTermLaunchCommandScript(
             projectPath: projectPath,
             command: command,
             isRunning: isRunning(),
         )
     }
+}
 
-    private func focusTerminalTabByTty(_ tty: String) -> Bool {
+final class TerminalAppTerminalDriver: TerminalDriver {
+    let app: SupportedTerminalApp = .terminal
+    private let appleScript: AppleScriptClient
+    private let isRunning: () -> Bool
+    private let runShell: (String) async -> (exitCode: Int32, output: String?)
+
+    private(set) var lastFailureReason: TerminalActivationFailureReason?
+
+    init(
+        appleScript: AppleScriptClient,
+        isRunning: @escaping () -> Bool,
+        runShell: @escaping (String) async -> (exitCode: Int32, output: String?),
+    ) {
+        self.appleScript = appleScript
+        self.isRunning = isRunning
+        self.runShell = runShell
+    }
+
+    func focus(
+        clientTty: String?,
+        projectPath _: String,
+        tmuxSessionHint _: String?,
+    ) async -> TerminalActivationCoordinator.TerminalFocusResult {
+        lastFailureReason = nil
+
+        guard let resolvedTTY = clientTty?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .nilIfEmpty
+        else {
+            return .relaunchNeeded
+        }
+
         guard isRunning() else {
-            DebugLog.write("[ScriptedTerminalDriver] app=\(app.processName) not running tty=\(tty)")
-            return false
+            DebugLog.write("[TerminalAppTerminalDriver] not running tty=\(resolvedTTY)")
+            return .relaunchNeeded
         }
 
-        let escapedTty = tty
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-
-        let script: String
-        switch app {
-        case .ghostty:
-            return false
-        case .iTerm:
-            script = """
-            tell application "iTerm2"
-                repeat with w in windows
-                    repeat with t in tabs of w
-                        repeat with s in sessions of t
-                            if tty of s is "\(escapedTty)" then
-                                select t
-                                set index of w to 1
-                                activate
-                                return true
-                            end if
-                        end repeat
-                    end repeat
-                end repeat
-            end tell
-            return false
-            """
-        case .terminal:
-            script = """
-            tell application "Terminal"
-                repeat with w in windows
-                    repeat with t in tabs of w
-                        if tty of t is "\(escapedTty)" then
-                            set selected tab of w to t
-                            set index of w to 1
-                            activate
-                            return true
-                        end if
-                    end repeat
-                end repeat
-            end tell
-            return false
-            """
+        switch hostFocusResult(
+            app: app,
+            result: appleScript.runOutput(terminalAppFocusScript(for: resolvedTTY)),
+        ) {
+        case .success(true):
+            DebugLog.write("[TerminalAppTerminalDriver] tty=\(resolvedTTY) matched=true")
+            return .focused
+        case .success(false):
+            DebugLog.write("[TerminalAppTerminalDriver] tty=\(resolvedTTY) matched=false")
+            return .relaunchNeeded
+        case let .failure(reason):
+            lastFailureReason = reason
+            DebugLog.write("[TerminalAppTerminalDriver] tty=\(resolvedTTY) focusFailed reason=\(reason)")
+            return .failed(reason)
         }
+    }
 
-        let matched = appleScript.runBoolean(script) == true
-        DebugLog.write("[ScriptedTerminalDriver] app=\(app.processName) tty=\(tty) matched=\(matched)")
-        return matched
+    func launch(command: String, projectPath: String?) async -> Bool {
+        lastFailureReason = nil
+
+        switch await runHostLaunch(
+            app: app,
+            isRunning: isRunning(),
+            command: command,
+            projectPath: projectPath,
+            runShell: runShell,
+        ) {
+        case .success:
+            return true
+        case let .failure(reason):
+            lastFailureReason = reason
+            return false
+        }
+    }
+
+    func launchCommandScript(projectPath: String, command: String) -> String {
+        terminalAppLaunchCommandScript(
+            projectPath: projectPath,
+            command: command,
+            isRunning: isRunning(),
+        )
+    }
+}
+
+private func hostFocusResult(
+    app: SupportedTerminalApp,
+    result: AppleScriptExecutionResult,
+) -> Result<Bool, TerminalActivationFailureReason> {
+    guard result.success else {
+        return .failure(.hostOperationFailed(
+            app: app,
+            operation: .focusByTTY,
+            detail: cleanFailureDetail(result.error),
+        ))
+    }
+
+    guard let output = cleanFailureDetail(result.output)?.lowercased() else {
+        return .failure(.hostOperationFailed(
+            app: app,
+            operation: .focusByTTY,
+            detail: "Missing AppleScript boolean result",
+        ))
+    }
+
+    switch output {
+    case "true":
+        return .success(true)
+    case "false":
+        return .success(false)
+    default:
+        return .failure(.hostOperationFailed(
+            app: app,
+            operation: .focusByTTY,
+            detail: "Unexpected AppleScript boolean result: \(output)",
+        ))
     }
 }
 
@@ -307,9 +371,14 @@ func terminalLaunchCommandScript(
             projectPath: projectPath,
             command: command,
         ))
-    case .iTerm, .terminal:
-        scriptedTerminalLaunchCommandScript(
-            app: app,
+    case .iTerm:
+        iTermLaunchCommandScript(
+            projectPath: projectPath,
+            command: command,
+            isRunning: isRunning,
+        )
+    case .terminal:
+        terminalAppLaunchCommandScript(
             projectPath: projectPath,
             command: command,
             isRunning: isRunning,
@@ -317,64 +386,201 @@ func terminalLaunchCommandScript(
     }
 }
 
-private func scriptedTerminalLaunchCommandScript(
+private func iTermFocusScript(for tty: String) -> String {
+    let escapedTTY = tty
+        .replacingOccurrences(of: "\\", with: "\\\\")
+        .replacingOccurrences(of: "\"", with: "\\\"")
+
+    return """
+    tell application "iTerm2"
+        repeat with w in windows
+            repeat with t in tabs of w
+                repeat with s in sessions of t
+                    if tty of s is "\(escapedTTY)" then
+                        select t
+                        set index of w to 1
+                        activate
+                        return true
+                    end if
+                end repeat
+            end repeat
+        end repeat
+    end tell
+    return false
+    """
+}
+
+private func terminalAppFocusScript(for tty: String) -> String {
+    let escapedTTY = tty
+        .replacingOccurrences(of: "\\", with: "\\\\")
+        .replacingOccurrences(of: "\"", with: "\\\"")
+
+    return """
+    tell application "Terminal"
+        repeat with w in windows
+            repeat with t in tabs of w
+                if tty of t is "\(escapedTTY)" then
+                    set selected tab of w to t
+                    set index of w to 1
+                    activate
+                    return true
+                end if
+            end repeat
+        end repeat
+    end tell
+    return false
+    """
+}
+
+private func hostTerminalOpenCommand(
+    app: SupportedTerminalApp,
+    projectPath: String?,
+) -> String {
+    if let projectPath {
+        return "open -b \(app.bundleId) \(shellEscape(projectPath))"
+    }
+    return "open -b \(app.bundleId)"
+}
+
+private func hostTerminalSendCommandScript(
+    app: SupportedTerminalApp,
+    command: String,
+    isRunning: Bool,
+) -> String {
+    let delay = isRunning ? 1.0 : 2.5
+    let escapedCommand = command
+        .replacingOccurrences(of: "\\", with: "\\\\")
+        .replacingOccurrences(of: "\"", with: "\\\"")
+
+    let applescriptBody = switch app {
+    case .ghostty:
+        ""
+    case .iTerm:
+        """
+        tell application "iTerm"
+            tell current session of current window
+                write text "\(escapedCommand)"
+            end tell
+        end tell
+        """
+    case .terminal:
+        """
+        tell application "Terminal"
+            do script "\(escapedCommand)" in front window
+        end tell
+        """
+    }
+
+    return """
+    osascript <<'APPLESCRIPT'
+    delay \(delay)
+    \(applescriptBody)
+    APPLESCRIPT
+    """
+}
+
+private func iTermLaunchCommandScript(
+    projectPath: String,
+    command: String,
+    isRunning: Bool,
+) -> String {
+    hostTerminalLaunchCommandScript(
+        app: .iTerm,
+        projectPath: projectPath,
+        command: command,
+        isRunning: isRunning,
+    )
+}
+
+private func terminalAppLaunchCommandScript(
+    projectPath: String,
+    command: String,
+    isRunning: Bool,
+) -> String {
+    hostTerminalLaunchCommandScript(
+        app: .terminal,
+        projectPath: projectPath,
+        command: command,
+        isRunning: isRunning,
+    )
+}
+
+private func hostTerminalLaunchCommandScript(
     app: SupportedTerminalApp,
     projectPath: String,
     command: String,
     isRunning: Bool,
 ) -> String {
-    let escapedPath = bashDoubleQuoteEscape(projectPath)
-    let escapedCommand = bashDoubleQuoteEscape(command)
-    let delay = isRunning ? "1.0" : "2.5"
-
-    return """
-    PROJECT_PATH="\(escapedPath)"
-    CLAUDE_CMD="\(escapedCommand)"
-
-    open -b \(app.bundleId) "$PROJECT_PATH"
-
-    osascript <<'APPLESCRIPT'
-    delay \(delay)
-    tell application "System Events"
-        tell process "\(app.processName)"
-            keystroke "\(escapedCommand)"
-            delay 0.05
-            keystroke return
-        end tell
-    end tell
-    APPLESCRIPT
     """
+    \(hostTerminalOpenCommand(app: app, projectPath: projectPath))
+
+    \(hostTerminalSendCommandScript(app: app, command: command, isRunning: isRunning))
+    """
+}
+
+private func runHostLaunch(
+    app: SupportedTerminalApp,
+    isRunning: Bool,
+    command: String,
+    projectPath: String?,
+    runShell: (String) async -> (exitCode: Int32, output: String?),
+) async -> Result<Void, TerminalActivationFailureReason> {
+    let openResult = await runShell(hostTerminalOpenCommand(app: app, projectPath: projectPath))
+    guard openResult.exitCode == 0 else {
+        return .failure(.hostOperationFailed(
+            app: app,
+            operation: .openApplication,
+            detail: hostShellFailureDetail(openResult),
+        ))
+    }
+
+    let sendCommandResult = await runShell(hostTerminalSendCommandScript(
+        app: app,
+        command: command,
+        isRunning: isRunning,
+    ))
+    guard sendCommandResult.exitCode == 0 else {
+        return .failure(.hostOperationFailed(
+            app: app,
+            operation: .sendCommand,
+            detail: hostShellFailureDetail(sendCommandResult),
+        ))
+    }
+
+    return .success(())
+}
+
+private func hostShellFailureDetail(_ result: (exitCode: Int32, output: String?)) -> String? {
+    if let output = cleanFailureDetail(result.output) {
+        return output
+    }
+    return "Command exited with status \(result.exitCode)"
 }
 
 struct TerminalDriverRegistry {
     private let ghostty: GhosttyTerminalDriver
-    private let iTerm: ScriptedTerminalDriver
-    private let terminal: ScriptedTerminalDriver
+    private let iTerm: ITermTerminalDriver
+    private let terminal: TerminalAppTerminalDriver
 
     init(
         appleScript: AppleScriptClient,
         ghosttyAutomationClient: GhosttyAutomationClient,
         isTerminalRunning: @escaping (SupportedTerminalApp) -> Bool,
-        activateApp: @escaping (SupportedTerminalApp) -> Bool,
-        runBashScript: @escaping (String) -> Void,
+        runShell: @escaping (String) async -> (exitCode: Int32, output: String?),
     ) {
         ghostty = GhosttyTerminalDriver(
             automationClient: ghosttyAutomationClient,
             isRunning: { isTerminalRunning(.ghostty) },
         )
-        iTerm = ScriptedTerminalDriver(
-            app: .iTerm,
+        iTerm = ITermTerminalDriver(
             appleScript: appleScript,
             isRunning: { isTerminalRunning(.iTerm) },
-            activateApp: { activateApp(.iTerm) },
-            runBashScript: runBashScript,
+            runShell: runShell,
         )
-        terminal = ScriptedTerminalDriver(
-            app: .terminal,
+        terminal = TerminalAppTerminalDriver(
             appleScript: appleScript,
             isRunning: { isTerminalRunning(.terminal) },
-            activateApp: { activateApp(.terminal) },
-            runBashScript: runBashScript,
+            runShell: runShell,
         )
     }
 

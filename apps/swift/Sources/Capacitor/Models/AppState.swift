@@ -351,7 +351,7 @@ class AppState {
             guard let self else { return }
             if !result.success {
                 toast = ToastMessage(
-                    result.failureReason?.userMessage ?? "Couldn’t activate Ghostty.",
+                    result.failureReason?.userMessage ?? "Couldn't activate terminal.",
                     isError: true,
                 )
             }

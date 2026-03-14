@@ -6,30 +6,6 @@ final class GhosttyAutomationClientTests: XCTestCase {
     private final class StubAppleScriptClient: AppleScriptClient {
         var results: [AppleScriptExecutionResult] = []
 
-        func run(_: String) {}
-
-        func runChecked(_: String) -> Bool {
-            nextResult().success
-        }
-
-        func runBoolean(_: String) -> Bool? {
-            let result = nextResult()
-            guard result.success,
-                  let output = result.output?.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines).lowercased()
-            else {
-                return nil
-            }
-
-            switch output {
-            case "true":
-                return true
-            case "false":
-                return false
-            default:
-                return nil
-            }
-        }
-
         func runOutput(_: String) -> AppleScriptExecutionResult {
             nextResult()
         }

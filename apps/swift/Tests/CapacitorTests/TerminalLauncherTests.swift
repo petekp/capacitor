@@ -39,25 +39,11 @@ final class TerminalLauncherTests: XCTestCase {
 
     private final class StubAppleScriptClient: AppleScriptClient {
         let shouldSucceed: Bool
-        private(set) var checkedScripts: [String] = []
-        private(set) var booleanScripts: [String] = []
         private(set) var outputScripts: [String] = []
-        var booleanResult: Bool?
         var outputResults: [AppleScriptExecutionResult] = []
 
         init(shouldSucceed: Bool) {
             self.shouldSucceed = shouldSucceed
-        }
-
-        func run(_: String) {}
-        func runChecked(_ script: String) -> Bool {
-            checkedScripts.append(script)
-            return shouldSucceed
-        }
-
-        func runBoolean(_ script: String) -> Bool? {
-            booleanScripts.append(script)
-            return booleanResult
         }
 
         func runOutput(_ script: String) -> AppleScriptExecutionResult {
@@ -436,6 +422,19 @@ final class TerminalLauncherTests: XCTestCase {
         XCTAssertTrue(launched)
     }
 
+    func testUnifiedActivationReturnsFalseWhenLaunchFailsWithoutClient() async {
+        let ok = await TerminalActivationCoordinator.runActivationFlow(
+            sessionName: "my-project",
+            projectPath: "/path/to/project",
+            resolveAnyClientTty: { nil },
+            ensureAndSwitch: { _, _, _, _ in XCTFail("should not be called"); return false },
+            launchTerminalWithTmux: { _, _ in false },
+            activateTerminal: { _, _, _ in XCTFail("should not be called"); return .failed(nil) },
+        )
+
+        XCTAssertFalse(ok)
+    }
+
     /// Client exists → switch + focus
     func testUnifiedActivationSwitchesWhenClientExists() async {
         var switchedSession: String?
@@ -714,7 +713,9 @@ final class TerminalLauncherTests: XCTestCase {
         )
 
         XCTAssertTrue(script.contains("open -b com.googlecode.iterm2"))
-        XCTAssertTrue(script.contains("tell process \"iTerm2\""))
+        XCTAssertTrue(script.contains("tell application \"iTerm\""))
+        XCTAssertTrue(script.contains("write text \"claude --resume\""))
+        XCTAssertFalse(script.contains("tell process \"iTerm2\""))
         XCTAssertTrue(script.contains("claude --resume"))
     }
 
@@ -726,7 +727,9 @@ final class TerminalLauncherTests: XCTestCase {
         )
 
         XCTAssertTrue(script.contains("open -b com.apple.Terminal"))
-        XCTAssertTrue(script.contains("tell process \"Terminal\""))
+        XCTAssertTrue(script.contains("tell application \"Terminal\""))
+        XCTAssertTrue(script.contains("do script \"claude --resume\" in front window"))
+        XCTAssertFalse(script.contains("tell process \"Terminal\""))
         XCTAssertTrue(script.contains("claude --resume"))
     }
 

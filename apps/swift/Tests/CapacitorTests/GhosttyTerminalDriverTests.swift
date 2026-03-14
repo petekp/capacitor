@@ -32,14 +32,14 @@ final class GhosttyTerminalDriverTests: XCTestCase {
         }
     }
 
-    func testLaunchUsesNativeWindowCreation() {
+    func testLaunchUsesNativeWindowCreation() async {
         let automationClient = StubGhosttyAutomationClient()
         let driver = GhosttyTerminalDriver(
             automationClient: automationClient,
             isRunning: { false },
         )
 
-        let launched = driver.launch(
+        let launched = await driver.launch(
             command: "tmux new-session -A -s 'capacitor' -c '/Users/pete/Code/capacitor'",
             projectPath: "/Users/pete/Code/capacitor",
         )
