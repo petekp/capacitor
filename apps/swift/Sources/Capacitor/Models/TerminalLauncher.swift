@@ -92,10 +92,7 @@ final class TerminalLauncher {
 
     private let appleScript: AppleScriptClient
     private let ghosttyAutomationClient: GhosttyAutomationClient
-    var preferredTerminalAppResolver: ((String?, String, String?) -> SupportedTerminalApp?)?
-    var preferredHostTtyResolver: ((String, String?) -> String?)?
-    var preferredRoutingSessionResolver: ((String) -> String?)?
-    var preferredTmuxPaneResolver: ((String?, String, String?) -> String?)?
+    var activationIntentResolver: ((String?, String, String?) -> ActivationPolicyIntent)?
     private let fallbackTmuxSessionResolver: ((String) async -> String?)?
     /// Override for the unified activation flow. Tests use this to intercept card-click behavior.
     private let activateProjectSessionOverride: ((String, String) async -> Bool)?
@@ -178,10 +175,11 @@ final class TerminalLauncher {
     /// Resolve a tmux session name for a project.
     /// Prefers an existing tmux session matching the project path; falls back to project slug.
     private func resolveSessionName(for project: Project) async -> String {
-        if let resolved = preferredRoutingSessionResolver?(project.path)?
-            .trimmingCharacters(in: .whitespacesAndNewlines),
-            !resolved.isEmpty
-        {
+        if let resolved = resolveActivationIntent(
+            clientTty: nil,
+            projectPath: project.path,
+            sessionName: nil,
+        ).sessionName {
             return resolved
         }
         if let resolver = fallbackTmuxSessionResolver,
@@ -209,7 +207,11 @@ final class TerminalLauncher {
             projectPath: projectPath,
             resolveAnyClientTty: {
                 await tmuxRouter.resolveAnyClientTty(
-                    preferredHostTty: preferredHostTtyResolver?(projectPath, sessionName),
+                    preferredHostTty: resolveActivationIntent(
+                        clientTty: nil,
+                        projectPath: projectPath,
+                        sessionName: sessionName,
+                    ).hostTty,
                     targetSession: sessionName,
                 )
             },
@@ -234,7 +236,11 @@ final class TerminalLauncher {
                 )
             },
             resolveTargetPane: { [weak self] clientTty in
-                self?.preferredTmuxPaneResolver?(clientTty, projectPath, sessionName)
+                self?.resolveActivationIntent(
+                    clientTty: clientTty,
+                    projectPath: projectPath,
+                    sessionName: sessionName,
+                ).paneId
             },
             pollForNewClient: { [weak self] in
                 await self?.tmuxRouter.pollForNewClient()
@@ -256,11 +262,11 @@ final class TerminalLauncher {
     // MARK: - Tmux Helpers
 
     private func launchTerminalWithTmuxSession(_ session: String, projectPath: String? = nil) async -> Bool {
-        let app = preferredTerminalApp(
+        let app = resolveActivationIntent(
             clientTty: nil,
             projectPath: projectPath ?? "",
             sessionName: session,
-        )
+        ).terminalApp.app
         debugLog("launchTerminalWithTmuxSession app=\(app.processName) session=\(session) path=\(projectPath ?? "default")")
         let driver = driverRegistry.driver(for: app)
         let tmuxCommand = TmuxRouter.makeAttachCommand(session: session, projectPath: projectPath)
@@ -283,138 +289,6 @@ final class TerminalLauncher {
         )
     }
 
-    static func resolvePreferredTerminalApp(
-        clientTty: String?,
-        projectPath: String,
-        sessionName: String?,
-        shellState: ShellCwdState,
-    ) -> SupportedTerminalApp? {
-        let normalizedProjectPath = PathNormalizer.normalize(projectPath)
-        let normalizedClientTty: String? = {
-            guard let value = clientTty?.trimmingCharacters(in: .whitespacesAndNewlines),
-                  !value.isEmpty
-            else {
-                return nil
-            }
-            return value
-        }()
-        let normalizedSessionName: String? = {
-            guard let value = sessionName?.trimmingCharacters(in: .whitespacesAndNewlines),
-                  !value.isEmpty
-            else {
-                return nil
-            }
-            return value
-        }()
-
-        var bestMatch: (rank: Int, updatedAt: Date, app: SupportedTerminalApp)?
-
-        for entry in shellState.shells.values {
-            guard let app = SupportedTerminalApp.from(parentApp: entry.parentApp) else {
-                continue
-            }
-
-            let rank: Int? = if let normalizedClientTty, entry.tmuxClientTty == normalizedClientTty {
-                4
-            } else if let normalizedClientTty, entry.tty == normalizedClientTty {
-                3
-            } else if let normalizedSessionName, entry.tmuxSession == normalizedSessionName {
-                2
-            } else if PathNormalizer.normalize(entry.cwd) == normalizedProjectPath {
-                1
-            } else {
-                nil
-            }
-
-            guard let rank else { continue }
-
-            if let currentBest = bestMatch {
-                if rank < currentBest.rank {
-                    continue
-                }
-                if rank == currentBest.rank, entry.updatedAt <= currentBest.updatedAt {
-                    continue
-                }
-            }
-
-            bestMatch = (rank, entry.updatedAt, app)
-        }
-
-        return bestMatch?.app
-    }
-
-    static func resolvePreferredTmuxPane(
-        clientTty: String?,
-        projectPath: String,
-        sessionName: String?,
-        shellState: ShellCwdState,
-    ) -> String? {
-        let normalizedProjectPath = PathNormalizer.normalize(projectPath)
-        let normalizedClientTty: String? = {
-            guard let value = clientTty?.trimmingCharacters(in: .whitespacesAndNewlines),
-                  !value.isEmpty
-            else {
-                return nil
-            }
-            return value
-        }()
-        let normalizedSessionName: String? = {
-            guard let value = sessionName?.trimmingCharacters(in: .whitespacesAndNewlines),
-                  !value.isEmpty
-            else {
-                return nil
-            }
-            return value
-        }()
-
-        var bestMatch: (rank: Int, updatedAt: Date, pane: String)?
-
-        for entry in shellState.shells.values {
-            guard let pane = entry.tmuxPane?.trimmingCharacters(in: .whitespacesAndNewlines),
-                  !pane.isEmpty
-            else {
-                continue
-            }
-
-            let normalizedEntryPath = PathNormalizer.normalize(entry.cwd)
-
-            let rank: Int? = if let normalizedClientTty,
-                                entry.tmuxClientTty == normalizedClientTty,
-                                let normalizedSessionName,
-                                entry.tmuxSession == normalizedSessionName,
-                                normalizedEntryPath == normalizedProjectPath
-            {
-                4
-            } else if let normalizedSessionName,
-                      entry.tmuxSession == normalizedSessionName,
-                      normalizedEntryPath == normalizedProjectPath
-            {
-                3
-            } else if let normalizedClientTty, entry.tmuxClientTty == normalizedClientTty {
-                2
-            } else if normalizedEntryPath == normalizedProjectPath {
-                1
-            } else {
-                nil
-            }
-
-            guard let rank else { continue }
-
-            if let currentBest = bestMatch {
-                if rank < currentBest.rank {
-                    continue
-                }
-                if rank == currentBest.rank, entry.updatedAt <= currentBest.updatedAt {
-                    continue
-                }
-            }
-
-            bestMatch = (rank, entry.updatedAt, pane)
-        }
-
-        return bestMatch?.pane
-    }
-
     // MARK: - Terminal Focus After Tmux Switch
 
     private func activateTerminalAfterTmuxSwitch(
@@ -422,11 +296,11 @@ final class TerminalLauncher {
         projectPath: String,
         tmuxSessionHint: String?,
     ) async -> TerminalActivationCoordinator.TerminalFocusResult {
-        let app = preferredTerminalApp(
+        let app = resolveActivationIntent(
             clientTty: clientTty,
             projectPath: projectPath,
             sessionName: tmuxSessionHint,
-        )
+        ).terminalApp.app
         let driver = driverRegistry.driver(for: app)
         let result = await driver.focus(
             clientTty: clientTty,
@@ -441,12 +315,18 @@ final class TerminalLauncher {
         return result
     }
 
-    private func preferredTerminalApp(
+    private func resolveActivationIntent(
         clientTty: String?,
         projectPath: String,
         sessionName: String?,
-    ) -> SupportedTerminalApp {
-        preferredTerminalAppResolver?(clientTty, projectPath, sessionName) ?? SupportedTerminalApp.detectAvailable()
+    ) -> ActivationPolicyIntent {
+        activationIntentResolver?(clientTty, projectPath, sessionName) ?? ActivationPolicy().resolveIntent(
+            projectPath: projectPath,
+            clientTty: clientTty,
+            sessionName: sessionName,
+            route: nil,
+            shellState: nil,
+        )
     }
 
     private func isTerminalRunning(_ app: SupportedTerminalApp) -> Bool {
@@ -570,7 +450,7 @@ enum TerminalScripts {
         command: String,
         preferredApp: SupportedTerminalApp? = nil,
     ) -> String {
-        let app = preferredApp ?? SupportedTerminalApp.detectAvailable()
+        let app = preferredApp ?? ActivationPolicyFallback.defaultTerminalApp()
         return terminalLaunchCommandScript(
             app: app,
             projectPath: projectPath,

@@ -167,6 +167,7 @@ class AppState {
     // MARK: - Private State
 
     private let layoutModeKey = "layoutMode"
+    private let activationPolicy = ActivationPolicy()
     private var engine: CoreRuntime?
     private var refreshTimer: Timer?
     private var runtimeBootstrapTask: _Concurrency.Task<Void, Never>?
@@ -212,64 +213,24 @@ class AppState {
         activeProjectResolver = ActiveProjectResolver(
             sessionStateManager: sessionStateManager,
         )
-        terminalLauncher.preferredTerminalAppResolver = { [weak self] clientTty, projectPath, sessionName in
+        terminalLauncher.activationIntentResolver = { [weak self] clientTty, projectPath, sessionName in
             guard let self else {
-                return nil
+                return ActivationPolicy().resolveIntent(
+                    projectPath: projectPath,
+                    clientTty: clientTty,
+                    sessionName: sessionName,
+                    route: nil,
+                    shellState: nil,
+                )
             }
 
-            if let routedApp = routingStateStore
-                .routingView(projectPath: projectPath, workspaceId: nil)?
-                .target
-                .terminalApp,
-                let app = SupportedTerminalApp.from(parentApp: routedApp)
-            {
-                return app
-            }
-
-            guard let shellState = shellStateStore.state else {
-                return nil
-            }
-            return TerminalLauncher.resolvePreferredTerminalApp(
-                clientTty: clientTty,
+            let route = routingStateStore.routingView(projectPath: projectPath, workspaceId: nil)
+            return activationPolicy.resolveIntent(
                 projectPath: projectPath,
-                sessionName: sessionName,
-                shellState: shellState,
-            )
-        }
-        terminalLauncher.preferredRoutingSessionResolver = { [weak self] projectPath in
-            guard let route = self?.routingStateStore.routingView(projectPath: projectPath, workspaceId: nil) else {
-                return nil
-            }
-            guard route.target.kind == "tmux_session" || route.target.kind == "tmux_pane" else {
-                return nil
-            }
-            return route.target.sessionName
-        }
-        terminalLauncher.preferredHostTtyResolver = { [weak self] projectPath, sessionName in
-            guard let route = self?.routingStateStore.routingView(projectPath: projectPath, workspaceId: nil) else {
-                return nil
-            }
-            guard sessionName == nil || route.target.sessionName == sessionName else {
-                return nil
-            }
-            return route.target.hostTty
-        }
-        terminalLauncher.preferredTmuxPaneResolver = { [weak self] clientTty, projectPath, sessionName in
-            if let route = self?.routingStateStore.routingView(projectPath: projectPath, workspaceId: nil),
-               route.target.kind == "tmux_pane",
-               let paneId = route.target.paneId,
-               sessionName == nil || route.target.sessionName == sessionName
-            {
-                return paneId
-            }
-            guard let shellState = self?.shellStateStore.state else {
-                return nil
-            }
-            return TerminalLauncher.resolvePreferredTmuxPane(
                 clientTty: clientTty,
-                projectPath: projectPath,
                 sessionName: sessionName,
-                shellState: shellState,
+                route: route,
+                shellState: shellStateStore.state,
             )
         }
         projectCreationCoordinator = ProjectCreationCoordinator(

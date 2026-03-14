@@ -1,0 +1,51 @@
+# Anti-pattern ratchets
+# Budgets can only decrease.
+
+ratchets:
+  - id: ratchet-001
+    label: "Rust shadow activation owner entrypoint"
+    pattern: "\\bruntime_activation\\b"
+    scope: "core/capacitor-core/src/lib.rs"
+    budget: 0
+    rationale: "Freeze the only production-looking entrypoint to the test-only Rust activation model until slice-004 removes it."
+    notes: "Slice-004 drove this budget to zero on 2026-03-13."
+
+  - id: ratchet-002
+    label: "Fake runtime config API references"
+    pattern: "\\bfetchRuntimeConfig\\b"
+    scope: "apps/swift/Sources/Capacitor/Models/RuntimeClient.swift,apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift"
+    budget: 0
+    rationale: "This symbol implies the runtime owns freshness config even though the values are Swift-local."
+    notes: "Slice-003 drove this budget to zero on 2026-03-13."
+
+  - id: ratchet-003
+    label: "Fake core diagnostics API references"
+    pattern: "\\bfetchCoreRoutingDiagnostics\\b"
+    scope: "apps/swift/Sources/Capacitor/Models/RuntimeClient.swift,apps/swift/Sources/Capacitor/Views/Debug/DebugShellStateCard.swift,apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift"
+    budget: 0
+    rationale: "This symbol implies Rust emits diagnostics that are actually synthesized in Swift."
+    notes: "Slice-003 drove this budget to zero on 2026-03-13."
+
+  - id: ratchet-004
+    label: "DebugShellStateCard references"
+    pattern: "\\bDebugShellStateCard\\b"
+    scope: "apps/swift/Sources/Capacitor/Views/Debug/DebugProjectListPanel.swift,apps/swift/Sources/Capacitor/Views/Debug/DebugShellStateCard.swift"
+    budget: 0
+    rationale: "The temporary debug card is a shadow reasoning surface and should only move downward toward deletion."
+    notes: "Slice-003 drove this budget to zero on 2026-03-13."
+
+  - id: ratchet-005
+    label: "Distributed launcher resolver slots"
+    pattern: "\\bpreferred(?:TerminalApp|HostTty|RoutingSession|TmuxPane)Resolver\\b"
+    scope: "apps/swift/Sources/Capacitor/Models/AppState.swift,apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift,apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift"
+    budget: 0
+    rationale: "These resolver slots are the clearest measurable sign that activation policy ownership is still spread across AppState and TerminalLauncher."
+    notes: "Slice-002 drove this budget to zero on 2026-03-13."
+
+  - id: ratchet-006
+    label: "Implicit launcher fallback calls"
+    pattern: "detectAvailable\\("
+    scope: "apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift"
+    budget: 0
+    rationale: "Launcher-local calls to detectAvailable hide user-visible fallback policy instead of routing it through the canonical Swift policy owner."
+    notes: "Slice-002 drove this budget to zero on 2026-03-13. The helper still exists in SupportedTerminalApp and ActivationPolicyFallback; the launcher call sites are gone."
