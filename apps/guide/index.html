@@ -1,0 +1,1097 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Capacitor: A Literate Guide</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+
+<div id="progress"></div>
+
+<!-- ── Table of Contents ──────────────────────────────────── -->
+
+<nav id="toc">
+  <h3>Contents</h3>
+  <ol>
+    <li><a href="#s1"><span class="section-num">&sect;1</span> Agent Blindness</a></li>
+    <li><a href="#s2"><span class="section-num">&sect;2</span> The Sidecar Principle</a></li>
+    <li><a href="#s3"><span class="section-num">&sect;3</span> Two Languages, One Boundary</a></li>
+    <li><a href="#s4"><span class="section-num">&sect;4</span> The Vocabulary</a></li>
+    <li><a href="#s5"><span class="section-num">&sect;5</span> Hearing What Claude Does</a></li>
+    <li><a href="#s6"><span class="section-num">&sect;6</span> The Gate</a></li>
+    <li><a href="#s7"><span class="section-num">&sect;7</span> Normalizing the Signal</a></li>
+    <li><a href="#s8"><span class="section-num">&sect;8</span> The Reducer</a></li>
+    <li><a href="#s9"><span class="section-num">&sect;9</span> Knowing Which Project</a></li>
+    <li><a href="#s10"><span class="section-num">&sect;10</span> Routing</a></li>
+    <li><a href="#s11"><span class="section-num">&sect;11</span> The Runtime Service</a></li>
+    <li><a href="#s12"><span class="section-num">&sect;12</span> Crossing the Bridge</a></li>
+    <li><a href="#s13"><span class="section-num">&sect;13</span> The Projection Layer</a></li>
+    <li><a href="#s14"><span class="section-num">&sect;14</span> The Composition Root</a></li>
+    <li><a href="#s15"><span class="section-num">&sect;15</span> Terminal Activation</a></li>
+    <li><a href="#s16"><span class="section-num">&sect;16</span> Shell Integration</a></li>
+    <li><a href="#s17"><span class="section-num">&sect;17</span> Storage</a></li>
+    <li><a href="#s18"><span class="section-num">&sect;18</span> The Operational Surface</a></li>
+    <li><a href="#afterword">Afterword</a></li>
+  </ol>
+</nav>
+
+<!-- ── Main Content ───────────────────────────────────────── -->
+
+<main>
+
+<!-- ── Hero ────────────────────────────────────────────────── -->
+
+<header class="hero">
+  <h1>Capacitor</h1>
+  <p class="subtitle">A Literate Guide</p>
+  <p class="ornament">&sect; &middot; &sect; &middot; &sect;</p>
+</header>
+
+
+<!-- ══════════════════════════════════════════════════════════
+     §1. The Problem: Agent Blindness
+     ══════════════════════════════════════════════════════════ -->
+
+<section id="s1">
+  <div class="section-header">
+    <span class="section-number">&sect;1</span>
+    <h2 class="section-title">The Problem: Agent Blindness</h2>
+  </div>
+
+  <p>You're running five Claude Code sessions across three projects. One is writing tests, another is refactoring a module, a third is waiting for you to approve a file write. You can't see any of this. Each session lives in a terminal tab, and terminals are opaque rectangles&thinsp;&mdash;&thinsp;they show you text, not status. The only way to know what's happening is to switch to each tab, scan the output, and build a mental model of the whole system by hand.</p>
+
+  <p>This is the problem Capacitor exists to solve. Not by replacing Claude Code&thinsp;&mdash;&thinsp;not by intercepting its conversations or calling the Anthropic API&thinsp;&mdash;&thinsp;but by <em>observing</em> it. Capacitor is a glanceable companion app: a small macOS window that shows you what every agent session is doing, right now, and lets you click to jump to the right terminal.</p>
+
+  <p>That description sounds simple, but making it real requires solving several hard problems: How do you know what Claude Code is doing? How do you map a session to a project? How do you find the right terminal window? How do you keep the UI from flickering when hook events arrive milliseconds apart?</p>
+
+  <p>This guide tells the story of how each of those problems is solved.</p>
+</section>
+
+
+<!-- ══════════════════════════════════════════════════════════
+     §2. The Sidecar Principle
+     ══════════════════════════════════════════════════════════ -->
+
+<section id="s2">
+  <div class="section-header">
+    <span class="section-number">&sect;2</span>
+    <h2 class="section-title">The Sidecar Principle</h2>
+  </div>
+
+  <p>Before we look at any code, we need to understand the architectural constraint that shapes everything else. Capacitor is a <em>sidecar</em>. It observes Claude Code's behavior without participating in it:</p>
+
+  <ul>
+    <li><strong>Read from <code>~/.claude/</code></strong>&thinsp;&mdash;&thinsp;transcripts, configuration, plugin registries. This is Claude Code's namespace.</li>
+    <li><strong>Write to <code>~/.capacitor/</code></strong>&thinsp;&mdash;&thinsp;runtime artifacts, logs, state files. This is our namespace.</li>
+    <li><strong>Never call the Anthropic API</strong>&thinsp;&mdash;&thinsp;if we need to invoke Claude, we call the <code>claude</code> CLI.</li>
+    <li><strong>Never modify Claude's state</strong>&thinsp;&mdash;&thinsp;no writing to Claude's config, no injecting behavior.</li>
+  </ul>
+
+  <p>This isn't just a design preference&thinsp;&mdash;&thinsp;it's the load-bearing constraint. Capacitor must work with any version of Claude Code, must not interfere with ongoing sessions, and must gracefully degrade if Claude Code changes its hook contract. The sidecar principle keeps us on the safe side of all three.</p>
+
+  <p>The practical consequence is a clean data flow: Claude Code fires lifecycle hooks &rarr; Capacitor's Rust core ingests and reduces them into a world model &rarr; Swift reads that model and renders the UI. Information flows one direction, from Claude's namespace into ours, never the reverse.</p>
+</section>
+
+
+<!-- ══════════════════════════════════════════════════════════
+     §3. Two Languages, One Boundary
+     ══════════════════════════════════════════════════════════ -->
+
+<section id="s3">
+  <div class="section-header">
+    <span class="section-number">&sect;3</span>
+    <h2 class="section-title">Two Languages, One Boundary</h2>
+  </div>
+
+  <p>Capacitor is built in two languages, and the split is deliberate.</p>
+
+  <p><strong>Rust</strong> (<code>core/capacitor-core/</code>, <code>core/hud-hook/</code>) owns everything that must be fast, deterministic, and testable without a GUI: event ingestion, state reduction, project identity resolution, snapshot storage, and the runtime HTTP service. Rust is the <em>source of truth</em> for domain semantics.</p>
+
+  <p><strong>Swift</strong> (<code>apps/swift/</code>) owns everything that must be native to macOS: the SwiftUI view layer, window management, terminal automation via AppleScript, and the projection/hysteresis logic that turns raw state into stable UI. Swift is the <em>source of truth</em> for user experience.</p>
+
+  <p>The boundary between them is a local HTTP service. The Rust binary <code>hud-hook</code> runs a small server on <code>127.0.0.1:7474</code> that exposes the current state via <code>GET /runtime/snapshot</code>. Swift polls this endpoint every two seconds. There's also a UniFFI bridge for non-runtime APIs (setup checks, project CRUD, dashboard loading), but for live session state, the HTTP service is the canonical path.</p>
+
+  <p>This split means you can test the entire domain model&thinsp;&mdash;&thinsp;every state transition, every edge case in project identity&thinsp;&mdash;&thinsp;with <code>cargo test</code>, no Xcode required. And you can iterate on the UI with <code>swift build</code> without touching Rust, as long as the dylib is already built.</p>
+</section>
+
+
+<!-- ══════════════════════════════════════════════════════════
+     §4. The Vocabulary
+     ══════════════════════════════════════════════════════════ -->
+
+<section id="s4">
+  <div class="section-header">
+    <span class="section-number">&sect;4</span>
+    <h2 class="section-title">The Vocabulary</h2>
+  </div>
+
+  <p>Every system has a vocabulary, and learning it early saves confusion later. Here are Capacitor's core concepts, defined in <code>core/capacitor-core/src/domain/types.rs</code>:</p>
+
+  <p><strong>Session</strong>&thinsp;&mdash;&thinsp;A single Claude Code conversation. Identified by a <code>session_id</code> (UUID), associated with a project path and a process ID. A session has a <em>state</em>:</p>
+
+  <div class="code-block">
+    <div class="code-header">
+      <span class="code-lang">Rust</span>
+      <span class="code-file">core/capacitor-core/src/domain/types.rs:7&ndash;14</span>
+      <button class="code-copy">copy</button>
+    </div>
+    <pre><code><span class="kw">pub enum</span> <span class="ty">SessionState</span> {
+    <span class="ty">Working</span>,     <span class="cm">// Agent is executing tools</span>
+    <span class="ty">Ready</span>,       <span class="cm">// Awaiting user input</span>
+    <span class="ty">Idle</span>,        <span class="cm">// Default / no recent activity</span>
+    <span class="ty">Compacting</span>,  <span class="cm">// Transcript compaction in progress</span>
+    <span class="ty">Waiting</span>,     <span class="cm">// Permission dialog active</span>
+}</code></pre>
+  </div>
+
+  <p>Notice that each state has a <em>priority</em>:</p>
+
+  <div class="code-block">
+    <div class="code-header">
+      <span class="code-lang">Rust</span>
+      <span class="code-file">core/capacitor-core/src/domain/types.rs:18&ndash;26</span>
+      <button class="code-copy">copy</button>
+    </div>
+    <pre><code><span class="kw">pub fn</span> <span class="fn">priority</span>(<span class="kw">self</span>) -> <span class="ty">u8</span> {
+    <span class="kw">match</span> <span class="kw">self</span> {
+        <span class="ty">Self</span>::<span class="ty">Waiting</span>    => <span class="nb">4</span>,
+        <span class="ty">Self</span>::<span class="ty">Working</span>    => <span class="nb">3</span>,
+        <span class="ty">Self</span>::<span class="ty">Compacting</span> => <span class="nb">2</span>,
+        <span class="ty">Self</span>::<span class="ty">Ready</span>      => <span class="nb">1</span>,
+        <span class="ty">Self</span>::<span class="ty">Idle</span>       => <span class="nb">0</span>,
+    }
+}</code></pre>
+  </div>
+
+  <p>Waiting is highest priority because it requires immediate human attention&thinsp;&mdash;&thinsp;the agent is blocked. Working is next because something is actively happening. This priority ordering drives the UI: when a project has multiple sessions, the project's overall state is the <em>maximum priority</em> across all its sessions (<a class="xref" href="#s8">&sect;8</a>).</p>
+
+  <p><strong>Project</strong>&thinsp;&mdash;&thinsp;A directory on disk where code lives. Identified by a <code>project_path</code> (normalized, lowercased on macOS) and a <code>project_id</code> (typically the <code>.git</code> directory path). A project <em>aggregates</em> sessions: it has a state derived from its sessions, counts of total and active sessions, and timestamps.</p>
+
+  <p><strong>Shell</strong>&thinsp;&mdash;&thinsp;A terminal shell process. Identified by PID. Reports its current working directory, TTY device, parent terminal app (Ghostty, iTerm, etc.), and tmux context. Shells are how Capacitor knows <em>where</em> a session is running&thinsp;&mdash;&thinsp;which terminal tab, which tmux pane.</p>
+
+  <p><strong>Routing</strong>&thinsp;&mdash;&thinsp;The mapping from a project to a terminal target. Given a project's shells, Capacitor derives a <code>RoutingView</code> that says: &ldquo;this project is reachable via tmux pane <code>%3</code> in session <code>capacitor</code>, attached to Ghostty via <code>/dev/ttys004</code>.&rdquo; Routing is what makes &ldquo;click project &rarr; land in terminal&rdquo; possible (<a class="xref" href="#s10">&sect;10</a>, <a class="xref" href="#s15">&sect;15</a>).</p>
+
+  <p><strong>Snapshot</strong>&thinsp;&mdash;&thinsp;The complete world state at a point in time:</p>
+
+  <div class="code-block">
+    <div class="code-header">
+      <span class="code-lang">Rust</span>
+      <span class="code-file">core/capacitor-core/src/domain/types.rs:143&ndash;151</span>
+      <button class="code-copy">copy</button>
+    </div>
+    <pre><code><span class="kw">pub struct</span> <span class="ty">AppSnapshot</span> {
+    <span class="kw">pub</span> projects:    <span class="ty">Vec</span>&lt;<span class="ty">ProjectSummary</span>&gt;,
+    <span class="kw">pub</span> sessions:    <span class="ty">Vec</span>&lt;<span class="ty">SessionSummary</span>&gt;,
+    <span class="kw">pub</span> shells:      <span class="ty">Vec</span>&lt;<span class="ty">ShellSignal</span>&gt;,
+    <span class="kw">pub</span> routing:     <span class="ty">Vec</span>&lt;<span class="ty">RoutingView</span>&gt;,
+    <span class="kw">pub</span> diagnostics: <span class="ty">DiagnosticsSummary</span>,
+    <span class="kw">pub</span> generated_at: <span class="ty">String</span>,
+}</code></pre>
+  </div>
+
+  <p>This is the data structure that crosses every boundary in the system: Rust produces it, the HTTP service serves it, Swift consumes it. Its shape defines the contract between the two halves of the application.</p>
+</section>
+
+
+<!-- ══════════════════════════════════════════════════════════
+     §5. Hearing What Claude Does
+     ══════════════════════════════════════════════════════════ -->
+
+<section id="s5">
+  <div class="section-header">
+    <span class="section-number">&sect;5</span>
+    <h2 class="section-title">Hearing What Claude Does</h2>
+  </div>
+
+  <p>How does Capacitor know that a session just started working, or that a permission dialog appeared? Through <strong>hooks</strong>&thinsp;&mdash;&thinsp;lifecycle callbacks that Claude Code fires at defined moments.</p>
+
+  <p>Claude Code supports 18 hook event types. Capacitor cares about the stateful ones:</p>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Event</th><th>Meaning</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>SessionStart</code></td><td>A new conversation began</td></tr>
+        <tr><td><code>UserPromptSubmit</code></td><td>The user sent a message</td></tr>
+        <tr><td><code>PreToolUse</code> / <code>PostToolUse</code></td><td>Agent is calling tools</td></tr>
+        <tr><td><code>PermissionRequest</code></td><td>Agent needs human approval</td></tr>
+        <tr><td><code>PreCompact</code></td><td>Transcript is being compacted</td></tr>
+        <tr><td><code>Notification</code></td><td>Various (idle prompt, auth, permission)</td></tr>
+        <tr><td><code>TaskCompleted</code></td><td>An agent task finished</td></tr>
+        <tr><td><code>Stop</code></td><td>Session stopped</td></tr>
+        <tr><td><code>SessionEnd</code></td><td>Session terminated</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>And the informational ones it acknowledges but skips: <code>SubagentStart</code>, <code>SubagentStop</code>, <code>TeammateIdle</code>, <code>WorktreeCreate</code>, <code>WorktreeRemove</code>, <code>ConfigChange</code>. These are recognized so they don't trigger &ldquo;unknown event&rdquo; warnings, but they don't change session state.</p>
+
+  <p>Hooks arrive as HTTP POST requests to the <code>hud-hook</code> server. The hook configuration is installed into Claude Code's <code>~/.claude/settings.json</code> by Capacitor's setup process, pointing each hook type at <code>http://127.0.0.1:7474/runtime/ingest/hook-event</code>.</p>
+</section>
+
+
+<!-- ══════════════════════════════════════════════════════════
+     §6. The Gate
+     ══════════════════════════════════════════════════════════ -->
+
+<section id="s6">
+  <div class="section-header">
+    <span class="section-number">&sect;6</span>
+    <h2 class="section-title">The Gate</h2>
+  </div>
+
+  <p>Not every hook event should change state. The handler in <code>core/hud-hook/src/handle.rs</code> acts as a <em>gate</em>&thinsp;&mdash;&thinsp;a classification pass that decides whether an event is stateful, informational, or should be skipped entirely.</p>
+
+  <div class="code-block">
+    <div class="code-header">
+      <span class="code-lang">Rust</span>
+      <span class="code-file">core/hud-hook/src/handle.rs:206&ndash;283</span>
+      <button class="code-copy">copy</button>
+    </div>
+    <pre><code><span class="kw">fn</span> <span class="fn">process_event</span>(
+    event: &amp;<span class="ty">HookEvent</span>,
+    current_state: <span class="ty">Option</span>&lt;<span class="ty">SessionState</span>&gt;,
+    input: &amp;<span class="ty">HookInput</span>,
+) -> (<span class="ty">Action</span>, <span class="ty">Option</span>&lt;<span class="ty">SessionState</span>&gt;, <span class="ty">Option</span>&lt;(<span class="ty">String</span>, <span class="ty">String</span>)&gt;) {
+    <span class="kw">match</span> event {
+        <span class="ty">HookEvent</span>::<span class="ty">SessionStart</span> => {
+            <span class="kw">if</span> <span class="fn">is_active_state</span>(current_state) {
+                (<span class="ty">Action</span>::<span class="ty">Skip</span>, <span class="ty">None</span>, <span class="ty">None</span>)   <span class="cm">// Don't downgrade working&rarr;ready</span>
+            } <span class="kw">else</span> {
+                (<span class="ty">Action</span>::<span class="ty">Upsert</span>, <span class="ty">Some</span>(<span class="ty">SessionState</span>::<span class="ty">Ready</span>), <span class="ty">None</span>)
+            }
+        }
+        <span class="ty">HookEvent</span>::<span class="ty">UserPromptSubmit</span> =>
+            (<span class="ty">Action</span>::<span class="ty">Upsert</span>, <span class="ty">Some</span>(<span class="ty">SessionState</span>::<span class="ty">Working</span>), <span class="ty">None</span>),
+        <span class="ty">HookEvent</span>::<span class="ty">PreToolUse</span> { .. } => {
+            <span class="kw">if</span> current_state == <span class="ty">Some</span>(<span class="ty">SessionState</span>::<span class="ty">Working</span>) {
+                (<span class="ty">Action</span>::<span class="ty">Refresh</span>, <span class="ty">None</span>, <span class="ty">None</span>) <span class="cm">// Already working, refresh timestamp</span>
+            } <span class="kw">else</span> {
+                (<span class="ty">Action</span>::<span class="ty">Upsert</span>, <span class="ty">Some</span>(<span class="ty">SessionState</span>::<span class="ty">Working</span>), <span class="ty">None</span>)
+            }
+        }
+        <span class="cm">// ...</span>
+    }
+}</code></pre>
+  </div>
+
+  <p>Two guards deserve special attention:</p>
+
+  <p><strong>The subagent stop guard</strong> (line 80): When a subagent finishes, Claude Code fires a <code>Stop</code> event with the <em>parent</em> session's ID. Without this guard, the parent session would incorrectly transition from Working to Ready every time a subagent completed. The fix is simple&thinsp;&mdash;&thinsp;if the event has an <code>agent_id</code>, skip it:</p>
+
+  <div class="code-block">
+    <div class="code-header">
+      <span class="code-lang">Rust</span>
+      <span class="code-file">core/hud-hook/src/handle.rs:78&ndash;92</span>
+      <button class="code-copy">copy</button>
+    </div>
+    <pre><code><span class="cm">// Skip subagent Stop events &mdash; they share the parent session_id</span>
+<span class="cm">// but shouldn't affect the parent session's state.</span>
+<span class="kw">if</span> <span class="mc">matches!</span>(event, <span class="ty">HookEvent</span>::<span class="ty">Stop</span> { .. }) &amp;&amp; hook_input.agent_id.<span class="fn">is_some</span>() {
+    <span class="kw">return</span> <span class="ty">Ok</span>(());
+}</code></pre>
+  </div>
+
+  <p><strong>The stop_hook_active guard</strong>: When <code>stop_hook_active</code> is <code>true</code>, it means a stop hook is <em>about to run</em> (the session is pausing to execute the hook, not actually stopping). We skip these&thinsp;&mdash;&thinsp;the session will resume after the hook completes.</p>
+
+  <p>After classification, the event is forwarded to the runtime service via the dual-transport mechanism described in <a class="xref" href="#s11">&sect;11</a>.</p>
+</section>
+
+
+<!-- ══════════════════════════════════════════════════════════
+     §7. Normalizing the Signal
+     ══════════════════════════════════════════════════════════ -->
+
+<section id="s7">
+  <div class="section-header">
+    <span class="section-number">&sect;7</span>
+    <h2 class="section-title">Normalizing the Signal</h2>
+  </div>
+
+  <p>Before the reducer (<a class="xref" href="#s8">&sect;8</a>) sees an event, the ingest layer normalizes it. This is a short but critical piece of code in <code>core/capacitor-core/src/ingest/mod.rs</code>:</p>
+
+  <div class="code-block">
+    <div class="code-header">
+      <span class="code-lang">Rust</span>
+      <span class="code-file">core/capacitor-core/src/ingest/mod.rs:6&ndash;23</span>
+      <button class="code-copy">copy</button>
+    </div>
+    <pre><code><span class="kw">pub fn</span> <span class="fn">normalize_hook_event</span>(command: <span class="ty">IngestHookEventCommand</span>) -> <span class="ty">IngestHookEventCommand</span> {
+    <span class="ty">IngestHookEventCommand</span> {
+        event_id:          command.event_id.<span class="fn">trim</span>().<span class="fn">to_string</span>(),
+        session_id:        command.session_id.<span class="fn">trim</span>().<span class="fn">to_string</span>(),
+        project_path:      <span class="fn">normalize_required_path</span>(&amp;command.project_path),
+        cwd:               <span class="fn">normalize_optional_path</span>(command.cwd),
+        notification_type: <span class="fn">normalize_optional_text</span>(command.notification_type),
+        <span class="cm">// ...</span>
+    }
+}</code></pre>
+  </div>
+
+  <p>Every string is trimmed. Every path is normalized via <code>normalize_path_for_matching</code>, which strips trailing slashes and&thinsp;&mdash;&thinsp;crucially on macOS&thinsp;&mdash;&thinsp;lowercases the entire path. Empty optional fields become <code>None</code> rather than <code>Some("")</code>. This means the reducer never has to worry about whitespace, trailing slashes, or case sensitivity. It receives clean, canonical input.</p>
+
+  <p>Why lowercase on macOS? Because APFS is case-insensitive by default. <code>/Users/Pete/Code</code> and <code>/users/pete/code</code> are the same directory, and if we don't normalize for this, we'll create duplicate project entries every time Claude reports a path with different casing. The normalization is behind a <code>#[cfg(target_os = "macos")]</code> gate so it doesn't affect case-sensitive filesystems:</p>
+
+  <div class="code-block">
+    <div class="code-header">
+      <span class="code-lang">Rust</span>
+      <span class="code-file">core/capacitor-core/src/domain/identity.rs:92&ndash;101</span>
+      <button class="code-copy">copy</button>
+    </div>
+    <pre><code><span class="at">#[cfg(target_os = "macos")]</span>
+{
+    normalized.<span class="fn">to_lowercase</span>()
+}
+
+<span class="at">#[cfg(not(target_os = "macos"))]</span>
+{
+    normalized.<span class="fn">to_string</span>()
+}</code></pre>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════════════════
+     §8. The Reducer
+     ══════════════════════════════════════════════════════════ -->
+
+<section id="s8">
+  <div class="section-header">
+    <span class="section-number">&sect;8</span>
+    <h2 class="section-title">The Reducer</h2>
+  </div>
+
+  <p>The reducer is the heart of the Rust core. It lives in <code>core/capacitor-core/src/reduce/mod.rs</code> and implements a pure state machine: given the current state and an incoming event, produce the next state.</p>
+
+  <p>The <code>ReducerState</code> holds four collections:</p>
+
+  <div class="code-block">
+    <div class="code-header">
+      <span class="code-lang">Rust</span>
+      <span class="code-file">core/capacitor-core/src/reduce/mod.rs:17&ndash;22</span>
+      <button class="code-copy">copy</button>
+    </div>
+    <pre><code><span class="kw">pub struct</span> <span class="ty">ReducerState</span> {
+    <span class="kw">pub</span> projects: <span class="ty">BTreeMap</span>&lt;<span class="ty">String</span>, <span class="ty">ProjectSummary</span>&gt;,  <span class="cm">// sorted by path</span>
+    <span class="kw">pub</span> sessions: <span class="ty">HashMap</span>&lt;<span class="ty">String</span>, <span class="ty">SessionSummary</span>&gt;,   <span class="cm">// keyed by session_id</span>
+    <span class="kw">pub</span> shells:   <span class="ty">HashMap</span>&lt;<span class="ty">u32</span>, <span class="ty">ShellSignal</span>&gt;,          <span class="cm">// keyed by PID</span>
+    <span class="kw">pub</span> routing:  <span class="ty">BTreeMap</span>&lt;<span class="ty">String</span>, <span class="ty">RoutingView</span>&gt;,      <span class="cm">// keyed by workspace_id|path</span>
+    <span class="cm">// ...diagnostics counters...</span>
+}</code></pre>
+  </div>
+
+  <p><code>BTreeMap</code> for projects and routing (sorted output, deterministic iteration). <code>HashMap</code> for sessions and shells (fast lookup by ID/PID).</p>
+
+  <p>When a hook event arrives, <code>apply_hook_event</code> does four things:</p>
+
+  <ol>
+    <li><strong>Validate</strong>&thinsp;&mdash;&thinsp;reject if <code>event_id</code> or <code>session_id</code> is missing.</li>
+    <li><strong>Stale-check</strong>&thinsp;&mdash;&thinsp;if the session already has a more recent event, skip this one. This handles out-of-order delivery with a 5-second grace window.</li>
+    <li><strong>Reduce</strong>&thinsp;&mdash;&thinsp;call <code>reduce_session</code> to compute the session update.</li>
+    <li><strong>Recompute</strong>&thinsp;&mdash;&thinsp;rebuild the projects and routing views from the updated sessions.</li>
+  </ol>
+
+  <p>The <code>reduce_session</code> function is the state machine itself:</p>
+
+  <div class="code-block">
+    <div class="code-header">
+      <span class="code-lang">Rust</span>
+      <span class="code-file">core/capacitor-core/src/reduce/mod.rs:579&ndash;692</span>
+      <button class="code-copy">copy</button>
+    </div>
+    <pre><code><span class="kw">fn</span> <span class="fn">reduce_session</span>(
+    current: <span class="ty">Option</span>&lt;&amp;<span class="ty">SessionSummary</span>&gt;,
+    event: &amp;<span class="ty">IngestHookEventCommand</span>,
+) -> <span class="ty">SessionUpdate</span> {
+    <span class="kw">match</span> event.event_type {
+        <span class="ty">HookEventType</span>::<span class="ty">SessionStart</span> => {
+            <span class="kw">let</span> already_working = current
+                .<span class="fn">map</span>(|r| r.state == <span class="ty">SessionState</span>::<span class="ty">Working</span>
+                      || r.state == <span class="ty">SessionState</span>::<span class="ty">Waiting</span>)
+                .<span class="fn">unwrap_or</span>(<span class="nb">false</span>);
+            <span class="kw">if</span> already_working {
+                <span class="ty">SessionUpdate</span>::<span class="fn">Skip</span>(<span class="st">"session_start_already_active"</span>)
+            } <span class="kw">else</span> {
+                <span class="ty">SessionUpdate</span>::<span class="fn">Upsert</span>(<span class="fn">upsert_session</span>(<span class="cm">/*...*/</span>))
+            }
+        }
+        <span class="ty">HookEventType</span>::<span class="ty">UserPromptSubmit</span> | <span class="ty">HookEventType</span>::<span class="ty">PreToolUse</span> =>
+            <span class="ty">SessionUpdate</span>::<span class="fn">Upsert</span>(<span class="fn">upsert_session</span>(<span class="cm">/*...*/</span>, <span class="ty">SessionState</span>::<span class="ty">Working</span>)),
+        <span class="ty">HookEventType</span>::<span class="ty">PermissionRequest</span> =>
+            <span class="ty">SessionUpdate</span>::<span class="fn">Upsert</span>(<span class="fn">upsert_session</span>(<span class="cm">/*...*/</span>, <span class="ty">SessionState</span>::<span class="ty">Waiting</span>)),
+        <span class="ty">HookEventType</span>::<span class="ty">SessionEnd</span> => {
+            <span class="kw">let</span> pid = event.pid.<span class="fn">or_else</span>(|| current.<span class="fn">map</span>(|r| r.pid))
+                .<span class="fn">unwrap_or</span>(<span class="nb">0</span>);
+            <span class="kw">if</span> pid > <span class="nb">0</span> &amp;&amp; <span class="fn">is_pid_alive</span>(pid) {
+                <span class="cm">// PID still alive &mdash; session was cleared, not terminated</span>
+                <span class="ty">SessionUpdate</span>::<span class="fn">Upsert</span>(<span class="cm">/*...*/</span>)
+            } <span class="kw">else</span> {
+                <span class="ty">SessionUpdate</span>::<span class="fn">Delete</span>(event.session_id.<span class="fn">clone</span>())
+            }
+        }
+        <span class="cm">// ...</span>
+    }
+}</code></pre>
+  </div>
+
+  <p>A subtle design decision lives in the <code>SessionEnd</code> branch: before deleting a session, we check if its PID is still alive. If the process is still running, we treat the event as a &ldquo;session cleared&rdquo; (transition to Ready) rather than a deletion. This handles the case where Claude Code restarts a session in-place.</p>
+
+  <p>After updating the sessions map, <code>recompute_projects</code> rolls up session state into project summaries. The key insight: a project's state is the <em>maximum priority</em> across all its sessions. If one session is Idle but another is Working, the project shows Working. If any session is Waiting (priority 4), the project shows Waiting&thinsp;&mdash;&thinsp;because that's the thing that needs human attention most urgently.</p>
+</section>
+
+
+<!-- ══════════════════════════════════════════════════════════
+     §9. Knowing Which Project
+     ══════════════════════════════════════════════════════════ -->
+
+<section id="s9">
+  <div class="section-header">
+    <span class="section-number">&sect;9</span>
+    <h2 class="section-title">Knowing Which Project</h2>
+  </div>
+
+  <p>Given a file path&thinsp;&mdash;&thinsp;say <code>/Users/pete/Code/capacitor/apps/swift/Sources/main.swift</code>&thinsp;&mdash;&thinsp;which <em>project</em> does it belong to? This is the project identity problem, solved in <code>core/capacitor-core/src/domain/identity.rs</code>.</p>
+
+  <p>The algorithm walks upward from the given path, looking for project markers:</p>
+
+  <div class="code-block">
+    <div class="code-header">
+      <span class="code-lang">Rust</span>
+      <span class="code-file">core/capacitor-core/src/domain/identity.rs:4&ndash;16</span>
+      <button class="code-copy">copy</button>
+    </div>
+    <pre><code><span class="kw">const</span> <span class="fn">PROJECT_MARKERS</span>: &amp;[(&amp;<span class="ty">str</span>, <span class="ty">u8</span>)] = &amp;[
+    (<span class="st">"CLAUDE.md"</span>,     <span class="nb">1</span>),   <span class="cm">// Highest priority &mdash; definitive project root</span>
+    (<span class="st">"package.json"</span>,  <span class="nb">2</span>),
+    (<span class="st">"Cargo.toml"</span>,    <span class="nb">2</span>),
+    (<span class="st">"pyproject.toml"</span>, <span class="nb">2</span>),
+    (<span class="st">"go.mod"</span>,        <span class="nb">2</span>),
+    <span class="cm">// ...</span>
+    (<span class="st">".git"</span>,          <span class="nb">3</span>),
+    (<span class="st">"Makefile"</span>,      <span class="nb">4</span>),
+    (<span class="st">"CMakeLists.txt"</span>, <span class="nb">4</span>),
+];</code></pre>
+  </div>
+
+  <p><code>CLAUDE.md</code> has priority 1 (lowest number = highest priority) and <em>terminates the walk</em>&thinsp;&mdash;&thinsp;if you find it, that's the project root, period. This makes sense: <code>CLAUDE.md</code> is the one marker that's definitionally associated with a Claude Code project. Package manifests like <code>Cargo.toml</code> and <code>package.json</code> have priority 2&thinsp;&mdash;&thinsp;strong signals, but the walk continues upward in case there's a <code>CLAUDE.md</code> above. <code>.git</code> has priority 3&thinsp;&mdash;&thinsp;it's a project boundary, but a less specific one than a manifest file.</p>
+
+  <p>But there's a twist. In monorepos, a single <code>.git</code> directory covers multiple packages. And with git worktrees, the <code>.git</code> entry might be a <em>file</em> pointing to a <code>gitdir:</code> path in the main repo's <code>.git/worktrees/</code> directory. The identity system handles both cases, resolving through the <code>commondir</code> chain to find the canonical repository root.</p>
+
+  <p>The <code>workspace_id</code> is computed as <code>MD5(project_id|relative_path)</code>, lowercased on macOS. This gives each project a stable identifier that doesn't change when the user types the path in a different case, and&thinsp;&mdash;&thinsp;critically&thinsp;&mdash;&thinsp;resolves to the <em>same</em> ID whether you're working in the main repo or a worktree of it. A test makes this guarantee explicit:</p>
+
+  <div class="code-block">
+    <div class="code-header">
+      <span class="code-lang">Rust</span>
+      <span class="code-file">core/capacitor-core/src/domain/identity.rs:369&ndash;373</span>
+      <button class="code-copy">copy</button>
+    </div>
+    <pre><code><span class="kw">fn</span> <span class="fn">workspace_id_is_stable_for_case_changes</span>() {
+    <span class="kw">let</span> first  = <span class="fn">workspace_id</span>(<span class="st">"/Users/Pete/Code/Repo/.git"</span>, <span class="st">"/Users/Pete/Code/Repo"</span>);
+    <span class="kw">let</span> second = <span class="fn">workspace_id</span>(<span class="st">"/users/pete/code/repo/.git"</span>, <span class="st">"/users/pete/code/repo"</span>);
+    <span class="mc">assert_eq!</span>(first, second);
+}</code></pre>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════════════════
+     §10. Routing: Matching Shells to Projects
+     ══════════════════════════════════════════════════════════ -->
+
+<section id="s10">
+  <div class="section-header">
+    <span class="section-number">&sect;10</span>
+    <h2 class="section-title">Routing: Matching Shells to Projects</h2>
+  </div>
+
+  <p>Once we know which sessions belong to which projects, we need to figure out <em>where</em> those sessions are running&thinsp;&mdash;&thinsp;which terminal, which tmux session, which pane. This is routing, and it's computed in <code>recompute_routing</code> after every state change.</p>
+
+  <p>The algorithm selects the <em>best shell</em> for each project by ranking candidates:</p>
+
+  <div class="code-block">
+    <div class="code-header">
+      <span class="code-lang">Rust</span>
+      <span class="code-file">core/capacitor-core/src/reduce/mod.rs:401&ndash;421</span>
+      <button class="code-copy">copy</button>
+    </div>
+    <pre><code><span class="kw">fn</span> <span class="fn">shell_match_rank</span>(shell: &amp;<span class="ty">ShellSignal</span>, project_path: &amp;<span class="ty">str</span>, session_pids: &amp;[<span class="ty">u32</span>]) -> <span class="ty">u8</span> {
+    <span class="kw">if</span> session_pids.<span class="fn">contains</span>(&amp;shell.pid) {
+        <span class="nb">2</span>  <span class="cm">// Shell PID matches a known session &mdash; strongest signal</span>
+    } <span class="kw">else if</span> <span class="fn">paths_match</span>(shell.cwd.<span class="fn">as_str</span>(), project_path) {
+        <span class="nb">1</span>  <span class="cm">// Shell CWD is within the project &mdash; good signal</span>
+    } <span class="kw">else</span> {
+        <span class="nb">0</span>  <span class="cm">// No match</span>
+    }
+}
+
+<span class="kw">fn</span> <span class="fn">shell_target_rank</span>(shell: &amp;<span class="ty">ShellSignal</span>) -> <span class="ty">u8</span> {
+    <span class="kw">if</span> shell.tmux_pane.<span class="fn">is_some</span>()   { <span class="nb">3</span> }  <span class="cm">// Pane-level precision &mdash; best</span>
+    <span class="kw">else if</span> shell.tmux_session.<span class="fn">is_some</span>() { <span class="nb">2</span> }  <span class="cm">// Session-level &mdash; can switch</span>
+    <span class="kw">else if</span> <span class="fn">routing_parent_app</span>(shell.parent_app.<span class="fn">as_str</span>()).<span class="fn">is_some</span>() { <span class="nb">1</span> }
+    <span class="kw">else</span> { <span class="nb">0</span> }
+}</code></pre>
+  </div>
+
+  <p>The resulting <code>RoutingView</code> tells Swift everything it needs for terminal activation (<a class="xref" href="#s15">&sect;15</a>): the routing status (attached, detached, or unavailable), the target type (tmux pane, tmux session, or terminal app), and the host TTY that connects the tmux client to a specific terminal window.</p>
+</section>
+
+
+<!-- ══════════════════════════════════════════════════════════
+     §11. The Runtime Service
+     ══════════════════════════════════════════════════════════ -->
+
+<section id="s11">
+  <div class="section-header">
+    <span class="section-number">&sect;11</span>
+    <h2 class="section-title">The Runtime Service</h2>
+  </div>
+
+  <p>The Rust core doesn't run inside the Swift app. It runs as a separate process&thinsp;&mdash;&thinsp;<code>hud-hook serve</code>&thinsp;&mdash;&thinsp;that listens on <code>127.0.0.1:7474</code> and handles both hook event ingestion and snapshot queries.</p>
+
+  <div class="code-block">
+    <div class="code-header">
+      <span class="code-lang">Rust</span>
+      <span class="code-file">core/hud-hook/src/serve.rs:44&ndash;87</span>
+      <button class="code-copy">copy</button>
+    </div>
+    <pre><code><span class="kw">pub fn</span> <span class="fn">run</span>(port: <span class="ty">u16</span>) -> <span class="ty">Result</span>&lt;(), <span class="ty">String</span>&gt; {
+    <span class="kw">let</span> server = <span class="ty">tiny_http</span>::<span class="ty">Server</span>::<span class="fn">http</span>(&amp;addr).<span class="fn">map_err</span>(<span class="cm">/*...*/</span>)?;
+    <span class="kw">let</span> runtime_service = <span class="ty">RuntimeServerState</span>::<span class="fn">new</span>(port)?;
+
+    <span class="kw">loop</span> {
+        <span class="kw">if</span> <span class="fn">SHUTDOWN</span>.<span class="fn">load</span>(<span class="ty">Ordering</span>::<span class="ty">Relaxed</span>) { <span class="kw">break</span>; }
+        <span class="kw">let</span> request = <span class="kw">match</span> server.<span class="fn">recv_timeout</span>(<span class="ty">Duration</span>::<span class="fn">from_millis</span>(<span class="nb">500</span>)) {
+            <span class="ty">Ok</span>(<span class="ty">Some</span>(req)) => req,
+            <span class="ty">Ok</span>(<span class="ty">None</span>)     => <span class="kw">continue</span>,  <span class="cm">// timeout, check shutdown flag</span>
+            <span class="ty">Err</span>(e)       => { <span class="kw">continue</span>; }
+        };
+        <span class="fn">dispatch</span>(request, &amp;runtime_service);
+    }
+}</code></pre>
+  </div>
+
+  <p>The server uses <code>tiny_http</code>&thinsp;&mdash;&thinsp;a minimal, zero-dependency HTTP server. It polls with a 500ms timeout so it can check the shutdown flag between requests, enabling graceful SIGTERM handling.</p>
+
+  <p>The dispatch table maps routes to handlers:</p>
+
+  <div class="code-block">
+    <div class="code-header">
+      <span class="code-lang">Rust</span>
+      <span class="code-file">core/hud-hook/src/serve.rs:89&ndash;108</span>
+      <button class="code-copy">copy</button>
+    </div>
+    <pre><code><span class="kw">fn</span> <span class="fn">dispatch</span>(request: <span class="ty">tiny_http</span>::<span class="ty">Request</span>, runtime_service: &amp;<span class="ty">RuntimeServerState</span>) {
+    <span class="kw">match</span> (request.<span class="fn">method</span>(), request.<span class="fn">url</span>()) {
+        (&amp;<span class="ty">Get</span>,  <span class="st">"/health"</span>)                     => <span class="fn">handle_health</span>(<span class="cm">/*...*/</span>),
+        (&amp;<span class="ty">Get</span>,  <span class="st">"/runtime/snapshot"</span>)             => <span class="fn">handle_runtime_snapshot</span>(<span class="cm">/*...*/</span>),
+        (&amp;<span class="ty">Post</span>, <span class="st">"/runtime/ingest/hook-event"</span>)   => <span class="fn">handle_runtime_ingest_hook_event</span>(<span class="cm">/*...*/</span>),
+        (&amp;<span class="ty">Post</span>, <span class="st">"/runtime/ingest/shell-signal"</span>) => <span class="fn">handle_runtime_ingest_shell_signal</span>(<span class="cm">/*...*/</span>),
+        _                                      => { <span class="fn">json_error</span>(<span class="nb">404</span>, <span class="st">"not found"</span>); }
+    }
+}</code></pre>
+  </div>
+
+  <p><strong>The dual-transport trick</strong> lives in <code>core/hud-hook/src/runtime_client.rs</code>. When the hook handler runs <em>inside</em> <code>hud-hook serve</code>, it doesn't make an HTTP call to itself&thinsp;&mdash;&thinsp;it calls <code>CoreRuntime::ingest_hook_event</code> directly via a registered <code>Arc&lt;CoreRuntime&gt;</code>:</p>
+
+  <div class="code-block">
+    <div class="code-header">
+      <span class="code-lang">Rust</span>
+      <span class="code-file">core/hud-hook/src/runtime_client.rs:110&ndash;127</span>
+      <button class="code-copy">copy</button>
+    </div>
+    <pre><code><span class="kw">enum</span> <span class="ty">RuntimeTransport</span> {
+    <span class="ty">Service</span>(<span class="ty">RuntimeServiceEndpoint</span>),       <span class="cm">// HTTP call to external service</span>
+    <span class="ty">RegisteredService</span>(<span class="ty">Arc</span>&lt;<span class="ty">CoreRuntime</span>&gt;),   <span class="cm">// Direct in-process call</span>
+}
+
+<span class="kw">fn</span> <span class="fn">runtime_transport</span>() -> <span class="ty">Result</span>&lt;<span class="ty">RuntimeTransport</span>, <span class="ty">String</span>&gt; {
+    <span class="kw">if let</span> <span class="ty">Some</span>(runtime) = <span class="fn">REGISTERED_SERVICE_RUNTIME</span>.<span class="fn">get</span>() {
+        <span class="kw">return</span> <span class="ty">Ok</span>(<span class="ty">RuntimeTransport</span>::<span class="ty">RegisteredService</span>(<span class="ty">Arc</span>::<span class="fn">clone</span>(&amp;runtime)));
+    }
+    <span class="cm">// Fall back to HTTP endpoint discovery</span>
+    <span class="fn">runtime_service_endpoint</span>()?.<span class="fn">map</span>(<span class="ty">RuntimeTransport</span>::<span class="ty">Service</span>)
+        .<span class="fn">ok_or_else</span>(|| <span class="st">"runtime service endpoint unavailable"</span>.<span class="fn">to_string</span>())
+}</code></pre>
+  </div>
+
+  <p>This means <code>hud-hook cwd</code> (the shell integration command, <a class="xref" href="#s16">&sect;16</a>) can send events either way: in-process if it's running within the serve context, or via HTTP if it's an external invocation. Same semantic path, different transports.</p>
+</section>
+
+
+<!-- ══════════════════════════════════════════════════════════
+     §12. Crossing the Bridge
+     ══════════════════════════════════════════════════════════ -->
+
+<section id="s12">
+  <div class="section-header">
+    <span class="section-number">&sect;12</span>
+    <h2 class="section-title">Crossing the Bridge</h2>
+  </div>
+
+  <p>The Rust core exports types and methods to Swift via <strong>UniFFI</strong>. The facade lives in <code>core/capacitor-core/src/lib.rs</code>:</p>
+
+  <div class="code-block">
+    <div class="code-header">
+      <span class="code-lang">Rust</span>
+      <span class="code-file">core/capacitor-core/src/lib.rs:77&ndash;82</span>
+      <button class="code-copy">copy</button>
+    </div>
+    <pre><code><span class="at">#[derive(uniffi::Object)]</span>
+<span class="kw">pub struct</span> <span class="ty">CoreRuntime</span> {
+    state:            <span class="ty">std</span>::<span class="ty">sync</span>::<span class="ty">Mutex</span>&lt;<span class="ty">reduce</span>::<span class="ty">ReducerState</span>&gt;,
+    snapshot_storage: <span class="ty">Arc</span>&lt;<span class="kw">dyn</span> <span class="ty">SnapshotStorage</span>&gt;,
+    app_storage:      <span class="ty">StorageConfig</span>,
+}</code></pre>
+  </div>
+
+  <p>The <code>#[uniffi::Object]</code> attribute generates Swift bindings that let Swift hold a reference to the Rust object and call methods on it. Record types like <code>AppSnapshot</code> and <code>ProjectSummary</code> use <code>#[uniffi::Record]</code> and become Swift structs. Enums like <code>SessionState</code> use <code>#[uniffi::Enum]</code> and become Swift enums.</p>
+
+  <div class="callout">
+    <p><strong>Gotcha:</strong> UniFFI generates a type called <code>Task</code>, which shadows Swift's <code>_Concurrency.Task</code>. Any async Swift code that touches UniFFI-generated types must explicitly qualify <code>_Concurrency.Task</code> to avoid ambiguity.</p>
+  </div>
+
+  <p>Errors cross the bridge as simple strings&thinsp;&mdash;&thinsp;a deliberate simplification. Rich error types don't survive FFI boundaries well, and Swift's error handling is different enough from Rust's that a simple string message is more useful than a structured error that requires complex mapping.</p>
+
+  <p>For live session state, Swift doesn't use the UniFFI bridge at all&thinsp;&mdash;&thinsp;it queries the HTTP service via <code>RuntimeClient.swift</code>. The UniFFI path is reserved for setup, configuration, project CRUD, and other non-real-time operations.</p>
+</section>
+
+
+<!-- ══════════════════════════════════════════════════════════
+     §13. The Swift Projection Layer
+     ══════════════════════════════════════════════════════════ -->
+
+<section id="s13">
+  <div class="section-header">
+    <span class="section-number">&sect;13</span>
+    <h2 class="section-title">The Swift Projection Layer</h2>
+  </div>
+
+  <p>Here's the central insight of Capacitor's UI architecture: <strong>raw truth is not good enough for a UI.</strong></p>
+
+  <p>The Rust reducer produces correct state, but it produces it at the cadence of hook events&thinsp;&mdash;&thinsp;which can arrive in bursts, drop out temporarily, or lag behind reality. If Swift rendered the raw state directly, you'd see:</p>
+
+  <ul>
+    <li><strong>Flicker on transient gaps</strong>&thinsp;&mdash;&thinsp;when one session ends and another starts for the same project, there's a brief window where the project has no active sessions. The UI would flash to Idle and back to Working in under a second.</li>
+    <li><strong>Phantom emptiness</strong>&thinsp;&mdash;&thinsp;if the runtime service takes a moment to respond, the snapshot might be empty. The UI would blank out and then repopulate.</li>
+    <li><strong>Stale working states</strong>&thinsp;&mdash;&thinsp;Claude Code doesn't always fire <code>Stop</code> on interrupt. A session might show &ldquo;Working&rdquo; forever.</li>
+  </ul>
+
+  <p>The <code>SessionStateManager</code> in <code>apps/swift/Sources/Capacitor/Models/SessionStateManager.swift</code> solves all three with a projection and stabilization pipeline:</p>
+
+  <!-- Pipeline visualization -->
+  <div class="diagram">
+    <div class="diagram-title">Projection Pipeline</div>
+    <div class="flow">
+      <div class="flow-row">
+        <div class="flow-node core">Runtime Snapshot</div>
+      </div>
+      <div class="flow-arrow">
+        <svg viewBox="0 0 16 24"><line x1="8" y1="0" x2="8" y2="18" stroke="currentColor" stroke-width="1.5"/><polygon points="4,16 8,23 12,16" fill="currentColor"/></svg>
+        <span class="flow-arrow-label">merge with pinned projects</span>
+      </div>
+      <div class="flow-row">
+        <div class="flow-node swift">Stabilize Empty</div>
+      </div>
+      <div class="flow-arrow">
+        <svg viewBox="0 0 16 24"><line x1="8" y1="0" x2="8" y2="18" stroke="currentColor" stroke-width="1.5"/><polygon points="4,16 8,23 12,16" fill="currentColor"/></svg>
+        <span class="flow-arrow-label">hold for 2 empty snapshots</span>
+      </div>
+      <div class="flow-row">
+        <div class="flow-node swift">Stabilize Idle</div>
+      </div>
+      <div class="flow-arrow">
+        <svg viewBox="0 0 16 24"><line x1="8" y1="0" x2="8" y2="18" stroke="currentColor" stroke-width="1.5"/><polygon points="4,16 8,23 12,16" fill="currentColor"/></svg>
+        <span class="flow-arrow-label">asymmetric hysteresis</span>
+      </div>
+      <div class="flow-row">
+        <div class="flow-node swift">Animate</div>
+      </div>
+    </div>
+  </div>
+
+  <p><strong>Empty snapshot stabilization</strong> holds the previous state for 2 consecutive empty snapshots before committing:</p>
+
+  <div class="code-block">
+    <div class="code-header">
+      <span class="code-lang">Swift</span>
+      <span class="code-file">SessionStateManager.swift:172&ndash;215</span>
+      <button class="code-copy">copy</button>
+    </div>
+    <pre><code><span class="kw">private func</span> <span class="fn">stabilizeEmptyRuntimeSnapshotIfNeeded</span>(
+    _ merged: [<span class="ty">String</span>: <span class="ty">ProjectSessionState</span>],
+) -> [<span class="ty">String</span>: <span class="ty">ProjectSessionState</span>] {
+    <span class="kw">if</span> merged.<span class="fn">isEmpty</span> {
+        <span class="kw">guard</span> !sessionStates.<span class="fn">isEmpty</span> <span class="kw">else</span> {
+            <span class="kw">return</span> merged  <span class="cm">// Nothing to hold &mdash; we were already empty</span>
+        }
+        consecutiveEmptySnapshotCount += <span class="nb">1</span>
+        <span class="kw">if</span> consecutiveEmptySnapshotCount &lt; <span class="ty">Constants</span>.emptySnapshotCommitThreshold {
+            <span class="kw">return</span> sessionStates  <span class="cm">// Hold previous state</span>
+        }
+        consecutiveEmptySnapshotCount = <span class="nb">0</span>
+        <span class="kw">return</span> merged  <span class="cm">// Threshold reached &mdash; commit empty</span>
+    }
+    consecutiveEmptySnapshotCount = <span class="nb">0</span>
+    <span class="kw">return</span> merged
+}</code></pre>
+  </div>
+
+  <p><strong>Idle transition hysteresis</strong> is asymmetric: active&rarr;idle requires 2 consecutive idle snapshots (at 2-second polling, that's a 4-second hold), but idle&rarr;active is instant. This prevents brief idle flickers during session hand-offs:</p>
+
+  <div class="code-block">
+    <div class="code-header">
+      <span class="code-lang">Swift</span>
+      <span class="code-file">SessionStateManager.swift:223&ndash;263</span>
+      <button class="code-copy">copy</button>
+    </div>
+    <pre><code><span class="kw">private func</span> <span class="fn">stabilizeIdleTransitions</span>(
+    _ incoming: [<span class="ty">String</span>: <span class="ty">ProjectSessionState</span>],
+) -> [<span class="ty">String</span>: <span class="ty">ProjectSessionState</span>] {
+    <span class="kw">for</span> (path, incomingState) <span class="kw">in</span> incoming {
+        <span class="kw">let</span> isIncomingIdle = incomingState.state == .idle
+        <span class="kw">let</span> wasActive = sessionStates[path].<span class="fn">map</span> { $0.state != .idle } ?? <span class="nb">false</span>
+
+        <span class="kw">if</span> isIncomingIdle, wasActive {
+            <span class="kw">let</span> count = (consecutiveIdleCounts[path] ?? <span class="nb">0</span>) + <span class="nb">1</span>
+            consecutiveIdleCounts[path] = count
+            <span class="kw">if</span> count &lt; <span class="ty">Constants</span>.idleCommitThreshold {
+                result[path] = sessionStates[path]!  <span class="cm">// Hold active state</span>
+            }
+            <span class="cm">// else: threshold reached, commit idle</span>
+        }
+    }
+}</code></pre>
+  </div>
+
+  <p><strong>Stale working detection</strong> catches the case where Claude Code was interrupted without firing <code>Stop</code>. If a session has been in Working state for over 2 minutes with no new events, it's downgraded to Ready.</p>
+</section>
+
+
+<!-- ══════════════════════════════════════════════════════════
+     §14. The Composition Root
+     ══════════════════════════════════════════════════════════ -->
+
+<section id="s14">
+  <div class="section-header">
+    <span class="section-number">&sect;14</span>
+    <h2 class="section-title">The Composition Root</h2>
+  </div>
+
+  <p><code>AppState</code> in <code>apps/swift/Sources/Capacitor/Models/AppState.swift</code> is the composition root&thinsp;&mdash;&thinsp;the single <code>@Observable @MainActor</code> class that holds the entire app's state and coordinates between subsystems. At ~1,500 lines, it's the largest file in the codebase.</p>
+
+  <p>It holds:</p>
+  <ul>
+    <li><strong>Projects and their states</strong>&thinsp;&mdash;&thinsp;the list of pinned projects, their session states (via <code>SessionStateManager</code>, <a class="xref" href="#s13">&sect;13</a>), ordering, and dormancy.</li>
+    <li><strong>Runtime communication</strong>&thinsp;&mdash;&thinsp;the <code>RuntimeClient</code> that polls the service, the refresh timer, the latest snapshot.</li>
+    <li><strong>Feature flags</strong>&thinsp;&mdash;&thinsp;channel/profile (alpha/stable, stable/frontier), and gates for features like idea capture and project details.</li>
+    <li><strong>Coordinators</strong>&thinsp;&mdash;&thinsp;<code>HookServerManager</code> (manages the hud-hook process), <code>ProjectCreationCoordinator</code> (tracks new project creations), <code>SetupReadinessCoordinator</code> (startup validation), and <code>TerminalActivationCoordinator</code> (deduplicates rapid clicks).</li>
+  </ul>
+
+  <p>The refresh cycle is straightforward: every 2 seconds, <code>AppState</code> fetches a snapshot from the runtime service, passes it to <code>SessionStateManager.applyRuntimeProjectStates()</code>, and lets the projection pipeline (<a class="xref" href="#s13">&sect;13</a>) handle stabilization and animation. This polling approach is simpler and more resilient than a push-based system&thinsp;&mdash;&thinsp;if the service restarts, the next poll picks up the new state automatically.</p>
+</section>
+
+
+<!-- ══════════════════════════════════════════════════════════
+     §15. Terminal Activation
+     ══════════════════════════════════════════════════════════ -->
+
+<section id="s15">
+  <div class="section-header">
+    <span class="section-number">&sect;15</span>
+    <h2 class="section-title">Terminal Activation</h2>
+  </div>
+
+  <p>The signature feature: you click a project card, and Capacitor brings you to the right terminal. This is <code>TerminalLauncher</code> in <code>apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift</code>.</p>
+
+  <p>The activation flow for Ghostty + tmux (the primary path):</p>
+
+  <ol>
+    <li><strong>Resolve tmux session name</strong>&thinsp;&mdash;&thinsp;check routing hints, query existing tmux sessions, fall back to the project directory name.</li>
+    <li><strong>Resolve any attached tmux client</strong>&thinsp;&mdash;&thinsp;via <code>tmux list-clients</code>, preferring a client attached to the target session.</li>
+    <li><strong>If a client exists:</strong> ensure the session exists &rarr; switch the client to it &rarr; focus the terminal window.</li>
+    <li><strong>If no client exists:</strong> launch a new Ghostty tab with <code>tmux new-session -A -s &lt;name&gt;</code>.</li>
+  </ol>
+
+  <p>The <code>TerminalActivationCoordinator</code> wraps this in deduplication logic: if the user clicks project A, then immediately clicks project B, the first activation is cancelled and only B proceeds. This prevents tab proliferation from rapid clicks.</p>
+
+  <p>Terminal-specific behavior is abstracted behind the <code>TerminalDriver</code> protocol. Ghostty gets native AppleScript automation via <code>GhosttyAutomationClient</code>. iTerm2 and Terminal.app get their own drivers. This means adding support for a new terminal is a matter of implementing the protocol, not modifying the activation logic.</p>
+
+  <p>Shell scripts are executed via <code>runBashScriptWithResult</code>, which uses <code>Process</code> with a 10-second timeout, task cancellation support, and thread-safe continuation handling via a <code>ContinuationBox</code> pattern&thinsp;&mdash;&thinsp;a defensive approach to the fact that <code>Process.terminationHandler</code> runs on an arbitrary thread while Swift's structured concurrency needs a <code>CheckedContinuation</code>.</p>
+</section>
+
+
+<!-- ══════════════════════════════════════════════════════════
+     §16. Shell Integration
+     ══════════════════════════════════════════════════════════ -->
+
+<section id="s16">
+  <div class="section-header">
+    <span class="section-number">&sect;16</span>
+    <h2 class="section-title">Shell Integration</h2>
+  </div>
+
+  <p>How does Capacitor know which terminal has which project open? Through shell CWD tracking, implemented in <code>core/hud-hook/src/cwd.rs</code>.</p>
+
+  <p>Every time your shell prompt redraws (via <code>precmd</code> in zsh or <code>PROMPT_COMMAND</code> in bash), a snippet calls:</p>
+
+  <div class="code-block">
+    <div class="code-header">
+      <span class="code-lang">Bash</span>
+      <span class="code-file">Shell hook snippet</span>
+      <button class="code-copy">copy</button>
+    </div>
+    <pre><code>hud-hook cwd <span class="st">"$PWD"</span> $$ <span class="st">"$(tty)"</span></code></pre>
+  </div>
+
+  <p>This sends the current working directory, the shell PID, and the TTY device to the runtime. The <code>cwd</code> module has a hard performance target: <strong>under 15 milliseconds</strong>, because it runs on every prompt. The shell spawns it in the background, so users never wait, but we still want it fast.</p>
+
+  <p>The module does four things:</p>
+
+  <ol>
+    <li><strong>Normalize the path</strong>&thinsp;&mdash;&thinsp;strip trailing slashes, resolve case on macOS by walking real directory entries.</li>
+    <li><strong>Detect the parent terminal app</strong>&thinsp;&mdash;&thinsp;read <code>TERM_PROGRAM</code> for most terminals, <code>TERM</code> for Kitty/Alacritty, <code>TMUX</code> as a fallback.</li>
+    <li><strong>Detect tmux context</strong>&thinsp;&mdash;&thinsp;if the <code>TMUX</code> env var is set, run <code>tmux display-message -p "#S\t#{client_tty}"</code> to get the session name and client TTY. This has a 500ms timeout with kill-on-timeout to prevent hangs.</li>
+    <li><strong>Send to runtime</strong>&thinsp;&mdash;&thinsp;construct an <code>IngestShellSignalCommand</code> and send it via the dual-transport mechanism (<a class="xref" href="#s11">&sect;11</a>).</li>
+  </ol>
+
+  <div class="code-block">
+    <div class="code-header">
+      <span class="code-lang">Rust</span>
+      <span class="code-file">core/hud-hook/src/cwd.rs:200&ndash;231</span>
+      <button class="code-copy">copy</button>
+    </div>
+    <pre><code><span class="kw">fn</span> <span class="fn">detect_parent_app</span>(_pid: <span class="ty">u32</span>) -> <span class="ty">ParentApp</span> {
+    <span class="kw">if let</span> <span class="ty">Ok</span>(term_program) = <span class="ty">std</span>::<span class="ty">env</span>::<span class="fn">var</span>(<span class="st">"TERM_PROGRAM"</span>) {
+        <span class="kw">match</span> normalized.<span class="fn">as_str</span>() {
+            <span class="st">"ghostty"</span>                      => <span class="kw">return</span> <span class="ty">ParentApp</span>::<span class="ty">Ghostty</span>,
+            <span class="st">"iterm.app"</span> | <span class="st">"iterm2"</span>          => <span class="kw">return</span> <span class="ty">ParentApp</span>::<span class="ty">ITerm</span>,
+            <span class="st">"apple_terminal"</span> | <span class="st">"terminal"</span>   => <span class="kw">return</span> <span class="ty">ParentApp</span>::<span class="ty">Terminal</span>,
+            <span class="st">"cursor"</span>                       => <span class="kw">return</span> <span class="ty">ParentApp</span>::<span class="ty">Cursor</span>,
+            <span class="st">"vscode"</span>                       => <span class="kw">return</span> <span class="ty">ParentApp</span>::<span class="ty">VSCode</span>,
+            <span class="st">"zed"</span>                          => <span class="kw">return</span> <span class="ty">ParentApp</span>::<span class="ty">Zed</span>,
+            _ => {}
+        }
+    }
+}</code></pre>
+  </div>
+
+  <p>The parent app detection uses environment variables rather than process tree walking because it's faster and more portable. The tradeoff is that inside tmux, <code>TERM_PROGRAM</code> reflects the <em>host</em> terminal (Ghostty, iTerm), not tmux itself&thinsp;&mdash;&thinsp;which is actually what we want, since we need to know which terminal app to activate.</p>
+</section>
+
+
+<!-- ══════════════════════════════════════════════════════════
+     §17. Storage: Crash-Safe Persistence
+     ══════════════════════════════════════════════════════════ -->
+
+<section id="s17">
+  <div class="section-header">
+    <span class="section-number">&sect;17</span>
+    <h2 class="section-title">Storage: Crash-Safe Persistence</h2>
+  </div>
+
+  <p>Every time the reducer state changes, the snapshot is persisted to <code>~/.capacitor/runtime/app_snapshot.json</code>. The <code>JsonFileSnapshotStorage</code> in <code>core/capacitor-core/src/storage/mod.rs</code> uses atomic writes to prevent corruption:</p>
+
+  <div class="code-block">
+    <div class="code-header">
+      <span class="code-lang">Rust</span>
+      <span class="code-file">core/capacitor-core/src/storage/mod.rs:78&ndash;103</span>
+      <button class="code-copy">copy</button>
+    </div>
+    <pre><code><span class="kw">fn</span> <span class="fn">save_snapshot</span>(&amp;<span class="kw">self</span>, snapshot: &amp;<span class="ty">AppSnapshot</span>) -> <span class="ty">Result</span>&lt;(), <span class="ty">String</span>&gt; {
+    <span class="kw">let</span> _guard = <span class="kw">self</span>.io_lock.<span class="fn">lock</span>().<span class="fn">map_err</span>(<span class="cm">/*...*/</span>)?;
+
+    <span class="ty">Self</span>::<span class="fn">ensure_parent_dir</span>(&amp;<span class="kw">self</span>.path)?;
+
+    <span class="kw">let</span> payload = <span class="ty">serde_json</span>::<span class="fn">to_vec_pretty</span>(snapshot).<span class="fn">map_err</span>(<span class="cm">/*...*/</span>)?;
+
+    <span class="cm">// Write to temp file, then rename &mdash; atomic on POSIX</span>
+    <span class="kw">let</span> temp_path = <span class="kw">self</span>.path.<span class="fn">with_file_name</span>(<span class="mc">format!</span>(<span class="st">"{file_name}.tmp"</span>));
+    <span class="ty">fs</span>::<span class="fn">write</span>(&amp;temp_path, payload).<span class="fn">map_err</span>(<span class="cm">/*...*/</span>)?;
+    <span class="ty">fs</span>::<span class="fn">rename</span>(&amp;temp_path, &amp;<span class="kw">self</span>.path).<span class="fn">map_err</span>(<span class="cm">/*...*/</span>)?;
+
+    <span class="ty">Ok</span>(())
+}</code></pre>
+  </div>
+
+  <p>The temp-file-then-rename pattern ensures that the snapshot file is always either the old version or the new version, never a half-written intermediate. If the process crashes mid-write, the temp file is left behind and the real file remains intact.</p>
+
+  <p>The storage trait has two implementations: <code>InMemorySnapshotStorage</code> for tests (no filesystem I/O) and <code>JsonFileSnapshotStorage</code> for production. On startup, <code>from_snapshot</code> rehydrates the full reducer state from the persisted snapshot, rebuilding projects and routing maps. This means restarting <code>hud-hook serve</code> is seamless&thinsp;&mdash;&thinsp;the new process picks up where the old one left off.</p>
+</section>
+
+
+<!-- ══════════════════════════════════════════════════════════
+     §18. The Operational Surface
+     ══════════════════════════════════════════════════════════ -->
+
+<section id="s18">
+  <div class="section-header">
+    <span class="section-number">&sect;18</span>
+    <h2 class="section-title">The Operational Surface</h2>
+  </div>
+
+  <p>Capacitor ships with a rich set of scripts that encode the team's development workflow.</p>
+
+  <p><strong>Daily development</strong> is one command:</p>
+
+  <div class="code-block">
+    <div class="code-header">
+      <span class="code-lang">Bash</span>
+      <span class="code-file">scripts/dev/restart-alpha-stable.sh</span>
+      <button class="code-copy">copy</button>
+    </div>
+    <pre><code>./scripts/dev/restart-alpha-stable.sh</code></pre>
+  </div>
+
+  <p>This kills any running Capacitor instance, builds the Rust core in release mode, copies the dylib, builds the Swift app, and launches it with <code>--channel alpha --profile stable</code>. It's the default command for both humans and coding agents.</p>
+
+  <p><strong>Observability</strong> lives in <code>./scripts/dev/agent-observe.sh</code>, a comprehensive diagnostic CLI:</p>
+
+  <div class="code-block">
+    <div class="code-header">
+      <span class="code-lang">Bash</span>
+      <span class="code-file">scripts/dev/agent-observe.sh</span>
+      <button class="code-copy">copy</button>
+    </div>
+    <pre><code>./scripts/dev/agent-observe.sh diagnose          <span class="cm"># Full diagnostic dump</span>
+./scripts/dev/agent-observe.sh health            <span class="cm"># Runtime service health</span>
+./scripts/dev/agent-observe.sh sessions          <span class="cm"># Active sessions</span>
+./scripts/dev/agent-observe.sh routing-snapshot  <span class="cm"># Terminal routing state</span></code></pre>
+  </div>
+
+  <p>This script queries the runtime service first (using the bootstrap token for authentication), falling back to the persisted artifact only when the service is unavailable. The fallback mode is treated as degraded, not healthy&thinsp;&mdash;&thinsp;a distinction that matters when debugging &ldquo;why isn't the UI updating?&rdquo;</p>
+
+  <p><strong>CI</strong> runs seven jobs: test surface audit, script tests (via bats), Rust formatting/linting/testing, hook smoke tests, session-state reliability gate, Swift tests, and a build smoke test. Rust jobs run on macOS 14; Swift jobs on macOS 15 (for Xcode 26.3 / Swift 6.2).</p>
+
+  <p><strong>Release</strong> is a single script with preflight checks:</p>
+
+  <div class="code-block">
+    <div class="code-header">
+      <span class="code-lang">Bash</span>
+      <span class="code-file">scripts/release/release.sh</span>
+      <button class="code-copy">copy</button>
+    </div>
+    <pre><code>./scripts/release/release.sh patch</code></pre>
+  </div>
+
+  <p>This bumps the version, builds a signed and notarized app bundle, creates a DMG, and generates the Sparkle appcast for auto-updates. The bundle must include the Rust dylib, the hud-hook binary, Sparkle.framework, and fresh UniFFI bindings&thinsp;&mdash;&thinsp;a checklist that's easy to get wrong manually but is automated in the script.</p>
+</section>
+
+
+<!-- ══════════════════════════════════════════════════════════
+     Afterword: The Shape of the System
+     ══════════════════════════════════════════════════════════ -->
+
+<section id="afterword" class="afterword">
+  <div class="section-header">
+    <span class="section-number">Afterword</span>
+    <h2 class="section-title">The Shape of the System</h2>
+  </div>
+
+  <p>If you step back, Capacitor has a clean diamond shape:</p>
+
+  <!-- The System Diamond -->
+  <div class="diagram">
+    <div class="diagram-title">Data Flow Architecture</div>
+    <div class="flow">
+
+      <!-- Top: Two input sources -->
+      <div class="flow-row">
+        <div class="flow-node input">Shell Hooks (precmd)</div>
+        <div class="flow-node input">Claude Code Hooks</div>
+      </div>
+
+      <!-- Converging arrows -->
+      <div class="flow-arrow">
+        <svg viewBox="0 0 200 32" width="200" height="32">
+          <line x1="50" y1="0" x2="100" y2="28" stroke="#A8A29E" stroke-width="1.5"/>
+          <line x1="150" y1="0" x2="100" y2="28" stroke="#A8A29E" stroke-width="1.5"/>
+          <polygon points="96,24 100,31 104,24" fill="#A8A29E"/>
+        </svg>
+      </div>
+
+      <div class="flow-row">
+        <div class="flow-node core">hud-hook (Rust HTTP Server)</div>
+      </div>
+
+      <div class="flow-arrow">
+        <svg viewBox="0 0 16 24"><line x1="8" y1="0" x2="8" y2="18" stroke="#A8A29E" stroke-width="1.5"/><polygon points="4,16 8,23 12,16" fill="#A8A29E"/></svg>
+        <span class="flow-arrow-label">ingest &middot; normalize &middot; reduce</span>
+      </div>
+
+      <div class="flow-row">
+        <div class="flow-node core">ReducerState (Pure State Machine)</div>
+      </div>
+
+      <div class="flow-arrow">
+        <svg viewBox="0 0 16 24"><line x1="8" y1="0" x2="8" y2="18" stroke="#A8A29E" stroke-width="1.5"/><polygon points="4,16 8,23 12,16" fill="#A8A29E"/></svg>
+        <span class="flow-arrow-label">GET /runtime/snapshot</span>
+      </div>
+
+      <div class="flow-row">
+        <div class="flow-node">AppSnapshot (JSON)</div>
+      </div>
+
+      <div class="flow-arrow">
+        <svg viewBox="0 0 16 24"><line x1="8" y1="0" x2="8" y2="18" stroke="#A8A29E" stroke-width="1.5"/><polygon points="4,16 8,23 12,16" fill="#A8A29E"/></svg>
+        <span class="flow-arrow-label">project &middot; stabilize &middot; animate</span>
+      </div>
+
+      <div class="flow-row">
+        <div class="flow-node swift">Swift Projection + Hysteresis</div>
+      </div>
+
+      <div class="flow-arrow">
+        <svg viewBox="0 0 16 24"><line x1="8" y1="0" x2="8" y2="18" stroke="#A8A29E" stroke-width="1.5"/><polygon points="4,16 8,23 12,16" fill="#A8A29E"/></svg>
+      </div>
+
+      <div class="flow-row">
+        <div class="flow-node swift">SwiftUI Views</div>
+      </div>
+
+      <!-- Diverging arrows -->
+      <div class="flow-arrow">
+        <svg viewBox="0 0 200 32" width="200" height="32">
+          <line x1="100" y1="0" x2="50" y2="28" stroke="#A8A29E" stroke-width="1.5"/>
+          <line x1="100" y1="0" x2="150" y2="28" stroke="#A8A29E" stroke-width="1.5"/>
+          <polygon points="46,24 50,31 54,24" fill="#A8A29E"/>
+          <polygon points="146,24 150,31 154,24" fill="#A8A29E"/>
+        </svg>
+      </div>
+
+      <div class="flow-row">
+        <div class="flow-node swift">AppleScript</div>
+        <div class="flow-node swift">tmux Router</div>
+      </div>
+
+    </div>
+  </div>
+
+  <p>Events flow in from two sources (shell CWD tracking and Claude Code hooks), converge in the reducer, get projected through the stabilization pipeline, and flow out through the UI and terminal activation system. Information flows one direction. Each layer has a single owner. The boundary between Rust and Swift is a well-defined HTTP contract.</p>
+
+  <p>This is not an accident&thinsp;&mdash;&thinsp;it's the sidecar principle (<a class="xref" href="#s2">&sect;2</a>) carried to its conclusion. When you're observing a system you don't control, clarity of ownership and direction of data flow aren't luxuries. They're load-bearing.</p>
+</section>
+
+<div class="section-break">&sect; &middot; &sect; &middot; &sect;</div>
+
+
+<!-- ── Colophon ────────────────────────────────────────────── -->
+
+<footer class="colophon">
+  <p>This guide covers the Capacitor codebase as of March 2026, across 18 sections.</p>
+  <p>
+    For runtime debugging, see <code>.claude/docs/debugging-guide.md</code>.
+    For implementation hazards, see <code>.claude/docs/gotchas.md</code>.
+    For terminal activation UX, see <code>.claude/docs/terminal-activation-ux-spec.md</code>.
+  </p>
+  <p>Set in Cormorant Garamond, Source Serif 4, and JetBrains Mono.</p>
+</footer>
+
+</main>
+
+<script type="module" src="./main.js"></script>
+</body>
+</html>

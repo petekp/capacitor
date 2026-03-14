@@ -48,3 +48,4 @@ scripts/dev/capacitor-ingest.local
 
 # Git worktrees
 .worktrees/
+dist-guide
