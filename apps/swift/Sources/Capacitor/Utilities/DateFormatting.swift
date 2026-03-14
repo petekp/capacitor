@@ -6,7 +6,7 @@ import Foundation
 // ISO8601DateFormatter is expensive to create (~0.1ms per allocation). With 20 project
 // cards rendering at 120fps, uncached formatters would allocate 2400 formatters/second.
 //
-// See: ProjectsView.isStale(), SessionStaleness.isReadyStale()
+// See: SessionStaleness.isWorkingStale()
 
 extension ISO8601DateFormatter {
     /// Shared formatter with fractional seconds support.

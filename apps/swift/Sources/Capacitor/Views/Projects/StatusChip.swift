@@ -1,12 +1,9 @@
 import SwiftUI
 
-/// Displays the session status with staleness-based opacity.
-/// Uses the existing StatusIndicator animations (ellipsis, compacting).
+/// Displays the session status using the existing StatusIndicator animations.
 struct StatusChip: View {
     let state: SessionState?
-    let stateChangedAt: String?
     var style: ChipStyle = .normal
-    var staleOverride: Bool?
 
     @Environment(\.prefersReducedMotion) private var reduceMotion
 
@@ -19,15 +16,8 @@ struct StatusChip: View {
         state ?? .idle
     }
 
-    private var isStale: Bool {
-        if let staleOverride {
-            return staleOverride
-        }
-        return SessionStaleness.isReadyStale(state: state, stateChangedAt: stateChangedAt)
-    }
-
     private var chipOpacity: Double {
-        if effectiveState == .idle || isStale {
+        if effectiveState == .idle {
             return 0.6
         }
         return 1.0
@@ -55,32 +45,24 @@ struct StatusChip: View {
 /// A row of status chips for project cards.
 struct StatusChipsRow: View {
     let sessionState: ProjectSessionState?
-    let isStale: Bool
     var style: StatusChip.ChipStyle = .normal
 
     var body: some View {
-        HStack(spacing: 8) {
-            StatusChip(
-                state: sessionState?.state,
-                stateChangedAt: sessionState?.stateChangedAt,
-                style: style,
-                staleOverride: isStale,
-            )
-            if isStale {
-                StaleBadge(style: style == .compact ? .compact : .normal)
-            }
-        }
+        StatusChip(
+            state: sessionState?.state,
+            style: style,
+        )
     }
 }
 
 #Preview("Status Chips") {
     VStack(alignment: .leading, spacing: 16) {
         Group {
-            StatusChip(state: .ready, stateChangedAt: ISO8601DateFormatter.shared.string(from: Date().addingTimeInterval(-120)))
-            StatusChip(state: .working, stateChangedAt: ISO8601DateFormatter.shared.string(from: Date().addingTimeInterval(-300)))
-            StatusChip(state: .waiting, stateChangedAt: ISO8601DateFormatter.shared.string(from: Date().addingTimeInterval(-3600)))
-            StatusChip(state: .idle, stateChangedAt: ISO8601DateFormatter.shared.string(from: Date().addingTimeInterval(-86400 * 3)))
-            StatusChip(state: nil, stateChangedAt: nil)
+            StatusChip(state: .ready)
+            StatusChip(state: .working)
+            StatusChip(state: .waiting)
+            StatusChip(state: .idle)
+            StatusChip(state: nil)
         }
 
         Divider()
@@ -88,8 +70,8 @@ struct StatusChipsRow: View {
         Text("Compact Style").font(.caption).foregroundColor(.secondary)
 
         Group {
-            StatusChip(state: .ready, stateChangedAt: ISO8601DateFormatter.shared.string(from: Date().addingTimeInterval(-120)), style: .compact)
-            StatusChip(state: .working, stateChangedAt: ISO8601DateFormatter.shared.string(from: Date().addingTimeInterval(-300)), style: .compact)
+            StatusChip(state: .ready, style: .compact)
+            StatusChip(state: .working, style: .compact)
         }
     }
     .padding()

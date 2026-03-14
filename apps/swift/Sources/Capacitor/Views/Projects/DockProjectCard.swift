@@ -5,7 +5,6 @@ struct DockProjectCard: View {
     let sessionState: ProjectSessionState?
     let projectStatus: ProjectStatus?
     let flashState: SessionState?
-    let isStale: Bool
     let isActive: Bool
     let onTap: () -> Void
     let onInfoTap: (() -> Void)?
@@ -275,7 +274,7 @@ struct DockProjectCard: View {
                     Spacer(minLength: 0)
                 }
 
-                StatusChipsRow(sessionState: sessionState, isStale: isStale, style: .compact)
+                StatusChipsRow(sessionState: sessionState, style: .compact)
                     .padding(.top, glassConfig.dockChipTopPaddingRounded)
 
                 Spacer(minLength: 0)
@@ -373,8 +372,7 @@ private extension View {
     }
 }
 
-// Note: DockStatusIndicator, DockBlockerBadge, DockStaleBadge have been replaced
+// Note: DockStatusIndicator and DockBlockerBadge have been replaced
 // with shared components from ProjectCardComponents.swift:
 // - StatusIndicator(state:, style: .compact)
 // - BlockerBadge(style: .compact)
-// - StaleBadge(style: .compact)

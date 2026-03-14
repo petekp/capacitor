@@ -183,10 +183,6 @@ struct ProjectsView: View {
                                     let sessionState = ProjectOrdering.sessionState(for: project.path, sessionStates: sessionStates)
                                     let projectStatus = appState.getProjectStatus(for: project)
                                     let flashState = appState.isFlashing(project)
-                                    let isStale = SessionStaleness.isReadyStale(
-                                        state: sessionState?.state,
-                                        stateChangedAt: sessionState?.stateChangedAt,
-                                    )
                                     let group: ActivityGroup = activePaths.contains(project.path) ? .active : .idle
                                     let groupProjects = group == .active ? grouped.active : grouped.idle
                                     activeProjectCard(
@@ -194,7 +190,6 @@ struct ProjectsView: View {
                                         sessionState: sessionState,
                                         projectStatus: projectStatus,
                                         flashState: flashState,
-                                        isStale: isStale,
                                         index: index,
                                         group: group,
                                         groupProjects: groupProjects,
@@ -271,7 +266,6 @@ struct ProjectsView: View {
         sessionState: ProjectSessionState?,
         projectStatus: ProjectStatus?,
         flashState: SessionState?,
-        isStale: Bool,
         index: Int,
         group: ActivityGroup,
         groupProjects: [Project],
@@ -285,7 +279,6 @@ struct ProjectsView: View {
             sessionState: sessionState,
             projectStatus: projectStatus,
             flashState: flashState,
-            isStale: isStale,
             isActive: appState.activeProjectPath == project.path,
             onTap: {
                 appState.launchTerminal(for: project)

@@ -321,30 +321,6 @@ struct ClickableProjectTitle: View {
     }
 }
 
-// MARK: - Shared Badges
-
-/// Stale session badge
-struct StaleBadge: View {
-    var style: BadgeStyle = .normal
-
-    enum BadgeStyle {
-        case normal
-        case compact
-    }
-
-    var body: some View {
-        Text("stale")
-            .font(style == .compact ? AppTypography.label : AppTypography.captionSmall.weight(.medium))
-            .foregroundStyle(.white.opacity(style == .compact ? 0.4 : 0.5))
-            .padding(.horizontal, style == .compact ? 6 : 5)
-            .padding(.vertical, 2)
-            .background(Color.white.opacity(style == .compact ? 0.06 : 0.08))
-            .clipShape(Capsule())
-            .accessibilityLabel("Stale session")
-            .accessibilityHint("This project has been ready for more than 24 hours without activity")
-    }
-}
-
 // MARK: - Metallic Press Highlight (Metal Shader)
 
 /// GPU-computed metallic specular highlight at press point.

@@ -7,7 +7,6 @@ struct ProjectCardView: View {
     let sessionState: ProjectSessionState?
     let projectStatus: ProjectStatus?
     let flashState: SessionState?
-    let isStale: Bool
     let isActive: Bool
     let onTap: () -> Void
     let onInfoTap: (() -> Void)?
@@ -261,7 +260,6 @@ struct ProjectCardView: View {
                 ProjectCardContent(
                     sessionState: sessionState,
                     blocker: projectStatus?.blocker,
-                    isStale: isStale,
                 )
             }
 
@@ -408,11 +406,10 @@ private struct ProjectCardHeader: View {
 private struct ProjectCardContent: View {
     let sessionState: ProjectSessionState?
     let blocker: String?
-    let isStale: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            StatusChipsRow(sessionState: sessionState, isStale: isStale)
+            StatusChipsRow(sessionState: sessionState)
 
             if let blocker, !blocker.isEmpty {
                 HStack(spacing: 4) {
@@ -467,7 +464,7 @@ struct CardActionButtons: View {
     }
 }
 
-// Note: StaleBadge and StatusIndicator are in ProjectCardComponents.swift
+// Note: StatusIndicator is in ProjectCardComponents.swift
 
 // Note: View modifiers and glow effects are in separate files:
 // - ProjectCardModifiers.swift (cardStyling, cardInteractions, cardLifecycleHandlers)

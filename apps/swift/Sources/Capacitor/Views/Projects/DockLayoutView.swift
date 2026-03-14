@@ -59,16 +59,11 @@ struct DockLayoutView: View {
                                 let sessionState = ProjectOrdering.sessionState(for: project.path, sessionStates: sessionStates)
                                 let projectStatus = appState.getProjectStatus(for: project)
                                 let flashState = appState.isFlashing(project)
-                                let isStale = SessionStaleness.isReadyStale(
-                                    state: sessionState?.state,
-                                    stateChangedAt: sessionState?.stateChangedAt,
-                                )
                                 projectCard(
                                     for: project,
                                     sessionState: sessionState,
                                     projectStatus: projectStatus,
                                     flashState: flashState,
-                                    isStale: isStale,
                                     activePaths: activePaths,
                                     grouped: grouped,
                                 )
@@ -153,7 +148,6 @@ struct DockLayoutView: View {
         sessionState: ProjectSessionState?,
         projectStatus: ProjectStatus?,
         flashState: SessionState?,
-        isStale: Bool,
         activePaths: Set<String>,
         grouped: (active: [Project], idle: [Project]),
     ) -> some View {
@@ -168,7 +162,6 @@ struct DockLayoutView: View {
             sessionState: sessionState,
             projectStatus: projectStatus,
             flashState: flashState,
-            isStale: isStale,
             isActive: isActive,
             onTap: {
                 appState.launchTerminal(for: project)
