@@ -1,0 +1,725 @@
+/* ─────────────────────────────────────────────────────────────
+   The Annotated Source — A scholarly monograph for the screen
+   ───────────────────────────────────────────────────────────── */
+
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,500;0,8..60,600;1,8..60,400;1,8..60,500&family=JetBrains+Mono:wght@400;500&display=swap');
+
+/* ── Tokens ──────────────────────────────────────────────── */
+
+:root {
+  --bg:            #FAF7F2;
+  --bg-warm:       #F5F0E8;
+  --bg-code:       #F0EBE2;
+  --bg-code-line:  #EBE5DA;
+  --ink:           #1C1917;
+  --ink-soft:      #44403C;
+  --ink-muted:     #78716C;
+  --ink-faint:     #A8A29E;
+  --section:       #9A3412;
+  --section-soft:  #C2410C20;
+  --link:          #1E6B5A;
+  --link-hover:    #134E3E;
+  --accent:        #B45309;
+  --accent-soft:   #B4530918;
+  --rule:          #D6D3D1;
+  --rule-dark:     #A8A29E;
+  --code-keyword:  #9A3412;
+  --code-string:   #1E6B5A;
+  --code-comment:  #78716C;
+  --code-type:     #7C3AED;
+  --code-fn:       #B45309;
+  --code-macro:    #BE185D;
+  --code-number:   #0369A1;
+  --code-attr:     #6D28D9;
+
+  --font-display:  'Cormorant Garamond', 'Georgia', serif;
+  --font-body:     'Source Serif 4', 'Georgia', serif;
+  --font-mono:     'JetBrains Mono', 'Menlo', monospace;
+
+  --w-reading:     42rem;
+  --w-wide:        56rem;
+  --w-gutter:      5rem;
+}
+
+/* ── Reset & Base ────────────────────────────────────────── */
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: 2rem;
+  font-size: 18px;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  font-family: var(--font-body);
+  font-size: 1rem;
+  line-height: 1.72;
+  color: var(--ink);
+  background: var(--bg);
+  overflow-x: hidden;
+}
+
+::selection {
+  background: var(--section-soft);
+  color: var(--section);
+}
+
+/* ── Progress Bar ────────────────────────────────────────── */
+
+#progress {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 3px;
+  width: 0%;
+  background: linear-gradient(90deg, var(--section), var(--accent));
+  z-index: 1000;
+  transition: width 80ms linear;
+}
+
+/* ── Navigation Sidebar ──────────────────────────────────── */
+
+nav#toc {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 17rem;
+  height: 100vh;
+  padding: 2rem 1.25rem 2rem 1.5rem;
+  overflow-y: auto;
+  z-index: 100;
+  opacity: 0;
+  transform: translateX(-1rem);
+  transition: opacity 0.4s ease, transform 0.4s ease;
+  border-right: 1px solid var(--rule);
+  background: var(--bg);
+}
+
+nav#toc.visible {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+nav#toc h3 {
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  margin-bottom: 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--rule);
+}
+
+nav#toc ol {
+  list-style: none;
+  padding: 0;
+}
+
+nav#toc li {
+  margin-bottom: 0.15rem;
+}
+
+nav#toc a {
+  display: block;
+  font-family: var(--font-body);
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: var(--ink-muted);
+  text-decoration: none;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  transition: color 0.2s, background 0.2s;
+}
+
+nav#toc a:hover {
+  color: var(--ink);
+  background: var(--bg-warm);
+}
+
+nav#toc a.active {
+  color: var(--section);
+  background: var(--section-soft);
+  font-weight: 500;
+}
+
+nav#toc .section-num {
+  font-weight: 600;
+  color: var(--section);
+  margin-right: 0.25em;
+  font-feature-settings: 'tnum';
+}
+
+/* ── Main Content ────────────────────────────────────────── */
+
+main {
+  max-width: var(--w-reading);
+  margin: 0 auto;
+  padding: 0 2rem 6rem;
+  transition: margin-left 0.4s ease;
+}
+
+body.toc-open main {
+  margin-left: calc(17rem + ((100vw - 17rem - var(--w-reading)) / 2));
+}
+
+/* ── Hero / Title ────────────────────────────────────────── */
+
+.hero {
+  text-align: center;
+  padding: 8rem 0 5rem;
+  border-bottom: 2px solid var(--ink);
+  margin-bottom: 4rem;
+}
+
+.hero h1 {
+  font-family: var(--font-display);
+  font-size: 3.2rem;
+  font-weight: 400;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  margin-bottom: 0.5rem;
+}
+
+.hero .subtitle {
+  font-family: var(--font-display);
+  font-size: 1.3rem;
+  font-weight: 400;
+  font-style: italic;
+  color: var(--ink-soft);
+  margin-top: 0.75rem;
+}
+
+.hero .ornament {
+  display: inline-block;
+  margin-top: 2rem;
+  font-size: 1.5rem;
+  color: var(--ink-faint);
+  letter-spacing: 0.5em;
+}
+
+/* ── Sections ────────────────────────────────────────────── */
+
+section {
+  margin-bottom: 4rem;
+  position: relative;
+  scroll-margin-top: 2rem;
+}
+
+.section-header {
+  margin-bottom: 1.5rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--rule);
+}
+
+.section-number {
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  font-weight: 500;
+  color: var(--section);
+  display: block;
+  margin-bottom: 0.2rem;
+  letter-spacing: 0.02em;
+}
+
+.section-title {
+  font-family: var(--font-display);
+  font-size: 1.8rem;
+  font-weight: 500;
+  line-height: 1.25;
+  color: var(--ink);
+  letter-spacing: -0.01em;
+}
+
+/* ── Prose ────────────────────────────────────────────────── */
+
+p {
+  margin-bottom: 1.1rem;
+  hanging-punctuation: first last;
+  hyphens: auto;
+  -webkit-hyphens: auto;
+}
+
+p + p {
+  text-indent: 0;
+}
+
+strong {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+em {
+  font-style: italic;
+}
+
+a {
+  color: var(--link);
+  text-decoration: underline;
+  text-decoration-color: var(--link);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  transition: color 0.15s, text-decoration-color 0.15s;
+}
+
+a:hover {
+  color: var(--link-hover);
+  text-decoration-color: var(--link-hover);
+}
+
+/* ── Section Cross-References ────────────────────────────── */
+
+a.xref {
+  color: var(--section);
+  text-decoration: none;
+  font-weight: 500;
+  border-bottom: 1px dashed var(--section);
+  padding-bottom: 1px;
+  transition: background 0.2s, border-color 0.2s;
+  cursor: pointer;
+}
+
+a.xref:hover {
+  background: var(--section-soft);
+  border-bottom-style: solid;
+}
+
+/* ── Lists ───────────────────────────────────────────────── */
+
+ul, ol {
+  margin-bottom: 1.1rem;
+  padding-left: 1.5rem;
+}
+
+li {
+  margin-bottom: 0.35rem;
+}
+
+li::marker {
+  color: var(--ink-muted);
+}
+
+/* ── Tables ──────────────────────────────────────────────── */
+
+.table-wrap {
+  overflow-x: auto;
+  margin-bottom: 1.5rem;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+thead th {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 0.82rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  text-align: left;
+  padding: 0.5rem 1rem 0.5rem 0;
+  border-bottom: 2px solid var(--ink);
+}
+
+tbody td {
+  padding: 0.5rem 1rem 0.5rem 0;
+  border-bottom: 1px solid var(--rule);
+  vertical-align: top;
+}
+
+tbody tr:last-child td {
+  border-bottom: none;
+}
+
+tbody code {
+  font-size: 0.82rem;
+}
+
+/* ── Code Blocks ─────────────────────────────────────────── */
+
+.code-block {
+  margin: 1.5rem 0;
+  background: var(--bg-code);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.code-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.4rem 0.85rem;
+  background: var(--bg-code-line);
+  border-bottom: 1px solid var(--rule);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--ink-muted);
+}
+
+.code-lang {
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.code-file {
+  font-style: normal;
+  opacity: 0.7;
+}
+
+.code-copy {
+  background: none;
+  border: 1px solid transparent;
+  color: var(--ink-muted);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.code-copy:hover {
+  border-color: var(--rule-dark);
+  color: var(--ink-soft);
+}
+
+.code-copy.copied {
+  color: var(--link);
+  border-color: var(--link);
+}
+
+pre {
+  margin: 0;
+  padding: 1rem;
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  line-height: 1.65;
+  color: var(--ink-soft);
+  tab-size: 4;
+  -moz-tab-size: 4;
+}
+
+pre code {
+  background: none;
+  padding: 0;
+  border: none;
+  font-size: inherit;
+}
+
+/* Inline code */
+code {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  background: var(--bg-code);
+  padding: 0.1em 0.35em;
+  border-radius: 3px;
+  border: 1px solid var(--rule);
+  color: var(--ink-soft);
+}
+
+/* ── Syntax Highlighting (hand-rolled, Knuth-warm) ───────── */
+
+.kw  { color: var(--code-keyword); font-weight: 500; }
+.ty  { color: var(--code-type); }
+.fn  { color: var(--code-fn); }
+.st  { color: var(--code-string); }
+.cm  { color: var(--code-comment); font-style: italic; }
+.mc  { color: var(--code-macro); }
+.nb  { color: var(--code-number); }
+.at  { color: var(--code-attr); }
+.pp  { color: var(--ink-muted); }  /* punctuation */
+
+/* ── The Diamond Diagram ─────────────────────────────────── */
+
+.diagram {
+  margin: 2.5rem 0;
+  padding: 2.5rem 1.5rem;
+  background: var(--bg-warm);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.diagram-title {
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--ink-muted);
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.flow {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+}
+
+.flow-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1.5rem;
+  position: relative;
+}
+
+.flow-node {
+  background: white;
+  border: 2px solid var(--ink);
+  border-radius: 6px;
+  padding: 0.5rem 1.2rem;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--ink);
+  white-space: nowrap;
+  position: relative;
+  z-index: 1;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+
+.flow-node.core {
+  border-color: var(--section);
+  background: linear-gradient(135deg, #FFF7ED, #FFFBF5);
+}
+
+.flow-node.swift {
+  border-color: var(--link);
+  background: linear-gradient(135deg, #ECFDF5, #F0FDF9);
+}
+
+.flow-node.input {
+  border-color: var(--accent);
+  background: linear-gradient(135deg, #FFFBEB, #FEF9EE);
+}
+
+.flow-arrow {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0.25rem 0;
+  color: var(--ink-muted);
+}
+
+.flow-arrow svg {
+  width: 16px;
+  height: 24px;
+}
+
+.flow-arrow-label {
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  color: var(--ink-faint);
+  letter-spacing: 0.04em;
+}
+
+.flow-converge {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 0;
+  padding-bottom: 0;
+}
+
+.flow-converge .arm {
+  width: 6rem;
+  height: 2rem;
+  border: none;
+  position: relative;
+}
+
+.flow-converge .arm::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  width: 2px;
+  height: 100%;
+  background: var(--ink-muted);
+}
+
+.flow-converge .arm.left::after {
+  right: 0;
+  transform-origin: bottom right;
+  transform: rotate(-25deg);
+}
+
+.flow-converge .arm.right::after {
+  left: 0;
+  transform-origin: bottom left;
+  transform: rotate(25deg);
+}
+
+/* ── Section Dividers ────────────────────────────────────── */
+
+.section-break {
+  text-align: center;
+  margin: 4rem 0;
+  color: var(--ink-faint);
+  font-size: 1.2rem;
+  letter-spacing: 1em;
+}
+
+/* ── Afterword ───────────────────────────────────────────── */
+
+.afterword {
+  margin-top: 4rem;
+  padding-top: 3rem;
+  border-top: 2px solid var(--ink);
+}
+
+.afterword .section-title {
+  font-style: italic;
+}
+
+/* ── Colophon ────────────────────────────────────────────── */
+
+footer.colophon {
+  margin-top: 5rem;
+  padding: 2.5rem 0;
+  border-top: 1px solid var(--rule);
+  font-size: 0.82rem;
+  color: var(--ink-muted);
+  line-height: 1.6;
+  text-align: center;
+}
+
+footer.colophon p {
+  margin-bottom: 0.5rem;
+}
+
+/* ── Highlight / Emphasis Blocks ─────────────────────────── */
+
+.callout {
+  margin: 1.5rem 0;
+  padding: 1rem 1.25rem;
+  border-left: 3px solid var(--accent);
+  background: var(--accent-soft);
+  border-radius: 0 6px 6px 0;
+  font-size: 0.95rem;
+}
+
+.callout p:last-child {
+  margin-bottom: 0;
+}
+
+/* ── Responsive ──────────────────────────────────────────── */
+
+@media (max-width: 1200px) {
+  nav#toc {
+    display: none;
+  }
+  body.toc-open main {
+    margin-left: auto;
+  }
+}
+
+@media (max-width: 768px) {
+  html { font-size: 16px; }
+
+  .hero { padding: 4rem 0 2.5rem; }
+  .hero h1 { font-size: 2rem; }
+  .hero .subtitle { font-size: 1rem; }
+  .hero .ornament { font-size: 1.1rem; }
+
+  main { padding: 0 1.25rem 4rem; }
+
+  section { margin-bottom: 3rem; }
+
+  .section-number { font-size: 0.95rem; }
+  .section-title { font-size: 1.35rem; }
+
+  p { hyphens: auto; -webkit-hyphens: auto; }
+
+  /* Code blocks: allow horizontal scroll, smaller font */
+  .code-block { margin-left: -1.25rem; margin-right: -1.25rem; border-radius: 0; border-left: none; border-right: none; }
+  pre { font-size: 0.75rem; line-height: 1.55; padding: 0.85rem 1.25rem; -webkit-overflow-scrolling: touch; }
+  .code-header { padding: 0.35rem 1.25rem; }
+  .code-file { display: none; }
+
+  /* Inline code: prevent awkward wraps */
+  code { font-size: 0.82em; word-break: break-word; }
+
+  /* Tables: horizontal scroll on narrow screens */
+  .table-wrap { margin-left: -1.25rem; margin-right: -1.25rem; padding: 0 1.25rem; }
+  table { font-size: 0.82rem; }
+  thead th { font-size: 0.72rem; }
+
+  /* Diagrams: compact for mobile */
+  .diagram { padding: 1.5rem 1rem; margin-left: -1.25rem; margin-right: -1.25rem; border-radius: 0; border-left: none; border-right: none; }
+  .diagram-title { font-size: 0.75rem; margin-bottom: 1.5rem; }
+  .flow-row { gap: 0.5rem; flex-wrap: wrap; }
+  .flow-node { font-size: 0.6rem; padding: 0.35rem 0.65rem; white-space: normal; text-align: center; max-width: 10rem; }
+  .flow-arrow svg { height: 18px; }
+  .flow-arrow svg[viewBox="0 0 200 32"] { width: 140px; }
+  .flow-arrow-label { font-size: 0.55rem; }
+
+  /* Callout */
+  .callout { margin-left: -1.25rem; margin-right: -1.25rem; border-radius: 0; padding: 0.85rem 1.25rem; font-size: 0.88rem; }
+
+  /* Colophon */
+  footer.colophon { font-size: 0.75rem; margin-top: 3rem; padding: 1.5rem 0; }
+
+  /* Section divider */
+  .section-break { margin: 3rem 0; }
+}
+
+/* Small phones */
+@media (max-width: 400px) {
+  html { font-size: 15px; }
+  .hero h1 { font-size: 1.7rem; }
+  main { padding: 0 1rem 3rem; }
+  .code-block { margin-left: -1rem; margin-right: -1rem; }
+  pre { padding: 0.75rem 1rem; font-size: 0.7rem; }
+  .code-header { padding: 0.3rem 1rem; }
+  .flow-node { font-size: 0.55rem; padding: 0.3rem 0.5rem; }
+}
+
+/* ── Print ───────────────────────────────────────────────── */
+
+@media print {
+  nav#toc, #progress { display: none; }
+  body.toc-open main { margin-left: auto; }
+  .hero { padding: 3rem 0 2rem; }
+  section { break-inside: avoid; }
+  .code-block { break-inside: avoid; }
+}
+
+/* ── Animations ──────────────────────────────────────────── */
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.hero h1,
+.hero .subtitle,
+.hero .ornament {
+  animation: fadeInUp 0.6s ease both;
+}
+.hero .subtitle { animation-delay: 0.15s; }
+.hero .ornament { animation-delay: 0.3s; }
+
+section {
+  opacity: 0;
+  transform: translateY(10px);
+  transition: opacity 0.5s ease, transform 0.5s ease;
+}
+
+section.in-view {
+  opacity: 1;
+  transform: translateY(0);
+}
