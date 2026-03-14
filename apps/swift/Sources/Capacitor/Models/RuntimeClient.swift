@@ -220,28 +220,6 @@ struct CoreRoutingSnapshot: Equatable {
     let updatedAt: String
 }
 
-struct CoreRoutingDiagnostics: Equatable {
-    let snapshot: CoreRoutingSnapshot
-    let signalAgesMs: [String: UInt64]
-    let candidateTargets: [CoreRoutingTarget]
-    let conflicts: [String]
-    let scopeResolution: String
-}
-
-struct RuntimeRoutingConfig: Decodable, Equatable {
-    let tmuxSignalFreshMs: UInt64
-    let shellSignalFreshMs: UInt64
-    let shellRetentionHours: UInt64
-    let tmuxPollIntervalMs: UInt64
-
-    enum CodingKeys: String, CodingKey {
-        case tmuxSignalFreshMs = "tmux_signal_fresh_ms"
-        case shellSignalFreshMs = "shell_signal_fresh_ms"
-        case shellRetentionHours = "shell_retention_hours"
-        case tmuxPollIntervalMs = "tmux_poll_interval_ms"
-    }
-}
-
 struct RuntimeServiceConnection: Equatable {
     let baseURL: URL
     let bearerToken: String
@@ -603,37 +581,6 @@ final class RuntimeClient {
             reason: "No routing evidence available in runtime service snapshot",
             evidence: [],
             updatedAt: currentISO8601Timestamp(),
-        )
-    }
-
-    func fetchCoreRoutingDiagnostics(projectPath: String, workspaceId: String?) async throws -> CoreRoutingDiagnostics {
-        let snapshot = try await requireSnapshot(operation: "fetchRoutingDiagnostics")
-        let resolved = resolveRoutingView(
-            for: snapshot,
-            projectPath: projectPath,
-            workspaceId: workspaceId,
-        )
-        let routingSnapshot = try await fetchCoreRoutingSnapshot(projectPath: projectPath, workspaceId: workspaceId)
-        let candidateTargets: [CoreRoutingTarget] = routingSnapshot.target.kind == "none"
-            ? []
-            : [routingSnapshot.target]
-
-        return CoreRoutingDiagnostics(
-            snapshot: routingSnapshot,
-            signalAgesMs: [:],
-            candidateTargets: candidateTargets,
-            conflicts: [],
-            scopeResolution: resolved.scope,
-        )
-    }
-
-    func fetchRuntimeConfig() async throws -> RuntimeRoutingConfig {
-        _ = try await requireSnapshot(operation: "fetchRuntimeConfig")
-        return RuntimeRoutingConfig(
-            tmuxSignalFreshMs: Constants.tmuxSignalFreshMs,
-            shellSignalFreshMs: Constants.shellSignalFreshMs,
-            shellRetentionHours: Constants.shellRetentionHours,
-            tmuxPollIntervalMs: Constants.tmuxPollIntervalMs,
         )
     }
 

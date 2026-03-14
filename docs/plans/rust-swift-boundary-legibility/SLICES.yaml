@@ -1,0 +1,334 @@
+# Migration Slices
+# Status lifecycle: proposed -> in_progress -> done
+# Reserve a final convergence slice for residue sweep + ship verification.
+
+slices:
+  - id: slice-000
+    type: implementation
+    name: Decision freeze and control-plane package
+    status: done
+    dependencies: []
+    touched_paths:
+      - docs/plans/rust-swift-boundary-legibility
+      - docs/audits/rust-swift-boundary-seams/AUDIT.md
+      - .claude/architecture/RUST_SWIFT_BOUNDARY_OPTIONS.md
+    external_surfaces: []
+    contracts:
+      added:
+        - docs/plans/rust-swift-boundary-legibility/CHARTER.md
+        - docs/plans/rust-swift-boundary-legibility/DECISIONS.md
+        - docs/plans/rust-swift-boundary-legibility/SLICES.yaml
+        - docs/plans/rust-swift-boundary-legibility/MAP.csv
+        - docs/plans/rust-swift-boundary-legibility/RATCHETS.yaml
+        - docs/plans/rust-swift-boundary-legibility/SHIP_CHECKLIST.md
+        - docs/plans/rust-swift-boundary-legibility/TRANSLATION_GUIDE.md
+        - docs/plans/rust-swift-boundary-legibility/HANDOFF.md
+        - docs/plans/rust-swift-boundary-legibility/guard.sh
+      changed: []
+      removed: []
+    denylist_patterns: []
+    deletion_targets: []
+    temp_artifacts: []
+    docs_to_update: []
+    dependency_changes: []
+    residue_queries:
+      - pattern: "TODO\\(migration\\)|FIXME\\(migration\\)"
+        scope: "docs/plans/rust-swift-boundary-legibility"
+        reason: "The control plane should start clean without placeholder migration markers."
+    verification_commands:
+      - command: "bash docs/plans/rust-swift-boundary-legibility/guard.sh --status"
+        expect: "Ratchet budgets print and no control-plane artifact is missing."
+    replay_scenarios: []
+    smoke_scenarios: []
+    manual_checks: []
+    risks: []
+    notes: "This slice chooses Option 2 and packages the migration so later sessions can execute without re-running architecture discovery."
+
+  - id: slice-001
+    type: implementation
+    name: Swift activation-policy skeleton and failing-test capture
+    status: done
+    dependencies:
+      - slice-000
+    touched_paths:
+      - apps/swift/Sources/Capacitor/Models
+      - apps/swift/Tests/CapacitorTests
+      - docs/plans/rust-swift-boundary-legibility
+    external_surfaces: []
+    contracts:
+      added:
+        - "apps/swift/Sources/Capacitor/Models/ActivationPolicy.swift"
+        - "apps/swift/Tests/CapacitorTests/ActivationPolicyTests.swift"
+      changed:
+        - "Activation entrypoints wired so the policy owner can be exercised through tests without changing execution ownership."
+      removed: []
+    denylist_patterns: []
+    deletion_targets: []
+    temp_artifacts: []
+    docs_to_update:
+      - docs/plans/rust-swift-boundary-legibility/TRANSLATION_GUIDE.md
+      - docs/plans/rust-swift-boundary-legibility/HANDOFF.md
+    dependency_changes: []
+    residue_queries:
+      - pattern: "ActivationPolicySpike|ActivationPolicyPrototype"
+        scope: "apps/swift/Sources/Capacitor,apps/swift/Tests/CapacitorTests"
+        reason: "The validation spike must land under the canonical type name, not a prototype alias."
+    verification_commands:
+      - command: "swift test --package-path apps/swift --filter ActivationPolicyTests"
+        expect: "Facts-in / intent-out tests prove the skeleton can model routed app choice, attached tmux fallback, and explicit fallback policy."
+      - command: "swift test --package-path apps/swift --filter TerminalLauncherTests"
+        expect: "Existing launcher behavior remains green while the skeleton is introduced."
+      - command: "swift test --package-path apps/swift --filter AppStateSessionObservationTests"
+        expect: "AppState routing and shell observation wiring remains green after the policy seam is introduced."
+    replay_scenarios: []
+    smoke_scenarios:
+      - "Project-card activation still resolves the same intent for routed tmux pane, routed tmux session, and no-client launch cases."
+    manual_checks: []
+    risks:
+      - "If the policy skeleton requires sprawling callback plumbing or starts absorbing execution code, stop and reopen Option 3 before slice-002."
+    notes: "Completed on 2026-03-13. Added a pure ActivationPolicy seam, routed AppState resolver closures through it, and proved the spike with ActivationPolicyTests plus launcher/session regressions."
+
+  - id: slice-002
+    type: implementation
+    name: Consolidate Swift policy ownership and make fallback explicit
+    status: done
+    dependencies:
+      - slice-001
+    touched_paths:
+      - apps/swift/Sources/Capacitor/Models/AppState.swift
+      - apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift
+      - apps/swift/Sources/Capacitor/Models/SupportedTerminalApp.swift
+      - apps/swift/Sources/Capacitor/Models/ActivationPolicy.swift
+      - apps/swift/Tests/CapacitorTests/ActivationPolicyTests.swift
+      - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
+      - apps/swift/Tests/CapacitorTests/SupportedTerminalAppTests.swift
+      - docs/ARCHITECTURE.md
+    external_surfaces:
+      - NSWorkspace
+      - AppleScript terminal automation
+    contracts:
+      added:
+        - "One explicit Swift activation-policy owner that converts runtime facts plus local desktop state into activation intent."
+      changed:
+        - "AppState launch wiring"
+        - "TerminalLauncher selection path"
+        - "SupportedTerminalApp fallback policy surface"
+      removed:
+        - "Distributed resolver injection slots living on TerminalLauncher"
+    denylist_patterns:
+      - "preferred(?:TerminalApp|HostTty|RoutingSession|TmuxPane)Resolver"
+    deletion_targets:
+      - "TerminalLauncher.preferredTerminalAppResolver"
+      - "TerminalLauncher.preferredHostTtyResolver"
+      - "TerminalLauncher.preferredRoutingSessionResolver"
+      - "TerminalLauncher.preferredTmuxPaneResolver"
+      - "Launcher-local terminal ranking helpers that survive only because policy is split across files"
+    temp_artifacts: []
+    docs_to_update:
+      - docs/ARCHITECTURE.md
+      - docs/plans/rust-swift-boundary-legibility/TRANSLATION_GUIDE.md
+      - docs/plans/rust-swift-boundary-legibility/HANDOFF.md
+    dependency_changes: []
+    residue_queries:
+      - pattern: "preferred(?:TerminalApp|HostTty|RoutingSession|TmuxPane)Resolver"
+        scope: "apps/swift/Sources/Capacitor,apps/swift/Tests/CapacitorTests"
+        reason: "Distributed callback ownership must be gone once the policy owner is canonical."
+      - pattern: "detectAvailable\\("
+        scope: "apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift"
+        reason: "Launcher should stop choosing fallback terminals implicitly."
+    verification_commands:
+      - command: "swift test --package-path apps/swift --filter 'ActivationPolicyTests|TerminalLauncherTests|SupportedTerminalAppTests|AppStateSessionObservationTests'"
+        expect: "Policy owner covers route-first choice, shell ranking, and explicit fallback ladder without moving execution concerns."
+      - command: "swift test --package-path apps/swift --filter AppStateTerminalActivationTests"
+        expect: "AppState activation failure reporting still works after TerminalLauncher starts consuming a single ActivationPolicyIntent seam."
+    replay_scenarios: []
+    smoke_scenarios:
+      - "Routed tmux pane activation still selects the pane."
+      - "Attached tmux with missing terminal_app still chooses the expected host terminal through policy, not launcher heuristics."
+    manual_checks:
+      - surface: "Project card activation"
+        check: "Click a project whose route has pane and session metadata but no terminal_app."
+        expected: "Activation reaches the correct tmux client and logs a Swift-policy reason without silent fallback."
+    risks:
+      - "Existing dirty edits in TerminalLauncher.swift and TerminalLauncherTests.swift must be merged, not overwritten."
+      - "Fallback policy is user-visible; changing ownership without locking tests can create subtle regressions."
+    notes: "Completed on 2026-03-13. Removed the four distributed resolver slots from TerminalLauncher, replaced them with one ActivationPolicyIntent resolver, and moved launcher fallback choice behind ActivationPolicyFallback."
+
+  - id: slice-003
+    type: implementation
+    name: Remove fake runtime-boundary semantics and debug shadow paths
+    status: done
+    dependencies:
+      - slice-002
+    touched_paths:
+      - apps/swift/Sources/Capacitor/Models/RuntimeClient.swift
+      - apps/swift/Sources/Capacitor/Views/Debug/DebugProjectListPanel.swift
+      - apps/swift/Sources/Capacitor/Views/Debug/DebugShellStateCard.swift
+      - apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift
+      - docs/ARCHITECTURE.md
+      - docs/plans/rust-swift-boundary-legibility/TRANSLATION_GUIDE.md
+    external_surfaces:
+      - Runtime logs under ~/.capacitor/runtime/
+    contracts:
+      added:
+        - "Swift-local naming for freshness policy and activation diagnostics"
+      changed:
+        - "RuntimeClient API names and tests"
+        - "Debug-only diagnostic presentation"
+      removed:
+        - "Fake runtime config API"
+        - "Fake core diagnostics API"
+        - "Temporary debug shell card"
+    denylist_patterns:
+      - "\\bfetchRuntimeConfig\\b"
+      - "\\bfetchCoreRoutingDiagnostics\\b"
+      - "\\bDebugShellStateCard\\b"
+    deletion_targets:
+      - "RuntimeClient.fetchRuntimeConfig()"
+      - "RuntimeClient.fetchCoreRoutingDiagnostics(...)"
+      - "apps/swift/Sources/Capacitor/Views/Debug/DebugShellStateCard.swift"
+      - "DebugProjectListPanel embedding of DebugShellStateCard"
+    temp_artifacts: []
+    docs_to_update:
+      - docs/ARCHITECTURE.md
+      - docs/plans/rust-swift-boundary-legibility/TRANSLATION_GUIDE.md
+      - docs/plans/rust-swift-boundary-legibility/HANDOFF.md
+    dependency_changes: []
+    residue_queries:
+      - pattern: "\\bfetchRuntimeConfig\\b|\\bfetchCoreRoutingDiagnostics\\b|\\bDebugShellStateCard\\b"
+        scope: "apps/swift/Sources/Capacitor,apps/swift/Tests/CapacitorTests,docs/ARCHITECTURE.md,README.md"
+        reason: "The old boundary-looking names must disappear completely once the Swift-local replacements land."
+    verification_commands:
+      - command: "swift test --package-path apps/swift --filter 'RuntimeClientTests|ActivationPolicyTests|SupportedTerminalAppTests'"
+        expect: "Swift-local config and diagnostics naming is covered without implying a runtime-authored policy API."
+    replay_scenarios: []
+    smoke_scenarios:
+      - "Activation reason surfaces still explain facts versus policy after the rename cleanup."
+    manual_checks:
+      - surface: "Debug diagnostics and logs"
+        check: "Inspect activation reason output after clicking a project."
+        expected: "Labels clearly separate runtime facts from Swift policy interpretation."
+    risks:
+      - "Renaming can leave stale docs and tests behind unless carried in the same PR."
+    notes: "Completed on 2026-03-13. Renamed the fake RuntimeClient APIs to explicitly local semantics and removed DebugShellStateCard plus its panel embedding without leaving compatibility aliases behind."
+
+  - id: slice-004
+    type: implementation
+    name: Retire Rust runtime_activation shadow owner
+    status: done
+    dependencies:
+      - slice-002
+      - slice-003
+    touched_paths:
+      - core/capacitor-core/src/lib.rs
+      - core/capacitor-core/src/runtime_activation/mod.rs
+      - core/capacitor-core/tests
+      - docs/ARCHITECTURE.md
+      - AGENT_CHANGELOG.md
+    external_surfaces: []
+    contracts:
+      added:
+        - "If any behavior coverage from runtime_activation is still valuable, port it into explicitly non-authoritative regression tests."
+      changed:
+        - "Core crate documentation about what Rust owns"
+      removed:
+        - "Production-looking test-only activation module"
+    denylist_patterns:
+      - "\\bruntime_activation\\b"
+    deletion_targets:
+      - "core/capacitor-core/src/runtime_activation/mod.rs"
+      - "#[cfg(test)] mod runtime_activation;"
+      - "Production-looking activation-owner wording in core crate docs"
+    temp_artifacts: []
+    docs_to_update:
+      - docs/ARCHITECTURE.md
+      - AGENT_CHANGELOG.md
+      - docs/plans/rust-swift-boundary-legibility/HANDOFF.md
+    dependency_changes: []
+    residue_queries:
+      - pattern: "\\bruntime_activation\\b"
+        scope: "core/capacitor-core/src,core/capacitor-core/tests,docs/ARCHITECTURE.md,README.md"
+        reason: "The old shadow owner name must be gone once the core cleanup slice finishes."
+    verification_commands:
+      - command: "cargo test -p capacitor-core"
+        expect: "Core contract and reducer tests stay green after retiring the shadow owner."
+      - command: "swift test --package-path apps/swift --filter 'ActivationPolicyTests|TerminalLauncherTests'"
+        expect: "Swift policy tests still own the user-visible activation logic after the Rust shadow model is removed."
+    replay_scenarios: []
+    smoke_scenarios: []
+    manual_checks: []
+    risks:
+      - "Useful behavior coverage could be lost if runtime_activation tests are deleted instead of ported intentionally."
+    notes: "Completed on 2026-03-13. Deleted the runtime_activation module, removed its lib.rs entrypoint, and updated docs so Rust no longer advertises a production activation owner."
+
+  - id: slice-005
+    type: convergence
+    name: Boundary legibility convergence and ship gate
+    status: done
+    dependencies:
+      - slice-003
+      - slice-004
+    touched_paths:
+      - docs/plans/rust-swift-boundary-legibility
+      - docs/ARCHITECTURE.md
+      - AGENT_CHANGELOG.md
+      - README.md
+    external_surfaces:
+      - Runtime logs under ~/.capacitor/runtime/
+      - tmux CLI
+      - NSWorkspace
+      - AppleScript terminal automation
+    contracts:
+      added: []
+      changed:
+        - "Ship-ready docs and migration closeout artifacts"
+      removed:
+        - "Stale migration notes and temporary debugging residue introduced during slices 001-004"
+    denylist_patterns:
+      - "TODO\\(migration\\)"
+      - "ActivationPolicySpike|ActivationPolicyPrototype"
+    deletion_targets:
+      - "Any migration-only debug logging, temporary adapters, or one-off helper names introduced during slices 001-004"
+      - "Docs that still describe Rust and Swift as parallel activation-policy owners"
+    temp_artifacts: []
+    docs_to_update:
+      - README.md
+      - docs/ARCHITECTURE.md
+      - AGENT_CHANGELOG.md
+      - docs/plans/rust-swift-boundary-legibility/HANDOFF.md
+      - docs/plans/rust-swift-boundary-legibility/SHIP_CHECKLIST.md
+    dependency_changes: []
+    residue_queries:
+      - pattern: "\\bfetchRuntimeConfig\\b|\\bfetchCoreRoutingDiagnostics\\b|\\bDebugShellStateCard\\b|\\bruntime_activation\\b"
+        scope: "apps/swift,core/capacitor-core,docs/ARCHITECTURE.md,README.md"
+        reason: "Removed shadow surfaces must stay gone by closeout."
+      - pattern: "TODO\\(migration\\)|FIXME\\(migration\\)|ActivationPolicySpike|ActivationPolicyPrototype"
+        scope: "apps/swift,core/capacitor-core,docs/ARCHITECTURE.md,README.md"
+        reason: "No migration markers or prototype names should survive ship."
+    verification_commands:
+      - command: "bash docs/plans/rust-swift-boundary-legibility/guard.sh"
+        expect: "All ratchets, residue checks, and control-plane checks pass."
+      - command: "cargo test -p capacitor-core"
+        expect: "Rust runtime facts and reducer behavior remain green."
+      - command: "swift test --package-path apps/swift"
+        expect: "All Swift behavior and regression suites remain green."
+      - command: "swift build --package-path apps/swift"
+        expect: "The Swift package still builds cleanly after the boundary cleanup."
+      - command: "bash docs/plans/rust-swift-boundary-legibility/SHIP_CHECKLIST.md"
+        expect: "Automated ship gate runs and manual-only checks are ready to execute."
+    replay_scenarios: []
+    smoke_scenarios:
+      - "Project-card attached tmux reuse"
+      - "Detached direct-shell reuse"
+      - "No-client attach-or-create"
+      - "Explicit fallback terminal selection"
+    manual_checks:
+      - surface: "Project card activation"
+        check: "Exercise attached tmux reuse, detached direct-shell reuse, and no-client activation."
+        expected: "Behavior stays the same while the decision ownership is easier to explain."
+      - surface: "Logs and diagnostics"
+        check: "Inspect activation reason wording after each manual scenario."
+        expected: "Logs explicitly distinguish runtime facts from Swift policy and never imply fake core diagnostics or config."
+    risks:
+      - "Docs and tests can lag behind the code unless convergence owns the final sweep."
+    notes: "Completed on 2026-03-14. Automated convergence gates passed via SHIP_CHECKLIST.md. Additional convergence cleanup moved the remaining pure ranking helpers out of TerminalLauncher into ActivationPolicy, deleted the unused secondary ActivationPolicy entrypoint, and removed the dead RuntimeClient local-diagnostics/local-policy API surface. Additional AX-driven evidence covered the no-client Ghostty fallback path and one attached tmux route reuse path. A temporary projects.json seed for claude-code-setup was reverted after it still did not surface a clickable detached-card identifier in the AX tree. Manual confirmation now covers detached direct-shell host focus, no-client Ghostty reuse when the app is already running, and the activation wording split in logs."

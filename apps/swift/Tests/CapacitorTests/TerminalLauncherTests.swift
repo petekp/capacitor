@@ -335,7 +335,7 @@ final class TerminalLauncherTests: XCTestCase {
         XCTAssertEqual(results.first?.success, false)
     }
 
-    func testLaunchTerminalPrefersRoutingSessionResolverOverFallbackResolver() async {
+    func testLaunchTerminalPrefersActivationIntentSessionOverFallbackResolver() async {
         let project = makeProject(name: "project-a", path: "/Users/pete/Code/project-a")
         let exp = expectation(description: "launch result")
         var resolvedSession: String?
@@ -348,7 +348,14 @@ final class TerminalLauncherTests: XCTestCase {
                 return true
             },
         )
-        launcher.preferredRoutingSessionResolver = { _ in "routed-session" }
+        launcher.activationIntentResolver = { _, _, _ in
+            ActivationPolicyIntent(
+                terminalApp: ActivationPolicyTerminalAppDecision(app: .ghostty, source: .runtimeRoute),
+                sessionName: "routed-session",
+                hostTty: "/dev/ttys001",
+                paneId: "%12",
+            )
+        }
         launcher.onActivationResult = { _ in
             exp.fulfill()
         }
@@ -565,99 +572,6 @@ final class TerminalLauncherTests: XCTestCase {
         )
 
         XCTAssertEqual(tty, "/dev/ttys002")
-    }
-
-    func testResolvePreferredTerminalAppPrefersClientTtyMatch() {
-        let shellState = ShellCwdState(
-            version: 1,
-            shells: [
-                "100": ShellEntry(
-                    cwd: "/Users/pete/Code/capacitor",
-                    tty: "/dev/ttys010",
-                    parentApp: "Ghostty",
-                    tmuxSession: "caps",
-                    tmuxClientTty: "/dev/ttys001",
-                    updatedAt: Date(timeIntervalSince1970: 1_700_000_000),
-                ),
-                "101": ShellEntry(
-                    cwd: "/Users/pete/Code/capacitor",
-                    tty: "/dev/ttys020",
-                    parentApp: "iTerm2",
-                    tmuxSession: "caps",
-                    tmuxClientTty: "/dev/ttys002",
-                    updatedAt: Date(timeIntervalSince1970: 1_700_000_100),
-                ),
-            ],
-        )
-
-        let app = TerminalLauncher.resolvePreferredTerminalApp(
-            clientTty: "/dev/ttys002",
-            projectPath: "/Users/pete/Code/capacitor",
-            sessionName: "caps",
-            shellState: shellState,
-        )
-
-        XCTAssertEqual(app, .iTerm)
-    }
-
-    func testResolvePreferredTerminalAppFallsBackToSessionMatch() {
-        let shellState = ShellCwdState(
-            version: 1,
-            shells: [
-                "200": ShellEntry(
-                    cwd: "/Users/pete/Code/capacitor",
-                    tty: "/dev/ttys030",
-                    parentApp: "Terminal",
-                    tmuxSession: "caps",
-                    tmuxClientTty: nil,
-                    updatedAt: Date(timeIntervalSince1970: 1_700_000_200),
-                ),
-            ],
-        )
-
-        let app = TerminalLauncher.resolvePreferredTerminalApp(
-            clientTty: nil,
-            projectPath: "/Users/pete/Code/capacitor",
-            sessionName: "caps",
-            shellState: shellState,
-        )
-
-        XCTAssertEqual(app, .terminal)
-    }
-
-    func testResolvePreferredTmuxPanePrefersExactProjectPathInSharedSession() {
-        let shellState = ShellCwdState(
-            version: 1,
-            shells: [
-                "300": ShellEntry(
-                    cwd: "/Users/pete/Code/capacitor",
-                    tty: "/dev/ttys030",
-                    parentApp: "Ghostty",
-                    tmuxSession: "shared",
-                    tmuxClientTty: "/dev/ttys001",
-                    tmuxPane: "%1",
-                    updatedAt: Date(timeIntervalSince1970: 1_700_000_300),
-                ),
-                "301": ShellEntry(
-                    cwd: "/Users/pete/Code/sanctuary",
-                    tty: "/dev/ttys031",
-                    parentApp: "Ghostty",
-                    tmuxSession: "shared",
-                    tmuxClientTty: "/dev/ttys001",
-                    tmuxPane: "%2",
-                    updatedAt: Date(timeIntervalSince1970: 1_700_000_400),
-                ),
-            ],
-        )
-
-        let pane = TerminalLauncher.resolvePreferredTmuxPane(
-            clientTty: "/dev/ttys001",
-            projectPath: "/Users/pete/Code/sanctuary",
-            sessionName: "shared",
-            shellState: shellState,
-        )
-
-        XCTAssertEqual(pane, "%2")
     }
 
     func testEnsureAndSwitchSelectsPaneAfterSwitchingSession() async {

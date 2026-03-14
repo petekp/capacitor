@@ -15,6 +15,18 @@ Capacitor now uses an app-owned local runtime service (`hud-hook serve`) as the 
 
 ## Timeline
 
+### 2026-03-13 — Rust-Swift Boundary Legibility Cleanup
+
+**What changed:** Swift now has an explicit `ActivationPolicy` seam for activation intent, `TerminalLauncher` consumes one `activationIntentResolver` instead of four separate resolver callbacks, fake runtime-boundary names were removed from `RuntimeClient`, and the temporary `DebugShellStateCard` was deleted. The old Rust `runtime_activation` test-only shadow owner was retired.
+
+**Why:** The architecture review found that the main source of agent confusion was shadow ownership and fake boundaries, not execution correctness. The cleanup aligns the codebase with the real production lookup rule: Rust facts, Swift policy, Swift execution.
+
+**Agent impact:** If you need to answer "why did activation choose this app/session/pane?", start in `apps/swift/Sources/Capacitor/Models/ActivationPolicy.swift`. Do not look for a production Rust activation planner. If you touch `RuntimeClient`, keep Swift-local synthesis labeled as Swift-local.
+
+**Deprecated:** `core/capacitor-core/src/runtime_activation/mod.rs`, `fetchRuntimeConfig()`, `fetchCoreRoutingDiagnostics()`, and `DebugShellStateCard`.
+
+---
+
 ### 2026-03-13 — First-Class Host Adapters Closed Out
 
 **What changed:** `ScriptedTerminalDriver` was removed and replaced with `ITermTerminalDriver` and `TerminalAppTerminalDriver`. `TerminalActivationFailureReason` moved into a terminal-neutral home, AppState now uses terminal-aware failure copy, and the host launch path stopped using `System Events` keystrokes. iTerm now injects commands with `write text`; Terminal.app now uses `do script ... in front window`. Live proof now covers no-client attach-or-create plus existing-client focus for both host terminals.

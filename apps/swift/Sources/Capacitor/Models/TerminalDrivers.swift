@@ -102,6 +102,23 @@ final class GhosttyTerminalDriver: TerminalDriver {
             command: command,
         )
 
+        if isRunning() {
+            switch automationClient.readSnapshot() {
+            case let .success(snapshot):
+                if let targetWindowID = reusableWindowID(from: snapshot) {
+                    switch automationClient.createTab(inWindowID: targetWindowID, configuration: configuration) {
+                    case .success:
+                        return true
+                    case let .failure(reason):
+                        lastFailureReason = reason
+                        return false
+                    }
+                }
+            case .failure:
+                break
+            }
+        }
+
         switch automationClient.createWindow(configuration: configuration) {
         case .success:
             return true
@@ -153,6 +170,10 @@ final class GhosttyTerminalDriver: TerminalDriver {
             lastFailureReason = reason
             return false
         }
+    }
+
+    private func reusableWindowID(from snapshot: GhosttyAppSnapshot) -> String? {
+        snapshot.windows.first(where: \.isFront)?.id ?? snapshot.windows.first?.id
     }
 }
 

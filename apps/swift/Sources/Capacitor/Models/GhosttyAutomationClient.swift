@@ -19,6 +19,7 @@ struct GhosttySurfaceConfigurationOptions: Equatable {
 protocol GhosttyAutomationClient {
     func supportStatus() -> GhosttyAutomationSupportStatus
     func createWindow(configuration: GhosttySurfaceConfigurationOptions) -> Result<Void, TerminalActivationFailureReason>
+    func createTab(inWindowID windowID: String, configuration: GhosttySurfaceConfigurationOptions) -> Result<Void, TerminalActivationFailureReason>
     func readSnapshot() -> Result<GhosttyAppSnapshot, TerminalActivationFailureReason>
     func selectTab(id: String, inWindowID windowID: String) -> Result<Void, TerminalActivationFailureReason>
     func focusTerminal(id: String) -> Result<Void, TerminalActivationFailureReason>
@@ -111,6 +112,10 @@ struct DefaultGhosttyAutomationClient: GhosttyAutomationClient {
 
     func createWindow(configuration: GhosttySurfaceConfigurationOptions) -> Result<Void, TerminalActivationFailureReason> {
         runAction(Self.makeCreateWindowScript(configuration: configuration))
+    }
+
+    func createTab(inWindowID windowID: String, configuration: GhosttySurfaceConfigurationOptions) -> Result<Void, TerminalActivationFailureReason> {
+        runAction(Self.makeCreateTabScript(windowID: windowID, configuration: configuration))
     }
 
     func readSnapshot() -> Result<GhosttyAppSnapshot, TerminalActivationFailureReason> {
@@ -307,6 +312,10 @@ struct DefaultGhosttyAutomationClient: GhosttyAutomationClient {
         ghosttyCreateWindowAppleScript(configuration: configuration)
     }
 
+    private static func makeCreateTabScript(windowID: String, configuration: GhosttySurfaceConfigurationOptions) -> String {
+        ghosttyCreateTabAppleScript(windowID: windowID, configuration: configuration)
+    }
+
     private static let supportProbeScript = """
     tell application "Ghostty"
         count of windows
@@ -398,6 +407,31 @@ func ghosttyCreateWindowAppleScript(configuration: GhosttySurfaceConfigurationOp
     }
 
     lines.append("    new window with configuration launchConfig")
+    lines.append("end tell")
+
+    return lines.joined(separator: "\n")
+}
+
+func ghosttyCreateTabAppleScript(windowID: String, configuration: GhosttySurfaceConfigurationOptions) -> String {
+    var lines = [
+        "tell application \"Ghostty\"",
+        "    set launchConfig to new surface configuration",
+    ]
+
+    if let workingDirectory = configuration.initialWorkingDirectory?.trimmingCharacters(in: .whitespacesAndNewlines),
+       !workingDirectory.isEmpty
+    {
+        lines.append("    set initial working directory of launchConfig to \"\(appleScriptEscape(workingDirectory))\"")
+    }
+
+    if let initialInput = configuration.initialInput?.trimmingCharacters(in: .whitespacesAndNewlines),
+       !initialInput.isEmpty
+    {
+        lines.append("    set initial input of launchConfig to \"\(appleScriptEscape(initialInput))\" & linefeed")
+    }
+
+    lines.append("    set targetWindow to first window whose id is \"\(appleScriptEscape(windowID))\"")
+    lines.append("    new tab in targetWindow with configuration launchConfig")
     lines.append("end tell")
 
     return lines.joined(separator: "\n")

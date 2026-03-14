@@ -1,7 +1,7 @@
 //! Canonical Capacitor core runtime.
 //!
-//! This crate is the long-term source of truth for domain policy and
-//! projection exposed through UniFFI.
+//! This crate is the long-term source of truth for runtime facts, ingest,
+//! reducer/query state, and projections exposed through UniFFI.
 
 uniffi::setup_scaffolding!();
 
@@ -11,8 +11,6 @@ pub mod observation;
 pub mod projection;
 pub mod query;
 pub mod reduce;
-#[cfg(test)]
-mod runtime_activation;
 pub mod runtime_artifacts;
 pub mod runtime_boundaries;
 pub mod runtime_config;
