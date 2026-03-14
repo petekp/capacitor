@@ -157,3 +157,25 @@
 - iTerm existing-client focus proof captured
 - Terminal.app no-client attach-or-create proof captured
 - Terminal.app existing-client focus proof captured
+
+## 2026-03-13 Rigorous All-Terminals QA
+
+### Additional Live Evidence
+
+- Ghostty no-client attach-or-create proof:
+  - starting from zero tmux clients and a fresh Ghostty window on `pete-2025`, clicking `ax.project-card.pete-2025` made Ghostty frontmost.
+  - tmux client `/dev/ttys043` attached to session `dev`.
+  - app log captured `[TerminalLauncher] launchTerminalWithTmuxSession app=Ghostty session=dev path=/Users/petepetrash/Code/pete-2025`.
+- Ghostty existing-client session-switch proof:
+  - with Ghostty client `/dev/ttys043` already attached to `dev`, clicking `ax.project-card.sanctuary` kept Ghostty frontmost.
+  - the same tmux client moved to session `1`.
+- Ghostty stale-pane fallback proof rerun:
+  - created replacement pane `%22` in session `1`, killed routed pane `%5`, then clicked `ax.project-card.sanctuary`.
+  - app log captured `[TmuxRouter] stale pane during select-window pane=%5`.
+  - tmux client `/dev/ttys043` stayed on session `1` and landed on replacement pane `%22`.
+
+### QA Harness Note
+
+- During the Ghostty rerun pass, the app window briefly disappeared from the AX tree after a restart cycle.
+- Reopening the app from the Dock `Open` action restored the window and allowed the Ghostty card-click rerun to complete.
+- This was treated as a transient QA harness recovery step, not a terminal integration failure.
