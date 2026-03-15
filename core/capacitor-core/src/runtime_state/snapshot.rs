@@ -140,8 +140,18 @@ fn session_state_label(state: crate::domain::SessionState) -> &'static str {
 pub(crate) mod test_support {
     use std::io::{Read, Write};
     use std::net::TcpListener;
+    use std::sync::{Mutex, MutexGuard, OnceLock};
     use std::thread::{self, JoinHandle};
     use std::time::{Duration, Instant};
+
+    static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+    pub(crate) fn env_lock() -> MutexGuard<'static, ()> {
+        match ENV_LOCK.get_or_init(|| Mutex::new(())).lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        }
+    }
 
     #[derive(Debug, Clone)]
     pub(crate) struct MockRuntimeServiceRoute {
@@ -179,7 +189,10 @@ pub(crate) mod test_support {
             let auth_token = auth_token.to_string();
 
             let handle = thread::spawn(move || {
-                let deadline = Instant::now() + Duration::from_secs(3);
+                // Full cargo test runs can schedule the follow-up health probe a bit later
+                // than single-test runs, so keep this mock service alive long enough for
+                // multi-request callers to prove behavior without flaking on the harness.
+                let deadline = Instant::now() + Duration::from_secs(10);
                 let mut handled = 0usize;
 
                 while handled < routes.len() && Instant::now() < deadline {
@@ -292,16 +305,15 @@ pub(crate) mod test_support {
 
 #[cfg(test)]
 mod tests {
-    use super::test_support::{MockRuntimeService, MockRuntimeServiceRoute};
+    use super::test_support::{
+        env_lock as shared_env_lock, MockRuntimeService, MockRuntimeServiceRoute,
+    };
     use super::*;
     use crate::runtime_service::{RUNTIME_SERVICE_PORT_ENV, RUNTIME_SERVICE_TOKEN_ENV};
-    use std::sync::{Mutex, OnceLock};
 
     // Legacy env sentinel used to prove live runtime reads ignore the old
     // artifact-path boundary, even when a stale value is still present.
     const IGNORED_SNAPSHOT_ENV_NAME: &str = concat!("CAPACITOR_", "CORE_", "SNAPSHOT");
-
-    static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
     struct EnvGuard {
         key: &'static str,
@@ -333,10 +345,7 @@ mod tests {
     }
 
     fn env_lock() -> std::sync::MutexGuard<'static, ()> {
-        match ENV_LOCK.get_or_init(|| Mutex::new(())).lock() {
-            Ok(guard) => guard,
-            Err(poisoned) => poisoned.into_inner(),
-        }
+        shared_env_lock()
     }
 
     #[test]
@@ -467,6 +476,93 @@ mod tests {
         let _token = EnvGuard::set(RUNTIME_SERVICE_TOKEN_ENV, "health-token");
 
         assert_eq!(runtime_health(), Some(true));
+        runtime_service.finish();
+    }
+
+    #[test]
+    fn runtime_health_rejects_unexpected_protocol_version() {
+        let _guard = env_lock();
+        let runtime_service = MockRuntimeService::spawn(
+            "health-token",
+            vec![MockRuntimeServiceRoute::json(
+                "/health",
+                serde_json::json!({
+                    "status": "ok",
+                    "pid": 4242,
+                    "version": "runtime-service-test",
+                    "protocol_version": 99,
+                    "auth_mode": "bearer",
+                    "service_mode": "bootstrap_only"
+                }),
+            )],
+        );
+
+        let _enable = EnvGuard::set(ENABLE_ENV, "1");
+        let _port = EnvGuard::set(
+            RUNTIME_SERVICE_PORT_ENV,
+            &runtime_service.port().to_string(),
+        );
+        let _token = EnvGuard::set(RUNTIME_SERVICE_TOKEN_ENV, "health-token");
+
+        assert_eq!(runtime_health(), Some(false));
+        runtime_service.finish();
+    }
+
+    #[test]
+    fn runtime_health_rejects_unexpected_auth_mode() {
+        let _guard = env_lock();
+        let runtime_service = MockRuntimeService::spawn(
+            "health-token",
+            vec![MockRuntimeServiceRoute::json(
+                "/health",
+                serde_json::json!({
+                    "status": "ok",
+                    "pid": 4242,
+                    "version": "runtime-service-test",
+                    "protocol_version": 1,
+                    "auth_mode": "none",
+                    "service_mode": "bootstrap_only"
+                }),
+            )],
+        );
+
+        let _enable = EnvGuard::set(ENABLE_ENV, "1");
+        let _port = EnvGuard::set(
+            RUNTIME_SERVICE_PORT_ENV,
+            &runtime_service.port().to_string(),
+        );
+        let _token = EnvGuard::set(RUNTIME_SERVICE_TOKEN_ENV, "health-token");
+
+        assert_eq!(runtime_health(), Some(false));
+        runtime_service.finish();
+    }
+
+    #[test]
+    fn runtime_health_rejects_unexpected_service_mode() {
+        let _guard = env_lock();
+        let runtime_service = MockRuntimeService::spawn(
+            "health-token",
+            vec![MockRuntimeServiceRoute::json(
+                "/health",
+                serde_json::json!({
+                    "status": "ok",
+                    "pid": 4242,
+                    "version": "runtime-service-test",
+                    "protocol_version": 1,
+                    "auth_mode": "bearer",
+                    "service_mode": "daemon"
+                }),
+            )],
+        );
+
+        let _enable = EnvGuard::set(ENABLE_ENV, "1");
+        let _port = EnvGuard::set(
+            RUNTIME_SERVICE_PORT_ENV,
+            &runtime_service.port().to_string(),
+        );
+        let _token = EnvGuard::set(RUNTIME_SERVICE_TOKEN_ENV, "health-token");
+
+        assert_eq!(runtime_health(), Some(false));
         runtime_service.finish();
     }
 }

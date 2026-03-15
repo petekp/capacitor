@@ -396,15 +396,17 @@ final class HookServerManager {
             guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
                 return false
             }
-            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let status = json["status"] as? String
-            {
-                return status == "ok"
-            }
-            return false
+            return isCompatibleBootstrapServiceHealth(data)
         } catch {
             return false
         }
+    }
+
+    nonisolated static func isCompatibleBootstrapServiceHealth(_ data: Data) -> Bool {
+        guard let health = try? JSONDecoder().decode(RuntimeHealth.self, from: data) else {
+            return false
+        }
+        return health.isCompatibleBootstrapService
     }
 }
 

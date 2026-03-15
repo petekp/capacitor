@@ -146,7 +146,9 @@ impl RuntimeServiceEndpoint {
     }
 
     pub fn probe_health(&self) -> Result<RuntimeServiceHealth, String> {
-        self.get_json("/health")
+        let health: RuntimeServiceHealth = self.get_json("/health")?;
+        health.validate_bootstrap_contract()?;
+        Ok(health)
     }
 
     pub fn fetch_snapshot(&self) -> Result<AppSnapshot, String> {
@@ -382,6 +384,40 @@ pub struct RuntimeServiceHealth {
     pub service_mode: String,
 }
 
+impl RuntimeServiceHealth {
+    pub fn validate_bootstrap_contract(&self) -> Result<(), String> {
+        if self.status != "ok" {
+            return Err(format!(
+                "Unexpected runtime service health status {:?}; expected \"ok\"",
+                self.status
+            ));
+        }
+
+        if self.protocol_version != RUNTIME_SERVICE_PROTOCOL_VERSION {
+            return Err(format!(
+                "Unexpected runtime service protocol version {}; expected {}",
+                self.protocol_version, RUNTIME_SERVICE_PROTOCOL_VERSION
+            ));
+        }
+
+        if self.auth_mode != RUNTIME_SERVICE_AUTH_MODE {
+            return Err(format!(
+                "Unexpected runtime service auth mode {:?}; expected {:?}",
+                self.auth_mode, RUNTIME_SERVICE_AUTH_MODE
+            ));
+        }
+
+        if self.service_mode != RUNTIME_SERVICE_MODE_BOOTSTRAP_ONLY {
+            return Err(format!(
+                "Unexpected runtime service mode {:?}; expected {:?}",
+                self.service_mode, RUNTIME_SERVICE_MODE_BOOTSTRAP_ONLY
+            ));
+        }
+
+        Ok(())
+    }
+}
+
 pub struct RuntimeServiceTokenGuard {
     paths: Vec<PathBuf>,
 }
@@ -408,7 +444,10 @@ fn env_flag(key: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{RuntimeServiceBootstrap, RUNTIME_SERVICE_PROTOCOL_VERSION};
+    use super::{
+        RuntimeServiceBootstrap, RuntimeServiceHealth, RUNTIME_SERVICE_AUTH_MODE,
+        RUNTIME_SERVICE_MODE_BOOTSTRAP_ONLY, RUNTIME_SERVICE_PROTOCOL_VERSION,
+    };
 
     #[test]
     fn bootstrap_requires_matching_bearer_token() {
@@ -434,5 +473,36 @@ mod tests {
             "version should identify the service shell: {}",
             health.version
         );
+    }
+
+    #[test]
+    fn validate_bootstrap_contract_accepts_expected_health_shape() {
+        let health = RuntimeServiceHealth {
+            status: "ok".to_string(),
+            pid: 4242,
+            version: "runtime-service-test".to_string(),
+            protocol_version: RUNTIME_SERVICE_PROTOCOL_VERSION,
+            auth_mode: RUNTIME_SERVICE_AUTH_MODE.to_string(),
+            service_mode: RUNTIME_SERVICE_MODE_BOOTSTRAP_ONLY.to_string(),
+        };
+
+        assert!(health.validate_bootstrap_contract().is_ok());
+    }
+
+    #[test]
+    fn validate_bootstrap_contract_rejects_mismatched_auth_mode() {
+        let health = RuntimeServiceHealth {
+            status: "ok".to_string(),
+            pid: 4242,
+            version: "runtime-service-test".to_string(),
+            protocol_version: RUNTIME_SERVICE_PROTOCOL_VERSION,
+            auth_mode: "none".to_string(),
+            service_mode: RUNTIME_SERVICE_MODE_BOOTSTRAP_ONLY.to_string(),
+        };
+
+        let error = health
+            .validate_bootstrap_contract()
+            .expect_err("mismatched auth mode should fail");
+        assert!(error.contains("auth mode"), "unexpected error: {error}");
     }
 }

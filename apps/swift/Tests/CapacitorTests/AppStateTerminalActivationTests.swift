@@ -34,7 +34,7 @@ final class AppStateTerminalActivationTests: XCTestCase {
                     return (Data(json.utf8), response)
                 case "/health":
                     let json = """
-                    {"status":"ok","pid":4242,"version":"runtime-service-v1","protocol_version":1}
+                    {"status":"ok","pid":4242,"version":"runtime-service-v1","protocol_version":1,"auth_mode":"bearer","service_mode":"bootstrap_only"}
                     """
                     return (Data(json.utf8), response)
                 default:

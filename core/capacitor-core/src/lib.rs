@@ -951,7 +951,7 @@ mod tests {
     };
     use crate::runtime_service::{RUNTIME_SERVICE_PORT_ENV, RUNTIME_SERVICE_TOKEN_ENV};
     use crate::runtime_state::snapshot::test_support::{
-        MockRuntimeService, MockRuntimeServiceRoute,
+        env_lock as shared_env_lock, MockRuntimeService, MockRuntimeServiceRoute,
     };
     use crate::runtime_state::snapshot::{RuntimeSessionRecord, RuntimeSessionsSnapshot};
     use crate::runtime_storage::StorageConfig;
@@ -959,10 +959,9 @@ mod tests {
     use crate::storage::InMemorySnapshotStorage;
     use chrono::{Duration, Utc};
     use std::fs;
-    use std::sync::{Arc, Mutex, OnceLock};
+    use std::sync::Arc;
     use tempfile::TempDir;
 
-    static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
     const IGNORED_SNAPSHOT_ENV_NAME: &str = concat!("CAPACITOR_", "CORE_", "SNAPSHOT");
 
     struct EnvVarGuard {
@@ -989,10 +988,7 @@ mod tests {
     }
 
     fn env_lock() -> std::sync::MutexGuard<'static, ()> {
-        match ENV_LOCK.get_or_init(|| Mutex::new(())).lock() {
-            Ok(guard) => guard,
-            Err(poisoned) => poisoned.into_inner(),
-        }
+        shared_env_lock()
     }
 
     #[test]

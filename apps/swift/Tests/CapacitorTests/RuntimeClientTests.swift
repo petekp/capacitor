@@ -325,7 +325,114 @@ final class RuntimeClientTests: XCTestCase {
 
         XCTAssertEqual(health.status, "ok")
         XCTAssertEqual(health.protocolVersion, 1)
+        XCTAssertEqual(health.authMode, "bearer")
+        XCTAssertEqual(health.serviceMode, "bootstrap_only")
         XCTAssertTrue(health.version.contains("runtime-service"))
+    }
+
+    func testFetchHealthRejectsUnexpectedProtocolVersion() async throws {
+        let client = try RuntimeClient(
+            runtimeServiceConnectionOverride: RuntimeServiceConnection(
+                baseURL: XCTUnwrap(URL(string: "http://127.0.0.1:7812")),
+                bearerToken: "service-secret",
+            ),
+            sendRequest: { request in
+                let response = try XCTUnwrap(
+                    HTTPURLResponse(
+                        url: request.url!,
+                        statusCode: 200,
+                        httpVersion: nil,
+                        headerFields: ["Content-Type": "application/json"],
+                    ),
+                )
+                let json = """
+                {"status":"ok","pid":4242,"version":"runtime-service-v1","protocol_version":99,"auth_mode":"bearer","service_mode":"bootstrap_only"}
+                """
+                return (Data(json.utf8), response)
+            },
+        )
+
+        do {
+            _ = try await client.fetchHealth()
+            XCTFail("expected runtimeUnavailable for mismatched protocol version")
+        } catch let error as RuntimeClientError {
+            switch error {
+            case let .runtimeUnavailable(message):
+                XCTAssertTrue(message.contains("health"), "message mismatch: \(message)")
+            default:
+                XCTFail("unexpected RuntimeClientError: \(error)")
+            }
+        }
+    }
+
+    func testFetchHealthRejectsUnexpectedAuthMode() async throws {
+        let client = try RuntimeClient(
+            runtimeServiceConnectionOverride: RuntimeServiceConnection(
+                baseURL: XCTUnwrap(URL(string: "http://127.0.0.1:7812")),
+                bearerToken: "service-secret",
+            ),
+            sendRequest: { request in
+                let response = try XCTUnwrap(
+                    HTTPURLResponse(
+                        url: request.url!,
+                        statusCode: 200,
+                        httpVersion: nil,
+                        headerFields: ["Content-Type": "application/json"],
+                    ),
+                )
+                let json = """
+                {"status":"ok","pid":4242,"version":"runtime-service-v1","protocol_version":1,"auth_mode":"none","service_mode":"bootstrap_only"}
+                """
+                return (Data(json.utf8), response)
+            },
+        )
+
+        do {
+            _ = try await client.fetchHealth()
+            XCTFail("expected runtimeUnavailable for mismatched auth mode")
+        } catch let error as RuntimeClientError {
+            switch error {
+            case let .runtimeUnavailable(message):
+                XCTAssertTrue(message.contains("health"), "message mismatch: \(message)")
+            default:
+                XCTFail("unexpected RuntimeClientError: \(error)")
+            }
+        }
+    }
+
+    func testFetchHealthRejectsUnexpectedServiceMode() async throws {
+        let client = try RuntimeClient(
+            runtimeServiceConnectionOverride: RuntimeServiceConnection(
+                baseURL: XCTUnwrap(URL(string: "http://127.0.0.1:7812")),
+                bearerToken: "service-secret",
+            ),
+            sendRequest: { request in
+                let response = try XCTUnwrap(
+                    HTTPURLResponse(
+                        url: request.url!,
+                        statusCode: 200,
+                        httpVersion: nil,
+                        headerFields: ["Content-Type": "application/json"],
+                    ),
+                )
+                let json = """
+                {"status":"ok","pid":4242,"version":"runtime-service-v1","protocol_version":1,"auth_mode":"bearer","service_mode":"daemon"}
+                """
+                return (Data(json.utf8), response)
+            },
+        )
+
+        do {
+            _ = try await client.fetchHealth()
+            XCTFail("expected runtimeUnavailable for mismatched service mode")
+        } catch let error as RuntimeClientError {
+            switch error {
+            case let .runtimeUnavailable(message):
+                XCTAssertTrue(message.contains("health"), "message mismatch: \(message)")
+            default:
+                XCTFail("unexpected RuntimeClientError: \(error)")
+            }
+        }
     }
 
     private func makeClient(
@@ -350,7 +457,7 @@ final class RuntimeClientTests: XCTestCase {
                 switch request.url?.path {
                 case "/health":
                     let json = """
-                    {"status":"ok","pid":4242,"version":"runtime-service-v1","protocol_version":1}
+                    {"status":"ok","pid":4242,"version":"runtime-service-v1","protocol_version":1,"auth_mode":"bearer","service_mode":"bootstrap_only"}
                     """
                     return (Data(json.utf8), response)
                 case "/runtime/routing/resolve":

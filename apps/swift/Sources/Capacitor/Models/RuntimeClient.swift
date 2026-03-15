@@ -5,6 +5,8 @@ struct RuntimeHealth: Decodable {
     let pid: Int
     let version: String
     let protocolVersion: Int
+    let authMode: String
+    let serviceMode: String
     let security: RuntimeSecurityHealth?
     let runtime: RuntimeEngineHealth?
     let routing: RuntimeRoutingHealth?
@@ -14,6 +16,8 @@ struct RuntimeHealth: Decodable {
         pid: Int,
         version: String,
         protocolVersion: Int,
+        authMode: String,
+        serviceMode: String,
         security: RuntimeSecurityHealth? = nil,
         runtime: RuntimeEngineHealth? = nil,
         routing: RuntimeRoutingHealth? = nil,
@@ -22,6 +26,8 @@ struct RuntimeHealth: Decodable {
         self.pid = pid
         self.version = version
         self.protocolVersion = protocolVersion
+        self.authMode = authMode
+        self.serviceMode = serviceMode
         self.security = security
         self.runtime = runtime
         self.routing = routing
@@ -30,6 +36,31 @@ struct RuntimeHealth: Decodable {
     enum CodingKeys: String, CodingKey {
         case status, pid, version, security, runtime, routing
         case protocolVersion = "protocol_version"
+        case authMode = "auth_mode"
+        case serviceMode = "service_mode"
+    }
+
+    var isCompatibleBootstrapService: Bool {
+        status == "ok" &&
+            protocolVersion == 1 &&
+            authMode == "bearer" &&
+            serviceMode == "bootstrap_only"
+    }
+
+    var bootstrapContractMismatchDescription: String {
+        if status != "ok" {
+            return "unexpected status \(status)"
+        }
+        if protocolVersion != 1 {
+            return "unexpected protocol version \(protocolVersion)"
+        }
+        if authMode != "bearer" {
+            return "unexpected auth mode \(authMode)"
+        }
+        if serviceMode != "bootstrap_only" {
+            return "unexpected service mode \(serviceMode)"
+        }
+        return "unknown runtime health contract mismatch"
     }
 }
 
@@ -668,7 +699,13 @@ final class RuntimeClient {
                     "Runtime service health request failed for \(request.url?.absoluteString ?? "unknown")",
                 )
             }
-            return try JSONDecoder().decode(RuntimeHealth.self, from: data)
+            let health = try JSONDecoder().decode(RuntimeHealth.self, from: data)
+            guard health.isCompatibleBootstrapService else {
+                throw RuntimeClientError.runtimeUnavailable(
+                    "Unexpected runtime service health contract: \(health.bootstrapContractMismatchDescription)",
+                )
+            }
+            return health
         } catch let error as RuntimeClientError {
             throw error
         } catch {

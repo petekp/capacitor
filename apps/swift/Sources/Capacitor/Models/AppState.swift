@@ -683,7 +683,7 @@ class AppState {
                 await MainActor.run {
                     self.runtimeStatus = RuntimeStatus(
                         isEnabled: true,
-                        isHealthy: health.status == "ok",
+                        isHealthy: health.isCompatibleBootstrapService,
                         message: "Local runtime service healthy",
                         pid: health.pid,
                         version: health.version,

@@ -82,6 +82,98 @@ def verify_runtime_service_endpoints(runtime_client, hook_manager, violations):
         )
 
 
+def verify_runtime_health_contract(repo_root, violations):
+    runtime_client_source = (
+        repo_root / "apps/swift/Sources/Capacitor/Models/RuntimeClient.swift"
+    ).read_text()
+    hook_manager_source = (
+        repo_root / "apps/swift/Sources/Capacitor/Models/HookServerManager.swift"
+    ).read_text()
+    app_state_source = (
+        repo_root / "apps/swift/Sources/Capacitor/Models/AppState.swift"
+    ).read_text()
+    runtime_service_source = (
+        repo_root / "core/capacitor-core/src/runtime_service/mod.rs"
+    ).read_text()
+
+    if re.search(r'case authMode = "auth_mode"[\s\S]*case serviceMode = "service_mode"', runtime_client_source) is None:
+        violations.append(
+            violation(
+                "runtime_health_wire_contract_gap",
+                "Swift runtime health model no longer decodes auth_mode and service_mode",
+                "Swift health consumers must decode the full runtime bootstrap contract so they can reject unauthenticated or non-bootstrap services.",
+                path="apps/swift/Sources/Capacitor/Models/RuntimeClient.swift",
+                fix="Restore auth_mode/service_mode decoding and keep the runtime health contract explicit.",
+            )
+        )
+
+    if "isCompatibleBootstrapService" not in runtime_client_source:
+        violations.append(
+            violation(
+                "runtime_health_validation_helper_missing",
+                "Swift runtime health compatibility helper is missing",
+                "RuntimeClient should centralize runtime bootstrap contract validation instead of leaving lifecycle code to reinterpret health payloads ad hoc.",
+                path="apps/swift/Sources/Capacitor/Models/RuntimeClient.swift",
+                fix="Restore RuntimeHealth.isCompatibleBootstrapService or an equivalent shared validation seam intentionally.",
+            )
+        )
+
+    if re.search(r"fetchServiceHealth\(\)[\s\S]*isCompatibleBootstrapService", runtime_client_source) is None:
+        violations.append(
+            violation(
+                "runtime_client_health_contract_not_enforced",
+                "RuntimeClient no longer rejects unexpected runtime health contracts",
+                "RuntimeClient.fetchHealth should fail when the runtime service reports the wrong protocol, auth mode, or service mode.",
+                path="apps/swift/Sources/Capacitor/Models/RuntimeClient.swift",
+                fix="Validate the decoded RuntimeHealth payload before returning it to callers.",
+            )
+        )
+
+    if re.search(r"isCompatibleBootstrapServiceHealth[\s\S]*isCompatibleBootstrapService", hook_manager_source) is None:
+        violations.append(
+            violation(
+                "hook_server_manager_health_contract_not_enforced",
+                "HookServerManager no longer validates the full runtime bootstrap health contract",
+                "HookServerManager readiness and adoption checks should only succeed for the authenticated bootstrap runtime service, not any server that returns status=ok.",
+                path="apps/swift/Sources/Capacitor/Models/HookServerManager.swift",
+                fix="Decode RuntimeHealth and require isCompatibleBootstrapService in HookServerManager.fetchHealth.",
+            )
+        )
+
+    if "health.isCompatibleBootstrapService" not in app_state_source:
+        violations.append(
+            violation(
+                "app_state_health_status_only",
+                "AppState no longer records runtime health via the shared bootstrap contract helper",
+                "AppState should derive RuntimeStatus.isHealthy from the same validated health contract the runtime client enforces.",
+                path="apps/swift/Sources/Capacitor/Models/AppState.swift",
+                fix="Use health.isCompatibleBootstrapService when updating RuntimeStatus.",
+            )
+        )
+
+    if "validate_bootstrap_contract" not in runtime_service_source:
+        violations.append(
+            violation(
+                "rust_runtime_health_validation_helper_missing",
+                "Rust runtime-service health validation helper is missing",
+                "Rust callers should centralize runtime bootstrap contract validation so runtime_health cannot accept protocol/auth drift silently.",
+                path="core/capacitor-core/src/runtime_service/mod.rs",
+                fix="Restore RuntimeServiceHealth::validate_bootstrap_contract or an equivalent helper intentionally.",
+            )
+        )
+
+    if re.search(r"probe_health\(&self\) -> Result<RuntimeServiceHealth, String>\s*\{[\s\S]*validate_bootstrap_contract\(\)\?;", runtime_service_source) is None:
+        violations.append(
+            violation(
+                "rust_probe_health_contract_not_enforced",
+                "Rust runtime-service probe no longer validates the bootstrap contract",
+                "RuntimeServiceEndpoint::probe_health should reject non-bootstrap or unauthenticated health payloads instead of treating any 200 JSON response as healthy.",
+                path="core/capacitor-core/src/runtime_service/mod.rs",
+                fix="Call validate_bootstrap_contract from probe_health before returning success.",
+            )
+        )
+
+
 def verify_activation_policy_guards(repo_root, violations):
     activation_policy_source = (
         repo_root / "apps/swift/Sources/Capacitor/Models/ActivationPolicy.swift"
@@ -149,6 +241,78 @@ def verify_activation_policy_test_proofs(repo_root, violations):
                     diagnosis,
                     path="apps/swift/Tests/CapacitorTests/ActivationPolicyTests.swift",
                     fix="Add or tighten the named ActivationPolicy regression test so it proves shell evidence is ignored for terminal-app ranking when runtime routing is missing.",
+                )
+            )
+
+
+def verify_runtime_health_test_proofs(repo_root, violations):
+    runtime_snapshot_tests = (
+        repo_root / "core/capacitor-core/src/runtime_state/snapshot.rs"
+    ).read_text()
+    runtime_client_tests = (
+        repo_root / "apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift"
+    ).read_text()
+    hook_manager_tests = (
+        repo_root / "apps/swift/Tests/CapacitorTests/HookServerManagerTests.swift"
+    ).read_text()
+
+    required_rust_tests = {
+        "runtime_health_rejects_unexpected_protocol_version":
+            "Rust health checks should reject mismatched protocol versions.",
+        "runtime_health_rejects_unexpected_auth_mode":
+            "Rust health checks should reject non-bearer auth modes.",
+        "runtime_health_rejects_unexpected_service_mode":
+            "Rust health checks should reject non-bootstrap service modes.",
+    }
+    for test_name, diagnosis in required_rust_tests.items():
+        if f"fn {test_name}()" not in runtime_snapshot_tests:
+            violations.append(
+                violation(
+                    "runtime_health_rust_test_gap",
+                    "Rust runtime health contract proof is incomplete",
+                    diagnosis,
+                    path="core/capacitor-core/src/runtime_state/snapshot.rs",
+                    fix="Restore the named runtime health regression test so protocol/auth/service-mode drift stays executable.",
+                )
+            )
+
+    required_swift_tests = {
+        "testFetchHealthRejectsUnexpectedProtocolVersion":
+            "RuntimeClient should reject mismatched protocol versions.",
+        "testFetchHealthRejectsUnexpectedAuthMode":
+            "RuntimeClient should reject unexpected auth modes.",
+        "testFetchHealthRejectsUnexpectedServiceMode":
+            "RuntimeClient should reject unexpected service modes.",
+    }
+    for test_name, diagnosis in required_swift_tests.items():
+        if f"func {test_name}()" not in runtime_client_tests:
+            violations.append(
+                violation(
+                    "runtime_health_swift_test_gap",
+                    "Swift runtime health contract proof is incomplete",
+                    diagnosis,
+                    path="apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift",
+                    fix="Restore the named RuntimeClient regression test so health contract drift stays executable.",
+                )
+            )
+
+    required_hook_manager_tests = {
+        "testBootstrapHealthPayloadRejectsUnexpectedProtocolVersion":
+            "HookServerManager readiness checks should reject mismatched protocol versions.",
+        "testBootstrapHealthPayloadRejectsUnexpectedAuthMode":
+            "HookServerManager readiness checks should reject unexpected auth modes.",
+        "testBootstrapHealthPayloadRejectsUnexpectedServiceMode":
+            "HookServerManager readiness checks should reject unexpected service modes.",
+    }
+    for test_name, diagnosis in required_hook_manager_tests.items():
+        if f"func {test_name}()" not in hook_manager_tests:
+            violations.append(
+                violation(
+                    "hook_server_manager_health_test_gap",
+                    "HookServerManager bootstrap health proof is incomplete",
+                    diagnosis,
+                    path="apps/swift/Tests/CapacitorTests/HookServerManagerTests.swift",
+                    fix="Restore the named HookServerManager regression test so server adoption and readiness cannot regress to status-only checks silently.",
                 )
             )
 
@@ -253,9 +417,11 @@ def verify(facts):
     reducer_module = module_by_path(facts, "core/capacitor-core/src/reduce/mod.rs")
     serve_module = module_by_path(facts, "core/hud-hook/src/serve.rs")
     verify_runtime_service_endpoints(runtime_client, hook_manager, violations)
+    verify_runtime_health_contract(repo_root, violations)
     verify_reducer_tmux_ownership(reducer_module, violations)
     verify_activation_policy_guards(repo_root, violations)
     verify_activation_policy_test_proofs(repo_root, violations)
+    verify_runtime_health_test_proofs(repo_root, violations)
     if not module_has_regex(serve_module, "http_routes", r"^/runtime/routing/resolve$"):
         violations.append(
             violation(
