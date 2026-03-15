@@ -98,21 +98,6 @@ struct TmuxRouter {
         return firstTty
     }
 
-    func findSessionForPath(_ projectPath: String) async -> String? {
-        let result = await runScript("tmux list-panes -a -F '#{session_name}\t#{pane_current_path}' 2>/dev/null")
-        guard result.exitCode == 0,
-              let output = result.output
-        else {
-            return nil
-        }
-
-        return Self.bestSessionForPath(
-            output: output,
-            projectPath: projectPath,
-            homeDirectory: homeDirectoryProvider(),
-        )
-    }
-
     func pollForNewClient(
         maxAttempts: Int = 20,
         intervalNanoseconds: UInt64 = 500_000_000,
@@ -148,91 +133,6 @@ struct TmuxRouter {
             return "tmux new-session -A -s \(escapedSession) -c \(shellEscape(projectPath))"
         }
         return "tmux new-session -A -s \(escapedSession)"
-    }
-
-    static func bestSessionForPath(output: String, projectPath: String, homeDirectory: String) -> String? {
-        func normalizePath(_ path: String) -> String {
-            if path == "/" { return "/" }
-            var normalized = path
-            while normalized.hasSuffix("/"), normalized != "/" {
-                normalized.removeLast()
-            }
-            return normalized.lowercased()
-        }
-
-        func managedWorktreeRoot(_ path: String) -> String? {
-            let marker = "/.capacitor/worktrees/"
-            guard let markerRange = path.range(of: marker) else { return nil }
-            let worktreeNameStart = markerRange.upperBound
-            guard worktreeNameStart < path.endIndex else { return nil }
-
-            let suffix = path[worktreeNameStart...]
-            guard let nextSlash = suffix.firstIndex(of: "/") else {
-                return path
-            }
-
-            return String(path[..<nextSlash])
-        }
-
-        func isWithinPath(_ candidate: String, root: String) -> Bool {
-            candidate == root || candidate.hasPrefix(root + "/")
-        }
-
-        func matchRank(shellPath: String, projectPath: String, homeDir: String) -> Int? {
-            if shellPath == projectPath {
-                return 2
-            }
-
-            let (shorter, longer) = shellPath.count < projectPath.count
-                ? (shellPath, projectPath)
-                : (projectPath, shellPath)
-
-            if shorter == homeDir {
-                return nil
-            }
-
-            guard longer.hasPrefix(shorter + "/") else { return nil }
-            return shorter == projectPath ? 1 : 0
-        }
-
-        let normalizedProjectPath = normalizePath(projectPath)
-        let homeDir = normalizePath(homeDirectory)
-        let projectManagedRoot = managedWorktreeRoot(normalizedProjectPath)
-        var bestMatch: (rank: Int, session: String)?
-
-        for line in output.split(separator: "\n") {
-            let parts = line.split(separator: "\t", maxSplits: 1)
-            guard parts.count == 2 else { continue }
-
-            let sessionName = String(parts[0])
-            let panePath = normalizePath(String(parts[1]))
-            let paneManagedRoot = managedWorktreeRoot(panePath)
-
-            if let projectManagedRoot {
-                if paneManagedRoot != projectManagedRoot || !isWithinPath(panePath, root: projectManagedRoot) {
-                    continue
-                }
-            } else if paneManagedRoot != nil {
-                continue
-            }
-
-            guard let rank = matchRank(
-                shellPath: panePath,
-                projectPath: normalizedProjectPath,
-                homeDir: homeDir,
-            ) else {
-                continue
-            }
-
-            if bestMatch == nil || rank > bestMatch!.rank {
-                bestMatch = (rank, sessionName)
-                if rank == 2 {
-                    break
-                }
-            }
-        }
-
-        return bestMatch?.session
     }
 
     private func selectPaneIfNeeded(_ targetPane: String?) async -> Bool {

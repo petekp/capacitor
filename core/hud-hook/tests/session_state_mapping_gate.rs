@@ -1,6 +1,6 @@
 mod common;
 
-use common::{free_port, post_hook, read_snapshot, unique_temp_dir, ServerGuard};
+use common::{post_hook, read_snapshot, unique_temp_dir, ServerGuard};
 use serde_json::json;
 
 struct MappingCase {
@@ -104,10 +104,7 @@ fn session_state_mapping_gate_ss_p0_1_exhaustive_known_hook_events_map_to_expect
     for case in cases {
         let temp_dir = unique_temp_dir("hud-hook-mapping-gate");
         let snapshot_path = temp_dir.join("snapshot.json");
-        let port = free_port();
-
-        let _guard = ServerGuard::spawn(port, &temp_dir, &snapshot_path);
-        ServerGuard::wait_ready(port);
+        let (_guard, port) = ServerGuard::spawn_ready(&temp_dir, &snapshot_path);
 
         let mut input = json!({
             "hook_event_name": case.hook_event_name,
@@ -153,10 +150,7 @@ fn session_state_mapping_gate_ss_p0_1_exhaustive_known_hook_events_map_to_expect
 fn session_state_mapping_gate_ss_p0_1_unknown_event_is_unhandled_unknown_and_not_persisted() {
     let temp_dir = unique_temp_dir("hud-hook-mapping-unknown");
     let snapshot_path = temp_dir.join("snapshot.json");
-    let port = free_port();
-
-    let _guard = ServerGuard::spawn(port, &temp_dir, &snapshot_path);
-    ServerGuard::wait_ready(port);
+    let (_guard, port) = ServerGuard::spawn_ready(&temp_dir, &snapshot_path);
 
     let (status, _) = post_hook(
         port,
@@ -178,10 +172,7 @@ fn session_state_mapping_gate_ss_p0_1_unknown_event_is_unhandled_unknown_and_not
 fn session_state_mapping_gate_ss_p1_1_subagent_stop_is_isolated_from_parent_state() {
     let temp_dir = unique_temp_dir("hud-hook-subagent-stop");
     let snapshot_path = temp_dir.join("snapshot.json");
-    let port = free_port();
-
-    let _guard = ServerGuard::spawn(port, &temp_dir, &snapshot_path);
-    ServerGuard::wait_ready(port);
+    let (_guard, port) = ServerGuard::spawn_ready(&temp_dir, &snapshot_path);
 
     let (status1, _) = post_hook(
         port,
@@ -214,10 +205,7 @@ fn session_state_mapping_gate_ss_p1_1_subagent_stop_is_isolated_from_parent_stat
 fn session_state_mapping_gate_ss_p1_2_unknown_notification_type_is_non_mutating_but_persisted() {
     let temp_dir = unique_temp_dir("hud-hook-unknown-notification");
     let snapshot_path = temp_dir.join("snapshot.json");
-    let port = free_port();
-
-    let _guard = ServerGuard::spawn(port, &temp_dir, &snapshot_path);
-    ServerGuard::wait_ready(port);
+    let (_guard, port) = ServerGuard::spawn_ready(&temp_dir, &snapshot_path);
 
     let (status, _) = post_hook(
         port,
@@ -241,10 +229,7 @@ fn session_state_mapping_gate_ss_p2_2_cli_determinism_same_input_yields_same_sta
 
     for idx in 0..2 {
         let snapshot_path = temp_dir.join(format!("snapshot-{}.json", idx));
-        let port = free_port();
-
-        let _guard = ServerGuard::spawn(port, &temp_dir, &snapshot_path);
-        ServerGuard::wait_ready(port);
+        let (_guard, port) = ServerGuard::spawn_ready(&temp_dir, &snapshot_path);
 
         let (status, _) = post_hook(
             port,

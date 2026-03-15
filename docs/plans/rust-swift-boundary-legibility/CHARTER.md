@@ -11,7 +11,7 @@ Converge the Rust-Swift activation boundary onto Option 2 (`Core Facts, Swift Po
 
 ## Critical Workflows
 - Clicking a project card reuses the routed tmux pane when the runtime route already has pane metadata
-- Attached tmux activation still reaches the correct host terminal when the runtime route has `terminal_app = nil`
+- Attached tmux activation preserves runtime route hints when `terminal_app = nil` and uses explicit local fallback instead of shell reconstruction
 - Detached direct-shell activation respects runtime-emitted host-terminal facts
 - No-client activation still attaches or creates the correct tmux session without changing visible behavior
 - Fallback terminal selection remains deterministic and user-visible when no stronger signal exists
@@ -65,7 +65,7 @@ Converge the Rust-Swift activation boundary onto Option 2 (`Core Facts, Swift Po
 - `swift build --package-path apps/swift`
 
 ### Manual Checks
-- Click a project whose attached tmux route has `terminal_app = nil`; the app still reaches the expected host terminal and records a Swift-policy reason.
+- Click a project whose attached tmux route has `terminal_app = nil`; the app preserves the routed session/pane hints, uses the explicit fallback ladder for terminal choice, and records a Swift-policy reason.
 - Click a project with a detached direct-shell route; the routed terminal app still wins over local fallback.
 - Trigger a no-client activation path; the chosen fallback terminal matches the explicit policy ladder.
 - Inspect debug or log output after activation; wording clearly separates runtime facts from Swift policy interpretation.

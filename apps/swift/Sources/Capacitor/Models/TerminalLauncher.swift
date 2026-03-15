@@ -92,8 +92,8 @@ final class TerminalLauncher {
 
     private let appleScript: AppleScriptClient
     private let ghosttyAutomationClient: GhosttyAutomationClient
-    var activationIntentResolver: ((String?, String, String?) -> ActivationPolicyIntent)?
-    private let fallbackTmuxSessionResolver: ((String) async -> String?)?
+    var activationIntentResolver: ((String?, String, String?) async -> ActivationPolicyIntent)?
+    private let sessionResolutionPolicy: SessionResolutionPolicy
     /// Override for the unified activation flow. Tests use this to intercept card-click behavior.
     private let activateProjectSessionOverride: ((String, String) async -> Bool)?
 
@@ -118,7 +118,14 @@ final class TerminalLauncher {
             guard let self else {
                 return URL(fileURLWithPath: project.path).lastPathComponent
             }
-            return await resolveSessionName(for: project)
+            return await sessionResolutionPolicy.chooseSessionName(
+                projectPath: project.path,
+                routedSessionName: resolveActivationIntent(
+                    clientTty: nil,
+                    projectPath: project.path,
+                    sessionName: nil,
+                ).sessionName,
+            )
         },
         runResolvedActivation: { [weak self] sessionName, projectPath in
             guard let self else { return false }
@@ -139,12 +146,12 @@ final class TerminalLauncher {
     init(
         appleScript: AppleScriptClient = DefaultAppleScriptClient(),
         ghosttyAutomationClient: GhosttyAutomationClient? = nil,
-        fallbackTmuxSessionResolver: ((String) async -> String?)? = nil,
+        sessionResolutionPolicy: SessionResolutionPolicy = SessionResolutionPolicy(),
         activateProjectSessionOverride: ((String, String) async -> Bool)? = nil,
     ) {
         self.appleScript = appleScript
         self.ghosttyAutomationClient = ghosttyAutomationClient ?? DefaultGhosttyAutomationClient(appleScript: appleScript)
-        self.fallbackTmuxSessionResolver = fallbackTmuxSessionResolver
+        self.sessionResolutionPolicy = sessionResolutionPolicy
         self.activateProjectSessionOverride = activateProjectSessionOverride
     }
 
@@ -170,29 +177,6 @@ final class TerminalLauncher {
 
     func launchTerminal(for project: Project) {
         activationCoordinator.launchTerminal(for: project)
-    }
-
-    /// Resolve a tmux session name for a project.
-    /// Prefers an existing tmux session matching the project path; falls back to project slug.
-    private func resolveSessionName(for project: Project) async -> String {
-        if let resolved = resolveActivationIntent(
-            clientTty: nil,
-            projectPath: project.path,
-            sessionName: nil,
-        ).sessionName {
-            return resolved
-        }
-        if let resolver = fallbackTmuxSessionResolver,
-           let resolved = await resolver(project.path),
-           !resolved.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        {
-            return resolved.trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        if let existing = await findTmuxSessionForPath(project.path) {
-            return existing
-        }
-        // Default: use project directory name as session name
-        return URL(fileURLWithPath: project.path).lastPathComponent
     }
 
     /// Instance method that wires real dependencies into the shared coordinator flow.
@@ -236,7 +220,7 @@ final class TerminalLauncher {
                 )
             },
             resolveTargetPane: { [weak self] clientTty in
-                self?.resolveActivationIntent(
+                await self?.resolveActivationIntent(
                     clientTty: clientTty,
                     projectPath: projectPath,
                     sessionName: sessionName,
@@ -262,7 +246,7 @@ final class TerminalLauncher {
     // MARK: - Tmux Helpers
 
     private func launchTerminalWithTmuxSession(_ session: String, projectPath: String? = nil) async -> Bool {
-        let app = resolveActivationIntent(
+        let app = await resolveActivationIntent(
             clientTty: nil,
             projectPath: projectPath ?? "",
             sessionName: session,
@@ -277,18 +261,6 @@ final class TerminalLauncher {
         return launched
     }
 
-    private func findTmuxSessionForPath(_ projectPath: String) async -> String? {
-        await tmuxRouter.findSessionForPath(projectPath)
-    }
-
-    nonisolated static func bestTmuxSessionForPath(output: String, projectPath: String, homeDirectory: String) -> String? {
-        TmuxRouter.bestSessionForPath(
-            output: output,
-            projectPath: projectPath,
-            homeDirectory: homeDirectory,
-        )
-    }
-
     // MARK: - Terminal Focus After Tmux Switch
 
     private func activateTerminalAfterTmuxSwitch(
@@ -296,7 +268,7 @@ final class TerminalLauncher {
         projectPath: String,
         tmuxSessionHint: String?,
     ) async -> TerminalActivationCoordinator.TerminalFocusResult {
-        let app = resolveActivationIntent(
+        let app = await resolveActivationIntent(
             clientTty: clientTty,
             projectPath: projectPath,
             sessionName: tmuxSessionHint,
@@ -319,13 +291,12 @@ final class TerminalLauncher {
         clientTty: String?,
         projectPath: String,
         sessionName: String?,
-    ) -> ActivationPolicyIntent {
-        activationIntentResolver?(clientTty, projectPath, sessionName) ?? ActivationPolicy().resolveIntent(
+    ) async -> ActivationPolicyIntent {
+        await activationIntentResolver?(clientTty, projectPath, sessionName) ?? ActivationPolicy().resolveIntent(
             projectPath: projectPath,
             clientTty: clientTty,
             sessionName: sessionName,
             route: nil,
-            shellState: nil,
         )
     }
 

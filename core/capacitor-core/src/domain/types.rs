@@ -65,6 +65,15 @@ pub struct SessionSummary {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Record)]
+pub struct TmuxPaneInfo {
+    pub session_name: String,
+    pub pane_id: String,
+    pub pane_path: String,
+    #[serde(default)]
+    pub session_attached: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Record)]
 pub struct ShellSignal {
     pub pid: u32,
     pub cwd: String,
@@ -74,6 +83,8 @@ pub struct ShellSignal {
     pub tmux_client_tty: Option<String>,
     #[serde(default)]
     pub tmux_pane: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tmux_panes: Vec<TmuxPaneInfo>,
     pub updated_at: String,
 }
 
@@ -227,7 +238,17 @@ pub struct IngestShellSignalCommand {
     pub tmux_client_tty: Option<String>,
     #[serde(default)]
     pub tmux_pane: Option<String>,
+    #[serde(default)]
+    pub tmux_panes: Vec<TmuxPaneInfo>,
     pub recorded_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Record)]
+pub struct ResolveRoutingCommand {
+    pub project_path: String,
+    pub workspace_id: Option<String>,
+    pub session_name: Option<String>,
+    pub client_tty: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Enum)]

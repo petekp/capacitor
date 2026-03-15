@@ -17,7 +17,7 @@ Use this file during the implementation slices to keep the Option 2 target shape
 | Current surface | Why it is confusing today | Option 2 target |
 |---|---|---|
 | `core/capacitor-core/src/runtime_activation/mod.rs` | Looks like the production activation owner but only compiles in tests | Delete it or port any valuable cases into explicitly non-authoritative regression tests |
-| `AppState` resolver closures -> `TerminalLauncher` | Real policy is split across injected callbacks and launcher helpers | One Swift `ActivationPolicy` owner consumes runtime facts plus local desktop state |
+| `AppState` resolver closures -> `TerminalLauncher` | Real policy is split across injected callbacks and launcher helpers | One Swift `ActivationPolicy` owner consumes runtime facts plus explicit local fallback state |
 | `TerminalLauncher.resolvePreferredTerminalApp(...)` | Launcher ranks shell and session evidence directly | `ActivationPolicy` chooses the terminal app and explains why |
 | `SupportedTerminalApp.detectAvailable()` from `TerminalLauncher` | Fallback policy is hidden in a helper call | `ActivationPolicy` owns an explicit fallback ladder and tests it |
 | `RuntimeClient.fetchRuntimeConfig()` | Name implies runtime-backed config | Rename or relocate to an explicitly Swift-local freshness-policy surface |
@@ -29,7 +29,7 @@ Use this file during the implementation slices to keep the Option 2 target shape
 When the migration is done, the answer to "where does this decision live?" should be:
 
 - Runtime facts, route payloads, and shell/session truth: Rust
-- Activation intent, freshness interpretation, fallback choice, and diagnostics interpretation: Swift `ActivationPolicy`
+- Activation intent, freshness interpretation, explicit fallback choice, and diagnostics interpretation: Swift `ActivationPolicy`
 - tmux command execution and terminal focus/launch side effects: Swift coordinator, router, and drivers
 
 ## Edge Cases And Gotchas
@@ -49,11 +49,11 @@ When the migration is done, the answer to "where does this decision live?" shoul
 
 ### After
 
-`AppState -> ActivationPolicy.resolveIntent(runtimeFacts, localDesktopState) -> TerminalLauncher executes intent -> coordinator/router/drivers`
+`AppState -> ActivationPolicy.resolveIntent(runtimeFacts, fallbackState) -> TerminalLauncher executes intent -> coordinator/router/drivers`
 
 ## Suggested Test Cases
 
 - Route has `terminal_app`, `session_name`, and `pane_id`: policy should return that intent without local re-ranking.
-- Route has `session_name` and `pane_id` but `terminal_app = nil`: policy should choose host terminal from local shell/app state and record why.
-- No route exists but fresh shell evidence matches the project: policy should choose the freshest supported host deterministically.
+- Route has `session_name` and `pane_id` but `terminal_app = nil`: policy should preserve the route hints and use the explicit fallback ladder for terminal choice.
+- No route exists: policy should preserve any explicit caller session hint, avoid inventing pane/host identity, and use the explicit fallback ladder.
 - No stronger signal exists: policy should use the explicit fallback ladder and the test should name that ladder.

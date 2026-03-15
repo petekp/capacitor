@@ -149,6 +149,7 @@ mod tests {
                 tmux_session: None,
                 tmux_client_tty: None,
                 tmux_pane: None,
+                tmux_panes: vec![],
                 updated_at: "2026-02-28T00:00:00Z".to_string(),
             }],
             routing: vec![RoutingView {

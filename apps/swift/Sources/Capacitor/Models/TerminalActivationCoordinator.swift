@@ -42,7 +42,7 @@ final class TerminalActivationCoordinator {
         ensureAndSwitch: (String, String, String, String?) async -> Bool,
         launchTerminalWithTmux: (String, String) async -> Bool,
         activateTerminal: (String?, String, String?) async -> TerminalFocusResult,
-        resolveTargetPane: ((String?) -> String?)? = nil,
+        resolveTargetPane: ((String?) async -> String?)? = nil,
         pollForNewClient: (() async -> String?)? = nil,
     ) async -> Bool {
         let clientTty = await resolveAnyClientTty()
@@ -58,7 +58,7 @@ final class TerminalActivationCoordinator {
             return true
         }
 
-        let targetPane = resolveTargetPane?(clientTty)
+        let targetPane = await resolveTargetPane?(clientTty)
         let switched = await ensureAndSwitch(sessionName, projectPath, clientTty, targetPane)
         guard switched else {
             debugLog("runActivationFlow ensureAndSwitch failed session=\(sessionName)")

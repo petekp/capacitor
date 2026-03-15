@@ -20,7 +20,7 @@ use fs_err as fs;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use tempfile::NamedTempFile;
 
@@ -73,6 +73,11 @@ pub struct InstallResult {
 
 pub struct SetupChecker {
     storage: StorageConfig,
+}
+
+struct ResolvedSymlinkTarget {
+    target_path: PathBuf,
+    canonical_target: Option<PathBuf>,
 }
 
 impl SetupChecker {
@@ -210,24 +215,22 @@ impl SetupChecker {
             return HookStatus::PolicyBlocked { reason };
         }
 
-        // Check if binary exists (or is a symlink)
         let binary_path = self.get_hook_binary_path();
-        let is_symlink = binary_path.is_symlink();
+        let symlink_target = match resolve_symlink_target(&binary_path) {
+            Ok(target) => target,
+            Err(reason) => return HookStatus::BinaryBroken { reason },
+        };
 
-        // For symlinks, check if target exists before checking binary_path.exists()
-        // (exists() returns false for broken symlinks)
-        if is_symlink {
-            if let Ok(target) = fs::read_link(&binary_path) {
-                if !target.exists() {
-                    return HookStatus::SymlinkBroken {
-                        target: target.to_string_lossy().to_string(),
-                        reason: "Symlink target no longer exists. The app may have moved or `cargo clean` was run.".to_string(),
-                    };
-                }
+        if let Some(target) = symlink_target.as_ref() {
+            if !target.target_path.exists() {
+                return HookStatus::SymlinkBroken {
+                    target: target.target_path.to_string_lossy().to_string(),
+                    reason: "Symlink target no longer exists. The app may have moved or `cargo clean` was run.".to_string(),
+                };
             }
         }
 
-        if !binary_path.exists() && !is_symlink {
+        if !binary_path.exists() && symlink_target.is_none() {
             return HookStatus::NotInstalled;
         }
 
@@ -294,21 +297,13 @@ impl SetupChecker {
     fn verify_hook_binary(&self) -> Result<(), String> {
         let binary_path = self.get_hook_binary_path();
 
-        // Check if it's a symlink with a broken target
-        if binary_path.is_symlink() {
-            match fs::read_link(&binary_path) {
-                Ok(target) => {
-                    if !target.exists() {
-                        return Err(format!(
-                            "SYMLINK_BROKEN:{}:Symlink target no longer exists. \
-                             The app may have moved or `cargo clean` was run.",
-                            target.display()
-                        ));
-                    }
-                }
-                Err(e) => {
-                    return Err(format!("Cannot read symlink: {}", e));
-                }
+        if let Some(target) = resolve_symlink_target(&binary_path)? {
+            if !target.target_path.exists() {
+                return Err(format!(
+                    "SYMLINK_BROKEN:{}:Symlink target no longer exists. \
+                     The app may have moved or `cargo clean` was run.",
+                    target.target_path.display()
+                ));
             }
         }
 
@@ -504,15 +499,17 @@ impl SetupChecker {
         let dest_path = dest_dir.join("hud-hook");
 
         // Check if symlink already points to the correct target
-        if dest_path.is_symlink() {
-            if let Ok(current_target) = fs::read_link(&dest_path) {
-                if current_target == source_abs {
-                    return Ok(InstallResult {
-                        success: true,
-                        message: "Hook binary symlink already correct".to_string(),
-                        script_path: Some(dest_path.to_string_lossy().to_string()),
-                    });
-                }
+        if let Ok(Some(current_target)) = resolve_symlink_target(&dest_path) {
+            if current_target
+                .canonical_target
+                .as_ref()
+                .is_some_and(|target| target == &source_abs)
+            {
+                return Ok(InstallResult {
+                    success: true,
+                    message: "Hook binary symlink already correct".to_string(),
+                    script_path: Some(dest_path.to_string_lossy().to_string()),
+                });
             }
         }
 
@@ -608,9 +605,10 @@ impl SetupChecker {
 
         let mut removed_count = 0u32;
         hooks.retain(|_, event_hooks| {
-            let before_len = event_hooks.len();
-            event_hooks.retain(|hook_config| !self.hook_config_contains_managed_hook(hook_config));
-            removed_count += (before_len.saturating_sub(event_hooks.len())) as u32;
+            for hook_config in event_hooks.iter_mut() {
+                removed_count += self.remove_managed_inner_hooks(hook_config);
+            }
+            event_hooks.retain(|hook_config| self.hook_config_has_remaining_hooks(hook_config));
             !event_hooks.is_empty()
         });
 
@@ -622,7 +620,7 @@ impl SetupChecker {
 
         Ok(InstallResult {
             success: true,
-            message: format!("Removed {removed_count} Capacitor-managed hook entrie(s)"),
+            message: format!("Removed {removed_count} Capacitor-managed hook(s)"),
             script_path: Some(settings_path.to_string_lossy().to_string()),
         })
     }
@@ -671,13 +669,22 @@ impl SetupChecker {
         self.persist_settings_file(&settings_path, &settings)
     }
 
-    fn hook_config_contains_managed_hook(&self, hook_config: &HookConfig) -> bool {
-        if let Some(inner_hooks) = &hook_config.hooks {
-            if inner_hooks.iter().any(is_managed_hook) {
-                return true;
-            }
-        }
-        false
+    fn remove_managed_inner_hooks(&self, hook_config: &mut HookConfig) -> u32 {
+        let Some(inner_hooks) = hook_config.hooks.as_mut() else {
+            return 0;
+        };
+
+        let before_len = inner_hooks.len();
+        inner_hooks.retain(|hook| !is_managed_hook(hook));
+        (before_len.saturating_sub(inner_hooks.len())) as u32
+    }
+
+    fn hook_config_has_remaining_hooks(&self, hook_config: &HookConfig) -> bool {
+        hook_config
+            .hooks
+            .as_ref()
+            .map(|inner_hooks| !inner_hooks.is_empty())
+            .unwrap_or(true)
     }
 
     fn load_settings_file(&self, settings_path: &PathBuf) -> Result<SettingsFile, HudFfiError> {
@@ -725,6 +732,27 @@ impl SetupChecker {
 
         Ok(())
     }
+}
+
+fn resolve_symlink_target(path: &Path) -> Result<Option<ResolvedSymlinkTarget>, String> {
+    if !path.is_symlink() {
+        return Ok(None);
+    }
+
+    let target = fs::read_link(path).map_err(|e| format!("Cannot read symlink: {}", e))?;
+    let target_path = if target.is_absolute() {
+        target
+    } else {
+        path.parent()
+            .map(|parent| parent.join(&target))
+            .unwrap_or(target)
+    };
+
+    let canonical_target = fs::canonicalize(&target_path).ok();
+    Ok(Some(ResolvedSymlinkTarget {
+        target_path,
+        canonical_target,
+    }))
 }
 
 fn which(binary: &str) -> Option<String> {
@@ -920,10 +948,8 @@ fn matcher_matches_all_tools(matcher: &serde_json::Value) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::{Mutex, OnceLock};
+    use crate::runtime_state::snapshot::test_support::env_lock as shared_env_lock;
     use tempfile::TempDir;
-
-    static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
     struct EnvVarGuard {
         key: &'static str,
@@ -949,10 +975,7 @@ mod tests {
     }
 
     fn env_lock() -> std::sync::MutexGuard<'static, ()> {
-        ENV_LOCK
-            .get_or_init(|| Mutex::new(()))
-            .lock()
-            .expect("env lock poisoned")
+        shared_env_lock()
     }
 
     #[cfg(unix)]
@@ -1281,6 +1304,120 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn test_verify_hook_binary_accepts_relative_symlink_target() {
+        use std::os::unix::fs::symlink;
+
+        let _guard = env_lock();
+        let (temp, storage) = setup_test_env();
+        let home = temp.path();
+        let _home_guard = EnvVarGuard::set("HOME", home);
+
+        let build_dir = home.join("build");
+        fs::create_dir_all(&build_dir).expect("create build dir");
+        let source_binary = build_dir.join("hud-hook");
+        write_executable_script(
+            &source_binary,
+            "#!/bin/sh\n\
+             if [ \"$1\" = \"--help\" ]; then\n\
+               echo \"Commands: serve cwd\"\n\
+               exit 0\n\
+             fi\n\
+             exit 0\n",
+        );
+
+        let bin_dir = home.join(".local/bin");
+        fs::create_dir_all(&bin_dir).expect("create bin dir");
+        let symlink_path = bin_dir.join("hud-hook");
+        symlink("../../build/hud-hook", &symlink_path).expect("create relative symlink");
+
+        let checker = SetupChecker::new(storage);
+        let result = checker.verify_hook_binary();
+        assert!(
+            result.is_ok(),
+            "verify_hook_binary should accept valid relative symlink targets, got: {result:?}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_check_hooks_status_accepts_relative_symlink_target() {
+        use std::os::unix::fs::symlink;
+
+        let _guard = env_lock();
+        let (temp, storage) = setup_test_env();
+        let home = temp.path();
+        let _home_guard = EnvVarGuard::set("HOME", home);
+
+        let build_dir = home.join("build");
+        fs::create_dir_all(&build_dir).expect("create build dir");
+        let source_binary = build_dir.join("hud-hook");
+        write_executable_script(
+            &source_binary,
+            "#!/bin/sh\n\
+             if [ \"$1\" = \"--help\" ]; then\n\
+               echo \"Commands: serve cwd\"\n\
+               exit 0\n\
+             fi\n\
+             exit 0\n",
+        );
+
+        let bin_dir = home.join(".local/bin");
+        fs::create_dir_all(&bin_dir).expect("create bin dir");
+        let symlink_path = bin_dir.join("hud-hook");
+        symlink("../../build/hud-hook", &symlink_path).expect("create relative symlink");
+
+        let checker = SetupChecker::new(storage.clone());
+        checker.register_hooks_in_settings().unwrap();
+
+        let status = checker.check_hooks_status();
+        assert!(
+            matches!(status, HookStatus::Installed { .. }),
+            "check_hooks_status should accept valid relative symlink targets, got: {status:?}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_install_binary_from_path_keeps_relative_symlink_to_same_target() {
+        use std::os::unix::fs::symlink;
+
+        let _guard = env_lock();
+        let (temp, storage) = setup_test_env();
+        let home = temp.path();
+        let _home_guard = EnvVarGuard::set("HOME", home);
+
+        let build_dir = home.join("build");
+        fs::create_dir_all(&build_dir).expect("create build dir");
+        let source_binary = build_dir.join("hud-hook");
+        write_executable_script(
+            &source_binary,
+            "#!/bin/sh\n\
+             if [ \"$1\" = \"--help\" ]; then\n\
+               echo \"Commands: serve cwd\"\n\
+               exit 0\n\
+             fi\n\
+             exit 0\n",
+        );
+
+        let bin_dir = home.join(".local/bin");
+        fs::create_dir_all(&bin_dir).expect("create bin dir");
+        let symlink_path = bin_dir.join("hud-hook");
+        symlink("../../build/hud-hook", &symlink_path).expect("create relative symlink");
+
+        let checker = SetupChecker::new(storage);
+        let result = checker
+            .install_binary_from_path(source_binary.to_string_lossy().as_ref())
+            .expect("install binary from path");
+        assert!(result.success);
+        assert!(
+            result.message.contains("already correct"),
+            "relative symlink to the same binary should be preserved, got: {}",
+            result.message
+        );
+    }
+
     #[test]
     fn test_does_not_clobber_existing_settings() {
         let (_temp, storage) = setup_test_env();
@@ -1563,6 +1700,50 @@ mod tests {
         assert_eq!(
             settings["hooks"]["PostToolUse"][0]["hooks"][0]["command"],
             "custom-post-tool.sh"
+        );
+    }
+
+    #[test]
+    fn test_remove_hooks_preserves_custom_inner_hooks_in_mixed_entry() {
+        let (_temp, storage) = setup_test_env();
+        let checker = SetupChecker::new(storage.clone());
+
+        let existing = serde_json::json!({
+            "someOtherSetting": "value",
+            "hooks": {
+                "SessionStart": [
+                    {
+                        "hooks": [
+                            {"type": "command", "command": managed_command_hook_command()},
+                            {"type": "command", "command": "custom-start.sh"}
+                        ]
+                    }
+                ]
+            }
+        });
+        fs::write(
+            storage.claude_settings_file(),
+            serde_json::to_string_pretty(&existing).unwrap(),
+        )
+        .unwrap();
+
+        let result = checker.remove_hooks().unwrap();
+        assert!(result.success);
+
+        let settings_content = fs::read_to_string(storage.claude_settings_file()).unwrap();
+        let settings: serde_json::Value = serde_json::from_str(&settings_content).unwrap();
+
+        assert_eq!(settings["someOtherSetting"], "value");
+        assert_eq!(
+            settings["hooks"]["SessionStart"][0]["hooks"][0]["command"],
+            "custom-start.sh"
+        );
+        assert_eq!(
+            settings["hooks"]["SessionStart"][0]["hooks"]
+                .as_array()
+                .map(Vec::len),
+            Some(1),
+            "only the custom inner hook should remain after managed hooks are removed"
         );
     }
 

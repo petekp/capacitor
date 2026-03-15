@@ -1,5 +1,5 @@
 use crate::domain::{
-    normalize_path_for_matching, IngestHookEventCommand, IngestShellSignalCommand,
+    normalize_path_for_matching, IngestHookEventCommand, IngestShellSignalCommand, TmuxPaneInfo,
 };
 
 #[must_use]
@@ -32,6 +32,7 @@ pub fn normalize_shell_signal(command: IngestShellSignalCommand) -> IngestShellS
         tmux_session: normalize_optional_text(command.tmux_session),
         tmux_client_tty: normalize_optional_text(command.tmux_client_tty),
         tmux_pane: normalize_optional_text(command.tmux_pane),
+        tmux_panes: normalize_tmux_panes(command.tmux_panes),
         recorded_at: command.recorded_at.trim().to_string(),
     }
 }
@@ -60,10 +61,33 @@ fn normalize_optional_text(value: Option<String>) -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
+#[must_use]
+fn normalize_tmux_panes(value: Vec<TmuxPaneInfo>) -> Vec<TmuxPaneInfo> {
+    value
+        .into_iter()
+        .filter_map(|pane| {
+            let session_name = pane.session_name.trim().to_string();
+            let pane_id = pane.pane_id.trim().to_string();
+            let pane_path = normalize_required_path(&pane.pane_path);
+            if session_name.is_empty() || pane_id.is_empty() || pane_path.is_empty() {
+                return None;
+            }
+            Some(TmuxPaneInfo {
+                session_name,
+                pane_id,
+                pane_path,
+                session_attached: pane.session_attached,
+            })
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::{normalize_hook_event, normalize_shell_signal};
-    use crate::domain::{HookEventType, IngestHookEventCommand, IngestShellSignalCommand};
+    use crate::domain::{
+        HookEventType, IngestHookEventCommand, IngestShellSignalCommand, TmuxPaneInfo,
+    };
 
     #[test]
     fn normalize_hook_event_cleans_optional_fields() {
@@ -106,6 +130,12 @@ mod tests {
             tmux_session: Some(" repo ".to_string()),
             tmux_client_tty: Some(" /dev/ttys099 ".to_string()),
             tmux_pane: Some(" %42 ".to_string()),
+            tmux_panes: vec![TmuxPaneInfo {
+                session_name: " repo ".to_string(),
+                pane_id: " %42 ".to_string(),
+                pane_path: " /repo/apps/swift/ ".to_string(),
+                session_attached: true,
+            }],
             recorded_at: " 2026-02-28T00:00:00Z ".to_string(),
         });
 
@@ -115,5 +145,10 @@ mod tests {
         assert_eq!(normalized.tmux_session.as_deref(), Some("repo"));
         assert_eq!(normalized.tmux_client_tty.as_deref(), Some("/dev/ttys099"));
         assert_eq!(normalized.tmux_pane.as_deref(), Some("%42"));
+        assert_eq!(normalized.tmux_panes.len(), 1);
+        assert_eq!(normalized.tmux_panes[0].session_name, "repo");
+        assert_eq!(normalized.tmux_panes[0].pane_id, "%42");
+        assert_eq!(normalized.tmux_panes[0].pane_path, "/repo/apps/swift");
+        assert!(normalized.tmux_panes[0].session_attached);
     }
 }

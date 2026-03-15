@@ -31,7 +31,7 @@ echo ""
 
 FAILED=0
 
-echo -e "${YELLOW}[1/6] Release Script Tests (bats)${NC}"
+echo -e "${YELLOW}[1/7] Release Script Tests (bats)${NC}"
 if command -v bats &> /dev/null; then
     if bats tests/release-scripts; then
         echo -e "${GREEN}✓ Release script tests passed${NC}"
@@ -44,7 +44,7 @@ else
 fi
 echo ""
 
-echo -e "${YELLOW}[2/6] Rust Formatting${NC}"
+echo -e "${YELLOW}[2/7] Rust Formatting${NC}"
 if cargo fmt 2>&1; then
     echo -e "${GREEN}✓ Rust formatted${NC}"
 else
@@ -53,7 +53,16 @@ else
 fi
 echo ""
 
-echo -e "${YELLOW}[3/6] Rust Tests${NC}"
+echo -e "${YELLOW}[3/7] Formal Verification${NC}"
+if ./scripts/verify/verify.sh --repo-root "$PROJECT_ROOT" --layers 1,2,3 2>&1; then
+    echo -e "${GREEN}✓ Formal verification passed${NC}"
+else
+    echo -e "${RED}✗ Formal verification failed${NC}"
+    FAILED=1
+fi
+echo ""
+
+echo -e "${YELLOW}[4/7] Rust Tests${NC}"
 if cargo test 2>&1; then
     echo -e "${GREEN}✓ Rust tests passed${NC}"
 else
@@ -62,7 +71,7 @@ else
 fi
 echo ""
 
-echo -e "${YELLOW}[4/6] Rust Linting${NC}"
+echo -e "${YELLOW}[5/7] Rust Linting${NC}"
 if cargo clippy -- -D warnings 2>&1; then
     echo -e "${GREEN}✓ Clippy passed${NC}"
 else
@@ -71,7 +80,7 @@ else
 fi
 echo ""
 
-echo -e "${YELLOW}[5/6] Swift Formatting${NC}"
+echo -e "${YELLOW}[6/7] Swift Formatting${NC}"
 if command -v swiftformat &> /dev/null; then
     if swiftformat apps/swift 2>&1; then
         echo -e "${GREEN}✓ Swift formatted${NC}"
@@ -85,7 +94,7 @@ fi
 echo ""
 
 if [ "$QUICK" = false ]; then
-    echo -e "${YELLOW}[6/6] Swift Tests${NC}"
+    echo -e "${YELLOW}[7/7] Swift Tests${NC}"
 
     echo "Building Rust library for Swift tests..."
     cargo build -p capacitor-core --release
@@ -105,7 +114,7 @@ if [ "$QUICK" = false ]; then
     fi
     cd "$PROJECT_ROOT"
 else
-    echo -e "${YELLOW}[6/6] Swift Tests${NC}"
+    echo -e "${YELLOW}[7/7] Swift Tests${NC}"
     echo -e "${YELLOW}⚠ Skipped (--quick mode)${NC}"
 fi
 echo ""

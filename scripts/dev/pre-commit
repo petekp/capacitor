@@ -69,6 +69,13 @@ if command -v swiftformat &> /dev/null; then
 fi
 
 # 3. Rust tests (the main value - catches broken tests)
+if ! ./scripts/verify/verify.sh --repo-root "$(pwd)" --layers 1,2,3 --changed-only >/dev/null 2>&1; then
+    echo -e "${RED}✗ Formal verification failed${NC}"
+    ./scripts/verify/verify.sh --repo-root "$(pwd)" --layers 1,2,3 --changed-only --json || true
+    exit 1
+fi
+
+# 4. Rust tests (the main value - catches broken tests)
 if ! cargo test --quiet 2>/dev/null; then
     echo -e "${RED}✗ Rust tests failed${NC}"
     exit 1

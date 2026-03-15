@@ -273,6 +273,51 @@ final class RuntimeClientTests: XCTestCase {
         }
     }
 
+    func testFetchCoreRoutingSnapshotUsesActivationRouteQueryEndpoint() async throws {
+        var capturedPath: String?
+        var capturedBody: Data?
+        let client = try RuntimeClient(
+            runtimeServiceConnectionOverride: RuntimeServiceConnection(
+                baseURL: XCTUnwrap(URL(string: "http://127.0.0.1:7812")),
+                bearerToken: "service-secret",
+            ),
+            sendRequest: { request in
+                let response = try XCTUnwrap(
+                    HTTPURLResponse(
+                        url: request.url!,
+                        statusCode: 200,
+                        httpVersion: nil,
+                        headerFields: ["Content-Type": "application/json"],
+                    ),
+                )
+                capturedPath = request.url?.path
+                capturedBody = request.httpBody
+                let json = """
+                {"workspace_id":"workspace-capacitor","project_path":"/Users/pete/Code/capacitor","status":"attached","target":{"kind":"tmux_session","terminal_app":"iterm2","session_name":"caps","pane_id":null,"host_tty":"/dev/ttys002"},"reason_code":"TMUX_SESSION_ATTACHED","reason":"Matched tmux session 'caps'","updated_at":"2026-03-15T05:40:01Z"}
+                """
+                return (Data(json.utf8), response)
+            },
+        )
+
+        let snapshot = try await client.fetchCoreRoutingSnapshot(
+            projectPath: "/Users/pete/Code/capacitor",
+            workspaceId: nil,
+            clientTty: "/dev/ttys002",
+            sessionName: "caps",
+        )
+
+        XCTAssertEqual(capturedPath, "/runtime/routing/resolve")
+        let body = try XCTUnwrap(capturedBody)
+        let payload = try JSONSerialization.jsonObject(with: body) as? [String: String?]
+        XCTAssertEqual(payload?["project_path"] ?? nil, "/Users/pete/Code/capacitor")
+        XCTAssertEqual(payload?["client_tty"] ?? nil, "/dev/ttys002")
+        XCTAssertEqual(payload?["session_name"] ?? nil, "caps")
+        XCTAssertEqual(snapshot.target.terminalApp, "iterm2")
+        XCTAssertEqual(snapshot.target.sessionName, "caps")
+        XCTAssertEqual(snapshot.target.hostTty, "/dev/ttys002")
+        XCTAssertEqual(snapshot.reasonCode, "TMUX_SESSION_ATTACHED")
+    }
+
     func testFetchHealthReturnsCoreSnapshotModeHealth() async throws {
         let client = try makeClient()
 
@@ -280,7 +325,114 @@ final class RuntimeClientTests: XCTestCase {
 
         XCTAssertEqual(health.status, "ok")
         XCTAssertEqual(health.protocolVersion, 1)
+        XCTAssertEqual(health.authMode, "bearer")
+        XCTAssertEqual(health.serviceMode, "bootstrap_only")
         XCTAssertTrue(health.version.contains("runtime-service"))
+    }
+
+    func testFetchHealthRejectsUnexpectedProtocolVersion() async throws {
+        let client = try RuntimeClient(
+            runtimeServiceConnectionOverride: RuntimeServiceConnection(
+                baseURL: XCTUnwrap(URL(string: "http://127.0.0.1:7812")),
+                bearerToken: "service-secret",
+            ),
+            sendRequest: { request in
+                let response = try XCTUnwrap(
+                    HTTPURLResponse(
+                        url: request.url!,
+                        statusCode: 200,
+                        httpVersion: nil,
+                        headerFields: ["Content-Type": "application/json"],
+                    ),
+                )
+                let json = """
+                {"status":"ok","pid":4242,"version":"runtime-service-v1","protocol_version":99,"auth_mode":"bearer","service_mode":"bootstrap_only"}
+                """
+                return (Data(json.utf8), response)
+            },
+        )
+
+        do {
+            _ = try await client.fetchHealth()
+            XCTFail("expected runtimeUnavailable for mismatched protocol version")
+        } catch let error as RuntimeClientError {
+            switch error {
+            case let .runtimeUnavailable(message):
+                XCTAssertTrue(message.contains("health"), "message mismatch: \(message)")
+            default:
+                XCTFail("unexpected RuntimeClientError: \(error)")
+            }
+        }
+    }
+
+    func testFetchHealthRejectsUnexpectedAuthMode() async throws {
+        let client = try RuntimeClient(
+            runtimeServiceConnectionOverride: RuntimeServiceConnection(
+                baseURL: XCTUnwrap(URL(string: "http://127.0.0.1:7812")),
+                bearerToken: "service-secret",
+            ),
+            sendRequest: { request in
+                let response = try XCTUnwrap(
+                    HTTPURLResponse(
+                        url: request.url!,
+                        statusCode: 200,
+                        httpVersion: nil,
+                        headerFields: ["Content-Type": "application/json"],
+                    ),
+                )
+                let json = """
+                {"status":"ok","pid":4242,"version":"runtime-service-v1","protocol_version":1,"auth_mode":"none","service_mode":"bootstrap_only"}
+                """
+                return (Data(json.utf8), response)
+            },
+        )
+
+        do {
+            _ = try await client.fetchHealth()
+            XCTFail("expected runtimeUnavailable for mismatched auth mode")
+        } catch let error as RuntimeClientError {
+            switch error {
+            case let .runtimeUnavailable(message):
+                XCTAssertTrue(message.contains("health"), "message mismatch: \(message)")
+            default:
+                XCTFail("unexpected RuntimeClientError: \(error)")
+            }
+        }
+    }
+
+    func testFetchHealthRejectsUnexpectedServiceMode() async throws {
+        let client = try RuntimeClient(
+            runtimeServiceConnectionOverride: RuntimeServiceConnection(
+                baseURL: XCTUnwrap(URL(string: "http://127.0.0.1:7812")),
+                bearerToken: "service-secret",
+            ),
+            sendRequest: { request in
+                let response = try XCTUnwrap(
+                    HTTPURLResponse(
+                        url: request.url!,
+                        statusCode: 200,
+                        httpVersion: nil,
+                        headerFields: ["Content-Type": "application/json"],
+                    ),
+                )
+                let json = """
+                {"status":"ok","pid":4242,"version":"runtime-service-v1","protocol_version":1,"auth_mode":"bearer","service_mode":"daemon"}
+                """
+                return (Data(json.utf8), response)
+            },
+        )
+
+        do {
+            _ = try await client.fetchHealth()
+            XCTFail("expected runtimeUnavailable for mismatched service mode")
+        } catch let error as RuntimeClientError {
+            switch error {
+            case let .runtimeUnavailable(message):
+                XCTAssertTrue(message.contains("health"), "message mismatch: \(message)")
+            default:
+                XCTFail("unexpected RuntimeClientError: \(error)")
+            }
+        }
     }
 
     private func makeClient(
@@ -305,9 +457,17 @@ final class RuntimeClientTests: XCTestCase {
                 switch request.url?.path {
                 case "/health":
                     let json = """
-                    {"status":"ok","pid":4242,"version":"runtime-service-v1","protocol_version":1}
+                    {"status":"ok","pid":4242,"version":"runtime-service-v1","protocol_version":1,"auth_mode":"bearer","service_mode":"bootstrap_only"}
                     """
                     return (Data(json.utf8), response)
+                case "/runtime/routing/resolve":
+                    return (
+                        Self.makeRoutingResolveResponse(
+                            requestBody: request.httpBody,
+                            coreSnapshot: coreSnapshot ?? Self.makeDefaultCoreSnapshot(),
+                        ),
+                        response,
+                    )
                 case "/runtime/snapshot":
                     return (coreSnapshot ?? Self.makeDefaultCoreSnapshot(), response)
                 default:
@@ -365,6 +525,43 @@ final class RuntimeClientTests: XCTestCase {
 
     private static func makeRoutingReasonSnapshot(reasonCode: String) -> Data {
         makeCoreSnapshotResponse(routeReasonCode: reasonCode)
+    }
+
+    private static func makeRoutingResolveResponse(
+        requestBody: Data?,
+        coreSnapshot: Data,
+    ) -> Data {
+        let requestObject = requestBody.flatMap {
+            try? JSONSerialization.jsonObject(with: $0) as? [String: Any]
+        } ?? [:]
+        let requestProjectPath = PathNormalizer.normalize(requestObject["project_path"] as? String ?? "")
+        let requestWorkspaceId = (requestObject["workspace_id"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let snapshotObject = (try? JSONSerialization.jsonObject(with: coreSnapshot) as? [String: Any]) ?? [:]
+        let routes = snapshotObject["routing"] as? [[String: Any]] ?? []
+
+        if let route = routes.first(where: { route in
+            let routeWorkspaceId = route["workspace_id"] as? String
+            let routeProjectPath = PathNormalizer.normalize(route["project_path"] as? String ?? "")
+            if let requestWorkspaceId, !requestWorkspaceId.isEmpty, routeWorkspaceId == requestWorkspaceId {
+                return true
+            }
+            return routeProjectPath == requestProjectPath
+        }) {
+            return (try? JSONSerialization.data(withJSONObject: route)) ?? Data("{}".utf8)
+        }
+
+        let unresolvedWorkspaceId = {
+            if let requestWorkspaceId, !requestWorkspaceId.isEmpty {
+                return requestWorkspaceId
+            }
+            return requestProjectPath
+        }()
+        let json = """
+        {"workspace_id":"\(unresolvedWorkspaceId)","project_path":"\(requestProjectPath)","status":"unavailable","target":{"kind":"none","terminal_app":null,"session_name":null,"pane_id":null,"host_tty":null},"reason_code":"NO_TRUSTED_EVIDENCE","reason":"No routing evidence available in runtime service","updated_at":"2026-02-28T19:00:00Z"}
+        """
+        return Data(json.utf8)
     }
 
     private static func makeCoreSnapshotResponse(

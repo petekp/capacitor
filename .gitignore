@@ -49,3 +49,8 @@ scripts/dev/capacitor-ingest.local
 # Git worktrees
 .worktrees/
 dist-guide
+
+# Formal verifier caches and reports
+.verifier/facts/
+.verifier/reports/
+.verifier/.venv/

@@ -1,120 +1,66 @@
-## Handoff — 2026-03-13
+# Resume: Swift activation shell-ranking seam removed
 
-### Changed
+## Mission Status
+The Rust/Swift activation-boundary cleanup target for Swift terminal-app ranking is complete. Swift activation now resolves terminal choice from either a runtime route or explicit local fallback; the last production `.shellEvidence` path is gone.
 
-- Chose Option 2 (`Core Facts, Swift Policy`) as the active migration direction for the Rust-Swift activation boundary.
-- Created the migration control plane under `docs/plans/rust-swift-boundary-legibility/`:
-  - `CHARTER.md`
-  - `DECISIONS.md`
-  - `SLICES.yaml`
-  - `MAP.csv`
-  - `RATCHETS.yaml`
-  - `SHIP_CHECKLIST.md`
-  - `TRANSLATION_GUIDE.md`
-  - `HANDOFF.md`
-  - `guard.sh`
-- Froze the current shadow-boundary symbol budget with ratchets for:
-  - `runtime_activation`
-  - `fetchRuntimeConfig`
-  - `fetchCoreRoutingDiagnostics`
-  - `DebugShellStateCard`
-  - distributed `preferred*Resolver` slots
-  - launcher-local `detectAvailable()` calls
-- Completed `slice-001`:
-  - added `apps/swift/Sources/Capacitor/Models/ActivationPolicy.swift`
-  - added `apps/swift/Tests/CapacitorTests/ActivationPolicyTests.swift`
-  - routed `AppState`'s activation resolver closures through `ActivationPolicy`
-- Completed `slice-002`:
-  - removed the four distributed resolver slots from `TerminalLauncher`
-  - added `activationIntentResolver` as the single launcher policy seam
-  - moved launcher-local fallback choice behind `ActivationPolicyFallback`
-  - updated the launcher regression to assert the new seam
-- Completed `slice-003`:
-  - renamed `fetchCoreRoutingDiagnostics(...)` to `fetchLocalRoutingDiagnostics(...)`
-  - renamed `fetchRuntimeConfig()` to `loadLocalRoutingPolicyConfig()`
-  - removed `DebugShellStateCard.swift`
-  - removed `DebugShellStateCard` from `DebugProjectListPanel`
-- Completed `slice-004`:
-  - deleted `core/capacitor-core/src/runtime_activation/mod.rs`
-  - removed `#[cfg(test)] mod runtime_activation;` from `core/capacitor-core/src/lib.rs`
-  - updated `docs/ARCHITECTURE.md` to name `ActivationPolicy`
-  - added an `AGENT_CHANGELOG.md` entry for the boundary-legibility cleanup
-- Verified the spike with:
-  - `swift test --package-path apps/swift --filter ActivationPolicyTests`
-  - `swift test --package-path apps/swift --filter TerminalLauncherTests`
-  - `swift test --package-path apps/swift --filter AppStateSessionObservationTests`
-  - `swift test --package-path apps/swift --filter AppStateTerminalActivationTests`
-  - `swift test --package-path apps/swift --filter SupportedTerminalAppTests`
-  - `swift test --package-path apps/swift --filter RuntimeClientTests`
-  - `cargo test -p capacitor-core`
-- Started `slice-005` and ran `bash docs/plans/rust-swift-boundary-legibility/SHIP_CHECKLIST.md`:
-  - `bash docs/plans/rust-swift-boundary-legibility/guard.sh` passed
-  - `cargo test -p capacitor-core` passed
-  - `swift test --package-path apps/swift --filter 'ActivationPolicyTests|TerminalLauncherTests|RuntimeClientTests|SupportedTerminalAppTests|AppStateSessionObservationTests'` passed
-  - `swift test --package-path apps/swift` passed
-  - `swift build --package-path apps/swift` passed
-  - live runtime snapshot summary was captured by the checklist
-- Collected partial AX/manual evidence from the running debug app:
-  - `ax.project-card.capacitor` fired the named `Open in Terminal` action successfully
-  - app log captured `[TerminalLauncher] runActivationFlow noClient, launching attach-or-create session=capacitor`
-  - app log captured `[TerminalLauncher] launchTerminalWithTmuxSession app=Ghostty session=capacitor path=/Users/petepetrash/Code/capacitor`
-  - tmux client `/dev/ttys049` attached after that click
-  - `ax.project-card.pete-2025` also fired the named `Open in Terminal` action successfully
-  - `tmux display-message -p -t /dev/ttys049 '#{session_name}:#{pane_id}:#{pane_current_path}'` returned `dev:%0:/Users/petepetrash/Code/pete-2025`, which is evidence that the attached Ghostty client switched to the routed `pete-2025` surface
-  - attempted detached direct-shell proof via `ax.project-card.claude-code-setup`, but that identifier was not present in the current AX tree
-  - temporarily added `/Users/petepetrash/Code/claude-code-setup` to `~/.capacitor/projects.json`, restarted the app, retried the AX click, and still did not get a visible/clickable `ax.project-card.claude-code-setup`
-  - restored `~/.capacitor/projects.json` from backup and restarted the app, so user state is back to its original pinned-project list
-- Additional convergence cleanup completed after the review pass:
-  - moved the remaining shell-ranking and pane-ranking helpers from `TerminalLauncher` into `ActivationPolicy`
-  - deleted the unused secondary `ActivationPolicy.resolvePreferredTerminalApp(...)` entrypoint
-  - removed the dead `RuntimeClient` local-diagnostics/local-policy API surface and trimmed its tests
-- Fixed a late Ghostty UX regression discovered during manual QA:
-  - when Ghostty was already running but the tmux session was gone, no-client activation was opening a fresh Ghostty window
-  - added a test for that case in `GhosttyTerminalDriverTests`
-  - updated `GhosttyTerminalDriver.launch(...)` to create a new tab in the front Ghostty window when Ghostty is already running
-- Reviewed the live activation wording in `~/.capacitor/runtime/app-debug.log`:
-  - runtime facts appear under log lines like `RuntimeClient.fetchRuntimeSnapshot ...` and `RoutingStateStore.applyRuntimeRoutingViews ...`
-  - Swift decisions/actions appear under log lines like `TerminalLauncher runActivationFlow ...` and `launchTerminalWithTmuxSession ...`
-  - no remaining fake `core diagnostics` or `runtime config` wording was observed in the current activation path
-- Verified that cleanup with:
-  - `swift test --package-path apps/swift --filter 'ActivationPolicyTests|TerminalLauncherTests|RuntimeClientTests'`
-  - `swift test --package-path apps/swift --filter AppStateSessionObservationTests`
+## Last Meaningful Action
+- Deleted `ActivationPolicy` shell-based terminal-app ranking and the `shellState` activation input.
+- Added verifier coverage that fails if `.shellEvidence` or `preferredTerminalAppFromShellState(...)` returns to production code.
+- Reframed `ActivationPolicyTests.swift` so the old client-tty/session/project-path shell-ranking cases now prove route-miss fallback behavior instead.
+- Reran the broad Swift/Rust/verifier checks green.
+- Followed up on the lingering `hud-hook` readiness flake by moving the integration tests onto a retrying `ServerGuard::spawn_ready(...)` helper; `cargo test -p hud-hook --quiet` now passed repeatedly.
+
+## Current State
+- `ActivationPolicy` now exposes only `.runtimeRoute` and `.fallback` terminal-app sources.
+- `AppState` still queries Rust on demand via `/runtime/routing/resolve` before activation fallback.
+- `TerminalLauncher` still consumes one async `ActivationPolicyIntent` resolver, but no longer passes shell state into activation intent resolution.
+- `ShellStateStore` still exists for snapshot/state/setup UX, but it is no longer activation-critical.
+
+## Key Artifacts
+- `/Users/petepetrash/Code/capacitor/apps/swift/Sources/Capacitor/Models/ActivationPolicy.swift`
+  - runtime-route-or-fallback only; no `.shellEvidence`, no `preferredTerminalAppFromShellState(...)`
+- `/Users/petepetrash/Code/capacitor/apps/swift/Sources/Capacitor/Models/AppState.swift`
+  - activation resolver still prefers cached/on-demand runtime routes before fallback
+- `/Users/petepetrash/Code/capacitor/apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift`
+  - activation fallback path now uses the slimmer `ActivationPolicy.resolveIntent(...)` signature
+- `/Users/petepetrash/Code/capacitor/apps/swift/Tests/CapacitorTests/ActivationPolicyTests.swift`
+  - route-miss proofs now assert fallback behavior instead of shell-evidence ranking
+- `/Users/petepetrash/Code/capacitor/.verifier/specs/RuntimeBoundaryContracts.py`
+  - fails if Swift production activation reintroduces `.shellEvidence` or `preferredTerminalAppFromShellState(...)`
+
+## Verification State
+- Passed:
   - `swift test --package-path apps/swift`
-  - `bash docs/plans/rust-swift-boundary-legibility/guard.sh`
-  - `swift test --package-path apps/swift --filter GhosttyTerminalDriverTests`
-  - `swift test --package-path apps/swift --filter TerminalLauncherTests`
+  - `cargo test -p capacitor-core --quiet`
+  - `cargo test -p hud-hook --test serve_integration -- --test-threads=1`
+  - `cargo test -p hud-hook --test session_state_mapping_gate -- --test-threads=1`
+  - `cargo test -p hud-hook --quiet`
+  - repeated `cargo test -p hud-hook --quiet` loop: 8/8 passed after the retry-helper migration
+  - `./scripts/verify/verify.sh --layers 1,2,3 --json`
+  - `bash docs/plans/rust-swift-boundary-legibility/SHIP_CHECKLIST.md`
+- Known residual warning only:
+  - Layer 3 nesting warnings in:
+    - `/Users/petepetrash/Code/capacitor/core/capacitor-core/src/runtime_setup.rs`
+    - `/Users/petepetrash/Code/capacitor/core/capacitor-core/src/runtime_state/snapshot.rs`
+- Manual QA note:
+  - `/Users/petepetrash/Code/capacitor/docs/manual-qa/activation-boundary-closeout-2026-03-15.md`
+  - live runtime summary captured successfully, and later in the same session the AX-visible main window recovered enough to pass `bash scripts/ci/non-demo-ax-smoke.sh`
+  - a focused live attached-route proof was earned via `ax.project-card.pete-2025`: the named `Open in Terminal` action fired, `ghostty` became frontmost, and an attached tmux client moved from session `capacitor` to `dev`
+  - the AX/window issue still appears intermittent: earlier in the session `scripts/ax/ax_runner.swift` reported `No AX windows were found for com.capacitor.app.debug`, the app still had a real onscreen CG window, and direct AX attribute probes sometimes returned `kAXErrorCannotComplete`
+  - a follow-up experiment that explicitly set `NSWindow` accessibility role/subrole/element state did not change the behavior and was reverted
 
-### Now True
+## Established Decisions
+- Rust owns runtime facts and route derivation; Swift owns macOS execution and explicit local fallback only.
+- Swift should not reconstruct terminal-app ranking from shell state now that Rust can answer on-demand activation routing for ad hoc project paths.
+- If a runtime route is missing or incomplete, Swift should preserve route hints when present and otherwise fall back locally without inventing pane or host identity.
+- `hud-hook` integration tests should not choose a port in one step and wait on readiness in another; startup now owns retrying candidate ports inside `ServerGuard::spawn_ready(...)` / `spawn_service_bootstrap_ready(...)`.
 
-- The repo has a migration package that matches the existing `docs/plans/<plan-name>/` convention.
-- Option 2 is no longer just a recommendation in `.claude/architecture/RUST_SWIFT_BOUNDARY_OPTIONS.md`; it is the encoded migration target.
-- The first implementation slice is complete: the repo now has a narrow Swift `ActivationPolicy` owner and tests that prove routed-app precedence, shell-evidence fallback, and explicit fallback policy.
-- The package explicitly treats attached host-app identity as a Swift-policy concern unless later evidence justifies a richer runtime contract.
-- `ActivationPolicy` is pure and narrow: it interprets route facts and shell evidence, but execution still lives in `TerminalLauncher`, the coordinator, the router, and the drivers.
-- `TerminalLauncher` now consumes one policy intent seam instead of four injected policy callbacks.
-- The remaining pure ranking logic now also lives in `ActivationPolicy`, so `TerminalLauncher` is closer to a pure execution boundary.
-- The ratchet budgets for distributed resolver slots and launcher-local fallback calls are both at zero.
-- The ratchet budgets for `fetchRuntimeConfig`, `fetchCoreRoutingDiagnostics`, and `DebugShellStateCard` are also now zero.
-- The ratchet budget for `runtime_activation` is now zero as well.
-- All automated ship-gate commands in `SHIP_CHECKLIST.md` pass.
-- The running debug app plus AX harness can still drive real project-card clicks from this shell.
-- Manual confirmation now covers:
-  - detached direct-shell host focus
-  - no-client attach-or-create when Ghostty is closed
-  - no-client reuse of an existing Ghostty window when Ghostty is already open
-  - activation logs/diagnostics wording is legible enough to distinguish runtime facts from Swift policy/action
+## Best Next Loop
+1. Keep this slice closed unless a new activation-boundary regression appears.
+2. If someone needs more manual proof, reuse `/Users/petepetrash/Code/capacitor/docs/manual-qa/activation-boundary-closeout-2026-03-15.md` plus `scripts/ax/ax_runner.swift`; the highest-value remaining checks are a visible detached `terminal_app` project card and a no-client fallback-ladder scenario.
+3. If `hud-hook` startup flakes return, inspect `/Users/petepetrash/Code/capacitor/core/hud-hook/tests/common/mod.rs` before touching runtime-route behavior.
 
-### Remains
-
-- None in the migration package itself. Slice-005 is complete.
-
-### Shipping Blockers
-
-- `TerminalLauncher.swift` and `TerminalLauncherTests.swift` had pre-existing dirty edits; the migration work preserved and built on them, so future edits to those files should continue to merge carefully.
-- None discovered in the architectural migration itself.
-
-### Next Steps
-
-1. Run `bash docs/plans/rust-swift-boundary-legibility/guard.sh --status`.
-2. If you want to ship the migration, summarize it or prepare a PR from the current diff.
-3. If you want to keep polishing, the next non-blocking UX follow-up is better Ghostty window/tab reuse heuristics beyond the current fix.
+## Notes For The Next Agent
+- Start with `git worktree list` in fresh sessions.
+- Do not revert unrelated dirty files; this repo is still carrying many parallel edits.
+- Treat any new Swift activation heuristic proposal as suspect unless it is purely a fallback UX decision and not routing semantics.

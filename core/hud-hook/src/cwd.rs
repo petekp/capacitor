@@ -14,7 +14,7 @@
 //! Target: < 15ms total execution time.
 //! The shell spawns this in the background, so users never wait.
 
-use capacitor_core::runtime_types::ParentApp;
+use capacitor_core::{domain::TmuxPaneInfo, runtime_types::ParentApp};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::path::{Component, Path, PathBuf};
@@ -70,6 +70,7 @@ pub fn run(path: &str, pid: u32, tty: &str) -> Result<(), CwdError> {
     let entry = ShellEntry::new(normalized_path.clone(), resolved_tty.clone(), parent_app);
     let proc_start = detect_proc_start(pid);
     let tmux_pane = detect_tmux_pane();
+    let tmux_panes = detect_tmux_pane_inventory();
 
     if !crate::runtime_client::runtime_enabled() {
         return Err(CwdError::RuntimeUnavailable(
@@ -86,6 +87,7 @@ pub fn run(path: &str, pid: u32, tty: &str) -> Result<(), CwdError> {
         entry.tmux_client_tty.clone(),
         proc_start,
         tmux_pane,
+        tmux_panes,
     ) {
         Ok(()) => Ok(()),
         Err(err) => Err(CwdError::RuntimeUnavailable(err)),
@@ -275,6 +277,69 @@ fn detect_tmux_pane() -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
+fn detect_tmux_pane_inventory() -> Vec<TmuxPaneInfo> {
+    if std::env::var("TMUX").is_err() {
+        return Vec::new();
+    }
+
+    use std::time::Duration;
+    use wait_timeout::ChildExt;
+
+    let mut child = match std::process::Command::new("tmux")
+        .args([
+            "list-panes",
+            "-a",
+            "-F",
+            "#S\t#{pane_id}\t#{pane_current_path}\t#{session_attached}",
+        ])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+    {
+        Ok(child) => child,
+        Err(_) => return Vec::new(),
+    };
+
+    let timeout = Duration::from_millis(500);
+    match child.wait_timeout(timeout).ok().flatten() {
+        Some(status) if status.success() => {
+            let output = match child.wait_with_output() {
+                Ok(output) => output,
+                Err(_) => return Vec::new(),
+            };
+            parse_tmux_pane_inventory_output(&String::from_utf8_lossy(&output.stdout))
+        }
+        Some(_) => Vec::new(),
+        None => {
+            let _ = child.kill();
+            let _ = child.wait();
+            Vec::new()
+        }
+    }
+}
+
+fn parse_tmux_pane_inventory_output(output: &str) -> Vec<TmuxPaneInfo> {
+    output
+        .lines()
+        .filter_map(|line| {
+            let mut parts = line.splitn(4, '\t');
+            let session_name = parts.next()?.trim();
+            let pane_id = parts.next()?.trim();
+            let pane_path = parts.next()?.trim();
+            let session_attached = parts.next().unwrap_or("0").trim();
+            if session_name.is_empty() || pane_id.is_empty() || pane_path.is_empty() {
+                return None;
+            }
+            Some(TmuxPaneInfo {
+                session_name: session_name.to_string(),
+                pane_id: pane_id.to_string(),
+                pane_path: normalize_path(pane_path),
+                session_attached: session_attached != "0",
+            })
+        })
+        .collect()
+}
+
 use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
 
 fn detect_proc_start(pid: u32) -> Option<u64> {
@@ -380,5 +445,27 @@ mod tests {
         }
 
         fs::remove_dir_all(&root).expect("cleanup mixed-case directory tree");
+    }
+
+    #[test]
+    fn test_parse_tmux_pane_inventory_output_normalizes_rows() {
+        let output = "\
+dev\t%0\t/Users/Pete/Code/Pete-2025/\t1\n\
+dev\t%1\t/Users/Pete/Code/AUI/mcp-app-studio-starter/\t0\n\
+\t%2\t/missing/session\t1\n";
+
+        let panes = parse_tmux_pane_inventory_output(output);
+
+        assert_eq!(panes.len(), 2);
+        assert_eq!(panes[0].session_name, "dev");
+        assert_eq!(panes[0].pane_id, "%0");
+        assert_eq!(panes[0].pane_path, "/Users/Pete/Code/Pete-2025");
+        assert!(panes[0].session_attached);
+        assert_eq!(panes[1].pane_id, "%1");
+        assert_eq!(
+            panes[1].pane_path,
+            "/Users/Pete/Code/AUI/mcp-app-studio-starter"
+        );
+        assert!(!panes[1].session_attached);
     }
 }

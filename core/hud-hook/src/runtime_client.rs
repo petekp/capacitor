@@ -5,7 +5,7 @@
 //! instance directly so the adapter and runtime stay on one semantic path.
 
 use capacitor_core::{
-    domain::{HookEventType, IngestHookEventCommand, IngestShellSignalCommand},
+    domain::{HookEventType, IngestHookEventCommand, IngestShellSignalCommand, TmuxPaneInfo},
     runtime_service::{RuntimeServiceEndpoint, RUNTIME_SERVICE_DEFAULT_PORT},
     runtime_types::ParentApp,
     CoreRuntime,
@@ -68,6 +68,7 @@ pub fn send_shell_cwd_event(
     tmux_client_tty: Option<String>,
     _proc_start: Option<u64>,
     tmux_pane: Option<String>,
+    tmux_panes: Vec<TmuxPaneInfo>,
 ) -> Result<(), String> {
     let command = IngestShellSignalCommand {
         pid,
@@ -77,6 +78,7 @@ pub fn send_shell_cwd_event(
         tmux_session,
         tmux_client_tty,
         tmux_pane,
+        tmux_panes,
         recorded_at: Utc::now().to_rfc3339(),
     };
 

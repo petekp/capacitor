@@ -4,10 +4,11 @@ use std::collections::{BTreeMap, HashMap};
 use chrono::{DateTime, Utc};
 
 use crate::domain::{
-    display_name, normalize_path_for_matching, now_rfc3339, resolve_project_identity, workspace_id,
-    AppSnapshot, DiagnosticsSummary, HookEventType, IngestHookEventCommand,
-    IngestShellSignalCommand, MutationOutcome, ProjectSummary, RoutingStatus, RoutingTarget,
-    RoutingTargetKind, RoutingView, SessionState, SessionSummary, ShellSignal,
+    default_workspace_id, display_name, normalize_path_for_matching, now_rfc3339,
+    resolve_project_identity, workspace_id, AppSnapshot, DiagnosticsSummary, HookEventType,
+    IngestHookEventCommand, IngestShellSignalCommand, MutationOutcome, ProjectSummary,
+    ResolveRoutingCommand, RoutingStatus, RoutingTarget, RoutingTargetKind, RoutingView,
+    SessionState, SessionSummary, ShellSignal, TmuxPaneInfo,
 };
 use crate::runtime_types::ParentApp;
 
@@ -173,6 +174,7 @@ impl ReducerState {
             tmux_session: command.tmux_session,
             tmux_client_tty: command.tmux_client_tty,
             tmux_pane: command.tmux_pane,
+            tmux_panes: command.tmux_panes,
             updated_at,
         };
         self.shells.insert(shell.pid, shell);
@@ -220,6 +222,23 @@ impl ReducerState {
             },
             generated_at: now_rfc3339(),
         }
+    }
+
+    #[must_use]
+    pub fn resolve_routing(&self, command: ResolveRoutingCommand) -> RoutingView {
+        let project_path = normalize_path_for_matching(command.project_path.as_str());
+        let workspace_id = normalized_value(command.workspace_id.as_deref())
+            .unwrap_or_else(|| default_workspace_id(project_path.as_str()));
+        let session_name = normalized_value(command.session_name.as_deref());
+        let client_tty = normalized_value(command.client_tty.as_deref());
+
+        derive_activation_routing_view(
+            workspace_id.as_str(),
+            project_path.as_str(),
+            session_name.as_deref(),
+            client_tty.as_deref(),
+            self.shells.values(),
+        )
     }
 
     fn recompute_projects(&mut self) {
@@ -335,15 +354,38 @@ struct ReducedProjectState {
     active_count: u64,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct TmuxInventoryCandidate<'a> {
+    carrier: &'a ShellSignal,
+    pane: &'a TmuxPaneInfo,
+    rank: u8,
+}
+
 fn derive_routing_view<'a>(
     project: &ProjectSummary,
     sessions: &[&SessionSummary],
     shells: impl Iterator<Item = &'a ShellSignal>,
 ) -> RoutingView {
-    let shell = select_shell_for_project(project, sessions, shells);
-    let (status, target, reason_code, reason, updated_at) = match shell {
-        Some(shell) => routing_for_shell(shell),
-        None => (
+    let shell_set = shells.collect::<Vec<_>>();
+    let shell = select_shell_for_project(project, sessions, shell_set.iter().copied());
+    let inventory_candidate =
+        select_tmux_inventory_for_project(project.project_path.as_str(), shell_set.iter().copied());
+    let should_prefer_inventory = match (shell, inventory_candidate) {
+        (_, Some(_)) if shell.is_none() => true,
+        (Some(shell), Some(_))
+            if !paths_match(shell.cwd.as_str(), project.project_path.as_str()) =>
+        {
+            true
+        }
+        _ => false,
+    };
+    let (status, target, reason_code, reason, updated_at) = match (shell, inventory_candidate) {
+        (_, Some(candidate)) if should_prefer_inventory => {
+            routing_for_tmux_inventory(candidate, &shell_set)
+        }
+        (None, Some(candidate)) => routing_for_tmux_inventory(candidate, &shell_set),
+        (Some(shell), _) => routing_for_shell(shell, &shell_set),
+        (None, None) => (
             RoutingStatus::Unavailable,
             RoutingTarget::default(),
             "NO_TRUSTED_EVIDENCE".to_string(),
@@ -355,6 +397,53 @@ fn derive_routing_view<'a>(
     RoutingView {
         workspace_id: project.workspace_id.clone(),
         project_path: project.project_path.clone(),
+        status,
+        target,
+        reason_code,
+        reason,
+        updated_at,
+    }
+}
+
+fn derive_activation_routing_view<'a>(
+    workspace_id: &str,
+    project_path: &str,
+    session_name: Option<&str>,
+    client_tty: Option<&str>,
+    shells: impl Iterator<Item = &'a ShellSignal>,
+) -> RoutingView {
+    let shell_set = shells.collect::<Vec<_>>();
+    let shell = select_shell_for_activation(
+        project_path,
+        session_name,
+        client_tty,
+        shell_set.iter().copied(),
+    );
+    let inventory_candidate =
+        select_tmux_inventory_for_project(project_path, shell_set.iter().copied());
+    let should_prefer_inventory = match (shell, inventory_candidate) {
+        (_, Some(_)) if shell.is_none() => true,
+        (Some(shell), Some(_)) if !paths_match(shell.cwd.as_str(), project_path) => true,
+        _ => false,
+    };
+    let (status, target, reason_code, reason, updated_at) = match (shell, inventory_candidate) {
+        (_, Some(candidate)) if should_prefer_inventory => {
+            routing_for_tmux_inventory(candidate, &shell_set)
+        }
+        (Some(shell), _) => routing_for_shell(shell, &shell_set),
+        (None, None) => (
+            RoutingStatus::Unavailable,
+            RoutingTarget::default(),
+            "NO_TRUSTED_EVIDENCE".to_string(),
+            "No routing evidence available".to_string(),
+            now_rfc3339(),
+        ),
+        (None, Some(candidate)) => routing_for_tmux_inventory(candidate, &shell_set),
+    };
+
+    RoutingView {
+        workspace_id: workspace_id.to_string(),
+        project_path: project_path.to_string(),
         status,
         target,
         reason_code,
@@ -381,6 +470,48 @@ fn select_shell_for_project<'a>(
         })
 }
 
+fn select_shell_for_activation<'a>(
+    project_path: &str,
+    session_name: Option<&str>,
+    client_tty: Option<&str>,
+    shells: impl Iterator<Item = &'a ShellSignal>,
+) -> Option<&'a ShellSignal> {
+    shells
+        .filter(|shell| {
+            activation_shell_match_rank(shell, project_path, session_name, client_tty) > 0
+        })
+        .max_by(|left, right| {
+            compare_activation_shell_candidates(left, right, project_path, session_name, client_tty)
+        })
+}
+
+fn select_tmux_inventory_for_project<'a>(
+    project_path: &str,
+    shells: impl Iterator<Item = &'a ShellSignal>,
+) -> Option<TmuxInventoryCandidate<'a>> {
+    shells
+        .flat_map(|carrier| {
+            carrier.tmux_panes.iter().filter_map(move |pane| {
+                let rank = tmux_inventory_match_rank(pane.pane_path.as_str(), project_path)?;
+                Some(TmuxInventoryCandidate {
+                    carrier,
+                    pane,
+                    rank,
+                })
+            })
+        })
+        .max_by(|left, right| {
+            left.rank
+                .cmp(&right.rank)
+                .then_with(|| left.pane.session_attached.cmp(&right.pane.session_attached))
+                .then_with(|| {
+                    compare_timestamp_strings(&left.carrier.updated_at, &right.carrier.updated_at)
+                })
+                .then_with(|| left.pane.pane_id.cmp(&right.pane.pane_id))
+                .then_with(|| left.pane.session_name.cmp(&right.pane.session_name))
+        })
+}
+
 fn compare_shell_candidates(
     left: &ShellSignal,
     right: &ShellSignal,
@@ -394,6 +525,25 @@ fn compare_shell_candidates(
         .then_with(|| left.pid.cmp(&right.pid))
 }
 
+fn compare_activation_shell_candidates(
+    left: &ShellSignal,
+    right: &ShellSignal,
+    project_path: &str,
+    session_name: Option<&str>,
+    client_tty: Option<&str>,
+) -> Ordering {
+    activation_shell_match_rank(left, project_path, session_name, client_tty)
+        .cmp(&activation_shell_match_rank(
+            right,
+            project_path,
+            session_name,
+            client_tty,
+        ))
+        .then_with(|| shell_target_rank(left).cmp(&shell_target_rank(right)))
+        .then_with(|| compare_timestamp_strings(&left.updated_at, &right.updated_at))
+        .then_with(|| left.pid.cmp(&right.pid))
+}
+
 fn shell_matches_project(shell: &ShellSignal, project_path: &str, session_pids: &[u32]) -> bool {
     shell_match_rank(shell, project_path, session_pids) > 0
 }
@@ -402,6 +552,48 @@ fn shell_match_rank(shell: &ShellSignal, project_path: &str, session_pids: &[u32
     if session_pids.contains(&shell.pid) {
         2
     } else if paths_match(shell.cwd.as_str(), project_path) {
+        1
+    } else {
+        0
+    }
+}
+
+fn activation_shell_match_rank(
+    shell: &ShellSignal,
+    project_path: &str,
+    session_name: Option<&str>,
+    client_tty: Option<&str>,
+) -> u8 {
+    let project_path_matches = paths_match(shell.cwd.as_str(), project_path);
+    let session_matches = session_name.is_some_and(|expected| {
+        shell
+            .tmux_session
+            .as_deref()
+            .is_some_and(|actual| actual == expected)
+    });
+
+    if let Some(client_tty) = client_tty {
+        if shell
+            .tmux_client_tty
+            .as_deref()
+            .map(str::trim)
+            .is_some_and(|tty| tty == client_tty)
+        {
+            4
+        } else if shell.tty.trim() == client_tty {
+            3
+        } else if session_matches {
+            2
+        } else if project_path_matches {
+            1
+        } else {
+            0
+        }
+    } else if project_path_matches && session_matches {
+        3
+    } else if project_path_matches {
+        2
+    } else if session_matches {
         1
     } else {
         0
@@ -422,6 +614,7 @@ fn shell_target_rank(shell: &ShellSignal) -> u8 {
 
 fn routing_for_shell(
     shell: &ShellSignal,
+    shells: &[&ShellSignal],
 ) -> (RoutingStatus, RoutingTarget, String, String, String) {
     if let Some(pane) = shell.tmux_pane.as_ref() {
         let status = if shell
@@ -437,7 +630,7 @@ fn routing_for_shell(
             status,
             RoutingTarget {
                 kind: RoutingTargetKind::TmuxPane,
-                terminal_app: routing_parent_app(shell.parent_app.as_str()),
+                terminal_app: infer_attached_tmux_terminal_app(shell, shells),
                 session_name: shell.tmux_session.clone(),
                 pane_id: Some(pane.clone()),
                 host_tty: shell.tmux_client_tty.clone(),
@@ -466,7 +659,7 @@ fn routing_for_shell(
             status,
             RoutingTarget {
                 kind: RoutingTargetKind::TmuxSession,
-                terminal_app: routing_parent_app(shell.parent_app.as_str()),
+                terminal_app: infer_attached_tmux_terminal_app(shell, shells),
                 session_name: Some(session.clone()),
                 pane_id: None,
                 host_tty: shell.tmux_client_tty.clone(),
@@ -506,6 +699,143 @@ fn routing_for_shell(
     )
 }
 
+fn routing_for_tmux_inventory(
+    candidate: TmuxInventoryCandidate<'_>,
+    shells: &[&ShellSignal],
+) -> (RoutingStatus, RoutingTarget, String, String, String) {
+    let attached_shell = shells
+        .iter()
+        .copied()
+        .filter(|shell| {
+            shell.tmux_session.as_deref() == Some(candidate.pane.session_name.as_str())
+                && shell
+                    .tmux_client_tty
+                    .as_deref()
+                    .is_some_and(|tty| !tty.trim().is_empty())
+        })
+        .max_by(|left, right| {
+            compare_timestamp_strings(&left.updated_at, &right.updated_at)
+                .then_with(|| left.pid.cmp(&right.pid))
+        });
+
+    let status = if attached_shell.is_some() || candidate.pane.session_attached {
+        RoutingStatus::Attached
+    } else {
+        RoutingStatus::Detached
+    };
+    let terminal_app =
+        attached_shell.and_then(|shell| infer_attached_tmux_terminal_app(shell, shells));
+    let host_tty = attached_shell.and_then(|shell| shell.tmux_client_tty.clone());
+
+    (
+        status,
+        RoutingTarget {
+            kind: RoutingTargetKind::TmuxPane,
+            terminal_app,
+            session_name: Some(candidate.pane.session_name.clone()),
+            pane_id: Some(candidate.pane.pane_id.clone()),
+            host_tty,
+        },
+        match status {
+            RoutingStatus::Attached => "TMUX_PANE_ATTACHED".to_string(),
+            RoutingStatus::Detached => "TMUX_PANE_DETACHED".to_string(),
+            RoutingStatus::Unavailable => "TMUX_PANE_UNAVAILABLE".to_string(),
+        },
+        format!(
+            "Matched tmux pane '{}' from pane inventory",
+            candidate.pane.pane_id
+        ),
+        candidate.carrier.updated_at.clone(),
+    )
+}
+
+fn infer_attached_tmux_terminal_app(
+    shell: &ShellSignal,
+    shells: &[&ShellSignal],
+) -> Option<String> {
+    if let Some(app) = routing_parent_app(shell.parent_app.as_str()) {
+        return Some(app);
+    }
+
+    let host_tty = shell
+        .tmux_client_tty
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())?;
+
+    shells
+        .iter()
+        .filter_map(|candidate| {
+            let app = routing_parent_app(candidate.parent_app.as_str())?;
+            let rank = if candidate.tty.trim() == host_tty {
+                2
+            } else if candidate
+                .tmux_client_tty
+                .as_deref()
+                .map(str::trim)
+                .is_some_and(|tty| tty == host_tty)
+            {
+                1
+            } else {
+                return None;
+            };
+
+            Some((rank, candidate.updated_at.as_str(), candidate.pid, app))
+        })
+        .max_by(|left, right| {
+            left.0
+                .cmp(&right.0)
+                .then_with(|| compare_timestamp_strings(left.1, right.1))
+                .then_with(|| left.2.cmp(&right.2))
+        })
+        .map(|(_, _, _, app)| app)
+}
+
+fn tmux_inventory_match_rank(pane_path: &str, project_path: &str) -> Option<u8> {
+    let pane_path = normalize_path_for_matching(pane_path);
+    let project_path = normalize_path_for_matching(project_path);
+
+    let pane_managed_root = managed_worktree_root(pane_path.as_str());
+    let project_managed_root = managed_worktree_root(project_path.as_str());
+
+    if let Some(project_managed_root) = project_managed_root.as_deref() {
+        if pane_managed_root.as_deref() != Some(project_managed_root)
+            || !path_is_within_root(pane_path.as_str(), project_managed_root)
+        {
+            return None;
+        }
+    } else if pane_managed_root.is_some() {
+        return None;
+    }
+
+    if pane_path == project_path {
+        Some(2)
+    } else if pane_path
+        .strip_prefix(project_path.as_str())
+        .is_some_and(|rest| rest.starts_with('/'))
+    {
+        Some(1)
+    } else {
+        None
+    }
+}
+
+fn managed_worktree_root(path: &str) -> Option<String> {
+    let marker = "/.capacitor/worktrees/";
+    let marker_index = path.find(marker)?;
+    let suffix_start = marker_index + marker.len();
+    if suffix_start >= path.len() {
+        return None;
+    }
+    let suffix = &path[suffix_start..];
+    let next_slash = suffix.find('/')?;
+    Some(path[..suffix_start + next_slash].to_string())
+}
+
+fn path_is_within_root(path: &str, root: &str) -> bool {
+    path == root || path.starts_with(&format!("{root}/"))
+}
+
 fn routing_parent_app(value: &str) -> Option<String> {
     let normalized = ParentApp::from_string(value);
     if matches!(normalized, ParentApp::Unknown | ParentApp::Tmux) {
@@ -515,6 +845,13 @@ fn routing_parent_app(value: &str) -> Option<String> {
     serde_json::to_string(&normalized)
         .ok()
         .map(|value| value.trim_matches('"').to_string())
+}
+
+fn normalized_value(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string)
 }
 
 fn routing_key(workspace_id: &str, project_path: &str) -> String {
@@ -986,7 +1323,7 @@ mod tests {
     use super::ReducerState;
     use crate::domain::{
         default_workspace_id, HookEventType, IngestHookEventCommand, IngestShellSignalCommand,
-        RoutingStatus, RoutingTargetKind, SessionState,
+        ResolveRoutingCommand, RoutingStatus, RoutingTargetKind, SessionState, TmuxPaneInfo,
     };
 
     fn event_base(event_type: HookEventType) -> IngestHookEventCommand {
@@ -1141,6 +1478,7 @@ mod tests {
             tmux_session: Some("cap".to_string()),
             tmux_client_tty: Some("/dev/ttys099".to_string()),
             tmux_pane: Some("%42".to_string()),
+            tmux_panes: vec![],
             recorded_at: "2026-02-28T00:00:00Z".to_string(),
         });
 
@@ -1175,6 +1513,7 @@ mod tests {
             tmux_session: Some("repo".to_string()),
             tmux_client_tty: Some("/dev/ttys099".to_string()),
             tmux_pane: Some("%42".to_string()),
+            tmux_panes: vec![],
             recorded_at: "2026-02-28T00:00:00Z".to_string(),
         });
 
@@ -1206,6 +1545,7 @@ mod tests {
             tmux_session: Some("repo".to_string()),
             tmux_client_tty: Some("/dev/ttys099".to_string()),
             tmux_pane: None,
+            tmux_panes: vec![],
             recorded_at: "2026-02-28T00:00:00Z".to_string(),
         });
 
@@ -1271,6 +1611,7 @@ mod tests {
             tmux_session: Some("sanctuary".to_string()),
             tmux_client_tty: Some("/dev/ttys026".to_string()),
             tmux_pane: Some("%27".to_string()),
+            tmux_panes: vec![],
             recorded_at: "2026-03-13T02:35:59Z".to_string(),
         });
         let _ = state.apply_shell_signal(IngestShellSignalCommand {
@@ -1281,6 +1622,7 @@ mod tests {
             tmux_session: Some("dev".to_string()),
             tmux_client_tty: Some("/dev/ttys009".to_string()),
             tmux_pane: Some("%0".to_string()),
+            tmux_panes: vec![],
             recorded_at: "2026-03-13T02:40:41Z".to_string(),
         });
 
@@ -1325,6 +1667,7 @@ mod tests {
             tmux_session: Some("capacitor".to_string()),
             tmux_client_tty: Some("/dev/ttys022".to_string()),
             tmux_pane: Some("%21".to_string()),
+            tmux_panes: vec![],
             recorded_at: "2026-03-13T02:45:30Z".to_string(),
         });
 
@@ -1340,6 +1683,222 @@ mod tests {
         assert_eq!(route.target.pane_id.as_deref(), Some("%21"));
         assert_eq!(route.target.session_name.as_deref(), Some("capacitor"));
         assert_eq!(route.target.host_tty.as_deref(), Some("/dev/ttys022"));
+    }
+
+    #[test]
+    fn routing_infers_attached_tmux_terminal_app_from_host_tty_shell_evidence() {
+        let mut state = ReducerState::default();
+
+        let mut event = event_base(HookEventType::UserPromptSubmit);
+        event.pid = Some(4242);
+        event.project_path = "/tmp/core-project".to_string();
+        event.cwd = Some("/tmp/core-project".to_string());
+        event.recorded_at = "2026-03-14T20:00:00Z".to_string();
+        let _ = state.apply_hook_event(event);
+
+        let _ = state.apply_shell_signal(IngestShellSignalCommand {
+            pid: 5000,
+            cwd: "/tmp".to_string(),
+            tty: "/dev/ttys099".to_string(),
+            parent_app: "ghostty".to_string(),
+            tmux_session: Some("shared".to_string()),
+            tmux_client_tty: Some("/dev/ttys099".to_string()),
+            tmux_pane: Some("%1".to_string()),
+            tmux_panes: vec![],
+            recorded_at: "2026-03-14T20:00:01Z".to_string(),
+        });
+        let _ = state.apply_shell_signal(IngestShellSignalCommand {
+            pid: 4242,
+            cwd: "/tmp/core-project".to_string(),
+            tty: "/dev/ttys001".to_string(),
+            parent_app: "tmux".to_string(),
+            tmux_session: Some("core".to_string()),
+            tmux_client_tty: Some("/dev/ttys099".to_string()),
+            tmux_pane: Some("%42".to_string()),
+            tmux_panes: vec![],
+            recorded_at: "2026-03-14T20:00:02Z".to_string(),
+        });
+
+        let route = state
+            .snapshot()
+            .routing
+            .into_iter()
+            .find(|route| route.project_path == "/tmp/core-project")
+            .expect("route");
+
+        assert_eq!(route.status, RoutingStatus::Attached);
+        assert_eq!(route.target.kind, RoutingTargetKind::TmuxPane);
+        assert_eq!(route.target.terminal_app.as_deref(), Some("ghostty"));
+        assert_eq!(route.target.session_name.as_deref(), Some("core"));
+        assert_eq!(route.target.pane_id.as_deref(), Some("%42"));
+        assert_eq!(route.target.host_tty.as_deref(), Some("/dev/ttys099"));
+    }
+
+    #[test]
+    fn routing_derives_non_active_tmux_pane_from_inventory() {
+        let mut state = ReducerState::default();
+
+        let mut event = event_base(HookEventType::UserPromptSubmit);
+        event.pid = Some(4242);
+        event.project_path = "/users/petepetrash/code/aui/mcp-app-studio-starter".to_string();
+        event.cwd = Some("/users/petepetrash/code/aui/mcp-app-studio-starter".to_string());
+        event.recorded_at = "2026-03-15T03:00:00Z".to_string();
+        let _ = state.apply_hook_event(event);
+
+        let _ = state.apply_shell_signal(IngestShellSignalCommand {
+            pid: 4242,
+            cwd: "/users/petepetrash/code/pete-2025".to_string(),
+            tty: "/dev/ttys005".to_string(),
+            parent_app: "ghostty".to_string(),
+            tmux_session: Some("dev".to_string()),
+            tmux_client_tty: Some("/dev/ttys009".to_string()),
+            tmux_pane: Some("%0".to_string()),
+            tmux_panes: vec![
+                TmuxPaneInfo {
+                    session_name: "dev".to_string(),
+                    pane_id: "%0".to_string(),
+                    pane_path: "/users/petepetrash/code/pete-2025".to_string(),
+                    session_attached: true,
+                },
+                TmuxPaneInfo {
+                    session_name: "dev".to_string(),
+                    pane_id: "%1".to_string(),
+                    pane_path: "/users/petepetrash/code/aui/mcp-app-studio-starter".to_string(),
+                    session_attached: true,
+                },
+            ],
+            recorded_at: "2026-03-15T03:00:01Z".to_string(),
+        });
+
+        let route = state
+            .snapshot()
+            .routing
+            .into_iter()
+            .find(|route| {
+                route.project_path == "/users/petepetrash/code/aui/mcp-app-studio-starter"
+            })
+            .expect("route");
+
+        assert_eq!(route.status, RoutingStatus::Attached);
+        assert_eq!(route.target.kind, RoutingTargetKind::TmuxPane);
+        assert_eq!(route.target.session_name.as_deref(), Some("dev"));
+        assert_eq!(route.target.pane_id.as_deref(), Some("%1"));
+        assert_eq!(route.target.host_tty.as_deref(), Some("/dev/ttys009"));
+        assert_eq!(route.target.terminal_app.as_deref(), Some("ghostty"));
+    }
+
+    #[test]
+    fn routing_query_prefers_client_tty_match_for_untracked_project() {
+        let mut state = ReducerState::default();
+
+        let _ = state.apply_shell_signal(IngestShellSignalCommand {
+            pid: 100,
+            cwd: "/Users/pete/Code/capacitor".to_string(),
+            tty: "/dev/ttys010".to_string(),
+            parent_app: "Ghostty".to_string(),
+            tmux_session: Some("caps".to_string()),
+            tmux_client_tty: Some("/dev/ttys001".to_string()),
+            tmux_pane: None,
+            tmux_panes: vec![],
+            recorded_at: "2026-03-15T05:40:00Z".to_string(),
+        });
+
+        let _ = state.apply_shell_signal(IngestShellSignalCommand {
+            pid: 101,
+            cwd: "/Users/pete/Code/capacitor".to_string(),
+            tty: "/dev/ttys020".to_string(),
+            parent_app: "iTerm2".to_string(),
+            tmux_session: Some("caps".to_string()),
+            tmux_client_tty: Some("/dev/ttys002".to_string()),
+            tmux_pane: None,
+            tmux_panes: vec![],
+            recorded_at: "2026-03-15T05:40:01Z".to_string(),
+        });
+
+        let route = state.resolve_routing(ResolveRoutingCommand {
+            project_path: "/Users/pete/Code/capacitor".to_string(),
+            workspace_id: None,
+            session_name: Some("caps".to_string()),
+            client_tty: Some("/dev/ttys002".to_string()),
+        });
+
+        assert_eq!(route.status, RoutingStatus::Attached);
+        assert_eq!(route.target.kind, RoutingTargetKind::TmuxSession);
+        assert_eq!(route.target.terminal_app.as_deref(), Some("iterm2"));
+        assert_eq!(route.target.session_name.as_deref(), Some("caps"));
+        assert_eq!(route.target.host_tty.as_deref(), Some("/dev/ttys002"));
+    }
+
+    #[test]
+    fn routing_query_falls_back_to_session_match_for_untracked_project() {
+        let mut state = ReducerState::default();
+
+        let _ = state.apply_shell_signal(IngestShellSignalCommand {
+            pid: 200,
+            cwd: "/Users/pete/Code/capacitor".to_string(),
+            tty: "/dev/ttys030".to_string(),
+            parent_app: "Terminal".to_string(),
+            tmux_session: Some("caps".to_string()),
+            tmux_client_tty: None,
+            tmux_pane: None,
+            tmux_panes: vec![],
+            recorded_at: "2026-03-15T05:41:00Z".to_string(),
+        });
+
+        let route = state.resolve_routing(ResolveRoutingCommand {
+            project_path: "/Users/pete/Code/capacitor".to_string(),
+            workspace_id: None,
+            session_name: Some("caps".to_string()),
+            client_tty: None,
+        });
+
+        assert_eq!(route.status, RoutingStatus::Detached);
+        assert_eq!(route.target.kind, RoutingTargetKind::TmuxSession);
+        assert_eq!(route.target.terminal_app.as_deref(), Some("terminal"));
+        assert_eq!(route.target.session_name.as_deref(), Some("caps"));
+        assert_eq!(route.target.host_tty, None);
+    }
+
+    #[test]
+    fn routing_query_prefers_exact_project_path_when_client_tty_unknown() {
+        let mut state = ReducerState::default();
+
+        let _ = state.apply_shell_signal(IngestShellSignalCommand {
+            pid: 300,
+            cwd: "/Users/pete/Code/capacitor".to_string(),
+            tty: "/dev/ttys031".to_string(),
+            parent_app: "Ghostty".to_string(),
+            tmux_session: None,
+            tmux_client_tty: None,
+            tmux_pane: None,
+            tmux_panes: vec![],
+            recorded_at: "2026-03-15T05:42:00Z".to_string(),
+        });
+
+        let _ = state.apply_shell_signal(IngestShellSignalCommand {
+            pid: 301,
+            cwd: "/Users/pete".to_string(),
+            tty: "/dev/ttys029".to_string(),
+            parent_app: "Terminal".to_string(),
+            tmux_session: Some("capacitor".to_string()),
+            tmux_client_tty: None,
+            tmux_pane: None,
+            tmux_panes: vec![],
+            recorded_at: "2026-03-15T05:41:00Z".to_string(),
+        });
+
+        let route = state.resolve_routing(ResolveRoutingCommand {
+            project_path: "/Users/pete/Code/capacitor".to_string(),
+            workspace_id: None,
+            session_name: Some("capacitor".to_string()),
+            client_tty: None,
+        });
+
+        assert_eq!(route.status, RoutingStatus::Detached);
+        assert_eq!(route.target.kind, RoutingTargetKind::TerminalApp);
+        assert_eq!(route.target.terminal_app.as_deref(), Some("ghostty"));
+        assert_eq!(route.target.session_name, None);
+        assert_eq!(route.target.host_tty, None);
     }
 
     #[test]
