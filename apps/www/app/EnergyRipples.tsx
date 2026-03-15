@@ -43,15 +43,15 @@ export default function EnergyRipples({ anchorId }: { anchorId: string }) {
   }, [updatePosition]);
 
   const p = useDialKit("Ripples", {
-    count: [5, 1, 12, 1],
-    duration: [12, 1, 20, 0.5],
-    maxRadius: [800, 200, 3000, 50],
-    startOpacity: [0.25, 0.05, 1, 0.05],
+    count: [4, 1, 12, 1],
+    duration: [16, 1, 20, 0.5],
+    maxRadius: [1200, 200, 3000, 50],
+    startOpacity: [0.05, 0.01, 1, 0.01],
     endOpacity: [0, 0, 0.5, 0.01],
-    startStroke: [40, 0.5, 80, 0.5],
+    startStroke: [80, 0.5, 120, 0.5],
     endStroke: [0, 0, 30, 0.5],
-    blur: [29, 0, 200, 1],
-    blendMode: [4, 0, BLEND_MODES.length - 1, 1],
+    blur: [7, 0, 200, 1],
+    blendMode: [6, 0, BLEND_MODES.length - 1, 1],
     color: "#0FFF88",
   });
 
@@ -63,11 +63,8 @@ export default function EnergyRipples({ anchorId }: { anchorId: string }) {
     <div
       style={{
         position: "absolute",
-        top: 0,
-        left: 0,
-        width: "100%",
-        height: "100%",
-        overflow: "hidden",
+        inset: 0,
+        overflow: "visible",
         pointerEvents: "none",
         zIndex: 0,
       }}

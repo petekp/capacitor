@@ -1,6 +1,8 @@
 import styles from "./page.module.css";
 import LogomarkAnimated from "./LogomarkAnimated";
 import EnergyRipples from "./EnergyRipples";
+import GlassTextHeading from "./GlassTextHeading";
+import FeatureGlow from "./FeatureGlow";
 
 const DOWNLOAD_URL =
   "https://github.com/petekp/capacitor/releases/latest";
@@ -10,7 +12,7 @@ export default function Home() {
   return (
     <>
       <EnergyRipples anchorId="logomark-anchor" />
-      <header className={styles.header}>
+      <header className={`${styles.header} glass glass-strength-10 glass-surface`}>
         <div className={styles.headerInner}>
           <img
             src="/logo-green.svg"
@@ -35,7 +37,9 @@ export default function Home() {
         <div className={styles.hero}>
           <div className={styles.heroText}>
             <h1 className={styles.heading}>
-              Amplify your Claude Coding capacity
+              <GlassTextHeading>
+                Amplify your Claude Coding capacity
+              </GlassTextHeading>
             </h1>
             <p className={styles.subtitle}>
               A bring-your-own-terminal, multi-session orchestrator
@@ -54,7 +58,8 @@ export default function Home() {
         sessions visible and one click away.
       </p>
 
-      <div className={styles.featureGrid}>
+      <FeatureGlow targetId="feature-grid" />
+      <div className={styles.featureGrid} id="feature-grid">
         {/* Row 1: full width hero */}
         <div className={`${styles.featureTile} ${styles.tileStatus}`}>
           <strong>Live session status</strong>

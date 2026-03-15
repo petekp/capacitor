@@ -1,12 +1,16 @@
 /* ── Header ── */
 
 .header {
-  position: sticky;
-  top: 0;
+  position: fixed;
+  top: -100px;
+  left: 0;
+  right: 0;
   z-index: 10;
-  width: 100%;
-  background: var(--bg);
+  padding-top: 100px;
+  background: color-mix(in srgb, var(--bg) 90%, transparent);
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 .headerInner {
@@ -66,7 +70,7 @@
   flex-direction: column;
   align-items: flex-start;
   min-height: 100vh;
-  padding: 3rem 2rem;
+  padding: 5rem 2rem 3rem;
   gap: 2rem;
   max-width: 960px;
   margin: 0 auto;
@@ -80,6 +84,7 @@
   justify-content: space-between;
   width: 100%;
   gap: 3rem;
+  padding: 5rem 0;
 }
 
 .heroText {
@@ -172,36 +177,47 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
+  position: relative;
+  overflow: hidden;
 }
+
+.featureTile::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--tile-gradient);
+  background-attachment: fixed;
+  opacity: var(--glow-opacity, 0);
+  transition: opacity 0.15s linear;
+  pointer-events: none;
+}
+
+.tileStatus   { --tile-gradient: radial-gradient(circle at 50vw 50vh, rgba(15, 255, 136, 0.25), transparent 50%); }
+.tileTerminal { --tile-gradient: radial-gradient(circle at 50vw 50vh, rgba(255, 185, 50, 0.2), transparent 50%); }
+.tileUpcoming:nth-child(4) { --tile-gradient: radial-gradient(circle at 50vw 50vh, rgba(140, 130, 255, 0.15), transparent 50%); }
+.tileUpcoming:nth-child(5) { --tile-gradient: radial-gradient(circle at 50vw 50vh, rgba(100, 220, 255, 0.12), transparent 50%); }
 
 .featureTile strong {
   font-size: 1.25rem;
   font-weight: 600;
   letter-spacing: -0.01em;
-  color: rgba(0, 0, 0, 0.9);
+  color: var(--text-primary);
 }
 
 .featureTile span {
   font-size: 1.05rem;
   line-height: 1.55;
-  color: rgba(0, 0, 0, 0.5);
-}
-
-.tileStatus   { background: #0FFF88; }
-.tileTerminal { background: rgb(255, 185, 50); }
-
-.tileUpcoming {
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px dashed rgba(255, 255, 255, 0.12);
-}
-
-.tileUpcoming strong {
-  color: var(--text-primary);
-}
-
-.tileUpcoming span {
   color: var(--text-secondary);
 }
+
+.tileStatus   { background: rgba(15, 255, 136, 0.04); }
+.tileTerminal { background: rgba(255, 185, 50, 0.004); }
+
+.tileUpcoming {
+  opacity: 1;
+}
+
 
 .comingSoon {
   font-size: 0.7rem !important;
