@@ -7,7 +7,7 @@
   right: 0;
   z-index: 10;
   padding-top: 100px;
-  background: color-mix(in srgb, var(--bg) 90%, transparent);
+  background: color-mix(in srgb, var(--bg) 80%, transparent);
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.06);
@@ -84,7 +84,7 @@
   justify-content: space-between;
   width: 100%;
   gap: 3rem;
-  padding: 5rem 0;
+  padding: 5rem 0 2rem;
 }
 
 .heroText {
@@ -104,29 +104,31 @@
 }
 
 .heading {
-  font-size: 3.5rem;
-  font-weight: 700;
+  font-size: 2rem;
+  font-weight: 900;
   letter-spacing: -0.03em;
   line-height: 1.1;
-  color: red;
-  max-width: 600px;
+  font-family: monospace;
+  max-width: 650px;
+  text-shadow: rgba(255,255,255,0.5) 0 0 0;
 }
 
 .subtitle {
-  font-size: 1.35rem;
+  font-size: 1.25rem;
   font-weight: 400;
   color: var(--text-secondary);
   line-height: 1.4;
+  max-width: 600px;
 }
 
 .callout {
   color: var(--text-primary);
-  font-size: 1.75rem;
+  font-size: 2.4rem;
   line-height: 1.4;
   font-weight: 400;
   letter-spacing: -0.015em;
-  margin: 3rem 0;
-  max-width: 720px;
+  margin: 12rem 0;
+
 }
 
 .video {
@@ -157,7 +159,7 @@
   width: 100%;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
+  gap: 8px;
 }
 
 /* Row 1: full width hero */
@@ -217,49 +219,101 @@
   pointer-events: none;
 }
 
+.specularBorder {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(
+    calc(var(--tile-border-angle, 160deg) + 180deg),
+    rgba(255, 255, 255, 0.5) 0%,
+    rgba(255, 255, 255, 0.15) 15%,
+    transparent 50%,
+    transparent 100%
+  );
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  mix-blend-mode: screen;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.specularBloom {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    calc(var(--tile-border-angle, 160deg) + 180deg),
+    var(--bloom-bright, #ffffffb3) 0%,
+    var(--bloom-mid, #ffffff33) 4%,
+    transparent 35%,
+    transparent 86%
+  );
+  filter: blur(19px);
+  mix-blend-mode: color-burn;
+  pointer-events: none;
+  z-index: 1;
+}
+
 .tileStatus {
-  --tile-gradient: radial-gradient(circle at 50vw 50vh, rgba(15, 255, 136, 0.25), transparent 90%);
+  --tile-gradient: radial-gradient(circle at 50vw 50vh, rgba(15, 255, 136, 0.07), transparent 90%);
   --tile-border-highlight: rgba(15, 255, 136, 0.35);
   --tile-border-mid: rgba(15, 255, 136, 0.1);
   --tile-border-edge: rgba(15, 255, 136, 0.05);
+  --bloom-bright: rgba(50, 255, 160, 0.8);
+  --bloom-mid: rgba(50, 255, 160, 0.25);
 }
 
 .tileTerminal {
-  --tile-gradient: radial-gradient(circle at 50vw 50vh, rgba(255, 185, 50, 0.2), transparent 90%);
+  --tile-gradient: radial-gradient(circle at 50vw 50vh, rgba(255, 185, 50, 0.1), transparent 90%);
   --tile-border-highlight: rgba(255, 185, 50, 0.35);
   --tile-border-mid: rgba(255, 185, 50, 0.1);
   --tile-border-edge: rgba(255, 185, 50, 0.05);
+  --bloom-bright: rgba(255, 210, 80, 0.8);
+  --bloom-mid: rgba(255, 210, 80, 0.25);
 }
 
 .tileUpcoming:nth-child(4) {
-  --tile-gradient: radial-gradient(circle at 50vw 50vh, rgba(140, 130, 255, 0.15), transparent 90%);
+  --tile-gradient: radial-gradient(circle at 50vw 50vh, rgba(140, 130, 255, 0.1), transparent 90%);
   --tile-border-highlight: rgba(140, 130, 255, 0.3);
   --tile-border-mid: rgba(140, 130, 255, 0.08);
   --tile-border-edge: rgba(140, 130, 255, 0.04);
+  --bloom-bright: rgba(170, 160, 255, 0.8);
+  --bloom-mid: rgba(170, 160, 255, 0.25);
 }
 
 .tileUpcoming:nth-child(5) {
-  --tile-gradient: radial-gradient(circle at 50vw 50vh, rgba(100, 220, 255, 0.12), transparent 90%);
+  --tile-gradient: radial-gradient(circle at 50vw 50vh, rgba(100, 220, 255, 0.1), transparent 90%);
   --tile-border-highlight: rgba(100, 220, 255, 0.25);
   --tile-border-mid: rgba(100, 220, 255, 0.07);
   --tile-border-edge: rgba(100, 220, 255, 0.03);
+  --bloom-bright: rgba(140, 240, 255, 0.8);
+  --bloom-mid: rgba(140, 240, 255, 0.25);
 }
 
 .featureTile strong {
-  font-size: 1.25rem;
+  font-size: 1rem;
   font-weight: 600;
-  letter-spacing: -0.01em;
   color: var(--text-primary);
 }
 
 .featureTile span {
-  font-size: 1.05rem;
-  line-height: 1.55;
-  color: var(--text-secondary);
+  font-size: 1rem;
+  opacity: 0.7;
+
 }
 
-.tileStatus   { background: rgba(15, 255, 136, 0.04); }
-.tileTerminal { background: rgba(255, 185, 50, 0.004); }
+.tileStatus   { background: rgba(15, 255, 136, 0.08); }
+.tileTerminal { background: rgba(255, 185, 50, 0.06); }
+
+.tileUpcoming:nth-child(4) { background: rgba(140, 130, 255, 0.06); }
+.tileUpcoming:nth-child(5) { background: rgba(100, 220, 255, 0.06); }
 
 .tileUpcoming {
   opacity: 1;
@@ -351,7 +405,7 @@
   align-items: center;
   gap: 0.5rem;
   padding: 0.75rem 2rem;
-  background: var(--accent, var(--accent-fallback));
+  background: white;
   color: hsl(260, 4.5%, 11%);
   font-size: 1rem;
   font-weight: 600;

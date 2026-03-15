@@ -24,16 +24,16 @@ export default function GlassTextHeading({
   const sy = useSpring(mouseY, MOUSE_SPRING);
 
   const p = useDialKit("Glass Text", {
-    blurStdDev: [1, 0, 8, 0.1],
-    diffSurfaceScale: [0, 0, 30, 0.5],
-    diffConstant: [1.85, 0, 3, 0.05],
-    diffLightZ: [40, 0, 800, 10],
-    specSurfaceScale: [11, 0, 30, 0.5],
-    specConstant: [5, 0, 5, 0.1],
-    specExponent: [21, 1, 128, 1],
-    specLightZ: [50, 0, 800, 10],
-    diffOpacity: [0.7, 0, 1, 0.05],
-    specOpacity: [0.6, 0, 1, 0.05],
+    blurStdDev: [0.6, 0, 8, 0.1],
+    diffSurfaceScale: [0.5, 0, 30, 0.5],
+    diffConstant: [1.5, 0, 3, 0.05],
+    diffLightZ: [330, 0, 800, 10],
+    specSurfaceScale: [6.5, 0, 30, 0.5],
+    specConstant: [1.5, 0, 5, 0.1],
+    specExponent: [15, 1, 128, 1],
+    specLightZ: [0, 0, 800, 10],
+    diffOpacity: [0.2, 0, 1, 0.05],
+    specOpacity: [0.75, 0, 1, 0.05],
   });
 
   useMotionValueEvent(sx, "change", (v) => {

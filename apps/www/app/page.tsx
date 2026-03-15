@@ -38,19 +38,27 @@ export default function Home() {
           <div className={styles.heroText}>
             <h1 className={styles.heading}>
               <GlassTextHeading>
-                Amplify your Claude Coding capacity
+                Crank up your Claude-pacity
               </GlassTextHeading>
             </h1>
             <p className={styles.subtitle}>
-              A bring-your-own-terminal, multi-session orchestrator
+              A bring-your-own-terminal, always visible, multi-session orchestrator for Claude Code
             </p>
           </div>
           <div className={styles.heroMarkContainer} id="logomark-anchor">
             <LogomarkAnimated className={styles.heroMark} />
           </div>
         </div>
-      {/* Replace with <video> once demo is recorded */}
-      <div className={styles.videoPlaceholder}>Demo video coming soon</div>
+      <video
+        className={styles.video}
+        autoPlay
+        loop
+        muted
+        playsInline
+      >
+        <source src="/capacitor-full-1080.webm" type="video/webm" />
+        <source src="/capacitor-full-1080.mp4" type="video/mp4" />
+      </video>
 
       <p className={styles.callout}>
         If you&rsquo;ve ever lost track of which terminal window or tmux pane
@@ -62,6 +70,8 @@ export default function Home() {
       <div className={styles.featureGrid} id="feature-grid">
         {/* Row 1: full width hero */}
         <div className={`${styles.featureTile} ${styles.tileStatus}`}>
+          <span className={styles.specularBloom} />
+          <span className={styles.specularBorder} />
           <strong>Live session status</strong>
           <span>
             Keep project context visible without terminal tab hunting. See
@@ -73,7 +83,9 @@ export default function Home() {
 
         {/* Row 2 */}
         <div className={`${styles.featureTile} ${styles.tileTerminal}`}>
-          <strong>Seamless integration with your terminal of choice</strong>
+          <span className={styles.specularBloom} />
+          <span className={styles.specularBorder} />
+          <strong>Bring your own terminal</strong>
           <span>
             Click a project card to return to the right terminal and tmux
             context. Capacitor finds or creates the matching session, switches
@@ -84,6 +96,8 @@ export default function Home() {
 
         {/* Row 2: narrow right */}
         <div className={`${styles.featureTile} ${styles.tileUpcoming}`}>
+          <span className={styles.specularBloom} />
+          <span className={styles.specularBorder} />
           <span className={styles.comingSoon}>Coming soon</span>
           <strong>Idea queuing</strong>
           <span>
@@ -93,6 +107,8 @@ export default function Home() {
 
         {/* Row 3: narrow left, wide right (zigzag) */}
         <div className={`${styles.featureTile} ${styles.tileUpcoming}`}>
+          <span className={styles.specularBloom} />
+          <span className={styles.specularBorder} />
           <span className={styles.comingSoon}>Coming soon</span>
           <strong>Automatic git management</strong>
           <span>
@@ -100,6 +116,8 @@ export default function Home() {
           </span>
         </div>
         <div className={`${styles.featureTile} ${styles.tileUpcoming}`}>
+          <span className={styles.specularBloom} />
+          <span className={styles.specularBorder} />
           <span className={styles.comingSoon}>Coming soon</span>
           <strong>Proactive iteration with milestones</strong>
           <span>
@@ -145,7 +163,7 @@ export default function Home() {
 
       <p className={styles.requirements}>
         Requires macOS 14+, Apple Silicon, and{" "}
-        <a href="https://claude.ai/download">Claude Code</a> installed.
+        <a href="https://claude.ai/download">Claude Code</a> installed. tmux strongly recommended.
       </p>
 
       <a href="/guide" className={styles.guideLink}>
