@@ -21,6 +21,13 @@ cargo fmt                         # Format (required before commits)
 cargo clippy -- -D warnings       # Lint
 cargo test                        # Test
 
+# Formal verification
+./scripts/verify/verify.sh --bootstrap   # Install verifier deps and scaffold .verifier/
+./scripts/verify/verify.sh --layers 1    # Structural ownership/boundary checks
+./scripts/verify/verify.sh --layers 1,2  # Structural + behavioral specs
+./scripts/verify/verify.sh --grade       # Elegance audit only
+./scripts/verify/verify.sh --evolve      # Check docs/spec drift
+
 # Full rebuild (after Rust changes)
 cargo build -p capacitor-core --release && cd apps/swift && swift build
 # Advanced launch control:
@@ -89,6 +96,8 @@ For coding-agent runtime debugging, use the canonical diagnostic CLI:
 
 Full command reference: `./scripts/dev/agent-observe.sh help`
 Debugging guide: `.claude/docs/debugging-guide.md`
+
+Formal verification report path: `.verifier/reports/last-run.json`
 
 Optional browser UI + local telemetry sink: `node scripts/transparent-ui-server.mjs` (localhost:9133)
 

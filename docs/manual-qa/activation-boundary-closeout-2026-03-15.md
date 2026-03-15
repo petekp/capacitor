@@ -83,14 +83,49 @@ Exercise the real project-card activation path through `scripts/ax/ax_runner.swi
   - tmux client state changed from:
     - `/dev/ttys011 -> capacitor`
     - to `/dev/ttys011 -> dev`
-- A detached direct-shell proof for `ax.project-card.claude-code-setup` was still not available because that identifier was not present in the accessible project-card set for the current app state.
+- Later in the same session, a controlled state setup surfaced the detached-route card and the missing proofs were earned:
+  - temporarily pinned `/Users/petepetrash/Code/claude-code-setup` in `~/.capacitor/projects.json`
+  - temporarily removed `/Users/petepetrash/Code/claude-code-setup` from `com.capacitor.app.debug` `manuallyDormantProjects`
+  - restored both pieces of user state after the proof and relaunched the app
+- Detached `terminal_app` proof earned:
+  - `ax.project-card.claude-code-setup` became visible in the AX tree
+  - pre-click runtime route was:
+    - `status = detached`
+    - `kind = terminal_app`
+    - `terminal_app = ghostty`
+    - `session_name = null`
+    - `pane_id = null`
+    - `host_tty = null`
+  - clicking `ax.project-card.claude-code-setup` succeeded through the named `Open in Terminal` accessibility action
+  - frontmost app changed to `ghostty`
+  - tmux client state changed from:
+    - `/dev/ttys057 -> capacitor`
+    - to `/dev/ttys057 -> claude-code-setup`
+  - a new tmux session for `claude-code-setup` existed immediately after the click
+  - the runtime route then converged to:
+    - `status = attached`
+    - `kind = tmux_pane`
+    - `session_name = claude-code-setup`
+    - `pane_id = %32`
+    - `host_tty = /dev/ttys057`
+- No-client fallback-ladder proof earned:
+  - detached the sole tmux client `/dev/ttys057 -> claude-code-setup`
+  - verified `tmux list-clients` returned no clients before the click
+  - clicking `ax.project-card.pete-2025` succeeded through the named `Open in Terminal` accessibility action
+  - app debug log captured:
+    - `[TerminalLauncher] runActivationFlow noClient, launching attach-or-create session=dev`
+    - `[TerminalLauncher] launchTerminalWithTmuxSession app=Ghostty session=dev path=/Users/petepetrash/Code/pete-2025`
+  - frontmost app changed to `ghostty`
+  - a fresh tmux client appeared as `/dev/ttys015 -> dev`
+  - the runtime snapshot for `pete-2025` still reported the older attached route host tty (`/dev/ttys057`) immediately after the launch, so the authoritative proof here is the no-client log line plus the new tmux client rather than the stale cached `host_tty` field
 
 ## Remaining Manual Checks
 
-- Detached direct-shell route still prefers the routed terminal host for a currently visible project card with `kind = terminal_app`.
-- No-client activation still chooses the explicit fallback ladder.
-- Activation logs and diagnostics distinguish runtime facts from Swift policy interpretation during a real project-card click.
+- None for the activation-boundary cleanup itself.
+- Residual QA caveat:
+  - the debug app AX window tree can still intermittently disappear even when a real CG window exists
+  - immediately after the no-client fallback launch, the routing snapshot's cached `host_tty` lagged behind the newly created tmux client
 
 ## Recommended Next Step
 
-If the AX window disappears again, treat it as an intermittent accessibility/window-introspection bug in the debug app and recover it before trusting shell-driven UI QA. The highest-value remaining proof is a detached direct-shell card click for a visible `terminal_app` route plus a no-client fallback-ladder scenario.
+If the AX window disappears again, treat it as an intermittent accessibility/window-introspection bug in the debug app and recover it before trusting shell-driven UI QA. Follow-up work, if any, should focus on the intermittent AX window-tree disappearance and on whether the runtime snapshot should refresh `host_tty` more quickly after a no-client fallback launch.

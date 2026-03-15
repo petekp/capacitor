@@ -50,6 +50,20 @@ Current terminal support:
 3. Run Claude Code in your terminal(s) as normal.
 4. Click project cards in Capacitor to jump to the right session.
 
+## Developing Capacitor
+
+Formal verification is part of the repo's default engineering surface.
+
+```bash
+./scripts/verify/verify.sh --bootstrap
+./scripts/verify/verify.sh --layers 1
+./scripts/verify/verify.sh --layers 1,2
+./scripts/verify/verify.sh --grade
+./scripts/verify/verify.sh --evolve
+```
+
+Verifier specs and policy live under `.verifier/`. Cached facts and reports are generated locally under `.verifier/facts/` and `.verifier/reports/`.
+
 ## How it works
 
 Capacitor is a sidecar. It watches what Claude Code is doing without getting in the way.
