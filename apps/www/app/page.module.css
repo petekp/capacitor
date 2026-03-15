@@ -108,7 +108,7 @@
   font-weight: 700;
   letter-spacing: -0.03em;
   line-height: 1.1;
-  color: var(--text-primary);
+  color: red;
   max-width: 600px;
 }
 
@@ -193,10 +193,57 @@
   pointer-events: none;
 }
 
-.tileStatus   { --tile-gradient: radial-gradient(circle at 50vw 50vh, rgba(15, 255, 136, 0.25), transparent 50%); }
-.tileTerminal { --tile-gradient: radial-gradient(circle at 50vw 50vh, rgba(255, 185, 50, 0.2), transparent 50%); }
-.tileUpcoming:nth-child(4) { --tile-gradient: radial-gradient(circle at 50vw 50vh, rgba(140, 130, 255, 0.15), transparent 50%); }
-.tileUpcoming:nth-child(5) { --tile-gradient: radial-gradient(circle at 50vw 50vh, rgba(100, 220, 255, 0.12), transparent 50%); }
+.featureTile::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(
+    var(--tile-border-angle, 160deg),
+    var(--tile-border-highlight, rgba(255, 255, 255, 0.2)) 0%,
+    var(--tile-border-mid, rgba(255, 255, 255, 0.06)) 40%,
+    transparent 60%,
+    var(--tile-border-edge, rgba(255, 255, 255, 0.03)) 100%
+  );
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+.tileStatus {
+  --tile-gradient: radial-gradient(circle at 50vw 50vh, rgba(15, 255, 136, 0.25), transparent 90%);
+  --tile-border-highlight: rgba(15, 255, 136, 0.35);
+  --tile-border-mid: rgba(15, 255, 136, 0.1);
+  --tile-border-edge: rgba(15, 255, 136, 0.05);
+}
+
+.tileTerminal {
+  --tile-gradient: radial-gradient(circle at 50vw 50vh, rgba(255, 185, 50, 0.2), transparent 90%);
+  --tile-border-highlight: rgba(255, 185, 50, 0.35);
+  --tile-border-mid: rgba(255, 185, 50, 0.1);
+  --tile-border-edge: rgba(255, 185, 50, 0.05);
+}
+
+.tileUpcoming:nth-child(4) {
+  --tile-gradient: radial-gradient(circle at 50vw 50vh, rgba(140, 130, 255, 0.15), transparent 90%);
+  --tile-border-highlight: rgba(140, 130, 255, 0.3);
+  --tile-border-mid: rgba(140, 130, 255, 0.08);
+  --tile-border-edge: rgba(140, 130, 255, 0.04);
+}
+
+.tileUpcoming:nth-child(5) {
+  --tile-gradient: radial-gradient(circle at 50vw 50vh, rgba(100, 220, 255, 0.12), transparent 90%);
+  --tile-border-highlight: rgba(100, 220, 255, 0.25);
+  --tile-border-mid: rgba(100, 220, 255, 0.07);
+  --tile-border-edge: rgba(100, 220, 255, 0.03);
+}
 
 .featureTile strong {
   font-size: 1.25rem;

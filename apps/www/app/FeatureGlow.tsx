@@ -52,7 +52,15 @@ export default function FeatureGlow({ targetId }: { targetId: string }) {
 
     for (let i = 0; i < grid.children.length; i++) {
       const child = grid.children[i] as HTMLElement;
-      child.style.setProperty("--glow-opacity", String(opacities[i] ?? 0));
+      const opacity = opacities[i] ?? 0;
+      child.style.setProperty("--glow-opacity", String(opacity));
+
+      // Map scroll progress to border gradient angle (0deg → 240deg)
+      const rect = child.getBoundingClientRect();
+      const vh = window.innerHeight;
+      const progress = (vh - rect.top) / (vh + rect.height);
+      const angle = progress * 240;
+      child.style.setProperty("--tile-border-angle", `${angle}deg`);
     }
   }, [opacities, targetId]);
 
