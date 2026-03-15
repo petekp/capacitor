@@ -8,6 +8,8 @@
     "start": "next start"
   },
   "dependencies": {
+    "dialkit": "^1.1.0",
+    "motion": "^12.36.0",
     "next": "16.1.6",
     "react": "19.2.3",
     "react-dom": "19.2.3"
