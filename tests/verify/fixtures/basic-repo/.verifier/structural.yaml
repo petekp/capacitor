@@ -1,0 +1,14 @@
+meta:
+  canonical_docs: []
+ownership: []
+boundaries:
+  - rule: tmux_router_exclusive_command_owner
+    description: TmuxRouter is the only module allowed to build raw tmux commands.
+    constraint:
+      files_matching:
+        - src/**/*.swift
+      except:
+        - src/TmuxRouter.swift
+      must_not: shell_command_literal:^tmux\s
+patterns: []
+migration: []

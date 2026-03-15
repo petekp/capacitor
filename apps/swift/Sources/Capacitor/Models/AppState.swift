@@ -168,6 +168,7 @@ class AppState {
 
     private let layoutModeKey = "layoutMode"
     private let activationPolicy = ActivationPolicy()
+    private let runtimeClient: RuntimeClient
     private var engine: CoreRuntime?
     private var refreshTimer: Timer?
     private var runtimeBootstrapTask: _Concurrency.Task<Void, Never>?
@@ -193,9 +194,10 @@ class AppState {
 
     // MARK: - Initialization
 
-    init() {
+    init(runtimeClient: RuntimeClient = RuntimeClient.shared) {
+        self.runtimeClient = runtimeClient
         DebugLog.write(
-            "AppState.init start runtimeEnabled=\(RuntimeClient.shared.isEnabled) home=\(FileManager.default.homeDirectoryForCurrentUser.path)",
+            "AppState.init start runtimeEnabled=\(runtimeClient.isEnabled) home=\(FileManager.default.homeDirectoryForCurrentUser.path)",
         )
         let config = AppConfig.current()
         #if DEBUG
@@ -220,17 +222,26 @@ class AppState {
                     clientTty: clientTty,
                     sessionName: sessionName,
                     route: nil,
-                    shellState: nil,
                 )
             }
 
-            let route = routingStateStore.routingView(projectPath: projectPath, workspaceId: nil)
+            let route = if let cachedRoute = routingStateStore.routingView(
+                projectPath: projectPath,
+                workspaceId: nil,
+            ) {
+                cachedRoute
+            } else {
+                await resolveActivationRoute(
+                    projectPath: projectPath,
+                    clientTty: clientTty,
+                    sessionName: sessionName,
+                )
+            }
             return activationPolicy.resolveIntent(
                 projectPath: projectPath,
                 clientTty: clientTty,
                 sessionName: sessionName,
                 route: route,
-                shellState: shellStateStore.state,
             )
         }
         projectCreationCoordinator = ProjectCreationCoordinator(
@@ -451,7 +462,7 @@ class AppState {
             guard let self else { return }
 
             do {
-                let snapshot = try await RuntimeClient.shared.fetchRuntimeSnapshot(correlationId: correlationId)
+                let snapshot = try await runtimeClient.fetchRuntimeSnapshot(correlationId: correlationId)
                 guard !_Concurrency.Task.isCancelled else { return }
 
                 await applyRuntimeSnapshotIfFresh(
@@ -650,7 +661,7 @@ class AppState {
     }
 
     func checkRuntimeHealth() {
-        guard RuntimeClient.shared.isEnabled else {
+        guard runtimeClient.isEnabled else {
             runtimeStatus = RuntimeStatus(
                 isEnabled: false,
                 isHealthy: false,
@@ -667,9 +678,9 @@ class AppState {
 
         _Concurrency.Task { [weak self] in
             do {
-                let health = try await RuntimeClient.shared.fetchHealth()
+                guard let self else { return }
+                let health = try await runtimeClient.fetchHealth()
                 await MainActor.run {
-                    guard let self else { return }
                     self.runtimeStatus = RuntimeStatus(
                         isEnabled: true,
                         isHealthy: health.status == "ok",
@@ -703,6 +714,38 @@ class AppState {
                     ])
                 }
             }
+        }
+    }
+
+    private func resolveActivationRoute(
+        projectPath: String,
+        clientTty: String?,
+        sessionName: String?,
+    ) async -> RuntimeRoutingView? {
+        do {
+            let snapshot = try await runtimeClient.fetchCoreRoutingSnapshot(
+                projectPath: projectPath,
+                workspaceId: nil,
+                clientTty: clientTty,
+                sessionName: sessionName,
+            )
+            guard snapshot.status != "unavailable", snapshot.target.kind != "none" else {
+                return nil
+            }
+            return RuntimeRoutingView(
+                workspaceId: snapshot.workspaceId,
+                projectPath: snapshot.projectPath,
+                status: snapshot.status,
+                target: snapshot.target,
+                reasonCode: snapshot.reasonCode,
+                reason: snapshot.reason,
+                updatedAt: snapshot.updatedAt,
+            )
+        } catch {
+            DebugLog.write(
+                "AppState.resolveActivationRoute source=runtime_route_error path=\(projectPath) error=\(error)",
+            )
+            return nil
         }
     }
 

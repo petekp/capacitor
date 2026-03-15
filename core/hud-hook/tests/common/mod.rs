@@ -30,6 +30,10 @@ pub struct ServerGuard {
 }
 
 impl ServerGuard {
+    const STARTUP_TIMEOUT: Duration = Duration::from_secs(5);
+    const STARTUP_POLL_INTERVAL: Duration = Duration::from_millis(50);
+    const STARTUP_ATTEMPTS: usize = 8;
+
     /// Spawn `hud-hook serve` on the given port with custom HOME and snapshot path.
     pub fn spawn(port: u16, home: &Path, snapshot_path: &Path) -> Self {
         let child = Command::new(env!("CARGO_BIN_EXE_hud-hook"))
@@ -38,7 +42,7 @@ impl ServerGuard {
             .env("CAPACITOR_RUNTIME_ARTIFACT_PATH", snapshot_path)
             .env("CAPACITOR_CORE_ENABLED", "1")
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
+            .stderr(Stdio::piped())
             .spawn()
             .expect("spawn hud-hook serve");
 
@@ -61,11 +65,63 @@ impl ServerGuard {
             .env("CAPACITOR_RUNTIME_SERVICE_PORT", port.to_string())
             .env("CAPACITOR_RUNTIME_SERVICE_TOKEN", auth_token)
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
+            .stderr(Stdio::piped())
             .spawn()
             .expect("spawn hud-hook serve bootstrap");
 
         Self { child }
+    }
+
+    pub fn spawn_ready(home: &Path, snapshot_path: &Path) -> (Self, u16) {
+        Self::spawn_ready_with_candidates(
+            home,
+            snapshot_path,
+            (0..Self::STARTUP_ATTEMPTS).map(|_| free_port()),
+        )
+    }
+
+    pub fn spawn_ready_with_candidates<I>(
+        home: &Path,
+        snapshot_path: &Path,
+        ports: I,
+    ) -> (Self, u16)
+    where
+        I: IntoIterator<Item = u16>,
+    {
+        Self::spawn_with_retry(
+            ports,
+            |port| Self::spawn(port, home, snapshot_path),
+            |server, port| server.wait_until_ready(port),
+        )
+    }
+
+    pub fn spawn_service_bootstrap_ready(
+        home: &Path,
+        snapshot_path: &Path,
+        auth_token: &str,
+    ) -> (Self, u16) {
+        Self::spawn_service_bootstrap_ready_with_candidates(
+            home,
+            snapshot_path,
+            auth_token,
+            (0..Self::STARTUP_ATTEMPTS).map(|_| free_port()),
+        )
+    }
+
+    pub fn spawn_service_bootstrap_ready_with_candidates<I>(
+        home: &Path,
+        snapshot_path: &Path,
+        auth_token: &str,
+        ports: I,
+    ) -> (Self, u16)
+    where
+        I: IntoIterator<Item = u16>,
+    {
+        Self::spawn_with_retry(
+            ports,
+            |port| Self::spawn_service_bootstrap(port, home, snapshot_path, auth_token),
+            |server, port| server.wait_until_ready_with_auth(port, auth_token),
+        )
     }
 
     /// Wait for the server's /health endpoint to respond, panics after timeout.
@@ -74,20 +130,20 @@ impl ServerGuard {
     /// is written after bind but before the request loop starts. A successful
     /// health response guarantees all server initialization is complete.
     pub fn wait_ready(port: u16) {
-        let deadline = Instant::now() + Duration::from_secs(5);
+        let deadline = Instant::now() + Self::STARTUP_TIMEOUT;
         while Instant::now() < deadline {
             if let Ok((200, body)) = try_http_request(port, "GET", "/health", None) {
                 if body.contains("\"ok\"") {
                     return;
                 }
             }
-            std::thread::sleep(Duration::from_millis(50));
+            std::thread::sleep(Self::STARTUP_POLL_INTERVAL);
         }
         panic!("Server on port {port} did not become healthy within 5s");
     }
 
     pub fn wait_ready_with_auth(port: u16, auth_token: &str) {
-        let deadline = Instant::now() + Duration::from_secs(5);
+        let deadline = Instant::now() + Self::STARTUP_TIMEOUT;
         let header_value = format!("Bearer {auth_token}");
         while Instant::now() < deadline {
             if let Ok((200, body)) = try_http_request_with_headers(
@@ -101,9 +157,114 @@ impl ServerGuard {
                     return;
                 }
             }
-            std::thread::sleep(Duration::from_millis(50));
+            std::thread::sleep(Self::STARTUP_POLL_INTERVAL);
         }
         panic!("Server on port {port} did not become healthy within 5s");
+    }
+
+    fn spawn_with_retry<I, Spawn, Wait>(ports: I, mut spawn: Spawn, mut wait: Wait) -> (Self, u16)
+    where
+        I: IntoIterator<Item = u16>,
+        Spawn: FnMut(u16) -> Self,
+        Wait: FnMut(&mut Self, u16) -> Result<(), String>,
+    {
+        let mut failures = Vec::new();
+
+        for port in ports {
+            let mut server = spawn(port);
+            match wait(&mut server, port) {
+                Ok(()) => return (server, port),
+                Err(error) => failures.push(format!("port {port}: {error}")),
+            }
+        }
+
+        panic!(
+            "Failed to start hud-hook serve after {} attempts:\n{}",
+            failures.len(),
+            failures.join("\n")
+        );
+    }
+
+    fn wait_until_ready(&mut self, port: u16) -> Result<(), String> {
+        self.wait_until_ready_internal(port, None)
+    }
+
+    fn wait_until_ready_with_auth(&mut self, port: u16, auth_token: &str) -> Result<(), String> {
+        self.wait_until_ready_internal(port, Some(auth_token))
+    }
+
+    fn wait_until_ready_internal(
+        &mut self,
+        port: u16,
+        auth_token: Option<&str>,
+    ) -> Result<(), String> {
+        let deadline = Instant::now() + Self::STARTUP_TIMEOUT;
+        let header_value = auth_token.map(|token| format!("Bearer {token}"));
+
+        while Instant::now() < deadline {
+            if let Some(exit_reason) = self.exited_before_ready() {
+                return Err(exit_reason);
+            }
+
+            let response = if let Some(header_value) = header_value.as_deref() {
+                try_http_request_with_headers(
+                    port,
+                    "GET",
+                    "/health",
+                    &[("Authorization", header_value)],
+                    None,
+                )
+            } else {
+                try_http_request(port, "GET", "/health", None)
+            };
+
+            if let Ok((200, body)) = response {
+                if body.contains("\"ok\"") {
+                    return Ok(());
+                }
+            }
+
+            std::thread::sleep(Self::STARTUP_POLL_INTERVAL);
+        }
+
+        if let Some(exit_reason) = self.exited_before_ready() {
+            return Err(exit_reason);
+        }
+
+        Err(format!(
+            "Server on port {port} did not become healthy within {}s",
+            Self::STARTUP_TIMEOUT.as_secs()
+        ))
+    }
+
+    fn exited_before_ready(&mut self) -> Option<String> {
+        match self.child.try_wait() {
+            Ok(Some(status)) => {
+                let stderr = self.read_stderr();
+                let stderr_suffix = if stderr.trim().is_empty() {
+                    String::new()
+                } else {
+                    format!("; stderr: {}", stderr.trim())
+                };
+                Some(format!(
+                    "server exited before readiness check completed with status {status}{stderr_suffix}"
+                ))
+            }
+            Ok(None) => None,
+            Err(error) => Some(format!(
+                "failed to query child status while waiting for readiness: {error}"
+            )),
+        }
+    }
+
+    fn read_stderr(&mut self) -> String {
+        let Some(stderr) = self.child.stderr.as_mut() else {
+            return String::new();
+        };
+
+        let mut buffer = Vec::new();
+        let _ = stderr.read_to_end(&mut buffer);
+        String::from_utf8_lossy(&buffer).to_string()
     }
 }
 

@@ -138,17 +138,17 @@ slices:
         reason: "Launcher should stop choosing fallback terminals implicitly."
     verification_commands:
       - command: "swift test --package-path apps/swift --filter 'ActivationPolicyTests|TerminalLauncherTests|SupportedTerminalAppTests|AppStateSessionObservationTests'"
-        expect: "Policy owner covers route-first choice, shell ranking, and explicit fallback ladder without moving execution concerns."
+        expect: "Policy owner covers route-first choice, route-miss fallback behavior, and the explicit fallback ladder without moving execution concerns."
       - command: "swift test --package-path apps/swift --filter AppStateTerminalActivationTests"
         expect: "AppState activation failure reporting still works after TerminalLauncher starts consuming a single ActivationPolicyIntent seam."
     replay_scenarios: []
     smoke_scenarios:
       - "Routed tmux pane activation still selects the pane."
-      - "Attached tmux with missing terminal_app still chooses the expected host terminal through policy, not launcher heuristics."
+      - "Attached tmux with missing terminal_app preserves route hints and uses explicit fallback without launcher heuristics or shell reconstruction."
     manual_checks:
       - surface: "Project card activation"
         check: "Click a project whose route has pane and session metadata but no terminal_app."
-        expected: "Activation reaches the correct tmux client and logs a Swift-policy reason without silent fallback."
+        expected: "Activation keeps the routed pane/session hints, uses the explicit fallback ladder for terminal choice, and logs a Swift-policy reason without shell reconstruction."
     risks:
       - "Existing dirty edits in TerminalLauncher.swift and TerminalLauncherTests.swift must be merged, not overwritten."
       - "Fallback policy is user-visible; changing ownership without locking tests can create subtle regressions."
@@ -331,4 +331,4 @@ slices:
         expected: "Logs explicitly distinguish runtime facts from Swift policy and never imply fake core diagnostics or config."
     risks:
       - "Docs and tests can lag behind the code unless convergence owns the final sweep."
-    notes: "Completed on 2026-03-14. Automated convergence gates passed via SHIP_CHECKLIST.md. Additional convergence cleanup moved the remaining pure ranking helpers out of TerminalLauncher into ActivationPolicy, deleted the unused secondary ActivationPolicy entrypoint, and removed the dead RuntimeClient local-diagnostics/local-policy API surface. Additional AX-driven evidence covered the no-client Ghostty fallback path and one attached tmux route reuse path. A temporary projects.json seed for claude-code-setup was reverted after it still did not surface a clickable detached-card identifier in the AX tree. Manual confirmation now covers detached direct-shell host focus, no-client Ghostty reuse when the app is already running, and the activation wording split in logs."
+    notes: "Completed on 2026-03-14, with a final cleanup pass on 2026-03-15. Automated convergence gates passed via SHIP_CHECKLIST.md. Additional convergence cleanup moved the remaining pure ranking helpers out of TerminalLauncher into ActivationPolicy, deleted the unused secondary ActivationPolicy entrypoint, and removed the dead RuntimeClient local-diagnostics/local-policy API surface. The 2026-03-15 pass then removed the last Swift shell-ranking seam from ActivationPolicy, reframed the route-miss regressions around explicit fallback behavior, and added verifier coverage that fails if `.shellEvidence` or `preferredTerminalAppFromShellState(...)` returns. Additional AX-driven evidence covered the no-client Ghostty fallback path and one attached tmux route reuse path. A temporary projects.json seed for claude-code-setup was reverted after it still did not surface a clickable detached-card identifier in the AX tree. Manual confirmation now covers detached direct-shell host focus, no-client Ghostty reuse when the app is already running, and the activation wording split in logs."

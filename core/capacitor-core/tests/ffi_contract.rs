@@ -5,7 +5,7 @@ mod common;
 use capacitor_core::domain::{
     HookEventType, IdeaMutationKind, IngestHookEventCommand, IngestShellSignalCommand,
     MutateIdeaCommand, MutateProjectCommand, MutateWorktreeCommand, ProjectMutationKind,
-    RoutingTargetKind, WorktreeMutationKind,
+    RoutingTargetKind, TmuxPaneInfo, WorktreeMutationKind,
 };
 use capacitor_core::CoreRuntime;
 
@@ -22,6 +22,7 @@ fn valid_shell_signal_command() -> IngestShellSignalCommand {
         tmux_session: Some("core".to_string()),
         tmux_client_tty: Some("/dev/ttys099".to_string()),
         tmux_pane: Some("%42".to_string()),
+        tmux_panes: vec![],
         recorded_at: "2026-02-28T19:00:00Z".to_string(),
     }
 }
@@ -212,6 +213,107 @@ fn ffi_ingest_shell_signal_derives_tmux_pane_routing() {
     assert_eq!(route.target.kind, RoutingTargetKind::TmuxPane);
     assert_eq!(route.target.pane_id.as_deref(), Some("%42"));
     assert_eq!(route.target.session_name.as_deref(), Some("core"));
+    assert_eq!(route.reason_code, "TMUX_PANE_ATTACHED");
+}
+
+#[test]
+fn ffi_ingest_shell_signal_infers_attached_tmux_terminal_app_from_host_tty_evidence() {
+    let runtime = CoreRuntime::new().expect("runtime");
+    runtime
+        .ingest_hook_event(valid_hook_event_command())
+        .expect("hook event outcome");
+
+    let host_shell = IngestShellSignalCommand {
+        pid: 9000,
+        cwd: "/tmp".to_string(),
+        tty: "/dev/ttys099".to_string(),
+        parent_app: "Ghostty".to_string(),
+        tmux_session: Some("shared".to_string()),
+        tmux_client_tty: Some("/dev/ttys099".to_string()),
+        tmux_pane: Some("%1".to_string()),
+        tmux_panes: vec![],
+        recorded_at: "2026-02-28T18:59:59Z".to_string(),
+    };
+    assert!(
+        runtime
+            .ingest_shell_signal(host_shell)
+            .expect("host shell signal outcome")
+            .ok
+    );
+
+    let project_shell = IngestShellSignalCommand {
+        parent_app: "tmux".to_string(),
+        ..valid_shell_signal_command()
+    };
+    let outcome = runtime
+        .ingest_shell_signal(project_shell)
+        .expect("project shell signal outcome");
+
+    assert!(outcome.ok);
+
+    let snapshot = snapshot(&runtime);
+    let route = snapshot
+        .routing
+        .iter()
+        .find(|route| route.project_path == "/tmp/core-project")
+        .expect("route");
+    assert_eq!(route.target.kind, RoutingTargetKind::TmuxPane);
+    assert_eq!(route.target.terminal_app.as_deref(), Some("ghostty"));
+    assert_eq!(route.target.pane_id.as_deref(), Some("%42"));
+    assert_eq!(route.target.session_name.as_deref(), Some("core"));
+    assert_eq!(route.target.host_tty.as_deref(), Some("/dev/ttys099"));
+}
+
+#[test]
+fn ffi_ingest_shell_signal_derives_non_active_tmux_pane_from_inventory() {
+    let runtime = CoreRuntime::new().expect("runtime");
+    let mut hook_event = valid_hook_event_command();
+    hook_event.project_path = "/tmp/aui/mcp-app-studio-starter".to_string();
+    hook_event.cwd = Some("/tmp/aui/mcp-app-studio-starter".to_string());
+    runtime
+        .ingest_hook_event(hook_event)
+        .expect("hook event outcome");
+
+    let outcome = runtime
+        .ingest_shell_signal(IngestShellSignalCommand {
+            pid: 4242,
+            cwd: "/tmp/pete-2025".to_string(),
+            tty: "/dev/ttys001".to_string(),
+            parent_app: "Ghostty".to_string(),
+            tmux_session: Some("dev".to_string()),
+            tmux_client_tty: Some("/dev/ttys099".to_string()),
+            tmux_pane: Some("%0".to_string()),
+            tmux_panes: vec![
+                TmuxPaneInfo {
+                    session_name: "dev".to_string(),
+                    pane_id: "%0".to_string(),
+                    pane_path: "/tmp/pete-2025".to_string(),
+                    session_attached: true,
+                },
+                TmuxPaneInfo {
+                    session_name: "dev".to_string(),
+                    pane_id: "%1".to_string(),
+                    pane_path: "/tmp/aui/mcp-app-studio-starter".to_string(),
+                    session_attached: true,
+                },
+            ],
+            recorded_at: "2026-02-28T19:00:00Z".to_string(),
+        })
+        .expect("shell signal outcome");
+
+    assert!(outcome.ok);
+
+    let snapshot = snapshot(&runtime);
+    let route = snapshot
+        .routing
+        .iter()
+        .find(|route| route.project_path == "/tmp/aui/mcp-app-studio-starter")
+        .expect("route");
+    assert_eq!(route.target.kind, RoutingTargetKind::TmuxPane);
+    assert_eq!(route.target.session_name.as_deref(), Some("dev"));
+    assert_eq!(route.target.pane_id.as_deref(), Some("%1"));
+    assert_eq!(route.target.host_tty.as_deref(), Some("/dev/ttys099"));
+    assert_eq!(route.target.terminal_app.as_deref(), Some("ghostty"));
     assert_eq!(route.reason_code, "TMUX_PANE_ATTACHED");
 }
 

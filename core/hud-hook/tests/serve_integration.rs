@@ -10,6 +10,7 @@ use common::{
     unique_temp_dir, ServerGuard,
 };
 use std::fs;
+use std::net::TcpListener;
 
 fn seeded_snapshot_without_routing() -> serde_json::Value {
     serde_json::json!({
@@ -78,13 +79,34 @@ fn seeded_snapshot_without_routing() -> serde_json::Value {
 fn health_endpoint_returns_ok() {
     let temp_dir = unique_temp_dir("serve-health");
     let snapshot_path = temp_dir.join("snapshot.json");
-    let port = free_port();
-
-    let _server = ServerGuard::spawn(port, &temp_dir, &snapshot_path);
-    ServerGuard::wait_ready(port);
+    let (_server, port) = ServerGuard::spawn_ready(&temp_dir, &snapshot_path);
 
     let (status, body) = http_request(port, "GET", "/health", None);
     assert_eq!(status, 200);
+    assert!(body.contains(r#""status":"ok"#), "body: {body}");
+}
+
+#[test]
+fn spawn_ready_retries_when_initial_port_candidate_is_occupied() {
+    let temp_dir = unique_temp_dir("serve-ready-retry");
+    let snapshot_path = temp_dir.join("snapshot.json");
+    let occupied_listener = TcpListener::bind("127.0.0.1:0").expect("bind occupied listener");
+    let occupied_port = occupied_listener
+        .local_addr()
+        .expect("occupied listener addr")
+        .port();
+    let fallback_port = free_port();
+
+    let (_server, port) = ServerGuard::spawn_ready_with_candidates(
+        &temp_dir,
+        &snapshot_path,
+        [occupied_port, fallback_port],
+    );
+
+    assert_eq!(port, fallback_port);
+
+    let (status, body) = http_request(port, "GET", "/health", None);
+    assert_eq!(status, 200, "body: {body}");
     assert!(body.contains(r#""status":"ok"#), "body: {body}");
 }
 
@@ -93,11 +115,10 @@ fn bootstrap_health_requires_auth_and_reports_service_mode() {
     let temp_dir = unique_temp_dir("serve-bootstrap-health");
     let snapshot_path = temp_dir.join("snapshot.json");
     let runtime_dir = temp_dir.join(".capacitor/runtime");
-    let port = free_port();
     let auth_token = "secret-token";
 
-    let _server = ServerGuard::spawn_service_bootstrap(port, &temp_dir, &snapshot_path, auth_token);
-    ServerGuard::wait_ready_with_auth(port, auth_token);
+    let (_server, port) =
+        ServerGuard::spawn_service_bootstrap_ready(&temp_dir, &snapshot_path, auth_token);
 
     let (unauthorized_status, unauthorized_body) = http_request(port, "GET", "/health", None);
     assert_eq!(unauthorized_status, 401, "body: {unauthorized_body}");
@@ -127,11 +148,10 @@ fn bootstrap_health_requires_auth_and_reports_service_mode() {
 fn cwd_command_discovers_runtime_service_and_runtime_snapshot_reports_shell_state() {
     let temp_dir = unique_temp_dir("serve-runtime-snapshot");
     let snapshot_path = temp_dir.join("snapshot.json");
-    let port = free_port();
     let auth_token = "snapshot-token";
 
-    let _server = ServerGuard::spawn_service_bootstrap(port, &temp_dir, &snapshot_path, auth_token);
-    ServerGuard::wait_ready_with_auth(port, auth_token);
+    let (_server, port) =
+        ServerGuard::spawn_service_bootstrap_ready(&temp_dir, &snapshot_path, auth_token);
 
     let status = run_cwd(
         &temp_dir,
@@ -168,11 +188,10 @@ fn cwd_command_discovers_runtime_service_and_runtime_snapshot_reports_shell_stat
 fn hook_endpoint_and_runtime_snapshot_share_service_runtime_state() {
     let temp_dir = unique_temp_dir("serve-runtime-hook");
     let snapshot_path = temp_dir.join("snapshot.json");
-    let port = free_port();
     let auth_token = "hook-token";
 
-    let _server = ServerGuard::spawn_service_bootstrap(port, &temp_dir, &snapshot_path, auth_token);
-    ServerGuard::wait_ready_with_auth(port, auth_token);
+    let (_server, port) =
+        ServerGuard::spawn_service_bootstrap_ready(&temp_dir, &snapshot_path, auth_token);
 
     let payload = serde_json::json!({
         "hook_event_name": "UserPromptSubmit",
@@ -210,7 +229,6 @@ fn hook_endpoint_and_runtime_snapshot_share_service_runtime_state() {
 fn runtime_snapshot_recomputes_routing_from_seeded_snapshot_on_startup() {
     let temp_dir = unique_temp_dir("serve-runtime-recompute-routing");
     let snapshot_path = temp_dir.join("snapshot.json");
-    let port = free_port();
     let auth_token = "recompute-token";
 
     fs::write(
@@ -220,8 +238,8 @@ fn runtime_snapshot_recomputes_routing_from_seeded_snapshot_on_startup() {
     )
     .expect("write seeded snapshot");
 
-    let _server = ServerGuard::spawn_service_bootstrap(port, &temp_dir, &snapshot_path, auth_token);
-    ServerGuard::wait_ready_with_auth(port, auth_token);
+    let (_server, port) =
+        ServerGuard::spawn_service_bootstrap_ready(&temp_dir, &snapshot_path, auth_token);
 
     let authorization = format!("Bearer {auth_token}");
     let (snapshot_status, snapshot_body) = http_request_with_headers(
@@ -262,10 +280,7 @@ fn runtime_snapshot_recomputes_routing_from_seeded_snapshot_on_startup() {
 fn hook_endpoint_processes_event() {
     let temp_dir = unique_temp_dir("serve-hook");
     let snapshot_path = temp_dir.join("snapshot.json");
-    let port = free_port();
-
-    let _server = ServerGuard::spawn(port, &temp_dir, &snapshot_path);
-    ServerGuard::wait_ready(port);
+    let (_server, port) = ServerGuard::spawn_ready(&temp_dir, &snapshot_path);
 
     let payload = serde_json::json!({
         "hook_event_name": "UserPromptSubmit",
@@ -294,10 +309,7 @@ fn hook_endpoint_processes_event() {
 fn hook_endpoint_skips_non_delete_when_cwd_missing() {
     let temp_dir = unique_temp_dir("serve-missing-cwd-skip");
     let snapshot_path = temp_dir.join("snapshot.json");
-    let port = free_port();
-
-    let _server = ServerGuard::spawn(port, &temp_dir, &snapshot_path);
-    ServerGuard::wait_ready(port);
+    let (_server, port) = ServerGuard::spawn_ready(&temp_dir, &snapshot_path);
 
     let payload = serde_json::json!({
         "hook_event_name": "UserPromptSubmit",
@@ -322,10 +334,7 @@ fn hook_endpoint_skips_non_delete_when_cwd_missing() {
 fn session_end_without_cwd_still_deletes_existing_session() {
     let temp_dir = unique_temp_dir("serve-missing-cwd-delete");
     let snapshot_path = temp_dir.join("snapshot.json");
-    let port = free_port();
-
-    let _server = ServerGuard::spawn(port, &temp_dir, &snapshot_path);
-    ServerGuard::wait_ready(port);
+    let (_server, port) = ServerGuard::spawn_ready(&temp_dir, &snapshot_path);
 
     let create_payload = serde_json::json!({
         "hook_event_name": "UserPromptSubmit",
@@ -360,10 +369,7 @@ fn session_end_without_cwd_still_deletes_existing_session() {
 fn hook_endpoint_accepts_valid_chunked_body_without_content_length() {
     let temp_dir = unique_temp_dir("serve-chunked-valid");
     let snapshot_path = temp_dir.join("snapshot.json");
-    let port = free_port();
-
-    let _server = ServerGuard::spawn(port, &temp_dir, &snapshot_path);
-    ServerGuard::wait_ready(port);
+    let (_server, port) = ServerGuard::spawn_ready(&temp_dir, &snapshot_path);
 
     let payload = serde_json::json!({
         "hook_event_name": "UserPromptSubmit",
@@ -406,10 +412,7 @@ fn hook_endpoint_accepts_valid_chunked_body_without_content_length() {
 fn hook_endpoint_rejects_invalid_json() {
     let temp_dir = unique_temp_dir("serve-bad-json");
     let snapshot_path = temp_dir.join("snapshot.json");
-    let port = free_port();
-
-    let _server = ServerGuard::spawn(port, &temp_dir, &snapshot_path);
-    ServerGuard::wait_ready(port);
+    let (_server, port) = ServerGuard::spawn_ready(&temp_dir, &snapshot_path);
 
     let (status, body) = http_request(port, "POST", "/hook", Some("not json"));
     assert_eq!(status, 400, "body: {body}");
@@ -420,10 +423,7 @@ fn hook_endpoint_rejects_invalid_json() {
 fn hook_endpoint_rejects_oversized_body_without_content_length() {
     let temp_dir = unique_temp_dir("serve-oversized-no-length");
     let snapshot_path = temp_dir.join("snapshot.json");
-    let port = free_port();
-
-    let _server = ServerGuard::spawn(port, &temp_dir, &snapshot_path);
-    ServerGuard::wait_ready(port);
+    let (_server, port) = ServerGuard::spawn_ready(&temp_dir, &snapshot_path);
 
     // Deliberately exceed MAX_BODY_BYTES (1 MiB) without Content-Length.
     let payload = serde_json::json!({
@@ -462,10 +462,7 @@ fn hook_endpoint_rejects_oversized_body_without_content_length() {
 fn unknown_route_returns_404() {
     let temp_dir = unique_temp_dir("serve-404");
     let snapshot_path = temp_dir.join("snapshot.json");
-    let port = free_port();
-
-    let _server = ServerGuard::spawn(port, &temp_dir, &snapshot_path);
-    ServerGuard::wait_ready(port);
+    let (_server, port) = ServerGuard::spawn_ready(&temp_dir, &snapshot_path);
 
     let (status, _body) = http_request(port, "GET", "/nonexistent", None);
     assert_eq!(status, 404);
@@ -476,10 +473,7 @@ fn pid_file_is_written() {
     let temp_dir = unique_temp_dir("serve-pid");
     let snapshot_path = temp_dir.join("snapshot.json");
     let runtime_dir = temp_dir.join(".capacitor/runtime");
-    let port = free_port();
-
-    let server = ServerGuard::spawn(port, &temp_dir, &snapshot_path);
-    ServerGuard::wait_ready(port);
+    let (server, port) = ServerGuard::spawn_ready(&temp_dir, &snapshot_path);
 
     let pid_file = runtime_dir.join(format!("hud-hook-serve-{port}.pid"));
     assert!(pid_file.exists(), "PID file should exist at {pid_file:?}");

@@ -98,6 +98,7 @@ mod tests {
             tmux_session: None,
             tmux_client_tty: None,
             tmux_pane: None,
+            tmux_panes: vec![],
             recorded_at: "2026-03-09T12:00:00Z".to_string(),
         });
 

@@ -55,61 +55,6 @@ final class TerminalLauncherTests: XCTestCase {
         }
     }
 
-    func testBestTmuxSessionForPathDoesNotMatchParentRepoForWorktreePath() {
-        let output = "agentic-canvas\t/Users/pete/Code/agentic-canvas\n"
-        let projectPath = "/Users/pete/Code/agentic-canvas/.capacitor/worktrees/workstream-1"
-
-        let session = TerminalLauncher.bestTmuxSessionForPath(
-            output: output,
-            projectPath: projectPath,
-            homeDirectory: "/Users/pete",
-        )
-
-        XCTAssertNil(session)
-    }
-
-    func testBestTmuxSessionForPathDoesNotMatchManagedWorktreeForRepoRootPath() {
-        let output = """
-        mcp-app-studio-tool-metadata-workstream-1\t/Users/pete/Code/codex/.capacitor/worktrees/mcp-app-studio-tool-metadata-workstream-1
-        """
-        let projectPath = "/Users/pete/Code/codex"
-
-        let session = TerminalLauncher.bestTmuxSessionForPath(
-            output: output,
-            projectPath: projectPath,
-            homeDirectory: "/Users/pete",
-        )
-
-        XCTAssertNil(session)
-    }
-
-    func testFindSessionForPathUsesAllPanesSoSharedSessionNonActivePaneIsFound() async {
-        var commands: [String] = []
-        let expectedCommand = "tmux list-panes -a -F '#{session_name}\t#{pane_current_path}' 2>/dev/null"
-        let router = TmuxRouter(
-            runScript: { cmd in
-                commands.append(cmd)
-                guard cmd == expectedCommand else {
-                    return (1, nil)
-                }
-
-                return (
-                    0,
-                    """
-                    dev\t/Users/pete/Code/pete-2025
-                    dev\t/Users/pete/Code/aui/mcp-app-studio-starter
-                    """,
-                )
-            },
-            homeDirectoryProvider: { "/Users/pete" },
-        )
-
-        let session = await router.findSessionForPath("/Users/pete/Code/aui/mcp-app-studio-starter")
-
-        XCTAssertEqual(session, "dev")
-        XCTAssertEqual(commands, [expectedCommand])
-    }
-
     func testRunBashScriptWithResultHandlesLargeOutputWithoutDeadlock() {
         let exp = expectation(description: "runBashScriptWithResult completes")
         _Concurrency.Task {
@@ -157,9 +102,9 @@ final class TerminalLauncherTests: XCTestCase {
 
             let launcher = TerminalLauncher(
                 appleScript: StubAppleScriptClient(shouldSucceed: true),
-                fallbackTmuxSessionResolver: { path in
+                sessionResolutionPolicy: SessionResolutionPolicy(discoverFallbackSession: { path in
                     URL(fileURLWithPath: path).lastPathComponent
-                },
+                }),
                 activateProjectSessionOverride: { _, projectPath in
                     executedPaths.append(projectPath)
                     if projectPath == projectA.path {
@@ -204,9 +149,9 @@ final class TerminalLauncherTests: XCTestCase {
 
             let launcher = TerminalLauncher(
                 appleScript: StubAppleScriptClient(shouldSucceed: true),
-                fallbackTmuxSessionResolver: { path in
+                sessionResolutionPolicy: SessionResolutionPolicy(discoverFallbackSession: { path in
                     URL(fileURLWithPath: path).lastPathComponent
-                },
+                }),
                 activateProjectSessionOverride: { _, projectPath in
                     executedPaths.append(projectPath)
                     if executedPaths.count == 1 {
@@ -250,9 +195,9 @@ final class TerminalLauncherTests: XCTestCase {
 
             let launcher = TerminalLauncher(
                 appleScript: StubAppleScriptClient(shouldSucceed: true),
-                fallbackTmuxSessionResolver: { path in
+                sessionResolutionPolicy: SessionResolutionPolicy(discoverFallbackSession: { path in
                     URL(fileURLWithPath: path).lastPathComponent
-                },
+                }),
                 activateProjectSessionOverride: { _, projectPath in
                     executedPaths.append(projectPath)
                     return true
@@ -290,9 +235,9 @@ final class TerminalLauncherTests: XCTestCase {
 
         let launcher = TerminalLauncher(
             appleScript: StubAppleScriptClient(shouldSucceed: true),
-            fallbackTmuxSessionResolver: { path in
+            sessionResolutionPolicy: SessionResolutionPolicy(discoverFallbackSession: { path in
                 URL(fileURLWithPath: path).lastPathComponent
-            },
+            }),
             activateProjectSessionOverride: { _, _ in true },
         )
 
@@ -316,9 +261,9 @@ final class TerminalLauncherTests: XCTestCase {
 
         let launcher = TerminalLauncher(
             appleScript: StubAppleScriptClient(shouldSucceed: true),
-            fallbackTmuxSessionResolver: { path in
+            sessionResolutionPolicy: SessionResolutionPolicy(discoverFallbackSession: { path in
                 URL(fileURLWithPath: path).lastPathComponent
-            },
+            }),
             activateProjectSessionOverride: { _, _ in false },
         )
 
@@ -342,7 +287,7 @@ final class TerminalLauncherTests: XCTestCase {
 
         let launcher = TerminalLauncher(
             appleScript: StubAppleScriptClient(shouldSucceed: true),
-            fallbackTmuxSessionResolver: { _ in "fallback-session" },
+            sessionResolutionPolicy: SessionResolutionPolicy(discoverFallbackSession: { _ in "fallback-session" }),
             activateProjectSessionOverride: { sessionName, _ in
                 resolvedSession = sessionName
                 return true

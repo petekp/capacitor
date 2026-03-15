@@ -1,10 +1,10 @@
 # Agent Changelog
 
-> This file helps coding agents understand project evolution, key decisions, and deprecated patterns. Updated: 2026-03-13
+> This file helps coding agents understand project evolution, key decisions, and deprecated patterns. Updated: 2026-03-15
 
 ## Current State Summary
 
-Capacitor now uses an app-owned local runtime service (`hud-hook serve`) as the authoritative runtime boundary. Rust (`core/capacitor-core`) owns ingest, reducer, and route derivation; Swift owns presentation and macOS side effects through `RoutingStateStore`, `TerminalActivationCoordinator`, `TmuxRouter`, first-class `TerminalDriver` implementations for Ghostty, iTerm, and Terminal.app, and `GhosttyAutomationClient`. Terminal switching is route-first, pane-aware, and proven live across Ghostty, iTerm, and Terminal.app, and host-terminal launch no longer relies on brittle `System Events` keystrokes.
+Capacitor now uses an app-owned local runtime service (`hud-hook serve`) as the authoritative runtime boundary. Rust (`core/capacitor-core`) owns ingest, reducer, route derivation, and on-demand activation routing facts; Swift owns presentation and macOS side effects through `RoutingStateStore`, `ActivationPolicy`, `TerminalActivationCoordinator`, `TmuxRouter`, first-class `TerminalDriver` implementations for Ghostty, iTerm, and Terminal.app, and `GhosttyAutomationClient`. Terminal switching is route-first, pane-aware, and proven live across Ghostty, iTerm, and Terminal.app, and Swift no longer reconstructs terminal-app ranking from shell state when runtime routing is missing.
 
 ## Stale Information Detected
 
@@ -14,6 +14,18 @@ Capacitor now uses an app-owned local runtime service (`hud-hook serve`) as the 
 | `docs/manual-qa/terminal-routing-closeout-2026-03-12.md` (2026-03-13 convergence subsection) | Host-terminal proof references `[ScriptedTerminalDriver]` log labels | The 2026-03-13 host-adapter follow-up section in the same file is the current authority; host proof now uses `[ITermTerminalDriver]` and `[TerminalAppTerminalDriver]` after the host-adapter split and launch-path fix | 2026-03-13 |
 
 ## Timeline
+
+### 2026-03-15 — Final Swift Shell-Ranking Seam Removed
+
+**What changed:** `ActivationPolicy` dropped the last production shell-ranking path: `.shellEvidence` and `preferredTerminalAppFromShellState(...)` are gone, `resolveIntent(...)` no longer accepts shell state, and route-miss regressions now prove explicit fallback behavior instead of shell-based terminal selection. The runtime boundary verifier now fails if that seam returns.
+
+**Why:** Rust already owned the authoritative facts for attached host-app inference, non-active tmux pane routing, and on-demand route resolution for ad hoc project paths. Keeping Swift-side shell ranking alive after that point only preserved a shadow policy path and made the boundary harder for agents to reason about.
+
+**Agent impact:** If activation has a route, trust the route. If it does not, `ActivationPolicy` now preserves any caller-provided session hint, avoids inventing pane or host identity, and uses the explicit fallback ladder. Do not add new terminal-app ranking heuristics from `ShellStateStore` back into activation code.
+
+**Deprecated:** Production `.shellEvidence` activation paths and `preferredTerminalAppFromShellState(...)`.
+
+---
 
 ### 2026-03-13 — Rust-Swift Boundary Legibility Cleanup
 
@@ -101,6 +113,7 @@ Capacitor now uses an app-owned local runtime service (`hud-hook serve`) as the 
 
 | Don't | Do Instead | Deprecated Since |
 |-------|------------|------------------|
+| Reconstruct terminal-app ranking from `ShellStateStore` during activation | Use runtime routes when present and fall back explicitly when they are not | 2026-03-15 |
 | Treat `~/.capacitor/runtime/app_snapshot.json` as live runtime truth | Query the authenticated runtime service using `runtime-service.json` | 2026-03 |
 | Add terminal-specific focus logic directly in `TerminalLauncher` or views | Put host automation behind `TerminalDriver` implementations | 2026-03 |
 | Add or restore a shared generic host-terminal driver | Keep iTerm and Terminal.app as separate concrete drivers with shared pure helpers only | 2026-03-13 |

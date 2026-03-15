@@ -35,7 +35,7 @@ echo "[ ] No migration-only TODO/FIXME markers remain"
 
 echo
 echo "== Manual-only checks =="
-echo "[ ] Attached tmux route with terminal_app=nil still focuses the expected host terminal"
+echo "[ ] Attached tmux route with terminal_app=nil preserves route hints and uses the explicit fallback ladder"
 echo "[ ] Detached direct-shell route still prefers the routed terminal host"
 echo "[ ] No-client activation still chooses the explicit fallback ladder"
 echo "[ ] Activation logs and diagnostics distinguish runtime facts from Swift policy interpretation"

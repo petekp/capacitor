@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use capacitor_core::{
-    domain::{IngestHookEventCommand, IngestShellSignalCommand},
+    domain::{IngestHookEventCommand, IngestShellSignalCommand, ResolveRoutingCommand},
     runtime_service::RuntimeServiceBootstrap,
     CoreRuntime,
 };
@@ -93,6 +93,9 @@ fn dispatch(request: tiny_http::Request, runtime_service: &RuntimeServerState) {
         }
         (&tiny_http::Method::Get, "/runtime/snapshot") => {
             handle_runtime_snapshot(request, runtime_service)
+        }
+        (&tiny_http::Method::Post, "/runtime/routing/resolve") => {
+            handle_runtime_resolve_routing(request, runtime_service)
         }
         (&tiny_http::Method::Post, "/runtime/ingest/hook-event") => {
             handle_runtime_ingest_hook_event(request, runtime_service)
@@ -179,6 +182,34 @@ fn handle_runtime_ingest_hook_event(mut request: tiny_http::Request, state: &Run
         Err(error) => {
             tracing::warn!(error = %error, "Runtime hook ingest request failed");
             let _ = request.respond(json_error(500, "runtime hook ingest failed"));
+        }
+    }
+}
+
+fn handle_runtime_resolve_routing(mut request: tiny_http::Request, state: &RuntimeServerState) {
+    let Some(runtime) = state.runtime.as_ref() else {
+        let _ = request.respond(json_error(404, "runtime service not enabled"));
+        return;
+    };
+
+    if !authorize_runtime_request(&request, state.bootstrap.as_ref()) {
+        let _ = request.respond(json_error(401, "unauthorized"));
+        return;
+    }
+
+    let command = match read_json::<ResolveRoutingCommand>(&mut request) {
+        Ok(command) => command,
+        Err(response) => {
+            let _ = request.respond(response);
+            return;
+        }
+    };
+
+    match runtime.resolve_routing(command) {
+        Ok(route) => respond_json(request, 200, &route),
+        Err(error) => {
+            tracing::warn!(error = %error, "Runtime route resolve request failed");
+            let _ = request.respond(json_error(500, "runtime route resolve failed"));
         }
     }
 }

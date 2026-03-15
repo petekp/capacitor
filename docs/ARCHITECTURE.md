@@ -51,7 +51,7 @@
 ## Activation Boundaries
 
 - Rust derives canonical routing targets from shell and session evidence.
-- `ActivationPolicy` interprets routing state plus local shell and desktop facts into activation intent.
+- `ActivationPolicy` interprets routing state into activation intent and applies only explicit local fallback when runtime facts are missing or incomplete.
 - `TerminalActivationCoordinator` owns request arbitration, stale-request suppression, and activation outcome reporting.
 - `TmuxRouter` is the only place raw tmux command strings are built or executed.
 - `GhosttyTerminalDriver` plus `GhosttyAutomationClient` own Ghostty's native routing and launch behavior.

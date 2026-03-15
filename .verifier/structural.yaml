@@ -1,0 +1,243 @@
+meta:
+  canonical_docs:
+    - docs/ARCHITECTURE.md
+    - docs/architecture-decisions/004-dedicated-local-runtime-service.md
+  doc_claim_patterns:
+    - "Rust owns runtime semantics; Swift owns presentation, orchestration, and macOS side effects"
+    - "Runtime boundary:\\s+authenticated local HTTP service hosted by `hud-hook serve`"
+    - "`?TmuxRouter`? is the only place raw tmux command strings are built or executed"
+    - "The runtime service is the application boundary for tracking"
+    - "The runtime service must remain local-only and authenticated"
+    - "Treating snapshot-file reads as the primary app/runtime boundary"
+
+ownership:
+  - rule: swift_runtime_service_reads_owned
+    description: Live runtime-service reads in production Swift must flow through RuntimeClient or HookServerManager.
+    groups:
+      - formal-verify
+      - runtime-boundary
+    source_docs:
+      - docs/ARCHITECTURE.md
+      - docs/architecture-decisions/004-dedicated-local-runtime-service.md
+    doc_patterns:
+      - "Runtime boundary:\\s+authenticated local HTTP service hosted by `hud-hook serve`"
+      - "The runtime service is the application boundary for tracking"
+    constraint:
+      files_matching:
+        - apps/swift/Sources/Capacitor/**/*.swift
+      except:
+        - apps/swift/Sources/Capacitor/Models/RuntimeClient.swift
+        - apps/swift/Sources/Capacitor/Models/HookServerManager.swift
+      must_not: http_route:^/health$|^/runtime/
+
+  - rule: runtime_shadow_owners_stay_deleted
+    description: Production-facing shadow owners and fake runtime boundary names must stay deleted.
+    groups:
+      - formal-verify
+      - runtime-boundary
+      - rust-swift-boundary-legibility
+    source_docs:
+      - docs/ARCHITECTURE.md
+    doc_patterns:
+      - "Rust owns runtime semantics; Swift owns presentation, orchestration, and macOS side effects"
+    constraint:
+      files_matching:
+        - apps/swift/Sources/**/*.swift
+        - core/**/*.rs
+      must_not: reference:fetchRuntimeConfig|fetchCoreRoutingDiagnostics|runtime_activation|DebugShellStateCard
+
+  - rule: activation_policy_not_distributed
+    description: Distributed activation-policy resolver slots must not return.
+    groups:
+      - formal-verify
+      - rust-swift-boundary-legibility
+    constraint:
+      files_matching:
+        - apps/swift/Sources/Capacitor/Models/AppState.swift
+        - apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift
+        - apps/swift/Tests/CapacitorTests/TerminalLauncherTests.swift
+      must_not: reference:preferred(?:TerminalApp|HostTty|RoutingSession|TmuxPane)Resolver|ActivationPolicySpike|ActivationPolicyPrototype
+
+boundaries:
+  - rule: tmux_router_exclusive_command_owner
+    description: TmuxRouter is the only production Swift module allowed to build raw tmux commands.
+    groups:
+      - formal-verify
+      - runtime-boundary
+      - terminal-routing-foundation
+    source_docs:
+      - docs/ARCHITECTURE.md
+    doc_patterns:
+      - "`?TmuxRouter`? is the only place raw tmux command strings are built or executed"
+    constraint:
+      files_matching:
+        - apps/swift/Sources/Capacitor/**/*.swift
+      except:
+        - apps/swift/Sources/Capacitor/Models/TmuxRouter.swift
+      must_not: shell_command_literal:^tmux\s
+
+  - rule: ghostty_applescript_adapter_exclusive
+    description: Ghostty AppleScript must stay inside the Ghostty automation adapter and out of docs/UX surfaces.
+    groups:
+      - formal-verify
+      - ghostty-applescript
+    constraint:
+      files_matching:
+        - apps/swift/Sources/Capacitor/**/*.swift
+        - apps/swift/Tests/**/*.swift
+        - README.md
+        - .claude/docs/terminal-activation-ux-spec.md
+        - .claude/docs/debugging-guide.md
+        - .claude/docs/gotchas.md
+        - docs/PRE_RELEASE_CHECKLIST.md
+        - docs/ARCHITECTURE.md
+      except:
+        - apps/swift/Sources/Capacitor/Models/GhosttyAutomationClient.swift
+      must_not: contains_regex:open -a Ghostty\.app|tell process "Ghostty"|AXUIElement|kAX|AXPress|AXRaise
+
+  - rule: hud_hook_owns_runtime_routes
+    description: The production runtime-service HTTP surface belongs to hud-hook serve.
+    groups:
+      - formal-verify
+      - runtime-boundary
+    source_docs:
+      - docs/ARCHITECTURE.md
+      - docs/architecture-decisions/004-dedicated-local-runtime-service.md
+    doc_patterns:
+      - "The runtime service must remain local-only and authenticated"
+    constraint:
+      files_matching:
+        - core/hud-hook/src/**/*.rs
+      except:
+        - core/hud-hook/src/serve.rs
+      must_not: http_route:^/health$|^/runtime/
+
+patterns:
+  - rule: no_snapshot_file_first_live_boundary
+    description: Production Swift app code must not reintroduce snapshot-file-first live reads.
+    groups:
+      - formal-verify
+      - runtime-boundary
+    source_docs:
+      - docs/ARCHITECTURE.md
+    doc_patterns:
+      - "Treating snapshot-file reads as the primary app/runtime boundary"
+    constraint:
+      files_matching:
+        - apps/swift/Sources/Capacitor/**/*.swift
+      must_not: contains_regex:app_snapshot\.json
+
+migration:
+  - rule: no_launcher_detect_available_fallback
+    description: TerminalLauncher must not hide fallback policy behind detectAvailable.
+    groups:
+      - formal-verify
+      - rust-swift-boundary-legibility
+    constraint:
+      files_matching:
+        - apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift
+      must_not: contains_regex:detectAvailable\(
+
+  - rule: no_terminal_switch_cases_inside_launcher
+    description: TerminalLauncher should not embed per-terminal switch logic.
+    groups:
+      - formal-verify
+      - terminal-routing-foundation
+    constraint:
+      files_matching:
+        - apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift
+      must_not: contains_regex:case \.ghostty|case \.iTerm|case \.terminal
+
+  - rule: launcher_does_not_own_session_discovery_fallback
+    description: TerminalLauncher should not own route-missing tmux session discovery.
+    groups:
+      - formal-verify
+      - rust-swift-boundary-legibility
+      - terminal-routing-foundation
+    constraint:
+      files_matching:
+        - apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift
+      except:
+        - .claude/worktrees/**/*.swift
+      must_not: reference:fallbackTmuxSessionResolver|findTmuxSessionForPath
+
+  - rule: swift_tmux_session_discovery_stays_deleted
+    description: Swift must not reintroduce tmux session discovery once Rust routes non-active panes canonically.
+    groups:
+      - formal-verify
+      - rust-swift-boundary-legibility
+      - terminal-routing-foundation
+    constraint:
+      files_matching:
+        - apps/swift/Sources/**/*.swift
+        - apps/swift/Tests/**/*.swift
+      except:
+        - .claude/worktrees/**/*.swift
+      must_not: reference:findSessionForPath|bestSessionForPath|discoverTmuxSessionForProject
+
+  - rule: swift_tmux_pane_recovery_stays_deleted
+    description: Swift must not re-derive tmux pane targets from shell state once Rust owns pane routing.
+    groups:
+      - formal-verify
+      - rust-swift-boundary-legibility
+      - terminal-routing-foundation
+    constraint:
+      files_matching:
+        - apps/swift/Sources/**/*.swift
+        - apps/swift/Tests/**/*.swift
+      except:
+        - .claude/worktrees/**/*.swift
+      must_not: contains_regex:preferredTmuxPaneFromShellState
+
+  - rule: no_legacy_raw_route_shape
+    description: Legacy target_kind and target_value route shape must remain deleted.
+    groups:
+      - formal-verify
+      - terminal-routing-foundation
+    constraint:
+      files_matching:
+        - apps/swift/Sources/**/*.swift
+        - core/**/*.rs
+      must_not: reference:target_kind|target_value
+
+  - rule: host_focus_applescript_stays_in_terminal_drivers
+    description: Host-focus AppleScript for Terminal and iTerm stays behind TerminalDrivers.
+    groups:
+      - formal-verify
+      - terminal-routing-foundation
+    constraint:
+      files_matching:
+        - apps/swift/Sources/Capacitor/Models/**/*.swift
+      except:
+        - apps/swift/Sources/Capacitor/Models/TerminalDrivers.swift
+      must_not: contains_regex:tell application "iTerm2"|tell application "Terminal"
+
+  - rule: no_legacy_ghostty_keystroke_or_ax_tokens
+    description: Legacy Ghostty AX and System Events launch tokens stay at zero.
+    groups:
+      - formal-verify
+      - ghostty-applescript
+    constraint:
+      files_matching:
+        - apps/swift/Sources/**/*.swift
+        - apps/swift/Tests/**/*.swift
+        - README.md
+        - .claude/docs/terminal-activation-ux-spec.md
+        - .claude/docs/debugging-guide.md
+        - .claude/docs/gotchas.md
+        - docs/PRE_RELEASE_CHECKLIST.md
+        - docs/ARCHITECTURE.md
+      must_not: contains_regex:GhosttyAXReader|bestGhosttyTabMatch|ghosttyWindowTitleMatchesSession|resolveGhosttyAXRouting|activateGhosttyWithAXRouting|tell process "Ghostty"|open -a Ghostty\.app
+
+  - rule: runtime_activation_shadow_path_stays_deleted
+    description: The retired Rust runtime_activation shadow owner must stay deleted.
+    groups:
+      - formal-verify
+      - rust-swift-boundary-legibility
+    source_docs:
+      - docs/ARCHITECTURE.md
+    doc_patterns:
+      - "One production owner per behavior: Rust owns runtime semantics; Swift owns presentation, orchestration, and macOS side effects"
+    constraint:
+      all_modules: true
+      must_not: path_regex:^core/capacitor-core/src/runtime_activation/

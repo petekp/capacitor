@@ -37,7 +37,7 @@ use chrono::{DateTime, Utc};
 use domain::{
     default_workspace_id, display_name, now_rfc3339, AppSnapshot, IngestHookEventCommand,
     IngestShellSignalCommand, MutateIdeaCommand, MutateProjectCommand, MutateWorktreeCommand,
-    MutationOutcome, ProjectMutationKind,
+    MutationOutcome, ProjectMutationKind, ResolveRoutingCommand, RoutingView,
 };
 use runtime_artifacts::{count_artifacts_in_dir, count_hooks_in_dir};
 use runtime_config::{load_hud_config_with_storage, resolve_symlink, save_hud_config_with_storage};
@@ -313,6 +313,14 @@ impl CoreRuntime {
     pub fn app_snapshot(&self) -> Result<AppSnapshot, CoreRuntimeError> {
         let state = self.lock_state()?;
         Ok(query::app_snapshot(&state))
+    }
+
+    pub fn resolve_routing(
+        &self,
+        command: ResolveRoutingCommand,
+    ) -> Result<RoutingView, CoreRuntimeError> {
+        let state = self.lock_state()?;
+        Ok(state.resolve_routing(command))
     }
 
     pub fn ingest_hook_event(

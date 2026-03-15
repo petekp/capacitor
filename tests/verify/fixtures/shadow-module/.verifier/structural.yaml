@@ -1,0 +1,11 @@
+meta:
+  canonical_docs: []
+ownership: []
+boundaries: []
+patterns: []
+migration:
+  - rule: shadow_runtime_activation_path_deleted
+    description: Shadow runtime activation modules must stay deleted.
+    constraint:
+      all_modules: true
+      must_not: path_regex:^core/capacitor-core/src/runtime_activation/

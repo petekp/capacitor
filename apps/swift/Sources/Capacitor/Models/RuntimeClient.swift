@@ -438,6 +438,20 @@ private struct SnapshotRoutingPayload: Decodable {
     }
 }
 
+private struct ResolveRoutingRequest: Encodable {
+    let projectPath: String
+    let workspaceId: String?
+    let sessionName: String?
+    let clientTty: String?
+
+    enum CodingKeys: String, CodingKey {
+        case projectPath = "project_path"
+        case workspaceId = "workspace_id"
+        case sessionName = "session_name"
+        case clientTty = "client_tty"
+    }
+}
+
 enum RuntimeClientError: Error {
     case disabled
     case invalidResponse
@@ -548,39 +562,22 @@ final class RuntimeClient {
         )
     }
 
-    func fetchCoreRoutingSnapshot(projectPath: String, workspaceId: String?) async throws -> CoreRoutingSnapshot {
-        let snapshot = try await requireSnapshot(operation: "fetchRoutingSnapshot")
-        let resolved = resolveRoutingView(
-            for: snapshot,
+    func fetchCoreRoutingSnapshot(
+        projectPath: String,
+        workspaceId: String?,
+        clientTty: String? = nil,
+        sessionName: String? = nil,
+    ) async throws -> CoreRoutingSnapshot {
+        let route = try await resolveRouting(
             projectPath: projectPath,
             workspaceId: workspaceId,
+            clientTty: clientTty,
+            sessionName: sessionName,
         )
-
-        if let route = resolved.route {
-            return mapCoreRoutingSnapshot(
-                route,
-                projectPath: projectPath,
-                workspaceId: workspaceId,
-                snapshot: snapshot,
-            )
-        }
-
-        let normalizedPath = PathNormalizer.normalize(projectPath)
-        let trimmedWorkspaceId = workspaceId?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let fallbackWorkspaceId = (trimmedWorkspaceId?.isEmpty == false ? trimmedWorkspaceId : nil)
-            ?? normalizedPath
-
-        return CoreRoutingSnapshot(
-            version: 1,
-            workspaceId: fallbackWorkspaceId,
-            projectPath: normalizedPath,
-            status: "unavailable",
-            target: CoreRoutingTarget(kind: "none"),
-            confidence: "low",
-            reasonCode: "NO_TRUSTED_EVIDENCE",
-            reason: "No routing evidence available in runtime service snapshot",
-            evidence: [],
-            updatedAt: currentISO8601Timestamp(),
+        return mapCoreRoutingSnapshot(
+            route,
+            projectPath: projectPath,
+            workspaceId: workspaceId,
         )
     }
 
@@ -595,6 +592,43 @@ final class RuntimeClient {
         }
 
         return try await loadRuntimeServiceSnapshot(correlationId: correlationId, operation: operation)
+    }
+
+    private func resolveRouting(
+        projectPath: String,
+        workspaceId: String?,
+        clientTty: String?,
+        sessionName: String?,
+    ) async throws -> SnapshotRoutingPayload {
+        guard isEnabled else {
+            throw RuntimeClientError.disabled
+        }
+
+        var request = try runtimeServiceRequest(path: "/runtime/routing/resolve")
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(ResolveRoutingRequest(
+            projectPath: projectPath,
+            workspaceId: workspaceId,
+            sessionName: sessionName,
+            clientTty: clientTty,
+        ))
+
+        do {
+            let (data, response) = try await sendRequest(request)
+            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+                throw RuntimeClientError.runtimeUnavailable(
+                    "Runtime route request failed for \(request.url?.absoluteString ?? "unknown")",
+                )
+            }
+            return try JSONDecoder().decode(SnapshotRoutingPayload.self, from: data)
+        } catch let error as RuntimeClientError {
+            throw error
+        } catch {
+            throw RuntimeClientError.runtimeUnavailable(
+                "Runtime route unavailable: \(error.localizedDescription)",
+            )
+        }
     }
 
     private func loadRuntimeServiceSnapshot(
@@ -765,11 +799,9 @@ final class RuntimeClient {
         _ route: SnapshotRoutingPayload,
         projectPath: String,
         workspaceId _: String?,
-        snapshot: SnapshotPayload,
     ) -> CoreRoutingSnapshot {
         let normalizedStatus = route.status
         let reasonCode = normalizeReasonCode(route.reasonCode)
-        let evidence = tmuxClientEvidence(route: route, snapshot: snapshot)
 
         let confidence = if normalizedStatus == "attached" {
             "high"
@@ -788,7 +820,7 @@ final class RuntimeClient {
             confidence: confidence,
             reasonCode: reasonCode,
             reason: route.reason,
-            evidence: evidence,
+            evidence: [],
             updatedAt: route.updatedAt,
         )
     }
