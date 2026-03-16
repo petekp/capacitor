@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Pre-commit hook: fast checks before each commit
-# Install: ln -sf ../../scripts/dev/pre-commit .git/hooks/pre-commit
+# Install: ./scripts/dev/install-pre-commit-hook.sh
 
 set -e
 

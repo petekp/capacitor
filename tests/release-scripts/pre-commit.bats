@@ -59,6 +59,12 @@ teardown() {
     rm -rf "$TEST_DIR"
 }
 
+copy_hook_installer() {
+    local repo="$1"
+    mkdir -p "$repo/scripts/dev"
+    cp "$PROJECT_ROOT/scripts/dev/install-pre-commit-hook.sh" "$repo/scripts/dev/"
+}
+
 @test "pre-commit reruns verifier with changed-only compatible layers" {
     run env TEST_DIR="$TEST_DIR" PATH="$TEST_DIR/fake-bin:/usr/bin:/bin:/usr/sbin:/sbin" /bin/bash -c 'cd "$TEST_DIR" && ./scripts/dev/pre-commit'
     [ "$status" -eq 1 ]
@@ -72,4 +78,39 @@ teardown() {
     run grep -c -- '--layers 1,3 --changed-only --json' "$TEST_DIR/verify-invocations.log"
     [ "$status" -eq 0 ]
     [ "$output" = "1" ]
+}
+
+@test "installed hook dispatches to the current worktree script" {
+    WORKTREE_DIR="$TEST_DIR-worktree"
+    copy_hook_installer "$TEST_DIR"
+
+    git -C "$TEST_DIR" worktree add --detach "$WORKTREE_DIR" >/dev/null
+    copy_hook_installer "$WORKTREE_DIR"
+
+    cat > "$TEST_DIR/scripts/dev/pre-commit" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'base\n' >> "$(git rev-parse --show-toplevel)/hook-dispatch.log"
+EOF
+    chmod +x "$TEST_DIR/scripts/dev/pre-commit"
+
+    cat > "$WORKTREE_DIR/scripts/dev/pre-commit" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'worktree\n' >> "$(git rev-parse --show-toplevel)/hook-dispatch.log"
+EOF
+    chmod +x "$WORKTREE_DIR/scripts/dev/pre-commit"
+
+    run env WORKTREE_DIR="$WORKTREE_DIR" PATH="/usr/bin:/bin:/usr/sbin:/sbin" /bin/bash -c 'cd "$WORKTREE_DIR" && ./scripts/dev/install-pre-commit-hook.sh'
+    [ "$status" -eq 0 ]
+
+    HOOK_PATH="$(git -C "$WORKTREE_DIR" rev-parse --git-path hooks/pre-commit)"
+
+    run env WORKTREE_DIR="$WORKTREE_DIR" HOOK_PATH="$HOOK_PATH" PATH="/usr/bin:/bin:/usr/sbin:/sbin" /bin/bash -c 'cd "$WORKTREE_DIR" && "$HOOK_PATH"'
+    [ "$status" -eq 0 ]
+
+    [ ! -f "$TEST_DIR/hook-dispatch.log" ]
+    run cat "$WORKTREE_DIR/hook-dispatch.log"
+    [ "$status" -eq 0 ]
+    [ "$output" = "worktree" ]
 }

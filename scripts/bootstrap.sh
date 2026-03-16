@@ -130,13 +130,13 @@ SWIFT_DEBUG_DIR=$(swift build --show-bin-path)
 
 # -----------------------------------------------------------------------------
 # Pre-commit hooks
-# Ensures formatting and tests run before each commit. Symlinks to the repo
-# script so updates propagate automatically.
+# Ensures formatting and tests run before each commit. Install a wrapper in the
+# shared hook dir that dispatches to the current worktree's script.
 # -----------------------------------------------------------------------------
 
 echo "Installing pre-commit hooks..."
 cd "$PROJECT_ROOT"
-ln -sf ../../scripts/dev/pre-commit .git/hooks/pre-commit
+"$PROJECT_ROOT/scripts/dev/install-pre-commit-hook.sh"
 
 # -----------------------------------------------------------------------------
 # Copy dylib to debug build directory
