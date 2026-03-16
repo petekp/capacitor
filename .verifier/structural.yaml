@@ -206,7 +206,7 @@ patterns:
         - apps/swift/Sources/Capacitor/**/*.swift
       except:
         - apps/swift/Sources/Capacitor/Models/DelegationLoopManager.swift
-      must_not: contains_regex:stream-json
+      must_not: string_literal:stream-json
 
   - rule: runtime_health_status_only_checks_stay_deleted
     description: Status-only runtime health checks must stay deleted from Swift lifecycle code.

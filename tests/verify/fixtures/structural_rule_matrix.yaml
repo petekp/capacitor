@@ -14,6 +14,22 @@ swift_runtime_service_reads_owned:
       category: swift_source
       http_routes:
         - /health
+swift_runtime_delegation_mutations_owned:
+  pass:
+    - path: apps/swift/Sources/Capacitor/Models/RuntimeClient.swift
+      language: swift
+      category: swift_source
+      http_routes:
+        - /runtime/delegation/start
+    - path: apps/swift/Sources/Capacitor/Models/AppViewModel.swift
+      language: swift
+      category: swift_source
+  fail:
+    - path: apps/swift/Sources/Capacitor/Models/AppViewModel.swift
+      language: swift
+      category: swift_source
+      http_routes:
+        - /runtime/delegation/start
 runtime_shadow_owners_stay_deleted:
   pass:
     - path: apps/swift/Sources/Capacitor/Models/AppState.swift
@@ -121,6 +137,17 @@ no_snapshot_file_first_live_boundary:
       category: swift_source
       string_literals:
         - app_snapshot.json
+delegation_worker_launch_owned:
+  pass:
+    - path: apps/swift/Sources/Capacitor/Models/RuntimeClient.swift
+      language: swift
+      category: swift_source
+  fail:
+    - path: apps/swift/Sources/Capacitor/Models/RuntimeClient.swift
+      language: swift
+      category: swift_source
+      string_literals:
+        - stream-json
 no_launcher_detect_available_fallback:
   pass:
     - path: apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift
