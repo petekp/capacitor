@@ -1,14 +1,9 @@
 # Gotchas Reference
 
-This file is the implementation-hazard companion to `CLAUDE.md` and
-`.claude/docs/debugging-guide.md`.
+> Doc role: `task-runbook`
+> Status: Implementation hazards only. For architecture, start at `.claude/docs/architecture-primer.md`.
 
-Architecture source of truth lives in:
-
-- `CLAUDE.md`
-- `docs/ARCHITECTURE.md`
-- `docs/architecture-decisions/004-dedicated-local-runtime-service.md`
-- `docs/channel-profile-workflow.md`
+This file is the implementation-hazard companion to `CLAUDE.md` and `.claude/docs/debugging-guide.md`.
 
 ## Rust
 

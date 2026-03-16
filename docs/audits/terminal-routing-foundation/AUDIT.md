@@ -1,5 +1,8 @@
 # Terminal Routing Foundation Audit
 
+> Doc role: `historical-evidence`
+> Status: Historical evidence only. Do not treat this as the current architecture spec.
+
 ## Method
 
 - Inspected the current Rust runtime contract, reducer, `hud-hook` shell adapter, UniFFI bridge, Swift runtime snapshot client, AppState snapshot application, and terminal activation codepaths.

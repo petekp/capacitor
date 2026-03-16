@@ -1,5 +1,8 @@
 # Session State Manual QA Report
 
+> Doc role: `historical-evidence`
+> Status: Historical evidence only. Do not treat this as the current architecture spec.
+
 - Date (UTC):
 - Tester:
 - Build/Commit:

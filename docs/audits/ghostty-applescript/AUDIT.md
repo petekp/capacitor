@@ -1,5 +1,8 @@
 # Ghostty AppleScript Migration Audit
 
+> Doc role: `historical-evidence`
+> Status: Historical evidence only. Do not treat this as the current architecture spec.
+
 ## Method
 
 - Inspected the Swift activation flow, Ghostty routing helpers, tests, and user-facing docs.

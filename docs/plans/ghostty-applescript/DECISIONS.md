@@ -1,5 +1,8 @@
 # Decisions
 
+> Doc role: `historical-evidence`
+> Status: Historical evidence only. Do not treat this as the current architecture spec.
+
 ## 2026-03-10 — D1 Adapter Boundary
 
 Raw Ghostty AppleScript strings and parsing live in `GhosttyAutomationClient.swift`, not in `TerminalLauncher.swift`. This isolates the preview upstream API behind one boundary.

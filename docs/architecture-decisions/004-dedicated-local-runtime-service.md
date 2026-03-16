@@ -1,5 +1,8 @@
 # ADR-004: Dedicated Local Runtime Service
 
+> Doc role: `canonical-rationale`
+> Status: Accepted rationale. This is not the current-state spec. Read after `.claude/docs/architecture-primer.md` and `docs/ARCHITECTURE.md`.
+
 **Status:** Accepted  
 **Date:** 2026-03-09
 

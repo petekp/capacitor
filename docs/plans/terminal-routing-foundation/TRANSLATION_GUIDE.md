@@ -1,5 +1,8 @@
 # Translation Guide
 
+> Doc role: `historical-evidence`
+> Status: Historical evidence only. Do not treat this as the current architecture spec.
+
 ## Old → New
 
 | Old pattern | New pattern |

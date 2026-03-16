@@ -1,5 +1,8 @@
 # Rust-Swift Boundary Seam Audit
 
+> Doc role: `historical-evidence`
+> Status: Historical evidence only. Do not treat this as the current architecture spec.
+
 Date: 2026-03-13
 
 ## Scope Brief
@@ -411,4 +414,3 @@ These are the architecture decisions the audit says must be made before prescrib
 - `~/.capacitor/runtime/app-debug.log:1247-1248`
 - `~/.capacitor/runtime/app-debug.log:2352-2353`
 - `~/.capacitor/runtime/app-debug.log:2462-2463`
-

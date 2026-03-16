@@ -1,5 +1,8 @@
 # Architecture Decisions
 
+> Doc role: `historical-evidence`
+> Status: Historical evidence only. Do not treat this as the current architecture spec.
+
 Append-only. Never edit or delete past entries. To reverse a decision, add a new entry that supersedes it.
 
 ---

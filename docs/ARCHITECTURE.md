@@ -1,52 +1,32 @@
 # Capacitor Architecture (Dedicated Runtime Service)
 
-## Principles
+> Doc role: `canonical-spec`
+> Status: Current architecture spec. Read after `.claude/docs/architecture-primer.md`.
+> Rationale: `docs/architecture-decisions/004-dedicated-local-runtime-service.md`
 
-1. One application boundary: the local runtime service owns ingest, state derivation, and typed runtime reads.
-2. VERIFIER_CLAIM(runtime_semantics_owner_split): owner_scope=core/**/*.rs,apps/swift/Sources/Capacitor/**/*.swift; One production owner per behavior: Rust owns runtime semantics; Swift owns presentation, orchestration, and macOS side effects.
-3. One semantic path: hook adapters, shell adapters, and UI reads all converge on the same runtime service state.
+## System Boundary
 
-## Runtime Flow
-
-1. Claude Code hook events reach `hud-hook serve` over `/hook`.
-2. `hud-hook serve` hosts the local runtime service and normalizes adapter input into the canonical `capacitor-core` runtime.
-3. `capacitor-core` applies ingest, reducer, and projection logic, then persists runtime artifacts for durability and replay.
-4. The Swift app reads runtime state from authenticated `/runtime/*` endpoints exposed by the service.
-5. `AppState`, `SessionStateManager`, and `ShellStateStore` apply presentation-only freshness guards and hysteresis before updating visible UI state.
-
-## Ownership
-
-- Rust (`core/capacitor-core`):
-  - Path normalization and workspace identity
-  - Hook and shell ingest normalization
-  - Reducer/query state derivation
-  - Runtime persistence and replay artifacts
-  - Runtime setup validation and hook-health evaluation
-- Runtime service shell (`core/hud-hook`):
-  - Local authenticated runtime-service process
-  - Claude `/hook` adapter ingress
-  - Shell `cwd` forwarding
-  - Typed `/runtime/*` read and ingest endpoints
-- Swift (`apps/swift/Sources/Capacitor`):
-  - Runtime-service supervision and reconnect/adoption
-  - Runtime snapshot projection and stabilization (`SessionStateManager`, `ShellStateStore`, `RoutingStateStore`, `AppState`)
-  - SwiftUI views + interaction flows
-  - Activation orchestration (`TerminalActivationCoordinator`)
-  - tmux execution and client/session/pane routing (`TmuxRouter`)
-  - Terminal host automation (`TerminalDriver` implementations, `GhosttyAutomationClient`)
-  - Setup and feature-policy coordinators
-
-## Boundaries
+Capacitor uses a dedicated local runtime service as its live application boundary.
 
 - VERIFIER_CLAIM(runtime_boundary_service): owner_scope=core/hud-hook/src/serve.rs; Runtime boundary: authenticated local HTTP service hosted by `hud-hook serve`
-- FFI boundary: `capacitor-core` UniFFI exports for app-facing setup and non-runtime APIs
-- Adapter boundary: Claude `/hook` and shell `cwd` inputs forward into the runtime service; they do not own lifecycle semantics
+- Live runtime reads go through authenticated `/health` and `/runtime/*` endpoints exposed by that service.
+- Persisted artifacts under `~/.capacitor/runtime/` exist for durability, replay, and debugging. They are not the primary live boundary for the app.
+- The UniFFI boundary remains the app-facing path for setup and other non-runtime APIs.
 
-## Repository Shape
+## Ownership By Subsystem
 
-- `core/capacitor-core/`: canonical ingest, reducer, query, storage, and FFI runtime
-- `core/hud-hook/`: runtime-service shell plus hook/shell adapters
-- `apps/swift/`: menubar application, runtime-service client/supervisor, projection layer, and feature coordinators
+- VERIFIER_CLAIM(runtime_semantics_owner_split): owner_scope=core/**/*.rs,apps/swift/Sources/Capacitor/**/*.swift; One production owner per behavior: Rust owns runtime semantics; Swift owns presentation, orchestration, and macOS side effects.
+- Rust (`core/capacitor-core`) owns path normalization, workspace identity, ingest normalization, reducer/query state derivation, runtime persistence, replay artifacts, and runtime setup validation.
+- `core/hud-hook` owns the local authenticated runtime-service shell, Claude hook ingress, shell `cwd` forwarding, and the typed `/runtime/*` read plus ingest endpoints.
+- Swift (`apps/swift/Sources/Capacitor`) owns runtime-service supervision, projection and stabilization (`SessionStateManager`, `ShellStateStore`, `RoutingStateStore`, `AppState`), SwiftUI views, activation orchestration, tmux execution, terminal drivers, and setup coordinators.
+
+## Runtime Data Flow
+
+1. Claude hook events and shell cwd signals reach `hud-hook serve`.
+2. `hud-hook serve` normalizes adapter input and forwards it into the canonical `capacitor-core` runtime.
+3. `capacitor-core` applies ingest, reducer, and query logic, then persists runtime artifacts for durability and replay.
+4. The Swift app reads typed runtime state from authenticated `/runtime/*` endpoints exposed by the service.
+5. Swift projection layers apply presentation-only freshness guards and hysteresis before updating visible UI state.
 
 ## Activation Boundaries
 

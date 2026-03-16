@@ -1,5 +1,8 @@
 # Resume: Harden Reducer-Owned Routing Contracts
 
+> Doc role: `historical-evidence`
+> Status: Historical evidence only. Do not treat this as the current architecture spec.
+
 ## Mission
 Continue Capacitor hardening after the activation-boundary cleanup and runtime/bootstrap/setup contract work landed. The next highest-value subsystem is the Rust reducer/routing engine, because it owns the routing facts Swift must not re-derive.
 

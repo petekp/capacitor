@@ -1,5 +1,8 @@
 # Ghostty AppleScript Migration Charter
 
+> Doc role: `historical-evidence`
+> Status: Historical evidence only. Do not treat this as the current architecture spec.
+
 ## Mission
 
 Replace Capacitor's Ghostty Accessibility-based routing and Ghostty-specific keystroke launch heuristics with Ghostty's native AppleScript window/tab/terminal API, while preserving the existing tmux-centered activation UX.

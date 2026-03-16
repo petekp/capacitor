@@ -1,5 +1,8 @@
 # Channel + Profile Workflow
 
+> Doc role: `task-runbook`
+> Status: Task-specific workflow reference. This is not the current system architecture spec.
+
 ## Why this exists
 
 Capacitor now separates:

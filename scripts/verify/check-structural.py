@@ -6,6 +6,7 @@ import pathlib
 import re
 from typing import Any
 
+from doc_governance import doc_governance_violations
 from verifier_common import (
     Violation,
     VALID_FACT_KINDS,
@@ -302,6 +303,7 @@ def evolve_violations(
     config: dict[str, Any],
     rules: list[dict[str, Any]],
     facts: dict[str, Any],
+    repo_root: pathlib.Path,
 ) -> list[Violation]:
     canonical_docs = normalize_patterns(config.get("meta", {}).get("canonical_docs"))
     doc_modules = [module for module in facts["modules"] if module["path"] in canonical_docs]
@@ -367,6 +369,7 @@ def evolve_violations(
                     fix="Update owner_scope metadata or restore the intended owner module intentionally.",
                 )
             )
+    violations.extend(doc_governance_violations(repo_root, config))
     return violations
 
 
@@ -392,7 +395,7 @@ def main() -> None:
             violations.extend(check_rule(rule, facts["modules"], repo_root))
 
         if args.evolve:
-            violations.extend(evolve_violations(config, rules, facts))
+            violations.extend(evolve_violations(config, rules, facts, repo_root))
 
         if selected_paths:
             violations = [violation for violation in violations if not violation.path or violation.path in selected_paths]

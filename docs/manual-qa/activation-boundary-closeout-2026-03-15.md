@@ -1,5 +1,8 @@
 # Activation Boundary Closeout - 2026-03-15
 
+> Doc role: `historical-evidence`
+> Status: Historical evidence only. Do not treat this as the current architecture spec.
+
 ## Automated Checks Completed
 
 - `swift test --package-path apps/swift`

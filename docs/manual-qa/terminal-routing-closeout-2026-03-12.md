@@ -1,5 +1,8 @@
 # Terminal Routing Closeout - 2026-03-12
 
+> Doc role: `historical-evidence`
+> Status: Historical evidence only. Do not treat this as the current architecture spec.
+
 ## Automated Checks Completed
 
 - `cargo test -p hud-hook runtime_snapshot_recomputes_routing_from_seeded_snapshot_on_startup -- --nocapture`

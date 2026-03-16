@@ -54,6 +54,179 @@ commit_repo() {
   git -C "$repo" commit -qm "fixture"
 }
 
+write_doc_governance_fixture() {
+  local repo="$1"
+  mkdir -p \
+    "$repo/.verifier" \
+    "$repo/.claude/docs" \
+    "$repo/docs/architecture-decisions" \
+    "$repo/docs/archive/architecture-history" \
+    "$repo/docs/audits/sample" \
+    "$repo/docs/manual-qa" \
+    "$repo/docs/plans/sample"
+
+  cat > "$repo/.verifier/structural.yaml" <<'YAML'
+meta:
+  canonical_docs:
+    - .claude/docs/architecture-primer.md
+    - docs/ARCHITECTURE.md
+    - docs/architecture-decisions/004-dedicated-local-runtime-service.md
+  doc_governance:
+    primer: .claude/docs/architecture-primer.md
+    spec: docs/ARCHITECTURE.md
+    rationale: docs/architecture-decisions/004-dedicated-local-runtime-service.md
+    recent_deltas: AGENT_CHANGELOG.md
+    generated_aid: .verifier/reports/architecture-packet.md
+    support_docs:
+      - CLAUDE.md
+      - .claude/docs/README.md
+      - .claude/docs/debugging-guide.md
+      - .claude/docs/gotchas.md
+      - .claude/docs/release-guide.md
+    historical_globs:
+      - docs/audits/**/*.md
+      - docs/manual-qa/**/*.md
+      - docs/plans/**/*.md
+    archived_globs:
+      - docs/archive/architecture-history/**/*.md
+ownership: []
+boundaries: []
+patterns: []
+migration: []
+YAML
+
+  cat > "$repo/.claude/docs/architecture-primer.md" <<'MD'
+# Architecture Primer
+
+> Doc role: `agent-entrypoint`
+> Status: Current. Read this first for architecture orientation.
+
+## Read Order
+
+1. `.claude/docs/architecture-primer.md`
+2. `docs/ARCHITECTURE.md`
+3. `docs/architecture-decisions/004-dedicated-local-runtime-service.md`
+
+## Ignore As Current Architecture
+
+- `AGENT_CHANGELOG.md`
+- `docs/audits/`
+- `docs/plans/`
+- `docs/manual-qa/`
+MD
+
+  cat > "$repo/docs/ARCHITECTURE.md" <<'MD'
+# Architecture
+
+> Doc role: `canonical-spec`
+> Status: Current architecture spec. Read after `.claude/docs/architecture-primer.md`.
+> Rationale: `docs/architecture-decisions/004-dedicated-local-runtime-service.md`
+
+The checked-in current-state system spec lives here.
+MD
+
+  cat > "$repo/docs/architecture-decisions/004-dedicated-local-runtime-service.md" <<'MD'
+# ADR-004
+
+> Doc role: `canonical-rationale`
+> Status: Accepted rationale. This is not the current-state spec. Read after `.claude/docs/architecture-primer.md` and `docs/ARCHITECTURE.md`.
+
+This file explains why the current boundary exists.
+MD
+
+  cat > "$repo/AGENT_CHANGELOG.md" <<'MD'
+# Agent Changelog
+
+> Doc role: `recent-deltas`
+> Status: Recent deltas only. This file is not the current architecture spec.
+> Archive: `docs/archive/architecture-history/agent-changelog-history.md`
+
+Keep only the retired seams that still matter for current agent work.
+MD
+
+  cat > "$repo/CLAUDE.md" <<'MD'
+# CLAUDE
+
+> Doc role: `task-runbook`
+> Status: Workflow and command guide only. For architecture, start at `.claude/docs/architecture-primer.md`.
+MD
+
+  cat > "$repo/.claude/docs/README.md" <<'MD'
+# Agent Docs
+
+> Doc role: `task-runbook`
+> Status: Routing table only. For architecture, start at `.claude/docs/architecture-primer.md`.
+MD
+
+  cat > "$repo/.claude/docs/debugging-guide.md" <<'MD'
+# Debugging Guide
+
+> Doc role: `task-runbook`
+> Status: Debugging runbook only. Use `.claude/docs/architecture-primer.md` for architecture context.
+MD
+
+  cat > "$repo/.claude/docs/gotchas.md" <<'MD'
+# Gotchas
+
+> Doc role: `task-runbook`
+> Status: Implementation hazards only. Use `.claude/docs/architecture-primer.md` for architecture context.
+MD
+
+  cat > "$repo/.claude/docs/release-guide.md" <<'MD'
+# Release Guide
+
+> Doc role: `task-runbook`
+> Status: Release mechanics only. Use `.claude/docs/architecture-primer.md` for architecture context.
+MD
+
+  cat > "$repo/docs/audits/sample/AUDIT.md" <<'MD'
+# Sample Audit
+
+> Doc role: `historical-evidence`
+> Status: Historical evidence only. Do not treat this as the current architecture spec.
+
+Audit evidence.
+MD
+
+  cat > "$repo/docs/manual-qa/sample-closeout.md" <<'MD'
+# Sample Manual QA
+
+> Doc role: `historical-evidence`
+> Status: Historical evidence only. Do not treat this as the current architecture spec.
+
+Manual QA evidence.
+MD
+
+  cat > "$repo/docs/plans/sample/HANDOFF.md" <<'MD'
+# Sample Plan
+
+> Doc role: `historical-evidence`
+> Status: Historical evidence only. Do not treat this as the current architecture spec.
+
+Planning evidence.
+MD
+
+  cat > "$repo/docs/archive/architecture-history/legacy-architecture.md" <<'MD'
+# Legacy Architecture
+
+> Doc role: `historical-evidence`
+> Status: Archived. Historical evidence only. Do not treat this as the current architecture spec.
+> Current read path: `.claude/docs/architecture-primer.md` -> `docs/ARCHITECTURE.md` -> `docs/architecture-decisions/004-dedicated-local-runtime-service.md`
+
+Superseded architecture narrative.
+MD
+
+  cat > "$repo/docs/archive/architecture-history/agent-changelog-history.md" <<'MD'
+# Agent Changelog History
+
+> Doc role: `historical-evidence`
+> Status: Archived. Historical evidence only. Do not treat this as the current architecture spec.
+> Current read path: `.claude/docs/architecture-primer.md` -> `docs/ARCHITECTURE.md` -> `docs/architecture-decisions/004-dedicated-local-runtime-service.md`
+
+Older delta history.
+MD
+}
+
 @test "bootstrap is idempotent and scaffolds verifier files" {
   temp_root="$(mktemp -d)"
   mkdir -p "$temp_root/repo"
@@ -387,6 +560,86 @@ assert payload["violation_count"] == 1, payload
 assert payload.get("selected_scope") == "full_due_to_verifier_change", payload
 rules = {violation["rule"] for violation in payload["layer_results"]["1"]["violations"]}
 assert rules == {"tmux_router_exclusive_command_owner"}, rules
+PY
+  [ "$status" -eq 0 ]
+}
+
+@test "evolve generates an architecture packet with primer spec and ADR as the canonical read path" {
+  repo="$(new_temp_repo)"
+  write_doc_governance_fixture "$repo"
+
+  run_verify --repo-root "$repo" --layers 1 --evolve --json
+  [ "$status" -eq 0 ]
+
+  run python3 - <<'PY' "$repo/.verifier/reports/architecture-packet.md"
+import pathlib
+import sys
+
+text = pathlib.Path(sys.argv[1]).read_text()
+
+assert "> Doc role: `generated-aid`" in text, text
+assert "## Canonical Read Path" in text, text
+assert "1. `.claude/docs/architecture-primer.md`" in text, text
+assert "2. `docs/ARCHITECTURE.md`" in text, text
+assert "3. `docs/architecture-decisions/004-dedicated-local-runtime-service.md`" in text, text
+assert "## Recent Deltas" in text, text
+assert "`AGENT_CHANGELOG.md`" in text, text
+
+canonical_section = text.split("## Canonical Read Path", 1)[1].split("## Recent Deltas", 1)[0]
+assert "AGENT_CHANGELOG.md" not in canonical_section, canonical_section
+PY
+  [ "$status" -eq 0 ]
+}
+
+@test "evolve fails when a non-canonical runbook claims architecture authority" {
+  repo="$(new_temp_repo)"
+  write_doc_governance_fixture "$repo"
+
+  cat > "$repo/.claude/docs/debugging-guide.md" <<'MD'
+# Debugging Guide
+
+> Doc role: `task-runbook`
+> Status: Debugging runbook only. Use `.claude/docs/architecture-primer.md` for architecture context.
+
+Architecture source of truth lives in `docs/ARCHITECTURE.md`.
+MD
+
+  run_verify --repo-root "$repo" --layers 1 --evolve --json
+  [ "$status" -ne 0 ]
+
+  run python3 - <<'PY' "$repo/.verifier/reports/last-run.json"
+import json
+import pathlib
+import sys
+
+payload = json.loads(pathlib.Path(sys.argv[1]).read_text())
+rules = {violation["rule"] for violation in payload["layer_results"]["1"]["violations"]}
+assert "non_canonical_doc_claims_architecture_authority" in rules, rules
+PY
+  [ "$status" -eq 0 ]
+}
+
+@test "evolve fails when an archived architecture doc is missing the archived header" {
+  repo="$(new_temp_repo)"
+  write_doc_governance_fixture "$repo"
+
+  cat > "$repo/docs/archive/architecture-history/legacy-architecture.md" <<'MD'
+# Legacy Architecture
+
+Superseded architecture narrative without an archive banner.
+MD
+
+  run_verify --repo-root "$repo" --layers 1 --evolve --json
+  [ "$status" -ne 0 ]
+
+  run python3 - <<'PY' "$repo/.verifier/reports/last-run.json"
+import json
+import pathlib
+import sys
+
+payload = json.loads(pathlib.Path(sys.argv[1]).read_text())
+rules = {violation["rule"] for violation in payload["layer_results"]["1"]["violations"]}
+assert "archived_doc_missing_historical_header" in rules, rules
 PY
   [ "$status" -eq 0 ]
 }

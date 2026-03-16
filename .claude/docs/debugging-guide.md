@@ -1,22 +1,16 @@
 # Debugging Guide
 
+> Doc role: `task-runbook`
+> Status: Debugging runbook only. For current architecture, start at `.claude/docs/architecture-primer.md`.
+
 Use this guide for runtime and activation debugging only.
-Architecture source of truth lives in `CLAUDE.md`,
-`docs/ARCHITECTURE.md`, and
-`docs/architecture-decisions/004-dedicated-local-runtime-service.md`.
 
-## Runtime Model
+## Runtime Surfaces
 
-Capacitor is runtime-service based:
+These are the runtime paths you will touch while debugging:
 
-1. `hud-hook serve` receives Claude hook events and shell cwd signals.
-2. `capacitor-core` reduces them into the canonical runtime state and persists runtime artifacts.
-3. Swift reads typed snapshot data from authenticated `/runtime/*` service endpoints and applies projection and stabilization before rendering.
-
-Canonical runtime inputs and paths:
-
-- Hook binary: `~/.local/bin/hud-hook`
 - Runtime service connection: `~/.capacitor/runtime/runtime-service.json`
+- Hook binary: `~/.local/bin/hud-hook`
 - Persisted runtime artifact: `~/.capacitor/runtime/app_snapshot.json`
 - Runtime directory: `~/.capacitor/runtime/`
 

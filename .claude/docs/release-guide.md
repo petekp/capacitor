@@ -1,13 +1,9 @@
 # Release Guide
 
+> Doc role: `task-runbook`
+> Status: Release mechanics only. For architecture, start at `.claude/docs/architecture-primer.md`.
+
 Use this guide for agent-run release preparation and verification.
-
-Source of truth for the active app architecture still lives in:
-
-- `CLAUDE.md`
-- `docs/ARCHITECTURE.md`
-- `docs/architecture-decisions/004-dedicated-local-runtime-service.md`
-- `docs/channel-profile-workflow.md`
 
 Source of truth for release mechanics lives in the scripts themselves:
 

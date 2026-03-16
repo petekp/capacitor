@@ -1,5 +1,8 @@
 # Async Idea Delegation UX Exploration
 
+> Doc role: `historical-evidence`
+> Status: Historical evidence only. Do not treat this as the current architecture spec.
+
 Status: exploratory, non-prescriptive
 
 Last updated: 2026-03-13

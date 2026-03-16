@@ -54,6 +54,8 @@ Current terminal support:
 
 Formal verification is part of the repo's default engineering surface.
 
+Architecture docs for coding agents start at `.claude/docs/architecture-primer.md`.
+
 ```bash
 ./scripts/verify/verify.sh --bootstrap
 ./scripts/verify/verify.sh --layers 1
