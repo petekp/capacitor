@@ -13,8 +13,9 @@ enum CapacitorProjectPaths {
         for projectPath: String,
         fileManager: FileManager = .default,
     ) -> URL {
-        projectsRoot(fileManager: fileManager)
-            .appendingPathComponent(encodePath(projectPath), isDirectory: true)
+        let normalizedProjectPath = PathNormalizer.normalize(projectPath)
+        return projectsRoot(fileManager: fileManager)
+            .appendingPathComponent(encodePath(normalizedProjectPath), isDirectory: true)
     }
 
     static func encodePath(_ path: String) -> String {
