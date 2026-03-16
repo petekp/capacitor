@@ -14,7 +14,7 @@ Capacitor uses a dedicated local runtime service as its tracking architecture.
 
 Specifically:
 
-1. The runtime service is the application boundary for tracking.
+1. VERIFIER_CLAIM(runtime_tracking_application_boundary): owner_scope=apps/swift/Sources/Capacitor/Models/RuntimeClient.swift,apps/swift/Sources/Capacitor/Models/HookServerManager.swift; The runtime service is the application boundary for tracking.
 2. The Swift app becomes a client of the runtime service.
 3. Claude ingress adapters and shell signal adapters target the runtime service.
 4. Observation journal plus derived read models remain the target runtime model.
@@ -35,7 +35,7 @@ Tradeoffs:
 
 ## Guardrails
 
-1. The runtime service must remain local-only and authenticated.
+1. VERIFIER_CLAIM(runtime_service_local_only_authenticated): owner_scope=core/hud-hook/src/serve.rs,core/capacitor-core/src/runtime_service/mod.rs,apps/swift/Sources/Capacitor/Models/RuntimeClient.swift,apps/swift/Sources/Capacitor/Models/HookServerManager.swift,apps/swift/Sources/Capacitor/Models/AppState.swift; The runtime service must remain local-only and authenticated.
 2. Adapters remain forwarders, not reducers.
 3. Runtime verification stays green through replay, smoke, and reliability checks.
 4. The process split must be implemented as composition-root work, not by moving domain semantics out of Rust.

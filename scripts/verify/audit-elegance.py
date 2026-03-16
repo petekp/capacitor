@@ -8,7 +8,15 @@ from typing import Any
 
 import lizard
 
-from verifier_common import Violation, ensure_python, load_json, load_yaml, read_text, utc_now, write_json
+from verifier_common import (
+    Violation,
+    build_layer_payload,
+    ensure_python,
+    load_json,
+    load_yaml,
+    read_text,
+    write_json_atomic,
+)
 
 
 GRADE_ORDER = ["F", "D", "C", "B", "A"]
@@ -221,15 +229,17 @@ def main() -> None:
     grade = grade_for(score)
     minimum_grade = str(config.get("minimum_grade", "B"))
     passed = GRADE_ORDER.index(grade) >= GRADE_ORDER.index(minimum_grade)
-    payload = {
-        "generated_at": utc_now(),
-        "passed": passed,
-        "score": score,
-        "grade": grade,
-        "minimum_grade": minimum_grade,
-        "violations": [deduction.as_dict() for deduction in deductions],
-    }
-    write_json(pathlib.Path(args.out), payload)
+    payload = build_layer_payload(
+        violations=deductions,
+        status="passed" if passed else "violated",
+        extra={
+            "score": score,
+            "grade": grade,
+            "minimum_grade": minimum_grade,
+        },
+    )
+    payload["passed"] = passed
+    write_json_atomic(pathlib.Path(args.out), payload)
     raise SystemExit(0 if passed else 1)
 
 

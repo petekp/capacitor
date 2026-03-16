@@ -30,8 +30,9 @@ echo -e "${CYAN}========================================${NC}"
 echo ""
 
 FAILED=0
+VENV_DIR="${VENV_DIR:-$PROJECT_ROOT/.verifier/.venv}"
 
-echo -e "${YELLOW}[1/7] Release Script Tests (bats)${NC}"
+echo -e "${YELLOW}[1/10] Release Script Tests (bats)${NC}"
 if command -v bats &> /dev/null; then
     if bats tests/release-scripts; then
         echo -e "${GREEN}✓ Release script tests passed${NC}"
@@ -44,7 +45,7 @@ else
 fi
 echo ""
 
-echo -e "${YELLOW}[2/7] Rust Formatting${NC}"
+echo -e "${YELLOW}[2/10] Rust Formatting${NC}"
 if cargo fmt 2>&1; then
     echo -e "${GREEN}✓ Rust formatted${NC}"
 else
@@ -53,8 +54,39 @@ else
 fi
 echo ""
 
-echo -e "${YELLOW}[3/7] Formal Verification${NC}"
-if ./scripts/verify/verify.sh --repo-root "$PROJECT_ROOT" --layers 1,2,3 2>&1; then
+echo -e "${YELLOW}[3/10] Verifier Dependency Bootstrap${NC}"
+if env VENV_DIR="$VENV_DIR" ./scripts/verify/install-deps.sh 2>&1; then
+    echo -e "${GREEN}✓ Verifier dependencies ready${NC}"
+else
+    echo -e "${RED}✗ Verifier dependency bootstrap failed${NC}"
+    FAILED=1
+fi
+echo ""
+
+echo -e "${YELLOW}[4/10] Verifier Self-Tests (bats)${NC}"
+if command -v bats &> /dev/null; then
+    if env VENV_DIR="$VENV_DIR" bats tests/verify/verify.bats; then
+        echo -e "${GREEN}✓ Verifier bats tests passed${NC}"
+    else
+        echo -e "${RED}✗ Verifier bats tests failed${NC}"
+        FAILED=1
+    fi
+else
+    echo -e "${YELLOW}⚠ bats not installed, skipping verifier bats tests (brew install bats-core)${NC}"
+fi
+echo ""
+
+echo -e "${YELLOW}[5/10] Verifier Helper Tests (unittest)${NC}"
+if "$VENV_DIR/bin/python" -m unittest discover -s tests/verify_unit -v 2>&1; then
+    echo -e "${GREEN}✓ Verifier helper tests passed${NC}"
+else
+    echo -e "${RED}✗ Verifier helper tests failed${NC}"
+    FAILED=1
+fi
+echo ""
+
+echo -e "${YELLOW}[6/10] Formal Verification${NC}"
+if env VENV_DIR="$VENV_DIR" ./scripts/verify/verify.sh --repo-root "$PROJECT_ROOT" --layers 1,2,3 2>&1; then
     echo -e "${GREEN}✓ Formal verification passed${NC}"
 else
     echo -e "${RED}✗ Formal verification failed${NC}"
@@ -62,7 +94,7 @@ else
 fi
 echo ""
 
-echo -e "${YELLOW}[4/7] Rust Tests${NC}"
+echo -e "${YELLOW}[7/10] Rust Tests${NC}"
 if cargo test 2>&1; then
     echo -e "${GREEN}✓ Rust tests passed${NC}"
 else
@@ -71,7 +103,7 @@ else
 fi
 echo ""
 
-echo -e "${YELLOW}[5/7] Rust Linting${NC}"
+echo -e "${YELLOW}[8/10] Rust Linting${NC}"
 if cargo clippy -- -D warnings 2>&1; then
     echo -e "${GREEN}✓ Clippy passed${NC}"
 else
@@ -80,7 +112,7 @@ else
 fi
 echo ""
 
-echo -e "${YELLOW}[6/7] Swift Formatting${NC}"
+echo -e "${YELLOW}[9/10] Swift Formatting${NC}"
 if command -v swiftformat &> /dev/null; then
     if swiftformat apps/swift 2>&1; then
         echo -e "${GREEN}✓ Swift formatted${NC}"
@@ -94,7 +126,7 @@ fi
 echo ""
 
 if [ "$QUICK" = false ]; then
-    echo -e "${YELLOW}[7/7] Swift Tests${NC}"
+    echo -e "${YELLOW}[10/10] Swift Tests${NC}"
 
     echo "Building Rust library for Swift tests..."
     cargo build -p capacitor-core --release
@@ -114,7 +146,7 @@ if [ "$QUICK" = false ]; then
     fi
     cd "$PROJECT_ROOT"
 else
-    echo -e "${YELLOW}[7/7] Swift Tests${NC}"
+    echo -e "${YELLOW}[10/10] Swift Tests${NC}"
     echo -e "${YELLOW}⚠ Skipped (--quick mode)${NC}"
 fi
 echo ""
