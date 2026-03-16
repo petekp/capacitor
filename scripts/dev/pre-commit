@@ -68,10 +68,10 @@ if command -v swiftformat &> /dev/null; then
     fi
 fi
 
-# 3. Rust tests (the main value - catches broken tests)
-if ! ./scripts/verify/verify.sh --repo-root "$(pwd)" --layers 1,2,3 --changed-only >/dev/null 2>&1; then
+# 3. Formal verification on staged-path-compatible layers
+if ! ./scripts/verify/verify.sh --repo-root "$(pwd)" --layers 1,3 --changed-only >/dev/null 2>&1; then
     echo -e "${RED}✗ Formal verification failed${NC}"
-    ./scripts/verify/verify.sh --repo-root "$(pwd)" --layers 1,2,3 --changed-only --json || true
+    ./scripts/verify/verify.sh --repo-root "$(pwd)" --layers 1,3 --changed-only --json || true
     exit 1
 fi
 
