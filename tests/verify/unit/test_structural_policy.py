@@ -36,6 +36,7 @@ class StructuralPolicyTests(unittest.TestCase):
         self.assertEqual(
             {
                 "swift_runtime_service_reads_owned",
+                "swift_runtime_delegation_mutations_owned",
                 "runtime_shadow_owners_stay_deleted",
                 "activation_policy_not_distributed",
                 "tmux_router_exclusive_command_owner",
@@ -43,6 +44,7 @@ class StructuralPolicyTests(unittest.TestCase):
                 "rust_runtime_health_probe_validates_bootstrap_contract",
                 "swift_runtime_health_consumers_validate_bootstrap_contract",
                 "no_snapshot_file_first_live_boundary",
+                "delegation_worker_launch_owned",
                 "no_launcher_detect_available_fallback",
                 "launcher_does_not_own_session_discovery_fallback",
                 "swift_tmux_session_discovery_stays_deleted",
