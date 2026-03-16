@@ -74,16 +74,15 @@ class StructuralPolicyTests(unittest.TestCase):
                 {
                     "rule": "bad_regex_rule",
                     "description": "bad",
-                    "constraint": {"files_matching": ["src/**/*.swift"], "must_not": "contains_regex:bad"},
+                    "constraint": {"files_matching": ["src/**/*.swift"], "must_not": "not_a_fact_kind:bad"},
                 }
             ],
         }
 
-        violations = self.policy.layer1_policy_violations(config)
+        audit = self.policy.build_rule_audit(config)
 
-        self.assertEqual(1, len(violations))
-        self.assertEqual("bad_regex_rule", violations[0]["rule"])
-        self.assertEqual("contains_regex", violations[0]["fact_kind"])
+        self.assertEqual("not_a_fact_kind", audit[0]["fact_kind"])
+        self.assertFalse(audit[0]["layer1_sound"])
 
 
 if __name__ == "__main__":

@@ -6,11 +6,15 @@ from typing import Any
 ALLOWED_HARD_LAYER1_FACT_KINDS = frozenset(
     {
         "call_pattern",
+        "contains_regex",
         "definition",
         "http_route",
+        "identifier_ref",
         "implement",
         "import",
         "path_regex",
+        "process_exec",
+        "static_http_route",
         "reference",
         "shell_command_literal",
         "string_literal",
@@ -23,11 +27,14 @@ FACT_CONFIDENCE = {
     "definition": "medium",
     "doc_claim": "medium",
     "http_route": "high",
+    "identifier_ref": "medium",
     "implement": "medium",
     "import": "medium",
     "path_regex": "high",
+    "process_exec": "high",
     "reference": "medium",
     "shell_command_literal": "high",
+    "static_http_route": "high",
     "string_literal": "high",
 }
 
