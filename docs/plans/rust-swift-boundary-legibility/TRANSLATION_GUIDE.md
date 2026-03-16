@@ -1,5 +1,8 @@
 # Translation Guide
 
+> Doc role: `historical-evidence`
+> Status: Historical evidence only. Do not treat this as the current architecture spec.
+
 Use this file during the implementation slices to keep the Option 2 target shape honest.
 
 ## Current Status

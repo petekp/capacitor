@@ -1,5 +1,8 @@
 # Handoff — 2026-03-13 Closeout
 
+> Doc role: `historical-evidence`
+> Status: Historical evidence only. Do not treat this as the current architecture spec.
+
 ## Mission
 
 Terminal-routing-foundation is complete. The route-first, pane-aware terminal activation path is closed out with live Ghostty, iTerm, and Terminal.app proof.

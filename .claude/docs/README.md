@@ -1,21 +1,16 @@
 # Agent Docs
 
+> Doc role: `task-runbook`
+> Status: Routing table only. For architecture, start at `.claude/docs/architecture-primer.md`.
+
 This folder is the local runbook surface for coding agents working in Capacitor.
 
-It is not the architecture source of truth by itself. Read in this order:
+## Read Path
 
-1. `CLAUDE.md`
-2. `docs/ARCHITECTURE.md`
-3. `docs/architecture-decisions/004-dedicated-local-runtime-service.md`
-4. `docs/channel-profile-workflow.md` when channel/profile behavior matters
-5. The specific runbook in this folder that matches the task
-
-## Current Architecture Snapshot
-
-- Rust owns domain semantics, persisted runtime truth, setup validation, and file-backed behavior.
-- `core/hud-hook/` hosts the local runtime service and adapts Claude hook + shell-cwd inputs into `capacitor-core`.
-- Swift owns projection, interaction flow, terminal activation execution, and macOS integrations.
-- `apps/swift/Sources/Capacitor/Models/AppState.swift` is the shell environment hub. It exposes collaborators but does not own live-world assembly or duplicate domain policy.
+1. `CLAUDE.md` for commands, verification workflow, and repo conventions
+2. `.claude/docs/architecture-primer.md` for architecture hierarchy and routing
+3. `docs/channel-profile-workflow.md` when channel/profile behavior matters
+4. The specific runbook in this folder that matches the task
 
 ## Default Verification Set
 

@@ -1,5 +1,9 @@
 # Architecture Exploration: iTerm and Terminal.app Integration
 
+> Doc role: `historical-evidence`
+> Status: Archived. Historical evidence only. Do not treat this as the current architecture spec.
+> Current read path: `.claude/docs/architecture-primer.md` -> `docs/ARCHITECTURE.md` -> `docs/architecture-decisions/004-dedicated-local-runtime-service.md`
+
 ## Goal
 
 Improve the iTerm and Terminal.app integration so it is as trustworthy, diagnosable, and maintainable as the Ghostty path, without reopening the broader terminal-activation architecture.

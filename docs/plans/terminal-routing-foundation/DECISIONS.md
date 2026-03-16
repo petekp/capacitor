@@ -1,5 +1,8 @@
 # Decisions
 
+> Doc role: `historical-evidence`
+> Status: Historical evidence only. Do not treat this as the current architecture spec.
+
 ## 2026-03-11 — D1 Rust Owns Routing Derivation
 
 Routing targets are derived inside `core/capacitor-core`, not recomputed in Swift. Swift consumes route state and executes it.

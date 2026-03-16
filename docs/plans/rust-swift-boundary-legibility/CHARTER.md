@@ -1,5 +1,8 @@
 # Migration Charter
 
+> Doc role: `historical-evidence`
+> Status: Historical evidence only. Do not treat this as the current architecture spec.
+
 ## Mission
 Converge the Rust-Swift activation boundary onto Option 2 (`Core Facts, Swift Policy`) so Rust emits canonical runtime facts, one explicit Swift policy owner chooses activation intent, and Swift execution layers perform macOS side effects.
 

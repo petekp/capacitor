@@ -1,5 +1,9 @@
 # Capacitor: A Literate Guide
 
+> Doc role: `historical-evidence`
+> Status: Archived. Historical evidence only. Do not treat this as the current architecture spec.
+> Current read path: `.claude/docs/architecture-primer.md` -> `docs/ARCHITECTURE.md` -> `docs/architecture-decisions/004-dedicated-local-runtime-service.md`
+
 *A narrative walkthrough of the Capacitor codebase, ordered for human understanding.*
 
 ---

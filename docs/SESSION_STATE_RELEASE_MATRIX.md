@@ -1,5 +1,8 @@
 # Session State Reliability Gate v3 (Runtime Service + Operations)
 
+> Doc role: `task-runbook`
+> Status: Release-gate reference. This is not the current system architecture spec.
+
 - Canonical path: `docs/SESSION_STATE_RELEASE_MATRIX.md`
 - Scope: Hook ingest -> local runtime service -> `capacitor-core` reducer/query -> persisted runtime artifacts -> Swift projection/stabilization (`AppState`, `SessionStateManager`, `ShellStateStore`), plus the operational checks that keep replay and soak verification wired into CI
 - Policy: `P0` blocking, `P1/P2` triage-required

@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Doc role: `historical-evidence`
+# Status: Historical evidence only. Do not treat this as the current architecture spec.
 set -euo pipefail
 
 ROOT="/Users/petepetrash/Code/capacitor"

@@ -1,5 +1,9 @@
 # Architecture Exploration: Rust-Swift Boundary Legibility
 
+> Doc role: `historical-evidence`
+> Status: Archived. Historical evidence only. Do not treat this as the current architecture spec.
+> Current read path: `.claude/docs/architecture-primer.md` -> `docs/ARCHITECTURE.md` -> `docs/architecture-decisions/004-dedicated-local-runtime-service.md`
+
 ## Goal
 
 Make the current Rust + `hud-hook` + Swift system more elegant and legible for coding agents by ensuring that:

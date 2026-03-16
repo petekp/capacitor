@@ -1,5 +1,8 @@
 # Capacitor
 
+> Doc role: `task-runbook`
+> Status: Workflow and command guide only. For architecture, start at `.claude/docs/architecture-primer.md`.
+
 A fun, glanceable, bring-your-own terminal UI for navigating multiple coding agent sessions in parallel.
 
 ## Stack
@@ -7,6 +10,13 @@ A fun, glanceable, bring-your-own terminal UI for navigating multiple coding age
 - **Platform** — Apple Silicon, macOS 14+
 - **Swift App** (`apps/swift/`) — SwiftUI, 120Hz ProMotion
 - **Rust Core** (`core/capacitor-core/`) — Persisted runtime ingest/reduce/query, snapshot storage, and UniFFI exports
+
+## Architecture Read Path
+
+1. `.claude/docs/architecture-primer.md`
+2. `docs/ARCHITECTURE.md`
+3. `docs/architecture-decisions/004-dedicated-local-runtime-service.md`
+4. `AGENT_CHANGELOG.md` only when you need recent deltas or retired seams
 
 ## Commands
 
@@ -60,9 +70,7 @@ capacitor/
 └── .claude/docs/                 # Local engineering runbooks
 ```
 
-## Core Principle: Local Runtime Service Architecture
-
-**Capacitor observes Claude Code—it doesn't replace it.**
+## Operational Boundary Notes
 
 - Read from `~/.claude/` — transcripts, config (Claude's namespace)
 - Write to `~/.capacitor/` — runtime service artifacts, logs, and state (our namespace)
@@ -88,18 +96,6 @@ capacitor/
 | Terminal launch facade | `apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift` |
 | tmux command ownership | `apps/swift/Sources/Capacitor/Models/TmuxRouter.swift` |
 | UniFFI bindings | `apps/swift/Sources/Capacitor/Bridge/capacitor_core.swift` |
-
-## State Tracking
-
-Hooks → **hud-hook runtime service** → authenticated `/health` + `/runtime/snapshot` → Swift + tooling
-
-- **Live runtime boundary:** local runtime service bootstrap (`~/.capacitor/runtime/runtime-service.json`)
-- **Persisted runtime artifact:** `~/.capacitor/runtime/app_snapshot.json`
-- **Runtime logs/artifacts:** `~/.capacitor/runtime/`
-- **Hook binary:** `~/.local/bin/hud-hook`
-
-**Resolution:** Rust owns runtime ingest/reduce/query truth; Swift owns freshness guards,
-projection hysteresis, shell/session composition, and macOS-facing lifecycle behavior.
 
 ## Telemetry
 

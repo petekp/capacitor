@@ -1,5 +1,8 @@
 # Charter
 
+> Doc role: `historical-evidence`
+> Status: Historical evidence only. Do not treat this as the current architecture spec.
+
 > Historical plan note. This charter captures the routing-foundation scope before the 2026-03-13 follow-up Ghostty native launch migration. Current shipped Ghostty behavior now includes native launch.
 
 ## Mission

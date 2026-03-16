@@ -223,51 +223,31 @@ def matches_glob(value: str, patterns: str | list[str]) -> bool:
     return any(fnmatch.fnmatch(value, pattern) for pattern in pattern_list)
 
 
-def _recursive_glob_regex(pattern: str) -> re.Pattern[str]:
-    normalized = pattern.replace("\\", "/")
-    escaped: list[str] = ["^"]
-    i = 0
-    while i < len(normalized):
-        char = normalized[i]
-        if char == "*":
-            if i + 1 < len(normalized) and normalized[i + 1] == "*":
-                escaped.append(".*")
-                i += 2
-                continue
-            escaped.append("[^/]*")
-        elif char == "?":
-            escaped.append("[^/]")
-        else:
-            escaped.append(re.escape(char))
-        i += 1
-    escaped.append("$")
-    return re.compile("".join(escaped))
+def _match_segments(path_segments: list[str], pattern_segments: list[str]) -> bool:
+    if not pattern_segments:
+        return not path_segments
+    if pattern_segments[0] == "**":
+        if _match_segments(path_segments, pattern_segments[1:]):
+            return True
+        if path_segments:
+            return _match_segments(path_segments[1:], pattern_segments)
+        return False
+    if not path_segments:
+        return False
+    if not fnmatch.fnmatchcase(path_segments[0], pattern_segments[0]):
+        return False
+    return _match_segments(path_segments[1:], pattern_segments[1:])
 
 
 def recursive_glob_match(value: str, pattern: str) -> bool:
     normalized_value = value.replace("\\", "/")
-    return _recursive_glob_regex(pattern).match(normalized_value) is not None
+    normalized_pattern = pattern.replace("\\", "/")
+    return _match_segments(normalized_value.split("/"), normalized_pattern.split("/"))
 
 
 def matches_name_or_path(module: dict[str, Any], pattern: str) -> bool:
     path = module["path"]
-
-    def match_segments(path_segments: list[str], pattern_segments: list[str]) -> bool:
-        if not pattern_segments:
-            return not path_segments
-        if pattern_segments[0] == "**":
-            if match_segments(path_segments, pattern_segments[1:]):
-                return True
-            if path_segments:
-                return match_segments(path_segments[1:], pattern_segments)
-            return False
-        if not path_segments:
-            return False
-        if not fnmatch.fnmatchcase(path_segments[0], pattern_segments[0]):
-            return False
-        return match_segments(path_segments[1:], pattern_segments[1:])
-
-    if match_segments(path.split("/"), pattern.split("/")):
+    if recursive_glob_match(path, pattern):
         return True
     if fnmatch.fnmatch(module["name"], pattern):
         return True
@@ -278,7 +258,7 @@ def validate_selector_glob(pattern: str) -> None:
     normalized = pattern.strip()
     if not normalized:
         raise ValueError("Selector patterns must not be empty.")
-    _recursive_glob_regex(normalized)
+    recursive_glob_match("", normalized)
 
 
 def fact_kind_from(spec: str | None) -> str | None:

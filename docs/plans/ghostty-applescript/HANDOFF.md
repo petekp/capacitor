@@ -1,5 +1,8 @@
 # Handoff — 2026-03-13
 
+> Doc role: `historical-evidence`
+> Status: Historical evidence only. Do not treat this as the current architecture spec.
+
 ## Changed
 
 - Added a failing regression around `GhosttyTerminalDriver.launch(...)`, then migrated Ghostty launch/resume to native Ghostty `new window` surface creation.

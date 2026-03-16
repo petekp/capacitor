@@ -1,5 +1,8 @@
 # Ghostty Routing Smoke - 2026-03-10
 
+> Doc role: `historical-evidence`
+> Status: Historical evidence only. Do not treat this as the current architecture spec.
+
 > Historical note. The project-card AX automation limitation in this session was resolved on 2026-03-13. The authoritative closeout proof now lives in `docs/manual-qa/terminal-routing-closeout-2026-03-12.md`.
 > Historical note. The negative Ghostty native-launch result in this session was superseded on 2026-03-13 by `docs/manual-qa/ghostty-native-surface-matrix-2026-03-13.md`, and current shipped behavior now uses native Ghostty launch.
 

@@ -1,5 +1,8 @@
 # Ghostty Native Surface Matrix - 2026-03-13
 
+> Doc role: `historical-evidence`
+> Status: Historical evidence only. Do not treat this as the current architecture spec.
+
 ## Goal
 
 Re-test whether Ghostty 1.3.0's native AppleScript surface-creation API was sufficient to replace the last legacy Ghostty launch path for both running-Ghostty and cold-start flows.

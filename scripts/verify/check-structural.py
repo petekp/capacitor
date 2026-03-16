@@ -6,6 +6,7 @@ import pathlib
 import re
 from typing import Any
 
+from doc_governance import doc_governance_violations
 from ledger import audit_ledger
 from pipeline import attach_run_manifest, manifest_violations
 from structural_policy import (
@@ -557,6 +558,7 @@ def main() -> None:
 
         if args.evolve:
             violations.extend(evolve_violations(config, rules, facts))
+            violations.extend(doc_governance_violations(repo_root, config))
 
         ledger_audit = None
         if args.canonical_claims and args.ledger and args.specs_dir:

@@ -1,5 +1,8 @@
 # Terminal Activation UX Spec
 
+> Doc role: `task-runbook`
+> Status: Task-specific activation spec. This is not the current system architecture spec.
+
 This is the active source of truth for terminal activation behavior.
 
 ## Source Of Truth Files

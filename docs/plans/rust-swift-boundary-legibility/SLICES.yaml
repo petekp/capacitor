@@ -11,7 +11,7 @@ slices:
     touched_paths:
       - docs/plans/rust-swift-boundary-legibility
       - docs/audits/rust-swift-boundary-seams/AUDIT.md
-      - .claude/architecture/RUST_SWIFT_BOUNDARY_OPTIONS.md
+      - docs/archive/architecture-history/RUST_SWIFT_BOUNDARY_OPTIONS.md
     external_surfaces: []
     contracts:
       added:
