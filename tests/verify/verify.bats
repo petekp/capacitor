@@ -399,6 +399,30 @@ SH
   [[ "$output" == *'"claim_coverage":'* ]]
 }
 
+@test "verify defaults JSON helper scripts to the verifier venv when available" {
+  fixture="$PROJECT_ROOT/tests/verify/fixtures/basic-repo"
+  fake_bin="$(mktemp -d)"
+  marker="$fake_bin/python3-used.txt"
+
+  cat > "$fake_bin/python3" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'used\n' > "$MARKER_PATH"
+echo "unexpected system python3 invocation" >&2
+exit 91
+SH
+  chmod +x "$fake_bin/python3"
+
+  run env \
+    MARKER_PATH="$marker" \
+    PATH="$fake_bin:$PATH" \
+    VENV_DIR="$TEST_VENV_DIR" \
+    "$VERIFY" --repo-root "$fixture" --layers 1 --json
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"passed": true'* ]]
+  [ ! -f "$marker" ]
+}
+
 @test "layer1 fails when raw tmux commands appear outside the declared owner" {
   fixture="$PROJECT_ROOT/tests/verify/fixtures/violations"
   run_verify --repo-root "$fixture" --layers 1 --json
