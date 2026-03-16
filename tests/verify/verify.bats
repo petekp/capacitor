@@ -797,6 +797,25 @@ PY
   [[ "$output" == *'"spec_results":'* ]]
 }
 
+@test "verifier shell helpers default to the verifier venv python" {
+  repo="$(new_temp_repo)"
+  fake_bin="$(mktemp -d)"
+
+  cat > "$fake_bin/python3" <<'SH'
+#!/usr/bin/env bash
+echo "unexpected system python invocation" >&2
+exit 97
+SH
+  chmod +x "$fake_bin/python3"
+
+  run env VENV_DIR="$TEST_VENV_DIR" "$VERIFY" --repo-root "$repo" --bootstrap
+  [ "$status" -eq 0 ]
+
+  run env PATH="$fake_bin:$PATH" VENV_DIR="$TEST_VENV_DIR" "$VERIFY" --repo-root "$repo" --layers 1 --json
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"passed": true'* ]]
+}
+
 @test "report-only preserves findings but exits zero" {
   fixture="$PROJECT_ROOT/tests/verify/fixtures/violations"
   run env VENV_DIR="$PROJECT_ROOT/.verifier/.venv" "$VERIFY" --repo-root "$fixture" --layers 1 --report-only --json

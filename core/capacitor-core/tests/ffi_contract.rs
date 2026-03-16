@@ -623,6 +623,7 @@ fn fixture_snapshot_json() -> &'static str {
       "updated_at": "2026-02-28T19:00:00Z"
     }
   ],
+  "delegations": [],
   "diagnostics": {
     "events_ingested": 7,
     "sessions_tracked": 1,

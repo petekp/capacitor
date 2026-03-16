@@ -111,6 +111,11 @@ struct ProjectDetailView: View {
                         selectedIdea = nil
                         selectedIdeaFrame = nil
                     },
+                    onDelegate: appState.isDelegationLoopEnabled ? { idea in
+                        appState.delegateIdea(idea, for: project)
+                        selectedIdea = nil
+                        selectedIdeaFrame = nil
+                    } : nil,
                     onRemove: { idea in
                         withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                             appState.dismissIdea(idea, for: project)

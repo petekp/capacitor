@@ -293,6 +293,7 @@ final class AppStateSessionObservationTests: XCTestCase {
                     updatedAt: timestamp,
                 ),
             ],
+            delegations: [],
         )
     }
 }

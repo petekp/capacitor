@@ -52,6 +52,19 @@ ownership:
         - apps/swift/Sources/Capacitor/Models/HookServerManager.swift
       must_not: http_route:^/health$|^/runtime/
 
+  - rule: swift_runtime_delegation_mutations_owned
+    description: Delegation runtime-service mutations must flow through RuntimeClient rather than ad hoc Swift HTTP callers.
+    groups:
+      - formal-verify
+      - runtime-boundary
+      - delegation-loop-validation
+    constraint:
+      files_matching:
+        - apps/swift/Sources/Capacitor/**/*.swift
+      except:
+        - apps/swift/Sources/Capacitor/Models/RuntimeClient.swift
+      must_not: http_route:^/runtime/delegation/
+
   - rule: runtime_shadow_owners_stay_deleted
     description: Production-facing shadow owners and fake runtime boundary names must stay deleted.
     groups:
@@ -182,6 +195,18 @@ patterns:
       files_matching:
         - apps/swift/Sources/Capacitor/**/*.swift
       must_not: string_literal:app_snapshot\.json
+
+  - rule: delegation_worker_launch_owned
+    description: The stream-json Claude worker launch contract belongs to DelegationLoopManager.
+    groups:
+      - formal-verify
+      - delegation-loop-validation
+    constraint:
+      files_matching:
+        - apps/swift/Sources/Capacitor/**/*.swift
+      except:
+        - apps/swift/Sources/Capacitor/Models/DelegationLoopManager.swift
+      must_not: string_literal:stream-json
 
   - rule: runtime_health_status_only_checks_stay_deleted
     description: Status-only runtime health checks must stay deleted from Swift lifecycle code.

@@ -5,10 +5,11 @@ use chrono::{DateTime, Utc};
 
 use crate::domain::{
     default_workspace_id, display_name, normalize_path_for_matching, now_rfc3339,
-    resolve_project_identity, workspace_id, AppSnapshot, DiagnosticsSummary, HookEventType,
-    IngestHookEventCommand, IngestShellSignalCommand, MutationOutcome, ProjectSummary,
-    ResolveRoutingCommand, RoutingStatus, RoutingTarget, RoutingTargetKind, RoutingView,
-    SessionState, SessionSummary, ShellSignal, TmuxPaneInfo,
+    resolve_project_identity, workspace_id, AppSnapshot, DelegationMutationKind,
+    DelegationReviewState, DelegationStatus, DiagnosticsSummary, HookEventType,
+    IngestHookEventCommand, IngestShellSignalCommand, MutateDelegationCommand, MutationOutcome,
+    ProjectDelegationState, ProjectSummary, ResolveRoutingCommand, RoutingStatus, RoutingTarget,
+    RoutingTargetKind, RoutingView, SessionState, SessionSummary, ShellSignal, TmuxPaneInfo,
 };
 use crate::runtime_types::ParentApp;
 
@@ -17,6 +18,7 @@ const STALE_EVENT_GRACE_SECS: i64 = 5;
 #[derive(Debug, Default, Clone)]
 pub struct ReducerState {
     pub projects: BTreeMap<String, ProjectSummary>,
+    pub delegations: BTreeMap<String, ProjectDelegationState>,
     pub sessions: HashMap<String, SessionSummary>,
     pub shells: HashMap<u32, ShellSignal>,
     pub routing: BTreeMap<String, crate::domain::RoutingView>,
@@ -43,6 +45,7 @@ impl ReducerState {
             sessions: snapshot_sessions,
             shells: snapshot_shells,
             routing: _,
+            delegations: snapshot_delegations,
             diagnostics,
             generated_at: _,
         } = snapshot;
@@ -57,6 +60,11 @@ impl ReducerState {
             sessions.insert(session.session_id.clone(), session);
         }
 
+        let mut delegations = BTreeMap::new();
+        for delegation in snapshot_delegations {
+            delegations.insert(delegation.project_path.clone(), delegation);
+        }
+
         let mut shells = HashMap::new();
         for shell in snapshot_shells {
             shells.insert(shell.pid, shell);
@@ -64,6 +72,7 @@ impl ReducerState {
 
         let mut state = Self {
             projects,
+            delegations,
             sessions,
             shells,
             routing: BTreeMap::new(),
@@ -196,8 +205,262 @@ impl ReducerState {
     }
 
     #[must_use]
+    pub fn apply_delegation_mutation(
+        &mut self,
+        command: MutateDelegationCommand,
+    ) -> MutationOutcome {
+        self.events_ingested = self.events_ingested.saturating_add(1);
+
+        let project_path = normalize_path_for_matching(command.project_path.as_str());
+        if project_path.is_empty() {
+            self.last_error = Some("mutate_delegation missing project_path".to_string());
+            return MutationOutcome {
+                ok: false,
+                message: "missing project_path".to_string(),
+            };
+        }
+
+        let Some(worker_id) = trimmed_value(Some(command.worker_id.as_str())) else {
+            self.last_error = Some("mutate_delegation missing worker_id".to_string());
+            return MutationOutcome {
+                ok: false,
+                message: "missing worker_id".to_string(),
+            };
+        };
+
+        let updated_at = now_rfc3339();
+
+        match command.kind {
+            DelegationMutationKind::Start => {
+                if self.delegations.contains_key(project_path.as_str()) {
+                    self.last_error = Some(format!(
+                        "mutate_delegation duplicate active delegation project_path={project_path}"
+                    ));
+                    return MutationOutcome {
+                        ok: false,
+                        message: "delegation already active for project".to_string(),
+                    };
+                }
+
+                let Some(worktree_name) = trimmed_value(command.worktree_name.as_deref()) else {
+                    self.last_error = Some("mutate_delegation missing worktree_name".to_string());
+                    return MutationOutcome {
+                        ok: false,
+                        message: "missing worktree_name".to_string(),
+                    };
+                };
+                let Some(worktree_path) = trimmed_value(command.worktree_path.as_deref()) else {
+                    self.last_error = Some("mutate_delegation missing worktree_path".to_string());
+                    return MutationOutcome {
+                        ok: false,
+                        message: "missing worktree_path".to_string(),
+                    };
+                };
+
+                self.delegations.insert(
+                    project_path.clone(),
+                    ProjectDelegationState {
+                        project_path,
+                        worker_id,
+                        idea_id: trimmed_value(command.idea_id.as_deref()),
+                        worktree_name,
+                        worktree_path,
+                        session_id: trimmed_value(command.session_id.as_deref()),
+                        status: DelegationStatus::Working,
+                        started_at: updated_at.clone(),
+                        updated_at,
+                        current_review: None,
+                    },
+                );
+
+                MutationOutcome {
+                    ok: true,
+                    message: "delegation started".to_string(),
+                }
+            }
+            DelegationMutationKind::AttachSession => {
+                let Some(existing) = self.delegations.get_mut(project_path.as_str()) else {
+                    self.last_error = Some(format!(
+                        "mutate_delegation attach_session missing delegation project_path={project_path}"
+                    ));
+                    return MutationOutcome {
+                        ok: false,
+                        message: "delegation not found".to_string(),
+                    };
+                };
+
+                if existing.worker_id != worker_id {
+                    self.last_error = Some(format!(
+                        "mutate_delegation attach_session worker mismatch project_path={project_path}"
+                    ));
+                    return MutationOutcome {
+                        ok: false,
+                        message: "worker_id does not match active delegation".to_string(),
+                    };
+                }
+
+                let Some(session_id) = trimmed_value(command.session_id.as_deref()) else {
+                    self.last_error = Some("mutate_delegation missing session_id".to_string());
+                    return MutationOutcome {
+                        ok: false,
+                        message: "missing session_id".to_string(),
+                    };
+                };
+
+                existing.session_id = Some(session_id);
+                existing.updated_at = updated_at;
+
+                MutationOutcome {
+                    ok: true,
+                    message: "delegation session attached".to_string(),
+                }
+            }
+            DelegationMutationKind::ReviewReady => {
+                let Some(existing) = self.delegations.get_mut(project_path.as_str()) else {
+                    self.last_error = Some(format!(
+                        "mutate_delegation review_ready missing delegation project_path={project_path}"
+                    ));
+                    return MutationOutcome {
+                        ok: false,
+                        message: "delegation not found".to_string(),
+                    };
+                };
+
+                if existing.worker_id != worker_id {
+                    self.last_error = Some(format!(
+                        "mutate_delegation review_ready worker mismatch project_path={project_path}"
+                    ));
+                    return MutationOutcome {
+                        ok: false,
+                        message: "worker_id does not match active delegation".to_string(),
+                    };
+                }
+
+                let Some(milestone_id) = trimmed_value(command.milestone_id.as_deref()) else {
+                    self.last_error = Some("mutate_delegation missing milestone_id".to_string());
+                    return MutationOutcome {
+                        ok: false,
+                        message: "missing milestone_id".to_string(),
+                    };
+                };
+                let Some(brief_path) = trimmed_value(command.brief_path.as_deref()) else {
+                    self.last_error = Some("mutate_delegation missing brief_path".to_string());
+                    return MutationOutcome {
+                        ok: false,
+                        message: "missing brief_path".to_string(),
+                    };
+                };
+                let Some(manifest_path) = trimmed_value(command.manifest_path.as_deref()) else {
+                    self.last_error = Some("mutate_delegation missing manifest_path".to_string());
+                    return MutationOutcome {
+                        ok: false,
+                        message: "missing manifest_path".to_string(),
+                    };
+                };
+
+                if let Some(session_id) = trimmed_value(command.session_id.as_deref()) {
+                    existing.session_id = Some(session_id);
+                }
+                existing.status = DelegationStatus::ReviewNeeded;
+                existing.updated_at = updated_at.clone();
+                existing.current_review = Some(DelegationReviewState {
+                    milestone_id,
+                    brief_path,
+                    manifest_path,
+                    requested_at: updated_at,
+                });
+
+                MutationOutcome {
+                    ok: true,
+                    message: "delegation review ready".to_string(),
+                }
+            }
+            DelegationMutationKind::Resume => {
+                let Some(existing) = self.delegations.get_mut(project_path.as_str()) else {
+                    self.last_error = Some(format!(
+                        "mutate_delegation resume missing delegation project_path={project_path}"
+                    ));
+                    return MutationOutcome {
+                        ok: false,
+                        message: "delegation not found".to_string(),
+                    };
+                };
+
+                if existing.worker_id != worker_id {
+                    self.last_error = Some(format!(
+                        "mutate_delegation resume worker mismatch project_path={project_path}"
+                    ));
+                    return MutationOutcome {
+                        ok: false,
+                        message: "worker_id does not match active delegation".to_string(),
+                    };
+                }
+
+                if existing.current_review.is_none() {
+                    self.last_error = Some(format!(
+                        "mutate_delegation resume without pending review project_path={project_path}"
+                    ));
+                    return MutationOutcome {
+                        ok: false,
+                        message: "delegation review is not pending".to_string(),
+                    };
+                }
+
+                if command.review_decision.is_none() {
+                    self.last_error = Some("mutate_delegation missing review_decision".to_string());
+                    return MutationOutcome {
+                        ok: false,
+                        message: "missing review_decision".to_string(),
+                    };
+                }
+
+                if let Some(session_id) = trimmed_value(command.session_id.as_deref()) {
+                    existing.session_id = Some(session_id);
+                }
+                existing.status = DelegationStatus::Working;
+                existing.updated_at = updated_at;
+                existing.current_review = None;
+
+                MutationOutcome {
+                    ok: true,
+                    message: "delegation resumed".to_string(),
+                }
+            }
+            DelegationMutationKind::Complete => {
+                let Some(existing) = self.delegations.get(project_path.as_str()) else {
+                    self.last_error = Some(format!(
+                        "mutate_delegation complete missing delegation project_path={project_path}"
+                    ));
+                    return MutationOutcome {
+                        ok: false,
+                        message: "delegation not found".to_string(),
+                    };
+                };
+
+                if existing.worker_id != worker_id {
+                    self.last_error = Some(format!(
+                        "mutate_delegation complete worker mismatch project_path={project_path}"
+                    ));
+                    return MutationOutcome {
+                        ok: false,
+                        message: "worker_id does not match active delegation".to_string(),
+                    };
+                }
+
+                self.delegations.remove(project_path.as_str());
+
+                MutationOutcome {
+                    ok: true,
+                    message: "delegation completed".to_string(),
+                }
+            }
+        }
+    }
+
+    #[must_use]
     pub fn snapshot(&self) -> AppSnapshot {
         let projects = self.projects.values().cloned().collect::<Vec<_>>();
+        let delegations = self.delegations.values().cloned().collect::<Vec<_>>();
 
         let mut sessions = self.sessions.values().cloned().collect::<Vec<_>>();
         sessions.sort_by(|left, right| {
@@ -216,6 +479,7 @@ impl ReducerState {
             sessions,
             shells,
             routing,
+            delegations,
             diagnostics: DiagnosticsSummary {
                 events_ingested: self.events_ingested,
                 sessions_tracked: self.sessions.len() as u64,
@@ -875,6 +1139,13 @@ fn routing_parent_app(value: &str) -> Option<String> {
 }
 
 fn normalized_value(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string)
+}
+
+fn trimmed_value(value: Option<&str>) -> Option<String> {
     value
         .map(str::trim)
         .filter(|value| !value.is_empty())

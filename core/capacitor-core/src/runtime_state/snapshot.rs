@@ -412,6 +412,7 @@ mod tests {
             }],
             "shells": [],
             "routing": [],
+            "delegations": [],
             "diagnostics": {
                 "events_ingested": 1,
                 "sessions_tracked": 1,

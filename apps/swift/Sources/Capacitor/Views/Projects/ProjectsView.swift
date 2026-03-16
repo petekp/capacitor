@@ -277,11 +277,12 @@ struct ProjectsView: View {
         ProjectCardView(
             project: project,
             sessionState: sessionState,
+            delegationState: appState.delegationState(for: project),
             projectStatus: projectStatus,
             flashState: flashState,
             isActive: appState.activeProjectPath == project.path,
             onTap: {
-                appState.launchTerminal(for: project)
+                appState.handlePrimaryProjectAction(for: project)
             },
             onInfoTap: canShowDetails ? { appState.showProjectDetail(project) } : nil,
             onMoveToDormant: {

@@ -185,6 +185,7 @@ class BehavioralSpecProofTests(unittest.TestCase):
             "apps/swift/Sources/Capacitor/Models/ActivationPolicy.swift",
             "apps/swift/Tests/CapacitorTests/ActivationPolicyTests.swift",
             "core/capacitor-core/src/runtime_state/snapshot.rs",
+            "core/capacitor-core/tests/ffi_contract.rs",
             "apps/swift/Tests/CapacitorTests/RuntimeClientTests.swift",
             "apps/swift/Tests/CapacitorTests/HookServerManagerTests.swift",
         ]

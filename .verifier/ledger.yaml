@@ -7,6 +7,14 @@ claims:
       - tests/verify/fixtures/structural_rule_matrix.yaml#swift_runtime_service_reads_owned.pass
     negative_fixtures:
       - tests/verify/fixtures/structural_rule_matrix.yaml#swift_runtime_service_reads_owned.fail
+  swift_runtime_delegation_mutations_owned:
+    structural_rules:
+      - swift_runtime_delegation_mutations_owned
+    behavioral_specs: []
+    positive_fixtures:
+      - tests/verify/fixtures/structural_rule_matrix.yaml#swift_runtime_delegation_mutations_owned.pass
+    negative_fixtures:
+      - tests/verify/fixtures/structural_rule_matrix.yaml#swift_runtime_delegation_mutations_owned.fail
   runtime_shadow_owners_stay_deleted:
     structural_rules:
       - runtime_shadow_owners_stay_deleted
@@ -74,6 +82,14 @@ claims:
       - tests/verify/fixtures/structural_rule_matrix.yaml#no_snapshot_file_first_live_boundary.pass
     negative_fixtures:
       - tests/verify/fixtures/structural_rule_matrix.yaml#no_snapshot_file_first_live_boundary.fail
+  delegation_worker_launch_owned:
+    structural_rules:
+      - delegation_worker_launch_owned
+    behavioral_specs: []
+    positive_fixtures:
+      - tests/verify/fixtures/structural_rule_matrix.yaml#delegation_worker_launch_owned.pass
+    negative_fixtures:
+      - tests/verify/fixtures/structural_rule_matrix.yaml#delegation_worker_launch_owned.fail
   runtime_health_status_only_checks_stay_deleted:
     structural_rules:
       - runtime_health_status_only_checks_stay_deleted

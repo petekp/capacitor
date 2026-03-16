@@ -60,6 +60,7 @@ fn seeded_snapshot_without_routing() -> serde_json::Value {
             }
         ],
         "routing": [],
+        "delegations": [],
         "diagnostics": {
             "events_ingested": 2,
             "sessions_tracked": 1,
@@ -273,6 +274,95 @@ fn runtime_snapshot_recomputes_routing_from_seeded_snapshot_on_startup() {
     assert_eq!(
         snapshot_json["routing"][0]["reason_code"].as_str(),
         Some("TMUX_SESSION_ATTACHED")
+    );
+}
+
+#[test]
+fn runtime_delegation_mutation_endpoint_updates_shared_runtime_snapshot() {
+    let temp_dir = unique_temp_dir("serve-runtime-delegation");
+    let snapshot_path = temp_dir.join("snapshot.json");
+    let auth_token = "delegation-token";
+
+    let (_server, port) =
+        ServerGuard::spawn_service_bootstrap_ready(&temp_dir, &snapshot_path, auth_token);
+
+    let authorization = format!("Bearer {auth_token}");
+    let start_payload = serde_json::json!({
+        "kind": "start",
+        "project_path": "/tmp/runtime-service-project",
+        "worker_id": "worker-1",
+        "idea_id": "idea-1",
+        "worktree_name": "delegation-worker-1",
+        "worktree_path": "/tmp/runtime-service-project/.capacitor/worktrees/delegation-worker-1",
+        "session_id": null,
+        "milestone_id": null,
+        "brief_path": null,
+        "manifest_path": null,
+        "review_decision": null,
+        "note": null
+    });
+
+    let (start_status, start_body) = http_request_with_headers(
+        port,
+        "POST",
+        "/runtime/delegation/mutate",
+        &[("Authorization", authorization.as_str())],
+        Some(&start_payload.to_string()),
+    );
+    assert_eq!(start_status, 200, "body: {start_body}");
+
+    let review_payload = serde_json::json!({
+        "kind": "review_ready",
+        "project_path": "/tmp/runtime-service-project",
+        "worker_id": "worker-1",
+        "idea_id": "idea-1",
+        "worktree_name": "delegation-worker-1",
+        "worktree_path": "/tmp/runtime-service-project/.capacitor/worktrees/delegation-worker-1",
+        "session_id": "session-worker-1",
+        "milestone_id": "01",
+        "brief_path": "/tmp/runtime-service-project/.capacitor/delegations/worker-1/milestones/01/brief.md",
+        "manifest_path": "/tmp/runtime-service-project/.capacitor/delegations/worker-1/milestones/01/manifest.json",
+        "review_decision": null,
+        "note": null
+    });
+
+    let (review_status, review_body) = http_request_with_headers(
+        port,
+        "POST",
+        "/runtime/delegation/mutate",
+        &[("Authorization", authorization.as_str())],
+        Some(&review_payload.to_string()),
+    );
+    assert_eq!(review_status, 200, "body: {review_body}");
+
+    let (snapshot_status, snapshot_body) = http_request_with_headers(
+        port,
+        "GET",
+        "/runtime/snapshot",
+        &[("Authorization", authorization.as_str())],
+        None,
+    );
+    assert_eq!(snapshot_status, 200, "body: {snapshot_body}");
+
+    let snapshot_json: serde_json::Value =
+        serde_json::from_str(&snapshot_body).expect("runtime snapshot json");
+    assert_eq!(
+        snapshot_json["delegations"].as_array().map(Vec::len),
+        Some(1)
+    );
+    assert_eq!(
+        snapshot_json["delegations"][0]["project_path"].as_str(),
+        Some("/tmp/runtime-service-project")
+    );
+    assert_eq!(
+        snapshot_json["delegations"][0]["status"].as_str(),
+        Some("review_needed")
+    );
+    assert_eq!(
+        snapshot_json["delegations"][0]["current_review"]["manifest_path"].as_str(),
+        Some(
+            "/tmp/runtime-service-project/.capacitor/delegations/worker-1/milestones/01/manifest.json",
+        )
     );
 }
 

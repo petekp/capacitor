@@ -8,7 +8,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use capacitor_core::{
-    domain::{IngestHookEventCommand, IngestShellSignalCommand, ResolveRoutingCommand},
+    domain::{
+        IngestHookEventCommand, IngestShellSignalCommand, MutateDelegationCommand,
+        ResolveRoutingCommand,
+    },
     runtime_service::RuntimeServiceBootstrap,
     CoreRuntime,
 };
@@ -102,6 +105,9 @@ fn dispatch(request: tiny_http::Request, runtime_service: &RuntimeServerState) {
         }
         (&tiny_http::Method::Post, "/runtime/ingest/shell-signal") => {
             handle_runtime_ingest_shell_signal(request, runtime_service)
+        }
+        (&tiny_http::Method::Post, "/runtime/delegation/mutate") => {
+            handle_runtime_mutate_delegation(request, runtime_service)
         }
         (&tiny_http::Method::Post, "/hook") => handle_hook(request),
         _ => {
@@ -238,6 +244,34 @@ fn handle_runtime_ingest_shell_signal(mut request: tiny_http::Request, state: &R
         Err(error) => {
             tracing::warn!(error = %error, "Runtime shell ingest request failed");
             let _ = request.respond(json_error(500, "runtime shell ingest failed"));
+        }
+    }
+}
+
+fn handle_runtime_mutate_delegation(mut request: tiny_http::Request, state: &RuntimeServerState) {
+    let Some(runtime) = state.runtime.as_ref() else {
+        let _ = request.respond(json_error(404, "runtime service not enabled"));
+        return;
+    };
+
+    if !authorize_runtime_request(&request, state.bootstrap.as_ref()) {
+        let _ = request.respond(json_error(401, "unauthorized"));
+        return;
+    }
+
+    let command = match read_json::<MutateDelegationCommand>(&mut request) {
+        Ok(command) => command,
+        Err(response) => {
+            let _ = request.respond(response);
+            return;
+        }
+    };
+
+    match runtime.mutate_delegation(command) {
+        Ok(outcome) => respond_json(request, 200, &outcome),
+        Err(error) => {
+            tracing::warn!(error = %error, "Runtime delegation mutation request failed");
+            let _ = request.respond(json_error(500, "runtime delegation mutation failed"));
         }
     }
 }

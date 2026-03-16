@@ -395,7 +395,15 @@ final class ProjectCreationCoordinator {
     }
 
     private func launchClaudeResume(projectPath: String, sessionId: String, creationId: String) async throws {
-        let claudeCmd = "/opt/homebrew/bin/claude --resume \(sessionId)"
+        guard let claudePath = await ClaudeCliResolver.shared.resolveClaudePath() else {
+            throw NSError(
+                domain: "Capacitor",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "Claude CLI not found"],
+            )
+        }
+
+        let claudeCmd = "\(shellEscape(claudePath)) --resume \(shellEscape(sessionId))"
         let script = TerminalScripts.launchWithCommand(projectPath: projectPath, command: claudeCmd)
 
         let process = Process()

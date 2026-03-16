@@ -22,6 +22,7 @@ struct WorktreeService {
 
     enum Error: Swift.Error, Equatable, LocalizedError {
         case invalidWorktreeName(String)
+        case invalidBranchName(String)
         case dirtyWorktree(path: String)
         case activeSessionWorktree(path: String)
         case lockedWorktree(path: String, message: String)
@@ -31,6 +32,8 @@ struct WorktreeService {
             switch self {
             case let .invalidWorktreeName(name):
                 return "Invalid worktree name: \(name)"
+            case let .invalidBranchName(name):
+                return "Invalid branch name: \(name)"
             case let .dirtyWorktree(path):
                 return "Cannot remove dirty worktree at \(path)"
             case let .activeSessionWorktree(path):
@@ -145,22 +148,27 @@ struct WorktreeService {
             .sorted { $0.name < $1.name }
     }
 
-    func createManagedWorktree(in repoPath: String, name: String) throws -> Worktree {
+    func createManagedWorktree(
+        in repoPath: String,
+        name: String,
+        branchName: String? = nil,
+    ) throws -> Worktree {
         try validateWorktreeName(name)
+        let branchName = try validatedBranchName(branchName ?? name)
 
         let managedRootURL = URL(fileURLWithPath: repoPath)
             .appendingPathComponent(".capacitor/worktrees", isDirectory: true)
         try fileManager.createDirectory(at: managedRootURL, withIntermediateDirectories: true)
 
         let relativePath = ".capacitor/worktrees/\(name)"
-        let arguments = ["worktree", "add", relativePath, "-b", name]
+        let arguments = ["worktree", "add", relativePath, "-b", branchName]
         let result = runGit(arguments, repoPath)
         try ensureGitSuccess(result, arguments: arguments)
 
         let fullPath = managedRootURL.appendingPathComponent(name, isDirectory: true).path
         return Worktree(
             path: PathNormalizer.normalize(fullPath),
-            branchRef: "refs/heads/\(name)",
+            branchRef: "refs/heads/\(branchName)",
             head: nil,
             isDetached: false,
             isLocked: false,
@@ -239,6 +247,14 @@ struct WorktreeService {
         if trimmed.isEmpty || trimmed.contains("/") || trimmed.contains("..") {
             throw Error.invalidWorktreeName(name)
         }
+    }
+
+    private func validatedBranchName(_ branchName: String) throws -> String {
+        let trimmed = branchName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty || trimmed.contains("..") {
+            throw Error.invalidBranchName(branchName)
+        }
+        return trimmed
     }
 
     private func pruneWorktrees(in repoPath: String) throws {

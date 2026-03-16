@@ -112,8 +112,28 @@ final class RuntimeClientTests: XCTestCase {
         XCTAssertEqual(snapshot.sessions.count, 1)
         XCTAssertEqual(snapshot.shellState.shells.count, 1)
         XCTAssertEqual(snapshot.routingViews.count, 1)
+        XCTAssertTrue(snapshot.delegations.isEmpty)
         XCTAssertEqual(snapshot.projectStates.first?.projectPath, "/tmp/core-project")
         XCTAssertEqual(snapshot.sessions.first?.sessionId, "session-core")
+    }
+
+    func testFetchRuntimeSnapshotMapsDelegationReviewNeededState() async throws {
+        let client = try makeClient(
+            coreSnapshot: Self.makeDelegationReviewNeededSnapshot(),
+        )
+
+        let snapshot = try await client.fetchRuntimeSnapshot(correlationId: "delegation-runtime")
+
+        XCTAssertEqual(snapshot.delegations.count, 1)
+        XCTAssertEqual(snapshot.delegations.first?.projectPath, "/tmp/core-project")
+        XCTAssertEqual(snapshot.delegations.first?.workerId, "worker-1")
+        XCTAssertEqual(snapshot.delegations.first?.sessionId, "worker-session-1")
+        XCTAssertEqual(snapshot.delegations.first?.status, "review_needed")
+        XCTAssertEqual(snapshot.delegations.first?.currentReview?.milestoneId, "01")
+        XCTAssertEqual(
+            snapshot.delegations.first?.currentReview?.manifestPath,
+            "/tmp/core-project/.capacitor/delegations/worker-1/milestones/01/manifest.json",
+        )
     }
 
     func testFetchRuntimeSnapshotFailureScenarios() async throws {
@@ -527,6 +547,14 @@ final class RuntimeClientTests: XCTestCase {
         makeCoreSnapshotResponse(routeReasonCode: reasonCode)
     }
 
+    private static func makeDelegationReviewNeededSnapshot() -> Data {
+        makeCoreSnapshotResponse(
+            delegationJSON: """
+            ,"delegations":[{"project_path":"/tmp/core-project","worker_id":"worker-1","idea_id":"idea-1","worktree_name":"delegation-worker-1","worktree_path":"/tmp/core-project/.capacitor/worktrees/delegation-worker-1","session_id":"worker-session-1","status":"review_needed","started_at":"2026-02-28T19:00:00Z","updated_at":"2026-02-28T19:05:00Z","current_review":{"milestone_id":"01","brief_path":"/tmp/core-project/.capacitor/delegations/worker-1/milestones/01/brief.md","manifest_path":"/tmp/core-project/.capacitor/delegations/worker-1/milestones/01/manifest.json","requested_at":"2026-02-28T19:05:00Z"}}]
+            """,
+        )
+    }
+
     private static func makeRoutingResolveResponse(
         requestBody: Data?,
         coreSnapshot: Data,
@@ -568,6 +596,7 @@ final class RuntimeClientTests: XCTestCase {
         shellUpdatedAt: String = "2026-02-28T19:00:00Z",
         routeReasonCode: String = "tmux_client_attached",
         shellTmuxClientTty: String? = "/dev/ttys099",
+        delegationJSON: String = ",\"delegations\":[]",
     ) -> Data {
         let shellTmuxClientTtyJSON = if let shellTmuxClientTty {
             "\"\(shellTmuxClientTty)\""
@@ -575,7 +604,7 @@ final class RuntimeClientTests: XCTestCase {
             "null"
         }
         let json = """
-        {"projects":[{"project_id":"/tmp/core-project/.git","workspace_id":"workspace-core","project_path":"/tmp/core-project","display_name":"core-project","state":"working","updated_at":"2026-02-28T19:00:00Z","state_changed_at":"2026-02-28T19:00:00Z","representative_session_id":"session-core","latest_session_id":"session-core","session_count":1,"active_count":1,"has_session":true}],"sessions":[{"session_id":"session-core","pid":4242,"cwd":"/tmp/core-project","project_id":"/tmp/core-project/.git","project_path":"/tmp/core-project","workspace_id":"workspace-core","state":"working","state_changed_at":"2026-02-28T19:00:00Z","updated_at":"2026-02-28T19:00:00Z","last_event":"user_prompt_submit","last_activity_at":"2026-02-28T19:00:00Z","tools_in_flight":1,"ready_reason":null}],"shells":[{"pid":4242,"cwd":"/tmp/core-project","tty":"/dev/ttys001","parent_app":"Ghostty","tmux_session":"core","tmux_client_tty":\(shellTmuxClientTtyJSON),"tmux_pane":"%42","updated_at":"\(shellUpdatedAt)"}],"routing":[{"workspace_id":"workspace-core","project_path":"/tmp/core-project","status":"attached","target":{"kind":"tmux_pane","terminal_app":"Ghostty","session_name":"core","pane_id":"%42","host_tty":"/dev/ttys099"},"reason_code":"\(routeReasonCode)","reason":"Attached tmux pane","updated_at":"2026-02-28T19:00:00Z"}],"diagnostics":{"events_ingested":7,"sessions_tracked":1,"shell_signals_tracked":1,"events_skipped":0,"stale_events_skipped":0,"informational_events_skipped":0,"reducer_events_skipped":0,"last_error":null},"generated_at":"2026-02-28T19:00:00Z"}
+        {"projects":[{"project_id":"/tmp/core-project/.git","workspace_id":"workspace-core","project_path":"/tmp/core-project","display_name":"core-project","state":"working","updated_at":"2026-02-28T19:00:00Z","state_changed_at":"2026-02-28T19:00:00Z","representative_session_id":"session-core","latest_session_id":"session-core","session_count":1,"active_count":1,"has_session":true}],"sessions":[{"session_id":"session-core","pid":4242,"cwd":"/tmp/core-project","project_id":"/tmp/core-project/.git","project_path":"/tmp/core-project","workspace_id":"workspace-core","state":"working","state_changed_at":"2026-02-28T19:00:00Z","updated_at":"2026-02-28T19:00:00Z","last_event":"user_prompt_submit","last_activity_at":"2026-02-28T19:00:00Z","tools_in_flight":1,"ready_reason":null}],"shells":[{"pid":4242,"cwd":"/tmp/core-project","tty":"/dev/ttys001","parent_app":"Ghostty","tmux_session":"core","tmux_client_tty":\(shellTmuxClientTtyJSON),"tmux_pane":"%42","updated_at":"\(shellUpdatedAt)"}],"routing":[{"workspace_id":"workspace-core","project_path":"/tmp/core-project","status":"attached","target":{"kind":"tmux_pane","terminal_app":"Ghostty","session_name":"core","pane_id":"%42","host_tty":"/dev/ttys099"},"reason_code":"\(routeReasonCode)","reason":"Attached tmux pane","updated_at":"2026-02-28T19:00:00Z"}]\(delegationJSON),"diagnostics":{"events_ingested":7,"sessions_tracked":1,"shell_signals_tracked":1,"events_skipped":0,"stale_events_skipped":0,"informational_events_skipped":0,"reducer_events_skipped":0,"last_error":null},"generated_at":"2026-02-28T19:00:00Z"}
         """
         return Data(json.utf8)
     }

@@ -69,6 +69,21 @@ final class AppConfigTests: XCTestCase {
         XCTAssertTrue(config.featureFlags.workstreams)
         XCTAssertTrue(config.featureFlags.projectCreation)
         XCTAssertTrue(config.featureFlags.llmFeatures)
+        XCTAssertFalse(config.featureFlags.delegationLoop)
+    }
+
+    func testDevFrontierEnablesDelegationLoopByDefault() {
+        let config = AppConfig.resolve(
+            environment: [
+                "CAPACITOR_CHANNEL": "dev",
+                "CAPACITOR_PROFILE": "frontier",
+            ],
+            info: [:],
+            configFile: nil,
+            defaultChannel: .prod,
+        )
+
+        XCTAssertTrue(config.featureFlags.delegationLoop)
     }
 
     func testStableProfileKeepsAlphaSafeDefaultsEvenOnNonAlphaChannel() {

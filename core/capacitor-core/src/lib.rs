@@ -36,8 +36,9 @@ use std::sync::Arc;
 use chrono::{DateTime, Utc};
 use domain::{
     default_workspace_id, display_name, now_rfc3339, AppSnapshot, IngestHookEventCommand,
-    IngestShellSignalCommand, MutateIdeaCommand, MutateProjectCommand, MutateWorktreeCommand,
-    MutationOutcome, ProjectMutationKind, ResolveRoutingCommand, RoutingView,
+    IngestShellSignalCommand, MutateDelegationCommand, MutateIdeaCommand, MutateProjectCommand,
+    MutateWorktreeCommand, MutationOutcome, ProjectMutationKind, ResolveRoutingCommand,
+    RoutingView,
 };
 use runtime_artifacts::{count_artifacts_in_dir, count_hooks_in_dir};
 use runtime_config::{load_hud_config_with_storage, resolve_symlink, save_hud_config_with_storage};
@@ -401,6 +402,7 @@ impl CoreRuntime {
                 let normalized_path =
                     crate::domain::normalize_path_for_matching(&command.project_path);
                 state.projects.remove(&normalized_path);
+                state.delegations.remove(&normalized_path);
                 state
                     .sessions
                     .retain(|_, session| session.project_path != normalized_path);
@@ -466,6 +468,18 @@ impl CoreRuntime {
             command.kind, command.repo_path, command.worktree_name, command.force
         );
         let outcome = MutationOutcome { ok: true, message };
+        let snapshot = state.snapshot();
+        drop(state);
+        self.persist_snapshot(&snapshot)?;
+        Ok(outcome)
+    }
+
+    pub fn mutate_delegation(
+        &self,
+        command: MutateDelegationCommand,
+    ) -> Result<MutationOutcome, CoreRuntimeError> {
+        let mut state = self.lock_state()?;
+        let outcome = state.apply_delegation_mutation(command);
         let snapshot = state.snapshot();
         drop(state);
         self.persist_snapshot(&snapshot)?;
@@ -1255,6 +1269,7 @@ mod tests {
             sessions,
             shells: vec![],
             routing: vec![],
+            delegations: vec![],
             diagnostics: DiagnosticsSummary {
                 events_ingested: 0,
                 sessions_tracked: 0,

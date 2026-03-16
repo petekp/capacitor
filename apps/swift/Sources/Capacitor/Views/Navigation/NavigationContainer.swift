@@ -17,8 +17,8 @@ struct NavigationContainer: View {
     @State private var listPosition: SlidePosition = .center
     @State private var detailPosition: SlidePosition = .right
 
-    @State private var currentDetail: Project?
-    @State private var showDetail = false
+    @State private var currentSecondaryView: ProjectView?
+    @State private var showSecondary = false
 
     @State private var listOpacity: Double = 1
     @State private var detailOpacity: Double = 0
@@ -38,6 +38,7 @@ struct NavigationContainer: View {
 
     private var isDetailActive: Bool {
         if case .detail = appState.projectView { return true }
+        if case .delegationReview = appState.projectView { return true }
         return false
     }
 
@@ -53,8 +54,8 @@ struct NavigationContainer: View {
                     .zIndex(isListActive ? 1 : 0)
                     .allowsHitTesting(isListActive)
 
-                if appState.isProjectDetailsEnabled, showDetail, let project = currentDetail {
-                    ProjectDetailView(project: project)
+                if showSecondary, let currentSecondaryView {
+                    secondaryView(currentSecondaryView)
                         .frame(width: width)
                         .offset(x: reduceMotion ? 0 : detailPosition.rawValue * width)
                         .opacity(reduceMotion ? detailOpacity : 1)
@@ -92,8 +93,8 @@ struct NavigationContainer: View {
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + animationDuration + 0.1) {
                 if case .list = appState.projectView {
-                    showDetail = false
-                    currentDetail = nil
+                    showSecondary = false
+                    currentSecondaryView = nil
                 }
             }
 
@@ -102,8 +103,8 @@ struct NavigationContainer: View {
                 appState.showProjectList()
                 return
             }
-            currentDetail = project
-            showDetail = true
+            currentSecondaryView = .detail(project)
+            showSecondary = true
             if reduceMotion {
                 detailOpacity = 0
             } else {
@@ -121,6 +122,47 @@ struct NavigationContainer: View {
                     }
                 }
             }
+
+        case let .delegationReview(project):
+            guard appState.isDelegationLoopEnabled else {
+                appState.showProjectList()
+                return
+            }
+            currentSecondaryView = .delegationReview(project)
+            showSecondary = true
+            if reduceMotion {
+                detailOpacity = 0
+            } else {
+                detailPosition = .right
+            }
+
+            DispatchQueue.main.async {
+                withAnimation(navigationAnimation) {
+                    if reduceMotion {
+                        listOpacity = 0
+                        detailOpacity = 1
+                    } else {
+                        listPosition = .left
+                        detailPosition = .center
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func secondaryView(_ projectView: ProjectView) -> some View {
+        switch projectView {
+        case let .detail(project):
+            if appState.isProjectDetailsEnabled {
+                ProjectDetailView(project: project)
+            }
+        case let .delegationReview(project):
+            if appState.isDelegationLoopEnabled {
+                DelegationReviewView(project: project)
+            }
+        case .list:
+            EmptyView()
         }
     }
 }
