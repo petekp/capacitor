@@ -1,0 +1,25 @@
+proofs:
+  - name: reducer_routing_parity
+    layer: 2
+    path: core/capacitor-core/src/reduce/mod.rs
+    command:
+      - cargo
+      - test
+      - -p
+      - capacitor-core
+      - routing_parity_matches_persisted_
+    message: Reducer routing parity proof failed
+    diagnosis: Persisted reducer routing and no-hints resolve_routing must stay identical for the same normalized project and workspace inputs.
+    fix: Restore full RoutingView parity or update the focused reducer routing proof intentionally.
+  - name: reducer_stale_shell_signal
+    layer: 2
+    path: core/capacitor-core/src/reduce/mod.rs
+    command:
+      - cargo
+      - test
+      - -p
+      - capacitor-core
+      - routing_ignores_stale_shell_signal_for_same_pid
+    message: Reducer stale shell-signal proof failed
+    diagnosis: Older shell evidence for the same PID must not overwrite newer reducer routing facts.
+    fix: Restore stale-shell non-regression or update the focused reducer routing proof intentionally.

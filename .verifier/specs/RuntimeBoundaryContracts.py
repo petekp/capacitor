@@ -51,6 +51,110 @@ def verify_reducer_tmux_ownership(reducer_module, violations):
         )
 
 
+def verify_reducer_routing_parity_proof(repo_root, violations):
+    reducer_source = (
+        repo_root / "core/capacitor-core/src/reduce/mod.rs"
+    ).read_text()
+    proof_registry = repo_root / ".verifier/specs/proof_registry.yaml"
+
+    required_tests = {
+        "routing_parity_matches_persisted_attached_tmux_pane_from_active_shell_evidence":
+            "Persisted reducer routing should match no-hints resolve_routing for attached tmux panes selected from active shell evidence.",
+        "routing_parity_matches_persisted_attached_tmux_terminal_app_inferred_from_host_tty":
+            "Persisted reducer routing should match no-hints resolve_routing when the attached tmux host terminal app is inferred from separate host-tty shell evidence.",
+        "routing_parity_matches_persisted_non_active_tmux_pane_from_inventory":
+            "Persisted reducer routing should match no-hints resolve_routing for non-active tmux panes recovered from pane inventory.",
+        "routing_parity_matches_persisted_detached_terminal_app_route":
+            "Persisted reducer routing should match no-hints resolve_routing for detached direct-shell terminal-app routes.",
+        "routing_parity_matches_persisted_unavailable_route_without_trusted_evidence":
+            "Persisted reducer routing should match no-hints resolve_routing even when the project is unavailable because no trusted routing evidence exists.",
+    }
+    for test_name, diagnosis in required_tests.items():
+        if f"fn {test_name}()" not in reducer_source:
+            violations.append(
+                violation(
+                    "reducer_routing_parity_test_gap",
+                    "Reducer routing parity proof is incomplete",
+                    diagnosis,
+                    path="core/capacitor-core/src/reduce/mod.rs",
+                    fix="Restore the named reducer routing parity regression test so persisted and on-demand routing stay executable as one contract.",
+                )
+            )
+
+    if not proof_registry.exists():
+        violations.append(
+            violation(
+                "reducer_routing_parity_proof_registry_missing",
+                "Reducer routing parity Layer 2 proof is missing",
+                "Layer 2 should run a focused Rust routing parity proof instead of relying on the whole reducer suite implicitly.",
+                path=".verifier/specs/proof_registry.yaml",
+                fix="Add the focused reducer routing parity proof entry to .verifier/specs/proof_registry.yaml.",
+            )
+        )
+        return
+
+    proof_registry_source = proof_registry.read_text()
+    if re.search(
+        r"name:\s*reducer_routing_parity[\s\S]*command:[\s\S]*routing_parity_matches_persisted_",
+        proof_registry_source,
+    ) is None:
+        violations.append(
+            violation(
+                "reducer_routing_parity_proof_registry_gap",
+                "Reducer routing parity Layer 2 proof is incomplete",
+                "Layer 2 should execute the focused Rust routing parity regression filter so persisted and no-hints routing parity stays fast and explicit.",
+                path=".verifier/specs/proof_registry.yaml",
+                fix="Register a reducer_routing_parity proof that runs the routing_parity_matches_persisted_ cargo test filter.",
+            )
+            )
+
+
+def verify_reducer_stale_shell_signal_proof(repo_root, violations):
+    reducer_source = (
+        repo_root / "core/capacitor-core/src/reduce/mod.rs"
+    ).read_text()
+    proof_registry = repo_root / ".verifier/specs/proof_registry.yaml"
+
+    test_name = "routing_ignores_stale_shell_signal_for_same_pid"
+    if f"fn {test_name}()" not in reducer_source:
+        violations.append(
+            violation(
+                "reducer_stale_shell_signal_test_gap",
+                "Reducer stale shell-signal proof is incomplete",
+                "Older shell evidence for the same PID should not overwrite newer routing facts and regress the canonical route.",
+                path="core/capacitor-core/src/reduce/mod.rs",
+                fix="Restore the named stale shell-signal regression test so out-of-order shell ingest stays executable.",
+            )
+        )
+
+    if not proof_registry.exists():
+        violations.append(
+            violation(
+                "reducer_stale_shell_signal_proof_registry_missing",
+                "Reducer stale shell-signal Layer 2 proof is missing",
+                "Layer 2 should run a focused Rust proof that stale shell signals cannot overwrite newer routing evidence.",
+                path=".verifier/specs/proof_registry.yaml",
+                fix="Add the focused stale shell-signal proof entry to .verifier/specs/proof_registry.yaml.",
+            )
+        )
+        return
+
+    proof_registry_source = proof_registry.read_text()
+    if re.search(
+        r"name:\s*reducer_stale_shell_signal[\s\S]*command:[\s\S]*routing_ignores_stale_shell_signal_for_same_pid",
+        proof_registry_source,
+    ) is None:
+        violations.append(
+            violation(
+                "reducer_stale_shell_signal_proof_registry_gap",
+                "Reducer stale shell-signal Layer 2 proof is incomplete",
+                "Layer 2 should execute the focused stale-shell regression filter so out-of-order shell evidence cannot silently regress reducer routing.",
+                path=".verifier/specs/proof_registry.yaml",
+                fix="Register a reducer_stale_shell_signal proof that runs the routing_ignores_stale_shell_signal_for_same_pid cargo test filter.",
+            )
+        )
+
+
 def verify_runtime_service_endpoints(runtime_client, hook_manager, violations):
     if not module_has_regex(runtime_client, "http_routes", r"^/runtime/snapshot$"):
         violations.append(
@@ -419,6 +523,8 @@ def verify(facts):
     verify_runtime_service_endpoints(runtime_client, hook_manager, violations)
     verify_runtime_health_contract(repo_root, violations)
     verify_reducer_tmux_ownership(reducer_module, violations)
+    verify_reducer_routing_parity_proof(repo_root, violations)
+    verify_reducer_stale_shell_signal_proof(repo_root, violations)
     verify_activation_policy_guards(repo_root, violations)
     verify_activation_policy_test_proofs(repo_root, violations)
     verify_runtime_health_test_proofs(repo_root, violations)

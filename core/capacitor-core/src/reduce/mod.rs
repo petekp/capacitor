@@ -166,6 +166,15 @@ impl ReducerState {
             command.recorded_at
         };
 
+        let current = self.shells.get(&command.pid);
+        if is_shell_signal_stale(current, updated_at.as_str()) {
+            self.stale_events_skipped += 1;
+            return MutationOutcome {
+                ok: true,
+                message: "stale shell signal skipped".to_string(),
+            };
+        }
+
         let shell = ShellSignal {
             pid: command.pid,
             cwd: normalize_path_for_matching(&command.cwd),
@@ -231,6 +240,15 @@ impl ReducerState {
             .unwrap_or_else(|| default_workspace_id(project_path.as_str()));
         let session_name = normalized_value(command.session_name.as_deref());
         let client_tty = normalized_value(command.client_tty.as_deref());
+
+        if session_name.is_none() && client_tty.is_none() {
+            let key = routing_key(workspace_id.as_str(), project_path.as_str());
+            if let Some(route) = self.routing.get(key.as_str()) {
+                if route.project_path == project_path {
+                    return route.clone();
+                }
+            }
+        }
 
         derive_activation_routing_view(
             workspace_id.as_str(),
@@ -1280,14 +1298,26 @@ fn is_pid_alive(pid: u32) -> bool {
 
 fn is_event_stale(current: Option<&SessionSummary>, event: &IngestHookEventCommand) -> bool {
     let Some(current) = current else { return false };
-    let Some(event_time) = parse_rfc3339(&event.recorded_at) else {
+    is_timestamp_stale(current.updated_at.as_str(), event.recorded_at.as_str())
+}
+
+fn is_shell_signal_stale(current: Option<&ShellSignal>, incoming_recorded_at: &str) -> bool {
+    let Some(current) = current else { return false };
+    is_timestamp_stale(current.updated_at.as_str(), incoming_recorded_at)
+}
+
+fn is_timestamp_stale(current_updated_at: &str, incoming_recorded_at: &str) -> bool {
+    let Some(incoming_time) = parse_rfc3339(incoming_recorded_at) else {
         return false;
     };
-    let Some(current_time) = parse_rfc3339(&current.updated_at) else {
+    let Some(current_time) = parse_rfc3339(current_updated_at) else {
         return false;
     };
 
-    current_time.signed_duration_since(event_time).num_seconds() > STALE_EVENT_GRACE_SECS
+    current_time
+        .signed_duration_since(incoming_time)
+        .num_seconds()
+        > STALE_EVENT_GRACE_SECS
 }
 
 fn paths_match(left: &str, right: &str) -> bool {
@@ -1343,6 +1373,27 @@ mod tests {
             agent_id: None,
             teammate_name: None,
         }
+    }
+
+    fn assert_persisted_routing_matches_resolved_routing(
+        state: &ReducerState,
+        expected_project_path: &str,
+    ) {
+        let persisted = state
+            .snapshot()
+            .routing
+            .into_iter()
+            .find(|route| route.project_path == expected_project_path)
+            .expect("persisted route");
+
+        let resolved = state.resolve_routing(ResolveRoutingCommand {
+            project_path: persisted.project_path.clone(),
+            workspace_id: Some(persisted.workspace_id.clone()),
+            session_name: None,
+            client_tty: None,
+        });
+
+        assert_eq!(resolved, persisted);
     }
 
     #[test]
@@ -1533,6 +1584,26 @@ mod tests {
     }
 
     #[test]
+    fn routing_parity_matches_persisted_attached_tmux_pane_from_active_shell_evidence() {
+        let mut state = ReducerState::default();
+
+        let _ = state.apply_hook_event(event_base(HookEventType::UserPromptSubmit));
+        let _ = state.apply_shell_signal(IngestShellSignalCommand {
+            pid: 1234,
+            cwd: "/repo".to_string(),
+            tty: "/dev/ttys001".to_string(),
+            parent_app: "ghostty".to_string(),
+            tmux_session: Some("repo".to_string()),
+            tmux_client_tty: Some("/dev/ttys099".to_string()),
+            tmux_pane: Some("%42".to_string()),
+            tmux_panes: vec![],
+            recorded_at: "2026-02-28T00:00:00Z".to_string(),
+        });
+
+        assert_persisted_routing_matches_resolved_routing(&state, "/repo");
+    }
+
+    #[test]
     fn routing_falls_back_to_tmux_session_when_pane_missing() {
         let mut state = ReducerState::default();
 
@@ -1581,6 +1652,15 @@ mod tests {
         assert_eq!(route.target.session_name, None);
         assert_eq!(route.target.pane_id, None);
         assert_eq!(route.reason_code, "NO_TRUSTED_EVIDENCE");
+    }
+
+    #[test]
+    fn routing_parity_matches_persisted_unavailable_route_without_trusted_evidence() {
+        let mut state = ReducerState::default();
+
+        let _ = state.apply_hook_event(event_base(HookEventType::UserPromptSubmit));
+
+        assert_persisted_routing_matches_resolved_routing(&state, "/repo");
     }
 
     #[test]
@@ -1735,6 +1815,43 @@ mod tests {
     }
 
     #[test]
+    fn routing_parity_matches_persisted_attached_tmux_terminal_app_inferred_from_host_tty() {
+        let mut state = ReducerState::default();
+
+        let mut event = event_base(HookEventType::UserPromptSubmit);
+        event.pid = Some(4242);
+        event.project_path = "/tmp/core-project".to_string();
+        event.cwd = Some("/tmp/core-project".to_string());
+        event.recorded_at = "2026-03-14T20:00:00Z".to_string();
+        let _ = state.apply_hook_event(event);
+
+        let _ = state.apply_shell_signal(IngestShellSignalCommand {
+            pid: 5000,
+            cwd: "/tmp".to_string(),
+            tty: "/dev/ttys099".to_string(),
+            parent_app: "ghostty".to_string(),
+            tmux_session: Some("shared".to_string()),
+            tmux_client_tty: Some("/dev/ttys099".to_string()),
+            tmux_pane: Some("%1".to_string()),
+            tmux_panes: vec![],
+            recorded_at: "2026-03-14T20:00:01Z".to_string(),
+        });
+        let _ = state.apply_shell_signal(IngestShellSignalCommand {
+            pid: 4242,
+            cwd: "/tmp/core-project".to_string(),
+            tty: "/dev/ttys001".to_string(),
+            parent_app: "tmux".to_string(),
+            tmux_session: Some("core".to_string()),
+            tmux_client_tty: Some("/dev/ttys099".to_string()),
+            tmux_pane: Some("%42".to_string()),
+            tmux_panes: vec![],
+            recorded_at: "2026-03-14T20:00:02Z".to_string(),
+        });
+
+        assert_persisted_routing_matches_resolved_routing(&state, "/tmp/core-project");
+    }
+
+    #[test]
     fn routing_derives_non_active_tmux_pane_from_inventory() {
         let mut state = ReducerState::default();
 
@@ -1785,6 +1902,68 @@ mod tests {
         assert_eq!(route.target.pane_id.as_deref(), Some("%1"));
         assert_eq!(route.target.host_tty.as_deref(), Some("/dev/ttys009"));
         assert_eq!(route.target.terminal_app.as_deref(), Some("ghostty"));
+    }
+
+    #[test]
+    fn routing_parity_matches_persisted_non_active_tmux_pane_from_inventory() {
+        let mut state = ReducerState::default();
+
+        let mut event = event_base(HookEventType::UserPromptSubmit);
+        event.pid = Some(4242);
+        event.project_path = "/users/petepetrash/code/aui/mcp-app-studio-starter".to_string();
+        event.cwd = Some("/users/petepetrash/code/aui/mcp-app-studio-starter".to_string());
+        event.recorded_at = "2026-03-15T03:00:00Z".to_string();
+        let _ = state.apply_hook_event(event);
+
+        let _ = state.apply_shell_signal(IngestShellSignalCommand {
+            pid: 4242,
+            cwd: "/users/petepetrash/code/pete-2025".to_string(),
+            tty: "/dev/ttys005".to_string(),
+            parent_app: "ghostty".to_string(),
+            tmux_session: Some("dev".to_string()),
+            tmux_client_tty: Some("/dev/ttys009".to_string()),
+            tmux_pane: Some("%0".to_string()),
+            tmux_panes: vec![
+                TmuxPaneInfo {
+                    session_name: "dev".to_string(),
+                    pane_id: "%0".to_string(),
+                    pane_path: "/users/petepetrash/code/pete-2025".to_string(),
+                    session_attached: true,
+                },
+                TmuxPaneInfo {
+                    session_name: "dev".to_string(),
+                    pane_id: "%1".to_string(),
+                    pane_path: "/users/petepetrash/code/aui/mcp-app-studio-starter".to_string(),
+                    session_attached: true,
+                },
+            ],
+            recorded_at: "2026-03-15T03:00:01Z".to_string(),
+        });
+
+        assert_persisted_routing_matches_resolved_routing(
+            &state,
+            "/users/petepetrash/code/aui/mcp-app-studio-starter",
+        );
+    }
+
+    #[test]
+    fn routing_parity_matches_persisted_detached_terminal_app_route() {
+        let mut state = ReducerState::default();
+
+        let _ = state.apply_hook_event(event_base(HookEventType::UserPromptSubmit));
+        let _ = state.apply_shell_signal(IngestShellSignalCommand {
+            pid: 1234,
+            cwd: "/repo".to_string(),
+            tty: "/dev/ttys001".to_string(),
+            parent_app: "terminal".to_string(),
+            tmux_session: None,
+            tmux_client_tty: None,
+            tmux_pane: None,
+            tmux_panes: vec![],
+            recorded_at: "2026-03-15T06:00:00Z".to_string(),
+        });
+
+        assert_persisted_routing_matches_resolved_routing(&state, "/repo");
     }
 
     #[test]
@@ -1899,6 +2078,59 @@ mod tests {
         assert_eq!(route.target.terminal_app.as_deref(), Some("ghostty"));
         assert_eq!(route.target.session_name, None);
         assert_eq!(route.target.host_tty, None);
+    }
+
+    #[test]
+    fn routing_ignores_stale_shell_signal_for_same_pid() {
+        let mut state = ReducerState::default();
+
+        let _ = state.apply_hook_event(event_base(HookEventType::UserPromptSubmit));
+
+        let _ = state.apply_shell_signal(IngestShellSignalCommand {
+            pid: 1234,
+            cwd: "/repo".to_string(),
+            tty: "/dev/ttys001".to_string(),
+            parent_app: "ghostty".to_string(),
+            tmux_session: Some("repo".to_string()),
+            tmux_client_tty: Some("/dev/ttys099".to_string()),
+            tmux_pane: Some("%42".to_string()),
+            tmux_panes: vec![],
+            recorded_at: "2026-02-28T00:00:10Z".to_string(),
+        });
+
+        let outcome = state.apply_shell_signal(IngestShellSignalCommand {
+            pid: 1234,
+            cwd: "/somewhere-else".to_string(),
+            tty: "/dev/ttys001".to_string(),
+            parent_app: "terminal".to_string(),
+            tmux_session: None,
+            tmux_client_tty: None,
+            tmux_pane: None,
+            tmux_panes: vec![],
+            recorded_at: "2026-02-28T00:00:00Z".to_string(),
+        });
+
+        assert!(outcome.ok);
+        assert_eq!(outcome.message, "stale shell signal skipped");
+        assert_eq!(state.stale_events_skipped, 1);
+
+        let route = state
+            .snapshot()
+            .routing
+            .into_iter()
+            .find(|route| route.project_path == "/repo")
+            .expect("route");
+
+        assert_eq!(route.status, RoutingStatus::Attached);
+        assert_eq!(route.target.kind, RoutingTargetKind::TmuxPane);
+        assert_eq!(route.target.terminal_app.as_deref(), Some("ghostty"));
+        assert_eq!(route.target.session_name.as_deref(), Some("repo"));
+        assert_eq!(route.target.pane_id.as_deref(), Some("%42"));
+        assert_eq!(route.target.host_tty.as_deref(), Some("/dev/ttys099"));
+
+        let shell = state.shells.get(&1234).expect("shell");
+        assert_eq!(shell.cwd, "/repo");
+        assert_eq!(shell.updated_at, "2026-02-28T00:00:10Z");
     }
 
     #[test]

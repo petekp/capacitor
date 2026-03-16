@@ -8,7 +8,7 @@ import subprocess
 import sys
 from typing import Any
 
-from verifier_common import Violation, ensure_python, load_json, utc_now, write_json
+from verifier_common import Violation, ensure_python, load_json, load_yaml, utc_now, write_json
 
 
 def parse_args() -> argparse.Namespace:
@@ -81,6 +81,101 @@ def tla_spec_violations(repo_root: pathlib.Path, facts_path: pathlib.Path, spec_
     ]
 
 
+def display_path(path: pathlib.Path, repo_root: pathlib.Path) -> str:
+    try:
+        return str(path.resolve().relative_to(repo_root.resolve()))
+    except ValueError:
+        return str(path)
+
+
+def proof_registry_violations(repo_root: pathlib.Path, specs_dir: pathlib.Path) -> list[Violation]:
+    registry_path = specs_dir / "proof_registry.yaml"
+    if not registry_path.exists():
+        return []
+
+    payload = load_yaml(registry_path) or {}
+    proofs = payload.get("proofs", [])
+    violations: list[Violation] = []
+    registry_display_path = display_path(registry_path, repo_root)
+
+    for proof in proofs:
+        if str(proof.get("layer", "2")) != "2":
+            continue
+
+        command = proof.get("command")
+        if not isinstance(command, list) or not command:
+            violations.append(
+                Violation(
+                    layer="2",
+                    rule=str(proof.get("name", "behavioral_proof_registry_entry")),
+                    path=proof.get("path", registry_display_path),
+                    line=None,
+                    message="Behavioral proof registry entry is invalid",
+                    diagnosis="Each behavioral proof must declare a non-empty command list.",
+                    fix="Update .verifier/specs/proof_registry.yaml so every proof defines command as a YAML list of argv tokens.",
+                )
+            )
+            continue
+
+        cwd = repo_root / proof["cwd"] if proof.get("cwd") else repo_root
+        try:
+            completed = subprocess.run(
+                [str(token) for token in command],
+                cwd=cwd,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        except OSError as error:
+            violations.append(
+                Violation(
+                    layer="2",
+                    rule=str(proof.get("name", "behavioral_proof_execution")),
+                    path=proof.get("path", registry_display_path),
+                    line=None,
+                    message=str(proof.get("message", "Behavioral proof failed to launch")),
+                    diagnosis=str(error),
+                    fix=proof.get("fix"),
+                )
+            )
+            continue
+
+        if completed.returncode == 0:
+            continue
+
+        output = "\n".join(
+            chunk.strip()
+            for chunk in (completed.stdout, completed.stderr)
+            if chunk and chunk.strip()
+        )
+        if len(output) > 4000:
+            output = output[-4000:]
+
+        diagnosis = str(
+            proof.get(
+                "diagnosis",
+                "Behavioral proof command returned a non-zero exit status.",
+            )
+        )
+        if output:
+            diagnosis = f"{diagnosis}\n\n{output}"
+
+        violations.append(
+            Violation(
+                layer="2",
+                rule=str(proof.get("name", "behavioral_proof")),
+                path=proof.get("path", registry_display_path),
+                line=None,
+                message=str(proof.get("message", "Behavioral proof failed")),
+                diagnosis=diagnosis,
+                fix=proof.get("fix"),
+                severity=str(proof.get("severity", "error")),
+            )
+        )
+
+    return violations
+
+
 def main() -> None:
     ensure_python()
     args = parse_args()
@@ -98,6 +193,7 @@ def main() -> None:
         violations.extend(python_spec_violations(spec_path, facts))
     for spec_path in sorted(specs_dir.glob("*.tla")):
         violations.extend(tla_spec_violations(repo_root, facts_path, spec_path))
+    violations.extend(proof_registry_violations(repo_root, specs_dir))
 
     payload = {
         "generated_at": utc_now(),

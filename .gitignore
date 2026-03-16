@@ -51,6 +51,8 @@ scripts/dev/capacitor-ingest.local
 dist-guide
 
 # Formal verifier caches and reports
-.verifier/facts/
-.verifier/reports/
+**/.verifier/facts/
+**/.verifier/reports/
 .verifier/.venv/
+__pycache__/
+*.pyc

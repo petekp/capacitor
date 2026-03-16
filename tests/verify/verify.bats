@@ -8,6 +8,15 @@ setup() {
   fi
 }
 
+copy_fixture_repo() {
+  local fixture_name="$1"
+  local temp_root
+  temp_root="$(mktemp -d)"
+  mkdir -p "$temp_root/repo"
+  cp -R "$PROJECT_ROOT/tests/verify/fixtures/$fixture_name"/. "$temp_root/repo/"
+  printf '%s\n' "$temp_root/repo"
+}
+
 @test "bootstrap is idempotent and scaffolds verifier files" {
   temp_root="$(mktemp -d)"
   mkdir -p "$temp_root/repo"
@@ -117,14 +126,14 @@ SH
 }
 
 @test "layer1 allows raw tmux commands inside the declared owner" {
-  fixture="$PROJECT_ROOT/tests/verify/fixtures/basic-repo"
+  fixture="$(copy_fixture_repo basic-repo)"
   run env VENV_DIR="$PROJECT_ROOT/.verifier/.venv" "$VERIFY" --repo-root "$fixture" --layers 1 --json
   [ "$status" -eq 0 ]
   [[ "$output" == *'"passed": true'* ]]
 }
 
 @test "layer1 fails when raw tmux commands appear outside the declared owner" {
-  fixture="$PROJECT_ROOT/tests/verify/fixtures/violations"
+  fixture="$(copy_fixture_repo violations)"
   run env VENV_DIR="$PROJECT_ROOT/.verifier/.venv" "$VERIFY" --repo-root "$fixture" --layers 1 --json
   [ "$status" -ne 0 ]
   [[ "$output" == *'"violation_count":'* ]]
@@ -142,7 +151,7 @@ PY
 }
 
 @test "layer1 fails when a retired shadow module path returns" {
-  fixture="$PROJECT_ROOT/tests/verify/fixtures/shadow-module"
+  fixture="$(copy_fixture_repo shadow-module)"
   run env VENV_DIR="$PROJECT_ROOT/.verifier/.venv" "$VERIFY" --repo-root "$fixture" --layers 1 --json
   [ "$status" -ne 0 ]
   [[ "$output" == *'"violation_count":'* ]]
@@ -169,8 +178,90 @@ PY
   [[ "$output" == *'"passed": true'* ]]
 }
 
+@test "verifier-generated artifacts are ignored across nested repos and python caches stay untracked" {
+  run git check-ignore --no-index -v \
+    tests/verify/fixtures/basic-repo/.verifier/facts/current.json \
+    tests/verify/fixtures/basic-repo/.verifier/reports/last-run.json \
+    .verifier/specs/__pycache__/RuntimeBoundaryContracts.cpython-313.pyc
+  [ "$status" -eq 0 ]
+  [[ "$output" == *".verifier/facts/"* ]]
+  [[ "$output" == *".verifier/reports/"* ]]
+  [[ "$output" == *"__pycache__/"* ]]
+
+  run bash -lc "git ls-files .verifier/specs/__pycache__"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "layer2 executes proof registry commands" {
+  temp_root="$(mktemp -d)"
+  mkdir -p "$temp_root/repo/.verifier/specs" "$temp_root/repo/scripts"
+
+  cat > "$temp_root/repo/.verifier/specs/proof_registry.yaml" <<'YAML'
+proofs:
+  - name: smoke_proof
+    layer: 2
+    path: scripts/proof-ok.sh
+    command:
+      - ./scripts/proof-ok.sh
+YAML
+
+  cat > "$temp_root/repo/scripts/proof-ok.sh" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+touch .proof-ran
+SH
+  chmod +x "$temp_root/repo/scripts/proof-ok.sh"
+
+  run env VENV_DIR="$PROJECT_ROOT/.verifier/.venv" "$VERIFY" --repo-root "$temp_root/repo" --layers 2 --json
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"passed": true'* ]]
+  [ -f "$temp_root/repo/.proof-ran" ]
+}
+
+@test "layer2 reports proof registry failures as behavioral violations" {
+  temp_root="$(mktemp -d)"
+  mkdir -p "$temp_root/repo/.verifier/specs" "$temp_root/repo/scripts"
+
+  cat > "$temp_root/repo/.verifier/specs/proof_registry.yaml" <<'YAML'
+proofs:
+  - name: failing_proof
+    layer: 2
+    path: scripts/proof-fail.sh
+    command:
+      - ./scripts/proof-fail.sh
+    message: Focused proof failed
+    diagnosis: The focused proof command should surface its failure through Layer 2.
+YAML
+
+  cat > "$temp_root/repo/scripts/proof-fail.sh" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+echo "proof failure output" >&2
+exit 7
+SH
+  chmod +x "$temp_root/repo/scripts/proof-fail.sh"
+
+  run env VENV_DIR="$PROJECT_ROOT/.verifier/.venv" "$VERIFY" --repo-root "$temp_root/repo" --layers 2 --json
+  [ "$status" -ne 0 ]
+  [[ "$output" == *'failing_proof'* ]]
+  [[ "$output" == *'Focused proof failed'* ]]
+
+  run python3 - <<'PY' "$temp_root/repo/.verifier/reports/last-run.json"
+import json
+import pathlib
+import sys
+
+payload = json.loads(pathlib.Path(sys.argv[1]).read_text())
+violations = payload["layer_results"]["2"]["violations"]
+assert any(v["rule"] == "failing_proof" for v in violations)
+assert any("proof failure output" in v["diagnosis"] for v in violations)
+PY
+  [ "$status" -eq 0 ]
+}
+
 @test "evolve fails when a canonical doc claim is not covered by a verifier rule" {
-  fixture="$PROJECT_ROOT/tests/verify/fixtures/wrappers"
+  fixture="$(copy_fixture_repo wrappers)"
   run env VENV_DIR="$PROJECT_ROOT/.verifier/.venv" "$VERIFY" --repo-root "$fixture" --layers 1 --evolve --json
   [ "$status" -ne 0 ]
   [[ "$output" == *'uncovered_doc_claim'* ]]
