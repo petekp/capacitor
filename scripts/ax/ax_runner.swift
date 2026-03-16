@@ -309,12 +309,7 @@ private func waitForWindow(in appElement: AXUIElement, timeout: TimeInterval, bu
     let deadline = Date().addingTimeInterval(timeout)
     while Date() < deadline {
         if let windows = copyAttribute(appElement, name: kAXWindowsAttribute as CFString) as? [AXUIElement],
-           windows.contains(where: {
-               if let role = copyAttribute($0, name: kAXRoleAttribute as CFString) as? String {
-                   return role == kAXWindowRole as String
-               }
-               return false
-           })
+           !windows.isEmpty
         {
             return
         }
@@ -450,16 +445,14 @@ private func actionNames(for element: AXUIElement) -> [String] {
 }
 
 private func preferredDeterministicAction(identifier: String, actionNames: [String]) -> String? {
-    if let namedOpenAction = actionNames.first(where: { $0.localizedCaseInsensitiveContains("open in terminal") }) {
-        return namedOpenAction
+    if identifier.hasPrefix("ax.project-card."),
+       let reviewAction = actionNames.first(where: { $0.localizedCaseInsensitiveContains("open review") })
+    {
+        return reviewAction
     }
 
-    // Project cards frequently expose only custom named actions instead of a reliable
-    // hittable frame or AXPress path. Prefer that explicit action when available.
-    if identifier.hasPrefix("ax.project-card."),
-       let firstNamedAction = actionNames.first(where: { $0.localizedCaseInsensitiveContains("name:") })
-    {
-        return firstNamedAction
+    if let namedOpenAction = actionNames.first(where: { $0.localizedCaseInsensitiveContains("open in terminal") }) {
+        return namedOpenAction
     }
 
     return nil

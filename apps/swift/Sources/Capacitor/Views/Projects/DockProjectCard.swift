@@ -3,6 +3,7 @@ import SwiftUI
 struct DockProjectCard: View {
     let project: Project
     let sessionState: ProjectSessionState?
+    let delegationState: RuntimeDelegationState?
     let projectStatus: ProjectStatus?
     let flashState: SessionState?
     let isActive: Bool
@@ -274,10 +275,26 @@ struct DockProjectCard: View {
                     Spacer(minLength: 0)
                 }
 
-                StatusChipsRow(sessionState: sessionState, style: .compact)
-                    .padding(.top, glassConfig.dockChipTopPaddingRounded)
+                StatusChipsRow(
+                    sessionState: sessionState,
+                    delegationState: delegationState,
+                    style: .compact,
+                )
+                .padding(.top, glassConfig.dockChipTopPaddingRounded)
 
                 Spacer(minLength: 0)
+
+                if delegationState?.status == "review_needed", delegationState?.currentReview != nil {
+                    HStack(spacing: 4) {
+                        Image(systemName: "text.badge.star")
+                            .font(AppTypography.captionSmall)
+                        Text("Review brief ready")
+                            .font(AppTypography.label)
+                            .lineLimit(1)
+                    }
+                    .foregroundColor(.orange.opacity(0.9))
+                    .padding(.top, 4)
+                }
 
                 if let blocker = projectStatus?.blocker, !blocker.isEmpty {
                     HStack(spacing: 4) {

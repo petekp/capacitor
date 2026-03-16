@@ -7,7 +7,6 @@ final class ProjectDetailsManager {
         static let ideasCheckIntervalSeconds: TimeInterval = 2.0
         static let claudeMdTruncationLength = 3000
         static let fallbackTitleLength = 50
-        static let claudeCliPath = "/opt/homebrew/bin/claude"
     }
 
     private let descriptionsFilePath = FileManager.default.homeDirectoryForCurrentUser
@@ -513,11 +512,19 @@ final class ProjectDetailsManager {
 
 private extension ProjectDetailsManager {
     func generateWithHaiku(prompt: String, stripTrailingPunctuation: Bool) async throws -> String {
+        guard let claudePath = await ClaudeCliResolver.shared.resolveClaudePath() else {
+            throw NSError(
+                domain: "Capacitor",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "Claude CLI not found"],
+            )
+        }
+
         let process = Process()
         let outputPipe = Pipe()
         let errorPipe = Pipe()
 
-        process.executableURL = URL(fileURLWithPath: Constants.claudeCliPath)
+        process.executableURL = URL(fileURLWithPath: claudePath)
         process.arguments = ["--print", "--model", "haiku", prompt]
         process.standardOutput = outputPipe
         process.standardError = errorPipe

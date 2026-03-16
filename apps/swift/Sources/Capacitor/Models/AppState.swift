@@ -10,12 +10,15 @@ enum LayoutMode: String, CaseIterable {
 enum ProjectView: Equatable {
     case list
     case detail(Project)
+    case delegationReview(Project)
 
     static func == (lhs: ProjectView, rhs: ProjectView) -> Bool {
         switch (lhs, rhs) {
         case (.list, .list):
             true
         case let (.detail(p1), .detail(p2)):
+            p1.path == p2.path
+        case let (.delegationReview(p1), .delegationReview(p2)):
             p1.path == p2.path
         default:
             false
@@ -73,6 +76,10 @@ class AppState {
         featureFlags.llmFeatures && isProjectDetailsEnabled
     }
 
+    var isDelegationLoopEnabled: Bool {
+        featureFlags.delegationLoop && isProjectDetailsEnabled
+    }
+
     var isWindowAnchoringEnabled: Bool {
         featureFlags.windowAnchoring
     }
@@ -91,6 +98,7 @@ class AppState {
     // MARK: - Active project creations (Idea → V1)
 
     var activeCreations: [ProjectCreation] = []
+    private(set) var delegationStates: [String: RuntimeDelegationState] = [:]
 
     // MARK: - Cached Project Statuses (avoids FFI call per card per render)
 
@@ -149,6 +157,7 @@ class AppState {
     let sessionStateManager = SessionStateManager()
     let hookServerManager = HookServerManager()
     let projectDetailsManager = ProjectDetailsManager()
+    private(set) var delegationLoopManager: DelegationLoopManager!
     private let projectIngestionWorker = ProjectIngestionWorker()
     private(set) var projectCreationCoordinator: ProjectCreationCoordinator!
     private(set) var projectFeatureCoordinator: ProjectFeatureCoordinator!
@@ -261,6 +270,7 @@ class AppState {
                 self?.loadDashboard()
             },
         )
+        delegationLoopManager = DelegationLoopManager(runtimeClient: runtimeClient)
         projectFeatureCoordinator = ProjectFeatureCoordinator(
             projectDetailsEnabled: { [weak self] in
                 self?.isProjectDetailsEnabled ?? false
@@ -512,11 +522,28 @@ class AppState {
             snapshot.routingViews,
             correlationId: correlationId,
         )
+        if isDelegationLoopEnabled {
+            let nextDelegations = Dictionary(
+                uniqueKeysWithValues: snapshot.delegations.map {
+                    (PathNormalizer.normalize($0.projectPath), $0)
+                },
+            )
+            if nextDelegations != delegationStates {
+                delegationStates = nextDelegations
+            }
+        } else if !delegationStates.isEmpty {
+            delegationStates = [:]
+        }
         consecutiveRuntimeSnapshotFailures = 0
 
         DebugLog.write(
             "AppState.refreshSessionStates source=runtime_snapshot_apply cid=\(correlationId) projects=\(snapshot.projectStates.count) sessions=\(snapshot.sessions.count) shells=\(snapshot.shellState.shells.count) routing=\(snapshot.routingViews.count)",
         )
+        if isDelegationLoopEnabled {
+            _Concurrency.Task { [delegationLoopManager] in
+                await delegationLoopManager?.reconcile(delegations: snapshot.delegations)
+            }
+        }
         updatePostSessionRefreshContext()
     }
 
@@ -545,6 +572,7 @@ class AppState {
             sessionStateManager.clearRuntimeProjectStates()
             shellStateStore.clearRuntimeShellState(correlationId: correlationId)
             routingStateStore.clearRuntimeRoutingViews(correlationId: correlationId)
+            delegationStates = [:]
         }
 
         updatePostSessionRefreshContext()
@@ -1240,6 +1268,20 @@ class AppState {
         terminalLauncher.launchTerminal(for: project)
     }
 
+    func handlePrimaryProjectAction(for project: Project) {
+        let action = ProjectPrimaryActionResolver.resolve(
+            delegationState: delegationState(for: project),
+            isDelegationEnabled: isDelegationLoopEnabled,
+        )
+
+        switch action {
+        case .openTerminal:
+            launchTerminal(for: project)
+        case .openDelegationReview:
+            showDelegationReview(project)
+        }
+    }
+
     private func activeWorktreePathsForGuardrails() -> Set<String> {
         var paths: Set<String> = []
 
@@ -1258,6 +1300,14 @@ class AppState {
 
     func showProjectDetail(_ project: Project) {
         projectFeatureCoordinator.showProjectDetail(project)
+    }
+
+    func showDelegationReview(_ project: Project) {
+        guard isDelegationLoopEnabled else {
+            launchTerminal(for: project)
+            return
+        }
+        projectView = .delegationReview(project)
     }
 
     func showProjectList() {
@@ -1469,6 +1519,61 @@ class AppState {
 
     func reorderIdeas(_ reorderedIdeas: [Idea], for project: Project) {
         projectFeatureCoordinator.reorderIdeas(reorderedIdeas, for: project)
+    }
+
+    func delegateIdea(_ idea: Idea, for project: Project) {
+        guard isDelegationLoopEnabled else {
+            error = "Delegation loop is disabled for this build."
+            return
+        }
+
+        _Concurrency.Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await delegationLoopManager.startDelegation(project: project, idea: idea)
+                await MainActor.run {
+                    self.refreshSessionStates()
+                }
+            } catch {
+                await MainActor.run {
+                    self.error = error.localizedDescription
+                    self.refreshSessionStates()
+                }
+            }
+        }
+    }
+
+    func delegationState(for project: Project) -> RuntimeDelegationState? {
+        guard isDelegationLoopEnabled else { return nil }
+        return delegationStates[PathNormalizer.normalize(project.path)]
+    }
+
+    func submitDelegationReview(
+        for project: Project,
+        delegation: RuntimeDelegationState,
+        decision: DelegationLoopManager.ReviewDecision,
+        note: String,
+    ) {
+        _Concurrency.Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await delegationLoopManager.submitReviewDecision(
+                    project: project,
+                    delegation: delegation,
+                    decision: decision,
+                    note: note,
+                )
+                await MainActor.run {
+                    self.showProjectList()
+                    self.refreshSessionStates()
+                }
+            } catch {
+                await MainActor.run {
+                    self.error = error.localizedDescription
+                    self.refreshSessionStates()
+                }
+            }
+        }
     }
 
     // MARK: - Project Descriptions (delegating to ProjectDetailsManager)

@@ -160,11 +160,12 @@ struct DockLayoutView: View {
         DockProjectCard(
             project: project,
             sessionState: sessionState,
+            delegationState: appState.delegationState(for: project),
             projectStatus: projectStatus,
             flashState: flashState,
             isActive: isActive,
             onTap: {
-                appState.launchTerminal(for: project)
+                appState.handlePrimaryProjectAction(for: project)
             },
             onInfoTap: canShowDetails ? { appState.showProjectDetail(project) } : nil,
             onMoveToDormant: { appState.moveToDormant(project) },

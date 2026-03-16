@@ -3,6 +3,7 @@ import SwiftUI
 struct IdeaDetailOverlay: View {
     let idea: Idea
     let onDismiss: () -> Void
+    let onDelegate: (() -> Void)?
     let onRemove: () -> Void
 
     @State private var appeared = false
@@ -62,21 +63,40 @@ struct IdeaDetailOverlay: View {
 
                     Spacer()
 
-                    // Bottom-right: Remove button
-                    Button(action: onRemove) {
-                        HStack(spacing: 8) {
-                            Image(systemName: "trash")
-                                .font(.system(size: 14, weight: .medium))
-                            Text("Remove")
-                                .font(.system(size: 14, weight: .medium))
+                    HStack(spacing: 10) {
+                        if let onDelegate {
+                            Button(action: onDelegate) {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "bolt.fill")
+                                        .font(.system(size: 14, weight: .medium))
+                                    Text("Delegate")
+                                        .font(.system(size: 14, weight: .medium))
+                                }
+                                .foregroundColor(.black.opacity(0.85))
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 10)
+                                .background(Color.white.opacity(0.9))
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                            }
+                            .buttonStyle(.plain)
                         }
-                        .foregroundColor(.red.opacity(0.8))
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 10)
-                        .background(Color.red.opacity(0.1))
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                        // Bottom-right: Remove button
+                        Button(action: onRemove) {
+                            HStack(spacing: 8) {
+                                Image(systemName: "trash")
+                                    .font(.system(size: 14, weight: .medium))
+                                Text("Remove")
+                                    .font(.system(size: 14, weight: .medium))
+                            }
+                            .foregroundColor(.red.opacity(0.8))
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                            .background(Color.red.opacity(0.1))
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
                     .padding(Layout.cornerPadding)
                 }
             }
@@ -126,6 +146,7 @@ struct IdeaDetailModalOverlay: View {
     let idea: Idea?
     let anchorFrame: CGRect?
     let onDismiss: () -> Void
+    let onDelegate: ((Idea) -> Void)?
     let onRemove: (Idea) -> Void
 
     @State private var escapeMonitor: Any?
@@ -139,6 +160,7 @@ struct IdeaDetailModalOverlay: View {
                 IdeaDetailOverlay(
                     idea: idea,
                     onDismiss: onDismiss,
+                    onDelegate: onDelegate.map { handler in { handler(idea) } },
                     onRemove: { onRemove(idea) },
                 )
             }

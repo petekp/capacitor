@@ -2,6 +2,10 @@ import Foundation
 
 enum AccessibilityIdentifiers {
     static let backProjectsIdentifier = "ax.nav.back-projects"
+    static let delegationReviewIdentifier = "ax.delegation-review"
+    static let delegationReviewApproveIdentifier = "ax.delegation-review.approve"
+    static let delegationReviewRequestChangesIdentifier = "ax.delegation-review.request-changes"
+    static let delegationReviewNotesIdentifier = "ax.delegation-review.notes"
 
     static func projectCardIdentifier(for project: Project) -> String {
         "ax.project-card.\(slug(for: project))"

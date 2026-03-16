@@ -5,6 +5,7 @@ import SwiftUI
 struct ProjectCardView: View {
     let project: Project
     let sessionState: ProjectSessionState?
+    let delegationState: RuntimeDelegationState?
     let projectStatus: ProjectStatus?
     let flashState: SessionState?
     let isActive: Bool
@@ -205,8 +206,8 @@ struct ProjectCardView: View {
             .accessibilityIdentifier(AccessibilityIdentifiers.projectCardIdentifier(for: project))
             .accessibilityLabel(project.name)
             .accessibilityValue(accessibilityStatusDescription)
-            .accessibilityHint("Double-tap to open in terminal. Use actions menu for more options.")
-            .accessibilityAction(named: "Open in Terminal", onTap)
+            .accessibilityHint(accessibilityHintText)
+            .accessibilityAction(named: primaryAccessibilityActionName, onTap)
             .applyIf(onInfoTap) { view, action in
                 view.accessibilityAction(named: "View Details", action)
             }
@@ -216,13 +217,30 @@ struct ProjectCardView: View {
     // MARK: - Computed View Helpers
 
     private var accessibilityStatusDescription: String {
-        switch currentState {
+        if delegationState?.status == "review_needed", delegationState?.currentReview != nil {
+            return "Delegation review needed"
+        }
+        return switch currentState {
         case .ready: "Ready for input"
         case .working: "Working"
         case .waiting: "Waiting for user action"
         case .compacting: "Compacting history"
         case .idle: "Idle"
         }
+    }
+
+    private var primaryAccessibilityActionName: String {
+        if delegationState?.status == "review_needed", delegationState?.currentReview != nil {
+            return "Open Review"
+        }
+        return "Open in Terminal"
+    }
+
+    private var accessibilityHintText: String {
+        if delegationState?.status == "review_needed", delegationState?.currentReview != nil {
+            return "Double-tap to review the delegated work. Use actions menu for more options."
+        }
+        return "Double-tap to open in terminal. Use actions menu for more options."
     }
 
     // MARK: - Press Highlight
@@ -259,6 +277,7 @@ struct ProjectCardView: View {
 
                 ProjectCardContent(
                     sessionState: sessionState,
+                    delegationState: delegationState,
                     blocker: projectStatus?.blocker,
                 )
             }
@@ -405,11 +424,26 @@ private struct ProjectCardHeader: View {
 
 private struct ProjectCardContent: View {
     let sessionState: ProjectSessionState?
+    let delegationState: RuntimeDelegationState?
     let blocker: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            StatusChipsRow(sessionState: sessionState)
+            StatusChipsRow(
+                sessionState: sessionState,
+                delegationState: delegationState,
+            )
+
+            if delegationState?.status == "review_needed", delegationState?.currentReview != nil {
+                HStack(spacing: 4) {
+                    Image(systemName: "text.badge.star")
+                        .font(AppTypography.captionSmall)
+                    Text("Review brief ready")
+                        .font(AppTypography.label)
+                        .lineLimit(1)
+                }
+                .foregroundColor(.orange.opacity(0.9))
+            }
 
             if let blocker, !blocker.isEmpty {
                 HStack(spacing: 4) {

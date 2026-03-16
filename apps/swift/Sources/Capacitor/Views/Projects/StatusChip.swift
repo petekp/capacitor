@@ -45,13 +45,37 @@ struct StatusChip: View {
 /// A row of status chips for project cards.
 struct StatusChipsRow: View {
     let sessionState: ProjectSessionState?
+    var delegationState: RuntimeDelegationState?
     var style: StatusChip.ChipStyle = .normal
 
     var body: some View {
-        StatusChip(
-            state: sessionState?.state,
-            style: style,
-        )
+        HStack(spacing: 8) {
+            if delegationState?.status == "review_needed", delegationState?.currentReview != nil {
+                DelegationReviewChip(style: style)
+            }
+
+            StatusChip(
+                state: sessionState?.state,
+                style: style,
+            )
+        }
+    }
+}
+
+private struct DelegationReviewChip: View {
+    let style: StatusChip.ChipStyle
+
+    private var font: Font {
+        .system(.callout, design: .monospaced).weight(.semibold)
+    }
+
+    var body: some View {
+        Text("REVIEW")
+            .font(font)
+            .tracking(1.2)
+            .foregroundStyle(Color.orange.opacity(0.95))
+            .scaleEffect(style == .compact ? 0.85 : 1.0, anchor: .leading)
+            .accessibilityLabel("Delegation review needed")
     }
 }
 

@@ -157,8 +157,56 @@ pub struct AppSnapshot {
     pub sessions: Vec<SessionSummary>,
     pub shells: Vec<ShellSignal>,
     pub routing: Vec<RoutingView>,
+    #[serde(default)]
+    pub delegations: Vec<ProjectDelegationState>,
     pub diagnostics: DiagnosticsSummary,
     pub generated_at: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Enum)]
+#[serde(rename_all = "snake_case")]
+pub enum DelegationStatus {
+    Working,
+    ReviewNeeded,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Enum)]
+#[serde(rename_all = "snake_case")]
+pub enum DelegationMutationKind {
+    Start,
+    AttachSession,
+    ReviewReady,
+    Resume,
+    Complete,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Enum)]
+#[serde(rename_all = "snake_case")]
+pub enum DelegationReviewDecision {
+    Approve,
+    RequestChanges,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Record)]
+pub struct DelegationReviewState {
+    pub milestone_id: String,
+    pub brief_path: String,
+    pub manifest_path: String,
+    pub requested_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Record)]
+pub struct ProjectDelegationState {
+    pub project_path: String,
+    pub worker_id: String,
+    pub idea_id: Option<String>,
+    pub worktree_name: String,
+    pub worktree_path: String,
+    pub session_id: Option<String>,
+    pub status: DelegationStatus,
+    pub started_at: String,
+    pub updated_at: String,
+    pub current_review: Option<DelegationReviewState>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Enum)]
@@ -297,6 +345,22 @@ pub struct MutateWorktreeCommand {
     pub repo_path: String,
     pub worktree_name: String,
     pub force: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Record)]
+pub struct MutateDelegationCommand {
+    pub kind: DelegationMutationKind,
+    pub project_path: String,
+    pub worker_id: String,
+    pub idea_id: Option<String>,
+    pub worktree_name: Option<String>,
+    pub worktree_path: Option<String>,
+    pub session_id: Option<String>,
+    pub milestone_id: Option<String>,
+    pub brief_path: Option<String>,
+    pub manifest_path: Option<String>,
+    pub review_decision: Option<DelegationReviewDecision>,
+    pub note: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Record)]

@@ -199,6 +199,47 @@ struct RuntimeSnapshot {
     let sessions: [RuntimeSession]
     let shellState: ShellCwdState
     let routingViews: [RuntimeRoutingView]
+    let delegations: [RuntimeDelegationState]
+}
+
+struct RuntimeDelegationReview: Decodable, Equatable {
+    let milestoneId: String
+    let briefPath: String
+    let manifestPath: String
+    let requestedAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case milestoneId = "milestone_id"
+        case briefPath = "brief_path"
+        case manifestPath = "manifest_path"
+        case requestedAt = "requested_at"
+    }
+}
+
+struct RuntimeDelegationState: Decodable, Equatable {
+    let projectPath: String
+    let workerId: String
+    let ideaId: String?
+    let worktreeName: String
+    let worktreePath: String
+    let sessionId: String?
+    let status: String
+    let startedAt: String
+    let updatedAt: String
+    let currentReview: RuntimeDelegationReview?
+
+    enum CodingKeys: String, CodingKey {
+        case projectPath = "project_path"
+        case workerId = "worker_id"
+        case ideaId = "idea_id"
+        case worktreeName = "worktree_name"
+        case worktreePath = "worktree_path"
+        case sessionId = "session_id"
+        case status
+        case startedAt = "started_at"
+        case updatedAt = "updated_at"
+        case currentReview = "current_review"
+    }
 }
 
 struct CoreRoutingTarget: Decodable, Equatable {
@@ -307,12 +348,31 @@ private struct SnapshotPayload: Decodable {
     let sessions: [SnapshotSessionPayload]
     let shells: [SnapshotShellPayload]
     let routing: [SnapshotRoutingPayload]
+    let delegations: [SnapshotDelegationPayload]
+
+    enum CodingKeys: String, CodingKey {
+        case projects
+        case sessions
+        case shells
+        case routing
+        case delegations
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        projects = try container.decode([SnapshotProjectPayload].self, forKey: .projects)
+        sessions = try container.decode([SnapshotSessionPayload].self, forKey: .sessions)
+        shells = try container.decode([SnapshotShellPayload].self, forKey: .shells)
+        routing = try container.decode([SnapshotRoutingPayload].self, forKey: .routing)
+        delegations = try container.decodeIfPresent([SnapshotDelegationPayload].self, forKey: .delegations) ?? []
+    }
 
     init(_ snapshot: AppSnapshot) {
         projects = snapshot.projects.map(SnapshotProjectPayload.init)
         sessions = snapshot.sessions.map(SnapshotSessionPayload.init)
         shells = snapshot.shells.map(SnapshotShellPayload.init)
         routing = snapshot.routing.map(SnapshotRoutingPayload.init)
+        delegations = snapshot.delegations.map(SnapshotDelegationPayload.init)
     }
 }
 
@@ -469,6 +529,66 @@ private struct SnapshotRoutingPayload: Decodable {
     }
 }
 
+private struct SnapshotDelegationReviewPayload: Decodable {
+    let milestoneId: String
+    let briefPath: String
+    let manifestPath: String
+    let requestedAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case milestoneId = "milestone_id"
+        case briefPath = "brief_path"
+        case manifestPath = "manifest_path"
+        case requestedAt = "requested_at"
+    }
+
+    init(_ review: DelegationReviewState) {
+        milestoneId = review.milestoneId
+        briefPath = review.briefPath
+        manifestPath = review.manifestPath
+        requestedAt = review.requestedAt
+    }
+}
+
+private struct SnapshotDelegationPayload: Decodable {
+    let projectPath: String
+    let workerId: String
+    let ideaId: String?
+    let worktreeName: String
+    let worktreePath: String
+    let sessionId: String?
+    let status: String
+    let startedAt: String
+    let updatedAt: String
+    let currentReview: SnapshotDelegationReviewPayload?
+
+    enum CodingKeys: String, CodingKey {
+        case projectPath = "project_path"
+        case workerId = "worker_id"
+        case ideaId = "idea_id"
+        case worktreeName = "worktree_name"
+        case worktreePath = "worktree_path"
+        case sessionId = "session_id"
+        case status
+        case startedAt = "started_at"
+        case updatedAt = "updated_at"
+        case currentReview = "current_review"
+    }
+
+    init(_ delegation: ProjectDelegationState) {
+        projectPath = delegation.projectPath
+        workerId = delegation.workerId
+        ideaId = delegation.ideaId
+        worktreeName = delegation.worktreeName
+        worktreePath = delegation.worktreePath
+        sessionId = delegation.sessionId
+        status = RuntimeClient.snapshotDelegationStatusString(delegation.status)
+        startedAt = delegation.startedAt
+        updatedAt = delegation.updatedAt
+        currentReview = delegation.currentReview.map(SnapshotDelegationReviewPayload.init)
+    }
+}
+
 private struct ResolveRoutingRequest: Encodable {
     let projectPath: String
     let workspaceId: String?
@@ -480,6 +600,36 @@ private struct ResolveRoutingRequest: Encodable {
         case workspaceId = "workspace_id"
         case sessionName = "session_name"
         case clientTty = "client_tty"
+    }
+}
+
+struct RuntimeDelegationMutationRequest: Encodable {
+    let kind: String
+    let projectPath: String
+    let workerId: String
+    let ideaId: String?
+    let worktreeName: String?
+    let worktreePath: String?
+    let sessionId: String?
+    let milestoneId: String?
+    let briefPath: String?
+    let manifestPath: String?
+    let reviewDecision: String?
+    let note: String?
+
+    enum CodingKeys: String, CodingKey {
+        case kind
+        case projectPath = "project_path"
+        case workerId = "worker_id"
+        case ideaId = "idea_id"
+        case worktreeName = "worktree_name"
+        case worktreePath = "worktree_path"
+        case sessionId = "session_id"
+        case milestoneId = "milestone_id"
+        case briefPath = "brief_path"
+        case manifestPath = "manifest_path"
+        case reviewDecision = "review_decision"
+        case note
     }
 }
 
@@ -590,6 +740,7 @@ final class RuntimeClient {
             sessions: sessions,
             shellState: shellState,
             routingViews: mapRoutingViews(snapshot),
+            delegations: mapDelegations(snapshot),
         )
     }
 
@@ -610,6 +761,32 @@ final class RuntimeClient {
             projectPath: projectPath,
             workspaceId: workspaceId,
         )
+    }
+
+    func mutateDelegation(_ requestBody: RuntimeDelegationMutationRequest) async throws {
+        guard isEnabled else {
+            throw RuntimeClientError.disabled
+        }
+
+        var request = try runtimeServiceRequest(path: "/runtime/delegation/mutate")
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(requestBody)
+
+        do {
+            let (_, response) = try await sendRequest(request)
+            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+                throw RuntimeClientError.runtimeUnavailable(
+                    "Runtime delegation mutation failed for \(request.url?.absoluteString ?? "unknown")",
+                )
+            }
+        } catch let error as RuntimeClientError {
+            throw error
+        } catch {
+            throw RuntimeClientError.runtimeUnavailable(
+                "Runtime delegation mutation unavailable: \(error.localizedDescription)",
+            )
+        }
     }
 
     private let runtimeSourceLabel = "runtime_service"
@@ -809,6 +986,30 @@ final class RuntimeClient {
         }
     }
 
+    private func mapDelegations(_ snapshot: SnapshotPayload) -> [RuntimeDelegationState] {
+        snapshot.delegations.map { delegation in
+            RuntimeDelegationState(
+                projectPath: delegation.projectPath,
+                workerId: delegation.workerId,
+                ideaId: delegation.ideaId,
+                worktreeName: delegation.worktreeName,
+                worktreePath: delegation.worktreePath,
+                sessionId: delegation.sessionId,
+                status: delegation.status,
+                startedAt: delegation.startedAt,
+                updatedAt: delegation.updatedAt,
+                currentReview: delegation.currentReview.map { review in
+                    RuntimeDelegationReview(
+                        milestoneId: review.milestoneId,
+                        briefPath: review.briefPath,
+                        manifestPath: review.manifestPath,
+                        requestedAt: review.requestedAt,
+                    )
+                },
+            )
+        }
+    }
+
     private func resolveRoutingView(
         for snapshot: SnapshotPayload,
         projectPath: String,
@@ -1003,6 +1204,15 @@ final class RuntimeClient {
             "detached"
         case .unavailable:
             "unavailable"
+        }
+    }
+
+    fileprivate static func snapshotDelegationStatusString(_ status: DelegationStatus) -> String {
+        switch status {
+        case .working:
+            "working"
+        case .reviewNeeded:
+            "review_needed"
         }
     }
 

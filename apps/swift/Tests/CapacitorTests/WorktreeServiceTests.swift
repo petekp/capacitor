@@ -132,6 +132,37 @@ final class WorktreeServiceTests: XCTestCase {
         XCTAssertTrue(isDirectory.boolValue)
     }
 
+    func testCreateManagedWorktreeAllowsDistinctBranchName() throws {
+        let fileManager = FileManager.default
+        let repoRoot = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try fileManager.createDirectory(at: repoRoot, withIntermediateDirectories: true)
+        defer { try? fileManager.removeItem(at: repoRoot) }
+
+        var receivedArgs: [String] = []
+
+        let service = WorktreeService(runGit: { args, _ in
+            receivedArgs = args
+            return .init(exitCode: 0, stdout: "", stderr: "")
+        })
+
+        _ = try service.createManagedWorktree(
+            in: repoRoot.path,
+            name: "delegation-worker-1",
+            branchName: "pkp/delegation-worker-1",
+        )
+
+        XCTAssertEqual(
+            receivedArgs,
+            [
+                "worktree",
+                "add",
+                ".capacitor/worktrees/delegation-worker-1",
+                "-b",
+                "pkp/delegation-worker-1",
+            ],
+        )
+    }
+
     func testRemoveManagedWorktreeBuildsExpectedGitCommand() throws {
         let repoPath = "/tmp/repo"
         var receivedArgs: [String] = []

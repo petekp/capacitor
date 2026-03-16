@@ -551,6 +551,8 @@ public protocol CoreRuntimeProtocol: AnyObject {
 
     func loadIdeasOrder(projectPath: String) throws -> [String]
 
+    func mutateDelegation(command: MutateDelegationCommand) throws -> MutationOutcome
+
     func mutateIdea(command: MutateIdeaCommand) throws -> MutationOutcome
 
     func mutateProject(command: MutateProjectCommand) throws -> MutationOutcome
@@ -560,6 +562,8 @@ public protocol CoreRuntimeProtocol: AnyObject {
     func removeHooks() throws -> InstallResult
 
     func removeProject(path: String) throws
+
+    func resolveRouting(command: ResolveRoutingCommand) throws -> RoutingView
 
     func runHookTest() -> HookTestResult
 
@@ -779,6 +783,13 @@ open class CoreRuntime:
         })
     }
 
+    open func mutateDelegation(command: MutateDelegationCommand) throws -> MutationOutcome {
+        return try FfiConverterTypeMutationOutcome.lift(rustCallWithError(FfiConverterTypeCoreRuntimeError.lift) {
+            uniffi_capacitor_core_fn_method_coreruntime_mutate_delegation(self.uniffiClonePointer(),
+                                                                          FfiConverterTypeMutateDelegationCommand.lower(command), $0)
+        })
+    }
+
     open func mutateIdea(command: MutateIdeaCommand) throws -> MutationOutcome {
         return try FfiConverterTypeMutationOutcome.lift(rustCallWithError(FfiConverterTypeCoreRuntimeError.lift) {
             uniffi_capacitor_core_fn_method_coreruntime_mutate_idea(self.uniffiClonePointer(),
@@ -811,6 +822,13 @@ open class CoreRuntime:
             uniffi_capacitor_core_fn_method_coreruntime_remove_project(self.uniffiClonePointer(),
                                                                        FfiConverterString.lower(path), $0)
         }
+    }
+
+    open func resolveRouting(command: ResolveRoutingCommand) throws -> RoutingView {
+        return try FfiConverterTypeRoutingView.lift(rustCallWithError(FfiConverterTypeCoreRuntimeError.lift) {
+            uniffi_capacitor_core_fn_method_coreruntime_resolve_routing(self.uniffiClonePointer(),
+                                                                        FfiConverterTypeResolveRoutingCommand.lower(command), $0)
+        })
     }
 
     open func runHookTest() -> HookTestResult {
@@ -932,16 +950,18 @@ public struct AppSnapshot {
     public var sessions: [SessionSummary]
     public var shells: [ShellSignal]
     public var routing: [RoutingView]
+    public var delegations: [ProjectDelegationState]
     public var diagnostics: DiagnosticsSummary
     public var generatedAt: String
 
     /// Default memberwise initializers are never public by default, so we
     /// declare one manually.
-    public init(projects: [ProjectSummary], sessions: [SessionSummary], shells: [ShellSignal], routing: [RoutingView], diagnostics: DiagnosticsSummary, generatedAt: String) {
+    public init(projects: [ProjectSummary], sessions: [SessionSummary], shells: [ShellSignal], routing: [RoutingView], delegations: [ProjectDelegationState], diagnostics: DiagnosticsSummary, generatedAt: String) {
         self.projects = projects
         self.sessions = sessions
         self.shells = shells
         self.routing = routing
+        self.delegations = delegations
         self.diagnostics = diagnostics
         self.generatedAt = generatedAt
     }
@@ -961,6 +981,9 @@ extension AppSnapshot: Equatable, Hashable {
         if lhs.routing != rhs.routing {
             return false
         }
+        if lhs.delegations != rhs.delegations {
+            return false
+        }
         if lhs.diagnostics != rhs.diagnostics {
             return false
         }
@@ -975,6 +998,7 @@ extension AppSnapshot: Equatable, Hashable {
         hasher.combine(sessions)
         hasher.combine(shells)
         hasher.combine(routing)
+        hasher.combine(delegations)
         hasher.combine(diagnostics)
         hasher.combine(generatedAt)
     }
@@ -991,6 +1015,7 @@ public struct FfiConverterTypeAppSnapshot: FfiConverterRustBuffer {
                 sessions: FfiConverterSequenceTypeSessionSummary.read(from: &buf),
                 shells: FfiConverterSequenceTypeShellSignal.read(from: &buf),
                 routing: FfiConverterSequenceTypeRoutingView.read(from: &buf),
+                delegations: FfiConverterSequenceTypeProjectDelegationState.read(from: &buf),
                 diagnostics: FfiConverterTypeDiagnosticsSummary.read(from: &buf),
                 generatedAt: FfiConverterString.read(from: &buf)
             )
@@ -1001,6 +1026,7 @@ public struct FfiConverterTypeAppSnapshot: FfiConverterRustBuffer {
         FfiConverterSequenceTypeSessionSummary.write(value.sessions, into: &buf)
         FfiConverterSequenceTypeShellSignal.write(value.shells, into: &buf)
         FfiConverterSequenceTypeRoutingView.write(value.routing, into: &buf)
+        FfiConverterSequenceTypeProjectDelegationState.write(value.delegations, into: &buf)
         FfiConverterTypeDiagnosticsSummary.write(value.diagnostics, into: &buf)
         FfiConverterString.write(value.generatedAt, into: &buf)
     }
@@ -1538,6 +1564,83 @@ public func FfiConverterTypeDashboardData_lift(_ buf: RustBuffer) throws -> Dash
 #endif
 public func FfiConverterTypeDashboardData_lower(_ value: DashboardData) -> RustBuffer {
     return FfiConverterTypeDashboardData.lower(value)
+}
+
+public struct DelegationReviewState {
+    public var milestoneId: String
+    public var briefPath: String
+    public var manifestPath: String
+    public var requestedAt: String
+
+    /// Default memberwise initializers are never public by default, so we
+    /// declare one manually.
+    public init(milestoneId: String, briefPath: String, manifestPath: String, requestedAt: String) {
+        self.milestoneId = milestoneId
+        self.briefPath = briefPath
+        self.manifestPath = manifestPath
+        self.requestedAt = requestedAt
+    }
+}
+
+extension DelegationReviewState: Equatable, Hashable {
+    public static func == (lhs: DelegationReviewState, rhs: DelegationReviewState) -> Bool {
+        if lhs.milestoneId != rhs.milestoneId {
+            return false
+        }
+        if lhs.briefPath != rhs.briefPath {
+            return false
+        }
+        if lhs.manifestPath != rhs.manifestPath {
+            return false
+        }
+        if lhs.requestedAt != rhs.requestedAt {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(milestoneId)
+        hasher.combine(briefPath)
+        hasher.combine(manifestPath)
+        hasher.combine(requestedAt)
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeDelegationReviewState: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> DelegationReviewState {
+        return
+            try DelegationReviewState(
+                milestoneId: FfiConverterString.read(from: &buf),
+                briefPath: FfiConverterString.read(from: &buf),
+                manifestPath: FfiConverterString.read(from: &buf),
+                requestedAt: FfiConverterString.read(from: &buf)
+            )
+    }
+
+    public static func write(_ value: DelegationReviewState, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.milestoneId, into: &buf)
+        FfiConverterString.write(value.briefPath, into: &buf)
+        FfiConverterString.write(value.manifestPath, into: &buf)
+        FfiConverterString.write(value.requestedAt, into: &buf)
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeDelegationReviewState_lift(_ buf: RustBuffer) throws -> DelegationReviewState {
+    return try FfiConverterTypeDelegationReviewState.lift(buf)
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeDelegationReviewState_lower(_ value: DelegationReviewState) -> RustBuffer {
+    return FfiConverterTypeDelegationReviewState.lower(value)
 }
 
 public struct DependencyStatus {
@@ -2637,11 +2740,12 @@ public struct IngestShellSignalCommand {
     public var tmuxSession: String?
     public var tmuxClientTty: String?
     public var tmuxPane: String?
+    public var tmuxPanes: [TmuxPaneInfo]
     public var recordedAt: String
 
     /// Default memberwise initializers are never public by default, so we
     /// declare one manually.
-    public init(pid: UInt32, cwd: String, tty: String, parentApp: String, tmuxSession: String?, tmuxClientTty: String?, tmuxPane: String?, recordedAt: String) {
+    public init(pid: UInt32, cwd: String, tty: String, parentApp: String, tmuxSession: String?, tmuxClientTty: String?, tmuxPane: String?, tmuxPanes: [TmuxPaneInfo], recordedAt: String) {
         self.pid = pid
         self.cwd = cwd
         self.tty = tty
@@ -2649,6 +2753,7 @@ public struct IngestShellSignalCommand {
         self.tmuxSession = tmuxSession
         self.tmuxClientTty = tmuxClientTty
         self.tmuxPane = tmuxPane
+        self.tmuxPanes = tmuxPanes
         self.recordedAt = recordedAt
     }
 }
@@ -2676,6 +2781,9 @@ extension IngestShellSignalCommand: Equatable, Hashable {
         if lhs.tmuxPane != rhs.tmuxPane {
             return false
         }
+        if lhs.tmuxPanes != rhs.tmuxPanes {
+            return false
+        }
         if lhs.recordedAt != rhs.recordedAt {
             return false
         }
@@ -2690,6 +2798,7 @@ extension IngestShellSignalCommand: Equatable, Hashable {
         hasher.combine(tmuxSession)
         hasher.combine(tmuxClientTty)
         hasher.combine(tmuxPane)
+        hasher.combine(tmuxPanes)
         hasher.combine(recordedAt)
     }
 }
@@ -2708,6 +2817,7 @@ public struct FfiConverterTypeIngestShellSignalCommand: FfiConverterRustBuffer {
                 tmuxSession: FfiConverterOptionString.read(from: &buf),
                 tmuxClientTty: FfiConverterOptionString.read(from: &buf),
                 tmuxPane: FfiConverterOptionString.read(from: &buf),
+                tmuxPanes: FfiConverterSequenceTypeTmuxPaneInfo.read(from: &buf),
                 recordedAt: FfiConverterString.read(from: &buf)
             )
     }
@@ -2720,6 +2830,7 @@ public struct FfiConverterTypeIngestShellSignalCommand: FfiConverterRustBuffer {
         FfiConverterOptionString.write(value.tmuxSession, into: &buf)
         FfiConverterOptionString.write(value.tmuxClientTty, into: &buf)
         FfiConverterOptionString.write(value.tmuxPane, into: &buf)
+        FfiConverterSequenceTypeTmuxPaneInfo.write(value.tmuxPanes, into: &buf)
         FfiConverterString.write(value.recordedAt, into: &buf)
     }
 }
@@ -2805,6 +2916,147 @@ public func FfiConverterTypeInstallResult_lift(_ buf: RustBuffer) throws -> Inst
 #endif
 public func FfiConverterTypeInstallResult_lower(_ value: InstallResult) -> RustBuffer {
     return FfiConverterTypeInstallResult.lower(value)
+}
+
+public struct MutateDelegationCommand {
+    public var kind: DelegationMutationKind
+    public var projectPath: String
+    public var workerId: String
+    public var ideaId: String?
+    public var worktreeName: String?
+    public var worktreePath: String?
+    public var sessionId: String?
+    public var milestoneId: String?
+    public var briefPath: String?
+    public var manifestPath: String?
+    public var reviewDecision: DelegationReviewDecision?
+    public var note: String?
+
+    /// Default memberwise initializers are never public by default, so we
+    /// declare one manually.
+    public init(kind: DelegationMutationKind, projectPath: String, workerId: String, ideaId: String?, worktreeName: String?, worktreePath: String?, sessionId: String?, milestoneId: String?, briefPath: String?, manifestPath: String?, reviewDecision: DelegationReviewDecision?, note: String?) {
+        self.kind = kind
+        self.projectPath = projectPath
+        self.workerId = workerId
+        self.ideaId = ideaId
+        self.worktreeName = worktreeName
+        self.worktreePath = worktreePath
+        self.sessionId = sessionId
+        self.milestoneId = milestoneId
+        self.briefPath = briefPath
+        self.manifestPath = manifestPath
+        self.reviewDecision = reviewDecision
+        self.note = note
+    }
+}
+
+extension MutateDelegationCommand: Equatable, Hashable {
+    public static func == (lhs: MutateDelegationCommand, rhs: MutateDelegationCommand) -> Bool {
+        if lhs.kind != rhs.kind {
+            return false
+        }
+        if lhs.projectPath != rhs.projectPath {
+            return false
+        }
+        if lhs.workerId != rhs.workerId {
+            return false
+        }
+        if lhs.ideaId != rhs.ideaId {
+            return false
+        }
+        if lhs.worktreeName != rhs.worktreeName {
+            return false
+        }
+        if lhs.worktreePath != rhs.worktreePath {
+            return false
+        }
+        if lhs.sessionId != rhs.sessionId {
+            return false
+        }
+        if lhs.milestoneId != rhs.milestoneId {
+            return false
+        }
+        if lhs.briefPath != rhs.briefPath {
+            return false
+        }
+        if lhs.manifestPath != rhs.manifestPath {
+            return false
+        }
+        if lhs.reviewDecision != rhs.reviewDecision {
+            return false
+        }
+        if lhs.note != rhs.note {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(kind)
+        hasher.combine(projectPath)
+        hasher.combine(workerId)
+        hasher.combine(ideaId)
+        hasher.combine(worktreeName)
+        hasher.combine(worktreePath)
+        hasher.combine(sessionId)
+        hasher.combine(milestoneId)
+        hasher.combine(briefPath)
+        hasher.combine(manifestPath)
+        hasher.combine(reviewDecision)
+        hasher.combine(note)
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeMutateDelegationCommand: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MutateDelegationCommand {
+        return
+            try MutateDelegationCommand(
+                kind: FfiConverterTypeDelegationMutationKind.read(from: &buf),
+                projectPath: FfiConverterString.read(from: &buf),
+                workerId: FfiConverterString.read(from: &buf),
+                ideaId: FfiConverterOptionString.read(from: &buf),
+                worktreeName: FfiConverterOptionString.read(from: &buf),
+                worktreePath: FfiConverterOptionString.read(from: &buf),
+                sessionId: FfiConverterOptionString.read(from: &buf),
+                milestoneId: FfiConverterOptionString.read(from: &buf),
+                briefPath: FfiConverterOptionString.read(from: &buf),
+                manifestPath: FfiConverterOptionString.read(from: &buf),
+                reviewDecision: FfiConverterOptionTypeDelegationReviewDecision.read(from: &buf),
+                note: FfiConverterOptionString.read(from: &buf)
+            )
+    }
+
+    public static func write(_ value: MutateDelegationCommand, into buf: inout [UInt8]) {
+        FfiConverterTypeDelegationMutationKind.write(value.kind, into: &buf)
+        FfiConverterString.write(value.projectPath, into: &buf)
+        FfiConverterString.write(value.workerId, into: &buf)
+        FfiConverterOptionString.write(value.ideaId, into: &buf)
+        FfiConverterOptionString.write(value.worktreeName, into: &buf)
+        FfiConverterOptionString.write(value.worktreePath, into: &buf)
+        FfiConverterOptionString.write(value.sessionId, into: &buf)
+        FfiConverterOptionString.write(value.milestoneId, into: &buf)
+        FfiConverterOptionString.write(value.briefPath, into: &buf)
+        FfiConverterOptionString.write(value.manifestPath, into: &buf)
+        FfiConverterOptionTypeDelegationReviewDecision.write(value.reviewDecision, into: &buf)
+        FfiConverterOptionString.write(value.note, into: &buf)
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMutateDelegationCommand_lift(_ buf: RustBuffer) throws -> MutateDelegationCommand {
+    return try FfiConverterTypeMutateDelegationCommand.lift(buf)
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMutateDelegationCommand_lower(_ value: MutateDelegationCommand) -> RustBuffer {
+    return FfiConverterTypeMutateDelegationCommand.lower(value)
 }
 
 public struct MutateIdeaCommand {
@@ -3642,6 +3894,131 @@ public func FfiConverterTypeProjectCreation_lower(_ value: ProjectCreation) -> R
     return FfiConverterTypeProjectCreation.lower(value)
 }
 
+public struct ProjectDelegationState {
+    public var projectPath: String
+    public var workerId: String
+    public var ideaId: String?
+    public var worktreeName: String
+    public var worktreePath: String
+    public var sessionId: String?
+    public var status: DelegationStatus
+    public var startedAt: String
+    public var updatedAt: String
+    public var currentReview: DelegationReviewState?
+
+    /// Default memberwise initializers are never public by default, so we
+    /// declare one manually.
+    public init(projectPath: String, workerId: String, ideaId: String?, worktreeName: String, worktreePath: String, sessionId: String?, status: DelegationStatus, startedAt: String, updatedAt: String, currentReview: DelegationReviewState?) {
+        self.projectPath = projectPath
+        self.workerId = workerId
+        self.ideaId = ideaId
+        self.worktreeName = worktreeName
+        self.worktreePath = worktreePath
+        self.sessionId = sessionId
+        self.status = status
+        self.startedAt = startedAt
+        self.updatedAt = updatedAt
+        self.currentReview = currentReview
+    }
+}
+
+extension ProjectDelegationState: Equatable, Hashable {
+    public static func == (lhs: ProjectDelegationState, rhs: ProjectDelegationState) -> Bool {
+        if lhs.projectPath != rhs.projectPath {
+            return false
+        }
+        if lhs.workerId != rhs.workerId {
+            return false
+        }
+        if lhs.ideaId != rhs.ideaId {
+            return false
+        }
+        if lhs.worktreeName != rhs.worktreeName {
+            return false
+        }
+        if lhs.worktreePath != rhs.worktreePath {
+            return false
+        }
+        if lhs.sessionId != rhs.sessionId {
+            return false
+        }
+        if lhs.status != rhs.status {
+            return false
+        }
+        if lhs.startedAt != rhs.startedAt {
+            return false
+        }
+        if lhs.updatedAt != rhs.updatedAt {
+            return false
+        }
+        if lhs.currentReview != rhs.currentReview {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(projectPath)
+        hasher.combine(workerId)
+        hasher.combine(ideaId)
+        hasher.combine(worktreeName)
+        hasher.combine(worktreePath)
+        hasher.combine(sessionId)
+        hasher.combine(status)
+        hasher.combine(startedAt)
+        hasher.combine(updatedAt)
+        hasher.combine(currentReview)
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeProjectDelegationState: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ProjectDelegationState {
+        return
+            try ProjectDelegationState(
+                projectPath: FfiConverterString.read(from: &buf),
+                workerId: FfiConverterString.read(from: &buf),
+                ideaId: FfiConverterOptionString.read(from: &buf),
+                worktreeName: FfiConverterString.read(from: &buf),
+                worktreePath: FfiConverterString.read(from: &buf),
+                sessionId: FfiConverterOptionString.read(from: &buf),
+                status: FfiConverterTypeDelegationStatus.read(from: &buf),
+                startedAt: FfiConverterString.read(from: &buf),
+                updatedAt: FfiConverterString.read(from: &buf),
+                currentReview: FfiConverterOptionTypeDelegationReviewState.read(from: &buf)
+            )
+    }
+
+    public static func write(_ value: ProjectDelegationState, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.projectPath, into: &buf)
+        FfiConverterString.write(value.workerId, into: &buf)
+        FfiConverterOptionString.write(value.ideaId, into: &buf)
+        FfiConverterString.write(value.worktreeName, into: &buf)
+        FfiConverterString.write(value.worktreePath, into: &buf)
+        FfiConverterOptionString.write(value.sessionId, into: &buf)
+        FfiConverterTypeDelegationStatus.write(value.status, into: &buf)
+        FfiConverterString.write(value.startedAt, into: &buf)
+        FfiConverterString.write(value.updatedAt, into: &buf)
+        FfiConverterOptionTypeDelegationReviewState.write(value.currentReview, into: &buf)
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeProjectDelegationState_lift(_ buf: RustBuffer) throws -> ProjectDelegationState {
+    return try FfiConverterTypeProjectDelegationState.lift(buf)
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeProjectDelegationState_lower(_ value: ProjectDelegationState) -> RustBuffer {
+    return FfiConverterTypeProjectDelegationState.lower(value)
+}
+
 /**
  * Detailed project information including tasks and git status.
  */
@@ -4230,6 +4607,83 @@ public func FfiConverterTypeProjectSummary_lower(_ value: ProjectSummary) -> Rus
     return FfiConverterTypeProjectSummary.lower(value)
 }
 
+public struct ResolveRoutingCommand {
+    public var projectPath: String
+    public var workspaceId: String?
+    public var sessionName: String?
+    public var clientTty: String?
+
+    /// Default memberwise initializers are never public by default, so we
+    /// declare one manually.
+    public init(projectPath: String, workspaceId: String?, sessionName: String?, clientTty: String?) {
+        self.projectPath = projectPath
+        self.workspaceId = workspaceId
+        self.sessionName = sessionName
+        self.clientTty = clientTty
+    }
+}
+
+extension ResolveRoutingCommand: Equatable, Hashable {
+    public static func == (lhs: ResolveRoutingCommand, rhs: ResolveRoutingCommand) -> Bool {
+        if lhs.projectPath != rhs.projectPath {
+            return false
+        }
+        if lhs.workspaceId != rhs.workspaceId {
+            return false
+        }
+        if lhs.sessionName != rhs.sessionName {
+            return false
+        }
+        if lhs.clientTty != rhs.clientTty {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(projectPath)
+        hasher.combine(workspaceId)
+        hasher.combine(sessionName)
+        hasher.combine(clientTty)
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeResolveRoutingCommand: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ResolveRoutingCommand {
+        return
+            try ResolveRoutingCommand(
+                projectPath: FfiConverterString.read(from: &buf),
+                workspaceId: FfiConverterOptionString.read(from: &buf),
+                sessionName: FfiConverterOptionString.read(from: &buf),
+                clientTty: FfiConverterOptionString.read(from: &buf)
+            )
+    }
+
+    public static func write(_ value: ResolveRoutingCommand, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.projectPath, into: &buf)
+        FfiConverterOptionString.write(value.workspaceId, into: &buf)
+        FfiConverterOptionString.write(value.sessionName, into: &buf)
+        FfiConverterOptionString.write(value.clientTty, into: &buf)
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeResolveRoutingCommand_lift(_ buf: RustBuffer) throws -> ResolveRoutingCommand {
+    return try FfiConverterTypeResolveRoutingCommand.lift(buf)
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeResolveRoutingCommand_lower(_ value: ResolveRoutingCommand) -> RustBuffer {
+    return FfiConverterTypeResolveRoutingCommand.lower(value)
+}
+
 public struct RoutingTarget {
     public var kind: RoutingTargetKind
     public var terminalApp: String?
@@ -4658,11 +5112,12 @@ public struct ShellSignal {
     public var tmuxSession: String?
     public var tmuxClientTty: String?
     public var tmuxPane: String?
+    public var tmuxPanes: [TmuxPaneInfo]
     public var updatedAt: String
 
     /// Default memberwise initializers are never public by default, so we
     /// declare one manually.
-    public init(pid: UInt32, cwd: String, tty: String, parentApp: String, tmuxSession: String?, tmuxClientTty: String?, tmuxPane: String?, updatedAt: String) {
+    public init(pid: UInt32, cwd: String, tty: String, parentApp: String, tmuxSession: String?, tmuxClientTty: String?, tmuxPane: String?, tmuxPanes: [TmuxPaneInfo], updatedAt: String) {
         self.pid = pid
         self.cwd = cwd
         self.tty = tty
@@ -4670,6 +5125,7 @@ public struct ShellSignal {
         self.tmuxSession = tmuxSession
         self.tmuxClientTty = tmuxClientTty
         self.tmuxPane = tmuxPane
+        self.tmuxPanes = tmuxPanes
         self.updatedAt = updatedAt
     }
 }
@@ -4697,6 +5153,9 @@ extension ShellSignal: Equatable, Hashable {
         if lhs.tmuxPane != rhs.tmuxPane {
             return false
         }
+        if lhs.tmuxPanes != rhs.tmuxPanes {
+            return false
+        }
         if lhs.updatedAt != rhs.updatedAt {
             return false
         }
@@ -4711,6 +5170,7 @@ extension ShellSignal: Equatable, Hashable {
         hasher.combine(tmuxSession)
         hasher.combine(tmuxClientTty)
         hasher.combine(tmuxPane)
+        hasher.combine(tmuxPanes)
         hasher.combine(updatedAt)
     }
 }
@@ -4729,6 +5189,7 @@ public struct FfiConverterTypeShellSignal: FfiConverterRustBuffer {
                 tmuxSession: FfiConverterOptionString.read(from: &buf),
                 tmuxClientTty: FfiConverterOptionString.read(from: &buf),
                 tmuxPane: FfiConverterOptionString.read(from: &buf),
+                tmuxPanes: FfiConverterSequenceTypeTmuxPaneInfo.read(from: &buf),
                 updatedAt: FfiConverterString.read(from: &buf)
             )
     }
@@ -4741,6 +5202,7 @@ public struct FfiConverterTypeShellSignal: FfiConverterRustBuffer {
         FfiConverterOptionString.write(value.tmuxSession, into: &buf)
         FfiConverterOptionString.write(value.tmuxClientTty, into: &buf)
         FfiConverterOptionString.write(value.tmuxPane, into: &buf)
+        FfiConverterSequenceTypeTmuxPaneInfo.write(value.tmuxPanes, into: &buf)
         FfiConverterString.write(value.updatedAt, into: &buf)
     }
 }
@@ -5007,6 +5469,83 @@ public func FfiConverterTypeTask_lower(_ value: Task) -> RustBuffer {
     return FfiConverterTypeTask.lower(value)
 }
 
+public struct TmuxPaneInfo {
+    public var sessionName: String
+    public var paneId: String
+    public var panePath: String
+    public var sessionAttached: Bool
+
+    /// Default memberwise initializers are never public by default, so we
+    /// declare one manually.
+    public init(sessionName: String, paneId: String, panePath: String, sessionAttached: Bool) {
+        self.sessionName = sessionName
+        self.paneId = paneId
+        self.panePath = panePath
+        self.sessionAttached = sessionAttached
+    }
+}
+
+extension TmuxPaneInfo: Equatable, Hashable {
+    public static func == (lhs: TmuxPaneInfo, rhs: TmuxPaneInfo) -> Bool {
+        if lhs.sessionName != rhs.sessionName {
+            return false
+        }
+        if lhs.paneId != rhs.paneId {
+            return false
+        }
+        if lhs.panePath != rhs.panePath {
+            return false
+        }
+        if lhs.sessionAttached != rhs.sessionAttached {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(sessionName)
+        hasher.combine(paneId)
+        hasher.combine(panePath)
+        hasher.combine(sessionAttached)
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeTmuxPaneInfo: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TmuxPaneInfo {
+        return
+            try TmuxPaneInfo(
+                sessionName: FfiConverterString.read(from: &buf),
+                paneId: FfiConverterString.read(from: &buf),
+                panePath: FfiConverterString.read(from: &buf),
+                sessionAttached: FfiConverterBool.read(from: &buf)
+            )
+    }
+
+    public static func write(_ value: TmuxPaneInfo, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.sessionName, into: &buf)
+        FfiConverterString.write(value.paneId, into: &buf)
+        FfiConverterString.write(value.panePath, into: &buf)
+        FfiConverterBool.write(value.sessionAttached, into: &buf)
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTmuxPaneInfo_lift(_ buf: RustBuffer) throws -> TmuxPaneInfo {
+    return try FfiConverterTypeTmuxPaneInfo.lift(buf)
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTmuxPaneInfo_lower(_ value: TmuxPaneInfo) -> RustBuffer {
+    return FfiConverterTypeTmuxPaneInfo.lower(value)
+}
+
 /**
  * FFI-friendly validation result for Swift/Kotlin/Python.
  *
@@ -5252,6 +5791,180 @@ public func FfiConverterTypeCreationStatus_lower(_ value: CreationStatus) -> Rus
 }
 
 extension CreationStatus: Equatable, Hashable {}
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
+public enum DelegationMutationKind {
+    case start
+    case attachSession
+    case reviewReady
+    case resume
+    case complete
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeDelegationMutationKind: FfiConverterRustBuffer {
+    typealias SwiftType = DelegationMutationKind
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> DelegationMutationKind {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        case 1: return .start
+
+        case 2: return .attachSession
+
+        case 3: return .reviewReady
+
+        case 4: return .resume
+
+        case 5: return .complete
+
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: DelegationMutationKind, into buf: inout [UInt8]) {
+        switch value {
+        case .start:
+            writeInt(&buf, Int32(1))
+
+        case .attachSession:
+            writeInt(&buf, Int32(2))
+
+        case .reviewReady:
+            writeInt(&buf, Int32(3))
+
+        case .resume:
+            writeInt(&buf, Int32(4))
+
+        case .complete:
+            writeInt(&buf, Int32(5))
+        }
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeDelegationMutationKind_lift(_ buf: RustBuffer) throws -> DelegationMutationKind {
+    return try FfiConverterTypeDelegationMutationKind.lift(buf)
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeDelegationMutationKind_lower(_ value: DelegationMutationKind) -> RustBuffer {
+    return FfiConverterTypeDelegationMutationKind.lower(value)
+}
+
+extension DelegationMutationKind: Equatable, Hashable {}
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
+public enum DelegationReviewDecision {
+    case approve
+    case requestChanges
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeDelegationReviewDecision: FfiConverterRustBuffer {
+    typealias SwiftType = DelegationReviewDecision
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> DelegationReviewDecision {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        case 1: return .approve
+
+        case 2: return .requestChanges
+
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: DelegationReviewDecision, into buf: inout [UInt8]) {
+        switch value {
+        case .approve:
+            writeInt(&buf, Int32(1))
+
+        case .requestChanges:
+            writeInt(&buf, Int32(2))
+        }
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeDelegationReviewDecision_lift(_ buf: RustBuffer) throws -> DelegationReviewDecision {
+    return try FfiConverterTypeDelegationReviewDecision.lift(buf)
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeDelegationReviewDecision_lower(_ value: DelegationReviewDecision) -> RustBuffer {
+    return FfiConverterTypeDelegationReviewDecision.lower(value)
+}
+
+extension DelegationReviewDecision: Equatable, Hashable {}
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
+public enum DelegationStatus {
+    case working
+    case reviewNeeded
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeDelegationStatus: FfiConverterRustBuffer {
+    typealias SwiftType = DelegationStatus
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> DelegationStatus {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        case 1: return .working
+
+        case 2: return .reviewNeeded
+
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: DelegationStatus, into buf: inout [UInt8]) {
+        switch value {
+        case .working:
+            writeInt(&buf, Int32(1))
+
+        case .reviewNeeded:
+            writeInt(&buf, Int32(2))
+        }
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeDelegationStatus_lift(_ buf: RustBuffer) throws -> DelegationStatus {
+    return try FfiConverterTypeDelegationStatus.lift(buf)
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeDelegationStatus_lower(_ value: DelegationStatus) -> RustBuffer {
+    return FfiConverterTypeDelegationStatus.lower(value)
+}
+
+extension DelegationStatus: Equatable, Hashable {}
 
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
@@ -6362,6 +7075,30 @@ private struct FfiConverterOptionTypeCreationProgress: FfiConverterRustBuffer {
 #if swift(>=5.8)
     @_documentation(visibility: private)
 #endif
+private struct FfiConverterOptionTypeDelegationReviewState: FfiConverterRustBuffer {
+    typealias SwiftType = DelegationReviewState?
+
+    static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeDelegationReviewState.write(value, into: &buf)
+    }
+
+    static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeDelegationReviewState.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
 private struct FfiConverterOptionTypeProjectStats: FfiConverterRustBuffer {
     typealias SwiftType = ProjectStats?
 
@@ -6402,6 +7139,30 @@ private struct FfiConverterOptionTypeProjectStatus: FfiConverterRustBuffer {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeProjectStatus.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+private struct FfiConverterOptionTypeDelegationReviewDecision: FfiConverterRustBuffer {
+    typealias SwiftType = DelegationReviewDecision?
+
+    static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeDelegationReviewDecision.write(value, into: &buf)
+    }
+
+    static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeDelegationReviewDecision.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -6551,6 +7312,31 @@ private struct FfiConverterSequenceTypeProject: FfiConverterRustBuffer {
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             try seq.append(FfiConverterTypeProject.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+private struct FfiConverterSequenceTypeProjectDelegationState: FfiConverterRustBuffer {
+    typealias SwiftType = [ProjectDelegationState]
+
+    static func write(_ value: [ProjectDelegationState], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeProjectDelegationState.write(item, into: &buf)
+        }
+    }
+
+    static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [ProjectDelegationState] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [ProjectDelegationState]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            try seq.append(FfiConverterTypeProjectDelegationState.read(from: &buf))
         }
         return seq
     }
@@ -6709,6 +7495,31 @@ private struct FfiConverterSequenceTypeTask: FfiConverterRustBuffer {
 #if swift(>=5.8)
     @_documentation(visibility: private)
 #endif
+private struct FfiConverterSequenceTypeTmuxPaneInfo: FfiConverterRustBuffer {
+    typealias SwiftType = [TmuxPaneInfo]
+
+    static func write(_ value: [TmuxPaneInfo], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeTmuxPaneInfo.write(item, into: &buf)
+        }
+    }
+
+    static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [TmuxPaneInfo] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [TmuxPaneInfo]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            try seq.append(FfiConverterTypeTmuxPaneInfo.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
 private struct FfiConverterDictionaryStringTypeCachedFileInfo: FfiConverterRustBuffer {
     static func write(_ value: [String: CachedFileInfo], into buf: inout [UInt8]) {
         let len = Int32(value.count)
@@ -6837,6 +7648,9 @@ private var initializationResult: InitializationResult = {
     if uniffi_capacitor_core_checksum_method_coreruntime_load_ideas_order() != 56403 {
         return InitializationResult.apiChecksumMismatch
     }
+    if uniffi_capacitor_core_checksum_method_coreruntime_mutate_delegation() != 22057 {
+        return InitializationResult.apiChecksumMismatch
+    }
     if uniffi_capacitor_core_checksum_method_coreruntime_mutate_idea() != 36496 {
         return InitializationResult.apiChecksumMismatch
     }
@@ -6850,6 +7664,9 @@ private var initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if uniffi_capacitor_core_checksum_method_coreruntime_remove_project() != 50715 {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if uniffi_capacitor_core_checksum_method_coreruntime_resolve_routing() != 15784 {
         return InitializationResult.apiChecksumMismatch
     }
     if uniffi_capacitor_core_checksum_method_coreruntime_run_hook_test() != 23431 {
