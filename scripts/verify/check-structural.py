@@ -8,15 +8,20 @@ from typing import Any
 
 from verifier_common import (
     Violation,
+    VALID_FACT_KINDS,
+    build_error_payload,
+    build_layer_payload,
+    dedupe_violations,
     ensure_python,
+    fact_kind_from,
     load_json,
     load_yaml,
     matches_name_or_path,
     normalize_patterns,
     read_text,
     relpath,
-    utc_now,
-    write_json,
+    validate_selector_glob,
+    write_json_atomic,
 )
 
 
@@ -140,14 +145,22 @@ def matches_fact(module: dict[str, Any], repo_root: pathlib.Path, fact_spec: str
         return matches
     if kind == "reference":
         return entry_matches_regex(module["references"], pattern)
+    if kind == "identifier_ref":
+        return entry_matches_regex(module["identifier_refs"], pattern)
     if kind == "implement":
         return entry_matches_regex(module["implements"], pattern)
     if kind == "http_route":
         return entry_matches_regex(module["http_routes"], pattern)
+    if kind == "static_http_route":
+        return entry_matches_regex(module["static_http_routes"], pattern)
     if kind == "shell_command_literal":
         return entry_matches_regex(module["shell_command_literals"], pattern)
+    if kind == "process_exec":
+        return entry_matches_regex(module["process_execs"], pattern)
     if kind == "doc_claim":
         return entry_matches_regex(module["doc_claims"], pattern)
+    if kind == "raw_text":
+        return entry_matches_regex(module["raw_text"], pattern)
     if kind == "contains_regex":
         content = read_text(repo_root / module["path"])
         regex = re.compile(pattern, flags=re.MULTILINE)
@@ -164,6 +177,56 @@ def matching_rule_groups(rule: dict[str, Any], selected_groups: set[str] | None)
         return True
     rule_groups = set(normalize_patterns(rule.get("groups")))
     return bool(rule_groups & selected_groups)
+
+
+def validate_selector(rule: dict[str, Any], selector: dict[str, Any]) -> None:
+    if not selector:
+        raise ValueError(f"Rule {rule['rule']} must declare a constraint.")
+
+    scope_keys = {"all_modules", "files_matching", "files_in", "modules_matching", "modules_in"}
+    if selector.get("all_modules") is not True and not any(key in selector for key in scope_keys - {"all_modules"}):
+        raise ValueError(
+            f"Rule {rule['rule']} must declare a non-empty scope or set all_modules: true."
+        )
+
+    for key in ("files_matching", "files_in", "modules_matching", "except"):
+        for pattern in normalize_patterns(selector.get(key)):
+            validate_selector_glob(pattern)
+
+    if "modules_in" in selector:
+        descriptor = selector["modules_in"]
+        if isinstance(descriptor, dict):
+            directory = descriptor.get("directory")
+            if directory is not None:
+                validate_selector_glob(str(directory).rstrip("/") + "/**")
+
+    fact_specs = [
+        selector.get("must"),
+        selector.get("must_not"),
+        selector.get("may"),
+    ]
+    for fact_spec in fact_specs:
+        kind = fact_kind_from(fact_spec)
+        if kind and kind not in VALID_FACT_KINDS:
+            raise ValueError(f"Rule {rule['rule']} references unsupported fact kind '{kind}'.")
+
+    if "only" in selector:
+        allowed_patterns = normalize_patterns(selector["only"])
+        if not allowed_patterns:
+            raise ValueError(f"Rule {rule['rule']} must declare at least one allowed owner pattern.")
+        for pattern in allowed_patterns:
+            validate_selector_glob(pattern)
+        if "may" not in selector:
+            raise ValueError(f"Rule {rule['rule']} uses 'only' without a matching 'may' fact.")
+
+
+def validate_config(config: dict[str, Any], rules: list[dict[str, Any]]) -> None:
+    for rule in rules:
+        validate_selector(rule, rule.get("constraint", {}))
+        if "source_docs" in rule or "doc_patterns" in rule:
+            raise ValueError(f"Rule {rule['rule']} must use claim_ids instead of source_docs/doc_patterns.")
+        if "claim_ids" in rule and not normalize_patterns(rule.get("claim_ids")):
+            raise ValueError(f"Rule {rule['rule']} must not declare an empty claim_ids list.")
 
 
 def check_rule(
@@ -241,58 +304,67 @@ def evolve_violations(
     facts: dict[str, Any],
 ) -> list[Violation]:
     canonical_docs = normalize_patterns(config.get("meta", {}).get("canonical_docs"))
-    enforced_claim_patterns = [
-        re.compile(pattern, flags=re.IGNORECASE)
-        for pattern in normalize_patterns(config.get("meta", {}).get("doc_claim_patterns"))
-    ]
     doc_modules = [module for module in facts["modules"] if module["path"] in canonical_docs]
     violations: list[Violation] = []
 
-    covered_claims: set[tuple[str, int]] = set()
+    claims_by_id: dict[str, dict[str, Any]] = {}
+    for module in doc_modules:
+        for claim in module.get("doc_claims", []):
+            claim_id = claim.get("id")
+            if not claim_id:
+                continue
+            claims_by_id[claim_id] = {
+                "module_path": module["path"],
+                "line": claim["line"],
+                "value": claim["value"],
+                "owner_scopes": claim.get("owner_scopes", []),
+            }
+
+    covered_claim_ids: set[str] = set()
     for rule in rules:
-        source_docs = set(normalize_patterns(rule.get("source_docs")))
-        patterns = normalize_patterns(rule.get("doc_patterns"))
-        if not source_docs or not patterns:
-            continue
-        for pattern in patterns:
-            regex = re.compile(pattern, flags=re.IGNORECASE)
-            matched = False
-            for module in doc_modules:
-                if module["path"] not in source_docs:
-                    continue
-                for claim in module.get("doc_claims", []):
-                    if regex.search(claim["value"]):
-                        matched = True
-                        covered_claims.add((module["path"], claim["line"]))
-            if not matched:
+        for claim_id in normalize_patterns(rule.get("claim_ids")):
+            if claim_id not in claims_by_id:
                 violations.append(
                     Violation(
                         layer="1",
-                        rule=rule["rule"],
+                        rule="missing_claim_id",
                         path=None,
                         line=None,
-                        message="Verifier doc pattern no longer matches source docs",
-                        diagnosis=f"Rule {rule['rule']} references stale doc pattern {pattern}.",
-                        fix="Update doc_patterns or the source document intentionally.",
+                        message="Structural rule references a missing canonical claim id",
+                        diagnosis=f"Rule {rule['rule']} references missing claim id {claim_id}.",
+                        fix="Update claim_ids or restore the canonical claim marker intentionally.",
                     )
                 )
+                continue
+            covered_claim_ids.add(claim_id)
 
-    for module in doc_modules:
-        for claim in module.get("doc_claims", []):
-            if enforced_claim_patterns and not any(pattern.search(claim["value"]) for pattern in enforced_claim_patterns):
-                continue
-            key = (module["path"], claim["line"])
-            if key in covered_claims:
-                continue
+    for claim_id, claim in claims_by_id.items():
+        if claim_id not in covered_claim_ids:
             violations.append(
                 Violation(
                     layer="1",
                     rule="uncovered_doc_claim",
-                    path=module["path"],
+                    path=claim["module_path"],
                     line=claim["line"],
                     message="Canonical architecture claim is not covered by verifier rules",
-                    diagnosis=f"{module['path']} contains an ownership/boundary claim with no matching verifier rule.",
-                    fix="Add a structural rule with source_docs/doc_patterns or remove the stale claim.",
+                    diagnosis=f"Claim {claim_id} has no enforcing structural rule.",
+                    fix="Add a structural rule with claim_ids or remove the stale claim marker.",
+                )
+            )
+        owner_scopes = normalize_patterns(claim.get("owner_scopes"))
+        if owner_scopes and not any(
+            any(matches_name_or_path(module, pattern) for pattern in owner_scopes)
+            for module in facts["modules"]
+        ):
+            violations.append(
+                Violation(
+                    layer="1",
+                    rule="orphaned_claim_owner_scope",
+                    path=claim["module_path"],
+                    line=claim["line"],
+                    message="Canonical claim owner scope no longer matches any modules",
+                    diagnosis=f"Claim {claim_id} declares owner_scope values that match no modules.",
+                    fix="Update owner_scope metadata or restore the intended owner module intentionally.",
                 )
             )
     return violations
@@ -302,34 +374,41 @@ def main() -> None:
     ensure_python()
     args = parse_args()
     repo_root = pathlib.Path(args.repo_root).resolve()
-    facts = load_json(pathlib.Path(args.facts), default={})
-    config = load_yaml(pathlib.Path(args.config))
-    rules = flatten_rules(config)
-    selected_groups = normalize_groups(args.groups)
-    selected_paths = load_selected_paths(args.paths_file)
+    out_path = pathlib.Path(args.out)
 
-    violations: list[Violation] = []
-    for rule in rules:
-        if not matching_rule_groups(rule, selected_groups):
-            continue
-        violations.extend(check_rule(rule, facts["modules"], repo_root))
+    try:
+        facts = load_json(pathlib.Path(args.facts), default={})
+        config = load_yaml(pathlib.Path(args.config))
+        rules = flatten_rules(config)
+        validate_config(config, rules)
 
-    if args.evolve:
-        violations.extend(evolve_violations(config, rules, facts))
+        selected_groups = normalize_groups(args.groups)
+        selected_paths = load_selected_paths(args.paths_file)
 
-    if selected_paths:
-        violations = [violation for violation in violations if not violation.path or violation.path in selected_paths]
+        violations: list[Violation] = []
+        for rule in rules:
+            if not matching_rule_groups(rule, selected_groups):
+                continue
+            violations.extend(check_rule(rule, facts["modules"], repo_root))
 
-    payload = {
-        "generated_at": utc_now(),
-        "passed": not violations,
-        "violations": [violation.as_dict() for violation in violations],
-    }
-    write_json(pathlib.Path(args.out), payload)
+        if args.evolve:
+            violations.extend(evolve_violations(config, rules, facts))
 
-    if args.status:
-        raise SystemExit(0)
-    raise SystemExit(0 if payload["passed"] else 1)
+        if selected_paths:
+            violations = [violation for violation in violations if not violation.path or violation.path in selected_paths]
+
+        payload = build_layer_payload(violations=dedupe_violations(violations))
+        write_json_atomic(out_path, payload)
+
+        if args.status:
+            raise SystemExit(0)
+        raise SystemExit(0 if payload["passed"] else 1)
+    except Exception as error:
+        payload = build_error_payload(str(error))
+        write_json_atomic(out_path, payload)
+        if args.status:
+            raise SystemExit(0)
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

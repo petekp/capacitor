@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import fnmatch
 import hashlib
 import json
 import os
@@ -8,8 +7,10 @@ import pathlib
 import re
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from functools import lru_cache
 from typing import Any, Iterable
 
 import yaml
@@ -46,6 +47,22 @@ PRODUCTION_EXTENSIONS = {
     ".mjs",
     ".js",
     ".toml",
+}
+
+VALID_FACT_KINDS = {
+    "call_pattern",
+    "contains_regex",
+    "doc_claim",
+    "http_route",
+    "identifier_ref",
+    "implement",
+    "import",
+    "path_regex",
+    "process_exec",
+    "raw_text",
+    "reference",
+    "shell_command_literal",
+    "static_http_route",
 }
 
 
@@ -94,6 +111,22 @@ def load_json(path: pathlib.Path, default: Any = None) -> Any:
 def write_json(path: pathlib.Path, payload: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+
+
+def write_json_atomic(path: pathlib.Path, payload: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        "w",
+        encoding="utf-8",
+        dir=path.parent,
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+        delete=False,
+    ) as handle:
+        json.dump(payload, handle, indent=2, sort_keys=True)
+        handle.write("\n")
+        temp_path = pathlib.Path(handle.name)
+    os.replace(temp_path, path)
 
 
 def load_yaml(path: pathlib.Path) -> Any:
@@ -183,22 +216,47 @@ def category_for(relative_path: str) -> str:
     return "other"
 
 
+@lru_cache(maxsize=512)
+def _recursive_glob_regex(pattern: str) -> re.Pattern[str]:
+    normalized = pattern.strip().replace("\\", "/")
+    if not normalized:
+        raise ValueError("Glob pattern must not be empty.")
+
+    regex_parts: list[str] = ["^"]
+    index = 0
+    while index < len(normalized):
+        character = normalized[index]
+        if character == "*":
+            if index + 1 < len(normalized) and normalized[index + 1] == "*":
+                index += 1
+                if index + 1 < len(normalized) and normalized[index + 1] == "/":
+                    regex_parts.append("(?:.*/)?")
+                    index += 1
+                else:
+                    regex_parts.append(".*")
+            else:
+                regex_parts.append("[^/]*")
+        elif character == "?":
+            regex_parts.append("[^/]")
+        else:
+            regex_parts.append(re.escape(character))
+        index += 1
+    regex_parts.append("$")
+    return re.compile("".join(regex_parts))
+
+
+def recursive_glob_match(value: str, pattern: str) -> bool:
+    normalized_value = value.replace("\\", "/")
+    return _recursive_glob_regex(pattern).match(normalized_value) is not None
+
+
 def matches_glob(value: str, patterns: str | list[str]) -> bool:
     pattern_list = [patterns] if isinstance(patterns, str) else list(patterns)
-    return any(fnmatch.fnmatch(value, pattern) for pattern in pattern_list)
+    return any(recursive_glob_match(value, pattern) for pattern in pattern_list)
 
 
 def matches_name_or_path(module: dict[str, Any], pattern: str) -> bool:
-    path = pathlib.PurePosixPath(module["path"])
-    patterns = [pattern]
-    if "**/" in pattern:
-        patterns.append(pattern.replace("**/", ""))
-    for candidate in patterns:
-        if path.match(candidate):
-            return True
-    if fnmatch.fnmatch(module["name"], pattern):
-        return True
-    return False
+    return recursive_glob_match(module["path"], pattern) or recursive_glob_match(module["name"], pattern)
 
 
 def normalize_patterns(value: Any) -> list[str]:
@@ -207,6 +265,20 @@ def normalize_patterns(value: Any) -> list[str]:
     if isinstance(value, list):
         return [str(item) for item in value]
     return [str(value)]
+
+
+def validate_selector_glob(pattern: str) -> None:
+    normalized = pattern.strip()
+    if not normalized:
+        raise ValueError("Selector patterns must not be empty.")
+    _recursive_glob_regex(normalized)
+
+
+def fact_kind_from(spec: str | None) -> str | None:
+    if not spec:
+        return None
+    kind, _, _ = spec.partition(":")
+    return kind or None
 
 
 def find_git_changed_files(repo_root: pathlib.Path) -> list[str]:
@@ -303,6 +375,57 @@ def unique_entries(entries: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
         seen.add(key)
         unique.append(entry)
     return unique
+
+
+def dedupe_violations(violations: Iterable[Violation]) -> list[Violation]:
+    seen: set[tuple[str, str | None, int | None, str]] = set()
+    deduped: list[Violation] = []
+    for violation in violations:
+        key = (violation.rule, violation.path, violation.line, violation.message)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(violation)
+    return deduped
+
+
+def build_layer_payload(
+    *,
+    violations: Iterable[Violation] = (),
+    status: str | None = None,
+    execution_error: str | None = None,
+    extra: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    normalized = list(violations)
+    error_count = sum(1 for violation in normalized if violation.severity != "warning")
+    warning_count = sum(1 for violation in normalized if violation.severity == "warning")
+
+    if status is None:
+        if execution_error:
+            status = "error"
+        elif error_count > 0:
+            status = "violated"
+        else:
+            status = "passed"
+
+    payload = {
+        "generated_at": utc_now(),
+        "passed": status == "passed",
+        "status": status,
+        "violations": [violation.as_dict() for violation in normalized],
+        "violation_count": error_count,
+        "error_count": error_count,
+        "warning_count": warning_count,
+    }
+    if execution_error:
+        payload["execution_error"] = execution_error
+    if extra:
+        payload.update(extra)
+    return payload
+
+
+def build_error_payload(message: str, *, extra: dict[str, Any] | None = None) -> dict[str, Any]:
+    return build_layer_payload(status="error", execution_error=message, extra=extra)
 
 
 def ensure_python() -> None:

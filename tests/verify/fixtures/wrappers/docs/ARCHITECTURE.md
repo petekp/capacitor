@@ -1,1 +1,1 @@
-- Only RuntimeClient may cross the runtime boundary.
+- VERIFIER_CLAIM(runtime_client_boundary): owner_scope=src/RuntimeClient.swift; Only RuntimeClient may cross the runtime boundary.

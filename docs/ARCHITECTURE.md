@@ -3,7 +3,7 @@
 ## Principles
 
 1. One application boundary: the local runtime service owns ingest, state derivation, and typed runtime reads.
-2. One production owner per behavior: Rust owns runtime semantics; Swift owns presentation, orchestration, and macOS side effects.
+2. VERIFIER_CLAIM(runtime_semantics_owner_split): owner_scope=core/**/*.rs,apps/swift/Sources/Capacitor/**/*.swift; One production owner per behavior: Rust owns runtime semantics; Swift owns presentation, orchestration, and macOS side effects.
 3. One semantic path: hook adapters, shell adapters, and UI reads all converge on the same runtime service state.
 
 ## Runtime Flow
@@ -38,7 +38,7 @@
 
 ## Boundaries
 
-- Runtime boundary: authenticated local HTTP service hosted by `hud-hook serve`
+- VERIFIER_CLAIM(runtime_boundary_service): owner_scope=core/hud-hook/src/serve.rs; Runtime boundary: authenticated local HTTP service hosted by `hud-hook serve`
 - FFI boundary: `capacitor-core` UniFFI exports for app-facing setup and non-runtime APIs
 - Adapter boundary: Claude `/hook` and shell `cwd` inputs forward into the runtime service; they do not own lifecycle semantics
 
@@ -53,12 +53,12 @@
 - Rust derives canonical routing targets from shell and session evidence.
 - `ActivationPolicy` interprets routing state into activation intent and applies only explicit local fallback when runtime facts are missing or incomplete.
 - `TerminalActivationCoordinator` owns request arbitration, stale-request suppression, and activation outcome reporting.
-- `TmuxRouter` is the only place raw tmux command strings are built or executed.
+- VERIFIER_CLAIM(tmux_router_exclusive_command_owner): owner_scope=apps/swift/Sources/Capacitor/Models/TmuxRouter.swift; `TmuxRouter` is the only place raw tmux command strings are built or executed.
 - `GhosttyTerminalDriver` plus `GhosttyAutomationClient` own Ghostty's native routing and launch behavior.
 - `ITermTerminalDriver` and `TerminalAppTerminalDriver` own their TTY-based host focus and launch behavior, including typed failure mapping.
 
 ## Non-Goals
 
 - Reintroducing parallel runtime policy paths across Rust and Swift
-- Treating snapshot-file reads as the primary app/runtime boundary
+- VERIFIER_CLAIM(snapshot_file_not_primary_boundary): owner_scope=apps/swift/Sources/Capacitor/**/*.swift; Treating snapshot-file reads as the primary app/runtime boundary
 - Backward compatibility with daemon-era IPC or launchd ownership models
