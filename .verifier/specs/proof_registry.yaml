@@ -51,6 +51,46 @@ proofs:
       - --
       - --exact
       - --nocapture
+  reducer_routing_parity:
+    language: rust
+    path: core/capacitor-core/src/reduce/mod.rs
+    symbol: routing_parity_matches_persisted_
+    command:
+      - cargo
+      - test
+      - -p
+      - capacitor-core
+      - routing_parity_matches_persisted_
+  reducer_stale_shell_signal:
+    language: rust
+    path: core/capacitor-core/src/reduce/mod.rs
+    symbol: routing_ignores_stale_shell_signal_for_same_pid
+    command:
+      - cargo
+      - test
+      - -p
+      - capacitor-core
+      - routing_ignores_stale_shell_signal_for_same_pid
+  reducer_inventory_preference:
+    language: rust
+    path: core/capacitor-core/src/reduce/mod.rs
+    symbol: routing_inventory_preference_
+    command:
+      - cargo
+      - test
+      - -p
+      - capacitor-core
+      - routing_inventory_preference_
+  ffi_routing_inventory_preference:
+    language: rust
+    path: core/capacitor-core/tests/ffi_contract.rs
+    symbol: ffi_routing_inventory_preference_
+    command:
+      - cargo
+      - test
+      - -p
+      - capacitor-core
+      - ffi_routing_inventory_preference_
 
   hook_server_lifecycle_starts_running_after_healthy_startup:
     language: swift

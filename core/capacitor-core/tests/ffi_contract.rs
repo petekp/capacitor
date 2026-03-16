@@ -5,7 +5,7 @@ mod common;
 use capacitor_core::domain::{
     HookEventType, IdeaMutationKind, IngestHookEventCommand, IngestShellSignalCommand,
     MutateIdeaCommand, MutateProjectCommand, MutateWorktreeCommand, ProjectMutationKind,
-    RoutingTargetKind, TmuxPaneInfo, WorktreeMutationKind,
+    ResolveRoutingCommand, RoutingStatus, RoutingTargetKind, TmuxPaneInfo, WorktreeMutationKind,
 };
 use capacitor_core::CoreRuntime;
 
@@ -315,6 +315,161 @@ fn ffi_ingest_shell_signal_derives_non_active_tmux_pane_from_inventory() {
     assert_eq!(route.target.host_tty.as_deref(), Some("/dev/ttys099"));
     assert_eq!(route.target.terminal_app.as_deref(), Some("ghostty"));
     assert_eq!(route.reason_code, "TMUX_PANE_ATTACHED");
+}
+
+#[test]
+fn ffi_routing_inventory_preference_snapshot_prefers_inventory_for_mismatched_shell() {
+    let runtime = CoreRuntime::new().expect("runtime");
+    let mut hook_event = valid_hook_event_command();
+    hook_event.pid = Some(4242);
+    hook_event.project_path = "/tmp/target".to_string();
+    hook_event.cwd = Some("/tmp/target".to_string());
+    runtime
+        .ingest_hook_event(hook_event)
+        .expect("hook event outcome");
+
+    let outcome = runtime
+        .ingest_shell_signal(IngestShellSignalCommand {
+            pid: 4242,
+            cwd: "/tmp/other".to_string(),
+            tty: "/dev/ttys001".to_string(),
+            parent_app: "Ghostty".to_string(),
+            tmux_session: Some("dev".to_string()),
+            tmux_client_tty: Some("/dev/ttys099".to_string()),
+            tmux_pane: Some("%0".to_string()),
+            tmux_panes: vec![
+                TmuxPaneInfo {
+                    session_name: "dev".to_string(),
+                    pane_id: "%0".to_string(),
+                    pane_path: "/tmp/other".to_string(),
+                    session_attached: true,
+                },
+                TmuxPaneInfo {
+                    session_name: "dev".to_string(),
+                    pane_id: "%1".to_string(),
+                    pane_path: "/tmp/target".to_string(),
+                    session_attached: true,
+                },
+            ],
+            recorded_at: "2026-03-16T01:00:00Z".to_string(),
+        })
+        .expect("shell signal outcome");
+
+    assert!(outcome.ok);
+
+    let snapshot = snapshot(&runtime);
+    let route = snapshot
+        .routing
+        .iter()
+        .find(|route| route.project_path == "/tmp/target")
+        .expect("route");
+    assert_eq!(route.status, RoutingStatus::Attached);
+    assert_eq!(route.target.kind, RoutingTargetKind::TmuxPane);
+    assert_eq!(route.target.terminal_app.as_deref(), Some("ghostty"));
+    assert_eq!(route.target.session_name.as_deref(), Some("dev"));
+    assert_eq!(route.target.pane_id.as_deref(), Some("%1"));
+    assert_eq!(route.target.host_tty.as_deref(), Some("/dev/ttys099"));
+    assert_eq!(route.reason_code, "TMUX_PANE_ATTACHED");
+    assert_eq!(route.reason, "Matched tmux pane '%1' from pane inventory");
+    assert_eq!(route.updated_at, "2026-03-16T01:00:00Z");
+}
+
+#[test]
+fn ffi_routing_inventory_preference_resolve_prefers_inventory_for_hinted_mismatched_shell() {
+    let runtime = CoreRuntime::new().expect("runtime");
+
+    let outcome = runtime
+        .ingest_shell_signal(IngestShellSignalCommand {
+            pid: 5252,
+            cwd: "/tmp/other".to_string(),
+            tty: "/dev/ttys030".to_string(),
+            parent_app: "Terminal".to_string(),
+            tmux_session: Some("caps".to_string()),
+            tmux_client_tty: Some("/dev/ttys040".to_string()),
+            tmux_pane: Some("%0".to_string()),
+            tmux_panes: vec![
+                TmuxPaneInfo {
+                    session_name: "caps".to_string(),
+                    pane_id: "%0".to_string(),
+                    pane_path: "/tmp/other".to_string(),
+                    session_attached: true,
+                },
+                TmuxPaneInfo {
+                    session_name: "caps".to_string(),
+                    pane_id: "%5".to_string(),
+                    pane_path: "/tmp/target".to_string(),
+                    session_attached: true,
+                },
+            ],
+            recorded_at: "2026-03-16T01:00:01Z".to_string(),
+        })
+        .expect("shell signal outcome");
+
+    assert!(outcome.ok);
+
+    let route = runtime
+        .resolve_routing(ResolveRoutingCommand {
+            project_path: "/tmp/target".to_string(),
+            workspace_id: None,
+            session_name: Some("caps".to_string()),
+            client_tty: Some("/dev/ttys040".to_string()),
+        })
+        .expect("route");
+
+    assert_eq!(route.status, RoutingStatus::Attached);
+    assert_eq!(route.target.kind, RoutingTargetKind::TmuxPane);
+    assert_eq!(route.target.terminal_app.as_deref(), Some("terminal"));
+    assert_eq!(route.target.session_name.as_deref(), Some("caps"));
+    assert_eq!(route.target.pane_id.as_deref(), Some("%5"));
+    assert_eq!(route.target.host_tty.as_deref(), Some("/dev/ttys040"));
+    assert_eq!(route.reason_code, "TMUX_PANE_ATTACHED");
+    assert_eq!(route.reason, "Matched tmux pane '%5' from pane inventory");
+    assert_eq!(route.updated_at, "2026-03-16T01:00:01Z");
+}
+
+#[test]
+fn ffi_routing_inventory_preference_resolve_keeps_matching_shell_canonical() {
+    let runtime = CoreRuntime::new().expect("runtime");
+
+    let outcome = runtime
+        .ingest_shell_signal(IngestShellSignalCommand {
+            pid: 6262,
+            cwd: "/tmp/repo".to_string(),
+            tty: "/dev/ttys031".to_string(),
+            parent_app: "Ghostty".to_string(),
+            tmux_session: Some("caps".to_string()),
+            tmux_client_tty: Some("/dev/ttys041".to_string()),
+            tmux_pane: Some("%42".to_string()),
+            tmux_panes: vec![TmuxPaneInfo {
+                session_name: "caps".to_string(),
+                pane_id: "%9".to_string(),
+                pane_path: "/tmp/repo".to_string(),
+                session_attached: true,
+            }],
+            recorded_at: "2026-03-16T01:00:02Z".to_string(),
+        })
+        .expect("shell signal outcome");
+
+    assert!(outcome.ok);
+
+    let route = runtime
+        .resolve_routing(ResolveRoutingCommand {
+            project_path: "/tmp/repo".to_string(),
+            workspace_id: None,
+            session_name: Some("caps".to_string()),
+            client_tty: Some("/dev/ttys041".to_string()),
+        })
+        .expect("route");
+
+    assert_eq!(route.status, RoutingStatus::Attached);
+    assert_eq!(route.target.kind, RoutingTargetKind::TmuxPane);
+    assert_eq!(route.target.terminal_app.as_deref(), Some("ghostty"));
+    assert_eq!(route.target.session_name.as_deref(), Some("caps"));
+    assert_eq!(route.target.pane_id.as_deref(), Some("%42"));
+    assert_eq!(route.target.host_tty.as_deref(), Some("/dev/ttys041"));
+    assert_eq!(route.reason_code, "TMUX_PANE_ATTACHED");
+    assert_eq!(route.reason, "Matched tmux pane '%42'");
+    assert_eq!(route.updated_at, "2026-03-16T01:00:02Z");
 }
 
 #[test]
