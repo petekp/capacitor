@@ -4,6 +4,7 @@ set -euo pipefail
 REPO_ROOT=""
 FACTS=""
 SPEC=""
+OUT_DIR=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -17,6 +18,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --spec)
       SPEC="$2"
+      shift 2
+      ;;
+    --out-dir)
+      OUT_DIR="$2"
       shift 2
       ;;
     *)
@@ -46,11 +51,17 @@ SPEC_DIR="$(dirname "$SPEC_PATH")"
 SPEC_NAME="$(basename "$SPEC_PATH" .tla)"
 CFG_PATH="${SPEC_DIR}/${SPEC_NAME}.cfg"
 
-TMP_DIR="$(mktemp -d)"
-cleanup() {
+if [[ -n "$OUT_DIR" ]]; then
+  TMP_DIR="$OUT_DIR"
   rm -rf "$TMP_DIR"
-}
-trap cleanup EXIT
+  mkdir -p "$TMP_DIR"
+else
+  TMP_DIR="$(mktemp -d)"
+  cleanup() {
+    rm -rf "$TMP_DIR"
+  }
+  trap cleanup EXIT
+fi
 
 GENERATED_CFG="$TMP_DIR/${SPEC_NAME}.cfg"
 cp "$CFG_PATH" "$GENERATED_CFG"

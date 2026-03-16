@@ -1,0 +1,61 @@
+claims:
+  - claim_id: swift_runtime_service_reads_owned
+    description: Live runtime-service reads in production Swift stay behind RuntimeClient or HookServerManager.
+    enforcement: hard
+  - claim_id: runtime_shadow_owners_stay_deleted
+    description: Runtime shadow owners and fake boundary names remain deleted.
+    enforcement: hard
+  - claim_id: activation_policy_not_distributed
+    description: Activation-policy resolver ownership stays centralized instead of being distributed through callback slots.
+    enforcement: hard
+  - claim_id: tmux_router_exclusive_command_owner
+    description: TmuxRouter is the only production Swift owner of raw tmux command strings.
+    enforcement: hard
+  - claim_id: ghostty_applescript_adapter_exclusive
+    description: Ghostty AX and AppleScript launch behavior stays inside the Ghostty automation adapter.
+    enforcement: hard
+  - claim_id: hud_hook_owns_runtime_routes
+    description: hud-hook serve owns the production runtime-service HTTP surface.
+    enforcement: hard
+  - claim_id: rust_runtime_health_probe_validates_bootstrap_contract
+    description: Rust runtime-service health probes validate the bootstrap contract.
+    enforcement: hard
+  - claim_id: swift_runtime_health_consumers_validate_bootstrap_contract
+    description: Swift runtime-service health consumers validate the bootstrap contract.
+    enforcement: hard
+  - claim_id: no_snapshot_file_first_live_boundary
+    description: Snapshot files never become the live runtime boundary for production Swift reads.
+    enforcement: hard
+  - claim_id: runtime_health_status_only_checks_stay_deleted
+    description: Status-only runtime health checks remain deleted from Swift lifecycle code.
+    enforcement: hard
+  - claim_id: no_launcher_detect_available_fallback
+    description: TerminalLauncher does not hide terminal fallback policy behind detectAvailable.
+    enforcement: hard
+  - claim_id: no_terminal_switch_cases_inside_launcher
+    description: TerminalLauncher does not embed per-terminal switch logic.
+    enforcement: hard
+  - claim_id: launcher_does_not_own_session_discovery_fallback
+    description: TerminalLauncher does not own tmux session discovery fallback.
+    enforcement: hard
+  - claim_id: swift_tmux_session_discovery_stays_deleted
+    description: Swift tmux session discovery remains deleted.
+    enforcement: hard
+  - claim_id: swift_tmux_pane_recovery_stays_deleted
+    description: Swift tmux pane recovery from shell state remains deleted.
+    enforcement: hard
+  - claim_id: no_legacy_raw_route_shape
+    description: Legacy target_kind and target_value route fields remain deleted.
+    enforcement: hard
+  - claim_id: host_focus_applescript_stays_in_terminal_drivers
+    description: Host-focus AppleScript for Terminal and iTerm stays behind TerminalDrivers.
+    enforcement: hard
+  - claim_id: runtime_activation_shadow_path_stays_deleted
+    description: The retired Rust runtime_activation shadow owner path stays deleted.
+    enforcement: hard
+  - claim_id: hook_setup_contracts
+    description: Hook setup symlink and mixed-entry contracts remain executable and intact.
+    enforcement: hard
+  - claim_id: replay_parity_contracts
+    description: Replay corpus and replay parity expectations remain executable and internally consistent.
+    enforcement: hard

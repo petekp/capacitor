@@ -2,6 +2,22 @@ from __future__ import annotations
 
 from _helpers import contract
 
+SPEC_METADATA = {
+    "spec_id": "HookSetupContracts",
+    "proof_kind": "python",
+    "claims_proven": ["hook_setup_contracts"],
+    "checks_executed": [
+        "hook_setup_helpers_present",
+        "hook_setup_call_sites_use_helpers",
+        "hook_setup_named_regression_tests_present",
+    ],
+    "assumptions": [],
+    "supporting_artifacts": [
+        ".verifier/specs/HookSetupContracts.py",
+        "core/capacitor-core/src/runtime_setup.rs",
+    ],
+}
+
 
 def contracts():
     return [

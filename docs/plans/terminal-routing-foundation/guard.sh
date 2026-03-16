@@ -6,7 +6,7 @@ VERIFY="$ROOT/scripts/verify/verify.sh"
 
 ARGS=(--repo-root "$ROOT" --layers 1 --groups terminal-routing-foundation)
 if [[ "${1:-}" == "--status" ]]; then
-  ARGS+=(--status)
+  ARGS+=(--report-only)
 fi
 
 "$VERIFY" "${ARGS[@]}"

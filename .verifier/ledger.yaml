@@ -1,0 +1,166 @@
+claims:
+  swift_runtime_service_reads_owned:
+    structural_rules:
+      - swift_runtime_service_reads_owned
+    behavioral_specs: []
+    positive_fixtures:
+      - tests/verify/fixtures/structural_rule_matrix.yaml#swift_runtime_service_reads_owned.pass
+    negative_fixtures:
+      - tests/verify/fixtures/structural_rule_matrix.yaml#swift_runtime_service_reads_owned.fail
+  runtime_shadow_owners_stay_deleted:
+    structural_rules:
+      - runtime_shadow_owners_stay_deleted
+    behavioral_specs: []
+    positive_fixtures:
+      - tests/verify/fixtures/structural_rule_matrix.yaml#runtime_shadow_owners_stay_deleted.pass
+    negative_fixtures:
+      - tests/verify/fixtures/structural_rule_matrix.yaml#runtime_shadow_owners_stay_deleted.fail
+  activation_policy_not_distributed:
+    structural_rules:
+      - activation_policy_not_distributed
+    behavioral_specs: []
+    positive_fixtures:
+      - tests/verify/fixtures/structural_rule_matrix.yaml#activation_policy_not_distributed.pass
+    negative_fixtures:
+      - tests/verify/fixtures/structural_rule_matrix.yaml#activation_policy_not_distributed.fail
+  tmux_router_exclusive_command_owner:
+    structural_rules:
+      - tmux_router_exclusive_command_owner
+    behavioral_specs: []
+    positive_fixtures:
+      - tests/verify/fixtures/structural_rule_matrix.yaml#tmux_router_exclusive_command_owner.pass
+    negative_fixtures:
+      - tests/verify/fixtures/structural_rule_matrix.yaml#tmux_router_exclusive_command_owner.fail
+  ghostty_applescript_adapter_exclusive:
+    structural_rules:
+      - ghostty_applescript_adapter_exclusive
+    behavioral_specs:
+      - GhosttyAutomationContracts
+    positive_fixtures:
+      - tests/verify/unit/test_behavioral_specs.py#test_ghostty_automation_contracts_passes_on_repo
+    negative_fixtures:
+      - tests/verify/unit/test_behavioral_specs.py#test_ghostty_automation_contracts_fails_when_legacy_tokens_return
+  hud_hook_owns_runtime_routes:
+    structural_rules:
+      - hud_hook_owns_runtime_routes
+    behavioral_specs: []
+    positive_fixtures:
+      - tests/verify/fixtures/structural_rule_matrix.yaml#hud_hook_owns_runtime_routes.pass
+    negative_fixtures:
+      - tests/verify/fixtures/structural_rule_matrix.yaml#hud_hook_owns_runtime_routes.fail
+  rust_runtime_health_probe_validates_bootstrap_contract:
+    structural_rules:
+      - rust_runtime_health_probe_validates_bootstrap_contract
+    behavioral_specs:
+      - RuntimeBoundaryContracts
+    positive_fixtures:
+      - tests/verify/fixtures/structural_rule_matrix.yaml#rust_runtime_health_probe_validates_bootstrap_contract.pass
+    negative_fixtures:
+      - tests/verify/fixtures/structural_rule_matrix.yaml#rust_runtime_health_probe_validates_bootstrap_contract.fail
+  swift_runtime_health_consumers_validate_bootstrap_contract:
+    structural_rules:
+      - swift_runtime_health_consumers_validate_bootstrap_contract
+    behavioral_specs:
+      - RuntimeBoundaryContracts
+    positive_fixtures:
+      - tests/verify/fixtures/structural_rule_matrix.yaml#swift_runtime_health_consumers_validate_bootstrap_contract.pass
+    negative_fixtures:
+      - tests/verify/fixtures/structural_rule_matrix.yaml#swift_runtime_health_consumers_validate_bootstrap_contract.fail
+  no_snapshot_file_first_live_boundary:
+    structural_rules:
+      - no_snapshot_file_first_live_boundary
+    behavioral_specs: []
+    positive_fixtures:
+      - tests/verify/fixtures/structural_rule_matrix.yaml#no_snapshot_file_first_live_boundary.pass
+    negative_fixtures:
+      - tests/verify/fixtures/structural_rule_matrix.yaml#no_snapshot_file_first_live_boundary.fail
+  runtime_health_status_only_checks_stay_deleted:
+    structural_rules:
+      - runtime_health_status_only_checks_stay_deleted
+    behavioral_specs:
+      - RuntimeBoundaryContracts
+    positive_fixtures:
+      - tests/verify/unit/test_behavioral_specs.py#test_runtime_boundary_contracts_pass_on_repo
+    negative_fixtures:
+      - tests/verify/unit/test_behavioral_specs.py#test_runtime_boundary_contracts_fail_when_status_only_check_returns
+  no_launcher_detect_available_fallback:
+    structural_rules:
+      - no_launcher_detect_available_fallback
+    behavioral_specs: []
+    positive_fixtures:
+      - tests/verify/fixtures/structural_rule_matrix.yaml#no_launcher_detect_available_fallback.pass
+    negative_fixtures:
+      - tests/verify/fixtures/structural_rule_matrix.yaml#no_launcher_detect_available_fallback.fail
+  no_terminal_switch_cases_inside_launcher:
+    structural_rules:
+      - no_terminal_switch_cases_inside_launcher
+    behavioral_specs:
+      - TerminalRoutingContracts
+    positive_fixtures:
+      - tests/verify/unit/test_behavioral_specs.py#test_terminal_routing_contracts_pass_on_repo
+    negative_fixtures:
+      - tests/verify/unit/test_behavioral_specs.py#test_terminal_routing_contracts_fail_when_switch_returns
+  launcher_does_not_own_session_discovery_fallback:
+    structural_rules:
+      - launcher_does_not_own_session_discovery_fallback
+    behavioral_specs: []
+    positive_fixtures:
+      - tests/verify/fixtures/structural_rule_matrix.yaml#launcher_does_not_own_session_discovery_fallback.pass
+    negative_fixtures:
+      - tests/verify/fixtures/structural_rule_matrix.yaml#launcher_does_not_own_session_discovery_fallback.fail
+  swift_tmux_session_discovery_stays_deleted:
+    structural_rules:
+      - swift_tmux_session_discovery_stays_deleted
+    behavioral_specs: []
+    positive_fixtures:
+      - tests/verify/fixtures/structural_rule_matrix.yaml#swift_tmux_session_discovery_stays_deleted.pass
+    negative_fixtures:
+      - tests/verify/fixtures/structural_rule_matrix.yaml#swift_tmux_session_discovery_stays_deleted.fail
+  swift_tmux_pane_recovery_stays_deleted:
+    structural_rules:
+      - swift_tmux_pane_recovery_stays_deleted
+    behavioral_specs: []
+    positive_fixtures:
+      - tests/verify/fixtures/structural_rule_matrix.yaml#swift_tmux_pane_recovery_stays_deleted.pass
+    negative_fixtures:
+      - tests/verify/fixtures/structural_rule_matrix.yaml#swift_tmux_pane_recovery_stays_deleted.fail
+  no_legacy_raw_route_shape:
+    structural_rules:
+      - no_legacy_raw_route_shape
+    behavioral_specs: []
+    positive_fixtures:
+      - tests/verify/fixtures/structural_rule_matrix.yaml#no_legacy_raw_route_shape.pass
+    negative_fixtures:
+      - tests/verify/fixtures/structural_rule_matrix.yaml#no_legacy_raw_route_shape.fail
+  host_focus_applescript_stays_in_terminal_drivers:
+    structural_rules:
+      - host_focus_applescript_stays_in_terminal_drivers
+    behavioral_specs: []
+    positive_fixtures:
+      - tests/verify/fixtures/structural_rule_matrix.yaml#host_focus_applescript_stays_in_terminal_drivers.pass
+    negative_fixtures:
+      - tests/verify/fixtures/structural_rule_matrix.yaml#host_focus_applescript_stays_in_terminal_drivers.fail
+  runtime_activation_shadow_path_stays_deleted:
+    structural_rules:
+      - runtime_activation_shadow_path_stays_deleted
+    behavioral_specs: []
+    positive_fixtures:
+      - tests/verify/fixtures/structural_rule_matrix.yaml#runtime_activation_shadow_path_stays_deleted.pass
+    negative_fixtures:
+      - tests/verify/fixtures/structural_rule_matrix.yaml#runtime_activation_shadow_path_stays_deleted.fail
+  hook_setup_contracts:
+    structural_rules: []
+    behavioral_specs:
+      - HookSetupContracts
+    positive_fixtures:
+      - tests/verify/unit/test_behavioral_specs.py#test_hook_setup_contracts_pass_on_repo
+    negative_fixtures:
+      - tests/verify/unit/test_behavioral_specs.py#test_hook_setup_contracts_fail_when_helper_missing
+  replay_parity_contracts:
+    structural_rules: []
+    behavioral_specs:
+      - ReplayParityContracts
+    positive_fixtures:
+      - tests/verify/unit/test_behavioral_specs.py#test_replay_parity_contracts_pass_on_repo
+    negative_fixtures:
+      - tests/verify/unit/test_behavioral_specs.py#test_replay_parity_contracts_fail_when_fixture_names_duplicate

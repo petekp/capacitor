@@ -1,0 +1,4 @@
+claims:
+  - claim_id: tmux_router_exclusive_command_owner
+    description: TmuxRouter is the only module allowed to build raw tmux commands.
+    enforcement: hard

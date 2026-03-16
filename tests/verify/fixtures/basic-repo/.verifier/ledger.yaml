@@ -1,0 +1,9 @@
+claims:
+  tmux_router_exclusive_command_owner:
+    structural_rules:
+      - tmux_router_exclusive_command_owner
+    behavioral_specs: []
+    positive_fixtures:
+      - src/TmuxRouter.swift
+    negative_fixtures:
+      - .verifier/structural.yaml

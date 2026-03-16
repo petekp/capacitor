@@ -1,0 +1,204 @@
+swift_runtime_service_reads_owned:
+  pass:
+    - path: apps/swift/Sources/Capacitor/Models/RuntimeClient.swift
+      language: swift
+      category: swift_source
+      http_routes:
+        - /runtime/snapshot
+    - path: apps/swift/Sources/Capacitor/Models/AppViewModel.swift
+      language: swift
+      category: swift_source
+  fail:
+    - path: apps/swift/Sources/Capacitor/Models/AppViewModel.swift
+      language: swift
+      category: swift_source
+      http_routes:
+        - /health
+runtime_shadow_owners_stay_deleted:
+  pass:
+    - path: apps/swift/Sources/Capacitor/Models/AppState.swift
+      language: swift
+      category: swift_source
+  fail:
+    - path: apps/swift/Sources/Capacitor/Models/AppState.swift
+      language: swift
+      category: swift_source
+      references:
+        - fetchRuntimeConfig
+activation_policy_not_distributed:
+  pass:
+    - path: apps/swift/Sources/Capacitor/Models/AppState.swift
+      language: swift
+      category: swift_source
+  fail:
+    - path: apps/swift/Sources/Capacitor/Models/AppState.swift
+      language: swift
+      category: swift_source
+      references:
+        - preferredTerminalAppResolver
+tmux_router_exclusive_command_owner:
+  pass:
+    - path: apps/swift/Sources/Capacitor/Models/TmuxRouter.swift
+      language: swift
+      category: swift_source
+      shell_command_literals:
+        - tmux switch-client -t capacitor
+    - path: apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift
+      language: swift
+      category: swift_source
+  fail:
+    - path: apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift
+      language: swift
+      category: swift_source
+      shell_command_literals:
+        - tmux new-session -A -s capacitor
+hud_hook_owns_runtime_routes:
+  pass:
+    - path: core/hud-hook/src/serve.rs
+      language: rust
+      category: rust_source
+      http_routes:
+        - /health
+    - path: core/hud-hook/src/runtime_state.rs
+      language: rust
+      category: rust_source
+  fail:
+    - path: core/hud-hook/src/runtime_state.rs
+      language: rust
+      category: rust_source
+      http_routes:
+        - /runtime/snapshot
+rust_runtime_health_probe_validates_bootstrap_contract:
+  pass:
+    - path: core/capacitor-core/src/runtime_service/mod.rs
+      language: rust
+      category: rust_source
+      references:
+        - validate_bootstrap_contract
+  fail:
+    - path: core/capacitor-core/src/runtime_service/mod.rs
+      language: rust
+      category: rust_source
+swift_runtime_health_consumers_validate_bootstrap_contract:
+  pass:
+    - path: apps/swift/Sources/Capacitor/Models/RuntimeClient.swift
+      language: swift
+      category: swift_source
+      references:
+        - isCompatibleBootstrapService
+    - path: apps/swift/Sources/Capacitor/Models/HookServerManager.swift
+      language: swift
+      category: swift_source
+      references:
+        - isCompatibleBootstrapService
+    - path: apps/swift/Sources/Capacitor/Models/AppState.swift
+      language: swift
+      category: swift_source
+      references:
+        - isCompatibleBootstrapService
+  fail:
+    - path: apps/swift/Sources/Capacitor/Models/RuntimeClient.swift
+      language: swift
+      category: swift_source
+      references:
+        - isCompatibleBootstrapService
+    - path: apps/swift/Sources/Capacitor/Models/HookServerManager.swift
+      language: swift
+      category: swift_source
+    - path: apps/swift/Sources/Capacitor/Models/AppState.swift
+      language: swift
+      category: swift_source
+      references:
+        - isCompatibleBootstrapService
+no_snapshot_file_first_live_boundary:
+  pass:
+    - path: apps/swift/Sources/Capacitor/Models/AppState.swift
+      language: swift
+      category: swift_source
+  fail:
+    - path: apps/swift/Sources/Capacitor/Models/AppState.swift
+      language: swift
+      category: swift_source
+      string_literals:
+        - app_snapshot.json
+no_launcher_detect_available_fallback:
+  pass:
+    - path: apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift
+      language: swift
+      category: swift_source
+  fail:
+    - path: apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift
+      language: swift
+      category: swift_source
+      references:
+        - detectAvailable
+launcher_does_not_own_session_discovery_fallback:
+  pass:
+    - path: apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift
+      language: swift
+      category: swift_source
+  fail:
+    - path: apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift
+      language: swift
+      category: swift_source
+      references:
+        - fallbackTmuxSessionResolver
+swift_tmux_session_discovery_stays_deleted:
+  pass:
+    - path: apps/swift/Sources/Capacitor/Models/ActivationPolicy.swift
+      language: swift
+      category: swift_source
+  fail:
+    - path: apps/swift/Sources/Capacitor/Models/ActivationPolicy.swift
+      language: swift
+      category: swift_source
+      references:
+        - discoverTmuxSessionForProject
+swift_tmux_pane_recovery_stays_deleted:
+  pass:
+    - path: apps/swift/Sources/Capacitor/Models/ActivationPolicy.swift
+      language: swift
+      category: swift_source
+  fail:
+    - path: apps/swift/Sources/Capacitor/Models/ActivationPolicy.swift
+      language: swift
+      category: swift_source
+      references:
+        - preferredTmuxPaneFromShellState
+no_legacy_raw_route_shape:
+  pass:
+    - path: apps/swift/Sources/Capacitor/Models/RuntimeClient.swift
+      language: swift
+      category: swift_source
+  fail:
+    - path: apps/swift/Sources/Capacitor/Models/RuntimeClient.swift
+      language: swift
+      category: swift_source
+      references:
+        - target_kind
+host_focus_applescript_stays_in_terminal_drivers:
+  pass:
+    - path: apps/swift/Sources/Capacitor/Models/TerminalDrivers.swift
+      language: swift
+      category: swift_source
+      string_literals:
+        - tell application "iTerm2"
+        - tell application "Terminal"
+    - path: apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift
+      language: swift
+      category: swift_source
+  fail:
+    - path: apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift
+      language: swift
+      category: swift_source
+      string_literals:
+        - tell application "Terminal"
+runtime_activation_shadow_path_stays_deleted:
+  pass:
+    - path: core/capacitor-core/src/runtime_service/mod.rs
+      language: rust
+      category: rust_source
+  fail:
+    - path: core/capacitor-core/src/runtime_activation/mod.rs
+      language: rust
+      category: rust_source

@@ -1,0 +1,9 @@
+claims:
+  shadow_runtime_activation_path_deleted:
+    structural_rules:
+      - shadow_runtime_activation_path_deleted
+    behavioral_specs: []
+    positive_fixtures:
+      - .verifier/structural.yaml
+    negative_fixtures:
+      - core/capacitor-core/src/runtime_activation/policy.rs

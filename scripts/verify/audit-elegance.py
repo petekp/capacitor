@@ -8,15 +8,8 @@ from typing import Any
 
 import lizard
 
-from verifier_common import (
-    Violation,
-    build_layer_payload,
-    ensure_python,
-    load_json,
-    load_yaml,
-    read_text,
-    write_json_atomic,
-)
+from pipeline import attach_run_manifest, manifest_violations
+from verifier_common import Violation, ensure_python, load_json, load_yaml, read_text, utc_now, write_json
 
 
 GRADE_ORDER = ["F", "D", "C", "B", "A"]
@@ -29,6 +22,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--config", required=True)
     parser.add_argument("--out", required=True)
     parser.add_argument("--paths-file")
+    parser.add_argument("--run-manifest")
+    parser.add_argument("--report-only", action="store_true")
     return parser.parse_args()
 
 
@@ -99,16 +94,41 @@ def pass_through_wrappers(content: str, language: str) -> list[int]:
     return wrappers
 
 
+def load_selected_paths(path_file: str | None) -> set[str] | None:
+    if not path_file:
+        return None
+    path = pathlib.Path(path_file)
+    if not path.exists():
+        return set()
+    return {line.strip() for line in path.read_text().splitlines() if line.strip()}
+
+
 def main() -> None:
     ensure_python()
     args = parse_args()
     repo_root = pathlib.Path(args.repo_root).resolve()
     facts = load_json(pathlib.Path(args.facts), default={})
     config = load_yaml(pathlib.Path(args.config))
+    selected_paths = load_selected_paths(args.paths_file)
+    expected_manifest = load_json(pathlib.Path(args.run_manifest), default={}) if args.run_manifest else None
 
     score = 100
     deductions: list[Violation] = []
+    if expected_manifest:
+        for issue in manifest_violations(expected_manifest, facts.get("run_manifest")):
+            deductions.append(
+                Violation(
+                    layer="3",
+                    rule="run_manifest_drift",
+                    path=None,
+                    line=None,
+                    message=issue["message"],
+                    diagnosis=issue["diagnosis"],
+                )
+            )
     for module in facts["modules"]:
+        if selected_paths is not None and module["path"] not in selected_paths:
+            continue
         is_primary_code = module["category"] in {"swift_source", "rust_source"}
         is_verifier_surface = module["path"].startswith("scripts/verify/") or module["path"].startswith(".verifier/")
         if not (is_primary_code or is_verifier_surface):
@@ -229,17 +249,19 @@ def main() -> None:
     grade = grade_for(score)
     minimum_grade = str(config.get("minimum_grade", "B"))
     passed = GRADE_ORDER.index(grade) >= GRADE_ORDER.index(minimum_grade)
-    payload = build_layer_payload(
-        violations=deductions,
-        status="passed" if passed else "violated",
-        extra={
-            "score": score,
-            "grade": grade,
-            "minimum_grade": minimum_grade,
-        },
-    )
-    payload["passed"] = passed
-    write_json_atomic(pathlib.Path(args.out), payload)
+    payload = {
+        "generated_at": utc_now(),
+        "passed": passed,
+        "score": score,
+        "grade": grade,
+        "minimum_grade": minimum_grade,
+        "violations": [deduction.as_dict() for deduction in deductions],
+    }
+    if expected_manifest:
+        payload = attach_run_manifest(payload, expected_manifest)
+    write_json(pathlib.Path(args.out), payload)
+    if args.report_only:
+        raise SystemExit(0)
     raise SystemExit(0 if passed else 1)
 
 

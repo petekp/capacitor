@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "python_min_version": "3.10",
+  "requirements_file": "scripts/verify/requirements.txt",
+  "requirements_sha256": "3352f56c9d2b640ab72e04ad8165641e849871d4b0cf7de8d0c0ebaf07ffcd27",
+  "apalache": {
+    "version": "0.52.2",
+    "repo": "apalache-mc/apalache",
+    "archive_name": "apalache.tgz",
+    "archive_sha256": "7b0238bc071956615f81f12dc9e83b7b025515f7cba95940c3f120250532247d"
+  }
+}

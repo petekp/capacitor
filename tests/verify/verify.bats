@@ -74,6 +74,8 @@ commit_repo() {
 
   [ -f "$temp_root/repo/.verifier/structural.yaml" ]
   [ -f "$temp_root/repo/.verifier/elegance.yaml" ]
+  [ -f "$temp_root/repo/.verifier/canonical-claims.yaml" ]
+  [ -f "$temp_root/repo/.verifier/ledger.yaml" ]
   [ -d "$temp_root/repo/.verifier/specs" ]
 }
 
@@ -151,6 +153,7 @@ SH
     PYTHON_BIN="$(command -v python3)" \
     VENV_DIR="$fake_venv" \
     VERIFY_SKIP_PYTHON_DEPS=1 \
+    APALACHE_SHA256="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" \
     APALACHE_VERSION="9.9.9" \
     APALACHE_REPO="example/apalache" \
     "$PROJECT_ROOT/scripts/verify/install-deps.sh"
@@ -162,11 +165,65 @@ SH
   [ -x "$fake_home/.local/bin/apalache-mc" ]
 }
 
+@test "install-deps fails when the Apalache archive checksum does not match" {
+  temp_root="$(mktemp -d)"
+  fake_home="$temp_root/home"
+  fake_bin="$temp_root/fake-bin"
+  fake_venv="$temp_root/venv"
+  mkdir -p "$fake_home" "$fake_bin" "$fake_venv/bin"
+
+  cat > "$fake_venv/bin/pip" <<'SH'
+#!/usr/bin/env bash
+exit 0
+SH
+  chmod +x "$fake_venv/bin/pip"
+
+  cat > "$fake_bin/java" <<'SH'
+#!/usr/bin/env bash
+echo 'openjdk version "17.0.18"'
+SH
+  chmod +x "$fake_bin/java"
+
+  cat > "$fake_bin/curl" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+out=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -o)
+      out="$2"
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+printf 'bad-archive' > "$out"
+SH
+  chmod +x "$fake_bin/curl"
+
+  run env \
+    HOME="$fake_home" \
+    PATH="$fake_bin:/usr/bin:/bin:/usr/sbin:/sbin" \
+    PYTHON_BIN="$PROJECT_ROOT/.verifier/.venv/bin/python" \
+    VENV_DIR="$fake_venv" \
+    VERIFY_SKIP_PYTHON_DEPS=1 \
+    APALACHE_VERSION="9.9.9" \
+    APALACHE_REPO="example/apalache" \
+    APALACHE_SHA256="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" \
+    "$PROJECT_ROOT/scripts/verify/install-deps.sh"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *'checksum mismatch'* ]]
+}
+
 @test "layer1 allows raw tmux commands inside the declared owner" {
   fixture="$PROJECT_ROOT/tests/verify/fixtures/basic-repo"
   run_verify --repo-root "$fixture" --layers 1 --json
   [ "$status" -eq 0 ]
   [[ "$output" == *'"passed": true'* ]]
+  [[ "$output" == *'"run_manifest":'* ]]
+  [[ "$output" == *'"claim_coverage":'* ]]
 }
 
 @test "layer1 fails when raw tmux commands appear outside the declared owner" {
@@ -460,6 +517,21 @@ PY
   run_verify --repo-root "$PROJECT_ROOT" --layers 2 --json
   [ "$status" -eq 0 ]
   [[ "$output" == *'"passed": true'* ]]
+  [[ "$output" == *'"spec_results":'* ]]
+}
+
+@test "report-only preserves findings but exits zero" {
+  fixture="$PROJECT_ROOT/tests/verify/fixtures/violations"
+  run env VENV_DIR="$PROJECT_ROOT/.verifier/.venv" "$VERIFY" --repo-root "$fixture" --layers 1 --report-only --json
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"violation_count":'* ]]
+  [[ "$output" == *'"tmux_router_exclusive_command_owner"'* ]]
+}
+
+@test "changed-only rejects layer2 path-scoped runs" {
+  run env VENV_DIR="$PROJECT_ROOT/.verifier/.venv" "$VERIFY" --repo-root "$PROJECT_ROOT" --layers 1,2 --changed-only
+  [ "$status" -eq 2 ]
+  [[ "$output" == *'Layer 2 does not support path-scoped runs'* ]]
 }
 
 @test "comment-satisfied HookSetup proofs fail when executable proof artifacts are missing" {

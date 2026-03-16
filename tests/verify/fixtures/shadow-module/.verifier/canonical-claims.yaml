@@ -1,0 +1,4 @@
+claims:
+  - claim_id: shadow_runtime_activation_path_deleted
+    description: Shadow runtime activation modules must stay deleted.
+    enforcement: hard
