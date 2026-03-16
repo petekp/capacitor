@@ -61,7 +61,14 @@ done
 
 VENV_DIR="${VENV_DIR:-$REPO_ROOT/.verifier/.venv}"
 PYTHON_BIN="$VENV_DIR/bin/python"
-JSON_PYTHON="${JSON_PYTHON:-python3}"
+if [[ -n "${JSON_PYTHON:-}" ]]; then
+  JSON_PYTHON="$JSON_PYTHON"
+elif [[ -x "$PYTHON_BIN" ]]; then
+  # Keep helper scripts on the same interpreter as the verifier toolchain.
+  JSON_PYTHON="$PYTHON_BIN"
+else
+  JSON_PYTHON="python3"
+fi
 
 FACTS_PATH="$REPO_ROOT/.verifier/facts/current.json"
 STRUCTURAL_OUT="$REPO_ROOT/.verifier/reports/layer1.json"
