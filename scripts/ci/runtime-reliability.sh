@@ -6,7 +6,6 @@ workspace_root="$(cd "${script_dir}/../.." && pwd -P)"
 cd "${workspace_root}"
 
 mode="${1:-ci}"
-report_path="${2:-${CAPACITOR_BENCH_REPORT_PATH:-target/hem-shadow-bench-report.json}}"
 
 run_guard() {
   echo ""
@@ -40,16 +39,10 @@ run_ax_verifier_nightly() {
     --artifacts-dir artifacts/ax-automation-verification/nightly
 }
 
-run_shadow_parity_gate() {
+run_projection_parity_gate() {
   echo ""
-  echo "[runtime-reliability] replay parity gate"
-  cargo test -p capacitor-core --test replay_diff replay_diff_shadow_snapshot_read_model_matches_runtime_snapshot
-}
-
-run_soak_bench() {
-  echo ""
-  echo "[runtime-reliability] hem shadow soak bench"
-  bash scripts/ci/hem-shadow-bench.sh "${report_path}"
+  echo "[runtime-reliability] projection parity gate"
+  cargo test -p capacitor-core --test replay_diff replay_diff_projection_read_model_matches_runtime_snapshot
 }
 
 case "${mode}" in
@@ -58,18 +51,17 @@ case "${mode}" in
     run_guard
     run_replay_gate
     run_ax_verifier_ci
-    run_shadow_parity_gate
+    run_projection_parity_gate
     ;;
   nightly)
-    echo "Runtime reliability suite (nightly)"
+    echo "Runtime reliability suite (nightly schedule)"
     run_guard
     run_replay_gate
     run_ax_verifier_nightly
-    run_shadow_parity_gate
-    run_soak_bench
+    run_projection_parity_gate
     ;;
   *)
-    echo "Usage: $0 [ci|nightly] [report-path]" >&2
+    echo "Usage: $0 [ci|nightly]" >&2
     exit 2
     ;;
 esac

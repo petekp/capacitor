@@ -13,7 +13,7 @@ This gate protects session-state correctness in the dedicated runtime-service ar
 
 1. Hook event classification must remain explicit and deterministic.
 2. Replay projection must remain deterministic for the same corpus.
-3. Shadow read-model parity must remain green against the canonical runtime output.
+3. Projection read-model parity must remain green against the canonical runtime output.
 4. Reducer/query baselines must remain stable under refactors.
 5. Replay verification must stay wired into pre-merge CI, and soak verification must stay wired into the nightly workflow.
 
@@ -29,17 +29,17 @@ The script enforces:
    `cargo test -p hud-hook --test session_state_mapping_gate session_state_mapping_gate_ss_p0`
 2. `SS-P0-2` replay-diff determinism  
    `cargo test -p capacitor-core --test replay_diff replay_diff_corpus_matches_expected_and_is_deterministic`
-3. `SS-P0-3` shadow read-model parity  
-   `cargo test -p capacitor-core --test replay_diff replay_diff_shadow_snapshot_read_model_matches_runtime_snapshot`
+3. `SS-P0-3` projection read-model parity  
+   `cargo test -p capacitor-core --test replay_diff replay_diff_projection_read_model_matches_runtime_snapshot`
 4. Core reducer/query baseline suites  
    `cargo test -p capacitor-core reduce` and `cargo test -p capacitor-core query`
 
 ## Operational Wiring
 
 - Pre-merge CI runs `./scripts/ci/runtime-reliability.sh ci`
-- Nightly/scheduled verification runs `./scripts/ci/runtime-reliability.sh nightly <report-path>`
+- Nightly/scheduled verification runs `./scripts/ci/runtime-reliability.sh nightly`
 
-`runtime-reliability.sh` is the stable operational wrapper. It always runs the runtime reliability guard, replay gate, and the AX automation verifier lane. Pre-merge mode runs a single AX pass with `--skip-details --allow-untrusted`. Nightly mode runs a repeated AX pass with `--require-log-health --allow-untrusted`, then additionally runs the HEM shadow soak benchmark.
+`runtime-reliability.sh` is the stable operational wrapper. It always runs the runtime reliability guard, replay gate, and projection-parity suite, plus the AX automation verifier lane. Pre-merge mode runs a single AX pass with `--skip-details --allow-untrusted`. Nightly mode runs a repeated AX pass with `--require-log-health --allow-untrusted` while keeping the same projection-parity verification on a schedule.
 
 ## P1/P2 Non-Blocking (Triage Required)
 

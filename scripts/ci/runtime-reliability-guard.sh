@@ -154,16 +154,16 @@ echo "── Operational Verification Wiring ──"
 echo ""
 
 check_file_contains "CI runtime reliability gate" ".github/workflows/ci.yml" 'scripts/ci/runtime-reliability.sh ci'
-check_file_contains "Nightly runtime reliability suite" ".github/workflows/hem-shadow-nightly.yml" 'scripts/ci/runtime-reliability.sh nightly'
+check_file_contains "Nightly runtime reliability suite" ".github/workflows/runtime-reliability-nightly.yml" 'scripts/ci/runtime-reliability.sh nightly'
 check_file_contains "Runtime reliability wraps reliability guard" "scripts/ci/runtime-reliability.sh" 'scripts/ci/runtime-reliability-guard.sh --status'
 check_file_contains "Runtime reliability wraps replay gate" "scripts/ci/runtime-reliability.sh" 'scripts/ci/session-state-gate.sh'
 check_file_contains "AX verifier script keeps allow-untrusted mode" "scripts/ci/ax-automation-verify.sh" '--allow-untrusted'
 check_file_contains "AX verifier script keeps log-health mode" "scripts/ci/ax-automation-verify.sh" '--require-log-health'
 check_file_contains "Runtime reliability defines AX verifier ci lane" "scripts/ci/runtime-reliability.sh" 'run_ax_verifier_ci'
 check_file_contains "Runtime reliability defines AX verifier nightly lane" "scripts/ci/runtime-reliability.sh" 'run_ax_verifier_nightly'
-check_file_contains "Runtime reliability wraps soak bench" "scripts/ci/runtime-reliability.sh" 'scripts/ci/hem-shadow-bench.sh'
-check_file_contains "Nightly workflow keeps schedule trigger" ".github/workflows/hem-shadow-nightly.yml" 'schedule:'
 check_file_contains "AX contract ship checklist references verifier" "docs/plans/ax-automation-contract/SHIP_CHECKLIST.md" 'scripts/ci/ax-automation-verify.sh'
+check_file_contains "Runtime reliability wraps projection parity gate" "scripts/ci/runtime-reliability.sh" 'replay_diff_projection_read_model_matches_runtime_snapshot'
+check_file_contains "Nightly workflow keeps schedule trigger" ".github/workflows/runtime-reliability-nightly.yml" 'schedule:'
 
 echo ""
 echo "═══════════════════════════════════════════════════════════════"

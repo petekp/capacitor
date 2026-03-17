@@ -155,7 +155,7 @@ fn normalized_snapshot(mut snapshot: AppSnapshot) -> serde_json::Value {
     serde_json::to_value(snapshot).expect("serialize snapshot")
 }
 
-fn shadow_parity_report(
+fn projection_parity_report(
     snapshot: &AppSnapshot,
     read_model: &SnapshotReadModel,
 ) -> ShadowParityReport {
@@ -366,7 +366,7 @@ fn replay_diff_snapshot_projector_scaffold_tracks_applied_observations() {
 }
 
 #[test]
-fn replay_diff_shadow_snapshot_read_model_matches_runtime_snapshot() {
+fn replay_diff_projection_read_model_matches_runtime_snapshot() {
     let cases = replay_cases();
     assert!(
         !cases.is_empty(),
@@ -378,11 +378,11 @@ fn replay_diff_shadow_snapshot_read_model_matches_runtime_snapshot() {
         let snapshot = run_replay_case(&case);
         let projector = SnapshotReadModelProjector;
         let read_model = projector.project(&snapshot, &observations);
-        let report = shadow_parity_report(&snapshot, &read_model);
+        let report = projection_parity_report(&snapshot, &read_model);
 
         assert!(
             report.mismatch_reasons.is_empty(),
-            "shadow parity mismatch for case '{}': {:?}",
+            "projection parity mismatch for case '{}': {:?}",
             case.name,
             report.mismatch_reasons
         );
