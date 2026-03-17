@@ -10,6 +10,8 @@ default_artifacts_dir="${workspace_root}/artifacts/ax-automation-verification"
 default_debug_log="${CAPACITOR_APP_DEBUG_LOG:-$HOME/.capacitor/runtime/app-debug.log}"
 default_projects_file="${CAPACITOR_PROJECTS_FILE:-$HOME/.capacitor/projects.json}"
 runtime_projects_target="$HOME/.capacitor/projects.json"
+claude_stub_dir="${AX_VERIFY_CLAUDE_STUB_DIR:-}"
+force_claude_stub="${AX_VERIFY_FORCE_CLAUDE_STUB:-0}"
 
 runs=1
 skip_details=0
@@ -282,6 +284,36 @@ run_smoke() {
     return "$status"
 }
 
+write_claude_stub() {
+    local target_path="$1"
+    local stub_body='#!/usr/bin/env bash
+exit 0
+'
+
+    mkdir -p "$(dirname "$target_path")"
+    printf '%s' "$stub_body" >"$target_path"
+    chmod +x "$target_path"
+}
+
+ensure_claude_cli_for_runtime() {
+    if [[ "$force_claude_stub" != "1" ]] && (command -v claude >/dev/null 2>&1 || [[ -x /opt/homebrew/bin/claude ]] || [[ -x /usr/local/bin/claude ]]); then
+        return
+    fi
+
+    if [[ -n "$claude_stub_dir" ]]; then
+        write_claude_stub "$claude_stub_dir/claude"
+        return
+    fi
+
+    if [[ "${GITHUB_ACTIONS:-}" == "true" || "${CI:-}" == "true" ]]; then
+        local target_path="/usr/local/bin/claude"
+        printf '%s' '#!/usr/bin/env bash
+exit 0
+' | sudo tee "$target_path" >/dev/null
+        sudo chmod +x "$target_path"
+    fi
+}
+
 install_runtime_projects_file() {
     local run_dir="$1"
     local source_path="$2"
@@ -310,11 +342,12 @@ restore_runtime_projects_file() {
     fi
 }
 
-main() {
+    main() {
     parse_args "$@"
 
     require_cmd jq
     require_cmd tee
+    ensure_claude_cli_for_runtime
 
     local session_timestamp
     session_timestamp="$(date -u +%Y%m%dT%H%M%SZ)"

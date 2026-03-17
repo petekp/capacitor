@@ -39,6 +39,9 @@ done
 
 jq -er '.pinned_projects | length == 2' "$projects_file" >/dev/null
 jq -er '.pinned_projects | length == 2' "$HOME/.capacitor/projects.json" >/dev/null
+if [[ -n "${AX_VERIFY_EXPECT_CLAUDE_STUB:-}" ]]; then
+    [[ -x "${AX_VERIFY_EXPECT_CLAUDE_STUB}" ]]
+fi
 mkdir -p "$artifacts_dir"
 printf '%s\n' '{"event":"runner.complete"}' > "$artifacts_dir/non-demo-ax-smoke-cards-fixture.log"
 EOF
@@ -59,4 +62,17 @@ teardown() {
     [[ "$output" == *"runs_requested=1"* ]]
     [[ "$output" == *"runs_passed=1"* ]]
     [[ "$output" == *"first_failure_context=none"* ]]
+}
+
+@test "ax verifier can install a claude stub for CI-style setup checks" {
+    run env \
+        HOME="$TEST_DIR/home" \
+        AX_AUTOMATION_SMOKE_SCRIPT="$TEST_DIR/scripts/ci/fake-non-demo-ax-smoke.sh" \
+        AX_VERIFY_CLAUDE_STUB_DIR="$TEST_DIR/claude-bin" \
+        AX_VERIFY_FORCE_CLAUDE_STUB=1 \
+        AX_VERIFY_EXPECT_CLAUDE_STUB="$TEST_DIR/claude-bin/claude" \
+        /bin/bash -lc "cd '$TEST_DIR' && bash scripts/ci/ax-automation-verify.sh --runs 1 --skip-details --artifacts-dir '$TEST_DIR/artifacts'"
+
+    [ "$status" -eq 0 ]
+    [ -x "$TEST_DIR/claude-bin/claude" ]
 }
