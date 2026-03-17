@@ -17,6 +17,7 @@ npm-debug.log*
 dist/
 artifacts/demo/
 artifacts/manual-testing/
+artifacts/ax-automation-verification/
 
 # Rust
 target/
@@ -54,3 +55,7 @@ dist-guide
 .verifier/facts/
 .verifier/reports/
 .verifier/.venv/
+.verifier/specs/__pycache__/
+scripts/verify/__pycache__/
+tests/verify/**/__pycache__/
+tests/verify/fixtures/*/.verifier/
