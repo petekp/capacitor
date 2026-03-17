@@ -49,6 +49,7 @@ struct IdeaDetailOverlay: View {
                             .clipShape(Circle())
                     }
                     .buttonStyle(.plain)
+                    .accessibilityIdentifier(AccessibilityIdentifiers.ideaDetailDismissIdentifier)
                     .padding(Layout.cornerPadding)
                 }
 
@@ -79,6 +80,7 @@ struct IdeaDetailOverlay: View {
                                 .clipShape(RoundedRectangle(cornerRadius: 8))
                             }
                             .buttonStyle(.plain)
+                            .accessibilityIdentifier(AccessibilityIdentifiers.ideaDetailDelegateIdentifier)
                         }
 
                         // Bottom-right: Remove button
@@ -96,12 +98,14 @@ struct IdeaDetailOverlay: View {
                             .clipShape(RoundedRectangle(cornerRadius: 8))
                         }
                         .buttonStyle(.plain)
+                        .accessibilityIdentifier(AccessibilityIdentifiers.ideaDetailRemoveIdentifier)
                     }
                     .padding(Layout.cornerPadding)
                 }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityIdentifier(AccessibilityIdentifiers.ideaDetailIdentifier)
         .scaleEffect(appeared ? 1 : 0.96)
         .opacity(appeared ? 1 : 0)
         .onAppear {

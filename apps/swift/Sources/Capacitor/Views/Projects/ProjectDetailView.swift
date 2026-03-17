@@ -55,9 +55,16 @@ struct ProjectDetailView: View {
                         VStack(alignment: .leading, spacing: 12) {
                             DetailSectionLabel(title: "IDEA QUEUE")
 
+                            let delegationState = appState.delegationState(for: project)
                             IdeaQueueView(
                                 ideas: appState.getIdeas(for: project),
-                                isGeneratingTitle: { appState.isGeneratingTitle(for: $0) },
+                                activityForIdea: { idea in
+                                    IdeaQueueStatusResolver.resolve(
+                                        idea: idea,
+                                        isGeneratingTitle: appState.isGeneratingTitle(for: idea.id),
+                                        delegationState: delegationState,
+                                    )
+                                },
                                 onTapIdea: { idea, frame in
                                     selectedIdea = idea
                                     selectedIdeaFrame = frame

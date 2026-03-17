@@ -458,6 +458,10 @@ private func preferredDeterministicAction(identifier: String, actionNames: [Stri
     return nil
 }
 
+private func shouldPreferAXPressBeforeVisibleFallback(identifier: String) -> Bool {
+    identifier.hasPrefix("ax.idea-detail.")
+}
+
 private func performClick(
     identifier: String,
     app: NSRunningApplication,
@@ -480,6 +484,18 @@ private func performClick(
         log("step.click.named_action_fallback", [
             "identifier": identifier,
             "action": action.replacingOccurrences(of: "\n", with: " | "),
+            "status": result.rawValue,
+        ])
+    }
+
+    if shouldPreferAXPressBeforeVisibleFallback(identifier: identifier) {
+        let result = AXUIElementPerformAction(element, kAXPressAction as CFString)
+        if result == .success {
+            log("step.click.ax_press", ["identifier": identifier])
+            return
+        }
+        log("step.click.ax_press_fallback", [
+            "identifier": identifier,
             "status": result.rawValue,
         ])
     }

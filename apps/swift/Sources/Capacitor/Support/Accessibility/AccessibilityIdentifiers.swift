@@ -2,6 +2,10 @@ import Foundation
 
 enum AccessibilityIdentifiers {
     static let backProjectsIdentifier = "ax.nav.back-projects"
+    static let ideaDetailIdentifier = "ax.idea-detail"
+    static let ideaDetailDismissIdentifier = "ax.idea-detail.dismiss"
+    static let ideaDetailDelegateIdentifier = "ax.idea-detail.delegate"
+    static let ideaDetailRemoveIdentifier = "ax.idea-detail.remove"
     static let delegationReviewIdentifier = "ax.delegation-review"
     static let delegationReviewApproveIdentifier = "ax.delegation-review.approve"
     static let delegationReviewRequestChangesIdentifier = "ax.delegation-review.request-changes"

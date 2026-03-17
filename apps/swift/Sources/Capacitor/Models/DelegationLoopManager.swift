@@ -163,6 +163,37 @@ actor DelegationProcessLineBuffer {
     }
 }
 
+enum DelegationLoopError: Error {
+    case startupPreparation(underlying: Error)
+    case workerLaunch(underlying: Error)
+    case missingReviewSession
+    case reviewResume(underlying: Error)
+}
+
+enum DelegationUserFacingMessage {
+    static func startFailure(for error: Error) -> String {
+        switch error as? DelegationLoopError {
+        case .some(.startupPreparation):
+            "Couldn't prepare the delegation worktree. Try delegating again."
+        case .some(.workerLaunch):
+            "Couldn't launch the Claude worker. Try delegating again."
+        default:
+            "Couldn't start delegation. Try again."
+        }
+    }
+
+    static func reviewFailure(for error: Error) -> String {
+        switch error as? DelegationLoopError {
+        case .some(.missingReviewSession):
+            "Couldn't continue the review because the worker session is missing. Retry once the worker reconnects."
+        case .some(.reviewResume):
+            "Couldn't resume the worker. The review stayed pending, your decision wasn't lost, and you can retry."
+        default:
+            "Couldn't continue the delegation review. Try again."
+        }
+    }
+}
+
 actor DelegationLoopManager {
     enum ReviewDecision: String {
         case approve
@@ -202,6 +233,11 @@ actor DelegationLoopManager {
         let resumePromptPath: URL
     }
 
+    private struct AttachedSessionKey: Hashable {
+        let normalizedProjectPath: String
+        let workerID: String
+    }
+
     private enum Constants {
         static let milestoneID = "01"
     }
@@ -211,6 +247,7 @@ actor DelegationLoopManager {
     private let sessionDiscovery: DelegationSessionDiscovery
     private let worktreeService: WorktreeService
     private let fileManager: FileManager
+    private var lastAttachedSessionIDs: [AttachedSessionKey: String] = [:]
 
     init(
         runtimeClient: RuntimeClient,
@@ -266,11 +303,21 @@ actor DelegationLoopManager {
         let worktreeName = "delegation-\(workerID.prefix(8))"
         let branchName = "pkp/\(worktreeName)"
         let paths = workerPaths(projectPath: project.path, workerID: workerID)
-        let worktree = try worktreeService.createManagedWorktree(
-            in: project.path,
-            name: worktreeName,
-            branchName: branchName,
-        )
+        clearAttachedSessions(forProjectPath: project.path)
+
+        let worktree: WorktreeService.Worktree
+        do {
+            worktree = try worktreeService.createManagedWorktree(
+                in: project.path,
+                name: worktreeName,
+                branchName: branchName,
+            )
+        } catch {
+            DebugLog.write(
+                "DelegationLoopManager.start failure stage=worktree_prepare worker=\(workerID) error=\(error.localizedDescription)",
+            )
+            throw DelegationLoopError.startupPreparation(underlying: error)
+        }
 
         do {
             try createWorkerDirectories(paths)
@@ -301,50 +348,57 @@ actor DelegationLoopManager {
                 context: "start worker=\(workerID) project=\(project.path)",
             )
 
-            try await claudeLauncher(
-                DelegationClaudeLaunchRequest(
-                    workingDirectory: worktree.path,
-                    prompt: prompt,
-                    resumeSessionID: nil,
-                ),
-            ) { [self] sessionID in
+            do {
+                try await claudeLauncher(
+                    DelegationClaudeLaunchRequest(
+                        workingDirectory: worktree.path,
+                        prompt: prompt,
+                        resumeSessionID: nil,
+                    ),
+                ) { [self] sessionID in
+                    DebugLog.write(
+                        "DelegationLoopManager.session discovered source=stream worker=\(workerID) session=\(sessionID)",
+                    )
+                    try await attachSessionIfNeeded(
+                        projectPath: project.path,
+                        workerID: workerID,
+                        ideaID: idea.id,
+                        worktreeName: worktreeName,
+                        worktreePath: worktree.path,
+                        sessionID: sessionID,
+                        runtimeSessionID: nil,
+                        context: "attach_session source=stream worker=\(workerID)",
+                    )
+                }
+            } catch {
                 DebugLog.write(
-                    "DelegationLoopManager.session discovered source=stream worker=\(workerID) session=\(sessionID)",
+                    "DelegationLoopManager.start failure stage=worker_launch worker=\(workerID) error=\(error.localizedDescription)",
                 )
-                try await attachSession(
+                await cleanupFailedStart(
                     projectPath: project.path,
                     workerID: workerID,
                     ideaID: idea.id,
                     worktreeName: worktreeName,
                     worktreePath: worktree.path,
-                    sessionID: sessionID,
-                    context: "attach_session source=stream worker=\(workerID)",
                 )
+                throw DelegationLoopError.workerLaunch(underlying: error)
             }
         } catch {
-            try? worktreeService.removeManagedWorktree(
-                in: project.path,
-                name: worktreeName,
-                force: true,
+            if let delegationError = error as? DelegationLoopError {
+                throw delegationError
+            }
+
+            DebugLog.write(
+                "DelegationLoopManager.start failure stage=startup worker=\(workerID) error=\(error.localizedDescription)",
             )
-            await mutateDelegationLoggedIgnoringFailure(
-                RuntimeDelegationMutationRequest(
-                    kind: "complete",
-                    projectPath: project.path,
-                    workerId: workerID,
-                    ideaId: idea.id,
-                    worktreeName: worktreeName,
-                    worktreePath: worktree.path,
-                    sessionId: nil,
-                    milestoneId: nil,
-                    briefPath: nil,
-                    manifestPath: nil,
-                    reviewDecision: nil,
-                    note: nil,
-                ),
-                context: "cleanup_after_failed_start worker=\(workerID)",
+            await cleanupFailedStart(
+                projectPath: project.path,
+                workerID: workerID,
+                ideaID: idea.id,
+                worktreeName: worktreeName,
+                worktreePath: worktree.path,
             )
-            throw error
+            throw DelegationLoopError.startupPreparation(underlying: error)
         }
     }
 
@@ -356,21 +410,21 @@ actor DelegationLoopManager {
     ) async throws {
         let discoveredSessionID = delegation.sessionId ?? sessionDiscovery.mostRecentSessionID(for: delegation.worktreePath)
         guard let sessionID = discoveredSessionID else {
-            throw NSError(
-                domain: "Capacitor",
-                code: 2,
-                userInfo: [NSLocalizedDescriptionKey: "Delegation session is missing"],
+            DebugLog.write(
+                "DelegationLoopManager.review failure stage=missing_session worker=\(delegation.workerId)",
             )
+            throw DelegationLoopError.missingReviewSession
         }
 
         if delegation.sessionId == nil {
-            try await attachSession(
+            try await attachSessionIfNeeded(
                 projectPath: project.path,
                 workerID: delegation.workerId,
                 ideaID: delegation.ideaId,
                 worktreeName: delegation.worktreeName,
                 worktreePath: delegation.worktreePath,
                 sessionID: sessionID,
+                runtimeSessionID: delegation.sessionId,
                 context: "attach_session source=review_action worker=\(delegation.workerId)",
             )
         }
@@ -431,7 +485,10 @@ actor DelegationLoopManager {
                 ),
                 context: "restore_review_ready_after_resume_failure worker=\(delegation.workerId)",
             )
-            throw error
+            DebugLog.write(
+                "DelegationLoopManager.review failure stage=resume_launch worker=\(delegation.workerId) error=\(error.localizedDescription)",
+            )
+            throw DelegationLoopError.reviewResume(underlying: error)
         }
     }
 
@@ -443,24 +500,18 @@ actor DelegationLoopManager {
 
     private func reconcile(delegation: RuntimeDelegationState) async {
         let paths = workerPaths(projectPath: delegation.projectPath, workerID: delegation.workerId)
-        let discoveredSessionID = delegation.sessionId ?? sessionDiscovery.mostRecentSessionID(for: delegation.worktreePath)
+        let discoveredSessionID = sessionDiscovery.mostRecentSessionID(for: delegation.worktreePath)
+        let effectiveSessionID = discoveredSessionID ?? delegation.sessionId
 
-        if delegation.sessionId == nil, let discoveredSessionID {
-            await mutateDelegationLoggedIgnoringFailure(
-                RuntimeDelegationMutationRequest(
-                    kind: "attach_session",
-                    projectPath: delegation.projectPath,
-                    workerId: delegation.workerId,
-                    ideaId: delegation.ideaId,
-                    worktreeName: delegation.worktreeName,
-                    worktreePath: delegation.worktreePath,
-                    sessionId: discoveredSessionID,
-                    milestoneId: nil,
-                    briefPath: nil,
-                    manifestPath: nil,
-                    reviewDecision: nil,
-                    note: nil,
-                ),
+        if let discoveredSessionID {
+            _ = await attachSessionIfNeededIgnoringFailure(
+                projectPath: delegation.projectPath,
+                workerID: delegation.workerId,
+                ideaID: delegation.ideaId,
+                worktreeName: delegation.worktreeName,
+                worktreePath: delegation.worktreePath,
+                sessionID: discoveredSessionID,
+                runtimeSessionID: delegation.sessionId,
                 context: "attach_session source=reconcile worker=\(delegation.workerId)",
             )
         }
@@ -468,23 +519,25 @@ actor DelegationLoopManager {
         guard delegation.status == "working" else { return }
 
         if fileManager.fileExists(atPath: paths.completionMarkerPath.path) {
-            await mutateDelegationLoggedIgnoringFailure(
-                RuntimeDelegationMutationRequest(
-                    kind: "complete",
-                    projectPath: delegation.projectPath,
-                    workerId: delegation.workerId,
-                    ideaId: delegation.ideaId,
-                    worktreeName: delegation.worktreeName,
-                    worktreePath: delegation.worktreePath,
-                    sessionId: discoveredSessionID,
-                    milestoneId: nil,
-                    briefPath: nil,
-                    manifestPath: nil,
-                    reviewDecision: nil,
-                    note: nil,
-                ),
-                context: "complete source=reconcile worker=\(delegation.workerId)",
-            )
+            do {
+                try await mutateDelegationLogged(
+                    RuntimeDelegationMutationRequest(
+                        kind: "complete",
+                        projectPath: delegation.projectPath,
+                        workerId: delegation.workerId,
+                        ideaId: delegation.ideaId,
+                        worktreeName: delegation.worktreeName,
+                        worktreePath: delegation.worktreePath,
+                        sessionId: effectiveSessionID,
+                        milestoneId: nil,
+                        briefPath: nil,
+                        manifestPath: nil,
+                        reviewDecision: nil,
+                        note: nil,
+                    ),
+                    context: "complete source=reconcile worker=\(delegation.workerId)",
+                )
+            } catch {}
             return
         }
 
@@ -506,7 +559,7 @@ actor DelegationLoopManager {
                 ideaId: delegation.ideaId,
                 worktreeName: delegation.worktreeName,
                 worktreePath: delegation.worktreePath,
-                sessionId: discoveredSessionID,
+                sessionId: effectiveSessionID,
                 milestoneId: Constants.milestoneID,
                 briefPath: paths.briefPath.path,
                 manifestPath: paths.manifestPath.path,
@@ -526,6 +579,7 @@ actor DelegationLoopManager {
         )
         do {
             try await runtimeMutation(request)
+            applyMutationSideEffects(request)
             DebugLog.write(
                 "DelegationLoopManager.mutation success kind=\(request.kind) worker=\(request.workerId) session=\(request.sessionId ?? "nil") context=\(context)",
             )
@@ -546,15 +600,41 @@ actor DelegationLoopManager {
         } catch {}
     }
 
-    private func attachSession(
+    @discardableResult
+    private func attachSessionIfNeeded(
         projectPath: String,
         workerID: String,
         ideaID: String?,
         worktreeName: String?,
         worktreePath: String?,
         sessionID: String,
+        runtimeSessionID: String?,
         context: String,
-    ) async throws {
+    ) async throws -> Bool {
+        let cacheKey = attachedSessionKey(projectPath: projectPath, workerID: workerID)
+
+        if runtimeSessionID == sessionID {
+            logAttachSkipped(
+                projectPath: projectPath,
+                workerID: workerID,
+                sessionID: sessionID,
+                context: context,
+                reason: "runtime_already_attached",
+            )
+            return false
+        }
+
+        if lastAttachedSessionIDs[cacheKey] == sessionID {
+            logAttachSkipped(
+                projectPath: projectPath,
+                workerID: workerID,
+                sessionID: sessionID,
+                context: context,
+                reason: "cache_already_attached",
+            )
+            return false
+        }
+
         try await mutateDelegationLogged(
             RuntimeDelegationMutationRequest(
                 kind: "attach_session",
@@ -571,6 +651,115 @@ actor DelegationLoopManager {
                 note: nil,
             ),
             context: context,
+        )
+        return true
+    }
+
+    @discardableResult
+    private func attachSessionIfNeededIgnoringFailure(
+        projectPath: String,
+        workerID: String,
+        ideaID: String?,
+        worktreeName: String?,
+        worktreePath: String?,
+        sessionID: String,
+        runtimeSessionID: String?,
+        context: String,
+    ) async -> Bool {
+        do {
+            return try await attachSessionIfNeeded(
+                projectPath: projectPath,
+                workerID: workerID,
+                ideaID: ideaID,
+                worktreeName: worktreeName,
+                worktreePath: worktreePath,
+                sessionID: sessionID,
+                runtimeSessionID: runtimeSessionID,
+                context: context,
+            )
+        } catch {
+            return false
+        }
+    }
+
+    private func cleanupFailedStart(
+        projectPath: String,
+        workerID: String,
+        ideaID: String,
+        worktreeName: String,
+        worktreePath: String,
+    ) async {
+        clearAttachedSession(projectPath: projectPath, workerID: workerID)
+
+        try? worktreeService.removeManagedWorktree(
+            in: projectPath,
+            name: worktreeName,
+            force: true,
+        )
+
+        await mutateDelegationLoggedIgnoringFailure(
+            RuntimeDelegationMutationRequest(
+                kind: "complete",
+                projectPath: projectPath,
+                workerId: workerID,
+                ideaId: ideaID,
+                worktreeName: worktreeName,
+                worktreePath: worktreePath,
+                sessionId: nil,
+                milestoneId: nil,
+                briefPath: nil,
+                manifestPath: nil,
+                reviewDecision: nil,
+                note: nil,
+            ),
+            context: "cleanup_after_failed_start worker=\(workerID)",
+        )
+    }
+
+    private func attachedSessionKey(projectPath: String, workerID: String) -> AttachedSessionKey {
+        AttachedSessionKey(
+            normalizedProjectPath: PathNormalizer.normalize(projectPath),
+            workerID: workerID,
+        )
+    }
+
+    private func clearAttachedSession(projectPath: String, workerID: String) {
+        lastAttachedSessionIDs.removeValue(forKey: attachedSessionKey(projectPath: projectPath, workerID: workerID))
+    }
+
+    private func clearAttachedSessions(forProjectPath projectPath: String) {
+        let normalizedProjectPath = PathNormalizer.normalize(projectPath)
+        lastAttachedSessionIDs = lastAttachedSessionIDs.filter { key, _ in
+            key.normalizedProjectPath != normalizedProjectPath
+        }
+    }
+
+    private func applyMutationSideEffects(_ request: RuntimeDelegationMutationRequest) {
+        switch request.kind {
+        case "attach_session":
+            guard let sessionID = request.sessionId else { return }
+            lastAttachedSessionIDs[attachedSessionKey(
+                projectPath: request.projectPath,
+                workerID: request.workerId,
+            )] = sessionID
+
+        case "complete":
+            clearAttachedSession(projectPath: request.projectPath, workerID: request.workerId)
+
+        default:
+            break
+        }
+    }
+
+    private func logAttachSkipped(
+        projectPath: String,
+        workerID: String,
+        sessionID: String,
+        context: String,
+        reason: String,
+    ) {
+        DebugLog.write(
+            "DelegationLoopManager.attach skipped reason=\(reason) worker=\(workerID) session=\(sessionID) project=\(PathNormalizer.normalize(projectPath)) context=\(context)",
         )
     }
 

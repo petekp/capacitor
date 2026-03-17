@@ -3,7 +3,7 @@ import SwiftUI
 
 struct IdeaQueueView: View {
     let ideas: [Idea]
-    let isGeneratingTitle: (String) -> Bool
+    let activityForIdea: (Idea) -> IdeaQueueActivity?
     var onTapIdea: ((Idea, CGRect) -> Void)?
     var onReorder: (([Idea]) -> Void)?
     var onRemove: ((Idea) -> Void)?
@@ -76,7 +76,7 @@ struct IdeaQueueView: View {
                 IdeaQueueRow(
                     idea: idea,
                     isFirst: false,
-                    isGeneratingTitle: isGeneratingTitle(idea.id),
+                    activity: activityForIdea(idea),
                     onTap: nil,
                     onRemove: nil,
                 )
@@ -108,7 +108,7 @@ struct IdeaQueueView: View {
                 IdeaQueueRow(
                     idea: idea,
                     isFirst: index == 0 && !isBeingDragged,
-                    isGeneratingTitle: isGeneratingTitle(idea.id),
+                    activity: activityForIdea(idea),
                     onTap: {
                         if let frame = rowFrames[idea.id] {
                             onTapIdea?(idea, frame)
@@ -261,7 +261,7 @@ struct IdeaQueueView: View {
 struct IdeaQueueRow: View {
     let idea: Idea
     let isFirst: Bool
-    let isGeneratingTitle: Bool
+    let activity: IdeaQueueActivity?
     var onTap: (() -> Void)?
     var onRemove: (() -> Void)?
 
@@ -281,7 +281,7 @@ struct IdeaQueueRow: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
         .overlay(alignment: .trailing) {
-            if isHovered, !isGeneratingTitle {
+            if isHovered, activity?.usesPlaceholderTitle != true {
                 hoverActions
                     .padding(.trailing, 14)
             }
@@ -297,22 +297,50 @@ struct IdeaQueueRow: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(idea.title)
+        .accessibilityValue(activity?.accessibilityLabel ?? "")
         .accessibilityHint(isFirst ? "Top of queue - next to work on" : "Drag to reorder")
     }
 
     private var titleArea: some View {
-        ZStack(alignment: .leading) {
-            Text(idea.title)
-                .font(AppTypography.body)
-                .foregroundColor(.white.opacity(isFirst ? 0.9 : 0.7))
-                .lineLimit(2)
-                .opacity(isGeneratingTitle ? 0 : 1)
+        VStack(alignment: .leading, spacing: activity == nil ? 0 : 4) {
+            ZStack(alignment: .leading) {
+                Text(idea.title)
+                    .font(AppTypography.body)
+                    .foregroundColor(.white.opacity(isFirst ? 0.9 : 0.7))
+                    .lineLimit(2)
+                    .opacity(activity?.usesPlaceholderTitle == true ? 0 : 1)
 
-            if isGeneratingTitle {
-                ShimmeringText(text: "Processing...")
+                if activity?.usesPlaceholderTitle == true {
+                    ShimmeringText(text: "Processing...")
+                }
+            }
+
+            if let activity {
+                activityLabel(activity)
             }
         }
-        .animation(.easeInOut(duration: 0.3), value: isGeneratingTitle)
+        .animation(.easeInOut(duration: 0.3), value: activity)
+    }
+
+    private func activityLabel(_ activity: IdeaQueueActivity) -> some View {
+        HStack(spacing: 6) {
+            if activity.showsProgress {
+                ProgressView()
+                    .controlSize(.small)
+                    .tint(activity.tint)
+                    .scaleEffect(0.7)
+            } else {
+                Image(systemName: activity.symbolName)
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundColor(activity.tint)
+            }
+
+            Text(activity.label)
+                .font(AppTypography.caption)
+                .foregroundColor(activity.tint.opacity(activity.showsProgress ? 0.95 : 0.85))
+                .lineLimit(1)
+        }
+        .accessibilityHidden(true)
     }
 
     private var hoverActions: some View {

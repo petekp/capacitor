@@ -94,6 +94,123 @@ final class DelegationLoopManagerTests: XCTestCase {
         XCTAssertEqual(requests.first?.sessionId, "session-200")
     }
 
+    func testStartDelegationDedupesRepeatedStreamSessionIDAttaches() async throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        addTeardownBlock {
+            try? FileManager.default.removeItem(at: tempDir)
+        }
+
+        let mutationRecorder = MutationRecorder()
+        let manager = DelegationLoopManager(
+            mutateDelegation: { request in
+                await mutationRecorder.record(request)
+            },
+            worktreeService: makeWorktreeService(),
+            sessionDiscovery: DelegationSessionDiscovery(
+                fileManager: .default,
+                claudeProjectsDirectory: tempDir,
+            ),
+            claudeLauncher: { _, onSessionID in
+                try await onSessionID("session-200")
+                try await onSessionID("session-200")
+            },
+        )
+
+        try await manager.startDelegation(
+            project: makeProject(path: tempDir.path),
+            idea: makeIdea(id: "idea-1"),
+        )
+
+        let requests = await mutationRecorder.snapshot()
+        XCTAssertEqual(requests.map(\.kind), ["start", "attach_session"])
+        XCTAssertEqual(requests.last?.sessionId, "session-200")
+    }
+
+    func testReconcileSkipsAttachWhenDiscoveredSessionMatchesRuntimeSnapshot() async throws {
+        let tempDir = try makeClaudeProjectsDirectoryWithSession(
+            workingDirectoryName: "-Users-petepetrash-Code-capacitor--capacitor-worktrees-delegation-54da230f",
+            sessionID: "session-200",
+        )
+        addTeardownBlock {
+            try? FileManager.default.removeItem(at: tempDir)
+        }
+
+        let mutationRecorder = MutationRecorder()
+        let manager = DelegationLoopManager(
+            mutateDelegation: { request in
+                await mutationRecorder.record(request)
+            },
+            sessionDiscovery: DelegationSessionDiscovery(
+                fileManager: .default,
+                claudeProjectsDirectory: tempDir,
+            ),
+            claudeLauncher: { _, _ in
+                XCTFail("reconcile should not launch Claude")
+            },
+        )
+
+        await manager.reconcile(delegations: [
+            makeDelegation(
+                projectPath: "/tmp/projects/capacitor",
+                sessionId: "session-200",
+                status: "review_needed",
+                currentReview: RuntimeDelegationReview(
+                    milestoneId: "01",
+                    briefPath: "/tmp/brief.md",
+                    manifestPath: "/tmp/manifest.json",
+                    requestedAt: "2026-03-16T18:41:41Z",
+                ),
+            ),
+        ])
+
+        let requests = await mutationRecorder.snapshot()
+        XCTAssertTrue(requests.isEmpty)
+    }
+
+    func testReconcileAttachesChangedSessionEvenWhenRuntimeSnapshotAlreadyHasSession() async throws {
+        let tempDir = try makeClaudeProjectsDirectoryWithSession(
+            workingDirectoryName: "-Users-petepetrash-Code-capacitor--capacitor-worktrees-delegation-54da230f",
+            sessionID: "session-200",
+        )
+        addTeardownBlock {
+            try? FileManager.default.removeItem(at: tempDir)
+        }
+
+        let mutationRecorder = MutationRecorder()
+        let manager = DelegationLoopManager(
+            mutateDelegation: { request in
+                await mutationRecorder.record(request)
+            },
+            sessionDiscovery: DelegationSessionDiscovery(
+                fileManager: .default,
+                claudeProjectsDirectory: tempDir,
+            ),
+            claudeLauncher: { _, _ in
+                XCTFail("reconcile should not launch Claude")
+            },
+        )
+
+        await manager.reconcile(delegations: [
+            makeDelegation(
+                projectPath: "/tmp/projects/capacitor",
+                sessionId: "session-100",
+                status: "review_needed",
+                currentReview: RuntimeDelegationReview(
+                    milestoneId: "01",
+                    briefPath: "/tmp/brief.md",
+                    manifestPath: "/tmp/manifest.json",
+                    requestedAt: "2026-03-16T18:41:41Z",
+                ),
+            ),
+        ])
+
+        let requests = await mutationRecorder.snapshot()
+        XCTAssertEqual(requests.map(\.kind), ["attach_session"])
+        XCTAssertEqual(requests.first?.sessionId, "session-200")
+    }
+
     func testSubmitReviewDecisionBackfillsMissingSessionAndResumesSameSession() async throws {
         let tempDir = try makeClaudeProjectsDirectoryWithSession(
             workingDirectoryName: "-Users-petepetrash-Code-capacitor--capacitor-worktrees-delegation-54da230f",
@@ -149,6 +266,35 @@ final class DelegationLoopManagerTests: XCTestCase {
         let launches = await launchRecorder.snapshot()
         XCTAssertEqual(launches.count, 1)
         XCTAssertEqual(launches.first?.resumeSessionID, "session-200")
+    }
+
+    func testDelegationFailureMappingReturnsExpectedUserFacingCopy() {
+        let sampleError = SampleError()
+
+        XCTAssertEqual(
+            DelegationUserFacingMessage.startFailure(
+                for: DelegationLoopError.startupPreparation(underlying: sampleError),
+            ),
+            "Couldn't prepare the delegation worktree. Try delegating again.",
+        )
+        XCTAssertEqual(
+            DelegationUserFacingMessage.startFailure(
+                for: DelegationLoopError.workerLaunch(underlying: sampleError),
+            ),
+            "Couldn't launch the Claude worker. Try delegating again.",
+        )
+        XCTAssertEqual(
+            DelegationUserFacingMessage.reviewFailure(
+                for: DelegationLoopError.missingReviewSession,
+            ),
+            "Couldn't continue the review because the worker session is missing. Retry once the worker reconnects.",
+        )
+        XCTAssertEqual(
+            DelegationUserFacingMessage.reviewFailure(
+                for: DelegationLoopError.reviewResume(underlying: sampleError),
+            ),
+            "Couldn't resume the worker. The review stayed pending, your decision wasn't lost, and you can retry.",
+        )
     }
 
     func testClaudeLaunchArgumentsIncludeSingleThreadedWorkerGuardrails() {
@@ -228,6 +374,41 @@ final class DelegationLoopManagerTests: XCTestCase {
             isMissing: false,
         )
     }
+
+    private func makeIdea(id: String) -> Idea {
+        Idea(
+            id: id,
+            title: "Tight stabilization pass",
+            description: "Reproduce the delegation attach dedupe bug",
+            added: "2026-03-16T18:37:02Z",
+            effort: "small",
+            status: "open",
+            triage: "validated",
+            related: nil,
+        )
+    }
+
+    private func makeWorktreeService() -> WorktreeService {
+        WorktreeService(fileManager: .default) { arguments, cwd in
+            if arguments.count >= 3,
+               arguments[0] == "worktree",
+               arguments[1] == "add"
+            {
+                let worktreePath = URL(fileURLWithPath: cwd)
+                    .appendingPathComponent(arguments[2], isDirectory: true)
+                try? FileManager.default.createDirectory(
+                    at: worktreePath,
+                    withIntermediateDirectories: true,
+                )
+            }
+
+            return WorktreeService.GitCommandResult(
+                exitCode: 0,
+                stdout: "",
+                stderr: "",
+            )
+        }
+    }
 }
 
 private actor MutationRecorder {
@@ -251,5 +432,11 @@ private actor LaunchRecorder {
 
     func snapshot() -> [DelegationClaudeLaunchRequest] {
         requests
+    }
+}
+
+private struct SampleError: LocalizedError {
+    var errorDescription: String? {
+        "sample failure"
     }
 }

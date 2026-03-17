@@ -1536,7 +1536,11 @@ class AppState {
                 }
             } catch {
                 await MainActor.run {
-                    self.error = error.localizedDescription
+                    let message = DelegationUserFacingMessage.startFailure(for: error)
+                    DebugLog.write(
+                        "AppState.delegateIdea failure project=\(project.path) error=\(error.localizedDescription) userMessage=\(message)",
+                    )
+                    self.toast = .error(message)
                     self.refreshSessionStates()
                 }
             }
@@ -1569,7 +1573,11 @@ class AppState {
                 }
             } catch {
                 await MainActor.run {
-                    self.error = error.localizedDescription
+                    let message = DelegationUserFacingMessage.reviewFailure(for: error)
+                    DebugLog.write(
+                        "AppState.submitDelegationReview failure project=\(project.path) worker=\(delegation.workerId) error=\(error.localizedDescription) userMessage=\(message)",
+                    )
+                    self.toast = .error(message)
                     self.refreshSessionStates()
                 }
             }
