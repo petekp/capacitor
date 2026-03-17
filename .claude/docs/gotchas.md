@@ -94,6 +94,14 @@ When Swift looks unchanged but runtime behavior disagrees, force a rebuild:
 
 ## Runtime And Activation
 
+### AX verifier uses the real runtime projects file
+
+The AX verifier is not just a scenario generator. It seeds the runtime projects
+file the app actually reads (`~/.capacitor/projects.json`) before launching the
+debug bundle, then restores the previous file afterward. If you bypass the
+verifier and drive `scripts/ax/ax_runner.swift` directly, you must supply that
+runtime state yourself.
+
 ### Rust owns persisted truth; Swift owns projection and execution
 
 Do not move snapshot truth, setup policy, or file-backed semantics into Swift.
@@ -130,6 +138,13 @@ Project/session ownership should use exact or normalized identity matching.
 Parent/child path matching is only for UI focus and activation heuristics.
 
 ## Hooks And First-Run Testing
+
+### AX CI intentionally bypasses setup gating
+
+The runtime reliability AX lane is proving the project-card surface, not
+first-run onboarding. In CI it launches the debug bundle with setup validation
+skipped so `WelcomeView` does not hide the cards under test. Do not copy that
+mode into normal user-facing startup logic without being explicit about why.
 
 ### Shell snippets must call `hud-hook cwd`
 

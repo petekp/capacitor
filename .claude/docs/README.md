@@ -25,6 +25,7 @@ cd apps/swift && swift test
 
 ## Picking The Right Runbook
 
+- `ax-automation.md`: canonical AX/project-card automation interface, failure modes, and CI behavior
 - `debugging-guide.md`: runtime, hook, snapshot, routing, or activation debugging
 - `gotchas.md`: implementation hazards and easy-to-miss repo conventions
 - `release-guide.md`: release build, notarization, bundling, and preflight verification

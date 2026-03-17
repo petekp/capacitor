@@ -96,6 +96,15 @@ After building release assets:
 ./scripts/ci/runtime-reliability.sh ci
 ```
 
+If the release touched project cards, project details, accessibility
+identifiers, or AX launch/setup behavior, also capture direct AX evidence with:
+
+```bash
+bash scripts/ci/ax-automation-verify.sh --runs 1 --skip-details
+```
+
+Use `.claude/docs/ax-automation.md` when you need the detailed AX runbook.
+
 Then validate the app from a fresh state:
 
 ```bash

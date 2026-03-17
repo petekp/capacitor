@@ -41,6 +41,12 @@ If the problem smells like Swift projection or activation:
 cd apps/swift && swift test
 ```
 
+If the problem smells like project-card AX automation, start with:
+
+```bash
+bash scripts/ci/ax-automation-verify.sh --runs 1 --skip-details
+```
+
 ## Canonical Diagnostic Tool
 
 `./scripts/dev/agent-observe.sh` is the default observability surface for coding agents.
@@ -86,6 +92,24 @@ cd apps/swift && swift test --filter 'TerminalLauncherTests|Ghostty.*Tests'
 
 The reliable activation evidence is the app debug log plus the runtime service snapshot payload.
 Do not assume `activation-traces` is populated in normal production flows.
+
+## AX Automation Debugging
+
+Use `.claude/docs/ax-automation.md` as the detailed runbook when the issue is specifically:
+
+- project cards missing from the AX tree
+- `ax.project-card.*` or `ax.project-details.*` timeouts
+- AX relaunch flakes
+- `[WindowAX]` lifecycle health failures
+
+Quick triage rule:
+
+1. `Timed out waiting ... for app com.capacitor.app.debug`
+   Treat this as a bundle/launch problem.
+2. `Timed out waiting ... for AX identifier ax.project-card.*`
+   Treat this as “wrong app surface or missing card” first.
+3. `No AX windows were found`
+   Treat this as a window visibility / trust / AX-surface problem.
 
 ## Hook Debugging
 

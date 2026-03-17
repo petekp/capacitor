@@ -39,6 +39,11 @@ cargo test                        # Test
 ./scripts/verify/verify.sh --layers 1 --evolve  # Check canonical doc/spec drift
 ./scripts/dev/run-tests.sh               # Full local test pass (includes verifier self-tests)
 
+# AX automation
+bash scripts/ci/ax-automation-verify.sh --runs 1 --skip-details
+bash scripts/ci/ax-automation-verify.sh --runs 3 --require-log-health
+bash scripts/ci/runtime-reliability.sh ci    # Includes AX verifier lane in the runtime suite
+
 # Advanced launch/build control:
 ./scripts/dev/restart-app.sh --force     # Full Rust + UniFFI + Swift rebuild and relaunch
 ./scripts/dev/restart-app.sh --channel alpha --profile stable
@@ -110,6 +115,7 @@ For coding-agent runtime debugging, use the canonical diagnostic CLI:
 
 Full command reference: `./scripts/dev/agent-observe.sh help`
 Debugging guide: `.claude/docs/debugging-guide.md`
+AX automation guide: `.claude/docs/ax-automation.md`
 
 Formal verification report path: `.verifier/reports/last-run.json`
 
@@ -126,5 +132,7 @@ Optional browser UI + local telemetry sink: `node scripts/transparent-ui-server.
 - **Hook symlink, not copy** — Use `ln -s target/release/hud-hook ~/.local/bin/hud-hook` (copying triggers Gatekeeper SIGKILL)
 - **UniFFI Task shadows Swift Task** — Use `_Concurrency.Task` explicitly in async code
 - **Swift app links release Rust core** — The Swift package links `../../target/release`, so Rust-side API changes need a fresh release build before standalone Swift package commands
+- **Prefer the AX verifier over raw `ax_runner.swift`** — `scripts/ci/ax-automation-verify.sh` seeds runtime project state, captures artifacts, and classifies failures. Drop to the raw runner only when debugging the AX interface itself.
+- **Runtime AX CI is intentionally not onboarding-sensitive** — the runtime reliability wrapper launches the AX lane with setup validation bypassed so CI verifies the project surface rather than `WelcomeView`.
 
 **Full gotchas reference:** `.claude/docs/gotchas.md`
