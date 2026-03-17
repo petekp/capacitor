@@ -9,6 +9,7 @@ smoke_script="${AX_AUTOMATION_SMOKE_SCRIPT:-${workspace_root}/scripts/ci/non-dem
 default_artifacts_dir="${workspace_root}/artifacts/ax-automation-verification"
 default_debug_log="${CAPACITOR_APP_DEBUG_LOG:-$HOME/.capacitor/runtime/app-debug.log}"
 default_projects_file="${CAPACITOR_PROJECTS_FILE:-$HOME/.capacitor/projects.json}"
+runtime_projects_target="$HOME/.capacitor/projects.json"
 
 runs=1
 skip_details=0
@@ -281,6 +282,34 @@ run_smoke() {
     return "$status"
 }
 
+install_runtime_projects_file() {
+    local run_dir="$1"
+    local source_path="$2"
+    local backup_path="${run_dir}/projects.runtime.backup.json"
+    local restore_mode="remove"
+
+    mkdir -p "$(dirname "$runtime_projects_target")"
+    if [[ -f "$runtime_projects_target" ]]; then
+        cp "$runtime_projects_target" "$backup_path"
+        restore_mode="restore"
+    fi
+
+    cp "$source_path" "$runtime_projects_target"
+    printf '%s\n' "$restore_mode"
+}
+
+restore_runtime_projects_file() {
+    local run_dir="$1"
+    local restore_mode="$2"
+    local backup_path="${run_dir}/projects.runtime.backup.json"
+
+    if [[ "$restore_mode" == "restore" && -f "$backup_path" ]]; then
+        mv "$backup_path" "$runtime_projects_target"
+    else
+        rm -f "$runtime_projects_target"
+    fi
+}
+
 main() {
     parse_args "$@"
 
@@ -323,6 +352,8 @@ main() {
 
         local projects_path
         projects_path="$(prepare_projects_file "$run_dir")"
+        local restore_mode=""
+        restore_mode="$(install_runtime_projects_file "$run_dir" "$projects_path")"
 
         local debug_log_start_size
         debug_log_start_size="$(log_file_size "$debug_log")"
@@ -333,6 +364,7 @@ main() {
         else
             smoke_status=$?
         fi
+        restore_runtime_projects_file "$run_dir" "$restore_mode"
 
         slice_debug_log "$debug_log" "$debug_log_start_size" "$run_debug_log"
 

@@ -38,6 +38,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 jq -er '.pinned_projects | length == 2' "$projects_file" >/dev/null
+jq -er '.pinned_projects | length == 2' "$HOME/.capacitor/projects.json" >/dev/null
 mkdir -p "$artifacts_dir"
 printf '%s\n' '{"event":"runner.complete"}' > "$artifacts_dir/non-demo-ax-smoke-cards-fixture.log"
 EOF
