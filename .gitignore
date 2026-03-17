@@ -55,7 +55,7 @@ dist-guide
 .verifier/facts/
 .verifier/reports/
 .verifier/.venv/
-.verifier/specs/__pycache__/
-scripts/verify/__pycache__/
-tests/verify/**/__pycache__/
 tests/verify/fixtures/*/.verifier/
+
+# Python bytecode caches
+__pycache__/
