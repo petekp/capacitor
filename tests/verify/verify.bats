@@ -995,7 +995,7 @@ YAML
 fn replay_diff_corpus_matches_expected_and_is_deterministic() {}
 
 #[test]
-fn replay_diff_shadow_snapshot_read_model_matches_runtime_snapshot() {}
+fn replay_diff_projection_read_model_matches_runtime_snapshot() {}
 RUST
 
   cat > "$repo/core/capacitor-core/tests/fixtures/replay/absurd.json" <<'JSON'

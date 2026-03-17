@@ -103,7 +103,7 @@ class BehavioralSpecProofTests(unittest.TestCase):
                     "path": "core/capacitor-core/tests/replay_diff.rs",
                     "definitions": [
                         {"value": "replay_diff_corpus_matches_expected_and_is_deterministic", "line": 1},
-                        {"value": "replay_diff_shadow_snapshot_read_model_matches_runtime_snapshot", "line": 2},
+                        {"value": "replay_diff_projection_read_model_matches_runtime_snapshot", "line": 2},
                     ],
                 }
             ],
@@ -131,7 +131,7 @@ class BehavioralSpecProofTests(unittest.TestCase):
                     "path": "core/capacitor-core/tests/replay_diff.rs",
                     "definitions": [
                         {"value": "replay_diff_corpus_matches_expected_and_is_deterministic", "line": 1},
-                        {"value": "replay_diff_shadow_snapshot_read_model_matches_runtime_snapshot", "line": 2},
+                        {"value": "replay_diff_projection_read_model_matches_runtime_snapshot", "line": 2},
                     ],
                 }
             ],

@@ -286,10 +286,10 @@ proofs:
       - --
       - --exact
       - --nocapture
-  replay_diff_shadow_snapshot_read_model_matches_runtime_snapshot:
+  replay_diff_projection_read_model_matches_runtime_snapshot:
     language: rust
     path: core/capacitor-core/tests/replay_diff.rs
-    symbol: replay_diff_shadow_snapshot_read_model_matches_runtime_snapshot
+    symbol: replay_diff_projection_read_model_matches_runtime_snapshot
     command:
       - cargo
       - test
@@ -297,7 +297,7 @@ proofs:
       - capacitor-core
       - --test
       - replay_diff
-      - replay_diff_shadow_snapshot_read_model_matches_runtime_snapshot
+      - replay_diff_projection_read_model_matches_runtime_snapshot
       - --
       - --exact
       - --nocapture

@@ -38,7 +38,7 @@ def verify(facts):
     replay_test = module_by_path(facts, "core/capacitor-core/tests/replay_diff.rs")
     required_tests = {
         "replay_diff_corpus_matches_expected_and_is_deterministic",
-        "replay_diff_shadow_snapshot_read_model_matches_runtime_snapshot",
+        "replay_diff_projection_read_model_matches_runtime_snapshot",
     }
     actual_tests = {entry["value"] for entry in replay_test.get("definitions", [])} if replay_test else set()
     missing_tests = sorted(required_tests - actual_tests)
