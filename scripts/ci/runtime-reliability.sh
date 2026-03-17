@@ -20,6 +20,26 @@ run_replay_gate() {
   bash scripts/ci/session-state-gate.sh
 }
 
+run_ax_verifier_ci() {
+  echo ""
+  echo "[runtime-reliability] ax automation verifier (ci)"
+  bash scripts/ci/ax-automation-verify.sh \
+    --runs 1 \
+    --skip-details \
+    --allow-untrusted \
+    --artifacts-dir artifacts/ax-automation-verification/ci
+}
+
+run_ax_verifier_nightly() {
+  echo ""
+  echo "[runtime-reliability] ax automation verifier (nightly)"
+  bash scripts/ci/ax-automation-verify.sh \
+    --runs 3 \
+    --require-log-health \
+    --allow-untrusted \
+    --artifacts-dir artifacts/ax-automation-verification/nightly
+}
+
 run_shadow_parity_gate() {
   echo ""
   echo "[runtime-reliability] replay parity gate"
@@ -37,12 +57,14 @@ case "${mode}" in
     echo "Runtime reliability suite (pre-merge CI)"
     run_guard
     run_replay_gate
+    run_ax_verifier_ci
     run_shadow_parity_gate
     ;;
   nightly)
     echo "Runtime reliability suite (nightly)"
     run_guard
     run_replay_gate
+    run_ax_verifier_nightly
     run_shadow_parity_gate
     run_soak_bench
     ;;

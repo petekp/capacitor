@@ -56,13 +56,16 @@ Required sign-off artifacts:
 
 If the release includes changes to project cards, layout toggles, project details navigation, or accessibility identifiers, run:
 
-- `bash scripts/ci/non-demo-ax-smoke.sh`
+- `bash scripts/ci/ax-automation-verify.sh --runs 1 --skip-details`
+- `bash scripts/ci/ax-automation-verify.sh --runs 3 --require-log-health` for relaunch-flake coverage in trusted AX environments
 
 Required sign-off artifacts:
 
+- [ ] AX verifier one-pass smoke is green
+- [ ] Repeated AX verifier run is green, or the report explicitly labels the environment as `skipped_untrusted`
 - [ ] Stable profile card AX scenario passes (real projects, no demo env)
-- [ ] Frontier profile details AX scenario passes (`ax.project-details.*` + back navigation)
-- [ ] Logs attached from `artifacts/manual-testing/non-demo-ax-smoke-*.log`
+- [ ] Frontier profile details AX scenario passes (`ax.project-details.*` + back navigation) when details are included
+- [ ] Logs attached from `artifacts/ax-automation-verification/<timestamp>/`
 
 ### 1. Pre-Build Checks
 

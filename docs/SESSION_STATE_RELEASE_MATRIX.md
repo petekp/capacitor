@@ -39,7 +39,7 @@ The script enforces:
 - Pre-merge CI runs `./scripts/ci/runtime-reliability.sh ci`
 - Nightly/scheduled verification runs `./scripts/ci/runtime-reliability.sh nightly <report-path>`
 
-`runtime-reliability.sh` is the stable operational wrapper. It always runs the runtime reliability guard and replay gate. Nightly mode additionally runs the HEM shadow soak benchmark.
+`runtime-reliability.sh` is the stable operational wrapper. It always runs the runtime reliability guard, replay gate, and the AX automation verifier lane. Pre-merge mode runs a single AX pass with `--skip-details --allow-untrusted`. Nightly mode runs a repeated AX pass with `--require-log-health --allow-untrusted`, then additionally runs the HEM shadow soak benchmark.
 
 ## P1/P2 Non-Blocking (Triage Required)
 

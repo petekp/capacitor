@@ -169,7 +169,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil,
             queue: .main,
         ) { notification in
-            Self.liftSubsidiaryWindowIfNeeded(notification.object as? NSWindow)
+            let window = notification.object as? NSWindow
+            Self.liftSubsidiaryWindowIfNeeded(window)
+            if let window {
+                WindowAXDiagnostics.log(context: "didBecomeKey", window: window)
+            }
         }
     }
 
@@ -297,8 +301,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidBecomeActive(_: Notification) {
         // Ensure window becomes key when app activates
+        WindowAXDiagnostics.logApplicationDidBecomeActive(windowCount: NSApp.windows.count)
         if let window = NSApp.windows.first {
             window.makeKeyAndOrderFront(nil)
+            WindowAXDiagnostics.log(context: "applicationDidBecomeActive", window: window)
         }
     }
 }

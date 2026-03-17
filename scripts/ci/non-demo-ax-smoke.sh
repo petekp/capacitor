@@ -7,6 +7,7 @@ workspace_root="$(cd "${script_dir}/../.." && pwd -P)"
 
 projects_file="${CAPACITOR_PROJECTS_FILE:-$HOME/.capacitor/projects.json}"
 skip_details_phase=0
+artifact_dir=""
 
 usage() {
     cat <<'USAGE'
@@ -18,6 +19,7 @@ Runs non-demo AX smoke coverage against the debug build:
 
 Options:
   --projects-file <path>  Override projects json (default: ~/.capacitor/projects.json)
+  --artifacts-dir <path>  Override artifact directory (default: artifacts/manual-testing)
   --skip-details          Skip the frontier/details phase.
   --help                  Show this help text.
 USAGE
@@ -28,6 +30,11 @@ while [[ $# -gt 0 ]]; do
     --projects-file)
         [[ $# -ge 2 ]] || { echo "--projects-file requires a value" >&2; exit 1; }
         projects_file="$2"
+        shift 2
+        ;;
+    --artifacts-dir)
+        [[ $# -ge 2 ]] || { echo "--artifacts-dir requires a value" >&2; exit 1; }
+        artifact_dir="$2"
         shift 2
         ;;
     --skip-details)
@@ -118,7 +125,7 @@ details_primary_id="ax.project-details.${primary_slug}"
 details_secondary_id="ax.project-details.${secondary_slug}"
 
 timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
-artifact_dir="${workspace_root}/artifacts/manual-testing"
+artifact_dir="${artifact_dir:-${workspace_root}/artifacts/manual-testing}"
 mkdir -p "$artifact_dir"
 
 cards_scenario="${artifact_dir}/non-demo-ax-smoke-cards-${timestamp}.json"
