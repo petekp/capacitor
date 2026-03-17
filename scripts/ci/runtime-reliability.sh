@@ -29,7 +29,7 @@ run_ax_verifier_ci() {
   echo ""
   echo "[runtime-reliability] ax automation verifier (ci)"
   prepare_ax_verifier_build
-  bash scripts/ci/ax-automation-verify.sh \
+  CAPACITOR_SKIP_SETUP_VALIDATION=1 bash scripts/ci/ax-automation-verify.sh \
     --runs 1 \
     --skip-details \
     --allow-untrusted \
@@ -40,7 +40,7 @@ run_ax_verifier_nightly() {
   echo ""
   echo "[runtime-reliability] ax automation verifier (nightly)"
   prepare_ax_verifier_build
-  bash scripts/ci/ax-automation-verify.sh \
+  CAPACITOR_SKIP_SETUP_VALIDATION=1 bash scripts/ci/ax-automation-verify.sh \
     --runs 3 \
     --require-log-health \
     --allow-untrusted \

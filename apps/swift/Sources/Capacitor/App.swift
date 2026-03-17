@@ -1,6 +1,20 @@
 import AppKit
 import SwiftUI
 
+enum AppLaunchOverrides {
+    static func shouldSkipSetupValidation(info: [String: Any]) -> Bool {
+        guard let raw = info["CapacitorSkipSetupValidation"] else { return false }
+        switch raw {
+        case let value as String:
+            return value == "1" || value.caseInsensitiveCompare("true") == .orderedSame
+        case let value as NSNumber:
+            return value.intValue != 0
+        default:
+            return false
+        }
+    }
+}
+
 @main
 struct CapacitorApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
@@ -11,10 +25,14 @@ struct CapacitorApp: App {
     @AppStorage("layoutMode") private var layoutMode = "vertical"
     @AppStorage("setupComplete") private var setupComplete = false
 
+    private var shouldSkipSetupValidation: Bool {
+        AppLaunchOverrides.shouldSkipSetupValidation(info: Bundle.main.infoDictionary ?? [:])
+    }
+
     var body: some Scene {
         WindowGroup {
             ZStack {
-                if setupComplete {
+                if setupComplete || shouldSkipSetupValidation {
                     ContentView()
                         .environment(appState)
                         .environment(\.floatingMode, floatingMode)
@@ -223,6 +241,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// Only shows WelcomeView if something genuinely needs user attention
     /// (e.g. Claude CLI not installed, hook install failed, policy blocked).
     private func validateHookSetup() {
+        if AppLaunchOverrides.shouldSkipSetupValidation(info: Bundle.main.infoDictionary ?? [:]) {
+            UserDefaults.standard.set(true, forKey: "setupComplete")
+            return
+        }
+
         guard let engine = try? CoreRuntime() else { return }
 
         // 1. Evaluate startup readiness from one canonical setup status snapshot.

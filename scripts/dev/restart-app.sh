@@ -34,6 +34,7 @@ SWIFT_ONLY=false
 RUNTIME_STATE_FILE="${CAPACITOR_RUNTIME_STATE_FILE:-$HOME/.capacitor/runtime-context.env}"
 CHANNEL="${CAPACITOR_CHANNEL:-}"
 PROFILE="${CAPACITOR_PROFILE:-}"
+SKIP_SETUP_VALIDATION="${CAPACITOR_SKIP_SETUP_VALIDATION:-0}"
 
 if [[ (-z "$CHANNEL" || -z "$PROFILE") && -f "$RUNTIME_STATE_FILE" ]]; then
     # shellcheck source=/dev/null
@@ -342,6 +343,9 @@ if ! /usr/libexec/PlistBuddy -c "Set :CapacitorChannel $CHANNEL" "$DEBUG_APP/Con
 fi
 if ! /usr/libexec/PlistBuddy -c "Set :CapacitorProfile $PROFILE" "$DEBUG_APP/Contents/Info.plist" 2>/dev/null; then
     /usr/libexec/PlistBuddy -c "Add :CapacitorProfile string $PROFILE" "$DEBUG_APP/Contents/Info.plist" 2>/dev/null || true
+fi
+if ! /usr/libexec/PlistBuddy -c "Set :CapacitorSkipSetupValidation $SKIP_SETUP_VALIDATION" "$DEBUG_APP/Contents/Info.plist" 2>/dev/null; then
+    /usr/libexec/PlistBuddy -c "Add :CapacitorSkipSetupValidation string $SKIP_SETUP_VALIDATION" "$DEBUG_APP/Contents/Info.plist" 2>/dev/null || true
 fi
 
 # Replace the app executable with the debug binary.
