@@ -117,7 +117,7 @@ build_seeded_projects_file() {
 
     for candidate in "${candidates[@]}"; do
         [[ -d "$candidate" ]] || continue
-        if [[ " ${selected[*]} " != *" ${candidate} "* ]]; then
+        if [[ " ${selected[@]-} " != *" ${candidate} "* ]]; then
             selected+=("$candidate")
         fi
         if [[ "${#selected[@]}" -ge 2 ]]; then

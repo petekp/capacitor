@@ -19,9 +19,16 @@ run_replay_gate() {
   bash scripts/ci/session-state-gate.sh
 }
 
+prepare_ax_verifier_build() {
+  echo ""
+  echo "[runtime-reliability] prepare ax verifier build"
+  cargo build -p capacitor-core -p hud-hook --release
+}
+
 run_ax_verifier_ci() {
   echo ""
   echo "[runtime-reliability] ax automation verifier (ci)"
+  prepare_ax_verifier_build
   bash scripts/ci/ax-automation-verify.sh \
     --runs 1 \
     --skip-details \
@@ -32,6 +39,7 @@ run_ax_verifier_ci() {
 run_ax_verifier_nightly() {
   echo ""
   echo "[runtime-reliability] ax automation verifier (nightly)"
+  prepare_ax_verifier_build
   bash scripts/ci/ax-automation-verify.sh \
     --runs 3 \
     --require-log-health \
