@@ -269,25 +269,67 @@ if ! otool -l "$DEBUG_BIN" | grep -q "@loader_path"; then
     install_name_tool -add_rpath "@loader_path" "$DEBUG_BIN"
 fi
 
+create_debug_bundle_skeleton() {
+    local app_path="$1"
+    local bundle_id="$2"
+
+    mkdir -p "$app_path/Contents/MacOS"
+    mkdir -p "$app_path/Contents/Frameworks"
+    mkdir -p "$app_path/Contents/Resources"
+
+    cat > "$app_path/Contents/Info.plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+    <key>CFBundleExecutable</key>
+    <string>Capacitor</string>
+    <key>CFBundleIdentifier</key>
+    <string>${bundle_id}</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>Capacitor</string>
+    <key>CFBundleDisplayName</key>
+    <string>Capacitor</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>14.0</string>
+    <key>LSUIElement</key>
+    <false/>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>NSSupportsAutomaticTermination</key>
+    <true/>
+    <key>NSSupportsSuddenTermination</key>
+    <false/>
+</dict>
+</plist>
+EOF
+}
+
 # Assemble a debug app bundle so LaunchServices opens a real GUI app (no Warp/Terminal windows).
 TEMPLATE_APP="$PROJECT_ROOT/apps/swift/Capacitor.app"
 FALLBACK_TEMPLATE="/Applications/Capacitor.app"
 DEBUG_APP="$PROJECT_ROOT/apps/swift/CapacitorDebug.app"
 
+rm -rf "$DEBUG_APP"
 if [ ! -d "$TEMPLATE_APP" ]; then
     if [ -d "$FALLBACK_TEMPLATE" ]; then
         echo "Warning: Template app bundle not found at $TEMPLATE_APP; using $FALLBACK_TEMPLATE" >&2
         TEMPLATE_APP="$FALLBACK_TEMPLATE"
     else
-        echo "Error: Template app bundle not found at $TEMPLATE_APP or $FALLBACK_TEMPLATE" >&2
-        echo "Falling back to swift run (no bundle)." >&2
-        CAPACITOR_CHANNEL="$CHANNEL" CAPACITOR_PROFILE="$PROFILE" swift run 2>&1 &
-        exit 0
+        echo "Warning: Template app bundle not found at $TEMPLATE_APP or $FALLBACK_TEMPLATE; creating a minimal debug bundle." >&2
+        create_debug_bundle_skeleton "$DEBUG_APP" "com.capacitor.app.debug"
     fi
 fi
 
-rm -rf "$DEBUG_APP"
-rsync -a "$TEMPLATE_APP/" "$DEBUG_APP/"
+if [ -d "${TEMPLATE_APP:-}" ]; then
+    rsync -a "$TEMPLATE_APP/" "$DEBUG_APP/"
+fi
 
 # Ensure the debug bundle is distinct from the release app.
 /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier com.capacitor.app.debug" "$DEBUG_APP/Contents/Info.plist"
