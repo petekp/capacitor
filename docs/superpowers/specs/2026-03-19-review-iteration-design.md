@@ -87,6 +87,7 @@ Milestone ID becomes dynamic. Each review round gets its own numbered directory.
     03/                          # current active review
       brief.md
       manifest.json
+      .review-ready              # sentinel: worker wrote this last
                                  # no decision.json — this is active
 ```
 
@@ -155,11 +156,19 @@ For each active delegation:
 1. Check for `completion.json` → if found, mutate to `complete` (unchanged)
 2. Scan `milestones/` for the highest-numbered directory
 3. If that milestone has `decision.json` → skip (worker is addressing feedback)
-4. If that milestone has `brief.md` + `manifest.json` but no `decision.json` →
-   new or revised milestone ready for review. Mutate to `review_ready` with this
-   milestone's ID
-5. If the highest directory is incomplete (missing brief/manifest) → skip (worker
-   still writing)
+4. If that milestone has a `.review-ready` sentinel file but no `decision.json` →
+   new or revised milestone ready for review. Validate that `manifest.json` parses
+   as valid JSON before triggering `review_ready`. If parse fails, skip (treat as
+   incomplete). Mutate to `review_ready` with this milestone's ID.
+5. If the highest directory is incomplete (missing sentinel, missing files, or
+   corrupt manifest) → skip (worker still writing or crashed mid-write)
+
+**Sentinel file for atomic readiness:** The worker writes `.review-ready` as the
+last file after both `brief.md` and `manifest.json` are complete. The reconciler
+checks for the sentinel instead of the individual content files. This prevents
+the TOCTOU race where the reconciler sees a half-written `manifest.json` and
+triggers `review_ready` with corrupt data. The worker prompt instructs: "Write
+brief.md, then manifest.json, then touch .review-ready to signal completion."
 
 **Key invariant:** At most one milestone at a time lacks a `decision.json`. All
 previous milestones have decisions. This makes the scan deterministic. The invariant
@@ -182,22 +191,33 @@ Swift owns projection and reconciliation.
 
 ### 5. Testing Strategy
 
-**Rust tests (unchanged):**
+**Rust tests (new):**
 - Existing `delegation_contract.rs` tests pass various `milestone_id` values and
-  continue to work. No new Rust tests needed since the reducer doesn't change behavior.
+  continue to work.
+- New multi-round test: Start → ReviewReady("01") → Resume → ReviewReady("02") →
+  Resume → Complete. Validates the reducer handles the iteration cycle cleanly.
 
 **Swift unit tests (new):**
 1. Milestone scanning — `nextMilestoneID()` returns correct values for empty dir,
    dir with one decided milestone, dir with multiple decided milestones
-2. Reconciliation with numbered milestones — detects highest undecided milestone
-3. Reconciliation skips incomplete milestones — brief without manifest doesn't
-   trigger review_ready
-4. Decision write isolation — writes to correct milestone directory only
-5. Resume prompt includes correct next milestone number
+2. Milestone scanning — ignores non-numeric entries (.DS_Store, temp dirs)
+3. Reconciliation with filesystem artifacts — creates actual `brief.md`,
+   `manifest.json`, and `.review-ready` files on disk, verifies reconcile()
+   fires the correct `review_ready` mutation with the right milestone ID
+4. Reconciliation skips incomplete milestones — sentinel missing, or manifest
+   present but invalid JSON → does not trigger review_ready
+5. Decision write isolation — writes to correct milestone directory only
+6. Resume prompt branches on decision — request_changes prompt instructs worker
+   to write new milestone; approve prompt instructs finalization
+7. Resume prompt includes correct next milestone number
+8. Malformed manifest graceful degradation — review view shows summary text and
+   "no artifacts" when manifest.json is corrupt or truncated
 
 **Integration test (extend existing DelegationLoopManagerTests):**
 - Full cycle: start → milestone 01 → review_ready → request_changes → resume →
   milestone 02 → review_ready → approve → complete
+- Resume failure recovery: Claude launch fails → delegation restores to
+  review_ready with decision preserved on disk
 
 **Review window tests:**
 - Window opens with correct milestone data
