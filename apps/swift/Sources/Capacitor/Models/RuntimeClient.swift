@@ -638,6 +638,7 @@ enum RuntimeClientError: Error {
     case invalidResponse
     case timeout
     case runtimeUnavailable(String)
+    case mutationRejected(String)
 }
 
 final class RuntimeClient {
@@ -774,11 +775,17 @@ final class RuntimeClient {
         request.httpBody = try JSONEncoder().encode(requestBody)
 
         do {
-            let (_, response) = try await sendRequest(request)
+            let (data, response) = try await sendRequest(request)
             guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
                 throw RuntimeClientError.runtimeUnavailable(
                     "Runtime delegation mutation failed for \(request.url?.absoluteString ?? "unknown")",
                 )
+            }
+
+            if let outcome = try? JSONDecoder().decode(MutationOutcomeResponse.self, from: data),
+               !outcome.ok
+            {
+                throw RuntimeClientError.mutationRejected(outcome.message)
             }
         } catch let error as RuntimeClientError {
             throw error
@@ -787,6 +794,11 @@ final class RuntimeClient {
                 "Runtime delegation mutation unavailable: \(error.localizedDescription)",
             )
         }
+    }
+
+    private struct MutationOutcomeResponse: Decodable {
+        let ok: Bool
+        let message: String
     }
 
     private let runtimeSourceLabel = "runtime_service"

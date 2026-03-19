@@ -455,6 +455,113 @@ final class RuntimeClientTests: XCTestCase {
         }
     }
 
+    func testMutateDelegationSuccessDoesNotThrow() async throws {
+        let client = try makeMutationClient(
+            mutationResponse: #"{"ok":true,"message":"delegation started"}"#,
+        )
+
+        try await client.mutateDelegation(RuntimeDelegationMutationRequest(
+            kind: "start",
+            projectPath: "/tmp/test",
+            workerId: "worker-1",
+            ideaId: nil,
+            worktreeName: "wt-1",
+            worktreePath: "/tmp/wt",
+            sessionId: nil,
+            milestoneId: nil,
+            briefPath: nil,
+            manifestPath: nil,
+            reviewDecision: nil,
+            note: nil,
+        ))
+    }
+
+    func testMutateDelegationRejectedThrowsMutationRejected() async throws {
+        let client = try makeMutationClient(
+            mutationResponse: #"{"ok":false,"message":"delegation already active for project"}"#,
+        )
+
+        do {
+            try await client.mutateDelegation(RuntimeDelegationMutationRequest(
+                kind: "start",
+                projectPath: "/tmp/test",
+                workerId: "worker-1",
+                ideaId: nil,
+                worktreeName: "wt-1",
+                worktreePath: "/tmp/wt",
+                sessionId: nil,
+                milestoneId: nil,
+                briefPath: nil,
+                manifestPath: nil,
+                reviewDecision: nil,
+                note: nil,
+            ))
+            XCTFail("expected mutationRejected error")
+        } catch let error as RuntimeClientError {
+            switch error {
+            case let .mutationRejected(message):
+                XCTAssertEqual(message, "delegation already active for project")
+            default:
+                XCTFail("unexpected RuntimeClientError: \(error)")
+            }
+        }
+    }
+
+    func testMutateDelegationNon200ThrowsRuntimeUnavailable() async throws {
+        let client = try makeMutationClient(
+            mutationResponse: #"{"error":"not found"}"#,
+            statusCode: 404,
+        )
+
+        do {
+            try await client.mutateDelegation(RuntimeDelegationMutationRequest(
+                kind: "start",
+                projectPath: "/tmp/test",
+                workerId: "worker-1",
+                ideaId: nil,
+                worktreeName: nil,
+                worktreePath: nil,
+                sessionId: nil,
+                milestoneId: nil,
+                briefPath: nil,
+                manifestPath: nil,
+                reviewDecision: nil,
+                note: nil,
+            ))
+            XCTFail("expected runtimeUnavailable error")
+        } catch let error as RuntimeClientError {
+            switch error {
+            case .runtimeUnavailable:
+                break
+            default:
+                XCTFail("unexpected RuntimeClientError: \(error)")
+            }
+        }
+    }
+
+    private func makeMutationClient(
+        mutationResponse: String,
+        statusCode: Int = 200,
+    ) throws -> RuntimeClient {
+        RuntimeClient(
+            runtimeServiceConnectionOverride: RuntimeServiceConnection(
+                baseURL: URL(string: "http://127.0.0.1:7812")!,
+                bearerToken: "service-secret",
+            ),
+            sendRequest: { request in
+                let response = try XCTUnwrap(
+                    HTTPURLResponse(
+                        url: request.url!,
+                        statusCode: statusCode,
+                        httpVersion: nil,
+                        headerFields: ["Content-Type": "application/json"],
+                    ),
+                )
+                return (Data(mutationResponse.utf8), response)
+            },
+        )
+    }
+
     private func makeClient(
         coreSnapshot: Data? = nil,
         responseStatusCode: Int = 200,
