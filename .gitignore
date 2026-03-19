@@ -51,6 +51,11 @@ scripts/dev/capacitor-ingest.local
 .worktrees/
 dist-guide
 
+# Working state directories (runtime, pipeline, relay)
+.capacitor/
+.pipeline/
+.relay/
+
 # Formal verifier caches and reports
 .verifier/facts/
 .verifier/reports/
