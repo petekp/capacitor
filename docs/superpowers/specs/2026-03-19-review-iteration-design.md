@@ -52,12 +52,15 @@ on the right.
   - **Approve** — "Ship this milestone and move on."
   - **Request Changes** — "Worker will address your feedback and submit a new revision."
   - **Write a Response** — "Provide custom instructions to the worker."
+- **"Write a Response" is a UI alias for Request Changes** — both produce
+  `ReviewDecision.requestChanges` with a note. The distinction is ergonomic:
+  Request Changes conveys "this needs fixing," Write a Response conveys "here are
+  instructions." No new enum variant is needed. The note text is always passed
+  through regardless of which card the user picks.
 - Clicking Request Changes or Write a Response expands a text editor within the rail
 - Single "Submit Decision" button at the bottom of the rail
 - On revision 2+, cards adapt: pre-filled feedback from previous round, contextual labels
 - Future: worker manifest can include suggested response options with descriptions
-
-**Responsive behavior:** On very narrow windows, the rail collapses below the content pane.
 
 ### 3. Numbered Milestones Data Model
 
@@ -104,18 +107,44 @@ Milestone ID becomes dynamic. Each review round gets its own numbered directory.
 - No new mutation kinds needed. No reducer behavior changes.
 
 **Swift changes:**
-- `Constants.milestoneID = "01"` replaced by computed `nextMilestoneID()` that scans
-  the milestones directory
-- `workerPaths()` takes a milestone ID parameter instead of using the constant
+- `Constants.milestoneID = "01"` replaced by a `nextMilestoneID(workerRoot:)` function
+  that scans the milestones directory, sorts numerically, and returns the next ID.
+  Format: 2-digit zero-padded strings ("01", "02", ..., "99"). For an empty directory,
+  returns "01". Sorting is numeric (not lexicographic) to avoid "10" sorting before "02".
+- `WorkerPaths` struct is split: worker-root paths (status, completion, prompts) are
+  computed once per worker; milestone-specific paths (brief, manifest, decision) are
+  computed per milestone ID. A new `milestonePaths(workerRoot:milestoneID:)` function
+  returns only the milestone-specific subset. `workerPaths()` composes both for
+  backward compatibility.
+- Reconciliation calls a new `activeMilestoneID(workerRoot:)` function that scans
+  the milestones directory and returns the highest-numbered directory lacking
+  `decision.json`. Returns nil if all milestones have decisions (worker is working).
 - `submitReviewDecision()` writes `decision.json` to the current milestone, then
   (for request-changes) passes the next milestone number in the resume prompt
-- Previous round context read from prior milestone's `decision.json`
+- Previous round context: the review window reads `decision.json` from milestone
+  N-1 (where N is the current active milestone's numeric ID, zero-padded). For
+  milestone "01" there is no previous round. The lookup is: parse current ID as
+  Int, subtract 1, format as "%02d", read from that directory.
+- `decision.md` is written alongside `decision.json` for human readability only.
+  It has no control-flow role — reconciliation and state transitions check only
+  `decision.json`.
 
-**Worker prompt changes:**
-- Launch prompt: "Write milestone artifacts to milestones/01/" (unchanged)
-- Resume after request-changes: "Write revised artifacts to milestones/02/" (new —
-  replaces "do not open another review checkpoint")
-- Resume after approve: "Finalize and write completion marker" (unchanged intent)
+**Worker prompt changes — `buildResumePrompt()` full rewrite for request-changes:**
+
+The current `buildResumePrompt()` (lines 953-988) has 8 requirements all oriented
+around "finish and exit." For the request-changes path, most of these must change.
+The function will branch on the decision:
+
+*After approve:*
+- Requirements 3, 6-8 stay: finalize, update status, write completion marker, exit
+- Requirement 5 stays: do not open another review checkpoint
+
+*After request-changes:*
+- Requirement 4 changes: "Address the requested delta and produce a new milestone"
+- Requirement 5 inverts: "You MUST produce a new review checkpoint in milestones/{next}/"
+- Requirements 7-8 do NOT apply: no completion marker, no exit after writing milestone
+- New requirements: write `brief.md` and `manifest.json` to `milestones/{next}/`,
+  then exit (the reconciliation loop will detect the new milestone)
 
 ### 4. Reconciliation Loop Changes
 
@@ -133,7 +162,18 @@ For each active delegation:
    still writing)
 
 **Key invariant:** At most one milestone at a time lacks a `decision.json`. All
-previous milestones have decisions. This makes the scan deterministic.
+previous milestones have decisions. This makes the scan deterministic. The invariant
+is enforced by the flow: the worker can only create milestone N+1 after the user
+decides milestone N and the resume prompt instructs the worker to write to N+1.
+
+**Idempotency:** If two reconciliation cycles overlap and both detect the same
+undecided milestone, the `review_ready` mutation will succeed twice — the reducer
+overwrites `current_review` with the same data. This is safe (idempotent) but
+wasteful. No guard is needed since the cost is negligible.
+
+**Edge case — empty milestones directory:** If `milestones/` exists but has no
+subdirectories (worker killed before creating `01/`), `activeMilestoneID()` returns
+nil and reconciliation skips the delegation. The worker will eventually create `01/`.
 
 The reducer doesn't need to know about milestone numbering. It stores whatever
 `milestone_id` Swift passes. The intelligence lives in the reconciliation scanner
@@ -174,6 +214,21 @@ Swift owns projection and reconciliation.
   is deferred — the previous round context in the review window is sufficient for now
 - Rich artifact support (screenshots, recordings) is a future enhancement to the
   manifest format and review window hero area
+
+## Implementation Phasing
+
+This spec bundles two largely independent changes: the numbered milestone data model
+(core feature) and the standalone review window (UX improvement). They can be
+implemented and tested in sequence:
+
+1. **Phase 1: Numbered milestones + reconciliation** — data model, scanning,
+   resume prompt rewrite, reconciliation changes. Test with the existing inline
+   review view (update it to pass the dynamic milestone ID). This phase delivers
+   the core review iteration loop.
+2. **Phase 2: Standalone review window** — new Window scene, zen layout, decision
+   rail, previous round context display. This phase delivers the UX improvement.
+
+Phase 1 is the critical path. Phase 2 can follow immediately or be deferred.
 
 ## Non-Goals
 
