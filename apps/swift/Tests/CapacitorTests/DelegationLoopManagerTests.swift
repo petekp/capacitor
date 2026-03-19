@@ -321,6 +321,718 @@ final class DelegationLoopManagerTests: XCTestCase {
         )
     }
 
+    // MARK: - Milestone Scanning and Review Iteration Tests
+
+    func testReconcileDetectsFirstMilestoneWithSentinel() async throws {
+        let projectPath = "/tmp/projects/test-\(UUID().uuidString)"
+        let milestonesRoot = makeDelegationMilestonesRoot(projectPath: projectPath)
+        addTeardownBlock {
+            try? FileManager.default.removeItem(
+                at: CapacitorProjectPaths.projectDataDirectory(for: projectPath),
+            )
+        }
+
+        try createMilestoneFixture(
+            at: milestonesRoot,
+            milestoneID: "01",
+            withBrief: true,
+            withManifest: true,
+            withSentinel: true,
+        )
+
+        let mutationRecorder = MutationRecorder()
+        let manager = makeReconcileManager(mutationRecorder: mutationRecorder)
+
+        await manager.reconcile(delegations: [
+            makeDelegation(
+                projectPath: projectPath,
+                sessionId: nil,
+                status: "working",
+                currentReview: nil,
+            ),
+        ])
+
+        let requests = await mutationRecorder.snapshot()
+        XCTAssertEqual(requests.map(\.kind), ["review_ready"])
+        XCTAssertEqual(requests.first?.milestoneId, "01")
+    }
+
+    func testReconcileSkipsMilestoneWithoutSentinel() async throws {
+        let projectPath = "/tmp/projects/test-\(UUID().uuidString)"
+        let milestonesRoot = makeDelegationMilestonesRoot(projectPath: projectPath)
+        addTeardownBlock {
+            try? FileManager.default.removeItem(
+                at: CapacitorProjectPaths.projectDataDirectory(for: projectPath),
+            )
+        }
+
+        try createMilestoneFixture(
+            at: milestonesRoot,
+            milestoneID: "01",
+            withBrief: true,
+            withManifest: true,
+            withSentinel: false,
+        )
+
+        let mutationRecorder = MutationRecorder()
+        let manager = makeReconcileManager(mutationRecorder: mutationRecorder)
+
+        await manager.reconcile(delegations: [
+            makeDelegation(
+                projectPath: projectPath,
+                sessionId: nil,
+                status: "working",
+                currentReview: nil,
+            ),
+        ])
+
+        let requests = await mutationRecorder.snapshot()
+        XCTAssertTrue(
+            requests.isEmpty,
+            "Should not fire review_ready without sentinel file",
+        )
+    }
+
+    func testReconcileSkipsMilestoneWithInvalidManifest() async throws {
+        let projectPath = "/tmp/projects/test-\(UUID().uuidString)"
+        let milestonesRoot = makeDelegationMilestonesRoot(projectPath: projectPath)
+        addTeardownBlock {
+            try? FileManager.default.removeItem(
+                at: CapacitorProjectPaths.projectDataDirectory(for: projectPath),
+            )
+        }
+
+        try createMilestoneFixture(
+            at: milestonesRoot,
+            milestoneID: "01",
+            withBrief: true,
+            withManifest: true,
+            withValidManifest: false,
+            withSentinel: true,
+        )
+
+        let mutationRecorder = MutationRecorder()
+        let manager = makeReconcileManager(mutationRecorder: mutationRecorder)
+
+        await manager.reconcile(delegations: [
+            makeDelegation(
+                projectPath: projectPath,
+                sessionId: nil,
+                status: "working",
+                currentReview: nil,
+            ),
+        ])
+
+        let requests = await mutationRecorder.snapshot()
+        XCTAssertTrue(
+            requests.isEmpty,
+            "Should not fire review_ready with invalid manifest JSON",
+        )
+    }
+
+    func testReconcileDetectsSecondMilestoneAfterFirstDecided() async throws {
+        let projectPath = "/tmp/projects/test-\(UUID().uuidString)"
+        let milestonesRoot = makeDelegationMilestonesRoot(projectPath: projectPath)
+        addTeardownBlock {
+            try? FileManager.default.removeItem(
+                at: CapacitorProjectPaths.projectDataDirectory(for: projectPath),
+            )
+        }
+
+        try createMilestoneFixture(
+            at: milestonesRoot,
+            milestoneID: "01",
+            withBrief: true,
+            withManifest: true,
+            withDecision: true,
+            withSentinel: true,
+        )
+        try createMilestoneFixture(
+            at: milestonesRoot,
+            milestoneID: "02",
+            withBrief: true,
+            withManifest: true,
+            withSentinel: true,
+        )
+
+        let mutationRecorder = MutationRecorder()
+        let manager = makeReconcileManager(mutationRecorder: mutationRecorder)
+
+        await manager.reconcile(delegations: [
+            makeDelegation(
+                projectPath: projectPath,
+                sessionId: nil,
+                status: "working",
+                currentReview: nil,
+            ),
+        ])
+
+        let requests = await mutationRecorder.snapshot()
+        XCTAssertEqual(requests.map(\.kind), ["review_ready"])
+        XCTAssertEqual(requests.first?.milestoneId, "02")
+    }
+
+    func testReconcileReturnsNothingWhenAllMilestonesDecided() async throws {
+        let projectPath = "/tmp/projects/test-\(UUID().uuidString)"
+        let milestonesRoot = makeDelegationMilestonesRoot(projectPath: projectPath)
+        addTeardownBlock {
+            try? FileManager.default.removeItem(
+                at: CapacitorProjectPaths.projectDataDirectory(for: projectPath),
+            )
+        }
+
+        try createMilestoneFixture(
+            at: milestonesRoot,
+            milestoneID: "01",
+            withBrief: true,
+            withManifest: true,
+            withDecision: true,
+            withSentinel: true,
+        )
+        try createMilestoneFixture(
+            at: milestonesRoot,
+            milestoneID: "02",
+            withBrief: true,
+            withManifest: true,
+            withDecision: true,
+            withSentinel: true,
+        )
+
+        let mutationRecorder = MutationRecorder()
+        let manager = makeReconcileManager(mutationRecorder: mutationRecorder)
+
+        await manager.reconcile(delegations: [
+            makeDelegation(
+                projectPath: projectPath,
+                sessionId: nil,
+                status: "working",
+                currentReview: nil,
+            ),
+        ])
+
+        let requests = await mutationRecorder.snapshot()
+        XCTAssertTrue(
+            requests.isEmpty,
+            "Should not fire review_ready when all milestones are decided",
+        )
+    }
+
+    func testReconcileIgnoresNonNumericMilestoneDirectories() async throws {
+        let projectPath = "/tmp/projects/test-\(UUID().uuidString)"
+        let milestonesRoot = makeDelegationMilestonesRoot(projectPath: projectPath)
+        addTeardownBlock {
+            try? FileManager.default.removeItem(
+                at: CapacitorProjectPaths.projectDataDirectory(for: projectPath),
+            )
+        }
+
+        // Create non-numeric directories that should be ignored
+        try FileManager.default.createDirectory(
+            at: milestonesRoot.appendingPathComponent("temp", isDirectory: true),
+            withIntermediateDirectories: true,
+        )
+        // Create the real milestone
+        try createMilestoneFixture(
+            at: milestonesRoot,
+            milestoneID: "01",
+            withBrief: true,
+            withManifest: true,
+            withSentinel: true,
+        )
+
+        let mutationRecorder = MutationRecorder()
+        let manager = makeReconcileManager(mutationRecorder: mutationRecorder)
+
+        await manager.reconcile(delegations: [
+            makeDelegation(
+                projectPath: projectPath,
+                sessionId: nil,
+                status: "working",
+                currentReview: nil,
+            ),
+        ])
+
+        let requests = await mutationRecorder.snapshot()
+        XCTAssertEqual(requests.map(\.kind), ["review_ready"])
+        XCTAssertEqual(requests.first?.milestoneId, "01")
+    }
+
+    func testResumePromptForApproveMentionsCompletionMarker() async throws {
+        let tempDir = try makeClaudeProjectsDirectoryWithSession(
+            workingDirectoryName: "-Users-petepetrash-Code-capacitor--capacitor-worktrees-delegation-54da230f",
+            sessionID: "session-200",
+        )
+        addTeardownBlock {
+            try? FileManager.default.removeItem(at: tempDir)
+        }
+
+        let projectPath = "/tmp/projects/test-\(UUID().uuidString)"
+        addTeardownBlock {
+            try? FileManager.default.removeItem(
+                at: CapacitorProjectPaths.projectDataDirectory(for: projectPath),
+            )
+        }
+
+        let mutationRecorder = MutationRecorder()
+        let manager = DelegationLoopManager(
+            mutateDelegation: { request in
+                await mutationRecorder.record(request)
+            },
+            sessionDiscovery: DelegationSessionDiscovery(
+                fileManager: .default,
+                claudeProjectsDirectory: tempDir,
+            ),
+            claudeLauncher: { _, _ in },
+        )
+
+        try await manager.submitReviewDecision(
+            project: makeProject(path: projectPath),
+            delegation: makeDelegation(
+                projectPath: projectPath,
+                sessionId: nil,
+                status: "review_needed",
+                currentReview: RuntimeDelegationReview(
+                    milestoneId: "01",
+                    briefPath: "/tmp/brief.md",
+                    manifestPath: "/tmp/manifest.json",
+                    requestedAt: "2026-03-19T00:00:00Z",
+                ),
+            ),
+            decision: .approve,
+            note: "Ship it",
+        )
+
+        let rootPaths = CapacitorProjectPaths.projectDataDirectory(for: projectPath)
+            .appendingPathComponent("delegations", isDirectory: true)
+            .appendingPathComponent("worker-1", isDirectory: true)
+        let promptPath = rootPaths.appendingPathComponent("resume-prompt.md")
+        let promptContent = try String(contentsOf: promptPath, encoding: .utf8)
+
+        XCTAssertTrue(promptContent.contains("completion"), "Approve prompt should mention completion")
+        XCTAssertTrue(promptContent.contains("approve"), "Approve prompt should mention approve")
+        XCTAssertFalse(
+            promptContent.contains("milestones/02"),
+            "Approve prompt should not reference next milestone",
+        )
+    }
+
+    func testResumePromptForRequestChangesReferencesNextMilestone() async throws {
+        let tempDir = try makeClaudeProjectsDirectoryWithSession(
+            workingDirectoryName: "-Users-petepetrash-Code-capacitor--capacitor-worktrees-delegation-54da230f",
+            sessionID: "session-200",
+        )
+        addTeardownBlock {
+            try? FileManager.default.removeItem(at: tempDir)
+        }
+
+        let projectPath = "/tmp/projects/test-\(UUID().uuidString)"
+        addTeardownBlock {
+            try? FileManager.default.removeItem(
+                at: CapacitorProjectPaths.projectDataDirectory(for: projectPath),
+            )
+        }
+
+        let mutationRecorder = MutationRecorder()
+        let manager = DelegationLoopManager(
+            mutateDelegation: { request in
+                await mutationRecorder.record(request)
+            },
+            sessionDiscovery: DelegationSessionDiscovery(
+                fileManager: .default,
+                claudeProjectsDirectory: tempDir,
+            ),
+            claudeLauncher: { _, _ in },
+        )
+
+        try await manager.submitReviewDecision(
+            project: makeProject(path: projectPath),
+            delegation: makeDelegation(
+                projectPath: projectPath,
+                sessionId: nil,
+                status: "review_needed",
+                currentReview: RuntimeDelegationReview(
+                    milestoneId: "01",
+                    briefPath: "/tmp/brief.md",
+                    manifestPath: "/tmp/manifest.json",
+                    requestedAt: "2026-03-19T00:00:00Z",
+                ),
+            ),
+            decision: .requestChanges,
+            note: "Fix error handling",
+        )
+
+        let rootPaths = CapacitorProjectPaths.projectDataDirectory(for: projectPath)
+            .appendingPathComponent("delegations", isDirectory: true)
+            .appendingPathComponent("worker-1", isDirectory: true)
+        let promptPath = rootPaths.appendingPathComponent("resume-prompt.md")
+        let promptContent = try String(contentsOf: promptPath, encoding: .utf8)
+
+        XCTAssertTrue(
+            promptContent.contains("milestones/02") || promptContent.contains("milestone_id\": \"02"),
+            "Request changes prompt should reference next milestone 02",
+        )
+        XCTAssertTrue(
+            promptContent.contains(".review-ready"),
+            "Request changes prompt should mention sentinel file",
+        )
+        XCTAssertFalse(
+            promptContent.contains("completion"),
+            "Request changes prompt should not mention completion marker",
+        )
+    }
+
+    func testFullIterationCycle() async throws {
+        let tempDir = try makeClaudeProjectsDirectoryWithSession(
+            workingDirectoryName: "-Users-petepetrash-Code-capacitor--capacitor-worktrees-delegation-54da230f",
+            sessionID: "session-200",
+        )
+        addTeardownBlock {
+            try? FileManager.default.removeItem(at: tempDir)
+        }
+
+        let projectPath = "/tmp/projects/test-\(UUID().uuidString)"
+        let milestonesRoot = makeDelegationMilestonesRoot(projectPath: projectPath)
+        addTeardownBlock {
+            try? FileManager.default.removeItem(
+                at: CapacitorProjectPaths.projectDataDirectory(for: projectPath),
+            )
+        }
+
+        let mutationRecorder = MutationRecorder()
+        let manager = DelegationLoopManager(
+            mutateDelegation: { request in
+                await mutationRecorder.record(request)
+            },
+            sessionDiscovery: DelegationSessionDiscovery(
+                fileManager: .default,
+                claudeProjectsDirectory: tempDir,
+            ),
+            claudeLauncher: { _, _ in },
+        )
+
+        // Step 1: Worker produces milestone 01
+        try createMilestoneFixture(
+            at: milestonesRoot,
+            milestoneID: "01",
+            withBrief: true,
+            withManifest: true,
+            withSentinel: true,
+        )
+
+        // Step 2: Reconcile detects milestone 01
+        await manager.reconcile(delegations: [
+            makeDelegation(
+                projectPath: projectPath,
+                sessionId: "session-200",
+                status: "working",
+                currentReview: nil,
+            ),
+        ])
+
+        var requests = await mutationRecorder.snapshot()
+        XCTAssertEqual(requests.last?.kind, "review_ready")
+        XCTAssertEqual(requests.last?.milestoneId, "01")
+
+        // Step 3: User requests changes on milestone 01
+        try await manager.submitReviewDecision(
+            project: makeProject(path: projectPath),
+            delegation: makeDelegation(
+                projectPath: projectPath,
+                sessionId: "session-200",
+                status: "review_needed",
+                currentReview: RuntimeDelegationReview(
+                    milestoneId: "01",
+                    briefPath: milestonesRoot.appendingPathComponent("01/brief.md").path,
+                    manifestPath: milestonesRoot.appendingPathComponent("01/manifest.json").path,
+                    requestedAt: "2026-03-19T00:00:00Z",
+                ),
+            ),
+            decision: .requestChanges,
+            note: "Fix the error handling",
+        )
+
+        requests = await mutationRecorder.snapshot()
+        XCTAssertTrue(requests.contains(where: { $0.kind == "resume" && $0.reviewDecision == "request_changes" }))
+
+        // Step 4: Worker produces milestone 02
+        try createMilestoneFixture(
+            at: milestonesRoot,
+            milestoneID: "02",
+            withBrief: true,
+            withManifest: true,
+            withSentinel: true,
+        )
+
+        // Step 5: Reconcile detects milestone 02
+        await manager.reconcile(delegations: [
+            makeDelegation(
+                projectPath: projectPath,
+                sessionId: "session-200",
+                status: "working",
+                currentReview: nil,
+            ),
+        ])
+
+        requests = await mutationRecorder.snapshot()
+        let reviewReadyRequests = requests.filter { $0.kind == "review_ready" }
+        XCTAssertEqual(reviewReadyRequests.last?.milestoneId, "02")
+
+        // Step 6: User approves milestone 02
+        try await manager.submitReviewDecision(
+            project: makeProject(path: projectPath),
+            delegation: makeDelegation(
+                projectPath: projectPath,
+                sessionId: "session-200",
+                status: "review_needed",
+                currentReview: RuntimeDelegationReview(
+                    milestoneId: "02",
+                    briefPath: milestonesRoot.appendingPathComponent("02/brief.md").path,
+                    manifestPath: milestonesRoot.appendingPathComponent("02/manifest.json").path,
+                    requestedAt: "2026-03-19T00:00:01Z",
+                ),
+            ),
+            decision: .approve,
+            note: "Looks good",
+        )
+
+        requests = await mutationRecorder.snapshot()
+        XCTAssertTrue(requests.contains(where: { $0.kind == "resume" && $0.reviewDecision == "approve" }))
+
+        // Verify the approve prompt references completion, not a next milestone
+        let rootPaths = CapacitorProjectPaths.projectDataDirectory(for: projectPath)
+            .appendingPathComponent("delegations", isDirectory: true)
+            .appendingPathComponent("worker-1", isDirectory: true)
+        let promptContent = try String(
+            contentsOf: rootPaths.appendingPathComponent("resume-prompt.md"),
+            encoding: .utf8,
+        )
+        XCTAssertTrue(promptContent.contains("completion"))
+        XCTAssertFalse(promptContent.contains("milestones/03"))
+    }
+
+    func testResumeFailureRestoresReviewReadyAndCleansUpPendingDecision() async throws {
+        let tempDir = try makeClaudeProjectsDirectoryWithSession(
+            workingDirectoryName: "-Users-petepetrash-Code-capacitor--capacitor-worktrees-delegation-54da230f",
+            sessionID: "session-200",
+        )
+        addTeardownBlock {
+            try? FileManager.default.removeItem(at: tempDir)
+        }
+
+        let projectPath = "/tmp/projects/test-\(UUID().uuidString)"
+        let milestonesRoot = makeDelegationMilestonesRoot(projectPath: projectPath)
+        addTeardownBlock {
+            try? FileManager.default.removeItem(
+                at: CapacitorProjectPaths.projectDataDirectory(for: projectPath),
+            )
+        }
+
+        let mutationRecorder = MutationRecorder()
+        let manager = DelegationLoopManager(
+            mutateDelegation: { request in
+                await mutationRecorder.record(request)
+            },
+            sessionDiscovery: DelegationSessionDiscovery(
+                fileManager: .default,
+                claudeProjectsDirectory: tempDir,
+            ),
+            claudeLauncher: { _, _ in
+                throw SampleError()
+            },
+        )
+
+        do {
+            try await manager.submitReviewDecision(
+                project: makeProject(path: projectPath),
+                delegation: makeDelegation(
+                    projectPath: projectPath,
+                    sessionId: nil,
+                    status: "review_needed",
+                    currentReview: RuntimeDelegationReview(
+                        milestoneId: "01",
+                        briefPath: "/tmp/brief.md",
+                        manifestPath: "/tmp/manifest.json",
+                        requestedAt: "2026-03-19T00:00:00Z",
+                    ),
+                ),
+                decision: .requestChanges,
+                note: "Fix it",
+            )
+            XCTFail("Should have thrown")
+        } catch {}
+
+        // Verify review_ready was re-fired
+        let requests = await mutationRecorder.snapshot()
+        XCTAssertTrue(
+            requests.contains(where: { $0.kind == "review_ready" && $0.milestoneId == "01" }),
+            "Should restore review_ready after resume failure",
+        )
+
+        // Verify decision-pending.json was cleaned up
+        let pendingPath = milestonesRoot
+            .appendingPathComponent("01", isDirectory: true)
+            .appendingPathComponent("decision-pending.json")
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: pendingPath.path),
+            "decision-pending.json should be deleted after resume failure",
+        )
+
+        // Verify decision.json does NOT exist (immutability preserved)
+        let decisionPath = milestonesRoot
+            .appendingPathComponent("01", isDirectory: true)
+            .appendingPathComponent("decision.json")
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: decisionPath.path),
+            "decision.json should not exist after resume failure (immutability preserved)",
+        )
+    }
+
+    func testSuccessfulResumePromotesDecisionPendingToFinal() async throws {
+        let tempDir = try makeClaudeProjectsDirectoryWithSession(
+            workingDirectoryName: "-Users-petepetrash-Code-capacitor--capacitor-worktrees-delegation-54da230f",
+            sessionID: "session-200",
+        )
+        addTeardownBlock {
+            try? FileManager.default.removeItem(at: tempDir)
+        }
+
+        let projectPath = "/tmp/projects/test-\(UUID().uuidString)"
+        let milestonesRoot = makeDelegationMilestonesRoot(projectPath: projectPath)
+        addTeardownBlock {
+            try? FileManager.default.removeItem(
+                at: CapacitorProjectPaths.projectDataDirectory(for: projectPath),
+            )
+        }
+
+        let mutationRecorder = MutationRecorder()
+        let manager = DelegationLoopManager(
+            mutateDelegation: { request in
+                await mutationRecorder.record(request)
+            },
+            sessionDiscovery: DelegationSessionDiscovery(
+                fileManager: .default,
+                claudeProjectsDirectory: tempDir,
+            ),
+            claudeLauncher: { _, _ in },
+        )
+
+        try await manager.submitReviewDecision(
+            project: makeProject(path: projectPath),
+            delegation: makeDelegation(
+                projectPath: projectPath,
+                sessionId: nil,
+                status: "review_needed",
+                currentReview: RuntimeDelegationReview(
+                    milestoneId: "01",
+                    briefPath: "/tmp/brief.md",
+                    manifestPath: "/tmp/manifest.json",
+                    requestedAt: "2026-03-19T00:00:00Z",
+                ),
+            ),
+            decision: .approve,
+            note: "Ship it",
+        )
+
+        // Verify decision.json exists (promoted from pending)
+        let decisionPath = milestonesRoot
+            .appendingPathComponent("01", isDirectory: true)
+            .appendingPathComponent("decision.json")
+        XCTAssertTrue(
+            FileManager.default.fileExists(atPath: decisionPath.path),
+            "decision.json should exist after successful resume",
+        )
+
+        // Verify decision-pending.json does NOT exist
+        let pendingPath = milestonesRoot
+            .appendingPathComponent("01", isDirectory: true)
+            .appendingPathComponent("decision-pending.json")
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: pendingPath.path),
+            "decision-pending.json should be renamed to decision.json",
+        )
+
+        // Verify decision content
+        let data = try Data(contentsOf: decisionPath)
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        XCTAssertEqual(json?["decision"] as? String, "approve")
+    }
+
+    // MARK: - Milestone Fixture Helpers
+
+    private func makeDelegationMilestonesRoot(
+        projectPath: String,
+        workerID: String = "worker-1",
+    ) -> URL {
+        CapacitorProjectPaths.projectDataDirectory(for: projectPath)
+            .appendingPathComponent("delegations", isDirectory: true)
+            .appendingPathComponent(workerID, isDirectory: true)
+            .appendingPathComponent("milestones", isDirectory: true)
+    }
+
+    private func createMilestoneFixture(
+        at milestonesRoot: URL,
+        milestoneID: String,
+        withBrief: Bool = false,
+        withManifest: Bool = false,
+        withValidManifest: Bool = true,
+        withDecision: Bool = false,
+        withSentinel: Bool = false,
+    ) throws {
+        let dir = milestonesRoot.appendingPathComponent(milestoneID, isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+
+        if withBrief {
+            try "Test brief for milestone \(milestoneID)".write(
+                to: dir.appendingPathComponent("brief.md"),
+                atomically: true,
+                encoding: .utf8,
+            )
+        }
+        if withManifest {
+            let content = withValidManifest
+                ? """
+                {"version":1,"milestone_id":"\(milestoneID)","summary":"test","artifacts":[]}
+                """
+                : "not valid json {{"
+            try content.write(
+                to: dir.appendingPathComponent("manifest.json"),
+                atomically: true,
+                encoding: .utf8,
+            )
+        }
+        if withDecision {
+            try """
+            {"version":1,"decision":"approve","submitted_at":"2026-03-19T00:00:00Z"}
+            """.write(
+                to: dir.appendingPathComponent("decision.json"),
+                atomically: true,
+                encoding: .utf8,
+            )
+        }
+        if withSentinel {
+            try Data().write(to: dir.appendingPathComponent(".review-ready"))
+        }
+    }
+
+    private func makeReconcileManager(
+        mutationRecorder: MutationRecorder,
+    ) -> DelegationLoopManager {
+        let emptyDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        return DelegationLoopManager(
+            mutateDelegation: { request in
+                await mutationRecorder.record(request)
+            },
+            sessionDiscovery: DelegationSessionDiscovery(
+                fileManager: .default,
+                claudeProjectsDirectory: emptyDir,
+            ),
+            claudeLauncher: { _, _ in
+                XCTFail("reconcile should not launch Claude")
+            },
+        )
+    }
+
     private func makeClaudeProjectsDirectoryWithSession(
         workingDirectoryName: String,
         sessionID: String,

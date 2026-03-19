@@ -220,26 +220,28 @@ actor DelegationLoopManager {
         }
     }
 
-    private struct WorkerPaths {
+    private struct WorkerRootPaths {
         let workerRoot: URL
+        let milestonesRoot: URL
         let statusPath: URL
-        let milestoneDirectory: URL
-        let briefPath: URL
-        let manifestPath: URL
-        let decisionJSONPath: URL
-        let decisionMarkdownPath: URL
         let completionMarkerPath: URL
         let launchPromptPath: URL
         let resumePromptPath: URL
     }
 
+    private struct MilestonePaths {
+        let directory: URL
+        let briefPath: URL
+        let manifestPath: URL
+        let decisionJSONPath: URL
+        let decisionMarkdownPath: URL
+        let pendingDecisionPath: URL
+        let sentinelPath: URL
+    }
+
     private struct AttachedSessionKey: Hashable {
         let normalizedProjectPath: String
         let workerID: String
-    }
-
-    private enum Constants {
-        static let milestoneID = "01"
     }
 
     private let runtimeMutation: DelegationMutator
@@ -302,7 +304,8 @@ actor DelegationLoopManager {
         let workerID = UUID().uuidString.lowercased()
         let worktreeName = "delegation-\(workerID.prefix(8))"
         let branchName = "pkp/\(worktreeName)"
-        let paths = workerPaths(projectPath: project.path, workerID: workerID)
+        let rootPaths = workerRootPaths(projectPath: project.path, workerID: workerID)
+        let milestone = milestonePaths(milestonesRoot: rootPaths.milestonesRoot, milestoneID: "01")
         clearAttachedSessions(forProjectPath: project.path)
 
         let worktree: WorktreeService.Worktree
@@ -320,15 +323,16 @@ actor DelegationLoopManager {
         }
 
         do {
-            try createWorkerDirectories(paths)
+            try createWorkerDirectories(rootPaths: rootPaths, milestonePaths: milestone)
             let prompt = buildInitialPrompt(
                 project: project,
                 idea: idea,
                 workerID: workerID,
                 worktreePath: worktree.path,
-                paths: paths,
+                rootPaths: rootPaths,
+                milestonePaths: milestone,
             )
-            try prompt.write(to: paths.launchPromptPath, atomically: true, encoding: .utf8)
+            try prompt.write(to: rootPaths.launchPromptPath, atomically: true, encoding: .utf8)
 
             try await mutateDelegationLogged(
                 RuntimeDelegationMutationRequest(
@@ -429,9 +433,13 @@ actor DelegationLoopManager {
             )
         }
 
-        let paths = workerPaths(projectPath: project.path, workerID: delegation.workerId)
-        try createWorkerDirectories(paths)
-        try writeReviewDecision(decision: decision, note: note, to: paths)
+        let rootPaths = workerRootPaths(projectPath: project.path, workerID: delegation.workerId)
+        let currentMilestoneID = delegation.currentReview?.milestoneId ?? "01"
+        let currentMilestone = milestonePaths(milestonesRoot: rootPaths.milestonesRoot, milestoneID: currentMilestoneID)
+        try createWorkerDirectories(rootPaths: rootPaths, milestonePaths: currentMilestone)
+
+        // Staged decision: write as pending first, promote after successful launch
+        try writeReviewDecision(decision: decision, note: note, to: currentMilestone, staged: true)
 
         try await mutateDelegationLogged(
             RuntimeDelegationMutationRequest(
@@ -451,13 +459,19 @@ actor DelegationLoopManager {
             context: "resume worker=\(delegation.workerId) decision=\(decision.rawValue)",
         )
 
+        let nextMilestone: String? = decision == .requestChanges
+            ? nextMilestoneID(milestonesRoot: rootPaths.milestonesRoot)
+            : nil
+
         let prompt = buildResumePrompt(
             project: project,
             decision: decision,
             note: note,
-            paths: paths,
+            rootPaths: rootPaths,
+            currentMilestonePaths: currentMilestone,
+            nextMilestoneID: nextMilestone,
         )
-        try prompt.write(to: paths.resumePromptPath, atomically: true, encoding: .utf8)
+        try prompt.write(to: rootPaths.resumePromptPath, atomically: true, encoding: .utf8)
 
         do {
             try await claudeLauncher(
@@ -467,7 +481,11 @@ actor DelegationLoopManager {
                     resumeSessionID: sessionID,
                 ),
             ) { _ in }
+            // Launch succeeded — promote pending decision to final
+            try fileManager.moveItem(at: currentMilestone.pendingDecisionPath, to: currentMilestone.decisionJSONPath)
         } catch {
+            // Launch failed — clean up pending decision to preserve immutability contract
+            try? fileManager.removeItem(at: currentMilestone.pendingDecisionPath)
             await mutateDelegationLoggedIgnoringFailure(
                 RuntimeDelegationMutationRequest(
                     kind: "review_ready",
@@ -499,7 +517,7 @@ actor DelegationLoopManager {
     }
 
     private func reconcile(delegation: RuntimeDelegationState) async {
-        let paths = workerPaths(projectPath: delegation.projectPath, workerID: delegation.workerId)
+        let rootPaths = workerRootPaths(projectPath: delegation.projectPath, workerID: delegation.workerId)
         let discoveredSessionID = sessionDiscovery.mostRecentSessionID(for: delegation.worktreePath)
         let effectiveSessionID = discoveredSessionID ?? delegation.sessionId
 
@@ -518,7 +536,7 @@ actor DelegationLoopManager {
 
         guard delegation.status == "working" else { return }
 
-        if fileManager.fileExists(atPath: paths.completionMarkerPath.path) {
+        if fileManager.fileExists(atPath: rootPaths.completionMarkerPath.path) {
             do {
                 try await mutateDelegationLogged(
                     RuntimeDelegationMutationRequest(
@@ -541,12 +559,17 @@ actor DelegationLoopManager {
             return
         }
 
-        if fileManager.fileExists(atPath: paths.decisionJSONPath.path) {
+        guard let activeID = activeMilestoneID(milestonesRoot: rootPaths.milestonesRoot) else {
+            return
+        }
+        let activeMilestone = milestonePaths(milestonesRoot: rootPaths.milestonesRoot, milestoneID: activeID)
+
+        guard fileManager.fileExists(atPath: activeMilestone.sentinelPath.path) else {
             return
         }
 
-        guard fileManager.fileExists(atPath: paths.briefPath.path),
-              fileManager.fileExists(atPath: paths.manifestPath.path)
+        guard let manifestData = fileManager.contents(atPath: activeMilestone.manifestPath.path),
+              (try? JSONSerialization.jsonObject(with: manifestData)) != nil
         else {
             return
         }
@@ -560,9 +583,9 @@ actor DelegationLoopManager {
                 worktreeName: delegation.worktreeName,
                 worktreePath: delegation.worktreePath,
                 sessionId: effectiveSessionID,
-                milestoneId: Constants.milestoneID,
-                briefPath: paths.briefPath.path,
-                manifestPath: paths.manifestPath.path,
+                milestoneId: activeID,
+                briefPath: activeMilestone.briefPath.path,
+                manifestPath: activeMilestone.manifestPath.path,
                 reviewDecision: nil,
                 note: nil,
             ),
@@ -849,37 +872,76 @@ actor DelegationLoopManager {
         }
     }
 
-    private func workerPaths(projectPath: String, workerID: String) -> WorkerPaths {
+    private func workerRootPaths(projectPath: String, workerID: String) -> WorkerRootPaths {
         let workerRoot = CapacitorProjectPaths.projectDataDirectory(for: projectPath, fileManager: fileManager)
             .appendingPathComponent("delegations", isDirectory: true)
             .appendingPathComponent(workerID, isDirectory: true)
-        let milestoneDirectory = workerRoot
-            .appendingPathComponent("milestones", isDirectory: true)
-            .appendingPathComponent(Constants.milestoneID, isDirectory: true)
 
-        return WorkerPaths(
+        return WorkerRootPaths(
             workerRoot: workerRoot,
+            milestonesRoot: workerRoot.appendingPathComponent("milestones", isDirectory: true),
             statusPath: workerRoot.appendingPathComponent("status.md"),
-            milestoneDirectory: milestoneDirectory,
-            briefPath: milestoneDirectory.appendingPathComponent("brief.md"),
-            manifestPath: milestoneDirectory.appendingPathComponent("manifest.json"),
-            decisionJSONPath: milestoneDirectory.appendingPathComponent("decision.json"),
-            decisionMarkdownPath: milestoneDirectory.appendingPathComponent("decision.md"),
             completionMarkerPath: workerRoot.appendingPathComponent("completion.json"),
             launchPromptPath: workerRoot.appendingPathComponent("launch-prompt.md"),
             resumePromptPath: workerRoot.appendingPathComponent("resume-prompt.md"),
         )
     }
 
-    private func createWorkerDirectories(_ paths: WorkerPaths) throws {
-        try fileManager.createDirectory(at: paths.workerRoot, withIntermediateDirectories: true)
-        try fileManager.createDirectory(at: paths.milestoneDirectory, withIntermediateDirectories: true)
+    private func milestonePaths(milestonesRoot: URL, milestoneID: String) -> MilestonePaths {
+        let directory = milestonesRoot.appendingPathComponent(milestoneID, isDirectory: true)
+        return MilestonePaths(
+            directory: directory,
+            briefPath: directory.appendingPathComponent("brief.md"),
+            manifestPath: directory.appendingPathComponent("manifest.json"),
+            decisionJSONPath: directory.appendingPathComponent("decision.json"),
+            decisionMarkdownPath: directory.appendingPathComponent("decision.md"),
+            pendingDecisionPath: directory.appendingPathComponent("decision-pending.json"),
+            sentinelPath: directory.appendingPathComponent(".review-ready"),
+        )
+    }
+
+    private func nextMilestoneID(milestonesRoot: URL) -> String {
+        let maxID = numericMilestoneIDs(in: milestonesRoot).max() ?? 0
+        return String(format: "%02d", maxID + 1)
+    }
+
+    private func activeMilestoneID(milestonesRoot: URL) -> String? {
+        let ids = numericMilestoneIDs(in: milestonesRoot).sorted(by: >)
+        for id in ids {
+            let milestoneID = String(format: "%02d", id)
+            let decisionPath = milestonesRoot
+                .appendingPathComponent(milestoneID, isDirectory: true)
+                .appendingPathComponent("decision.json")
+            if !fileManager.fileExists(atPath: decisionPath.path) {
+                return milestoneID
+            }
+        }
+        return nil
+    }
+
+    private func numericMilestoneIDs(in milestonesRoot: URL) -> [Int] {
+        guard let contents = try? fileManager.contentsOfDirectory(
+            at: milestonesRoot,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles],
+        ) else {
+            return []
+        }
+        return contents.compactMap { url in
+            Int(url.lastPathComponent)
+        }
+    }
+
+    private func createWorkerDirectories(rootPaths: WorkerRootPaths, milestonePaths: MilestonePaths) throws {
+        try fileManager.createDirectory(at: rootPaths.workerRoot, withIntermediateDirectories: true)
+        try fileManager.createDirectory(at: milestonePaths.directory, withIntermediateDirectories: true)
     }
 
     private func writeReviewDecision(
         decision: ReviewDecision,
         note: String,
-        to paths: WorkerPaths,
+        to milestone: MilestonePaths,
+        staged: Bool = false,
     ) throws {
         let trimmedNote = note.trimmingCharacters(in: .whitespacesAndNewlines)
         let payload = ReviewDecisionPayload(
@@ -892,7 +954,8 @@ actor DelegationLoopManager {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let data = try encoder.encode(payload)
-        try data.write(to: paths.decisionJSONPath, options: .atomic)
+        let jsonPath = staged ? milestone.pendingDecisionPath : milestone.decisionJSONPath
+        try data.write(to: jsonPath, options: .atomic)
 
         let markdown = """
         # Review Decision
@@ -902,7 +965,7 @@ actor DelegationLoopManager {
 
         \(trimmedNote.isEmpty ? "No additional notes." : trimmedNote)
         """
-        try markdown.write(to: paths.decisionMarkdownPath, atomically: true, encoding: .utf8)
+        try markdown.write(to: milestone.decisionMarkdownPath, atomically: true, encoding: .utf8)
     }
 
     private func buildInitialPrompt(
@@ -910,7 +973,8 @@ actor DelegationLoopManager {
         idea: Idea,
         workerID: String,
         worktreePath: String,
-        paths: WorkerPaths,
+        rootPaths: WorkerRootPaths,
+        milestonePaths milestone: MilestonePaths,
     ) -> String {
         """
         You are executing one async delegation slice inside Capacitor.
@@ -928,23 +992,24 @@ actor DelegationLoopManager {
         1. Work only inside the current git worktree.
         2. Do not spawn subagents and do not use the Agent tool.
         3. Do not perform broad repo audits or exploratory surveys outside the task at hand.
-        4. Update \(paths.statusPath.path) immediately with a short plan, then keep it current with concise progress notes.
+        4. Update \(rootPaths.statusPath.path) immediately with a short plan, then keep it current with concise progress notes.
         5. Produce exactly one reviewable checkpoint and stop there.
-        6. Before stopping, write:
-           - \(paths.briefPath.path)
-           - \(paths.manifestPath.path)
+        6. Before stopping, write (in this order):
+           - \(milestone.briefPath.path)
+           - \(milestone.manifestPath.path)
+           - \(milestone.sentinelPath.path) (empty file — signals milestone is ready for review)
         7. The manifest must be valid JSON with this shape:
            {
              "version": 1,
-             "milestone_id": "\(Constants.milestoneID)",
+             "milestone_id": "\(milestone.directory.lastPathComponent)",
              "summary": "short summary",
              "artifacts": [
                { "label": "artifact label", "path": "absolute or relative file path" }
              ]
            }
-        8. Write \(paths.statusPath.path) before any substantial exploration or code changes.
+        8. Write \(rootPaths.statusPath.path) before any substantial exploration or code changes.
         9. Do not continue past the review checkpoint in this run.
-        10. Exit after writing the review files.
+        10. Exit after writing the sentinel file.
 
         Treat the review brief as the human-facing explanation of what changed, what still needs scrutiny, and what decision would unblock you.
         """
@@ -954,36 +1019,73 @@ actor DelegationLoopManager {
         project: Project,
         decision: ReviewDecision,
         note: String,
-        paths: WorkerPaths,
+        rootPaths: WorkerRootPaths,
+        currentMilestonePaths: MilestonePaths,
+        nextMilestoneID: String?,
     ) -> String {
         let trimmedNote = note.trimmingCharacters(in: .whitespacesAndNewlines)
+        let noteText = trimmedNote.isEmpty ? "No additional notes." : trimmedNote
 
-        return """
-        Resume the delegated work for \(project.name).
+        switch decision {
+        case .approve:
+            return """
+            Resume the delegated work for \(project.name).
 
-        Read the user's review decision from:
-        - \(paths.decisionJSONPath.path)
-        - \(paths.decisionMarkdownPath.path)
+            The reviewer approved your work on milestone \(currentMilestonePaths.directory.lastPathComponent).
 
-        Current decision: \(decision.rawValue)
-        Notes:
-        \(trimmedNote.isEmpty ? "No additional notes." : trimmedNote)
+            Decision: approve
+            Notes:
+            \(noteText)
 
-        Requirements:
-        1. Apply the review feedback and finish the task in the current worktree.
-        2. Do not spawn subagents and do not use the Agent tool.
-        3. If the decision is approve and no changes were requested, do not continue exploration or new implementation work. Treat the approved checkpoint as final, update \(paths.statusPath.path), write the completion marker, and exit.
-        4. If the decision is request_changes, address only the requested delta, then update \(paths.statusPath.path), write the completion marker, and exit.
-        5. Do not open another review checkpoint in this slice.
-        6. Update \(paths.statusPath.path) with final progress before exiting.
-        7. When finished, write \(paths.completionMarkerPath.path) as JSON with:
-           {
-             "version": 1,
-             "status": "completed",
-             "completed_at": "<ISO8601 timestamp>",
-             "summary": "short completion summary"
-           }
-        8. Exit after writing the completion marker.
-        """
+            Requirements:
+            1. Apply any minor adjustments if requested, then finalize.
+            2. Do not spawn subagents and do not use the Agent tool.
+            3. Do not continue exploration or start new implementation work. Treat the approved checkpoint as final.
+            4. Update \(rootPaths.statusPath.path) with final progress.
+            5. Do not open another review checkpoint.
+            6. When finished, write \(rootPaths.completionMarkerPath.path) as JSON with:
+               {
+                 "version": 1,
+                 "status": "completed",
+                 "completed_at": "<ISO8601 timestamp>",
+                 "summary": "short completion summary"
+               }
+            7. Exit after writing the completion marker.
+            """
+
+        case .requestChanges:
+            let nextID = nextMilestoneID ?? "02"
+            let nextMilestone = milestonePaths(milestonesRoot: rootPaths.milestonesRoot, milestoneID: nextID)
+            return """
+            Resume the delegated work for \(project.name).
+
+            The reviewer requested changes on milestone \(currentMilestonePaths.directory.lastPathComponent).
+
+            Decision: request_changes
+            Notes:
+            \(noteText)
+
+            Requirements:
+            1. Address the requested delta in the current worktree.
+            2. Do not spawn subagents and do not use the Agent tool.
+            3. Update \(rootPaths.statusPath.path) with progress as you work.
+            4. Address the requested changes and produce a new milestone.
+            5. You MUST produce a new review checkpoint in \(nextMilestone.directory.path):
+               - Write \(nextMilestone.briefPath.path)
+               - Write \(nextMilestone.manifestPath.path)
+               - Write \(nextMilestone.sentinelPath.path) (empty file — signals milestone is ready for review)
+            6. The manifest must be valid JSON with this shape:
+               {
+                 "version": 1,
+                 "milestone_id": "\(nextID)",
+                 "summary": "short summary",
+                 "artifacts": [
+                   { "label": "artifact label", "path": "absolute or relative file path" }
+                 ]
+               }
+            7. Write files in this order: brief.md, then manifest.json, then .review-ready sentinel.
+            8. Exit after writing the sentinel file.
+            """
+        }
     }
 }
