@@ -17,7 +17,7 @@
 #   impl_dispatched      - Record a completed implementation handoff
 #   review_clean         - Set slice status to "done", record verdict
 #   review_rejected      - Increment review_rejections for the slice
-#   converge_complete    - Set phase to "complete", all slices to "done"
+#   converge_complete    - Set phase to "complete", converge slices to "done"
 #   converge_failed      - Increment convergence_attempts
 #   analytically_resolved - Slice resolved by analysis (no code change needed)
 #   orchestrator_direct   - Orchestrator fixed directly (code changed, no worker)
@@ -35,13 +35,28 @@
 #   --verification CMD - Verification command; repeat to add multiple commands
 #   --criteria TEXT    - Success criteria text (optional for add_slice)
 #   --validate         - Check batch.json consistency, exit 0 if clean, 1 if drift
-#   --rebuild          - Rebuild batch.json from .relay/plan.json + events.ndjson
-#   --batch PATH       - Path to batch.json (default: .relay/batch.json)
+#   --rebuild          - Rebuild batch.json from <root>/plan.json + <root>/events.ndjson
+#   --root DIR         - Relay state root (default: .relay/); derives batch.json,
+#                        events.ndjson, plan.json, and archive/
+#   --batch PATH       - Path to batch.json (default: <root>/batch.json). If used
+#                        with --root, this overrides only batch.json
 
 set -euo pipefail
 
-BATCH_FILE=".relay/batch.json"
-ARCHIVE_DIR=".relay/archive"
+root_path() {
+  local root="$1"
+  local name="$2"
+
+  if [[ "$root" == "/" ]]; then
+    printf '/%s\n' "$name"
+    return
+  fi
+
+  printf '%s/%s\n' "${root%/}" "$name"
+}
+
+ROOT_DIR=".relay"
+BATCH_OVERRIDE=""
 SLICE=""
 EVENT=""
 HANDOFF=""
@@ -75,7 +90,8 @@ while [[ $# -gt 0 ]]; do
     --criteria) CRITERIA="$2"; shift 2 ;;
     --validate) VALIDATE=true; shift ;;
     --rebuild)  REBUILD=true; shift ;;
-    --batch)    BATCH_FILE="$2"; shift 2 ;;
+    --root)     ROOT_DIR="$2"; shift 2 ;;
+    --batch)    BATCH_OVERRIDE="$2"; shift 2 ;;
     *) echo "Unknown option: $1" >&2; exit 1 ;;
   esac
 done
@@ -85,7 +101,12 @@ if $VALIDATE && $REBUILD; then
   exit 1
 fi
 
-python3 - "$BATCH_FILE" "$ARCHIVE_DIR" "$SLICE" "$EVENT" "$HANDOFF" "$SUMMARY" "$TASK" "$SLICE_TYPE" "$SCOPE" "$SKILLS" "$VERIFICATION" "$CRITERIA" "$VALIDATE" "$REBUILD" <<'PY'
+BATCH_FILE="${BATCH_OVERRIDE:-$(root_path "$ROOT_DIR" "batch.json")}"
+ARCHIVE_DIR="$(root_path "$ROOT_DIR" "archive")"
+EVENTS_FILE="$(root_path "$ROOT_DIR" "events.ndjson")"
+PLAN_FILE="$(root_path "$ROOT_DIR" "plan.json")"
+
+python3 - "$BATCH_FILE" "$ARCHIVE_DIR" "$EVENTS_FILE" "$PLAN_FILE" "$SLICE" "$EVENT" "$HANDOFF" "$SUMMARY" "$TASK" "$SLICE_TYPE" "$SCOPE" "$SKILLS" "$VERIFICATION" "$CRITERIA" "$VALIDATE" "$REBUILD" <<'PY'
 import json
 import os
 import shutil
@@ -96,20 +117,24 @@ from datetime import datetime, timezone
 
 batch_file = sys.argv[1]
 archive_dir = sys.argv[2]
-slice_id = sys.argv[3]
-event = sys.argv[4]
-handoff = sys.argv[5]
-summary = sys.argv[6]
-task = sys.argv[7]
-slice_type = sys.argv[8]
-scope = sys.argv[9]
-skills = sys.argv[10]
-verification = sys.argv[11]
-criteria = sys.argv[12]
-validate_mode = sys.argv[13] == "true"
-rebuild_mode = sys.argv[14] == "true"
+events_file = sys.argv[3]
+plan_file = sys.argv[4]
+slice_id = sys.argv[5]
+event = sys.argv[6]
+handoff = sys.argv[7]
+summary = sys.argv[8]
+task = sys.argv[9]
+slice_type = sys.argv[10]
+scope = sys.argv[11]
+skills = sys.argv[12]
+verification = sys.argv[13]
+criteria = sys.argv[14]
+validate_mode = sys.argv[15] == "true"
+rebuild_mode = sys.argv[16] == "true"
 
 VALID_TYPES = {"implement", "review", "converge"}
+VALID_PHASES = {"implement", "converge", "complete"}
+VALID_STATUSES = {"pending", "in_progress", "done"}
 SLICE_LEVEL_EVENTS = {
     "attempt_started",
     "impl_dispatched",
@@ -128,10 +153,12 @@ NORMALIZED_EVENTS = {
     "analytically_resolved",
     "orchestrator_direct",
 }
-
-relay_dir = os.path.dirname(batch_file) or os.path.normpath(os.path.join(archive_dir, os.pardir))
-events_file = os.path.join(os.path.normpath(os.path.join(archive_dir, os.pardir)), "events.ndjson")
-plan_file = os.path.join(relay_dir, "plan.json")
+DONE_SLICE_EVENTS = {
+    "attempt_started",
+    "impl_dispatched",
+    "review_clean",
+    "review_rejected",
+}
 
 
 def utc_now():
@@ -146,16 +173,30 @@ def parse_lines(value):
     return [line.strip() for line in value.splitlines() if line.strip()]
 
 
-def load_json(path, description):
+def require_cli_string(value, flag_name, required_message):
+    if not isinstance(value, str) or value == "":
+        print(f"ERROR: {required_message}", file=sys.stderr)
+        sys.exit(1)
+    if not value.strip():
+        print(f"ERROR: {flag_name} must be a non-empty, non-whitespace string", file=sys.stderr)
+        sys.exit(1)
+    return value
+
+
+def load_json(path, description, require_object=False):
     try:
         with open(path) as fh:
-            return json.load(fh)
+            payload = json.load(fh)
     except FileNotFoundError:
         print(f"ERROR: {description} {path} not found", file=sys.stderr)
         sys.exit(1)
     except json.JSONDecodeError as exc:
         print(f"ERROR: {description} {path} is not valid JSON: {exc}", file=sys.stderr)
         sys.exit(1)
+    if require_object and not isinstance(payload, dict):
+        print(f"ERROR: {description} must be a JSON object: {path}", file=sys.stderr)
+        sys.exit(1)
+    return payload
 
 
 def write_json_atomic(path, payload):
@@ -182,6 +223,9 @@ def load_events(path):
                 record = json.loads(stripped)
             except json.JSONDecodeError as exc:
                 print(f"ERROR: {path}:{line_no} is not valid JSON: {exc}", file=sys.stderr)
+                sys.exit(1)
+            if not isinstance(record, dict):
+                print(f"ERROR: {path}:{line_no} must be a JSON object", file=sys.stderr)
                 sys.exit(1)
             records.append(record)
     return records
@@ -217,6 +261,15 @@ def find_slice(batch, sid):
     sys.exit(1)
 
 
+def reject_done_slice_event(current, cli_event):
+    if current.get("status") == "done":
+        print(
+            f"ERROR: {cli_event} rejected; slice {current.get('id')} is already done",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+
 def next_pending(batch):
     for current in batch.get("slices", []):
         if current.get("status") == "pending" and current.get("type", "implement") != "converge":
@@ -238,9 +291,8 @@ def advance_after_resolution(batch):
 
 
 def build_add_slice_payload(batch, ts):
-    if not task or not slice_type:
-        print("ERROR: add_slice requires --task and --type", file=sys.stderr)
-        sys.exit(1)
+    require_cli_string(task, "--task", "add_slice requires --task and --type")
+    require_cli_string(slice_type, "--type", "add_slice requires --task and --type")
     if slice_type not in VALID_TYPES:
         print(
             f"ERROR: invalid slice type \"{slice_type}\" (expected one of: implement, review, converge)",
@@ -263,12 +315,12 @@ def build_add_slice_payload(batch, ts):
 
 
 def build_record(batch, cli_event, ts):
-    if cli_event in SLICE_LEVEL_EVENTS and not slice_id:
-        print(f"ERROR: --slice is required for {cli_event}", file=sys.stderr)
-        sys.exit(1)
+    if cli_event in SLICE_LEVEL_EVENTS:
+        require_cli_string(slice_id, "--slice", f"--slice is required for {cli_event}")
 
     if cli_event == "attempt_started":
-        find_slice(batch, slice_id)
+        current = find_slice(batch, slice_id)
+        reject_done_slice_event(current, cli_event)
         return {
             "ts": ts,
             "event": "attempt_started",
@@ -277,7 +329,8 @@ def build_record(batch, cli_event, ts):
             "summary": summary,
         }
     if cli_event == "impl_dispatched":
-        find_slice(batch, slice_id)
+        current = find_slice(batch, slice_id)
+        reject_done_slice_event(current, cli_event)
         return {
             "ts": ts,
             "event": "attempt_finished",
@@ -286,7 +339,8 @@ def build_record(batch, cli_event, ts):
             "summary": summary,
         }
     if cli_event in {"review_clean", "review_rejected"}:
-        find_slice(batch, slice_id)
+        current = find_slice(batch, slice_id)
+        reject_done_slice_event(current, cli_event)
         default_summary = "CLEAN" if cli_event == "review_clean" else "ISSUES FOUND"
         return {
             "ts": ts,
@@ -330,6 +384,8 @@ def apply_record(batch, record):
 
     if record_event == "attempt_started":
         current = find_slice(batch, record_slice)
+        if mutation in DONE_SLICE_EVENTS:
+            reject_done_slice_event(current, mutation)
         if not current.get("attempt_in_progress"):
             current["impl_attempts"] = current.get("impl_attempts", 0) + 1
         current["attempt_in_progress"] = True
@@ -340,6 +396,8 @@ def apply_record(batch, record):
 
     if record_event == "attempt_finished":
         current = find_slice(batch, record_slice)
+        if mutation in DONE_SLICE_EVENTS:
+            reject_done_slice_event(current, mutation)
         if not current.get("attempt_in_progress"):
             current["impl_attempts"] = current.get("impl_attempts", 0) + 1
         clear_attempt_flag(current)
@@ -352,6 +410,8 @@ def apply_record(batch, record):
 
     if record_event == "review_recorded":
         current = find_slice(batch, record_slice)
+        if mutation in DONE_SLICE_EVENTS:
+            reject_done_slice_event(current, mutation)
         clear_attempt_flag(current)
         current["last_updated"] = ts
         if mutation == "review_clean":
@@ -369,9 +429,17 @@ def apply_record(batch, record):
     if record_event == "converge_started":
         if mutation == "converge_complete":
             for current in batch.get("slices", []):
-                current["status"] = "done"
-                current["last_updated"] = ts
-                clear_attempt_flag(current)
+                if current.get("type", "implement") != "converge" and current.get("status") in {"pending", "in_progress"}:
+                    print(
+                        f"ERROR: converge_complete rejected; slice {current.get('id')} is still {current.get('status')}",
+                        file=sys.stderr,
+                    )
+                    sys.exit(1)
+            for current in batch.get("slices", []):
+                if current.get("type", "implement") == "converge":
+                    current["status"] = "done"
+                    current["last_updated"] = ts
+                    clear_attempt_flag(current)
             batch["phase"] = "complete"
             batch["current_slice"] = ""
             return
@@ -452,15 +520,31 @@ def print_mutation_summary(batch, record):
         print(f"converge [{event}]: attempts={batch.get('convergence_attempts', 0)} phase={batch.get('phase', '')}")
 
 
+def reject_terminal_batch_mutation(batch, cli_event):
+    if batch.get("phase") != "complete":
+        return
+    print(f"ERROR: batch is complete; {cli_event} rejected", file=sys.stderr)
+    sys.exit(1)
+
+
 def validate_batch(batch):
     errors = []
-    slice_ids = {current["id"] for current in batch.get("slices", [])}
+    phase = batch.get("phase")
+    if phase not in VALID_PHASES:
+        errors.append(f"batch phase {phase!r} is invalid")
+
+    slice_map = {current["id"]: current for current in batch.get("slices", [])}
+    slice_ids = set(slice_map)
     current_slice = batch.get("current_slice", "")
     if current_slice and current_slice not in slice_ids:
         errors.append(f"current_slice \"{current_slice}\" not in slice list")
+    elif current_slice and slice_map[current_slice].get("status") == "done":
+        errors.append(f"current_slice \"{current_slice}\" points to done slice")
     for current in batch.get("slices", []):
         if current.get("type", "implement") not in VALID_TYPES:
             errors.append(f"{current['id']} has invalid type {current.get('type')!r}")
+        if current.get("status") not in VALID_STATUSES:
+            errors.append(f"{current['id']} has invalid status {current.get('status')!r}")
         if (
             current.get("status") == "done"
             and current.get("impl_attempts", 0) == 0
@@ -470,11 +554,23 @@ def validate_batch(batch):
             errors.append(f"{current['id']} is done but has 0 impl_attempts")
         if current.get("status") == "done" and current.get("attempt_in_progress"):
             errors.append(f"{current['id']} is done but still marked attempt_in_progress")
+    non_terminal = [
+        f"{current.get('id')} ({current.get('status')})"
+        for current in batch.get("slices", [])
+        if current.get("status") in {"pending", "in_progress"}
+    ]
+    if batch.get("phase") == "complete" and non_terminal:
+        errors.append(
+            "completed batches must not leave slices pending or in_progress"
+            + (f": {', '.join(non_terminal)}" if non_terminal else "")
+        )
     return errors
 
 
 if validate_mode:
-    batch = load_json(batch_file, "batch file")
+    batch = load_json(batch_file, "batch file", require_object=True)
+    if os.path.exists(events_file):
+        load_events(events_file)
     drift = validate_batch(batch)
     if drift:
         for item in drift:
@@ -484,10 +580,15 @@ if validate_mode:
     sys.exit(0)
 
 if rebuild_mode:
-    plan = load_json(plan_file, "plan file")
+    plan = load_json(plan_file, "plan file", require_object=True)
     rebuilt = deepcopy(plan)
     for record in load_events(events_file):
         apply_record(rebuilt, record)
+    drift = validate_batch(rebuilt)
+    if drift:
+        for item in drift:
+            print(f"DRIFT: {item}", file=sys.stderr)
+        sys.exit(1)
     write_json_atomic(batch_file, rebuilt)
     print(f"Rebuilt {batch_file} from {plan_file} + {events_file}")
     sys.exit(0)
@@ -500,11 +601,14 @@ if not event:
     print("ERROR: --event is required (or use --validate/--rebuild)", file=sys.stderr)
     sys.exit(1)
 
-batch = load_json(batch_file, "batch file")
+batch = load_json(batch_file, "batch file", require_object=True)
+reject_terminal_batch_mutation(batch, event)
 ts = utc_now()
 record = build_record(batch, event, ts)
+updated_batch = deepcopy(batch)
+apply_record(updated_batch, record)
 append_event(events_file, record)
-apply_record(batch, record)
+batch = updated_batch
 archive_handoff_if_present(batch)
 write_json_atomic(batch_file, batch)
 print_mutation_summary(batch, record)

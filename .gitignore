@@ -57,10 +57,11 @@ dist-guide
 .relay/
 
 # Formal verifier caches and reports
-.verifier/facts/
-.verifier/reports/
+**/.verifier/facts/
+**/.verifier/reports/
 .verifier/.venv/
 tests/verify/fixtures/*/.verifier/
 
 # Python bytecode caches
 __pycache__/
+*.pyc
