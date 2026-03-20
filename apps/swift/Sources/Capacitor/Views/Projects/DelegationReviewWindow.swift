@@ -9,6 +9,10 @@ struct DelegationReviewWindow: View {
     @State private var previousDecision: PreviousRoundDecision?
     @State private var selectedDecision: DecisionOption?
     @State private var note = ""
+    @State private var diffStat = ""
+    @State private var fullDiff = ""
+    @State private var showFullDiff = false
+    @State private var swiftChangesBannerDismissed = false
 
     private var target: AppState.ReviewWindowTarget? {
         appState.reviewWindowTarget
@@ -46,6 +50,19 @@ struct DelegationReviewWindow: View {
                     decisionRail(project: project, delegation: delegation)
                         .frame(width: 300)
                 }
+            } else if target != nil, delegation != nil {
+                VStack(spacing: 12) {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(.white.opacity(0.5))
+                    Text("Decision submitted")
+                        .font(.title3)
+                        .foregroundColor(.white.opacity(0.65))
+                    Text("The worker is processing your feedback.")
+                        .font(.body)
+                        .foregroundColor(.white.opacity(0.42))
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 VStack(spacing: 12) {
                     Text("No active review")
@@ -136,6 +153,51 @@ struct DelegationReviewWindow: View {
                 .font(.caption.monospaced())
                 .foregroundColor(.white.opacity(0.42))
 
+                // Swift changes banner
+                if manifest?.swiftChanges == true, !swiftChangesBannerDismissed {
+                    HStack(spacing: 10) {
+                        Image(systemName: "info.circle.fill")
+                            .font(.callout)
+                            .foregroundColor(.blue.opacity(0.7))
+
+                        Text("This milestone includes Swift changes. The running app reflects the previous build.")
+                            .font(.callout)
+                            .foregroundColor(.white.opacity(0.72))
+
+                        Spacer()
+
+                        Button(action: {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString("./scripts/dev/restart-alpha-stable.sh", forType: .string)
+                        }) {
+                            Text("Copy rebuild cmd")
+                                .font(.caption.weight(.medium))
+                                .foregroundColor(.blue.opacity(0.8))
+                        }
+                        .buttonStyle(.plain)
+
+                        Button(action: {
+                            withAnimation(.easeOut(duration: 0.15)) {
+                                swiftChangesBannerDismissed = true
+                            }
+                        }) {
+                            Image(systemName: "xmark")
+                                .font(.caption2)
+                                .foregroundColor(.white.opacity(0.35))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(12)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(Color.blue.opacity(0.08))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .strokeBorder(Color.blue.opacity(0.2), lineWidth: 1),
+                            ),
+                    )
+                }
+
                 Divider()
                     .background(Color.white.opacity(0.08))
 
@@ -170,6 +232,51 @@ struct DelegationReviewWindow: View {
                                         .foregroundColor(.white.opacity(0.35))
                                         .textSelection(.enabled)
                                 }
+                            }
+                        }
+                    }
+                }
+
+                // Changes diff
+                if !diffStat.isEmpty {
+                    VStack(alignment: .leading, spacing: 10) {
+                        sectionLabel("CHANGES")
+
+                        Text(diffStat)
+                            .font(.caption.monospaced())
+                            .foregroundColor(.white.opacity(0.62))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .textSelection(.enabled)
+
+                        if !fullDiff.isEmpty {
+                            Button(action: {
+                                withAnimation(.easeInOut(duration: 0.15)) {
+                                    showFullDiff.toggle()
+                                }
+                            }) {
+                                HStack(spacing: 4) {
+                                    Image(systemName: showFullDiff ? "chevron.down" : "chevron.right")
+                                        .font(.caption2)
+                                    Text(showFullDiff ? "Hide Full Diff" : "Show Full Diff")
+                                        .font(.caption.weight(.medium))
+                                }
+                                .foregroundColor(.white.opacity(0.5))
+                            }
+                            .buttonStyle(.plain)
+
+                            if showFullDiff {
+                                ScrollView(.horizontal, showsIndicators: true) {
+                                    Text(fullDiff)
+                                        .font(.caption.monospaced())
+                                        .foregroundColor(.white.opacity(0.62))
+                                        .textSelection(.enabled)
+                                }
+                                .frame(maxHeight: 400)
+                                .padding(10)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                        .fill(Color.black.opacity(0.25)),
+                                )
                             }
                         }
                     }
@@ -379,6 +486,10 @@ struct DelegationReviewWindow: View {
                 reviewBrief = ""
                 manifest = nil
                 previousDecision = nil
+                diffStat = ""
+                fullDiff = ""
+                showFullDiff = false
+                swiftChangesBannerDismissed = false
             }
             return
         }
@@ -392,11 +503,46 @@ struct DelegationReviewWindow: View {
         // Load previous round context
         let prevDecision = loadPreviousRoundDecision(currentMilestoneId: currentReview.milestoneId)
 
+        // Load worktree diff
+        let worktreePath = delegation?.worktreePath
+        let stat = worktreePath.flatMap { Self.runGitDiff(in: $0, stat: true) } ?? ""
+        let diff = worktreePath.flatMap { Self.runGitDiff(in: $0, stat: false) } ?? ""
+
         await MainActor.run {
             reviewBrief = brief
             manifest = decodedManifest
             previousDecision = prevDecision
+            diffStat = stat
+            fullDiff = diff
+            showFullDiff = false
+            swiftChangesBannerDismissed = false
         }
+    }
+
+    private static func runGitDiff(in worktreePath: String, stat: Bool) -> String? {
+        let process = Process()
+        let pipe = Pipe()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        var arguments = ["diff", "HEAD"]
+        if stat {
+            arguments.append("--stat")
+        }
+        process.arguments = arguments
+        process.currentDirectoryURL = URL(fileURLWithPath: worktreePath)
+        process.standardOutput = pipe
+        process.standardError = FileHandle.nullDevice
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            return nil
+        }
+
+        guard process.terminationStatus == 0 else { return nil }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        let output = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return output?.isEmpty == true ? nil : output
     }
 
     private func loadPreviousRoundDecision(currentMilestoneId: String) -> PreviousRoundDecision? {

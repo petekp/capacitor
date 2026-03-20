@@ -909,10 +909,14 @@ actor DelegationLoopManager {
         let ids = numericMilestoneIDs(in: milestonesRoot).sorted(by: >)
         for id in ids {
             let milestoneID = String(format: "%02d", id)
-            let decisionPath = milestonesRoot
-                .appendingPathComponent(milestoneID, isDirectory: true)
-                .appendingPathComponent("decision.json")
-            if !fileManager.fileExists(atPath: decisionPath.path) {
+            let milestoneDir = milestonesRoot.appendingPathComponent(milestoneID, isDirectory: true)
+            let hasDecision = fileManager.fileExists(
+                atPath: milestoneDir.appendingPathComponent("decision.json").path
+            )
+            let hasPendingDecision = fileManager.fileExists(
+                atPath: milestoneDir.appendingPathComponent("decision-pending.json").path
+            )
+            if !hasDecision, !hasPendingDecision {
                 return milestoneID
             }
         }
@@ -1009,9 +1013,11 @@ actor DelegationLoopManager {
              "decisions": {
                "approve": { "label": "short contextual CTA", "description": "why the reviewer should approve" },
                "request_changes": { "label": "short contextual CTA", "description": "what specifically needs work" }
-             }
+             },
+             "swift_changes": true
            }
            The "decisions" field is required. Labels should be 2-4 words. Descriptions should be one short sentence — specific to what you did, not generic. The reviewer sees these as action options.
+           Set "swift_changes" to true if you modified any .swift files. Omit it or set to false otherwise.
         8. Write \(rootPaths.statusPath.path) before any substantial exploration or code changes.
         9. Do not continue past the review checkpoint in this run.
         10. Exit after writing the sentinel file.
@@ -1090,9 +1096,11 @@ actor DelegationLoopManager {
                  "decisions": {
                    "approve": { "label": "short contextual CTA", "description": "why the reviewer should approve" },
                    "request_changes": { "label": "short contextual CTA", "description": "what specifically needs work" }
-                 }
+                 },
+                 "swift_changes": true
                }
                The "decisions" field is required. Labels should be 2-4 words. Descriptions should be one short sentence — specific to what you did, not generic. The reviewer sees these as action options.
+               Set "swift_changes" to true if you modified any .swift files. Omit it or set to false otherwise.
             7. Write files in this order: brief.md, then manifest.json, then .review-ready sentinel.
             8. Exit after writing the sentinel file.
             """

@@ -30,6 +30,7 @@ struct DelegationReviewManifest: Decodable {
     let summary: String?
     let artifacts: [Artifact]
     let decisions: DecisionHints?
+    let swiftChanges: Bool?
 
     enum CodingKeys: String, CodingKey {
         case version
@@ -37,5 +38,6 @@ struct DelegationReviewManifest: Decodable {
         case summary
         case artifacts
         case decisions
+        case swiftChanges = "swift_changes"
     }
 }

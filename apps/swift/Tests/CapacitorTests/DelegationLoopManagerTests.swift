@@ -957,6 +957,49 @@ final class DelegationLoopManagerTests: XCTestCase {
         XCTAssertEqual(json?["decision"] as? String, "approve")
     }
 
+    // MARK: - Reconcile Race Condition Tests
+
+    func testReconcileSkipsReviewReadyWhenPendingDecisionExists() async throws {
+        let projectPath = "/tmp/projects/test-race"
+        let milestonesRoot = makeDelegationMilestonesRoot(projectPath: projectPath)
+        addTeardownBlock {
+            try? FileManager.default.removeItem(
+                at: CapacitorProjectPaths.projectDataDirectory(for: projectPath)
+            )
+        }
+
+        // Milestone 01 has sentinel + manifest BUT also a pending decision
+        // (simulates the window between submitReviewDecision writing pending
+        // and the Claude launch completing)
+        try createMilestoneFixture(
+            at: milestonesRoot,
+            milestoneID: "01",
+            withBrief: true,
+            withManifest: true,
+            withPendingDecision: true,
+            withSentinel: true,
+        )
+
+        let mutationRecorder = MutationRecorder()
+        let manager = makeReconcileManager(mutationRecorder: mutationRecorder)
+
+        await manager.reconcile(delegations: [
+            makeDelegation(
+                projectPath: projectPath,
+                sessionId: "session-200",
+                status: "working",
+                currentReview: nil,
+            ),
+        ])
+
+        let requests = await mutationRecorder.snapshot()
+        let reviewReadyRequests = requests.filter { $0.kind == "review_ready" }
+        XCTAssertTrue(
+            reviewReadyRequests.isEmpty,
+            "reconcile must not re-fire review_ready when decision-pending.json exists (race condition)",
+        )
+    }
+
     // MARK: - Milestone Fixture Helpers
 
     private func makeDelegationMilestonesRoot(
@@ -976,6 +1019,7 @@ final class DelegationLoopManagerTests: XCTestCase {
         withManifest: Bool = false,
         withValidManifest: Bool = true,
         withDecision: Bool = false,
+        withPendingDecision: Bool = false,
         withSentinel: Bool = false,
     ) throws {
         let dir = milestonesRoot.appendingPathComponent(milestoneID, isDirectory: true)
@@ -1005,6 +1049,15 @@ final class DelegationLoopManagerTests: XCTestCase {
             {"version":1,"decision":"approve","submitted_at":"2026-03-19T00:00:00Z"}
             """.write(
                 to: dir.appendingPathComponent("decision.json"),
+                atomically: true,
+                encoding: .utf8,
+            )
+        }
+        if withPendingDecision {
+            try """
+            {"version":1,"decision":"request_changes","submitted_at":"2026-03-19T00:00:00Z"}
+            """.write(
+                to: dir.appendingPathComponent("decision-pending.json"),
                 atomically: true,
                 encoding: .utf8,
             )
