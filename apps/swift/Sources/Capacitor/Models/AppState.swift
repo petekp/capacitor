@@ -164,7 +164,7 @@ class AppState {
     let routingStateStore = RoutingStateStore()
     let terminalLauncher = TerminalLauncher()
     let sessionStateManager = SessionStateManager()
-    let hookServerManager = HookServerManager()
+    let hookServerManager: HookServerManager
     let projectDetailsManager = ProjectDetailsManager()
     private(set) var delegationLoopManager: DelegationLoopManager!
     private let projectIngestionWorker = ProjectIngestionWorker()
@@ -199,6 +199,11 @@ class AppState {
     private(set) var didAttemptRuntimeHealthCheckForTesting = false
     private(set) var didStartRefreshTimerForTesting = false
     private(set) var didStartShellTrackingForTesting = false
+    private(set) var didShutdownForTesting = false
+    #if DEBUG
+        private(set) var runtimeBootstrapTraceForTesting: [String] = []
+    #endif
+    private var isShuttingDown = false
 
     // MARK: - Computed Properties (bridging to managers)
 
@@ -212,8 +217,21 @@ class AppState {
 
     // MARK: - Initialization
 
-    init(runtimeClient: RuntimeClient = RuntimeClient.shared) {
+    init(
+        runtimeClient: RuntimeClient = RuntimeClient.shared,
+        hookServerManager: HookServerManager = HookServerManager(),
+    ) {
         self.runtimeClient = runtimeClient
+        self.hookServerManager = hookServerManager
+        self.runtimeClient.setIncompatibleSchemaHandler { [weak self] health, minimumSchemaVersion in
+            guard let self else { return }
+            await MainActor.run {
+                self.handleIncompatibleRuntimeServiceSchema(
+                    observedSchemaVersion: health.normalizedSchemaVersion,
+                    minimumSchemaVersion: minimumSchemaVersion,
+                )
+            }
+        }
         DebugLog.write(
             "AppState.init start runtimeEnabled=\(runtimeClient.isEnabled) home=\(FileManager.default.homeDirectoryForCurrentUser.path)",
         )
@@ -354,7 +372,6 @@ class AppState {
 
         scheduleRuntimeBootstrap()
     }
-
     private func scheduleRuntimeBootstrap() {
         didScheduleRuntimeBootstrapForTesting = true
 
@@ -365,8 +382,14 @@ class AppState {
             do {
                 guard !_Concurrency.Task.isCancelled else { return }
                 engine = try CoreRuntime()
+                recordRuntimeBootstrapStepForTesting("createCoreRuntime")
                 guard !_Concurrency.Task.isCancelled else { return }
 
+                recordRuntimeBootstrapStepForTesting("startHookServer")
+                hookServerManager.startIfNeeded()
+                guard !_Concurrency.Task.isCancelled else { return }
+
+                recordRuntimeBootstrapStepForTesting("ensureRuntimeReady")
                 ensureRuntimeReady()
                 guard !_Concurrency.Task.isCancelled else { return }
 
@@ -374,7 +397,6 @@ class AppState {
                 loadDashboard()
                 guard !_Concurrency.Task.isCancelled else { return }
                 checkHookDiagnostic()
-                hookServerManager.startIfNeeded()
                 setupRefreshTimer()
                 startShellTracking()
             } catch {
@@ -382,6 +404,20 @@ class AppState {
                 isLoading = false
             }
         }
+    }
+
+    func shutdown() {
+        guard !isShuttingDown else { return }
+        isShuttingDown = true
+        didShutdownForTesting = true
+
+        runtimeBootstrapTask?.cancel()
+        runtimeBootstrapTask = nil
+        runtimeSnapshotTask?.cancel()
+        runtimeSnapshotTask = nil
+        refreshTimer?.invalidate()
+        refreshTimer = nil
+        hookServerManager.stop()
     }
 
     // MARK: - Setup
@@ -752,6 +788,18 @@ class AppState {
                 }
             }
         }
+    }
+
+    private func handleIncompatibleRuntimeServiceSchema(
+        observedSchemaVersion: Int,
+        minimumSchemaVersion: Int,
+    ) {
+        DebugLog.write(
+            "Runtime service schema version \(observedSchemaVersion) is older than required version \(minimumSchemaVersion). Restarting runtime.",
+        )
+        hookServerManager.stop()
+        hookServerManager.startIfNeeded()
+        toast = ToastMessage("Runtime service restarted for compatibility")
     }
 
     private func resolveActivationRoute(
@@ -1682,6 +1730,12 @@ class AppState {
             projectCreationCoordinator.hasCreationMonitorTasksForTesting(creationId: creationId)
         }
     #endif
+
+    private func recordRuntimeBootstrapStepForTesting(_ step: String) {
+        #if DEBUG
+            runtimeBootstrapTraceForTesting.append(step)
+        #endif
+    }
 
     func cancelCreation(_ id: String) {
         projectCreationCoordinator.cancelCreation(id)

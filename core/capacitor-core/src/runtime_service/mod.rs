@@ -7,7 +7,7 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 use crate::domain::{
-    AppSnapshot, IngestHookEventCommand, IngestShellSignalCommand, MutationOutcome,
+    AppSnapshot, IngestHookEventCommand, IngestShellSignalCommand, MutationOutcome, SCHEMA_VERSION,
 };
 
 pub const RUNTIME_SERVICE_BOOTSTRAP_ENV: &str = "CAPACITOR_RUNTIME_SERVICE_BOOTSTRAP";
@@ -323,6 +323,7 @@ impl RuntimeServiceBootstrap {
             pid: std::process::id(),
             version: format!("{}:{}", RUNTIME_SERVICE_VERSION, self.port),
             protocol_version: RUNTIME_SERVICE_PROTOCOL_VERSION,
+            schema_version: SCHEMA_VERSION,
             auth_mode: RUNTIME_SERVICE_AUTH_MODE.to_string(),
             service_mode: RUNTIME_SERVICE_MODE_BOOTSTRAP_ONLY.to_string(),
         }
@@ -380,6 +381,7 @@ pub struct RuntimeServiceHealth {
     pub pid: u32,
     pub version: String,
     pub protocol_version: u32,
+    pub schema_version: u32,
     pub auth_mode: String,
     pub service_mode: String,
 }
@@ -397,6 +399,13 @@ impl RuntimeServiceHealth {
             return Err(format!(
                 "Unexpected runtime service protocol version {}; expected {}",
                 self.protocol_version, RUNTIME_SERVICE_PROTOCOL_VERSION
+            ));
+        }
+
+        if self.schema_version < SCHEMA_VERSION {
+            return Err(format!(
+                "Unexpected runtime service schema version {}; expected at least {}",
+                self.schema_version, SCHEMA_VERSION
             ));
         }
 
@@ -448,6 +457,7 @@ mod tests {
         RuntimeServiceBootstrap, RuntimeServiceHealth, RUNTIME_SERVICE_AUTH_MODE,
         RUNTIME_SERVICE_MODE_BOOTSTRAP_ONLY, RUNTIME_SERVICE_PROTOCOL_VERSION,
     };
+    use crate::domain::SCHEMA_VERSION;
 
     #[test]
     fn bootstrap_requires_matching_bearer_token() {
@@ -465,6 +475,7 @@ mod tests {
 
         assert_eq!(health.status, "ok");
         assert_eq!(health.protocol_version, RUNTIME_SERVICE_PROTOCOL_VERSION);
+        assert_eq!(health.schema_version, SCHEMA_VERSION);
         assert_eq!(health.auth_mode, "bearer");
         assert_eq!(health.service_mode, "bootstrap_only");
         assert!(health.pid > 0);
@@ -482,6 +493,7 @@ mod tests {
             pid: 4242,
             version: "runtime-service-test".to_string(),
             protocol_version: RUNTIME_SERVICE_PROTOCOL_VERSION,
+            schema_version: SCHEMA_VERSION,
             auth_mode: RUNTIME_SERVICE_AUTH_MODE.to_string(),
             service_mode: RUNTIME_SERVICE_MODE_BOOTSTRAP_ONLY.to_string(),
         };
@@ -496,6 +508,7 @@ mod tests {
             pid: 4242,
             version: "runtime-service-test".to_string(),
             protocol_version: RUNTIME_SERVICE_PROTOCOL_VERSION,
+            schema_version: SCHEMA_VERSION,
             auth_mode: "none".to_string(),
             service_mode: RUNTIME_SERVICE_MODE_BOOTSTRAP_ONLY.to_string(),
         };
@@ -504,5 +517,26 @@ mod tests {
             .validate_bootstrap_contract()
             .expect_err("mismatched auth mode should fail");
         assert!(error.contains("auth mode"), "unexpected error: {error}");
+    }
+
+    #[test]
+    fn validate_bootstrap_contract_rejects_older_schema_version() {
+        let health = RuntimeServiceHealth {
+            status: "ok".to_string(),
+            pid: 4242,
+            version: "runtime-service-test".to_string(),
+            protocol_version: RUNTIME_SERVICE_PROTOCOL_VERSION,
+            schema_version: SCHEMA_VERSION.saturating_sub(1),
+            auth_mode: RUNTIME_SERVICE_AUTH_MODE.to_string(),
+            service_mode: RUNTIME_SERVICE_MODE_BOOTSTRAP_ONLY.to_string(),
+        };
+
+        let error = health
+            .validate_bootstrap_contract()
+            .expect_err("older schema version should fail");
+        assert!(
+            error.contains("schema version"),
+            "unexpected error: {error}"
+        );
     }
 }

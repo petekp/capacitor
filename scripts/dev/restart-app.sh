@@ -8,6 +8,203 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 # shellcheck source=/dev/null
 source "$SCRIPT_DIR/load-runtime-env.sh"
 
+runtime_service_dir() {
+    printf '%s\n' "${CAPACITOR_RUNTIME_DIR:-$HOME/.capacitor/runtime}"
+}
+
+runtime_service_pid_file_path() {
+    local port="${1:-7474}"
+    printf '%s/runtime-service-%s.pid\n' "$(runtime_service_dir)" "$port"
+}
+
+runtime_service_token_file_path() {
+    local port="${1:-7474}"
+    printf '%s/runtime-service-%s.token\n' "$(runtime_service_dir)" "$port"
+}
+
+runtime_service_connection_file_path() {
+    printf '%s/runtime-service.json\n' "$(runtime_service_dir)"
+}
+
+legacy_daemon_socket_path() {
+    printf '%s\n' "${CAPACITOR_LEGACY_DAEMON_SOCKET:-$HOME/.capacitor/daemon.sock}"
+}
+
+legacy_daemon_dir_path() {
+    printf '%s\n' "${CAPACITOR_LEGACY_DAEMON_DIR:-$HOME/.capacitor/daemon}"
+}
+
+read_pid_from_file() {
+    local path="$1"
+    local pid=""
+
+    if [[ ! -f "$path" ]]; then
+        return 1
+    fi
+
+    pid="$(tr -d '[:space:]' < "$path" 2>/dev/null || true)"
+    if [[ "$pid" =~ ^[0-9]+$ ]]; then
+        printf '%s\n' "$pid"
+        return 0
+    fi
+
+    return 1
+}
+
+runtime_service_listener_pids() {
+    local port="${1:-7474}"
+    lsof -nP -iTCP:"$port" -sTCP:LISTEN -t 2>/dev/null || true
+}
+
+runtime_service_port_in_use() {
+    local port="${1:-7474}"
+    lsof -nP -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1
+}
+
+runtime_service_pid_listens_on_port() {
+    local pid="$1"
+    local port="${2:-7474}"
+    lsof -nP -a -p "$pid" -iTCP:"$port" -sTCP:LISTEN -t >/dev/null 2>&1
+}
+
+wait_for_pid_exit() {
+    local pid="$1"
+    local timeout_seconds="${2:-3}"
+    local attempts=$((timeout_seconds * 10))
+    local attempt=0
+
+    while (( attempt < attempts )); do
+        if ! kill -0 "$pid" 2>/dev/null; then
+            return 0
+        fi
+        sleep 0.1
+        attempt=$((attempt + 1))
+    done
+
+    return 1
+}
+
+terminate_pid_with_escalation() {
+    local pid="$1"
+    local label="$2"
+
+    if [[ ! "$pid" =~ ^[0-9]+$ ]] || [[ "$pid" -le 1 ]] || [[ "$pid" -eq "$$" ]]; then
+        return 0
+    fi
+
+    if ! kill -0 "$pid" 2>/dev/null; then
+        return 0
+    fi
+
+    echo "Stopping $label process $pid..."
+    kill -TERM "$pid" 2>/dev/null || true
+    if wait_for_pid_exit "$pid" 3; then
+        return 0
+    fi
+
+    echo "Force killing $label process $pid..."
+    kill -KILL "$pid" 2>/dev/null || true
+    wait_for_pid_exit "$pid" 2 || true
+}
+
+cleanup_runtime_service_artifacts() {
+    local port="${1:-7474}"
+
+    rm -f "$(runtime_service_pid_file_path "$port")"
+    rm -f "$(runtime_service_token_file_path "$port")"
+    rm -f "$(runtime_service_connection_file_path)"
+}
+
+reap_runtime_service() {
+    local port="${1:-7474}"
+    local pid_file
+    local pid_from_file=""
+    local listener_pid=""
+    local existing_pid=""
+    local candidate_pids=""
+    local port_wait_attempt=0
+
+    pid_file="$(runtime_service_pid_file_path "$port")"
+    pid_from_file="$(read_pid_from_file "$pid_file" || true)"
+    if [[ -n "$pid_from_file" ]] && kill -0 "$pid_from_file" 2>/dev/null && runtime_service_pid_listens_on_port "$pid_from_file" "$port"; then
+        candidate_pids="$pid_from_file"
+    fi
+
+    while IFS= read -r listener_pid; do
+        [[ -z "$listener_pid" ]] && continue
+
+        local seen=false
+        for existing_pid in $candidate_pids; do
+            if [[ "$existing_pid" == "$listener_pid" ]]; then
+                seen=true
+                break
+            fi
+        done
+
+        if [[ "$seen" == false ]]; then
+            candidate_pids="${candidate_pids:+$candidate_pids }$listener_pid"
+        fi
+    done < <(runtime_service_listener_pids "$port")
+
+    if [[ -n "$candidate_pids" ]] || runtime_service_port_in_use "$port"; then
+        echo "Reaping stale runtime service on port $port..."
+    fi
+
+    for existing_pid in $candidate_pids; do
+        terminate_pid_with_escalation "$existing_pid" "runtime service"
+    done
+
+    cleanup_runtime_service_artifacts "$port"
+
+    while (( port_wait_attempt < 50 )); do
+        if ! runtime_service_port_in_use "$port"; then
+            return 0
+        fi
+        sleep 0.1
+        port_wait_attempt=$((port_wait_attempt + 1))
+    done
+
+    echo "Error: Port $port is still occupied after runtime service cleanup." >&2
+    return 1
+}
+
+wait_for_pattern_exit() {
+    local pattern="$1"
+    local timeout_seconds="${2:-3}"
+    local attempts=$((timeout_seconds * 10))
+    local attempt=0
+
+    while (( attempt < attempts )); do
+        if ! pgrep -f "$pattern" >/dev/null 2>&1; then
+            return 0
+        fi
+        sleep 0.1
+        attempt=$((attempt + 1))
+    done
+
+    return 1
+}
+
+kill_stale_capacitor_daemon() {
+    local legacy_pattern='[c]apacitor-daemon'
+
+    if pgrep -f "$legacy_pattern" >/dev/null 2>&1; then
+        echo "Cleaning up legacy capacitor-daemon..."
+        pkill -TERM -f "$legacy_pattern" 2>/dev/null || true
+        if ! wait_for_pattern_exit "$legacy_pattern" 3; then
+            pkill -KILL -f "$legacy_pattern" 2>/dev/null || true
+            wait_for_pattern_exit "$legacy_pattern" 2 || true
+        fi
+    fi
+
+    rm -f "$(legacy_daemon_socket_path)"
+    rm -rf "$(legacy_daemon_dir_path)"
+}
+
+if [[ "${CAPACITOR_RESTART_APP_SOURCE_ONLY:-0}" == "1" ]]; then
+    return 0 2>/dev/null || exit 0
+fi
+
 # Prefer a real Apple signing identity so helper binaries are attributed to the
 # app bundle in Login Items.
 SIGNING_IDENTITY="${CAPACITOR_SIGNING_IDENTITY:-}"
@@ -142,6 +339,12 @@ fi
 
 # Verify hook is in sync (warn only, don't block)
 "$PROJECT_ROOT/scripts/sync-hooks.sh" 2>/dev/null || true
+
+# Reap stale runtime boundaries before the app starts shutting down. The app can
+# otherwise relaunch hud-hook during shutdown and leave the old runtime service
+# binary pinned to port 7474.
+reap_runtime_service 7474
+kill_stale_capacitor_daemon
 
 # Kill any existing Capacitor instances (graceful first, then force)
 # Prefer killing the release app first to avoid confusing launches.

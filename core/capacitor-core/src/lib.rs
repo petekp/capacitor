@@ -1328,6 +1328,7 @@ mod tests {
                         "pid": 4242,
                         "version": "runtime-service-test",
                         "protocol_version": 1,
+                        "schema_version": 2,
                         "auth_mode": "bearer",
                         "service_mode": "bootstrap_only",
                     }),
