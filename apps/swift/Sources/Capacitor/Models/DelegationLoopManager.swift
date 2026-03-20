@@ -1005,8 +1005,13 @@ actor DelegationLoopManager {
              "summary": "short summary",
              "artifacts": [
                { "label": "artifact label", "path": "absolute or relative file path" }
-             ]
+             ],
+             "decisions": {
+               "approve": { "label": "short contextual CTA", "description": "why the reviewer should approve" },
+               "request_changes": { "label": "short contextual CTA", "description": "what specifically needs work" }
+             }
            }
+           The "decisions" field is required. Write labels and descriptions that are specific to what you actually did — not generic placeholders. The reviewer sees these as action buttons.
         8. Write \(rootPaths.statusPath.path) before any substantial exploration or code changes.
         9. Do not continue past the review checkpoint in this run.
         10. Exit after writing the sentinel file.
@@ -1081,8 +1086,13 @@ actor DelegationLoopManager {
                  "summary": "short summary",
                  "artifacts": [
                    { "label": "artifact label", "path": "absolute or relative file path" }
-                 ]
+                 ],
+                 "decisions": {
+                   "approve": { "label": "short contextual CTA", "description": "why the reviewer should approve" },
+                   "request_changes": { "label": "short contextual CTA", "description": "what specifically needs work" }
+                 }
                }
+               The "decisions" field is required. Write labels and descriptions that are specific to what you actually did — not generic placeholders. The reviewer sees these as action buttons.
             7. Write files in this order: brief.md, then manifest.json, then .review-ready sentinel.
             8. Exit after writing the sentinel file.
             """

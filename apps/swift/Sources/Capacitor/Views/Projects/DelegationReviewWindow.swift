@@ -68,6 +68,9 @@ struct DelegationReviewWindow: View {
                 dismissWindow(id: "delegation-review")
             }
         }
+        .onDisappear {
+            appState.reviewWindowTarget = nil
+        }
     }
 
     // MARK: - Content Pane (left, ~65% width)
@@ -220,16 +223,16 @@ struct DelegationReviewWindow: View {
 
             decisionCard(
                 option: .approve,
-                title: "Approve",
-                description: "Ship this milestone and move on.",
+                title: manifest?.decisions?.approve?.label ?? "Approve",
+                description: manifest?.decisions?.approve?.description ?? "Ship this milestone and move on.",
                 icon: "checkmark.circle.fill",
                 accentColor: .green,
             )
 
             decisionCard(
                 option: .requestChanges,
-                title: "Request Changes",
-                description: "Worker will address your feedback and submit a new revision.",
+                title: manifest?.decisions?.requestChanges?.label ?? "Request Changes",
+                description: manifest?.decisions?.requestChanges?.description ?? "Worker will address your feedback and submit a new revision.",
                 icon: "arrow.triangle.2.circlepath",
                 accentColor: .orange,
             )
