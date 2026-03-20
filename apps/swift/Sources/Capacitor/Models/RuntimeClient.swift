@@ -226,6 +226,7 @@ struct RuntimeDelegationState: Decodable, Equatable {
     let status: String
     let startedAt: String
     let updatedAt: String
+    let submittedMilestoneId: String?
     let currentReview: RuntimeDelegationReview?
 
     enum CodingKeys: String, CodingKey {
@@ -238,7 +239,34 @@ struct RuntimeDelegationState: Decodable, Equatable {
         case status
         case startedAt = "started_at"
         case updatedAt = "updated_at"
+        case submittedMilestoneId = "submitted_milestone_id"
         case currentReview = "current_review"
+    }
+
+    init(
+        projectPath: String,
+        workerId: String,
+        ideaId: String?,
+        worktreeName: String,
+        worktreePath: String,
+        sessionId: String?,
+        status: String,
+        startedAt: String,
+        updatedAt: String,
+        submittedMilestoneId: String? = nil,
+        currentReview: RuntimeDelegationReview?,
+    ) {
+        self.projectPath = projectPath
+        self.workerId = workerId
+        self.ideaId = ideaId
+        self.worktreeName = worktreeName
+        self.worktreePath = worktreePath
+        self.sessionId = sessionId
+        self.status = status
+        self.startedAt = startedAt
+        self.updatedAt = updatedAt
+        self.submittedMilestoneId = submittedMilestoneId
+        self.currentReview = currentReview
     }
 }
 
@@ -560,6 +588,7 @@ private struct SnapshotDelegationPayload: Decodable {
     let status: String
     let startedAt: String
     let updatedAt: String
+    let submittedMilestoneId: String?
     let currentReview: SnapshotDelegationReviewPayload?
 
     enum CodingKeys: String, CodingKey {
@@ -572,6 +601,7 @@ private struct SnapshotDelegationPayload: Decodable {
         case status
         case startedAt = "started_at"
         case updatedAt = "updated_at"
+        case submittedMilestoneId = "submitted_milestone_id"
         case currentReview = "current_review"
     }
 
@@ -585,6 +615,7 @@ private struct SnapshotDelegationPayload: Decodable {
         status = RuntimeClient.snapshotDelegationStatusString(delegation.status)
         startedAt = delegation.startedAt
         updatedAt = delegation.updatedAt
+        submittedMilestoneId = RuntimeClient.snapshotDelegationSubmittedMilestoneID(delegation)
         currentReview = delegation.currentReview.map(SnapshotDelegationReviewPayload.init)
     }
 }
@@ -1010,6 +1041,7 @@ final class RuntimeClient {
                 status: delegation.status,
                 startedAt: delegation.startedAt,
                 updatedAt: delegation.updatedAt,
+                submittedMilestoneId: delegation.submittedMilestoneId,
                 currentReview: delegation.currentReview.map { review in
                     RuntimeDelegationReview(
                         milestoneId: review.milestoneId,
@@ -1220,12 +1252,7 @@ final class RuntimeClient {
     }
 
     fileprivate static func snapshotDelegationStatusString(_ status: DelegationStatus) -> String {
-        switch status {
-        case .working:
-            "working"
-        case .reviewNeeded:
-            "review_needed"
-        }
+        snakeCaseEnumCaseName(status)
     }
 
     fileprivate static func snapshotRoutingTargetKindString(_ kind: RoutingTargetKind) -> String {
@@ -1239,6 +1266,47 @@ final class RuntimeClient {
         case .none:
             "none"
         }
+    }
+
+    fileprivate static func snapshotDelegationSubmittedMilestoneID(_ delegation: ProjectDelegationState) -> String? {
+        guard let reflectedValue = Mirror(reflecting: delegation)
+            .children
+            .first(where: { $0.label == "submittedMilestoneId" })?
+            .value
+        else {
+            return nil
+        }
+        return unwrapOptionalString(reflectedValue)
+    }
+
+    private static func snakeCaseEnumCaseName<T>(_ value: T) -> String {
+        let rawName = String(describing: value)
+        guard !rawName.isEmpty else { return rawName }
+
+        var result = ""
+        result.reserveCapacity(rawName.count + 4)
+
+        for character in rawName {
+            if character.isUppercase, !result.isEmpty {
+                result.append("_")
+            }
+            result.append(contentsOf: String(character).lowercased())
+        }
+
+        return result
+    }
+
+    private static func unwrapOptionalString(_ value: Any) -> String? {
+        if let string = value as? String {
+            return string
+        }
+
+        let mirror = Mirror(reflecting: value)
+        guard mirror.displayStyle == .optional else {
+            return nil
+        }
+
+        return mirror.children.first?.value as? String
     }
 }
 

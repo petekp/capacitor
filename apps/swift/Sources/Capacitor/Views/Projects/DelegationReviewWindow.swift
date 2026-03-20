@@ -13,6 +13,11 @@ struct DelegationReviewWindow: View {
     @State private var fullDiff = ""
     @State private var showFullDiff = false
     @State private var swiftChangesBannerDismissed = false
+    @State private var phase: ReviewPhase = .review
+    @State private var submittedDecisionLabel = ""
+    @State private var submittedTimestampLabel = ""
+    @State private var submittedProjectName = ""
+    @State private var autoCloseTask: _Concurrency.Task<Void, Never>?
 
     private var target: AppState.ReviewWindowTarget? {
         appState.reviewWindowTarget
@@ -37,9 +42,23 @@ struct DelegationReviewWindow: View {
         return Int(milestoneId) ?? 1
     }
 
+    private var isSubmitting: Bool {
+        if case .submitting = phase {
+            return true
+        }
+        return false
+    }
+
+    private var targetIdentity: String? {
+        guard let target else { return nil }
+        return "\(target.projectPath)#\(target.workerID)"
+    }
+
     var body: some View {
         Group {
-            if let project, let delegation, let currentReview {
+            if case .submitted = phase {
+                submittedReceiptView
+            } else if let project, let delegation, let currentReview {
                 HStack(spacing: 0) {
                     contentPane(project: project, delegation: delegation, review: currentReview)
                         .frame(minWidth: 400)
@@ -50,27 +69,23 @@ struct DelegationReviewWindow: View {
                     decisionRail(project: project, delegation: delegation)
                         .frame(width: 300)
                 }
-            } else if target != nil, delegation != nil {
-                VStack(spacing: 12) {
-                    ProgressView()
-                        .controlSize(.small)
-                        .tint(.white.opacity(0.5))
-                    Text("Decision submitted")
-                        .font(.title3)
-                        .foregroundColor(.white.opacity(0.65))
-                    Text("The worker is processing your feedback.")
-                        .font(.body)
-                        .foregroundColor(.white.opacity(0.42))
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 VStack(spacing: 12) {
-                    Text("No active review")
-                        .font(.title3)
-                        .foregroundColor(.white.opacity(0.65))
-                    Text("The review may have been completed or cancelled.")
-                        .font(.body)
-                        .foregroundColor(.white.opacity(0.42))
+                    if case let .failed(message) = phase {
+                        Text("Couldn't submit review")
+                            .font(.title3)
+                            .foregroundColor(.white.opacity(0.65))
+                        Text(message)
+                            .font(.body)
+                            .foregroundColor(.red.opacity(0.8))
+                    } else {
+                        Text("No active review")
+                            .font(.title3)
+                            .foregroundColor(.white.opacity(0.65))
+                        Text("The review may have been completed or cancelled.")
+                            .font(.body)
+                            .foregroundColor(.white.opacity(0.42))
+                    }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -85,7 +100,25 @@ struct DelegationReviewWindow: View {
                 dismissWindow(id: "delegation-review")
             }
         }
+        .onChange(of: targetIdentity) { oldValue, newValue in
+            guard oldValue != newValue else { return }
+            autoCloseTask?.cancel()
+            if newValue != nil {
+                phase = .review
+                selectedDecision = nil
+                note = ""
+                submittedDecisionLabel = ""
+                submittedTimestampLabel = ""
+                submittedProjectName = ""
+            }
+        }
+        .onChange(of: delegation?.status) { _, newValue in
+            guard case .submitted = phase, newValue == "resume_failed" else { return }
+            autoCloseTask?.cancel()
+            phase = .failed("Couldn't resume the worker. The review stayed pending, your decision wasn't lost, and you can retry.")
+        }
         .onDisappear {
+            autoCloseTask?.cancel()
             appState.reviewWindowTarget = nil
         }
     }
@@ -328,6 +361,31 @@ struct DelegationReviewWindow: View {
                 .font(.headline)
                 .foregroundColor(.white.opacity(0.72))
 
+            if case let .failed(message) = phase {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Retry needed")
+                        .font(.callout.weight(.semibold))
+                        .foregroundColor(.white.opacity(0.88))
+
+                    Text(message)
+                        .font(.caption)
+                        .foregroundColor(.red.opacity(0.8))
+
+                    Text("Your note is still here.")
+                        .font(.caption)
+                        .foregroundColor(.white.opacity(0.42))
+                }
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(Color.red.opacity(0.08))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .strokeBorder(Color.red.opacity(0.24), lineWidth: 1),
+                        ),
+                )
+            }
+
             decisionCard(
                 option: .approve,
                 title: manifest?.decisions?.approve?.label ?? "Approve",
@@ -358,6 +416,7 @@ struct DelegationReviewWindow: View {
                     .scrollContentBackground(.hidden)
                     .padding(10)
                     .frame(minHeight: 100)
+                    .disabled(isSubmitting)
                     .accessibilityIdentifier(AccessibilityIdentifiers.delegationReviewNotesIdentifier)
                     .background(
                         RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -373,28 +432,32 @@ struct DelegationReviewWindow: View {
 
             if let selectedDecision {
                 Button(action: {
-                    let decision: DelegationLoopManager.ReviewDecision = selectedDecision == .approve
-                        ? .approve
-                        : .requestChanges
-                    appState.submitDelegationReview(
-                        for: project,
+                    submitDecision(
+                        selectedDecision,
+                        project: project,
                         delegation: delegation,
-                        decision: decision,
-                        note: note,
-                        fromWindow: true,
                     )
                 }) {
-                    Text("Submit Decision")
-                        .font(.body.weight(.semibold))
-                        .foregroundColor(selectedDecision == .approve ? .black : .white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .background(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .fill(selectedDecision == .approve ? Color.white.opacity(0.92) : Color.orange.opacity(0.65)),
-                        )
+                    HStack(spacing: 8) {
+                        if isSubmitting {
+                            ProgressView()
+                                .controlSize(.small)
+                                .tint(selectedDecision == .approve ? Color.black.opacity(0.82) : Color.white.opacity(0.82))
+                        }
+
+                        Text(submitButtonTitle)
+                            .font(.body.weight(.semibold))
+                    }
+                    .foregroundColor(selectedDecision == .approve ? .black : .white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(selectedDecision == .approve ? Color.white.opacity(0.92) : Color.orange.opacity(0.65)),
+                    )
                 }
                 .buttonStyle(.plain)
+                .disabled(isSubmitting)
                 .accessibilityIdentifier(
                     selectedDecision == .approve
                         ? AccessibilityIdentifiers.delegationReviewApproveIdentifier
@@ -417,6 +480,7 @@ struct DelegationReviewWindow: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Button(action: {
+                guard !isSubmitting else { return }
                 withAnimation(.easeInOut(duration: 0.15)) {
                     selectedDecision = option
                 }
@@ -446,6 +510,7 @@ struct DelegationReviewWindow: View {
                 )
             }
             .buttonStyle(.plain)
+            .disabled(isSubmitting)
 
             Text(description)
                 .font(.caption)
@@ -455,6 +520,67 @@ struct DelegationReviewWindow: View {
     }
 
     // MARK: - Helpers
+
+    private var submitButtonTitle: String {
+        switch phase {
+        case .review:
+            "Submit Decision"
+        case .submitting:
+            "Submitting..."
+        case .submitted:
+            "Submitted"
+        case .failed:
+            "Retry"
+        }
+    }
+
+    private var submittedReceiptView: some View {
+        VStack {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 10) {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                        .font(.title3.weight(.semibold))
+                        .foregroundColor(.blue.opacity(0.7))
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(submittedProjectName)
+                            .font(.system(.headline, design: .monospaced))
+                            .foregroundColor(.white.opacity(0.88))
+
+                        Text("Feedback sent to worker")
+                            .font(.title3.weight(.semibold))
+                            .foregroundColor(.white.opacity(0.82))
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(submittedDecisionLabel)
+                        .font(.callout.weight(.medium))
+                        .foregroundColor(.white.opacity(0.65))
+
+                    Text(submittedTimestampLabel)
+                        .font(.caption.monospaced())
+                        .foregroundColor(.white.opacity(0.42))
+
+                    Text("The worker is resuming in the background.")
+                        .font(.body)
+                        .foregroundColor(.white.opacity(0.65))
+                }
+            }
+            .padding(24)
+            .frame(maxWidth: 420, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(Color.black.opacity(0.18))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .strokeBorder(Color.white.opacity(0.06), lineWidth: 1),
+                    ),
+            )
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(32)
+    }
 
     private func metadataItem(label: String, value: String) -> some View {
         HStack(spacing: 4) {
@@ -476,6 +602,63 @@ struct DelegationReviewWindow: View {
                 .tracking(2)
                 .foregroundColor(.white.opacity(0.45))
         }
+    }
+
+    private func submitDecision(
+        _ selectedDecision: DecisionOption,
+        project: Project,
+        delegation: RuntimeDelegationState,
+    ) {
+        let decision: DelegationLoopManager.ReviewDecision = selectedDecision == .approve
+            ? .approve
+            : .requestChanges
+        let decisionLabel = decisionTitle(for: selectedDecision)
+
+        autoCloseTask?.cancel()
+        phase = .submitting
+
+        _Concurrency.Task { @MainActor in
+            do {
+                try await appState.submitDelegationReview(
+                    for: project,
+                    delegation: delegation,
+                    decision: decision,
+                    note: note,
+                    fromWindow: true,
+                )
+                submittedProjectName = project.name
+                submittedDecisionLabel = decisionLabel
+                submittedTimestampLabel = Self.submissionTimestampLabel(for: Date())
+                phase = .submitted
+                scheduleAutoClose()
+            } catch {
+                phase = .failed(DelegationUserFacingMessage.reviewFailure(for: error))
+            }
+        }
+    }
+
+    private func decisionTitle(for option: DecisionOption) -> String {
+        switch option {
+        case .approve:
+            manifest?.decisions?.approve?.label ?? "Approve"
+        case .requestChanges:
+            manifest?.decisions?.requestChanges?.label ?? "Request Changes"
+        case .writeResponse:
+            "Write a Response"
+        }
+    }
+
+    private func scheduleAutoClose() {
+        autoCloseTask?.cancel()
+        autoCloseTask = _Concurrency.Task { @MainActor in
+            try? await _Concurrency.Task.sleep(nanoseconds: 2_000_000_000)
+            guard case .submitted = phase else { return }
+            appState.reviewWindowTarget = nil
+        }
+    }
+
+    private static func submissionTimestampLabel(for date: Date) -> String {
+        "Submitted at \(submittedAtFormatter.string(from: date))"
     }
 
     // MARK: - Data Loading
@@ -576,7 +759,21 @@ private enum DecisionOption {
     case writeResponse
 }
 
+private enum ReviewPhase: Equatable {
+    case review
+    case submitting
+    case submitted
+    case failed(String)
+}
+
 private struct PreviousRoundDecision {
     let decision: String
     let note: String?
 }
+
+private let submittedAtFormatter: DateFormatter = {
+    let formatter = DateFormatter()
+    formatter.dateStyle = .none
+    formatter.timeStyle = .short
+    return formatter
+}()

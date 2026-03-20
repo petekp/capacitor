@@ -168,6 +168,8 @@ pub struct AppSnapshot {
 pub enum DelegationStatus {
     Working,
     ReviewNeeded,
+    ResumePending,
+    ResumeFailed,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Enum)]
@@ -176,7 +178,9 @@ pub enum DelegationMutationKind {
     Start,
     AttachSession,
     ReviewReady,
+    SubmitReview,
     Resume,
+    ResumeFailed,
     Complete,
 }
 
@@ -206,6 +210,8 @@ pub struct ProjectDelegationState {
     pub status: DelegationStatus,
     pub started_at: String,
     pub updated_at: String,
+    #[serde(default)]
+    pub submitted_milestone_id: Option<String>,
     pub current_review: Option<DelegationReviewState>,
 }
 

@@ -54,6 +54,14 @@ struct StatusChipsRow: View {
                 DelegationReviewChip(style: style)
             }
 
+            if delegationState?.status == "resume_pending" {
+                DelegationResumingChip(style: style)
+            }
+
+            if delegationState?.status == "resume_failed" {
+                DelegationResumeFailedChip(style: style)
+            }
+
             StatusChip(
                 state: sessionState?.state,
                 style: style,
@@ -76,6 +84,40 @@ private struct DelegationReviewChip: View {
             .foregroundStyle(Color.orange.opacity(0.95))
             .scaleEffect(style == .compact ? 0.85 : 1.0, anchor: .leading)
             .accessibilityLabel("Delegation review needed")
+    }
+}
+
+private struct DelegationResumingChip: View {
+    let style: StatusChip.ChipStyle
+
+    private var font: Font {
+        .system(.callout, design: .monospaced).weight(.semibold)
+    }
+
+    var body: some View {
+        Text("RESUMING")
+            .font(font)
+            .tracking(1.2)
+            .foregroundStyle(Color.blue.opacity(0.75))
+            .scaleEffect(style == .compact ? 0.85 : 1.0, anchor: .leading)
+            .accessibilityLabel("Delegation resuming")
+    }
+}
+
+private struct DelegationResumeFailedChip: View {
+    let style: StatusChip.ChipStyle
+
+    private var font: Font {
+        .system(.callout, design: .monospaced).weight(.semibold)
+    }
+
+    var body: some View {
+        Text("RESUME FAILED")
+            .font(font)
+            .tracking(1.2)
+            .foregroundStyle(Color.red.opacity(0.85))
+            .scaleEffect(style == .compact ? 0.85 : 1.0, anchor: .leading)
+            .accessibilityLabel("Delegation resume failed")
     }
 }
 

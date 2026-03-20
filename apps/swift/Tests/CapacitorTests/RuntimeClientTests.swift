@@ -136,6 +136,19 @@ final class RuntimeClientTests: XCTestCase {
         )
     }
 
+    func testFetchRuntimeSnapshotMapsDelegationResumePendingState() async throws {
+        let client = try makeClient(
+            coreSnapshot: Self.makeDelegationResumePendingSnapshot(),
+        )
+
+        let snapshot = try await client.fetchRuntimeSnapshot(correlationId: "delegation-resume-pending")
+
+        XCTAssertEqual(snapshot.delegations.count, 1)
+        XCTAssertEqual(snapshot.delegations.first?.status, "resume_pending")
+        XCTAssertEqual(snapshot.delegations.first?.submittedMilestoneId, "01")
+        XCTAssertEqual(snapshot.delegations.first?.currentReview?.milestoneId, "01")
+    }
+
     func testFetchRuntimeSnapshotFailureScenarios() async throws {
         enum ExpectedError {
             case invalidResponse
@@ -658,6 +671,14 @@ final class RuntimeClientTests: XCTestCase {
         makeCoreSnapshotResponse(
             delegationJSON: """
             ,"delegations":[{"project_path":"/tmp/core-project","worker_id":"worker-1","idea_id":"idea-1","worktree_name":"delegation-worker-1","worktree_path":"/tmp/core-project/.capacitor/worktrees/delegation-worker-1","session_id":"worker-session-1","status":"review_needed","started_at":"2026-02-28T19:00:00Z","updated_at":"2026-02-28T19:05:00Z","current_review":{"milestone_id":"01","brief_path":"/tmp/core-project/.capacitor/delegations/worker-1/milestones/01/brief.md","manifest_path":"/tmp/core-project/.capacitor/delegations/worker-1/milestones/01/manifest.json","requested_at":"2026-02-28T19:05:00Z"}}]
+            """,
+        )
+    }
+
+    private static func makeDelegationResumePendingSnapshot() -> Data {
+        makeCoreSnapshotResponse(
+            delegationJSON: """
+            ,"delegations":[{"project_path":"/tmp/core-project","worker_id":"worker-1","idea_id":"idea-1","worktree_name":"delegation-worker-1","worktree_path":"/tmp/core-project/.capacitor/worktrees/delegation-worker-1","session_id":"worker-session-1","status":"resume_pending","started_at":"2026-02-28T19:00:00Z","updated_at":"2026-02-28T19:05:00Z","submitted_milestone_id":"01","current_review":{"milestone_id":"01","brief_path":"/tmp/core-project/.capacitor/delegations/worker-1/milestones/01/brief.md","manifest_path":"/tmp/core-project/.capacitor/delegations/worker-1/milestones/01/manifest.json","requested_at":"2026-02-28T19:05:00Z"}}]
             """,
         )
     }

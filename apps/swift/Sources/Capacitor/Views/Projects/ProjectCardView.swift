@@ -216,9 +216,28 @@ struct ProjectCardView: View {
 
     // MARK: - Computed View Helpers
 
+    private var delegationStatus: String? {
+        delegationState?.status
+    }
+
+    private var hasOpenDelegationReview: Bool {
+        guard let delegationState else { return false }
+        return delegationState.currentReview != nil
+            && (delegationState.status == "review_needed" || delegationState.status == "resume_failed")
+    }
+
     private var accessibilityStatusDescription: String {
-        if delegationState?.status == "review_needed", delegationState?.currentReview != nil {
+        if delegationStatus == "review_needed", delegationState?.currentReview != nil {
             return "Delegation review needed"
+        }
+        if delegationStatus == "resume_pending" {
+            return "Worker resuming after review feedback"
+        }
+        if delegationStatus == "resume_failed", delegationState?.currentReview != nil {
+            return "Worker resume failed and review is ready to retry"
+        }
+        if delegationStatus == "resume_failed" {
+            return "Worker resume failed"
         }
         return switch currentState {
         case .ready: "Ready for input"
@@ -230,15 +249,30 @@ struct ProjectCardView: View {
     }
 
     private var primaryAccessibilityActionName: String {
-        if delegationState?.status == "review_needed", delegationState?.currentReview != nil {
+        if hasOpenDelegationReview {
+            if delegationStatus == "resume_failed" {
+                return "Retry Review"
+            }
             return "Open Review"
+        }
+        if delegationStatus == "resume_pending" {
+            return "Open in Terminal While Resuming"
         }
         return "Open in Terminal"
     }
 
     private var accessibilityHintText: String {
-        if delegationState?.status == "review_needed", delegationState?.currentReview != nil {
+        if delegationStatus == "review_needed", delegationState?.currentReview != nil {
             return "Double-tap to review the delegated work. Use actions menu for more options."
+        }
+        if delegationStatus == "resume_pending" {
+            return "Double-tap to open in terminal while the worker resumes in the background. Use actions menu for more options."
+        }
+        if delegationStatus == "resume_failed", delegationState?.currentReview != nil {
+            return "Double-tap to reopen the review and retry resuming the worker. Use actions menu for more options."
+        }
+        if delegationStatus == "resume_failed" {
+            return "Double-tap to open in terminal and inspect the failed resume. Use actions menu for more options."
         }
         return "Double-tap to open in terminal. Use actions menu for more options."
     }
@@ -443,6 +477,28 @@ private struct ProjectCardContent: View {
                         .lineLimit(1)
                 }
                 .foregroundColor(.orange.opacity(0.9))
+            }
+
+            if delegationState?.status == "resume_pending" {
+                HStack(spacing: 4) {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                        .font(AppTypography.captionSmall)
+                    Text("Resuming worker")
+                        .font(AppTypography.label)
+                        .lineLimit(1)
+                }
+                .foregroundColor(.blue.opacity(0.7))
+            }
+
+            if delegationState?.status == "resume_failed" {
+                HStack(spacing: 4) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(AppTypography.captionSmall)
+                    Text("Resume failed")
+                        .font(AppTypography.label)
+                        .lineLimit(1)
+                }
+                .foregroundColor(.red.opacity(0.8))
             }
 
             if let blocker, !blocker.isEmpty {

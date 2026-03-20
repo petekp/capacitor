@@ -1577,34 +1577,67 @@ class AppState {
         decision: DelegationLoopManager.ReviewDecision,
         note: String,
         fromWindow: Bool = false,
-    ) {
-        _Concurrency.Task { [weak self] in
-            guard let self else { return }
-            do {
-                try await delegationLoopManager.submitReviewDecision(
-                    project: project,
-                    delegation: delegation,
-                    decision: decision,
-                    note: note,
-                )
-                await MainActor.run {
-                    if fromWindow {
-                        self.reviewWindowTarget = nil
-                    } else {
-                        self.showProjectList()
-                    }
-                    self.refreshSessionStates()
-                }
-            } catch {
-                await MainActor.run {
-                    let message = DelegationUserFacingMessage.reviewFailure(for: error)
-                    DebugLog.write(
-                        "AppState.submitDelegationReview failure project=\(project.path) worker=\(delegation.workerId) error=\(error.localizedDescription) userMessage=\(message)",
-                    )
-                    self.toast = .error(message)
-                    self.refreshSessionStates()
-                }
+    ) async throws {
+        do {
+            let accepted = try await delegationLoopManager.acceptReviewDecision(
+                project: project,
+                delegation: delegation,
+                decision: decision,
+                note: note,
+            )
+
+            applyAcceptedReviewDecisionLocally(
+                delegation,
+                sessionId: accepted.sessionId,
+                submittedMilestoneId: accepted.submittedMilestoneId,
+            )
+
+            if !fromWindow {
+                showProjectList()
+                toast = ToastMessage("Feedback sent to worker")
             }
+
+            await delegationLoopManager.launchResumeInBackground(accepted)
+            scheduleDelegationRefreshAfterReviewSubmission()
+        } catch {
+            let message = DelegationUserFacingMessage.reviewFailure(for: error)
+            DebugLog.write(
+                "AppState.submitDelegationReview failure project=\(project.path) worker=\(delegation.workerId) error=\(error.localizedDescription) userMessage=\(message)",
+            )
+            toast = .error(message)
+            refreshSessionStates()
+            throw error
+        }
+    }
+
+    private func applyAcceptedReviewDecisionLocally(
+        _ delegation: RuntimeDelegationState,
+        sessionId: String,
+        submittedMilestoneId: String,
+    ) {
+        let normalizedProjectPath = PathNormalizer.normalize(delegation.projectPath)
+        guard delegationStates[normalizedProjectPath] != nil else { return }
+
+        delegationStates[normalizedProjectPath] = RuntimeDelegationState(
+            projectPath: delegation.projectPath,
+            workerId: delegation.workerId,
+            ideaId: delegation.ideaId,
+            worktreeName: delegation.worktreeName,
+            worktreePath: delegation.worktreePath,
+            sessionId: sessionId,
+            status: "resume_pending",
+            startedAt: delegation.startedAt,
+            updatedAt: formatISO8601Timestamp(Date()),
+            submittedMilestoneId: submittedMilestoneId,
+            currentReview: delegation.currentReview,
+        )
+    }
+
+    private func scheduleDelegationRefreshAfterReviewSubmission() {
+        _Concurrency.Task { @MainActor in
+            // Give the runtime mutation a moment to land before replacing the optimistic resume_pending state.
+            try? await _Concurrency.Task.sleep(nanoseconds: 300_000_000)
+            refreshSessionStates()
         }
     }
 
