@@ -32,6 +32,7 @@ private final class RowOrderTracker {
 struct ProjectsView: View {
     @Environment(AppState.self) var appState: AppState
     @Environment(\.floatingMode) private var floatingMode
+    @Environment(\.openWindow) private var openWindow
     private let glassConfig = GlassConfig.shared
     @State private var pausedCollapsed = true
     @State private var draggedProject: Project?
@@ -257,6 +258,11 @@ struct ProjectsView: View {
                 scrollbarInset: scrollbarInset,
                 floatingMode: floatingMode,
             )
+            .onChange(of: appState.reviewWindowTarget?.workerID) { oldValue, newValue in
+                if oldValue == nil, newValue != nil {
+                    openWindow(id: "delegation-review")
+                }
+            }
         }
     }
 

@@ -88,6 +88,15 @@ class AppState {
 
     var projectView: ProjectView = .list
 
+    // MARK: - Review Window
+
+    struct ReviewWindowTarget: Equatable {
+        let projectPath: String
+        let workerID: String
+    }
+
+    var reviewWindowTarget: ReviewWindowTarget?
+
     // MARK: - Data
 
     var dashboard: DashboardData?
@@ -1307,7 +1316,12 @@ class AppState {
             launchTerminal(for: project)
             return
         }
-        projectView = .delegationReview(project)
+        if let delegation = delegationState(for: project) {
+            reviewWindowTarget = ReviewWindowTarget(
+                projectPath: project.path,
+                workerID: delegation.workerId,
+            )
+        }
     }
 
     func showProjectList() {
@@ -1552,11 +1566,17 @@ class AppState {
         return delegationStates[PathNormalizer.normalize(project.path)]
     }
 
+    func delegationState(forPath projectPath: String) -> RuntimeDelegationState? {
+        guard isDelegationLoopEnabled else { return nil }
+        return delegationStates[PathNormalizer.normalize(projectPath)]
+    }
+
     func submitDelegationReview(
         for project: Project,
         delegation: RuntimeDelegationState,
         decision: DelegationLoopManager.ReviewDecision,
         note: String,
+        fromWindow: Bool = false,
     ) {
         _Concurrency.Task { [weak self] in
             guard let self else { return }
@@ -1568,7 +1588,11 @@ class AppState {
                     note: note,
                 )
                 await MainActor.run {
-                    self.showProjectList()
+                    if fromWindow {
+                        self.reviewWindowTarget = nil
+                    } else {
+                        self.showProjectList()
+                    }
                     self.refreshSessionStates()
                 }
             } catch {
