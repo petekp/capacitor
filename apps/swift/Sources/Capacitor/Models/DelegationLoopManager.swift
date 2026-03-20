@@ -1011,7 +1011,7 @@ actor DelegationLoopManager {
                "request_changes": { "label": "short contextual CTA", "description": "what specifically needs work" }
              }
            }
-           The "decisions" field is required. Write labels and descriptions that are specific to what you actually did — not generic placeholders. The reviewer sees these as action buttons.
+           The "decisions" field is required. Labels should be 2-4 words. Descriptions should be one short sentence — specific to what you did, not generic. The reviewer sees these as action options.
         8. Write \(rootPaths.statusPath.path) before any substantial exploration or code changes.
         9. Do not continue past the review checkpoint in this run.
         10. Exit after writing the sentinel file.
@@ -1092,7 +1092,7 @@ actor DelegationLoopManager {
                    "request_changes": { "label": "short contextual CTA", "description": "what specifically needs work" }
                  }
                }
-               The "decisions" field is required. Write labels and descriptions that are specific to what you actually did — not generic placeholders. The reviewer sees these as action buttons.
+               The "decisions" field is required. Labels should be 2-4 words. Descriptions should be one short sentence — specific to what you did, not generic. The reviewer sees these as action options.
             7. Write files in this order: brief.md, then manifest.json, then .review-ready sentinel.
             8. Exit after writing the sentinel file.
             """

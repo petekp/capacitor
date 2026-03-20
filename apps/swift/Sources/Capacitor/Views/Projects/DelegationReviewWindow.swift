@@ -308,42 +308,43 @@ struct DelegationReviewWindow: View {
         icon: String,
         accentColor: Color,
     ) -> some View {
-        Button(action: {
-            withAnimation(.easeInOut(duration: 0.15)) {
-                selectedDecision = option
-            }
-        }) {
-            HStack(spacing: 12) {
-                Image(systemName: icon)
-                    .font(.title3)
-                    .foregroundColor(selectedDecision == option ? accentColor : .white.opacity(0.4))
+        VStack(alignment: .leading, spacing: 6) {
+            Button(action: {
+                withAnimation(.easeInOut(duration: 0.15)) {
+                    selectedDecision = option
+                }
+            }) {
+                HStack(spacing: 12) {
+                    Image(systemName: icon)
+                        .font(.title3)
+                        .foregroundColor(selectedDecision == option ? accentColor : .white.opacity(0.4))
 
-                VStack(alignment: .leading, spacing: 2) {
                     Text(title)
                         .font(.callout.weight(.semibold))
                         .foregroundColor(.white.opacity(0.92))
-                    Text(description)
-                        .font(.caption)
-                        .foregroundColor(.white.opacity(0.5))
-                        .lineLimit(2)
-                }
 
-                Spacer()
+                    Spacer()
+                }
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(selectedDecision == option ? accentColor.opacity(0.12) : Color.white.opacity(0.04))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .strokeBorder(
+                                    selectedDecision == option ? accentColor.opacity(0.4) : Color.white.opacity(0.06),
+                                    lineWidth: 1,
+                                ),
+                        ),
+                )
             }
-            .padding(12)
-            .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(selectedDecision == option ? accentColor.opacity(0.12) : Color.white.opacity(0.04))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .strokeBorder(
-                                selectedDecision == option ? accentColor.opacity(0.4) : Color.white.opacity(0.06),
-                                lineWidth: 1,
-                            ),
-                    ),
-            )
+            .buttonStyle(.plain)
+
+            Text(description)
+                .font(.caption)
+                .foregroundColor(.white.opacity(0.45))
+                .padding(.horizontal, 4)
         }
-        .buttonStyle(.plain)
     }
 
     // MARK: - Helpers
