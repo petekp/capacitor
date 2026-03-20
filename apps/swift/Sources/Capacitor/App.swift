@@ -163,6 +163,15 @@ struct CapacitorApp: App {
             SettingsView(updaterController: updaterController)
         }
 
+        Window("Delegation Review", id: "delegation-review") {
+            DelegationReviewWindow()
+                .environment(appState)
+                .preferredColorScheme(.dark)
+        }
+        .defaultSize(width: 900, height: 650)
+        .windowResizability(.contentMinSize)
+        .suppressedFromWindowMenu()
+
         #if DEBUG
             AppDebugWindows(appState: appState)
         #endif
