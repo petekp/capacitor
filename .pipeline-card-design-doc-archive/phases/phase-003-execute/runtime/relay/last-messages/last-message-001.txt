@@ -1,0 +1,8 @@
+Wrote [2026-03-20-orchestrator-card-design.md](/Users/petepetrash/Code/capacitor/docs/superpowers/specs/2026-03-20-orchestrator-card-design.md) as the only changed file. It stays aligned with the revised orchestrator architecture by keeping runtime read models as the source of card truth, routing review through the review surface, and treating stale orchestrator recovery as an internal implementation concern rather than a user-facing mode.
+
+Verification:
+- File exists at the correct path.
+- All 9 required sections are present (`rg -c '^## '` returned `9`).
+- ASCII sketches are included for the layout and each card state.
+- No scrapped PRD machinery leaked back in as product behavior; the banned concepts appear only once as an explicit out-of-scope exclusion.
+- No other files were modified. The new spec currently shows as an untracked file in git.
