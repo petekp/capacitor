@@ -49,23 +49,19 @@ struct StatusChipsRow: View {
     var style: StatusChip.ChipStyle = .normal
 
     var body: some View {
-        HStack(spacing: 8) {
+        Group {
             if delegationState?.status == "review_needed", delegationState?.currentReview != nil {
                 DelegationReviewChip(style: style)
-            }
-
-            if delegationState?.status == "resume_pending" {
+            } else if delegationState?.status == "resume_pending" {
                 DelegationResumingChip(style: style)
-            }
-
-            if delegationState?.status == "resume_failed" {
+            } else if delegationState?.status == "resume_failed" {
                 DelegationResumeFailedChip(style: style)
+            } else {
+                StatusChip(
+                    state: sessionState?.state,
+                    style: style,
+                )
             }
-
-            StatusChip(
-                state: sessionState?.state,
-                style: style,
-            )
         }
     }
 }
@@ -82,7 +78,7 @@ private struct DelegationReviewChip: View {
             .font(font)
             .tracking(1.2)
             .foregroundStyle(Color.orange.opacity(0.95))
-            .scaleEffect(style == .compact ? 0.85 : 1.0, anchor: .leading)
+            .scaleEffect(style == .compact ? 0.85 : 1.0, anchor: .trailing)
             .accessibilityLabel("Delegation review needed")
     }
 }
@@ -99,7 +95,7 @@ private struct DelegationResumingChip: View {
             .font(font)
             .tracking(1.2)
             .foregroundStyle(Color.blue.opacity(0.75))
-            .scaleEffect(style == .compact ? 0.85 : 1.0, anchor: .leading)
+            .scaleEffect(style == .compact ? 0.85 : 1.0, anchor: .trailing)
             .accessibilityLabel("Delegation resuming")
     }
 }
@@ -116,7 +112,7 @@ private struct DelegationResumeFailedChip: View {
             .font(font)
             .tracking(1.2)
             .foregroundStyle(Color.red.opacity(0.85))
-            .scaleEffect(style == .compact ? 0.85 : 1.0, anchor: .leading)
+            .scaleEffect(style == .compact ? 0.85 : 1.0, anchor: .trailing)
             .accessibilityLabel("Delegation resume failed")
     }
 }

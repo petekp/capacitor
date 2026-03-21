@@ -389,9 +389,93 @@ import SwiftUI
             Group(content: {
                 StickySection(title: "List Layout", onReset: resetList) {
                     TuningRow(label: "Card Spacing", value: $config.cardListSpacing, range: 0 ... 24, step: 1, format: "%.0f")
-                    TuningRow(label: "Card Padding H", value: $config.cardPaddingHorizontal, range: 4 ... 24, step: 1, format: "%.0f")
-                    TuningRow(label: "Card Padding V", value: $config.cardPaddingVertical, range: 4 ... 24, step: 1, format: "%.0f")
+
+                    SectionDivider()
+
+                    Text("Card Padding")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.white.opacity(0.5))
+
+                    TuningRow(label: "Top", value: $config.cardPaddingTop, range: 4 ... 24, step: 1, format: "%.0f")
+                    TuningRow(label: "Bottom", value: $config.cardPaddingBottom, range: 4 ... 24, step: 1, format: "%.0f")
+                    TuningRow(label: "Leading", value: $config.cardPaddingLeading, range: 4 ... 24, step: 1, format: "%.0f")
+                    TuningRow(label: "Trailing", value: $config.cardPaddingTrailing, range: 4 ... 24, step: 1, format: "%.0f")
+
+                    SectionDivider()
+
                     TuningRow(label: "List Padding H", value: $config.listHorizontalPadding, range: 0 ... 32, step: 1, format: "%.0f")
+                }
+
+                StickySection(title: "Action Bar", onReset: resetActionBar) {
+                    Text("Layout")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.white.opacity(0.5))
+
+                    TuningRow(label: "Top Padding", value: actionBarTopPaddingBinding, range: 0 ... 24, step: 1, format: "%.0f")
+                    TuningRow(label: "Bottom Spacing", value: actionBarBottomSpacingBinding, range: 0 ... 24, step: 1, format: "%.0f")
+                    TuningRow(label: "Button Height", value: actionBarButtonHeightBinding, range: 14 ... 40, step: 1, format: "%.0f")
+
+                    SectionDivider()
+
+                    Text("Button Padding")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.white.opacity(0.5))
+
+                    TuningRow(label: "Top", value: actionBarButtonPaddingTopBinding, range: 0 ... 12, step: 1, format: "%.0f")
+                    TuningRow(label: "Bottom", value: actionBarButtonPaddingBottomBinding, range: 0 ... 12, step: 1, format: "%.0f")
+                    TuningRow(label: "Leading", value: actionBarButtonPaddingLeadingBinding, range: 0 ... 24, step: 1, format: "%.0f")
+                    TuningRow(label: "Trailing", value: actionBarButtonPaddingTrailingBinding, range: 0 ... 24, step: 1, format: "%.0f")
+
+                    SectionDivider()
+
+                    Text("Row Margins")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.white.opacity(0.5))
+
+                    TuningRow(label: "Top", value: actionBarRowMarginTopBinding, range: 0 ... 24, step: 1, format: "%.0f")
+                    TuningRow(label: "Bottom", value: actionBarRowMarginBottomBinding, range: 0 ... 24, step: 1, format: "%.0f")
+                    TuningRow(label: "Leading", value: actionBarRowMarginLeadingBinding, range: 0 ... 24, step: 1, format: "%.0f")
+                    TuningRow(label: "Trailing", value: actionBarRowMarginTrailingBinding, range: 0 ... 24, step: 1, format: "%.0f")
+
+                    SectionDivider()
+
+                    Text("Separators")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.white.opacity(0.5))
+
+                    TuningRow(label: "Line Opacity", value: $config.actionBarSeparatorOpacity, range: 0 ... 1)
+                    TuningRow(label: "Divider Opacity", value: $config.actionBarDividerOpacity, range: 0 ... 1)
+                    TuningRow(label: "Line Height", value: $config.actionBarSeparatorHeight, range: 0.5 ... 2, step: 0.1, format: "%.1f")
+                    TuningRow(label: "Divider Width", value: $config.actionBarDividerWidth, range: 0.5 ... 2, step: 0.1, format: "%.1f")
+
+                    SectionDivider()
+
+                    Text("Styling")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.white.opacity(0.5))
+
+                    TuningRow(label: "Icon Size", value: actionBarIconSizeBinding, range: 8 ... 18, step: 1, format: "%.0f")
+                    TuningRow(label: "Foreground", value: $config.actionBarForegroundOpacity, range: 0 ... 1)
+                    TuningRow(label: "Hover", value: $config.actionBarHoverOpacity, range: 0 ... 1)
+                    TuningRow(label: "Disabled", value: $config.actionBarDisabledOpacity, range: 0 ... 1)
+
+                    SectionDivider()
+
+                    Text("Typography")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.white.opacity(0.5))
+
+                    TuningRow(label: "Label Size", value: actionBarFontSizeBinding, range: 8 ... 18, step: 1, format: "%.0f")
+                    TuningPickerRow(
+                        label: "Label Weight",
+                        selection: $config.actionBarFontWeight,
+                        options: fontWeightOptions,
+                    )
+                    TuningPickerRow(
+                        label: "Icon Weight",
+                        selection: $config.actionBarIconFontWeight,
+                        options: fontWeightOptions,
+                    )
                 }
 
                 StickySection(title: "Dock Layout", onReset: resetDock) {
@@ -433,9 +517,137 @@ import SwiftUI
 
         private func resetList() {
             config.cardListSpacing = 8.0
-            config.cardPaddingHorizontal = 12.0
-            config.cardPaddingVertical = 12.0
+            config.cardPaddingTop = 14.15
+            config.cardPaddingBottom = 14.15
+            config.cardPaddingLeading = 12.0
+            config.cardPaddingTrailing = 12.0
             config.listHorizontalPadding = 12.0
+        }
+
+        private var actionBarTopPaddingBinding: Binding<Double> {
+            Binding(
+                get: { Double(config.actionBarTopPadding) },
+                set: { config.actionBarTopPadding = CGFloat($0) },
+            )
+        }
+
+        private var actionBarBottomSpacingBinding: Binding<Double> {
+            Binding(
+                get: { Double(config.actionBarBottomSpacing) },
+                set: { config.actionBarBottomSpacing = CGFloat($0) },
+            )
+        }
+
+        private var actionBarButtonHeightBinding: Binding<Double> {
+            Binding(
+                get: { Double(config.actionBarButtonHeight) },
+                set: { config.actionBarButtonHeight = CGFloat($0) },
+            )
+        }
+
+        private var actionBarButtonPaddingTopBinding: Binding<Double> {
+            Binding(
+                get: { Double(config.actionBarButtonPaddingTop) },
+                set: { config.actionBarButtonPaddingTop = CGFloat($0) },
+            )
+        }
+
+        private var actionBarButtonPaddingBottomBinding: Binding<Double> {
+            Binding(
+                get: { Double(config.actionBarButtonPaddingBottom) },
+                set: { config.actionBarButtonPaddingBottom = CGFloat($0) },
+            )
+        }
+
+        private var actionBarButtonPaddingLeadingBinding: Binding<Double> {
+            Binding(
+                get: { Double(config.actionBarButtonPaddingLeading) },
+                set: { config.actionBarButtonPaddingLeading = CGFloat($0) },
+            )
+        }
+
+        private var actionBarButtonPaddingTrailingBinding: Binding<Double> {
+            Binding(
+                get: { Double(config.actionBarButtonPaddingTrailing) },
+                set: { config.actionBarButtonPaddingTrailing = CGFloat($0) },
+            )
+        }
+
+        private var actionBarRowMarginTopBinding: Binding<Double> {
+            Binding(
+                get: { Double(config.actionBarRowMarginTop) },
+                set: { config.actionBarRowMarginTop = CGFloat($0) },
+            )
+        }
+
+        private var actionBarRowMarginBottomBinding: Binding<Double> {
+            Binding(
+                get: { Double(config.actionBarRowMarginBottom) },
+                set: { config.actionBarRowMarginBottom = CGFloat($0) },
+            )
+        }
+
+        private var actionBarRowMarginLeadingBinding: Binding<Double> {
+            Binding(
+                get: { Double(config.actionBarRowMarginLeading) },
+                set: { config.actionBarRowMarginLeading = CGFloat($0) },
+            )
+        }
+
+        private var actionBarRowMarginTrailingBinding: Binding<Double> {
+            Binding(
+                get: { Double(config.actionBarRowMarginTrailing) },
+                set: { config.actionBarRowMarginTrailing = CGFloat($0) },
+            )
+        }
+
+        private var actionBarFontSizeBinding: Binding<Double> {
+            Binding(
+                get: { Double(config.actionBarFontSize) },
+                set: { config.actionBarFontSize = CGFloat($0) },
+            )
+        }
+
+        private var actionBarIconSizeBinding: Binding<Double> {
+            Binding(
+                get: { Double(config.actionBarIconSize) },
+                set: { config.actionBarIconSize = CGFloat($0) },
+            )
+        }
+
+        private var fontWeightOptions: [(String, Int)] {
+            [
+                ("Ultra Light", 1),
+                ("Thin", 2),
+                ("Light", 3),
+                ("Regular", 4),
+                ("Medium", 5),
+                ("Semibold", 6),
+                ("Bold", 7),
+                ("Heavy", 8),
+                ("Black", 9),
+            ]
+        }
+
+        private func resetActionBar() {
+            config.actionBarTopPadding = 10
+            config.actionBarBottomSpacing = 10
+            config.actionBarButtonHeight = 22
+            config.actionBarSeparatorOpacity = 0.15
+            config.actionBarDividerOpacity = 0.15
+            config.actionBarSeparatorHeight = 0.5
+            config.actionBarDividerWidth = 0.5
+            config.actionBarButtonPaddingTop = 0
+            config.actionBarButtonPaddingBottom = 0
+            config.actionBarButtonPaddingLeading = 0
+            config.actionBarButtonPaddingTrailing = 0
+            config.actionBarFontSize = 12
+            config.actionBarFontWeight = 5
+            config.actionBarIconFontWeight = 6
+            config.actionBarIconSize = 11
+            config.actionBarForegroundOpacity = 0.62
+            config.actionBarHoverOpacity = 0.82
+            config.actionBarDisabledOpacity = 0.3
         }
 
         private func resetDock() {

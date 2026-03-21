@@ -15,7 +15,7 @@ export default function Home() {
       <header className={`${styles.header} glass glass-strength-10 glass-surface`}>
         <div className={styles.headerInner}>
           <img
-            src="/logo-green.svg"
+            src="/logo-small.svg"
             alt="Capacitor"
             className={styles.headerLogo}
           />
@@ -38,7 +38,7 @@ export default function Home() {
           <div className={styles.heroText}>
             <h1 className={styles.heading}>
               <GlassTextHeading>
-                Crank up your Claude-pacity
+                The missing link between you and Claude Code
               </GlassTextHeading>
             </h1>
             <p className={styles.subtitle}>

@@ -541,7 +541,7 @@ actor DelegationLoopManager {
     func launchResumeInBackground(_ context: AcceptedReviewDecisionContext) {
         _Concurrency.Task.detached { [self, context] in
             do {
-                try await self.performResumeLaunch(context: context)
+                try await performResumeLaunch(context: context)
             } catch {
                 DebugLog.write(
                     "DelegationLoopManager.review background_failure worker=\(context.workerId) error=\(error.localizedDescription)",

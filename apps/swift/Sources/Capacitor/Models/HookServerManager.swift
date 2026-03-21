@@ -432,7 +432,7 @@ final class HookServerManager {
 
         launchReadinessTask = _Concurrency.Task { [weak self] in
             guard let self else { return }
-            await self.runLaunchReadinessChecks(generation: generation, authToken: authToken)
+            await runLaunchReadinessChecks(generation: generation, authToken: authToken)
         }
     }
 
@@ -441,7 +441,7 @@ final class HookServerManager {
             return
         }
 
-        for attempt in 0..<launchReadinessAttempts {
+        for attempt in 0 ..< launchReadinessAttempts {
             guard generation == lifecycleGeneration, !stopRequested else {
                 return
             }
@@ -679,7 +679,7 @@ extension HookServerManagerDependencies {
                 if !hookServerProcessIsAlive(pid: pid) {
                     return true
                 }
-                usleep(10_000)
+                usleep(10000)
             }
             return !hookServerProcessIsAlive(pid: pid)
         },

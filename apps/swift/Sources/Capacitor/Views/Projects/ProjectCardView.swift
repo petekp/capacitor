@@ -101,13 +101,7 @@ struct ProjectCardView: View {
             )
         #endif
 
-        // Capture layout values once at body evaluation to avoid constraint loops
-        let paddingH = glassConfig.cardPaddingH
-        let paddingV = glassConfig.cardPaddingV
-
         let styledCard = cardContent
-            .padding(.horizontal, paddingH)
-            .padding(.vertical, paddingV)
             .cardStyling(
                 isHovered: isHovered,
                 currentState: currentState,
@@ -220,6 +214,42 @@ struct ProjectCardView: View {
         delegationState?.status
     }
 
+    private var delegationContextText: String? {
+        guard let delegationState else { return nil }
+
+        if let workingOn = projectStatus?.workingOn?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+            !workingOn.isEmpty
+        {
+            return workingOn
+        }
+
+        let milestoneID = delegationState.currentReview?.milestoneId ?? delegationState.submittedMilestoneId
+
+        switch delegationState.status {
+        case "review_needed":
+            if let milestoneID, !milestoneID.isEmpty {
+                return "Milestone \(milestoneID) awaiting review"
+            }
+            return "Review ready"
+        case "resume_pending":
+            if let milestoneID, !milestoneID.isEmpty {
+                return "Resuming milestone \(milestoneID)"
+            }
+            return "Delegation is resuming"
+        case "resume_failed":
+            if let milestoneID, !milestoneID.isEmpty {
+                return "Resume failed for milestone \(milestoneID)"
+            }
+            return "Resume failed"
+        default:
+            if let milestoneID, !milestoneID.isEmpty {
+                return "Milestone \(milestoneID) in progress"
+            }
+            return "Delegation in progress"
+        }
+    }
+
     private var hasOpenDelegationReview: Bool {
         guard let delegationState else { return false }
         return delegationState.currentReview != nil
@@ -297,33 +327,68 @@ struct ProjectCardView: View {
         #endif
     }
 
+    private var paddingTop: CGFloat {
+        #if DEBUG
+            glassConfig.cardPaddingTopRounded
+        #else
+            14
+        #endif
+    }
+
+    private var paddingBottom: CGFloat {
+        #if DEBUG
+            glassConfig.cardPaddingBottomRounded
+        #else
+            8
+        #endif
+    }
+
+    private var paddingLeading: CGFloat {
+        #if DEBUG
+            glassConfig.cardPaddingLeadingRounded
+        #else
+            12
+        #endif
+    }
+
+    private var paddingTrailing: CGFloat {
+        #if DEBUG
+            glassConfig.cardPaddingTrailingRounded
+        #else
+            12
+        #endif
+    }
+
     // MARK: - Card Content
 
     private var cardContent: some View {
-        HStack(spacing: 12) {
+        VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 6) {
                 ProjectCardHeader(
                     project: project,
                     nameColor: nameColor,
-                    onInfoTap: onInfoTap,
-                    detailsAccessibilityIdentifier: AccessibilityIdentifiers.projectDetailsIdentifier(for: project),
+                    sessionState: sessionState,
+                    delegationState: delegationState,
                 )
 
                 ProjectCardContent(
-                    sessionState: sessionState,
-                    delegationState: delegationState,
-                    blocker: projectStatus?.blocker,
+                    contextLine: delegationContextText,
+                    isMissing: project.isMissing,
                 )
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, paddingTop)
+            .padding(.bottom, paddingBottom)
+            .padding(.leading, paddingLeading)
+            .padding(.trailing, paddingTrailing)
 
-            CardActionButtons(
+            ProjectCardActionBar(
                 isCardHovered: isHovered,
                 onCaptureIdea: onCaptureIdea,
                 onDetails: onInfoTap,
             )
         }
-        .frame(minHeight: 40) // Match action button height for consistent card sizing
-        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: projectStatus?.blocker)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: - Context Menu
@@ -421,35 +486,30 @@ struct ProjectCardView: View {
 private struct ProjectCardHeader: View {
     let project: Project
     let nameColor: Color
-    let onInfoTap: (() -> Void)?
-    let detailsAccessibilityIdentifier: String
+    let sessionState: ProjectSessionState?
+    let delegationState: RuntimeDelegationState?
 
     var body: some View {
-        HStack {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
             if project.isMissing {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .font(AppTypography.bodySecondary)
                     .foregroundColor(.orange)
             }
 
-            if let onInfoTap {
-                ClickableProjectTitle(
-                    name: project.name,
-                    nameColor: nameColor,
-                    isMissing: project.isMissing,
-                    action: onInfoTap,
-                    accessibilityIdentifier: detailsAccessibilityIdentifier,
-                )
-            } else {
-                Text(project.name)
-                    .font(AppTypography.cardTitle.monospaced())
-                    .foregroundStyle(nameColor)
-                    .strikethrough(project.isMissing, color: .white.opacity(0.3))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-            }
+            Text(project.name)
+                .font(AppTypography.cardTitle.monospaced())
+                .foregroundStyle(nameColor)
+                .strikethrough(project.isMissing, color: .white.opacity(0.3))
+                .lineLimit(1)
+                .truncationMode(.tail)
 
-            Spacer()
+            Spacer(minLength: 0)
+
+            StatusChipsRow(
+                sessionState: sessionState,
+                delegationState: delegationState,
+            )
         }
     }
 }
@@ -457,62 +517,297 @@ private struct ProjectCardHeader: View {
 // MARK: - Card Content Component
 
 private struct ProjectCardContent: View {
-    let sessionState: ProjectSessionState?
-    let delegationState: RuntimeDelegationState?
-    let blocker: String?
+    let contextLine: String?
+    let isMissing: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            StatusChipsRow(
-                sessionState: sessionState,
-                delegationState: delegationState,
-            )
-
-            if delegationState?.status == "review_needed", delegationState?.currentReview != nil {
-                HStack(spacing: 4) {
-                    Image(systemName: "text.badge.star")
-                        .font(AppTypography.captionSmall)
-                    Text("Review brief ready")
-                        .font(AppTypography.label)
-                        .lineLimit(1)
-                }
-                .foregroundColor(.orange.opacity(0.9))
-            }
-
-            if delegationState?.status == "resume_pending" {
-                HStack(spacing: 4) {
-                    Image(systemName: "arrow.triangle.2.circlepath")
-                        .font(AppTypography.captionSmall)
-                    Text("Resuming worker")
-                        .font(AppTypography.label)
-                        .lineLimit(1)
-                }
-                .foregroundColor(.blue.opacity(0.7))
-            }
-
-            if delegationState?.status == "resume_failed" {
-                HStack(spacing: 4) {
-                    Image(systemName: "exclamationmark.triangle")
-                        .font(AppTypography.captionSmall)
-                    Text("Resume failed")
-                        .font(AppTypography.label)
-                        .lineLimit(1)
-                }
-                .foregroundColor(.red.opacity(0.8))
-            }
-
-            if let blocker, !blocker.isEmpty {
-                HStack(spacing: 4) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .font(AppTypography.captionSmall)
-                    Text(blocker)
-                        .font(AppTypography.label)
-                        .lineLimit(1)
-                }
-                .foregroundColor(Color(hue: 0, saturation: 0.7, brightness: 0.85))
+        Group {
+            if let contextLine {
+                Text(contextLine)
+                    .font(AppTypography.bodySecondary)
+                    .foregroundStyle(isMissing ? .white.opacity(0.35) : .white.opacity(0.62))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+// MARK: - Action Bar
+
+private enum ProjectCardActionMetrics {
+    static var buttonMinHeight: CGFloat {
+        #if DEBUG
+            GlassConfig.shared.actionBarButtonHeight
+        #else
+            30.14
+        #endif
+    }
+}
+
+private struct ProjectCardActionBar: View {
+    let isCardHovered: Bool
+    var onCaptureIdea: ((CGRect) -> Void)?
+    var onDetails: (() -> Void)?
+
+    #if DEBUG
+        private let config = GlassConfig.shared
+    #endif
+
+    private var separatorHeight: CGFloat {
+        #if DEBUG
+            CGFloat(config.actionBarSeparatorHeight)
+        #else
+            0.99
+        #endif
+    }
+
+    private var topPadding: CGFloat {
+        #if DEBUG
+            config.actionBarTopPadding
+        #else
+            0
+        #endif
+    }
+
+    private var bottomSpacing: CGFloat {
+        #if DEBUG
+            config.actionBarBottomSpacing
+        #else
+            0
+        #endif
+    }
+
+    private var rowMarginTop: CGFloat {
+        #if DEBUG
+            config.actionBarRowMarginTop
+        #else
+            0
+        #endif
+    }
+
+    private var rowMarginBottom: CGFloat {
+        #if DEBUG
+            config.actionBarRowMarginBottom
+        #else
+            6.52
+        #endif
+    }
+
+    private var rowMarginLeading: CGFloat {
+        #if DEBUG
+            config.actionBarRowMarginLeading
+        #else
+            9.59
+        #endif
+    }
+
+    private var rowMarginTrailing: CGFloat {
+        #if DEBUG
+            config.actionBarRowMarginTrailing
+        #else
+            9.76
+        #endif
+    }
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ProjectCardActionButton(
+                icon: "plus",
+                title: "Idea",
+                accessibilityLabel: "Capture idea for this project",
+                action: onCaptureIdea,
+            )
+
+            Spacer(minLength: 0)
+
+            ProjectCardActionButton(
+                icon: "chevron.right",
+                title: "Details",
+                iconTrailing: true,
+                accessibilityLabel: "View project details",
+                action: onDetails.map { action in { _ in action() } },
+            )
+        }
+        .opacity(isCardHovered ? 1 : 0)
+        .animation(.spring(response: 0.25, dampingFraction: 0.8), value: isCardHovered)
+        .padding(.top, topPadding + separatorHeight + bottomSpacing)
+        .padding(.top, rowMarginTop)
+        .padding(.bottom, rowMarginBottom)
+        .padding(.leading, rowMarginLeading)
+        .padding(.trailing, rowMarginTrailing)
+        .contentShape(.rect)
+        .onTapGesture {}
+    }
+}
+
+private struct ProjectCardActionButton: View {
+    let icon: String
+    let title: String
+    var iconTrailing: Bool = false
+    let accessibilityLabel: String
+    var action: ((CGRect) -> Void)?
+
+    #if DEBUG
+        private let config = GlassConfig.shared
+    #endif
+
+    @Environment(\.prefersReducedMotion) private var reduceMotion
+
+    @State private var isHovered = false
+    @State private var buttonFrame: CGRect = .zero
+
+    private var isEnabled: Bool {
+        action != nil
+    }
+
+    private var foregroundColor: Color {
+        #if DEBUG
+            guard isEnabled else { return .white.opacity(config.actionBarDisabledOpacity) }
+            return .white.opacity(isHovered ? config.actionBarHoverOpacity : config.actionBarForegroundOpacity)
+        #else
+            guard isEnabled else { return .white.opacity(0.3) }
+            return .white.opacity(isHovered ? 0.82 : 0.62)
+        #endif
+    }
+
+    private var iconFont: Font {
+        #if DEBUG
+            .system(size: config.actionBarIconSize, weight: Self.fontWeight(from: config.actionBarIconFontWeight))
+        #else
+            .system(size: 11, weight: .semibold)
+        #endif
+    }
+
+    private var labelFont: Font {
+        #if DEBUG
+            .system(size: config.actionBarFontSize, weight: Self.fontWeight(from: config.actionBarFontWeight))
+        #else
+            .system(size: 12, weight: .medium)
+        #endif
+    }
+
+    private var paddingTop: CGFloat {
+        #if DEBUG
+            config.actionBarButtonPaddingTop
+        #else
+            0
+        #endif
+    }
+
+    private var paddingBottom: CGFloat {
+        #if DEBUG
+            config.actionBarButtonPaddingBottom
+        #else
+            0
+        #endif
+    }
+
+    private var paddingLeading: CGFloat {
+        #if DEBUG
+            config.actionBarButtonPaddingLeading
+        #else
+            0
+        #endif
+    }
+
+    private var paddingTrailing: CGFloat {
+        #if DEBUG
+            config.actionBarButtonPaddingTrailing
+        #else
+            0
+        #endif
+    }
+
+    private var hoverFillOpacity: Double {
+        isEnabled && isHovered ? 0.14 : 0.0
+    }
+
+    private var hoverStrokeOpacity: Double {
+        isEnabled && isHovered ? 0.24 : 0.0
+    }
+
+    private var hoverAnimation: Animation {
+        reduceMotion ? AppMotion.reducedMotionFallback : .spring(response: 0.2, dampingFraction: 0.75)
+    }
+
+    private var labelContent: some View {
+        Group {
+            if iconTrailing {
+                HStack(spacing: 6) {
+                    Text(title)
+                        .font(labelFont)
+
+                    Image(systemName: icon)
+                        .font(iconFont)
+                }
+            } else {
+                HStack(spacing: 6) {
+                    Image(systemName: icon)
+                        .font(iconFont)
+
+                    Text(title)
+                        .font(labelFont)
+                }
+            }
+        }
+        .foregroundStyle(foregroundColor)
+        .padding(.top, 5 + paddingTop)
+        .padding(.bottom, 5 + paddingBottom)
+        .padding(.leading, 10 + paddingLeading)
+        .padding(.trailing, 10 + paddingTrailing)
+        .background(
+            Capsule(style: .continuous)
+                .fill(Color.white.opacity(hoverFillOpacity)),
+        )
+        .overlay(
+            Capsule(style: .continuous)
+                .strokeBorder(Color.white.opacity(hoverStrokeOpacity), lineWidth: 0.5),
+        )
+        .scaleEffect(isEnabled && isHovered && !reduceMotion ? 1.02 : 1.0)
+    }
+
+    var body: some View {
+        Button(action: { action?(buttonFrame) }) {
+            labelContent
+                .frame(minHeight: ProjectCardActionMetrics.buttonMinHeight)
+                .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .disabled(!isEnabled)
+        .background(
+            GeometryReader { geo in
+                Color.clear.preference(
+                    key: ButtonFramePreferenceKey.self,
+                    value: geo.frame(in: .named("contentView")),
+                )
+            },
+        )
+        .onPreferenceChange(ButtonFramePreferenceKey.self) { frame in
+            buttonFrame = frame
+        }
+        .onHover { hovering in
+            withAnimation(hoverAnimation) {
+                isHovered = isEnabled && hovering
+            }
+        }
+        .accessibilityLabel(accessibilityLabel)
+    }
+
+    private static func fontWeight(from value: Int) -> Font.Weight {
+        switch value {
+        case 1: .ultraLight
+        case 2: .thin
+        case 3: .light
+        case 4: .regular
+        case 5: .medium
+        case 6: .semibold
+        case 7: .bold
+        case 8: .heavy
+        case 9: .black
+        default: .medium
+        }
     }
 }
 

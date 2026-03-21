@@ -1302,7 +1302,7 @@ final class RuntimeClient {
         return unwrapOptionalString(reflectedValue)
     }
 
-    private static func snakeCaseEnumCaseName<T>(_ value: T) -> String {
+    private static func snakeCaseEnumCaseName(_ value: some Any) -> String {
         let rawName = String(describing: value)
         guard !rawName.isEmpty else { return rawName }
 

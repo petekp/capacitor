@@ -1473,7 +1473,7 @@ final class DelegationLoopManagerTests: XCTestCase {
 
         let requests = await mutationProjector.snapshot()
         XCTAssertEqual(
-            requests.filter { $0.kind == "submit_review" }.count,
+            requests.count(where: { $0.kind == "submit_review" }),
             1,
             "Retry should reuse the accepted review instead of requiring a second submission",
         )
@@ -1718,7 +1718,7 @@ final class DelegationLoopManagerTests: XCTestCase {
         let milestonesRoot = makeDelegationMilestonesRoot(projectPath: projectPath)
         addTeardownBlock {
             try? FileManager.default.removeItem(
-                at: CapacitorProjectPaths.projectDataDirectory(for: projectPath)
+                at: CapacitorProjectPaths.projectDataDirectory(for: projectPath),
             )
         }
 

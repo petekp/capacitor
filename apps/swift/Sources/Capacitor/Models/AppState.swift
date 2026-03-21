@@ -372,6 +372,7 @@ class AppState {
 
         scheduleRuntimeBootstrap()
     }
+
     private func scheduleRuntimeBootstrap() {
         didScheduleRuntimeBootstrapForTesting = true
 

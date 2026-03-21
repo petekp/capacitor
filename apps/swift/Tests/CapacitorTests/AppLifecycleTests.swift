@@ -1,5 +1,5 @@
-@testable import Capacitor
 import AppKit
+@testable import Capacitor
 import XCTest
 
 @MainActor

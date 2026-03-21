@@ -340,12 +340,6 @@ fi
 # Verify hook is in sync (warn only, don't block)
 "$PROJECT_ROOT/scripts/sync-hooks.sh" 2>/dev/null || true
 
-# Reap stale runtime boundaries before the app starts shutting down. The app can
-# otherwise relaunch hud-hook during shutdown and leave the old runtime service
-# binary pinned to port 7474.
-reap_runtime_service 7474
-kill_stale_capacitor_daemon
-
 # Kill any existing Capacitor instances (graceful first, then force)
 # Prefer killing the release app first to avoid confusing launches.
 pkill -f '/Applications/Capacitor.app/Contents/MacOS/Capacitor' 2>/dev/null || true
@@ -366,6 +360,12 @@ if pgrep -x Capacitor > /dev/null; then
     pgrep -x Capacitor | xargs kill -9 2>/dev/null || true
     sleep 0.5
 fi
+
+# Reap stale runtime boundaries only after the app is fully down. Otherwise the
+# app can observe hud-hook disappearing during shutdown, relaunch it, and leave
+# the replacement runtime service pinned to port 7474.
+reap_runtime_service 7474
+kill_stale_capacitor_daemon
 
 cd "$PROJECT_ROOT"
 
