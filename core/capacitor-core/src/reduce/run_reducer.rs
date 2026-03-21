@@ -6,9 +6,9 @@
 use std::collections::BTreeMap;
 
 use crate::domain::{
-    method_registry, now_rfc3339, ActiveCheckpoint, CheckpointDecision, CheckpointStatus,
-    MutateRunCommand, MutationOutcome, PhaseInstance, PhaseStatus, RunMutationKind, RunState,
-    RunStatus,
+    method_registry, now_rfc3339, ActiveCheckpoint, CaptureStatus, CheckpointDecision,
+    CheckpointStatus, MutateRunCommand, MutationOutcome, PhaseInstance, PhaseStatus,
+    RunMutationKind, RunState, RunStatus,
 };
 
 /// Apply a run mutation to the runs map. Returns a `MutationOutcome`.
@@ -33,6 +33,7 @@ pub fn apply_run_mutation(
         RunMutationKind::AdvancePhase => handle_advance_phase(runs, &key),
         RunMutationKind::EmitCheckpoint => handle_emit_checkpoint(runs, &key, &command),
         RunMutationKind::SubmitDecision => handle_submit_decision(runs, &key, &command),
+        RunMutationKind::CaptureComplete => handle_capture_complete(runs, &key, &command),
         RunMutationKind::AttachSession => handle_attach_session(runs, &key, &command),
         RunMutationKind::DetachSession => handle_detach_session(runs, &key),
         RunMutationKind::Pause => handle_status_transition(runs, &key, RunStatus::Paused, "pause"),
@@ -182,6 +183,12 @@ fn handle_emit_checkpoint(
     let now = now_rfc3339();
     let checkpoint_id = format!("{}:{}:ckpt-{}", run.id, phase_id, now.replace(':', "-"));
 
+    let capture_status = if command.capture_requested {
+        CaptureStatus::Pending
+    } else {
+        CaptureStatus::NotRequested
+    };
+
     run.active_checkpoint = Some(ActiveCheckpoint {
         id: checkpoint_id,
         phase_id,
@@ -191,6 +198,9 @@ fn handle_emit_checkpoint(
         summary: command.checkpoint_summary.clone(),
         brief_path: command.checkpoint_brief_path.clone(),
         manifest_path: command.checkpoint_manifest_path.clone(),
+        media_artifacts: command.checkpoint_media_artifacts.clone(),
+        mermaid_sources: command.checkpoint_mermaid_sources.clone(),
+        capture_status,
         decision: None,
         created_at: now.clone(),
         decided_at: None,
@@ -238,6 +248,35 @@ fn handle_submit_decision(
     run.status = RunStatus::Active;
     run.updated_at = now;
     ok(&format!("decision recorded: {action}"))
+}
+
+fn handle_capture_complete(
+    runs: &mut BTreeMap<String, RunState>,
+    key: &str,
+    command: &MutateRunCommand,
+) -> MutationOutcome {
+    let run = match runs.get_mut(key) {
+        Some(r) => r,
+        None => return reject("run not found"),
+    };
+
+    let checkpoint = match &mut run.active_checkpoint {
+        Some(c) => c,
+        None => return reject("no active checkpoint"),
+    };
+
+    if !matches!(checkpoint.capture_status, CaptureStatus::Pending) {
+        return reject("capture is not pending");
+    }
+
+    // Append completed media artifacts to the checkpoint
+    checkpoint
+        .media_artifacts
+        .extend(command.completed_media_artifacts.clone());
+    checkpoint.capture_status = CaptureStatus::Completed;
+
+    run.updated_at = now_rfc3339();
+    ok("capture completed")
 }
 
 fn handle_attach_session(
@@ -357,10 +396,14 @@ mod tests {
             checkpoint_summary: None,
             checkpoint_brief_path: None,
             checkpoint_manifest_path: None,
+            checkpoint_media_artifacts: vec![],
+            checkpoint_mermaid_sources: vec![],
+            capture_requested: false,
             decision_action: None,
             decision_note: None,
             session_id: None,
             delegation_worker_id: None,
+            completed_media_artifacts: vec![],
         }
     }
 
@@ -385,10 +428,14 @@ mod tests {
             checkpoint_summary: None,
             checkpoint_brief_path: None,
             checkpoint_manifest_path: None,
+            checkpoint_media_artifacts: vec![],
+            checkpoint_mermaid_sources: vec![],
+            capture_requested: false,
             decision_action: None,
             decision_note: None,
             session_id: None,
             delegation_worker_id: None,
+            completed_media_artifacts: vec![],
         }
     }
 
@@ -662,5 +709,115 @@ mod tests {
 
         let run = runs.values().next().unwrap();
         assert_eq!(run.delegation_worker_id.as_deref(), Some("worker-abc"));
+    }
+
+    #[test]
+    fn emit_checkpoint_with_media_artifacts() {
+        use crate::domain::{CaptureStatus, MediaArtifact, MediaArtifactType, MermaidSource};
+
+        let mut runs = empty_runs();
+        apply_run_mutation(&mut runs, create_command("run-001", "execution_only"));
+
+        let mut cmd = base_cmd("run-001");
+        cmd.session_id = Some("s1".to_string());
+        mutate(&mut runs, cmd, RunMutationKind::AttachSession);
+
+        let mut cmd = base_cmd("run-001");
+        cmd.checkpoint_kind = Some(CheckpointKind::ImplementationMilestone);
+        cmd.checkpoint_title = Some("With media".to_string());
+        cmd.checkpoint_media_artifacts = vec![MediaArtifact {
+            artifact_type: MediaArtifactType::Screenshot,
+            path: "terminal-001.png".to_string(),
+            label: "Terminal".to_string(),
+            width: Some(2560),
+            height: Some(1440),
+            duration_secs: None,
+        }];
+        cmd.checkpoint_mermaid_sources = vec![MermaidSource {
+            label: "Architecture".to_string(),
+            source: "graph LR; A-->B".to_string(),
+        }];
+        cmd.capture_requested = true;
+        let result = mutate(&mut runs, cmd, RunMutationKind::EmitCheckpoint);
+        assert!(result.ok, "{}", result.message);
+
+        let run = runs.values().next().unwrap();
+        let ckpt = run.active_checkpoint.as_ref().unwrap();
+        assert_eq!(ckpt.media_artifacts.len(), 1);
+        assert_eq!(ckpt.media_artifacts[0].label, "Terminal");
+        assert_eq!(ckpt.mermaid_sources.len(), 1);
+        assert_eq!(ckpt.mermaid_sources[0].label, "Architecture");
+        assert!(matches!(ckpt.capture_status, CaptureStatus::Pending));
+    }
+
+    #[test]
+    fn capture_complete_updates_checkpoint() {
+        use crate::domain::{CaptureStatus, MediaArtifact, MediaArtifactType};
+
+        let mut runs = empty_runs();
+        apply_run_mutation(&mut runs, create_command("run-001", "execution_only"));
+
+        let mut cmd = base_cmd("run-001");
+        cmd.session_id = Some("s1".to_string());
+        mutate(&mut runs, cmd, RunMutationKind::AttachSession);
+
+        // Emit checkpoint with capture requested
+        let mut cmd = base_cmd("run-001");
+        cmd.checkpoint_kind = Some(CheckpointKind::ImplementationMilestone);
+        cmd.capture_requested = true;
+        mutate(&mut runs, cmd, RunMutationKind::EmitCheckpoint);
+
+        // Complete capture with artifacts
+        let mut cmd = base_cmd("run-001");
+        cmd.completed_media_artifacts = vec![
+            MediaArtifact {
+                artifact_type: MediaArtifactType::Screenshot,
+                path: "terminal-001.png".to_string(),
+                label: "Terminal capture".to_string(),
+                width: Some(2560),
+                height: Some(1440),
+                duration_secs: None,
+            },
+            MediaArtifact {
+                artifact_type: MediaArtifactType::Screenshot,
+                path: "browser-001.png".to_string(),
+                label: "Browser capture".to_string(),
+                width: Some(1920),
+                height: Some(1080),
+                duration_secs: None,
+            },
+        ];
+        let result = mutate(&mut runs, cmd, RunMutationKind::CaptureComplete);
+        assert!(result.ok, "{}", result.message);
+
+        let run = runs.values().next().unwrap();
+        let ckpt = run.active_checkpoint.as_ref().unwrap();
+        assert_eq!(ckpt.media_artifacts.len(), 2);
+        assert!(matches!(ckpt.capture_status, CaptureStatus::Completed));
+    }
+
+    #[test]
+    fn capture_complete_rejects_without_pending() {
+        let mut runs = empty_runs();
+        apply_run_mutation(&mut runs, create_command("run-001", "execution_only"));
+
+        let mut cmd = base_cmd("run-001");
+        cmd.session_id = Some("s1".to_string());
+        mutate(&mut runs, cmd, RunMutationKind::AttachSession);
+
+        // Emit checkpoint WITHOUT capture requested
+        let mut cmd = base_cmd("run-001");
+        cmd.checkpoint_kind = Some(CheckpointKind::ImplementationMilestone);
+        cmd.capture_requested = false;
+        mutate(&mut runs, cmd, RunMutationKind::EmitCheckpoint);
+
+        // Try to complete capture — should be rejected
+        let result = mutate(
+            &mut runs,
+            base_cmd("run-001"),
+            RunMutationKind::CaptureComplete,
+        );
+        assert!(!result.ok);
+        assert!(result.message.contains("not pending"));
     }
 }

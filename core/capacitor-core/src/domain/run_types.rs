@@ -84,6 +84,7 @@ pub enum RunMutationKind {
     SubmitDecision,
     AttachSession,
     DetachSession,
+    CaptureComplete,
     Pause,
     Resume,
     Complete,
@@ -146,6 +147,51 @@ impl PhaseInstance {
 }
 
 // ---------------------------------------------------------------------------
+// Media Artifacts
+// ---------------------------------------------------------------------------
+
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Enum, Default,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum MediaArtifactType {
+    #[default]
+    Screenshot,
+    Recording,
+    MermaidDiagram,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Record)]
+pub struct MediaArtifact {
+    pub artifact_type: MediaArtifactType,
+    pub path: String,
+    pub label: String,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+    pub duration_secs: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Record)]
+pub struct MermaidSource {
+    pub label: String,
+    pub source: String,
+}
+
+#[derive(
+    Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Enum, Default,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum CaptureStatus {
+    #[default]
+    NotRequested,
+    Pending,
+    Completed,
+    Failed {
+        reason: String,
+    },
+}
+
+// ---------------------------------------------------------------------------
 // Checkpoint
 // ---------------------------------------------------------------------------
 
@@ -156,6 +202,9 @@ pub struct CheckpointPacket {
     pub summary: Option<String>,
     pub brief_path: Option<String>,
     pub manifest_path: Option<String>,
+    pub media_artifacts: Vec<MediaArtifact>,
+    pub mermaid_sources: Vec<MermaidSource>,
+    pub capture_requested: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Record)]
@@ -174,6 +223,9 @@ pub struct ActiveCheckpoint {
     pub summary: Option<String>,
     pub brief_path: Option<String>,
     pub manifest_path: Option<String>,
+    pub media_artifacts: Vec<MediaArtifact>,
+    pub mermaid_sources: Vec<MermaidSource>,
+    pub capture_status: CaptureStatus,
     pub decision: Option<CheckpointDecision>,
     pub created_at: String,
     pub decided_at: Option<String>,
@@ -229,10 +281,15 @@ pub struct MutateRunCommand {
     pub checkpoint_summary: Option<String>,
     pub checkpoint_brief_path: Option<String>,
     pub checkpoint_manifest_path: Option<String>,
+    pub checkpoint_media_artifacts: Vec<MediaArtifact>,
+    pub checkpoint_mermaid_sources: Vec<MermaidSource>,
+    pub capture_requested: bool,
     pub decision_action: Option<String>,
     pub decision_note: Option<String>,
     pub session_id: Option<String>,
     pub delegation_worker_id: Option<String>,
+    /// Media artifact paths to attach via CaptureComplete.
+    pub completed_media_artifacts: Vec<MediaArtifact>,
 }
 
 // ---------------------------------------------------------------------------

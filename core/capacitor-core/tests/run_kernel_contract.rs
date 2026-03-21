@@ -30,10 +30,14 @@ fn create_cmd(run_id: &str, method_id: &str) -> MutateRunCommand {
         checkpoint_summary: None,
         checkpoint_brief_path: None,
         checkpoint_manifest_path: None,
+        checkpoint_media_artifacts: vec![],
+        checkpoint_mermaid_sources: vec![],
+        capture_requested: false,
         decision_action: None,
         decision_note: None,
         session_id: None,
         delegation_worker_id: None,
+        completed_media_artifacts: vec![],
     }
 }
 
@@ -49,10 +53,14 @@ fn base_cmd(run_id: &str) -> MutateRunCommand {
         checkpoint_summary: None,
         checkpoint_brief_path: None,
         checkpoint_manifest_path: None,
+        checkpoint_media_artifacts: vec![],
+        checkpoint_mermaid_sources: vec![],
+        capture_requested: false,
         decision_action: None,
         decision_note: None,
         session_id: None,
         delegation_worker_id: None,
+        completed_media_artifacts: vec![],
     }
 }
 
