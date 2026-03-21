@@ -74,4 +74,54 @@ struct DelegationReviewManifestTests {
         #expect(manifest.decisions?.approve?.label == "Ship It")
         #expect(manifest.artifacts.count == 1)
     }
+
+    @Test("Decodes artifact with artifact_type field")
+    func decodesArtifactWithType() throws {
+        let json = """
+        {
+            "version": 1,
+            "milestone_id": "01",
+            "summary": "With media",
+            "artifacts": [
+                {"label": "Terminal", "path": "terminal-001.png", "artifact_type": "screenshot", "width": 2560, "height": 1440},
+                {"label": "Architecture", "path": "arch.mmd", "artifact_type": "mermaid"},
+                {"label": "Flow recording", "path": "phase.mov", "artifact_type": "recording", "duration_secs": 42.5}
+            ]
+        }
+        """.data(using: .utf8)!
+
+        let manifest = try JSONDecoder().decode(DelegationReviewManifest.self, from: json)
+        #expect(manifest.artifacts.count == 3)
+
+        #expect(manifest.artifacts[0].artifactType == .screenshot)
+        #expect(manifest.artifacts[0].width == 2560)
+        #expect(manifest.artifacts[0].height == 1440)
+        #expect(manifest.artifacts[0].isMedia == true)
+
+        #expect(manifest.artifacts[1].artifactType == .mermaid)
+        #expect(manifest.artifacts[1].isMedia == true)
+
+        #expect(manifest.artifacts[2].artifactType == .recording)
+        #expect(manifest.artifacts[2].durationSecs == 42.5)
+        #expect(manifest.artifacts[2].isMedia == true)
+    }
+
+    @Test("Decodes artifact without artifact_type (backwards compat)")
+    func decodesArtifactWithoutType() throws {
+        let json = """
+        {
+            "version": 1,
+            "milestone_id": "01",
+            "summary": "Legacy",
+            "artifacts": [
+                {"label": "Some file", "path": "some/path.swift"}
+            ]
+        }
+        """.data(using: .utf8)!
+
+        let manifest = try JSONDecoder().decode(DelegationReviewManifest.self, from: json)
+        #expect(manifest.artifacts[0].artifactType == nil)
+        #expect(manifest.artifacts[0].width == nil)
+        #expect(manifest.artifacts[0].isMedia == false)
+    }
 }

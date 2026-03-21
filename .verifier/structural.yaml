@@ -95,7 +95,7 @@ ownership:
 
 boundaries:
   - rule: tmux_router_exclusive_command_owner
-    description: TmuxRouter is the only production Swift module allowed to build raw tmux commands.
+    description: TmuxRouter and TerminalCaptureService are the only production Swift modules allowed to build raw tmux commands.
     groups:
       - formal-verify
       - runtime-boundary
@@ -109,6 +109,7 @@ boundaries:
         - apps/swift/Sources/Capacitor/**/*.swift
       except:
         - apps/swift/Sources/Capacitor/Models/TmuxRouter.swift
+        - apps/swift/Sources/Capacitor/Models/TerminalCaptureService.swift
       must_not: shell_command_literal:^tmux\s
 
   - rule: ghostty_applescript_adapter_exclusive

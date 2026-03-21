@@ -291,6 +291,35 @@ struct DelegationReviewWindow: View {
                     }
                 }
 
+                // Media artifacts (screenshots, recordings, diagrams)
+                if let artifacts = manifest?.artifacts {
+                    let mediaArtifacts = artifacts.filter(\.isMedia)
+                    if !mediaArtifacts.isEmpty {
+                        VStack(alignment: .leading, spacing: 10) {
+                            sectionLabel("MEDIA")
+
+                            ForEach(mediaArtifacts) { artifact in
+                                switch artifact.artifactType {
+                                case .screenshot, .recording:
+                                    CaptureImageView(
+                                        filePath: artifact.path,
+                                        label: artifact.label,
+                                    )
+                                case .mermaid:
+                                    if let source = loadMermaidSource(path: artifact.path) {
+                                        LabeledMermaidView(
+                                            source: source,
+                                            label: artifact.label,
+                                        )
+                                    }
+                                default:
+                                    EmptyView()
+                                }
+                            }
+                        }
+                    }
+                }
+
                 // Changes diff
                 if !diffStat.isEmpty {
                     VStack(alignment: .leading, spacing: 10) {
@@ -759,6 +788,10 @@ struct DelegationReviewWindow: View {
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
         let output = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
         return output?.isEmpty == true ? nil : output
+    }
+
+    private func loadMermaidSource(path: String) -> String? {
+        try? String(contentsOfFile: path, encoding: .utf8)
     }
 
     private func loadPreviousRoundDecision(currentMilestoneId: String) -> PreviousRoundDecision? {
