@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 struct DockLayoutView: View {
     @Environment(AppState.self) var appState: AppState
     @Environment(\.floatingMode) private var floatingMode
+    @Environment(\.openWindow) private var openWindow
     private let glassConfig = GlassConfig.shared
     @State private var scrolledID: String?
     @State private var draggedProject: Project?
@@ -106,6 +107,11 @@ struct DockLayoutView: View {
         .background(floatingMode ? Color.clear : Color.hudBackground)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Project dock")
+        .onChange(of: appState.reviewWindowTarget?.workerID) { oldValue, newValue in
+            if oldValue == nil, newValue != nil {
+                openWindow(id: "delegation-review")
+            }
+        }
     }
 
     private var emptyState: some View {

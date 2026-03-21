@@ -7,11 +7,14 @@ use crate::domain::{
     default_workspace_id, display_name, normalize_path_for_matching, now_rfc3339,
     resolve_project_identity, workspace_id, AppSnapshot, DelegationMutationKind,
     DelegationReviewState, DelegationStatus, DiagnosticsSummary, HookEventType,
-    IngestHookEventCommand, IngestShellSignalCommand, MutateDelegationCommand, MutationOutcome,
-    ProjectDelegationState, ProjectSummary, ResolveRoutingCommand, RoutingStatus, RoutingTarget,
-    RoutingTargetKind, RoutingView, SessionState, SessionSummary, ShellSignal, TmuxPaneInfo,
+    IngestHookEventCommand, IngestShellSignalCommand, MutateDelegationCommand, MutateRunCommand,
+    MutationOutcome, ProjectDelegationState, ProjectSummary, ResolveRoutingCommand, RoutingStatus,
+    RoutingTarget, RoutingTargetKind, RoutingView, RunState, SessionState, SessionSummary,
+    ShellSignal, TmuxPaneInfo,
 };
 use crate::runtime_types::ParentApp;
+
+pub mod run_reducer;
 
 const STALE_EVENT_GRACE_SECS: i64 = 5;
 
@@ -19,6 +22,7 @@ const STALE_EVENT_GRACE_SECS: i64 = 5;
 pub struct ReducerState {
     pub projects: BTreeMap<String, ProjectSummary>,
     pub delegations: BTreeMap<String, ProjectDelegationState>,
+    pub runs: BTreeMap<String, RunState>,
     pub sessions: HashMap<String, SessionSummary>,
     pub shells: HashMap<u32, ShellSignal>,
     pub routing: BTreeMap<String, crate::domain::RoutingView>,
@@ -46,6 +50,7 @@ impl ReducerState {
             shells: snapshot_shells,
             routing: _,
             delegations: snapshot_delegations,
+            runs: snapshot_runs,
             diagnostics,
             generated_at: _,
         } = snapshot;
@@ -65,6 +70,12 @@ impl ReducerState {
             delegations.insert(delegation.project_path.clone(), delegation);
         }
 
+        let mut runs = BTreeMap::new();
+        for run in snapshot_runs {
+            let key = format!("{}#{}", run.project_path, run.id);
+            runs.insert(key, run);
+        }
+
         let mut shells = HashMap::new();
         for shell in snapshot_shells {
             shells.insert(shell.pid, shell);
@@ -73,6 +84,7 @@ impl ReducerState {
         let mut state = Self {
             projects,
             delegations,
+            runs,
             sessions,
             shells,
             routing: BTreeMap::new(),
@@ -205,6 +217,12 @@ impl ReducerState {
     }
 
     #[must_use]
+    pub fn apply_run_mutation(&mut self, command: MutateRunCommand) -> MutationOutcome {
+        self.events_ingested = self.events_ingested.saturating_add(1);
+        run_reducer::apply_run_mutation(&mut self.runs, command)
+    }
+
+    #[must_use]
     pub fn apply_delegation_mutation(
         &mut self,
         command: MutateDelegationCommand,
@@ -269,6 +287,7 @@ impl ReducerState {
                         status: DelegationStatus::Working,
                         started_at: updated_at.clone(),
                         updated_at,
+                        submitted_milestone_id: None,
                         current_review: None,
                     },
                 );
@@ -358,6 +377,23 @@ impl ReducerState {
                     };
                 };
 
+                if existing.status == DelegationStatus::ResumePending
+                    && existing.submitted_milestone_id.as_deref().is_some_and(
+                        |submitted_milestone_id| {
+                            compare_milestone_ids(milestone_id.as_str(), submitted_milestone_id)
+                                != Ordering::Greater
+                        },
+                    )
+                {
+                    self.last_error = Some(format!(
+                        "mutate_delegation review_ready suppressed during resume_pending project_path={project_path}"
+                    ));
+                    return MutationOutcome {
+                        ok: false,
+                        message: "review suppressed during resume_pending".to_string(),
+                    };
+                }
+
                 if let Some(session_id) = trimmed_value(command.session_id.as_deref()) {
                     existing.session_id = Some(session_id);
                 }
@@ -373,6 +409,72 @@ impl ReducerState {
                 MutationOutcome {
                     ok: true,
                     message: "delegation review ready".to_string(),
+                }
+            }
+            DelegationMutationKind::SubmitReview => {
+                let Some(existing) = self.delegations.get_mut(project_path.as_str()) else {
+                    self.last_error = Some(format!(
+                        "mutate_delegation submit_review missing delegation project_path={project_path}"
+                    ));
+                    return MutationOutcome {
+                        ok: false,
+                        message: "delegation not found".to_string(),
+                    };
+                };
+
+                if existing.worker_id != worker_id {
+                    self.last_error = Some(format!(
+                        "mutate_delegation submit_review worker mismatch project_path={project_path}"
+                    ));
+                    return MutationOutcome {
+                        ok: false,
+                        message: "worker_id does not match active delegation".to_string(),
+                    };
+                }
+
+                // SubmitReview is valid from ReviewNeeded (normal) or ResumeFailed (retry)
+                if existing.status != DelegationStatus::ReviewNeeded
+                    && existing.status != DelegationStatus::ResumeFailed
+                {
+                    self.last_error = Some(format!(
+                        "mutate_delegation submit_review invalid status={:?} project_path={project_path}",
+                        existing.status
+                    ));
+                    return MutationOutcome {
+                        ok: false,
+                        message: "delegation status must be review_needed or resume_failed"
+                            .to_string(),
+                    };
+                }
+
+                let Some(current_review) = existing.current_review.as_ref() else {
+                    self.last_error = Some(format!(
+                        "mutate_delegation submit_review without pending review project_path={project_path}"
+                    ));
+                    return MutationOutcome {
+                        ok: false,
+                        message: "delegation review is not pending".to_string(),
+                    };
+                };
+
+                if command.review_decision.is_none() {
+                    self.last_error = Some("mutate_delegation missing review_decision".to_string());
+                    return MutationOutcome {
+                        ok: false,
+                        message: "missing review_decision".to_string(),
+                    };
+                }
+
+                if let Some(session_id) = trimmed_value(command.session_id.as_deref()) {
+                    existing.session_id = Some(session_id);
+                }
+                existing.status = DelegationStatus::ResumePending;
+                existing.updated_at = updated_at;
+                existing.submitted_milestone_id = Some(current_review.milestone_id.clone());
+
+                MutationOutcome {
+                    ok: true,
+                    message: "delegation review submitted".to_string(),
                 }
             }
             DelegationMutationKind::Resume => {
@@ -396,21 +498,23 @@ impl ReducerState {
                     };
                 }
 
-                if existing.current_review.is_none() {
+                if existing.status != DelegationStatus::ResumePending {
                     self.last_error = Some(format!(
-                        "mutate_delegation resume without pending review project_path={project_path}"
+                        "mutate_delegation resume without resume_pending project_path={project_path}"
                     ));
                     return MutationOutcome {
                         ok: false,
-                        message: "delegation review is not pending".to_string(),
+                        message: "delegation resume is not pending".to_string(),
                     };
                 }
 
-                if command.review_decision.is_none() {
-                    self.last_error = Some("mutate_delegation missing review_decision".to_string());
+                if existing.current_review.is_none() {
+                    self.last_error = Some(format!(
+                        "mutate_delegation resume missing review context project_path={project_path}"
+                    ));
                     return MutationOutcome {
                         ok: false,
-                        message: "missing review_decision".to_string(),
+                        message: "delegation review context missing".to_string(),
                     };
                 }
 
@@ -424,6 +528,58 @@ impl ReducerState {
                 MutationOutcome {
                     ok: true,
                     message: "delegation resumed".to_string(),
+                }
+            }
+            DelegationMutationKind::ResumeFailed => {
+                let Some(existing) = self.delegations.get_mut(project_path.as_str()) else {
+                    self.last_error = Some(format!(
+                        "mutate_delegation resume_failed missing delegation project_path={project_path}"
+                    ));
+                    return MutationOutcome {
+                        ok: false,
+                        message: "delegation not found".to_string(),
+                    };
+                };
+
+                if existing.worker_id != worker_id {
+                    self.last_error = Some(format!(
+                        "mutate_delegation resume_failed worker mismatch project_path={project_path}"
+                    ));
+                    return MutationOutcome {
+                        ok: false,
+                        message: "worker_id does not match active delegation".to_string(),
+                    };
+                }
+
+                if existing.status != DelegationStatus::ResumePending {
+                    self.last_error = Some(format!(
+                        "mutate_delegation resume_failed without resume_pending project_path={project_path}"
+                    ));
+                    return MutationOutcome {
+                        ok: false,
+                        message: "delegation resume is not pending".to_string(),
+                    };
+                }
+
+                if existing.current_review.is_none() {
+                    self.last_error = Some(format!(
+                        "mutate_delegation resume_failed missing review context project_path={project_path}"
+                    ));
+                    return MutationOutcome {
+                        ok: false,
+                        message: "delegation review context missing".to_string(),
+                    };
+                }
+
+                if let Some(session_id) = trimmed_value(command.session_id.as_deref()) {
+                    existing.session_id = Some(session_id);
+                }
+                existing.status = DelegationStatus::ResumeFailed;
+                existing.updated_at = updated_at;
+
+                MutationOutcome {
+                    ok: true,
+                    message: "delegation resume failed".to_string(),
                 }
             }
             DelegationMutationKind::Complete => {
@@ -473,6 +629,7 @@ impl ReducerState {
         shells.sort_by(|left, right| left.pid.cmp(&right.pid));
 
         let routing = self.routing.values().cloned().collect::<Vec<_>>();
+        let runs = self.runs.values().cloned().collect::<Vec<_>>();
 
         AppSnapshot {
             projects,
@@ -480,6 +637,7 @@ impl ReducerState {
             shells,
             routing,
             delegations,
+            runs,
             diagnostics: DiagnosticsSummary {
                 events_ingested: self.events_ingested,
                 sessions_tracked: self.sessions.len() as u64,
@@ -1622,6 +1780,13 @@ fn compare_timestamp_strings(left: &str, right: &str) -> Ordering {
     }
 }
 
+fn compare_milestone_ids(left: &str, right: &str) -> Ordering {
+    match (left.parse::<u64>(), right.parse::<u64>()) {
+        (Ok(left), Ok(right)) => left.cmp(&right),
+        _ => left.cmp(right),
+    }
+}
+
 fn parse_rfc3339(value: &str) -> Option<DateTime<Utc>> {
     DateTime::parse_from_rfc3339(value)
         .ok()
@@ -1635,7 +1800,8 @@ mod tests {
         TmuxInventoryCandidate,
     };
     use crate::domain::{
-        default_workspace_id, HookEventType, IngestHookEventCommand, IngestShellSignalCommand,
+        default_workspace_id, DelegationMutationKind, DelegationReviewDecision, DelegationStatus,
+        HookEventType, IngestHookEventCommand, IngestShellSignalCommand, MutateDelegationCommand,
         ResolveRoutingCommand, RoutingStatus, RoutingTargetKind, RoutingView, SessionState,
         ShellSignal, TmuxPaneInfo,
     };
@@ -1710,6 +1876,209 @@ mod tests {
             pane_path: pane_path.to_string(),
             session_attached: true,
         }
+    }
+
+    fn delegation_start_command() -> MutateDelegationCommand {
+        MutateDelegationCommand {
+            kind: DelegationMutationKind::Start,
+            project_path: "/repo".to_string(),
+            worker_id: "worker-1".to_string(),
+            idea_id: Some("idea-1".to_string()),
+            worktree_name: Some("delegation-worker-1".to_string()),
+            worktree_path: Some("/repo/.capacitor/worktrees/delegation-worker-1".to_string()),
+            session_id: Some("session-1".to_string()),
+            milestone_id: None,
+            brief_path: None,
+            manifest_path: None,
+            review_decision: None,
+            note: None,
+        }
+    }
+
+    fn delegation_review_ready_command(milestone_id: &str) -> MutateDelegationCommand {
+        MutateDelegationCommand {
+            kind: DelegationMutationKind::ReviewReady,
+            milestone_id: Some(milestone_id.to_string()),
+            brief_path: Some(format!(
+                "/repo/.capacitor/delegations/worker-1/milestones/{milestone_id}/brief.md"
+            )),
+            manifest_path: Some(format!(
+                "/repo/.capacitor/delegations/worker-1/milestones/{milestone_id}/manifest.json"
+            )),
+            ..delegation_start_command()
+        }
+    }
+
+    fn delegation_submit_review_command(
+        review_decision: DelegationReviewDecision,
+    ) -> MutateDelegationCommand {
+        MutateDelegationCommand {
+            kind: DelegationMutationKind::SubmitReview,
+            review_decision: Some(review_decision),
+            note: Some("Looks good".to_string()),
+            ..delegation_start_command()
+        }
+    }
+
+    fn delegation_resume_command() -> MutateDelegationCommand {
+        MutateDelegationCommand {
+            kind: DelegationMutationKind::Resume,
+            ..delegation_start_command()
+        }
+    }
+
+    fn delegation_resume_failed_command() -> MutateDelegationCommand {
+        MutateDelegationCommand {
+            kind: DelegationMutationKind::ResumeFailed,
+            ..delegation_start_command()
+        }
+    }
+
+    fn started_delegation_state() -> ReducerState {
+        let mut state = ReducerState::default();
+        let outcome = state.apply_delegation_mutation(delegation_start_command());
+        assert!(outcome.ok, "{outcome:?}");
+        state
+    }
+
+    fn review_ready_delegation_state(milestone_id: &str) -> ReducerState {
+        let mut state = started_delegation_state();
+        let outcome =
+            state.apply_delegation_mutation(delegation_review_ready_command(milestone_id));
+        assert!(outcome.ok, "{outcome:?}");
+        state
+    }
+
+    fn resume_pending_delegation_state(milestone_id: &str) -> ReducerState {
+        let mut state = review_ready_delegation_state(milestone_id);
+        let outcome = state.apply_delegation_mutation(delegation_submit_review_command(
+            DelegationReviewDecision::Approve,
+        ));
+        assert!(outcome.ok, "{outcome:?}");
+        state
+    }
+
+    #[test]
+    fn submit_review_sets_resume_pending_and_preserves_current_review() {
+        let mut state = review_ready_delegation_state("01");
+
+        let outcome = state.apply_delegation_mutation(delegation_submit_review_command(
+            DelegationReviewDecision::Approve,
+        ));
+
+        assert!(outcome.ok, "{outcome:?}");
+
+        let delegation = state.delegations.get("/repo").expect("delegation");
+        assert_eq!(delegation.status, DelegationStatus::ResumePending);
+        assert_eq!(delegation.submitted_milestone_id.as_deref(), Some("01"));
+        assert_eq!(
+            delegation
+                .current_review
+                .as_ref()
+                .map(|review| review.milestone_id.as_str()),
+            Some("01"),
+        );
+    }
+
+    #[test]
+    fn resume_from_resume_pending_transitions_to_working_and_clears_review() {
+        let mut state = resume_pending_delegation_state("01");
+
+        let outcome = state.apply_delegation_mutation(delegation_resume_command());
+
+        assert!(outcome.ok, "{outcome:?}");
+
+        let delegation = state.delegations.get("/repo").expect("delegation");
+        assert_eq!(delegation.status, DelegationStatus::Working);
+        assert_eq!(delegation.submitted_milestone_id.as_deref(), Some("01"));
+        assert!(delegation.current_review.is_none());
+    }
+
+    #[test]
+    fn review_ready_is_rejected_when_resume_pending_for_submitted_milestone() {
+        let mut state = resume_pending_delegation_state("01");
+
+        let outcome = state.apply_delegation_mutation(delegation_review_ready_command("01"));
+
+        assert!(!outcome.ok);
+        assert_eq!(outcome.message, "review suppressed during resume_pending");
+
+        let delegation = state.delegations.get("/repo").expect("delegation");
+        assert_eq!(delegation.status, DelegationStatus::ResumePending);
+        assert_eq!(delegation.submitted_milestone_id.as_deref(), Some("01"));
+        assert_eq!(
+            delegation
+                .current_review
+                .as_ref()
+                .map(|review| review.milestone_id.as_str()),
+            Some("01"),
+        );
+    }
+
+    #[test]
+    fn review_ready_is_accepted_when_resume_pending_for_newer_milestone() {
+        let mut state = resume_pending_delegation_state("01");
+
+        let outcome = state.apply_delegation_mutation(delegation_review_ready_command("02"));
+
+        assert!(outcome.ok, "{outcome:?}");
+
+        let delegation = state.delegations.get("/repo").expect("delegation");
+        assert_eq!(delegation.status, DelegationStatus::ReviewNeeded);
+        assert_eq!(delegation.submitted_milestone_id.as_deref(), Some("01"));
+        assert_eq!(
+            delegation
+                .current_review
+                .as_ref()
+                .map(|review| review.milestone_id.as_str()),
+            Some("02"),
+        );
+    }
+
+    #[test]
+    fn resume_failed_preserves_review_context_for_retry() {
+        let mut state = resume_pending_delegation_state("01");
+
+        let outcome = state.apply_delegation_mutation(delegation_resume_failed_command());
+
+        assert!(outcome.ok, "{outcome:?}");
+
+        let delegation = state.delegations.get("/repo").expect("delegation");
+        assert_eq!(delegation.status, DelegationStatus::ResumeFailed);
+        assert_eq!(delegation.submitted_milestone_id.as_deref(), Some("01"));
+        assert_eq!(
+            delegation
+                .current_review
+                .as_ref()
+                .map(|review| review.milestone_id.as_str()),
+            Some("01"),
+        );
+    }
+
+    #[test]
+    fn submit_review_without_current_review_fails() {
+        // From Working status: hits status guard first
+        let mut state = started_delegation_state();
+
+        let outcome = state.apply_delegation_mutation(delegation_submit_review_command(
+            DelegationReviewDecision::Approve,
+        ));
+
+        assert!(!outcome.ok);
+        assert_eq!(
+            outcome.message,
+            "delegation status must be review_needed or resume_failed"
+        );
+    }
+
+    #[test]
+    fn resume_without_resume_pending_status_fails() {
+        let mut state = review_ready_delegation_state("01");
+
+        let outcome = state.apply_delegation_mutation(delegation_resume_command());
+
+        assert!(!outcome.ok);
+        assert_eq!(outcome.message, "delegation resume is not pending");
     }
 
     #[test]

@@ -309,10 +309,54 @@ class GlassConfig {
 
     // MARK: - Layout Settings (Card List)
 
-    var cardListSpacing: Double = 4.98 // Gap between cards in vertical list
-    var cardPaddingHorizontal: Double = 15.07 // Horizontal internal padding for vertical cards
-    var cardPaddingVertical: Double = 11.40 // Vertical internal padding for vertical cards
-    var listHorizontalPadding: Double = 11.60 // Horizontal padding for list container
+    var cardListSpacing: Double = 8.0 // Gap between cards in vertical list
+    var cardPaddingTop: Double = 14.15 // Top internal padding for vertical cards
+    var cardPaddingBottom: Double = 7.59 // Bottom internal padding for vertical cards
+    var cardPaddingLeading: Double = 12.0 // Leading internal padding for vertical cards
+    var cardPaddingTrailing: Double = 12.0 // Trailing internal padding for vertical cards
+    var cardPaddingHorizontal: Double {
+        get { (cardPaddingLeading + cardPaddingTrailing) / 2 }
+        set {
+            cardPaddingLeading = newValue
+            cardPaddingTrailing = newValue
+        }
+    }
+
+    var cardPaddingVertical: Double {
+        get { (cardPaddingTop + cardPaddingBottom) / 2 }
+        set {
+            cardPaddingTop = newValue
+            cardPaddingBottom = newValue
+        }
+    }
+
+    var listHorizontalPadding: Double = 12.0 // Horizontal padding for list container
+    var actionBarTopPadding: CGFloat = 0 // Padding above the action bar separator
+    var actionBarBottomSpacing: CGFloat = 0 // Spacing between the separator and action buttons
+    // Action Bar - Row Margins
+    var actionBarRowMarginTop: CGFloat = 0 // Margin above the button row
+    var actionBarRowMarginBottom: CGFloat = 6.52 // Margin below the button row
+    var actionBarRowMarginLeading: CGFloat = 9.59 // Margin on the left of the button row
+    var actionBarRowMarginTrailing: CGFloat = 9.76 // Margin on the right of the button row
+    var actionBarButtonHeight: CGFloat = 30.14 // Minimum height of each action button
+    var actionBarSeparatorOpacity: Double = 0.14 // Horizontal separator opacity
+    var actionBarDividerOpacity: Double = 0.13 // Vertical divider opacity
+    var actionBarSeparatorHeight: Double = 0.99 // Horizontal separator thickness
+    var actionBarDividerWidth: Double = 0.98 // Vertical divider thickness
+    // Action Bar - Button Padding
+    var actionBarButtonPaddingTop: CGFloat = 0
+    var actionBarButtonPaddingBottom: CGFloat = 0
+    var actionBarButtonPaddingLeading: CGFloat = 0
+    var actionBarButtonPaddingTrailing: CGFloat = 0
+
+    // Action Bar - Typography
+    var actionBarFontSize: CGFloat = 12.07 // Button label font size
+    var actionBarFontWeight: Int = 4 // 1=ultraLight, 2=thin, 3=light, 4=regular, 5=medium, 6=semibold, 7=bold, 8=heavy, 9=black
+    var actionBarIconFontWeight: Int = 6 // Weight for SF Symbol icons
+    var actionBarIconSize: CGFloat = 9.24 // SF Symbol size for action bar buttons
+    var actionBarForegroundOpacity: Double = 0.62 // Default text/icon opacity
+    var actionBarHoverOpacity: Double = 0.82 // Hovered text/icon opacity
+    var actionBarDisabledOpacity: Double = 0.3 // Disabled text/icon opacity
 
     // MARK: - Layout Settings (Dock)
 
@@ -335,6 +379,22 @@ class GlassConfig {
 
     var cardListSpacingRounded: CGFloat {
         round(cardListSpacing)
+    }
+
+    var cardPaddingTopRounded: CGFloat {
+        round(cardPaddingTop)
+    }
+
+    var cardPaddingBottomRounded: CGFloat {
+        round(cardPaddingBottom)
+    }
+
+    var cardPaddingLeadingRounded: CGFloat {
+        round(cardPaddingLeading)
+    }
+
+    var cardPaddingTrailingRounded: CGFloat {
+        round(cardPaddingTrailing)
     }
 
     var cardPaddingH: CGFloat {
@@ -856,10 +916,34 @@ class GlassConfig {
         cardReorderSpringDamping = 0.85
 
         // Layout
-        cardListSpacing = 4.98
-        cardPaddingHorizontal = 15.07
-        cardPaddingVertical = 11.40
-        listHorizontalPadding = 11.60
+        cardListSpacing = 8.0
+        cardPaddingTop = 14.15
+        cardPaddingBottom = 14.15
+        cardPaddingLeading = 12.0
+        cardPaddingTrailing = 12.0
+        listHorizontalPadding = 12.0
+        actionBarTopPadding = 0
+        actionBarBottomSpacing = 0
+        actionBarRowMarginTop = 0
+        actionBarRowMarginBottom = 6.52
+        actionBarRowMarginLeading = 9.59
+        actionBarRowMarginTrailing = 9.76
+        actionBarButtonHeight = 30.14
+        actionBarSeparatorOpacity = 0.14
+        actionBarDividerOpacity = 0.13
+        actionBarSeparatorHeight = 0.99
+        actionBarDividerWidth = 0.98
+        actionBarButtonPaddingTop = 0
+        actionBarButtonPaddingBottom = 0
+        actionBarButtonPaddingLeading = 0
+        actionBarButtonPaddingTrailing = 0
+        actionBarFontSize = 12.07
+        actionBarFontWeight = 4
+        actionBarIconFontWeight = 6
+        actionBarIconSize = 9.24
+        actionBarForegroundOpacity = 0.62
+        actionBarHoverOpacity = 0.82
+        actionBarDisabledOpacity = 0.3
         dockCardSpacing = 12.41
         dockCardPaddingHorizontal = 14.85
         dockCardPaddingVertical = 13.79
@@ -1065,10 +1149,39 @@ class GlassConfig {
             ("State Transitions", "pausedCardStagger", 0.025, pausedCardStagger),
             ("State Transitions", "sectionToggleSpringResponse", 0.18, sectionToggleSpringResponse),
             // Layout - List
-            ("Layout List", "cardListSpacing", 4.98, cardListSpacing),
-            ("Layout List", "cardPaddingHorizontal", 15.07, cardPaddingHorizontal),
-            ("Layout List", "cardPaddingVertical", 11.40, cardPaddingVertical),
-            ("Layout List", "listHorizontalPadding", 11.60, listHorizontalPadding),
+            ("Layout List", "cardListSpacing", 8.0, cardListSpacing),
+            ("Layout List", "cardPaddingTop", 14.15, cardPaddingTop),
+            ("Layout List", "cardPaddingBottom", 7.59, cardPaddingBottom),
+            ("Layout List", "cardPaddingLeading", 12.0, cardPaddingLeading),
+            ("Layout List", "cardPaddingTrailing", 12.0, cardPaddingTrailing),
+            ("Layout List", "listHorizontalPadding", 12.0, listHorizontalPadding),
+            // Action Bar - Layout
+            ("Action Bar Layout", "actionBarTopPadding", 0, Double(actionBarTopPadding)),
+            ("Action Bar Layout", "actionBarBottomSpacing", 0, Double(actionBarBottomSpacing)),
+            ("Action Bar Layout", "actionBarRowMarginTop", 0, Double(actionBarRowMarginTop)),
+            ("Action Bar Layout", "actionBarRowMarginBottom", 6.52, Double(actionBarRowMarginBottom)),
+            ("Action Bar Layout", "actionBarRowMarginLeading", 9.59, Double(actionBarRowMarginLeading)),
+            ("Action Bar Layout", "actionBarRowMarginTrailing", 9.76, Double(actionBarRowMarginTrailing)),
+            ("Action Bar Layout", "actionBarButtonHeight", 30.14, Double(actionBarButtonHeight)),
+            // Action Bar - Separators
+            ("Action Bar Separators", "actionBarSeparatorOpacity", 0.14, actionBarSeparatorOpacity),
+            ("Action Bar Separators", "actionBarDividerOpacity", 0.13, actionBarDividerOpacity),
+            ("Action Bar Separators", "actionBarSeparatorHeight", 0.99, actionBarSeparatorHeight),
+            ("Action Bar Separators", "actionBarDividerWidth", 0.98, actionBarDividerWidth),
+            // Action Bar - Button Padding
+            ("Action Bar Buttons", "actionBarButtonPaddingTop", 0, Double(actionBarButtonPaddingTop)),
+            ("Action Bar Buttons", "actionBarButtonPaddingBottom", 0, Double(actionBarButtonPaddingBottom)),
+            ("Action Bar Buttons", "actionBarButtonPaddingLeading", 0, Double(actionBarButtonPaddingLeading)),
+            ("Action Bar Buttons", "actionBarButtonPaddingTrailing", 0, Double(actionBarButtonPaddingTrailing)),
+            // Action Bar - Typography
+            ("Action Bar Typography", "actionBarFontSize", 12.07, Double(actionBarFontSize)),
+            ("Action Bar Typography", "actionBarFontWeight", 4, Double(actionBarFontWeight)),
+            ("Action Bar Typography", "actionBarIconFontWeight", 6, Double(actionBarIconFontWeight)),
+            // Action Bar - Styling
+            ("Action Bar Styling", "actionBarIconSize", 9.24, Double(actionBarIconSize)),
+            ("Action Bar Styling", "actionBarForegroundOpacity", 0.62, actionBarForegroundOpacity),
+            ("Action Bar Styling", "actionBarHoverOpacity", 0.82, actionBarHoverOpacity),
+            ("Action Bar Styling", "actionBarDisabledOpacity", 0.3, actionBarDisabledOpacity),
             // Layout - Dock
             ("Layout Dock", "dockCardSpacing", 12.41, dockCardSpacing),
             ("Layout Dock", "dockCardPaddingHorizontal", 14.85, dockCardPaddingHorizontal),

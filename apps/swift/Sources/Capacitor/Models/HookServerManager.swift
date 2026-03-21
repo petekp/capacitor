@@ -1,6 +1,10 @@
 import Darwin
 import Foundation
 
+private func hookServerProcessIsAlive(pid: Int32) -> Bool {
+    kill(pid, 0) == 0
+}
+
 protocol HookServerProcessControlling: AnyObject {
     var isRunning: Bool { get }
     var processIdentifier: Int32 { get }
@@ -76,21 +80,31 @@ struct HookServerManagerDependencies {
     var isProcessAlive: (Int32) -> Bool
     var isManagedServerProcess: (Int32, String) -> Bool
     var terminatePid: (Int32) -> Void
+    var killPid: (Int32) -> Void
+    var waitForProcessExit: (Int32, TimeInterval) -> Bool
     var loadRuntimeServiceConnection: (UInt16) -> RuntimeServiceConnection?
-    var launchProcess: (String, UInt16, [String: String]) throws -> any HookServerProcessControlling
-    var fetchHealth: (UInt16, String?) async -> Bool
+    var launchProcess: (String, UInt16, [String: String], @escaping @Sendable (Int32) -> Void) throws -> any HookServerProcessControlling
+    var fetchHealth: (UInt16, String?) -> RuntimeHealth?
 }
 
 private final class LiveHookServerProcess: HookServerProcessControlling {
     private let process: Process
 
-    init(binaryPath: String, port: UInt16, environment: [String: String]) throws {
+    init(
+        binaryPath: String,
+        port: UInt16,
+        environment: [String: String],
+        terminationHandler: @escaping @Sendable (Int32) -> Void,
+    ) throws {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: binaryPath)
         process.arguments = ["serve", "--port", String(port)]
         process.environment = environment
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
+        process.terminationHandler = { process in
+            terminationHandler(process.terminationStatus)
+        }
         try process.run()
         self.process = process
     }
@@ -124,15 +138,17 @@ private final class LiveHookServerProcess: HookServerProcessControlling {
 /// Manages the lifecycle of the `hud-hook serve` HTTP server process.
 ///
 /// Keeps a single long-lived HTTP server that receives hook events via POST
-/// from Claude Code. The Swift app spawns the server at startup and monitors
-/// it via periodic health checks, restarting if the process exits unexpectedly.
-@MainActor
+/// from Claude Code. The Swift app verifies startup readiness before treating
+/// the server as healthy, then monitors it via periodic health checks.
 final class HookServerManager {
     // MARK: - Configuration
 
     nonisolated static let defaultPort: UInt16 = 7474
     private nonisolated static let healthPath = "/health"
     private static let maxConsecutiveFailures = 3
+    private static let gracefulStopTimeout: TimeInterval = 2.0
+    private nonisolated static let defaultLaunchReadinessAttempts = 10
+    private nonisolated static let defaultLaunchReadinessInterval = Duration.milliseconds(500)
 
     // MARK: - State
 
@@ -151,12 +167,15 @@ final class HookServerManager {
     private var process: (any HookServerProcessControlling)?
     private var adoptedPid: Int32?
     private var healthCheckTask: _Concurrency.Task<Void, Never>?
+    private var launchReadinessTask: _Concurrency.Task<Void, Never>?
     private var healthCheckToken: UUID?
     private var lifecycleGeneration: UInt64 = 0
     private var stopRequested = false
     private var healthAuthorizationToken: String?
     private let port: UInt16
     private let binaryPath: String
+    private let launchReadinessAttempts: Int
+    private let launchReadinessInterval: Duration
     private let dependencies: HookServerManagerDependencies
     private var lifecycleState = HookServerLifecycleState()
 
@@ -166,11 +185,14 @@ final class HookServerManager {
         port: UInt16 = HookServerManager.defaultPort,
         binaryPath: String? = nil,
         dependencies: HookServerManagerDependencies = .live,
+        launchReadinessAttempts: Int = HookServerManager.defaultLaunchReadinessAttempts,
+        launchReadinessInterval: Duration = HookServerManager.defaultLaunchReadinessInterval,
     ) {
         self.port = port
         self.dependencies = dependencies
-        self.binaryPath = binaryPath ?? FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".local/bin/hud-hook").path
+        self.launchReadinessAttempts = max(1, launchReadinessAttempts)
+        self.launchReadinessInterval = launchReadinessInterval
+        self.binaryPath = binaryPath ?? Self.defaultBinaryPath
     }
 
     // MARK: - Lifecycle
@@ -211,6 +233,18 @@ final class HookServerManager {
             dependencies.removePidFile(pidFilePath)
         }
 
+        if let connection = dependencies.loadRuntimeServiceConnection(port),
+           let health = dependencies.fetchHealth(port, connection.bearerToken),
+           health.isCompatibleBootstrapService
+        {
+            beginLifecycleObservation(
+                adoptedPid: Int32(health.pid),
+                healthAuthorizationToken: connection.bearerToken,
+            )
+            DebugLog.write("HookServerManager: adopting live runtime service pid \(health.pid) on port \(port)")
+            return
+        }
+
         start()
     }
 
@@ -218,7 +252,7 @@ final class HookServerManager {
     /// Restarts the server after `maxConsecutiveFailures` consecutive failures.
     func checkHealth() {
         guard status == .running || status == .starting else { return }
-        guard healthCheckTask == nil else { return }
+        guard healthCheckTask == nil, launchReadinessTask == nil else { return }
 
         let generation = lifecycleGeneration
 
@@ -239,29 +273,38 @@ final class HookServerManager {
         let authToken = healthAuthorizationToken
         healthCheckTask = _Concurrency.Task { [weak self] in
             guard let self else { return }
-            let healthy = await dependencies.fetchHealth(port, authToken)
+            let healthy = dependencies.fetchHealth(port, authToken)?.isCompatibleBootstrapService ?? false
             await MainActor.run {
                 self.finishHealthCheck(healthy: healthy, token: token, generation: generation)
             }
         }
     }
 
-    /// Gracefully stops the server process without blocking the main actor.
+    /// Gracefully stops the server process, escalating to SIGKILL if it does not exit promptly.
     func stop() {
         lifecycleGeneration &+= 1
         cancelHealthCheck()
+        cancelLaunchReadiness()
 
         let ownedProcess = process
-        let ownedPid = adoptedPid
+        let managedPid = ownedProcess?.processIdentifier ?? adoptedPid
 
         process = nil
         adoptedPid = nil
         healthAuthorizationToken = nil
         _ = applyLifecycle(.stopRequested)
 
-        ownedProcess?.terminate()
-        if let ownedPid {
-            dependencies.terminatePid(ownedPid)
+        if let ownedProcess {
+            ownedProcess.terminate()
+        } else if let managedPid {
+            dependencies.terminatePid(managedPid)
+        }
+
+        if let managedPid,
+           !dependencies.waitForProcessExit(managedPid, Self.gracefulStopTimeout)
+        {
+            DebugLog.write("HookServerManager: graceful stop timed out for pid \(managedPid), sending SIGKILL")
+            dependencies.killPid(managedPid)
         }
 
         DebugLog.write("HookServerManager: server stop requested")
@@ -272,6 +315,7 @@ final class HookServerManager {
     private func start() {
         lifecycleGeneration &+= 1
         cancelHealthCheck()
+        cancelLaunchReadiness()
         adoptedPid = nil
         _ = applyLifecycle(.launchRequested)
 
@@ -284,11 +328,38 @@ final class HookServerManager {
         healthAuthorizationToken = authToken
 
         do {
-            let launchedProcess = try dependencies.launchProcess(binaryPath, port, environment)
+            let launchGeneration = lifecycleGeneration
+            let launchedProcess = try dependencies.launchProcess(
+                binaryPath,
+                port,
+                environment,
+                { [weak self] terminationStatus in
+                    _Concurrency.Task { @MainActor in
+                        self?.handleLaunchedProcessTermination(
+                            terminationStatus: terminationStatus,
+                            generation: launchGeneration,
+                        )
+                    }
+                },
+            )
+            guard launchGeneration == lifecycleGeneration else {
+                launchedProcess.terminate()
+                return
+            }
+
+            guard status == .starting, !stopRequested else {
+                return
+            }
+
             process = launchedProcess
+            beginLaunchReadinessObservation(
+                generation: launchGeneration,
+                authToken: authToken,
+            )
             DebugLog.write("HookServerManager: launched pid \(launchedProcess.processIdentifier) on port \(port)")
         } catch {
             process = nil
+            healthAuthorizationToken = nil
             _ = applyLifecycle(.launchFailed(error.localizedDescription))
             DebugLog.write("HookServerManager: failed to launch - \(error)")
             Telemetry.emit("hook_server", "Launch failed", payload: [
@@ -300,6 +371,7 @@ final class HookServerManager {
     private func beginLifecycleObservation(adoptedPid: Int32, healthAuthorizationToken: String?) {
         lifecycleGeneration &+= 1
         cancelHealthCheck()
+        cancelLaunchReadiness()
         process = nil
         self.adoptedPid = adoptedPid
         self.healthAuthorizationToken = healthAuthorizationToken
@@ -350,10 +422,147 @@ final class HookServerManager {
         healthCheckToken = nil
     }
 
+    private func cancelLaunchReadiness() {
+        launchReadinessTask?.cancel()
+        launchReadinessTask = nil
+    }
+
+    private func beginLaunchReadinessObservation(generation: UInt64, authToken: String) {
+        cancelLaunchReadiness()
+
+        launchReadinessTask = _Concurrency.Task { [weak self] in
+            guard let self else { return }
+            await runLaunchReadinessChecks(generation: generation, authToken: authToken)
+        }
+    }
+
+    private func runLaunchReadinessChecks(generation: UInt64, authToken: String) async {
+        guard status == .starting, generation == lifecycleGeneration, !stopRequested else {
+            return
+        }
+
+        for attempt in 0 ..< launchReadinessAttempts {
+            guard generation == lifecycleGeneration, !stopRequested else {
+                return
+            }
+
+            if let proc = process, !proc.isRunning {
+                handleLaunchedProcessTermination(
+                    terminationStatus: proc.terminationStatus,
+                    generation: generation,
+                )
+                return
+            }
+
+            let healthy = dependencies.fetchHealth(port, authToken)?.isCompatibleBootstrapService ?? false
+
+            guard generation == lifecycleGeneration, !stopRequested, status == .starting else {
+                return
+            }
+
+            if healthy {
+                completeLaunchReadiness(generation: generation)
+                return
+            }
+
+            if attempt < launchReadinessAttempts - 1 {
+                do {
+                    try await _Concurrency.Task.sleep(for: launchReadinessInterval)
+                } catch {
+                    if _Concurrency.Task.isCancelled {
+                        return
+                    }
+                }
+            }
+        }
+
+        failLaunchReadiness(
+            message: "HookServerManager: launch readiness timed out after \(launchReadinessAttempts) attempts",
+            generation: generation,
+        )
+    }
+
+    private func handleLaunchedProcessTermination(terminationStatus: Int32, generation: UInt64) {
+        guard generation == lifecycleGeneration, !stopRequested else {
+            return
+        }
+
+        if launchReadinessTask != nil || status == .starting {
+            failLaunchReadiness(
+                message: "HookServerManager: launched process exited during startup with code \(terminationStatus)",
+                generation: generation,
+            )
+            return
+        }
+
+        guard status == .running else {
+            return
+        }
+
+        handleUnexpectedExit(for: generation)
+    }
+
+    private func completeLaunchReadiness(generation: UInt64) {
+        guard generation == lifecycleGeneration, !stopRequested else {
+            return
+        }
+
+        launchReadinessTask = nil
+
+        let directive = applyLifecycle(.healthCheckFinished(
+            healthy: true,
+            maxConsecutiveFailures: Self.maxConsecutiveFailures,
+        ))
+
+        guard directive == .serverReady else {
+            return
+        }
+
+        DebugLog.write("HookServerManager: server ready on port \(port)")
+        Telemetry.emit("hook_server", "Server started", payload: [
+            "port": port,
+        ])
+    }
+
+    private func failLaunchReadiness(message: String, generation: UInt64) {
+        guard generation == lifecycleGeneration, !stopRequested else {
+            return
+        }
+
+        cancelLaunchReadiness()
+
+        let ownedProcess = process
+        let managedPid = ownedProcess?.processIdentifier ?? adoptedPid
+        let shouldEscalate = ownedProcess?.isRunning ?? false
+
+        process = nil
+        adoptedPid = nil
+        healthAuthorizationToken = nil
+
+        if shouldEscalate, let ownedProcess {
+            ownedProcess.terminate()
+            if ownedProcess.isRunning, let managedPid {
+                dependencies.killPid(managedPid)
+            }
+        } else if let managedPid {
+            if dependencies.isProcessAlive(managedPid) {
+                dependencies.terminatePid(managedPid)
+            }
+        }
+
+        _ = applyLifecycle(.launchFailed(message))
+        DebugLog.write(message)
+        Telemetry.emit("hook_server", "Launch failed", payload: [
+            "reason": message,
+        ])
+    }
+
     private func handleUnexpectedExit(for generation: UInt64) {
         guard generation == lifecycleGeneration, !stopRequested else {
             return
         }
+
+        cancelLaunchReadiness()
 
         let oldPid = process?.processIdentifier ?? adoptedPid
         process = nil
@@ -365,6 +574,18 @@ final class HookServerManager {
         ])
 
         start()
+    }
+
+    private static var defaultBinaryPath: String {
+        HookBinaryLocator.preferredLaunchBinaryPath()
+    }
+
+    nonisolated static func executablePathsMatch(runningPath: String, configuredPath: String) -> Bool {
+        resolveExecutablePath(runningPath) == resolveExecutablePath(configuredPath)
+    }
+
+    private nonisolated static func resolveExecutablePath(_ path: String) -> String {
+        PathNormalizer.normalize(path)
     }
 
     private func applyLifecycle(_ event: HookServerLifecycleState.Event) -> HookServerLifecycleState.Directive {
@@ -382,24 +603,38 @@ final class HookServerManager {
             .appendingPathComponent(".capacitor/runtime/runtime-service-\(port).pid").path
     }
 
-    nonisolated static func fetchHealth(port: UInt16, authToken: String?) async -> Bool {
+    nonisolated static func fetchHealth(port: UInt16, authToken: String?) -> RuntimeHealth? {
         guard let url = URL(string: "http://127.0.0.1:\(port)\(healthPath)") else {
-            return false
+            return nil
         }
 
-        do {
-            var request = URLRequest(url: url)
-            if let authToken {
-                request.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
-            }
-            let (data, response) = try await URLSession.shared.data(for: request)
-            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
-                return false
-            }
-            return isCompatibleBootstrapServiceHealth(data)
-        } catch {
-            return false
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 2
+        if let authToken {
+            request.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
         }
+
+        let semaphore = DispatchSemaphore(value: 0)
+        var health: RuntimeHealth?
+        let task = URLSession.shared.dataTask(with: request) { data, response, error in
+            defer { semaphore.signal() }
+            guard error == nil,
+                  let http = response as? HTTPURLResponse,
+                  http.statusCode == 200,
+                  let data,
+                  let decoded = try? JSONDecoder().decode(RuntimeHealth.self, from: data)
+            else {
+                return
+            }
+            health = decoded
+        }
+        task.resume()
+
+        if semaphore.wait(timeout: .now() + 2) == .timedOut {
+            task.cancel()
+            return nil
+        }
+        return health
     }
 
     nonisolated static func isCompatibleBootstrapServiceHealth(_ data: Data) -> Bool {
@@ -422,23 +657,45 @@ extension HookServerManagerDependencies {
         removePidFile: { path in
             try? FileManager.default.removeItem(atPath: path)
         },
-        isProcessAlive: { pid in
-            kill(pid, 0) == 0
-        },
+        isProcessAlive: { pid in hookServerProcessIsAlive(pid: pid) },
         isManagedServerProcess: { pid, expectedBinaryPath in
-            LiveHookServerProcess.executablePath(pid: pid) == expectedBinaryPath
+            guard let runningPath = LiveHookServerProcess.executablePath(pid: pid) else {
+                return false
+            }
+            return HookServerManager.executablePathsMatch(
+                runningPath: runningPath,
+                configuredPath: expectedBinaryPath,
+            )
         },
         terminatePid: { pid in
             _ = kill(pid, SIGTERM)
         },
+        killPid: { pid in
+            _ = kill(pid, SIGKILL)
+        },
+        waitForProcessExit: { pid, timeout in
+            let deadline = Date().addingTimeInterval(timeout)
+            while Date() < deadline {
+                if !hookServerProcessIsAlive(pid: pid) {
+                    return true
+                }
+                usleep(10000)
+            }
+            return !hookServerProcessIsAlive(pid: pid)
+        },
         loadRuntimeServiceConnection: { _ in
             RuntimeServiceConnection.current()
         },
-        launchProcess: { binaryPath, port, environment in
-            try LiveHookServerProcess(binaryPath: binaryPath, port: port, environment: environment)
+        launchProcess: { binaryPath, port, environment, terminationHandler in
+            try LiveHookServerProcess(
+                binaryPath: binaryPath,
+                port: port,
+                environment: environment,
+                terminationHandler: terminationHandler,
+            )
         },
         fetchHealth: { port, authToken in
-            await HookServerManager.fetchHealth(port: port, authToken: authToken)
+            HookServerManager.fetchHealth(port: port, authToken: authToken)
         },
     )
 }

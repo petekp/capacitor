@@ -1,4 +1,5 @@
 @testable import Capacitor
+import Foundation
 import XCTest
 
 @MainActor
@@ -55,9 +56,10 @@ final class HookServerManagerTests: XCTestCase {
     func testStopPreventsLateFailedHealthCheckFromRestarting() async {
         let process = FakeHookServerProcess(pid: 41)
         var launchCount = 0
-        var continuation: CheckedContinuation<Bool, Never>?
+        let fetchHealthRelease = DispatchSemaphore(value: 0)
         let unexpectedRestart = expectation(description: "late health failure must not relaunch")
         unexpectedRestart.isInverted = true
+        var fetchHealthStarted = false
 
         let manager = HookServerManager(
             port: 8123,
@@ -71,32 +73,28 @@ final class HookServerManagerTests: XCTestCase {
                     return process
                 },
                 fetchHealth: { _, _ in
-                    await withCheckedContinuation { checkedContinuation in
-                        continuation = checkedContinuation
-                    }
+                    fetchHealthStarted = true
+                    fetchHealthRelease.wait()
+                    return nil
                 },
             ),
         )
 
         manager.startIfNeeded()
-        manager.checkHealth()
-
-        for _ in 0 ..< 20 where continuation == nil {
+        for _ in 0 ..< 50 where !fetchHealthStarted {
             await _Concurrency.Task.yield()
         }
 
-        XCTAssertNotNil(continuation)
-
         manager.stop()
-        XCTAssertEqual(manager.status, .stopped)
+        XCTAssertEqual(manager.status, HookServerManager.Status.stopped)
         XCTAssertEqual(launchCount, 1)
         XCTAssertEqual(process.terminateCallCount, 1)
 
-        continuation?.resume(returning: false)
+        fetchHealthRelease.signal()
         await _Concurrency.Task.yield()
         await fulfillment(of: [unexpectedRestart], timeout: 0.1)
 
-        XCTAssertEqual(manager.status, .stopped)
+        XCTAssertEqual(manager.status, HookServerManager.Status.stopped)
         XCTAssertEqual(launchCount, 1, "explicit stop must dominate late health failures")
     }
 
@@ -124,11 +122,38 @@ final class HookServerManagerTests: XCTestCase {
 
         XCTAssertEqual(removedPidFilePaths.count, 1)
         XCTAssertEqual(launchCount, 1)
-        XCTAssertEqual(manager.status, .starting)
+        XCTAssertEqual(manager.status, HookServerManager.Status.starting)
+    }
+
+    func testStartIfNeededRemovesStaleDeadPidAndLaunchesFreshProcess() {
+        let process = FakeHookServerProcess(pid: 52)
+        var removedPidFilePaths: [String] = []
+        var launchCount = 0
+
+        let manager = HookServerManager(
+            port: 8132,
+            binaryPath: "/tmp/hud-hook",
+            dependencies: makeDependencies(
+                readPidFile: { _ in 1001 },
+                removePidFile: { removedPidFilePaths.append($0) },
+                isProcessAlive: { _ in false },
+                launchProcess: { _, _, _ in
+                    launchCount += 1
+                    return process
+                },
+            ),
+        )
+
+        manager.startIfNeeded()
+
+        XCTAssertEqual(removedPidFilePaths.count, 1)
+        XCTAssertEqual(launchCount, 1)
+        XCTAssertEqual(manager.status, HookServerManager.Status.starting)
     }
 
     func testStopTerminatesVerifiedAdoptedPid() {
         var terminatedPids: [Int32] = []
+        var waitedForPids: [(Int32, TimeInterval)] = []
         var launchCount = 0
 
         let manager = HookServerManager(
@@ -139,6 +164,10 @@ final class HookServerManagerTests: XCTestCase {
                 isProcessAlive: { _ in true },
                 isManagedServerProcess: { _, _ in true },
                 terminatePid: { terminatedPids.append($0) },
+                waitForProcessExit: { pid, timeout in
+                    waitedForPids.append((pid, timeout))
+                    return true
+                },
                 loadRuntimeServiceConnection: { _ in
                     RuntimeServiceConnection(
                         baseURL: URL(string: "http://127.0.0.1:8125")!,
@@ -153,14 +182,52 @@ final class HookServerManagerTests: XCTestCase {
         )
 
         manager.startIfNeeded()
-        XCTAssertEqual(manager.status, .starting)
+        XCTAssertEqual(manager.status, HookServerManager.Status.starting)
         XCTAssertEqual(launchCount, 0)
 
         manager.stop()
 
-        XCTAssertEqual(manager.status, .stopped)
+        guard let waited = waitedForPids.first else {
+            return XCTFail("expected graceful stop wait")
+        }
+        XCTAssertEqual(manager.status, HookServerManager.Status.stopped)
         XCTAssertEqual(terminatedPids, [321])
+        XCTAssertEqual(waitedForPids.count, 1)
+        XCTAssertEqual(waited.0, 321)
+        XCTAssertEqual(waited.1, 2.0, accuracy: 0.001)
         XCTAssertEqual(launchCount, 0)
+    }
+
+    func testStopForceKillsOwnedProcessWhenGracefulExitTimesOut() {
+        let process = FakeHookServerProcess(pid: 98, stopsOnTerminate: false)
+        var killedPids: [Int32] = []
+        var waitedForPids: [(Int32, TimeInterval)] = []
+
+        let manager = HookServerManager(
+            port: 8129,
+            binaryPath: "/tmp/hud-hook",
+            dependencies: makeDependencies(
+                killPid: { killedPids.append($0) },
+                waitForProcessExit: { pid, timeout in
+                    waitedForPids.append((pid, timeout))
+                    return false
+                },
+                launchProcess: { _, _, _ in process },
+            ),
+        )
+
+        manager.startIfNeeded()
+        manager.stop()
+
+        guard let waited = waitedForPids.first else {
+            return XCTFail("expected graceful stop wait")
+        }
+        XCTAssertEqual(manager.status, HookServerManager.Status.stopped)
+        XCTAssertEqual(process.terminateCallCount, 1)
+        XCTAssertEqual(waitedForPids.count, 1)
+        XCTAssertEqual(waited.0, 98)
+        XCTAssertEqual(waited.1, 2.0, accuracy: 0.001)
+        XCTAssertEqual(killedPids, [98])
     }
 
     func testStartIfNeededLaunchesServiceBootstrap() {
@@ -182,7 +249,7 @@ final class HookServerManagerTests: XCTestCase {
         manager.startIfNeeded()
 
         XCTAssertEqual(launchCount, 1)
-        XCTAssertEqual(manager.status, .starting)
+        XCTAssertEqual(manager.status, HookServerManager.Status.starting)
         XCTAssertEqual(capturedEnvironment["CAPACITOR_RUNTIME_SERVICE_BOOTSTRAP"], "1")
         XCTAssertEqual(capturedEnvironment["CAPACITOR_RUNTIME_SERVICE_PORT"], "8126")
         XCTAssertNotNil(capturedEnvironment["CAPACITOR_RUNTIME_SERVICE_TOKEN"])
@@ -200,7 +267,7 @@ final class HookServerManagerTests: XCTestCase {
                 launchProcess: { _, _, _ in process },
                 fetchHealth: { _, authToken in
                     receivedAuthToken = authToken
-                    return true
+                    return Self.makeCompatibleHealth(pid: 91)
                 },
             ),
         )
@@ -212,12 +279,12 @@ final class HookServerManagerTests: XCTestCase {
             await _Concurrency.Task.yield()
         }
 
-        for _ in 0 ..< 20 where manager.status != .running {
+        for _ in 0 ..< 20 where manager.status != HookServerManager.Status.running {
             await _Concurrency.Task.yield()
         }
 
         XCTAssertNotNil(receivedAuthToken)
-        XCTAssertEqual(manager.status, .running)
+        XCTAssertEqual(manager.status, HookServerManager.Status.running)
     }
 
     func testServiceModeAdoptsExistingRuntimeServiceAndUsesPersistedAuthToken() async {
@@ -243,22 +310,234 @@ final class HookServerManagerTests: XCTestCase {
                 },
                 fetchHealth: { _, authToken in
                     receivedAuthToken = authToken
-                    return true
+                    return Self.makeCompatibleHealth(pid: 654)
                 },
             ),
         )
 
         manager.startIfNeeded()
         XCTAssertEqual(launchCount, 0)
-        XCTAssertEqual(manager.status, .starting)
+        XCTAssertEqual(manager.status, HookServerManager.Status.starting)
 
         manager.checkHealth()
-        for _ in 0 ..< 20 where receivedAuthToken == nil || manager.status != .running {
+        for _ in 0 ..< 20 where receivedAuthToken == nil || manager.status != HookServerManager.Status.running {
             await _Concurrency.Task.yield()
         }
 
         XCTAssertEqual(receivedAuthToken, "persisted-token")
-        XCTAssertEqual(manager.status, .running)
+        XCTAssertEqual(manager.status, HookServerManager.Status.running)
+    }
+
+    func testStartIfNeededAdoptsCompatibleRuntimeWhenPidFileMissing() async {
+        var launchCount = 0
+        var healthCheckCount = 0
+
+        let manager = HookServerManager(
+            port: 8133,
+            binaryPath: "/tmp/hud-hook",
+            dependencies: makeDependencies(
+                loadRuntimeServiceConnection: { _ in
+                    RuntimeServiceConnection(
+                        baseURL: URL(string: "http://127.0.0.1:8133")!,
+                        bearerToken: "persisted-token",
+                    )
+                },
+                launchProcess: { _, _, _ in
+                    launchCount += 1
+                    return FakeHookServerProcess(pid: 96)
+                },
+                fetchHealth: { _, authToken in
+                    healthCheckCount += 1
+                    XCTAssertEqual(authToken, "persisted-token")
+                    return Self.makeCompatibleHealth(pid: 654)
+                },
+            ),
+            launchReadinessInterval: .zero,
+        )
+
+        manager.startIfNeeded()
+        manager.checkHealth()
+        await waitUntil { manager.status == HookServerManager.Status.running }
+
+        XCTAssertGreaterThanOrEqual(healthCheckCount, 1)
+        XCTAssertEqual(launchCount, 0)
+    }
+
+    func testStartIfNeededFailsIfLaunchedProcessExitsBeforeReadinessSucceeds() async {
+        let process = FakeHookServerProcess(pid: 93)
+        var launchCount = 0
+        let fetchHealthRelease = DispatchSemaphore(value: 0)
+        var fetchHealthStarted = false
+
+        let manager = HookServerManager(
+            port: 8130,
+            binaryPath: "/tmp/hud-hook",
+            dependencies: makeDependencies(
+                launchProcessWithTermination: { _, _, _, terminationHandler in
+                    launchCount += 1
+                    process.attachTerminationHandler(terminationHandler)
+                    return process
+                },
+                fetchHealth: { _, _ in
+                    fetchHealthStarted = true
+                    fetchHealthRelease.wait()
+                    return nil
+                },
+            ),
+            launchReadinessAttempts: 3,
+            launchReadinessInterval: .zero,
+        )
+
+        manager.startIfNeeded()
+        for _ in 0 ..< 50 where !fetchHealthStarted {
+            await _Concurrency.Task.yield()
+        }
+        process.simulateExit(status: 48)
+        fetchHealthRelease.signal()
+        await waitUntil {
+            if case .failed = manager.status {
+                return true
+            }
+            return false
+        }
+
+        XCTAssertEqual(launchCount, 1)
+        XCTAssertEqual(process.terminateCallCount, 0)
+        if case let .failed(message) = manager.status {
+            XCTAssertTrue(message.contains("exited during startup"), "message mismatch: \(message)")
+        } else {
+            XCTFail("expected startup failure, got \(manager.status)")
+        }
+    }
+
+    func testStartIfNeededFailsReadinessAfterRetryBudgetAndTerminatesProcess() async {
+        let process = FakeHookServerProcess(pid: 94)
+        var launchCount = 0
+
+        let manager = HookServerManager(
+            port: 8131,
+            binaryPath: "/tmp/hud-hook",
+            dependencies: makeDependencies(
+                launchProcessWithTermination: { _, _, _, terminationHandler in
+                    launchCount += 1
+                    process.attachTerminationHandler(terminationHandler)
+                    return process
+                },
+                fetchHealth: { _, _ in nil },
+            ),
+            launchReadinessAttempts: 2,
+            launchReadinessInterval: .zero,
+        )
+
+        manager.startIfNeeded()
+        await waitUntil {
+            if case .failed = manager.status {
+                return true
+            }
+            return false
+        }
+
+        XCTAssertEqual(launchCount, 1)
+        XCTAssertEqual(process.terminateCallCount, 1)
+        if case let .failed(message) = manager.status {
+            XCTAssertTrue(message.contains("readiness"), "message mismatch: \(message)")
+        } else {
+            XCTFail("expected readiness failure, got \(manager.status)")
+        }
+    }
+
+    func testManagedServerProcessComparisonResolvesSymlinkedExecutablePaths() throws {
+        let tempDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDirectory) }
+
+        let realBinary = tempDirectory.appendingPathComponent("target/release/hud-hook")
+        try FileManager.default.createDirectory(
+            at: realBinary.deletingLastPathComponent(),
+            withIntermediateDirectories: true,
+        )
+        XCTAssertTrue(FileManager.default.createFile(atPath: realBinary.path, contents: Data()))
+
+        let installedBinary = tempDirectory.appendingPathComponent(".local/bin/hud-hook")
+        try FileManager.default.createDirectory(
+            at: installedBinary.deletingLastPathComponent(),
+            withIntermediateDirectories: true,
+        )
+        try FileManager.default.createSymbolicLink(
+            atPath: installedBinary.path,
+            withDestinationPath: realBinary.path,
+        )
+
+        XCTAssertTrue(
+            HookServerManager.executablePathsMatch(
+                runningPath: realBinary.path,
+                configuredPath: installedBinary.path,
+            ),
+        )
+    }
+
+    func testStartIfNeededAdoptsSymlinkResolvedManagedProcess() async throws {
+        let tempDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDirectory) }
+
+        let realBinary = tempDirectory.appendingPathComponent("target/release/hud-hook")
+        try FileManager.default.createDirectory(
+            at: realBinary.deletingLastPathComponent(),
+            withIntermediateDirectories: true,
+        )
+        XCTAssertTrue(FileManager.default.createFile(atPath: realBinary.path, contents: Data()))
+
+        let installedBinary = tempDirectory.appendingPathComponent(".local/bin/hud-hook")
+        try FileManager.default.createDirectory(
+            at: installedBinary.deletingLastPathComponent(),
+            withIntermediateDirectories: true,
+        )
+        try FileManager.default.createSymbolicLink(
+            atPath: installedBinary.path,
+            withDestinationPath: realBinary.path,
+        )
+
+        var launchCount = 0
+        var receivedAuthToken: String?
+
+        let manager = HookServerManager(
+            port: 8134,
+            binaryPath: installedBinary.path,
+            dependencies: makeDependencies(
+                readPidFile: { _ in 777 },
+                isProcessAlive: { _ in true },
+                isManagedServerProcess: { _, configuredPath in
+                    HookServerManager.executablePathsMatch(
+                        runningPath: realBinary.path,
+                        configuredPath: configuredPath,
+                    )
+                },
+                loadRuntimeServiceConnection: { _ in
+                    RuntimeServiceConnection(
+                        baseURL: URL(string: "http://127.0.0.1:8134")!,
+                        bearerToken: "persisted-token",
+                    )
+                },
+                launchProcess: { _, _, _ in
+                    launchCount += 1
+                    return FakeHookServerProcess(pid: 97)
+                },
+                fetchHealth: { _, authToken in
+                    receivedAuthToken = authToken
+                    return Self.makeCompatibleHealth(pid: 97)
+                },
+            ),
+        )
+
+        manager.startIfNeeded()
+        manager.checkHealth()
+        await waitUntil { manager.status == HookServerManager.Status.running }
+
+        XCTAssertEqual(launchCount, 0)
+        XCTAssertEqual(receivedAuthToken, "persisted-token")
     }
 
     func testBootstrapHealthPayloadRejectsUnexpectedProtocolVersion() {
@@ -297,11 +576,14 @@ final class HookServerManagerTests: XCTestCase {
         isProcessAlive: @escaping (Int32) -> Bool = { _ in true },
         isManagedServerProcess: @escaping (Int32, String) -> Bool = { _, _ in true },
         terminatePid: @escaping (Int32) -> Void = { _ in },
+        killPid: @escaping (Int32) -> Void = { _ in },
+        waitForProcessExit: @escaping (Int32, TimeInterval) -> Bool = { _, _ in true },
         loadRuntimeServiceConnection: @escaping (UInt16) -> RuntimeServiceConnection? = { _ in nil },
         launchProcess: @escaping (String, UInt16, [String: String]) throws -> any HookServerProcessControlling = { _, _, _ in
             FakeHookServerProcess(pid: 11)
         },
-        fetchHealth: @escaping (UInt16, String?) async -> Bool = { _, _ in true },
+        launchProcessWithTermination: ((String, UInt16, [String: String], @escaping @Sendable (Int32) -> Void) throws -> any HookServerProcessControlling)? = nil,
+        fetchHealth: @escaping (UInt16, String?) -> RuntimeHealth? = { _, _ in nil },
     ) -> HookServerManagerDependencies {
         HookServerManagerDependencies(
             isExecutableFile: { _ in true },
@@ -310,10 +592,40 @@ final class HookServerManagerTests: XCTestCase {
             isProcessAlive: isProcessAlive,
             isManagedServerProcess: isManagedServerProcess,
             terminatePid: terminatePid,
+            killPid: killPid,
+            waitForProcessExit: waitForProcessExit,
             loadRuntimeServiceConnection: loadRuntimeServiceConnection,
-            launchProcess: launchProcess,
+            launchProcess: launchProcessWithTermination ?? { binaryPath, port, environment, _ in
+                try launchProcess(binaryPath, port, environment)
+            },
             fetchHealth: fetchHealth,
         )
+    }
+
+    private static func makeCompatibleHealth(pid: Int = 4242) -> RuntimeHealth {
+        RuntimeHealth(
+            status: "ok",
+            pid: pid,
+            version: "runtime-service-v1",
+            protocolVersion: 1,
+            schemaVersion: 2,
+            authMode: "bearer",
+            serviceMode: "bootstrap_only",
+        )
+    }
+
+    private func waitUntil(
+        timeoutNanoseconds: UInt64 = 1_000_000_000,
+        condition: @escaping @MainActor () -> Bool,
+    ) async {
+        let start = ContinuousClock.now
+        while !condition() {
+            if ContinuousClock.now - start > .nanoseconds(Int64(timeoutNanoseconds)) {
+                XCTFail("condition not met before timeout")
+                return
+            }
+            await _Concurrency.Task.yield()
+        }
     }
 }
 
@@ -322,13 +634,28 @@ private final class FakeHookServerProcess: HookServerProcessControlling {
     let processIdentifier: Int32
     var terminationStatus: Int32 = 0
     private(set) var terminateCallCount = 0
+    private var terminationHandler: (@Sendable (Int32) -> Void)?
+    private let stopsOnTerminate: Bool
 
-    init(pid: Int32) {
+    init(pid: Int32, stopsOnTerminate: Bool = true) {
         processIdentifier = pid
+        self.stopsOnTerminate = stopsOnTerminate
     }
 
     func terminate() {
         terminateCallCount += 1
+        if stopsOnTerminate {
+            isRunning = false
+        }
+    }
+
+    func attachTerminationHandler(_ terminationHandler: @escaping @Sendable (Int32) -> Void) {
+        self.terminationHandler = terminationHandler
+    }
+
+    func simulateExit(status: Int32) {
+        terminationStatus = status
         isRunning = false
+        terminationHandler?(status)
     }
 }

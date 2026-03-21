@@ -51,6 +51,7 @@ struct ContentView: View {
                             appState.captureIdea(for: project, text: text)
                         },
                     )
+                    .zIndex(100)
                 }
 
                 if !appState.isLoading, appState.projects.isEmpty, !isDragHovered, !appState.isFileDragOverCard {

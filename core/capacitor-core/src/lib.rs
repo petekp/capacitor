@@ -486,6 +486,18 @@ impl CoreRuntime {
         Ok(outcome)
     }
 
+    pub fn mutate_run(
+        &self,
+        command: domain::MutateRunCommand,
+    ) -> Result<MutationOutcome, CoreRuntimeError> {
+        let mut state = self.lock_state()?;
+        let outcome = state.apply_run_mutation(command);
+        let snapshot = state.snapshot();
+        drop(state);
+        self.persist_snapshot(&snapshot)?;
+        Ok(outcome)
+    }
+
     // Runtime setup + project APIs
 
     pub fn claude_dir(&self) -> String {
@@ -1270,6 +1282,7 @@ mod tests {
             shells: vec![],
             routing: vec![],
             delegations: vec![],
+            runs: vec![],
             diagnostics: DiagnosticsSummary {
                 events_ingested: 0,
                 sessions_tracked: 0,
@@ -1328,6 +1341,7 @@ mod tests {
                         "pid": 4242,
                         "version": "runtime-service-test",
                         "protocol_version": 1,
+                        "schema_version": 2,
                         "auth_mode": "bearer",
                         "service_mode": "bootstrap_only",
                     }),

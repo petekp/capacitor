@@ -1,6 +1,23 @@
 import AppKit
 import SwiftUI
 
+struct IdeaCaptureTextAreaLayout {
+    static let maxWidth: CGFloat = 500
+    static let horizontalPadding: CGFloat = 48
+    static let verticalPadding: CGFloat = 60
+
+    static func frame(in size: CGSize) -> CGRect {
+        let width = max(0, min(maxWidth, size.width - (horizontalPadding * 2)))
+        let height = max(0, size.height - (verticalPadding * 2))
+        return CGRect(
+            x: (size.width - width) / 2,
+            y: verticalPadding,
+            width: width,
+            height: height,
+        )
+    }
+}
+
 struct IdeaCaptureOverlay: View {
     @Binding var isPresented: Bool
     @Binding var shouldFocus: Bool
@@ -24,8 +41,8 @@ struct IdeaCaptureOverlay: View {
     ]
 
     private enum Layout {
-        static let maxTextWidth: CGFloat = 500
-        static let horizontalPadding: CGFloat = 48
+        static let maxTextWidth = IdeaCaptureTextAreaLayout.maxWidth
+        static let horizontalPadding = IdeaCaptureTextAreaLayout.horizontalPadding
         static let cornerPadding: CGFloat = 24
 
         static let maxFontSize: CGFloat = 28
@@ -55,79 +72,15 @@ struct IdeaCaptureOverlay: View {
 
     var body: some View {
         ZStack {
-            // Full-bleed text area - clickable everywhere
             textArea
-                .onTapGesture {
-                    focusTextArea()
-                }
-
-            // Corner elements overlay
-            VStack {
-                HStack {
-                    // Top-left: Project name
-                    Text(projectName)
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(.white.opacity(0.4))
-                        .padding(Layout.cornerPadding)
-
-                    Spacer()
-
-                    // Top-right: Cancel button
-                    Button(action: cancel) {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundColor(.white.opacity(0.5))
-                            .frame(width: 32, height: 32)
-                            .background(Color.white.opacity(0.1))
-                            .clipShape(Circle())
-                    }
-                    .buttonStyle(.plain)
-                    .padding(Layout.cornerPadding)
-                }
-
-                Spacer()
-
-                // Error banner in the center-bottom area
-                if let error = captureError {
-                    errorBanner(error)
-                        .frame(maxWidth: Layout.maxTextWidth)
-                        .padding(.horizontal, Layout.horizontalPadding)
-                        .padding(.bottom, 80)
-                }
-
-                HStack {
-                    // Bottom-left: Keyboard hints
-                    Text("⏎ Save  ⇧⏎ Save & add another  ⎋ Cancel")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(.white.opacity(0.35))
-                        .padding(Layout.cornerPadding)
-
-                    Spacer()
-
-                    // Bottom-right: Save button
-                    Button(action: captureAndClose) {
-                        HStack(spacing: showingSuccess ? 0 : 8) {
-                            Image(systemName: "checkmark")
-                                .font(.system(size: 14, weight: .semibold))
-                            if !showingSuccess {
-                                Text("Save")
-                                    .font(.system(size: 14, weight: .semibold))
-                            }
-                        }
-                        .foregroundColor(showingSuccess ? .white : (hasText ? .white : .white.opacity(0.4)))
-                        .padding(.horizontal, showingSuccess ? 14 : 18)
-                        .padding(.vertical, 10)
-                        .background(showingSuccess ? Color.green : (hasText ? Color.blue : Color.white.opacity(0.1)))
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                        .animation(.spring(response: 0.2, dampingFraction: 0.8), value: showingSuccess)
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(!hasText || isCapturing || showingSuccess)
-                    .padding(Layout.cornerPadding)
-                }
-            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .overlay(alignment: .top) {
+            topBar
+        }
+        .overlay(alignment: .bottom) {
+            bottomBar
+        }
         .onAppear {
             installReturnMonitor()
         }
@@ -139,6 +92,66 @@ struct IdeaCaptureOverlay: View {
                 focusTextArea()
             }
         }
+    }
+
+    private var topBar: some View {
+        HStack {
+            Text(projectName)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundColor(.white.opacity(0.4))
+
+            Spacer()
+
+            Button(action: cancel) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundColor(.white.opacity(0.5))
+                    .frame(width: 32, height: 32)
+                    .background(Color.white.opacity(0.1))
+                    .clipShape(Circle())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(Layout.cornerPadding)
+    }
+
+    private var bottomBar: some View {
+        VStack(spacing: 16) {
+            if let error = captureError {
+                errorBanner(error)
+                    .frame(maxWidth: Layout.maxTextWidth)
+                    .padding(.horizontal, Layout.horizontalPadding)
+            }
+
+            HStack {
+                Text("⏎ Save  ⇧⏎ Save & add another  ⎋ Cancel")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(.white.opacity(0.35))
+
+                Spacer()
+
+                Button(action: captureAndClose) {
+                    HStack(spacing: showingSuccess ? 0 : 8) {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 14, weight: .semibold))
+                        if !showingSuccess {
+                            Text("Save")
+                                .font(.system(size: 14, weight: .semibold))
+                        }
+                    }
+                    .foregroundColor(showingSuccess ? .white : (hasText ? .white : .white.opacity(0.4)))
+                    .padding(.horizontal, showingSuccess ? 14 : 18)
+                    .padding(.vertical, 10)
+                    .background(showingSuccess ? Color.green : (hasText ? Color.blue : Color.white.opacity(0.1)))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .animation(.spring(response: 0.2, dampingFraction: 0.8), value: showingSuccess)
+                }
+                .buttonStyle(.plain)
+                .disabled(!hasText || isCapturing || showingSuccess)
+            }
+            .padding(.horizontal, Layout.cornerPadding)
+        }
+        .padding(.bottom, Layout.cornerPadding)
     }
 
     private func focusTextArea() {
@@ -170,30 +183,31 @@ struct IdeaCaptureOverlay: View {
     }
 
     private var textArea: some View {
-        ZStack {
-            // Full-bleed centered TextEditor with dynamic font scaling
-            CenteredTextEditor(
-                text: $ideaText,
-                isFocused: $isTextFieldFocused,
-                fontSize: dynamicFontSize,
-                textColor: .white,
-                placeholderColor: .white.withAlphaComponent(0.3),
-                isDisabled: isCapturing,
-            )
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding(.top, 60)
-            .padding(.bottom, 60)
+        GeometryReader { geometry in
+            let frame = IdeaCaptureTextAreaLayout.frame(in: geometry.size)
 
-            // Centered placeholder (always at max size)
-            if ideaText.isEmpty {
-                Text(placeholder)
-                    .font(.system(size: Layout.maxFontSize, weight: .regular))
-                    .foregroundColor(.white.opacity(0.3))
-                    .allowsHitTesting(false)
+            ZStack {
+                CenteredTextEditor(
+                    text: $ideaText,
+                    isFocused: $isTextFieldFocused,
+                    fontSize: dynamicFontSize,
+                    textColor: .white,
+                    placeholderColor: .white.withAlphaComponent(0.3),
+                    isDisabled: isCapturing,
+                )
+                .frame(width: frame.width, height: frame.height)
+
+                if ideaText.isEmpty {
+                    Text(placeholder)
+                        .font(.system(size: Layout.maxFontSize, weight: .regular))
+                        .foregroundColor(.white.opacity(0.3))
+                        .frame(width: frame.width)
+                        .allowsHitTesting(false)
+                }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .contentShape(Rectangle())
     }
 
     private func errorBanner(_ error: String) -> some View {
@@ -407,6 +421,49 @@ extension NSView {
 
 // MARK: - Vertically Centered Text Editor
 
+final class TextViewFocusController {
+    private weak var textView: NSTextView?
+    private weak var scrollView: NSScrollView?
+    private var hasPendingFocus = false
+
+    func attach(textView: NSTextView, scrollView: NSScrollView) {
+        self.textView = textView
+        self.scrollView = scrollView
+    }
+
+    func requestFocus() {
+        guard let textView else { return }
+
+        guard let window = textView.window ?? scrollView?.window else {
+            hasPendingFocus = true
+            return
+        }
+
+        hasPendingFocus = false
+
+        if window.firstResponder !== textView {
+            window.makeFirstResponder(textView)
+        }
+    }
+
+    func viewDidMoveToWindow() {
+        guard hasPendingFocus else { return }
+
+        DispatchQueue.main.async { [weak self] in
+            self?.requestFocus()
+        }
+    }
+}
+
+final class FocusAwareScrollView: NSScrollView {
+    var onDidMoveToWindow: (() -> Void)?
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        onDidMoveToWindow?()
+    }
+}
+
 struct CenteredTextEditor: NSViewRepresentable {
     @Binding var text: String
     @Binding var isFocused: Bool
@@ -420,11 +477,14 @@ struct CenteredTextEditor: NSViewRepresentable {
     }
 
     func makeNSView(context: Context) -> NSScrollView {
-        let scrollView = NSScrollView()
+        let scrollView = FocusAwareScrollView()
         scrollView.hasVerticalScroller = false
         scrollView.hasHorizontalScroller = false
         scrollView.borderType = .noBorder
         scrollView.drawsBackground = false
+        scrollView.onDidMoveToWindow = {
+            context.coordinator.scrollViewDidMoveToWindow()
+        }
 
         let textContainer = NSTextContainer()
         textContainer.widthTracksTextView = true
@@ -473,12 +533,12 @@ struct CenteredTextEditor: NSViewRepresentable {
         }
 
         scrollView.documentView = textView
-        context.coordinator.textView = textView
+        context.coordinator.attach(textView: textView, scrollView: scrollView)
 
         return scrollView
     }
 
-    func updateNSView(_ scrollView: NSScrollView, context _: Context) {
+    func updateNSView(_ scrollView: NSScrollView, context: Context) {
         guard let textView = scrollView.documentView as? CenteredNSTextView else { return }
 
         let font = NSFont.systemFont(ofSize: fontSize, weight: .regular)
@@ -508,13 +568,8 @@ struct CenteredTextEditor: NSViewRepresentable {
             storage.addAttributes(attributes, range: NSRange(location: 0, length: storage.length))
         }
 
-        // Handle focus
         if isFocused {
-            DispatchQueue.main.async {
-                if let window = scrollView.window {
-                    window.makeFirstResponder(textView)
-                }
-            }
+            context.coordinator.requestFocus()
         }
 
         textView.needsLayout = true
@@ -524,9 +579,23 @@ struct CenteredTextEditor: NSViewRepresentable {
     class Coordinator: NSObject, NSTextViewDelegate {
         var parent: CenteredTextEditor
         weak var textView: NSTextView?
+        let focusController = TextViewFocusController()
 
         init(_ parent: CenteredTextEditor) {
             self.parent = parent
+        }
+
+        func attach(textView: NSTextView, scrollView: NSScrollView) {
+            self.textView = textView
+            focusController.attach(textView: textView, scrollView: scrollView)
+        }
+
+        func requestFocus() {
+            focusController.requestFocus()
+        }
+
+        func scrollViewDidMoveToWindow() {
+            focusController.viewDidMoveToWindow()
         }
 
         func textDidChange(_ notification: Notification) {

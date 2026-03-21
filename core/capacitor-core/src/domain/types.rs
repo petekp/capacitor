@@ -159,15 +159,22 @@ pub struct AppSnapshot {
     pub routing: Vec<RoutingView>,
     #[serde(default)]
     pub delegations: Vec<ProjectDelegationState>,
+    #[serde(default)]
+    pub runs: Vec<super::run_types::RunState>,
     pub diagnostics: DiagnosticsSummary,
     pub generated_at: String,
 }
+
+/// Increment when delegation mutation kinds or delegation statuses change.
+pub const SCHEMA_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Enum)]
 #[serde(rename_all = "snake_case")]
 pub enum DelegationStatus {
     Working,
     ReviewNeeded,
+    ResumePending,
+    ResumeFailed,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Enum)]
@@ -176,7 +183,9 @@ pub enum DelegationMutationKind {
     Start,
     AttachSession,
     ReviewReady,
+    SubmitReview,
     Resume,
+    ResumeFailed,
     Complete,
 }
 
@@ -206,6 +215,8 @@ pub struct ProjectDelegationState {
     pub status: DelegationStatus,
     pub started_at: String,
     pub updated_at: String,
+    #[serde(default)]
+    pub submitted_milestone_id: Option<String>,
     pub current_review: Option<DelegationReviewState>,
 }
 

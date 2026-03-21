@@ -136,6 +136,19 @@ final class RuntimeClientTests: XCTestCase {
         )
     }
 
+    func testFetchRuntimeSnapshotMapsDelegationResumePendingState() async throws {
+        let client = try makeClient(
+            coreSnapshot: Self.makeDelegationResumePendingSnapshot(),
+        )
+
+        let snapshot = try await client.fetchRuntimeSnapshot(correlationId: "delegation-resume-pending")
+
+        XCTAssertEqual(snapshot.delegations.count, 1)
+        XCTAssertEqual(snapshot.delegations.first?.status, "resume_pending")
+        XCTAssertEqual(snapshot.delegations.first?.submittedMilestoneId, "01")
+        XCTAssertEqual(snapshot.delegations.first?.currentReview?.milestoneId, "01")
+    }
+
     func testFetchRuntimeSnapshotFailureScenarios() async throws {
         enum ExpectedError {
             case invalidResponse
@@ -345,9 +358,58 @@ final class RuntimeClientTests: XCTestCase {
 
         XCTAssertEqual(health.status, "ok")
         XCTAssertEqual(health.protocolVersion, 1)
+        XCTAssertEqual(health.schemaVersion, 2)
         XCTAssertEqual(health.authMode, "bearer")
         XCTAssertEqual(health.serviceMode, "bootstrap_only")
         XCTAssertTrue(health.version.contains("runtime-service"))
+    }
+
+    func testFetchHealthRejectsMissingSchemaVersionAndRequestsCompatibilityRestart() async throws {
+        let restartRequested = expectation(description: "compatibility restart requested")
+        let client = try RuntimeClient(
+            runtimeServiceConnectionOverride: RuntimeServiceConnection(
+                baseURL: XCTUnwrap(URL(string: "http://127.0.0.1:7812")),
+                bearerToken: "service-secret",
+            ),
+            sendRequest: { request in
+                let response = try XCTUnwrap(
+                    HTTPURLResponse(
+                        url: request.url!,
+                        statusCode: 200,
+                        httpVersion: nil,
+                        headerFields: ["Content-Type": "application/json"],
+                    ),
+                )
+                let json = """
+                {"status":"ok","pid":4242,"version":"runtime-service-v1","protocol_version":1,"auth_mode":"bearer","service_mode":"bootstrap_only"}
+                """
+                return (Data(json.utf8), response)
+            },
+        )
+
+        var observedHealth: RuntimeHealth?
+        var observedMinimumSchemaVersion: Int?
+        client.setIncompatibleSchemaHandler { health, minimumSchemaVersion in
+            observedHealth = health
+            observedMinimumSchemaVersion = minimumSchemaVersion
+            restartRequested.fulfill()
+        }
+
+        do {
+            _ = try await client.fetchHealth()
+            XCTFail("expected runtimeUnavailable for missing schema version")
+        } catch let error as RuntimeClientError {
+            switch error {
+            case let .runtimeUnavailable(message):
+                XCTAssertTrue(message.contains("schema version"), "message mismatch: \(message)")
+            default:
+                XCTFail("unexpected RuntimeClientError: \(error)")
+            }
+        }
+
+        await fulfillment(of: [restartRequested], timeout: 0.5)
+        XCTAssertNil(observedHealth?.schemaVersion)
+        XCTAssertEqual(observedMinimumSchemaVersion, 2)
     }
 
     func testFetchHealthRejectsUnexpectedProtocolVersion() async throws {
@@ -584,7 +646,7 @@ final class RuntimeClientTests: XCTestCase {
                 switch request.url?.path {
                 case "/health":
                     let json = """
-                    {"status":"ok","pid":4242,"version":"runtime-service-v1","protocol_version":1,"auth_mode":"bearer","service_mode":"bootstrap_only"}
+                    {"status":"ok","pid":4242,"version":"runtime-service-v1","protocol_version":1,"schema_version":2,"auth_mode":"bearer","service_mode":"bootstrap_only"}
                     """
                     return (Data(json.utf8), response)
                 case "/runtime/routing/resolve":
@@ -658,6 +720,14 @@ final class RuntimeClientTests: XCTestCase {
         makeCoreSnapshotResponse(
             delegationJSON: """
             ,"delegations":[{"project_path":"/tmp/core-project","worker_id":"worker-1","idea_id":"idea-1","worktree_name":"delegation-worker-1","worktree_path":"/tmp/core-project/.capacitor/worktrees/delegation-worker-1","session_id":"worker-session-1","status":"review_needed","started_at":"2026-02-28T19:00:00Z","updated_at":"2026-02-28T19:05:00Z","current_review":{"milestone_id":"01","brief_path":"/tmp/core-project/.capacitor/delegations/worker-1/milestones/01/brief.md","manifest_path":"/tmp/core-project/.capacitor/delegations/worker-1/milestones/01/manifest.json","requested_at":"2026-02-28T19:05:00Z"}}]
+            """,
+        )
+    }
+
+    private static func makeDelegationResumePendingSnapshot() -> Data {
+        makeCoreSnapshotResponse(
+            delegationJSON: """
+            ,"delegations":[{"project_path":"/tmp/core-project","worker_id":"worker-1","idea_id":"idea-1","worktree_name":"delegation-worker-1","worktree_path":"/tmp/core-project/.capacitor/worktrees/delegation-worker-1","session_id":"worker-session-1","status":"resume_pending","started_at":"2026-02-28T19:00:00Z","updated_at":"2026-02-28T19:05:00Z","submitted_milestone_id":"01","current_review":{"milestone_id":"01","brief_path":"/tmp/core-project/.capacitor/delegations/worker-1/milestones/01/brief.md","manifest_path":"/tmp/core-project/.capacitor/delegations/worker-1/milestones/01/manifest.json","requested_at":"2026-02-28T19:05:00Z"}}]
             """,
         )
     }

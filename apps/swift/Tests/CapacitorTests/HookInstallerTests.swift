@@ -76,6 +76,41 @@ final class HookInstallerTests: XCTestCase {
         XCTAssertNil(message)
         XCTAssertEqual(runtime.installHooksCallCount, 1)
     }
+
+    func testPreferredLaunchBinaryPathUsesCanonicalInstallInDevelopment() {
+        let path = HookBinaryLocator.preferredLaunchBinaryPath(
+            isRunningFromAppBundle: false,
+            installedBinaryPath: "/tmp/.local/bin/hud-hook",
+            bundledBinaryPath: "/tmp/Capacitor.app/Contents/Resources/hud-hook",
+            isExecutableFile: { _ in true },
+        )
+
+        XCTAssertEqual(path, "/tmp/.local/bin/hud-hook")
+    }
+
+    func testPreferredLaunchBinaryPathUsesBundledBinaryInDistributedApp() {
+        let path = HookBinaryLocator.preferredLaunchBinaryPath(
+            isRunningFromAppBundle: true,
+            installedBinaryPath: "/tmp/.local/bin/hud-hook",
+            bundledBinaryPath: "/tmp/Capacitor.app/Contents/Resources/hud-hook",
+            isExecutableFile: { _ in true },
+        )
+
+        XCTAssertEqual(path, "/tmp/Capacitor.app/Contents/Resources/hud-hook")
+    }
+
+    func testInstallSourceBinaryPathSkipsBundledCopyInDevelopment() {
+        let sourcePath = HookBinaryLocator.installSourceBinaryPath(
+            isRunningFromAppBundle: false,
+            installedBinaryPath: "/tmp/.local/bin/hud-hook",
+            bundledBinaryPath: "/tmp/Capacitor.app/Contents/Resources/hud-hook",
+            isExecutableFile: { path in
+                path == "/tmp/Capacitor.app/Contents/Resources/hud-hook"
+            },
+        )
+
+        XCTAssertNil(sourcePath)
+    }
 }
 
 private struct StubError: LocalizedError {

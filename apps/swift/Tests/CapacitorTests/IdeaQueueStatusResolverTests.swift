@@ -22,6 +22,16 @@ final class IdeaQueueStatusResolverTests: XCTestCase {
         XCTAssertEqual(status, .delegationWorking)
     }
 
+    func testMapsResumePendingDelegationForMatchingIdea() {
+        let status = IdeaQueueStatusResolver.resolve(
+            idea: makeIdea(),
+            isGeneratingTitle: false,
+            delegationState: makeDelegation(status: "resume_pending", currentReview: nil),
+        )
+
+        XCTAssertEqual(status, .delegationWorking)
+    }
+
     func testFallsBackToGeneratingTitleWhenNoDelegationMatches() {
         let status = IdeaQueueStatusResolver.resolve(
             idea: makeIdea(),

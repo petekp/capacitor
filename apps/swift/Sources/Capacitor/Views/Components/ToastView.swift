@@ -95,5 +95,6 @@ struct ToastContainer: View {
             }
         }
         .animation(.spring(response: 0.3, dampingFraction: 0.8), value: toast?.id)
+        .allowsHitTesting(toast != nil)
     }
 }

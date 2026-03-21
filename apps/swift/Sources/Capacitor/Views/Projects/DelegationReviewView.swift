@@ -1,28 +1,5 @@
 import SwiftUI
 
-private struct DelegationReviewManifest: Decodable {
-    struct Artifact: Decodable, Identifiable {
-        let label: String
-        let path: String
-
-        var id: String {
-            "\(label)|\(path)"
-        }
-    }
-
-    let version: Int
-    let milestoneId: String
-    let summary: String?
-    let artifacts: [Artifact]
-
-    enum CodingKeys: String, CodingKey {
-        case version
-        case milestoneId = "milestone_id"
-        case summary
-        case artifacts
-    }
-}
-
 struct DelegationReviewView: View {
     @Environment(AppState.self) var appState: AppState
     @Environment(\.floatingMode) private var floatingMode
@@ -198,12 +175,14 @@ struct DelegationReviewView: View {
     private func actionRow(delegation: RuntimeDelegationState) -> some View {
         HStack(spacing: 12) {
             Button(action: {
-                appState.submitDelegationReview(
-                    for: project,
-                    delegation: delegation,
-                    decision: .requestChanges,
-                    note: note,
-                )
+                _Concurrency.Task { @MainActor in
+                    try? await appState.submitDelegationReview(
+                        for: project,
+                        delegation: delegation,
+                        decision: .requestChanges,
+                        note: note,
+                    )
+                }
             }) {
                 Text("Request Changes")
                     .font(AppTypography.bodySecondary.weight(.semibold))
@@ -217,12 +196,14 @@ struct DelegationReviewView: View {
             .accessibilityIdentifier(AccessibilityIdentifiers.delegationReviewRequestChangesIdentifier)
 
             Button(action: {
-                appState.submitDelegationReview(
-                    for: project,
-                    delegation: delegation,
-                    decision: .approve,
-                    note: note,
-                )
+                _Concurrency.Task { @MainActor in
+                    try? await appState.submitDelegationReview(
+                        for: project,
+                        delegation: delegation,
+                        decision: .approve,
+                        note: note,
+                    )
+                }
             }) {
                 Text("Approve")
                     .font(AppTypography.bodySecondary.weight(.semibold))

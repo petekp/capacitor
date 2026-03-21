@@ -10,13 +10,17 @@ enum ProjectPrimaryActionResolver {
         delegationState: RuntimeDelegationState?,
         isDelegationEnabled: Bool,
     ) -> ProjectPrimaryAction {
-        guard isDelegationEnabled,
-              delegationState?.status == "review_needed",
-              delegationState?.currentReview != nil
-        else {
+        guard isDelegationEnabled else {
             return .openTerminal
         }
 
-        return .openDelegationReview
+        if let delegationState,
+           delegationState.currentReview != nil,
+           delegationState.status == "review_needed" || delegationState.status == "resume_failed"
+        {
+            return .openDelegationReview
+        }
+
+        return .openTerminal
     }
 }

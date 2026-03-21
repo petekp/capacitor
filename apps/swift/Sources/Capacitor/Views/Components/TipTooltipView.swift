@@ -80,5 +80,6 @@ struct TipTooltipContainer: View {
             }
         }
         .animation(.spring(response: 0.3, dampingFraction: 0.8), value: showTip)
+        .allowsHitTesting(showTip)
     }
 }

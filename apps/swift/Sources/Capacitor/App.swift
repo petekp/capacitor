@@ -82,6 +82,9 @@ struct CapacitorApp: App {
                     ))
                 }
             }
+            .onAppear {
+                appDelegate.appState = appState
+            }
         }
         .defaultSize(width: 360, height: 700)
         .windowResizability(.contentSize)
@@ -163,6 +166,15 @@ struct CapacitorApp: App {
             SettingsView(updaterController: updaterController)
         }
 
+        Window("Delegation Review", id: "delegation-review") {
+            DelegationReviewWindow()
+                .environment(appState)
+                .preferredColorScheme(.dark)
+        }
+        .defaultSize(width: 900, height: 650)
+        .windowResizability(.contentMinSize)
+        .suppressedFromWindowMenu()
+
         #if DEBUG
             AppDebugWindows(appState: appState)
         #endif
@@ -171,6 +183,7 @@ struct CapacitorApp: App {
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     private var windowObserver: NSObjectProtocol?
+    weak var appState: AppState?
 
     func applicationDidFinishLaunching(_: Notification) {
         // Ensure the app can be activated and receive focus
@@ -193,6 +206,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 WindowAXDiagnostics.log(context: "didBecomeKey", window: window)
             }
         }
+    }
+
+    func applicationWillTerminate(_: Notification) {
+        appState?.shutdown()
     }
 
     /// Shows a custom About panel with the app icon and version info

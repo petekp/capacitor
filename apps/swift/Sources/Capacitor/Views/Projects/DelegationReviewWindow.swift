@@ -1,0 +1,845 @@
+import SwiftUI
+
+struct DelegationReviewWindow: View {
+    @Environment(AppState.self) var appState: AppState
+    @Environment(\.dismissWindow) private var dismissWindow
+
+    @State private var reviewBrief = ""
+    @State private var manifest: DelegationReviewManifest?
+    @State private var previousDecision: PreviousRoundDecision?
+    @State private var selectedDecision: DecisionOption?
+    @State private var note = ""
+    @State private var diffStat = ""
+    @State private var fullDiff = ""
+    @State private var showFullDiff = false
+    @State private var swiftChangesBannerDismissed = false
+    @State private var phase: ReviewPhase = .review
+    @State private var submittedDecisionLabel = ""
+    @State private var submittedTimestampLabel = ""
+    @State private var submittedProjectName = ""
+    @State private var autoCloseTask: _Concurrency.Task<Void, Never>?
+
+    private var target: AppState.ReviewWindowTarget? {
+        appState.reviewWindowTarget
+    }
+
+    private var delegation: RuntimeDelegationState? {
+        guard let target else { return nil }
+        return appState.delegationState(forPath: target.projectPath)
+    }
+
+    private var currentReview: RuntimeDelegationReview? {
+        delegation?.currentReview
+    }
+
+    private var project: Project? {
+        guard let target else { return nil }
+        return appState.projects.first { $0.path == target.projectPath }
+    }
+
+    private var milestoneNumber: Int {
+        guard let milestoneId = currentReview?.milestoneId else { return 1 }
+        return Int(milestoneId) ?? 1
+    }
+
+    private var isSubmitting: Bool {
+        if case .submitting = phase {
+            return true
+        }
+        return false
+    }
+
+    private var targetIdentity: String? {
+        guard let target else { return nil }
+        return "\(target.projectPath)#\(target.workerID)"
+    }
+
+    var body: some View {
+        Group {
+            if case .submitted = phase {
+                submittedReceiptView
+            } else if let project, let delegation, let currentReview {
+                HStack(spacing: 0) {
+                    contentPane(project: project, delegation: delegation, review: currentReview)
+                        .frame(minWidth: 400)
+
+                    Divider()
+                        .background(Color.white.opacity(0.08))
+
+                    decisionRail(project: project, delegation: delegation)
+                        .frame(width: 300)
+                }
+            } else {
+                VStack(spacing: 12) {
+                    if case let .failed(message) = phase {
+                        Text("Couldn't submit review")
+                            .font(AppTypography.sectionTitle)
+                            .foregroundColor(.white.opacity(0.65))
+                        Text(message)
+                            .font(AppTypography.body)
+                            .foregroundColor(.red.opacity(0.8))
+                    } else {
+                        Text("No active review")
+                            .font(AppTypography.sectionTitle)
+                            .foregroundColor(.white.opacity(0.65))
+                        Text("The review may have been completed or cancelled.")
+                            .font(AppTypography.body)
+                            .foregroundColor(.white.opacity(0.42))
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .background {
+            ZStack {
+                DarkFrostedGlass()
+                Color.black.opacity(0.15)
+            }
+            .ignoresSafeArea()
+        }
+        .accessibilityIdentifier(AccessibilityIdentifiers.delegationReviewIdentifier)
+        .task(id: currentReview?.manifestPath ?? "no-review") {
+            await loadReviewArtifacts()
+        }
+        .onChange(of: appState.reviewWindowTarget) { _, newValue in
+            if newValue == nil {
+                dismissWindow(id: "delegation-review")
+            }
+        }
+        .onChange(of: targetIdentity) { oldValue, newValue in
+            guard oldValue != newValue else { return }
+            autoCloseTask?.cancel()
+            if newValue != nil {
+                phase = .review
+                selectedDecision = nil
+                note = ""
+                submittedDecisionLabel = ""
+                submittedTimestampLabel = ""
+                submittedProjectName = ""
+            }
+        }
+        .onChange(of: delegation?.status) { _, newValue in
+            guard case .submitted = phase, newValue == "resume_failed" else { return }
+            autoCloseTask?.cancel()
+            phase = .failed("Couldn't resume the worker. The review stayed pending, your decision wasn't lost, and you can retry.")
+        }
+        .onDisappear {
+            autoCloseTask?.cancel()
+            appState.reviewWindowTarget = nil
+        }
+    }
+
+    // MARK: - Content Pane (left, ~65% width)
+
+    private func contentPane(
+        project: Project,
+        delegation: RuntimeDelegationState,
+        review: RuntimeDelegationReview,
+    ) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                // Header
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(project.name)
+                        .font(AppTypography.sectionTitle.monospaced())
+                        .foregroundColor(.white.opacity(0.92))
+
+                    HStack(spacing: 8) {
+                        Text("Delegation Review")
+                            .font(AppTypography.caption.weight(.bold))
+                            .tracking(2)
+                            .foregroundColor(.orange.opacity(0.85))
+
+                        if milestoneNumber > 1 {
+                            Text("Revision \(milestoneNumber)")
+                                .font(AppTypography.caption.weight(.medium))
+                                .foregroundColor(.white.opacity(0.5))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 2)
+                                .background(
+                                    Capsule()
+                                        .fill(Color.white.opacity(0.08)),
+                                )
+                        }
+                    }
+                }
+
+                // Summary
+                if let summary = manifest?.summary, !summary.isEmpty {
+                    Text(summary)
+                        .font(AppTypography.body)
+                        .foregroundColor(.white.opacity(0.82))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
+                // Metadata
+                HStack(spacing: 16) {
+                    metadataItem(
+                        label: "Milestone",
+                        value: review.milestoneId,
+                    )
+                    if let artifacts = manifest?.artifacts {
+                        metadataItem(
+                            label: "Artifacts",
+                            value: "\(artifacts.count)",
+                        )
+                    }
+                    metadataItem(
+                        label: "Worker",
+                        value: String(delegation.workerId.prefix(8)),
+                    )
+                }
+                .font(AppTypography.monoCaption)
+                .foregroundColor(.white.opacity(0.42))
+
+                // Swift changes banner
+                if manifest?.swiftChanges == true, !swiftChangesBannerDismissed {
+                    HStack(spacing: 10) {
+                        Image(systemName: "info.circle.fill")
+                            .font(AppTypography.bodySecondary)
+                            .foregroundColor(.blue.opacity(0.7))
+
+                        Text("This milestone includes Swift changes. The running app reflects the previous build.")
+                            .font(AppTypography.bodySecondary)
+                            .foregroundColor(.white.opacity(0.72))
+
+                        Spacer()
+
+                        Button(action: {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString("./scripts/dev/restart-alpha-stable.sh", forType: .string)
+                        }) {
+                            Text("Copy rebuild cmd")
+                                .font(AppTypography.caption.weight(.medium))
+                                .foregroundColor(.blue.opacity(0.8))
+                        }
+                        .buttonStyle(.plain)
+
+                        Button(action: {
+                            withAnimation(.easeOut(duration: 0.15)) {
+                                swiftChangesBannerDismissed = true
+                            }
+                        }) {
+                            Image(systemName: "xmark")
+                                .font(AppTypography.captionSmall)
+                                .foregroundColor(.white.opacity(0.35))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(12)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(Color.blue.opacity(0.08))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .strokeBorder(Color.blue.opacity(0.2), lineWidth: 1),
+                            ),
+                    )
+                }
+
+                Divider()
+                    .background(Color.white.opacity(0.08))
+
+                // Brief
+                VStack(alignment: .leading, spacing: 10) {
+                    sectionLabel("REVIEW BRIEF")
+
+                    if reviewBrief.isEmpty {
+                        Text("No review brief was found yet.")
+                            .font(AppTypography.body)
+                            .foregroundColor(.white.opacity(0.55))
+                    } else {
+                        MarkdownTextView(text: reviewBrief)
+                    }
+                }
+
+                // Artifacts
+                if let artifacts = manifest?.artifacts, !artifacts.isEmpty {
+                    VStack(alignment: .leading, spacing: 10) {
+                        sectionLabel("ARTIFACTS")
+
+                        VStack(spacing: 6) {
+                            ForEach(artifacts) { artifact in
+                                HStack(spacing: 10) {
+                                    Image(systemName: "doc.text")
+                                        .font(AppTypography.bodySecondary)
+                                        .foregroundColor(.white.opacity(0.45))
+
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text(artifact.label)
+                                            .font(AppTypography.bodySecondary.weight(.medium))
+                                            .foregroundColor(.white.opacity(0.88))
+                                        Text(artifact.path)
+                                            .font(AppTypography.monoCaption)
+                                            .foregroundColor(.white.opacity(0.4))
+                                            .textSelection(.enabled)
+                                    }
+
+                                    Spacer(minLength: 0)
+                                }
+                                .padding(10)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                        .fill(Color.white.opacity(0.04))
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                                .strokeBorder(Color.white.opacity(0.06), lineWidth: 0.5),
+                                        ),
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Media artifacts (screenshots, recordings, diagrams)
+                if let artifacts = manifest?.artifacts {
+                    let mediaArtifacts = artifacts.filter(\.isMedia)
+                    if !mediaArtifacts.isEmpty {
+                        VStack(alignment: .leading, spacing: 10) {
+                            sectionLabel("MEDIA")
+
+                            ForEach(mediaArtifacts) { artifact in
+                                switch artifact.artifactType {
+                                case .screenshot, .recording:
+                                    CaptureImageView(
+                                        filePath: artifact.path,
+                                        label: artifact.label,
+                                    )
+                                case .mermaid:
+                                    if let source = loadMermaidSource(path: artifact.path) {
+                                        LabeledMermaidView(
+                                            source: source,
+                                            label: artifact.label,
+                                        )
+                                    }
+                                default:
+                                    EmptyView()
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Changes diff
+                if !diffStat.isEmpty {
+                    VStack(alignment: .leading, spacing: 10) {
+                        sectionLabel("CHANGES")
+
+                        Text(diffStat)
+                            .font(AppTypography.monoCaption)
+                            .foregroundColor(.white.opacity(0.62))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .textSelection(.enabled)
+
+                        if !fullDiff.isEmpty {
+                            Button(action: {
+                                withAnimation(.easeInOut(duration: 0.15)) {
+                                    showFullDiff.toggle()
+                                }
+                            }) {
+                                HStack(spacing: 4) {
+                                    Image(systemName: showFullDiff ? "chevron.down" : "chevron.right")
+                                        .font(AppTypography.captionSmall)
+                                    Text(showFullDiff ? "Hide Full Diff" : "Show Full Diff")
+                                        .font(AppTypography.caption.weight(.medium))
+                                }
+                                .foregroundColor(.white.opacity(0.5))
+                            }
+                            .buttonStyle(.plain)
+
+                            if showFullDiff {
+                                ScrollView(.horizontal, showsIndicators: true) {
+                                    Text(fullDiff)
+                                        .font(AppTypography.monoCaption)
+                                        .foregroundColor(.white.opacity(0.72))
+                                        .textSelection(.enabled)
+                                }
+                                .frame(maxHeight: 400)
+                                .padding(12)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                        .fill(Color.black.opacity(0.3))
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                                .strokeBorder(Color.white.opacity(0.06), lineWidth: 0.5),
+                                        ),
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Previous round context
+                if let previousDecision {
+                    VStack(alignment: .leading, spacing: 10) {
+                        sectionLabel("PREVIOUS ROUND")
+
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack(spacing: 6) {
+                                Image(systemName: previousDecision.decision == "approve" ? "checkmark.circle" : "arrow.triangle.2.circlepath")
+                                    .font(AppTypography.caption)
+                                    .foregroundColor(previousDecision.decision == "approve" ? .green.opacity(0.7) : .orange.opacity(0.7))
+
+                                Text("Decision: \(previousDecision.decision)")
+                                    .font(AppTypography.bodySecondary.weight(.medium))
+                                    .foregroundColor(.white.opacity(0.72))
+                            }
+
+                            if let note = previousDecision.note, !note.isEmpty {
+                                Text(note)
+                                    .font(AppTypography.body)
+                                    .foregroundColor(.white.opacity(0.62))
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
+                        .padding(12)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill(Color.white.opacity(0.04))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                        .strokeBorder(Color.white.opacity(0.06), lineWidth: 0.5),
+                                ),
+                        )
+                    }
+                }
+            }
+            .padding(24)
+        }
+    }
+
+    // MARK: - Decision Rail (right, ~35% width)
+
+    private func decisionRail(
+        project: Project,
+        delegation: RuntimeDelegationState,
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Decision")
+                .font(AppTypography.cardTitle)
+                .foregroundColor(.white.opacity(0.72))
+
+            if case let .failed(message) = phase {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Retry needed")
+                        .font(AppTypography.bodySecondary.weight(.semibold))
+                        .foregroundColor(.white.opacity(0.88))
+
+                    Text(message)
+                        .font(AppTypography.caption)
+                        .foregroundColor(.red.opacity(0.8))
+
+                    Text("Your note is still here.")
+                        .font(AppTypography.caption)
+                        .foregroundColor(.white.opacity(0.42))
+                }
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color.red.opacity(0.08))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .strokeBorder(Color.red.opacity(0.24), lineWidth: 1),
+                        ),
+                )
+            }
+
+            decisionCard(
+                option: .approve,
+                title: manifest?.decisions?.approve?.label ?? "Approve",
+                description: manifest?.decisions?.approve?.description ?? "Ship this milestone and move on.",
+                icon: "checkmark.circle.fill",
+                accentColor: .green,
+            )
+
+            decisionCard(
+                option: .requestChanges,
+                title: manifest?.decisions?.requestChanges?.label ?? "Request Changes",
+                description: manifest?.decisions?.requestChanges?.description ?? "Worker will address your feedback and submit a new revision.",
+                icon: "arrow.triangle.2.circlepath",
+                accentColor: .orange,
+            )
+
+            decisionCard(
+                option: .writeResponse,
+                title: "Write a Response",
+                description: "Provide custom instructions to the worker.",
+                icon: "text.bubble",
+                accentColor: .blue,
+            )
+
+            if selectedDecision == .requestChanges || selectedDecision == .writeResponse {
+                TextEditor(text: $note)
+                    .font(AppTypography.body)
+                    .scrollContentBackground(.hidden)
+                    .padding(10)
+                    .frame(minHeight: 100)
+                    .disabled(isSubmitting)
+                    .accessibilityIdentifier(AccessibilityIdentifiers.delegationReviewNotesIdentifier)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(Color.white.opacity(0.05))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .strokeBorder(Color.white.opacity(0.1), lineWidth: 0.5),
+                            ),
+                    )
+            }
+
+            Spacer()
+
+            if let selectedDecision {
+                Button(action: {
+                    submitDecision(
+                        selectedDecision,
+                        project: project,
+                        delegation: delegation,
+                    )
+                }) {
+                    HStack(spacing: 8) {
+                        if isSubmitting {
+                            ProgressView()
+                                .controlSize(.small)
+                                .tint(selectedDecision == .approve ? Color.black.opacity(0.82) : Color.white.opacity(0.82))
+                        }
+
+                        Text(submitButtonTitle)
+                            .font(AppTypography.bodyMedium)
+                    }
+                    .foregroundColor(selectedDecision == .approve ? .black.opacity(0.88) : .white.opacity(0.92))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(selectedDecision == .approve ? Color.white.opacity(0.92) : Color.orange.opacity(0.65))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .strokeBorder(Color.white.opacity(0.12), lineWidth: 0.5),
+                            ),
+                    )
+                }
+                .buttonStyle(.plain)
+                .disabled(isSubmitting)
+                .accessibilityIdentifier(
+                    selectedDecision == .approve
+                        ? AccessibilityIdentifiers.delegationReviewApproveIdentifier
+                        : AccessibilityIdentifiers.delegationReviewRequestChangesIdentifier,
+                )
+            }
+        }
+        .padding(20)
+        .background(Color.black.opacity(0.2))
+    }
+
+    // MARK: - Decision Card
+
+    private func decisionCard(
+        option: DecisionOption,
+        title: String,
+        description: String,
+        icon: String,
+        accentColor: Color,
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Button(action: {
+                guard !isSubmitting else { return }
+                withAnimation(.easeInOut(duration: 0.15)) {
+                    selectedDecision = option
+                }
+            }) {
+                HStack(spacing: 12) {
+                    Image(systemName: icon)
+                        .font(AppTypography.sectionTitle)
+                        .foregroundColor(selectedDecision == option ? accentColor : .white.opacity(0.4))
+
+                    Text(title)
+                        .font(AppTypography.bodySecondary.weight(.semibold))
+                        .foregroundColor(.white.opacity(0.92))
+
+                    Spacer()
+                }
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(selectedDecision == option ? accentColor.opacity(0.12) : Color.white.opacity(0.04))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .strokeBorder(
+                                    selectedDecision == option ? accentColor.opacity(0.4) : Color.white.opacity(0.06),
+                                    lineWidth: 0.5,
+                                ),
+                        ),
+                )
+            }
+            .buttonStyle(.plain)
+            .disabled(isSubmitting)
+
+            Text(description)
+                .font(AppTypography.caption)
+                .foregroundColor(.white.opacity(0.45))
+                .padding(.horizontal, 4)
+        }
+    }
+
+    // MARK: - Helpers
+
+    private var submitButtonTitle: String {
+        switch phase {
+        case .review:
+            "Submit Decision"
+        case .submitting:
+            "Submitting..."
+        case .submitted:
+            "Submitted"
+        case .failed:
+            "Retry"
+        }
+    }
+
+    private var submittedReceiptView: some View {
+        VStack {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 10) {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                        .font(AppTypography.sectionTitle.weight(.semibold))
+                        .foregroundColor(.blue.opacity(0.7))
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(submittedProjectName)
+                            .font(AppTypography.cardTitle.monospaced())
+                            .foregroundColor(.white.opacity(0.88))
+
+                        Text("Feedback sent to worker")
+                            .font(AppTypography.sectionTitle)
+                            .foregroundColor(.white.opacity(0.82))
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(submittedDecisionLabel)
+                        .font(AppTypography.bodySecondary.weight(.medium))
+                        .foregroundColor(.white.opacity(0.65))
+
+                    Text(submittedTimestampLabel)
+                        .font(AppTypography.monoCaption)
+                        .foregroundColor(.white.opacity(0.42))
+
+                    Text("The worker is resuming in the background.")
+                        .font(AppTypography.body)
+                        .foregroundColor(.white.opacity(0.65))
+                }
+            }
+            .padding(24)
+            .frame(maxWidth: 420, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(Color.black.opacity(0.2))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .strokeBorder(Color.white.opacity(0.08), lineWidth: 0.5),
+                    ),
+            )
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(32)
+    }
+
+    private func metadataItem(label: String, value: String) -> some View {
+        HStack(spacing: 4) {
+            Text(label + ":")
+                .foregroundColor(.white.opacity(0.35))
+            Text(value)
+                .foregroundColor(.white.opacity(0.55))
+        }
+    }
+
+    private func sectionLabel(_ title: String) -> some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(Color.orange.opacity(0.6))
+                .frame(width: 4, height: 4)
+
+            Text(title)
+                .font(AppTypography.caption.weight(.bold))
+                .tracking(2)
+                .foregroundColor(.white.opacity(0.45))
+        }
+    }
+
+    private func submitDecision(
+        _ selectedDecision: DecisionOption,
+        project: Project,
+        delegation: RuntimeDelegationState,
+    ) {
+        let decision: DelegationLoopManager.ReviewDecision = selectedDecision == .approve
+            ? .approve
+            : .requestChanges
+        let decisionLabel = decisionTitle(for: selectedDecision)
+
+        autoCloseTask?.cancel()
+        phase = .submitting
+
+        _Concurrency.Task { @MainActor in
+            do {
+                try await appState.submitDelegationReview(
+                    for: project,
+                    delegation: delegation,
+                    decision: decision,
+                    note: note,
+                    fromWindow: true,
+                )
+                submittedProjectName = project.name
+                submittedDecisionLabel = decisionLabel
+                submittedTimestampLabel = Self.submissionTimestampLabel(for: Date())
+                phase = .submitted
+                scheduleAutoClose()
+            } catch {
+                phase = .failed(DelegationUserFacingMessage.reviewFailure(for: error))
+            }
+        }
+    }
+
+    private func decisionTitle(for option: DecisionOption) -> String {
+        switch option {
+        case .approve:
+            manifest?.decisions?.approve?.label ?? "Approve"
+        case .requestChanges:
+            manifest?.decisions?.requestChanges?.label ?? "Request Changes"
+        case .writeResponse:
+            "Write a Response"
+        }
+    }
+
+    private func scheduleAutoClose() {
+        autoCloseTask?.cancel()
+        autoCloseTask = _Concurrency.Task { @MainActor in
+            try? await _Concurrency.Task.sleep(nanoseconds: 2_000_000_000)
+            guard case .submitted = phase else { return }
+            appState.reviewWindowTarget = nil
+        }
+    }
+
+    private static func submissionTimestampLabel(for date: Date) -> String {
+        "Submitted at \(submittedAtFormatter.string(from: date))"
+    }
+
+    // MARK: - Data Loading
+
+    private func loadReviewArtifacts() async {
+        guard let currentReview else {
+            await MainActor.run {
+                reviewBrief = ""
+                manifest = nil
+                previousDecision = nil
+                diffStat = ""
+                fullDiff = ""
+                showFullDiff = false
+                swiftChangesBannerDismissed = false
+            }
+            return
+        }
+
+        let brief = (try? String(contentsOfFile: currentReview.briefPath, encoding: .utf8)) ?? ""
+        let manifestData = try? Data(contentsOf: URL(fileURLWithPath: currentReview.manifestPath))
+        let decodedManifest = manifestData.flatMap {
+            try? JSONDecoder().decode(DelegationReviewManifest.self, from: $0)
+        }
+
+        // Load previous round context
+        let prevDecision = loadPreviousRoundDecision(currentMilestoneId: currentReview.milestoneId)
+
+        // Load worktree diff
+        let worktreePath = delegation?.worktreePath
+        let stat = worktreePath.flatMap { Self.runGitDiff(in: $0, stat: true) } ?? ""
+        let diff = worktreePath.flatMap { Self.runGitDiff(in: $0, stat: false) } ?? ""
+
+        await MainActor.run {
+            reviewBrief = brief
+            manifest = decodedManifest
+            previousDecision = prevDecision
+            diffStat = stat
+            fullDiff = diff
+            showFullDiff = false
+            swiftChangesBannerDismissed = false
+        }
+    }
+
+    private static func runGitDiff(in worktreePath: String, stat: Bool) -> String? {
+        let process = Process()
+        let pipe = Pipe()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        var arguments = ["diff", "HEAD"]
+        if stat {
+            arguments.append("--stat")
+        }
+        process.arguments = arguments
+        process.currentDirectoryURL = URL(fileURLWithPath: worktreePath)
+        process.standardOutput = pipe
+        process.standardError = FileHandle.nullDevice
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            return nil
+        }
+
+        guard process.terminationStatus == 0 else { return nil }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        let output = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return output?.isEmpty == true ? nil : output
+    }
+
+    private func loadMermaidSource(path: String) -> String? {
+        try? String(contentsOfFile: path, encoding: .utf8)
+    }
+
+    private func loadPreviousRoundDecision(currentMilestoneId: String) -> PreviousRoundDecision? {
+        guard let currentNum = Int(currentMilestoneId), currentNum > 1 else { return nil }
+        let previousId = String(format: "%02d", currentNum - 1)
+
+        guard let currentReview,
+              let manifestPath = URL(string: currentReview.manifestPath)?.deletingLastPathComponent().deletingLastPathComponent()
+        else { return nil }
+
+        let previousDecisionPath = manifestPath
+            .appendingPathComponent(previousId, isDirectory: true)
+            .appendingPathComponent("decision.json")
+
+        guard let data = try? Data(contentsOf: previousDecisionPath),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return nil }
+
+        return PreviousRoundDecision(
+            decision: json["decision"] as? String ?? "unknown",
+            note: json["note"] as? String,
+        )
+    }
+}
+
+// MARK: - Supporting Types
+
+private enum DecisionOption {
+    case approve
+    case requestChanges
+    case writeResponse
+}
+
+private enum ReviewPhase: Equatable {
+    case review
+    case submitting
+    case submitted
+    case failed(String)
+}
+
+private struct PreviousRoundDecision {
+    let decision: String
+    let note: String?
+}
+
+private let submittedAtFormatter: DateFormatter = {
+    let formatter = DateFormatter()
+    formatter.dateStyle = .none
+    formatter.timeStyle = .short
+    return formatter
+}()
