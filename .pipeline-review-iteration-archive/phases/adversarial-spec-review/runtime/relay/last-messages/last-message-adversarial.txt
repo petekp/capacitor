@@ -1,9 +1,0 @@
-Wrote the adversarial review to [review-findings-adversarial.md](/Users/petepetrash/Code/capacitor/.pipeline/phases/adversarial-spec-review/runtime/relay/review-findings/review-findings-adversarial.md) and the execution/verification handoff to [handoff-adversarial.md](/Users/petepetrash/Code/capacitor/.pipeline/phases/adversarial-spec-review/runtime/relay/handoffs/handoff-adversarial.md).
-
-The biggest problems I found are:
-- The spec’s “preserve `decision.json` on disk after resume failure” path conflicts with its own active-milestone invariant, so the review can look recovered in memory and then disappear after restart.
-- The design still trusts the worker to obey milestone numbering; wrong directories, skipped numbers, or `completion.json` written alongside a new milestone can wedge the loop or skip review entirely.
-- There’s no stuck/protocol-violation state, so incomplete milestones and non-terminating workers can leave a delegation in permanent `working`.
-- The standalone `Window(id: "delegation-review")` plan is missing a per-project window state model and clashes with the current main-window navigation flow.
-
-Verification was clean in this environment: `cargo fmt --check`, `cargo clippy`, both Rust test commands, `swift test`, and `./scripts/verify/verify.sh --layers 1,2` all passed. `./scripts/verify/verify.sh --grade` also passed, but only at grade `C` with 12 pre-existing elegance warnings; there were no `SANDBOX_LIMITED` failures.

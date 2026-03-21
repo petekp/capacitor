@@ -392,6 +392,11 @@ RustBuffer uniffi_capacitor_core_fn_method_coreruntime_mutate_idea(void*_Nonnull
 RustBuffer uniffi_capacitor_core_fn_method_coreruntime_mutate_project(void*_Nonnull ptr, RustBuffer command, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CAPACITOR_CORE_FN_METHOD_CORERUNTIME_MUTATE_RUN
+#define UNIFFI_FFIDEF_UNIFFI_CAPACITOR_CORE_FN_METHOD_CORERUNTIME_MUTATE_RUN
+RustBuffer uniffi_capacitor_core_fn_method_coreruntime_mutate_run(void*_Nonnull ptr, RustBuffer command, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CAPACITOR_CORE_FN_METHOD_CORERUNTIME_MUTATE_WORKTREE
 #define UNIFFI_FFIDEF_UNIFFI_CAPACITOR_CORE_FN_METHOD_CORERUNTIME_MUTATE_WORKTREE
 RustBuffer uniffi_capacitor_core_fn_method_coreruntime_mutate_worktree(void*_Nonnull ptr, RustBuffer command, RustCallStatus *_Nonnull out_status
@@ -873,6 +878,12 @@ uint16_t uniffi_capacitor_core_checksum_method_coreruntime_mutate_idea(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_CAPACITOR_CORE_CHECKSUM_METHOD_CORERUNTIME_MUTATE_PROJECT
 #define UNIFFI_FFIDEF_UNIFFI_CAPACITOR_CORE_CHECKSUM_METHOD_CORERUNTIME_MUTATE_PROJECT
 uint16_t uniffi_capacitor_core_checksum_method_coreruntime_mutate_project(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CAPACITOR_CORE_CHECKSUM_METHOD_CORERUNTIME_MUTATE_RUN
+#define UNIFFI_FFIDEF_UNIFFI_CAPACITOR_CORE_CHECKSUM_METHOD_CORERUNTIME_MUTATE_RUN
+uint16_t uniffi_capacitor_core_checksum_method_coreruntime_mutate_run(void
     
 );
 #endif

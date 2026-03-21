@@ -1,8 +1,0 @@
-{
-  "adapter_id": "codex-direct",
-  "phase_id": "phase-003-execute",
-  "status": "complete",
-  "last_checkpoint_at": "2026-03-21T01:55:00Z",
-  "updated_at": "2026-03-21T01:55:00Z",
-  "summary": "Design doc written at docs/superpowers/specs/2026-03-20-orchestrator-card-design.md"
-}

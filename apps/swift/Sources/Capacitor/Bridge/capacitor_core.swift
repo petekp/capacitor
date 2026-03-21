@@ -557,6 +557,8 @@ public protocol CoreRuntimeProtocol: AnyObject {
 
     func mutateProject(command: MutateProjectCommand) throws -> MutationOutcome
 
+    func mutateRun(command: MutateRunCommand) throws -> MutationOutcome
+
     func mutateWorktree(command: MutateWorktreeCommand) throws -> MutationOutcome
 
     func removeHooks() throws -> InstallResult
@@ -804,6 +806,13 @@ open class CoreRuntime:
         })
     }
 
+    open func mutateRun(command: MutateRunCommand) throws -> MutationOutcome {
+        return try FfiConverterTypeMutationOutcome.lift(rustCallWithError(FfiConverterTypeCoreRuntimeError.lift) {
+            uniffi_capacitor_core_fn_method_coreruntime_mutate_run(self.uniffiClonePointer(),
+                                                                   FfiConverterTypeMutateRunCommand.lower(command), $0)
+        })
+    }
+
     open func mutateWorktree(command: MutateWorktreeCommand) throws -> MutationOutcome {
         return try FfiConverterTypeMutationOutcome.lift(rustCallWithError(FfiConverterTypeCoreRuntimeError.lift) {
             uniffi_capacitor_core_fn_method_coreruntime_mutate_worktree(self.uniffiClonePointer(),
@@ -945,23 +954,158 @@ public func FfiConverterTypeCoreRuntime_lower(_ value: CoreRuntime) -> UnsafeMut
     return FfiConverterTypeCoreRuntime.lower(value)
 }
 
+public struct ActiveCheckpoint {
+    public var id: String
+    public var phaseId: String
+    public var kind: CheckpointKind
+    public var status: CheckpointStatus
+    public var title: String
+    public var summary: String?
+    public var briefPath: String?
+    public var manifestPath: String?
+    public var decision: CheckpointDecision?
+    public var createdAt: String
+    public var decidedAt: String?
+
+    /// Default memberwise initializers are never public by default, so we
+    /// declare one manually.
+    public init(id: String, phaseId: String, kind: CheckpointKind, status: CheckpointStatus, title: String, summary: String?, briefPath: String?, manifestPath: String?, decision: CheckpointDecision?, createdAt: String, decidedAt: String?) {
+        self.id = id
+        self.phaseId = phaseId
+        self.kind = kind
+        self.status = status
+        self.title = title
+        self.summary = summary
+        self.briefPath = briefPath
+        self.manifestPath = manifestPath
+        self.decision = decision
+        self.createdAt = createdAt
+        self.decidedAt = decidedAt
+    }
+}
+
+extension ActiveCheckpoint: Equatable, Hashable {
+    public static func == (lhs: ActiveCheckpoint, rhs: ActiveCheckpoint) -> Bool {
+        if lhs.id != rhs.id {
+            return false
+        }
+        if lhs.phaseId != rhs.phaseId {
+            return false
+        }
+        if lhs.kind != rhs.kind {
+            return false
+        }
+        if lhs.status != rhs.status {
+            return false
+        }
+        if lhs.title != rhs.title {
+            return false
+        }
+        if lhs.summary != rhs.summary {
+            return false
+        }
+        if lhs.briefPath != rhs.briefPath {
+            return false
+        }
+        if lhs.manifestPath != rhs.manifestPath {
+            return false
+        }
+        if lhs.decision != rhs.decision {
+            return false
+        }
+        if lhs.createdAt != rhs.createdAt {
+            return false
+        }
+        if lhs.decidedAt != rhs.decidedAt {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+        hasher.combine(phaseId)
+        hasher.combine(kind)
+        hasher.combine(status)
+        hasher.combine(title)
+        hasher.combine(summary)
+        hasher.combine(briefPath)
+        hasher.combine(manifestPath)
+        hasher.combine(decision)
+        hasher.combine(createdAt)
+        hasher.combine(decidedAt)
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeActiveCheckpoint: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ActiveCheckpoint {
+        return
+            try ActiveCheckpoint(
+                id: FfiConverterString.read(from: &buf),
+                phaseId: FfiConverterString.read(from: &buf),
+                kind: FfiConverterTypeCheckpointKind.read(from: &buf),
+                status: FfiConverterTypeCheckpointStatus.read(from: &buf),
+                title: FfiConverterString.read(from: &buf),
+                summary: FfiConverterOptionString.read(from: &buf),
+                briefPath: FfiConverterOptionString.read(from: &buf),
+                manifestPath: FfiConverterOptionString.read(from: &buf),
+                decision: FfiConverterOptionTypeCheckpointDecision.read(from: &buf),
+                createdAt: FfiConverterString.read(from: &buf),
+                decidedAt: FfiConverterOptionString.read(from: &buf)
+            )
+    }
+
+    public static func write(_ value: ActiveCheckpoint, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterString.write(value.phaseId, into: &buf)
+        FfiConverterTypeCheckpointKind.write(value.kind, into: &buf)
+        FfiConverterTypeCheckpointStatus.write(value.status, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterOptionString.write(value.summary, into: &buf)
+        FfiConverterOptionString.write(value.briefPath, into: &buf)
+        FfiConverterOptionString.write(value.manifestPath, into: &buf)
+        FfiConverterOptionTypeCheckpointDecision.write(value.decision, into: &buf)
+        FfiConverterString.write(value.createdAt, into: &buf)
+        FfiConverterOptionString.write(value.decidedAt, into: &buf)
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeActiveCheckpoint_lift(_ buf: RustBuffer) throws -> ActiveCheckpoint {
+    return try FfiConverterTypeActiveCheckpoint.lift(buf)
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeActiveCheckpoint_lower(_ value: ActiveCheckpoint) -> RustBuffer {
+    return FfiConverterTypeActiveCheckpoint.lower(value)
+}
+
 public struct AppSnapshot {
     public var projects: [ProjectSummary]
     public var sessions: [SessionSummary]
     public var shells: [ShellSignal]
     public var routing: [RoutingView]
     public var delegations: [ProjectDelegationState]
+    public var runs: [RunState]
     public var diagnostics: DiagnosticsSummary
     public var generatedAt: String
 
     /// Default memberwise initializers are never public by default, so we
     /// declare one manually.
-    public init(projects: [ProjectSummary], sessions: [SessionSummary], shells: [ShellSignal], routing: [RoutingView], delegations: [ProjectDelegationState], diagnostics: DiagnosticsSummary, generatedAt: String) {
+    public init(projects: [ProjectSummary], sessions: [SessionSummary], shells: [ShellSignal], routing: [RoutingView], delegations: [ProjectDelegationState], runs: [RunState], diagnostics: DiagnosticsSummary, generatedAt: String) {
         self.projects = projects
         self.sessions = sessions
         self.shells = shells
         self.routing = routing
         self.delegations = delegations
+        self.runs = runs
         self.diagnostics = diagnostics
         self.generatedAt = generatedAt
     }
@@ -984,6 +1128,9 @@ extension AppSnapshot: Equatable, Hashable {
         if lhs.delegations != rhs.delegations {
             return false
         }
+        if lhs.runs != rhs.runs {
+            return false
+        }
         if lhs.diagnostics != rhs.diagnostics {
             return false
         }
@@ -999,6 +1146,7 @@ extension AppSnapshot: Equatable, Hashable {
         hasher.combine(shells)
         hasher.combine(routing)
         hasher.combine(delegations)
+        hasher.combine(runs)
         hasher.combine(diagnostics)
         hasher.combine(generatedAt)
     }
@@ -1016,6 +1164,7 @@ public struct FfiConverterTypeAppSnapshot: FfiConverterRustBuffer {
                 shells: FfiConverterSequenceTypeShellSignal.read(from: &buf),
                 routing: FfiConverterSequenceTypeRoutingView.read(from: &buf),
                 delegations: FfiConverterSequenceTypeProjectDelegationState.read(from: &buf),
+                runs: FfiConverterSequenceTypeRunState.read(from: &buf),
                 diagnostics: FfiConverterTypeDiagnosticsSummary.read(from: &buf),
                 generatedAt: FfiConverterString.read(from: &buf)
             )
@@ -1027,6 +1176,7 @@ public struct FfiConverterTypeAppSnapshot: FfiConverterRustBuffer {
         FfiConverterSequenceTypeShellSignal.write(value.shells, into: &buf)
         FfiConverterSequenceTypeRoutingView.write(value.routing, into: &buf)
         FfiConverterSequenceTypeProjectDelegationState.write(value.delegations, into: &buf)
+        FfiConverterSequenceTypeRunState.write(value.runs, into: &buf)
         FfiConverterTypeDiagnosticsSummary.write(value.diagnostics, into: &buf)
         FfiConverterString.write(value.generatedAt, into: &buf)
     }
@@ -1260,6 +1410,152 @@ public func FfiConverterTypeCachedProjectStats_lift(_ buf: RustBuffer) throws ->
 #endif
 public func FfiConverterTypeCachedProjectStats_lower(_ value: CachedProjectStats) -> RustBuffer {
     return FfiConverterTypeCachedProjectStats.lower(value)
+}
+
+public struct CheckpointDecision {
+    public var action: String
+    public var note: String?
+
+    /// Default memberwise initializers are never public by default, so we
+    /// declare one manually.
+    public init(action: String, note: String?) {
+        self.action = action
+        self.note = note
+    }
+}
+
+extension CheckpointDecision: Equatable, Hashable {
+    public static func == (lhs: CheckpointDecision, rhs: CheckpointDecision) -> Bool {
+        if lhs.action != rhs.action {
+            return false
+        }
+        if lhs.note != rhs.note {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(action)
+        hasher.combine(note)
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCheckpointDecision: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CheckpointDecision {
+        return
+            try CheckpointDecision(
+                action: FfiConverterString.read(from: &buf),
+                note: FfiConverterOptionString.read(from: &buf)
+            )
+    }
+
+    public static func write(_ value: CheckpointDecision, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.action, into: &buf)
+        FfiConverterOptionString.write(value.note, into: &buf)
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCheckpointDecision_lift(_ buf: RustBuffer) throws -> CheckpointDecision {
+    return try FfiConverterTypeCheckpointDecision.lift(buf)
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCheckpointDecision_lower(_ value: CheckpointDecision) -> RustBuffer {
+    return FfiConverterTypeCheckpointDecision.lower(value)
+}
+
+public struct CheckpointPacket {
+    public var kind: CheckpointKind
+    public var title: String
+    public var summary: String?
+    public var briefPath: String?
+    public var manifestPath: String?
+
+    /// Default memberwise initializers are never public by default, so we
+    /// declare one manually.
+    public init(kind: CheckpointKind, title: String, summary: String?, briefPath: String?, manifestPath: String?) {
+        self.kind = kind
+        self.title = title
+        self.summary = summary
+        self.briefPath = briefPath
+        self.manifestPath = manifestPath
+    }
+}
+
+extension CheckpointPacket: Equatable, Hashable {
+    public static func == (lhs: CheckpointPacket, rhs: CheckpointPacket) -> Bool {
+        if lhs.kind != rhs.kind {
+            return false
+        }
+        if lhs.title != rhs.title {
+            return false
+        }
+        if lhs.summary != rhs.summary {
+            return false
+        }
+        if lhs.briefPath != rhs.briefPath {
+            return false
+        }
+        if lhs.manifestPath != rhs.manifestPath {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(kind)
+        hasher.combine(title)
+        hasher.combine(summary)
+        hasher.combine(briefPath)
+        hasher.combine(manifestPath)
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCheckpointPacket: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CheckpointPacket {
+        return
+            try CheckpointPacket(
+                kind: FfiConverterTypeCheckpointKind.read(from: &buf),
+                title: FfiConverterString.read(from: &buf),
+                summary: FfiConverterOptionString.read(from: &buf),
+                briefPath: FfiConverterOptionString.read(from: &buf),
+                manifestPath: FfiConverterOptionString.read(from: &buf)
+            )
+    }
+
+    public static func write(_ value: CheckpointPacket, into buf: inout [UInt8]) {
+        FfiConverterTypeCheckpointKind.write(value.kind, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterOptionString.write(value.summary, into: &buf)
+        FfiConverterOptionString.write(value.briefPath, into: &buf)
+        FfiConverterOptionString.write(value.manifestPath, into: &buf)
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCheckpointPacket_lift(_ buf: RustBuffer) throws -> CheckpointPacket {
+    return try FfiConverterTypeCheckpointPacket.lift(buf)
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCheckpointPacket_lower(_ value: CheckpointPacket) -> RustBuffer {
+    return FfiConverterTypeCheckpointPacket.lower(value)
 }
 
 /**
@@ -2918,6 +3214,99 @@ public func FfiConverterTypeInstallResult_lower(_ value: InstallResult) -> RustB
     return FfiConverterTypeInstallResult.lower(value)
 }
 
+public struct MethodTemplate {
+    public var id: String
+    public var name: String
+    public var description: String
+    public var taskArchetype: String
+    public var defaultInvolvement: InvolvementLevel
+    public var phases: [PhaseTemplate]
+
+    /// Default memberwise initializers are never public by default, so we
+    /// declare one manually.
+    public init(id: String, name: String, description: String, taskArchetype: String, defaultInvolvement: InvolvementLevel, phases: [PhaseTemplate]) {
+        self.id = id
+        self.name = name
+        self.description = description
+        self.taskArchetype = taskArchetype
+        self.defaultInvolvement = defaultInvolvement
+        self.phases = phases
+    }
+}
+
+extension MethodTemplate: Equatable, Hashable {
+    public static func == (lhs: MethodTemplate, rhs: MethodTemplate) -> Bool {
+        if lhs.id != rhs.id {
+            return false
+        }
+        if lhs.name != rhs.name {
+            return false
+        }
+        if lhs.description != rhs.description {
+            return false
+        }
+        if lhs.taskArchetype != rhs.taskArchetype {
+            return false
+        }
+        if lhs.defaultInvolvement != rhs.defaultInvolvement {
+            return false
+        }
+        if lhs.phases != rhs.phases {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+        hasher.combine(name)
+        hasher.combine(description)
+        hasher.combine(taskArchetype)
+        hasher.combine(defaultInvolvement)
+        hasher.combine(phases)
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeMethodTemplate: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MethodTemplate {
+        return
+            try MethodTemplate(
+                id: FfiConverterString.read(from: &buf),
+                name: FfiConverterString.read(from: &buf),
+                description: FfiConverterString.read(from: &buf),
+                taskArchetype: FfiConverterString.read(from: &buf),
+                defaultInvolvement: FfiConverterTypeInvolvementLevel.read(from: &buf),
+                phases: FfiConverterSequenceTypePhaseTemplate.read(from: &buf)
+            )
+    }
+
+    public static func write(_ value: MethodTemplate, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterString.write(value.description, into: &buf)
+        FfiConverterString.write(value.taskArchetype, into: &buf)
+        FfiConverterTypeInvolvementLevel.write(value.defaultInvolvement, into: &buf)
+        FfiConverterSequenceTypePhaseTemplate.write(value.phases, into: &buf)
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMethodTemplate_lift(_ buf: RustBuffer) throws -> MethodTemplate {
+    return try FfiConverterTypeMethodTemplate.lift(buf)
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMethodTemplate_lower(_ value: MethodTemplate) -> RustBuffer {
+    return FfiConverterTypeMethodTemplate.lower(value)
+}
+
 public struct MutateDelegationCommand {
     public var kind: DelegationMutationKind
     public var projectPath: String
@@ -3221,6 +3610,163 @@ public func FfiConverterTypeMutateProjectCommand_lower(_ value: MutateProjectCom
     return FfiConverterTypeMutateProjectCommand.lower(value)
 }
 
+public struct MutateRunCommand {
+    public var kind: RunMutationKind
+    public var projectPath: String
+    public var runId: String
+    public var methodId: String?
+    public var involvement: InvolvementLevel?
+    public var checkpointKind: CheckpointKind?
+    public var checkpointTitle: String?
+    public var checkpointSummary: String?
+    public var checkpointBriefPath: String?
+    public var checkpointManifestPath: String?
+    public var decisionAction: String?
+    public var decisionNote: String?
+    public var sessionId: String?
+    public var delegationWorkerId: String?
+
+    /// Default memberwise initializers are never public by default, so we
+    /// declare one manually.
+    public init(kind: RunMutationKind, projectPath: String, runId: String, methodId: String?, involvement: InvolvementLevel?, checkpointKind: CheckpointKind?, checkpointTitle: String?, checkpointSummary: String?, checkpointBriefPath: String?, checkpointManifestPath: String?, decisionAction: String?, decisionNote: String?, sessionId: String?, delegationWorkerId: String?) {
+        self.kind = kind
+        self.projectPath = projectPath
+        self.runId = runId
+        self.methodId = methodId
+        self.involvement = involvement
+        self.checkpointKind = checkpointKind
+        self.checkpointTitle = checkpointTitle
+        self.checkpointSummary = checkpointSummary
+        self.checkpointBriefPath = checkpointBriefPath
+        self.checkpointManifestPath = checkpointManifestPath
+        self.decisionAction = decisionAction
+        self.decisionNote = decisionNote
+        self.sessionId = sessionId
+        self.delegationWorkerId = delegationWorkerId
+    }
+}
+
+extension MutateRunCommand: Equatable, Hashable {
+    public static func == (lhs: MutateRunCommand, rhs: MutateRunCommand) -> Bool {
+        if lhs.kind != rhs.kind {
+            return false
+        }
+        if lhs.projectPath != rhs.projectPath {
+            return false
+        }
+        if lhs.runId != rhs.runId {
+            return false
+        }
+        if lhs.methodId != rhs.methodId {
+            return false
+        }
+        if lhs.involvement != rhs.involvement {
+            return false
+        }
+        if lhs.checkpointKind != rhs.checkpointKind {
+            return false
+        }
+        if lhs.checkpointTitle != rhs.checkpointTitle {
+            return false
+        }
+        if lhs.checkpointSummary != rhs.checkpointSummary {
+            return false
+        }
+        if lhs.checkpointBriefPath != rhs.checkpointBriefPath {
+            return false
+        }
+        if lhs.checkpointManifestPath != rhs.checkpointManifestPath {
+            return false
+        }
+        if lhs.decisionAction != rhs.decisionAction {
+            return false
+        }
+        if lhs.decisionNote != rhs.decisionNote {
+            return false
+        }
+        if lhs.sessionId != rhs.sessionId {
+            return false
+        }
+        if lhs.delegationWorkerId != rhs.delegationWorkerId {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(kind)
+        hasher.combine(projectPath)
+        hasher.combine(runId)
+        hasher.combine(methodId)
+        hasher.combine(involvement)
+        hasher.combine(checkpointKind)
+        hasher.combine(checkpointTitle)
+        hasher.combine(checkpointSummary)
+        hasher.combine(checkpointBriefPath)
+        hasher.combine(checkpointManifestPath)
+        hasher.combine(decisionAction)
+        hasher.combine(decisionNote)
+        hasher.combine(sessionId)
+        hasher.combine(delegationWorkerId)
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeMutateRunCommand: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MutateRunCommand {
+        return
+            try MutateRunCommand(
+                kind: FfiConverterTypeRunMutationKind.read(from: &buf),
+                projectPath: FfiConverterString.read(from: &buf),
+                runId: FfiConverterString.read(from: &buf),
+                methodId: FfiConverterOptionString.read(from: &buf),
+                involvement: FfiConverterOptionTypeInvolvementLevel.read(from: &buf),
+                checkpointKind: FfiConverterOptionTypeCheckpointKind.read(from: &buf),
+                checkpointTitle: FfiConverterOptionString.read(from: &buf),
+                checkpointSummary: FfiConverterOptionString.read(from: &buf),
+                checkpointBriefPath: FfiConverterOptionString.read(from: &buf),
+                checkpointManifestPath: FfiConverterOptionString.read(from: &buf),
+                decisionAction: FfiConverterOptionString.read(from: &buf),
+                decisionNote: FfiConverterOptionString.read(from: &buf),
+                sessionId: FfiConverterOptionString.read(from: &buf),
+                delegationWorkerId: FfiConverterOptionString.read(from: &buf)
+            )
+    }
+
+    public static func write(_ value: MutateRunCommand, into buf: inout [UInt8]) {
+        FfiConverterTypeRunMutationKind.write(value.kind, into: &buf)
+        FfiConverterString.write(value.projectPath, into: &buf)
+        FfiConverterString.write(value.runId, into: &buf)
+        FfiConverterOptionString.write(value.methodId, into: &buf)
+        FfiConverterOptionTypeInvolvementLevel.write(value.involvement, into: &buf)
+        FfiConverterOptionTypeCheckpointKind.write(value.checkpointKind, into: &buf)
+        FfiConverterOptionString.write(value.checkpointTitle, into: &buf)
+        FfiConverterOptionString.write(value.checkpointSummary, into: &buf)
+        FfiConverterOptionString.write(value.checkpointBriefPath, into: &buf)
+        FfiConverterOptionString.write(value.checkpointManifestPath, into: &buf)
+        FfiConverterOptionString.write(value.decisionAction, into: &buf)
+        FfiConverterOptionString.write(value.decisionNote, into: &buf)
+        FfiConverterOptionString.write(value.sessionId, into: &buf)
+        FfiConverterOptionString.write(value.delegationWorkerId, into: &buf)
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMutateRunCommand_lift(_ buf: RustBuffer) throws -> MutateRunCommand {
+    return try FfiConverterTypeMutateRunCommand.lift(buf)
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMutateRunCommand_lower(_ value: MutateRunCommand) -> RustBuffer {
+    return FfiConverterTypeMutateRunCommand.lower(value)
+}
+
 public struct MutateWorktreeCommand {
     public var kind: WorktreeMutationKind
     public var repoPath: String
@@ -3445,6 +3991,192 @@ public func FfiConverterTypeNewProjectRequest_lift(_ buf: RustBuffer) throws -> 
 #endif
 public func FfiConverterTypeNewProjectRequest_lower(_ value: NewProjectRequest) -> RustBuffer {
     return FfiConverterTypeNewProjectRequest.lower(value)
+}
+
+public struct PhaseInstance {
+    public var id: String
+    public var templateId: String
+    public var name: String
+    public var status: PhaseStatus
+    public var checkpointPolicy: String
+    public var skillHint: String?
+    public var startedAt: String?
+    public var completedAt: String?
+
+    /// Default memberwise initializers are never public by default, so we
+    /// declare one manually.
+    public init(id: String, templateId: String, name: String, status: PhaseStatus, checkpointPolicy: String, skillHint: String?, startedAt: String?, completedAt: String?) {
+        self.id = id
+        self.templateId = templateId
+        self.name = name
+        self.status = status
+        self.checkpointPolicy = checkpointPolicy
+        self.skillHint = skillHint
+        self.startedAt = startedAt
+        self.completedAt = completedAt
+    }
+}
+
+extension PhaseInstance: Equatable, Hashable {
+    public static func == (lhs: PhaseInstance, rhs: PhaseInstance) -> Bool {
+        if lhs.id != rhs.id {
+            return false
+        }
+        if lhs.templateId != rhs.templateId {
+            return false
+        }
+        if lhs.name != rhs.name {
+            return false
+        }
+        if lhs.status != rhs.status {
+            return false
+        }
+        if lhs.checkpointPolicy != rhs.checkpointPolicy {
+            return false
+        }
+        if lhs.skillHint != rhs.skillHint {
+            return false
+        }
+        if lhs.startedAt != rhs.startedAt {
+            return false
+        }
+        if lhs.completedAt != rhs.completedAt {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+        hasher.combine(templateId)
+        hasher.combine(name)
+        hasher.combine(status)
+        hasher.combine(checkpointPolicy)
+        hasher.combine(skillHint)
+        hasher.combine(startedAt)
+        hasher.combine(completedAt)
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePhaseInstance: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PhaseInstance {
+        return
+            try PhaseInstance(
+                id: FfiConverterString.read(from: &buf),
+                templateId: FfiConverterString.read(from: &buf),
+                name: FfiConverterString.read(from: &buf),
+                status: FfiConverterTypePhaseStatus.read(from: &buf),
+                checkpointPolicy: FfiConverterString.read(from: &buf),
+                skillHint: FfiConverterOptionString.read(from: &buf),
+                startedAt: FfiConverterOptionString.read(from: &buf),
+                completedAt: FfiConverterOptionString.read(from: &buf)
+            )
+    }
+
+    public static func write(_ value: PhaseInstance, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterString.write(value.templateId, into: &buf)
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterTypePhaseStatus.write(value.status, into: &buf)
+        FfiConverterString.write(value.checkpointPolicy, into: &buf)
+        FfiConverterOptionString.write(value.skillHint, into: &buf)
+        FfiConverterOptionString.write(value.startedAt, into: &buf)
+        FfiConverterOptionString.write(value.completedAt, into: &buf)
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypePhaseInstance_lift(_ buf: RustBuffer) throws -> PhaseInstance {
+    return try FfiConverterTypePhaseInstance.lift(buf)
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypePhaseInstance_lower(_ value: PhaseInstance) -> RustBuffer {
+    return FfiConverterTypePhaseInstance.lower(value)
+}
+
+public struct PhaseTemplate {
+    public var id: String
+    public var name: String
+    public var checkpointPolicy: String
+    public var skillHint: String?
+
+    /// Default memberwise initializers are never public by default, so we
+    /// declare one manually.
+    public init(id: String, name: String, checkpointPolicy: String, skillHint: String?) {
+        self.id = id
+        self.name = name
+        self.checkpointPolicy = checkpointPolicy
+        self.skillHint = skillHint
+    }
+}
+
+extension PhaseTemplate: Equatable, Hashable {
+    public static func == (lhs: PhaseTemplate, rhs: PhaseTemplate) -> Bool {
+        if lhs.id != rhs.id {
+            return false
+        }
+        if lhs.name != rhs.name {
+            return false
+        }
+        if lhs.checkpointPolicy != rhs.checkpointPolicy {
+            return false
+        }
+        if lhs.skillHint != rhs.skillHint {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+        hasher.combine(name)
+        hasher.combine(checkpointPolicy)
+        hasher.combine(skillHint)
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePhaseTemplate: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PhaseTemplate {
+        return
+            try PhaseTemplate(
+                id: FfiConverterString.read(from: &buf),
+                name: FfiConverterString.read(from: &buf),
+                checkpointPolicy: FfiConverterString.read(from: &buf),
+                skillHint: FfiConverterOptionString.read(from: &buf)
+            )
+    }
+
+    public static func write(_ value: PhaseTemplate, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterString.write(value.checkpointPolicy, into: &buf)
+        FfiConverterOptionString.write(value.skillHint, into: &buf)
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypePhaseTemplate_lift(_ buf: RustBuffer) throws -> PhaseTemplate {
+    return try FfiConverterTypePhaseTemplate.lift(buf)
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypePhaseTemplate_lower(_ value: PhaseTemplate) -> RustBuffer {
+    return FfiConverterTypePhaseTemplate.lower(value)
 }
 
 /**
@@ -4878,6 +5610,162 @@ public func FfiConverterTypeRoutingView_lower(_ value: RoutingView) -> RustBuffe
     return FfiConverterTypeRoutingView.lower(value)
 }
 
+public struct RunState {
+    public var id: String
+    public var projectPath: String
+    public var methodId: String
+    public var methodName: String
+    public var involvement: InvolvementLevel
+    public var status: RunStatus
+    public var phases: [PhaseInstance]
+    public var currentPhaseIndex: UInt32
+    public var activeCheckpoint: ActiveCheckpoint?
+    public var sessionId: String?
+    /**
+     * Strangler bridge: links to existing delegation worker when in execution phase.
+     */
+    public var delegationWorkerId: String?
+    public var createdAt: String
+    public var updatedAt: String
+
+    /// Default memberwise initializers are never public by default, so we
+    /// declare one manually.
+    public init(id: String, projectPath: String, methodId: String, methodName: String, involvement: InvolvementLevel, status: RunStatus, phases: [PhaseInstance], currentPhaseIndex: UInt32, activeCheckpoint: ActiveCheckpoint?, sessionId: String?,
+                /* 
+                    * Strangler bridge: links to existing delegation worker when in execution phase.
+                    */ delegationWorkerId: String?, createdAt: String, updatedAt: String)
+    {
+        self.id = id
+        self.projectPath = projectPath
+        self.methodId = methodId
+        self.methodName = methodName
+        self.involvement = involvement
+        self.status = status
+        self.phases = phases
+        self.currentPhaseIndex = currentPhaseIndex
+        self.activeCheckpoint = activeCheckpoint
+        self.sessionId = sessionId
+        self.delegationWorkerId = delegationWorkerId
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+    }
+}
+
+extension RunState: Equatable, Hashable {
+    public static func == (lhs: RunState, rhs: RunState) -> Bool {
+        if lhs.id != rhs.id {
+            return false
+        }
+        if lhs.projectPath != rhs.projectPath {
+            return false
+        }
+        if lhs.methodId != rhs.methodId {
+            return false
+        }
+        if lhs.methodName != rhs.methodName {
+            return false
+        }
+        if lhs.involvement != rhs.involvement {
+            return false
+        }
+        if lhs.status != rhs.status {
+            return false
+        }
+        if lhs.phases != rhs.phases {
+            return false
+        }
+        if lhs.currentPhaseIndex != rhs.currentPhaseIndex {
+            return false
+        }
+        if lhs.activeCheckpoint != rhs.activeCheckpoint {
+            return false
+        }
+        if lhs.sessionId != rhs.sessionId {
+            return false
+        }
+        if lhs.delegationWorkerId != rhs.delegationWorkerId {
+            return false
+        }
+        if lhs.createdAt != rhs.createdAt {
+            return false
+        }
+        if lhs.updatedAt != rhs.updatedAt {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+        hasher.combine(projectPath)
+        hasher.combine(methodId)
+        hasher.combine(methodName)
+        hasher.combine(involvement)
+        hasher.combine(status)
+        hasher.combine(phases)
+        hasher.combine(currentPhaseIndex)
+        hasher.combine(activeCheckpoint)
+        hasher.combine(sessionId)
+        hasher.combine(delegationWorkerId)
+        hasher.combine(createdAt)
+        hasher.combine(updatedAt)
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRunState: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RunState {
+        return
+            try RunState(
+                id: FfiConverterString.read(from: &buf),
+                projectPath: FfiConverterString.read(from: &buf),
+                methodId: FfiConverterString.read(from: &buf),
+                methodName: FfiConverterString.read(from: &buf),
+                involvement: FfiConverterTypeInvolvementLevel.read(from: &buf),
+                status: FfiConverterTypeRunStatus.read(from: &buf),
+                phases: FfiConverterSequenceTypePhaseInstance.read(from: &buf),
+                currentPhaseIndex: FfiConverterUInt32.read(from: &buf),
+                activeCheckpoint: FfiConverterOptionTypeActiveCheckpoint.read(from: &buf),
+                sessionId: FfiConverterOptionString.read(from: &buf),
+                delegationWorkerId: FfiConverterOptionString.read(from: &buf),
+                createdAt: FfiConverterString.read(from: &buf),
+                updatedAt: FfiConverterString.read(from: &buf)
+            )
+    }
+
+    public static func write(_ value: RunState, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterString.write(value.projectPath, into: &buf)
+        FfiConverterString.write(value.methodId, into: &buf)
+        FfiConverterString.write(value.methodName, into: &buf)
+        FfiConverterTypeInvolvementLevel.write(value.involvement, into: &buf)
+        FfiConverterTypeRunStatus.write(value.status, into: &buf)
+        FfiConverterSequenceTypePhaseInstance.write(value.phases, into: &buf)
+        FfiConverterUInt32.write(value.currentPhaseIndex, into: &buf)
+        FfiConverterOptionTypeActiveCheckpoint.write(value.activeCheckpoint, into: &buf)
+        FfiConverterOptionString.write(value.sessionId, into: &buf)
+        FfiConverterOptionString.write(value.delegationWorkerId, into: &buf)
+        FfiConverterString.write(value.createdAt, into: &buf)
+        FfiConverterString.write(value.updatedAt, into: &buf)
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRunState_lift(_ buf: RustBuffer) throws -> RunState {
+    return try FfiConverterTypeRunState.lift(buf)
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRunState_lower(_ value: RunState) -> RustBuffer {
+    return FfiConverterTypeRunState.lower(value)
+}
+
 public struct SessionSummary {
     public var sessionId: String
     public var pid: UInt32
@@ -5688,6 +6576,135 @@ public func FfiConverterTypeValidationResultFfi_lift(_ buf: RustBuffer) throws -
 public func FfiConverterTypeValidationResultFfi_lower(_ value: ValidationResultFfi) -> RustBuffer {
     return FfiConverterTypeValidationResultFfi.lower(value)
 }
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
+public enum CheckpointKind {
+    case proposal
+    case implementationMilestone
+    case alignmentReview
+    case custom(label: String)
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCheckpointKind: FfiConverterRustBuffer {
+    typealias SwiftType = CheckpointKind
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CheckpointKind {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        case 1: return .proposal
+
+        case 2: return .implementationMilestone
+
+        case 3: return .alignmentReview
+
+        case 4: return try .custom(label: FfiConverterString.read(from: &buf))
+
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: CheckpointKind, into buf: inout [UInt8]) {
+        switch value {
+        case .proposal:
+            writeInt(&buf, Int32(1))
+
+        case .implementationMilestone:
+            writeInt(&buf, Int32(2))
+
+        case .alignmentReview:
+            writeInt(&buf, Int32(3))
+
+        case let .custom(label):
+            writeInt(&buf, Int32(4))
+            FfiConverterString.write(label, into: &buf)
+        }
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCheckpointKind_lift(_ buf: RustBuffer) throws -> CheckpointKind {
+    return try FfiConverterTypeCheckpointKind.lift(buf)
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCheckpointKind_lower(_ value: CheckpointKind) -> RustBuffer {
+    return FfiConverterTypeCheckpointKind.lower(value)
+}
+
+extension CheckpointKind: Equatable, Hashable {}
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
+public enum CheckpointStatus {
+    case pending
+    case active
+    case decided
+    case skipped
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCheckpointStatus: FfiConverterRustBuffer {
+    typealias SwiftType = CheckpointStatus
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CheckpointStatus {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        case 1: return .pending
+
+        case 2: return .active
+
+        case 3: return .decided
+
+        case 4: return .skipped
+
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: CheckpointStatus, into buf: inout [UInt8]) {
+        switch value {
+        case .pending:
+            writeInt(&buf, Int32(1))
+
+        case .active:
+            writeInt(&buf, Int32(2))
+
+        case .decided:
+            writeInt(&buf, Int32(3))
+
+        case .skipped:
+            writeInt(&buf, Int32(4))
+        }
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCheckpointStatus_lift(_ buf: RustBuffer) throws -> CheckpointStatus {
+    return try FfiConverterTypeCheckpointStatus.lift(buf)
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCheckpointStatus_lower(_ value: CheckpointStatus) -> RustBuffer {
+    return FfiConverterTypeCheckpointStatus.lower(value)
+}
+
+extension CheckpointStatus: Equatable, Hashable {}
 
 public enum CoreRuntimeError {
     case General(message: String)
@@ -6514,6 +7531,64 @@ extension IdeaMutationKind: Equatable, Hashable {}
 
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
+public enum InvolvementLevel {
+    case autonomous
+    case supervised
+    case collaborative
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeInvolvementLevel: FfiConverterRustBuffer {
+    typealias SwiftType = InvolvementLevel
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> InvolvementLevel {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        case 1: return .autonomous
+
+        case 2: return .supervised
+
+        case 3: return .collaborative
+
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: InvolvementLevel, into buf: inout [UInt8]) {
+        switch value {
+        case .autonomous:
+            writeInt(&buf, Int32(1))
+
+        case .supervised:
+            writeInt(&buf, Int32(2))
+
+        case .collaborative:
+            writeInt(&buf, Int32(3))
+        }
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeInvolvementLevel_lift(_ buf: RustBuffer) throws -> InvolvementLevel {
+    return try FfiConverterTypeInvolvementLevel.lift(buf)
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeInvolvementLevel_lower(_ value: InvolvementLevel) -> RustBuffer {
+    return FfiConverterTypeInvolvementLevel.lower(value)
+}
+
+extension InvolvementLevel: Equatable, Hashable {}
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 /* 
  * The parent application hosting a shell session.
  *
@@ -6633,6 +7708,70 @@ public func FfiConverterTypeParentApp_lower(_ value: ParentApp) -> RustBuffer {
 }
 
 extension ParentApp: Equatable, Hashable {}
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
+public enum PhaseStatus {
+    case pending
+    case active
+    case completed
+    case skipped
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePhaseStatus: FfiConverterRustBuffer {
+    typealias SwiftType = PhaseStatus
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PhaseStatus {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        case 1: return .pending
+
+        case 2: return .active
+
+        case 3: return .completed
+
+        case 4: return .skipped
+
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: PhaseStatus, into buf: inout [UInt8]) {
+        switch value {
+        case .pending:
+            writeInt(&buf, Int32(1))
+
+        case .active:
+            writeInt(&buf, Int32(2))
+
+        case .completed:
+            writeInt(&buf, Int32(3))
+
+        case .skipped:
+            writeInt(&buf, Int32(4))
+        }
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypePhaseStatus_lift(_ buf: RustBuffer) throws -> PhaseStatus {
+    return try FfiConverterTypePhaseStatus.lift(buf)
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypePhaseStatus_lower(_ value: PhaseStatus) -> RustBuffer {
+    return FfiConverterTypePhaseStatus.lower(value)
+}
+
+extension PhaseStatus: Equatable, Hashable {}
 
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
@@ -6813,6 +7952,188 @@ public func FfiConverterTypeRoutingTargetKind_lower(_ value: RoutingTargetKind) 
 }
 
 extension RoutingTargetKind: Equatable, Hashable {}
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
+public enum RunMutationKind {
+    case create
+    case advancePhase
+    case emitCheckpoint
+    case submitDecision
+    case attachSession
+    case detachSession
+    case pause
+    case resume
+    case complete
+    case fail
+    case cancel
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRunMutationKind: FfiConverterRustBuffer {
+    typealias SwiftType = RunMutationKind
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RunMutationKind {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        case 1: return .create
+
+        case 2: return .advancePhase
+
+        case 3: return .emitCheckpoint
+
+        case 4: return .submitDecision
+
+        case 5: return .attachSession
+
+        case 6: return .detachSession
+
+        case 7: return .pause
+
+        case 8: return .resume
+
+        case 9: return .complete
+
+        case 10: return .fail
+
+        case 11: return .cancel
+
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: RunMutationKind, into buf: inout [UInt8]) {
+        switch value {
+        case .create:
+            writeInt(&buf, Int32(1))
+
+        case .advancePhase:
+            writeInt(&buf, Int32(2))
+
+        case .emitCheckpoint:
+            writeInt(&buf, Int32(3))
+
+        case .submitDecision:
+            writeInt(&buf, Int32(4))
+
+        case .attachSession:
+            writeInt(&buf, Int32(5))
+
+        case .detachSession:
+            writeInt(&buf, Int32(6))
+
+        case .pause:
+            writeInt(&buf, Int32(7))
+
+        case .resume:
+            writeInt(&buf, Int32(8))
+
+        case .complete:
+            writeInt(&buf, Int32(9))
+
+        case .fail:
+            writeInt(&buf, Int32(10))
+
+        case .cancel:
+            writeInt(&buf, Int32(11))
+        }
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRunMutationKind_lift(_ buf: RustBuffer) throws -> RunMutationKind {
+    return try FfiConverterTypeRunMutationKind.lift(buf)
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRunMutationKind_lower(_ value: RunMutationKind) -> RustBuffer {
+    return FfiConverterTypeRunMutationKind.lower(value)
+}
+
+extension RunMutationKind: Equatable, Hashable {}
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
+public enum RunStatus {
+    case created
+    case active
+    case paused
+    case completed
+    case failed
+    case cancelled
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRunStatus: FfiConverterRustBuffer {
+    typealias SwiftType = RunStatus
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RunStatus {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        case 1: return .created
+
+        case 2: return .active
+
+        case 3: return .paused
+
+        case 4: return .completed
+
+        case 5: return .failed
+
+        case 6: return .cancelled
+
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: RunStatus, into buf: inout [UInt8]) {
+        switch value {
+        case .created:
+            writeInt(&buf, Int32(1))
+
+        case .active:
+            writeInt(&buf, Int32(2))
+
+        case .paused:
+            writeInt(&buf, Int32(3))
+
+        case .completed:
+            writeInt(&buf, Int32(4))
+
+        case .failed:
+            writeInt(&buf, Int32(5))
+
+        case .cancelled:
+            writeInt(&buf, Int32(6))
+        }
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRunStatus_lift(_ buf: RustBuffer) throws -> RunStatus {
+    return try FfiConverterTypeRunStatus.lift(buf)
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRunStatus_lower(_ value: RunStatus) -> RustBuffer {
+    return FfiConverterTypeRunStatus.lower(value)
+}
+
+extension RunStatus: Equatable, Hashable {}
 
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
@@ -7059,6 +8380,54 @@ private struct FfiConverterOptionString: FfiConverterRustBuffer {
 #if swift(>=5.8)
     @_documentation(visibility: private)
 #endif
+private struct FfiConverterOptionTypeActiveCheckpoint: FfiConverterRustBuffer {
+    typealias SwiftType = ActiveCheckpoint?
+
+    static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeActiveCheckpoint.write(value, into: &buf)
+    }
+
+    static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeActiveCheckpoint.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+private struct FfiConverterOptionTypeCheckpointDecision: FfiConverterRustBuffer {
+    typealias SwiftType = CheckpointDecision?
+
+    static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeCheckpointDecision.write(value, into: &buf)
+    }
+
+    static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeCheckpointDecision.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
 private struct FfiConverterOptionTypeContextInfo: FfiConverterRustBuffer {
     typealias SwiftType = ContextInfo?
 
@@ -7179,6 +8548,30 @@ private struct FfiConverterOptionTypeProjectStatus: FfiConverterRustBuffer {
 #if swift(>=5.8)
     @_documentation(visibility: private)
 #endif
+private struct FfiConverterOptionTypeCheckpointKind: FfiConverterRustBuffer {
+    typealias SwiftType = CheckpointKind?
+
+    static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeCheckpointKind.write(value, into: &buf)
+    }
+
+    static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeCheckpointKind.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
 private struct FfiConverterOptionTypeDelegationReviewDecision: FfiConverterRustBuffer {
     typealias SwiftType = DelegationReviewDecision?
 
@@ -7219,6 +8612,30 @@ private struct FfiConverterOptionTypeHookIssue: FfiConverterRustBuffer {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeHookIssue.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+private struct FfiConverterOptionTypeInvolvementLevel: FfiConverterRustBuffer {
+    typealias SwiftType = InvolvementLevel?
+
+    static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeInvolvementLevel.write(value, into: &buf)
+    }
+
+    static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeInvolvementLevel.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -7294,6 +8711,56 @@ private struct FfiConverterSequenceTypeIdea: FfiConverterRustBuffer {
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             try seq.append(FfiConverterTypeIdea.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+private struct FfiConverterSequenceTypePhaseInstance: FfiConverterRustBuffer {
+    typealias SwiftType = [PhaseInstance]
+
+    static func write(_ value: [PhaseInstance], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypePhaseInstance.write(item, into: &buf)
+        }
+    }
+
+    static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [PhaseInstance] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [PhaseInstance]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            try seq.append(FfiConverterTypePhaseInstance.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+private struct FfiConverterSequenceTypePhaseTemplate: FfiConverterRustBuffer {
+    typealias SwiftType = [PhaseTemplate]
+
+    static func write(_ value: [PhaseTemplate], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypePhaseTemplate.write(item, into: &buf)
+        }
+    }
+
+    static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [PhaseTemplate] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [PhaseTemplate]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            try seq.append(FfiConverterTypePhaseTemplate.read(from: &buf))
         }
         return seq
     }
@@ -7419,6 +8886,31 @@ private struct FfiConverterSequenceTypeRoutingView: FfiConverterRustBuffer {
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             try seq.append(FfiConverterTypeRoutingView.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+private struct FfiConverterSequenceTypeRunState: FfiConverterRustBuffer {
+    typealias SwiftType = [RunState]
+
+    static func write(_ value: [RunState], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeRunState.write(item, into: &buf)
+        }
+    }
+
+    static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [RunState] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [RunState]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            try seq.append(FfiConverterTypeRunState.read(from: &buf))
         }
         return seq
     }
@@ -7687,6 +9179,9 @@ private var initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if uniffi_capacitor_core_checksum_method_coreruntime_mutate_project() != 22074 {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if uniffi_capacitor_core_checksum_method_coreruntime_mutate_run() != 27321 {
         return InitializationResult.apiChecksumMismatch
     }
     if uniffi_capacitor_core_checksum_method_coreruntime_mutate_worktree() != 17358 {

@@ -159,6 +159,8 @@ pub struct AppSnapshot {
     pub routing: Vec<RoutingView>,
     #[serde(default)]
     pub delegations: Vec<ProjectDelegationState>,
+    #[serde(default)]
+    pub runs: Vec<super::run_types::RunState>,
     pub diagnostics: DiagnosticsSummary,
     pub generated_at: String,
 }

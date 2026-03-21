@@ -7,11 +7,14 @@ use crate::domain::{
     default_workspace_id, display_name, normalize_path_for_matching, now_rfc3339,
     resolve_project_identity, workspace_id, AppSnapshot, DelegationMutationKind,
     DelegationReviewState, DelegationStatus, DiagnosticsSummary, HookEventType,
-    IngestHookEventCommand, IngestShellSignalCommand, MutateDelegationCommand, MutationOutcome,
-    ProjectDelegationState, ProjectSummary, ResolveRoutingCommand, RoutingStatus, RoutingTarget,
-    RoutingTargetKind, RoutingView, SessionState, SessionSummary, ShellSignal, TmuxPaneInfo,
+    IngestHookEventCommand, IngestShellSignalCommand, MutateDelegationCommand, MutateRunCommand,
+    MutationOutcome, ProjectDelegationState, ProjectSummary, ResolveRoutingCommand, RoutingStatus,
+    RoutingTarget, RoutingTargetKind, RoutingView, RunState, SessionState, SessionSummary,
+    ShellSignal, TmuxPaneInfo,
 };
 use crate::runtime_types::ParentApp;
+
+pub mod run_reducer;
 
 const STALE_EVENT_GRACE_SECS: i64 = 5;
 
@@ -19,6 +22,7 @@ const STALE_EVENT_GRACE_SECS: i64 = 5;
 pub struct ReducerState {
     pub projects: BTreeMap<String, ProjectSummary>,
     pub delegations: BTreeMap<String, ProjectDelegationState>,
+    pub runs: BTreeMap<String, RunState>,
     pub sessions: HashMap<String, SessionSummary>,
     pub shells: HashMap<u32, ShellSignal>,
     pub routing: BTreeMap<String, crate::domain::RoutingView>,
@@ -46,6 +50,7 @@ impl ReducerState {
             shells: snapshot_shells,
             routing: _,
             delegations: snapshot_delegations,
+            runs: snapshot_runs,
             diagnostics,
             generated_at: _,
         } = snapshot;
@@ -65,6 +70,12 @@ impl ReducerState {
             delegations.insert(delegation.project_path.clone(), delegation);
         }
 
+        let mut runs = BTreeMap::new();
+        for run in snapshot_runs {
+            let key = format!("{}#{}", run.project_path, run.id);
+            runs.insert(key, run);
+        }
+
         let mut shells = HashMap::new();
         for shell in snapshot_shells {
             shells.insert(shell.pid, shell);
@@ -73,6 +84,7 @@ impl ReducerState {
         let mut state = Self {
             projects,
             delegations,
+            runs,
             sessions,
             shells,
             routing: BTreeMap::new(),
@@ -202,6 +214,12 @@ impl ReducerState {
             ok: true,
             message: "shell signal ingested".to_string(),
         }
+    }
+
+    #[must_use]
+    pub fn apply_run_mutation(&mut self, command: MutateRunCommand) -> MutationOutcome {
+        self.events_ingested = self.events_ingested.saturating_add(1);
+        run_reducer::apply_run_mutation(&mut self.runs, command)
     }
 
     #[must_use]
@@ -611,6 +629,7 @@ impl ReducerState {
         shells.sort_by(|left, right| left.pid.cmp(&right.pid));
 
         let routing = self.routing.values().cloned().collect::<Vec<_>>();
+        let runs = self.runs.values().cloned().collect::<Vec<_>>();
 
         AppSnapshot {
             projects,
@@ -618,6 +637,7 @@ impl ReducerState {
             shells,
             routing,
             delegations,
+            runs,
             diagnostics: DiagnosticsSummary {
                 events_ingested: self.events_ingested,
                 sessions_tracked: self.sessions.len() as u64,

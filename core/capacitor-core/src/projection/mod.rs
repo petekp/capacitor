@@ -130,6 +130,7 @@ mod tests {
                 last_hook_event_at: Some("2026-03-09T12:00:00Z".to_string()),
             },
             delegations: vec![],
+            runs: vec![],
             generated_at: "2026-03-09T12:00:00Z".to_string(),
         }
     }
