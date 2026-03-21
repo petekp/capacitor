@@ -5,6 +5,7 @@ struct RuntimeHealth: Decodable {
     let pid: Int
     let version: String
     let protocolVersion: Int
+    let schemaVersion: Int?
     let authMode: String
     let serviceMode: String
     let security: RuntimeSecurityHealth?
@@ -16,6 +17,7 @@ struct RuntimeHealth: Decodable {
         pid: Int,
         version: String,
         protocolVersion: Int,
+        schemaVersion: Int? = nil,
         authMode: String,
         serviceMode: String,
         security: RuntimeSecurityHealth? = nil,
@@ -26,6 +28,7 @@ struct RuntimeHealth: Decodable {
         self.pid = pid
         self.version = version
         self.protocolVersion = protocolVersion
+        self.schemaVersion = schemaVersion
         self.authMode = authMode
         self.serviceMode = serviceMode
         self.security = security
@@ -36,6 +39,7 @@ struct RuntimeHealth: Decodable {
     enum CodingKeys: String, CodingKey {
         case status, pid, version, security, runtime, routing
         case protocolVersion = "protocol_version"
+        case schemaVersion = "schema_version"
         case authMode = "auth_mode"
         case serviceMode = "service_mode"
     }
@@ -61,6 +65,10 @@ struct RuntimeHealth: Decodable {
             return "unexpected service mode \(serviceMode)"
         }
         return "unknown runtime health contract mismatch"
+    }
+
+    var normalizedSchemaVersion: Int {
+        schemaVersion ?? 0
     }
 }
 
@@ -226,6 +234,7 @@ struct RuntimeDelegationState: Decodable, Equatable {
     let status: String
     let startedAt: String
     let updatedAt: String
+    let submittedMilestoneId: String?
     let currentReview: RuntimeDelegationReview?
 
     enum CodingKeys: String, CodingKey {
@@ -238,7 +247,34 @@ struct RuntimeDelegationState: Decodable, Equatable {
         case status
         case startedAt = "started_at"
         case updatedAt = "updated_at"
+        case submittedMilestoneId = "submitted_milestone_id"
         case currentReview = "current_review"
+    }
+
+    init(
+        projectPath: String,
+        workerId: String,
+        ideaId: String?,
+        worktreeName: String,
+        worktreePath: String,
+        sessionId: String?,
+        status: String,
+        startedAt: String,
+        updatedAt: String,
+        submittedMilestoneId: String? = nil,
+        currentReview: RuntimeDelegationReview?,
+    ) {
+        self.projectPath = projectPath
+        self.workerId = workerId
+        self.ideaId = ideaId
+        self.worktreeName = worktreeName
+        self.worktreePath = worktreePath
+        self.sessionId = sessionId
+        self.status = status
+        self.startedAt = startedAt
+        self.updatedAt = updatedAt
+        self.submittedMilestoneId = submittedMilestoneId
+        self.currentReview = currentReview
     }
 }
 
@@ -560,6 +596,7 @@ private struct SnapshotDelegationPayload: Decodable {
     let status: String
     let startedAt: String
     let updatedAt: String
+    let submittedMilestoneId: String?
     let currentReview: SnapshotDelegationReviewPayload?
 
     enum CodingKeys: String, CodingKey {
@@ -572,6 +609,7 @@ private struct SnapshotDelegationPayload: Decodable {
         case status
         case startedAt = "started_at"
         case updatedAt = "updated_at"
+        case submittedMilestoneId = "submitted_milestone_id"
         case currentReview = "current_review"
     }
 
@@ -585,6 +623,7 @@ private struct SnapshotDelegationPayload: Decodable {
         status = RuntimeClient.snapshotDelegationStatusString(delegation.status)
         startedAt = delegation.startedAt
         updatedAt = delegation.updatedAt
+        submittedMilestoneId = RuntimeClient.snapshotDelegationSubmittedMilestoneID(delegation)
         currentReview = delegation.currentReview.map(SnapshotDelegationReviewPayload.init)
     }
 }
@@ -646,6 +685,7 @@ final class RuntimeClient {
 
     private enum Constants {
         static let enabledEnv = "CAPACITOR_RUNTIME_ENABLED"
+        static let minimumSchemaVersion = 2
         static let tmuxSignalFreshMs: UInt64 = 5000
         static let shellSignalFreshMs: UInt64 = 600_000
         static let shellRetentionHours: UInt64 = 24
@@ -656,6 +696,7 @@ final class RuntimeClient {
     private let runtimeServiceConnectionOverride: RuntimeServiceConnection?
     private let loadRuntimeServiceConnection: () -> RuntimeServiceConnection?
     private let sendRequest: (URLRequest) async throws -> (Data, URLResponse)
+    private var incompatibleSchemaHandler: (RuntimeHealth, Int) async -> Void = { _, _ in }
 
     init(
         isEnabledOverride: Bool? = nil,
@@ -689,6 +730,12 @@ final class RuntimeClient {
         }
         let value = String(cString: raw)
         return ["1", "true", "TRUE", "yes", "YES"].contains(value)
+    }
+
+    func setIncompatibleSchemaHandler(
+        _ handler: @escaping (RuntimeHealth, Int) async -> Void,
+    ) {
+        incompatibleSchemaHandler = handler
     }
 
     func fetchHealth() async throws -> RuntimeHealth {
@@ -894,6 +941,13 @@ final class RuntimeClient {
                     "Unexpected runtime service health contract: \(health.bootstrapContractMismatchDescription)",
                 )
             }
+            guard health.normalizedSchemaVersion >= Constants.minimumSchemaVersion else {
+                let message =
+                    "Runtime service schema version \(health.normalizedSchemaVersion) is older than required version \(Constants.minimumSchemaVersion). Restarting runtime."
+                DebugLog.write(message)
+                await incompatibleSchemaHandler(health, Constants.minimumSchemaVersion)
+                throw RuntimeClientError.runtimeUnavailable(message)
+            }
             return health
         } catch let error as RuntimeClientError {
             throw error
@@ -1010,6 +1064,7 @@ final class RuntimeClient {
                 status: delegation.status,
                 startedAt: delegation.startedAt,
                 updatedAt: delegation.updatedAt,
+                submittedMilestoneId: delegation.submittedMilestoneId,
                 currentReview: delegation.currentReview.map { review in
                     RuntimeDelegationReview(
                         milestoneId: review.milestoneId,
@@ -1220,12 +1275,7 @@ final class RuntimeClient {
     }
 
     fileprivate static func snapshotDelegationStatusString(_ status: DelegationStatus) -> String {
-        switch status {
-        case .working:
-            "working"
-        case .reviewNeeded:
-            "review_needed"
-        }
+        snakeCaseEnumCaseName(status)
     }
 
     fileprivate static func snapshotRoutingTargetKindString(_ kind: RoutingTargetKind) -> String {
@@ -1239,6 +1289,47 @@ final class RuntimeClient {
         case .none:
             "none"
         }
+    }
+
+    fileprivate static func snapshotDelegationSubmittedMilestoneID(_ delegation: ProjectDelegationState) -> String? {
+        guard let reflectedValue = Mirror(reflecting: delegation)
+            .children
+            .first(where: { $0.label == "submittedMilestoneId" })?
+            .value
+        else {
+            return nil
+        }
+        return unwrapOptionalString(reflectedValue)
+    }
+
+    private static func snakeCaseEnumCaseName(_ value: some Any) -> String {
+        let rawName = String(describing: value)
+        guard !rawName.isEmpty else { return rawName }
+
+        var result = ""
+        result.reserveCapacity(rawName.count + 4)
+
+        for character in rawName {
+            if character.isUppercase, !result.isEmpty {
+                result.append("_")
+            }
+            result.append(contentsOf: String(character).lowercased())
+        }
+
+        return result
+    }
+
+    private static func unwrapOptionalString(_ value: Any) -> String? {
+        if let string = value as? String {
+            return string
+        }
+
+        let mirror = Mirror(reflecting: value)
+        guard mirror.displayStyle == .optional else {
+            return nil
+        }
+
+        return mirror.children.first?.value as? String
     }
 }
 

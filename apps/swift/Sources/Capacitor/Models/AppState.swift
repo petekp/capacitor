@@ -164,7 +164,7 @@ class AppState {
     let routingStateStore = RoutingStateStore()
     let terminalLauncher = TerminalLauncher()
     let sessionStateManager = SessionStateManager()
-    let hookServerManager = HookServerManager()
+    let hookServerManager: HookServerManager
     let projectDetailsManager = ProjectDetailsManager()
     private(set) var delegationLoopManager: DelegationLoopManager!
     private let projectIngestionWorker = ProjectIngestionWorker()
@@ -199,6 +199,11 @@ class AppState {
     private(set) var didAttemptRuntimeHealthCheckForTesting = false
     private(set) var didStartRefreshTimerForTesting = false
     private(set) var didStartShellTrackingForTesting = false
+    private(set) var didShutdownForTesting = false
+    #if DEBUG
+        private(set) var runtimeBootstrapTraceForTesting: [String] = []
+    #endif
+    private var isShuttingDown = false
 
     // MARK: - Computed Properties (bridging to managers)
 
@@ -212,8 +217,21 @@ class AppState {
 
     // MARK: - Initialization
 
-    init(runtimeClient: RuntimeClient = RuntimeClient.shared) {
+    init(
+        runtimeClient: RuntimeClient = RuntimeClient.shared,
+        hookServerManager: HookServerManager = HookServerManager(),
+    ) {
         self.runtimeClient = runtimeClient
+        self.hookServerManager = hookServerManager
+        self.runtimeClient.setIncompatibleSchemaHandler { [weak self] health, minimumSchemaVersion in
+            guard let self else { return }
+            await MainActor.run {
+                self.handleIncompatibleRuntimeServiceSchema(
+                    observedSchemaVersion: health.normalizedSchemaVersion,
+                    minimumSchemaVersion: minimumSchemaVersion,
+                )
+            }
+        }
         DebugLog.write(
             "AppState.init start runtimeEnabled=\(runtimeClient.isEnabled) home=\(FileManager.default.homeDirectoryForCurrentUser.path)",
         )
@@ -365,8 +383,14 @@ class AppState {
             do {
                 guard !_Concurrency.Task.isCancelled else { return }
                 engine = try CoreRuntime()
+                recordRuntimeBootstrapStepForTesting("createCoreRuntime")
                 guard !_Concurrency.Task.isCancelled else { return }
 
+                recordRuntimeBootstrapStepForTesting("startHookServer")
+                hookServerManager.startIfNeeded()
+                guard !_Concurrency.Task.isCancelled else { return }
+
+                recordRuntimeBootstrapStepForTesting("ensureRuntimeReady")
                 ensureRuntimeReady()
                 guard !_Concurrency.Task.isCancelled else { return }
 
@@ -374,7 +398,6 @@ class AppState {
                 loadDashboard()
                 guard !_Concurrency.Task.isCancelled else { return }
                 checkHookDiagnostic()
-                hookServerManager.startIfNeeded()
                 setupRefreshTimer()
                 startShellTracking()
             } catch {
@@ -382,6 +405,20 @@ class AppState {
                 isLoading = false
             }
         }
+    }
+
+    func shutdown() {
+        guard !isShuttingDown else { return }
+        isShuttingDown = true
+        didShutdownForTesting = true
+
+        runtimeBootstrapTask?.cancel()
+        runtimeBootstrapTask = nil
+        runtimeSnapshotTask?.cancel()
+        runtimeSnapshotTask = nil
+        refreshTimer?.invalidate()
+        refreshTimer = nil
+        hookServerManager.stop()
     }
 
     // MARK: - Setup
@@ -752,6 +789,18 @@ class AppState {
                 }
             }
         }
+    }
+
+    private func handleIncompatibleRuntimeServiceSchema(
+        observedSchemaVersion: Int,
+        minimumSchemaVersion: Int,
+    ) {
+        DebugLog.write(
+            "Runtime service schema version \(observedSchemaVersion) is older than required version \(minimumSchemaVersion). Restarting runtime.",
+        )
+        hookServerManager.stop()
+        hookServerManager.startIfNeeded()
+        toast = ToastMessage("Runtime service restarted for compatibility")
     }
 
     private func resolveActivationRoute(
@@ -1577,34 +1626,67 @@ class AppState {
         decision: DelegationLoopManager.ReviewDecision,
         note: String,
         fromWindow: Bool = false,
-    ) {
-        _Concurrency.Task { [weak self] in
-            guard let self else { return }
-            do {
-                try await delegationLoopManager.submitReviewDecision(
-                    project: project,
-                    delegation: delegation,
-                    decision: decision,
-                    note: note,
-                )
-                await MainActor.run {
-                    if fromWindow {
-                        self.reviewWindowTarget = nil
-                    } else {
-                        self.showProjectList()
-                    }
-                    self.refreshSessionStates()
-                }
-            } catch {
-                await MainActor.run {
-                    let message = DelegationUserFacingMessage.reviewFailure(for: error)
-                    DebugLog.write(
-                        "AppState.submitDelegationReview failure project=\(project.path) worker=\(delegation.workerId) error=\(error.localizedDescription) userMessage=\(message)",
-                    )
-                    self.toast = .error(message)
-                    self.refreshSessionStates()
-                }
+    ) async throws {
+        do {
+            let accepted = try await delegationLoopManager.acceptReviewDecision(
+                project: project,
+                delegation: delegation,
+                decision: decision,
+                note: note,
+            )
+
+            applyAcceptedReviewDecisionLocally(
+                delegation,
+                sessionId: accepted.sessionId,
+                submittedMilestoneId: accepted.submittedMilestoneId,
+            )
+
+            if !fromWindow {
+                showProjectList()
+                toast = ToastMessage("Feedback sent to worker")
             }
+
+            await delegationLoopManager.launchResumeInBackground(accepted)
+            scheduleDelegationRefreshAfterReviewSubmission()
+        } catch {
+            let message = DelegationUserFacingMessage.reviewFailure(for: error)
+            DebugLog.write(
+                "AppState.submitDelegationReview failure project=\(project.path) worker=\(delegation.workerId) error=\(error.localizedDescription) userMessage=\(message)",
+            )
+            toast = .error(message)
+            refreshSessionStates()
+            throw error
+        }
+    }
+
+    private func applyAcceptedReviewDecisionLocally(
+        _ delegation: RuntimeDelegationState,
+        sessionId: String,
+        submittedMilestoneId: String,
+    ) {
+        let normalizedProjectPath = PathNormalizer.normalize(delegation.projectPath)
+        guard delegationStates[normalizedProjectPath] != nil else { return }
+
+        delegationStates[normalizedProjectPath] = RuntimeDelegationState(
+            projectPath: delegation.projectPath,
+            workerId: delegation.workerId,
+            ideaId: delegation.ideaId,
+            worktreeName: delegation.worktreeName,
+            worktreePath: delegation.worktreePath,
+            sessionId: sessionId,
+            status: "resume_pending",
+            startedAt: delegation.startedAt,
+            updatedAt: formatISO8601Timestamp(Date()),
+            submittedMilestoneId: submittedMilestoneId,
+            currentReview: delegation.currentReview,
+        )
+    }
+
+    private func scheduleDelegationRefreshAfterReviewSubmission() {
+        _Concurrency.Task { @MainActor in
+            // Give the runtime mutation a moment to land before replacing the optimistic resume_pending state.
+            try? await _Concurrency.Task.sleep(nanoseconds: 300_000_000)
+            refreshSessionStates()
         }
     }
 
@@ -1649,6 +1731,12 @@ class AppState {
             projectCreationCoordinator.hasCreationMonitorTasksForTesting(creationId: creationId)
         }
     #endif
+
+    private func recordRuntimeBootstrapStepForTesting(_ step: String) {
+        #if DEBUG
+            runtimeBootstrapTraceForTesting.append(step)
+        #endif
+    }
 
     func cancelCreation(_ id: String) {
         projectCreationCoordinator.cancelCreation(id)

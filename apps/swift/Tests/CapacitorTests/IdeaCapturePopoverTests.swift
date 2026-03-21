@@ -84,6 +84,11 @@ final class IdeaCapturePopoverTests: XCTestCase {
 private let ideaCaptureTestWindowSize = CGSize(width: 800, height: 500)
 
 private final class TestWindow: NSWindow {
-    override var canBecomeKey: Bool { true }
-    override var canBecomeMain: Bool { true }
+    override var canBecomeKey: Bool {
+        true
+    }
+
+    override var canBecomeMain: Bool {
+        true
+    }
 }

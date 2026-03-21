@@ -134,6 +134,7 @@ fn bootstrap_health_requires_auth_and_reports_service_mode() {
     );
     assert_eq!(status, 200, "body: {body}");
     assert!(body.contains(r#""status":"ok""#), "body: {body}");
+    assert!(body.contains(r#""schema_version":"#), "body: {body}");
     assert!(
         body.contains(r#""service_mode":"bootstrap_only""#),
         "body: {body}"

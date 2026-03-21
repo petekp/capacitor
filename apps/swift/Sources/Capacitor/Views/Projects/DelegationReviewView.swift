@@ -175,12 +175,14 @@ struct DelegationReviewView: View {
     private func actionRow(delegation: RuntimeDelegationState) -> some View {
         HStack(spacing: 12) {
             Button(action: {
-                appState.submitDelegationReview(
-                    for: project,
-                    delegation: delegation,
-                    decision: .requestChanges,
-                    note: note,
-                )
+                _Concurrency.Task { @MainActor in
+                    try? await appState.submitDelegationReview(
+                        for: project,
+                        delegation: delegation,
+                        decision: .requestChanges,
+                        note: note,
+                    )
+                }
             }) {
                 Text("Request Changes")
                     .font(AppTypography.bodySecondary.weight(.semibold))
@@ -194,12 +196,14 @@ struct DelegationReviewView: View {
             .accessibilityIdentifier(AccessibilityIdentifiers.delegationReviewRequestChangesIdentifier)
 
             Button(action: {
-                appState.submitDelegationReview(
-                    for: project,
-                    delegation: delegation,
-                    decision: .approve,
-                    note: note,
-                )
+                _Concurrency.Task { @MainActor in
+                    try? await appState.submitDelegationReview(
+                        for: project,
+                        delegation: delegation,
+                        decision: .approve,
+                        note: note,
+                    )
+                }
             }) {
                 Text("Approve")
                     .font(AppTypography.bodySecondary.weight(.semibold))

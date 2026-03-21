@@ -84,7 +84,11 @@ enum IdeaQueueStatusResolver {
                 return .reviewReady
             }
 
-            if delegationState.status == "working" {
+            if delegationState.status == "resume_failed", delegationState.currentReview != nil {
+                return .reviewReady
+            }
+
+            if delegationState.status == "working" || delegationState.status == "resume_pending" {
                 return .delegationWorking
             }
         }

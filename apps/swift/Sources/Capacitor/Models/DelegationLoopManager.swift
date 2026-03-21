@@ -1,6 +1,6 @@
 import Foundation
 
-struct DelegationClaudeLaunchRequest: Equatable {
+struct DelegationClaudeLaunchRequest: Equatable, Sendable {
     let workingDirectory: String
     let prompt: String
     let resumeSessionID: String?
@@ -195,7 +195,7 @@ enum DelegationUserFacingMessage {
 }
 
 actor DelegationLoopManager {
-    enum ReviewDecision: String {
+    enum ReviewDecision: String, Sendable {
         case approve
         case requestChanges = "request_changes"
     }
@@ -220,7 +220,30 @@ actor DelegationLoopManager {
         }
     }
 
-    private struct WorkerRootPaths {
+    struct AcceptedReviewDecisionContext: Sendable {
+        let projectName: String
+        let projectPath: String
+        let workerId: String
+        let ideaId: String?
+        let worktreeName: String
+        let worktreePath: String
+        let sessionId: String
+        let decision: ReviewDecision
+        let note: String
+        let milestonesRoot: URL
+        let statusPath: URL
+        let completionMarkerPath: URL
+        let resumePromptPath: URL
+        let currentReviewMilestoneId: String
+        let currentReviewBriefPath: String
+        let currentReviewManifestPath: String
+        let currentReviewDecisionJSONPath: URL
+        let currentReviewDecisionMarkdownPath: URL
+        let currentReviewPendingDecisionPath: URL
+        let submittedMilestoneId: String
+    }
+
+    private struct WorkerRootPaths: Sendable {
         let workerRoot: URL
         let milestonesRoot: URL
         let statusPath: URL
@@ -229,7 +252,7 @@ actor DelegationLoopManager {
         let resumePromptPath: URL
     }
 
-    private struct MilestonePaths {
+    private struct MilestonePaths: Sendable {
         let directory: URL
         let briefPath: URL
         let manifestPath: URL
@@ -412,12 +435,35 @@ actor DelegationLoopManager {
         decision: ReviewDecision,
         note: String,
     ) async throws {
+        let accepted = try await acceptReviewDecision(
+            project: project,
+            delegation: delegation,
+            decision: decision,
+            note: note,
+        )
+        try await performResumeLaunch(context: accepted)
+    }
+
+    func acceptReviewDecision(
+        project: Project,
+        delegation: RuntimeDelegationState,
+        decision: ReviewDecision,
+        note: String,
+    ) async throws -> AcceptedReviewDecisionContext {
         let discoveredSessionID = delegation.sessionId ?? sessionDiscovery.mostRecentSessionID(for: delegation.worktreePath)
         guard let sessionID = discoveredSessionID else {
             DebugLog.write(
                 "DelegationLoopManager.review failure stage=missing_session worker=\(delegation.workerId)",
             )
             throw DelegationLoopError.missingReviewSession
+        }
+
+        guard let currentReview = delegation.currentReview else {
+            throw NSError(
+                domain: "Capacitor",
+                code: 2,
+                userInfo: [NSLocalizedDescriptionKey: "Delegation review context is missing"],
+            )
         }
 
         if delegation.sessionId == nil {
@@ -434,80 +480,255 @@ actor DelegationLoopManager {
         }
 
         let rootPaths = workerRootPaths(projectPath: project.path, workerID: delegation.workerId)
-        let currentMilestoneID = delegation.currentReview?.milestoneId ?? "01"
-        let currentMilestone = milestonePaths(milestonesRoot: rootPaths.milestonesRoot, milestoneID: currentMilestoneID)
+        let currentMilestone = milestonePaths(
+            milestonesRoot: rootPaths.milestonesRoot,
+            milestoneID: currentReview.milestoneId,
+        )
         try createWorkerDirectories(rootPaths: rootPaths, milestonePaths: currentMilestone)
 
-        // Staged decision: write as pending first, promote after successful launch
         try writeReviewDecision(decision: decision, note: note, to: currentMilestone, staged: true)
 
-        try await mutateDelegationLogged(
-            RuntimeDelegationMutationRequest(
-                kind: "resume",
-                projectPath: project.path,
-                workerId: delegation.workerId,
-                ideaId: delegation.ideaId,
-                worktreeName: delegation.worktreeName,
-                worktreePath: delegation.worktreePath,
-                sessionId: sessionID,
-                milestoneId: delegation.currentReview?.milestoneId,
-                briefPath: delegation.currentReview?.briefPath,
-                manifestPath: delegation.currentReview?.manifestPath,
-                reviewDecision: decision.rawValue,
-                note: note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : note,
-            ),
-            context: "resume worker=\(delegation.workerId) decision=\(decision.rawValue)",
-        )
-
-        let nextMilestone: String? = decision == .requestChanges
-            ? nextMilestoneID(milestonesRoot: rootPaths.milestonesRoot)
-            : nil
-
-        let prompt = buildResumePrompt(
-            project: project,
-            decision: decision,
-            note: note,
-            rootPaths: rootPaths,
-            currentMilestonePaths: currentMilestone,
-            nextMilestoneID: nextMilestone,
-        )
-        try prompt.write(to: rootPaths.resumePromptPath, atomically: true, encoding: .utf8)
-
         do {
-            try await claudeLauncher(
-                DelegationClaudeLaunchRequest(
-                    workingDirectory: delegation.worktreePath,
-                    prompt: prompt,
-                    resumeSessionID: sessionID,
-                ),
-            ) { _ in }
-            // Launch succeeded — promote pending decision to final
-            try fileManager.moveItem(at: currentMilestone.pendingDecisionPath, to: currentMilestone.decisionJSONPath)
-        } catch {
-            // Launch failed — clean up pending decision to preserve immutability contract
-            try? fileManager.removeItem(at: currentMilestone.pendingDecisionPath)
-            await mutateDelegationLoggedIgnoringFailure(
+            try await mutateDelegationLogged(
                 RuntimeDelegationMutationRequest(
-                    kind: "review_ready",
+                    kind: "submit_review",
                     projectPath: project.path,
                     workerId: delegation.workerId,
                     ideaId: delegation.ideaId,
                     worktreeName: delegation.worktreeName,
                     worktreePath: delegation.worktreePath,
                     sessionId: sessionID,
-                    milestoneId: delegation.currentReview?.milestoneId,
-                    briefPath: delegation.currentReview?.briefPath,
-                    manifestPath: delegation.currentReview?.manifestPath,
+                    milestoneId: currentReview.milestoneId,
+                    briefPath: currentReview.briefPath,
+                    manifestPath: currentReview.manifestPath,
+                    reviewDecision: decision.rawValue,
+                    note: normalizedReviewNote(note),
+                ),
+                context: "submit_review worker=\(delegation.workerId) decision=\(decision.rawValue)",
+            )
+        } catch {
+            cleanupDecisionArtifacts(
+                pendingDecisionPath: currentMilestone.pendingDecisionPath,
+                decisionMarkdownPath: currentMilestone.decisionMarkdownPath,
+            )
+            throw error
+        }
+
+        return AcceptedReviewDecisionContext(
+            projectName: project.name,
+            projectPath: project.path,
+            workerId: delegation.workerId,
+            ideaId: delegation.ideaId,
+            worktreeName: delegation.worktreeName,
+            worktreePath: delegation.worktreePath,
+            sessionId: sessionID,
+            decision: decision,
+            note: note,
+            milestonesRoot: rootPaths.milestonesRoot,
+            statusPath: rootPaths.statusPath,
+            completionMarkerPath: rootPaths.completionMarkerPath,
+            resumePromptPath: rootPaths.resumePromptPath,
+            currentReviewMilestoneId: currentReview.milestoneId,
+            currentReviewBriefPath: currentReview.briefPath,
+            currentReviewManifestPath: currentReview.manifestPath,
+            currentReviewDecisionJSONPath: currentMilestone.decisionJSONPath,
+            currentReviewDecisionMarkdownPath: currentMilestone.decisionMarkdownPath,
+            currentReviewPendingDecisionPath: currentMilestone.pendingDecisionPath,
+            submittedMilestoneId: currentReview.milestoneId,
+        )
+    }
+
+    func launchResumeInBackground(_ context: AcceptedReviewDecisionContext) {
+        _Concurrency.Task.detached { [self, context] in
+            do {
+                try await performResumeLaunch(context: context)
+            } catch {
+                DebugLog.write(
+                    "DelegationLoopManager.review background_failure worker=\(context.workerId) error=\(error.localizedDescription)",
+                )
+            }
+        }
+    }
+
+    private func performResumeLaunch(context: AcceptedReviewDecisionContext) async throws {
+        let rootPaths = WorkerRootPaths(
+            workerRoot: context.milestonesRoot.deletingLastPathComponent(),
+            milestonesRoot: context.milestonesRoot,
+            statusPath: context.statusPath,
+            completionMarkerPath: context.completionMarkerPath,
+            launchPromptPath: context.resumePromptPath.deletingLastPathComponent().appendingPathComponent("launch-prompt.md"),
+            resumePromptPath: context.resumePromptPath,
+        )
+        let currentMilestone = milestonePaths(
+            milestonesRoot: context.milestonesRoot,
+            milestoneID: context.currentReviewMilestoneId,
+        )
+        let nextMilestone: String? = context.decision == .requestChanges
+            ? nextMilestoneID(milestonesRoot: context.milestonesRoot)
+            : nil
+        let prompt = buildResumePrompt(
+            projectName: context.projectName,
+            decision: context.decision,
+            note: context.note,
+            rootPaths: rootPaths,
+            currentMilestonePaths: currentMilestone,
+            nextMilestoneID: nextMilestone,
+        )
+
+        do {
+            try ensurePendingDecisionArtifacts(
+                for: context,
+                currentMilestone: currentMilestone,
+            )
+            try prompt.write(to: context.resumePromptPath, atomically: true, encoding: .utf8)
+            try await claudeLauncher(
+                DelegationClaudeLaunchRequest(
+                    workingDirectory: context.worktreePath,
+                    prompt: prompt,
+                    resumeSessionID: context.sessionId,
+                ),
+            ) { _ in }
+        } catch {
+            await handleResumeLaunchFailure(context: context, error: error)
+            throw DelegationLoopError.reviewResume(underlying: error)
+        }
+
+        // Post-launch: send resume mutation. If this fails, the runtime is still
+        // resume_pending, so roll back via handleResumeLaunchFailure.
+        do {
+            try await mutateDelegationLogged(
+                RuntimeDelegationMutationRequest(
+                    kind: "resume",
+                    projectPath: context.projectPath,
+                    workerId: context.workerId,
+                    ideaId: context.ideaId,
+                    worktreeName: context.worktreeName,
+                    worktreePath: context.worktreePath,
+                    sessionId: context.sessionId,
+                    milestoneId: context.currentReviewMilestoneId,
+                    briefPath: context.currentReviewBriefPath,
+                    manifestPath: context.currentReviewManifestPath,
                     reviewDecision: nil,
                     note: nil,
                 ),
-                context: "restore_review_ready_after_resume_failure worker=\(delegation.workerId)",
+                context: "resume worker=\(context.workerId)",
             )
+        } catch {
             DebugLog.write(
-                "DelegationLoopManager.review failure stage=resume_launch worker=\(delegation.workerId) error=\(error.localizedDescription)",
+                "DelegationLoopManager.review resume_mutation_failed worker=\(context.workerId) error=\(error.localizedDescription)",
             )
-            throw DelegationLoopError.reviewResume(underlying: error)
+            await handleResumeLaunchFailure(context: context, error: error)
+            throw error
         }
+
+        // Resume mutation succeeded — runtime is now Working. Promote the
+        // pending decision artifact. If this fails, do NOT roll back the
+        // runtime state (the worker is genuinely resumed). Just log it.
+        do {
+            try promotePendingDecision(
+                pendingDecisionPath: context.currentReviewPendingDecisionPath,
+                decisionJSONPath: context.currentReviewDecisionJSONPath,
+            )
+        } catch {
+            DebugLog.write(
+                "DelegationLoopManager.review artifact_promotion_failed worker=\(context.workerId) error=\(error.localizedDescription) — runtime is Working, not rolling back",
+            )
+        }
+    }
+
+    private func handleResumeLaunchFailure(
+        context: AcceptedReviewDecisionContext,
+        error: Error,
+    ) async {
+        await mutateDelegationLoggedIgnoringFailure(
+            RuntimeDelegationMutationRequest(
+                kind: "resume_failed",
+                projectPath: context.projectPath,
+                workerId: context.workerId,
+                ideaId: context.ideaId,
+                worktreeName: context.worktreeName,
+                worktreePath: context.worktreePath,
+                sessionId: context.sessionId,
+                milestoneId: context.currentReviewMilestoneId,
+                briefPath: context.currentReviewBriefPath,
+                manifestPath: context.currentReviewManifestPath,
+                reviewDecision: nil,
+                note: nil,
+            ),
+            context: "resume_failed worker=\(context.workerId)",
+        )
+
+        cleanupDecisionArtifacts(
+            pendingDecisionPath: context.currentReviewPendingDecisionPath,
+            decisionMarkdownPath: context.currentReviewDecisionMarkdownPath,
+        )
+
+        if fileManager.fileExists(atPath: context.completionMarkerPath.path) {
+            await mutateDelegationLoggedIgnoringFailure(
+                RuntimeDelegationMutationRequest(
+                    kind: "complete",
+                    projectPath: context.projectPath,
+                    workerId: context.workerId,
+                    ideaId: context.ideaId,
+                    worktreeName: context.worktreeName,
+                    worktreePath: context.worktreePath,
+                    sessionId: context.sessionId,
+                    milestoneId: nil,
+                    briefPath: nil,
+                    manifestPath: nil,
+                    reviewDecision: nil,
+                    note: nil,
+                ),
+                context: "complete_after_resume_failure worker=\(context.workerId)",
+            )
+        } else if let newerMilestoneID = activeMilestoneID(
+            milestonesRoot: context.milestonesRoot,
+            submittedMilestoneID: context.submittedMilestoneId,
+        ) {
+            let newerMilestone = milestonePaths(
+                milestonesRoot: context.milestonesRoot,
+                milestoneID: newerMilestoneID,
+            )
+            await mutateDelegationLoggedIgnoringFailure(
+                RuntimeDelegationMutationRequest(
+                    kind: "review_ready",
+                    projectPath: context.projectPath,
+                    workerId: context.workerId,
+                    ideaId: context.ideaId,
+                    worktreeName: context.worktreeName,
+                    worktreePath: context.worktreePath,
+                    sessionId: context.sessionId,
+                    milestoneId: newerMilestoneID,
+                    briefPath: newerMilestone.briefPath.path,
+                    manifestPath: newerMilestone.manifestPath.path,
+                    reviewDecision: nil,
+                    note: nil,
+                ),
+                context: "review_ready_after_resume_failure worker=\(context.workerId) milestone=\(newerMilestoneID)",
+            )
+        } else {
+            await mutateDelegationLoggedIgnoringFailure(
+                RuntimeDelegationMutationRequest(
+                    kind: "review_ready",
+                    projectPath: context.projectPath,
+                    workerId: context.workerId,
+                    ideaId: context.ideaId,
+                    worktreeName: context.worktreeName,
+                    worktreePath: context.worktreePath,
+                    sessionId: context.sessionId,
+                    milestoneId: context.currentReviewMilestoneId,
+                    briefPath: context.currentReviewBriefPath,
+                    manifestPath: context.currentReviewManifestPath,
+                    reviewDecision: nil,
+                    note: nil,
+                ),
+                context: "restore_review_ready_after_resume_failure worker=\(context.workerId)",
+            )
+        }
+
+        DebugLog.write(
+            "DelegationLoopManager.review failure stage=resume_launch worker=\(context.workerId) error=\(error.localizedDescription)",
+        )
     }
 
     func reconcile(delegations: [RuntimeDelegationState]) async {
@@ -534,7 +755,8 @@ actor DelegationLoopManager {
             )
         }
 
-        guard delegation.status == "working" else { return }
+        let shouldScanForReview = delegation.status == "working" || delegation.status == "resume_pending"
+        guard shouldScanForReview else { return }
 
         if fileManager.fileExists(atPath: rootPaths.completionMarkerPath.path) {
             do {
@@ -559,20 +781,13 @@ actor DelegationLoopManager {
             return
         }
 
-        guard let activeID = activeMilestoneID(milestonesRoot: rootPaths.milestonesRoot) else {
+        guard let activeID = activeMilestoneID(
+            milestonesRoot: rootPaths.milestonesRoot,
+            submittedMilestoneID: delegation.submittedMilestoneId,
+        ) else {
             return
         }
         let activeMilestone = milestonePaths(milestonesRoot: rootPaths.milestonesRoot, milestoneID: activeID)
-
-        guard fileManager.fileExists(atPath: activeMilestone.sentinelPath.path) else {
-            return
-        }
-
-        guard let manifestData = fileManager.contents(atPath: activeMilestone.manifestPath.path),
-              (try? JSONSerialization.jsonObject(with: manifestData)) != nil
-        else {
-            return
-        }
 
         await mutateDelegationLoggedIgnoringFailure(
             RuntimeDelegationMutationRequest(
@@ -905,21 +1120,33 @@ actor DelegationLoopManager {
         return String(format: "%02d", maxID + 1)
     }
 
-    private func activeMilestoneID(milestonesRoot: URL) -> String? {
-        let ids = numericMilestoneIDs(in: milestonesRoot).sorted(by: >)
-        for id in ids {
-            let milestoneID = String(format: "%02d", id)
-            let milestoneDir = milestonesRoot.appendingPathComponent(milestoneID, isDirectory: true)
-            let hasDecision = fileManager.fileExists(
-                atPath: milestoneDir.appendingPathComponent("decision.json").path
-            )
-            let hasPendingDecision = fileManager.fileExists(
-                atPath: milestoneDir.appendingPathComponent("decision-pending.json").path
-            )
-            if !hasDecision, !hasPendingDecision {
+    private func activeMilestoneID(
+        milestonesRoot: URL,
+        submittedMilestoneID: String? = nil,
+    ) -> String? {
+        let ids = numericMilestoneIDs(in: milestonesRoot)
+
+        if let submittedMilestoneID,
+           let submittedNumericID = Int(submittedMilestoneID)
+        {
+            for id in ids.sorted(by: >) where id > submittedNumericID {
+                let milestoneID = String(format: "%02d", id)
+                let milestone = milestonePaths(milestonesRoot: milestonesRoot, milestoneID: milestoneID)
+                guard hasValidReviewReadyMilestone(milestone) else { continue }
+                guard !hasDecision(for: milestone), !hasPendingDecision(for: milestone) else { continue }
                 return milestoneID
             }
+            return nil
         }
+
+        for id in ids.sorted(by: >) {
+            let milestoneID = String(format: "%02d", id)
+            let milestone = milestonePaths(milestonesRoot: milestonesRoot, milestoneID: milestoneID)
+            guard hasValidReviewReadyMilestone(milestone) else { continue }
+            guard !hasDecision(for: milestone), !hasPendingDecision(for: milestone) else { continue }
+            return milestoneID
+        }
+
         return nil
     }
 
@@ -939,6 +1166,75 @@ actor DelegationLoopManager {
     private func createWorkerDirectories(rootPaths: WorkerRootPaths, milestonePaths: MilestonePaths) throws {
         try fileManager.createDirectory(at: rootPaths.workerRoot, withIntermediateDirectories: true)
         try fileManager.createDirectory(at: milestonePaths.directory, withIntermediateDirectories: true)
+    }
+
+    private func cleanupDecisionArtifacts(
+        pendingDecisionPath: URL,
+        decisionMarkdownPath: URL,
+    ) {
+        try? fileManager.removeItem(at: pendingDecisionPath)
+        try? fileManager.removeItem(at: decisionMarkdownPath)
+    }
+
+    private func promotePendingDecision(
+        pendingDecisionPath: URL,
+        decisionJSONPath: URL,
+    ) throws {
+        if fileManager.fileExists(atPath: decisionJSONPath.path) {
+            try fileManager.removeItem(at: decisionJSONPath)
+        }
+        try fileManager.moveItem(at: pendingDecisionPath, to: decisionJSONPath)
+    }
+
+    private func ensurePendingDecisionArtifacts(
+        for context: AcceptedReviewDecisionContext,
+        currentMilestone: MilestonePaths,
+    ) throws {
+        guard !fileManager.fileExists(atPath: currentMilestone.decisionJSONPath.path) else {
+            return
+        }
+
+        let hasPendingDecision = fileManager.fileExists(atPath: currentMilestone.pendingDecisionPath.path)
+        let hasDecisionMarkdown = fileManager.fileExists(atPath: currentMilestone.decisionMarkdownPath.path)
+        guard !hasPendingDecision || !hasDecisionMarkdown else {
+            return
+        }
+
+        // A failed background resume cleans staged artifacts. Recreate them here so
+        // the same accepted review can be retried without re-entering the decision.
+        try writeReviewDecision(
+            decision: context.decision,
+            note: context.note,
+            to: currentMilestone,
+            staged: true,
+        )
+    }
+
+    private func normalizedReviewNote(_ note: String) -> String? {
+        let trimmed = note.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private func hasValidReviewReadyMilestone(_ milestone: MilestonePaths) -> Bool {
+        guard fileManager.fileExists(atPath: milestone.sentinelPath.path) else {
+            return false
+        }
+
+        guard let manifestData = fileManager.contents(atPath: milestone.manifestPath.path),
+              (try? JSONSerialization.jsonObject(with: manifestData)) != nil
+        else {
+            return false
+        }
+
+        return true
+    }
+
+    private func hasDecision(for milestone: MilestonePaths) -> Bool {
+        fileManager.fileExists(atPath: milestone.decisionJSONPath.path)
+    }
+
+    private func hasPendingDecision(for milestone: MilestonePaths) -> Bool {
+        fileManager.fileExists(atPath: milestone.pendingDecisionPath.path)
     }
 
     private func writeReviewDecision(
@@ -1027,7 +1323,7 @@ actor DelegationLoopManager {
     }
 
     private func buildResumePrompt(
-        project: Project,
+        projectName: String,
         decision: ReviewDecision,
         note: String,
         rootPaths: WorkerRootPaths,
@@ -1040,7 +1336,7 @@ actor DelegationLoopManager {
         switch decision {
         case .approve:
             return """
-            Resume the delegated work for \(project.name).
+            Resume the delegated work for \(projectName).
 
             The reviewer approved your work on milestone \(currentMilestonePaths.directory.lastPathComponent).
 
@@ -1068,7 +1364,7 @@ actor DelegationLoopManager {
             let nextID = nextMilestoneID ?? "02"
             let nextMilestone = milestonePaths(milestonesRoot: rootPaths.milestonesRoot, milestoneID: nextID)
             return """
-            Resume the delegated work for \(project.name).
+            Resume the delegated work for \(projectName).
 
             The reviewer requested changes on milestone \(currentMilestonePaths.directory.lastPathComponent).
 

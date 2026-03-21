@@ -3904,11 +3904,12 @@ public struct ProjectDelegationState {
     public var status: DelegationStatus
     public var startedAt: String
     public var updatedAt: String
+    public var submittedMilestoneId: String?
     public var currentReview: DelegationReviewState?
 
     /// Default memberwise initializers are never public by default, so we
     /// declare one manually.
-    public init(projectPath: String, workerId: String, ideaId: String?, worktreeName: String, worktreePath: String, sessionId: String?, status: DelegationStatus, startedAt: String, updatedAt: String, currentReview: DelegationReviewState?) {
+    public init(projectPath: String, workerId: String, ideaId: String?, worktreeName: String, worktreePath: String, sessionId: String?, status: DelegationStatus, startedAt: String, updatedAt: String, submittedMilestoneId: String?, currentReview: DelegationReviewState?) {
         self.projectPath = projectPath
         self.workerId = workerId
         self.ideaId = ideaId
@@ -3918,6 +3919,7 @@ public struct ProjectDelegationState {
         self.status = status
         self.startedAt = startedAt
         self.updatedAt = updatedAt
+        self.submittedMilestoneId = submittedMilestoneId
         self.currentReview = currentReview
     }
 }
@@ -3951,6 +3953,9 @@ extension ProjectDelegationState: Equatable, Hashable {
         if lhs.updatedAt != rhs.updatedAt {
             return false
         }
+        if lhs.submittedMilestoneId != rhs.submittedMilestoneId {
+            return false
+        }
         if lhs.currentReview != rhs.currentReview {
             return false
         }
@@ -3967,6 +3972,7 @@ extension ProjectDelegationState: Equatable, Hashable {
         hasher.combine(status)
         hasher.combine(startedAt)
         hasher.combine(updatedAt)
+        hasher.combine(submittedMilestoneId)
         hasher.combine(currentReview)
     }
 }
@@ -3987,6 +3993,7 @@ public struct FfiConverterTypeProjectDelegationState: FfiConverterRustBuffer {
                 status: FfiConverterTypeDelegationStatus.read(from: &buf),
                 startedAt: FfiConverterString.read(from: &buf),
                 updatedAt: FfiConverterString.read(from: &buf),
+                submittedMilestoneId: FfiConverterOptionString.read(from: &buf),
                 currentReview: FfiConverterOptionTypeDelegationReviewState.read(from: &buf)
             )
     }
@@ -4001,6 +4008,7 @@ public struct FfiConverterTypeProjectDelegationState: FfiConverterRustBuffer {
         FfiConverterTypeDelegationStatus.write(value.status, into: &buf)
         FfiConverterString.write(value.startedAt, into: &buf)
         FfiConverterString.write(value.updatedAt, into: &buf)
+        FfiConverterOptionString.write(value.submittedMilestoneId, into: &buf)
         FfiConverterOptionTypeDelegationReviewState.write(value.currentReview, into: &buf)
     }
 }
@@ -5799,7 +5807,9 @@ public enum DelegationMutationKind {
     case start
     case attachSession
     case reviewReady
+    case submitReview
     case resume
+    case resumeFailed
     case complete
 }
 
@@ -5818,9 +5828,13 @@ public struct FfiConverterTypeDelegationMutationKind: FfiConverterRustBuffer {
 
         case 3: return .reviewReady
 
-        case 4: return .resume
+        case 4: return .submitReview
 
-        case 5: return .complete
+        case 5: return .resume
+
+        case 6: return .resumeFailed
+
+        case 7: return .complete
 
         default: throw UniffiInternalError.unexpectedEnumCase
         }
@@ -5837,11 +5851,17 @@ public struct FfiConverterTypeDelegationMutationKind: FfiConverterRustBuffer {
         case .reviewReady:
             writeInt(&buf, Int32(3))
 
-        case .resume:
+        case .submitReview:
             writeInt(&buf, Int32(4))
 
-        case .complete:
+        case .resume:
             writeInt(&buf, Int32(5))
+
+        case .resumeFailed:
+            writeInt(&buf, Int32(6))
+
+        case .complete:
+            writeInt(&buf, Int32(7))
         }
     }
 }
@@ -5920,6 +5940,8 @@ extension DelegationReviewDecision: Equatable, Hashable {}
 public enum DelegationStatus {
     case working
     case reviewNeeded
+    case resumePending
+    case resumeFailed
 }
 
 #if swift(>=5.8)
@@ -5935,6 +5957,10 @@ public struct FfiConverterTypeDelegationStatus: FfiConverterRustBuffer {
 
         case 2: return .reviewNeeded
 
+        case 3: return .resumePending
+
+        case 4: return .resumeFailed
+
         default: throw UniffiInternalError.unexpectedEnumCase
         }
     }
@@ -5946,6 +5972,12 @@ public struct FfiConverterTypeDelegationStatus: FfiConverterRustBuffer {
 
         case .reviewNeeded:
             writeInt(&buf, Int32(2))
+
+        case .resumePending:
+            writeInt(&buf, Int32(3))
+
+        case .resumeFailed:
+            writeInt(&buf, Int32(4))
         }
     }
 }
