@@ -1,0 +1,24 @@
+{
+  "allowed_paths": [
+    "apps/swift/Sources/Capacitor/Models/DelegationReviewManifest.swift",
+    "apps/swift/Sources/Capacitor/Views/Projects/DelegationReviewWindow.swift",
+    "apps/swift/Sources/Capacitor/Models/DelegationLoopManager.swift"
+  ],
+  "interface_changes": {
+    "DelegationReviewManifest": "Add optional decisions: DecisionHints? field with nested DecisionHint type",
+    "DelegationReviewWindow": "Read manifest.decisions for card labels/descriptions with static fallbacks",
+    "buildInitialPrompt": "Add decisions field to manifest schema instruction",
+    "buildResumePrompt": "Add decisions field to manifest schema instruction in request_changes branch"
+  },
+  "verification_commands": [
+    "swift test --package-path apps/swift --filter DelegationLoopManagerTests",
+    "swift test --package-path apps/swift"
+  ],
+  "non_goals": [
+    "LLM-generated CTAs at review time (client-side inference)",
+    "New enum variants for decisions",
+    "Changes to the Rust reducer or domain types",
+    "Changes to DelegationReviewView (inline view)"
+  ],
+  "open_questions": []
+}

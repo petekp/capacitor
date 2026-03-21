@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "pipeline_id": "card-design-doc",
+  "allowed_paths": [
+    "docs/superpowers/specs/2026-03-20-orchestrator-card-design.md"
+  ],
+  "read_paths": [
+    "docs/superpowers/specs/2026-03-16-orchestrator-design-revised.md",
+    "docs/superpowers/specs/2026-03-15-orchestrator-design.md",
+    ".relay/ux-gaps.md",
+    ".relay/prompt-card-design-doc.md"
+  ],
+  "interface_changes": "none — design doc only, no code changes",
+  "verification_commands": [
+    "test -f docs/superpowers/specs/2026-03-20-orchestrator-card-design.md",
+    "wc -l docs/superpowers/specs/2026-03-20-orchestrator-card-design.md | awk '{if ($1 > 50) exit 0; else exit 1}'"
+  ],
+  "non_goals": [
+    "No code changes",
+    "No implementation work",
+    "No urgency metadata, attention lanes, review queues, or project management concepts",
+    "No engineering spec or implementation plan"
+  ],
+  "open_questions": []
+}
