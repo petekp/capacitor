@@ -291,7 +291,7 @@ struct DelegationReviewWindow: View {
                     }
                 }
 
-                // Media artifacts (screenshots, recordings, diagrams)
+                // Media artifacts (screenshots, rendered diagrams)
                 if let artifacts = manifest?.artifacts {
                     let mediaArtifacts = artifacts.filter(\.isMedia)
                     if !mediaArtifacts.isEmpty {
@@ -299,22 +299,10 @@ struct DelegationReviewWindow: View {
                             sectionLabel("MEDIA")
 
                             ForEach(mediaArtifacts) { artifact in
-                                switch artifact.artifactType {
-                                case .screenshot, .recording:
-                                    CaptureImageView(
-                                        filePath: artifact.path,
-                                        label: artifact.label,
-                                    )
-                                case .mermaid:
-                                    if let source = loadMermaidSource(path: artifact.path) {
-                                        LabeledMermaidView(
-                                            source: source,
-                                            label: artifact.label,
-                                        )
-                                    }
-                                default:
-                                    EmptyView()
-                                }
+                                CaptureImageView(
+                                    filePath: artifact.path,
+                                    label: artifact.label,
+                                )
                             }
                         }
                     }
@@ -788,10 +776,6 @@ struct DelegationReviewWindow: View {
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
         let output = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
         return output?.isEmpty == true ? nil : output
-    }
-
-    private func loadMermaidSource(path: String) -> String? {
-        try? String(contentsOfFile: path, encoding: .utf8)
     }
 
     private func loadPreviousRoundDecision(currentMilestoneId: String) -> PreviousRoundDecision? {

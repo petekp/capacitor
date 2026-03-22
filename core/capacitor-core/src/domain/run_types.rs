@@ -205,6 +205,9 @@ pub struct CheckpointPacket {
     pub media_artifacts: Vec<MediaArtifact>,
     pub mermaid_sources: Vec<MermaidSource>,
     pub capture_requested: bool,
+    /// URL to capture via agent-browser at checkpoint time (e.g., "http://localhost:3000").
+    /// When present, implies capture is requested even if `capture_requested` is false.
+    pub capture_url: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Record)]
@@ -226,6 +229,8 @@ pub struct ActiveCheckpoint {
     pub media_artifacts: Vec<MediaArtifact>,
     pub mermaid_sources: Vec<MermaidSource>,
     pub capture_status: CaptureStatus,
+    /// URL that was captured (or should be captured) via agent-browser.
+    pub capture_url: Option<String>,
     pub decision: Option<CheckpointDecision>,
     pub created_at: String,
     pub decided_at: Option<String>,
@@ -284,6 +289,8 @@ pub struct MutateRunCommand {
     pub checkpoint_media_artifacts: Vec<MediaArtifact>,
     pub checkpoint_mermaid_sources: Vec<MermaidSource>,
     pub capture_requested: bool,
+    /// URL to capture via agent-browser (e.g., "http://localhost:3000").
+    pub capture_url: Option<String>,
     pub decision_action: Option<String>,
     pub decision_note: Option<String>,
     pub session_id: Option<String>,
