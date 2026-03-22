@@ -4,7 +4,8 @@ import SwiftUI
 ///
 /// Loads images asynchronously from a file path and renders them as
 /// thumbnails in the review window. Clicking opens a sheet with the
-/// full-size image.
+/// full-size image. If a companion `.mmd` file exists (Mermaid source),
+/// shows a "Copy Source" button.
 struct CaptureImageView: View {
     let filePath: String
     let label: String
@@ -12,12 +13,34 @@ struct CaptureImageView: View {
 
     @State private var image: NSImage?
     @State private var showFullSize = false
+    @State private var hasMermaidSource = false
+    @State private var copiedSource = false
+
+    private var mermaidSourcePath: String {
+        let base = (filePath as NSString).deletingPathExtension
+        return base + ".mmd"
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(label)
-                .font(AppTypography.caption.weight(.medium))
-                .foregroundColor(.white.opacity(0.65))
+            HStack(spacing: 8) {
+                Text(label)
+                    .font(AppTypography.caption.weight(.medium))
+                    .foregroundColor(.white.opacity(0.65))
+
+                if hasMermaidSource {
+                    Button(action: copyMermaidSource) {
+                        HStack(spacing: 3) {
+                            Image(systemName: copiedSource ? "checkmark" : "doc.on.doc")
+                                .font(AppTypography.captionSmall)
+                            Text(copiedSource ? "Copied" : "Copy Source")
+                                .font(AppTypography.captionSmall.weight(.medium))
+                        }
+                        .foregroundColor(copiedSource ? .green.opacity(0.7) : .blue.opacity(0.7))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
 
             if let image {
                 Button(action: { showFullSize = true }) {
@@ -57,11 +80,25 @@ struct CaptureImageView: View {
         }
         .task {
             image = await loadImage()
+            hasMermaidSource = FileManager.default.fileExists(atPath: mermaidSourcePath)
+        }
+    }
+
+    private func copyMermaidSource() {
+        guard let source = try? String(contentsOfFile: mermaidSourcePath, encoding: .utf8) else {
+            return
+        }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(source, forType: .string)
+        copiedSource = true
+
+        _Concurrency.Task { @MainActor in
+            try? await _Concurrency.Task.sleep(nanoseconds: 2_000_000_000)
+            copiedSource = false
         }
     }
 
     private func loadImage() async -> NSImage? {
-        // Load off main thread to avoid jank on large Retina screenshots
         await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 guard FileManager.default.fileExists(atPath: filePath) else {

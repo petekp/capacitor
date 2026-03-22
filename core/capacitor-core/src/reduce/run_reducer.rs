@@ -183,7 +183,8 @@ fn handle_emit_checkpoint(
     let now = now_rfc3339();
     let checkpoint_id = format!("{}:{}:ckpt-{}", run.id, phase_id, now.replace(':', "-"));
 
-    let capture_status = if command.capture_requested {
+    // capture_url implies capture is requested, even if capture_requested is false
+    let capture_status = if command.capture_requested || command.capture_url.is_some() {
         CaptureStatus::Pending
     } else {
         CaptureStatus::NotRequested
@@ -201,6 +202,7 @@ fn handle_emit_checkpoint(
         media_artifacts: command.checkpoint_media_artifacts.clone(),
         mermaid_sources: command.checkpoint_mermaid_sources.clone(),
         capture_status,
+        capture_url: command.capture_url.clone(),
         decision: None,
         created_at: now.clone(),
         decided_at: None,
@@ -399,6 +401,7 @@ mod tests {
             checkpoint_media_artifacts: vec![],
             checkpoint_mermaid_sources: vec![],
             capture_requested: false,
+            capture_url: None,
             decision_action: None,
             decision_note: None,
             session_id: None,
@@ -431,6 +434,7 @@ mod tests {
             checkpoint_media_artifacts: vec![],
             checkpoint_mermaid_sources: vec![],
             capture_requested: false,
+            capture_url: None,
             decision_action: None,
             decision_note: None,
             session_id: None,
@@ -819,5 +823,53 @@ mod tests {
         );
         assert!(!result.ok);
         assert!(result.message.contains("not pending"));
+    }
+
+    #[test]
+    fn emit_checkpoint_with_capture_url_auto_sets_pending() {
+        use crate::domain::CaptureStatus;
+
+        let mut runs = empty_runs();
+        apply_run_mutation(&mut runs, create_command("run-001", "execution_only"));
+
+        let mut cmd = base_cmd("run-001");
+        cmd.session_id = Some("s1".to_string());
+        mutate(&mut runs, cmd, RunMutationKind::AttachSession);
+
+        // Emit checkpoint with capture_url but capture_requested=false
+        let mut cmd = base_cmd("run-001");
+        cmd.checkpoint_kind = Some(CheckpointKind::ImplementationMilestone);
+        cmd.checkpoint_title = Some("URL capture".to_string());
+        cmd.capture_requested = false;
+        cmd.capture_url = Some("http://localhost:3000".to_string());
+        let result = mutate(&mut runs, cmd, RunMutationKind::EmitCheckpoint);
+        assert!(result.ok, "{}", result.message);
+
+        let run = runs.values().next().unwrap();
+        let ckpt = run.active_checkpoint.as_ref().unwrap();
+        // capture_url should auto-set status to Pending
+        assert!(matches!(ckpt.capture_status, CaptureStatus::Pending));
+        assert_eq!(ckpt.capture_url.as_deref(), Some("http://localhost:3000"));
+    }
+
+    #[test]
+    fn emit_checkpoint_capture_url_persists_to_active() {
+        let mut runs = empty_runs();
+        apply_run_mutation(&mut runs, create_command("run-001", "execution_only"));
+
+        let mut cmd = base_cmd("run-001");
+        cmd.session_id = Some("s1".to_string());
+        mutate(&mut runs, cmd, RunMutationKind::AttachSession);
+
+        let mut cmd = base_cmd("run-001");
+        cmd.checkpoint_kind = Some(CheckpointKind::ImplementationMilestone);
+        cmd.capture_requested = true;
+        cmd.capture_url = Some("http://localhost:5173".to_string());
+        let result = mutate(&mut runs, cmd, RunMutationKind::EmitCheckpoint);
+        assert!(result.ok, "{}", result.message);
+
+        let run = runs.values().next().unwrap();
+        let ckpt = run.active_checkpoint.as_ref().unwrap();
+        assert_eq!(ckpt.capture_url.as_deref(), Some("http://localhost:5173"));
     }
 }

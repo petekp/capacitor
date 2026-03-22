@@ -1,7 +1,8 @@
 # Screen Capture & Recording Research for Checkpoint Artifacts
 
 > Date: 2026-03-21
-> Status: Research complete, pending adversarial review
+> Status: **SUPERSEDED** — This research was the input to an adversarial review that changed the architecture. The final architecture uses **agent-browser** (headless Chrome CLI) instead of ScreenCaptureKit, and renders Mermaid via agent-browser instead of WKWebView. See `.pipeline/phases/phase-002-align/artifacts/execution-spec.md` for the current spec.
+> Original status: Research complete, pending adversarial review
 
 ## Executive Summary
 

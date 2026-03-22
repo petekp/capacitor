@@ -1,7 +1,8 @@
 # Adversarial Review: Screen Capture & Recording Research
 
 > Date: 2026-03-21
-> Status: Review complete
+> Status: **SUPERSEDED** — This adversarial review drove the decision to use agent-browser, but the final architecture evolved further (no tmux capture, no ScreenCaptureKit for web, screenshots only). See `.pipeline/phases/phase-002-align/artifacts/execution-spec.md` for the current spec.
+> Original status: Review complete
 > Reviewer: Adversarial review agent
 
 ---
