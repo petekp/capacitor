@@ -1,0 +1,41 @@
+# Purpose: Method fixture for testing parallel phase execution (Slice 11).
+# Steps within the parallel phase execute concurrently — a step failure
+# does NOT prevent other steps from executing.
+schema_version: "1"
+method:
+  id: parallel-phase
+  version: "2026-03-23"
+  title: Parallel Phase Method
+  description: Tests parallel execution mode where all steps run regardless of individual failures.
+  outputs:
+    step_a_output:
+      from: parallel.step-a.result
+      required: false
+    step_b_output:
+      from: parallel.step-b.result
+      required: false
+  phases:
+    - id: parallel
+      title: Parallel Phase
+      execution: parallel
+      steps:
+        - id: step-a
+          title: Step A
+          action: dispatch
+          max_attempts: 1
+          outputs:
+            result:
+              path: artifacts/step-a-result.md
+              type: markdown
+          dispatch:
+            instructions: Execute step A in parallel phase.
+        - id: step-b
+          title: Step B
+          action: dispatch
+          max_attempts: 1
+          outputs:
+            result:
+              path: artifacts/step-b-result.md
+              type: markdown
+          dispatch:
+            instructions: Execute step B in parallel phase.

@@ -10,3 +10,4 @@ mod step7_action_agnostic;
 mod step8_batch_a;
 mod step8_batch_b;
 mod step8_batch_c;
+mod step8_batch_d;

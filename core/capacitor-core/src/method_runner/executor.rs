@@ -12,7 +12,7 @@ use crate::method_runner::adapters::{
     PromptBuildRequest, PromptBuilder, WorkerDispatchRequest, WorkerDispatcher,
 };
 use crate::method_runner::definition::{
-    write_snapshot, write_step_json, ActionKind, CompletionPolicy, DefinitionSource,
+    write_snapshot, write_step_json, ActionKind, CompletionPolicy, DefinitionSource, ExecutionMode,
     NormalizationError, NormalizedDefinitionFile, NormalizedGate, NormalizedPhase, NormalizedStep,
     Normalizer, StepActionConfig,
 };
@@ -420,7 +420,8 @@ pub fn execute_run(
         append_event(&events_path, &mut env, &mut current_seq)?;
     }
 
-    // 10. Execute phases serially
+    // 10. Execute phases (serial or parallel depending on mode)
+    let run_start = std::time::Instant::now();
     for phase in &normalized.method.phases {
         // PhaseStarted
         {
@@ -429,30 +430,129 @@ pub fn execute_run(
             append_event(&events_path, &mut env, &mut current_seq)?;
         }
 
-        // Execute steps serially
-        for step in &phase.steps {
-            // Check for pipeline_execute — blocked
-            if step.action == ActionKind::PipelineExecute {
-                // Emit StepBlocked event before returning error
-                let mut env = make_envelope(&run_id, MethodEventKind::StepBlocked);
-                env.phase_id = Some(phase.id.clone());
-                env.step_id = Some(step.id.clone());
-                append_event(&events_path, &mut env, &mut current_seq)?;
-
-                return Err(RunError::PipelineExecuteBlocked(step.id.clone()));
+        if phase.execution == ExecutionMode::Parallel {
+            // Parallel: execute all steps regardless of individual failures
+            let mut step_results: Vec<(&NormalizedStep, Result<(), RunError>)> = Vec::new();
+            for step in &phase.steps {
+                let result = if step.action == ActionKind::PipelineExecute {
+                    let mut env = make_envelope(&run_id, MethodEventKind::StepBlocked);
+                    env.phase_id = Some(phase.id.clone());
+                    env.step_id = Some(step.id.clone());
+                    env.payload = serde_json::json!({
+                        "blocked_reason": {
+                            "category": "pipeline_blocked",
+                            "details": "pipeline_execute not supported in v1"
+                        }
+                    });
+                    append_event(&events_path, &mut env, &mut current_seq)?;
+                    Err(RunError::PipelineExecuteBlocked(step.id.clone()))
+                } else {
+                    execute_step(
+                        &paths,
+                        &events_path,
+                        &run_id,
+                        &mut current_seq,
+                        &phase.id,
+                        step,
+                        prompt_builder,
+                        dispatcher,
+                        interactive_io,
+                    )
+                };
+                step_results.push((step, result));
             }
 
-            execute_step(
-                &paths,
-                &events_path,
-                &run_id,
-                &mut current_seq,
-                &phase.id,
-                step,
-                prompt_builder,
-                dispatcher,
-                interactive_io,
-            )?;
+            // Join semantics: check outcomes
+            let mut any_failed = false;
+            let mut any_blocked = false;
+            let mut all_ok = true;
+            for (_step, result) in &step_results {
+                match result {
+                    Ok(()) => {}
+                    Err(RunError::StepBlocked { .. })
+                    | Err(RunError::PipelineExecuteBlocked(_)) => {
+                        any_blocked = true;
+                        all_ok = false;
+                    }
+                    Err(_) => {
+                        any_failed = true;
+                        all_ok = false;
+                    }
+                }
+            }
+
+            if any_blocked {
+                // Phase blocked
+                let mut env = make_envelope(&run_id, MethodEventKind::PhaseBlocked);
+                env.phase_id = Some(phase.id.clone());
+                env.payload = serde_json::json!({ "reason": "one or more parallel steps blocked" });
+                append_event(&events_path, &mut env, &mut current_seq)?;
+
+                // Emit RunBlocked with summary
+                {
+                    let summary = build_run_summary(&events_path, &normalized, run_start)?;
+                    let mut env = make_envelope(&run_id, MethodEventKind::RunBlocked);
+                    env.payload = summary;
+                    append_event(&events_path, &mut env, &mut current_seq)?;
+                }
+
+                let events = crate::method_runner::events::recover_events(&events_path)?;
+                let state = project(&events)?;
+                write_state_atomic(&paths.state_json(), &state).map_err(RunError::IoError)?;
+                return Ok(state);
+            } else if any_failed && !all_ok {
+                // Phase failed
+                let mut env = make_envelope(&run_id, MethodEventKind::PhaseFailed);
+                env.phase_id = Some(phase.id.clone());
+                env.payload = serde_json::json!({ "reason": "one or more parallel steps failed" });
+                append_event(&events_path, &mut env, &mut current_seq)?;
+
+                // Emit RunFailed with summary
+                {
+                    let summary = build_run_summary(&events_path, &normalized, run_start)?;
+                    let mut env = make_envelope(&run_id, MethodEventKind::RunFailed);
+                    env.payload = summary;
+                    append_event(&events_path, &mut env, &mut current_seq)?;
+                }
+
+                let events = crate::method_runner::events::recover_events(&events_path)?;
+                let state = project(&events)?;
+                write_state_atomic(&paths.state_json(), &state).map_err(RunError::IoError)?;
+                return Ok(state);
+            }
+            // all_ok: fall through to gate evaluation and PhaseCompleted
+        } else {
+            // Serial: existing behavior — step failure stops the phase
+            for step in &phase.steps {
+                // Check for pipeline_execute — blocked
+                if step.action == ActionKind::PipelineExecute {
+                    // Emit StepBlocked event before returning error
+                    let mut env = make_envelope(&run_id, MethodEventKind::StepBlocked);
+                    env.phase_id = Some(phase.id.clone());
+                    env.step_id = Some(step.id.clone());
+                    env.payload = serde_json::json!({
+                        "blocked_reason": {
+                            "category": "pipeline_blocked",
+                            "details": "pipeline_execute not supported in v1"
+                        }
+                    });
+                    append_event(&events_path, &mut env, &mut current_seq)?;
+
+                    return Err(RunError::PipelineExecuteBlocked(step.id.clone()));
+                }
+
+                execute_step(
+                    &paths,
+                    &events_path,
+                    &run_id,
+                    &mut current_seq,
+                    &phase.id,
+                    step,
+                    prompt_builder,
+                    dispatcher,
+                    interactive_io,
+                )?;
+            }
         }
 
         // Evaluate phase gate (if present) after all steps complete
@@ -528,9 +628,11 @@ pub fn execute_run(
     // 11. Resolve method-level outputs
     resolve_method_outputs(&paths, &events_path, &run_id, &mut current_seq, &normalized)?;
 
-    // 12. RunCompleted
+    // 12. RunCompleted with summary payload
     {
+        let summary = build_run_summary(&events_path, &normalized, run_start)?;
         let mut env = make_envelope(&run_id, MethodEventKind::RunCompleted);
+        env.payload = summary;
         append_event(&events_path, &mut env, &mut current_seq)?;
     }
 
@@ -685,6 +787,8 @@ fn execute_dispatch_step(
         // Write input-bindings.json
         write_input_bindings(&attempt_dir, &step.inputs)?;
 
+        let attempt_start = std::time::Instant::now();
+
         // AttemptStarted
         {
             let mut env = make_envelope(run_id, MethodEventKind::AttemptStarted);
@@ -710,6 +814,8 @@ fn execute_dispatch_step(
             dispatcher,
         )?;
 
+        let elapsed_ms = attempt_start.elapsed().as_millis() as u64;
+
         match outcome {
             AttemptOutcome::Success => {
                 // Evaluate completion policy and bind outputs
@@ -727,12 +833,13 @@ fn execute_dispatch_step(
                 // Write attempt.json (success)
                 write_attempt_json(&attempt_dir, phase_id, &step.id, attempt, "completed")?;
 
-                // AttemptCompleted
+                // AttemptCompleted with timing
                 {
                     let mut env = make_envelope(run_id, MethodEventKind::AttemptCompleted);
                     env.phase_id = Some(phase_id.to_string());
                     env.step_id = Some(step.id.clone());
                     env.attempt = Some(attempt);
+                    env.payload = serde_json::json!({ "elapsed_ms": elapsed_ms });
                     append_event(events_path, &mut env, current_seq)?;
                 }
 
@@ -750,13 +857,20 @@ fn execute_dispatch_step(
                 // Write attempt.json (failed)
                 write_attempt_json(&attempt_dir, phase_id, &step.id, attempt, "failed")?;
 
-                // AttemptFailed
+                // Categorize the error
+                let error_category = categorize_attempt_error(&reason);
+
+                // AttemptFailed with timing and error category
                 {
                     let mut env = make_envelope(run_id, MethodEventKind::AttemptFailed);
                     env.phase_id = Some(phase_id.to_string());
                     env.step_id = Some(step.id.clone());
                     env.attempt = Some(attempt);
-                    env.payload = serde_json::json!({ "reason": reason });
+                    env.payload = serde_json::json!({
+                        "reason": reason,
+                        "elapsed_ms": elapsed_ms,
+                        "error_category": error_category,
+                    });
                     append_event(events_path, &mut env, current_seq)?;
                 }
 
@@ -777,6 +891,10 @@ fn execute_dispatch_step(
                 step.max_attempts
             ),
             "last_failure": last_failure_reason,
+            "blocked_reason": {
+                "category": "circuit_breaker",
+                "details": format!("all {} attempts exhausted", step.max_attempts),
+            },
         });
         append_event(events_path, &mut env, current_seq)?;
     }
@@ -1099,6 +1217,8 @@ fn execute_synthesis_step(
         std::fs::write(attempt_dir.join("input-bindings.json"), json)?;
     }
 
+    let attempt_start = std::time::Instant::now();
+
     // AttemptStarted
     {
         let mut env = make_envelope(run_id, MethodEventKind::AttemptStarted);
@@ -1224,12 +1344,14 @@ fn execute_synthesis_step(
         std::fs::write(attempt_dir.join("attempt.json"), json)?;
     }
 
-    // AttemptCompleted
+    // AttemptCompleted with timing
     {
+        let elapsed_ms = attempt_start.elapsed().as_millis() as u64;
         let mut env = make_envelope(run_id, MethodEventKind::AttemptCompleted);
         env.phase_id = Some(phase_id.to_string());
         env.step_id = Some(step.id.clone());
         env.attempt = Some(attempt);
+        env.payload = serde_json::json!({ "elapsed_ms": elapsed_ms });
         append_event(events_path, &mut env, current_seq)?;
     }
 
@@ -1283,6 +1405,8 @@ fn execute_interactive_step(
         std::fs::write(attempt_dir.join("input-bindings.json"), json)?;
     }
 
+    let attempt_start = std::time::Instant::now();
+
     // AttemptStarted
     {
         let mut env = make_envelope(run_id, MethodEventKind::AttemptStarted);
@@ -1328,20 +1452,32 @@ fn execute_interactive_step(
     // Validate response against declared response_type
     if !response_type.is_empty() {
         if let Err(validation_err) = validate_interactive_response(&response_type, &response.body) {
-            // Emit StepBlocked and return error — invalid response is a blocking condition
+            let elapsed_ms = attempt_start.elapsed().as_millis() as u64;
+            // Emit AttemptFailed with timing and error category
             {
                 let mut env = make_envelope(run_id, MethodEventKind::AttemptFailed);
                 env.phase_id = Some(phase_id.to_string());
                 env.step_id = Some(step.id.clone());
                 env.attempt = Some(attempt);
-                env.payload = serde_json::json!({ "reason": validation_err });
+                env.payload = serde_json::json!({
+                    "reason": validation_err,
+                    "elapsed_ms": elapsed_ms,
+                    "error_category": "validation_failed",
+                });
                 append_event(events_path, &mut env, current_seq)?;
             }
+            // Emit StepBlocked with structured blocked_reason
             {
                 let mut env = make_envelope(run_id, MethodEventKind::StepBlocked);
                 env.phase_id = Some(phase_id.to_string());
                 env.step_id = Some(step.id.clone());
-                env.payload = serde_json::json!({ "reason": format!("response validation failed: {}", validation_err) });
+                env.payload = serde_json::json!({
+                    "reason": format!("response validation failed: {}", validation_err),
+                    "blocked_reason": {
+                        "category": "gate_rejected",
+                        "details": format!("response validation failed: {}", validation_err),
+                    }
+                });
                 append_event(events_path, &mut env, current_seq)?;
             }
             return Err(RunError::StepBlocked {
@@ -1419,12 +1555,14 @@ fn execute_interactive_step(
         std::fs::write(attempt_dir.join("attempt.json"), json)?;
     }
 
-    // AttemptCompleted
+    // AttemptCompleted with timing
     {
+        let elapsed_ms = attempt_start.elapsed().as_millis() as u64;
         let mut env = make_envelope(run_id, MethodEventKind::AttemptCompleted);
         env.phase_id = Some(phase_id.to_string());
         env.step_id = Some(step.id.clone());
         env.attempt = Some(attempt);
+        env.payload = serde_json::json!({ "elapsed_ms": elapsed_ms });
         append_event(events_path, &mut env, current_seq)?;
     }
 
@@ -1437,6 +1575,93 @@ fn execute_interactive_step(
     }
 
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Error categorization
+// ---------------------------------------------------------------------------
+
+/// Categorize an attempt failure reason into a structured error category.
+fn categorize_attempt_error(reason: &str) -> &'static str {
+    let lower = reason.to_lowercase();
+    if lower.contains("spawn failed") || lower.contains("timeout") || lower.contains("i/o error") {
+        "adapter_error"
+    } else if lower.contains("crash") || lower.contains("exit_code") || lower.contains("non-zero") {
+        "worker_crash"
+    } else if lower.contains("handoff") || lower.contains("no handoff") {
+        "handoff_missing"
+    } else if lower.contains("validation") {
+        "validation_failed"
+    } else {
+        "adapter_error"
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Run summary
+// ---------------------------------------------------------------------------
+
+/// Build a run summary payload with aggregate statistics from the run.
+fn build_run_summary(
+    events_path: &Path,
+    normalized: &NormalizedDefinitionFile,
+    run_start: std::time::Instant,
+) -> Result<serde_json::Value, RunError> {
+    let events = crate::method_runner::events::recover_events(events_path)?;
+    let state = project(&events)?;
+    let elapsed_ms = run_start.elapsed().as_millis() as u64;
+
+    let total_phases = normalized.method.phases.len() as u64;
+    let total_steps: u64 = normalized
+        .method
+        .phases
+        .iter()
+        .map(|p| p.steps.len() as u64)
+        .sum();
+
+    let mut completed_phases: u64 = 0;
+    let mut blocked_phases: u64 = 0;
+    let mut failed_phases: u64 = 0;
+    let mut completed_steps: u64 = 0;
+    let mut blocked_steps: u64 = 0;
+    let mut failed_steps: u64 = 0;
+    let mut total_attempts: u64 = 0;
+
+    for phase_state in state.phases.values() {
+        match phase_state.status {
+            crate::method_runner::state::PhaseStatus::Completed => completed_phases += 1,
+            crate::method_runner::state::PhaseStatus::Blocked => blocked_phases += 1,
+            crate::method_runner::state::PhaseStatus::Failed => failed_phases += 1,
+            _ => {}
+        }
+        for step_state in phase_state.steps.values() {
+            match step_state.status {
+                crate::method_runner::state::StepStatus::Completed => completed_steps += 1,
+                crate::method_runner::state::StepStatus::Blocked => blocked_steps += 1,
+                crate::method_runner::state::StepStatus::Failed => failed_steps += 1,
+                _ => {}
+            }
+            total_attempts += step_state.attempts.len() as u64;
+        }
+    }
+
+    let total_events = events.len() as u64;
+
+    Ok(serde_json::json!({
+        "summary": {
+            "total_phases": total_phases,
+            "completed_phases": completed_phases,
+            "blocked_phases": blocked_phases,
+            "failed_phases": failed_phases,
+            "total_steps": total_steps,
+            "completed_steps": completed_steps,
+            "blocked_steps": blocked_steps,
+            "failed_steps": failed_steps,
+            "total_attempts": total_attempts,
+            "total_events": total_events,
+            "elapsed_ms": elapsed_ms,
+        }
+    }))
 }
 
 fn find_handoff(relay_root: &Path) -> Option<std::path::PathBuf> {
