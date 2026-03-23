@@ -11,7 +11,8 @@
 //! - Method archetypes and involvement levels
 
 use capacitor_core::domain::{
-    CheckpointKind, InvolvementLevel, MutateRunCommand, RunMutationKind, RunStatus,
+    CaptureStatus, CheckpointKind, InvolvementLevel, MediaArtifact, MediaArtifactType,
+    MutateRunCommand, RunMutationKind, RunStatus,
 };
 use capacitor_core::CoreRuntime;
 use tempfile::TempDir;
@@ -32,8 +33,12 @@ fn create_cmd(run_id: &str, method_id: &str) -> MutateRunCommand {
         checkpoint_manifest_path: None,
         checkpoint_media_artifacts: vec![],
         checkpoint_mermaid_sources: vec![],
-        capture_requested: false,
         capture_url: None,
+        checkpoint_id: None,
+        capture_request_id: None,
+        client_id: None,
+        observed_capture_url: None,
+        capture_failure_reason: None,
         decision_action: None,
         decision_note: None,
         session_id: None,
@@ -56,8 +61,12 @@ fn base_cmd(run_id: &str) -> MutateRunCommand {
         checkpoint_manifest_path: None,
         checkpoint_media_artifacts: vec![],
         checkpoint_mermaid_sources: vec![],
-        capture_requested: false,
         capture_url: None,
+        checkpoint_id: None,
+        capture_request_id: None,
+        client_id: None,
+        observed_capture_url: None,
+        capture_failure_reason: None,
         decision_action: None,
         decision_note: None,
         session_id: None,
@@ -145,6 +154,121 @@ fn scenario_execution_only_full_lifecycle() {
 
     let snap = runtime.app_snapshot().expect("snapshot");
     assert_eq!(snap.runs[0].status, RunStatus::Completed);
+}
+
+// ===========================================================================
+// Scenario 2: Capture lifecycle on a checkpoint
+// ===========================================================================
+
+#[test]
+fn scenario_capture_checkpoint_lifecycle() {
+    let runtime = CoreRuntime::new().expect("runtime");
+
+    runtime
+        .mutate_run(create_cmd("run-capture-01", "execution_only"))
+        .expect("create");
+
+    let snap = runtime.app_snapshot().expect("snapshot");
+    let run = snap
+        .runs
+        .iter()
+        .find(|run| run.id == "run-capture-01")
+        .expect("created run");
+    assert_eq!(run.status, RunStatus::Created);
+    assert!(run.active_checkpoint.is_none());
+
+    let mut cmd = base_cmd("run-capture-01");
+    cmd.session_id = Some("session-capture-01".to_string());
+    let outcome = mutate(&runtime, cmd, RunMutationKind::AttachSession);
+    assert!(outcome.ok);
+
+    let snap = runtime.app_snapshot().expect("snapshot");
+    let run = snap
+        .runs
+        .iter()
+        .find(|run| run.id == "run-capture-01")
+        .expect("attached run");
+    assert_eq!(run.status, RunStatus::Active);
+    assert_eq!(run.session_id.as_deref(), Some("session-capture-01"));
+    assert_eq!(run.current_phase_index, 0);
+    assert_eq!(
+        run.phases[0].status,
+        capacitor_core::domain::PhaseStatus::Active
+    );
+
+    let mut cmd = base_cmd("run-capture-01");
+    cmd.checkpoint_kind = Some(CheckpointKind::ImplementationMilestone);
+    cmd.checkpoint_title = Some("Capture milestone".to_string());
+    cmd.capture_url = Some("http://localhost:3000".to_string());
+    let outcome = mutate(&runtime, cmd, RunMutationKind::EmitCheckpoint);
+    assert!(outcome.ok);
+
+    let snap = runtime.app_snapshot().expect("snapshot");
+    let run = snap
+        .runs
+        .iter()
+        .find(|run| run.id == "run-capture-01")
+        .expect("checkpoint run");
+    let checkpoint = run.active_checkpoint.as_ref().expect("checkpoint");
+    assert_eq!(run.status, RunStatus::Paused);
+    assert_eq!(
+        checkpoint.capture_url.as_deref(),
+        Some("http://localhost:3000")
+    );
+    assert_eq!(checkpoint.capture_status, CaptureStatus::Pending);
+    assert!(checkpoint.capture_claim.is_none());
+
+    let capture_request_id = "capture-request-01".to_string();
+    let mut cmd = base_cmd("run-capture-01");
+    cmd.checkpoint_id = Some(checkpoint.id.clone());
+    cmd.capture_request_id = Some(capture_request_id.clone());
+    cmd.client_id = Some("client-01".to_string());
+    cmd.observed_capture_url = Some("http://localhost:3000".to_string());
+    let outcome = mutate(&runtime, cmd, RunMutationKind::CaptureClaim);
+    assert!(outcome.ok);
+
+    let snap = runtime.app_snapshot().expect("snapshot");
+    let run = snap
+        .runs
+        .iter()
+        .find(|run| run.id == "run-capture-01")
+        .expect("claimed run");
+    let checkpoint = run.active_checkpoint.as_ref().expect("checkpoint");
+    assert_eq!(run.status, RunStatus::Paused);
+    assert_eq!(checkpoint.capture_status, CaptureStatus::InProgress);
+    let claim = checkpoint.capture_claim.as_ref().expect("claim");
+    assert_eq!(claim.capture_request_id, capture_request_id);
+    assert_eq!(claim.client_id, "client-01");
+    assert_eq!(
+        claim.observed_capture_url.as_deref(),
+        Some("http://localhost:3000")
+    );
+
+    let mut cmd = base_cmd("run-capture-01");
+    cmd.checkpoint_id = Some(checkpoint.id.clone());
+    cmd.capture_request_id = Some(capture_request_id.clone());
+    cmd.completed_media_artifacts = vec![MediaArtifact {
+        artifact_type: MediaArtifactType::Screenshot,
+        path: "/tmp/capture.png".to_string(),
+        label: "Capture screenshot".to_string(),
+        width: Some(1280),
+        height: Some(800),
+        duration_secs: None,
+    }];
+    let outcome = mutate(&runtime, cmd, RunMutationKind::CaptureComplete);
+    assert!(outcome.ok);
+
+    let snap = runtime.app_snapshot().expect("snapshot");
+    let run = snap
+        .runs
+        .iter()
+        .find(|run| run.id == "run-capture-01")
+        .expect("completed run");
+    let checkpoint = run.active_checkpoint.as_ref().expect("checkpoint");
+    assert_eq!(run.status, RunStatus::Paused);
+    assert_eq!(checkpoint.capture_status, CaptureStatus::Completed);
+    assert_eq!(checkpoint.media_artifacts.len(), 1);
+    assert_eq!(checkpoint.media_artifacts[0].path, "/tmp/capture.png");
 }
 
 // ===========================================================================
@@ -610,4 +734,66 @@ fn scenario_runs_and_delegations_coexist() {
     assert_eq!(snap.runs.len(), 1);
     assert_eq!(snap.delegations[0].worker_id, "worker-1");
     assert_eq!(snap.runs[0].id, "run-coexist");
+}
+
+// ===========================================================================
+// Scenario 8: capture_complete rejects empty artifacts
+// ===========================================================================
+
+#[test]
+fn scenario_capture_complete_rejects_empty_artifacts() {
+    let runtime = CoreRuntime::new().expect("runtime");
+
+    runtime
+        .mutate_run(create_cmd("run-empty-cap", "execution_only"))
+        .expect("create");
+
+    let mut cmd = base_cmd("run-empty-cap");
+    cmd.session_id = Some("session-empty-cap".to_string());
+    let outcome = mutate(&runtime, cmd, RunMutationKind::AttachSession);
+    assert!(outcome.ok);
+
+    let mut cmd = base_cmd("run-empty-cap");
+    cmd.checkpoint_kind = Some(CheckpointKind::ImplementationMilestone);
+    cmd.checkpoint_title = Some("Empty capture test".to_string());
+    cmd.capture_url = Some("http://localhost:3000".to_string());
+    let outcome = mutate(&runtime, cmd, RunMutationKind::EmitCheckpoint);
+    assert!(outcome.ok);
+
+    let snap = runtime.app_snapshot().expect("snapshot");
+    let run = snap
+        .runs
+        .iter()
+        .find(|run| run.id == "run-empty-cap")
+        .expect("run");
+    let checkpoint = run.active_checkpoint.as_ref().expect("checkpoint");
+
+    let mut cmd = base_cmd("run-empty-cap");
+    cmd.checkpoint_id = Some(checkpoint.id.clone());
+    cmd.capture_request_id = Some("cap-req-empty".to_string());
+    cmd.client_id = Some("client-01".to_string());
+    cmd.observed_capture_url = Some("http://localhost:3000".to_string());
+    let outcome = mutate(&runtime, cmd, RunMutationKind::CaptureClaim);
+    assert!(outcome.ok);
+
+    // Attempt capture_complete with empty artifacts — should be rejected
+    let mut cmd = base_cmd("run-empty-cap");
+    cmd.checkpoint_id = Some(checkpoint.id.clone());
+    cmd.capture_request_id = Some("cap-req-empty".to_string());
+    cmd.completed_media_artifacts = vec![];
+    let outcome = mutate(&runtime, cmd, RunMutationKind::CaptureComplete);
+    assert!(
+        !outcome.ok,
+        "capture_complete with empty artifacts must be rejected"
+    );
+
+    // Checkpoint should still be InProgress
+    let snap = runtime.app_snapshot().expect("snapshot");
+    let run = snap
+        .runs
+        .iter()
+        .find(|run| run.id == "run-empty-cap")
+        .expect("run after rejection");
+    let checkpoint = run.active_checkpoint.as_ref().expect("checkpoint");
+    assert_eq!(checkpoint.capture_status, CaptureStatus::InProgress);
 }

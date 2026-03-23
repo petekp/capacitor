@@ -63,6 +63,7 @@ final class RuntimeClientTests: XCTestCase {
         XCTAssertEqual(snapshot.sessions.first?.sessionId, "session-core")
         XCTAssertEqual(snapshot.shellState.shells.count, 1)
         XCTAssertEqual(snapshot.routingViews.count, 1)
+        XCTAssertTrue(snapshot.runs.isEmpty)
     }
 
     func testFetchProjectStatesUsesCoreSnapshotWhenAvailable() async throws {
@@ -113,6 +114,7 @@ final class RuntimeClientTests: XCTestCase {
         XCTAssertEqual(snapshot.shellState.shells.count, 1)
         XCTAssertEqual(snapshot.routingViews.count, 1)
         XCTAssertTrue(snapshot.delegations.isEmpty)
+        XCTAssertTrue(snapshot.runs.isEmpty)
         XCTAssertEqual(snapshot.projectStates.first?.projectPath, "/tmp/core-project")
         XCTAssertEqual(snapshot.sessions.first?.sessionId, "session-core")
     }
@@ -147,6 +149,134 @@ final class RuntimeClientTests: XCTestCase {
         XCTAssertEqual(snapshot.delegations.first?.status, "resume_pending")
         XCTAssertEqual(snapshot.delegations.first?.submittedMilestoneId, "01")
         XCTAssertEqual(snapshot.delegations.first?.currentReview?.milestoneId, "01")
+    }
+
+    func testFetchRuntimeSnapshotMapsRunCheckpointCapturePending() async throws {
+        let client = try makeClient(
+            coreSnapshot: Self.makeRunCheckpointPendingSnapshot(),
+        )
+
+        let snapshot = try await client.fetchRuntimeSnapshot(correlationId: "run-capture-pending")
+
+        let run = try XCTUnwrap(snapshot.runs.first)
+        let checkpoint = try XCTUnwrap(run.activeCheckpoint)
+        XCTAssertEqual(run.id, "run-001")
+        XCTAssertEqual(run.projectPath, "/tmp/core-project")
+        XCTAssertEqual(checkpoint.id, "checkpoint-001")
+        XCTAssertEqual(checkpoint.captureStatus, .pending)
+        XCTAssertEqual(checkpoint.captureUrl, "http://localhost:3000")
+        XCTAssertNil(checkpoint.captureClaim)
+    }
+
+    func testFetchRuntimeSnapshotMapsRunCheckpointCaptureFailed() async throws {
+        let client = try makeClient(
+            coreSnapshot: Self.makeRunCheckpointFailedSnapshot(),
+        )
+
+        let snapshot = try await client.fetchRuntimeSnapshot(correlationId: "run-capture-failed")
+
+        let checkpoint = try XCTUnwrap(snapshot.runs.first?.activeCheckpoint)
+        if case let .failed(reason) = checkpoint.captureStatus {
+            XCTAssertEqual(reason, "timeout")
+        } else {
+            XCTFail("expected failed capture status")
+        }
+        XCTAssertEqual(checkpoint.captureClaim?.captureRequestId, "capture-001")
+        XCTAssertEqual(checkpoint.captureClaim?.clientId, "capacitor-mac-1234")
+        XCTAssertEqual(checkpoint.captureClaim?.claimedAt, "2026-02-28T19:02:00Z")
+        XCTAssertEqual(checkpoint.captureClaim?.observedCaptureUrl, "http://localhost:3000")
+    }
+
+    func testFetchRuntimeSnapshotMapsRunCheckpointCaptureStatusStrings() async throws {
+        let scenarios: [LabeledExpectationScenario<String, RuntimeCaptureStatus>] = [
+            LabeledExpectationScenario(
+                label: "not_requested",
+                input: "not_requested",
+                expected: .notRequested,
+            ),
+            LabeledExpectationScenario(
+                label: "in_progress",
+                input: "in_progress",
+                expected: .inProgress,
+            ),
+            LabeledExpectationScenario(
+                label: "completed",
+                input: "completed",
+                expected: .completed,
+            ),
+        ]
+
+        for scenario in scenarios {
+            let context = scenarioContext(scenario.label)
+            let client = try makeClient(
+                coreSnapshot: Self.makeRunCheckpointSnapshot(captureStatusJSON: "\"\(scenario.input)\""),
+            )
+
+            let snapshot = try await client.fetchRuntimeSnapshot(
+                correlationId: "run-capture-\(scenario.label)",
+            )
+
+            let checkpoint = try XCTUnwrap(snapshot.runs.first?.activeCheckpoint, context)
+            XCTAssertEqual(checkpoint.captureStatus, scenario.expected, context)
+        }
+    }
+
+    func testFetchRuntimeSnapshotMapsAllNonFailedCaptureStatuses() async throws {
+        let scenarios: [(label: String, captureStatusJSON: String, expected: RuntimeCaptureStatus)] = [
+            ("not_requested", "\"not_requested\"", .notRequested),
+            ("in_progress", "\"in_progress\"", .inProgress),
+            ("completed", "\"completed\"", .completed),
+        ]
+
+        for scenario in scenarios {
+            let context = scenario.label
+            let client = try makeClient(
+                coreSnapshot: Self.makeRunCheckpointCaptureStatusSnapshot(
+                    captureStatusJSON: scenario.captureStatusJSON,
+                ),
+            )
+
+            let snapshot = try await client.fetchRuntimeSnapshot(correlationId: "run-capture-\(scenario.label)")
+
+            let checkpoint = try XCTUnwrap(snapshot.runs.first?.activeCheckpoint)
+            XCTAssertEqual(
+                checkpoint.captureStatus,
+                scenario.expected,
+                "\(context) capture status mismatch",
+            )
+        }
+    }
+
+    func testFetchRuntimeSnapshotIncludesRunsInRuntimeSnapshot() async throws {
+        let client = try makeClient(
+            coreSnapshot: Self.makeRunCheckpointPendingSnapshot(),
+        )
+
+        let snapshot = try await client.fetchRuntimeSnapshot(correlationId: "run-included")
+
+        XCTAssertEqual(snapshot.runs.count, 1)
+        XCTAssertEqual(snapshot.runs.first?.id, "run-001")
+        XCTAssertEqual(snapshot.runs.first?.methodId, "method-001")
+        XCTAssertEqual(snapshot.runs.first?.methodName, "Execution")
+        XCTAssertEqual(snapshot.runs.first?.status, "paused")
+        XCTAssertEqual(snapshot.runs.first?.sessionId, "session-core")
+        XCTAssertEqual(snapshot.runs.first?.delegationWorkerId, "worker-1")
+    }
+
+    func testFetchRuntimeSnapshotMapsCustomCheckpointKind() async throws {
+        let client = try makeClient(
+            coreSnapshot: Self.makeRunCustomCheckpointKindSnapshot(),
+        )
+
+        let snapshot = try await client.fetchRuntimeSnapshot(correlationId: "run-custom-kind")
+
+        let checkpoint = try XCTUnwrap(snapshot.runs.first?.activeCheckpoint)
+        switch checkpoint.kind {
+        case let .custom(label):
+            XCTAssertEqual(label, "QA hold")
+        default:
+            XCTFail("expected custom checkpoint kind")
+        }
     }
 
     func testFetchRuntimeSnapshotFailureScenarios() async throws {
@@ -358,7 +488,7 @@ final class RuntimeClientTests: XCTestCase {
 
         XCTAssertEqual(health.status, "ok")
         XCTAssertEqual(health.protocolVersion, 1)
-        XCTAssertEqual(health.schemaVersion, 2)
+        XCTAssertEqual(health.schemaVersion, 3)
         XCTAssertEqual(health.authMode, "bearer")
         XCTAssertEqual(health.serviceMode, "bootstrap_only")
         XCTAssertTrue(health.version.contains("runtime-service"))
@@ -409,7 +539,7 @@ final class RuntimeClientTests: XCTestCase {
 
         await fulfillment(of: [restartRequested], timeout: 0.5)
         XCTAssertNil(observedHealth?.schemaVersion)
-        XCTAssertEqual(observedMinimumSchemaVersion, 2)
+        XCTAssertEqual(observedMinimumSchemaVersion, 3)
     }
 
     func testFetchHealthRejectsUnexpectedProtocolVersion() async throws {
@@ -601,9 +731,89 @@ final class RuntimeClientTests: XCTestCase {
         }
     }
 
+    func testMutateRunSuccessDoesNotThrow() async throws {
+        let client = try makeMutationClient(
+            mutationResponse: #"{"ok":true,"message":"run capture claimed"}"#,
+        )
+
+        try await client.mutateRun(makeRunMutationRequest())
+    }
+
+    func testMutateRunRejectedThrowsMutationRejected() async throws {
+        let client = try makeMutationClient(
+            mutationResponse: #"{"ok":false,"message":"run mutation rejected"}"#,
+        )
+
+        do {
+            try await client.mutateRun(makeRunMutationRequest())
+            XCTFail("expected mutationRejected error")
+        } catch let error as RuntimeClientError {
+            switch error {
+            case let .mutationRejected(message):
+                XCTAssertEqual(message, "run mutation rejected")
+            default:
+                XCTFail("unexpected RuntimeClientError: \(error)")
+            }
+        }
+    }
+
+    func testMutateRunNon200ThrowsRuntimeUnavailable() async throws {
+        let client = try makeMutationClient(
+            mutationResponse: #"{"error":"not found"}"#,
+            statusCode: 404,
+        )
+
+        do {
+            try await client.mutateRun(makeRunMutationRequest())
+            XCTFail("expected runtimeUnavailable error")
+        } catch let error as RuntimeClientError {
+            switch error {
+            case .runtimeUnavailable:
+                break
+            default:
+                XCTFail("unexpected RuntimeClientError: \(error)")
+            }
+        }
+    }
+
+    func testMutateRunTargetsRuntimeRunMutateEndpoint() async throws {
+        var capturedRequest: URLRequest?
+        let client = try makeMutationClient(
+            mutationResponse: #"{"ok":true,"message":"run capture claimed"}"#,
+            requestObserver: { request in
+                capturedRequest = request
+            },
+        )
+
+        try await client.mutateRun(makeRunMutationRequest())
+
+        XCTAssertEqual(capturedRequest?.url?.path, "/runtime/run/mutate")
+        XCTAssertEqual(
+            capturedRequest?.value(forHTTPHeaderField: "Authorization"),
+            "Bearer service-secret",
+        )
+        let body = try XCTUnwrap(capturedRequest?.httpBody)
+        let payload = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        XCTAssertEqual(payload["checkpoint_id"] as? String, "checkpoint-001")
+        XCTAssertEqual(payload["capture_request_id"] as? String, "capture-001")
+        XCTAssertNil(payload["capture_requested"])
+    }
+
+    func testRuntimeRunMutationRequestEncodesCustomCheckpointKind() throws {
+        let request = makeRunMutationRequest(checkpointKind: .custom(label: "QA hold"))
+
+        let data = try JSONEncoder().encode(request)
+        let payload = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let checkpointKind = try XCTUnwrap(payload["checkpoint_kind"] as? [String: Any])
+        let custom = try XCTUnwrap(checkpointKind["custom"] as? [String: Any])
+
+        XCTAssertEqual(custom["label"] as? String, "QA hold")
+    }
+
     private func makeMutationClient(
         mutationResponse: String,
         statusCode: Int = 200,
+        requestObserver: ((URLRequest) -> Void)? = nil,
     ) throws -> RuntimeClient {
         RuntimeClient(
             runtimeServiceConnectionOverride: RuntimeServiceConnection(
@@ -611,6 +821,7 @@ final class RuntimeClientTests: XCTestCase {
                 bearerToken: "service-secret",
             ),
             sendRequest: { request in
+                requestObserver?(request)
                 let response = try XCTUnwrap(
                     HTTPURLResponse(
                         url: request.url!,
@@ -646,7 +857,7 @@ final class RuntimeClientTests: XCTestCase {
                 switch request.url?.path {
                 case "/health":
                     let json = """
-                    {"status":"ok","pid":4242,"version":"runtime-service-v1","protocol_version":1,"schema_version":2,"auth_mode":"bearer","service_mode":"bootstrap_only"}
+                    {"status":"ok","pid":4242,"version":"runtime-service-v1","protocol_version":1,"schema_version":3,"auth_mode":"bearer","service_mode":"bootstrap_only"}
                     """
                     return (Data(json.utf8), response)
                 case "/runtime/routing/resolve":
@@ -732,6 +943,54 @@ final class RuntimeClientTests: XCTestCase {
         )
     }
 
+    private static func makeRunCheckpointPendingSnapshot() -> Data {
+        makeRunCheckpointSnapshot(captureStatusJSON: #""pending""#)
+    }
+
+    private static func makeRunCheckpointFailedSnapshot() -> Data {
+        makeRunCheckpointSnapshot(
+            captureStatusJSON: #"{"failed":{"reason":"timeout"}}"#,
+            updatedAt: "2026-02-28T19:03:00Z",
+            mediaArtifactsJSON:
+            #"[{"artifact_type":"screenshot","path":"/tmp/core-project/.artifacts/web-capture.png","label":"Web capture","width":1440,"height":900,"duration_secs":null}]"#,
+            mermaidSourcesJSON: #"[{"label":"Sequence","source":"graph LR; A-->B"}]"#,
+            captureClaimJSON:
+            #"{"capture_request_id":"capture-001","client_id":"capacitor-mac-1234","claimed_at":"2026-02-28T19:02:00Z","observed_capture_url":"http://localhost:3000"}"#,
+        )
+    }
+
+    private static func makeRunCheckpointCaptureStatusSnapshot(
+        captureStatusJSON: String,
+    ) -> Data {
+        makeCoreSnapshotResponse(
+            runsJSON: """
+            ,"runs":[{"id":"run-001","project_path":"/tmp/core-project","method_id":"method-001","method_name":"Execution","status":"paused","session_id":"session-core","delegation_worker_id":"worker-1","created_at":"2026-02-28T19:00:00Z","updated_at":"2026-02-28T19:01:00Z","active_checkpoint":{"id":"checkpoint-001","phase_id":"phase-001","kind":"implementation_milestone","status":"active","title":"Capture homepage","summary":"Verify the implementation checkpoint.","brief_path":"/tmp/core-project/brief.md","manifest_path":"/tmp/core-project/manifest.json","media_artifacts":[],"mermaid_sources":[],"capture_status":\(captureStatusJSON),"capture_url":"http://localhost:3000","capture_claim":null,"created_at":"2026-02-28T19:00:00Z","decided_at":null}}]
+            """,
+        )
+    }
+
+    private static func makeRunCustomCheckpointKindSnapshot() -> Data {
+        makeCoreSnapshotResponse(
+            runsJSON: """
+            ,"runs":[{"id":"run-001","project_path":"/tmp/core-project","method_id":"method-001","method_name":"Execution","status":"paused","session_id":"session-core","delegation_worker_id":"worker-1","created_at":"2026-02-28T19:00:00Z","updated_at":"2026-02-28T19:03:00Z","active_checkpoint":{"id":"checkpoint-001","phase_id":"phase-001","kind":{"custom":{"label":"QA hold"}},"status":"active","title":"Capture homepage","summary":"Wait for QA confirmation.","brief_path":null,"manifest_path":null,"media_artifacts":[],"mermaid_sources":[],"capture_status":"pending","capture_url":"http://localhost:3000","capture_claim":null,"created_at":"2026-02-28T19:00:00Z","decided_at":null}}]
+            """,
+        )
+    }
+
+    private static func makeRunCheckpointSnapshot(
+        captureStatusJSON: String,
+        updatedAt: String = "2026-02-28T19:01:00Z",
+        mediaArtifactsJSON: String = "[]",
+        mermaidSourcesJSON: String = "[]",
+        captureClaimJSON: String = "null",
+    ) -> Data {
+        makeCoreSnapshotResponse(
+            runsJSON: """
+            ,"runs":[{"id":"run-001","project_path":"/tmp/core-project","method_id":"method-001","method_name":"Execution","status":"paused","session_id":"session-core","delegation_worker_id":"worker-1","created_at":"2026-02-28T19:00:00Z","updated_at":"\(updatedAt)","active_checkpoint":{"id":"checkpoint-001","phase_id":"phase-001","kind":"implementation_milestone","status":"active","title":"Capture homepage","summary":"Verify the implementation checkpoint.","brief_path":"/tmp/core-project/brief.md","manifest_path":"/tmp/core-project/manifest.json","media_artifacts":\(mediaArtifactsJSON),"mermaid_sources":\(mermaidSourcesJSON),"capture_status":\(captureStatusJSON),"capture_url":"http://localhost:3000","capture_claim":\(captureClaimJSON),"created_at":"2026-02-28T19:00:00Z","decided_at":null}}]
+            """,
+        )
+    }
+
     private static func makeRoutingResolveResponse(
         requestBody: Data?,
         coreSnapshot: Data,
@@ -774,6 +1033,7 @@ final class RuntimeClientTests: XCTestCase {
         routeReasonCode: String = "tmux_client_attached",
         shellTmuxClientTty: String? = "/dev/ttys099",
         delegationJSON: String = ",\"delegations\":[]",
+        runsJSON: String = ",\"runs\":[]",
     ) -> Data {
         let shellTmuxClientTtyJSON = if let shellTmuxClientTty {
             "\"\(shellTmuxClientTty)\""
@@ -781,8 +1041,39 @@ final class RuntimeClientTests: XCTestCase {
             "null"
         }
         let json = """
-        {"projects":[{"project_id":"/tmp/core-project/.git","workspace_id":"workspace-core","project_path":"/tmp/core-project","display_name":"core-project","state":"working","updated_at":"2026-02-28T19:00:00Z","state_changed_at":"2026-02-28T19:00:00Z","representative_session_id":"session-core","latest_session_id":"session-core","session_count":1,"active_count":1,"has_session":true}],"sessions":[{"session_id":"session-core","pid":4242,"cwd":"/tmp/core-project","project_id":"/tmp/core-project/.git","project_path":"/tmp/core-project","workspace_id":"workspace-core","state":"working","state_changed_at":"2026-02-28T19:00:00Z","updated_at":"2026-02-28T19:00:00Z","last_event":"user_prompt_submit","last_activity_at":"2026-02-28T19:00:00Z","tools_in_flight":1,"ready_reason":null}],"shells":[{"pid":4242,"cwd":"/tmp/core-project","tty":"/dev/ttys001","parent_app":"Ghostty","tmux_session":"core","tmux_client_tty":\(shellTmuxClientTtyJSON),"tmux_pane":"%42","updated_at":"\(shellUpdatedAt)"}],"routing":[{"workspace_id":"workspace-core","project_path":"/tmp/core-project","status":"attached","target":{"kind":"tmux_pane","terminal_app":"Ghostty","session_name":"core","pane_id":"%42","host_tty":"/dev/ttys099"},"reason_code":"\(routeReasonCode)","reason":"Attached tmux pane","updated_at":"2026-02-28T19:00:00Z"}]\(delegationJSON),"diagnostics":{"events_ingested":7,"sessions_tracked":1,"shell_signals_tracked":1,"events_skipped":0,"stale_events_skipped":0,"informational_events_skipped":0,"reducer_events_skipped":0,"last_error":null},"generated_at":"2026-02-28T19:00:00Z"}
+        {"projects":[{"project_id":"/tmp/core-project/.git","workspace_id":"workspace-core","project_path":"/tmp/core-project","display_name":"core-project","state":"working","updated_at":"2026-02-28T19:00:00Z","state_changed_at":"2026-02-28T19:00:00Z","representative_session_id":"session-core","latest_session_id":"session-core","session_count":1,"active_count":1,"has_session":true}],"sessions":[{"session_id":"session-core","pid":4242,"cwd":"/tmp/core-project","project_id":"/tmp/core-project/.git","project_path":"/tmp/core-project","workspace_id":"workspace-core","state":"working","state_changed_at":"2026-02-28T19:00:00Z","updated_at":"2026-02-28T19:00:00Z","last_event":"user_prompt_submit","last_activity_at":"2026-02-28T19:00:00Z","tools_in_flight":1,"ready_reason":null}],"shells":[{"pid":4242,"cwd":"/tmp/core-project","tty":"/dev/ttys001","parent_app":"Ghostty","tmux_session":"core","tmux_client_tty":\(shellTmuxClientTtyJSON),"tmux_pane":"%42","updated_at":"\(shellUpdatedAt)"}],"routing":[{"workspace_id":"workspace-core","project_path":"/tmp/core-project","status":"attached","target":{"kind":"tmux_pane","terminal_app":"Ghostty","session_name":"core","pane_id":"%42","host_tty":"/dev/ttys099"},"reason_code":"\(routeReasonCode)","reason":"Attached tmux pane","updated_at":"2026-02-28T19:00:00Z"}]\(delegationJSON)\(runsJSON),"diagnostics":{"events_ingested":7,"sessions_tracked":1,"shell_signals_tracked":1,"events_skipped":0,"stale_events_skipped":0,"informational_events_skipped":0,"reducer_events_skipped":0,"last_error":null},"generated_at":"2026-02-28T19:00:00Z"}
         """
         return Data(json.utf8)
+    }
+
+    private func makeRunMutationRequest(
+        kind: String = "capture_claim",
+        checkpointKind: RuntimeCheckpointKind? = .implementationMilestone,
+    ) -> RuntimeRunMutationRequest {
+        RuntimeRunMutationRequest(
+            kind: kind,
+            projectPath: "/tmp/core-project",
+            runId: "run-001",
+            checkpointId: "checkpoint-001",
+            methodId: "method-001",
+            involvement: "driver",
+            checkpointKind: checkpointKind,
+            checkpointTitle: "Capture homepage",
+            checkpointSummary: "Verify the implementation checkpoint.",
+            checkpointBriefPath: "/tmp/core-project/brief.md",
+            checkpointManifestPath: "/tmp/core-project/manifest.json",
+            checkpointMediaArtifacts: [],
+            checkpointMermaidSources: [],
+            captureUrl: "http://localhost:3000",
+            decisionAction: nil,
+            decisionNote: nil,
+            sessionId: "session-core",
+            delegationWorkerId: "worker-1",
+            captureRequestId: "capture-001",
+            clientId: "capacitor-mac-1234",
+            observedCaptureUrl: "http://localhost:3000",
+            captureFailureReason: nil,
+            completedMediaArtifacts: [],
+        )
     }
 }

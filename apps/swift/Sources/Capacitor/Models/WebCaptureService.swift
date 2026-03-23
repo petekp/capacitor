@@ -43,7 +43,6 @@ actor WebCaptureService {
         _ url: String,
         outputPath: String,
         timeoutSeconds: Int = 30,
-        fullPage: Bool = false,
     ) async throws -> CaptureResult {
         let binary = try findAgentBrowser()
 
@@ -73,14 +72,9 @@ actor WebCaptureService {
         )
 
         // Take screenshot
-        var screenshotArgs = ["screenshot", outputPath, "--session", sessionName]
-        if fullPage {
-            screenshotArgs.insert("--full", at: 2)
-        }
-
         let shotResult = try await shellExec(
             command: binary,
-            arguments: screenshotArgs,
+            arguments: ["screenshot", outputPath, "--session", sessionName],
             timeoutSeconds: timeoutSeconds,
         )
 
@@ -300,7 +294,6 @@ actor WebCaptureService {
     // MARK: - Shell Helpers
 
     private struct ShellResult {
-        let stdout: String
         let stderr: String
         let exitCode: Int32
     }
@@ -312,12 +305,11 @@ actor WebCaptureService {
     ) async throws -> ShellResult {
         try await withCheckedThrowingContinuation { continuation in
             let process = Process()
-            let stdoutPipe = Pipe()
             let stderrPipe = Pipe()
 
             process.executableURL = URL(fileURLWithPath: command)
             process.arguments = arguments
-            process.standardOutput = stdoutPipe
+            process.standardOutput = FileHandle.nullDevice
             process.standardError = stderrPipe
 
             // Set up timeout
@@ -341,11 +333,9 @@ actor WebCaptureService {
                     return
                 }
 
-                let stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
                 let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
 
                 let result = ShellResult(
-                    stdout: String(data: stdoutData, encoding: .utf8) ?? "",
                     stderr: String(data: stderrData, encoding: .utf8) ?? "",
                     exitCode: process.terminationStatus,
                 )

@@ -40,6 +40,16 @@ enum AppFeatureError: LocalizedError {
     }
 }
 
+struct RuntimeRunKey: Hashable, Sendable {
+    let normalizedProjectPath: String
+    let runID: String
+
+    init(run: RuntimeRunState) {
+        normalizedProjectPath = PathNormalizer.normalize(run.projectPath)
+        runID = run.id
+    }
+}
+
 @Observable
 @MainActor
 class AppState {
@@ -108,6 +118,7 @@ class AppState {
 
     var activeCreations: [ProjectCreation] = []
     private(set) var delegationStates: [String: RuntimeDelegationState] = [:]
+    private(set) var runStatesByID: [RuntimeRunKey: RuntimeRunState] = [:]
 
     // MARK: - Cached Project Statuses (avoids FFI call per card per render)
 
@@ -167,6 +178,7 @@ class AppState {
     let hookServerManager: HookServerManager
     let projectDetailsManager = ProjectDetailsManager()
     private(set) var delegationLoopManager: DelegationLoopManager!
+    let runCaptureCoordinator: RunCaptureCoordinator
     private let projectIngestionWorker = ProjectIngestionWorker()
     private(set) var projectCreationCoordinator: ProjectCreationCoordinator!
     private(set) var projectFeatureCoordinator: ProjectFeatureCoordinator!
@@ -195,10 +207,6 @@ class AppState {
     private var runtimeSnapshotCorrelationCounter: UInt64 = 0
     private var consecutiveRuntimeSnapshotFailures = 0
     private(set) var sessionStateRevision = 0
-    private(set) var didScheduleRuntimeBootstrapForTesting = false
-    private(set) var didAttemptRuntimeHealthCheckForTesting = false
-    private(set) var didStartRefreshTimerForTesting = false
-    private(set) var didStartShellTrackingForTesting = false
     private(set) var didShutdownForTesting = false
     #if DEBUG
         private(set) var runtimeBootstrapTraceForTesting: [String] = []
@@ -223,6 +231,7 @@ class AppState {
     ) {
         self.runtimeClient = runtimeClient
         self.hookServerManager = hookServerManager
+        runCaptureCoordinator = RunCaptureCoordinator(runtimeClient: runtimeClient)
         self.runtimeClient.setIncompatibleSchemaHandler { [weak self] health, minimumSchemaVersion in
             guard let self else { return }
             await MainActor.run {
@@ -374,8 +383,6 @@ class AppState {
     }
 
     private func scheduleRuntimeBootstrap() {
-        didScheduleRuntimeBootstrapForTesting = true
-
         // Phase 2: Defer runtime bootstrap work past first SwiftUI render.
         runtimeBootstrapTask?.cancel()
         runtimeBootstrapTask = _Concurrency.Task { @MainActor [weak self] in
@@ -429,7 +436,6 @@ class AppState {
     private var runtimeHealthCheckCounter = 0
 
     private func setupRefreshTimer() {
-        didStartRefreshTimerForTesting = true
         refreshTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
             guard let self else { return }
             DispatchQueue.main.async {
@@ -470,7 +476,6 @@ class AppState {
     }
 
     private func startShellTracking() {
-        didStartShellTrackingForTesting = true
         activeProjectResolver.updateProjects(projects)
     }
 
@@ -580,15 +585,30 @@ class AppState {
         } else if !delegationStates.isEmpty {
             delegationStates = [:]
         }
+        let nextRunsByID = Dictionary(
+            snapshot.runs.map { (RuntimeRunKey(run: $0), $0) },
+            uniquingKeysWith: { existing, incoming in
+                DebugLog.write(
+                    "AppState.refreshSessionStates duplicate RuntimeRunKey for run=\(incoming.id) projectPath=\(incoming.projectPath) — keeping first",
+                )
+                return existing
+            },
+        )
+        if nextRunsByID != runStatesByID {
+            runStatesByID = nextRunsByID
+        }
         consecutiveRuntimeSnapshotFailures = 0
 
         DebugLog.write(
-            "AppState.refreshSessionStates source=runtime_snapshot_apply cid=\(correlationId) projects=\(snapshot.projectStates.count) sessions=\(snapshot.sessions.count) shells=\(snapshot.shellState.shells.count) routing=\(snapshot.routingViews.count)",
+            "AppState.refreshSessionStates source=runtime_snapshot_apply cid=\(correlationId) projects=\(snapshot.projectStates.count) sessions=\(snapshot.sessions.count) shells=\(snapshot.shellState.shells.count) routing=\(snapshot.routingViews.count) runs=\(snapshot.runs.count)",
         )
         if isDelegationLoopEnabled {
             _Concurrency.Task { [delegationLoopManager] in
                 await delegationLoopManager?.reconcile(delegations: snapshot.delegations)
             }
+        }
+        _Concurrency.Task { [runCaptureCoordinator] in
+            await runCaptureCoordinator.reconcile(runs: snapshot.runs)
         }
         updatePostSessionRefreshContext()
     }
@@ -619,6 +639,7 @@ class AppState {
             shellStateStore.clearRuntimeShellState(correlationId: correlationId)
             routingStateStore.clearRuntimeRoutingViews(correlationId: correlationId)
             delegationStates = [:]
+            runStatesByID = [:]
         }
 
         updatePostSessionRefreshContext()
@@ -728,7 +749,6 @@ class AppState {
     // MARK: - Runtime Diagnostic
 
     func ensureRuntimeReady() {
-        didAttemptRuntimeHealthCheckForTesting = true
         // Hard cutover mode: live runtime state comes from the local runtime service.
         // No legacy launchd lifecycle orchestration remains in AppState.
         checkRuntimeHealth()

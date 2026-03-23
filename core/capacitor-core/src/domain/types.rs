@@ -165,8 +165,8 @@ pub struct AppSnapshot {
     pub generated_at: String,
 }
 
-/// Increment when delegation mutation kinds or delegation statuses change.
-pub const SCHEMA_VERSION: u32 = 2;
+/// Increment when delegation or run mutation contracts change.
+pub const SCHEMA_VERSION: u32 = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Enum)]
 #[serde(rename_all = "snake_case")]

@@ -459,7 +459,7 @@ mod tests {
                     "pid": 4242,
                     "version": "runtime-service-test",
                     "protocol_version": 1,
-                    "schema_version": 2,
+                    "schema_version": 3,
                     "auth_mode": "bearer",
                     "service_mode": "bootstrap_only"
                 }),
@@ -493,7 +493,7 @@ mod tests {
                     "pid": 4242,
                     "version": "runtime-service-test",
                     "protocol_version": 99,
-                    "schema_version": 2,
+                    "schema_version": 3,
                     "auth_mode": "bearer",
                     "service_mode": "bootstrap_only"
                 }),
@@ -523,7 +523,7 @@ mod tests {
                     "pid": 4242,
                     "version": "runtime-service-test",
                     "protocol_version": 1,
-                    "schema_version": 2,
+                    "schema_version": 3,
                     "auth_mode": "none",
                     "service_mode": "bootstrap_only"
                 }),
@@ -553,7 +553,7 @@ mod tests {
                     "pid": 4242,
                     "version": "runtime-service-test",
                     "protocol_version": 1,
-                    "schema_version": 2,
+                    "schema_version": 3,
                     "auth_mode": "bearer",
                     "service_mode": "daemon"
                 }),
