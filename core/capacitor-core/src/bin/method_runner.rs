@@ -8,6 +8,7 @@ use capacitor_core::method_runner::adapters::{
 };
 use capacitor_core::method_runner::definition::DefinitionSource;
 use capacitor_core::method_runner::executor::{execute_normalize, execute_run};
+use capacitor_core::method_runner::resume::resume_run;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CommandKind {
@@ -92,8 +93,24 @@ fn main() -> ExitCode {
                 }
             }
             CommandKind::Resume => {
-                println!("resume not yet implemented");
-                ExitCode::SUCCESS
+                let prompt_builder = FakePromptBuilder;
+                let dispatcher = FakeWorkerDispatcher;
+                let interactive_io = FakeInteractiveIO::new("approved");
+                match resume_run(&command.root, &prompt_builder, &dispatcher, &interactive_io) {
+                    Ok(state) => {
+                        println!("resume complete: run_id={}", state.run_id);
+                        println!("status: {:?}", state.status);
+                        println!(
+                            "phases: {}",
+                            state.phases.keys().cloned().collect::<Vec<_>>().join(", ")
+                        );
+                        ExitCode::SUCCESS
+                    }
+                    Err(e) => {
+                        eprintln!("error: {e}");
+                        ExitCode::FAILURE
+                    }
+                }
             }
         },
         Err(message) => {

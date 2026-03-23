@@ -442,6 +442,7 @@ fn invariant_i7_conservative_output_availability() {
     let mut phase_state = capacitor_core::method_runner::state::PhaseState {
         status: PhaseStatus::Running,
         steps: BTreeMap::new(),
+        gate_result: None,
     };
 
     let step_state = capacitor_core::method_runner::state::StepState {

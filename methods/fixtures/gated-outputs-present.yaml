@@ -1,0 +1,29 @@
+schema_version: "1"
+method:
+  id: gated-outputs-present
+  version: "2026-03-23"
+  title: Gated Outputs Present
+  description: Method with an outputs_present gate checking named outputs exist.
+  outputs:
+    dispatch_summary:
+      from: build.implement.dispatch_summary
+      required: true
+  phases:
+    - id: build
+      title: Build
+      execution: serial
+      gate:
+        id: outputs-gate
+        type: outputs_present
+        outputs:
+          - dispatch_summary
+      steps:
+        - id: implement
+          title: Implement
+          action: dispatch
+          outputs:
+            dispatch_summary:
+              path: artifacts/dispatch-summary.md
+              type: markdown
+          dispatch:
+            instructions: Implement the feature.

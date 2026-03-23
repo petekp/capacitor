@@ -13,7 +13,8 @@ use crate::method_runner::adapters::{
 };
 use crate::method_runner::definition::{
     write_snapshot, write_step_json, ActionKind, CompletionPolicy, DefinitionSource,
-    NormalizationError, NormalizedDefinitionFile, NormalizedStep, Normalizer, StepActionConfig,
+    NormalizationError, NormalizedDefinitionFile, NormalizedGate, NormalizedPhase, NormalizedStep,
+    Normalizer, StepActionConfig,
 };
 use crate::method_runner::events::{append_event, make_envelope, AppendError, MethodEventKind};
 use crate::method_runner::handoff::{ingest_handoff, HandoffParseError};
@@ -56,6 +57,286 @@ pub enum RunError {
 
     #[error("step '{step_id}' blocked: {reason}")]
     StepBlocked { step_id: String, reason: String },
+
+    #[error("phase '{phase_id}' blocked by gate '{gate_id}': {reason}")]
+    PhaseGateBlocked {
+        phase_id: String,
+        gate_id: String,
+        reason: String,
+    },
+}
+
+// ---------------------------------------------------------------------------
+// Gate evaluation
+// ---------------------------------------------------------------------------
+
+/// Outcome of evaluating a phase or step gate.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GateOutcome {
+    Approved,
+    Rejected,
+    Waiting,
+    TimedOut,
+    ValidationFailed { reason: String },
+}
+
+impl GateOutcome {
+    pub fn as_str(&self) -> &str {
+        match self {
+            GateOutcome::Approved => "approved",
+            GateOutcome::Rejected => "rejected",
+            GateOutcome::Waiting => "waiting",
+            GateOutcome::TimedOut => "timed_out",
+            GateOutcome::ValidationFailed { .. } => "validation_failed",
+        }
+    }
+
+    pub fn reason(&self) -> Option<&str> {
+        match self {
+            GateOutcome::ValidationFailed { reason } => Some(reason.as_str()),
+            _ => None,
+        }
+    }
+}
+
+/// Evaluate a phase gate after all steps in the phase have completed.
+///
+/// Gate types:
+/// - `approval` — prompts via InteractiveIO, expects "approved" or "rejected"
+/// - `outputs_present` — checks that all named outputs in gate.outputs exist in state
+/// - `handoff_verdict` — checks all steps have handoffs with CLEAN verdict
+/// - `completion_claim` — checks all steps have COMPLETE claim
+/// - `manual_test_complete` — prompts via InteractiveIO (same as approval)
+/// - `pipeline_clean` — v1-deferred, always returns blocked (waiting)
+pub fn evaluate_gate(
+    gate: &NormalizedGate,
+    phase: &NormalizedPhase,
+    state: &MethodRunState,
+    paths: &MethodRunPaths,
+    interactive_io: &dyn InteractiveIO,
+) -> GateOutcome {
+    match gate.gate_type.as_str() {
+        "approval" | "manual_test_complete" => {
+            let prompt_msg = if gate.gate_type == "approval" {
+                format!("Gate '{}': Do you approve this phase?", gate.id)
+            } else {
+                format!("Gate '{}': Have manual tests been completed?", gate.id)
+            };
+            interactive_io.emit_prompt(&InteractivePrompt {
+                message: prompt_msg,
+            });
+            let response = interactive_io.capture_response();
+            let normalized = response.body.trim().to_lowercase();
+            match normalized.as_str() {
+                "approved" => GateOutcome::Approved,
+                "rejected" => GateOutcome::Rejected,
+                _ => GateOutcome::Rejected,
+            }
+        }
+        "outputs_present" => {
+            // Check that all named outputs in gate.outputs exist in the state
+            let phase_id = &phase.id;
+            if let Some(phase_state) = state.phases.get(phase_id) {
+                for output_name in &gate.outputs {
+                    // Search for the output across all steps in this phase
+                    let mut found = false;
+                    for step_state in phase_state.steps.values() {
+                        if step_state.outputs.contains_key(output_name) {
+                            found = true;
+                            break;
+                        }
+                    }
+                    if !found {
+                        return GateOutcome::ValidationFailed {
+                            reason: format!(
+                                "output '{}' not found in phase '{}'",
+                                output_name, phase_id
+                            ),
+                        };
+                    }
+                }
+                GateOutcome::Approved
+            } else {
+                GateOutcome::ValidationFailed {
+                    reason: format!("phase '{}' not found in state", phase_id),
+                }
+            }
+        }
+        "handoff_verdict" => {
+            // Check that all steps in the phase have handoffs with CLEAN verdict
+            for step_def in &phase.steps {
+                if step_def.action != ActionKind::Dispatch {
+                    continue; // Only dispatch steps have handoffs
+                }
+                // Find the completed attempt's handoff
+                let phase_state = match state.phases.get(&phase.id) {
+                    Some(ps) => ps,
+                    None => {
+                        return GateOutcome::ValidationFailed {
+                            reason: format!("phase '{}' not found in state", phase.id),
+                        }
+                    }
+                };
+                let step_state = match phase_state.steps.get(&step_def.id) {
+                    Some(ss) => ss,
+                    None => {
+                        return GateOutcome::ValidationFailed {
+                            reason: format!("step '{}' not found in state", step_def.id),
+                        }
+                    }
+                };
+                // Find the latest completed attempt
+                let completed_attempt = step_state.attempts.iter().rev().find(|(_, a)| {
+                    a.status == crate::method_runner::state::AttemptStatus::Completed
+                        || a.status == crate::method_runner::state::AttemptStatus::OutputBound
+                });
+                if let Some((attempt_num, attempt_state)) = completed_attempt {
+                    // Check each worker's handoff
+                    for worker_id in attempt_state.workers.keys() {
+                        let handoff_path = paths.canonical_handoff(
+                            &phase.id,
+                            &step_def.id,
+                            *attempt_num,
+                            worker_id,
+                        );
+                        if handoff_path.exists() {
+                            let content = match std::fs::read_to_string(&handoff_path) {
+                                Ok(c) => c,
+                                Err(_) => {
+                                    return GateOutcome::ValidationFailed {
+                                        reason: format!(
+                                            "cannot read handoff for worker '{}'",
+                                            worker_id
+                                        ),
+                                    }
+                                }
+                            };
+                            let parsed = match crate::method_runner::handoff::parse_handoff(
+                                &content, worker_id,
+                            ) {
+                                Ok(p) => p,
+                                Err(_) => {
+                                    return GateOutcome::ValidationFailed {
+                                        reason: format!(
+                                            "cannot parse handoff for worker '{}'",
+                                            worker_id
+                                        ),
+                                    }
+                                }
+                            };
+                            if parsed.verdict.as_deref() != Some("CLEAN") {
+                                return GateOutcome::ValidationFailed {
+                                    reason: format!(
+                                        "worker '{}' has verdict '{}'",
+                                        worker_id,
+                                        parsed.verdict.as_deref().unwrap_or("none")
+                                    ),
+                                };
+                            }
+                        } else {
+                            return GateOutcome::ValidationFailed {
+                                reason: format!("no handoff found for worker '{}'", worker_id),
+                            };
+                        }
+                    }
+                } else {
+                    return GateOutcome::ValidationFailed {
+                        reason: format!("no completed attempt for step '{}'", step_def.id),
+                    };
+                }
+            }
+            GateOutcome::Approved
+        }
+        "completion_claim" => {
+            // Check that all steps have COMPLETE claim in their handoffs
+            for step_def in &phase.steps {
+                if step_def.action != ActionKind::Dispatch {
+                    continue;
+                }
+                let phase_state = match state.phases.get(&phase.id) {
+                    Some(ps) => ps,
+                    None => {
+                        return GateOutcome::ValidationFailed {
+                            reason: format!("phase '{}' not found in state", phase.id),
+                        }
+                    }
+                };
+                let step_state = match phase_state.steps.get(&step_def.id) {
+                    Some(ss) => ss,
+                    None => {
+                        return GateOutcome::ValidationFailed {
+                            reason: format!("step '{}' not found in state", step_def.id),
+                        }
+                    }
+                };
+                let completed_attempt = step_state.attempts.iter().rev().find(|(_, a)| {
+                    a.status == crate::method_runner::state::AttemptStatus::Completed
+                        || a.status == crate::method_runner::state::AttemptStatus::OutputBound
+                });
+                if let Some((attempt_num, attempt_state)) = completed_attempt {
+                    for worker_id in attempt_state.workers.keys() {
+                        let handoff_path = paths.canonical_handoff(
+                            &phase.id,
+                            &step_def.id,
+                            *attempt_num,
+                            worker_id,
+                        );
+                        if handoff_path.exists() {
+                            let content = match std::fs::read_to_string(&handoff_path) {
+                                Ok(c) => c,
+                                Err(_) => {
+                                    return GateOutcome::ValidationFailed {
+                                        reason: format!(
+                                            "cannot read handoff for worker '{}'",
+                                            worker_id
+                                        ),
+                                    }
+                                }
+                            };
+                            let parsed = match crate::method_runner::handoff::parse_handoff(
+                                &content, worker_id,
+                            ) {
+                                Ok(p) => p,
+                                Err(_) => {
+                                    return GateOutcome::ValidationFailed {
+                                        reason: format!(
+                                            "cannot parse handoff for worker '{}'",
+                                            worker_id
+                                        ),
+                                    }
+                                }
+                            };
+                            if parsed.completion_claim.as_deref() != Some("COMPLETE") {
+                                return GateOutcome::ValidationFailed {
+                                    reason: format!(
+                                        "worker '{}' has completion claim '{}'",
+                                        worker_id,
+                                        parsed.completion_claim.as_deref().unwrap_or("none")
+                                    ),
+                                };
+                            }
+                        } else {
+                            return GateOutcome::ValidationFailed {
+                                reason: format!("no handoff found for worker '{}'", worker_id),
+                            };
+                        }
+                    }
+                } else {
+                    return GateOutcome::ValidationFailed {
+                        reason: format!("no completed attempt for step '{}'", step_def.id),
+                    };
+                }
+            }
+            GateOutcome::Approved
+        }
+        "pipeline_clean" => {
+            // v1-deferred: always returns waiting (blocked)
+            GateOutcome::Waiting
+        }
+        _ => GateOutcome::ValidationFailed {
+            reason: format!("unknown gate type '{}'", gate.gate_type),
+        },
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -174,6 +455,68 @@ pub fn execute_run(
             )?;
         }
 
+        // Evaluate phase gate (if present) after all steps complete
+        if let Some(ref gate) = phase.gate {
+            // Project current state to evaluate gate against
+            let current_events = crate::method_runner::events::recover_events(&events_path)?;
+            let current_state = project(&current_events)?;
+
+            let outcome = evaluate_gate(gate, phase, &current_state, &paths, interactive_io);
+
+            // Emit GateEvaluated event
+            {
+                let mut env = make_envelope(&run_id, MethodEventKind::GateEvaluated);
+                env.phase_id = Some(phase.id.clone());
+                let mut payload = serde_json::json!({
+                    "gate_id": gate.id,
+                    "gate_type": gate.gate_type,
+                    "outcome": outcome.as_str(),
+                });
+                if let Some(reason) = outcome.reason() {
+                    payload["reason"] = serde_json::Value::String(reason.to_string());
+                }
+                env.payload = payload;
+                append_event(&events_path, &mut env, &mut current_seq)?;
+            }
+
+            match outcome {
+                GateOutcome::Approved => {
+                    // Phase completes normally — fall through to PhaseCompleted
+                }
+                GateOutcome::Rejected
+                | GateOutcome::ValidationFailed { .. }
+                | GateOutcome::TimedOut
+                | GateOutcome::Waiting => {
+                    let reason = match &outcome {
+                        GateOutcome::Rejected => "gate rejected".to_string(),
+                        GateOutcome::ValidationFailed { reason } => {
+                            format!("validation failed: {}", reason)
+                        }
+                        GateOutcome::TimedOut => "gate timed out".to_string(),
+                        GateOutcome::Waiting => {
+                            "pipeline_clean requires pipeline-execute, not implemented in v1"
+                                .to_string()
+                        }
+                        _ => unreachable!(),
+                    };
+
+                    // Emit PhaseBlocked
+                    {
+                        let mut env = make_envelope(&run_id, MethodEventKind::PhaseBlocked);
+                        env.phase_id = Some(phase.id.clone());
+                        env.payload = serde_json::json!({ "reason": reason });
+                        append_event(&events_path, &mut env, &mut current_seq)?;
+                    }
+
+                    return Err(RunError::PhaseGateBlocked {
+                        phase_id: phase.id.clone(),
+                        gate_id: gate.id.clone(),
+                        reason,
+                    });
+                }
+            }
+        }
+
         // PhaseCompleted
         {
             let mut env = make_envelope(&run_id, MethodEventKind::PhaseCompleted);
@@ -211,6 +554,40 @@ fn create_method_dirs(paths: &MethodRunPaths) -> Result<(), std::io::Error> {
     std::fs::create_dir_all(paths.method_root().join("artifacts").join("handoffs"))?;
     std::fs::create_dir_all(paths.method_root().join("artifacts").join("outputs"))?;
     Ok(())
+}
+
+/// Public wrapper for `execute_step` used by the resume module.
+#[allow(clippy::too_many_arguments)]
+pub fn execute_step_public(
+    paths: &MethodRunPaths,
+    events_path: &Path,
+    run_id: &str,
+    current_seq: &mut u64,
+    phase_id: &str,
+    step: &NormalizedStep,
+    prompt_builder: &dyn PromptBuilder,
+    dispatcher: &dyn WorkerDispatcher,
+    interactive_io: &dyn InteractiveIO,
+) -> Result<(), RunError> {
+    // Check for pipeline_execute at the public boundary
+    if step.action == ActionKind::PipelineExecute {
+        let mut env = make_envelope(run_id, MethodEventKind::StepBlocked);
+        env.phase_id = Some(phase_id.to_string());
+        env.step_id = Some(step.id.clone());
+        append_event(events_path, &mut env, current_seq)?;
+        return Err(RunError::PipelineExecuteBlocked(step.id.clone()));
+    }
+    execute_step(
+        paths,
+        events_path,
+        run_id,
+        current_seq,
+        phase_id,
+        step,
+        prompt_builder,
+        dispatcher,
+        interactive_io,
+    )
 }
 
 #[allow(clippy::too_many_arguments)]

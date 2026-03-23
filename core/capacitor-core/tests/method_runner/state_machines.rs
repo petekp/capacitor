@@ -378,12 +378,14 @@ fn phase_status_running_pending_illegal() {
 }
 
 #[test]
-fn phase_status_running_running_illegal() {
-    assert_illegal(
-        PhaseStatus::Running.transition_to(PhaseStatus::Running, "p1"),
-        "Running",
-        "Running",
+fn phase_status_running_running_idempotent() {
+    // Running->Running is legal (idempotent) to support resume restart.
+    let result = PhaseStatus::Running.transition_to(PhaseStatus::Running, "p1");
+    assert!(
+        result.is_ok(),
+        "Running->Running should be legal for phases"
     );
+    assert_eq!(result.unwrap(), PhaseStatus::Running);
 }
 
 #[test]
@@ -686,12 +688,11 @@ fn step_status_running_pending_illegal() {
 }
 
 #[test]
-fn step_status_running_running_illegal() {
-    assert_illegal(
-        StepStatus::Running.transition_to(StepStatus::Running, "s1"),
-        "Running",
-        "Running",
-    );
+fn step_status_running_running_idempotent() {
+    // Running->Running is legal (idempotent) to support resume restart.
+    let result = StepStatus::Running.transition_to(StepStatus::Running, "s1");
+    assert!(result.is_ok(), "Running->Running should be legal for steps");
+    assert_eq!(result.unwrap(), StepStatus::Running);
 }
 
 #[test]

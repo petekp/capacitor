@@ -123,6 +123,7 @@ impl PhaseStatus {
         let legal = matches!(
             (self, next),
             (PhaseStatus::Pending, PhaseStatus::Running)
+                | (PhaseStatus::Running, PhaseStatus::Running) // idempotent for resume restart
                 | (PhaseStatus::Running, PhaseStatus::Completed)
                 | (PhaseStatus::Running, PhaseStatus::Failed)
                 | (PhaseStatus::Running, PhaseStatus::Blocked)
@@ -148,6 +149,7 @@ impl StepStatus {
         let legal = matches!(
             (self, next),
             (StepStatus::Pending, StepStatus::Running)
+                | (StepStatus::Running, StepStatus::Running) // idempotent for resume restart
                 | (StepStatus::Running, StepStatus::Completed)
                 | (StepStatus::Running, StepStatus::Failed)
                 | (StepStatus::Running, StepStatus::Blocked)
@@ -232,9 +234,20 @@ pub struct MethodRunState {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GateResult {
+    pub gate_id: String,
+    pub gate_type: String,
+    pub outcome: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PhaseState {
     pub status: PhaseStatus,
     pub steps: BTreeMap<String, StepState>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub gate_result: Option<GateResult>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -340,6 +353,7 @@ fn apply_event(
                 .or_insert_with(|| PhaseState {
                     status: PhaseStatus::Pending,
                     steps: BTreeMap::new(),
+                    gate_result: None,
                 });
             phase.status = phase
                 .status
@@ -623,9 +637,43 @@ fn apply_event(
                 }
             }
         }
+        MethodEventKind::GateEvaluated => {
+            let phase_id = event.phase_id.as_deref().unwrap_or("unknown");
+            if let Some(phase) = state.phases.get_mut(phase_id) {
+                let gate_id = event
+                    .payload
+                    .get("gate_id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown")
+                    .to_string();
+                let gate_type = event
+                    .payload
+                    .get("gate_type")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown")
+                    .to_string();
+                let outcome = event
+                    .payload
+                    .get("outcome")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown")
+                    .to_string();
+                let reason = event
+                    .payload
+                    .get("reason")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+
+                phase.gate_result = Some(GateResult {
+                    gate_id,
+                    gate_type,
+                    outcome,
+                    reason,
+                });
+            }
+        }
         // Events we acknowledge but don't need special state for in tracer bullet
-        MethodEventKind::GateEvaluated
-        | MethodEventKind::InteractivePrompted
+        MethodEventKind::InteractivePrompted
         | MethodEventKind::InteractiveResponseReceived
         | MethodEventKind::SynthesisStarted
         | MethodEventKind::SynthesisCompleted
