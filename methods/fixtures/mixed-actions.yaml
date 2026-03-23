@@ -1,0 +1,63 @@
+schema_version: "1"
+method:
+  id: mixed-actions
+  version: "2026-03-23"
+  title: Mixed Actions
+  description: Method with dispatch, synthesis, and interactive steps proving action-agnostic core.
+  defaults:
+    max_attempts: 1
+    completion_policy: all_complete
+  outputs:
+    worker_output:
+      from: phase-a.do-dispatch.worker_output
+      required: true
+    synthesized:
+      from: phase-b.do-synthesis.synthesized
+      required: true
+    user_input:
+      from: phase-c.do-interactive.user_input
+      required: true
+  phases:
+    - id: phase-a
+      title: Dispatch Phase
+      execution: serial
+      steps:
+        - id: do-dispatch
+          title: Do Dispatch
+          action: dispatch
+          template: implement
+          outputs:
+            worker_output:
+              path: artifacts/worker-output.md
+              type: markdown
+          dispatch:
+            instructions: Execute the dispatch step.
+    - id: phase-b
+      title: Synthesis Phase
+      execution: serial
+      steps:
+        - id: do-synthesis
+          title: Do Synthesis
+          action: synthesis
+          outputs:
+            synthesized:
+              path: artifacts/synthesized.md
+              type: markdown
+          synthesis:
+            instructions: Synthesize from available inputs.
+            output: synthesized
+    - id: phase-c
+      title: Interactive Phase
+      execution: serial
+      steps:
+        - id: do-interactive
+          title: Do Interactive
+          action: interactive
+          outputs:
+            user_input:
+              path: artifacts/user-input.md
+              type: markdown
+          interactive:
+            prompt: "Please review and approve."
+            response_type: markdown
+            output: user_input

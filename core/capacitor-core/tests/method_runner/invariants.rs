@@ -6,7 +6,9 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use capacitor_core::method_runner::adapters::{FakePromptBuilder, FakeWorkerDispatcher};
+use capacitor_core::method_runner::adapters::{
+    FakeInteractiveIO, FakePromptBuilder, FakeWorkerDispatcher,
+};
 use capacitor_core::method_runner::definition::{
     DefinitionLoader, DefinitionSource, NormalizedDefinitionFile, Normalizer,
 };
@@ -37,8 +39,15 @@ fn run_minimal_dispatch() -> (TempDir, MethodRunPaths, MethodRunState) {
         definition_path: fixture_path(),
         execution_root: tmp.path().to_path_buf(),
     };
-    let state =
-        execute_run(&source, &FakePromptBuilder, &FakeWorkerDispatcher).expect("execute_run");
+    let state = execute_run(
+        &source,
+        &FakePromptBuilder,
+        &FakeWorkerDispatcher,
+        &FakeInteractiveIO {
+            response: "approved".to_string(),
+        },
+    )
+    .expect("execute_run");
     let paths = MethodRunPaths::new(tmp.path());
     (tmp, paths, state)
 }

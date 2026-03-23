@@ -3,7 +3,9 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use capacitor_core::method_runner::adapters::{FakePromptBuilder, FakeWorkerDispatcher};
+use capacitor_core::method_runner::adapters::{
+    FakeInteractiveIO, FakePromptBuilder, FakeWorkerDispatcher,
+};
 use capacitor_core::method_runner::definition::DefinitionSource;
 use capacitor_core::method_runner::executor::{execute_normalize, execute_run};
 
@@ -72,7 +74,10 @@ fn main() -> ExitCode {
                 };
                 let prompt_builder = FakePromptBuilder;
                 let dispatcher = FakeWorkerDispatcher;
-                match execute_run(&source, &prompt_builder, &dispatcher) {
+                let interactive_io = FakeInteractiveIO {
+                    response: "approved".to_string(),
+                };
+                match execute_run(&source, &prompt_builder, &dispatcher, &interactive_io) {
                     Ok(state) => {
                         println!("run complete: run_id={}", state.run_id);
                         println!("status: {:?}", state.status);

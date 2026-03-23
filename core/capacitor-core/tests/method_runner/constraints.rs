@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use capacitor_core::method_runner::adapters::{
-    AdapterError, FakePromptBuilder, FakeWorkerDispatcher,
+    AdapterError, FakeInteractiveIO, FakePromptBuilder, FakeWorkerDispatcher,
 };
 use capacitor_core::method_runner::definition::{
     ActionKind, NormalizationError, Normalizer, StepActionConfig,
@@ -586,7 +586,10 @@ fn c9_pipeline_execute_blocked_at_runtime() {
 
     let prompt_builder = FakePromptBuilder;
     let dispatcher = FakeWorkerDispatcher;
-    let result = execute_run(&source, &prompt_builder, &dispatcher);
+    let fake_io = FakeInteractiveIO {
+        response: "approved".to_string(),
+    };
+    let result = execute_run(&source, &prompt_builder, &dispatcher, &fake_io);
 
     assert!(
         result.is_err(),

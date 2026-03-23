@@ -11,6 +11,9 @@ fn method_runner_fixtures_are_readable_from_the_crate_root() {
     let fixture_paths = [
         "../../methods/fixtures/minimal-dispatch.yaml",
         "../../methods/fixtures/pipeline-blocked.yaml",
+        "../../methods/fixtures/synthesis-only.yaml",
+        "../../methods/fixtures/interactive-only.yaml",
+        "../../methods/fixtures/mixed-actions.yaml",
         "../../methods/library/spec-hardening.yaml",
     ];
 

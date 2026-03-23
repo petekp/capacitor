@@ -405,10 +405,17 @@ fn error_pipeline_blocked() {
 
     let prompt_builder = capacitor_core::method_runner::adapters::FakePromptBuilder;
     let dispatcher = capacitor_core::method_runner::adapters::FakeWorkerDispatcher;
+    let fake_io = capacitor_core::method_runner::adapters::FakeInteractiveIO {
+        response: "approved".to_string(),
+    };
 
-    let err =
-        capacitor_core::method_runner::executor::execute_run(&source, &prompt_builder, &dispatcher)
-            .unwrap_err();
+    let err = capacitor_core::method_runner::executor::execute_run(
+        &source,
+        &prompt_builder,
+        &dispatcher,
+        &fake_io,
+    )
+    .unwrap_err();
     let msg = err.to_string();
 
     assert!(

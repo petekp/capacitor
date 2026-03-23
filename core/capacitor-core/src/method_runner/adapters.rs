@@ -121,6 +121,27 @@ pub trait InteractiveIO {
 }
 
 // ---------------------------------------------------------------------------
+// Fake interactive IO
+// ---------------------------------------------------------------------------
+
+/// Fake interactive IO for tracer bullet. Returns a pre-configured response
+/// without actually prompting the user.
+pub struct FakeInteractiveIO {
+    pub response: String,
+}
+
+impl InteractiveIO for FakeInteractiveIO {
+    fn emit_prompt(&self, _prompt: &InteractivePrompt) {
+        // In fake mode, we just ignore the prompt
+    }
+    fn capture_response(&self) -> InteractiveResponse {
+        InteractiveResponse {
+            body: self.response.clone(),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Fake prompt builder
 // ---------------------------------------------------------------------------
 

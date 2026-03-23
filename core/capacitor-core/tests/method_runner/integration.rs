@@ -7,7 +7,9 @@
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
-use capacitor_core::method_runner::adapters::{FakePromptBuilder, FakeWorkerDispatcher};
+use capacitor_core::method_runner::adapters::{
+    FakeInteractiveIO, FakePromptBuilder, FakeWorkerDispatcher,
+};
 use capacitor_core::method_runner::definition::{ActionKind, DefinitionLoader, DefinitionSource};
 use capacitor_core::method_runner::events::{recover_events, MethodEventKind};
 use capacitor_core::method_runner::executor::{execute_normalize, execute_run, RunError};
@@ -43,8 +45,15 @@ fn integration_full_lifecycle() {
         execution_root: execution_root.clone(),
     };
 
-    let state =
-        execute_run(&source, &FakePromptBuilder, &FakeWorkerDispatcher).expect("execute_run");
+    let state = execute_run(
+        &source,
+        &FakePromptBuilder,
+        &FakeWorkerDispatcher,
+        &FakeInteractiveIO {
+            response: "approved".to_string(),
+        },
+    )
+    .expect("execute_run");
 
     let paths = MethodRunPaths::new(&execution_root);
 
@@ -175,8 +184,15 @@ fn integration_event_sequence_correctness() {
         execution_root: execution_root.clone(),
     };
 
-    let _state =
-        execute_run(&source, &FakePromptBuilder, &FakeWorkerDispatcher).expect("execute_run");
+    let _state = execute_run(
+        &source,
+        &FakePromptBuilder,
+        &FakeWorkerDispatcher,
+        &FakeInteractiveIO {
+            response: "approved".to_string(),
+        },
+    )
+    .expect("execute_run");
 
     let paths = MethodRunPaths::new(&execution_root);
     let events = recover_events(&paths.events_log()).expect("recover events");
@@ -304,8 +320,15 @@ fn integration_state_rebuild_from_events() {
         execution_root: execution_root.clone(),
     };
 
-    let _state =
-        execute_run(&source, &FakePromptBuilder, &FakeWorkerDispatcher).expect("execute_run");
+    let _state = execute_run(
+        &source,
+        &FakePromptBuilder,
+        &FakeWorkerDispatcher,
+        &FakeInteractiveIO {
+            response: "approved".to_string(),
+        },
+    )
+    .expect("execute_run");
 
     let paths = MethodRunPaths::new(&execution_root);
 
@@ -372,8 +395,15 @@ fn integration_artifact_cross_reference() {
         execution_root: execution_root.clone(),
     };
 
-    let _state =
-        execute_run(&source, &FakePromptBuilder, &FakeWorkerDispatcher).expect("execute_run");
+    let _state = execute_run(
+        &source,
+        &FakePromptBuilder,
+        &FakeWorkerDispatcher,
+        &FakeInteractiveIO {
+            response: "approved".to_string(),
+        },
+    )
+    .expect("execute_run");
 
     let paths = MethodRunPaths::new(&execution_root);
 
@@ -592,7 +622,14 @@ fn integration_pipeline_blocked() {
         execution_root: execution_root.clone(),
     };
 
-    let result = execute_run(&source, &FakePromptBuilder, &FakeWorkerDispatcher);
+    let result = execute_run(
+        &source,
+        &FakePromptBuilder,
+        &FakeWorkerDispatcher,
+        &FakeInteractiveIO {
+            response: "approved".to_string(),
+        },
+    );
 
     // Verify returns PipelineExecuteBlocked error
     let err = result.expect_err("pipeline-blocked.yaml should return an error");
@@ -637,8 +674,23 @@ fn integration_run_isolation() {
         execution_root: tmp_b.path().to_path_buf(),
     };
 
-    let state_a = execute_run(&source_a, &FakePromptBuilder, &FakeWorkerDispatcher).expect("run A");
-    let state_b = execute_run(&source_b, &FakePromptBuilder, &FakeWorkerDispatcher).expect("run B");
+    let fake_io = FakeInteractiveIO {
+        response: "approved".to_string(),
+    };
+    let state_a = execute_run(
+        &source_a,
+        &FakePromptBuilder,
+        &FakeWorkerDispatcher,
+        &fake_io,
+    )
+    .expect("run A");
+    let state_b = execute_run(
+        &source_b,
+        &FakePromptBuilder,
+        &FakeWorkerDispatcher,
+        &fake_io,
+    )
+    .expect("run B");
 
     // Verify different run_ids
     assert_ne!(

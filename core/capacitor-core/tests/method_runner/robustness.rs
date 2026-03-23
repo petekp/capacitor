@@ -7,7 +7,9 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use capacitor_core::method_runner::adapters::{FakePromptBuilder, FakeWorkerDispatcher};
+use capacitor_core::method_runner::adapters::{
+    FakeInteractiveIO, FakePromptBuilder, FakeWorkerDispatcher,
+};
 use capacitor_core::method_runner::definition::{DefinitionLoader, DefinitionSource, Normalizer};
 use capacitor_core::method_runner::events::{
     append_event, make_envelope, recover_events, MethodEventEnvelope, MethodEventKind,
@@ -383,7 +385,15 @@ fn robustness_method_tree_structure() {
     let prompt_builder = FakePromptBuilder;
     let dispatcher = FakeWorkerDispatcher;
 
-    let state = execute_run(&source, &prompt_builder, &dispatcher).unwrap();
+    let state = execute_run(
+        &source,
+        &prompt_builder,
+        &dispatcher,
+        &FakeInteractiveIO {
+            response: "approved".to_string(),
+        },
+    )
+    .unwrap();
     assert_eq!(state.status, RunStatus::Completed);
 
     let paths = MethodRunPaths::new(tmp.path());
@@ -479,8 +489,11 @@ fn robustness_clean_run_isolation() {
         execution_root: tmp_b.path().to_path_buf(),
     };
 
-    let state_a = execute_run(&source_a, &prompt_builder, &dispatcher).unwrap();
-    let state_b = execute_run(&source_b, &prompt_builder, &dispatcher).unwrap();
+    let fake_io = FakeInteractiveIO {
+        response: "approved".to_string(),
+    };
+    let state_a = execute_run(&source_a, &prompt_builder, &dispatcher, &fake_io).unwrap();
+    let state_b = execute_run(&source_b, &prompt_builder, &dispatcher, &fake_io).unwrap();
 
     // Run IDs must be different (ULIDs are unique)
     assert_ne!(
@@ -524,7 +537,15 @@ fn robustness_definition_snapshot_is_valid_yaml() {
     let prompt_builder = FakePromptBuilder;
     let dispatcher = FakeWorkerDispatcher;
 
-    execute_run(&source, &prompt_builder, &dispatcher).unwrap();
+    execute_run(
+        &source,
+        &prompt_builder,
+        &dispatcher,
+        &FakeInteractiveIO {
+            response: "approved".to_string(),
+        },
+    )
+    .unwrap();
 
     let paths = MethodRunPaths::new(tmp.path());
     let snapshot_path = paths.definition_snapshot();

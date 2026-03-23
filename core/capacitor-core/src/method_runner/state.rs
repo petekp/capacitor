@@ -172,6 +172,7 @@ impl AttemptStatus {
         let legal = matches!(
             (self, next),
             (AttemptStatus::Created, AttemptStatus::Dispatching)
+                | (AttemptStatus::Created, AttemptStatus::OutputBound) // synthesis/interactive: no worker dispatch
                 | (AttemptStatus::Dispatching, AttemptStatus::Running)
                 | (AttemptStatus::Running, AttemptStatus::HandoffReceived)
                 | (AttemptStatus::Running, AttemptStatus::Failed)
@@ -595,8 +596,12 @@ fn apply_event(
             if let Some(phase) = state.phases.get_mut(phase_id) {
                 if let Some(step) = phase.steps.get_mut(step_id) {
                     if let Some(attempt) = step.attempts.get_mut(&attempt_num) {
-                        // Transition attempt HandoffReceived → OutputBound
-                        if attempt.status == AttemptStatus::HandoffReceived {
+                        // Transition attempt → OutputBound
+                        // HandoffReceived → OutputBound (dispatch path)
+                        // Created → OutputBound (synthesis/interactive path: no worker dispatch)
+                        if attempt.status == AttemptStatus::HandoffReceived
+                            || attempt.status == AttemptStatus::Created
+                        {
                             let attempt_id = format!("{step_id}:attempt:{attempt_num}");
                             attempt.status = attempt
                                 .status

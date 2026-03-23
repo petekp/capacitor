@@ -911,11 +911,11 @@ fn attempt_status_created_handoff_received_illegal() {
 }
 
 #[test]
-fn attempt_status_created_output_bound_illegal() {
-    assert_illegal(
+fn attempt_status_created_output_bound_legal() {
+    // Legal for synthesis/interactive paths: no worker dispatch, direct output binding
+    assert_legal(
         AttemptStatus::Created.transition_to(AttemptStatus::OutputBound, "a1"),
-        "Created",
-        "OutputBound",
+        AttemptStatus::OutputBound,
     );
 }
 
