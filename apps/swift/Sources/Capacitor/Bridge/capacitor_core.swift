@@ -970,6 +970,7 @@ public struct ActiveCheckpoint {
      * URL that was captured (or should be captured) via agent-browser.
      */
     public var captureUrl: String?
+    public var captureClaim: CaptureClaim?
     public var decision: CheckpointDecision?
     public var createdAt: String
     public var decidedAt: String?
@@ -979,7 +980,7 @@ public struct ActiveCheckpoint {
     public init(id: String, phaseId: String, kind: CheckpointKind, status: CheckpointStatus, title: String, summary: String?, briefPath: String?, manifestPath: String?, mediaArtifacts: [MediaArtifact], mermaidSources: [MermaidSource], captureStatus: CaptureStatus,
                 /* 
                     * URL that was captured (or should be captured) via agent-browser.
-                    */ captureUrl: String?, decision: CheckpointDecision?, createdAt: String, decidedAt: String?)
+                    */ captureUrl: String?, captureClaim: CaptureClaim?, decision: CheckpointDecision?, createdAt: String, decidedAt: String?)
     {
         self.id = id
         self.phaseId = phaseId
@@ -993,6 +994,7 @@ public struct ActiveCheckpoint {
         self.mermaidSources = mermaidSources
         self.captureStatus = captureStatus
         self.captureUrl = captureUrl
+        self.captureClaim = captureClaim
         self.decision = decision
         self.createdAt = createdAt
         self.decidedAt = decidedAt
@@ -1037,6 +1039,9 @@ extension ActiveCheckpoint: Equatable, Hashable {
         if lhs.captureUrl != rhs.captureUrl {
             return false
         }
+        if lhs.captureClaim != rhs.captureClaim {
+            return false
+        }
         if lhs.decision != rhs.decision {
             return false
         }
@@ -1062,6 +1067,7 @@ extension ActiveCheckpoint: Equatable, Hashable {
         hasher.combine(mermaidSources)
         hasher.combine(captureStatus)
         hasher.combine(captureUrl)
+        hasher.combine(captureClaim)
         hasher.combine(decision)
         hasher.combine(createdAt)
         hasher.combine(decidedAt)
@@ -1087,6 +1093,7 @@ public struct FfiConverterTypeActiveCheckpoint: FfiConverterRustBuffer {
                 mermaidSources: FfiConverterSequenceTypeMermaidSource.read(from: &buf),
                 captureStatus: FfiConverterTypeCaptureStatus.read(from: &buf),
                 captureUrl: FfiConverterOptionString.read(from: &buf),
+                captureClaim: FfiConverterOptionTypeCaptureClaim.read(from: &buf),
                 decision: FfiConverterOptionTypeCheckpointDecision.read(from: &buf),
                 createdAt: FfiConverterString.read(from: &buf),
                 decidedAt: FfiConverterOptionString.read(from: &buf)
@@ -1106,6 +1113,7 @@ public struct FfiConverterTypeActiveCheckpoint: FfiConverterRustBuffer {
         FfiConverterSequenceTypeMermaidSource.write(value.mermaidSources, into: &buf)
         FfiConverterTypeCaptureStatus.write(value.captureStatus, into: &buf)
         FfiConverterOptionString.write(value.captureUrl, into: &buf)
+        FfiConverterOptionTypeCaptureClaim.write(value.captureClaim, into: &buf)
         FfiConverterOptionTypeCheckpointDecision.write(value.decision, into: &buf)
         FfiConverterString.write(value.createdAt, into: &buf)
         FfiConverterOptionString.write(value.decidedAt, into: &buf)
@@ -1451,6 +1459,83 @@ public func FfiConverterTypeCachedProjectStats_lower(_ value: CachedProjectStats
     return FfiConverterTypeCachedProjectStats.lower(value)
 }
 
+public struct CaptureClaim {
+    public var captureRequestId: String
+    public var clientId: String
+    public var claimedAt: String
+    public var observedCaptureUrl: String?
+
+    /// Default memberwise initializers are never public by default, so we
+    /// declare one manually.
+    public init(captureRequestId: String, clientId: String, claimedAt: String, observedCaptureUrl: String?) {
+        self.captureRequestId = captureRequestId
+        self.clientId = clientId
+        self.claimedAt = claimedAt
+        self.observedCaptureUrl = observedCaptureUrl
+    }
+}
+
+extension CaptureClaim: Equatable, Hashable {
+    public static func == (lhs: CaptureClaim, rhs: CaptureClaim) -> Bool {
+        if lhs.captureRequestId != rhs.captureRequestId {
+            return false
+        }
+        if lhs.clientId != rhs.clientId {
+            return false
+        }
+        if lhs.claimedAt != rhs.claimedAt {
+            return false
+        }
+        if lhs.observedCaptureUrl != rhs.observedCaptureUrl {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(captureRequestId)
+        hasher.combine(clientId)
+        hasher.combine(claimedAt)
+        hasher.combine(observedCaptureUrl)
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCaptureClaim: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CaptureClaim {
+        return
+            try CaptureClaim(
+                captureRequestId: FfiConverterString.read(from: &buf),
+                clientId: FfiConverterString.read(from: &buf),
+                claimedAt: FfiConverterString.read(from: &buf),
+                observedCaptureUrl: FfiConverterOptionString.read(from: &buf)
+            )
+    }
+
+    public static func write(_ value: CaptureClaim, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.captureRequestId, into: &buf)
+        FfiConverterString.write(value.clientId, into: &buf)
+        FfiConverterString.write(value.claimedAt, into: &buf)
+        FfiConverterOptionString.write(value.observedCaptureUrl, into: &buf)
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCaptureClaim_lift(_ buf: RustBuffer) throws -> CaptureClaim {
+    return try FfiConverterTypeCaptureClaim.lift(buf)
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCaptureClaim_lower(_ value: CaptureClaim) -> RustBuffer {
+    return FfiConverterTypeCaptureClaim.lower(value)
+}
+
 public struct CheckpointDecision {
     public var action: String
     public var note: String?
@@ -1520,19 +1605,16 @@ public struct CheckpointPacket {
     public var manifestPath: String?
     public var mediaArtifacts: [MediaArtifact]
     public var mermaidSources: [MermaidSource]
-    public var captureRequested: Bool
     /**
      * URL to capture via agent-browser at checkpoint time (e.g., "http://localhost:3000").
-     * When present, implies capture is requested even if `capture_requested` is false.
      */
     public var captureUrl: String?
 
     /// Default memberwise initializers are never public by default, so we
     /// declare one manually.
-    public init(kind: CheckpointKind, title: String, summary: String?, briefPath: String?, manifestPath: String?, mediaArtifacts: [MediaArtifact], mermaidSources: [MermaidSource], captureRequested: Bool,
+    public init(kind: CheckpointKind, title: String, summary: String?, briefPath: String?, manifestPath: String?, mediaArtifacts: [MediaArtifact], mermaidSources: [MermaidSource],
                 /* 
                     * URL to capture via agent-browser at checkpoint time (e.g., "http://localhost:3000").
-                    * When present, implies capture is requested even if `capture_requested` is false.
                     */ captureUrl: String?)
     {
         self.kind = kind
@@ -1542,7 +1624,6 @@ public struct CheckpointPacket {
         self.manifestPath = manifestPath
         self.mediaArtifacts = mediaArtifacts
         self.mermaidSources = mermaidSources
-        self.captureRequested = captureRequested
         self.captureUrl = captureUrl
     }
 }
@@ -1570,9 +1651,6 @@ extension CheckpointPacket: Equatable, Hashable {
         if lhs.mermaidSources != rhs.mermaidSources {
             return false
         }
-        if lhs.captureRequested != rhs.captureRequested {
-            return false
-        }
         if lhs.captureUrl != rhs.captureUrl {
             return false
         }
@@ -1587,7 +1665,6 @@ extension CheckpointPacket: Equatable, Hashable {
         hasher.combine(manifestPath)
         hasher.combine(mediaArtifacts)
         hasher.combine(mermaidSources)
-        hasher.combine(captureRequested)
         hasher.combine(captureUrl)
     }
 }
@@ -1606,7 +1683,6 @@ public struct FfiConverterTypeCheckpointPacket: FfiConverterRustBuffer {
                 manifestPath: FfiConverterOptionString.read(from: &buf),
                 mediaArtifacts: FfiConverterSequenceTypeMediaArtifact.read(from: &buf),
                 mermaidSources: FfiConverterSequenceTypeMermaidSource.read(from: &buf),
-                captureRequested: FfiConverterBool.read(from: &buf),
                 captureUrl: FfiConverterOptionString.read(from: &buf)
             )
     }
@@ -1619,7 +1695,6 @@ public struct FfiConverterTypeCheckpointPacket: FfiConverterRustBuffer {
         FfiConverterOptionString.write(value.manifestPath, into: &buf)
         FfiConverterSequenceTypeMediaArtifact.write(value.mediaArtifacts, into: &buf)
         FfiConverterSequenceTypeMermaidSource.write(value.mermaidSources, into: &buf)
-        FfiConverterBool.write(value.captureRequested, into: &buf)
         FfiConverterOptionString.write(value.captureUrl, into: &buf)
     }
 }
@@ -3857,11 +3932,15 @@ public struct MutateRunCommand {
     public var checkpointManifestPath: String?
     public var checkpointMediaArtifacts: [MediaArtifact]
     public var checkpointMermaidSources: [MermaidSource]
-    public var captureRequested: Bool
     /**
      * URL to capture via agent-browser (e.g., "http://localhost:3000").
      */
     public var captureUrl: String?
+    public var checkpointId: String?
+    public var captureRequestId: String?
+    public var clientId: String?
+    public var observedCaptureUrl: String?
+    public var captureFailureReason: String?
     public var decisionAction: String?
     public var decisionNote: String?
     public var sessionId: String?
@@ -3873,10 +3952,10 @@ public struct MutateRunCommand {
 
     /// Default memberwise initializers are never public by default, so we
     /// declare one manually.
-    public init(kind: RunMutationKind, projectPath: String, runId: String, methodId: String?, involvement: InvolvementLevel?, checkpointKind: CheckpointKind?, checkpointTitle: String?, checkpointSummary: String?, checkpointBriefPath: String?, checkpointManifestPath: String?, checkpointMediaArtifacts: [MediaArtifact], checkpointMermaidSources: [MermaidSource], captureRequested: Bool,
+    public init(kind: RunMutationKind, projectPath: String, runId: String, methodId: String?, involvement: InvolvementLevel?, checkpointKind: CheckpointKind?, checkpointTitle: String?, checkpointSummary: String?, checkpointBriefPath: String?, checkpointManifestPath: String?, checkpointMediaArtifacts: [MediaArtifact], checkpointMermaidSources: [MermaidSource],
                 /* 
                     * URL to capture via agent-browser (e.g., "http://localhost:3000").
-                    */ captureUrl: String?, decisionAction: String?, decisionNote: String?, sessionId: String?, delegationWorkerId: String?,
+                    */ captureUrl: String?, checkpointId: String?, captureRequestId: String?, clientId: String?, observedCaptureUrl: String?, captureFailureReason: String?, decisionAction: String?, decisionNote: String?, sessionId: String?, delegationWorkerId: String?,
                 /* 
                     * Media artifact paths to attach via CaptureComplete.
                     */ completedMediaArtifacts: [MediaArtifact])
@@ -3893,8 +3972,12 @@ public struct MutateRunCommand {
         self.checkpointManifestPath = checkpointManifestPath
         self.checkpointMediaArtifacts = checkpointMediaArtifacts
         self.checkpointMermaidSources = checkpointMermaidSources
-        self.captureRequested = captureRequested
         self.captureUrl = captureUrl
+        self.checkpointId = checkpointId
+        self.captureRequestId = captureRequestId
+        self.clientId = clientId
+        self.observedCaptureUrl = observedCaptureUrl
+        self.captureFailureReason = captureFailureReason
         self.decisionAction = decisionAction
         self.decisionNote = decisionNote
         self.sessionId = sessionId
@@ -3941,10 +4024,22 @@ extension MutateRunCommand: Equatable, Hashable {
         if lhs.checkpointMermaidSources != rhs.checkpointMermaidSources {
             return false
         }
-        if lhs.captureRequested != rhs.captureRequested {
+        if lhs.captureUrl != rhs.captureUrl {
             return false
         }
-        if lhs.captureUrl != rhs.captureUrl {
+        if lhs.checkpointId != rhs.checkpointId {
+            return false
+        }
+        if lhs.captureRequestId != rhs.captureRequestId {
+            return false
+        }
+        if lhs.clientId != rhs.clientId {
+            return false
+        }
+        if lhs.observedCaptureUrl != rhs.observedCaptureUrl {
+            return false
+        }
+        if lhs.captureFailureReason != rhs.captureFailureReason {
             return false
         }
         if lhs.decisionAction != rhs.decisionAction {
@@ -3978,8 +4073,12 @@ extension MutateRunCommand: Equatable, Hashable {
         hasher.combine(checkpointManifestPath)
         hasher.combine(checkpointMediaArtifacts)
         hasher.combine(checkpointMermaidSources)
-        hasher.combine(captureRequested)
         hasher.combine(captureUrl)
+        hasher.combine(checkpointId)
+        hasher.combine(captureRequestId)
+        hasher.combine(clientId)
+        hasher.combine(observedCaptureUrl)
+        hasher.combine(captureFailureReason)
         hasher.combine(decisionAction)
         hasher.combine(decisionNote)
         hasher.combine(sessionId)
@@ -4007,8 +4106,12 @@ public struct FfiConverterTypeMutateRunCommand: FfiConverterRustBuffer {
                 checkpointManifestPath: FfiConverterOptionString.read(from: &buf),
                 checkpointMediaArtifacts: FfiConverterSequenceTypeMediaArtifact.read(from: &buf),
                 checkpointMermaidSources: FfiConverterSequenceTypeMermaidSource.read(from: &buf),
-                captureRequested: FfiConverterBool.read(from: &buf),
                 captureUrl: FfiConverterOptionString.read(from: &buf),
+                checkpointId: FfiConverterOptionString.read(from: &buf),
+                captureRequestId: FfiConverterOptionString.read(from: &buf),
+                clientId: FfiConverterOptionString.read(from: &buf),
+                observedCaptureUrl: FfiConverterOptionString.read(from: &buf),
+                captureFailureReason: FfiConverterOptionString.read(from: &buf),
                 decisionAction: FfiConverterOptionString.read(from: &buf),
                 decisionNote: FfiConverterOptionString.read(from: &buf),
                 sessionId: FfiConverterOptionString.read(from: &buf),
@@ -4030,8 +4133,12 @@ public struct FfiConverterTypeMutateRunCommand: FfiConverterRustBuffer {
         FfiConverterOptionString.write(value.checkpointManifestPath, into: &buf)
         FfiConverterSequenceTypeMediaArtifact.write(value.checkpointMediaArtifacts, into: &buf)
         FfiConverterSequenceTypeMermaidSource.write(value.checkpointMermaidSources, into: &buf)
-        FfiConverterBool.write(value.captureRequested, into: &buf)
         FfiConverterOptionString.write(value.captureUrl, into: &buf)
+        FfiConverterOptionString.write(value.checkpointId, into: &buf)
+        FfiConverterOptionString.write(value.captureRequestId, into: &buf)
+        FfiConverterOptionString.write(value.clientId, into: &buf)
+        FfiConverterOptionString.write(value.observedCaptureUrl, into: &buf)
+        FfiConverterOptionString.write(value.captureFailureReason, into: &buf)
         FfiConverterOptionString.write(value.decisionAction, into: &buf)
         FfiConverterOptionString.write(value.decisionNote, into: &buf)
         FfiConverterOptionString.write(value.sessionId, into: &buf)
@@ -6870,6 +6977,7 @@ public func FfiConverterTypeValidationResultFfi_lower(_ value: ValidationResultF
 public enum CaptureStatus {
     case notRequested
     case pending
+    case inProgress
     case completed
     case failed(reason: String)
 }
@@ -6887,9 +6995,11 @@ public struct FfiConverterTypeCaptureStatus: FfiConverterRustBuffer {
 
         case 2: return .pending
 
-        case 3: return .completed
+        case 3: return .inProgress
 
-        case 4: return try .failed(reason: FfiConverterString.read(from: &buf))
+        case 4: return .completed
+
+        case 5: return try .failed(reason: FfiConverterString.read(from: &buf))
 
         default: throw UniffiInternalError.unexpectedEnumCase
         }
@@ -6903,11 +7013,14 @@ public struct FfiConverterTypeCaptureStatus: FfiConverterRustBuffer {
         case .pending:
             writeInt(&buf, Int32(2))
 
-        case .completed:
+        case .inProgress:
             writeInt(&buf, Int32(3))
 
-        case let .failed(reason):
+        case .completed:
             writeInt(&buf, Int32(4))
+
+        case let .failed(reason):
+            writeInt(&buf, Int32(5))
             FfiConverterString.write(reason, into: &buf)
         }
     }
@@ -8373,6 +8486,8 @@ public enum RunMutationKind {
     case submitDecision
     case attachSession
     case detachSession
+    case captureClaim
+    case captureFailed
     case captureComplete
     case pause
     case resume
@@ -8402,17 +8517,21 @@ public struct FfiConverterTypeRunMutationKind: FfiConverterRustBuffer {
 
         case 6: return .detachSession
 
-        case 7: return .captureComplete
+        case 7: return .captureClaim
 
-        case 8: return .pause
+        case 8: return .captureFailed
 
-        case 9: return .resume
+        case 9: return .captureComplete
 
-        case 10: return .complete
+        case 10: return .pause
 
-        case 11: return .fail
+        case 11: return .resume
 
-        case 12: return .cancel
+        case 12: return .complete
+
+        case 13: return .fail
+
+        case 14: return .cancel
 
         default: throw UniffiInternalError.unexpectedEnumCase
         }
@@ -8438,23 +8557,29 @@ public struct FfiConverterTypeRunMutationKind: FfiConverterRustBuffer {
         case .detachSession:
             writeInt(&buf, Int32(6))
 
-        case .captureComplete:
+        case .captureClaim:
             writeInt(&buf, Int32(7))
 
-        case .pause:
+        case .captureFailed:
             writeInt(&buf, Int32(8))
 
-        case .resume:
+        case .captureComplete:
             writeInt(&buf, Int32(9))
 
-        case .complete:
+        case .pause:
             writeInt(&buf, Int32(10))
 
-        case .fail:
+        case .resume:
             writeInt(&buf, Int32(11))
 
-        case .cancel:
+        case .complete:
             writeInt(&buf, Int32(12))
+
+        case .fail:
+            writeInt(&buf, Int32(13))
+
+        case .cancel:
+            writeInt(&buf, Int32(14))
         }
     }
 }
@@ -8812,6 +8937,30 @@ private struct FfiConverterOptionTypeActiveCheckpoint: FfiConverterRustBuffer {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeActiveCheckpoint.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+private struct FfiConverterOptionTypeCaptureClaim: FfiConverterRustBuffer {
+    typealias SwiftType = CaptureClaim?
+
+    static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeCaptureClaim.write(value, into: &buf)
+    }
+
+    static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeCaptureClaim.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }

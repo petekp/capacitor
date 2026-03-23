@@ -10,7 +10,7 @@ use std::sync::Arc;
 use capacitor_core::{
     domain::{
         IngestHookEventCommand, IngestShellSignalCommand, MutateDelegationCommand,
-        ResolveRoutingCommand,
+        MutateRunCommand, ResolveRoutingCommand,
     },
     runtime_service::RuntimeServiceBootstrap,
     CoreRuntime,
@@ -108,6 +108,9 @@ fn dispatch(request: tiny_http::Request, runtime_service: &RuntimeServerState) {
         }
         (&tiny_http::Method::Post, "/runtime/delegation/mutate") => {
             handle_runtime_mutate_delegation(request, runtime_service)
+        }
+        (&tiny_http::Method::Post, "/runtime/run/mutate") => {
+            handle_runtime_mutate_run(request, runtime_service)
         }
         (&tiny_http::Method::Post, "/hook") => handle_hook(request),
         _ => {
@@ -272,6 +275,34 @@ fn handle_runtime_mutate_delegation(mut request: tiny_http::Request, state: &Run
         Err(error) => {
             tracing::warn!(error = %error, "Runtime delegation mutation request failed");
             let _ = request.respond(json_error(500, "runtime delegation mutation failed"));
+        }
+    }
+}
+
+fn handle_runtime_mutate_run(mut request: tiny_http::Request, state: &RuntimeServerState) {
+    let Some(runtime) = state.runtime.as_ref() else {
+        let _ = request.respond(json_error(404, "runtime service not enabled"));
+        return;
+    };
+
+    if !authorize_runtime_request(&request, state.bootstrap.as_ref()) {
+        let _ = request.respond(json_error(401, "unauthorized"));
+        return;
+    }
+
+    let command = match read_json::<MutateRunCommand>(&mut request) {
+        Ok(command) => command,
+        Err(response) => {
+            let _ = request.respond(response);
+            return;
+        }
+    };
+
+    match runtime.mutate_run(command) {
+        Ok(outcome) => respond_json(request, 200, &outcome),
+        Err(error) => {
+            tracing::warn!(error = %error, "Runtime run mutation request failed");
+            let _ = request.respond(json_error(500, "runtime run mutation failed"));
         }
     }
 }

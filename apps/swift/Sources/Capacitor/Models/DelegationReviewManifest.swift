@@ -1,11 +1,30 @@
 import Foundation
 
 struct DelegationReviewManifest: Decodable {
-    enum ArtifactType: String, Decodable {
+    enum ArtifactType: Decodable {
         case text
         case screenshot
         case recording
         case mermaid
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.singleValueContainer()
+            switch try container.decode(String.self) {
+            case "text":
+                self = .text
+            case "screenshot":
+                self = .screenshot
+            case "recording":
+                self = .recording
+            case "mermaid", "mermaid_diagram":
+                self = .mermaid
+            case let value:
+                throw DecodingError.dataCorruptedError(
+                    in: container,
+                    debugDescription: "Unsupported artifact_type: \(value)",
+                )
+            }
+        }
     }
 
     struct Artifact: Decodable, Identifiable {

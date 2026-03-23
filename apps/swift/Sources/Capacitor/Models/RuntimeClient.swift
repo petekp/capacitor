@@ -208,6 +208,7 @@ struct RuntimeSnapshot {
     let shellState: ShellCwdState
     let routingViews: [RuntimeRoutingView]
     let delegations: [RuntimeDelegationState]
+    let runs: [RuntimeRunState]
 }
 
 struct RuntimeDelegationReview: Decodable, Equatable {
@@ -276,6 +277,158 @@ struct RuntimeDelegationState: Decodable, Equatable {
         self.submittedMilestoneId = submittedMilestoneId
         self.currentReview = currentReview
     }
+}
+
+enum RuntimeCheckpointKind: Equatable, Sendable, Codable {
+    case proposal
+    case implementationMilestone
+    case alignmentReview
+    case custom(label: String)
+
+    private enum CodingKeys: String, CodingKey {
+        case custom
+    }
+
+    private struct CustomPayload: Codable {
+        let label: String
+    }
+
+    init(from decoder: Decoder) throws {
+        if let container = try? decoder.singleValueContainer(),
+           let value = try? container.decode(String.self)
+        {
+            switch value {
+            case "proposal":
+                self = .proposal
+            case "implementation_milestone":
+                self = .implementationMilestone
+            case "alignment_review":
+                self = .alignmentReview
+            default:
+                throw DecodingError.dataCorruptedError(
+                    in: container,
+                    debugDescription: "Unsupported checkpoint kind: \(value)",
+                )
+            }
+            return
+        }
+
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        if container.contains(.custom) {
+            let payload = try container.decode(CustomPayload.self, forKey: .custom)
+            self = .custom(label: payload.label)
+            return
+        }
+
+        throw DecodingError.dataCorrupted(DecodingError.Context(
+            codingPath: decoder.codingPath,
+            debugDescription: "Unsupported checkpoint kind payload",
+        ))
+    }
+
+    func encode(to encoder: Encoder) throws {
+        switch self {
+        case .proposal:
+            var container = encoder.singleValueContainer()
+            try container.encode("proposal")
+        case .implementationMilestone:
+            var container = encoder.singleValueContainer()
+            try container.encode("implementation_milestone")
+        case .alignmentReview:
+            var container = encoder.singleValueContainer()
+            try container.encode("alignment_review")
+        case let .custom(label):
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(CustomPayload(label: label), forKey: .custom)
+        }
+    }
+
+    init(_ kind: CheckpointKind) {
+        switch kind {
+        case .proposal:
+            self = .proposal
+        case .implementationMilestone:
+            self = .implementationMilestone
+        case .alignmentReview:
+            self = .alignmentReview
+        case let .custom(label):
+            self = .custom(label: label)
+        }
+    }
+}
+
+enum RuntimeCaptureStatus: Equatable, Sendable {
+    case notRequested
+    case pending
+    case inProgress
+    case completed
+    case failed(reason: String)
+}
+
+struct RuntimeCaptureClaim: Equatable, Sendable {
+    let captureRequestId: String
+    let clientId: String
+    let claimedAt: String
+    let observedCaptureUrl: String?
+}
+
+struct RuntimeMediaArtifact: Codable, Equatable, Sendable {
+    let artifactType: String
+    let path: String
+    let label: String
+    let width: Int?
+    let height: Int?
+    let durationSecs: String?
+
+    enum CodingKeys: String, CodingKey {
+        case artifactType = "artifact_type"
+        case path
+        case label
+        case width
+        case height
+        case durationSecs = "duration_secs"
+    }
+}
+
+struct RuntimeMermaidSource: Codable, Equatable, Sendable {
+    let label: String
+    let source: String
+
+    enum CodingKeys: String, CodingKey {
+        case label
+        case source
+    }
+}
+
+struct RuntimeCheckpointState: Equatable, Sendable {
+    let id: String
+    let phaseId: String
+    let kind: RuntimeCheckpointKind
+    let status: String
+    let title: String
+    let summary: String?
+    let briefPath: String?
+    let manifestPath: String?
+    let mediaArtifacts: [RuntimeMediaArtifact]
+    let mermaidSources: [RuntimeMermaidSource]
+    let captureStatus: RuntimeCaptureStatus
+    let captureUrl: String?
+    let captureClaim: RuntimeCaptureClaim?
+    let createdAt: String
+    let decidedAt: String?
+}
+
+struct RuntimeRunState: Equatable, Sendable {
+    let id: String
+    let projectPath: String
+    let methodId: String
+    let methodName: String
+    let status: String
+    let sessionId: String?
+    let delegationWorkerId: String?
+    let createdAt: String
+    let updatedAt: String
+    let activeCheckpoint: RuntimeCheckpointState?
 }
 
 struct CoreRoutingTarget: Decodable, Equatable {
@@ -385,6 +538,7 @@ private struct SnapshotPayload: Decodable {
     let shells: [SnapshotShellPayload]
     let routing: [SnapshotRoutingPayload]
     let delegations: [SnapshotDelegationPayload]
+    let runs: [SnapshotRunPayload]
 
     enum CodingKeys: String, CodingKey {
         case projects
@@ -392,6 +546,7 @@ private struct SnapshotPayload: Decodable {
         case shells
         case routing
         case delegations
+        case runs
     }
 
     init(from decoder: Decoder) throws {
@@ -401,6 +556,7 @@ private struct SnapshotPayload: Decodable {
         shells = try container.decode([SnapshotShellPayload].self, forKey: .shells)
         routing = try container.decode([SnapshotRoutingPayload].self, forKey: .routing)
         delegations = try container.decodeIfPresent([SnapshotDelegationPayload].self, forKey: .delegations) ?? []
+        runs = try container.decodeIfPresent([SnapshotRunPayload].self, forKey: .runs) ?? []
     }
 
     init(_ snapshot: AppSnapshot) {
@@ -409,6 +565,7 @@ private struct SnapshotPayload: Decodable {
         shells = snapshot.shells.map(SnapshotShellPayload.init)
         routing = snapshot.routing.map(SnapshotRoutingPayload.init)
         delegations = snapshot.delegations.map(SnapshotDelegationPayload.init)
+        runs = snapshot.runs.map(SnapshotRunPayload.init)
     }
 }
 
@@ -628,6 +785,210 @@ private struct SnapshotDelegationPayload: Decodable {
     }
 }
 
+private struct SnapshotCaptureClaimPayload: Decodable {
+    let captureRequestId: String
+    let clientId: String
+    let claimedAt: String
+    let observedCaptureUrl: String?
+
+    enum CodingKeys: String, CodingKey {
+        case captureRequestId = "capture_request_id"
+        case clientId = "client_id"
+        case claimedAt = "claimed_at"
+        case observedCaptureUrl = "observed_capture_url"
+    }
+
+    init(_ claim: CaptureClaim) {
+        captureRequestId = claim.captureRequestId
+        clientId = claim.clientId
+        claimedAt = claim.claimedAt
+        observedCaptureUrl = claim.observedCaptureUrl
+    }
+}
+
+private struct SnapshotMediaArtifactPayload: Decodable {
+    let artifactType: String
+    let path: String
+    let label: String
+    let width: Int?
+    let height: Int?
+    let durationSecs: String?
+
+    enum CodingKeys: String, CodingKey {
+        case artifactType = "artifact_type"
+        case path
+        case label
+        case width
+        case height
+        case durationSecs = "duration_secs"
+    }
+
+    init(_ artifact: MediaArtifact) {
+        artifactType = RuntimeClient.snapshotMediaArtifactTypeString(artifact.artifactType)
+        path = artifact.path
+        label = artifact.label
+        width = artifact.width.map(Int.init)
+        height = artifact.height.map(Int.init)
+        durationSecs = artifact.durationSecs
+    }
+}
+
+private struct SnapshotMermaidSourcePayload: Decodable {
+    let label: String
+    let source: String
+
+    enum CodingKeys: String, CodingKey {
+        case label
+        case source
+    }
+
+    init(_ source: MermaidSource) {
+        label = source.label
+        self.source = source.source
+    }
+}
+
+private struct SnapshotCheckpointPayload: Decodable {
+    let id: String
+    let phaseId: String
+    let kind: RuntimeCheckpointKind
+    let status: String
+    let title: String
+    let summary: String?
+    let briefPath: String?
+    let manifestPath: String?
+    let mediaArtifacts: [SnapshotMediaArtifactPayload]
+    let mermaidSources: [SnapshotMermaidSourcePayload]
+    let captureStatus: RuntimeCaptureStatus
+    let captureUrl: String?
+    let captureClaim: SnapshotCaptureClaimPayload?
+    let createdAt: String
+    let decidedAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case phaseId = "phase_id"
+        case kind
+        case status
+        case title
+        case summary
+        case briefPath = "brief_path"
+        case manifestPath = "manifest_path"
+        case mediaArtifacts = "media_artifacts"
+        case mermaidSources = "mermaid_sources"
+        case captureStatus = "capture_status"
+        case captureUrl = "capture_url"
+        case captureClaim = "capture_claim"
+        case createdAt = "created_at"
+        case decidedAt = "decided_at"
+    }
+
+    private struct FailedCaptureStatusPayload: Decodable {
+        struct ReasonPayload: Decodable {
+            let reason: String
+        }
+
+        let failed: ReasonPayload
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        phaseId = try container.decode(String.self, forKey: .phaseId)
+        kind = try container.decode(RuntimeCheckpointKind.self, forKey: .kind)
+        status = try container.decode(String.self, forKey: .status)
+        title = try container.decode(String.self, forKey: .title)
+        summary = try container.decodeIfPresent(String.self, forKey: .summary)
+        briefPath = try container.decodeIfPresent(String.self, forKey: .briefPath)
+        manifestPath = try container.decodeIfPresent(String.self, forKey: .manifestPath)
+        mediaArtifacts = try container.decodeIfPresent([SnapshotMediaArtifactPayload].self, forKey: .mediaArtifacts) ?? []
+        mermaidSources = try container.decodeIfPresent([SnapshotMermaidSourcePayload].self, forKey: .mermaidSources) ?? []
+        captureUrl = try container.decodeIfPresent(String.self, forKey: .captureUrl)
+        captureClaim = try container.decodeIfPresent(SnapshotCaptureClaimPayload.self, forKey: .captureClaim)
+        createdAt = try container.decode(String.self, forKey: .createdAt)
+        decidedAt = try container.decodeIfPresent(String.self, forKey: .decidedAt)
+
+        if let rawStatus = try? container.decode(String.self, forKey: .captureStatus) {
+            switch rawStatus {
+            case "not_requested":
+                captureStatus = .notRequested
+            case "pending":
+                captureStatus = .pending
+            case "in_progress":
+                captureStatus = .inProgress
+            case "completed":
+                captureStatus = .completed
+            default:
+                throw DecodingError.dataCorruptedError(
+                    forKey: .captureStatus,
+                    in: container,
+                    debugDescription: "Unsupported capture status: \(rawStatus)",
+                )
+            }
+        } else {
+            let payload = try container.decode(FailedCaptureStatusPayload.self, forKey: .captureStatus)
+            captureStatus = .failed(reason: payload.failed.reason)
+        }
+    }
+
+    init(_ checkpoint: ActiveCheckpoint) {
+        id = checkpoint.id
+        phaseId = checkpoint.phaseId
+        kind = RuntimeCheckpointKind(checkpoint.kind)
+        status = RuntimeClient.snapshotCheckpointStatusString(checkpoint.status)
+        title = checkpoint.title
+        summary = checkpoint.summary
+        briefPath = checkpoint.briefPath
+        manifestPath = checkpoint.manifestPath
+        mediaArtifacts = checkpoint.mediaArtifacts.map(SnapshotMediaArtifactPayload.init)
+        mermaidSources = checkpoint.mermaidSources.map(SnapshotMermaidSourcePayload.init)
+        captureStatus = RuntimeCaptureStatus(checkpoint.captureStatus)
+        captureUrl = checkpoint.captureUrl
+        captureClaim = checkpoint.captureClaim.map(SnapshotCaptureClaimPayload.init)
+        createdAt = checkpoint.createdAt
+        decidedAt = checkpoint.decidedAt
+    }
+}
+
+private struct SnapshotRunPayload: Decodable {
+    let id: String
+    let projectPath: String
+    let methodId: String
+    let methodName: String
+    let status: String
+    let sessionId: String?
+    let delegationWorkerId: String?
+    let createdAt: String
+    let updatedAt: String
+    let activeCheckpoint: SnapshotCheckpointPayload?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case projectPath = "project_path"
+        case methodId = "method_id"
+        case methodName = "method_name"
+        case status
+        case sessionId = "session_id"
+        case delegationWorkerId = "delegation_worker_id"
+        case createdAt = "created_at"
+        case updatedAt = "updated_at"
+        case activeCheckpoint = "active_checkpoint"
+    }
+
+    init(_ run: RunState) {
+        id = run.id
+        projectPath = run.projectPath
+        methodId = run.methodId
+        methodName = run.methodName
+        status = RuntimeClient.snapshotRunStatusString(run.status)
+        sessionId = run.sessionId
+        delegationWorkerId = run.delegationWorkerId
+        createdAt = run.createdAt
+        updatedAt = run.updatedAt
+        activeCheckpoint = run.activeCheckpoint.map(SnapshotCheckpointPayload.init)
+    }
+}
+
 private struct ResolveRoutingRequest: Encodable {
     let projectPath: String
     let workspaceId: String?
@@ -672,6 +1033,58 @@ struct RuntimeDelegationMutationRequest: Encodable {
     }
 }
 
+struct RuntimeRunMutationRequest: Encodable, Equatable, Sendable {
+    let kind: String
+    let projectPath: String
+    let runId: String
+    let checkpointId: String?
+    let methodId: String?
+    let involvement: String?
+    let checkpointKind: RuntimeCheckpointKind?
+    let checkpointTitle: String?
+    let checkpointSummary: String?
+    let checkpointBriefPath: String?
+    let checkpointManifestPath: String?
+    let checkpointMediaArtifacts: [RuntimeMediaArtifact]
+    let checkpointMermaidSources: [RuntimeMermaidSource]
+    let captureUrl: String?
+    let decisionAction: String?
+    let decisionNote: String?
+    let sessionId: String?
+    let delegationWorkerId: String?
+    let captureRequestId: String?
+    let clientId: String?
+    let observedCaptureUrl: String?
+    let captureFailureReason: String?
+    let completedMediaArtifacts: [RuntimeMediaArtifact]
+
+    enum CodingKeys: String, CodingKey {
+        case kind
+        case projectPath = "project_path"
+        case runId = "run_id"
+        case checkpointId = "checkpoint_id"
+        case methodId = "method_id"
+        case involvement
+        case checkpointKind = "checkpoint_kind"
+        case checkpointTitle = "checkpoint_title"
+        case checkpointSummary = "checkpoint_summary"
+        case checkpointBriefPath = "checkpoint_brief_path"
+        case checkpointManifestPath = "checkpoint_manifest_path"
+        case checkpointMediaArtifacts = "checkpoint_media_artifacts"
+        case checkpointMermaidSources = "checkpoint_mermaid_sources"
+        case captureUrl = "capture_url"
+        case decisionAction = "decision_action"
+        case decisionNote = "decision_note"
+        case sessionId = "session_id"
+        case delegationWorkerId = "delegation_worker_id"
+        case captureRequestId = "capture_request_id"
+        case clientId = "client_id"
+        case observedCaptureUrl = "observed_capture_url"
+        case captureFailureReason = "capture_failure_reason"
+        case completedMediaArtifacts = "completed_media_artifacts"
+    }
+}
+
 enum RuntimeClientError: Error {
     case disabled
     case invalidResponse
@@ -685,7 +1098,7 @@ final class RuntimeClient {
 
     private enum Constants {
         static let enabledEnv = "CAPACITOR_RUNTIME_ENABLED"
-        static let minimumSchemaVersion = 2
+        static let minimumSchemaVersion = 3
         static let tmuxSignalFreshMs: UInt64 = 5000
         static let shellSignalFreshMs: UInt64 = 600_000
         static let shellRetentionHours: UInt64 = 24
@@ -770,6 +1183,7 @@ final class RuntimeClient {
         let snapshot = try await requireSnapshot(correlationId: correlationId, operation: "fetchRuntimeSnapshot")
         let projectStates = mapProjectStates(snapshot)
         let sessions = mapSessions(snapshot)
+        let runs = mapRuns(snapshot)
         guard let shellState = mapShellState(
             snapshot,
             correlationId: correlationId,
@@ -780,7 +1194,7 @@ final class RuntimeClient {
 
         let cid = correlationId ?? "none"
         DebugLog.write(
-            "RuntimeClient.fetchRuntimeSnapshot source=\(runtimeSourceLabel) cid=\(cid) projects=\(projectStates.count) sessions=\(sessions.count) shells=\(shellState.shells.count)",
+            "RuntimeClient.fetchRuntimeSnapshot source=\(runtimeSourceLabel) cid=\(cid) projects=\(projectStates.count) sessions=\(sessions.count) shells=\(shellState.shells.count) runs=\(runs.count)",
         )
 
         return RuntimeSnapshot(
@@ -789,6 +1203,7 @@ final class RuntimeClient {
             shellState: shellState,
             routingViews: mapRoutingViews(snapshot),
             delegations: mapDelegations(snapshot),
+            runs: runs,
         )
     }
 
@@ -839,6 +1254,38 @@ final class RuntimeClient {
         } catch {
             throw RuntimeClientError.runtimeUnavailable(
                 "Runtime delegation mutation unavailable: \(error.localizedDescription)",
+            )
+        }
+    }
+
+    func mutateRun(_ requestBody: RuntimeRunMutationRequest) async throws {
+        guard isEnabled else {
+            throw RuntimeClientError.disabled
+        }
+
+        var request = try runtimeServiceRequest(path: "/runtime/run/mutate")
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(requestBody)
+
+        do {
+            let (data, response) = try await sendRequest(request)
+            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+                throw RuntimeClientError.runtimeUnavailable(
+                    "Runtime run mutation failed for \(request.url?.absoluteString ?? "unknown")",
+                )
+            }
+
+            if let outcome = try? JSONDecoder().decode(MutationOutcomeResponse.self, from: data),
+               !outcome.ok
+            {
+                throw RuntimeClientError.mutationRejected(outcome.message)
+            }
+        } catch let error as RuntimeClientError {
+            throw error
+        } catch {
+            throw RuntimeClientError.runtimeUnavailable(
+                "Runtime run mutation unavailable: \(error.localizedDescription)",
             )
         }
     }
@@ -1077,6 +1524,10 @@ final class RuntimeClient {
         }
     }
 
+    private func mapRuns(_ snapshot: SnapshotPayload) -> [RuntimeRunState] {
+        snapshot.runs.map(RuntimeRunState.init)
+    }
+
     private func resolveRoutingView(
         for snapshot: SnapshotPayload,
         projectPath: String,
@@ -1278,6 +1729,14 @@ final class RuntimeClient {
         snakeCaseEnumCaseName(status)
     }
 
+    fileprivate static func snapshotRunStatusString(_ status: RunStatus) -> String {
+        snakeCaseEnumCaseName(status)
+    }
+
+    fileprivate static func snapshotCheckpointStatusString(_ status: CheckpointStatus) -> String {
+        snakeCaseEnumCaseName(status)
+    }
+
     fileprivate static func snapshotRoutingTargetKindString(_ kind: RoutingTargetKind) -> String {
         switch kind {
         case .tmuxPane:
@@ -1289,6 +1748,10 @@ final class RuntimeClient {
         case .none:
             "none"
         }
+    }
+
+    fileprivate static func snapshotMediaArtifactTypeString(_ type: MediaArtifactType) -> String {
+        snakeCaseEnumCaseName(type)
     }
 
     fileprivate static func snapshotDelegationSubmittedMilestoneID(_ delegation: ProjectDelegationState) -> String? {
@@ -1340,5 +1803,84 @@ private extension CoreRoutingTarget {
         sessionName = target.sessionName
         paneId = target.paneId
         hostTty = target.hostTty
+    }
+}
+
+private extension RuntimeCaptureStatus {
+    init(_ status: CaptureStatus) {
+        switch status {
+        case .notRequested:
+            self = .notRequested
+        case .pending:
+            self = .pending
+        case .inProgress:
+            self = .inProgress
+        case .completed:
+            self = .completed
+        case let .failed(reason):
+            self = .failed(reason: reason)
+        }
+    }
+}
+
+private extension RuntimeMediaArtifact {
+    init(_ payload: SnapshotMediaArtifactPayload) {
+        artifactType = payload.artifactType
+        path = payload.path
+        label = payload.label
+        width = payload.width
+        height = payload.height
+        durationSecs = payload.durationSecs
+    }
+}
+
+private extension RuntimeMermaidSource {
+    init(_ payload: SnapshotMermaidSourcePayload) {
+        label = payload.label
+        source = payload.source
+    }
+}
+
+private extension RuntimeCaptureClaim {
+    init(_ payload: SnapshotCaptureClaimPayload) {
+        captureRequestId = payload.captureRequestId
+        clientId = payload.clientId
+        claimedAt = payload.claimedAt
+        observedCaptureUrl = payload.observedCaptureUrl
+    }
+}
+
+private extension RuntimeCheckpointState {
+    init(_ payload: SnapshotCheckpointPayload) {
+        id = payload.id
+        phaseId = payload.phaseId
+        kind = payload.kind
+        status = payload.status
+        title = payload.title
+        summary = payload.summary
+        briefPath = payload.briefPath
+        manifestPath = payload.manifestPath
+        mediaArtifacts = payload.mediaArtifacts.map(RuntimeMediaArtifact.init)
+        mermaidSources = payload.mermaidSources.map(RuntimeMermaidSource.init)
+        captureStatus = payload.captureStatus
+        captureUrl = payload.captureUrl
+        captureClaim = payload.captureClaim.map(RuntimeCaptureClaim.init)
+        createdAt = payload.createdAt
+        decidedAt = payload.decidedAt
+    }
+}
+
+private extension RuntimeRunState {
+    init(_ payload: SnapshotRunPayload) {
+        id = payload.id
+        projectPath = payload.projectPath
+        methodId = payload.methodId
+        methodName = payload.methodName
+        status = payload.status
+        sessionId = payload.sessionId
+        delegationWorkerId = payload.delegationWorkerId
+        createdAt = payload.createdAt
+        updatedAt = payload.updatedAt
+        activeCheckpoint = payload.activeCheckpoint.map(RuntimeCheckpointState.init)
     }
 }

@@ -61,6 +61,7 @@ fn seeded_snapshot_without_routing() -> serde_json::Value {
         ],
         "routing": [],
         "delegations": [],
+        "runs": [],
         "diagnostics": {
             "events_ingested": 2,
             "sessions_tracked": 1,
@@ -364,6 +365,239 @@ fn runtime_delegation_mutation_endpoint_updates_shared_runtime_snapshot() {
         Some(
             "/tmp/runtime-service-project/.capacitor/delegations/worker-1/milestones/01/manifest.json",
         )
+    );
+}
+
+#[test]
+fn runtime_run_mutation_endpoint_updates_shared_runtime_snapshot() {
+    let temp_dir = unique_temp_dir("serve-runtime-run");
+    let snapshot_path = temp_dir.join("snapshot.json");
+    let auth_token = "run-token";
+
+    let (_server, port) =
+        ServerGuard::spawn_service_bootstrap_ready(&temp_dir, &snapshot_path, auth_token);
+
+    let authorization = format!("Bearer {auth_token}");
+    let create_payload = serde_json::json!({
+        "kind": "create",
+        "project_path": "/tmp/runtime-service-project",
+        "run_id": "run-1",
+        "method_id": "execution_only",
+        "involvement": null,
+        "checkpoint_kind": null,
+        "checkpoint_title": null,
+        "checkpoint_summary": null,
+        "checkpoint_brief_path": null,
+        "checkpoint_manifest_path": null,
+        "checkpoint_media_artifacts": [],
+        "checkpoint_mermaid_sources": [],
+        "capture_url": null,
+        "checkpoint_id": null,
+        "capture_request_id": null,
+        "client_id": null,
+        "observed_capture_url": null,
+        "capture_failure_reason": null,
+        "decision_action": null,
+        "decision_note": null,
+        "session_id": null,
+        "delegation_worker_id": null,
+        "completed_media_artifacts": []
+    });
+    let (create_status, create_body) = http_request_with_headers(
+        port,
+        "POST",
+        "/runtime/run/mutate",
+        &[("Authorization", authorization.as_str())],
+        Some(&create_payload.to_string()),
+    );
+    assert_eq!(create_status, 200, "body: {create_body}");
+
+    let attach_payload = serde_json::json!({
+        "kind": "attach_session",
+        "project_path": "/tmp/runtime-service-project",
+        "run_id": "run-1",
+        "method_id": null,
+        "involvement": null,
+        "checkpoint_kind": null,
+        "checkpoint_title": null,
+        "checkpoint_summary": null,
+        "checkpoint_brief_path": null,
+        "checkpoint_manifest_path": null,
+        "checkpoint_media_artifacts": [],
+        "checkpoint_mermaid_sources": [],
+        "capture_url": null,
+        "checkpoint_id": null,
+        "capture_request_id": null,
+        "client_id": null,
+        "observed_capture_url": null,
+        "capture_failure_reason": null,
+        "decision_action": null,
+        "decision_note": null,
+        "session_id": "runtime-service-session",
+        "delegation_worker_id": null,
+        "completed_media_artifacts": []
+    });
+    let (attach_status, attach_body) = http_request_with_headers(
+        port,
+        "POST",
+        "/runtime/run/mutate",
+        &[("Authorization", authorization.as_str())],
+        Some(&attach_payload.to_string()),
+    );
+    assert_eq!(attach_status, 200, "body: {attach_body}");
+
+    let emit_payload = serde_json::json!({
+        "kind": "emit_checkpoint",
+        "project_path": "/tmp/runtime-service-project",
+        "run_id": "run-1",
+        "method_id": null,
+        "involvement": null,
+        "checkpoint_kind": "implementation_milestone",
+        "checkpoint_title": "Checkpoint capture",
+        "checkpoint_summary": null,
+        "checkpoint_brief_path": null,
+        "checkpoint_manifest_path": null,
+        "checkpoint_media_artifacts": [],
+        "checkpoint_mermaid_sources": [],
+        "capture_url": "http://localhost:3000",
+        "checkpoint_id": null,
+        "capture_request_id": null,
+        "client_id": null,
+        "observed_capture_url": null,
+        "capture_failure_reason": null,
+        "decision_action": null,
+        "decision_note": null,
+        "session_id": null,
+        "delegation_worker_id": null,
+        "completed_media_artifacts": []
+    });
+    let (emit_status, emit_body) = http_request_with_headers(
+        port,
+        "POST",
+        "/runtime/run/mutate",
+        &[("Authorization", authorization.as_str())],
+        Some(&emit_payload.to_string()),
+    );
+    assert_eq!(emit_status, 200, "body: {emit_body}");
+
+    let (snapshot_status, snapshot_body) = http_request_with_headers(
+        port,
+        "GET",
+        "/runtime/snapshot",
+        &[("Authorization", authorization.as_str())],
+        None,
+    );
+    assert_eq!(snapshot_status, 200, "body: {snapshot_body}");
+    let snapshot_json: serde_json::Value =
+        serde_json::from_str(&snapshot_body).expect("runtime snapshot json");
+    let checkpoint_id = snapshot_json["runs"][0]["active_checkpoint"]["id"]
+        .as_str()
+        .expect("checkpoint id")
+        .to_string();
+
+    let claim_payload = serde_json::json!({
+        "kind": "capture_claim",
+        "project_path": "/tmp/runtime-service-project",
+        "run_id": "run-1",
+        "method_id": null,
+        "involvement": null,
+        "checkpoint_kind": null,
+        "checkpoint_title": null,
+        "checkpoint_summary": null,
+        "checkpoint_brief_path": null,
+        "checkpoint_manifest_path": null,
+        "checkpoint_media_artifacts": [],
+        "checkpoint_mermaid_sources": [],
+        "capture_url": null,
+        "checkpoint_id": checkpoint_id.as_str(),
+        "capture_request_id": "request-1",
+        "client_id": "client-1",
+        "observed_capture_url": "http://localhost:4173",
+        "capture_failure_reason": null,
+        "decision_action": null,
+        "decision_note": null,
+        "session_id": null,
+        "delegation_worker_id": null,
+        "completed_media_artifacts": []
+    });
+    let (claim_status, claim_body) = http_request_with_headers(
+        port,
+        "POST",
+        "/runtime/run/mutate",
+        &[("Authorization", authorization.as_str())],
+        Some(&claim_payload.to_string()),
+    );
+    assert_eq!(claim_status, 200, "body: {claim_body}");
+
+    let complete_payload = serde_json::json!({
+        "kind": "capture_complete",
+        "project_path": "/tmp/runtime-service-project",
+        "run_id": "run-1",
+        "method_id": null,
+        "involvement": null,
+        "checkpoint_kind": null,
+        "checkpoint_title": null,
+        "checkpoint_summary": null,
+        "checkpoint_brief_path": null,
+        "checkpoint_manifest_path": null,
+        "checkpoint_media_artifacts": [],
+        "checkpoint_mermaid_sources": [],
+        "capture_url": null,
+        "checkpoint_id": checkpoint_id.as_str(),
+        "capture_request_id": "request-1",
+        "client_id": null,
+        "observed_capture_url": null,
+        "capture_failure_reason": null,
+        "decision_action": null,
+        "decision_note": null,
+        "session_id": null,
+        "delegation_worker_id": null,
+        "completed_media_artifacts": [
+            {
+                "artifact_type": "screenshot",
+                "path": "/tmp/runtime-service-project/captures/checkpoint-1.png",
+                "label": "Checkpoint screenshot",
+                "width": 1280,
+                "height": 720,
+                "duration_secs": null
+            }
+        ]
+    });
+    let (complete_status, complete_body) = http_request_with_headers(
+        port,
+        "POST",
+        "/runtime/run/mutate",
+        &[("Authorization", authorization.as_str())],
+        Some(&complete_payload.to_string()),
+    );
+    assert_eq!(complete_status, 200, "body: {complete_body}");
+
+    let (final_snapshot_status, final_snapshot_body) = http_request_with_headers(
+        port,
+        "GET",
+        "/runtime/snapshot",
+        &[("Authorization", authorization.as_str())],
+        None,
+    );
+    assert_eq!(final_snapshot_status, 200, "body: {final_snapshot_body}");
+
+    let final_snapshot_json: serde_json::Value =
+        serde_json::from_str(&final_snapshot_body).expect("runtime snapshot json");
+    assert_eq!(
+        final_snapshot_json["runs"].as_array().map(Vec::len),
+        Some(1)
+    );
+    assert_eq!(
+        final_snapshot_json["runs"][0]["active_checkpoint"]["id"].as_str(),
+        Some(checkpoint_id.as_str())
+    );
+    assert_eq!(
+        final_snapshot_json["runs"][0]["active_checkpoint"]["capture_status"].as_str(),
+        Some("completed")
+    );
+    assert_eq!(
+        final_snapshot_json["runs"][0]["active_checkpoint"]["media_artifacts"][0]["path"].as_str(),
+        Some("/tmp/runtime-service-project/captures/checkpoint-1.png")
     );
 }
 

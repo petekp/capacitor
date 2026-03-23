@@ -106,6 +106,25 @@ struct DelegationReviewManifestTests {
         #expect(manifest.artifacts[2].isMedia == true)
     }
 
+    @Test("Decodes mermaid_diagram artifact type emitted by runtime capture")
+    func decodesArtifactWithMermaidDiagramType() throws {
+        let json = """
+        {
+            "version": 1,
+            "milestone_id": "01",
+            "summary": "With runtime mermaid artifact",
+            "artifacts": [
+                {"label": "Architecture", "path": "arch.png", "artifact_type": "mermaid_diagram"}
+            ]
+        }
+        """.data(using: .utf8)!
+
+        let manifest = try JSONDecoder().decode(DelegationReviewManifest.self, from: json)
+        #expect(manifest.artifacts.count == 1)
+        #expect(manifest.artifacts[0].artifactType == .mermaid)
+        #expect(manifest.artifacts[0].isMedia == true)
+    }
+
     @Test("Decodes artifact without artifact_type (backwards compat)")
     func decodesArtifactWithoutType() throws {
         let json = """

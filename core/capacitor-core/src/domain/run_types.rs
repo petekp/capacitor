@@ -84,6 +84,8 @@ pub enum RunMutationKind {
     SubmitDecision,
     AttachSession,
     DetachSession,
+    CaptureClaim,
+    CaptureFailed,
     CaptureComplete,
     Pause,
     Resume,
@@ -185,6 +187,7 @@ pub enum CaptureStatus {
     #[default]
     NotRequested,
     Pending,
+    InProgress,
     Completed,
     Failed {
         reason: String,
@@ -204,9 +207,7 @@ pub struct CheckpointPacket {
     pub manifest_path: Option<String>,
     pub media_artifacts: Vec<MediaArtifact>,
     pub mermaid_sources: Vec<MermaidSource>,
-    pub capture_requested: bool,
     /// URL to capture via agent-browser at checkpoint time (e.g., "http://localhost:3000").
-    /// When present, implies capture is requested even if `capture_requested` is false.
     pub capture_url: Option<String>,
 }
 
@@ -214,6 +215,15 @@ pub struct CheckpointPacket {
 pub struct CheckpointDecision {
     pub action: String,
     pub note: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Record)]
+pub struct CaptureClaim {
+    pub capture_request_id: String,
+    pub client_id: String,
+    pub claimed_at: String,
+    #[serde(default)]
+    pub observed_capture_url: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Record)]
@@ -231,6 +241,8 @@ pub struct ActiveCheckpoint {
     pub capture_status: CaptureStatus,
     /// URL that was captured (or should be captured) via agent-browser.
     pub capture_url: Option<String>,
+    #[serde(default)]
+    pub capture_claim: Option<CaptureClaim>,
     pub decision: Option<CheckpointDecision>,
     pub created_at: String,
     pub decided_at: Option<String>,
@@ -288,9 +300,18 @@ pub struct MutateRunCommand {
     pub checkpoint_manifest_path: Option<String>,
     pub checkpoint_media_artifacts: Vec<MediaArtifact>,
     pub checkpoint_mermaid_sources: Vec<MermaidSource>,
-    pub capture_requested: bool,
     /// URL to capture via agent-browser (e.g., "http://localhost:3000").
     pub capture_url: Option<String>,
+    #[serde(default)]
+    pub checkpoint_id: Option<String>,
+    #[serde(default)]
+    pub capture_request_id: Option<String>,
+    #[serde(default)]
+    pub client_id: Option<String>,
+    #[serde(default)]
+    pub observed_capture_url: Option<String>,
+    #[serde(default)]
+    pub capture_failure_reason: Option<String>,
     pub decision_action: Option<String>,
     pub decision_note: Option<String>,
     pub session_id: Option<String>,

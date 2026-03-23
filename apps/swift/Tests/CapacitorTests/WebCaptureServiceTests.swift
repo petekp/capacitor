@@ -96,7 +96,7 @@ struct WebCaptureServiceTests {
         for error in errors {
             let desc = error.errorDescription
             #expect(desc != nil)
-            #expect(try !(#require(desc?.isEmpty)))
+            #expect(try !#require(desc?.isEmpty as Bool?))
         }
     }
 }
@@ -115,12 +115,10 @@ struct CaptureURLBridgeTests {
             manifestPath: nil,
             mediaArtifacts: [],
             mermaidSources: [],
-            captureRequested: false,
             captureUrl: "http://localhost:3000",
         )
 
         #expect(packet.captureUrl == "http://localhost:3000")
-        #expect(packet.captureRequested == false)
     }
 
     @Test("CheckpointPacket works without capture_url (nil)")
@@ -133,7 +131,6 @@ struct CaptureURLBridgeTests {
             manifestPath: nil,
             mediaArtifacts: [],
             mermaidSources: [],
-            captureRequested: false,
             captureUrl: nil,
         )
 
@@ -142,6 +139,12 @@ struct CaptureURLBridgeTests {
 
     @Test("ActiveCheckpoint exposes capture_url and capture_status")
     func activeCheckpointHasCaptureFields() {
+        let captureClaim = CaptureClaim(
+            captureRequestId: "capture-001",
+            clientId: "capacitor-mac-1234",
+            claimedAt: "2026-03-21T12:00:05Z",
+            observedCaptureUrl: "http://localhost:5173",
+        )
         let checkpoint = ActiveCheckpoint(
             id: "test-ckpt",
             phaseId: "phase-001",
@@ -155,6 +158,7 @@ struct CaptureURLBridgeTests {
             mermaidSources: [],
             captureStatus: .pending,
             captureUrl: "http://localhost:5173",
+            captureClaim: captureClaim,
             decision: nil,
             createdAt: "2026-03-21T12:00:00Z",
             decidedAt: nil,
@@ -162,6 +166,7 @@ struct CaptureURLBridgeTests {
 
         #expect(checkpoint.captureUrl == "http://localhost:5173")
         #expect(checkpoint.captureStatus == .pending)
+        #expect(checkpoint.captureClaim == captureClaim)
     }
 
     @Test("MutateRunCommand carries capture_url")
@@ -179,8 +184,12 @@ struct CaptureURLBridgeTests {
             checkpointManifestPath: nil,
             checkpointMediaArtifacts: [],
             checkpointMermaidSources: [],
-            captureRequested: true,
             captureUrl: "http://localhost:3000",
+            checkpointId: "checkpoint-001",
+            captureRequestId: "capture-001",
+            clientId: "capacitor-mac-1234",
+            observedCaptureUrl: "http://localhost:3000",
+            captureFailureReason: nil,
             decisionAction: nil,
             decisionNote: nil,
             sessionId: nil,
@@ -189,7 +198,25 @@ struct CaptureURLBridgeTests {
         )
 
         #expect(cmd.captureUrl == "http://localhost:3000")
-        #expect(cmd.captureRequested == true)
+        #expect(cmd.checkpointId == "checkpoint-001")
+        #expect(cmd.captureRequestId == "capture-001")
+        #expect(cmd.clientId == "capacitor-mac-1234")
+        #expect(cmd.observedCaptureUrl == "http://localhost:3000")
+    }
+
+    @Test("CaptureClaim bridge value carries claim metadata")
+    func captureClaimBridgeRoundTrip() {
+        let claim = CaptureClaim(
+            captureRequestId: "capture-001",
+            clientId: "capacitor-mac-1234",
+            claimedAt: "2026-03-21T12:00:05Z",
+            observedCaptureUrl: "http://localhost:5173",
+        )
+
+        #expect(claim.captureRequestId == "capture-001")
+        #expect(claim.clientId == "capacitor-mac-1234")
+        #expect(claim.claimedAt == "2026-03-21T12:00:05Z")
+        #expect(claim.observedCaptureUrl == "http://localhost:5173")
     }
 
     @Test("MediaArtifact type includes Screenshot variant")
@@ -212,13 +239,16 @@ struct CaptureURLBridgeTests {
         let statuses: [CaptureStatus] = [
             .notRequested,
             .pending,
+            .inProgress,
             .completed,
             .failed(reason: "timeout"),
         ]
 
-        #expect(statuses.count == 4)
+        #expect(statuses.count == 5)
 
-        if case let .failed(reason) = statuses[3] {
+        #expect(statuses[2] == .inProgress)
+
+        if case let .failed(reason) = statuses[4] {
             #expect(reason == "timeout")
         } else {
             Issue.record("Expected .failed variant")

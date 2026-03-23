@@ -40,6 +40,16 @@ enum AppFeatureError: LocalizedError {
     }
 }
 
+struct RuntimeRunKey: Hashable, Sendable {
+    let normalizedProjectPath: String
+    let runID: String
+
+    init(run: RuntimeRunState) {
+        normalizedProjectPath = PathNormalizer.normalize(run.projectPath)
+        runID = run.id
+    }
+}
+
 @Observable
 @MainActor
 class AppState {
@@ -108,6 +118,7 @@ class AppState {
 
     var activeCreations: [ProjectCreation] = []
     private(set) var delegationStates: [String: RuntimeDelegationState] = [:]
+    private(set) var runStatesByID: [RuntimeRunKey: RuntimeRunState] = [:]
 
     // MARK: - Cached Project Statuses (avoids FFI call per card per render)
 
@@ -167,6 +178,7 @@ class AppState {
     let hookServerManager: HookServerManager
     let projectDetailsManager = ProjectDetailsManager()
     private(set) var delegationLoopManager: DelegationLoopManager!
+    let runCaptureCoordinator: RunCaptureCoordinator
     private let projectIngestionWorker = ProjectIngestionWorker()
     private(set) var projectCreationCoordinator: ProjectCreationCoordinator!
     private(set) var projectFeatureCoordinator: ProjectFeatureCoordinator!
@@ -223,6 +235,7 @@ class AppState {
     ) {
         self.runtimeClient = runtimeClient
         self.hookServerManager = hookServerManager
+        runCaptureCoordinator = RunCaptureCoordinator(runtimeClient: runtimeClient)
         self.runtimeClient.setIncompatibleSchemaHandler { [weak self] health, minimumSchemaVersion in
             guard let self else { return }
             await MainActor.run {
@@ -580,15 +593,24 @@ class AppState {
         } else if !delegationStates.isEmpty {
             delegationStates = [:]
         }
+        let nextRunsByID = Dictionary(
+            uniqueKeysWithValues: snapshot.runs.map { (RuntimeRunKey(run: $0), $0) },
+        )
+        if nextRunsByID != runStatesByID {
+            runStatesByID = nextRunsByID
+        }
         consecutiveRuntimeSnapshotFailures = 0
 
         DebugLog.write(
-            "AppState.refreshSessionStates source=runtime_snapshot_apply cid=\(correlationId) projects=\(snapshot.projectStates.count) sessions=\(snapshot.sessions.count) shells=\(snapshot.shellState.shells.count) routing=\(snapshot.routingViews.count)",
+            "AppState.refreshSessionStates source=runtime_snapshot_apply cid=\(correlationId) projects=\(snapshot.projectStates.count) sessions=\(snapshot.sessions.count) shells=\(snapshot.shellState.shells.count) routing=\(snapshot.routingViews.count) runs=\(snapshot.runs.count)",
         )
         if isDelegationLoopEnabled {
             _Concurrency.Task { [delegationLoopManager] in
                 await delegationLoopManager?.reconcile(delegations: snapshot.delegations)
             }
+        }
+        _Concurrency.Task { [runCaptureCoordinator] in
+            await runCaptureCoordinator.reconcile(runs: snapshot.runs)
         }
         updatePostSessionRefreshContext()
     }
@@ -619,6 +641,7 @@ class AppState {
             shellStateStore.clearRuntimeShellState(correlationId: correlationId)
             routingStateStore.clearRuntimeRoutingViews(correlationId: correlationId)
             delegationStates = [:]
+            runStatesByID = [:]
         }
 
         updatePostSessionRefreshContext()
