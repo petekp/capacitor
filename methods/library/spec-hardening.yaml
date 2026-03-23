@@ -1,0 +1,241 @@
+# Purpose: Real v0 library method fixture converted from the `spec-hardening` skill for normalizer coverage.
+# Planned consumer test: Slice 1 real-method normalization plus future end-to-end fixture growth against a non-toy method.
+schema_version: "1"
+method:
+  id: spec-hardening
+  version: "2026-03-22"
+  title: Spec Hardening
+  description: >
+    Hardens a draft spec into an amended spec, execution packet, implementation
+    plan, and final review across the real intake, multi-angle review,
+    amendment, contracting, planning, and validation phases.
+  defaults:
+    skills:
+      - clean-architecture
+    template: implement
+    max_attempts: 2
+    completion_policy: all_complete
+  inputs:
+    source_draft:
+      type: markdown
+      required: true
+      description: Starting RFC, design spec, PRD, or method schema to harden.
+  outputs:
+    spec_brief:
+      from: intake.spec-intake.spec_brief
+      required: true
+    amended_spec:
+      from: amendment.amended-draft.amended_spec
+      required: true
+    execution_packet:
+      from: contracting.execution-packet.execution_packet
+      required: true
+    implementation_plan:
+      from: planning.implementation-plan.implementation_plan
+      required: true
+    plan_review:
+      from: validation.plan-review.plan_review
+      required: true
+  phases:
+    - id: intake
+      title: Intake
+      execution: serial
+      steps:
+        - id: spec-intake
+          title: Spec Intake
+          action: interactive
+          outputs:
+            spec_brief:
+              path: artifacts/spec-brief.md
+              type: markdown
+          interactive:
+            prompt: |-
+              Share the draft you want hardened. Then answer:
+              1. Who is the primary audience for this document?
+              2. What intended outcome must the hardened spec enable?
+              3. What is explicitly out of scope?
+              4. What open questions still matter?
+              5. Which decisions are required before build begins?
+            response_type: markdown
+            output: spec_brief
+    - id: multi-angle-review
+      title: Multi-Angle Review
+      execution: serial
+      steps:
+        - id: draft-digest
+          title: Draft Digest
+          action: synthesis
+          inputs:
+            - source_draft
+            - spec_brief
+          outputs:
+            draft_digest:
+              path: artifacts/draft-digest.md
+              type: markdown
+          synthesis:
+            instructions: >
+              Read the source draft and spec brief, then write a concise
+              `draft-digest.md` that captures the core claims, proposed
+              mechanism, dependencies, assumptions, ambiguities, and missing
+              artifacts without inventing new design decisions.
+            output: draft_digest
+        - id: implementer-review
+          title: Implementer Review
+          action: dispatch
+          inputs:
+            - draft_digest
+          skills:
+            - rust
+          outputs:
+            implementer_review:
+              path: artifacts/implementer-review.md
+              type: markdown
+          dispatch:
+            instructions: >
+              Evaluate the draft for buildability, missing seams, testability,
+              sequencing hazards, and required clarifications from an
+              implementer point of view.
+        - id: systems-review
+          title: Systems Review
+          action: dispatch
+          inputs:
+            - draft_digest
+          skills:
+            - architecture-exploration
+          outputs:
+            systems_review:
+              path: artifacts/systems-review.md
+              type: markdown
+          dispatch:
+            instructions: >
+              Pressure the draft for architectural boundary issues, runtime
+              risks, failure handling gaps, concurrency concerns, and
+              observability or migration blind spots.
+        - id: comparative-review
+          title: Comparative Review
+          action: dispatch
+          inputs:
+            - draft_digest
+          skills:
+            - deep-research
+          outputs:
+            comparative_review:
+              path: artifacts/comparative-review.md
+              type: markdown
+          dispatch:
+            instructions: >
+              Compare the draft to serious adjacent patterns or prior art and
+              turn those comparisons into adopt-or-avoid guidance.
+    - id: amendment
+      title: Amendment
+      execution: serial
+      gate:
+        id: amendment-outputs-present
+        type: outputs_present
+        outputs:
+          - caveat_resolution
+          - amended_spec
+      steps:
+        - id: caveat-resolution
+          title: Caveat Resolution
+          action: interactive
+          inputs:
+            - implementer_review
+            - systems_review
+            - comparative_review
+          outputs:
+            caveat_resolution:
+              path: artifacts/caveat-resolution.md
+              type: markdown
+          interactive:
+            prompt: |-
+              Here are the implementer, systems, and comparative review caveats.
+
+              1. Which caveats should become amendments now?
+              2. Which caveats are you explicitly rejecting?
+              3. Which risks are real but deferred instead of fixed in this pass?
+              4. What scope cuts, if any, should we make before rewriting the draft?
+            response_type: markdown
+            output: caveat_resolution
+        - id: amended-draft
+          title: Amended Draft
+          action: synthesis
+          inputs:
+            - source_draft
+            - draft_digest
+            - caveat_resolution
+          outputs:
+            amended_spec:
+              path: artifacts/amended-spec.md
+              type: markdown
+          synthesis:
+            instructions: >
+              Publish one canonical revised spec that incorporates accepted
+              caveats, makes deferred risk explicit, and yields a trustworthy
+              `amended-spec.md`.
+            output: amended_spec
+    - id: contracting
+      title: Contracting
+      execution: serial
+      steps:
+        - id: execution-packet
+          title: Execution Packet
+          action: synthesis
+          inputs:
+            - amended_spec
+            - systems_review
+            - caveat_resolution
+          outputs:
+            execution_packet:
+              path: artifacts/execution-packet.md
+              type: markdown
+          synthesis:
+            instructions: >
+              Convert the amended spec into a build-ready contract covering
+              invariants, interfaces to implement, constraints, verification
+              strategy, required artifacts, and rollback or reopen triggers.
+            output: execution_packet
+    - id: planning
+      title: Planning
+      execution: serial
+      steps:
+        - id: implementation-plan
+          title: Implementation Plan
+          action: synthesis
+          inputs:
+            - amended_spec
+            - execution_packet
+          outputs:
+            implementation_plan:
+              path: artifacts/implementation-plan.md
+              type: markdown
+          synthesis:
+            instructions: >
+              Sequence the work into slices that reference execution-packet
+              obligations and carry explicit test or verification
+              responsibilities.
+            output: implementation_plan
+    - id: validation
+      title: Validation
+      execution: serial
+      skills:
+        - seam-ripper
+      steps:
+        - id: plan-review
+          title: Plan Review
+          action: dispatch
+          template: review
+          inputs:
+            - execution_packet
+            - implementation_plan
+          skills:
+            - rust
+          outputs:
+            plan_review:
+              path: artifacts/plan-review.md
+              type: markdown
+          dispatch:
+            instructions: >
+              Adversarially review the implementation plan against the execution
+              packet, identify blocking gaps, and issue a READY or REVISE
+              verdict with a clear reopen target when needed.
