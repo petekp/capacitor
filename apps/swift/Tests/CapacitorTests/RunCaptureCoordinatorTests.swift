@@ -321,6 +321,498 @@ final class RunCaptureCoordinatorTests: XCTestCase {
         )
     }
 
+    func testOwnedInProgressRetryFinalizesFromPreservedArtifactsWhenToolUnavailable() async throws {
+        let homeDirectory = try makeTemporaryHomeDirectory()
+        let mutationRecorder = RunMutationRecorder()
+        let captureRecorder = CaptureRecorder()
+
+        // Phase 1: Initial capture succeeds locally but transport fails on finalize.
+        let firstRunCoordinator = makeCoordinator(
+            homeDirectory: homeDirectory,
+            clientID: "capacitor-mac-test",
+            mutateRun: { request in
+                await mutationRecorder.record(request)
+                if request.kind == "capture_complete" {
+                    throw RuntimeClientError.runtimeUnavailable("offline")
+                }
+            },
+            captureURL: { url, outputPath in
+                await captureRecorder.recordURL(url: url, outputPath: outputPath)
+                try writeArtifact(at: outputPath)
+                return WebCaptureService.CaptureResult(
+                    imagePath: outputPath,
+                    width: 1440,
+                    height: 900,
+                )
+            },
+        )
+        let run = makeRun(
+            runID: "run:/1",
+            checkpointID: "checkpoint:1",
+            captureStatus: .pending,
+            captureUrl: "http://localhost:3000/review",
+        )
+        await firstRunCoordinator.reconcile(runs: [run])
+
+        // Verify: claim + failed capture_complete, artifacts preserved on disk.
+        var requests = await mutationRecorder.snapshot()
+        XCTAssertEqual(requests.map(\.kind), ["capture_claim", "capture_complete"])
+
+        let captureDirectory = try captureDirectoryURL(
+            homeDirectory: homeDirectory,
+            runID: run.id,
+            checkpointID: XCTUnwrap(run.activeCheckpoint?.id),
+        )
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: captureDirectory.appendingPathComponent("web-capture.png").path,
+            ),
+            "artifacts should be preserved after transport failure",
+        )
+
+        // Phase 2: Retry as ownedInProgress with tool UNAVAILABLE.
+        // The coordinator should finalize from preserved artifacts, not re-capture.
+        let retryRecorder = RunMutationRecorder()
+        let retryCoordinator = makeCoordinator(
+            homeDirectory: homeDirectory,
+            clientID: "capacitor-mac-test",
+            mutateRun: { request in
+                await retryRecorder.record(request)
+            },
+            captureURL: { url, outputPath in
+                await captureRecorder.recordURL(url: url, outputPath: outputPath)
+                try writeArtifact(at: outputPath)
+                return WebCaptureService.CaptureResult(
+                    imagePath: outputPath,
+                    width: 1,
+                    height: 1,
+                )
+            },
+            isCaptureToolAvailable: { false },
+        )
+
+        let existingClaim = try RuntimeCaptureClaim(
+            captureRequestId: XCTUnwrap(requests.first?.captureRequestId),
+            clientId: "capacitor-mac-test",
+            claimedAt: "2026-03-22T00:00:00Z",
+            observedCaptureUrl: "http://localhost:3000/review",
+        )
+        let retryRun = makeRun(
+            runID: "run:/1",
+            checkpointID: "checkpoint:1",
+            captureStatus: .inProgress,
+            captureUrl: "http://localhost:3000/review",
+            captureClaim: existingClaim,
+        )
+
+        await retryCoordinator.reconcile(runs: [retryRun])
+
+        // Should finalize with capture_complete from preserved artifacts, NOT capture_failed.
+        let retryRequests = await retryRecorder.snapshot()
+        XCTAssertEqual(
+            retryRequests.map(\.kind),
+            ["capture_complete"],
+            "should finalize from preserved artifacts, not send capture_failed",
+        )
+        XCTAssertFalse(
+            retryRequests.contains(where: { $0.kind == "capture_failed" }),
+            "should never send capture_failed when preserved artifacts exist",
+        )
+
+        // Verify payload correctness.
+        let completionRequest = try XCTUnwrap(retryRequests.first)
+        XCTAssertEqual(
+            completionRequest.captureRequestId,
+            existingClaim.captureRequestId,
+            "should reuse the original claim's captureRequestId",
+        )
+        XCTAssertEqual(completionRequest.completedMediaArtifacts.count, 1)
+        XCTAssertEqual(completionRequest.completedMediaArtifacts.first?.artifactType, "screenshot")
+        XCTAssertTrue(
+            completionRequest.completedMediaArtifacts.first?.path.hasSuffix("web-capture.png") ?? false,
+            "artifact path should reference the preserved web-capture.png",
+        )
+
+        // Should NOT have invoked browser capture again.
+        let urlCaptureCount = await captureRecorder.urlCaptureCount()
+        XCTAssertEqual(urlCaptureCount, 1, "browser capture should have been called only once (initial)")
+    }
+
+    func testRecoveryFinalizationFailurePreservesArtifactsForNextRetry() async throws {
+        let homeDirectory = try makeTemporaryHomeDirectory()
+        let mutationRecorder = RunMutationRecorder()
+
+        // Both the initial and retry capture_complete calls fail with transport error.
+        let coordinator = makeCoordinator(
+            homeDirectory: homeDirectory,
+            mutateRun: { request in
+                await mutationRecorder.record(request)
+                if request.kind == "capture_complete" {
+                    throw RuntimeClientError.runtimeUnavailable("offline")
+                }
+            },
+            captureURL: { _, outputPath in
+                try writeArtifact(at: outputPath)
+                return WebCaptureService.CaptureResult(
+                    imagePath: outputPath,
+                    width: 1024,
+                    height: 768,
+                )
+            },
+        )
+        let run = makeRun(runID: "run:/1", checkpointID: "checkpoint:1")
+
+        // Phase 1: Initial capture succeeds locally, finalization fails.
+        await coordinator.reconcile(runs: [run])
+
+        let requests = await mutationRecorder.snapshot()
+        XCTAssertEqual(requests.map(\.kind), ["capture_claim", "capture_complete"])
+
+        // Phase 2: Retry as ownedInProgress — recovery also fails to finalize.
+        let retryRecorder = RunMutationRecorder()
+        let retryCoordinator = makeCoordinator(
+            homeDirectory: homeDirectory,
+            mutateRun: { request in
+                await retryRecorder.record(request)
+                if request.kind == "capture_complete" {
+                    throw RuntimeClientError.runtimeUnavailable("still offline")
+                }
+            },
+            isCaptureToolAvailable: { false },
+        )
+        let existingClaim = try RuntimeCaptureClaim(
+            captureRequestId: XCTUnwrap(requests.first?.captureRequestId),
+            clientId: "capacitor-mac-test",
+            claimedAt: "2026-03-22T00:00:00Z",
+            observedCaptureUrl: "http://localhost:3000/review",
+        )
+        let retryRun = makeRun(
+            runID: "run:/1",
+            checkpointID: "checkpoint:1",
+            captureStatus: .inProgress,
+            captureClaim: existingClaim,
+        )
+
+        await retryCoordinator.reconcile(runs: [retryRun])
+
+        // Should attempt capture_complete (from preserved artifacts), NOT capture_failed.
+        let retryRequests = await retryRecorder.snapshot()
+        XCTAssertEqual(retryRequests.map(\.kind), ["capture_complete"])
+        XCTAssertFalse(retryRequests.contains(where: { $0.kind == "capture_failed" }))
+
+        // Artifacts should STILL be preserved for yet another retry.
+        let captureDirectory = try captureDirectoryURL(
+            homeDirectory: homeDirectory,
+            runID: run.id,
+            checkpointID: XCTUnwrap(run.activeCheckpoint?.id),
+        )
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: captureDirectory.appendingPathComponent("web-capture.png").path,
+            ),
+            "artifacts must survive repeated recovery failures for future retries",
+        )
+    }
+
+    func testRecoveryWithMermaidArtifactsIncludesAllInFinalization() async throws {
+        let homeDirectory = try makeTemporaryHomeDirectory()
+        let mutationRecorder = RunMutationRecorder()
+        let mermaidSources = [
+            RuntimeMermaidSource(label: "Flow A", source: "graph TD\nA-->B"),
+        ]
+
+        // Phase 1: Full capture with mermaid, then transport failure.
+        let coordinator = makeCoordinator(
+            homeDirectory: homeDirectory,
+            mutateRun: { request in
+                await mutationRecorder.record(request)
+                if request.kind == "capture_complete" {
+                    throw RuntimeClientError.runtimeUnavailable("offline")
+                }
+            },
+            captureURL: { _, outputPath in
+                try writeArtifact(at: outputPath)
+                return WebCaptureService.CaptureResult(imagePath: outputPath, width: 1600, height: 900)
+            },
+            captureMermaid: { _, outputPath in
+                try writeArtifact(at: outputPath)
+                return WebCaptureService.CaptureResult(imagePath: outputPath, width: 800, height: 600)
+            },
+        )
+        let run = makeRun(runID: "run:/1", checkpointID: "checkpoint:1", mermaidSources: mermaidSources)
+
+        await coordinator.reconcile(runs: [run])
+
+        let requests = await mutationRecorder.snapshot()
+        XCTAssertEqual(requests.map(\.kind), ["capture_claim", "capture_complete"])
+
+        // Phase 2: Retry recovery should include both screenshot and mermaid.
+        let retryRecorder = RunMutationRecorder()
+        let retryCoordinator = makeCoordinator(
+            homeDirectory: homeDirectory,
+            mutateRun: { request in
+                await retryRecorder.record(request)
+            },
+            isCaptureToolAvailable: { false },
+        )
+        let existingClaim = try RuntimeCaptureClaim(
+            captureRequestId: XCTUnwrap(requests.first?.captureRequestId),
+            clientId: "capacitor-mac-test",
+            claimedAt: "2026-03-22T00:00:00Z",
+            observedCaptureUrl: "http://localhost:3000/review",
+        )
+        let retryRun = makeRun(
+            runID: "run:/1",
+            checkpointID: "checkpoint:1",
+            captureStatus: .inProgress,
+            captureClaim: existingClaim,
+            mermaidSources: mermaidSources,
+        )
+
+        await retryCoordinator.reconcile(runs: [retryRun])
+
+        let retryRequests = await retryRecorder.snapshot()
+        XCTAssertEqual(retryRequests.map(\.kind), ["capture_complete"])
+        let artifacts = try XCTUnwrap(retryRequests.first?.completedMediaArtifacts)
+        XCTAssertEqual(artifacts.count, 2, "should recover both screenshot and mermaid artifacts")
+        XCTAssertEqual(artifacts.count(where: { $0.artifactType == "screenshot" }), 1)
+        XCTAssertEqual(artifacts.count(where: { $0.artifactType == "mermaid_diagram" }), 1)
+        XCTAssertEqual(artifacts.last?.label, "Flow A")
+    }
+
+    func testRecoverySkippedWhenMermaidArtifactMissingFallsToFreshCapture() async throws {
+        let homeDirectory = try makeTemporaryHomeDirectory()
+        let mutationRecorder = RunMutationRecorder()
+        let captureRecorder = CaptureRecorder()
+        let mermaidSources = [
+            RuntimeMermaidSource(label: "Flow A", source: "graph TD\nA-->B"),
+        ]
+
+        // Phase 1: Capture with mermaid succeeds, then transport failure.
+        let coordinator = makeCoordinator(
+            homeDirectory: homeDirectory,
+            mutateRun: { request in
+                await mutationRecorder.record(request)
+                if request.kind == "capture_complete" {
+                    throw RuntimeClientError.runtimeUnavailable("offline")
+                }
+            },
+            captureURL: { _, outputPath in
+                try writeArtifact(at: outputPath)
+                return WebCaptureService.CaptureResult(imagePath: outputPath, width: 1600, height: 900)
+            },
+            captureMermaid: { _, outputPath in
+                try writeArtifact(at: outputPath)
+                return WebCaptureService.CaptureResult(imagePath: outputPath, width: 800, height: 600)
+            },
+        )
+        let run = makeRun(runID: "run:/1", checkpointID: "checkpoint:1", mermaidSources: mermaidSources)
+        await coordinator.reconcile(runs: [run])
+
+        // Simulate partial corruption: delete the mermaid PNG but keep web-capture.png.
+        let captureDirectory = try captureDirectoryURL(
+            homeDirectory: homeDirectory,
+            runID: run.id,
+            checkpointID: XCTUnwrap(run.activeCheckpoint?.id),
+        )
+        try FileManager.default.removeItem(
+            at: captureDirectory.appendingPathComponent("mermaid-0.png"),
+        )
+
+        // Phase 2: Retry — recovery should be skipped (incomplete artifacts).
+        // With tool available, should re-capture from scratch.
+        let retryRecorder = RunMutationRecorder()
+        let retryCoordinator = makeCoordinator(
+            homeDirectory: homeDirectory,
+            mutateRun: { request in
+                await retryRecorder.record(request)
+            },
+            captureURL: { url, outputPath in
+                await captureRecorder.recordURL(url: url, outputPath: outputPath)
+                try writeArtifact(at: outputPath)
+                return WebCaptureService.CaptureResult(imagePath: outputPath, width: 1600, height: 900)
+            },
+            captureMermaid: { _, outputPath in
+                try writeArtifact(at: outputPath)
+                return WebCaptureService.CaptureResult(imagePath: outputPath, width: 800, height: 600)
+            },
+        )
+        let initialRequests = await mutationRecorder.snapshot()
+        let existingClaim = try RuntimeCaptureClaim(
+            captureRequestId: XCTUnwrap(initialRequests.first?.captureRequestId),
+            clientId: "capacitor-mac-test",
+            claimedAt: "2026-03-22T00:00:00Z",
+            observedCaptureUrl: "http://localhost:3000/review",
+        )
+        let retryRun = makeRun(
+            runID: "run:/1",
+            checkpointID: "checkpoint:1",
+            captureStatus: .inProgress,
+            captureClaim: existingClaim,
+            mermaidSources: mermaidSources,
+        )
+
+        await retryCoordinator.reconcile(runs: [retryRun])
+
+        // Should have re-captured (browser called) since recovery was skipped.
+        let urlCaptureCount = await captureRecorder.urlCaptureCount()
+        XCTAssertEqual(urlCaptureCount, 1, "should re-capture when preserved artifacts are incomplete")
+        let retryRequests = await retryRecorder.snapshot()
+        XCTAssertEqual(retryRequests.map(\.kind), ["capture_complete"])
+    }
+
+    func testRecoverySkippedForZeroByteWebCapture() async throws {
+        let homeDirectory = try makeTemporaryHomeDirectory()
+        let mutationRecorder = RunMutationRecorder()
+        let captureRecorder = CaptureRecorder()
+
+        // Pre-create a zero-byte web-capture.png (simulating corruption).
+        let run = makeRun(runID: "run:/1", checkpointID: "checkpoint:1")
+        let captureDirectory = try captureDirectoryURL(
+            homeDirectory: homeDirectory,
+            runID: run.id,
+            checkpointID: XCTUnwrap(run.activeCheckpoint?.id),
+        )
+        try FileManager.default.createDirectory(at: captureDirectory, withIntermediateDirectories: true)
+        FileManager.default.createFile(
+            atPath: captureDirectory.appendingPathComponent("web-capture.png").path,
+            contents: Data(),
+        )
+
+        let coordinator = makeCoordinator(
+            homeDirectory: homeDirectory,
+            mutateRun: { request in
+                await mutationRecorder.record(request)
+            },
+            captureURL: { url, outputPath in
+                await captureRecorder.recordURL(url: url, outputPath: outputPath)
+                try writeArtifact(at: outputPath)
+                return WebCaptureService.CaptureResult(imagePath: outputPath, width: 1024, height: 768)
+            },
+        )
+        let existingClaim = RuntimeCaptureClaim(
+            captureRequestId: "claim-zero-byte",
+            clientId: "capacitor-mac-test",
+            claimedAt: "2026-03-22T00:00:00Z",
+            observedCaptureUrl: "http://localhost:3000/review",
+        )
+        let retryRun = makeRun(
+            runID: "run:/1",
+            checkpointID: "checkpoint:1",
+            captureStatus: .inProgress,
+            captureClaim: existingClaim,
+        )
+
+        await coordinator.reconcile(runs: [retryRun])
+
+        // Should have re-captured (zero-byte file rejected by isNonEmptyFile).
+        let urlCaptureCount = await captureRecorder.urlCaptureCount()
+        XCTAssertEqual(urlCaptureCount, 1, "zero-byte web-capture.png should trigger fresh capture")
+        let requests = await mutationRecorder.snapshot()
+        XCTAssertEqual(requests.map(\.kind), ["capture_complete"])
+    }
+
+    func testRecoveryPreferredEvenWhenCaptureToolIsAvailable() async throws {
+        let homeDirectory = try makeTemporaryHomeDirectory()
+        let mutationRecorder = RunMutationRecorder()
+        let captureRecorder = CaptureRecorder()
+
+        // Phase 1: Capture succeeds, finalization fails (transport error).
+        let coordinator = makeCoordinator(
+            homeDirectory: homeDirectory,
+            mutateRun: { request in
+                await mutationRecorder.record(request)
+                if request.kind == "capture_complete" {
+                    throw RuntimeClientError.runtimeUnavailable("offline")
+                }
+            },
+            captureURL: { url, outputPath in
+                await captureRecorder.recordURL(url: url, outputPath: outputPath)
+                try writeArtifact(at: outputPath)
+                return WebCaptureService.CaptureResult(imagePath: outputPath, width: 1440, height: 900)
+            },
+        )
+        let run = makeRun(runID: "run:/1", checkpointID: "checkpoint:1")
+        await coordinator.reconcile(runs: [run])
+
+        let requests = await mutationRecorder.snapshot()
+        XCTAssertEqual(requests.map(\.kind), ["capture_claim", "capture_complete"])
+
+        // Phase 2: Retry with tool AVAILABLE. Recovery should still be preferred.
+        let retryRecorder = RunMutationRecorder()
+        let retryCoordinator = makeCoordinator(
+            homeDirectory: homeDirectory,
+            mutateRun: { request in
+                await retryRecorder.record(request)
+            },
+            captureURL: { url, outputPath in
+                await captureRecorder.recordURL(url: url, outputPath: outputPath)
+                try writeArtifact(at: outputPath)
+                return WebCaptureService.CaptureResult(imagePath: outputPath, width: 1, height: 1)
+            },
+            isCaptureToolAvailable: { true },
+        )
+        let existingClaim = try RuntimeCaptureClaim(
+            captureRequestId: XCTUnwrap(requests.first?.captureRequestId),
+            clientId: "capacitor-mac-test",
+            claimedAt: "2026-03-22T00:00:00Z",
+            observedCaptureUrl: "http://localhost:3000/review",
+        )
+        let retryRun = makeRun(
+            runID: "run:/1",
+            checkpointID: "checkpoint:1",
+            captureStatus: .inProgress,
+            captureClaim: existingClaim,
+        )
+
+        await retryCoordinator.reconcile(runs: [retryRun])
+
+        // Should finalize from preserved artifacts, NOT re-capture.
+        let retryRequests = await retryRecorder.snapshot()
+        XCTAssertEqual(retryRequests.map(\.kind), ["capture_complete"])
+        let urlCaptureCount = await captureRecorder.urlCaptureCount()
+        XCTAssertEqual(urlCaptureCount, 1, "should use preserved artifacts, not re-capture even with tool available")
+    }
+
+    func testPendingClaimNeverTriggersRecoveryEvenWithPreservedArtifacts() async throws {
+        let homeDirectory = try makeTemporaryHomeDirectory()
+        let mutationRecorder = RunMutationRecorder()
+        let captureRecorder = CaptureRecorder()
+
+        // Pre-create artifacts that look like preserved state from a prior attempt.
+        let run = makeRun(runID: "run:/1", checkpointID: "checkpoint:1")
+        let captureDirectory = try captureDirectoryURL(
+            homeDirectory: homeDirectory,
+            runID: run.id,
+            checkpointID: XCTUnwrap(run.activeCheckpoint?.id),
+        )
+        try FileManager.default.createDirectory(at: captureDirectory, withIntermediateDirectories: true)
+        try Data("fake-artifact".utf8).write(
+            to: captureDirectory.appendingPathComponent("web-capture.png"),
+        )
+
+        let coordinator = makeCoordinator(
+            homeDirectory: homeDirectory,
+            mutateRun: { request in
+                await mutationRecorder.record(request)
+            },
+            captureURL: { url, outputPath in
+                await captureRecorder.recordURL(url: url, outputPath: outputPath)
+                try writeArtifact(at: outputPath)
+                return WebCaptureService.CaptureResult(imagePath: outputPath, width: 1024, height: 768)
+            },
+        )
+
+        // Reconcile as PENDING (fresh claim, not ownedInProgress).
+        await coordinator.reconcile(runs: [run])
+
+        // Should go through normal claim → capture flow, not recovery.
+        let requests = await mutationRecorder.snapshot()
+        XCTAssertEqual(requests.map(\.kind), ["capture_claim", "capture_complete"])
+        let urlCaptureCount = await captureRecorder.urlCaptureCount()
+        XCTAssertEqual(urlCaptureCount, 1, "pending claim must always capture fresh, never use recovery")
+    }
+
     func testInFlightCheckpointSkipsDuplicateReconcileTick() async throws {
         let homeDirectory = try makeTemporaryHomeDirectory()
         let mutationRecorder = RunMutationRecorder()

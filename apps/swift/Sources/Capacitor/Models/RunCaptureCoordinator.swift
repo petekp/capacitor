@@ -192,6 +192,39 @@ actor RunCaptureCoordinator {
             runID: candidate.run.id,
             checkpointID: candidate.checkpoint.id,
         )
+
+        // On ownedInProgress recovery, try to finalize from preserved artifacts first.
+        // A previous capture may have succeeded locally but failed to finalize due to
+        // transport failure. If the artifacts are still on disk, skip the browser entirely.
+        if !shouldClaim, let preservedArtifacts = recoverPreservedArtifacts(
+            for: candidate,
+            captureDirectory: captureDirectory,
+        ) {
+            do {
+                try await runtimeMutation(
+                    makeMutationRequest(
+                        kind: "capture_complete",
+                        run: candidate.run,
+                        checkpointID: candidate.checkpoint.id,
+                        captureRequestID: captureRequestID,
+                        completedMediaArtifacts: preservedArtifacts,
+                    ),
+                )
+                DebugLog.write(
+                    "RunCaptureCoordinator.finalize recovered from preserved artifacts checkpoint=\(candidate.checkpoint.id) run=\(candidate.run.id) artifacts=\(preservedArtifacts.count)",
+                )
+                return
+            } catch {
+                cleanupAfterFinalizationFailure(
+                    captureDirectory: captureDirectory,
+                    checkpointID: candidate.checkpoint.id,
+                    runID: candidate.run.id,
+                    error: error,
+                )
+                return
+            }
+        }
+
         let isToolAvailable = await isCaptureToolAvailable()
         guard isToolAvailable else {
             await finalizeFailedCapture(
@@ -278,6 +311,65 @@ actor RunCaptureCoordinator {
         }
 
         return artifacts
+    }
+
+    /// Checks whether a previous capture attempt left a complete artifact set on disk.
+    /// Returns a reconstructed artifact list if all expected artifacts exist and are
+    /// non-empty, or nil if any are missing/incomplete — triggering a fresh capture.
+    private func recoverPreservedArtifacts(
+        for candidate: CaptureCandidate,
+        captureDirectory: URL,
+    ) -> [RuntimeMediaArtifact]? {
+        let webCapturePath = captureDirectory.appendingPathComponent("web-capture.png")
+        guard isNonEmptyFile(at: webCapturePath) else {
+            DebugLog.write(
+                "RunCaptureCoordinator.recoverPreservedArtifacts skipped reason=web_capture_missing_or_empty checkpoint=\(candidate.checkpoint.id)",
+            )
+            return nil
+        }
+
+        var artifacts = [
+            RuntimeMediaArtifact(
+                artifactType: "screenshot",
+                path: webCapturePath.path,
+                label: "Web capture",
+                width: nil,
+                height: nil,
+                durationSecs: nil,
+            ),
+        ]
+
+        for (index, source) in candidate.checkpoint.mermaidSources.enumerated() {
+            let mermaidImagePath = captureDirectory.appendingPathComponent("mermaid-\(index).png")
+            guard isNonEmptyFile(at: mermaidImagePath) else {
+                DebugLog.write(
+                    "RunCaptureCoordinator.recoverPreservedArtifacts skipped reason=mermaid_\(index)_missing_or_empty checkpoint=\(candidate.checkpoint.id)",
+                )
+                return nil
+            }
+            artifacts.append(
+                RuntimeMediaArtifact(
+                    artifactType: "mermaid_diagram",
+                    path: mermaidImagePath.path,
+                    label: source.label,
+                    width: nil,
+                    height: nil,
+                    durationSecs: nil,
+                ),
+            )
+        }
+
+        return artifacts
+    }
+
+    private func isNonEmptyFile(at url: URL) -> Bool {
+        guard let attributes = try? fileManager.attributesOfItem(atPath: url.path) else {
+            return false
+        }
+        let fileType = attributes[.type] as? FileAttributeType
+        guard fileType == .typeRegular else { return false }
+        let size = attributes[.size] as? UInt64 ?? 0
+        return size > 0
     }
 
     private func finalizeFailedCapture(
