@@ -321,6 +321,113 @@ final class RunCaptureCoordinatorTests: XCTestCase {
         )
     }
 
+    func testOwnedInProgressRetryFinalizesFromPreservedArtifactsWhenToolUnavailable() async throws {
+        let homeDirectory = try makeTemporaryHomeDirectory()
+        let mutationRecorder = RunMutationRecorder()
+        let captureRecorder = CaptureRecorder()
+
+        // Phase 1: Initial capture succeeds locally but transport fails on finalize.
+        let firstRunCoordinator = makeCoordinator(
+            homeDirectory: homeDirectory,
+            clientID: "capacitor-mac-test",
+            mutateRun: { request in
+                await mutationRecorder.record(request)
+                if request.kind == "capture_complete" {
+                    throw RuntimeClientError.runtimeUnavailable("offline")
+                }
+            },
+            captureURL: { url, outputPath in
+                await captureRecorder.recordURL(url: url, outputPath: outputPath)
+                try writeArtifact(at: outputPath)
+                return WebCaptureService.CaptureResult(
+                    imagePath: outputPath,
+                    width: 1440,
+                    height: 900,
+                )
+            },
+        )
+        let run = makeRun(
+            runID: "run:/1",
+            checkpointID: "checkpoint:1",
+            captureStatus: .pending,
+            captureUrl: "http://localhost:3000/review",
+        )
+        await firstRunCoordinator.reconcile(runs: [run])
+
+        // Verify: claim + failed capture_complete, artifacts preserved on disk.
+        var requests = await mutationRecorder.snapshot()
+        XCTAssertEqual(requests.map(\.kind), ["capture_claim", "capture_complete"])
+
+        let captureDirectory = try captureDirectoryURL(
+            homeDirectory: homeDirectory,
+            runID: run.id,
+            checkpointID: XCTUnwrap(run.activeCheckpoint?.id),
+        )
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: captureDirectory.appendingPathComponent("web-capture.png").path,
+            ),
+            "artifacts should be preserved after transport failure",
+        )
+
+        // Phase 2: Retry as ownedInProgress with tool UNAVAILABLE.
+        // The coordinator should finalize from preserved artifacts, not re-capture.
+        let retryRecorder = RunMutationRecorder()
+        let retryCoordinator = makeCoordinator(
+            homeDirectory: homeDirectory,
+            clientID: "capacitor-mac-test",
+            mutateRun: { request in
+                await retryRecorder.record(request)
+            },
+            captureURL: { url, outputPath in
+                await captureRecorder.recordURL(url: url, outputPath: outputPath)
+                try writeArtifact(at: outputPath)
+                return WebCaptureService.CaptureResult(
+                    imagePath: outputPath,
+                    width: 1,
+                    height: 1,
+                )
+            },
+            isCaptureToolAvailable: { false },
+        )
+
+        let existingClaim = try RuntimeCaptureClaim(
+            captureRequestId: XCTUnwrap(requests.first?.captureRequestId),
+            clientId: "capacitor-mac-test",
+            claimedAt: "2026-03-22T00:00:00Z",
+            observedCaptureUrl: "http://localhost:3000/review",
+        )
+        let retryRun = makeRun(
+            runID: "run:/1",
+            checkpointID: "checkpoint:1",
+            captureStatus: .inProgress,
+            captureUrl: "http://localhost:3000/review",
+            captureClaim: existingClaim,
+        )
+
+        await retryCoordinator.reconcile(runs: [retryRun])
+
+        // Should finalize with capture_complete from preserved artifacts, NOT capture_failed.
+        let retryRequests = await retryRecorder.snapshot()
+        XCTAssertEqual(
+            retryRequests.map(\.kind),
+            ["capture_complete"],
+            "should finalize from preserved artifacts, not send capture_failed",
+        )
+        XCTAssertFalse(
+            retryRequests.contains(where: { $0.kind == "capture_failed" }),
+            "should never send capture_failed when preserved artifacts exist",
+        )
+        XCTAssertEqual(
+            retryRequests.first?.completedMediaArtifacts.count, 1,
+            "should include the preserved web-capture.png artifact",
+        )
+
+        // Should NOT have invoked browser capture again.
+        let urlCaptureCount = await captureRecorder.urlCaptureCount()
+        XCTAssertEqual(urlCaptureCount, 1, "browser capture should have been called only once (initial)")
+    }
+
     func testInFlightCheckpointSkipsDuplicateReconcileTick() async throws {
         let homeDirectory = try makeTemporaryHomeDirectory()
         let mutationRecorder = RunMutationRecorder()
