@@ -1,0 +1,36 @@
+# Purpose: Parse-only fixture for the v1 `pipeline-execute` boundary and runtime block behavior.
+# Planned consumer test: normalize successfully, then block at execution with `pipeline-execute not implemented in v1`.
+schema_version: "1"
+method:
+  id: pipeline-blocked
+  version: "2026-03-22"
+  title: Pipeline Execute Blocked
+  description: Valid pipeline-execute method that should normalize cleanly and stop at the v1 runtime boundary.
+  inputs:
+    source_draft:
+      type: markdown
+      required: true
+  outputs:
+    child_plan_review:
+      from: orchestration.run-child-pipeline.child_plan_review
+      required: true
+  phases:
+    - id: orchestration
+      title: Orchestration
+      execution: serial
+      steps:
+        - id: run-child-pipeline
+          title: Run Child Pipeline
+          action: pipeline-execute
+          inputs:
+            - source_draft
+          outputs:
+            child_plan_review:
+              path: artifacts/child-plan-review.md
+              type: markdown
+          pipeline_execute:
+            pipeline: spec-hardening
+            inputs:
+              source_draft: source_draft
+            outputs:
+              plan_review: child_plan_review

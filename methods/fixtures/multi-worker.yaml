@@ -1,0 +1,34 @@
+# Purpose: Method fixture for testing multi-worker fanout and completion policies.
+schema_version: "1"
+method:
+  id: multi-worker
+  version: "2026-03-23"
+  title: Multi Worker Dispatch
+  description: Tests multi-worker fanout with explicit worker specs.
+  outputs:
+    analysis:
+      from: review.analyze.analysis
+      required: true
+  phases:
+    - id: review
+      title: Review Phase
+      execution: serial
+      steps:
+        - id: analyze
+          title: Analyze Code
+          action: dispatch
+          max_attempts: 2
+          completion_policy: all_complete
+          outputs:
+            analysis:
+              path: artifacts/analysis.md
+              type: markdown
+          dispatch:
+            instructions: Analyze the codebase from multiple perspectives.
+            workers:
+              - id: security
+                title: Security Reviewer
+                instructions: Review for security vulnerabilities.
+              - id: performance
+                title: Performance Reviewer
+                instructions: Review for performance issues.

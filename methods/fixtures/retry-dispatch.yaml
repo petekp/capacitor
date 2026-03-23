@@ -1,0 +1,30 @@
+# Purpose: Method fixture for testing retry logic and circuit breaker.
+# max_attempts: 3 means up to 3 attempts before circuit breaker fires.
+schema_version: "1"
+method:
+  id: retry-dispatch
+  version: "2026-03-23"
+  title: Retry Dispatch
+  description: Tests retry logic, circuit breaker, and attempt isolation.
+  defaults:
+    max_attempts: 3
+    completion_policy: all_complete
+  outputs:
+    result:
+      from: work.do-work.result
+      required: true
+  phases:
+    - id: work
+      title: Work Phase
+      execution: serial
+      steps:
+        - id: do-work
+          title: Do Work
+          action: dispatch
+          max_attempts: 3
+          outputs:
+            result:
+              path: artifacts/result.md
+              type: markdown
+          dispatch:
+            instructions: Perform the work and produce a result artifact.

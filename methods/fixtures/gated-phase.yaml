@@ -1,0 +1,27 @@
+schema_version: "1"
+method:
+  id: gated-phase
+  version: "2026-03-23"
+  title: Gated Phase
+  description: Method with a phase gate that evaluates after all steps complete.
+  outputs:
+    dispatch_summary:
+      from: build.implement.dispatch_summary
+      required: true
+  phases:
+    - id: build
+      title: Build
+      execution: serial
+      gate:
+        id: build-gate
+        type: approval
+      steps:
+        - id: implement
+          title: Implement
+          action: dispatch
+          outputs:
+            dispatch_summary:
+              path: artifacts/dispatch-summary.md
+              type: markdown
+          dispatch:
+            instructions: Implement the feature.

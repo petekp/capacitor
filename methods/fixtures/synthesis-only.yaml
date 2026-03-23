@@ -1,0 +1,25 @@
+schema_version: "1"
+method:
+  id: synthesis-only
+  version: "2026-03-23"
+  title: Synthesis Only
+  description: Minimal method with a single synthesis step for action-agnostic proof.
+  outputs:
+    digest:
+      from: process.synthesize.digest
+      required: true
+  phases:
+    - id: process
+      title: Process
+      execution: serial
+      steps:
+        - id: synthesize
+          title: Synthesize
+          action: synthesis
+          outputs:
+            digest:
+              path: artifacts/digest.md
+              type: markdown
+          synthesis:
+            instructions: Synthesize a digest from the input materials.
+            output: digest

@@ -1,0 +1,38 @@
+schema_version: "1"
+method:
+  id: dispatch-then-synthesis
+  version: "2026-03-23"
+  title: Dispatch Then Synthesis
+  description: Method with a dispatch step followed by a synthesis step that consumes its output.
+  defaults:
+    max_attempts: 1
+  outputs:
+    digest:
+      from: pipeline.synthesize.digest
+      required: true
+  phases:
+    - id: pipeline
+      title: Pipeline
+      execution: serial
+      steps:
+        - id: do-work
+          title: Do Work
+          action: dispatch
+          outputs:
+            worker_output:
+              path: artifacts/worker-output.md
+              type: markdown
+          dispatch:
+            instructions: Execute the work.
+        - id: synthesize
+          title: Synthesize
+          action: synthesis
+          inputs:
+            - pipeline.do-work.worker_output
+          outputs:
+            digest:
+              path: artifacts/digest.md
+              type: markdown
+          synthesis:
+            instructions: Synthesize from the worker output.
+            output: digest

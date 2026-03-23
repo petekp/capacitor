@@ -7,6 +7,7 @@ uniffi::setup_scaffolding!();
 
 pub mod domain;
 pub mod ingest;
+pub mod method_runner;
 pub mod observation;
 pub mod projection;
 pub mod query;

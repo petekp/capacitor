@@ -1,0 +1,26 @@
+schema_version: "1"
+method:
+  id: interactive-only
+  version: "2026-03-23"
+  title: Interactive Only
+  description: Minimal method with a single interactive step for action-agnostic proof.
+  outputs:
+    user_response:
+      from: collect.prompt-user.user_response
+      required: true
+  phases:
+    - id: collect
+      title: Collect
+      execution: serial
+      steps:
+        - id: prompt-user
+          title: Prompt User
+          action: interactive
+          outputs:
+            user_response:
+              path: artifacts/user-response.md
+              type: markdown
+          interactive:
+            prompt: "Please provide your feedback on the draft."
+            response_type: markdown
+            output: user_response

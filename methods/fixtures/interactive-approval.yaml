@@ -1,0 +1,26 @@
+schema_version: "1"
+method:
+  id: interactive-approval
+  version: "2026-03-23"
+  title: Interactive Approval
+  description: Method with an approval-type interactive step.
+  outputs:
+    approval:
+      from: review.approve-draft.approval
+      required: true
+  phases:
+    - id: review
+      title: Review
+      execution: serial
+      steps:
+        - id: approve-draft
+          title: Approve Draft
+          action: interactive
+          outputs:
+            approval:
+              path: artifacts/approval.md
+              type: markdown
+          interactive:
+            prompt: "Do you approve the draft?"
+            response_type: approval
+            output: approval

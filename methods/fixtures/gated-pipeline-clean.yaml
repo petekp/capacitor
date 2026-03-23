@@ -1,0 +1,23 @@
+schema_version: "1"
+method:
+  id: gated-pipeline-clean
+  version: "2026-03-23"
+  title: Gated Pipeline Clean
+  description: Method with a pipeline_clean gate (v1-deferred, always blocked).
+  phases:
+    - id: build
+      title: Build
+      execution: serial
+      gate:
+        id: pipeline-gate
+        type: pipeline_clean
+      steps:
+        - id: implement
+          title: Implement
+          action: dispatch
+          outputs:
+            dispatch_summary:
+              path: artifacts/dispatch-summary.md
+              type: markdown
+          dispatch:
+            instructions: Implement the feature.

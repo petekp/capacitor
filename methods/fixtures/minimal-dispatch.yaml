@@ -1,0 +1,30 @@
+# Purpose: Minimal tracer-bullet method fixture for Slice 1-6 normalization and execution smoke.
+# Planned consumer test: first-success acceptance command using `methods/fixtures/minimal-dispatch.yaml`.
+schema_version: "1"
+method:
+  id: minimal-dispatch
+  version: "2026-03-22"
+  title: Minimal Dispatch
+  description: Smallest valid dispatch method that exercises the v1 bootstrap path.
+  defaults:
+    max_attempts: 2
+    completion_policy: all_complete
+  outputs:
+    dispatch_summary:
+      from: bootstrap.dispatch.dispatch_summary
+      required: true
+  phases:
+    - id: bootstrap
+      title: Bootstrap
+      execution: serial
+      steps:
+        - id: dispatch
+          title: Dispatch
+          action: dispatch
+          template: implement
+          outputs:
+            dispatch_summary:
+              path: artifacts/dispatch-summary.md
+              type: markdown
+          dispatch:
+            instructions: Write the primary artifact and standard handoff for the tracer-bullet smoke test.
