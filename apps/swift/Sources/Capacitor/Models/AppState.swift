@@ -207,10 +207,6 @@ class AppState {
     private var runtimeSnapshotCorrelationCounter: UInt64 = 0
     private var consecutiveRuntimeSnapshotFailures = 0
     private(set) var sessionStateRevision = 0
-    private(set) var didScheduleRuntimeBootstrapForTesting = false
-    private(set) var didAttemptRuntimeHealthCheckForTesting = false
-    private(set) var didStartRefreshTimerForTesting = false
-    private(set) var didStartShellTrackingForTesting = false
     private(set) var didShutdownForTesting = false
     #if DEBUG
         private(set) var runtimeBootstrapTraceForTesting: [String] = []
@@ -387,8 +383,6 @@ class AppState {
     }
 
     private func scheduleRuntimeBootstrap() {
-        didScheduleRuntimeBootstrapForTesting = true
-
         // Phase 2: Defer runtime bootstrap work past first SwiftUI render.
         runtimeBootstrapTask?.cancel()
         runtimeBootstrapTask = _Concurrency.Task { @MainActor [weak self] in
@@ -442,7 +436,6 @@ class AppState {
     private var runtimeHealthCheckCounter = 0
 
     private func setupRefreshTimer() {
-        didStartRefreshTimerForTesting = true
         refreshTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
             guard let self else { return }
             DispatchQueue.main.async {
@@ -483,7 +476,6 @@ class AppState {
     }
 
     private func startShellTracking() {
-        didStartShellTrackingForTesting = true
         activeProjectResolver.updateProjects(projects)
     }
 
@@ -751,7 +743,6 @@ class AppState {
     // MARK: - Runtime Diagnostic
 
     func ensureRuntimeReady() {
-        didAttemptRuntimeHealthCheckForTesting = true
         // Hard cutover mode: live runtime state comes from the local runtime service.
         // No legacy launchd lifecycle orchestration remains in AppState.
         checkRuntimeHealth()

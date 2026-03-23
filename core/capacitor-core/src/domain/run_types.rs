@@ -4,8 +4,6 @@
 //! (Option 2 from ARCHITECTURE_OPTIONS.md). They coexist with the existing
 //! delegation types during the strangler-pattern migration.
 
-use crate::domain::now_rfc3339;
-
 // ---------------------------------------------------------------------------
 // Enums
 // ---------------------------------------------------------------------------
@@ -275,11 +273,6 @@ impl RunState {
     pub fn current_phase(&self) -> Option<&PhaseInstance> {
         self.phases.get(self.current_phase_index as usize)
     }
-
-    #[must_use]
-    pub fn is_terminal(&self) -> bool {
-        self.status.is_terminal()
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -318,17 +311,4 @@ pub struct MutateRunCommand {
     pub delegation_worker_id: Option<String>,
     /// Media artifact paths to attach via CaptureComplete.
     pub completed_media_artifacts: Vec<MediaArtifact>,
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/// Generate a simple run-scoped checkpoint ID.
-#[must_use]
-pub fn next_checkpoint_id(run_id: &str, phase_id: &str) -> String {
-    format!(
-        "{run_id}:{phase_id}:ckpt-{}",
-        now_rfc3339().replace(':', "-")
-    )
 }
