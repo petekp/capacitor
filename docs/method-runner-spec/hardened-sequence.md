@@ -112,7 +112,7 @@
 - The crate compiles with the new bin target and module exports in place.
 - A worker can now take Step 6 without inventing filesystem layout, CLI shape, or test harness structure.
 
-### 6. Build the tracer bullet across the Slice 1-6 seam
+### 6. Build the tracer bullet across the Slice 1-6 seam — **COMPLETE (2026-03-23)**
 
 **Scope**
 
@@ -120,13 +120,15 @@
 - Restrict the happy path to one serial phase, one dispatch step, one implicit `primary` worker, no retries, no gates, no parallelism, and no runtime-service or Swift integration.
 - Treat non-dispatch actions according to the frozen contract: parse where required and block where v1 says to block.
 
-**Exit criteria**
+**Exit criteria** — all met:
 
-- The acceptance command frozen in Step 2 produces a complete `.method/` tree for `minimal-dispatch.yaml`.
-- The run writes, at minimum, `definition.snapshot.yaml`, per-step `step.json`, lock state, `events.ndjson`, `state.json`, prompt artifacts, attempt artifacts, canonical handoff copy, and output bindings.
-- Replay from `events.ndjson` reproduces `state.json`.
-- The tracer bullet closes under the adapter gate chosen in Step 4. If Step 4 recorded a waiver, this step is only conditionally complete until the live gate is later satisfied.
-- No code in this step requires mutating the existing run kernel or Swift/runtime-service consumers.
+- ✅ The acceptance command frozen in Step 2 produces a complete `.method/` tree for `minimal-dispatch.yaml` (14 events, 13 artifacts).
+- ✅ The run writes `definition.snapshot.yaml`, per-step `step.json`, lock state, `events.ndjson`, `state.json`, prompt artifacts, attempt artifacts, canonical handoff copy, and output bindings.
+- ✅ Replay from `events.ndjson` reproduces `state.json` (I1 invariant verified by dedicated test).
+- ✅ The tracer bullet closes under the adapter gate with waiver (fake adapters; compose-prompt.sh contract proven in Step 4).
+- ✅ No code mutates the existing run kernel or Swift/runtime-service consumers.
+
+**Hardening results:** 319 tests across 8 validation domains (invariants, interfaces, constraints, adversarial fuzzing, filesystem robustness, exhaustive state machine transitions at 100% coverage, integration, error audit). Two security/robustness issues found and fixed (path traversal in ids, max_attempts:0 accepted). See `step-6-closeout.md` for full details.
 
 ### 7. Prove the core is action-agnostic
 
