@@ -43,9 +43,7 @@ fn run_minimal_dispatch() -> (TempDir, MethodRunPaths, MethodRunState) {
         &source,
         &FakePromptBuilder,
         &FakeWorkerDispatcher,
-        &FakeInteractiveIO {
-            response: "approved".to_string(),
-        },
+        &FakeInteractiveIO::new("approved"),
     )
     .expect("execute_run");
     let paths = MethodRunPaths::new(tmp.path());

@@ -8,8 +8,8 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use crate::method_runner::adapters::{
-    AdapterError, InteractiveIO, InteractivePrompt, PromptBuildRequest, PromptBuilder,
-    WorkerDispatchRequest, WorkerDispatcher,
+    validate_interactive_response, AdapterError, InteractiveIO, InteractivePrompt,
+    PromptBuildRequest, PromptBuilder, WorkerDispatchRequest, WorkerDispatcher,
 };
 use crate::method_runner::definition::{
     write_snapshot, write_step_json, ActionKind, CompletionPolicy, DefinitionSource,
@@ -741,7 +741,35 @@ fn execute_synthesis_step(
         append_event(events_path, &mut env, current_seq)?;
     }
 
-    // Write stub output artifacts for each declared output
+    // Resolve declared inputs from current state (prior step outputs)
+    let resolved_inputs: BTreeMap<String, String> = {
+        let current_events = crate::method_runner::events::recover_events(events_path)?;
+        let current_state = project(&current_events)?;
+        let mut resolved = BTreeMap::new();
+        for input_ref in &step.inputs {
+            // Input refs are locator-style: "phase.step.output_name"
+            let segments: Vec<&str> = input_ref.split('.').collect();
+            if segments.len() >= 3 {
+                let ref_phase = segments[0];
+                let ref_step = segments[1];
+                let ref_output = segments.last().unwrap();
+                if let Some(phase_state) = current_state.phases.get(ref_phase) {
+                    if let Some(step_state) = phase_state.steps.get(ref_step) {
+                        if let Some(output_path) = step_state.outputs.get(*ref_output) {
+                            resolved.insert(input_ref.clone(), output_path.clone());
+                        }
+                    }
+                }
+            }
+            // If not resolved, record as unresolved
+            if !resolved.contains_key(input_ref) {
+                resolved.insert(input_ref.clone(), format!("(unresolved: {})", input_ref));
+            }
+        }
+        resolved
+    };
+
+    // Write output artifacts for each declared output (with resolved inputs)
     for output_def in step.outputs.values() {
         let output_path = attempt_dir.join(&output_def.path);
         if let Some(parent) = output_path.parent() {
@@ -751,11 +779,26 @@ fn execute_synthesis_step(
             StepActionConfig::Synthesis { instructions, .. } => instructions.clone(),
             _ => String::new(),
         };
-        let content = format!(
-            "# Synthesized\n\nInstructions: {}\n\n(stub output from tracer bullet)\n",
-            instructions
-        );
+
+        // Build content with resolved input references
+        let mut content = format!("# Synthesized\n\nInstructions: {}\n", instructions);
+        if !resolved_inputs.is_empty() {
+            content.push_str("\n## Consumed Inputs\n\n");
+            for (input_name, input_path) in &resolved_inputs {
+                content.push_str(&format!("- {}: {}\n", input_name, input_path));
+            }
+        }
+        content.push('\n');
         std::fs::write(&output_path, content)?;
+    }
+
+    // SynthesisCompleted — emitted after output artifacts written, before OutputBound events
+    {
+        let mut env = make_envelope(run_id, MethodEventKind::SynthesisCompleted);
+        env.phase_id = Some(phase_id.to_string());
+        env.step_id = Some(step.id.clone());
+        env.attempt = Some(attempt);
+        append_event(events_path, &mut env, current_seq)?;
     }
 
     // Write output-bindings.json and emit OutputBound events
@@ -787,15 +830,6 @@ fn execute_synthesis_step(
         let bindings_json = serde_json::json!({ "outputs": output_bindings });
         let json = serde_json::to_string_pretty(&bindings_json).map_err(std::io::Error::other)?;
         std::fs::write(attempt_dir.join("output-bindings.json"), json)?;
-    }
-
-    // SynthesisCompleted
-    {
-        let mut env = make_envelope(run_id, MethodEventKind::SynthesisCompleted);
-        env.phase_id = Some(phase_id.to_string());
-        env.step_id = Some(step.id.clone());
-        env.attempt = Some(attempt);
-        append_event(events_path, &mut env, current_seq)?;
     }
 
     // Write attempt.json
@@ -881,11 +915,18 @@ fn execute_interactive_step(
         append_event(events_path, &mut env, current_seq)?;
     }
 
-    // Extract prompt from interactive config
-    let prompt_message = match &step.config {
-        StepActionConfig::Interactive { prompt, .. } => prompt.clone(),
-        _ => String::new(),
+    // Extract prompt and response_type from interactive config
+    let (prompt_message, response_type) = match &step.config {
+        StepActionConfig::Interactive {
+            prompt,
+            response_type,
+            ..
+        } => (prompt.clone(), response_type.clone()),
+        _ => (String::new(), String::new()),
     };
+
+    // Persist prompt to attempt dir BEFORE collecting response (resume can re-display)
+    std::fs::write(attempt_dir.join("prompt.txt"), &prompt_message)?;
 
     // InteractivePrompted
     {
@@ -893,7 +934,10 @@ fn execute_interactive_step(
         env.phase_id = Some(phase_id.to_string());
         env.step_id = Some(step.id.clone());
         env.attempt = Some(attempt);
-        env.payload = serde_json::json!({ "prompt": prompt_message });
+        env.payload = serde_json::json!({
+            "prompt": prompt_message,
+            "response_type": response_type,
+        });
         // No worker_id for interactive
         append_event(events_path, &mut env, current_seq)?;
     }
@@ -904,13 +948,42 @@ fn execute_interactive_step(
     });
     let response = interactive_io.capture_response();
 
+    // Validate response against declared response_type
+    if !response_type.is_empty() {
+        if let Err(validation_err) = validate_interactive_response(&response_type, &response.body) {
+            // Emit StepBlocked and return error — invalid response is a blocking condition
+            {
+                let mut env = make_envelope(run_id, MethodEventKind::AttemptFailed);
+                env.phase_id = Some(phase_id.to_string());
+                env.step_id = Some(step.id.clone());
+                env.attempt = Some(attempt);
+                env.payload = serde_json::json!({ "reason": validation_err });
+                append_event(events_path, &mut env, current_seq)?;
+            }
+            {
+                let mut env = make_envelope(run_id, MethodEventKind::StepBlocked);
+                env.phase_id = Some(phase_id.to_string());
+                env.step_id = Some(step.id.clone());
+                env.payload = serde_json::json!({ "reason": format!("response validation failed: {}", validation_err) });
+                append_event(events_path, &mut env, current_seq)?;
+            }
+            return Err(RunError::StepBlocked {
+                step_id: step.id.clone(),
+                reason: format!("response validation failed: {}", validation_err),
+            });
+        }
+    }
+
     // InteractiveResponseReceived
     {
         let mut env = make_envelope(run_id, MethodEventKind::InteractiveResponseReceived);
         env.phase_id = Some(phase_id.to_string());
         env.step_id = Some(step.id.clone());
         env.attempt = Some(attempt);
-        env.payload = serde_json::json!({ "response_length": response.body.len() });
+        env.payload = serde_json::json!({
+            "response_length": response.body.len(),
+            "response_type": response_type,
+        });
         append_event(events_path, &mut env, current_seq)?;
     }
 

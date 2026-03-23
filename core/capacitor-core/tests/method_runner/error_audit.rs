@@ -405,9 +405,7 @@ fn error_pipeline_blocked() {
 
     let prompt_builder = capacitor_core::method_runner::adapters::FakePromptBuilder;
     let dispatcher = capacitor_core::method_runner::adapters::FakeWorkerDispatcher;
-    let fake_io = capacitor_core::method_runner::adapters::FakeInteractiveIO {
-        response: "approved".to_string(),
-    };
+    let fake_io = capacitor_core::method_runner::adapters::FakeInteractiveIO::new("approved");
 
     let err = capacitor_core::method_runner::executor::execute_run(
         &source,

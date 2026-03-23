@@ -49,9 +49,7 @@ fn integration_full_lifecycle() {
         &source,
         &FakePromptBuilder,
         &FakeWorkerDispatcher,
-        &FakeInteractiveIO {
-            response: "approved".to_string(),
-        },
+        &FakeInteractiveIO::new("approved"),
     )
     .expect("execute_run");
 
@@ -188,9 +186,7 @@ fn integration_event_sequence_correctness() {
         &source,
         &FakePromptBuilder,
         &FakeWorkerDispatcher,
-        &FakeInteractiveIO {
-            response: "approved".to_string(),
-        },
+        &FakeInteractiveIO::new("approved"),
     )
     .expect("execute_run");
 
@@ -324,9 +320,7 @@ fn integration_state_rebuild_from_events() {
         &source,
         &FakePromptBuilder,
         &FakeWorkerDispatcher,
-        &FakeInteractiveIO {
-            response: "approved".to_string(),
-        },
+        &FakeInteractiveIO::new("approved"),
     )
     .expect("execute_run");
 
@@ -399,9 +393,7 @@ fn integration_artifact_cross_reference() {
         &source,
         &FakePromptBuilder,
         &FakeWorkerDispatcher,
-        &FakeInteractiveIO {
-            response: "approved".to_string(),
-        },
+        &FakeInteractiveIO::new("approved"),
     )
     .expect("execute_run");
 
@@ -626,9 +618,7 @@ fn integration_pipeline_blocked() {
         &source,
         &FakePromptBuilder,
         &FakeWorkerDispatcher,
-        &FakeInteractiveIO {
-            response: "approved".to_string(),
-        },
+        &FakeInteractiveIO::new("approved"),
     );
 
     // Verify returns PipelineExecuteBlocked error
@@ -674,9 +664,7 @@ fn integration_run_isolation() {
         execution_root: tmp_b.path().to_path_buf(),
     };
 
-    let fake_io = FakeInteractiveIO {
-        response: "approved".to_string(),
-    };
+    let fake_io = FakeInteractiveIO::new("approved");
     let state_a = execute_run(
         &source_a,
         &FakePromptBuilder,

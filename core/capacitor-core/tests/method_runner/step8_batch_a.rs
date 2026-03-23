@@ -38,9 +38,7 @@ fn minimal_dispatch_path() -> PathBuf {
 }
 
 fn default_interactive() -> FakeInteractiveIO {
-    FakeInteractiveIO {
-        response: "approved".to_string(),
-    }
+    FakeInteractiveIO::new("approved")
 }
 
 // ============================================================================

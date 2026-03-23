@@ -36,9 +36,7 @@ fn pipeline_blocked_path() -> PathBuf {
 }
 
 fn default_fake_io() -> FakeInteractiveIO {
-    FakeInteractiveIO {
-        response: "approved".to_string(),
-    }
+    FakeInteractiveIO::new("approved")
 }
 
 // ============================================================================
@@ -147,9 +145,7 @@ fn interactive_step_executes_end_to_end() {
         execution_root: execution_root.clone(),
     };
 
-    let fake_io = FakeInteractiveIO {
-        response: "This is my feedback on the draft.".to_string(),
-    };
+    let fake_io = FakeInteractiveIO::new("This is my feedback on the draft.");
 
     let state = execute_run(&source, &FakePromptBuilder, &FakeWorkerDispatcher, &fake_io)
         .expect("execute_run for interactive-only");

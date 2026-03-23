@@ -586,9 +586,7 @@ fn c9_pipeline_execute_blocked_at_runtime() {
 
     let prompt_builder = FakePromptBuilder;
     let dispatcher = FakeWorkerDispatcher;
-    let fake_io = FakeInteractiveIO {
-        response: "approved".to_string(),
-    };
+    let fake_io = FakeInteractiveIO::new("approved");
     let result = execute_run(&source, &prompt_builder, &dispatcher, &fake_io);
 
     assert!(

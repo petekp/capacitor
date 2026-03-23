@@ -389,9 +389,7 @@ fn robustness_method_tree_structure() {
         &source,
         &prompt_builder,
         &dispatcher,
-        &FakeInteractiveIO {
-            response: "approved".to_string(),
-        },
+        &FakeInteractiveIO::new("approved"),
     )
     .unwrap();
     assert_eq!(state.status, RunStatus::Completed);
@@ -489,9 +487,7 @@ fn robustness_clean_run_isolation() {
         execution_root: tmp_b.path().to_path_buf(),
     };
 
-    let fake_io = FakeInteractiveIO {
-        response: "approved".to_string(),
-    };
+    let fake_io = FakeInteractiveIO::new("approved");
     let state_a = execute_run(&source_a, &prompt_builder, &dispatcher, &fake_io).unwrap();
     let state_b = execute_run(&source_b, &prompt_builder, &dispatcher, &fake_io).unwrap();
 
@@ -541,9 +537,7 @@ fn robustness_definition_snapshot_is_valid_yaml() {
         &source,
         &prompt_builder,
         &dispatcher,
-        &FakeInteractiveIO {
-            response: "approved".to_string(),
-        },
+        &FakeInteractiveIO::new("approved"),
     )
     .unwrap();
 

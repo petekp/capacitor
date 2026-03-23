@@ -74,9 +74,7 @@ fn main() -> ExitCode {
                 };
                 let prompt_builder = FakePromptBuilder;
                 let dispatcher = FakeWorkerDispatcher;
-                let interactive_io = FakeInteractiveIO {
-                    response: "approved".to_string(),
-                };
+                let interactive_io = FakeInteractiveIO::new("approved");
                 match execute_run(&source, &prompt_builder, &dispatcher, &interactive_io) {
                     Ok(state) => {
                         println!("run complete: run_id={}", state.run_id);

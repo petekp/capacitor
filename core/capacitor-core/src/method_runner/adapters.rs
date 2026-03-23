@@ -99,7 +99,7 @@ pub trait ArtifactIngestor {
 }
 
 // ---------------------------------------------------------------------------
-// Interactive IO (unchanged from scaffold)
+// Interactive IO
 // ---------------------------------------------------------------------------
 
 /// Prompt shown for interactive checkpoints.
@@ -121,13 +121,72 @@ pub trait InteractiveIO {
 }
 
 // ---------------------------------------------------------------------------
+// Response type validation
+// ---------------------------------------------------------------------------
+
+/// Validate an interactive response against its declared response_type.
+/// Returns Ok(()) if valid, or Err(reason) if the response doesn't match.
+pub fn validate_interactive_response(response_type: &str, body: &str) -> Result<(), String> {
+    match response_type {
+        "approval" => {
+            let normalized = body.trim().to_lowercase();
+            if normalized == "approved" || normalized == "rejected" {
+                Ok(())
+            } else {
+                Err(format!(
+                    "approval response must be 'approved' or 'rejected', got '{}'",
+                    body.trim()
+                ))
+            }
+        }
+        "markdown" | "selection" | "checklist" => {
+            if body.trim().is_empty() {
+                Err(format!("{} response must be non-empty", response_type))
+            } else {
+                Ok(())
+            }
+        }
+        other => {
+            // Unknown response type — accept any non-empty response
+            if body.trim().is_empty() {
+                Err(format!("{} response must be non-empty", other))
+            } else {
+                Ok(())
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Fake interactive IO
 // ---------------------------------------------------------------------------
 
 /// Fake interactive IO for tracer bullet. Returns a pre-configured response
-/// without actually prompting the user.
+/// without actually prompting the user. Optionally validates against a
+/// response_type if one is set.
 pub struct FakeInteractiveIO {
     pub response: String,
+    /// Optional response_type for validation awareness. When set, the fake
+    /// adapter will validate its response against the expected type.
+    pub response_type: Option<String>,
+}
+
+impl FakeInteractiveIO {
+    /// Create a FakeInteractiveIO with just a response (no type awareness).
+    pub fn new(response: impl Into<String>) -> Self {
+        Self {
+            response: response.into(),
+            response_type: None,
+        }
+    }
+
+    /// Create a FakeInteractiveIO with response_type awareness.
+    pub fn with_type(response: impl Into<String>, response_type: impl Into<String>) -> Self {
+        Self {
+            response: response.into(),
+            response_type: Some(response_type.into()),
+        }
+    }
 }
 
 impl InteractiveIO for FakeInteractiveIO {
@@ -135,9 +194,78 @@ impl InteractiveIO for FakeInteractiveIO {
         // In fake mode, we just ignore the prompt
     }
     fn capture_response(&self) -> InteractiveResponse {
+        // If response_type is set, validate the response matches
+        if let Some(ref rt) = self.response_type {
+            if let Err(e) = validate_interactive_response(rt, &self.response) {
+                eprintln!("warning: fake response validation failed: {}", e);
+            }
+        }
         InteractiveResponse {
             body: self.response.clone(),
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// CLI interactive IO
+// ---------------------------------------------------------------------------
+
+/// CLI interactive IO adapter. Reads responses from CLI flags:
+/// - `--approve` → "approved" for approval type
+/// - `--reject` → "rejected" for approval type
+/// - `--response-file <path>` → read response from file
+pub struct CliInteractiveIO {
+    mode: CliInteractiveMode,
+}
+
+/// How the CLI adapter resolves its response.
+pub enum CliInteractiveMode {
+    /// Fixed "approved" response (from --approve flag).
+    Approve,
+    /// Fixed "rejected" response (from --reject flag).
+    Reject,
+    /// Read response body from a file (from --response-file flag).
+    ResponseFile(PathBuf),
+}
+
+impl CliInteractiveIO {
+    pub fn approve() -> Self {
+        Self {
+            mode: CliInteractiveMode::Approve,
+        }
+    }
+
+    pub fn reject() -> Self {
+        Self {
+            mode: CliInteractiveMode::Reject,
+        }
+    }
+
+    pub fn from_file(path: PathBuf) -> Self {
+        Self {
+            mode: CliInteractiveMode::ResponseFile(path),
+        }
+    }
+}
+
+impl InteractiveIO for CliInteractiveIO {
+    fn emit_prompt(&self, prompt: &InteractivePrompt) {
+        // In CLI mode, print the prompt to stdout
+        println!("[interactive] {}", prompt.message);
+    }
+
+    fn capture_response(&self) -> InteractiveResponse {
+        let body = match &self.mode {
+            CliInteractiveMode::Approve => "approved".to_string(),
+            CliInteractiveMode::Reject => "rejected".to_string(),
+            CliInteractiveMode::ResponseFile(path) => {
+                std::fs::read_to_string(path).unwrap_or_else(|e| {
+                    eprintln!("warning: failed to read response file: {}", e);
+                    String::new()
+                })
+            }
+        };
+        InteractiveResponse { body }
     }
 }
 
