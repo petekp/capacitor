@@ -12,8 +12,47 @@ Use this file only for recent migration context and retired seams that still mat
 - Swift no longer reconstructs terminal-app ranking from shell state during production activation.
 - The authenticated local runtime service is the live runtime boundary; persisted files remain durability and debugging aids.
 - iTerm and Terminal.app are first-class drivers, not a generic shared host bucket.
+- Transport failure after `capture_complete` preserves artifacts on disk; the `ownedInProgress` retry path recovers from preserved artifacts before attempting a fresh browser capture.
+
+## Stale Information Detected
+
+| Location | States | Reality | Since |
+|----------|--------|---------|-------|
+| `.pipeline/phases/phase-003-exec/artifacts/implementation-guide-v2.md` | "transport-layer finalization failures must also remove local artifacts" | Transport failure preserves artifacts; recovery finalizes from disk (PR #40 + #41) | 2026-03-23 |
 
 ## Recent Active Deltas
+
+### 2026-03-23 — Capture Retry Artifact Recovery (PR #41)
+
+`RunCaptureCoordinator` now recovers from preserved artifacts when retrying an `ownedInProgress` checkpoint. After a transport failure during `capture_complete`, artifacts stay on disk. On the next reconcile tick, `recoverPreservedArtifacts` checks for a complete set (screenshot + all expected mermaids, non-empty regular files) and finalizes directly from disk — the browser is never invoked. If artifacts are missing, incomplete, or corrupt (zero-byte, directory masquerading as file), recovery is skipped and a fresh capture runs instead.
+
+Key files: `RunCaptureCoordinator.swift` (recovery logic), `RunCaptureCoordinatorTests.swift` (17 tests).
+
+### 2026-03-23 — Capture Transport Failure Fix and Flow Hardening (PR #40)
+
+The capture wiring slice shipped `RunCaptureCoordinator` — the orchestrator for the checkpoint capture lifecycle (claim → browser capture → finalize). Three hardening fixes landed alongside: `cleanupAfterFinalizationFailure` no longer deletes artifacts on transport failure, the Rust reducer rejects `capture_complete` with empty artifacts, and `Dictionary(uniquingKeysWith:)` prevents run-sink crashes on normalized path collisions. All `AppStateSessionObservationTests` now cancel runtime automation to fix cross-test interference.
+
+Key files: `RunCaptureCoordinator.swift`, `RuntimeClient.swift` (mutations), `run_reducer.rs` (capture state machine), `serve.rs` (`/runtime/run/mutate` endpoint).
+
+### 2026-03-22 — Run Kernel and Capture Service Types (PRs #38, #39)
+
+The Rust domain layer gained `MediaArtifact`, `MermaidSource`, `CaptureClaim`, `CaptureStatus`, and the capture state machine in `run_reducer.rs` (pending → claimed → in-progress → completed/failed). `WebCaptureService` wraps `agent-browser` for screenshot and mermaid-to-PNG rendering. Method compiler design doc and 3 new method skills validated.
+
+### 2026-03-21 — Checkpoint Media Artifacts and Review Window (#36, #37)
+
+Checkpoints gained `media_artifacts`, `mermaid_sources`, and `capture_url` fields. `CaptureImageView` renders captured PNGs with click-to-zoom and "Copy Source" for mermaid diagrams. `DelegationReviewWindow` added a MEDIA section for artifact display.
+
+### 2026-03-19 — Manage-Codex Relay Scripts (#35)
+
+Added `scripts/relay/update-batch.sh` and `scripts/relay/compose-prompt.sh` for autonomous Codex batch orchestration. Templates for implement, review, ship-review, and converge phases.
+
+### 2026-03-18 — Modular Development Pipeline v1
+
+Three-phase pipeline orchestrator (triage → align → execute) with gates, phase transitions, and artifact management. Lives in `.claude/skills/pipeline/`.
+
+### 2026-03-17 — AX Automation Verification Lane
+
+`scripts/ci/ax-automation-verify.sh` — the canonical AX interface for agents. Seeds runtime project state, captures timestamped artifacts, classifies failures into deterministic reasons. `runtime-reliability.sh ci` includes the AX lane.
 
 ### 2026-03-15 — Final Swift Shell-Ranking Seam Removed
 
@@ -35,6 +74,11 @@ Live runtime reads moved to authenticated `/runtime/*` endpoints hosted by `hud-
 
 | Don't | Do Instead | Deprecated Since |
 |-------|------------|------------------|
+| Delete artifacts on transport failure during `capture_complete` | Preserve artifacts on disk; let `ownedInProgress` recovery finalize from preserved files | 2026-03-23 |
+| Skip missing mermaid PNGs during artifact recovery (`continue`) | Require complete artifact set; return `nil` and fall through to fresh capture | 2026-03-23 |
+| Use `fileExists` alone to validate preserved artifacts | Use `isNonEmptyFile` (checks `.typeRegular` + size > 0) | 2026-03-23 |
+| Use `Dictionary(uniqueKeysWithValues:)` for `runStatesByID` | Use `Dictionary(_:uniquingKeysWith:)` with logging to handle path collisions | 2026-03-23 |
+| Send `capture_complete` with empty `completed_media_artifacts` | Rust reducer rejects empty artifacts; at least one screenshot required | 2026-03-23 |
 | Reconstruct terminal-app ranking from `ShellStateStore` during activation | Use runtime routes when present and fall back explicitly when they are not | 2026-03-15 |
 | Treat `~/.capacitor/runtime/app_snapshot.json` as live runtime truth | Query the authenticated runtime service using `runtime-service.json` | 2026-03 |
 | Add terminal-specific focus logic directly in `TerminalLauncher` or views | Put host automation behind `TerminalDriver` implementations | 2026-03 |
