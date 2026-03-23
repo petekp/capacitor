@@ -1,3 +1,5 @@
+mod method_runner;
+
 use std::fs;
 use std::path::PathBuf;
 

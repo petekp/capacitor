@@ -355,6 +355,12 @@ pub enum NormalizationError {
     #[error("step '{step_id}' has action 'dispatch' but no dispatch config")]
     MissingActionConfig { step_id: String },
 
+    #[error("invalid id '{id}' in {context}: ids must not contain '/', '\\', '..', or null bytes")]
+    InvalidId { id: String, context: String },
+
+    #[error("max_attempts must be >= 1, got {value} in step '{step_id}'")]
+    InvalidMaxAttempts { value: u32, step_id: String },
+
     #[error("I/O error: {0}")]
     IoError(#[from] std::io::Error),
 }
@@ -366,6 +372,25 @@ pub enum NormalizationError {
 pub struct Normalizer;
 
 impl Normalizer {
+    /// Validate an identifier is safe for use as a filesystem path component.
+    /// Rejects '/', '\', '..', and null bytes to prevent path traversal (P1 security).
+    fn validate_id(id: &str, context: &str) -> Result<(), NormalizationError> {
+        if id.contains('/')
+            || id.contains('\\')
+            || id.contains('\0')
+            || id == ".."
+            || id == "."
+            || id.contains("../")
+            || id.contains("/..")
+        {
+            return Err(NormalizationError::InvalidId {
+                id: id.to_string(),
+                context: context.to_string(),
+            });
+        }
+        Ok(())
+    }
+
     /// Parse YAML source text and normalize into a fully-resolved definition.
     pub fn normalize(yaml_content: &str) -> Result<NormalizedDefinitionFile, NormalizationError> {
         let raw: RawDefinitionFile = serde_yaml::from_str(yaml_content)?;
@@ -378,9 +403,10 @@ impl Normalizer {
 
         let defaults = raw.method.defaults.as_ref().cloned().unwrap_or_default();
 
-        // Validate phase id uniqueness
+        // Validate phase id format and uniqueness
         let mut phase_ids = BTreeSet::new();
         for phase in &raw.method.phases {
+            Self::validate_id(&phase.id, "phase")?;
             if !phase_ids.insert(&phase.id) {
                 return Err(NormalizationError::DuplicatePhaseId {
                     id: phase.id.clone(),
@@ -468,9 +494,10 @@ impl Normalizer {
             skills
         };
 
-        // Validate step id uniqueness within phase
+        // Validate step id format and uniqueness within phase
         let mut step_ids = BTreeSet::new();
         for step in &raw.steps {
+            Self::validate_id(&step.id, &format!("step in phase '{}'", raw.id))?;
             if !step_ids.insert(&step.id) {
                 return Err(NormalizationError::DuplicateStepId {
                     id: step.id.clone(),
@@ -524,8 +551,14 @@ impl Normalizer {
             merged
         };
 
-        // max_attempts: step → method defaults → 1
+        // max_attempts: step → method defaults → 1 (must be >= 1)
         let max_attempts = raw.max_attempts.or(defaults.max_attempts).unwrap_or(1);
+        if max_attempts == 0 {
+            return Err(NormalizationError::InvalidMaxAttempts {
+                value: 0,
+                step_id: raw.id.clone(),
+            });
+        }
 
         // completion_policy: step → method defaults → all_complete
         let completion_policy = {
