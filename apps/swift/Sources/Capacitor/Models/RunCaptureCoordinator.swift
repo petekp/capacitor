@@ -313,15 +313,18 @@ actor RunCaptureCoordinator {
         return artifacts
     }
 
-    /// Checks whether a previous capture attempt left complete artifacts on disk.
-    /// Returns a reconstructed artifact list if the minimum viable set (web-capture.png)
-    /// exists, or nil if artifacts are missing/incomplete and a fresh capture is needed.
+    /// Checks whether a previous capture attempt left a complete artifact set on disk.
+    /// Returns a reconstructed artifact list if all expected artifacts exist and are
+    /// non-empty, or nil if any are missing/incomplete — triggering a fresh capture.
     private func recoverPreservedArtifacts(
         for candidate: CaptureCandidate,
         captureDirectory: URL,
     ) -> [RuntimeMediaArtifact]? {
         let webCapturePath = captureDirectory.appendingPathComponent("web-capture.png")
-        guard fileManager.fileExists(atPath: webCapturePath.path) else {
+        guard isNonEmptyFile(at: webCapturePath) else {
+            DebugLog.write(
+                "RunCaptureCoordinator.recoverPreservedArtifacts skipped reason=web_capture_missing_or_empty checkpoint=\(candidate.checkpoint.id)",
+            )
             return nil
         }
 
@@ -338,8 +341,11 @@ actor RunCaptureCoordinator {
 
         for (index, source) in candidate.checkpoint.mermaidSources.enumerated() {
             let mermaidImagePath = captureDirectory.appendingPathComponent("mermaid-\(index).png")
-            guard fileManager.fileExists(atPath: mermaidImagePath.path) else {
-                continue
+            guard isNonEmptyFile(at: mermaidImagePath) else {
+                DebugLog.write(
+                    "RunCaptureCoordinator.recoverPreservedArtifacts skipped reason=mermaid_\(index)_missing_or_empty checkpoint=\(candidate.checkpoint.id)",
+                )
+                return nil
             }
             artifacts.append(
                 RuntimeMediaArtifact(
@@ -354,6 +360,13 @@ actor RunCaptureCoordinator {
         }
 
         return artifacts
+    }
+
+    private func isNonEmptyFile(at url: URL) -> Bool {
+        guard fileManager.fileExists(atPath: url.path) else { return false }
+        let attributes = try? fileManager.attributesOfItem(atPath: url.path)
+        let size = attributes?[.size] as? UInt64 ?? 0
+        return size > 0
     }
 
     private func finalizeFailedCapture(
