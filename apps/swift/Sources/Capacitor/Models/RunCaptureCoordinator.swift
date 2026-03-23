@@ -363,9 +363,12 @@ actor RunCaptureCoordinator {
     }
 
     private func isNonEmptyFile(at url: URL) -> Bool {
-        guard fileManager.fileExists(atPath: url.path) else { return false }
-        let attributes = try? fileManager.attributesOfItem(atPath: url.path)
-        let size = attributes?[.size] as? UInt64 ?? 0
+        guard let attributes = try? fileManager.attributesOfItem(atPath: url.path) else {
+            return false
+        }
+        let fileType = attributes[.type] as? FileAttributeType
+        guard fileType == .typeRegular else { return false }
+        let size = attributes[.size] as? UInt64 ?? 0
         return size > 0
     }
 
