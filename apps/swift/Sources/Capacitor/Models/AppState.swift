@@ -586,7 +586,13 @@ class AppState {
             delegationStates = [:]
         }
         let nextRunsByID = Dictionary(
-            uniqueKeysWithValues: snapshot.runs.map { (RuntimeRunKey(run: $0), $0) },
+            snapshot.runs.map { (RuntimeRunKey(run: $0), $0) },
+            uniquingKeysWith: { existing, incoming in
+                DebugLog.write(
+                    "AppState.refreshSessionStates duplicate RuntimeRunKey for run=\(incoming.id) projectPath=\(incoming.projectPath) — keeping first",
+                )
+                return existing
+            },
         )
         if nextRunsByID != runStatesByID {
             runStatesByID = nextRunsByID

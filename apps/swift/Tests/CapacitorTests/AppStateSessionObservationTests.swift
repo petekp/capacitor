@@ -6,6 +6,7 @@ import XCTest
 final class AppStateSessionObservationTests: XCTestCase {
     func testAppStateSessionReadInvalidatesWhenSessionStateChanges() {
         let appState = AppState()
+        appState.cancelRuntimeAutomationForTesting()
         let project = makeProject(name: "Capacitor", path: "/Users/petepetrash/Code/capacitor")
 
         let invalidated = expectation(description: "observation invalidated")
@@ -33,6 +34,7 @@ final class AppStateSessionObservationTests: XCTestCase {
 
     func testOrderedGroupedProjectsInvalidatesWhenSessionStateChanges() {
         let appState = AppState()
+        appState.cancelRuntimeAutomationForTesting()
         let project = makeProject(name: "Capacitor", path: "/Users/petepetrash/Code/capacitor")
         appState.projects = [project]
 
@@ -61,6 +63,7 @@ final class AppStateSessionObservationTests: XCTestCase {
 
     func testSessionStateRevisionIncrementsWhenSessionStateChanges() {
         let appState = AppState()
+        appState.cancelRuntimeAutomationForTesting()
         let project = makeProject(name: "Capacitor", path: "/Users/petepetrash/Code/capacitor")
         let initialRevision = appState.sessionStateRevision
 
@@ -82,6 +85,7 @@ final class AppStateSessionObservationTests: XCTestCase {
 
     func testStaleRuntimeSnapshotDoesNotApplyShellState() async {
         let appState = AppState()
+        appState.cancelRuntimeAutomationForTesting()
         let project = makeProject(name: "Capacitor", path: "/Users/petepetrash/Code/capacitor")
         appState.projects = [project]
 

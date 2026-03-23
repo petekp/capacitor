@@ -735,3 +735,65 @@ fn scenario_runs_and_delegations_coexist() {
     assert_eq!(snap.delegations[0].worker_id, "worker-1");
     assert_eq!(snap.runs[0].id, "run-coexist");
 }
+
+// ===========================================================================
+// Scenario 8: capture_complete rejects empty artifacts
+// ===========================================================================
+
+#[test]
+fn scenario_capture_complete_rejects_empty_artifacts() {
+    let runtime = CoreRuntime::new().expect("runtime");
+
+    runtime
+        .mutate_run(create_cmd("run-empty-cap", "execution_only"))
+        .expect("create");
+
+    let mut cmd = base_cmd("run-empty-cap");
+    cmd.session_id = Some("session-empty-cap".to_string());
+    let outcome = mutate(&runtime, cmd, RunMutationKind::AttachSession);
+    assert!(outcome.ok);
+
+    let mut cmd = base_cmd("run-empty-cap");
+    cmd.checkpoint_kind = Some(CheckpointKind::ImplementationMilestone);
+    cmd.checkpoint_title = Some("Empty capture test".to_string());
+    cmd.capture_url = Some("http://localhost:3000".to_string());
+    let outcome = mutate(&runtime, cmd, RunMutationKind::EmitCheckpoint);
+    assert!(outcome.ok);
+
+    let snap = runtime.app_snapshot().expect("snapshot");
+    let run = snap
+        .runs
+        .iter()
+        .find(|run| run.id == "run-empty-cap")
+        .expect("run");
+    let checkpoint = run.active_checkpoint.as_ref().expect("checkpoint");
+
+    let mut cmd = base_cmd("run-empty-cap");
+    cmd.checkpoint_id = Some(checkpoint.id.clone());
+    cmd.capture_request_id = Some("cap-req-empty".to_string());
+    cmd.client_id = Some("client-01".to_string());
+    cmd.observed_capture_url = Some("http://localhost:3000".to_string());
+    let outcome = mutate(&runtime, cmd, RunMutationKind::CaptureClaim);
+    assert!(outcome.ok);
+
+    // Attempt capture_complete with empty artifacts — should be rejected
+    let mut cmd = base_cmd("run-empty-cap");
+    cmd.checkpoint_id = Some(checkpoint.id.clone());
+    cmd.capture_request_id = Some("cap-req-empty".to_string());
+    cmd.completed_media_artifacts = vec![];
+    let outcome = mutate(&runtime, cmd, RunMutationKind::CaptureComplete);
+    assert!(
+        !outcome.ok,
+        "capture_complete with empty artifacts must be rejected"
+    );
+
+    // Checkpoint should still be InProgress
+    let snap = runtime.app_snapshot().expect("snapshot");
+    let run = snap
+        .runs
+        .iter()
+        .find(|run| run.id == "run-empty-cap")
+        .expect("run after rejection");
+    let checkpoint = run.active_checkpoint.as_ref().expect("checkpoint");
+    assert_eq!(checkpoint.capture_status, CaptureStatus::InProgress);
+}

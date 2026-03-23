@@ -281,7 +281,7 @@ final class RunCaptureCoordinatorTests: XCTestCase {
         )
     }
 
-    func testFinalizeTransportFailureDeletesCheckpointDirectoryAndLeavesRetryableClaim() async throws {
+    func testFinalizeTransportFailurePreservesArtifactsOnDisk() async throws {
         let homeDirectory = try makeTemporaryHomeDirectory()
         let mutationRecorder = RunMutationRecorder()
         let coordinator = makeCoordinator(
@@ -308,13 +308,15 @@ final class RunCaptureCoordinatorTests: XCTestCase {
         let requests = await mutationRecorder.snapshot()
         XCTAssertEqual(requests.map(\.kind), ["capture_claim", "capture_complete"])
         XCTAssertFalse(requests.contains(where: { $0.kind == "capture_failed" }))
-        XCTAssertFalse(
-            try FileManager.default.fileExists(
-                atPath: captureDirectoryURL(
-                    homeDirectory: homeDirectory,
-                    runID: run.id,
-                    checkpointID: XCTUnwrap(run.activeCheckpoint?.id),
-                ).path,
+        let captureDirectory = try captureDirectoryURL(
+            homeDirectory: homeDirectory,
+            runID: run.id,
+            checkpointID: XCTUnwrap(run.activeCheckpoint?.id),
+        )
+        XCTAssertTrue(FileManager.default.fileExists(atPath: captureDirectory.path))
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: captureDirectory.appendingPathComponent("web-capture.png").path,
             ),
         )
     }

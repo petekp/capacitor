@@ -316,6 +316,9 @@ fn handle_capture_complete(
     key: &str,
     command: &MutateRunCommand,
 ) -> MutationOutcome {
+    if command.completed_media_artifacts.is_empty() {
+        return reject("completed_media_artifacts must not be empty");
+    }
     with_validated_capture_mutation(runs, key, command, |checkpoint| {
         checkpoint
             .media_artifacts
@@ -1023,6 +1026,8 @@ mod tests {
 
     #[test]
     fn capture_complete_rejects_without_claim() {
+        use crate::domain::{MediaArtifact, MediaArtifactType};
+
         let mut runs = empty_runs();
         apply_run_mutation(&mut runs, create_command("run-001", "execution_only"));
         attach_session(&mut runs, "run-001");
@@ -1031,6 +1036,14 @@ mod tests {
         let mut cmd = base_cmd("run-001");
         cmd.checkpoint_id = Some(checkpoint_id);
         cmd.capture_request_id = Some("request-1".to_string());
+        cmd.completed_media_artifacts = vec![MediaArtifact {
+            artifact_type: MediaArtifactType::Screenshot,
+            path: "/tmp/capture.png".to_string(),
+            label: "screenshot".to_string(),
+            width: Some(1280),
+            height: Some(800),
+            duration_secs: None,
+        }];
         let result = mutate(&mut runs, cmd, RunMutationKind::CaptureComplete);
         assert!(!result.ok);
         assert!(result.message.contains("not in progress"));
@@ -1154,7 +1167,7 @@ mod tests {
 
     #[test]
     fn capture_complete_rejects_mismatched_capture_request_id() {
-        use crate::domain::CaptureStatus;
+        use crate::domain::{CaptureStatus, MediaArtifact, MediaArtifactType};
 
         let mut runs = empty_runs();
         apply_run_mutation(&mut runs, create_command("run-001", "execution_only"));
@@ -1166,6 +1179,14 @@ mod tests {
         let mut cmd = base_cmd("run-001");
         cmd.checkpoint_id = Some(checkpoint_id);
         cmd.capture_request_id = Some("request-2".to_string());
+        cmd.completed_media_artifacts = vec![MediaArtifact {
+            artifact_type: MediaArtifactType::Screenshot,
+            path: "/tmp/capture.png".to_string(),
+            label: "screenshot".to_string(),
+            width: Some(1280),
+            height: Some(800),
+            duration_secs: None,
+        }];
         let result = mutate(&mut runs, cmd, RunMutationKind::CaptureComplete);
         assert!(!result.ok);
         assert!(result.message.contains("does not match active claim"));
@@ -1205,7 +1226,7 @@ mod tests {
 
     #[test]
     fn stale_capture_completion_is_rejected_after_checkpoint_turnover() {
-        use crate::domain::CaptureStatus;
+        use crate::domain::{CaptureStatus, MediaArtifact, MediaArtifactType};
 
         let mut runs = empty_runs();
         apply_run_mutation(&mut runs, create_command("run-001", "execution_only"));
@@ -1226,6 +1247,14 @@ mod tests {
         let mut stale_complete = base_cmd("run-001");
         stale_complete.checkpoint_id = Some(checkpoint_a_id);
         stale_complete.capture_request_id = Some("request-a".to_string());
+        stale_complete.completed_media_artifacts = vec![MediaArtifact {
+            artifact_type: MediaArtifactType::Screenshot,
+            path: "/tmp/capture.png".to_string(),
+            label: "screenshot".to_string(),
+            width: Some(1280),
+            height: Some(800),
+            duration_secs: None,
+        }];
         let result = mutate(&mut runs, stale_complete, RunMutationKind::CaptureComplete);
         assert!(!result.ok);
         assert!(result.message.contains("does not match active checkpoint"));

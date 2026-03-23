@@ -306,12 +306,11 @@ actor RunCaptureCoordinator {
     }
 
     private func cleanupAfterFinalizationFailure(
-        captureDirectory: URL,
+        captureDirectory _: URL,
         checkpointID: String,
         runID: String,
         error: Error,
     ) {
-        deleteCaptureDirectoryIfPresent(captureDirectory)
         DebugLog.write(
             "RunCaptureCoordinator.finalize failed checkpoint=\(checkpointID) run=\(runID) error=\(error.localizedDescription)",
         )
