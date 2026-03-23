@@ -173,7 +173,9 @@ impl AttemptStatus {
             (self, next),
             (AttemptStatus::Created, AttemptStatus::Dispatching)
                 | (AttemptStatus::Created, AttemptStatus::OutputBound) // synthesis/interactive: no worker dispatch
+                | (AttemptStatus::Created, AttemptStatus::Failed) // adapter error before any dispatch
                 | (AttemptStatus::Dispatching, AttemptStatus::Running)
+                | (AttemptStatus::Dispatching, AttemptStatus::Failed) // all workers failed during dispatch
                 | (AttemptStatus::Running, AttemptStatus::HandoffReceived)
                 | (AttemptStatus::Running, AttemptStatus::Failed)
                 | (AttemptStatus::HandoffReceived, AttemptStatus::OutputBound)

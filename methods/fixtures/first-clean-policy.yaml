@@ -1,0 +1,35 @@
+# Purpose: Method fixture for testing first_clean completion policy.
+# With first_clean, the step succeeds as soon as any worker (in definition order) completes cleanly.
+schema_version: "1"
+method:
+  id: first-clean-policy
+  version: "2026-03-23"
+  title: First Clean Policy
+  description: Tests first_clean completion policy with multiple workers.
+  outputs:
+    result:
+      from: work.compete.result
+      required: true
+  phases:
+    - id: work
+      title: Work Phase
+      execution: serial
+      steps:
+        - id: compete
+          title: Competing Workers
+          action: dispatch
+          max_attempts: 2
+          completion_policy: first_clean
+          outputs:
+            result:
+              path: artifacts/result.md
+              type: markdown
+          dispatch:
+            instructions: Compete to produce the best result.
+            workers:
+              - id: alpha
+                title: Alpha Worker
+                instructions: Produce result via approach A.
+              - id: beta
+                title: Beta Worker
+                instructions: Produce result via approach B.

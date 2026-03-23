@@ -129,6 +129,22 @@ pub struct RawGate {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RawDispatchConfig {
     pub instructions: String,
+    #[serde(default)]
+    pub workers: Option<Vec<RawWorkerSpec>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RawWorkerSpec {
+    pub id: String,
+    #[serde(default)]
+    pub title: Option<String>,
+    pub instructions: String,
+    #[serde(default)]
+    pub skills: Option<Vec<String>>,
+    #[serde(default)]
+    pub inputs: Option<Vec<String>>,
+    #[serde(default)]
+    pub outputs: Option<BTreeMap<String, RawStepOutput>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -251,10 +267,21 @@ pub struct NormalizedGate {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NormalizedWorkerSpec {
+    pub id: String,
+    pub title: String,
+    pub instructions: String,
+    pub skills: Vec<String>,
+    pub inputs: Vec<String>,
+    pub outputs: BTreeMap<String, NormalizedStepOutput>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum StepActionConfig {
     Dispatch {
         instructions: String,
+        workers: Vec<NormalizedWorkerSpec>,
     },
     Interactive {
         prompt: String,
@@ -637,8 +664,53 @@ impl Normalizer {
                         step_id: raw.id.clone(),
                     }
                 })?;
+                let workers = match &cfg.workers {
+                    Some(raw_workers) => {
+                        let mut normalized = Vec::new();
+                        for w in raw_workers {
+                            Self::validate_id(&w.id, &format!("worker in step '{}'", raw.id))?;
+                            normalized.push(NormalizedWorkerSpec {
+                                id: w.id.clone(),
+                                title: w.title.clone().unwrap_or_else(|| w.id.clone()),
+                                instructions: w.instructions.clone(),
+                                skills: w.skills.clone().unwrap_or_default(),
+                                inputs: w.inputs.clone().unwrap_or_default(),
+                                outputs: w
+                                    .outputs
+                                    .as_ref()
+                                    .map(|o| {
+                                        o.iter()
+                                            .map(|(k, v)| {
+                                                (
+                                                    k.clone(),
+                                                    NormalizedStepOutput {
+                                                        path: v.path.clone(),
+                                                        output_type: v.output_type.clone(),
+                                                    },
+                                                )
+                                            })
+                                            .collect()
+                                    })
+                                    .unwrap_or_default(),
+                            });
+                        }
+                        normalized
+                    }
+                    None => {
+                        // Implicit single "primary" worker
+                        vec![NormalizedWorkerSpec {
+                            id: "primary".to_string(),
+                            title: "primary".to_string(),
+                            instructions: cfg.instructions.clone(),
+                            skills: Vec::new(),
+                            inputs: Vec::new(),
+                            outputs: BTreeMap::new(),
+                        }]
+                    }
+                };
                 Ok(StepActionConfig::Dispatch {
                     instructions: cfg.instructions.clone(),
+                    workers,
                 })
             }
             ActionKind::Interactive => {

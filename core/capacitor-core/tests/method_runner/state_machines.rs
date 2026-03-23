@@ -929,11 +929,11 @@ fn attempt_status_created_completed_illegal() {
 }
 
 #[test]
-fn attempt_status_created_failed_illegal() {
-    assert_illegal(
+fn attempt_status_created_failed_legal() {
+    // Created → Failed is legal: adapter error before any dispatch
+    assert_legal(
         AttemptStatus::Created.transition_to(AttemptStatus::Failed, "a1"),
-        "Created",
-        "Failed",
+        AttemptStatus::Failed,
     );
 }
 
@@ -983,11 +983,11 @@ fn attempt_status_dispatching_completed_illegal() {
 }
 
 #[test]
-fn attempt_status_dispatching_failed_illegal() {
-    assert_illegal(
+fn attempt_status_dispatching_failed_legal() {
+    // Dispatching → Failed is legal: all workers failed during dispatch phase
+    assert_legal(
         AttemptStatus::Dispatching.transition_to(AttemptStatus::Failed, "a1"),
-        "Dispatching",
-        "Failed",
+        AttemptStatus::Failed,
     );
 }
 

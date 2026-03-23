@@ -12,8 +12,8 @@ use crate::method_runner::adapters::{
     WorkerDispatchRequest, WorkerDispatcher,
 };
 use crate::method_runner::definition::{
-    write_snapshot, write_step_json, ActionKind, DefinitionSource, NormalizationError,
-    NormalizedDefinitionFile, NormalizedStep, Normalizer, StepActionConfig,
+    write_snapshot, write_step_json, ActionKind, CompletionPolicy, DefinitionSource,
+    NormalizationError, NormalizedDefinitionFile, NormalizedStep, Normalizer, StepActionConfig,
 };
 use crate::method_runner::events::{append_event, make_envelope, AppendError, MethodEventKind};
 use crate::method_runner::handoff::{ingest_handoff, HandoffParseError};
@@ -53,6 +53,9 @@ pub enum RunError {
 
     #[error("pipeline_execute step '{0}' requires external pipeline — run blocked")]
     PipelineExecuteBlocked(String),
+
+    #[error("step '{step_id}' blocked: {reason}")]
+    StepBlocked { step_id: String, reason: String },
 }
 
 // ---------------------------------------------------------------------------
@@ -252,8 +255,17 @@ fn execute_step(
 }
 
 // ---------------------------------------------------------------------------
-// Dispatch step execution
+// Dispatch step execution (with retry loop, circuit breaker, multi-worker)
 // ---------------------------------------------------------------------------
+
+/// Result of dispatching all workers in a single attempt.
+#[derive(Debug)]
+enum AttemptOutcome {
+    /// All workers completed cleanly according to completion policy.
+    Success,
+    /// At least one worker failed (adapter error or non-zero exit without handoff).
+    Failed { reason: String },
+}
 
 #[allow(clippy::too_many_arguments)]
 fn execute_dispatch_step(
@@ -274,171 +286,402 @@ fn execute_dispatch_step(
         append_event(events_path, &mut env, current_seq)?;
     }
 
-    let attempt: u32 = 1;
-    let worker_id = "primary";
+    // Extract workers from config (always at least one: implicit "primary")
+    let workers = match &step.config {
+        StepActionConfig::Dispatch { workers, .. } => workers.clone(),
+        _ => vec![],
+    };
 
-    // Create attempt dir and worker relay dir
-    let attempt_dir = paths.attempt_dir(phase_id, &step.id, attempt);
-    std::fs::create_dir_all(&attempt_dir)?;
-    let relay_root = paths.worker_relay_root(phase_id, &step.id, attempt, worker_id);
-    std::fs::create_dir_all(&relay_root)?;
-
-    // Write input-bindings.json
-    {
-        let inputs_map: BTreeMap<String, String> = step
-            .inputs
-            .iter()
-            .map(|input| (input.clone(), input.clone()))
-            .collect();
-        let bindings = serde_json::json!({ "inputs": inputs_map });
-        let json = serde_json::to_string_pretty(&bindings).map_err(std::io::Error::other)?;
-        std::fs::write(attempt_dir.join("input-bindings.json"), json)?;
-    }
-
-    // Extract instructions for prompt builder
-    let instructions = match &step.config {
-        StepActionConfig::Dispatch { instructions } => instructions.clone(),
+    // Extract step-level instructions
+    let step_instructions = match &step.config {
+        StepActionConfig::Dispatch { instructions, .. } => instructions.clone(),
         _ => String::new(),
     };
 
-    // Build prompt
-    let prompt_request = PromptBuildRequest {
-        phase_id: phase_id.to_string(),
-        step_id: step.id.clone(),
-        attempt,
-        relay_root: relay_root.clone(),
-        instructions,
-    };
-    prompt_builder.build_prompt(&prompt_request)?;
+    let mut last_failure_reason = String::new();
 
-    // AttemptStarted
-    {
-        let mut env = make_envelope(run_id, MethodEventKind::AttemptStarted);
-        env.phase_id = Some(phase_id.to_string());
-        env.step_id = Some(step.id.clone());
-        env.attempt = Some(attempt);
-        append_event(events_path, &mut env, current_seq)?;
-    }
+    // Retry loop: attempt 1..=max_attempts
+    for attempt in 1..=step.max_attempts {
+        let attempt_dir = paths.attempt_dir(phase_id, &step.id, attempt);
+        std::fs::create_dir_all(&attempt_dir)?;
 
-    // WorkerDispatched
-    {
-        let mut env = make_envelope(run_id, MethodEventKind::WorkerDispatched);
-        env.phase_id = Some(phase_id.to_string());
-        env.step_id = Some(step.id.clone());
-        env.attempt = Some(attempt);
-        env.worker_id = Some(worker_id.to_string());
-        append_event(events_path, &mut env, current_seq)?;
-    }
+        // Write input-bindings.json
+        write_input_bindings(&attempt_dir, &step.inputs)?;
 
-    // Dispatch worker
-    let dispatch_request = WorkerDispatchRequest {
-        phase_id: phase_id.to_string(),
-        step_id: step.id.clone(),
-        attempt,
-        worker_id: worker_id.to_string(),
-        relay_root: relay_root.clone(),
-    };
-    dispatcher.dispatch(&dispatch_request)?;
+        // AttemptStarted
+        {
+            let mut env = make_envelope(run_id, MethodEventKind::AttemptStarted);
+            env.phase_id = Some(phase_id.to_string());
+            env.step_id = Some(step.id.clone());
+            env.attempt = Some(attempt);
+            append_event(events_path, &mut env, current_seq)?;
+        }
 
-    // WorkerCompleted
-    {
-        let mut env = make_envelope(run_id, MethodEventKind::WorkerCompleted);
-        env.phase_id = Some(phase_id.to_string());
-        env.step_id = Some(step.id.clone());
-        env.attempt = Some(attempt);
-        env.worker_id = Some(worker_id.to_string());
-        append_event(events_path, &mut env, current_seq)?;
-    }
-
-    // Look for handoff at relay root (HANDOFF.md or handoff.md)
-    let handoff_path = find_handoff(&relay_root);
-    if let Some(handoff_source) = handoff_path {
-        let _ingest_result = ingest_handoff(
+        // Dispatch all workers in this attempt
+        let outcome = dispatch_attempt_workers(
             paths,
+            events_path,
+            run_id,
+            current_seq,
             phase_id,
-            &step.id,
+            step,
+            &workers,
+            &step_instructions,
             attempt,
-            worker_id,
-            &handoff_source,
+            &last_failure_reason,
+            prompt_builder,
+            dispatcher,
         )?;
 
-        // HandoffIngested
-        {
-            let mut env = make_envelope(run_id, MethodEventKind::HandoffIngested);
-            env.phase_id = Some(phase_id.to_string());
-            env.step_id = Some(step.id.clone());
-            env.attempt = Some(attempt);
-            env.worker_id = Some(worker_id.to_string());
-            append_event(events_path, &mut env, current_seq)?;
+        match outcome {
+            AttemptOutcome::Success => {
+                // Evaluate completion policy and bind outputs
+                bind_attempt_outputs(
+                    paths,
+                    events_path,
+                    run_id,
+                    current_seq,
+                    phase_id,
+                    step,
+                    attempt,
+                    &workers,
+                )?;
+
+                // Write attempt.json (success)
+                write_attempt_json(&attempt_dir, phase_id, &step.id, attempt, "completed")?;
+
+                // AttemptCompleted
+                {
+                    let mut env = make_envelope(run_id, MethodEventKind::AttemptCompleted);
+                    env.phase_id = Some(phase_id.to_string());
+                    env.step_id = Some(step.id.clone());
+                    env.attempt = Some(attempt);
+                    append_event(events_path, &mut env, current_seq)?;
+                }
+
+                // StepCompleted
+                {
+                    let mut env = make_envelope(run_id, MethodEventKind::StepCompleted);
+                    env.phase_id = Some(phase_id.to_string());
+                    env.step_id = Some(step.id.clone());
+                    append_event(events_path, &mut env, current_seq)?;
+                }
+
+                return Ok(());
+            }
+            AttemptOutcome::Failed { reason } => {
+                // Write attempt.json (failed)
+                write_attempt_json(&attempt_dir, phase_id, &step.id, attempt, "failed")?;
+
+                // AttemptFailed
+                {
+                    let mut env = make_envelope(run_id, MethodEventKind::AttemptFailed);
+                    env.phase_id = Some(phase_id.to_string());
+                    env.step_id = Some(step.id.clone());
+                    env.attempt = Some(attempt);
+                    env.payload = serde_json::json!({ "reason": reason });
+                    append_event(events_path, &mut env, current_seq)?;
+                }
+
+                last_failure_reason = reason;
+                // Loop continues to next attempt (if any remain)
+            }
         }
     }
 
-    // Write output-bindings.json and emit OutputBound events
+    // Circuit breaker: all attempts exhausted without success → StepBlocked
     {
-        let mut output_bindings: BTreeMap<String, serde_json::Value> = BTreeMap::new();
-        for (output_name, output_def) in &step.outputs {
-            let resolved_path = output_def.path.clone();
-            output_bindings.insert(
-                output_name.clone(),
-                serde_json::json!({
-                    "path": resolved_path,
-                    "type": output_def.output_type,
-                    "worker_id": worker_id,
-                }),
-            );
+        let mut env = make_envelope(run_id, MethodEventKind::StepBlocked);
+        env.phase_id = Some(phase_id.to_string());
+        env.step_id = Some(step.id.clone());
+        env.payload = serde_json::json!({
+            "reason": format!(
+                "circuit breaker: all {} attempts exhausted",
+                step.max_attempts
+            ),
+            "last_failure": last_failure_reason,
+        });
+        append_event(events_path, &mut env, current_seq)?;
+    }
 
-            // OutputBound event
-            let mut env = make_envelope(run_id, MethodEventKind::OutputBound);
+    // StepBlocked means the run cannot continue this step, but we don't
+    // error out — we return Ok and let the caller decide (phase may block).
+    // For now in serial execution, a blocked step is a run-stopping condition.
+    Err(RunError::StepBlocked {
+        step_id: step.id.clone(),
+        reason: format!(
+            "circuit breaker: all {} attempts exhausted",
+            step.max_attempts
+        ),
+    })
+}
+
+/// Dispatch all workers for a single attempt. Returns Success if the completion
+/// policy is satisfied, Failed otherwise.
+#[allow(clippy::too_many_arguments)]
+fn dispatch_attempt_workers(
+    paths: &MethodRunPaths,
+    events_path: &Path,
+    run_id: &str,
+    current_seq: &mut u64,
+    phase_id: &str,
+    step: &NormalizedStep,
+    workers: &[crate::method_runner::definition::NormalizedWorkerSpec],
+    step_instructions: &str,
+    attempt: u32,
+    prior_failure: &str,
+    prompt_builder: &dyn PromptBuilder,
+    dispatcher: &dyn WorkerDispatcher,
+) -> Result<AttemptOutcome, RunError> {
+    let mut worker_results: Vec<(String, bool)> = Vec::new(); // (worker_id, success)
+
+    for worker in workers {
+        let worker_id = &worker.id;
+
+        // Create worker relay dir
+        let relay_root = paths.worker_relay_root(phase_id, &step.id, attempt, worker_id);
+        std::fs::create_dir_all(&relay_root)?;
+
+        // Build prompt (use worker-specific instructions if available, else step-level)
+        let instructions = if worker.instructions.is_empty() {
+            step_instructions.to_string()
+        } else {
+            worker.instructions.clone()
+        };
+
+        // Include retry context in instructions if this is a retry
+        let full_instructions = if attempt > 1 && !prior_failure.is_empty() {
+            format!(
+                "{}\n\n## Retry Context (attempt {})\nPrior failure: {}",
+                instructions, attempt, prior_failure
+            )
+        } else {
+            instructions
+        };
+
+        let prompt_request = PromptBuildRequest {
+            phase_id: phase_id.to_string(),
+            step_id: step.id.clone(),
+            attempt,
+            relay_root: relay_root.clone(),
+            instructions: full_instructions,
+        };
+        prompt_builder.build_prompt(&prompt_request)?;
+
+        // WorkerDispatched
+        {
+            let mut env = make_envelope(run_id, MethodEventKind::WorkerDispatched);
             env.phase_id = Some(phase_id.to_string());
             env.step_id = Some(step.id.clone());
             env.attempt = Some(attempt);
-            env.worker_id = Some(worker_id.to_string());
-            env.payload = serde_json::json!({
-                "name": output_name,
+            env.worker_id = Some(worker_id.clone());
+            append_event(events_path, &mut env, current_seq)?;
+        }
+
+        // Dispatch worker
+        let dispatch_request = WorkerDispatchRequest {
+            phase_id: phase_id.to_string(),
+            step_id: step.id.clone(),
+            attempt,
+            worker_id: worker_id.clone(),
+            relay_root: relay_root.clone(),
+        };
+        let dispatch_result = dispatcher.dispatch(&dispatch_request);
+
+        match dispatch_result {
+            Ok(result) => {
+                let clean_exit = result.exit_code == 0;
+
+                if clean_exit {
+                    // WorkerCompleted
+                    let mut env = make_envelope(run_id, MethodEventKind::WorkerCompleted);
+                    env.phase_id = Some(phase_id.to_string());
+                    env.step_id = Some(step.id.clone());
+                    env.attempt = Some(attempt);
+                    env.worker_id = Some(worker_id.clone());
+                    append_event(events_path, &mut env, current_seq)?;
+                } else {
+                    // WorkerFailed (non-zero exit)
+                    let mut env = make_envelope(run_id, MethodEventKind::WorkerFailed);
+                    env.phase_id = Some(phase_id.to_string());
+                    env.step_id = Some(step.id.clone());
+                    env.attempt = Some(attempt);
+                    env.worker_id = Some(worker_id.clone());
+                    env.payload = serde_json::json!({ "exit_code": result.exit_code });
+                    append_event(events_path, &mut env, current_seq)?;
+                }
+
+                // Ingest handoff if present (even for failed workers — we want the data)
+                let handoff_path = find_handoff(&relay_root);
+                if let Some(handoff_source) = handoff_path {
+                    let _ingest_result = ingest_handoff(
+                        paths,
+                        phase_id,
+                        &step.id,
+                        attempt,
+                        worker_id,
+                        &handoff_source,
+                    )?;
+
+                    // HandoffIngested
+                    let mut env = make_envelope(run_id, MethodEventKind::HandoffIngested);
+                    env.phase_id = Some(phase_id.to_string());
+                    env.step_id = Some(step.id.clone());
+                    env.attempt = Some(attempt);
+                    env.worker_id = Some(worker_id.clone());
+                    append_event(events_path, &mut env, current_seq)?;
+                }
+
+                worker_results.push((worker_id.clone(), clean_exit));
+            }
+            Err(e) => {
+                // WorkerFailed (adapter error — spawn failed, timeout, etc.)
+                let mut env = make_envelope(run_id, MethodEventKind::WorkerFailed);
+                env.phase_id = Some(phase_id.to_string());
+                env.step_id = Some(step.id.clone());
+                env.attempt = Some(attempt);
+                env.worker_id = Some(worker_id.clone());
+                env.payload = serde_json::json!({ "error": e.to_string() });
+                append_event(events_path, &mut env, current_seq)?;
+
+                worker_results.push((worker_id.clone(), false));
+            }
+        }
+    }
+
+    // Evaluate completion policy
+    let succeeded = evaluate_completion_policy(step.completion_policy, &worker_results, workers);
+
+    if succeeded {
+        Ok(AttemptOutcome::Success)
+    } else {
+        let failed_workers: Vec<&str> = worker_results
+            .iter()
+            .filter(|(_, ok)| !ok)
+            .map(|(id, _)| id.as_str())
+            .collect();
+        Ok(AttemptOutcome::Failed {
+            reason: format!("workers failed: {}", failed_workers.join(", ")),
+        })
+    }
+}
+
+/// Evaluate whether the completion policy is satisfied given worker results.
+fn evaluate_completion_policy(
+    policy: CompletionPolicy,
+    results: &[(String, bool)],
+    workers: &[crate::method_runner::definition::NormalizedWorkerSpec],
+) -> bool {
+    match policy {
+        CompletionPolicy::AllComplete => {
+            // All workers must have succeeded
+            results.iter().all(|(_, ok)| *ok)
+        }
+        CompletionPolicy::FirstClean => {
+            // First worker in definition order that succeeded is enough.
+            // We check workers in definition order, not results order.
+            for worker_spec in workers {
+                if let Some((_, ok)) = results.iter().find(|(id, _)| *id == worker_spec.id) {
+                    if *ok {
+                        return true;
+                    }
+                }
+            }
+            false
+        }
+    }
+}
+
+/// Bind outputs for a successful attempt. Emits OutputBound events.
+#[allow(clippy::too_many_arguments)]
+fn bind_attempt_outputs(
+    _paths: &MethodRunPaths,
+    events_path: &Path,
+    run_id: &str,
+    current_seq: &mut u64,
+    phase_id: &str,
+    step: &NormalizedStep,
+    attempt: u32,
+    workers: &[crate::method_runner::definition::NormalizedWorkerSpec],
+) -> Result<(), RunError> {
+    let attempt_dir = _paths.attempt_dir(phase_id, &step.id, attempt);
+
+    // Determine which worker to bind from based on completion policy
+    let binding_worker_id = match step.completion_policy {
+        CompletionPolicy::FirstClean => {
+            // Use the first worker in definition order (for first-clean,
+            // that's the winning worker)
+            workers.first().map(|w| w.id.as_str()).unwrap_or("primary")
+        }
+        CompletionPolicy::AllComplete => {
+            // For all_complete with single worker, use "primary"
+            // For multi-worker all_complete, outputs come from each worker
+            workers.first().map(|w| w.id.as_str()).unwrap_or("primary")
+        }
+    };
+
+    let mut output_bindings: BTreeMap<String, serde_json::Value> = BTreeMap::new();
+    for (output_name, output_def) in &step.outputs {
+        let resolved_path = output_def.path.clone();
+        output_bindings.insert(
+            output_name.clone(),
+            serde_json::json!({
                 "path": resolved_path,
                 "type": output_def.output_type,
-            });
-            append_event(events_path, &mut env, current_seq)?;
-        }
+                "worker_id": binding_worker_id,
+            }),
+        );
 
-        let bindings_json = serde_json::json!({ "outputs": output_bindings });
-        let json = serde_json::to_string_pretty(&bindings_json).map_err(std::io::Error::other)?;
-        std::fs::write(attempt_dir.join("output-bindings.json"), json)?;
-    }
-
-    // Write attempt.json
-    {
-        let attempt_json = serde_json::json!({
-            "phase_id": phase_id,
-            "step_id": step.id,
-            "attempt": attempt,
-            "worker_id": worker_id,
-            "status": "completed",
-            "started_at": chrono::Utc::now().to_rfc3339(),
-            "completed_at": chrono::Utc::now().to_rfc3339(),
-        });
-        let json = serde_json::to_string_pretty(&attempt_json).map_err(std::io::Error::other)?;
-        std::fs::write(attempt_dir.join("attempt.json"), json)?;
-    }
-
-    // AttemptCompleted
-    {
-        let mut env = make_envelope(run_id, MethodEventKind::AttemptCompleted);
+        // OutputBound event
+        let mut env = make_envelope(run_id, MethodEventKind::OutputBound);
         env.phase_id = Some(phase_id.to_string());
         env.step_id = Some(step.id.clone());
         env.attempt = Some(attempt);
+        env.worker_id = Some(binding_worker_id.to_string());
+        env.payload = serde_json::json!({
+            "name": output_name,
+            "path": resolved_path,
+            "type": output_def.output_type,
+        });
         append_event(events_path, &mut env, current_seq)?;
     }
 
-    // StepCompleted
-    {
-        let mut env = make_envelope(run_id, MethodEventKind::StepCompleted);
-        env.phase_id = Some(phase_id.to_string());
-        env.step_id = Some(step.id.clone());
-        append_event(events_path, &mut env, current_seq)?;
-    }
+    let bindings_json = serde_json::json!({ "outputs": output_bindings });
+    let json = serde_json::to_string_pretty(&bindings_json).map_err(std::io::Error::other)?;
+    std::fs::write(attempt_dir.join("output-bindings.json"), json)?;
 
     Ok(())
+}
+
+/// Write input-bindings.json to an attempt directory.
+fn write_input_bindings(attempt_dir: &Path, inputs: &[String]) -> Result<(), std::io::Error> {
+    let inputs_map: BTreeMap<String, String> = inputs
+        .iter()
+        .map(|input| (input.clone(), input.clone()))
+        .collect();
+    let bindings = serde_json::json!({ "inputs": inputs_map });
+    let json = serde_json::to_string_pretty(&bindings).map_err(std::io::Error::other)?;
+    std::fs::write(attempt_dir.join("input-bindings.json"), json)
+}
+
+/// Write attempt.json with status and timestamps.
+fn write_attempt_json(
+    attempt_dir: &Path,
+    phase_id: &str,
+    step_id: &str,
+    attempt: u32,
+    status: &str,
+) -> Result<(), std::io::Error> {
+    let attempt_json = serde_json::json!({
+        "phase_id": phase_id,
+        "step_id": step_id,
+        "attempt": attempt,
+        "status": status,
+        "started_at": chrono::Utc::now().to_rfc3339(),
+        "completed_at": chrono::Utc::now().to_rfc3339(),
+    });
+    let json = serde_json::to_string_pretty(&attempt_json).map_err(std::io::Error::other)?;
+    std::fs::write(attempt_dir.join("attempt.json"), json)
 }
 
 // ---------------------------------------------------------------------------
