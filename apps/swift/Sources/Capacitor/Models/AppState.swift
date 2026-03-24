@@ -48,6 +48,11 @@ struct RuntimeRunKey: Hashable, Sendable {
         normalizedProjectPath = PathNormalizer.normalize(run.projectPath)
         runID = run.id
     }
+
+    init(projectPath: String, runID: String) {
+        normalizedProjectPath = PathNormalizer.normalize(projectPath)
+        self.runID = runID
+    }
 }
 
 @Observable
@@ -105,7 +110,14 @@ class AppState {
         let workerID: String
     }
 
+    struct RunCheckpointWindowTarget: Equatable {
+        let projectPath: String
+        let runID: String
+        let checkpointID: String
+    }
+
     var reviewWindowTarget: ReviewWindowTarget?
+    var runCheckpointWindowTarget: RunCheckpointWindowTarget?
 
     // MARK: - Data
 
@@ -594,9 +606,14 @@ class AppState {
                 return existing
             },
         )
+        let previousRunsByID = runStatesByID
         if nextRunsByID != runStatesByID {
             runStatesByID = nextRunsByID
         }
+        reconcileRunCheckpointWindowTarget(
+            previousRunsByID: previousRunsByID,
+            nextRunsByID: nextRunsByID,
+        )
         consecutiveRuntimeSnapshotFailures = 0
 
         DebugLog.write(
@@ -640,6 +657,7 @@ class AppState {
             routingStateStore.clearRuntimeRoutingViews(correlationId: correlationId)
             delegationStates = [:]
             runStatesByID = [:]
+            runCheckpointWindowTarget = nil
         }
 
         updatePostSessionRefreshContext()
@@ -1393,6 +1411,40 @@ class AppState {
         }
     }
 
+    func submitRunCheckpointDecision(
+        projectPath: String,
+        runID: String,
+        checkpointID: String,
+        action: String,
+        note: String?,
+    ) async throws {
+        try await runtimeClient.mutateRun(RuntimeRunMutationRequest(
+            kind: "submit_decision",
+            projectPath: projectPath,
+            runId: runID,
+            checkpointId: checkpointID,
+            methodId: nil,
+            involvement: nil,
+            checkpointKind: nil,
+            checkpointTitle: nil,
+            checkpointSummary: nil,
+            checkpointBriefPath: nil,
+            checkpointManifestPath: nil,
+            checkpointMediaArtifacts: [],
+            checkpointMermaidSources: [],
+            captureUrl: nil,
+            decisionAction: action,
+            decisionNote: note?.isEmpty == true ? nil : note,
+            sessionId: nil,
+            delegationWorkerId: nil,
+            captureRequestId: nil,
+            clientId: nil,
+            observedCaptureUrl: nil,
+            captureFailureReason: nil,
+            completedMediaArtifacts: [],
+        ))
+    }
+
     func showProjectList() {
         projectFeatureCoordinator.showProjectList()
     }
@@ -1640,6 +1692,17 @@ class AppState {
         return delegationStates[PathNormalizer.normalize(projectPath)]
     }
 
+    func runState(projectPath: String, runID: String) -> RuntimeRunState? {
+        runStatesByID[RuntimeRunKey(projectPath: projectPath, runID: runID)]
+    }
+
+    func runCheckpointState(target: RunCheckpointWindowTarget) -> RuntimeCheckpointState? {
+        runCheckpointState(
+            target: target,
+            runsByID: runStatesByID,
+        )
+    }
+
     func submitDelegationReview(
         for project: Project,
         delegation: RuntimeDelegationState,
@@ -1708,6 +1771,117 @@ class AppState {
             try? await _Concurrency.Task.sleep(nanoseconds: 300_000_000)
             refreshSessionStates()
         }
+    }
+
+    private func reconcileRunCheckpointWindowTarget(
+        previousRunsByID: [RuntimeRunKey: RuntimeRunState],
+        nextRunsByID: [RuntimeRunKey: RuntimeRunState],
+    ) {
+        if let currentTarget = runCheckpointWindowTarget,
+           runCheckpointState(
+               target: currentTarget,
+               runsByID: nextRunsByID,
+           ) != nil
+        {
+            return
+        }
+
+        let queuedTargets = nextRunsByID.values
+            .filter(isEligibleRunCheckpointCandidate)
+            .sorted(by: runCheckpointCandidatePrecedes)
+            .compactMap(runCheckpointTarget(for:))
+
+        guard !queuedTargets.isEmpty else {
+            runCheckpointWindowTarget = nil
+            return
+        }
+
+        let newlySurfacedTargets = nextRunsByID.values
+            .filter(isEligibleRunCheckpointCandidate)
+            .filter { run in
+                isNewlySurfacedRunCheckpoint(
+                    run,
+                    previousRunsByID: previousRunsByID,
+                )
+            }
+            .sorted(by: runCheckpointCandidatePrecedes)
+            .compactMap(runCheckpointTarget(for:))
+
+        if runCheckpointWindowTarget != nil {
+            runCheckpointWindowTarget = queuedTargets.first
+        } else if let newlySurfacedTarget = newlySurfacedTargets.first {
+            runCheckpointWindowTarget = newlySurfacedTarget
+        }
+    }
+
+    private func isEligibleRunCheckpointCandidate(_ run: RuntimeRunState) -> Bool {
+        run.status == "paused" && run.activeCheckpoint != nil
+    }
+
+    private func isNewlySurfacedRunCheckpoint(
+        _ run: RuntimeRunState,
+        previousRunsByID: [RuntimeRunKey: RuntimeRunState],
+    ) -> Bool {
+        guard let checkpoint = run.activeCheckpoint else { return false }
+        guard let previousRun = previousRunsByID[RuntimeRunKey(run: run)] else { return true }
+        guard previousRun.status == "paused",
+              let previousCheckpoint = previousRun.activeCheckpoint
+        else {
+            return true
+        }
+
+        return previousCheckpoint.id != checkpoint.id
+    }
+
+    private func runCheckpointTarget(for run: RuntimeRunState) -> RunCheckpointWindowTarget? {
+        guard let checkpoint = run.activeCheckpoint else { return nil }
+        return RunCheckpointWindowTarget(
+            projectPath: run.projectPath,
+            runID: run.id,
+            checkpointID: checkpoint.id,
+        )
+    }
+
+    private func runCheckpointCandidatePrecedes(
+        _ lhs: RuntimeRunState,
+        _ rhs: RuntimeRunState,
+    ) -> Bool {
+        let lhsCreatedAt = lhs.activeCheckpoint?.createdAt ?? lhs.createdAt
+        let rhsCreatedAt = rhs.activeCheckpoint?.createdAt ?? rhs.createdAt
+
+        switch (parseISO8601Date(lhsCreatedAt), parseISO8601Date(rhsCreatedAt)) {
+        case let (.some(lhsDate), .some(rhsDate)) where lhsDate != rhsDate:
+            return lhsDate < rhsDate
+        case (.some, .none):
+            return true
+        case (.none, .some):
+            return false
+        default:
+            if lhsCreatedAt != rhsCreatedAt {
+                return lhsCreatedAt < rhsCreatedAt
+            }
+        }
+
+        if lhs.id != rhs.id {
+            return lhs.id < rhs.id
+        }
+
+        return PathNormalizer.normalize(lhs.projectPath) < PathNormalizer.normalize(rhs.projectPath)
+    }
+
+    private func runCheckpointState(
+        target: RunCheckpointWindowTarget,
+        runsByID: [RuntimeRunKey: RuntimeRunState],
+    ) -> RuntimeCheckpointState? {
+        guard let run = runsByID[RuntimeRunKey(projectPath: target.projectPath, runID: target.runID)],
+              run.status == "paused",
+              let checkpoint = run.activeCheckpoint,
+              checkpoint.id == target.checkpointID
+        else {
+            return nil
+        }
+
+        return checkpoint
     }
 
     // MARK: - Project Descriptions (delegating to ProjectDetailsManager)

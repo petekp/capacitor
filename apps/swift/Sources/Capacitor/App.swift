@@ -175,6 +175,15 @@ struct CapacitorApp: App {
         .windowResizability(.contentMinSize)
         .suppressedFromWindowMenu()
 
+        Window("Run Checkpoint", id: "run-checkpoint-review") {
+            RunCheckpointReviewWindow()
+                .environment(appState)
+                .preferredColorScheme(.dark)
+        }
+        .defaultSize(width: 900, height: 650)
+        .windowResizability(.contentMinSize)
+        .suppressedFromWindowMenu()
+
         #if DEBUG
             AppDebugWindows(appState: appState)
         #endif

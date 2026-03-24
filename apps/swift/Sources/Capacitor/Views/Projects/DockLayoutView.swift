@@ -112,6 +112,11 @@ struct DockLayoutView: View {
                 openWindow(id: "delegation-review")
             }
         }
+        .onChange(of: appState.runCheckpointWindowTarget?.checkpointID) { oldValue, newValue in
+            if oldValue == nil, newValue != nil {
+                openWindow(id: "run-checkpoint-review")
+            }
+        }
     }
 
     private var emptyState: some View {
