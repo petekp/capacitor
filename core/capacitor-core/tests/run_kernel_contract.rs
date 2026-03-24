@@ -84,6 +84,21 @@ fn mutate(
     runtime.mutate_run(cmd).expect("mutation should not error")
 }
 
+fn active_checkpoint_id(runtime: &CoreRuntime, run_id: &str) -> String {
+    runtime
+        .app_snapshot()
+        .expect("snapshot")
+        .runs
+        .iter()
+        .find(|run| run.id == run_id)
+        .expect("run exists")
+        .active_checkpoint
+        .as_ref()
+        .expect("checkpoint exists")
+        .id
+        .clone()
+}
+
 // ===========================================================================
 // Scenario 1: Simple execution-only method
 // ===========================================================================
@@ -135,6 +150,7 @@ fn scenario_execution_only_full_lifecycle() {
 
     // Submit approve decision
     let mut cmd = base_cmd("run-exec-01");
+    cmd.checkpoint_id = Some(active_checkpoint_id(&runtime, "run-exec-01"));
     cmd.decision_action = Some("approve".to_string());
     cmd.decision_note = Some("Looks great, ship it".to_string());
     let outcome = mutate(&runtime, cmd, RunMutationKind::SubmitDecision);
@@ -304,9 +320,11 @@ fn scenario_shape_and_execute_multi_phase() {
 
     // Request changes on proposal
     let mut cmd = base_cmd("run-se-01");
+    cmd.checkpoint_id = Some(active_checkpoint_id(&runtime, "run-se-01"));
     cmd.decision_action = Some("request_changes".to_string());
     cmd.decision_note = Some("Add pagination support".to_string());
-    mutate(&runtime, cmd, RunMutationKind::SubmitDecision);
+    let outcome = mutate(&runtime, cmd, RunMutationKind::SubmitDecision);
+    assert!(outcome.ok, "{}", outcome.message);
 
     // Second proposal checkpoint
     let mut cmd = base_cmd("run-se-01");
@@ -316,8 +334,10 @@ fn scenario_shape_and_execute_multi_phase() {
 
     // Approve revised proposal
     let mut cmd = base_cmd("run-se-01");
+    cmd.checkpoint_id = Some(active_checkpoint_id(&runtime, "run-se-01"));
     cmd.decision_action = Some("approve".to_string());
-    mutate(&runtime, cmd, RunMutationKind::SubmitDecision);
+    let outcome = mutate(&runtime, cmd, RunMutationKind::SubmitDecision);
+    assert!(outcome.ok, "{}", outcome.message);
 
     // Advance to Execute phase
     mutate(
@@ -339,8 +359,10 @@ fn scenario_shape_and_execute_multi_phase() {
 
     // Approve milestone
     let mut cmd = base_cmd("run-se-01");
+    cmd.checkpoint_id = Some(active_checkpoint_id(&runtime, "run-se-01"));
     cmd.decision_action = Some("approve".to_string());
-    mutate(&runtime, cmd, RunMutationKind::SubmitDecision);
+    let outcome = mutate(&runtime, cmd, RunMutationKind::SubmitDecision);
+    assert!(outcome.ok, "{}", outcome.message);
 
     // Advance past Execute → completes run
     mutate(
@@ -401,8 +423,10 @@ fn scenario_deep_debug_three_phase() {
 
         // Decide
         let mut cmd = base_cmd("run-debug-01");
+        cmd.checkpoint_id = Some(active_checkpoint_id(&runtime, "run-debug-01"));
         cmd.decision_action = Some("approve".to_string());
-        mutate(&runtime, cmd, RunMutationKind::SubmitDecision);
+        let outcome = mutate(&runtime, cmd, RunMutationKind::SubmitDecision);
+        assert!(outcome.ok, "{}", outcome.message);
 
         // Advance
         mutate(
@@ -566,6 +590,142 @@ fn scenario_error_duplicate_checkpoint() {
 }
 
 #[test]
+fn scenario_emit_checkpoint_preserves_caller_supplied_checkpoint_id() {
+    let runtime = CoreRuntime::new().expect("runtime");
+    runtime
+        .mutate_run(create_cmd("run-gate-id", "execution_only"))
+        .expect("create");
+
+    let mut cmd = base_cmd("run-gate-id");
+    cmd.session_id = Some("session-gate-id".to_string());
+    let outcome = mutate(&runtime, cmd, RunMutationKind::AttachSession);
+    assert!(outcome.ok);
+
+    let mut cmd = base_cmd("run-gate-id");
+    cmd.checkpoint_id = Some("gate-build".to_string());
+    cmd.checkpoint_kind = Some(CheckpointKind::ImplementationMilestone);
+    cmd.checkpoint_title = Some("Build approval".to_string());
+    cmd.checkpoint_manifest_path = Some("/tmp/gate-build.json".to_string());
+    let outcome = mutate(&runtime, cmd, RunMutationKind::EmitCheckpoint);
+    assert!(outcome.ok, "emit failed: {}", outcome.message);
+
+    let snap = runtime.app_snapshot().expect("snapshot");
+    let run = snap
+        .runs
+        .iter()
+        .find(|run| run.id == "run-gate-id")
+        .expect("run exists");
+    let checkpoint = run.active_checkpoint.as_ref().expect("checkpoint exists");
+    assert_eq!(run.status, RunStatus::Paused);
+    assert_eq!(checkpoint.id, "gate-build");
+}
+
+#[test]
+fn scenario_reemitting_same_checkpoint_is_idempotent() {
+    let runtime = CoreRuntime::new().expect("runtime");
+    runtime
+        .mutate_run(create_cmd("run-gate-reemit", "execution_only"))
+        .expect("create");
+
+    let mut cmd = base_cmd("run-gate-reemit");
+    cmd.session_id = Some("session-gate-reemit".to_string());
+    let outcome = mutate(&runtime, cmd, RunMutationKind::AttachSession);
+    assert!(outcome.ok);
+
+    let mut emit_cmd = base_cmd("run-gate-reemit");
+    emit_cmd.checkpoint_id = Some("gate-build".to_string());
+    emit_cmd.checkpoint_kind = Some(CheckpointKind::ImplementationMilestone);
+    emit_cmd.checkpoint_title = Some("Build approval".to_string());
+    emit_cmd.checkpoint_manifest_path = Some("/tmp/gate-build.json".to_string());
+    let first = mutate(&runtime, emit_cmd.clone(), RunMutationKind::EmitCheckpoint);
+    assert!(first.ok, "first emit failed: {}", first.message);
+
+    let first_snap = runtime.app_snapshot().expect("snapshot");
+    let first_run = first_snap
+        .runs
+        .iter()
+        .find(|run| run.id == "run-gate-reemit")
+        .expect("run exists");
+    let first_checkpoint = first_run
+        .active_checkpoint
+        .as_ref()
+        .expect("checkpoint exists");
+    let first_created_at = first_checkpoint.created_at.clone();
+
+    let second = mutate(&runtime, emit_cmd, RunMutationKind::EmitCheckpoint);
+    assert!(second.ok, "second emit failed: {}", second.message);
+
+    let second_snap = runtime.app_snapshot().expect("snapshot");
+    let second_run = second_snap
+        .runs
+        .iter()
+        .find(|run| run.id == "run-gate-reemit")
+        .expect("run exists");
+    let second_checkpoint = second_run
+        .active_checkpoint
+        .as_ref()
+        .expect("checkpoint exists");
+    assert_eq!(second_run.status, RunStatus::Paused);
+    assert_eq!(second_checkpoint.id, "gate-build");
+    assert_eq!(second_checkpoint.created_at, first_created_at);
+}
+
+#[test]
+fn scenario_submit_decision_validates_checkpoint_id() {
+    let runtime = CoreRuntime::new().expect("runtime");
+    runtime
+        .mutate_run(create_cmd("run-gate-decision", "execution_only"))
+        .expect("create");
+
+    let mut cmd = base_cmd("run-gate-decision");
+    cmd.session_id = Some("session-gate-decision".to_string());
+    let outcome = mutate(&runtime, cmd, RunMutationKind::AttachSession);
+    assert!(outcome.ok);
+
+    let mut cmd = base_cmd("run-gate-decision");
+    cmd.checkpoint_id = Some("gate-build".to_string());
+    cmd.checkpoint_kind = Some(CheckpointKind::ImplementationMilestone);
+    cmd.checkpoint_title = Some("Build approval".to_string());
+    cmd.checkpoint_manifest_path = Some("/tmp/gate-build.json".to_string());
+    let outcome = mutate(&runtime, cmd, RunMutationKind::EmitCheckpoint);
+    assert!(outcome.ok, "emit failed: {}", outcome.message);
+
+    let mut missing_id = base_cmd("run-gate-decision");
+    missing_id.decision_action = Some("approve".to_string());
+    let missing_result = mutate(&runtime, missing_id, RunMutationKind::SubmitDecision);
+    assert!(!missing_result.ok);
+    assert!(missing_result.message.contains("missing checkpoint_id"));
+
+    let mut wrong_id = base_cmd("run-gate-decision");
+    wrong_id.checkpoint_id = Some("wrong-id".to_string());
+    wrong_id.decision_action = Some("approve".to_string());
+    let wrong_result = mutate(&runtime, wrong_id, RunMutationKind::SubmitDecision);
+    assert!(!wrong_result.ok);
+    assert!(wrong_result
+        .message
+        .contains("checkpoint_id does not match active checkpoint"));
+
+    let mut correct_id = base_cmd("run-gate-decision");
+    correct_id.checkpoint_id = Some("gate-build".to_string());
+    correct_id.decision_action = Some("approve".to_string());
+    let correct_result = mutate(&runtime, correct_id, RunMutationKind::SubmitDecision);
+    assert!(
+        correct_result.ok,
+        "decision failed: {}",
+        correct_result.message
+    );
+
+    let snap = runtime.app_snapshot().expect("snapshot");
+    let run = snap
+        .runs
+        .iter()
+        .find(|run| run.id == "run-gate-decision")
+        .expect("run exists");
+    assert_eq!(run.status, RunStatus::Active);
+    assert!(run.active_checkpoint.is_none());
+}
+
+#[test]
 fn scenario_error_advance_with_active_checkpoint() {
     let runtime = CoreRuntime::new().expect("runtime");
     runtime
@@ -606,7 +766,7 @@ fn scenario_error_decision_without_checkpoint() {
     cmd.decision_action = Some("approve".to_string());
     let outcome = mutate(&runtime, cmd, RunMutationKind::SubmitDecision);
     assert!(!outcome.ok);
-    assert!(outcome.message.contains("no active checkpoint"));
+    assert!(outcome.message.contains("missing checkpoint_id"));
 }
 
 // ===========================================================================

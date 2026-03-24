@@ -48,6 +48,21 @@ fn mutate(
     runtime.mutate_run(cmd).expect("mutation should not error")
 }
 
+fn active_checkpoint_id(runtime: &CoreRuntime, run_id: &str) -> String {
+    runtime
+        .app_snapshot()
+        .expect("snapshot")
+        .runs
+        .iter()
+        .find(|run| run.id == run_id)
+        .expect("run exists")
+        .active_checkpoint
+        .as_ref()
+        .expect("checkpoint exists")
+        .id
+        .clone()
+}
+
 #[test]
 fn idea_to_ship_checkpoint_flow() {
     let runtime = CoreRuntime::new().expect("runtime");
@@ -91,6 +106,7 @@ fn idea_to_ship_checkpoint_flow() {
 
     // 4. Submit approval decision
     let mut cmd = base_cmd("run-its-01");
+    cmd.checkpoint_id = Some(active_checkpoint_id(&runtime, "run-its-01"));
     cmd.decision_action = Some("approve".to_string());
     cmd.decision_note = Some("Shape approved, proceed to build".to_string());
     let result = mutate(&runtime, cmd, RunMutationKind::SubmitDecision);
@@ -124,6 +140,7 @@ fn idea_to_ship_checkpoint_flow() {
 
     // 7. Approve → advance past last phase → run completes
     let mut cmd = base_cmd("run-its-01");
+    cmd.checkpoint_id = Some(active_checkpoint_id(&runtime, "run-its-01"));
     cmd.decision_action = Some("approve".to_string());
     let result = mutate(&runtime, cmd, RunMutationKind::SubmitDecision);
     assert!(result.ok);

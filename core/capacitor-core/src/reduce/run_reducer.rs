@@ -162,10 +162,6 @@ fn handle_emit_checkpoint(
         return reject("run is in terminal state");
     }
 
-    if run.active_checkpoint.is_some() {
-        return reject("checkpoint already active");
-    }
-
     let checkpoint_kind = match &command.checkpoint_kind {
         Some(k) => k.clone(),
         None => return reject("missing checkpoint_kind"),
@@ -177,13 +173,36 @@ fn handle_emit_checkpoint(
         .unwrap_or("Checkpoint")
         .to_string();
 
+    let checkpoint_id = command
+        .checkpoint_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+
     let phase_id = run
         .current_phase()
         .map(|p| p.id.clone())
         .unwrap_or_default();
 
+    if let Some(active_checkpoint) = run.active_checkpoint.as_ref() {
+        let same_checkpoint = checkpoint_id
+            .map(|id| active_checkpoint.id == id)
+            .unwrap_or(false)
+            && active_checkpoint.kind == checkpoint_kind
+            && active_checkpoint.title == title
+            && active_checkpoint.manifest_path == command.checkpoint_manifest_path;
+
+        if same_checkpoint {
+            return ok("checkpoint already active");
+        }
+
+        return reject("checkpoint already active");
+    }
+
     let now = now_rfc3339();
-    let checkpoint_id = format!("{}:{}:ckpt-{}", run.id, phase_id, now.replace(':', "-"));
+    let checkpoint_id = checkpoint_id
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| format!("{}:{}:ckpt-{}", run.id, phase_id, now.replace(':', "-")));
 
     let capture_url = normalized_optional_text(command.capture_url.as_deref());
     let capture_status = if capture_url.is_some() {
@@ -282,10 +301,14 @@ fn handle_submit_decision(
         None => return reject("run not found"),
     };
 
-    let checkpoint = match &mut run.active_checkpoint {
-        Some(c) if c.status == CheckpointStatus::Active => c,
-        Some(_) => return reject("checkpoint is not active"),
-        None => return reject("no active checkpoint"),
+    let checkpoint_id = match require_checkpoint_id(command) {
+        Ok(value) => value,
+        Err(outcome) => return outcome,
+    };
+
+    let checkpoint = match active_checkpoint_for_command(run, checkpoint_id) {
+        Ok(checkpoint) => checkpoint,
+        Err(outcome) => return outcome,
     };
 
     let action = match &command.decision_action {
@@ -663,6 +686,17 @@ mod tests {
         mutate(runs, cmd, RunMutationKind::CaptureClaim)
     }
 
+    fn active_checkpoint_id(runs: &BTreeMap<String, RunState>, run_id: &str) -> String {
+        runs.values()
+            .find(|run| run.id == run_id)
+            .expect("run exists")
+            .active_checkpoint
+            .as_ref()
+            .expect("checkpoint exists")
+            .id
+            .clone()
+    }
+
     #[test]
     fn create_run_with_valid_method() {
         let mut runs = empty_runs();
@@ -763,6 +797,7 @@ mod tests {
         mutate(&mut runs, cmd, RunMutationKind::EmitCheckpoint);
 
         let mut cmd = base_cmd("run-001");
+        cmd.checkpoint_id = Some(active_checkpoint_id(&runs, "run-001"));
         cmd.decision_action = Some("approve".to_string());
         cmd.decision_note = Some("Looks good".to_string());
         let result = mutate(&mut runs, cmd, RunMutationKind::SubmitDecision);
@@ -871,8 +906,10 @@ mod tests {
 
         // Submit decision
         let mut cmd = base_cmd("run-001");
+        cmd.checkpoint_id = Some(active_checkpoint_id(&runs, "run-001"));
         cmd.decision_action = Some("approve".to_string());
-        mutate(&mut runs, cmd, RunMutationKind::SubmitDecision);
+        let result = mutate(&mut runs, cmd, RunMutationKind::SubmitDecision);
+        assert!(result.ok, "{}", result.message);
 
         // Advance to Execute phase
         mutate(
@@ -894,8 +931,10 @@ mod tests {
 
         // Approve milestone
         let mut cmd = base_cmd("run-001");
+        cmd.checkpoint_id = Some(active_checkpoint_id(&runs, "run-001"));
         cmd.decision_action = Some("approve".to_string());
-        mutate(&mut runs, cmd, RunMutationKind::SubmitDecision);
+        let result = mutate(&mut runs, cmd, RunMutationKind::SubmitDecision);
+        assert!(result.ok, "{}", result.message);
 
         // Advance past last phase → run completes
         let result = mutate(
@@ -1237,6 +1276,7 @@ mod tests {
         assert!(claim.ok, "{}", claim.message);
 
         let mut decision = base_cmd("run-001");
+        decision.checkpoint_id = Some(checkpoint_a_id.clone());
         decision.decision_action = Some("approve".to_string());
         let decision_result = mutate(&mut runs, decision, RunMutationKind::SubmitDecision);
         assert!(decision_result.ok, "{}", decision_result.message);
