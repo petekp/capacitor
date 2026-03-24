@@ -84,6 +84,65 @@ final class AppStateRunCheckpointTests: XCTestCase {
         )
     }
 
+    func testFreshRuntimeSnapshotPresentsNextPausedRunCheckpointAfterFirstCheckpointClears() async {
+        let appState = AppState()
+        appState.cancelRuntimeAutomationForTesting()
+        let project = makeProject(name: "Capacitor", path: "/Users/petepetrash/Code/capacitor")
+        appState.projects = [project]
+        appState.setRuntimeSnapshotGenerationForTesting(1)
+
+        let olderRun = makeRun(
+            projectPath: project.path,
+            runID: "run-alpha",
+            checkpointID: "checkpoint-older",
+            checkpointCreatedAt: "2026-03-24T10:00:00Z",
+        )
+        let newerRun = makeRun(
+            projectPath: project.path,
+            runID: "run-zeta",
+            checkpointID: "checkpoint-newer",
+            checkpointCreatedAt: "2026-03-24T10:05:00Z",
+        )
+
+        await appState.applyRuntimeSnapshotForTesting(
+            makeRuntimeSnapshot(projectPath: project.path, runs: [newerRun, olderRun]),
+            refreshGeneration: 1,
+            correlationId: "run-checkpoint-next-initial",
+            projects: [project],
+        )
+
+        XCTAssertEqual(
+            appState.runCheckpointWindowTarget,
+            AppState.RunCheckpointWindowTarget(
+                projectPath: project.path,
+                runID: olderRun.id,
+                checkpointID: "checkpoint-older",
+            ),
+        )
+
+        let resumedOlderRun = makeRun(
+            projectPath: project.path,
+            runID: olderRun.id,
+            status: "active",
+        )
+
+        await appState.applyRuntimeSnapshotForTesting(
+            makeRuntimeSnapshot(projectPath: project.path, runs: [resumedOlderRun, newerRun]),
+            refreshGeneration: 1,
+            correlationId: "run-checkpoint-next-after-clear",
+            projects: [project],
+        )
+
+        XCTAssertEqual(
+            appState.runCheckpointWindowTarget,
+            AppState.RunCheckpointWindowTarget(
+                projectPath: project.path,
+                runID: newerRun.id,
+                checkpointID: "checkpoint-newer",
+            ),
+        )
+    }
+
     func testSubmitRunCheckpointDecisionMutatesRuntimeRunWithCheckpointIdentity() async throws {
         var capturedRequest: URLRequest?
         let runtimeClient = try RuntimeClient(
@@ -174,21 +233,13 @@ final class AppStateRunCheckpointTests: XCTestCase {
     private func makeRun(
         projectPath: String,
         runID: String,
-        checkpointID: String,
-        checkpointCreatedAt: String,
+        checkpointID: String? = nil,
+        checkpointCreatedAt: String? = nil,
+        status: String = "paused",
     ) -> RuntimeRunState {
         let timestamp = "2026-03-24T10:00:00Z"
-        return RuntimeRunState(
-            id: runID,
-            projectPath: projectPath,
-            methodId: "checkpoint-review",
-            methodName: "Checkpoint Review",
-            status: "paused",
-            sessionId: "session-1",
-            delegationWorkerId: nil,
-            createdAt: timestamp,
-            updatedAt: timestamp,
-            activeCheckpoint: RuntimeCheckpointState(
+        let activeCheckpoint: RuntimeCheckpointState? = if let checkpointID, let checkpointCreatedAt {
+            RuntimeCheckpointState(
                 id: checkpointID,
                 phaseId: "phase-\(checkpointID)",
                 kind: .implementationMilestone,
@@ -204,7 +255,22 @@ final class AppStateRunCheckpointTests: XCTestCase {
                 captureClaim: nil,
                 createdAt: checkpointCreatedAt,
                 decidedAt: nil,
-            ),
+            )
+        } else {
+            nil
+        }
+
+        return RuntimeRunState(
+            id: runID,
+            projectPath: projectPath,
+            methodId: "checkpoint-review",
+            methodName: "Checkpoint Review",
+            status: status,
+            sessionId: "session-1",
+            delegationWorkerId: nil,
+            createdAt: timestamp,
+            updatedAt: timestamp,
+            activeCheckpoint: activeCheckpoint,
         )
     }
 }

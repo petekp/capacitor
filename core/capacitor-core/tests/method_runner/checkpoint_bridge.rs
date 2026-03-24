@@ -4,10 +4,10 @@ use std::io::Write;
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::thread::JoinHandle;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use capacitor_core::domain::{
     CheckpointKind, MediaArtifact, MediaArtifactType, MermaidSource, MutateRunCommand,
@@ -33,6 +33,7 @@ use capacitor_core::method_runner::state::{
 };
 use capacitor_core::method_runner::storage::MethodRunPaths;
 use capacitor_core::runtime_service::RuntimeServiceEndpoint;
+use capacitor_core::CoreRuntime;
 
 #[derive(Debug)]
 struct CapturedRequest {
@@ -48,6 +49,10 @@ struct StubMutationServer {
 
 impl StubMutationServer {
     fn spawn(auth_token: &str) -> Self {
+        Self::spawn_n(auth_token, 1)
+    }
+
+    fn spawn_n(auth_token: &str, expected_requests: usize) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind stub mutation server");
         listener
             .set_nonblocking(true)
@@ -61,7 +66,8 @@ impl StubMutationServer {
         let (request_tx, requests) = mpsc::channel();
 
         let handle = thread::spawn(move || {
-            let deadline = std::time::Instant::now() + Duration::from_secs(5);
+            let deadline = Instant::now() + Duration::from_secs(5);
+            let mut served_requests = 0usize;
 
             loop {
                 match listener.accept() {
@@ -102,10 +108,13 @@ impl StubMutationServer {
                         stream
                             .write_all(response.as_bytes())
                             .expect("write stub response");
-                        break;
+                        served_requests += 1;
+                        if served_requests >= expected_requests {
+                            break;
+                        }
                     }
                     Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                        if std::time::Instant::now() >= deadline {
+                        if Instant::now() >= deadline {
                             panic!("timed out waiting for bridge mutation request");
                         }
                         thread::sleep(Duration::from_millis(10));
@@ -135,6 +144,113 @@ impl StubMutationServer {
     fn finish(mut self) {
         if let Some(handle) = self.handle.take() {
             handle.join().expect("join stub mutation server");
+        }
+    }
+}
+
+struct RuntimeMutationServer {
+    port: u16,
+    handle: Option<JoinHandle<()>>,
+}
+
+impl RuntimeMutationServer {
+    fn spawn(runtime: Arc<CoreRuntime>, auth_token: &str, expected_requests: usize) -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind runtime mutation server");
+        listener
+            .set_nonblocking(true)
+            .expect("set runtime mutation server nonblocking");
+
+        let port = listener
+            .local_addr()
+            .expect("runtime mutation server addr")
+            .port();
+        let expected_auth = format!("Authorization: Bearer {auth_token}");
+
+        let handle = thread::spawn(move || {
+            let deadline = Instant::now() + Duration::from_secs(5);
+            let mut served_requests = 0usize;
+
+            loop {
+                match listener.accept() {
+                    Ok((mut stream, _)) => {
+                        stream
+                            .set_read_timeout(Some(Duration::from_secs(1)))
+                            .expect("set runtime server read timeout");
+                        let request = read_http_request(&mut stream);
+                        assert!(
+                            request
+                                .lines()
+                                .any(|line| line.trim_end_matches('\r') == expected_auth),
+                            "missing bearer token in request: {request}",
+                        );
+
+                        let (head, body) = request
+                            .split_once("\r\n\r\n")
+                            .expect("request must contain header/body separator");
+                        let request_line = head
+                            .lines()
+                            .next()
+                            .expect("request must contain a request line")
+                            .trim_end_matches('\r');
+                        assert_eq!(request_line, "POST /runtime/run/mutate HTTP/1.1");
+
+                        let command: MutateRunCommand =
+                            serde_json::from_str(body).expect("parse mutate run command");
+                        let outcome = runtime
+                            .mutate_run(command)
+                            .expect("runtime-backed mutation should not error");
+                        let response_body =
+                            serde_json::to_string(&outcome).expect("serialize mutation outcome");
+                        let response = format!(
+                            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                            response_body.len(),
+                            response_body
+                        );
+                        stream
+                            .write_all(response.as_bytes())
+                            .expect("write runtime server response");
+
+                        served_requests += 1;
+                        if served_requests >= expected_requests {
+                            break;
+                        }
+                    }
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        if Instant::now() >= deadline {
+                            panic!("timed out waiting for runtime-backed bridge mutation request");
+                        }
+                        thread::sleep(Duration::from_millis(10));
+                    }
+                    Err(error) => panic!("accept runtime-backed bridge mutation request: {error}"),
+                }
+            }
+        });
+
+        Self {
+            port,
+            handle: Some(handle),
+        }
+    }
+
+    fn endpoint(&self, auth_token: &str) -> RuntimeServiceEndpoint {
+        RuntimeServiceEndpoint::localhost(self.port, auth_token)
+    }
+
+    fn finish(mut self) {
+        if let Some(handle) = self.handle.take() {
+            handle.join().expect("join runtime mutation server");
+        }
+    }
+}
+
+impl Drop for RuntimeMutationServer {
+    fn drop(&mut self) {
+        if let Some(handle) = self.handle.take() {
+            if std::thread::panicking() {
+                let _ = handle.join();
+            } else {
+                handle.join().expect("join runtime mutation server");
+            }
         }
     }
 }
@@ -394,6 +510,103 @@ fn completed_step_state(
 fn write_artifact(path: &Path, contents: impl AsRef<[u8]>) {
     std::fs::create_dir_all(path.parent().expect("artifact parent")).expect("create artifact dir");
     std::fs::write(path, contents).expect("write artifact");
+}
+
+fn wait_for(description: &str, timeout: Duration, mut predicate: impl FnMut() -> bool) {
+    let deadline = Instant::now() + timeout;
+    loop {
+        if predicate() {
+            return;
+        }
+
+        assert!(
+            Instant::now() < deadline,
+            "timed out waiting for {description}"
+        );
+        thread::sleep(Duration::from_millis(10));
+    }
+}
+
+fn runtime_create_cmd(project_path: &str, run_id: &str, method_id: &str) -> MutateRunCommand {
+    MutateRunCommand {
+        kind: RunMutationKind::Create,
+        project_path: project_path.to_string(),
+        run_id: run_id.to_string(),
+        method_id: Some(method_id.to_string()),
+        involvement: None,
+        checkpoint_kind: None,
+        checkpoint_title: None,
+        checkpoint_summary: None,
+        checkpoint_brief_path: None,
+        checkpoint_manifest_path: None,
+        checkpoint_media_artifacts: vec![],
+        checkpoint_mermaid_sources: vec![],
+        capture_url: None,
+        checkpoint_id: None,
+        capture_request_id: None,
+        client_id: None,
+        observed_capture_url: None,
+        capture_failure_reason: None,
+        decision_action: None,
+        decision_note: None,
+        session_id: None,
+        delegation_worker_id: None,
+        completed_media_artifacts: vec![],
+    }
+}
+
+fn runtime_base_cmd(project_path: &str, run_id: &str) -> MutateRunCommand {
+    MutateRunCommand {
+        kind: RunMutationKind::Create,
+        project_path: project_path.to_string(),
+        run_id: run_id.to_string(),
+        method_id: None,
+        involvement: None,
+        checkpoint_kind: None,
+        checkpoint_title: None,
+        checkpoint_summary: None,
+        checkpoint_brief_path: None,
+        checkpoint_manifest_path: None,
+        checkpoint_media_artifacts: vec![],
+        checkpoint_mermaid_sources: vec![],
+        capture_url: None,
+        checkpoint_id: None,
+        capture_request_id: None,
+        client_id: None,
+        observed_capture_url: None,
+        capture_failure_reason: None,
+        decision_action: None,
+        decision_note: None,
+        session_id: None,
+        delegation_worker_id: None,
+        completed_media_artifacts: vec![],
+    }
+}
+
+fn runtime_mutate(
+    runtime: &CoreRuntime,
+    mut command: MutateRunCommand,
+    kind: RunMutationKind,
+) -> capacitor_core::domain::MutationOutcome {
+    command.kind = kind;
+    runtime
+        .mutate_run(command)
+        .expect("runtime mutation should not error")
+}
+
+fn runtime_checkpoint_created_at(runtime: &CoreRuntime, run_id: &str) -> String {
+    runtime
+        .app_snapshot()
+        .expect("runtime snapshot")
+        .runs
+        .iter()
+        .find(|run| run.id == run_id)
+        .expect("run exists")
+        .active_checkpoint
+        .as_ref()
+        .expect("checkpoint exists")
+        .created_at
+        .clone()
 }
 
 #[test]
@@ -865,4 +1078,203 @@ fn t9_bridge_generated_manifest_stays_swift_compatible() {
     assert!(decisions["approve"]["description"].is_string());
     assert!(decisions["request_changes"]["label"].is_string());
     assert!(decisions["request_changes"]["description"].is_string());
+}
+
+#[test]
+fn t13_bridge_crash_recovery_reemits_idempotently_and_returns_existing_decision_immediately() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let home_dir = temp.path().join("home");
+    let project_path = temp.path().join("project");
+    let manifest_path = project_path.join("artifacts/checkpoint-manifest.json");
+    std::fs::create_dir_all(manifest_path.parent().expect("manifest parent"))
+        .expect("create manifest parent");
+    std::fs::write(&manifest_path, "{}").expect("write manifest");
+
+    let context = bridge_context(&manifest_path);
+    let runtime = CoreRuntime::new().expect("runtime");
+    let run_id = "run-crash-recovery";
+    let project_path_string = project_path.to_string_lossy().to_string();
+
+    let create = runtime
+        .mutate_run(runtime_create_cmd(
+            &project_path_string,
+            run_id,
+            "execution_only",
+        ))
+        .expect("create run");
+    assert!(create.ok, "create failed: {}", create.message);
+
+    let mut attach_command = runtime_base_cmd(&project_path_string, run_id);
+    attach_command.session_id = Some("session-crash-recovery".to_string());
+    let attach = runtime_mutate(
+        runtime.as_ref(),
+        attach_command,
+        RunMutationKind::AttachSession,
+    );
+    assert!(attach.ok, "attach failed: {}", attach.message);
+
+    let mut emit_command = runtime_base_cmd(&project_path_string, run_id);
+    emit_command.checkpoint_id = Some(context.gate_id.clone());
+    emit_command.checkpoint_kind = Some(context.checkpoint_kind.clone());
+    emit_command.checkpoint_title = Some(context.checkpoint_title.clone());
+    emit_command.checkpoint_summary = Some(context.checkpoint_summary.clone());
+    emit_command.checkpoint_manifest_path = Some(manifest_path.to_string_lossy().to_string());
+    let first_emit = runtime_mutate(
+        runtime.as_ref(),
+        emit_command,
+        RunMutationKind::EmitCheckpoint,
+    );
+    assert!(first_emit.ok, "first emit failed: {}", first_emit.message);
+
+    let first_created_at = runtime_checkpoint_created_at(runtime.as_ref(), run_id);
+
+    let pending_file = pending_path(&home_dir, run_id, &context.gate_id);
+    write_json_atomic(
+        &pending_file,
+        &CheckpointBridgePending {
+            version: 1,
+            project_path: project_path_string.clone(),
+            run_id: run_id.to_string(),
+            checkpoint_id: context.gate_id.clone(),
+            phase_id: context.phase_id.clone(),
+            gate_type: context.gate_type.clone(),
+            manifest_path: manifest_path.to_string_lossy().to_string(),
+            created_at: "2026-03-24T12:00:00Z".to_string(),
+        },
+    )
+    .expect("write pending marker");
+
+    let decision_file = decision_path(&home_dir, run_id, &context.gate_id);
+    write_json_atomic(
+        &decision_file,
+        &CheckpointBridgeDecision {
+            version: 1,
+            run_id: run_id.to_string(),
+            checkpoint_id: context.gate_id.clone(),
+            action: "approve".to_string(),
+            note: Some("Recovered during restart".to_string()),
+            decided_at: "2026-03-24T12:01:00Z".to_string(),
+        },
+    )
+    .expect("write pre-existing decision");
+
+    let server = RuntimeMutationServer::spawn(runtime.clone(), "bridge-token", 1);
+    let bridge = make_bridge(
+        run_id,
+        project_path.clone(),
+        home_dir.clone(),
+        server.endpoint("bridge-token"),
+    );
+
+    bridge.emit_gate_checkpoint(&context);
+    server.finish();
+
+    let resumed_created_at = runtime_checkpoint_created_at(runtime.as_ref(), run_id);
+    assert_eq!(resumed_created_at, first_created_at);
+
+    let start = Instant::now();
+    let response =
+        capacitor_core::method_runner::adapters::InteractiveIO::capture_response(&bridge);
+    assert_eq!(response.body, "approved");
+    assert!(
+        start.elapsed() < Duration::from_millis(400),
+        "capture_response should return immediately when the decision file already exists"
+    );
+    assert!(
+        !decision_file.exists(),
+        "decision file should be cleaned up after crash recovery read"
+    );
+}
+
+#[test]
+fn t14_bridge_isolates_same_gate_id_across_concurrent_runs() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let home_dir = temp.path().join("home");
+    let project_path = temp.path().join("project");
+    let manifest_path = project_path.join("artifacts/checkpoint-manifest.json");
+    std::fs::create_dir_all(manifest_path.parent().expect("manifest parent"))
+        .expect("create manifest parent");
+    std::fs::write(&manifest_path, "{}").expect("write manifest");
+
+    let pending_a = pending_path(&home_dir, "run-A", "gate-review");
+    let pending_b = pending_path(&home_dir, "run-B", "gate-review");
+    let decision_a = decision_path(&home_dir, "run-A", "gate-review");
+    let decision_b = decision_path(&home_dir, "run-B", "gate-review");
+    assert_ne!(pending_a, pending_b);
+    assert_ne!(decision_a, decision_b);
+
+    let server = StubMutationServer::spawn_n("bridge-token", 2);
+    let endpoint = server.endpoint("bridge-token");
+
+    let project_path_a = project_path.clone();
+    let project_path_b = project_path.clone();
+    let home_dir_a = home_dir.clone();
+    let home_dir_b = home_dir.clone();
+    let manifest_path_a = manifest_path.clone();
+    let manifest_path_b = manifest_path.clone();
+    let endpoint_a = endpoint.clone();
+    let endpoint_b = endpoint;
+
+    let run_a = thread::spawn(move || {
+        let bridge = make_bridge("run-A", project_path_a, home_dir_a, endpoint_a);
+        let context = bridge_context(&manifest_path_a);
+        bridge.emit_gate_checkpoint(&context);
+        capacitor_core::method_runner::adapters::InteractiveIO::capture_response(&bridge).body
+    });
+    let run_b = thread::spawn(move || {
+        let bridge = make_bridge("run-B", project_path_b, home_dir_b, endpoint_b);
+        let context = bridge_context(&manifest_path_b);
+        bridge.emit_gate_checkpoint(&context);
+        capacitor_core::method_runner::adapters::InteractiveIO::capture_response(&bridge).body
+    });
+
+    wait_for("both pending markers", Duration::from_secs(2), || {
+        pending_a.exists() && pending_b.exists()
+    });
+
+    write_json_atomic(
+        &decision_a,
+        &CheckpointBridgeDecision {
+            version: 1,
+            run_id: "run-A".to_string(),
+            checkpoint_id: "gate-review".to_string(),
+            action: "approve".to_string(),
+            note: Some("Run A approved".to_string()),
+            decided_at: "2026-03-24T12:10:00Z".to_string(),
+        },
+    )
+    .expect("write run-A decision");
+
+    wait_for("run-A response", Duration::from_secs(2), || {
+        run_a.is_finished()
+    });
+    let run_a_response = run_a.join().expect("join run-A bridge");
+    assert_eq!(run_a_response, "approved");
+
+    thread::sleep(Duration::from_millis(700));
+    assert!(
+        !run_b.is_finished(),
+        "run-B should remain blocked until its own decision file appears"
+    );
+
+    write_json_atomic(
+        &decision_b,
+        &CheckpointBridgeDecision {
+            version: 1,
+            run_id: "run-B".to_string(),
+            checkpoint_id: "gate-review".to_string(),
+            action: "request_changes".to_string(),
+            note: Some("Run B needs changes".to_string()),
+            decided_at: "2026-03-24T12:11:00Z".to_string(),
+        },
+    )
+    .expect("write run-B decision");
+
+    wait_for("run-B response", Duration::from_secs(2), || {
+        run_b.is_finished()
+    });
+    let run_b_response = run_b.join().expect("join run-B bridge");
+    assert_eq!(run_b_response, "rejected");
+
+    server.finish();
 }
