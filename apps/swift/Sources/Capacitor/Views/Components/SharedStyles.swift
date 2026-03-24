@@ -13,7 +13,7 @@ struct BackButton: View {
                     .font(.system(size: 11, weight: .semibold))
                     .offset(x: isHovered ? -2 : 0)
                 Text(title)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(AppTypography.labelMedium)
             }
             .foregroundColor(.white.opacity(isHovered ? 0.95 : 0.55))
             .padding(.horizontal, 10)

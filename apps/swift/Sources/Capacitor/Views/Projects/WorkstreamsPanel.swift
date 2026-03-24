@@ -34,7 +34,7 @@ struct WorkstreamsPanel: View {
             if state.isLoading {
                 Text("Loading workstreams...")
                     .font(AppTypography.bodySecondary)
-                    .foregroundColor(.white.opacity(0.6))
+                    .foregroundColor(.white.opacity(0.55))
             } else if state.worktrees.isEmpty {
                 Text("No workstreams yet.")
                     .font(AppTypography.bodySecondary)
@@ -84,7 +84,7 @@ struct WorkstreamsPanel: View {
                 }
                 .buttonStyle(.plain)
                 .font(AppTypography.bodySecondary.weight(.medium))
-                .foregroundColor(.white.opacity(0.8))
+                .foregroundColor(.white.opacity(0.7))
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
                 .background(

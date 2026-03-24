@@ -97,7 +97,7 @@ struct IdeaCaptureOverlay: View {
     private var topBar: some View {
         HStack {
             Text(projectName)
-                .font(.system(size: 13, weight: .medium))
+                .font(AppTypography.bodyMedium)
                 .foregroundColor(.white.opacity(0.4))
 
             Spacer()
@@ -125,8 +125,8 @@ struct IdeaCaptureOverlay: View {
 
             HStack {
                 Text("⏎ Save  ⇧⏎ Save & add another  ⎋ Cancel")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(.white.opacity(0.35))
+                    .font(AppTypography.bodyMedium)
+                    .foregroundColor(.white.opacity(0.4))
 
                 Spacer()
 
@@ -136,7 +136,7 @@ struct IdeaCaptureOverlay: View {
                             .font(.system(size: 14, weight: .semibold))
                         if !showingSuccess {
                             Text("Save")
-                                .font(.system(size: 14, weight: .semibold))
+                                .font(AppTypography.cardTitle)
                         }
                     }
                     .foregroundColor(showingSuccess ? .white : (hasText ? .white : .white.opacity(0.4)))
@@ -216,7 +216,7 @@ struct IdeaCaptureOverlay: View {
                 .font(.system(size: 14))
                 .foregroundColor(.red)
             Text(error)
-                .font(.system(size: 14))
+                .font(AppTypography.body)
                 .foregroundColor(.red.opacity(0.9))
             Spacer()
         }

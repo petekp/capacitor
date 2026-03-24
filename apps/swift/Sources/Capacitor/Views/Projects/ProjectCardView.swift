@@ -525,7 +525,7 @@ private struct ProjectCardContent: View {
             if let contextLine {
                 Text(contextLine)
                     .font(AppTypography.bodySecondary)
-                    .foregroundStyle(isMissing ? .white.opacity(0.35) : .white.opacity(0.62))
+                    .foregroundStyle(isMissing ? .white.opacity(0.4) : .white.opacity(0.55))
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
@@ -668,7 +668,7 @@ private struct ProjectCardActionButton: View {
             return .white.opacity(isHovered ? config.actionBarHoverOpacity : config.actionBarForegroundOpacity)
         #else
             guard isEnabled else { return .white.opacity(0.3) }
-            return .white.opacity(isHovered ? 0.82 : 0.62)
+            return .white.opacity(isHovered ? 0.9 : 0.7)
         #endif
     }
 
@@ -684,7 +684,7 @@ private struct ProjectCardActionButton: View {
         #if DEBUG
             .system(size: config.actionBarFontSize, weight: Self.fontWeight(from: config.actionBarFontWeight))
         #else
-            .system(size: 12, weight: .medium)
+            AppTypography.labelMedium
         #endif
     }
 

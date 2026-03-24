@@ -23,7 +23,7 @@ struct TipTooltipView: View {
                 .foregroundColor(.yellow.opacity(0.9))
 
             Text(message)
-                .font(.system(size: 12, weight: .medium))
+                .font(AppTypography.labelMedium)
                 .foregroundColor(.white.opacity(0.9))
         }
         .padding(.horizontal, 14)
