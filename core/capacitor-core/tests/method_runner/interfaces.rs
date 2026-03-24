@@ -81,6 +81,8 @@ fn interface_if1_fake_prompt_builder_idempotence() {
         attempt: 1,
         relay_root: relay_root.clone(),
         instructions: "Do the thing.".into(),
+        template: None,
+        skills: vec![],
     };
 
     let builder = FakePromptBuilder;
@@ -111,6 +113,8 @@ fn interface_if1_prompt_builder_creates_expected_files() {
         attempt: 2,
         relay_root: relay_root.clone(),
         instructions: "Scan the codebase.".into(),
+        template: None,
+        skills: vec![],
     };
 
     let builder = FakePromptBuilder;
@@ -157,6 +161,7 @@ fn interface_if2_fake_dispatcher_creates_handoff() {
         attempt: 1,
         worker_id: "primary".into(),
         relay_root: relay_root.clone(),
+        prompt_path: relay_root.join("prompt.md"),
     };
 
     let dispatcher = FakeWorkerDispatcher;

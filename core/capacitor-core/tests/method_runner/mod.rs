@@ -1,9 +1,12 @@
+mod adapter_seam;
 mod adversarial;
 mod constraints;
 mod error_audit;
 mod integration;
 mod interfaces;
 mod invariants;
+mod real_prompt_builder;
+mod real_worker_dispatcher;
 mod robustness;
 mod state_machines;
 mod step7_action_agnostic;

@@ -954,14 +954,27 @@ fn dispatch_attempt_workers(
             instructions
         };
 
+        // Merge skills: step-level + worker-level, stable order, deduplicated
+        let merged_skills = {
+            let mut skills = step.skills.clone();
+            for s in &worker.skills {
+                if !skills.contains(s) {
+                    skills.push(s.clone());
+                }
+            }
+            skills
+        };
+
         let prompt_request = PromptBuildRequest {
             phase_id: phase_id.to_string(),
             step_id: step.id.clone(),
             attempt,
             relay_root: relay_root.clone(),
             instructions: full_instructions,
+            template: step.template.clone(),
+            skills: merged_skills,
         };
-        prompt_builder.build_prompt(&prompt_request)?;
+        let prompt_result = prompt_builder.build_prompt(&prompt_request)?;
 
         // WorkerDispatched
         {
@@ -973,13 +986,14 @@ fn dispatch_attempt_workers(
             append_event(events_path, &mut env, current_seq)?;
         }
 
-        // Dispatch worker
+        // Dispatch worker — prompt_path comes explicitly from IF1 result
         let dispatch_request = WorkerDispatchRequest {
             phase_id: phase_id.to_string(),
             step_id: step.id.clone(),
             attempt,
             worker_id: worker_id.clone(),
             relay_root: relay_root.clone(),
+            prompt_path: prompt_result.prompt_path,
         };
         let dispatch_result = dispatcher.dispatch(&dispatch_request);
 

@@ -6,6 +6,7 @@
 
 use std::io::Write;
 use std::path::PathBuf;
+use std::time::Duration;
 
 // ---------------------------------------------------------------------------
 // Errors
@@ -24,6 +25,18 @@ pub enum AdapterError {
 
     #[error("process crash: {0}")]
     ProcessCrash(String),
+
+    #[error("skill not found: {0}")]
+    SkillNotFound(String),
+
+    #[error("template not found: {0}")]
+    TemplateNotFound(String),
+
+    #[error("assembly failed (exit {exit_code}): {stderr}")]
+    AssemblyFailed { exit_code: i32, stderr: String },
+
+    #[error("contract violation: {0}")]
+    ContractViolation(String),
 }
 
 // ---------------------------------------------------------------------------
@@ -38,6 +51,10 @@ pub struct PromptBuildRequest {
     pub attempt: u32,
     pub relay_root: PathBuf,
     pub instructions: String,
+    /// Step-level template name (e.g. "implement", "review"). None if unset.
+    pub template: Option<String>,
+    /// Merged skills list (method defaults + phase + step + worker), stable order.
+    pub skills: Vec<String>,
 }
 
 /// Result from prompt composition.
@@ -65,13 +82,19 @@ pub struct WorkerDispatchRequest {
     pub attempt: u32,
     pub worker_id: String,
     pub relay_root: PathBuf,
+    /// Absolute path to the assembled prompt file from IF1.
+    pub prompt_path: PathBuf,
 }
 
 /// Result from dispatching a worker attempt.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct WorkerDispatchResult {
     pub worker_id: String,
     pub exit_code: i32,
+    /// Signal that terminated the process, if any (e.g. SIGTERM = 15).
+    pub signal: Option<i32>,
+    /// Wall-clock elapsed time of the worker subprocess.
+    pub elapsed: Duration,
 }
 
 /// Boundary for worker orchestration.
@@ -359,6 +382,8 @@ impl WorkerDispatcher for FakeWorkerDispatcher {
         Ok(WorkerDispatchResult {
             worker_id: request.worker_id.clone(),
             exit_code: 0,
+            signal: None,
+            elapsed: Duration::ZERO,
         })
     }
 }
@@ -450,6 +475,8 @@ impl WorkerDispatcher for ConfigurableDispatcher {
             return Ok(WorkerDispatchResult {
                 worker_id: request.worker_id.clone(),
                 exit_code: 1,
+                signal: None,
+                elapsed: Duration::ZERO,
             });
         }
 
@@ -459,6 +486,8 @@ impl WorkerDispatcher for ConfigurableDispatcher {
         Ok(WorkerDispatchResult {
             worker_id: request.worker_id.clone(),
             exit_code: 0,
+            signal: None,
+            elapsed: Duration::ZERO,
         })
     }
 }

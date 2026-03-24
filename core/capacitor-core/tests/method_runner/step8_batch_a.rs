@@ -696,6 +696,8 @@ fn if1_prompt_builder_idempotence() {
         attempt: 1,
         relay_root: tmp1.path().to_path_buf(),
         instructions: "Do the thing.".to_string(),
+        template: None,
+        skills: vec![],
     };
 
     let request2 = PromptBuildRequest {
@@ -704,6 +706,8 @@ fn if1_prompt_builder_idempotence() {
         attempt: 1,
         relay_root: tmp2.path().to_path_buf(),
         instructions: "Do the thing.".to_string(),
+        template: None,
+        skills: vec![],
     };
 
     let builder = FakePromptBuilder;
@@ -736,6 +740,7 @@ fn if2_exit_capture_clean_and_crash() {
         attempt: 1,
         worker_id: "primary".to_string(),
         relay_root: tmp.path().join("clean"),
+        prompt_path: tmp.path().join("clean/prompt.md"),
     };
     let result = FakeWorkerDispatcher.dispatch(&request).unwrap();
     assert_eq!(result.exit_code, 0, "clean exit should be 0");
@@ -749,6 +754,7 @@ fn if2_exit_capture_clean_and_crash() {
         attempt: 1,
         worker_id: "primary".to_string(),
         relay_root: tmp.path().join("crash"),
+        prompt_path: tmp.path().join("crash/prompt.md"),
     };
     let result2 = dispatcher.dispatch(&request2).unwrap();
     assert_ne!(result2.exit_code, 0, "crash exit should be non-zero");
@@ -772,6 +778,7 @@ fn if2_adapter_error_propagates() {
         attempt: 1,
         worker_id: "primary".to_string(),
         relay_root: tmp.path().to_path_buf(),
+        prompt_path: tmp.path().join("prompt.md"),
     };
 
     let result = dispatcher.dispatch(&request);
