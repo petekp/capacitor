@@ -1278,3 +1278,149 @@ fn t14_bridge_isolates_same_gate_id_across_concurrent_runs() {
 
     server.finish();
 }
+
+// ---------------------------------------------------------------------------
+// Fail-closed: bridge falls back to prompt when mutation is rejected
+// ---------------------------------------------------------------------------
+
+struct RejectingStubServer {
+    port: u16,
+    handle: Option<JoinHandle<()>>,
+}
+
+impl RejectingStubServer {
+    fn spawn(auth_token: &str) -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind rejecting stub server");
+        listener
+            .set_nonblocking(true)
+            .expect("set rejecting stub server nonblocking");
+        let port = listener
+            .local_addr()
+            .expect("rejecting stub server addr")
+            .port();
+        let expected_auth = format!("Authorization: Bearer {auth_token}");
+
+        let handle = thread::spawn(move || {
+            let deadline = Instant::now() + Duration::from_secs(5);
+            loop {
+                match listener.accept() {
+                    Ok((mut stream, _)) => {
+                        stream
+                            .set_read_timeout(Some(Duration::from_secs(1)))
+                            .expect("set read timeout");
+                        let request = read_http_request(&mut stream);
+                        assert!(
+                            request
+                                .lines()
+                                .any(|line| line.trim_end_matches('\r') == expected_auth),
+                            "missing bearer token in request: {request}",
+                        );
+                        let response_body =
+                            r#"{"ok":false,"message":"checkpoint rejected by runtime"}"#;
+                        let response = format!(
+                            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                            response_body.len(),
+                            response_body
+                        );
+                        stream
+                            .write_all(response.as_bytes())
+                            .expect("write rejecting stub response");
+                        break;
+                    }
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        if Instant::now() >= deadline {
+                            panic!("timed out waiting for bridge mutation request");
+                        }
+                        thread::sleep(Duration::from_millis(10));
+                    }
+                    Err(error) => panic!("accept bridge mutation request: {error}"),
+                }
+            }
+        });
+
+        Self {
+            port,
+            handle: Some(handle),
+        }
+    }
+
+    fn endpoint(&self, auth_token: &str) -> RuntimeServiceEndpoint {
+        RuntimeServiceEndpoint::localhost(self.port, auth_token)
+    }
+
+    fn finish(mut self) {
+        if let Some(handle) = self.handle.take() {
+            handle.join().expect("join rejecting stub server");
+        }
+    }
+}
+
+#[test]
+fn t15_bridge_falls_back_to_prompt_when_mutation_rejected() {
+    let token = "reject-test-token";
+    let server = RejectingStubServer::spawn(token);
+    let endpoint = server.endpoint(token);
+    let temp = tempfile::tempdir().expect("tempdir");
+    let home_dir = temp.path().to_path_buf();
+    let project_path = PathBuf::from("/test/project");
+
+    let bridge = BridgeInteractiveIO::new(
+        endpoint,
+        project_path,
+        "run-rejected".to_string(),
+        home_dir.clone(),
+        Box::new(FakeInteractiveIO::new("fallback-approved")),
+    );
+
+    let mut context = bridge_context(Path::new("/test/manifest.json"));
+    context.gate_id = "gate-rejected".to_string();
+    context.prompt_message = "Gate 'gate-rejected': Do you approve?".to_string();
+    bridge.emit_gate_checkpoint(&context);
+
+    // The pending marker should have been cleaned up after mutation rejection
+    let marker = pending_path(&home_dir, "run-rejected", "gate-rejected");
+    assert!(
+        !marker.exists(),
+        "pending marker should be cleaned up after mutation rejection"
+    );
+
+    // capture_response() should delegate to the fallback (not block forever)
+    // because emit_gate_checkpoint() did not arm current_gate_id
+    let response = bridge.capture_response();
+    assert_eq!(
+        response.body, "fallback-approved",
+        "bridge should fall back to standard prompt when mutation is rejected"
+    );
+
+    server.finish();
+}
+
+#[test]
+fn t15_bridge_falls_back_to_prompt_when_server_unreachable() {
+    // Connect to a port where nothing is listening
+    let endpoint = RuntimeServiceEndpoint::localhost(1, "dead-token");
+    let temp = tempfile::tempdir().expect("tempdir");
+    let home_dir = temp.path().to_path_buf();
+    let project_path = PathBuf::from("/test/project");
+
+    let bridge = BridgeInteractiveIO::new(
+        endpoint,
+        project_path,
+        "run-unreachable".to_string(),
+        home_dir.clone(),
+        Box::new(FakeInteractiveIO::new("fallback-approved")),
+    );
+
+    let mut context = bridge_context(Path::new("/test/manifest.json"));
+    context.gate_id = "gate-unreachable".to_string();
+    context.prompt_message = "Gate 'gate-unreachable': Do you approve?".to_string();
+    bridge.emit_gate_checkpoint(&context);
+
+    // Pending marker may or may not exist (write could succeed), but
+    // capture_response() must not block forever
+    let response = bridge.capture_response();
+    assert_eq!(
+        response.body, "fallback-approved",
+        "bridge should fall back to standard prompt when server is unreachable"
+    );
+}
