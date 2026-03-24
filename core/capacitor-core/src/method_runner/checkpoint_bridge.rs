@@ -147,18 +147,24 @@ impl BridgeInteractiveIO {
         }
     }
 
-    fn post_checkpoint(&self, context: &GateCheckpointContext) {
+    fn post_checkpoint(&self, context: &GateCheckpointContext) -> bool {
         let command = self.checkpoint_command(context);
         match self.endpoint.mutate_run(&command) {
-            Ok(MutationOutcome { ok: true, .. }) => {}
-            Ok(outcome) => eprintln!(
-                "warning: runtime service rejected checkpoint bridge mutation for gate '{}': {}",
-                context.gate_id, outcome.message
-            ),
-            Err(error) => eprintln!(
-                "warning: failed to post checkpoint bridge mutation for gate '{}': {}",
-                context.gate_id, error
-            ),
+            Ok(MutationOutcome { ok: true, .. }) => true,
+            Ok(outcome) => {
+                eprintln!(
+                    "warning: runtime service rejected checkpoint bridge mutation for gate '{}': {}",
+                    context.gate_id, outcome.message
+                );
+                false
+            }
+            Err(error) => {
+                eprintln!(
+                    "warning: failed to post checkpoint bridge mutation for gate '{}': {}",
+                    context.gate_id, error
+                );
+                false
+            }
         }
     }
 }
@@ -205,12 +211,26 @@ impl InteractiveIO for BridgeInteractiveIO {
 
         if let Err(error) = write_json_atomic(&pending_path, &pending) {
             eprintln!(
-                "warning: failed to write checkpoint bridge pending marker for gate '{}': {}",
+                "warning: failed to write checkpoint bridge pending marker for gate '{}', falling back to prompt: {}",
                 context.gate_id, error
             );
+            self.fallback.emit_prompt(&InteractivePrompt {
+                message: context.prompt_message.clone(),
+            });
+            return;
         }
 
-        self.post_checkpoint(context);
+        if !self.post_checkpoint(context) {
+            // Mutation failed or was rejected — clean up pending marker and fall back
+            // to the standard interactive prompt so capture_response() doesn't block
+            // forever waiting for a decision file that will never arrive.
+            let _ = fs_err::remove_file(&pending_path);
+            self.fallback.emit_prompt(&InteractivePrompt {
+                message: context.prompt_message.clone(),
+            });
+            return;
+        }
+
         *self.current_gate_id.borrow_mut() = Some(context.gate_id.clone());
     }
 }
