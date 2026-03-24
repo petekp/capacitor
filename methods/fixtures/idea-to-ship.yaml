@@ -1,0 +1,113 @@
+schema_version: "1"
+method:
+  id: idea-to-ship
+  version: "2026-03-23"
+  title: Idea to Ship
+  description: >
+    Full product loop: shape the idea, build the implementation,
+    review at a checkpoint, then ship. Exercises all gate types
+    and the complete checkpoint UX.
+  defaults:
+    max_attempts: 2
+    completion_policy: all_complete
+    skills:
+      - base-skill
+  outputs:
+    implementation:
+      from: build.implement.implementation
+      required: true
+    review_decision:
+      from: review.checkpoint.review_decision
+      required: true
+  phases:
+    # Phase 1: Shape — proposal gate (approval)
+    - id: shape
+      title: Shape
+      execution: serial
+      gate:
+        id: shape-gate
+        type: approval
+      steps:
+        - id: analyze
+          title: Analyze Requirements
+          action: dispatch
+          outputs:
+            analysis:
+              path: artifacts/analysis.md
+              type: markdown
+          dispatch:
+            instructions: >
+              Analyze the idea and produce a requirements analysis.
+              Output a structured markdown document with sections:
+              Problem, Approach, Risks, Success Criteria.
+
+    # Phase 2: Build — handoff verdict gate
+    - id: build
+      title: Build
+      execution: serial
+      skills:
+        - build-skill
+      gate:
+        id: build-gate
+        type: handoff_verdict
+      steps:
+        - id: implement
+          title: Implement
+          action: dispatch
+          template: implement
+          outputs:
+            implementation:
+              path: artifacts/implementation.md
+              type: markdown
+          dispatch:
+            instructions: >
+              Implement the feature based on the shaped requirements.
+            workers:
+              - id: primary
+                title: Primary Worker
+                instructions: >
+                  Build the core feature.
+                skills:
+                  - implement-skill
+
+    # Phase 3: Review — interactive approval checkpoint
+    - id: review
+      title: Review
+      execution: serial
+      gate:
+        id: review-gate
+        type: approval
+      steps:
+        - id: checkpoint
+          title: Review Checkpoint
+          action: interactive
+          outputs:
+            review_decision:
+              path: artifacts/review-decision.md
+              type: markdown
+          interactive:
+            prompt: >
+              Review the implementation. Check that all acceptance
+              criteria are met, tests pass, and code quality is good.
+              Approve to proceed to ship, or reject with notes.
+            response_type: approval
+            output: review_decision
+
+    # Phase 4: Ship — completion claim gate
+    - id: ship
+      title: Ship
+      execution: serial
+      gate:
+        id: ship-gate
+        type: completion_claim
+      steps:
+        - id: release
+          title: Release
+          action: dispatch
+          outputs:
+            release_notes:
+              path: artifacts/release-notes.md
+              type: markdown
+          dispatch:
+            instructions: >
+              Create release notes and tag the release.

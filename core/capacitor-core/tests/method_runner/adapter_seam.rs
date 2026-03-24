@@ -9,8 +9,9 @@ use std::time::Duration;
 
 use capacitor_core::method_runner::adapter_config::AdapterConfig;
 use capacitor_core::method_runner::adapters::{
-    AdapterError, FakePromptBuilder, FakeWorkerDispatcher, PromptBuildRequest, PromptBuildResult,
-    PromptBuilder, WorkerDispatchRequest, WorkerDispatchResult, WorkerDispatcher,
+    AdapterError, FakePromptBuilder, FakeWorkerDispatcher, FileInteractiveIO, InteractiveIO,
+    InteractivePrompt, PromptBuildRequest, PromptBuildResult, PromptBuilder, WorkerDispatchRequest,
+    WorkerDispatchResult, WorkerDispatcher,
 };
 use capacitor_core::method_runner::definition::DefinitionSource;
 use capacitor_core::method_runner::executor::execute_run;
@@ -381,4 +382,43 @@ fn t23_missing_codex_path_fails() {
         }
         other => panic!("expected SpawnFailed, got: {other:?}"),
     }
+}
+
+// =========================================================================
+// FileInteractiveIO: reads gate responses from pre-staged JSON files
+// =========================================================================
+
+#[test]
+fn file_interactive_io_reads_gate_responses() {
+    let tmp = tempfile::tempdir().unwrap();
+    let response_dir = tmp.path().join("responses");
+    std::fs::create_dir_all(&response_dir).unwrap();
+
+    // Stage a response file for gate "build-gate"
+    std::fs::write(
+        response_dir.join("build-gate.json"),
+        r#"{"action": "approved", "note": "Looks good"}"#,
+    )
+    .unwrap();
+
+    let io = FileInteractiveIO::new(response_dir);
+
+    // When prompted with gate id "build-gate", should return "approved"
+    io.emit_prompt(&InteractivePrompt {
+        message: "Gate 'build-gate': Do you approve this phase?".into(),
+    });
+    let response = io.capture_response();
+    assert_eq!(response.body.trim(), "approved");
+}
+
+#[test]
+fn file_interactive_io_falls_back_to_approved() {
+    let tmp = tempfile::tempdir().unwrap();
+    let io = FileInteractiveIO::new(tmp.path().to_path_buf());
+
+    io.emit_prompt(&InteractivePrompt {
+        message: "Gate 'unknown-gate': Do you approve?".into(),
+    });
+    let response = io.capture_response();
+    assert_eq!(response.body.trim(), "approved");
 }

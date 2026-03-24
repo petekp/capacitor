@@ -293,6 +293,91 @@ impl InteractiveIO for CliInteractiveIO {
 }
 
 // ---------------------------------------------------------------------------
+// File-backed interactive IO
+// ---------------------------------------------------------------------------
+
+/// File-backed interactive IO for testing multi-gate methods.
+///
+/// Handles TWO prompt formats:
+/// 1. Gate prompts: `"Gate '<gate_id>': ..."` -> looks up `{response_dir}/{gate_id}.json`
+/// 2. Interactive step prompts: raw prompt text -> looks up `{response_dir}/{step_id}.json`
+///    where step_id is extracted by normalizing the prompt (or a `_default.json` fallback)
+///
+/// Response JSON format: `{"action": "approved", "note": "optional note"}`
+/// Falls back to "approved" if no matching file exists.
+pub struct FileInteractiveIO {
+    response_dir: PathBuf,
+    current_prompt_key: std::cell::RefCell<Option<String>>,
+}
+
+impl FileInteractiveIO {
+    pub fn new(response_dir: PathBuf) -> Self {
+        Self {
+            response_dir,
+            current_prompt_key: std::cell::RefCell::new(None),
+        }
+    }
+
+    /// Extract a lookup key from a prompt message.
+    /// Gate prompts: "Gate 'build-gate': ..." -> "build-gate"
+    /// Interactive step prompts: try to find a step-id-like slug, else use "_default"
+    fn extract_key(message: &str) -> String {
+        // Try gate format first: "Gate '<id>':"
+        if let Some(after) = message.strip_prefix("Gate '") {
+            if let Some(id) = after.split("':").next() {
+                return id.to_string();
+            }
+        }
+        // For interactive step prompts, use a normalized slug of the first
+        // 40 chars as the key, or "_default" if empty
+        let slug: String = message
+            .chars()
+            .take(40)
+            .map(|c| {
+                if c.is_alphanumeric() {
+                    c.to_ascii_lowercase()
+                } else {
+                    '-'
+                }
+            })
+            .collect();
+        let slug = slug.trim_matches('-').to_string();
+        if slug.is_empty() {
+            "_default".to_string()
+        } else {
+            slug
+        }
+    }
+}
+
+impl InteractiveIO for FileInteractiveIO {
+    fn emit_prompt(&self, prompt: &InteractivePrompt) {
+        *self.current_prompt_key.borrow_mut() = Some(Self::extract_key(&prompt.message));
+    }
+
+    fn capture_response(&self) -> InteractiveResponse {
+        let key = self.current_prompt_key.borrow();
+        let body = if let Some(ref k) = *key {
+            let path = self.response_dir.join(format!("{}.json", k));
+            let fallback = self.response_dir.join("_default.json");
+            let target = if path.exists() { path } else { fallback };
+            if target.exists() {
+                let content = std::fs::read_to_string(&target).unwrap_or_default();
+                serde_json::from_str::<serde_json::Value>(&content)
+                    .ok()
+                    .and_then(|v| v["action"].as_str().map(String::from))
+                    .unwrap_or_else(|| "approved".into())
+            } else {
+                "approved".into()
+            }
+        } else {
+            "approved".into()
+        };
+        InteractiveResponse { body }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Fake prompt builder
 // ---------------------------------------------------------------------------
 

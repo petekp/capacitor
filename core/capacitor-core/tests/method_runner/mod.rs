@@ -1,10 +1,12 @@
 mod adapter_seam;
 mod adversarial;
+mod checkpoint_manifest;
 mod constraints;
 mod error_audit;
 mod integration;
 mod interfaces;
 mod invariants;
+mod manifest_swift_compat;
 mod real_prompt_builder;
 mod real_worker_dispatcher;
 mod robustness;
