@@ -22,13 +22,6 @@ struct DelegationReviewView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                HStack {
-                    BackButton(title: "Projects") {
-                        appState.showProjectList()
-                    }
-                    Spacer()
-                }
-
                 VStack(alignment: .leading, spacing: 8) {
                     Text(project.name)
                         .font(AppTypography.pageTitle.monospaced())
@@ -65,11 +58,11 @@ struct DelegationReviewView: View {
                 } else {
                     Text("The active review is no longer available.")
                         .font(AppTypography.body)
-                        .foregroundColor(.white.opacity(0.65))
+                        .foregroundColor(.white.opacity(0.7))
                 }
             }
             .padding(.horizontal, 16)
-            .padding(.top, floatingMode ? 12 : 16)
+            .padding(.top, floatingMode ? 44 : 12)
             .padding(.bottom, floatingMode ? 64 : 16)
         }
         .accessibilityIdentifier(AccessibilityIdentifiers.delegationReviewIdentifier)
@@ -95,16 +88,16 @@ struct DelegationReviewView: View {
             if let summary = manifest?.summary, !summary.isEmpty {
                 Text(summary)
                     .font(AppTypography.body)
-                    .foregroundColor(.white.opacity(0.78))
+                    .foregroundColor(.white.opacity(0.9))
             } else {
                 Text("Milestone \(review.milestoneId) is ready for a human decision.")
                     .font(AppTypography.body)
-                    .foregroundColor(.white.opacity(0.78))
+                    .foregroundColor(.white.opacity(0.9))
             }
 
             Text("Worker \(delegation.workerId.prefix(8)) • Session \(delegation.sessionId ?? "pending")")
                 .font(AppTypography.label)
-                .foregroundColor(.white.opacity(0.42))
+                .foregroundColor(.white.opacity(0.4))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -115,7 +108,7 @@ struct DelegationReviewView: View {
 
             Text(reviewBrief.isEmpty ? "No review brief was found yet." : reviewBrief)
                 .font(AppTypography.body)
-                .foregroundColor(.white.opacity(0.78))
+                .foregroundColor(.white.opacity(0.9))
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .textSelection(.enabled)
         }
@@ -130,10 +123,10 @@ struct DelegationReviewView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(artifact.label)
                             .font(AppTypography.bodySecondary.weight(.medium))
-                            .foregroundColor(.white.opacity(0.88))
+                            .foregroundColor(.white.opacity(0.9))
                         Text(artifact.path)
                             .font(AppTypography.captionSmall.monospaced())
-                            .foregroundColor(.white.opacity(0.42))
+                            .foregroundColor(.white.opacity(0.4))
                             .textSelection(.enabled)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -141,7 +134,7 @@ struct DelegationReviewView: View {
             } else if let currentReview {
                 Text(currentReview.manifestPath)
                     .font(AppTypography.captionSmall.monospaced())
-                    .foregroundColor(.white.opacity(0.42))
+                    .foregroundColor(.white.opacity(0.4))
                     .textSelection(.enabled)
             } else {
                 Text("No manifest data is available.")
@@ -186,7 +179,7 @@ struct DelegationReviewView: View {
             }) {
                 Text("Request Changes")
                     .font(AppTypography.bodySecondary.weight(.semibold))
-                    .foregroundColor(.white.opacity(0.92))
+                    .foregroundColor(.white.opacity(0.9))
                     .padding(.horizontal, 18)
                     .padding(.vertical, 12)
                     .background(Color.orange.opacity(0.18))

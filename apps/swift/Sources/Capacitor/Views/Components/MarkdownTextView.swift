@@ -11,8 +11,8 @@ import SwiftUI
 /// Falls back to plain text if markdown parsing fails.
 struct MarkdownTextView: View {
     let text: String
-    var bodyColor: Color = .white.opacity(0.82)
-    var secondaryColor: Color = .white.opacity(0.62)
+    var bodyColor: Color = .white.opacity(0.9)
+    var secondaryColor: Color = .white.opacity(0.55)
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -145,14 +145,14 @@ struct MarkdownTextView: View {
         case let .heading(level, content):
             Text(content)
                 .font(headingFont(level: level))
-                .foregroundColor(.white.opacity(0.88))
+                .foregroundColor(.white.opacity(0.9))
                 .textSelection(.enabled)
 
         case let .codeBlock(content, _):
             ScrollView(.horizontal, showsIndicators: false) {
                 Text(content)
                     .font(AppTypography.monoCaption)
-                    .foregroundColor(.white.opacity(0.72))
+                    .foregroundColor(.white.opacity(0.7))
                     .textSelection(.enabled)
             }
             .padding(12)

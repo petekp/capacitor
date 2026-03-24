@@ -46,7 +46,7 @@ struct SettingsView: View {
                     .accessibilityHint("Only enable when support needs exact paths; otherwise paths stay redacted")
 
                 Text("Quick feedback always opens a GitHub issue draft. Telemetry context is optional, and project paths stay redacted unless you opt in.")
-                    .font(.system(size: 11))
+                    .font(AppTypography.captionSmall)
                     .foregroundStyle(.secondary)
             }
 
@@ -101,7 +101,7 @@ struct KeyboardShortcutRow: View {
             Text(label)
             Spacer()
             Text(shortcut)
-                .font(.system(size: 12, design: .monospaced))
+                .font(AppTypography.monoCaption)
                 .foregroundColor(.secondary)
         }
         .accessibilityElement(children: .combine)

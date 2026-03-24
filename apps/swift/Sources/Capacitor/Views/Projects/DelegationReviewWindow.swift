@@ -74,17 +74,17 @@ struct DelegationReviewWindow: View {
                     if case let .failed(message) = phase {
                         Text("Couldn't submit review")
                             .font(AppTypography.sectionTitle)
-                            .foregroundColor(.white.opacity(0.65))
+                            .foregroundColor(.white.opacity(0.7))
                         Text(message)
                             .font(AppTypography.body)
                             .foregroundColor(.red.opacity(0.8))
                     } else {
                         Text("No active review")
                             .font(AppTypography.sectionTitle)
-                            .foregroundColor(.white.opacity(0.65))
+                            .foregroundColor(.white.opacity(0.7))
                         Text("The review may have been completed or cancelled.")
                             .font(AppTypography.body)
-                            .foregroundColor(.white.opacity(0.42))
+                            .foregroundColor(.white.opacity(0.4))
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -142,7 +142,7 @@ struct DelegationReviewWindow: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(project.name)
                         .font(AppTypography.sectionTitle.monospaced())
-                        .foregroundColor(.white.opacity(0.92))
+                        .foregroundColor(.white.opacity(0.9))
 
                     HStack(spacing: 8) {
                         Text("Delegation Review")
@@ -168,7 +168,7 @@ struct DelegationReviewWindow: View {
                 if let summary = manifest?.summary, !summary.isEmpty {
                     Text(summary)
                         .font(AppTypography.body)
-                        .foregroundColor(.white.opacity(0.82))
+                        .foregroundColor(.white.opacity(0.9))
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
@@ -190,7 +190,7 @@ struct DelegationReviewWindow: View {
                     )
                 }
                 .font(AppTypography.monoCaption)
-                .foregroundColor(.white.opacity(0.42))
+                .foregroundColor(.white.opacity(0.4))
 
                 // Swift changes banner
                 if manifest?.swiftChanges == true, !swiftChangesBannerDismissed {
@@ -201,7 +201,7 @@ struct DelegationReviewWindow: View {
 
                         Text("This milestone includes Swift changes. The running app reflects the previous build.")
                             .font(AppTypography.bodySecondary)
-                            .foregroundColor(.white.opacity(0.72))
+                            .foregroundColor(.white.opacity(0.7))
 
                         Spacer()
 
@@ -268,7 +268,7 @@ struct DelegationReviewWindow: View {
                                     VStack(alignment: .leading, spacing: 3) {
                                         Text(artifact.label)
                                             .font(AppTypography.bodySecondary.weight(.medium))
-                                            .foregroundColor(.white.opacity(0.88))
+                                            .foregroundColor(.white.opacity(0.9))
                                         Text(artifact.path)
                                             .font(AppTypography.monoCaption)
                                             .foregroundColor(.white.opacity(0.4))
@@ -315,7 +315,7 @@ struct DelegationReviewWindow: View {
 
                         Text(diffStat)
                             .font(AppTypography.monoCaption)
-                            .foregroundColor(.white.opacity(0.62))
+                            .foregroundColor(.white.opacity(0.55))
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .textSelection(.enabled)
 
@@ -339,7 +339,7 @@ struct DelegationReviewWindow: View {
                                 ScrollView(.horizontal, showsIndicators: true) {
                                     Text(fullDiff)
                                         .font(AppTypography.monoCaption)
-                                        .foregroundColor(.white.opacity(0.72))
+                                        .foregroundColor(.white.opacity(0.7))
                                         .textSelection(.enabled)
                                 }
                                 .frame(maxHeight: 400)
@@ -370,13 +370,13 @@ struct DelegationReviewWindow: View {
 
                                 Text("Decision: \(previousDecision.decision)")
                                     .font(AppTypography.bodySecondary.weight(.medium))
-                                    .foregroundColor(.white.opacity(0.72))
+                                    .foregroundColor(.white.opacity(0.7))
                             }
 
                             if let note = previousDecision.note, !note.isEmpty {
                                 Text(note)
                                     .font(AppTypography.body)
-                                    .foregroundColor(.white.opacity(0.62))
+                                    .foregroundColor(.white.opacity(0.55))
                                     .frame(maxWidth: .infinity, alignment: .leading)
                             }
                         }
@@ -405,13 +405,13 @@ struct DelegationReviewWindow: View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Decision")
                 .font(AppTypography.cardTitle)
-                .foregroundColor(.white.opacity(0.72))
+                .foregroundColor(.white.opacity(0.7))
 
             if case let .failed(message) = phase {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Retry needed")
                         .font(AppTypography.bodySecondary.weight(.semibold))
-                        .foregroundColor(.white.opacity(0.88))
+                        .foregroundColor(.white.opacity(0.9))
 
                     Text(message)
                         .font(AppTypography.caption)
@@ -419,7 +419,7 @@ struct DelegationReviewWindow: View {
 
                     Text("Your note is still here.")
                         .font(AppTypography.caption)
-                        .foregroundColor(.white.opacity(0.42))
+                        .foregroundColor(.white.opacity(0.4))
                 }
                 .padding(12)
                 .background(
@@ -494,7 +494,7 @@ struct DelegationReviewWindow: View {
                         Text(submitButtonTitle)
                             .font(AppTypography.bodyMedium)
                     }
-                    .foregroundColor(selectedDecision == .approve ? .black.opacity(0.88) : .white.opacity(0.92))
+                    .foregroundColor(selectedDecision == .approve ? .black.opacity(0.88) : .white.opacity(0.9))
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
                     .background(
@@ -542,7 +542,7 @@ struct DelegationReviewWindow: View {
 
                     Text(title)
                         .font(AppTypography.bodySecondary.weight(.semibold))
-                        .foregroundColor(.white.opacity(0.92))
+                        .foregroundColor(.white.opacity(0.9))
 
                     Spacer()
                 }
@@ -564,7 +564,7 @@ struct DelegationReviewWindow: View {
 
             Text(description)
                 .font(AppTypography.caption)
-                .foregroundColor(.white.opacity(0.45))
+                .foregroundColor(.white.opacity(0.4))
                 .padding(.horizontal, 4)
         }
     }
@@ -595,26 +595,26 @@ struct DelegationReviewWindow: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(submittedProjectName)
                             .font(AppTypography.cardTitle.monospaced())
-                            .foregroundColor(.white.opacity(0.88))
+                            .foregroundColor(.white.opacity(0.9))
 
                         Text("Feedback sent to worker")
                             .font(AppTypography.sectionTitle)
-                            .foregroundColor(.white.opacity(0.82))
+                            .foregroundColor(.white.opacity(0.9))
                     }
                 }
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text(submittedDecisionLabel)
                         .font(AppTypography.bodySecondary.weight(.medium))
-                        .foregroundColor(.white.opacity(0.65))
+                        .foregroundColor(.white.opacity(0.7))
 
                     Text(submittedTimestampLabel)
                         .font(AppTypography.monoCaption)
-                        .foregroundColor(.white.opacity(0.42))
+                        .foregroundColor(.white.opacity(0.4))
 
                     Text("The worker is resuming in the background.")
                         .font(AppTypography.body)
-                        .foregroundColor(.white.opacity(0.65))
+                        .foregroundColor(.white.opacity(0.7))
                 }
             }
             .padding(24)
@@ -635,7 +635,7 @@ struct DelegationReviewWindow: View {
     private func metadataItem(label: String, value: String) -> some View {
         HStack(spacing: 4) {
             Text(label + ":")
-                .foregroundColor(.white.opacity(0.35))
+                .foregroundColor(.white.opacity(0.4))
             Text(value)
                 .foregroundColor(.white.opacity(0.55))
         }
@@ -650,7 +650,7 @@ struct DelegationReviewWindow: View {
             Text(title)
                 .font(AppTypography.caption.weight(.bold))
                 .tracking(2)
-                .foregroundColor(.white.opacity(0.45))
+                .foregroundColor(.white.opacity(0.4))
         }
     }
 

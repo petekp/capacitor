@@ -248,7 +248,7 @@ struct IdeaQueueView: View {
 
             Text("Hover over the project card and click \"+ Idea\" to add one")
                 .font(AppTypography.caption)
-                .foregroundColor(.white.opacity(0.35))
+                .foregroundColor(.white.opacity(0.4))
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 16)

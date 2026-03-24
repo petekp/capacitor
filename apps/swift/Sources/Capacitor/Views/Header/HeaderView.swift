@@ -21,6 +21,7 @@ struct HeaderView: View {
                     BackButton(title: "Projects") {
                         appState.showProjectList()
                     }
+                    .accessibilityIdentifier(AccessibilityIdentifiers.backProjectsIdentifier)
                     .transition(.opacity.animation(.easeInOut(duration: 0.15)))
                 }
 
@@ -77,9 +78,9 @@ private struct HeaderFeedbackButton: View {
                 Image(systemName: "bubble.left")
                     .font(.system(size: 11, weight: .semibold))
                 Text("Feedback")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(AppTypography.cardSubtitle.weight(.semibold))
             }
-            .foregroundColor(.white.opacity(isHovered ? 0.9 : 0.72))
+            .foregroundColor(.white.opacity(isHovered ? 0.9 : 0.7))
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
             .background(

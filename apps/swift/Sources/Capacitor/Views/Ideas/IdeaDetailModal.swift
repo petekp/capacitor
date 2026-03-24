@@ -19,14 +19,14 @@ struct IdeaDetailOverlay: View {
             // Main content - centered
             VStack(alignment: .leading, spacing: 24) {
                 Text(idea.title)
-                    .font(.system(size: 28, weight: .semibold))
+                    .font(AppTypography.pageTitle.weight(.semibold))
                     .foregroundColor(.white)
                     .lineLimit(4)
 
                 if !idea.description.isEmpty {
                     Text(idea.description)
-                        .font(.system(size: 18, weight: .regular))
-                        .foregroundColor(.white.opacity(0.8))
+                        .font(AppTypography.sectionTitle.weight(.regular))
+                        .foregroundColor(.white.opacity(0.9))
                         .lineSpacing(4)
                         .lineLimit(12)
                 }
@@ -58,8 +58,8 @@ struct IdeaDetailOverlay: View {
                 HStack {
                     // Bottom-left: Timestamp
                     Text("Added \(formatRelativeDate(idea.added))")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(.white.opacity(0.35))
+                        .font(AppTypography.bodyMedium)
+                        .foregroundColor(.white.opacity(0.4))
                         .padding(Layout.cornerPadding)
 
                     Spacer()
@@ -71,7 +71,7 @@ struct IdeaDetailOverlay: View {
                                     Image(systemName: "bolt.fill")
                                         .font(.system(size: 14, weight: .medium))
                                     Text("Delegate")
-                                        .font(.system(size: 14, weight: .medium))
+                                        .font(AppTypography.bodyMedium)
                                 }
                                 .foregroundColor(.black.opacity(0.85))
                                 .padding(.horizontal, 16)
@@ -89,7 +89,7 @@ struct IdeaDetailOverlay: View {
                                 Image(systemName: "trash")
                                     .font(.system(size: 14, weight: .medium))
                                 Text("Remove")
-                                    .font(.system(size: 14, weight: .medium))
+                                    .font(AppTypography.bodyMedium)
                             }
                             .foregroundColor(.red.opacity(0.8))
                             .padding(.horizontal, 16)

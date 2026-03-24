@@ -17,15 +17,6 @@ struct ProjectDetailView: View {
         ZStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    HStack {
-                        BackButton(title: "Projects") {
-                            appState.showProjectList()
-                        }
-                        .accessibilityIdentifier(AccessibilityIdentifiers.backProjectsIdentifier)
-
-                        Spacer()
-                    }
-
                     Text(project.name)
                         .font(AppTypography.pageTitle.monospaced())
                         .foregroundColor(.white)
@@ -102,7 +93,7 @@ struct ProjectDetailView: View {
                     Spacer()
                 }
                 .padding(.horizontal, 16)
-                .padding(.top, floatingMode ? 12 : 16)
+                .padding(.top, floatingMode ? 44 : 12)
                 .padding(.bottom, floatingMode ? 64 : 16)
             }
             .blur(radius: isModalOpen ? 8 : 0)
@@ -157,7 +148,7 @@ struct DetailSectionLabel: View {
             Text(title)
                 .font(AppTypography.label.weight(.bold))
                 .tracking(2)
-                .foregroundColor(.white.opacity(0.45))
+                .foregroundColor(.white.opacity(0.4))
         }
     }
 }
@@ -175,7 +166,7 @@ struct DescriptionSection: View {
             if let description {
                 Text(description)
                     .font(AppTypography.body)
-                    .foregroundColor(.white.opacity(0.6))
+                    .foregroundColor(.white.opacity(0.55))
                     .lineLimit(4)
                     .fixedSize(horizontal: false, vertical: true)
             }

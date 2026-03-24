@@ -514,7 +514,7 @@ struct SectionHeader: View {
             Text(title.uppercased())
                 .font(AppTypography.label.weight(.medium))
                 .tracking(0.8)
-                .foregroundColor(.white.opacity(0.45))
+                .foregroundColor(.white.opacity(0.4))
 
             if count > 1 {
                 Text("(\(count))")
@@ -544,7 +544,7 @@ struct PausedSectionHeader: View {
                 Text("HIDDEN")
                     .font(AppTypography.label.weight(.medium))
                     .tracking(0.8)
-                    .foregroundColor(.white.opacity(0.45))
+                    .foregroundColor(.white.opacity(0.4))
 
                 if count > 1 {
                     Text("(\(count))")
@@ -850,11 +850,11 @@ struct EmptyProjectsView: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(suggestion.name)
-                        .font(.system(size: 13, weight: .medium))
+                        .font(AppTypography.bodyMedium)
                         .foregroundColor(.white.opacity(isSelected ? 0.9 : isHovered ? 0.7 : 0.55))
 
                     Text(suggestion.displayPath)
-                        .font(.system(size: 11, design: .monospaced))
+                        .font(AppTypography.cardSubtitle.monospaced())
                         .foregroundColor(.white.opacity(isSelected ? 0.4 : isHovered ? 0.3 : 0.25))
                         .lineLimit(1)
                         .truncationMode(.middle)

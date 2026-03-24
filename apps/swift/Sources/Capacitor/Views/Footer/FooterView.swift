@@ -132,7 +132,7 @@ private struct BrowseProjectsButton: View {
     var body: some View {
         Button(action: action) {
             Text("Browse")
-                .font(.system(size: 12, weight: .semibold))
+                .font(AppTypography.labelMedium.weight(.semibold))
                 .foregroundColor(.white.opacity(isHovered ? 0.9 : 0.55))
                 .padding(.horizontal, 16)
                 .padding(.vertical, 7)
@@ -166,7 +166,7 @@ private struct ConnectProjectsCTAButton: View {
     var body: some View {
         Button(action: action) {
             Text(count > 1 ? "Connect \(count) Projects" : "Connect Project")
-                .font(.system(size: 12, weight: .semibold))
+                .font(AppTypography.labelMedium.weight(.semibold))
                 .foregroundColor(.white.opacity(isHovered ? 1.0 : 0.9))
                 .padding(.horizontal, 20)
                 .padding(.vertical, 8)

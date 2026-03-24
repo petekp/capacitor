@@ -153,8 +153,8 @@ struct ContentView: View {
                     .foregroundStyle(Color.brand.opacity(0.8))
 
                 Text("Drop to connect projects")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.8))
+                    .font(AppTypography.bodyMedium)
+                    .foregroundStyle(.white.opacity(0.9))
             }
         }
         .allowsHitTesting(false)

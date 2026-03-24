@@ -38,7 +38,7 @@ struct ToastView: View {
                 .foregroundColor(toast.isError ? .red.opacity(0.9) : .green.opacity(0.9))
 
             Text(toast.message)
-                .font(.system(size: 12, weight: .medium))
+                .font(AppTypography.labelMedium)
                 .foregroundColor(.white.opacity(0.9))
         }
         .padding(.horizontal, 14)

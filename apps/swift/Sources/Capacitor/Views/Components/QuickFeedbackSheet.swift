@@ -23,7 +23,7 @@ struct QuickFeedbackSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Feedback")
-                .font(.system(size: 17, weight: .semibold))
+                .font(AppTypography.onboardingHeading)
 
             VStack(alignment: .leading, spacing: 6) {
                 StockFeedbackTextArea(text: $draft.summary)
@@ -31,7 +31,7 @@ struct QuickFeedbackSheet: View {
             }
 
             Toggle("Open a GitHub issue (optional)", isOn: $openGitHubIssue)
-                .font(.system(size: 12))
+                .font(AppTypography.bodySecondary)
                 .toggleStyle(.checkbox)
                 .foregroundStyle(.secondary)
 

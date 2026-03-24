@@ -26,7 +26,7 @@ struct CaptureImageView: View {
             HStack(spacing: 8) {
                 Text(label)
                     .font(AppTypography.caption.weight(.medium))
-                    .foregroundColor(.white.opacity(0.65))
+                    .foregroundColor(.white.opacity(0.7))
 
                 if hasMermaidSource {
                     Button(action: copyMermaidSource) {
@@ -116,7 +116,7 @@ struct CaptureImageView: View {
             HStack {
                 Text(label)
                     .font(AppTypography.cardTitle)
-                    .foregroundColor(.white.opacity(0.88))
+                    .foregroundColor(.white.opacity(0.9))
                 Spacer()
                 Button("Close") { showFullSize = false }
                     .keyboardShortcut(.escape)

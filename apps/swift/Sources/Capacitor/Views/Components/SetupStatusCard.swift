@@ -55,7 +55,7 @@ struct SetupStatusCard: View {
 
                 Text(headerMessage)
                     .font(AppTypography.caption)
-                    .foregroundColor(.white.opacity(0.8))
+                    .foregroundColor(.white.opacity(0.9))
 
                 Spacer()
 
@@ -150,7 +150,7 @@ struct SetupStatusCard: View {
                 .foregroundColor(.white.opacity(0.4))
                 .frame(width: 55, alignment: .leading)
             Text(value)
-                .font(.system(size: 10, design: .monospaced))
+                .font(AppTypography.monoCaption)
                 .foregroundColor(.white.opacity(0.5))
                 .lineLimit(1)
                 .truncationMode(.middle)
@@ -199,7 +199,7 @@ struct SetupStatusCard: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(message)
                 .font(AppTypography.captionSmall)
-                .foregroundColor(.white.opacity(0.58))
+                .foregroundColor(.white.opacity(0.55))
         }
     }
 
