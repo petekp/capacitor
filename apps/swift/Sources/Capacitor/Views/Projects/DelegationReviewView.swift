@@ -22,13 +22,6 @@ struct DelegationReviewView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                HStack {
-                    BackButton(title: "Projects") {
-                        appState.showProjectList()
-                    }
-                    Spacer()
-                }
-
                 VStack(alignment: .leading, spacing: 8) {
                     Text(project.name)
                         .font(AppTypography.pageTitle.monospaced())
@@ -69,7 +62,7 @@ struct DelegationReviewView: View {
                 }
             }
             .padding(.horizontal, 16)
-            .padding(.top, floatingMode ? 12 : 16)
+            .padding(.top, floatingMode ? 44 : 12)
             .padding(.bottom, floatingMode ? 64 : 16)
         }
         .accessibilityIdentifier(AccessibilityIdentifiers.delegationReviewIdentifier)

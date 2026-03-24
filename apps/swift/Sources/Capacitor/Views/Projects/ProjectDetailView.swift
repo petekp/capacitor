@@ -17,15 +17,6 @@ struct ProjectDetailView: View {
         ZStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    HStack {
-                        BackButton(title: "Projects") {
-                            appState.showProjectList()
-                        }
-                        .accessibilityIdentifier(AccessibilityIdentifiers.backProjectsIdentifier)
-
-                        Spacer()
-                    }
-
                     Text(project.name)
                         .font(AppTypography.pageTitle.monospaced())
                         .foregroundColor(.white)
@@ -102,7 +93,7 @@ struct ProjectDetailView: View {
                     Spacer()
                 }
                 .padding(.horizontal, 16)
-                .padding(.top, floatingMode ? 12 : 16)
+                .padding(.top, floatingMode ? 44 : 12)
                 .padding(.bottom, floatingMode ? 64 : 16)
             }
             .blur(radius: isModalOpen ? 8 : 0)

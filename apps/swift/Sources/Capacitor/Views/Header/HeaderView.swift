@@ -21,6 +21,7 @@ struct HeaderView: View {
                     BackButton(title: "Projects") {
                         appState.showProjectList()
                     }
+                    .accessibilityIdentifier(AccessibilityIdentifiers.backProjectsIdentifier)
                     .transition(.opacity.animation(.easeInOut(duration: 0.15)))
                 }
 
