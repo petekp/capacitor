@@ -25,12 +25,14 @@ const MAX_BODY_BYTES: u64 = 1_024 * 1_024;
 
 struct RuntimeServerState {
     bootstrap: Option<RuntimeServiceBootstrap>,
+    home_dir: PathBuf,
     runtime: Option<Arc<CoreRuntime>>,
 }
 
 impl RuntimeServerState {
     fn new(port: u16) -> Result<Self, String> {
         let bootstrap = RuntimeServiceBootstrap::from_env(port)?;
+        let home_dir = dirs::home_dir().ok_or("Cannot determine home directory")?;
         let artifact_path = runtime_artifact_path()?;
         let runtime =
             CoreRuntime::new_with_snapshot_file(artifact_path.to_string_lossy().to_string())
@@ -39,6 +41,7 @@ impl RuntimeServerState {
 
         Ok(Self {
             bootstrap,
+            home_dir,
             runtime: Some(runtime),
         })
     }
@@ -58,10 +61,7 @@ pub fn run(port: u16) -> Result<(), String> {
     let _runtime_service_guard = runtime_service
         .bootstrap
         .as_ref()
-        .map(|bootstrap| {
-            let home = dirs::home_dir().ok_or("Cannot determine home directory")?;
-            bootstrap.write_token_file(&home)
-        })
+        .map(|bootstrap| bootstrap.write_token_file(&runtime_service.home_dir))
         .transpose()?;
 
     // tiny_http::Server::incoming_requests() blocks until a request arrives
@@ -298,8 +298,16 @@ fn handle_runtime_mutate_run(mut request: tiny_http::Request, state: &RuntimeSer
         }
     };
 
+    let command_clone = command.clone();
     match runtime.mutate_run(command) {
-        Ok(outcome) => respond_json(request, 200, &outcome),
+        Ok(outcome) => {
+            crate::checkpoint_bridge_relay::relay_decision(
+                &state.home_dir,
+                &command_clone,
+                &outcome,
+            );
+            respond_json(request, 200, &outcome);
+        }
         Err(error) => {
             tracing::warn!(error = %error, "Runtime run mutation request failed");
             let _ = request.respond(json_error(500, "runtime run mutation failed"));

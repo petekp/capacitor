@@ -8,6 +8,8 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::time::Duration;
 
+use crate::domain::{CheckpointKind, MediaArtifact, MermaidSource};
+
 // ---------------------------------------------------------------------------
 // Errors
 // ---------------------------------------------------------------------------
@@ -137,10 +139,29 @@ pub struct InteractiveResponse {
     pub body: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GateCheckpointContext {
+    pub gate_id: String,
+    pub gate_type: String,
+    pub phase_id: String,
+    pub checkpoint_kind: CheckpointKind,
+    pub checkpoint_title: String,
+    pub checkpoint_summary: String,
+    pub manifest_path: PathBuf,
+    pub media_artifacts: Vec<MediaArtifact>,
+    pub mermaid_sources: Vec<MermaidSource>,
+    pub prompt_message: String,
+}
+
 /// Boundary for explicit human-in-the-loop interaction.
 pub trait InteractiveIO {
     fn emit_prompt(&self, prompt: &InteractivePrompt);
     fn capture_response(&self) -> InteractiveResponse;
+    fn emit_gate_checkpoint(&self, context: &GateCheckpointContext) {
+        self.emit_prompt(&InteractivePrompt {
+            message: context.prompt_message.clone(),
+        });
+    }
 }
 
 // ---------------------------------------------------------------------------

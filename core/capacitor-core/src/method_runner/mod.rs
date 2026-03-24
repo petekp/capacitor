@@ -5,6 +5,8 @@
 
 pub mod adapter_config;
 pub mod adapters;
+pub mod checkpoint_bridge;
+pub mod checkpoint_bridge_protocol;
 pub mod checkpoint_manifest;
 pub mod definition;
 pub mod events;

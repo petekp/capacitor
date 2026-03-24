@@ -5,12 +5,145 @@
 
 mod common;
 
+use capacitor_core::method_runner::checkpoint_bridge_protocol::{
+    decision_path, pending_path, write_json_atomic, CheckpointBridgeDecision,
+    CheckpointBridgePending, CHECKPOINT_BRIDGE_PROTOCOL_VERSION,
+};
 use common::{
     free_port, http_request, http_request_with_headers, raw_http_request, read_snapshot, run_cwd,
     unique_temp_dir, ServerGuard,
 };
 use std::fs;
 use std::net::TcpListener;
+
+fn create_run_with_active_checkpoint(port: u16, authorization: &str, run_id: &str) -> String {
+    let create_payload = serde_json::json!({
+        "kind": "create",
+        "project_path": "/tmp/runtime-service-project",
+        "run_id": run_id,
+        "method_id": "execution_only",
+        "involvement": null,
+        "checkpoint_kind": null,
+        "checkpoint_title": null,
+        "checkpoint_summary": null,
+        "checkpoint_brief_path": null,
+        "checkpoint_manifest_path": null,
+        "checkpoint_media_artifacts": [],
+        "checkpoint_mermaid_sources": [],
+        "capture_url": null,
+        "checkpoint_id": null,
+        "capture_request_id": null,
+        "client_id": null,
+        "observed_capture_url": null,
+        "capture_failure_reason": null,
+        "decision_action": null,
+        "decision_note": null,
+        "session_id": null,
+        "delegation_worker_id": null,
+        "completed_media_artifacts": []
+    });
+    let (create_status, create_body) = http_request_with_headers(
+        port,
+        "POST",
+        "/runtime/run/mutate",
+        &[("Authorization", authorization)],
+        Some(&create_payload.to_string()),
+    );
+    assert_eq!(create_status, 200, "body: {create_body}");
+
+    let emit_payload = serde_json::json!({
+        "kind": "emit_checkpoint",
+        "project_path": "/tmp/runtime-service-project",
+        "run_id": run_id,
+        "method_id": null,
+        "involvement": null,
+        "checkpoint_kind": "implementation_milestone",
+        "checkpoint_title": "Checkpoint capture",
+        "checkpoint_summary": null,
+        "checkpoint_brief_path": null,
+        "checkpoint_manifest_path": null,
+        "checkpoint_media_artifacts": [],
+        "checkpoint_mermaid_sources": [],
+        "capture_url": "http://localhost:3000",
+        "checkpoint_id": null,
+        "capture_request_id": null,
+        "client_id": null,
+        "observed_capture_url": null,
+        "capture_failure_reason": null,
+        "decision_action": null,
+        "decision_note": null,
+        "session_id": null,
+        "delegation_worker_id": null,
+        "completed_media_artifacts": []
+    });
+    let (emit_status, emit_body) = http_request_with_headers(
+        port,
+        "POST",
+        "/runtime/run/mutate",
+        &[("Authorization", authorization)],
+        Some(&emit_payload.to_string()),
+    );
+    assert_eq!(emit_status, 200, "body: {emit_body}");
+
+    let (snapshot_status, snapshot_body) = http_request_with_headers(
+        port,
+        "GET",
+        "/runtime/snapshot",
+        &[("Authorization", authorization)],
+        None,
+    );
+    assert_eq!(snapshot_status, 200, "body: {snapshot_body}");
+
+    let snapshot_json: serde_json::Value =
+        serde_json::from_str(&snapshot_body).expect("runtime snapshot json");
+    snapshot_json["runs"][0]["active_checkpoint"]["id"]
+        .as_str()
+        .expect("checkpoint id")
+        .to_string()
+}
+
+fn submit_decision(
+    port: u16,
+    authorization: &str,
+    run_id: &str,
+    checkpoint_id: &str,
+    action: &str,
+    note: Option<&str>,
+) -> (u16, String) {
+    let decision_payload = serde_json::json!({
+        "kind": "submit_decision",
+        "project_path": "/tmp/runtime-service-project",
+        "run_id": run_id,
+        "method_id": null,
+        "involvement": null,
+        "checkpoint_kind": null,
+        "checkpoint_title": null,
+        "checkpoint_summary": null,
+        "checkpoint_brief_path": null,
+        "checkpoint_manifest_path": null,
+        "checkpoint_media_artifacts": [],
+        "checkpoint_mermaid_sources": [],
+        "capture_url": null,
+        "checkpoint_id": checkpoint_id,
+        "capture_request_id": null,
+        "client_id": null,
+        "observed_capture_url": null,
+        "capture_failure_reason": null,
+        "decision_action": action,
+        "decision_note": note,
+        "session_id": null,
+        "delegation_worker_id": null,
+        "completed_media_artifacts": []
+    });
+
+    http_request_with_headers(
+        port,
+        "POST",
+        "/runtime/run/mutate",
+        &[("Authorization", authorization)],
+        Some(&decision_payload.to_string()),
+    )
+}
 
 fn seeded_snapshot_without_routing() -> serde_json::Value {
     serde_json::json!({
@@ -598,6 +731,216 @@ fn runtime_run_mutation_endpoint_updates_shared_runtime_snapshot() {
     assert_eq!(
         final_snapshot_json["runs"][0]["active_checkpoint"]["media_artifacts"][0]["path"].as_str(),
         Some("/tmp/runtime-service-project/captures/checkpoint-1.png")
+    );
+}
+
+#[test]
+fn runtime_run_submit_decision_writes_checkpoint_bridge_file_when_pending_marker_exists() {
+    let temp_dir = unique_temp_dir("serve-runtime-run-decision-bridge");
+    let snapshot_path = temp_dir.join("snapshot.json");
+    let auth_token = "decision-bridge-token";
+    let run_id = "run-decision-1";
+
+    let (_server, port) =
+        ServerGuard::spawn_service_bootstrap_ready(&temp_dir, &snapshot_path, auth_token);
+
+    let authorization = format!("Bearer {auth_token}");
+    let checkpoint_id = create_run_with_active_checkpoint(port, &authorization, run_id);
+
+    let pending = CheckpointBridgePending {
+        version: CHECKPOINT_BRIDGE_PROTOCOL_VERSION,
+        project_path: "/tmp/runtime-service-project".to_string(),
+        run_id: run_id.to_string(),
+        checkpoint_id: checkpoint_id.clone(),
+        phase_id: "phase-001".to_string(),
+        gate_type: "approval".to_string(),
+        manifest_path: "/tmp/runtime-service-project/.capacitor/checkpoints/gate.json".to_string(),
+        created_at: "2026-03-24T12:00:00Z".to_string(),
+    };
+    let pending_file = pending_path(&temp_dir, run_id, &checkpoint_id);
+    write_json_atomic(&pending_file, &pending).expect("write pending marker");
+
+    let (decision_status, decision_body) = submit_decision(
+        port,
+        &authorization,
+        run_id,
+        &checkpoint_id,
+        "approve",
+        Some("Ship it"),
+    );
+    assert_eq!(decision_status, 200, "body: {decision_body}");
+
+    let decision_file = decision_path(&temp_dir, run_id, &checkpoint_id);
+    assert!(
+        decision_file.exists(),
+        "decision file should exist at {decision_file:?}"
+    );
+    let decision_payload = fs::read_to_string(&decision_file).expect("read decision file");
+    let decision: CheckpointBridgeDecision =
+        serde_json::from_str(&decision_payload).expect("parse decision file");
+    assert_eq!(decision.version, CHECKPOINT_BRIDGE_PROTOCOL_VERSION);
+    assert_eq!(decision.run_id, run_id);
+    assert_eq!(decision.checkpoint_id, checkpoint_id);
+    assert_eq!(decision.action, "approve");
+    assert_eq!(decision.note.as_deref(), Some("Ship it"));
+    assert!(
+        !pending_file.exists(),
+        "pending marker should be removed after relay"
+    );
+}
+
+#[test]
+fn runtime_run_submit_decision_is_noop_without_checkpoint_bridge_pending_marker() {
+    let temp_dir = unique_temp_dir("serve-runtime-run-decision-noop");
+    let snapshot_path = temp_dir.join("snapshot.json");
+    let auth_token = "decision-noop-token";
+    let run_id = "run-decision-2";
+
+    let (_server, port) =
+        ServerGuard::spawn_service_bootstrap_ready(&temp_dir, &snapshot_path, auth_token);
+
+    let authorization = format!("Bearer {auth_token}");
+    let checkpoint_id = create_run_with_active_checkpoint(port, &authorization, run_id);
+
+    let (decision_status, decision_body) = submit_decision(
+        port,
+        &authorization,
+        run_id,
+        &checkpoint_id,
+        "request_changes",
+        Some("Needs one more pass"),
+    );
+    assert_eq!(decision_status, 200, "body: {decision_body}");
+
+    let decision_file = decision_path(&temp_dir, run_id, &checkpoint_id);
+    assert!(
+        !decision_file.exists(),
+        "relay should not write a decision without a pending marker"
+    );
+}
+
+#[test]
+fn runtime_run_submit_decision_does_not_write_checkpoint_bridge_file_when_mutation_is_rejected() {
+    let temp_dir = unique_temp_dir("serve-runtime-run-decision-rejected");
+    let snapshot_path = temp_dir.join("snapshot.json");
+    let auth_token = "decision-rejected-token";
+    let run_id = "run-decision-3";
+
+    let (_server, port) =
+        ServerGuard::spawn_service_bootstrap_ready(&temp_dir, &snapshot_path, auth_token);
+
+    let authorization = format!("Bearer {auth_token}");
+    let checkpoint_id = create_run_with_active_checkpoint(port, &authorization, run_id);
+
+    let pending = CheckpointBridgePending {
+        version: CHECKPOINT_BRIDGE_PROTOCOL_VERSION,
+        project_path: "/tmp/runtime-service-project".to_string(),
+        run_id: run_id.to_string(),
+        checkpoint_id: checkpoint_id.clone(),
+        phase_id: "phase-001".to_string(),
+        gate_type: "approval".to_string(),
+        manifest_path: "/tmp/runtime-service-project/.capacitor/checkpoints/gate.json".to_string(),
+        created_at: "2026-03-24T12:00:00Z".to_string(),
+    };
+    let pending_file = pending_path(&temp_dir, run_id, &checkpoint_id);
+    write_json_atomic(&pending_file, &pending).expect("write pending marker");
+
+    let (decision_status, decision_body) = submit_decision(
+        port,
+        &authorization,
+        run_id,
+        &checkpoint_id,
+        "",
+        Some("Ship it"),
+    );
+    assert_eq!(decision_status, 200, "body: {decision_body}");
+
+    let outcome: serde_json::Value =
+        serde_json::from_str(&decision_body).expect("parse mutation outcome");
+    assert_eq!(
+        outcome["ok"].as_bool(),
+        Some(false),
+        "body: {decision_body}"
+    );
+
+    let decision_file = decision_path(&temp_dir, run_id, &checkpoint_id);
+    assert!(
+        !decision_file.exists(),
+        "relay should not write a decision for rejected mutations"
+    );
+    assert!(
+        pending_file.exists(),
+        "pending marker should remain when relay does not run"
+    );
+}
+
+#[test]
+fn runtime_run_submit_decision_does_not_write_checkpoint_bridge_file_when_unauthorized() {
+    let temp_dir = unique_temp_dir("serve-runtime-run-decision-unauthorized");
+    let snapshot_path = temp_dir.join("snapshot.json");
+    let auth_token = "decision-unauthorized-token";
+    let run_id = "run-decision-4";
+
+    let (_server, port) =
+        ServerGuard::spawn_service_bootstrap_ready(&temp_dir, &snapshot_path, auth_token);
+
+    let authorization = format!("Bearer {auth_token}");
+    let checkpoint_id = create_run_with_active_checkpoint(port, &authorization, run_id);
+
+    let pending = CheckpointBridgePending {
+        version: CHECKPOINT_BRIDGE_PROTOCOL_VERSION,
+        project_path: "/tmp/runtime-service-project".to_string(),
+        run_id: run_id.to_string(),
+        checkpoint_id: checkpoint_id.clone(),
+        phase_id: "phase-001".to_string(),
+        gate_type: "approval".to_string(),
+        manifest_path: "/tmp/runtime-service-project/.capacitor/checkpoints/gate.json".to_string(),
+        created_at: "2026-03-24T12:00:00Z".to_string(),
+    };
+    let pending_file = pending_path(&temp_dir, run_id, &checkpoint_id);
+    write_json_atomic(&pending_file, &pending).expect("write pending marker");
+
+    let decision_payload = serde_json::json!({
+        "kind": "submit_decision",
+        "project_path": "/tmp/runtime-service-project",
+        "run_id": run_id,
+        "method_id": null,
+        "involvement": null,
+        "checkpoint_kind": null,
+        "checkpoint_title": null,
+        "checkpoint_summary": null,
+        "checkpoint_brief_path": null,
+        "checkpoint_manifest_path": null,
+        "checkpoint_media_artifacts": [],
+        "checkpoint_mermaid_sources": [],
+        "capture_url": null,
+        "checkpoint_id": checkpoint_id,
+        "capture_request_id": null,
+        "client_id": null,
+        "observed_capture_url": null,
+        "capture_failure_reason": null,
+        "decision_action": "approve",
+        "decision_note": "Ship it",
+        "session_id": null,
+        "delegation_worker_id": null,
+        "completed_media_artifacts": []
+    });
+    let (decision_status, decision_body) = http_request(
+        port,
+        "POST",
+        "/runtime/run/mutate",
+        Some(&decision_payload.to_string()),
+    );
+    assert_eq!(decision_status, 401, "body: {decision_body}");
+
+    let decision_file = decision_path(&temp_dir, run_id, &checkpoint_id);
+    assert!(
+        !decision_file.exists(),
+        "relay should not write a decision for unauthorized requests"
+    );
+    assert!(
+        pending_file.exists(),
+        "pending marker should remain when authorization fails"
     );
 }
 

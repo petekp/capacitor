@@ -103,11 +103,17 @@ impl CheckpointManifest {
 
     /// Write the manifest to `{relay_root}/adapter/review-manifest.json`.
     pub fn write_to(&self, relay_root: &std::path::Path) -> std::io::Result<()> {
-        let adapter_dir = relay_root.join("adapter");
-        std::fs::create_dir_all(&adapter_dir)?;
+        self.write_to_path(&relay_root.join("adapter").join("review-manifest.json"))
+    }
+
+    /// Write the manifest directly to the provided file path.
+    pub fn write_to_path(&self, path: &std::path::Path) -> std::io::Result<()> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
         let json = self
             .to_json_pretty()
             .map_err(|e| std::io::Error::other(e.to_string()))?;
-        std::fs::write(adapter_dir.join("review-manifest.json"), json)
+        std::fs::write(path, json)
     }
 }

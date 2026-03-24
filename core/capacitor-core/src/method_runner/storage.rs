@@ -119,6 +119,24 @@ impl MethodRunPaths {
             .join(format!("{}.json", name.as_ref()))
     }
 
+    /// Returns `.method/gates/<phase>/<gate>/`.
+    pub fn gate_dir(&self, phase_id: impl AsRef<str>, gate_id: impl AsRef<str>) -> PathBuf {
+        self.method_root()
+            .join("gates")
+            .join(phase_id.as_ref())
+            .join(gate_id.as_ref())
+    }
+
+    /// Returns `.method/gates/<phase>/<gate>/review-manifest.json`.
+    pub fn gate_manifest_path(
+        &self,
+        phase_id: impl AsRef<str>,
+        gate_id: impl AsRef<str>,
+    ) -> PathBuf {
+        self.gate_dir(phase_id, gate_id)
+            .join("review-manifest.json")
+    }
+
     fn format_attempt(attempt: u32) -> String {
         format!("{attempt:03}")
     }

@@ -7,7 +7,8 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 use crate::domain::{
-    AppSnapshot, IngestHookEventCommand, IngestShellSignalCommand, MutationOutcome, SCHEMA_VERSION,
+    AppSnapshot, IngestHookEventCommand, IngestShellSignalCommand, MutateRunCommand,
+    MutationOutcome, SCHEMA_VERSION,
 };
 
 pub const RUNTIME_SERVICE_BOOTSTRAP_ENV: &str = "CAPACITOR_RUNTIME_SERVICE_BOOTSTRAP";
@@ -167,6 +168,10 @@ impl RuntimeServiceEndpoint {
         command: &IngestShellSignalCommand,
     ) -> Result<MutationOutcome, String> {
         self.post_json("/runtime/ingest/shell-signal", command)
+    }
+
+    pub fn mutate_run(&self, command: &MutateRunCommand) -> Result<MutationOutcome, String> {
+        self.post_json("/runtime/run/mutate", command)
     }
 
     fn get_json<Response>(&self, path: &str) -> Result<Response, String>

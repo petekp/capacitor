@@ -7,6 +7,7 @@
 //! - `serve`: local runtime service — receives hook events and serves runtime reads
 //! - `cwd`: Shell CWD tracking (called by shell precmd hooks)
 
+mod checkpoint_bridge_relay;
 mod cwd;
 mod handle;
 mod hook_types;

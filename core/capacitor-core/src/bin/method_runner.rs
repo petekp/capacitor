@@ -8,11 +8,19 @@ use capacitor_core::method_runner::adapter_config::AdapterConfig;
 use capacitor_core::method_runner::adapters::{
     FakeInteractiveIO, FakePromptBuilder, FakeWorkerDispatcher, FileInteractiveIO,
 };
+use capacitor_core::method_runner::checkpoint_bridge::BridgeInteractiveIO;
 use capacitor_core::method_runner::definition::DefinitionSource;
 use capacitor_core::method_runner::executor::{execute_normalize, execute_run};
 use capacitor_core::method_runner::prompt_builder_adapter::ShellPromptBuilder;
 use capacitor_core::method_runner::resume::resume_run;
 use capacitor_core::method_runner::worker_dispatch_adapter::CodexWorkerDispatcher;
+use capacitor_core::runtime_service::{RuntimeServiceEndpoint, RUNTIME_SERVICE_DEFAULT_PORT};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct BridgeOptions {
+    run_id: String,
+    project_path: PathBuf,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CommandKind {
@@ -54,6 +62,8 @@ struct ParsedOptions {
     root: Option<PathBuf>,
     real_adapters: bool,
     interactive_mode: InteractiveMode,
+    bridge_run_id: Option<String>,
+    bridge_project_path: Option<PathBuf>,
 }
 
 #[derive(Debug)]
@@ -63,6 +73,7 @@ struct Command {
     root: PathBuf,
     real_adapters: bool,
     interactive_mode: InteractiveMode,
+    bridge: Option<BridgeOptions>,
 }
 
 fn main() -> ExitCode {
@@ -89,7 +100,14 @@ fn main() -> ExitCode {
                     definition_path: command.definition.expect("--definition required"),
                     execution_root: command.root.clone(),
                 };
-                let interactive_io = make_interactive_io(&command.interactive_mode);
+                let interactive_io =
+                    match make_interactive_io(&command.interactive_mode, command.bridge.as_ref()) {
+                        Ok(interactive_io) => interactive_io,
+                        Err(error) => {
+                            eprintln!("error: {error}");
+                            return ExitCode::FAILURE;
+                        }
+                    };
                 if command.real_adapters {
                     let script = match find_compose_script() {
                         Ok(p) => p,
@@ -166,7 +184,14 @@ fn main() -> ExitCode {
                 }
             }
             CommandKind::Resume => {
-                let interactive_io = make_interactive_io(&command.interactive_mode);
+                let interactive_io =
+                    match make_interactive_io(&command.interactive_mode, command.bridge.as_ref()) {
+                        Ok(interactive_io) => interactive_io,
+                        Err(error) => {
+                            eprintln!("error: {error}");
+                            return ExitCode::FAILURE;
+                        }
+                    };
                 if command.real_adapters {
                     let script = match find_compose_script() {
                         Ok(p) => p,
@@ -273,24 +298,39 @@ where
     let kind = CommandKind::parse(&subcommand)
         .ok_or_else(|| format!("unsupported subcommand: {subcommand}"))?;
 
-    let options = parse_options(args)?;
-    let root = options
-        .root
-        .ok_or_else(|| format!("missing required --root for {}", kind.as_str()))?;
+    let ParsedOptions {
+        definition,
+        root,
+        real_adapters,
+        interactive_mode,
+        bridge_run_id,
+        bridge_project_path,
+    } = parse_options(args)?;
+    let root = root.ok_or_else(|| format!("missing required --root for {}", kind.as_str()))?;
 
-    if matches!(kind, CommandKind::Normalize | CommandKind::Run) && options.definition.is_none() {
+    if bridge_project_path.is_some() && bridge_run_id.is_none() {
+        return Err("--bridge-project-path requires --bridge-run-id".to_string());
+    }
+
+    if matches!(kind, CommandKind::Normalize | CommandKind::Run) && definition.is_none() {
         return Err(format!(
             "missing required --definition for {}",
             kind.as_str()
         ));
     }
 
+    let bridge = bridge_run_id.map(|run_id| BridgeOptions {
+        run_id,
+        project_path: bridge_project_path.unwrap_or_else(|| root.clone()),
+    });
+
     Ok(Command {
         kind,
-        definition: options.definition,
+        definition,
         root,
-        real_adapters: options.real_adapters,
-        interactive_mode: options.interactive_mode,
+        real_adapters,
+        interactive_mode,
+        bridge,
     })
 }
 
@@ -328,6 +368,13 @@ where
                 let value = next_path_value(&mut args, "--response-dir")?;
                 parsed.interactive_mode = InteractiveMode::ResponseDir(value);
             }
+            "--bridge-run-id" => {
+                parsed.bridge_run_id = Some(next_string_value(&mut args, "--bridge-run-id")?);
+            }
+            "--bridge-project-path" => {
+                parsed.bridge_project_path =
+                    Some(next_path_value(&mut args, "--bridge-project-path")?);
+            }
             "--help" | "-h" | "help" => return Err("help requested".to_string()),
             _ => return Err(format!("unrecognized argument: {flag}")),
         }
@@ -344,6 +391,16 @@ where
         .next()
         .ok_or_else(|| format!("missing value for {flag}"))?;
     Ok(PathBuf::from(value))
+}
+
+fn next_string_value<I>(args: &mut I, flag: &str) -> Result<String, String>
+where
+    I: Iterator<Item = OsString>,
+{
+    args.next()
+        .ok_or_else(|| format!("missing value for {flag}"))?
+        .into_string()
+        .map_err(|_| format!("{flag} must be valid UTF-8"))
 }
 
 /// Find compose-prompt.sh: check COMPOSE_SCRIPT_PATH env, then relative to cargo manifest.
@@ -391,23 +448,45 @@ fn find_codex_binary() -> Result<PathBuf, String> {
 
 fn make_interactive_io(
     mode: &InteractiveMode,
-) -> Box<dyn capacitor_core::method_runner::adapters::InteractiveIO> {
-    match mode {
-        InteractiveMode::AutoApprove => Box::new(FakeInteractiveIO::new("approved")),
-        InteractiveMode::AutoReject => Box::new(FakeInteractiveIO::new("rejected")),
-        InteractiveMode::ResponseDir(dir) => Box::new(FileInteractiveIO::new(dir.clone())),
-    }
+    bridge: Option<&BridgeOptions>,
+) -> Result<Box<dyn capacitor_core::method_runner::adapters::InteractiveIO>, String> {
+    let fallback = match mode {
+        InteractiveMode::AutoApprove => Box::new(FakeInteractiveIO::new("approved"))
+            as Box<dyn capacitor_core::method_runner::adapters::InteractiveIO>,
+        InteractiveMode::AutoReject => Box::new(FakeInteractiveIO::new("rejected"))
+            as Box<dyn capacitor_core::method_runner::adapters::InteractiveIO>,
+        InteractiveMode::ResponseDir(dir) => Box::new(FileInteractiveIO::new(dir.clone()))
+            as Box<dyn capacitor_core::method_runner::adapters::InteractiveIO>,
+    };
+
+    let Some(bridge) = bridge else {
+        return Ok(fallback);
+    };
+
+    let home_dir = dirs::home_dir()
+        .ok_or_else(|| "bridge mode requires a detectable home directory".to_string())?;
+    let endpoint = RuntimeServiceEndpoint::discover(&home_dir, RUNTIME_SERVICE_DEFAULT_PORT)?
+        .ok_or_else(|| "bridge mode requires a reachable runtime service bootstrap".to_string())?;
+    Ok(Box::new(BridgeInteractiveIO::new(
+        endpoint,
+        bridge.project_path.clone(),
+        bridge.run_id.clone(),
+        home_dir,
+        fallback,
+    )))
 }
 
 fn usage() -> &'static str {
     "Usage:
   method-runner normalize --definition <path> --root <path>
-  method-runner run       --definition <path> --root <path> [--real] [--approve|--reject|--response-dir <path>]
-  method-runner resume    --root <path> [--real] [--approve|--reject|--response-dir <path>]
+  method-runner run       --definition <path> --root <path> [--real] [--approve|--reject|--response-dir <path>] [--bridge-run-id <run-id>] [--bridge-project-path <path>]
+  method-runner resume    --root <path> [--real] [--approve|--reject|--response-dir <path>] [--bridge-run-id <run-id>] [--bridge-project-path <path>]
 
 Flags:
-  --real            Use real subprocess adapters (ShellPromptBuilder + CodexWorkerDispatcher)
-  --approve         Auto-approve all interactive checkpoints (default)
-  --reject          Auto-reject all interactive checkpoints
-  --response-dir    Read checkpoint responses from JSON files in <path>"
+  --real                 Use real subprocess adapters (ShellPromptBuilder + CodexWorkerDispatcher)
+  --approve              Auto-approve all interactive checkpoints (default)
+  --reject               Auto-reject all interactive checkpoints
+  --response-dir         Read checkpoint responses from JSON files in <path>
+  --bridge-run-id        Enable runtime-service bridge mode for the given run id
+  --bridge-project-path  Override the bridge project path (defaults to --root)"
 }
