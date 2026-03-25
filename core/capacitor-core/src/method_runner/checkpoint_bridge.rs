@@ -1,3 +1,12 @@
+//! Bridge between synchronous method-runner gate checkpoints and async run-kernel reviews.
+//!
+//! `BridgeInteractiveIO` implements `InteractiveIO` by writing a pending marker to disk,
+//! posting an `EmitCheckpoint` mutation to the runtime service, then polling for a
+//! decision file written back by the `checkpoint_bridge_relay` in hud-hook.
+//! The design is fail-closed: validation failures, write errors, and mutation rejections
+//! all fall back to the interactive prompt without arming a gate_id.
+//! File format is defined in `checkpoint_bridge_protocol`.
+
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::thread;

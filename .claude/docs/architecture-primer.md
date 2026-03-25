@@ -31,6 +31,8 @@ Use `AGENT_CHANGELOG.md` only after the canonical read path when you need recent
 
 - Current system boundary or live ownership split: `docs/ARCHITECTURE.md`
 - Why the dedicated runtime service exists: `docs/architecture-decisions/004-dedicated-local-runtime-service.md`
+- Orchestration, checkpoints, and review surfaces: `docs/orchestrator/` (start with `checkpoint-bridge.md`)
+- Orchestrator terminology and disambiguation: `docs/orchestrator/terminology.md`
 - Recent migrations and retired seams to avoid reintroducing: `AGENT_CHANGELOG.md`
 - Runtime debugging workflow: `.claude/docs/debugging-guide.md`
 - Release mechanics: `.claude/docs/release-guide.md`
@@ -43,5 +45,5 @@ Use `AGENT_CHANGELOG.md` only after the canonical read path when you need recent
 - `docs/audits/`
 - `docs/plans/`
 - `docs/manual-qa/`
-- `docs/archive/architecture-history/`
+- `docs/archive/` (all subdirectories — retired docs preserved for history)
 

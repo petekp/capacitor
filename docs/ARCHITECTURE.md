@@ -37,6 +37,25 @@ Capacitor uses a dedicated local runtime service as its live application boundar
 - `GhosttyTerminalDriver` plus `GhosttyAutomationClient` own Ghostty's native routing and launch behavior.
 - `ITermTerminalDriver` and `TerminalAppTerminalDriver` own their TTY-based host focus and launch behavior, including typed failure mapping.
 
+## Orchestration and Checkpoints
+
+Capacitor supports two independent review flows that share a common window structure:
+
+- **Delegation review** — driven by `DelegationLoopManager` milestone files. Swift owns the delegation lifecycle: idea capture, worktree launch, milestone scanning, review presentation, decision submission, and resume prompts. Multi-round iteration is supported (request changes → new milestone → re-review).
+- **Run checkpoint review** — driven by runtime snapshot `runs` and `activeCheckpoint`. The checkpoint bridge (`checkpoint_bridge.rs`) connects method-runner gates to the run kernel, and `hud-hook` relays decisions back via file-based protocol. `AppState` auto-targets the oldest paused checkpoint.
+
+Both flows use `DelegationReviewManifest` as the shared decoder contract and present a left-pane/right-rail review window.
+
+Canonical documentation: `docs/orchestrator/`
+
+| Doc | Covers |
+|-----|--------|
+| `docs/orchestrator/checkpoint-bridge.md` | Gate→checkpoint→decision→unblock pipeline |
+| `docs/orchestrator/review-surfaces.md` | Shared review window contract |
+| `docs/orchestrator/appstate-checkpoint-policy.md` | AppState routing policy for both review flows |
+| `docs/orchestrator/terminology.md` | Normalized glossary |
+| `docs/orchestrator/idea-to-run-gap.md` | Current gaps between idea capture and method execution |
+
 ## Non-Goals
 
 - Reintroducing parallel runtime policy paths across Rust and Swift

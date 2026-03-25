@@ -1,3 +1,10 @@
+//! File protocol for the checkpoint bridge.
+//!
+//! Defines `CheckpointBridgePending` and `CheckpointBridgeDecision` JSON types and the
+//! filesystem layout under `~/.capacitor/runtime/checkpoint-bridge/<run_id>/`.
+//! `validate_path_component` guards against path traversal in run/checkpoint IDs.
+//! `write_json_atomic` ensures readers never see partial JSON (write-to-tmp then rename).
+
 use std::ffi::OsString;
 use std::io::Write;
 use std::path::{Path, PathBuf};

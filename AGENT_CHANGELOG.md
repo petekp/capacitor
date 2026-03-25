@@ -7,6 +7,24 @@
 
 Use this file only for recent migration context and retired seams that still matter for current agent work.
 
+## Recent Active Deltas
+
+### 2026-03-24 — Checkpoint Bridge Shipped + Documentation Sweep
+
+**Checkpoint bridge** (7 commits, `69dee75..3db10d1`): `BridgeInteractiveIO` bridges method-runner sync gates to the run kernel checkpoint system via file-based protocol. The bridge is fail-closed (all errors fall back to interactive prompt); the relay side in `hud-hook` is fail-open (known limitation — errors swallowed after HTTP mutation succeeds). Ship review hardened: path sanitization, poll timeout, decision action validation.
+
+Key files: `checkpoint_bridge.rs`, `checkpoint_bridge_protocol.rs` (capacitor-core), `checkpoint_bridge_relay.rs` (hud-hook), `RunCheckpointReviewWindow.swift`, `AppState.swift` (run checkpoint routing).
+
+**Documentation sweep**: 16 stale/superseded tracked docs retired to `docs/archive/`. 5 new canonical docs created under `docs/orchestrator/` (checkpoint-bridge, review-surfaces, appstate-checkpoint-policy, terminology, idea-to-run-gap). Module doc comments added to 3 Rust files. `ARCHITECTURE.md` and `architecture-primer.md` updated with orchestrator read path.
+
+## Stale Information Retired (2026-03-24)
+
+| Location | Retired To | Why |
+|----------|-----------|-----|
+| `docs/plans/orchestrator-status.md` | `docs/archive/orchestrator-history/` | Claimed request-changes is terminal (false since multi-round review shipped) |
+| `docs/method-runner-spec/step-6-closeout.md` | `docs/archive/method-runner-spec-history/` | Claimed real adapters deferred (false — `--real` flag wired to CLI) |
+| 14 additional review/process docs | `docs/archive/` | Superseded by amended-spec.md and execution-packet.md |
+
 ## Current Warning Surface
 
 - Swift no longer reconstructs terminal-app ranking from shell state during production activation.

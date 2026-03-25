@@ -1,3 +1,11 @@
+//! Relay for writing checkpoint bridge decision files after successful run mutations.
+//!
+//! Called from the `/runtime/run/mutate` handler when a `SubmitDecision` mutation succeeds.
+//! Reads the pending marker, writes a `CheckpointBridgeDecision` via the shared
+//! `checkpoint_bridge_protocol` format, then cleans up the pending file.
+//! Fail-open: all errors are logged via `tracing::warn` but silently swallowed so that
+//! a relay failure never blocks the mutation response path.
+
 use std::io::ErrorKind;
 use std::path::Path;
 
