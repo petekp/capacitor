@@ -1,0 +1,48 @@
+schema_version: "1"
+method:
+  id: shape_and_execute
+  version: "2026-03-24"
+  title: Shape & Execute
+  description: Align on approach before implementation.
+  defaults:
+    max_attempts: 2
+    completion_policy: all_complete
+  phases:
+    - id: shape
+      title: Shape
+      execution: serial
+      gate:
+        id: shape-gate
+        type: approval
+      steps:
+        - id: analyze
+          title: Analyze & Propose
+          action: dispatch
+          outputs:
+            proposal:
+              path: artifacts/proposal.md
+              type: markdown
+          dispatch:
+            instructions: >
+              Analyze the task and produce a proposal. Include problem
+              framing, approach, risks, and success criteria. This
+              proposal will be reviewed before implementation begins.
+
+    - id: execute
+      title: Execute
+      execution: serial
+      gate:
+        id: execute-gate
+        type: approval
+      steps:
+        - id: implement
+          title: Implement
+          action: dispatch
+          outputs:
+            implementation:
+              path: artifacts/implementation.md
+              type: markdown
+          dispatch:
+            instructions: >
+              Implement the approved proposal. Produce a summary of
+              what was built and any deviations from the proposal.

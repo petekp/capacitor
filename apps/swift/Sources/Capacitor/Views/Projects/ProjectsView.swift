@@ -289,6 +289,7 @@ struct ProjectsView: View {
             project: project,
             sessionState: sessionState,
             delegationState: appState.delegationState(for: project),
+            activeRunState: appState.activeRun(for: project),
             projectStatus: projectStatus,
             flashState: flashState,
             isActive: appState.activeProjectPath == project.path,

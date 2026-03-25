@@ -4,6 +4,8 @@ enum IdeaQueueActivity: Equatable {
     case generatingTitle
     case delegationWorking
     case reviewReady
+    case methodRunning(phaseName: String?)
+    case methodCheckpointReady
     case inProgress
 
     var label: String {
@@ -14,6 +16,14 @@ enum IdeaQueueActivity: Equatable {
             "Delegated and working"
         case .reviewReady:
             "Ready for review"
+        case let .methodRunning(phaseName):
+            if let phaseName {
+                "Running: \(phaseName)"
+            } else {
+                "Method running"
+            }
+        case .methodCheckpointReady:
+            "Checkpoint ready"
         case .inProgress:
             "In progress"
         }
@@ -27,6 +37,10 @@ enum IdeaQueueActivity: Equatable {
             "Delegated and working"
         case .reviewReady:
             "Delegation review ready"
+        case .methodRunning:
+            "Method run in progress"
+        case .methodCheckpointReady:
+            "Method checkpoint ready for review"
         case .inProgress:
             "In progress"
         }
@@ -34,9 +48,9 @@ enum IdeaQueueActivity: Equatable {
 
     var tint: Color {
         switch self {
-        case .generatingTitle, .delegationWorking:
+        case .generatingTitle, .delegationWorking, .methodRunning:
             .statusWorking
-        case .reviewReady:
+        case .reviewReady, .methodCheckpointReady:
             .orange.opacity(0.95)
         case .inProgress:
             .hudAccent
@@ -45,20 +59,20 @@ enum IdeaQueueActivity: Equatable {
 
     var showsProgress: Bool {
         switch self {
-        case .generatingTitle, .delegationWorking:
+        case .generatingTitle, .delegationWorking, .methodRunning:
             true
-        case .reviewReady, .inProgress:
+        case .reviewReady, .methodCheckpointReady, .inProgress:
             false
         }
     }
 
     var symbolName: String {
         switch self {
-        case .reviewReady:
+        case .reviewReady, .methodCheckpointReady:
             "checkmark.circle.fill"
         case .inProgress:
             "circle.fill"
-        case .generatingTitle, .delegationWorking:
+        case .generatingTitle, .delegationWorking, .methodRunning:
             "circle.fill"
         }
     }
@@ -67,7 +81,7 @@ enum IdeaQueueActivity: Equatable {
         switch self {
         case .generatingTitle:
             true
-        case .delegationWorking, .reviewReady, .inProgress:
+        case .delegationWorking, .reviewReady, .methodRunning, .methodCheckpointReady, .inProgress:
             false
         }
     }

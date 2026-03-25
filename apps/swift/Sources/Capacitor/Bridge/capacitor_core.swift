@@ -527,6 +527,8 @@ public protocol CoreRuntimeProtocol: AnyObject {
 
     func createProjectClaudeMd(projectPath: String) throws
 
+    func findBuiltinMethod(methodId: String) -> MethodTemplate?
+
     func getHookDiagnostic() -> HookDiagnosticReport
 
     func getHookStatus() -> HookStatus
@@ -544,6 +546,8 @@ public protocol CoreRuntimeProtocol: AnyObject {
     func installHookBinaryFromPath(sourcePath: String) throws -> InstallResult
 
     func installHooks() throws -> InstallResult
+
+    func listBuiltinMethods() -> [MethodTemplate]
 
     func loadDashboard() throws -> DashboardData
 
@@ -706,6 +710,13 @@ open class CoreRuntime:
         }
     }
 
+    open func findBuiltinMethod(methodId: String) -> MethodTemplate? {
+        return try! FfiConverterOptionTypeMethodTemplate.lift(try! rustCall {
+            uniffi_capacitor_core_fn_method_coreruntime_find_builtin_method(self.uniffiClonePointer(),
+                                                                            FfiConverterString.lower(methodId), $0)
+        })
+    }
+
     open func getHookDiagnostic() -> HookDiagnosticReport {
         return try! FfiConverterTypeHookDiagnosticReport.lift(try! rustCall {
             uniffi_capacitor_core_fn_method_coreruntime_get_hook_diagnostic(self.uniffiClonePointer(), $0)
@@ -762,6 +773,12 @@ open class CoreRuntime:
     open func installHooks() throws -> InstallResult {
         return try FfiConverterTypeInstallResult.lift(rustCallWithError(FfiConverterTypeCoreRuntimeError.lift) {
             uniffi_capacitor_core_fn_method_coreruntime_install_hooks(self.uniffiClonePointer(), $0)
+        })
+    }
+
+    open func listBuiltinMethods() -> [MethodTemplate] {
+        return try! FfiConverterSequenceTypeMethodTemplate.lift(try! rustCall {
+            uniffi_capacitor_core_fn_method_coreruntime_list_builtin_methods(self.uniffiClonePointer(), $0)
         })
     }
 
@@ -9065,6 +9082,30 @@ private struct FfiConverterOptionTypeDelegationReviewState: FfiConverterRustBuff
 #if swift(>=5.8)
     @_documentation(visibility: private)
 #endif
+private struct FfiConverterOptionTypeMethodTemplate: FfiConverterRustBuffer {
+    typealias SwiftType = MethodTemplate?
+
+    static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeMethodTemplate.write(value, into: &buf)
+    }
+
+    static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeMethodTemplate.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
 private struct FfiConverterOptionTypeProjectStats: FfiConverterRustBuffer {
     typealias SwiftType = ProjectStats?
 
@@ -9326,6 +9367,31 @@ private struct FfiConverterSequenceTypeMermaidSource: FfiConverterRustBuffer {
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             try seq.append(FfiConverterTypeMermaidSource.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+private struct FfiConverterSequenceTypeMethodTemplate: FfiConverterRustBuffer {
+    typealias SwiftType = [MethodTemplate]
+
+    static func write(_ value: [MethodTemplate], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeMethodTemplate.write(item, into: &buf)
+        }
+    }
+
+    static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [MethodTemplate] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [MethodTemplate]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            try seq.append(FfiConverterTypeMethodTemplate.read(from: &buf))
         }
         return seq
     }
@@ -9751,6 +9817,9 @@ private var initializationResult: InitializationResult = {
     if uniffi_capacitor_core_checksum_method_coreruntime_create_project_claude_md() != 45288 {
         return InitializationResult.apiChecksumMismatch
     }
+    if uniffi_capacitor_core_checksum_method_coreruntime_find_builtin_method() != 6703 {
+        return InitializationResult.apiChecksumMismatch
+    }
     if uniffi_capacitor_core_checksum_method_coreruntime_get_hook_diagnostic() != 54501 {
         return InitializationResult.apiChecksumMismatch
     }
@@ -9776,6 +9845,9 @@ private var initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if uniffi_capacitor_core_checksum_method_coreruntime_install_hooks() != 63712 {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if uniffi_capacitor_core_checksum_method_coreruntime_list_builtin_methods() != 61228 {
         return InitializationResult.apiChecksumMismatch
     }
     if uniffi_capacitor_core_checksum_method_coreruntime_load_dashboard() != 58933 {

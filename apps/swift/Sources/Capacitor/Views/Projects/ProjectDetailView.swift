@@ -8,9 +8,10 @@ struct ProjectDetailView: View {
     @State private var appeared = false
     @State private var selectedIdea: Idea?
     @State private var selectedIdeaFrame: CGRect?
+    @State private var methodSelectorIdea: Idea?
 
     private var isModalOpen: Bool {
-        selectedIdea != nil
+        selectedIdea != nil || methodSelectorIdea != nil
     }
 
     var body: some View {
@@ -114,6 +115,11 @@ struct ProjectDetailView: View {
                         selectedIdea = nil
                         selectedIdeaFrame = nil
                     } : nil,
+                    onRunMethod: appState.isMethodRunnerEnabled ? { idea in
+                        methodSelectorIdea = idea
+                        selectedIdea = nil
+                        selectedIdeaFrame = nil
+                    } : nil,
                     onRemove: { idea in
                         withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                             appState.dismissIdea(idea, for: project)
@@ -122,6 +128,24 @@ struct ProjectDetailView: View {
                         selectedIdeaFrame = nil
                     },
                 )
+
+                if let idea = methodSelectorIdea {
+                    ZStack {
+                        Color.black.opacity(0.3)
+                            .ignoresSafeArea()
+                            .onTapGesture { methodSelectorIdea = nil }
+
+                        MethodSelectorView(
+                            methods: appState.listBuiltinMethods(),
+                            onSelect: { method in
+                                appState.runMethodOnIdea(idea, method: method, for: project)
+                                methodSelectorIdea = nil
+                            },
+                            onDismiss: { methodSelectorIdea = nil },
+                        )
+                    }
+                    .transition(.opacity)
+                }
             }
         }
         .onAppear {

@@ -1,0 +1,69 @@
+schema_version: "1"
+method:
+  id: deep_debug
+  version: "2026-03-24"
+  title: Deep Debug
+  description: Systematic investigation with hypothesis validation.
+  defaults:
+    max_attempts: 3
+    completion_policy: all_complete
+  phases:
+    - id: investigate
+      title: Investigate
+      execution: serial
+      gate:
+        id: investigate-gate
+        type: approval
+      steps:
+        - id: gather-evidence
+          title: Gather Evidence
+          action: dispatch
+          outputs:
+            investigation:
+              path: artifacts/investigation.md
+              type: markdown
+          dispatch:
+            instructions: >
+              Investigate the problem systematically. Gather evidence,
+              identify relevant code paths, and document observations.
+              Do not propose fixes yet — focus on understanding.
+
+    - id: hypothesize
+      title: Hypothesize
+      execution: serial
+      gate:
+        id: hypothesize-gate
+        type: approval
+      steps:
+        - id: propose-fix
+          title: Propose Fix
+          action: dispatch
+          outputs:
+            hypothesis:
+              path: artifacts/hypothesis.md
+              type: markdown
+          dispatch:
+            instructions: >
+              Based on the investigation, form hypotheses about root
+              cause. Propose a fix with rationale. Explain why this
+              fix addresses the root cause and not just the symptom.
+
+    - id: validate
+      title: Validate
+      execution: serial
+      gate:
+        id: validate-gate
+        type: approval
+      steps:
+        - id: apply-and-verify
+          title: Apply & Verify
+          action: dispatch
+          outputs:
+            validation:
+              path: artifacts/validation.md
+              type: markdown
+          dispatch:
+            instructions: >
+              Apply the approved fix. Write tests that prove the fix
+              works. Verify no regressions were introduced. Document
+              the validation results.

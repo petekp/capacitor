@@ -57,6 +57,7 @@ struct FeatureFlags: Equatable, Codable {
     var projectCreation: Bool
     var llmFeatures: Bool
     var delegationLoop: Bool
+    var methodRunner: Bool
     var windowAnchoring: Bool
 
     static func defaults(for profile: AppProfile) -> FeatureFlags {
@@ -69,6 +70,7 @@ struct FeatureFlags: Equatable, Codable {
                 projectCreation: false,
                 llmFeatures: false,
                 delegationLoop: false,
+                methodRunner: false,
                 windowAnchoring: false,
             )
         case .frontier:
@@ -79,6 +81,7 @@ struct FeatureFlags: Equatable, Codable {
                 projectCreation: true,
                 llmFeatures: true,
                 delegationLoop: false,
+                methodRunner: true,
                 windowAnchoring: true,
             )
         }
@@ -116,6 +119,8 @@ struct FeatureFlags: Equatable, Codable {
             llmFeatures = enabled
         case .delegationLoop:
             delegationLoop = enabled
+        case .methodRunner:
+            methodRunner = enabled
         case .windowAnchoring:
             windowAnchoring = enabled
         }
@@ -313,6 +318,7 @@ private enum FeatureKey: String, CaseIterable {
     case projectCreation = "projectcreation"
     case llmFeatures = "llmfeatures"
     case delegationLoop = "delegationloop"
+    case methodRunner = "methodrunner"
     case windowAnchoring = "windowanchoring"
 
     static func parse(_ raw: String?) -> FeatureKey? {

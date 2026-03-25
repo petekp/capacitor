@@ -46,6 +46,7 @@ struct StatusChip: View {
 struct StatusChipsRow: View {
     let sessionState: ProjectSessionState?
     var delegationState: RuntimeDelegationState?
+    var activeRunState: RuntimeRunState?
     var style: StatusChip.ChipStyle = .normal
 
     var body: some View {
@@ -56,6 +57,8 @@ struct StatusChipsRow: View {
                 DelegationResumingChip(style: style)
             } else if delegationState?.status == "resume_failed" {
                 DelegationResumeFailedChip(style: style)
+            } else if let run = activeRunState {
+                RunStatusChip(runStatus: run.status, hasCheckpoint: run.activeCheckpoint != nil, style: style)
             } else {
                 StatusChip(
                     state: sessionState?.state,
@@ -97,6 +100,48 @@ private struct DelegationResumingChip: View {
             .foregroundStyle(Color.blue.opacity(0.75))
             .scaleEffect(style == .compact ? 0.85 : 1.0, anchor: .trailing)
             .accessibilityLabel("Delegation resuming")
+    }
+}
+
+private struct RunStatusChip: View {
+    let runStatus: String
+    let hasCheckpoint: Bool
+    let style: StatusChip.ChipStyle
+
+    private var font: Font {
+        .system(.callout, design: .monospaced).weight(.semibold)
+    }
+
+    private var label: String {
+        if runStatus == "paused", hasCheckpoint {
+            return "CHECKPOINT"
+        }
+        switch runStatus {
+        case "active": return "RUNNING"
+        case "paused": return "PAUSED"
+        case "created": return "STARTING"
+        default: return "RUN"
+        }
+    }
+
+    private var color: Color {
+        if runStatus == "paused", hasCheckpoint {
+            return .orange.opacity(0.95)
+        }
+        switch runStatus {
+        case "active", "created": return .statusWorking
+        case "paused": return .blue.opacity(0.75)
+        default: return .white.opacity(0.5)
+        }
+    }
+
+    var body: some View {
+        Text(label)
+            .font(font)
+            .tracking(1.2)
+            .foregroundStyle(color)
+            .scaleEffect(style == .compact ? 0.85 : 1.0, anchor: .trailing)
+            .accessibilityLabel("Method run \(label.lowercased())")
     }
 }
 

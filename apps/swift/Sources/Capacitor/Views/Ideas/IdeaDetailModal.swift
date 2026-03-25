@@ -4,6 +4,7 @@ struct IdeaDetailOverlay: View {
     let idea: Idea
     let onDismiss: () -> Void
     let onDelegate: (() -> Void)?
+    let onRunMethod: (() -> Void)?
     let onRemove: () -> Void
 
     @State private var appeared = false
@@ -65,6 +66,24 @@ struct IdeaDetailOverlay: View {
                     Spacer()
 
                     HStack(spacing: 10) {
+                        if let onRunMethod {
+                            Button(action: onRunMethod) {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "play.fill")
+                                        .font(.system(size: 14, weight: .medium))
+                                    Text("Run Method")
+                                        .font(AppTypography.bodyMedium)
+                                }
+                                .foregroundColor(.black.opacity(0.85))
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 10)
+                                .background(Color.white.opacity(0.9))
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityIdentifier("idea_detail_run_method")
+                        }
+
                         if let onDelegate {
                             Button(action: onDelegate) {
                                 HStack(spacing: 8) {
@@ -73,10 +92,10 @@ struct IdeaDetailOverlay: View {
                                     Text("Delegate")
                                         .font(AppTypography.bodyMedium)
                                 }
-                                .foregroundColor(.black.opacity(0.85))
+                                .foregroundColor(.white.opacity(0.85))
                                 .padding(.horizontal, 16)
                                 .padding(.vertical, 10)
-                                .background(Color.white.opacity(0.9))
+                                .background(Color.white.opacity(0.15))
                                 .clipShape(RoundedRectangle(cornerRadius: 8))
                             }
                             .buttonStyle(.plain)
@@ -151,6 +170,7 @@ struct IdeaDetailModalOverlay: View {
     let anchorFrame: CGRect?
     let onDismiss: () -> Void
     let onDelegate: ((Idea) -> Void)?
+    let onRunMethod: ((Idea) -> Void)?
     let onRemove: (Idea) -> Void
 
     @State private var escapeMonitor: Any?
@@ -165,6 +185,7 @@ struct IdeaDetailModalOverlay: View {
                     idea: idea,
                     onDismiss: onDismiss,
                     onDelegate: onDelegate.map { handler in { handler(idea) } },
+                    onRunMethod: onRunMethod.map { handler in { handler(idea) } },
                     onRemove: { onRemove(idea) },
                 )
             }

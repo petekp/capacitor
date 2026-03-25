@@ -6,6 +6,7 @@ struct ProjectCardView: View {
     let project: Project
     let sessionState: ProjectSessionState?
     let delegationState: RuntimeDelegationState?
+    let activeRunState: RuntimeRunState?
     let projectStatus: ProjectStatus?
     let flashState: SessionState?
     let isActive: Bool
@@ -214,6 +215,23 @@ struct ProjectCardView: View {
         delegationState?.status
     }
 
+    private var runContextText: String? {
+        guard let run = activeRunState else { return nil }
+        switch run.status {
+        case "active":
+            return "Running: \(run.methodName)"
+        case "paused":
+            if run.activeCheckpoint != nil {
+                return "Checkpoint ready — \(run.methodName)"
+            }
+            return "Paused: \(run.methodName)"
+        case "created":
+            return "Starting: \(run.methodName)"
+        default:
+            return nil
+        }
+    }
+
     private var delegationContextText: String? {
         guard let delegationState else { return nil }
 
@@ -369,10 +387,11 @@ struct ProjectCardView: View {
                     nameColor: nameColor,
                     sessionState: sessionState,
                     delegationState: delegationState,
+                    activeRunState: activeRunState,
                 )
 
                 ProjectCardContent(
-                    contextLine: delegationContextText,
+                    contextLine: runContextText ?? delegationContextText,
                     isMissing: project.isMissing,
                 )
             }
@@ -488,6 +507,7 @@ private struct ProjectCardHeader: View {
     let nameColor: Color
     let sessionState: ProjectSessionState?
     let delegationState: RuntimeDelegationState?
+    let activeRunState: RuntimeRunState?
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
@@ -509,6 +529,7 @@ private struct ProjectCardHeader: View {
             StatusChipsRow(
                 sessionState: sessionState,
                 delegationState: delegationState,
+                activeRunState: activeRunState,
             )
         }
     }

@@ -1,6 +1,6 @@
 use std::env;
 use std::ffi::OsString;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::Duration;
 
@@ -59,11 +59,41 @@ enum InteractiveMode {
 #[derive(Debug, Default)]
 struct ParsedOptions {
     definition: Option<PathBuf>,
+    method_id: Option<String>,
     root: Option<PathBuf>,
     real_adapters: bool,
     interactive_mode: InteractiveMode,
     bridge_run_id: Option<String>,
     bridge_project_path: Option<PathBuf>,
+}
+
+/// Embedded YAML definitions for built-in methods.
+fn builtin_method_yaml(method_id: &str) -> Option<&'static str> {
+    match method_id {
+        "execution_only" => Some(include_str!(
+            "../../../../methods/builtins/execution_only.yaml"
+        )),
+        "shape_and_execute" => Some(include_str!(
+            "../../../../methods/builtins/shape_and_execute.yaml"
+        )),
+        "deep_debug" => Some(include_str!("../../../../methods/builtins/deep_debug.yaml")),
+        "greenfield_build" => Some(include_str!(
+            "../../../../methods/builtins/greenfield_build.yaml"
+        )),
+        _ => None,
+    }
+}
+
+/// Write embedded YAML to a temp file in the execution root and return the path.
+fn materialize_builtin_method(method_id: &str, root: &Path) -> Result<PathBuf, String> {
+    let yaml = builtin_method_yaml(method_id)
+        .ok_or_else(|| format!("unknown built-in method: {method_id}"))?;
+    let method_dir = root.join(".method");
+    std::fs::create_dir_all(&method_dir)
+        .map_err(|e| format!("failed to create .method dir: {e}"))?;
+    let path = method_dir.join("builtin-definition.yaml");
+    std::fs::write(&path, yaml).map_err(|e| format!("failed to write definition: {e}"))?;
+    Ok(path)
 }
 
 #[derive(Debug)]
@@ -300,6 +330,7 @@ where
 
     let ParsedOptions {
         definition,
+        method_id,
         root,
         real_adapters,
         interactive_mode,
@@ -312,9 +343,22 @@ where
         return Err("--bridge-project-path requires --bridge-run-id".to_string());
     }
 
+    // Resolve definition: --definition takes precedence, --method-id materializes a built-in
+    let definition = if let Some(def) = definition {
+        Some(def)
+    } else if let Some(ref mid) = method_id {
+        if matches!(kind, CommandKind::Normalize | CommandKind::Run) {
+            Some(materialize_builtin_method(mid, &root)?)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
     if matches!(kind, CommandKind::Normalize | CommandKind::Run) && definition.is_none() {
         return Err(format!(
-            "missing required --definition for {}",
+            "missing --definition or --method-id for {}",
             kind.as_str()
         ));
     }
@@ -350,6 +394,9 @@ where
             "--definition" => {
                 let value = next_path_value(&mut args, "--definition")?;
                 parsed.definition = Some(value);
+            }
+            "--method-id" => {
+                parsed.method_id = Some(next_string_value(&mut args, "--method-id")?);
             }
             "--root" => {
                 let value = next_path_value(&mut args, "--root")?;
@@ -479,10 +526,12 @@ fn make_interactive_io(
 fn usage() -> &'static str {
     "Usage:
   method-runner normalize --definition <path> --root <path>
-  method-runner run       --definition <path> --root <path> [--real] [--approve|--reject|--response-dir <path>] [--bridge-run-id <run-id>] [--bridge-project-path <path>]
+  method-runner run       (--definition <path> | --method-id <id>) --root <path> [--real] [--approve|--reject|--response-dir <path>] [--bridge-run-id <run-id>] [--bridge-project-path <path>]
   method-runner resume    --root <path> [--real] [--approve|--reject|--response-dir <path>] [--bridge-run-id <run-id>] [--bridge-project-path <path>]
 
 Flags:
+  --definition           Path to a YAML method definition file
+  --method-id            Built-in method id (execution_only, shape_and_execute, deep_debug, greenfield_build)
   --real                 Use real subprocess adapters (ShellPromptBuilder + CodexWorkerDispatcher)
   --approve              Auto-approve all interactive checkpoints (default)
   --reject               Auto-reject all interactive checkpoints

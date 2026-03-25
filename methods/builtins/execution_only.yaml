@@ -1,0 +1,28 @@
+schema_version: "1"
+method:
+  id: execution_only
+  version: "2026-03-24"
+  title: Execute
+  description: Direct implementation with milestone checkpoints.
+  defaults:
+    max_attempts: 2
+    completion_policy: all_complete
+  phases:
+    - id: execute
+      title: Execute
+      execution: serial
+      gate:
+        id: execute-gate
+        type: approval
+      steps:
+        - id: implement
+          title: Implement
+          action: dispatch
+          outputs:
+            implementation:
+              path: artifacts/implementation.md
+              type: markdown
+          dispatch:
+            instructions: >
+              Implement the task. Produce a summary of what was done
+              and any decisions made along the way.

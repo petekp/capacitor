@@ -499,6 +499,16 @@ impl CoreRuntime {
         Ok(outcome)
     }
 
+    // Method templates
+
+    pub fn list_builtin_methods(&self) -> Vec<domain::MethodTemplate> {
+        domain::method_registry::builtin_methods()
+    }
+
+    pub fn find_builtin_method(&self, method_id: String) -> Option<domain::MethodTemplate> {
+        domain::method_registry::find_method(&method_id)
+    }
+
     // Runtime setup + project APIs
 
     pub fn claude_dir(&self) -> String {

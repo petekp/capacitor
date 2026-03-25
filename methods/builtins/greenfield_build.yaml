@@ -1,0 +1,91 @@
+schema_version: "1"
+method:
+  id: greenfield_build
+  version: "2026-03-24"
+  title: Greenfield Build
+  description: Scope, design, implement, and verify from scratch.
+  defaults:
+    max_attempts: 2
+    completion_policy: all_complete
+  phases:
+    - id: scope
+      title: Scope
+      execution: serial
+      gate:
+        id: scope-gate
+        type: approval
+      steps:
+        - id: define-scope
+          title: Define Scope
+          action: dispatch
+          outputs:
+            scope:
+              path: artifacts/scope.md
+              type: markdown
+          dispatch:
+            instructions: >
+              Define the scope of the build. Identify requirements,
+              constraints, and success criteria. Produce a scope
+              document for review before design begins.
+
+    - id: design
+      title: Design
+      execution: serial
+      gate:
+        id: design-gate
+        type: approval
+      steps:
+        - id: architect
+          title: Architect
+          action: dispatch
+          outputs:
+            design:
+              path: artifacts/design.md
+              type: markdown
+          dispatch:
+            instructions: >
+              Design the architecture within the approved scope.
+              Document key decisions, interfaces, data flow, and
+              module boundaries. This design will be reviewed before
+              implementation begins.
+
+    - id: implement
+      title: Implement
+      execution: serial
+      gate:
+        id: implement-gate
+        type: approval
+      steps:
+        - id: build
+          title: Build
+          action: dispatch
+          outputs:
+            implementation:
+              path: artifacts/implementation.md
+              type: markdown
+          dispatch:
+            instructions: >
+              Implement the approved design. Follow the architecture
+              decisions. Produce a summary of what was built and any
+              deviations from the design.
+
+    - id: verify
+      title: Verify
+      execution: serial
+      gate:
+        id: verify-gate
+        type: approval
+      steps:
+        - id: test-and-validate
+          title: Test & Validate
+          action: dispatch
+          outputs:
+            verification:
+              path: artifacts/verification.md
+              type: markdown
+          dispatch:
+            instructions: >
+              Verify the implementation against the scope and design.
+              Write tests, run existing tests, check edge cases.
+              Document the verification results and any remaining
+              issues.

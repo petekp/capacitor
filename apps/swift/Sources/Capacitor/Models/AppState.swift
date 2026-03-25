@@ -95,6 +95,10 @@ class AppState {
         featureFlags.delegationLoop && isProjectDetailsEnabled
     }
 
+    var isMethodRunnerEnabled: Bool {
+        featureFlags.methodRunner && isProjectDetailsEnabled
+    }
+
     var isWindowAnchoringEnabled: Bool {
         featureFlags.windowAnchoring
     }
@@ -211,6 +215,7 @@ class AppState {
     private let layoutModeKey = "layoutMode"
     private let activationPolicy = ActivationPolicy()
     private let runtimeClient: RuntimeClient
+    private var methodRunCoordinator: MethodRunCoordinator?
     private var engine: CoreRuntime?
     private var refreshTimer: Timer?
     private var runtimeBootstrapTask: _Concurrency.Task<Void, Never>?
@@ -244,6 +249,9 @@ class AppState {
         self.runtimeClient = runtimeClient
         self.hookServerManager = hookServerManager
         runCaptureCoordinator = RunCaptureCoordinator(runtimeClient: runtimeClient)
+        methodRunCoordinator = MethodRunCoordinator(mutateRun: { request in
+            try await runtimeClient.mutateRun(request)
+        })
         self.runtimeClient.setIncompatibleSchemaHandler { [weak self] health, minimumSchemaVersion in
             guard let self else { return }
             await MainActor.run {
@@ -1692,8 +1700,98 @@ class AppState {
         return delegationStates[PathNormalizer.normalize(projectPath)]
     }
 
+    // MARK: - Method Runner
+
+    func listBuiltinMethods() -> [MethodTemplate] {
+        engine?.listBuiltinMethods() ?? []
+    }
+
+    func runMethodOnIdea(_: Idea, method: MethodTemplate, for project: Project) {
+        guard isMethodRunnerEnabled else {
+            error = "Method runner is disabled for this build."
+            return
+        }
+
+        let runId = UUID().uuidString.lowercased()
+
+        _Concurrency.Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await runtimeClient.mutateRun(RuntimeRunMutationRequest(
+                    kind: "create",
+                    projectPath: project.path,
+                    runId: runId,
+                    checkpointId: nil,
+                    methodId: method.id,
+                    involvement: nil,
+                    checkpointKind: nil,
+                    checkpointTitle: nil,
+                    checkpointSummary: nil,
+                    checkpointBriefPath: nil,
+                    checkpointManifestPath: nil,
+                    checkpointMediaArtifacts: [],
+                    checkpointMermaidSources: [],
+                    captureUrl: nil,
+                    decisionAction: nil,
+                    decisionNote: nil,
+                    sessionId: nil,
+                    delegationWorkerId: nil,
+                    captureRequestId: nil,
+                    clientId: nil,
+                    observedCaptureUrl: nil,
+                    captureFailureReason: nil,
+                    completedMediaArtifacts: [],
+                ))
+
+                await MainActor.run {
+                    self.toast = ToastMessage("Method run started: \(method.name)")
+                    self.refreshSessionStates()
+                }
+
+                // Spawn the method-runner subprocess in the background.
+                // It runs asynchronously; completion/failure is handled by the coordinator.
+                if let coordinator = methodRunCoordinator {
+                    _Concurrency.Task.detached { [weak self] in
+                        do {
+                            try await coordinator.startRun(
+                                runID: runId,
+                                methodID: method.id,
+                                projectPath: project.path,
+                            )
+                        } catch {
+                            DebugLog.write(
+                                "MethodRunCoordinator.startRun failure runID=\(runId) error=\(error.localizedDescription)",
+                            )
+                            await MainActor.run {
+                                self?.toast = .error("Method run failed: \(error.localizedDescription)")
+                                self?.refreshSessionStates()
+                            }
+                        }
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    DebugLog.write(
+                        "AppState.runMethodOnIdea failure project=\(project.path) method=\(method.id) error=\(error.localizedDescription)",
+                    )
+                    self.toast = .error("Failed to start method run: \(error.localizedDescription)")
+                    self.refreshSessionStates()
+                }
+            }
+        }
+    }
+
     func runState(projectPath: String, runID: String) -> RuntimeRunState? {
         runStatesByID[RuntimeRunKey(projectPath: projectPath, runID: runID)]
+    }
+
+    /// Returns the first active (non-terminal) run for a project, if any.
+    func activeRun(for project: Project) -> RuntimeRunState? {
+        let normalizedPath = PathNormalizer.normalize(project.path)
+        return runStatesByID.values.first { run in
+            PathNormalizer.normalize(run.projectPath) == normalizedPath
+                && !["completed", "failed", "cancelled"].contains(run.status)
+        }
     }
 
     func runCheckpointState(target: RunCheckpointWindowTarget) -> RuntimeCheckpointState? {
