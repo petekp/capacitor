@@ -6,6 +6,26 @@ use serde::{Deserialize, Serialize};
 
 pub const CHECKPOINT_BRIDGE_PROTOCOL_VERSION: u32 = 1;
 
+/// Validate that an identifier is safe to use as a single filesystem path component.
+/// Rejects empty strings, strings containing path separators, "..", and absolute paths.
+pub fn validate_path_component(id: &str, label: &str) -> Result<(), String> {
+    if id.is_empty() {
+        return Err(format!("{label} must not be empty"));
+    }
+    if id.contains('/') || id.contains('\\') {
+        return Err(format!("{label} must not contain path separators: {id:?}"));
+    }
+    if id == "." || id == ".." {
+        return Err(format!(
+            "{label} must not be a relative path component: {id:?}"
+        ));
+    }
+    if id.contains("..") {
+        return Err(format!("{label} must not contain '..': {id:?}"));
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CheckpointBridgePending {
@@ -32,10 +52,14 @@ pub struct CheckpointBridgeDecision {
 }
 
 pub fn pending_path(home_dir: &Path, run_id: &str, checkpoint_id: &str) -> PathBuf {
+    debug_assert!(validate_path_component(run_id, "run_id").is_ok());
+    debug_assert!(validate_path_component(checkpoint_id, "checkpoint_id").is_ok());
     bridge_run_dir(home_dir, run_id).join(format!("{checkpoint_id}.pending.json"))
 }
 
 pub fn decision_path(home_dir: &Path, run_id: &str, checkpoint_id: &str) -> PathBuf {
+    debug_assert!(validate_path_component(run_id, "run_id").is_ok());
+    debug_assert!(validate_path_component(checkpoint_id, "checkpoint_id").is_ok());
     bridge_run_dir(home_dir, run_id).join(format!("{checkpoint_id}.json"))
 }
 

@@ -1,17 +1,22 @@
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::domain::{MutateRunCommand, MutationOutcome, RunMutationKind};
 use crate::method_runner::adapters::{
     GateCheckpointContext, InteractiveIO, InteractivePrompt, InteractiveResponse,
 };
 use crate::method_runner::checkpoint_bridge_protocol::{
-    decision_path, pending_path, write_json_atomic, CheckpointBridgeDecision,
-    CheckpointBridgePending, CHECKPOINT_BRIDGE_PROTOCOL_VERSION,
+    decision_path, pending_path, validate_path_component, write_json_atomic,
+    CheckpointBridgeDecision, CheckpointBridgePending, CHECKPOINT_BRIDGE_PROTOCOL_VERSION,
 };
 use crate::runtime_service::RuntimeServiceEndpoint;
+
+/// Maximum time to wait for a decision file before falling back to "rejected".
+/// Human gate decisions can reasonably take a long time (reviewer is reading code),
+/// so this is a safety net, not an expected timeout.
+const DECISION_POLL_TIMEOUT: Duration = Duration::from_secs(3600); // 1 hour
 
 pub struct BridgeInteractiveIO {
     endpoint: RuntimeServiceEndpoint,
@@ -20,6 +25,7 @@ pub struct BridgeInteractiveIO {
     home_dir: PathBuf,
     fallback: Box<dyn InteractiveIO>,
     current_gate_id: RefCell<Option<String>>,
+    poll_timeout: Duration,
 }
 
 impl BridgeInteractiveIO {
@@ -37,6 +43,7 @@ impl BridgeInteractiveIO {
             home_dir,
             fallback,
             current_gate_id: RefCell::new(None),
+            poll_timeout: DECISION_POLL_TIMEOUT,
         }
     }
 
@@ -184,6 +191,7 @@ impl InteractiveIO for BridgeInteractiveIO {
             return self.fallback.capture_response();
         };
 
+        let deadline = Instant::now() + self.poll_timeout;
         loop {
             match self.read_decision(&gate_id) {
                 Ok(Some(decision)) => {
@@ -192,7 +200,19 @@ impl InteractiveIO for BridgeInteractiveIO {
                     self.delete_decision_file(&gate_id);
                     return InteractiveResponse { body };
                 }
-                Ok(None) => thread::sleep(Duration::from_millis(500)),
+                Ok(None) => {
+                    if Instant::now() >= deadline {
+                        eprintln!(
+                            "warning: checkpoint bridge decision poll timed out for gate '{}' after {:?}",
+                            gate_id, self.poll_timeout
+                        );
+                        *self.current_gate_id.borrow_mut() = None;
+                        return InteractiveResponse {
+                            body: "rejected".to_string(),
+                        };
+                    }
+                    thread::sleep(Duration::from_millis(500));
+                }
                 Err(error) => {
                     eprintln!("warning: {}", error);
                     *self.current_gate_id.borrow_mut() = None;
@@ -206,6 +226,26 @@ impl InteractiveIO for BridgeInteractiveIO {
     }
 
     fn emit_gate_checkpoint(&self, context: &GateCheckpointContext) {
+        // Validate IDs before using them as filesystem path components
+        if let Err(error) = validate_path_component(&self.run_id, "run_id") {
+            eprintln!(
+                "warning: unsafe run_id for checkpoint bridge, falling back to prompt: {error}"
+            );
+            self.fallback.emit_prompt(&InteractivePrompt {
+                message: context.prompt_message.clone(),
+            });
+            return;
+        }
+        if let Err(error) = validate_path_component(&context.gate_id, "gate_id") {
+            eprintln!(
+                "warning: unsafe gate_id for checkpoint bridge, falling back to prompt: {error}"
+            );
+            self.fallback.emit_prompt(&InteractivePrompt {
+                message: context.prompt_message.clone(),
+            });
+            return;
+        }
+
         let pending = self.pending_marker(context);
         let pending_path = pending_path(&self.home_dir, &self.run_id, &context.gate_id);
 

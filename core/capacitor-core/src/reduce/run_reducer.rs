@@ -316,6 +316,14 @@ fn handle_submit_decision(
         _ => return reject("missing decision_action"),
     };
 
+    // Validate that the action is one of the recognized values. This prevents
+    // the runtime from resuming the run with an action that the bridge adapter
+    // or other consumers don't understand, which would desynchronize state.
+    match action.as_str() {
+        "approve" | "approved" | "request_changes" | "rejected" => {}
+        _ => return reject(&format!("unrecognized decision_action: {action:?}")),
+    }
+
     let now = now_rfc3339();
     checkpoint.decision = Some(CheckpointDecision {
         action: action.clone(),
