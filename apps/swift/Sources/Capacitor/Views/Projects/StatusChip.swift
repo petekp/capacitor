@@ -50,7 +50,6 @@ struct StatusChipsRow: View {
     var style: StatusChip.ChipStyle = .normal
 
     enum Presentation: Equatable {
-        case run(status: String, hasCheckpoint: Bool)
         case delegationReview
         case delegationResuming
         case delegationResumeFailed
@@ -64,8 +63,8 @@ struct StatusChipsRow: View {
     ) -> Presentation {
         // Runs win over delegation chips because a paused or active method run is the
         // most urgent project-level state the card can surface.
-        if let run = activeRunState {
-            return .run(status: run.status, hasCheckpoint: run.activeCheckpoint != nil)
+        if let runState = ProjectRunVisualStateResolver.visualState(for: activeRunState).sessionState {
+            return .session(runState)
         }
         if delegationState?.status == "review_needed", delegationState?.currentReview != nil {
             return .delegationReview
@@ -86,8 +85,6 @@ struct StatusChipsRow: View {
                 delegationState: delegationState,
                 activeRunState: activeRunState,
             ) {
-            case let .run(status, hasCheckpoint):
-                RunStatusChip(runStatus: status, hasCheckpoint: hasCheckpoint, style: style)
             case .delegationReview:
                 DelegationReviewChip(style: style)
             case .delegationResuming:
@@ -135,48 +132,6 @@ private struct DelegationResumingChip: View {
             .foregroundStyle(Color.blue.opacity(0.75))
             .scaleEffect(style == .compact ? 0.85 : 1.0, anchor: .trailing)
             .accessibilityLabel("Delegation resuming")
-    }
-}
-
-private struct RunStatusChip: View {
-    let runStatus: String
-    let hasCheckpoint: Bool
-    let style: StatusChip.ChipStyle
-
-    private var font: Font {
-        .system(.callout, design: .monospaced).weight(.semibold)
-    }
-
-    private var label: String {
-        if runStatus == "paused", hasCheckpoint {
-            return "CHECKPOINT"
-        }
-        switch runStatus {
-        case "active": return "RUNNING"
-        case "paused": return "PAUSED"
-        case "created": return "STARTING"
-        default: return "RUN"
-        }
-    }
-
-    private var color: Color {
-        if runStatus == "paused", hasCheckpoint {
-            return .orange.opacity(0.95)
-        }
-        switch runStatus {
-        case "active", "created": return .statusWorking
-        case "paused": return .blue.opacity(0.75)
-        default: return .white.opacity(0.5)
-        }
-    }
-
-    var body: some View {
-        Text(label)
-            .font(font)
-            .tracking(1.2)
-            .foregroundStyle(color)
-            .scaleEffect(style == .compact ? 0.85 : 1.0, anchor: .trailing)
-            .accessibilityLabel("Method run \(label.lowercased())")
     }
 }
 

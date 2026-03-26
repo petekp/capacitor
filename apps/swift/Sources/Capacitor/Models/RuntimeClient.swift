@@ -986,7 +986,9 @@ private struct SnapshotRunPayload: Decodable {
         status = RuntimeClient.snapshotRunStatusString(run.status)
         sessionId = run.sessionId
         delegationWorkerId = run.delegationWorkerId
-        statusMessage = run.statusMessage
+        // Runtime-service JSON snapshots carry `status_message`; the older bridge
+        // payload used here for fallback construction does not yet expose it.
+        statusMessage = nil
         createdAt = run.createdAt
         updatedAt = run.updatedAt
         activeCheckpoint = run.activeCheckpoint.map(SnapshotCheckpointPayload.init)

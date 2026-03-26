@@ -4,6 +4,7 @@ struct DockProjectCard: View {
     let project: Project
     let sessionState: ProjectSessionState?
     let delegationState: RuntimeDelegationState?
+    let activeRunState: RuntimeRunState?
     let projectStatus: ProjectStatus?
     let flashState: SessionState?
     let isActive: Bool
@@ -36,7 +37,14 @@ struct DockProjectCard: View {
     }
 
     private var currentState: SessionState {
-        sessionState?.state ?? .idle
+        if let runState = runVisualState.sessionState {
+            return runState
+        }
+        return sessionState?.state ?? .idle
+    }
+
+    private var runVisualState: RunVisualState {
+        ProjectRunVisualStateResolver.visualState(for: activeRunState)
     }
 
     private var cardScale: CGFloat {
@@ -108,7 +116,7 @@ struct DockProjectCard: View {
             let _ = DockProjectCardRenderTelemetry.logIfChanged(
                 path: project.path,
                 name: project.name,
-                state: sessionState?.state,
+                state: currentState,
             )
         #endif
 
@@ -278,6 +286,7 @@ struct DockProjectCard: View {
                 StatusChipsRow(
                     sessionState: sessionState,
                     delegationState: delegationState,
+                    activeRunState: activeRunState,
                     style: .compact,
                 )
                 .padding(.top, glassConfig.dockChipTopPaddingRounded)

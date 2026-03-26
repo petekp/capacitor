@@ -167,11 +167,13 @@ struct DockLayoutView: View {
         let canCaptureIdeas = appState.isIdeaCaptureEnabled
         let group: ActivityGroup = activePaths.contains(project.path) ? .active : .idle
         let groupProjects = group == .active ? grouped.active : grouped.idle
+        let activeRunState = appState.activeRun(for: project)
 
         DockProjectCard(
             project: project,
             sessionState: sessionState,
             delegationState: appState.delegationState(for: project),
+            activeRunState: activeRunState,
             projectStatus: projectStatus,
             flashState: flashState,
             isActive: isActive,

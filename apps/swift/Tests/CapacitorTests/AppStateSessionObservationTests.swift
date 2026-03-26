@@ -332,7 +332,7 @@ final class AppStateSessionObservationTests: XCTestCase {
         )
     }
 
-    func testRepeatedRuntimeSnapshotFailuresClearRunSinkAfterThreshold() async {
+    func testRepeatedRuntimeSnapshotFailuresPreserveRunSinkAfterThreshold() async {
         let appState = AppState()
         appState.cancelRuntimeAutomationForTesting()
         let project = makeProject(name: "Capacitor", path: "/Users/petepetrash/Code/capacitor")
@@ -368,9 +368,10 @@ final class AppStateSessionObservationTests: XCTestCase {
             errorDescription: "unavailable",
         )
 
-        XCTAssertTrue(
-            appState.runStatesByID.isEmpty,
-            "second consecutive fresh failure should clear stale run sink state",
+        XCTAssertEqual(
+            appState.runStatesByID[RuntimeRunKey(run: run)],
+            run,
+            "second consecutive fresh failure should preserve the last known run snapshot",
         )
     }
 

@@ -664,7 +664,6 @@ class AppState {
             shellStateStore.clearRuntimeShellState(correlationId: correlationId)
             routingStateStore.clearRuntimeRoutingViews(correlationId: correlationId)
             delegationStates = [:]
-            runStatesByID = [:]
             runCheckpointWindowTarget = nil
         }
 
@@ -1794,13 +1793,11 @@ class AppState {
         runStatesByID[RuntimeRunKey(projectPath: projectPath, runID: runID)]
     }
 
-    /// Returns the first active (non-terminal) run for a project, if any.
     func activeRun(for project: Project) -> RuntimeRunState? {
-        let normalizedPath = PathNormalizer.normalize(project.path)
-        return runStatesByID.values.first { run in
-            PathNormalizer.normalize(run.projectPath) == normalizedPath
-                && !["completed", "failed", "cancelled"].contains(run.status)
-        }
+        ProjectRunVisualStateResolver.resolve(
+            projectPath: project.path,
+            runsByID: runStatesByID,
+        ).run
     }
 
     func runCheckpointState(target: RunCheckpointWindowTarget) -> RuntimeCheckpointState? {

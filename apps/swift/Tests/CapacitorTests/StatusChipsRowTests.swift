@@ -9,7 +9,7 @@ final class StatusChipsRowTests: XCTestCase {
             activeRunState: makeRun(status: "active", checkpointID: nil),
         )
 
-        XCTAssertEqual(presentation, .run(status: "active", hasCheckpoint: false))
+        XCTAssertEqual(presentation, .session(.working))
     }
 
     func testPausedRunWithCheckpointSurfacesCheckpointPresentation() {
@@ -19,7 +19,17 @@ final class StatusChipsRowTests: XCTestCase {
             activeRunState: makeRun(status: "paused", checkpointID: "checkpoint-1"),
         )
 
-        XCTAssertEqual(presentation, .run(status: "paused", hasCheckpoint: true))
+        XCTAssertEqual(presentation, .session(.waiting))
+    }
+
+    func testCreatedRunFallsBackToDelegationReviewUntilStartLands() {
+        let presentation = StatusChipsRow.presentation(
+            sessionState: makeSessionState(.ready),
+            delegationState: makeDelegation(status: "review_needed", currentReview: makeReview()),
+            activeRunState: makeRun(status: "created", checkpointID: nil),
+        )
+
+        XCTAssertEqual(presentation, .delegationReview)
     }
 
     func testDelegationReviewFallsBackWhenNoRunExists() {
@@ -83,6 +93,7 @@ final class StatusChipsRowTests: XCTestCase {
     }
 
     private func makeRun(status: String, checkpointID: String?) -> RuntimeRunState {
+        let timestamp = currentISO8601Timestamp()
         let checkpoint: RuntimeCheckpointState? = if let checkpointID {
             RuntimeCheckpointState(
                 id: checkpointID,
@@ -98,7 +109,7 @@ final class StatusChipsRowTests: XCTestCase {
                 captureStatus: .notRequested,
                 captureUrl: nil,
                 captureClaim: nil,
-                createdAt: "2026-03-25T10:06:00Z",
+                createdAt: timestamp,
                 decidedAt: nil,
             )
         } else {
@@ -114,8 +125,8 @@ final class StatusChipsRowTests: XCTestCase {
             sessionId: "run-session-1",
             delegationWorkerId: nil,
             statusMessage: nil,
-            createdAt: "2026-03-25T10:00:00Z",
-            updatedAt: "2026-03-25T10:06:00Z",
+            createdAt: timestamp,
+            updatedAt: timestamp,
             activeCheckpoint: checkpoint,
         )
     }

@@ -37,7 +37,14 @@ struct ProjectCardView: View {
     // MARK: - Computed Properties
 
     private var currentState: SessionState {
-        sessionState?.state ?? .idle
+        if let runState = runVisualState.sessionState {
+            return runState
+        }
+        return sessionState?.state ?? .idle
+    }
+
+    private var runVisualState: RunVisualState {
+        ProjectRunVisualStateResolver.visualState(for: activeRunState)
     }
 
     private var nameColor: Color {
@@ -97,7 +104,7 @@ struct ProjectCardView: View {
             let _ = ProjectCardRenderTelemetry.logIfChanged(
                 path: project.path,
                 name: project.name,
-                state: sessionState?.state,
+                state: currentState,
                 source: "ProjectCardView",
             )
         #endif
@@ -216,20 +223,7 @@ struct ProjectCardView: View {
     }
 
     private var runContextText: String? {
-        guard let run = activeRunState else { return nil }
-        switch run.status {
-        case "active":
-            return "Running: \(run.methodName)"
-        case "paused":
-            if run.activeCheckpoint != nil {
-                return "Checkpoint ready — \(run.methodName)"
-            }
-            return "Paused: \(run.methodName)"
-        case "created":
-            return "Starting: \(run.methodName)"
-        default:
-            return nil
-        }
+        runVisualState.statusMessage
     }
 
     private var delegationContextText: String? {
@@ -275,6 +269,15 @@ struct ProjectCardView: View {
     }
 
     private var accessibilityStatusDescription: String {
+        if let runState = runVisualState.sessionState {
+            return switch runState {
+            case .ready: "Ready for input"
+            case .working: "Working"
+            case .waiting: "Waiting for user action"
+            case .compacting: "Compacting history"
+            case .idle: "Idle"
+            }
+        }
         if delegationStatus == "review_needed", delegationState?.currentReview != nil {
             return "Delegation review needed"
         }
@@ -391,7 +394,12 @@ struct ProjectCardView: View {
                 )
 
                 ProjectCardContent(
-                    contextLine: runContextText ?? delegationContextText,
+                    contextLine: runContextText ?? {
+                        if runVisualState == .none {
+                            return delegationContextText
+                        }
+                        return nil
+                    }(),
                     isMissing: project.isMissing,
                 )
             }

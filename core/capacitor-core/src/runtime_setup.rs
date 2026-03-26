@@ -642,14 +642,31 @@ impl SetupChecker {
         for contract in managed_hook_event_contracts() {
             let event_hooks = hooks.entry(contract.event_name.to_string()).or_default();
 
-            // Normalize any existing managed entries to the current contract,
-            // then check if we already have a conforming one.
-            let mut already_has_hud_hook = false;
+            // Normalize any existing managed entries to the current contract.
             for hook_config in event_hooks.iter_mut() {
-                if self.normalize_hud_hook_config(hook_config, contract) {
+                self.normalize_hud_hook_config(hook_config, contract);
+            }
+
+            // Then deduplicate managed entries so only the first survives.
+            let mut already_has_hud_hook = false;
+            let mut seen_managed_hook = false;
+            event_hooks.retain(|hook_config| {
+                let is_managed_entry = hook_config
+                    .hooks
+                    .as_ref()
+                    .map(|inner_hooks| inner_hooks.iter().any(is_managed_hook))
+                    .unwrap_or(false);
+
+                if is_managed_entry {
+                    if seen_managed_hook {
+                        return false;
+                    }
+                    seen_managed_hook = true;
                     already_has_hud_hook = true;
                 }
-            }
+
+                true
+            });
 
             if !already_has_hud_hook {
                 let hook_config = HookConfig {
@@ -1081,6 +1098,82 @@ mod tests {
         assert_eq!(
             settings["hooks"]["PreToolUse"][0]["hooks"][0]["url"],
             HOOK_HTTP_URL
+        );
+    }
+
+    #[test]
+    fn test_register_hooks_in_settings_deduplicates_managed_entries_per_event() {
+        let (_temp, storage) = setup_test_env();
+        let checker = SetupChecker::new(storage.clone());
+
+        let existing = serde_json::json!({
+            "hooks": {
+                "PreToolUse": [
+                    {
+                        "matcher": "*",
+                        "hooks": [{"type": "http", "url": HOOK_HTTP_URL}]
+                    },
+                    {
+                        "matcher": "*",
+                        "hooks": [{"type": "http", "url": HOOK_HTTP_URL}]
+                    },
+                    {
+                        "matcher": {"tools": ["BashTool"]},
+                        "hooks": [{"type": "command", "command": "notify.sh"}]
+                    }
+                ]
+            }
+        });
+        fs::write(
+            storage.claude_settings_file(),
+            serde_json::to_string_pretty(&existing).unwrap(),
+        )
+        .unwrap();
+
+        checker.register_hooks_in_settings().unwrap();
+
+        let settings_content = fs::read_to_string(storage.claude_settings_file()).unwrap();
+        let settings: SettingsFile = serde_json::from_str(&settings_content).unwrap();
+        let pre_tool_use = settings
+            .hooks
+            .expect("hooks should exist")
+            .remove("PreToolUse")
+            .expect("PreToolUse hook list should exist");
+
+        let managed_count = pre_tool_use
+            .iter()
+            .filter(|hook_config| {
+                hook_config
+                    .hooks
+                    .as_ref()
+                    .map(|hooks| hooks.iter().any(is_managed_hook))
+                    .unwrap_or(false)
+            })
+            .count();
+
+        assert_eq!(
+            managed_count, 1,
+            "register_hooks_in_settings should keep exactly one managed hook entry per event"
+        );
+        assert_eq!(
+            pre_tool_use.len(),
+            2,
+            "the duplicate managed entry should be removed while preserving the custom hook"
+        );
+        assert!(
+            pre_tool_use.iter().any(|hook_config| {
+                hook_config.matcher == Some(serde_json::json!({"tools": ["BashTool"]}))
+                    && hook_config
+                        .hooks
+                        .as_ref()
+                        .map(|hooks| {
+                            hooks
+                                .iter()
+                                .any(|hook| hook.command.as_deref() == Some("notify.sh"))
+                        })
+                        .unwrap_or(false)
+            }),
+            "non-managed hooks should be preserved during deduplication"
         );
     }
 
