@@ -268,6 +268,7 @@ final class AppStateRunCheckpointTests: XCTestCase {
             status: status,
             sessionId: "session-1",
             delegationWorkerId: nil,
+            statusMessage: nil,
             createdAt: timestamp,
             updatedAt: timestamp,
             activeCheckpoint: activeCheckpoint,

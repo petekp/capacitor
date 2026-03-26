@@ -43,6 +43,7 @@ fn create_cmd(run_id: &str, method_id: &str) -> MutateRunCommand {
         decision_note: None,
         session_id: None,
         delegation_worker_id: None,
+        status_message: None,
         completed_media_artifacts: vec![],
     }
 }
@@ -71,6 +72,7 @@ fn base_cmd(run_id: &str) -> MutateRunCommand {
         decision_note: None,
         session_id: None,
         delegation_worker_id: None,
+        status_message: None,
         completed_media_artifacts: vec![],
     }
 }

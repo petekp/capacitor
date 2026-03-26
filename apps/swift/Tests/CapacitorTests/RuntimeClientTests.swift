@@ -1069,6 +1069,7 @@ final class RuntimeClientTests: XCTestCase {
             decisionNote: nil,
             sessionId: "session-core",
             delegationWorkerId: "worker-1",
+            statusMessage: nil,
             captureRequestId: "capture-001",
             clientId: "capacitor-mac-1234",
             observedCaptureUrl: "http://localhost:3000",

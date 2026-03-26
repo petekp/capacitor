@@ -464,6 +464,7 @@ actor RunCaptureCoordinator {
             decisionNote: nil,
             sessionId: nil,
             delegationWorkerId: nil,
+            statusMessage: nil,
             captureRequestId: captureRequestID,
             clientId: clientID,
             observedCaptureUrl: observedCaptureURL,

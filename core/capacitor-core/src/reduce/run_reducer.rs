@@ -30,6 +30,8 @@ pub fn apply_run_mutation(
 
     match command.kind {
         RunMutationKind::Create => handle_create(runs, &key, &project_path, &run_id, &command),
+        RunMutationKind::Start => handle_start(runs, &key, &command),
+        RunMutationKind::Heartbeat => handle_heartbeat(runs, &key, &command),
         RunMutationKind::AdvancePhase => handle_advance_phase(runs, &key),
         RunMutationKind::EmitCheckpoint => handle_emit_checkpoint(runs, &key, &command),
         RunMutationKind::SubmitDecision => handle_submit_decision(runs, &key, &command),
@@ -99,12 +101,68 @@ fn handle_create(
         active_checkpoint: None,
         session_id: None,
         delegation_worker_id: command.delegation_worker_id.clone(),
+        status_message: None,
         created_at: now.clone(),
         updated_at: now,
     };
 
     runs.insert(key.to_string(), run);
     ok("run created")
+}
+
+fn handle_start(
+    runs: &mut BTreeMap<String, RunState>,
+    key: &str,
+    command: &MutateRunCommand,
+) -> MutationOutcome {
+    let run = match runs.get_mut(key) {
+        Some(r) => r,
+        None => return reject("run not found"),
+    };
+
+    if run.status.is_terminal() {
+        return reject("run is in terminal state");
+    }
+
+    // Idempotent: if already started, just update the message and timestamp.
+    if run.status != RunStatus::Created {
+        if let Some(msg) = normalized_optional_text(command.status_message.as_deref()) {
+            run.status_message = Some(msg);
+        }
+        run.updated_at = now_rfc3339();
+        return ok("run already started");
+    }
+
+    // Transition Created -> Active, activate phase 0.
+    run.status = RunStatus::Active;
+    if let Some(phase) = run.phases.get_mut(0) {
+        phase.status = PhaseStatus::Active;
+        phase.started_at = Some(now_rfc3339());
+    }
+    run.status_message = normalized_optional_text(command.status_message.as_deref());
+    run.updated_at = now_rfc3339();
+    ok("run started")
+}
+
+fn handle_heartbeat(
+    runs: &mut BTreeMap<String, RunState>,
+    key: &str,
+    command: &MutateRunCommand,
+) -> MutationOutcome {
+    let run = match runs.get_mut(key) {
+        Some(r) => r,
+        None => return reject("run not found"),
+    };
+
+    if run.status.is_terminal() {
+        return reject("run is in terminal state");
+    }
+
+    if let Some(msg) = normalized_optional_text(command.status_message.as_deref()) {
+        run.status_message = Some(msg);
+    }
+    run.updated_at = now_rfc3339();
+    ok("heartbeat recorded")
 }
 
 fn handle_advance_phase(runs: &mut BTreeMap<String, RunState>, key: &str) -> MutationOutcome {
@@ -611,6 +669,7 @@ mod tests {
             decision_note: None,
             session_id: None,
             delegation_worker_id: None,
+            status_message: None,
             completed_media_artifacts: vec![],
         }
     }
@@ -648,6 +707,7 @@ mod tests {
             decision_note: None,
             session_id: None,
             delegation_worker_id: None,
+            status_message: None,
             completed_media_artifacts: vec![],
         }
     }
@@ -1329,5 +1389,195 @@ mod tests {
         let run = runs.values().next().unwrap();
         let ckpt = run.active_checkpoint.as_ref().unwrap();
         assert_eq!(ckpt.capture_url.as_deref(), Some("http://localhost:5173"));
+    }
+
+    // -----------------------------------------------------------------------
+    // Start mutation tests
+    // -----------------------------------------------------------------------
+
+    fn start_run(runs: &mut BTreeMap<String, RunState>, run_id: &str) {
+        let result = mutate(runs, base_cmd(run_id), RunMutationKind::Start);
+        assert!(result.ok, "start failed: {}", result.message);
+    }
+
+    fn start_run_with_message(
+        runs: &mut BTreeMap<String, RunState>,
+        run_id: &str,
+        msg: &str,
+    ) -> MutationOutcome {
+        let mut cmd = base_cmd(run_id);
+        cmd.status_message = Some(msg.to_string());
+        mutate(runs, cmd, RunMutationKind::Start)
+    }
+
+    #[test]
+    fn start_transitions_created_to_active() {
+        let mut runs = empty_runs();
+        apply_run_mutation(&mut runs, create_command("run-001", "execution_only"));
+
+        let result = start_run_with_message(&mut runs, "run-001", "Initializing");
+        assert!(result.ok, "{}", result.message);
+        assert_eq!(result.message, "run started");
+
+        let run = runs.values().next().unwrap();
+        assert_eq!(run.status, RunStatus::Active);
+        assert_eq!(run.phases[0].status, PhaseStatus::Active);
+        assert!(run.phases[0].started_at.is_some());
+        assert_eq!(run.status_message.as_deref(), Some("Initializing"));
+    }
+
+    #[test]
+    fn start_is_idempotent_on_active_run() {
+        let mut runs = empty_runs();
+        apply_run_mutation(&mut runs, create_command("run-001", "execution_only"));
+        start_run(&mut runs, "run-001");
+
+        // Second start should succeed (idempotent)
+        let result = start_run_with_message(&mut runs, "run-001", "Re-initializing");
+        assert!(result.ok, "{}", result.message);
+        assert_eq!(result.message, "run already started");
+
+        let run = runs.values().next().unwrap();
+        assert_eq!(run.status, RunStatus::Active);
+        assert_eq!(run.status_message.as_deref(), Some("Re-initializing"));
+    }
+
+    #[test]
+    fn start_rejected_on_terminal_run() {
+        let mut runs = empty_runs();
+        apply_run_mutation(&mut runs, create_command("run-001", "execution_only"));
+        start_run(&mut runs, "run-001");
+        mutate(&mut runs, base_cmd("run-001"), RunMutationKind::Complete);
+
+        let result = mutate(&mut runs, base_cmd("run-001"), RunMutationKind::Start);
+        assert!(!result.ok);
+        assert!(result.message.contains("terminal"));
+    }
+
+    #[test]
+    fn start_without_message_leaves_none() {
+        let mut runs = empty_runs();
+        apply_run_mutation(&mut runs, create_command("run-001", "execution_only"));
+
+        let result = mutate(&mut runs, base_cmd("run-001"), RunMutationKind::Start);
+        assert!(result.ok);
+
+        let run = runs.values().next().unwrap();
+        assert_eq!(run.status, RunStatus::Active);
+        assert!(run.status_message.is_none());
+    }
+
+    // -----------------------------------------------------------------------
+    // Heartbeat mutation tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn heartbeat_updates_message_and_timestamp() {
+        let mut runs = empty_runs();
+        apply_run_mutation(&mut runs, create_command("run-001", "execution_only"));
+        start_run(&mut runs, "run-001");
+
+        let ts_before = runs.values().next().unwrap().updated_at.clone();
+
+        let mut cmd = base_cmd("run-001");
+        cmd.status_message = Some("Composing prompt".to_string());
+        let result = mutate(&mut runs, cmd, RunMutationKind::Heartbeat);
+        assert!(result.ok, "{}", result.message);
+
+        let run = runs.values().next().unwrap();
+        assert_eq!(run.status_message.as_deref(), Some("Composing prompt"));
+        assert!(run.updated_at >= ts_before);
+    }
+
+    #[test]
+    fn heartbeat_without_message_preserves_existing() {
+        let mut runs = empty_runs();
+        apply_run_mutation(&mut runs, create_command("run-001", "execution_only"));
+        start_run_with_message(&mut runs, "run-001", "Starting");
+
+        // Heartbeat with no message
+        let result = mutate(&mut runs, base_cmd("run-001"), RunMutationKind::Heartbeat);
+        assert!(result.ok);
+
+        let run = runs.values().next().unwrap();
+        assert_eq!(run.status_message.as_deref(), Some("Starting"));
+    }
+
+    #[test]
+    fn heartbeat_rejected_on_terminal_run() {
+        let mut runs = empty_runs();
+        apply_run_mutation(&mut runs, create_command("run-001", "execution_only"));
+        start_run(&mut runs, "run-001");
+        mutate(&mut runs, base_cmd("run-001"), RunMutationKind::Fail);
+
+        let result = mutate(&mut runs, base_cmd("run-001"), RunMutationKind::Heartbeat);
+        assert!(!result.ok);
+        assert!(result.message.contains("terminal"));
+    }
+
+    #[test]
+    fn heartbeat_on_created_run_succeeds() {
+        let mut runs = empty_runs();
+        apply_run_mutation(&mut runs, create_command("run-001", "execution_only"));
+
+        // Heartbeat before Start is allowed — liveness signal on a not-yet-started run
+        let mut cmd = base_cmd("run-001");
+        cmd.status_message = Some("Preparing".to_string());
+        let result = mutate(&mut runs, cmd, RunMutationKind::Heartbeat);
+        assert!(result.ok);
+
+        let run = runs.values().next().unwrap();
+        assert_eq!(run.status, RunStatus::Created); // Heartbeat doesn't change status
+        assert_eq!(run.status_message.as_deref(), Some("Preparing"));
+    }
+
+    // -----------------------------------------------------------------------
+    // Full lifecycle: Create -> Start -> Heartbeat -> AdvancePhase
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn full_lifecycle_create_start_heartbeat_advance() {
+        let mut runs = empty_runs();
+        apply_run_mutation(&mut runs, create_command("run-001", "shape_and_execute"));
+
+        // Start
+        start_run_with_message(&mut runs, "run-001", "Phase 1 starting");
+        let run = runs.values().next().unwrap();
+        assert_eq!(run.status, RunStatus::Active);
+        assert_eq!(run.phases[0].status, PhaseStatus::Active);
+
+        // Heartbeat
+        let mut cmd = base_cmd("run-001");
+        cmd.status_message = Some("Dispatching Codex".to_string());
+        mutate(&mut runs, cmd, RunMutationKind::Heartbeat);
+
+        // Advance to phase 2
+        let result = mutate(
+            &mut runs,
+            base_cmd("run-001"),
+            RunMutationKind::AdvancePhase,
+        );
+        assert!(result.ok, "{}", result.message);
+
+        let run = runs.values().next().unwrap();
+        assert_eq!(run.current_phase_index, 1);
+        assert_eq!(run.phases[0].status, PhaseStatus::Completed);
+        assert_eq!(run.phases[1].status, PhaseStatus::Active);
+
+        // Heartbeat on phase 2
+        let mut cmd = base_cmd("run-001");
+        cmd.status_message = Some("Phase 2 in progress".to_string());
+        mutate(&mut runs, cmd, RunMutationKind::Heartbeat);
+
+        // Complete final phase
+        let result = mutate(
+            &mut runs,
+            base_cmd("run-001"),
+            RunMutationKind::AdvancePhase,
+        );
+        assert!(result.ok);
+
+        let run = runs.values().next().unwrap();
+        assert_eq!(run.status, RunStatus::Completed);
     }
 }

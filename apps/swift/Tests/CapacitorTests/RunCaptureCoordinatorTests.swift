@@ -980,6 +980,7 @@ final class RunCaptureCoordinatorTests: XCTestCase {
             status: "paused",
             sessionId: "session-1",
             delegationWorkerId: nil,
+            statusMessage: nil,
             createdAt: timestamp,
             updatedAt: timestamp,
             activeCheckpoint: RuntimeCheckpointState(

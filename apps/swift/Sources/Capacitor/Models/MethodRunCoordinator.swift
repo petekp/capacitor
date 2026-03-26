@@ -163,6 +163,7 @@ final class MethodRunCoordinator: @unchecked Sendable {
                     decisionNote: nil,
                     sessionId: nil,
                     delegationWorkerId: nil,
+                    statusMessage: nil,
                     captureRequestId: nil,
                     clientId: nil,
                     observedCaptureUrl: nil,

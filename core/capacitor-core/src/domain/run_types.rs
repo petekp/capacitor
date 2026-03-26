@@ -77,6 +77,8 @@ pub enum InvolvementLevel {
 #[serde(rename_all = "snake_case")]
 pub enum RunMutationKind {
     Create,
+    Start,
+    Heartbeat,
     AdvancePhase,
     EmitCheckpoint,
     SubmitDecision,
@@ -264,6 +266,9 @@ pub struct RunState {
     pub session_id: Option<String>,
     /// Strangler bridge: links to existing delegation worker when in execution phase.
     pub delegation_worker_id: Option<String>,
+    /// Human-readable progress message set by Start and Heartbeat mutations.
+    #[serde(default)]
+    pub status_message: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -309,6 +314,9 @@ pub struct MutateRunCommand {
     pub decision_note: Option<String>,
     pub session_id: Option<String>,
     pub delegation_worker_id: Option<String>,
+    /// Human-readable progress message for Start and Heartbeat mutations.
+    #[serde(default)]
+    pub status_message: Option<String>,
     /// Media artifact paths to attach via CaptureComplete.
     pub completed_media_artifacts: Vec<MediaArtifact>,
 }

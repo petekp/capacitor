@@ -426,6 +426,7 @@ struct RuntimeRunState: Equatable, Sendable {
     let status: String
     let sessionId: String?
     let delegationWorkerId: String?
+    let statusMessage: String?
     let createdAt: String
     let updatedAt: String
     let activeCheckpoint: RuntimeCheckpointState?
@@ -958,6 +959,7 @@ private struct SnapshotRunPayload: Decodable {
     let status: String
     let sessionId: String?
     let delegationWorkerId: String?
+    let statusMessage: String?
     let createdAt: String
     let updatedAt: String
     let activeCheckpoint: SnapshotCheckpointPayload?
@@ -970,6 +972,7 @@ private struct SnapshotRunPayload: Decodable {
         case status
         case sessionId = "session_id"
         case delegationWorkerId = "delegation_worker_id"
+        case statusMessage = "status_message"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
         case activeCheckpoint = "active_checkpoint"
@@ -983,6 +986,7 @@ private struct SnapshotRunPayload: Decodable {
         status = RuntimeClient.snapshotRunStatusString(run.status)
         sessionId = run.sessionId
         delegationWorkerId = run.delegationWorkerId
+        statusMessage = run.statusMessage
         createdAt = run.createdAt
         updatedAt = run.updatedAt
         activeCheckpoint = run.activeCheckpoint.map(SnapshotCheckpointPayload.init)
@@ -1052,6 +1056,7 @@ struct RuntimeRunMutationRequest: Encodable, Equatable, Sendable {
     let decisionNote: String?
     let sessionId: String?
     let delegationWorkerId: String?
+    let statusMessage: String?
     let captureRequestId: String?
     let clientId: String?
     let observedCaptureUrl: String?
@@ -1077,6 +1082,7 @@ struct RuntimeRunMutationRequest: Encodable, Equatable, Sendable {
         case decisionNote = "decision_note"
         case sessionId = "session_id"
         case delegationWorkerId = "delegation_worker_id"
+        case statusMessage = "status_message"
         case captureRequestId = "capture_request_id"
         case clientId = "client_id"
         case observedCaptureUrl = "observed_capture_url"
@@ -1879,6 +1885,7 @@ private extension RuntimeRunState {
         status = payload.status
         sessionId = payload.sessionId
         delegationWorkerId = payload.delegationWorkerId
+        statusMessage = payload.statusMessage
         createdAt = payload.createdAt
         updatedAt = payload.updatedAt
         activeCheckpoint = payload.activeCheckpoint.map(RuntimeCheckpointState.init)

@@ -113,6 +113,7 @@ final class StatusChipsRowTests: XCTestCase {
             status: status,
             sessionId: "run-session-1",
             delegationWorkerId: nil,
+            statusMessage: nil,
             createdAt: "2026-03-25T10:00:00Z",
             updatedAt: "2026-03-25T10:06:00Z",
             activeCheckpoint: checkpoint,
