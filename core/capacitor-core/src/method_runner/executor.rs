@@ -21,6 +21,10 @@ use crate::method_runner::definition::{
 use crate::method_runner::events::{append_event, make_envelope, AppendError, MethodEventKind};
 use crate::method_runner::handoff::{ingest_handoff, HandoffParseError};
 use crate::method_runner::output::{resolve_and_write_output, ResolveError};
+use crate::method_runner::run_status_reporter::{
+    phase_started_message, report_status_kind, report_status_message, NoopRunStatusReporter,
+    RunStatusEventKind, RunStatusReporter,
+};
 use crate::method_runner::state::{project, write_state_atomic, MethodRunState, ProjectionError};
 use crate::method_runner::storage::{acquire_lock, LockError, MethodRunPaths};
 
@@ -633,6 +637,23 @@ pub fn execute_run(
     dispatcher: &dyn WorkerDispatcher,
     interactive_io: &dyn InteractiveIO,
 ) -> Result<MethodRunState, RunError> {
+    execute_run_with_reporter(
+        source,
+        prompt_builder,
+        dispatcher,
+        interactive_io,
+        &NoopRunStatusReporter,
+    )
+}
+
+/// Execute a complete method run and mirror progress through a reporter seam.
+pub fn execute_run_with_reporter(
+    source: &DefinitionSource,
+    prompt_builder: &dyn PromptBuilder,
+    dispatcher: &dyn WorkerDispatcher,
+    interactive_io: &dyn InteractiveIO,
+    reporter: &dyn RunStatusReporter,
+) -> Result<MethodRunState, RunError> {
     // 1. Read + normalize definition
     let yaml_content = std::fs::read_to_string(&source.definition_path)?;
     let normalized = Normalizer::normalize(&yaml_content)?;
@@ -673,15 +694,26 @@ pub fn execute_run(
         let mut env = make_envelope(&run_id, MethodEventKind::RunStarted);
         append_event(&events_path, &mut env, &mut current_seq)?;
     }
+    report_status_message(reporter, RunStatusEventKind::Start, "Run started");
 
     // 10. Execute phases (serial or parallel depending on mode)
     let run_start = std::time::Instant::now();
-    for phase in &normalized.method.phases {
+    let mut suppress_phase_started_heartbeat = false;
+    for (phase_index, phase) in normalized.method.phases.iter().enumerate() {
         // PhaseStarted
         {
             let mut env = make_envelope(&run_id, MethodEventKind::PhaseStarted);
             env.phase_id = Some(phase.id.clone());
             append_event(&events_path, &mut env, &mut current_seq)?;
+        }
+        if suppress_phase_started_heartbeat {
+            suppress_phase_started_heartbeat = false;
+        } else {
+            report_status_message(
+                reporter,
+                RunStatusEventKind::Heartbeat,
+                phase_started_message(&phase.title),
+            );
         }
 
         if phase.execution == ExecutionMode::Parallel {
@@ -711,6 +743,7 @@ pub fn execute_run(
                         prompt_builder,
                         dispatcher,
                         interactive_io,
+                        reporter,
                     )
                 };
                 step_results.push((step, result));
@@ -749,6 +782,7 @@ pub fn execute_run(
                     env.payload = summary;
                     append_event(&events_path, &mut env, &mut current_seq)?;
                 }
+                report_status_kind(reporter, RunStatusEventKind::Fail);
 
                 let events = crate::method_runner::events::recover_events(&events_path)?;
                 let state = project(&events)?;
@@ -768,6 +802,7 @@ pub fn execute_run(
                     env.payload = summary;
                     append_event(&events_path, &mut env, &mut current_seq)?;
                 }
+                report_status_kind(reporter, RunStatusEventKind::Fail);
 
                 let events = crate::method_runner::events::recover_events(&events_path)?;
                 let state = project(&events)?;
@@ -792,10 +827,11 @@ pub fn execute_run(
                     });
                     append_event(&events_path, &mut env, &mut current_seq)?;
 
+                    report_status_kind(reporter, RunStatusEventKind::Fail);
                     return Err(RunError::PipelineExecuteBlocked(step.id.clone()));
                 }
 
-                execute_step(
+                if let Err(error) = execute_step(
                     &paths,
                     &events_path,
                     &run_id,
@@ -805,7 +841,11 @@ pub fn execute_run(
                     prompt_builder,
                     dispatcher,
                     interactive_io,
-                )?;
+                    reporter,
+                ) {
+                    report_status_kind(reporter, RunStatusEventKind::Fail);
+                    return Err(error);
+                }
             }
         }
 
@@ -815,6 +855,11 @@ pub fn execute_run(
             let current_events = crate::method_runner::events::recover_events(&events_path)?;
             let current_state = project(&current_events)?;
 
+            report_status_message(
+                reporter,
+                RunStatusEventKind::Heartbeat,
+                "Waiting for checkpoint",
+            );
             let outcome = evaluate_gate(gate, phase, &current_state, &paths, interactive_io);
 
             // Emit GateEvaluated event
@@ -861,6 +906,7 @@ pub fn execute_run(
                         env.payload = serde_json::json!({ "reason": reason });
                         append_event(&events_path, &mut env, &mut current_seq)?;
                     }
+                    report_status_kind(reporter, RunStatusEventKind::Fail);
 
                     return Err(RunError::PhaseGateBlocked {
                         phase_id: phase.id.clone(),
@@ -877,10 +923,24 @@ pub fn execute_run(
             env.phase_id = Some(phase.id.clone());
             append_event(&events_path, &mut env, &mut current_seq)?;
         }
+        if let Some(next_phase) = normalized.method.phases.get(phase_index + 1) {
+            report_status_kind(reporter, RunStatusEventKind::AdvancePhase);
+            report_status_message(
+                reporter,
+                RunStatusEventKind::Heartbeat,
+                phase_started_message(&next_phase.title),
+            );
+            suppress_phase_started_heartbeat = true;
+        }
     }
 
     // 11. Resolve method-level outputs
-    resolve_method_outputs(&paths, &events_path, &run_id, &mut current_seq, &normalized)?;
+    if let Err(error) =
+        resolve_method_outputs(&paths, &events_path, &run_id, &mut current_seq, &normalized)
+    {
+        report_status_kind(reporter, RunStatusEventKind::Fail);
+        return Err(error);
+    }
 
     // 12. RunCompleted with summary payload
     {
@@ -889,6 +949,7 @@ pub fn execute_run(
         env.payload = summary;
         append_event(&events_path, &mut env, &mut current_seq)?;
     }
+    report_status_kind(reporter, RunStatusEventKind::Complete);
 
     // 13. Project state from events and write state.json
     let events = crate::method_runner::events::recover_events(&events_path)?;
@@ -925,6 +986,33 @@ pub fn execute_step_public(
     dispatcher: &dyn WorkerDispatcher,
     interactive_io: &dyn InteractiveIO,
 ) -> Result<(), RunError> {
+    execute_step_public_with_reporter(
+        paths,
+        events_path,
+        run_id,
+        current_seq,
+        phase_id,
+        step,
+        prompt_builder,
+        dispatcher,
+        interactive_io,
+        &NoopRunStatusReporter,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn execute_step_public_with_reporter(
+    paths: &MethodRunPaths,
+    events_path: &Path,
+    run_id: &str,
+    current_seq: &mut u64,
+    phase_id: &str,
+    step: &NormalizedStep,
+    prompt_builder: &dyn PromptBuilder,
+    dispatcher: &dyn WorkerDispatcher,
+    interactive_io: &dyn InteractiveIO,
+    reporter: &dyn RunStatusReporter,
+) -> Result<(), RunError> {
     // Check for pipeline_execute at the public boundary
     if step.action == ActionKind::PipelineExecute {
         let mut env = make_envelope(run_id, MethodEventKind::StepBlocked);
@@ -943,6 +1031,7 @@ pub fn execute_step_public(
         prompt_builder,
         dispatcher,
         interactive_io,
+        reporter,
     )
 }
 
@@ -957,6 +1046,7 @@ fn execute_step(
     prompt_builder: &dyn PromptBuilder,
     dispatcher: &dyn WorkerDispatcher,
     interactive_io: &dyn InteractiveIO,
+    reporter: &dyn RunStatusReporter,
 ) -> Result<(), RunError> {
     match step.action {
         ActionKind::Dispatch => execute_dispatch_step(
@@ -968,6 +1058,7 @@ fn execute_step(
             step,
             prompt_builder,
             dispatcher,
+            reporter,
         ),
         ActionKind::Synthesis => {
             execute_synthesis_step(paths, events_path, run_id, current_seq, phase_id, step)
@@ -1010,6 +1101,7 @@ fn execute_dispatch_step(
     step: &NormalizedStep,
     prompt_builder: &dyn PromptBuilder,
     dispatcher: &dyn WorkerDispatcher,
+    reporter: &dyn RunStatusReporter,
 ) -> Result<(), RunError> {
     // StepStarted
     {
@@ -1066,6 +1158,7 @@ fn execute_dispatch_step(
             &last_failure_reason,
             prompt_builder,
             dispatcher,
+            reporter,
         )?;
 
         let elapsed_ms = attempt_start.elapsed().as_millis() as u64;
@@ -1181,6 +1274,7 @@ fn dispatch_attempt_workers(
     prior_failure: &str,
     prompt_builder: &dyn PromptBuilder,
     dispatcher: &dyn WorkerDispatcher,
+    reporter: &dyn RunStatusReporter,
 ) -> Result<AttemptOutcome, RunError> {
     let mut worker_results: Vec<(String, bool)> = Vec::new(); // (worker_id, success)
 
@@ -1237,6 +1331,7 @@ fn dispatch_attempt_workers(
             skills: merged_skills,
             context_file,
         };
+        report_status_message(reporter, RunStatusEventKind::Heartbeat, "Composing prompt");
         let prompt_result = prompt_builder.build_prompt(&prompt_request)?;
 
         // WorkerDispatched
@@ -1258,6 +1353,7 @@ fn dispatch_attempt_workers(
             relay_root: relay_root.clone(),
             prompt_path: prompt_result.prompt_path,
         };
+        report_status_message(reporter, RunStatusEventKind::Heartbeat, "Dispatching Codex");
         let dispatch_result = dispatcher.dispatch(&dispatch_request);
 
         match dispatch_result {

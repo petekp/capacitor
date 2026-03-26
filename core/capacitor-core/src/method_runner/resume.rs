@@ -16,6 +16,10 @@ use crate::method_runner::events::{
     append_event, make_envelope, read_last_seq, recover_events, MethodEventKind,
 };
 use crate::method_runner::executor::RunError;
+use crate::method_runner::run_status_reporter::{
+    phase_started_message, report_status_kind, report_status_message, NoopRunStatusReporter,
+    RunStatusEventKind, RunStatusReporter,
+};
 use crate::method_runner::state::{
     rebuild_state, MethodRunState, PhaseStatus, RunStatus, StepStatus,
 };
@@ -251,6 +255,22 @@ pub fn resume_run(
     dispatcher: &dyn WorkerDispatcher,
     interactive_io: &dyn InteractiveIO,
 ) -> Result<MethodRunState, RunError> {
+    resume_run_with_reporter(
+        execution_root,
+        prompt_builder,
+        dispatcher,
+        interactive_io,
+        &NoopRunStatusReporter,
+    )
+}
+
+pub fn resume_run_with_reporter(
+    execution_root: &Path,
+    prompt_builder: &dyn PromptBuilder,
+    dispatcher: &dyn WorkerDispatcher,
+    interactive_io: &dyn InteractiveIO,
+    reporter: &dyn RunStatusReporter,
+) -> Result<MethodRunState, RunError> {
     let paths = MethodRunPaths::new(execution_root);
     let events_path = paths.events_log();
 
@@ -293,17 +313,25 @@ pub fn resume_run(
         let final_state = crate::method_runner::state::project(&events)?;
         crate::method_runner::state::write_state_atomic(&paths.state_json(), &final_state)
             .map_err(RunError::IoError)?;
+        report_status_kind(reporter, RunStatusEventKind::Complete);
         return Ok(final_state);
     }
 
     let (phase_idx, _step_idx) = resume_point.unwrap();
-
     // If run status is not Running, transition it
     if state.status == RunStatus::Created || state.status == RunStatus::Blocked {
         // Created->Running or Blocked->Running are both legal transitions
         let mut env = make_envelope(&state.run_id, MethodEventKind::RunStarted);
         append_event(&events_path, &mut env, &mut current_seq)?;
+        report_status_message(reporter, RunStatusEventKind::Start, "Run started");
     }
+    let recovered_phase = &definition.method.phases[phase_idx];
+    report_status_message(
+        reporter,
+        RunStatusEventKind::Heartbeat,
+        phase_started_message(&recovered_phase.title),
+    );
+    let mut suppress_phase_started_heartbeat = true;
 
     // Phase 4: Continue execution from resume point
     // For each phase from resume_point forward, execute non-terminal steps
@@ -341,6 +369,15 @@ pub fn resume_run(
             env.phase_id = Some(phase_def.id.clone());
             append_event(&events_path, &mut env, &mut current_seq)?;
         }
+        if suppress_phase_started_heartbeat {
+            suppress_phase_started_heartbeat = false;
+        } else if phase_status == PhaseStatus::Pending {
+            report_status_message(
+                reporter,
+                RunStatusEventKind::Heartbeat,
+                phase_started_message(&phase_def.title),
+            );
+        }
 
         // Execute non-terminal steps
         for step_def in &phase_def.steps {
@@ -361,7 +398,7 @@ pub fn resume_run(
             }
 
             // Execute this step
-            crate::method_runner::executor::execute_step_public(
+            if let Err(error) = crate::method_runner::executor::execute_step_public_with_reporter(
                 &paths,
                 &events_path,
                 &run_id,
@@ -371,7 +408,11 @@ pub fn resume_run(
                 prompt_builder,
                 dispatcher,
                 interactive_io,
-            )?;
+                reporter,
+            ) {
+                report_status_kind(reporter, RunStatusEventKind::Fail);
+                return Err(error);
+            }
         }
 
         // Evaluate gate if present
@@ -380,6 +421,11 @@ pub fn resume_run(
             let current_state = crate::method_runner::state::project(&current_events)?;
             current_seq = current_state.seq;
 
+            report_status_message(
+                reporter,
+                RunStatusEventKind::Heartbeat,
+                "Waiting for checkpoint",
+            );
             let outcome = crate::method_runner::executor::evaluate_gate(
                 gate,
                 phase_def,
@@ -429,6 +475,7 @@ pub fn resume_run(
                     env.payload = serde_json::json!({ "reason": reason });
                     append_event(&events_path, &mut env, &mut current_seq)?;
 
+                    report_status_kind(reporter, RunStatusEventKind::Fail);
                     return Err(RunError::PhaseGateBlocked {
                         phase_id: phase_def.id.clone(),
                         gate_id: gate.id.clone(),
@@ -443,6 +490,15 @@ pub fn resume_run(
             let mut env = make_envelope(&run_id, MethodEventKind::PhaseCompleted);
             env.phase_id = Some(phase_def.id.clone());
             append_event(&events_path, &mut env, &mut current_seq)?;
+        }
+        if let Some(next_phase) = definition.method.phases.get(pi + 1) {
+            report_status_kind(reporter, RunStatusEventKind::AdvancePhase);
+            report_status_message(
+                reporter,
+                RunStatusEventKind::Heartbeat,
+                phase_started_message(&next_phase.title),
+            );
+            suppress_phase_started_heartbeat = true;
         }
     }
 
@@ -463,6 +519,7 @@ pub fn resume_run(
                 Ok(_) => {}
                 Err(e) => {
                     if output.required {
+                        report_status_kind(reporter, RunStatusEventKind::Fail);
                         return Err(RunError::ResolveError(e));
                     }
                 }
@@ -475,6 +532,7 @@ pub fn resume_run(
         let mut env = make_envelope(&run_id, MethodEventKind::RunCompleted);
         append_event(&events_path, &mut env, &mut current_seq)?;
     }
+    report_status_kind(reporter, RunStatusEventKind::Complete);
 
     // Final state projection
     let events = recover_events(&events_path)?;

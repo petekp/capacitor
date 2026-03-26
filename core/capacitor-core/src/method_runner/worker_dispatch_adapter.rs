@@ -7,7 +7,8 @@
 use std::io::Write;
 use std::os::unix::process::CommandExt;
 use std::process::Command;
-use std::time::Instant;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use wait_timeout::ChildExt;
 
@@ -17,6 +18,11 @@ use crate::method_runner::adapter_config::{
 use crate::method_runner::adapters::{
     AdapterError, WorkerDispatchRequest, WorkerDispatchResult, WorkerDispatcher,
 };
+use crate::method_runner::run_status_reporter::{
+    report_status_message, NoopRunStatusReporter, RunStatusEventKind, RunStatusReporter,
+};
+
+const WORKER_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
 
 // ---------------------------------------------------------------------------
 // CodexWorkerDispatcher
@@ -25,11 +31,19 @@ use crate::method_runner::adapters::{
 /// Real worker dispatcher that delegates to `codex exec`.
 pub struct CodexWorkerDispatcher {
     config: AdapterConfig,
+    reporter: Arc<dyn RunStatusReporter + Send + Sync>,
 }
 
 impl CodexWorkerDispatcher {
     pub fn new(config: AdapterConfig) -> Self {
-        Self { config }
+        Self::with_reporter(config, Arc::new(NoopRunStatusReporter))
+    }
+
+    pub fn with_reporter(
+        config: AdapterConfig,
+        reporter: Arc<dyn RunStatusReporter + Send + Sync>,
+    ) -> Self {
+        Self { config, reporter }
     }
 }
 
@@ -127,44 +141,54 @@ impl WorkerDispatcher for CodexWorkerDispatcher {
         let timed_out;
         let status;
 
-        match child.wait_timeout(timeout) {
-            Ok(Some(s)) => {
-                // Completed within timeout
-                timed_out = false;
-                status = s;
-            }
-            Ok(None) => {
-                // Timed out — escalate: SIGTERM → grace → SIGKILL
-                timed_out = true;
-                let pgid = child_pid as i32; // process_group(0) means pgid = child pid
-
-                // SIGTERM the process group
-                unsafe {
-                    libc::killpg(pgid, libc::SIGTERM);
+        let mut remaining = timeout;
+        loop {
+            let wait_slice = remaining.min(WORKER_HEARTBEAT_INTERVAL);
+            match child.wait_timeout(wait_slice) {
+                Ok(Some(s)) => {
+                    timed_out = false;
+                    status = s;
+                    break;
                 }
+                Ok(None) => {
+                    let elapsed_secs = start.elapsed().as_secs();
+                    remaining = timeout.saturating_sub(start.elapsed());
+                    if remaining.is_zero() {
+                        timed_out = true;
+                        let pgid = child_pid as i32; // process_group(0) means pgid = child pid
 
-                // Grace period: wait for clean exit
-                match child.wait_timeout(self.config.kill_grace_period) {
-                    Ok(Some(s)) => {
-                        status = s;
-                    }
-                    Ok(None) | Err(_) => {
-                        // Still alive after grace — SIGKILL the group
                         unsafe {
-                            libc::killpg(pgid, libc::SIGKILL);
+                            libc::killpg(pgid, libc::SIGTERM);
                         }
-                        // Must still wait to reap
-                        status = child
-                            .wait()
-                            .unwrap_or_else(|_| std::process::ExitStatus::default());
+
+                        match child.wait_timeout(self.config.kill_grace_period) {
+                            Ok(Some(s)) => {
+                                status = s;
+                            }
+                            Ok(None) | Err(_) => {
+                                unsafe {
+                                    libc::killpg(pgid, libc::SIGKILL);
+                                }
+                                status = child
+                                    .wait()
+                                    .unwrap_or_else(|_| std::process::ExitStatus::default());
+                            }
+                        }
+                        break;
                     }
+
+                    report_status_message(
+                        self.reporter.as_ref(),
+                        RunStatusEventKind::Heartbeat,
+                        format!("Waiting for worker ({elapsed_secs}s)"),
+                    );
                 }
-            }
-            Err(e) => {
-                return Err(AdapterError::SpawnFailed(format!(
-                    "codex exec wait failed: {}",
-                    e
-                )));
+                Err(e) => {
+                    return Err(AdapterError::SpawnFailed(format!(
+                        "codex exec wait failed: {}",
+                        e
+                    )));
+                }
             }
         }
 

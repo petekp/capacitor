@@ -15,6 +15,7 @@ pub mod handoff;
 pub mod output;
 pub mod prompt_builder_adapter;
 pub mod resume;
+pub mod run_status_reporter;
 pub mod state;
 pub mod storage;
 pub mod worker_dispatch_adapter;

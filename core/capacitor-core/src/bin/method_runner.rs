@@ -2,6 +2,7 @@ use std::env;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+use std::sync::Arc;
 use std::time::Duration;
 
 use capacitor_core::method_runner::adapter_config::AdapterConfig;
@@ -10,9 +11,12 @@ use capacitor_core::method_runner::adapters::{
 };
 use capacitor_core::method_runner::checkpoint_bridge::BridgeInteractiveIO;
 use capacitor_core::method_runner::definition::DefinitionSource;
-use capacitor_core::method_runner::executor::{execute_normalize, execute_run};
+use capacitor_core::method_runner::executor::{execute_normalize, execute_run_with_reporter};
 use capacitor_core::method_runner::prompt_builder_adapter::ShellPromptBuilder;
-use capacitor_core::method_runner::resume::resume_run;
+use capacitor_core::method_runner::resume::resume_run_with_reporter;
+use capacitor_core::method_runner::run_status_reporter::{
+    NoopRunStatusReporter, RunStatusReporter, RuntimeRunStatusReporter,
+};
 use capacitor_core::method_runner::worker_dispatch_adapter::CodexWorkerDispatcher;
 use capacitor_core::runtime_service::{RuntimeServiceEndpoint, RUNTIME_SERVICE_DEFAULT_PORT};
 
@@ -151,6 +155,13 @@ fn main() -> ExitCode {
                             return ExitCode::FAILURE;
                         }
                     };
+                let reporter = match make_run_status_reporter(command.bridge.as_ref()) {
+                    Ok(reporter) => reporter,
+                    Err(error) => {
+                        eprintln!("error: {error}");
+                        return ExitCode::FAILURE;
+                    }
+                };
                 let worker_cwd = resolve_worker_cwd(
                     &command.root,
                     command.bridge.as_ref(),
@@ -188,12 +199,13 @@ fn main() -> ExitCode {
                         }
                     };
                     let prompt_builder = ShellPromptBuilder::new(config.clone());
-                    let dispatcher = CodexWorkerDispatcher::new(config);
-                    match execute_run(
+                    let dispatcher = CodexWorkerDispatcher::with_reporter(config, reporter.clone());
+                    match execute_run_with_reporter(
                         &source,
                         &prompt_builder,
                         &dispatcher,
                         interactive_io.as_ref(),
+                        reporter.as_ref(),
                     ) {
                         Ok(state) => {
                             println!("run complete: run_id={}", state.run_id);
@@ -212,11 +224,12 @@ fn main() -> ExitCode {
                 } else {
                     let prompt_builder = FakePromptBuilder;
                     let dispatcher = FakeWorkerDispatcher;
-                    match execute_run(
+                    match execute_run_with_reporter(
                         &source,
                         &prompt_builder,
                         &dispatcher,
                         interactive_io.as_ref(),
+                        reporter.as_ref(),
                     ) {
                         Ok(state) => {
                             println!("run complete: run_id={}", state.run_id);
@@ -243,6 +256,13 @@ fn main() -> ExitCode {
                             return ExitCode::FAILURE;
                         }
                     };
+                let reporter = match make_run_status_reporter(command.bridge.as_ref()) {
+                    Ok(reporter) => reporter,
+                    Err(error) => {
+                        eprintln!("error: {error}");
+                        return ExitCode::FAILURE;
+                    }
+                };
                 let resume_worker_cwd = resolve_worker_cwd(
                     &command.root,
                     command.bridge.as_ref(),
@@ -280,12 +300,13 @@ fn main() -> ExitCode {
                         }
                     };
                     let prompt_builder = ShellPromptBuilder::new(config.clone());
-                    let dispatcher = CodexWorkerDispatcher::new(config);
-                    match resume_run(
+                    let dispatcher = CodexWorkerDispatcher::with_reporter(config, reporter.clone());
+                    match resume_run_with_reporter(
                         &command.root,
                         &prompt_builder,
                         &dispatcher,
                         interactive_io.as_ref(),
+                        reporter.as_ref(),
                     ) {
                         Ok(state) => {
                             println!("resume complete: run_id={}", state.run_id);
@@ -304,11 +325,12 @@ fn main() -> ExitCode {
                 } else {
                     let prompt_builder = FakePromptBuilder;
                     let dispatcher = FakeWorkerDispatcher;
-                    match resume_run(
+                    match resume_run_with_reporter(
                         &command.root,
                         &prompt_builder,
                         &dispatcher,
                         interactive_io.as_ref(),
+                        reporter.as_ref(),
                     ) {
                         Ok(state) => {
                             println!("resume complete: run_id={}", state.run_id);
@@ -548,16 +570,36 @@ fn make_interactive_io(
         return Ok(fallback);
     };
 
-    let home_dir = dirs::home_dir()
-        .ok_or_else(|| "bridge mode requires a detectable home directory".to_string())?;
-    let endpoint = RuntimeServiceEndpoint::discover(&home_dir, RUNTIME_SERVICE_DEFAULT_PORT)?
-        .ok_or_else(|| "bridge mode requires a reachable runtime service bootstrap".to_string())?;
+    let (home_dir, endpoint) = discover_runtime_service_endpoint()?;
     Ok(Box::new(BridgeInteractiveIO::new(
         endpoint,
         bridge.project_path.clone(),
         bridge.run_id.clone(),
         home_dir,
         fallback,
+    )))
+}
+
+fn discover_runtime_service_endpoint() -> Result<(PathBuf, RuntimeServiceEndpoint), String> {
+    let home_dir = dirs::home_dir()
+        .ok_or_else(|| "bridge mode requires a detectable home directory".to_string())?;
+    let endpoint = RuntimeServiceEndpoint::discover(&home_dir, RUNTIME_SERVICE_DEFAULT_PORT)?
+        .ok_or_else(|| "bridge mode requires a reachable runtime service bootstrap".to_string())?;
+    Ok((home_dir, endpoint))
+}
+
+fn make_run_status_reporter(
+    bridge: Option<&BridgeOptions>,
+) -> Result<Arc<dyn RunStatusReporter + Send + Sync>, String> {
+    let Some(bridge) = bridge else {
+        return Ok(Arc::new(NoopRunStatusReporter));
+    };
+
+    let (_home_dir, endpoint) = discover_runtime_service_endpoint()?;
+    Ok(Arc::new(RuntimeRunStatusReporter::new(
+        endpoint,
+        bridge.project_path.clone(),
+        bridge.run_id.clone(),
     )))
 }
 

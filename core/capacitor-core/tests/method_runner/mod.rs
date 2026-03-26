@@ -11,6 +11,7 @@ mod manifest_swift_compat;
 mod real_prompt_builder;
 mod real_worker_dispatcher;
 mod robustness;
+mod run_status_reporter;
 mod state_machines;
 mod step7_action_agnostic;
 mod step8_batch_a;

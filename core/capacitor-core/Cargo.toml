@@ -38,3 +38,4 @@ md5 = "0.7"
 tempfile = "3.14"
 ulid = "1.0"
 wait-timeout = "0.2"
+ureq = { version = "2.10", features = ["json"] }

@@ -146,6 +146,16 @@ impl RuntimeServiceEndpoint {
         )
     }
 
+    #[must_use]
+    pub fn run_mutate_url(&self) -> String {
+        format!("http://{}:{}/runtime/run/mutate", self.host, self.port)
+    }
+
+    #[must_use]
+    pub fn auth_token(&self) -> &str {
+        &self.auth_token
+    }
+
     pub fn probe_health(&self) -> Result<RuntimeServiceHealth, String> {
         let health: RuntimeServiceHealth = self.get_json("/health")?;
         health.validate_bootstrap_contract()?;
