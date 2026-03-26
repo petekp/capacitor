@@ -12,7 +12,7 @@
 
 use capacitor_core::domain::{
     CaptureStatus, CheckpointKind, InvolvementLevel, MediaArtifact, MediaArtifactType,
-    MutateRunCommand, RunMutationKind, RunStatus,
+    MutateRunCommand, RunMutationKind, RunState, RunStatus,
 };
 use capacitor_core::CoreRuntime;
 use tempfile::TempDir;
@@ -44,6 +44,9 @@ fn create_cmd(run_id: &str, method_id: &str) -> MutateRunCommand {
         session_id: None,
         delegation_worker_id: None,
         status_message: None,
+        idea_id: None,
+        idea_title: None,
+        idea_description: None,
         completed_media_artifacts: vec![],
     }
 }
@@ -73,6 +76,9 @@ fn base_cmd(run_id: &str) -> MutateRunCommand {
         session_id: None,
         delegation_worker_id: None,
         status_message: None,
+        idea_id: None,
+        idea_title: None,
+        idea_description: None,
         completed_media_artifacts: vec![],
     }
 }
@@ -812,6 +818,110 @@ fn scenario_snapshot_recovery() {
         snap.runs[0].active_checkpoint.as_ref().unwrap().title,
         "Design doc"
     );
+}
+
+#[test]
+fn scenario_idea_fields_survive_create_snapshot_roundtrip() {
+    let temp = TempDir::new().expect("tempdir");
+    let snap_path = temp.path().join("app_snapshot.json");
+
+    let runtime = CoreRuntime::new_with_snapshot_file(snap_path.to_string_lossy().to_string())
+        .expect("runtime");
+
+    let mut cmd = create_cmd("run-idea-roundtrip", "execution_only");
+    cmd.idea_id = Some("test-idea-1".to_string());
+    cmd.idea_title = Some("Fix input width".to_string());
+    cmd.idea_description = Some("The input field is too narrow on mobile".to_string());
+    let outcome = runtime.mutate_run(cmd).expect("create");
+    assert!(outcome.ok, "create failed: {}", outcome.message);
+
+    let snap = runtime.app_snapshot().expect("snapshot");
+    let run = snap
+        .runs
+        .iter()
+        .find(|run| run.id == "run-idea-roundtrip")
+        .expect("created run");
+    assert_eq!(run.idea_id.as_deref(), Some("test-idea-1"));
+    assert_eq!(run.idea_title.as_deref(), Some("Fix input width"));
+    assert_eq!(
+        run.idea_description.as_deref(),
+        Some("The input field is too narrow on mobile")
+    );
+
+    drop(runtime);
+
+    let recovered = CoreRuntime::new_with_snapshot_file(snap_path.to_string_lossy().to_string())
+        .expect("recovered runtime");
+    let snap = recovered.app_snapshot().expect("snapshot");
+    let run = snap
+        .runs
+        .iter()
+        .find(|run| run.id == "run-idea-roundtrip")
+        .expect("recovered run");
+    assert_eq!(run.idea_id.as_deref(), Some("test-idea-1"));
+    assert_eq!(run.idea_title.as_deref(), Some("Fix input width"));
+    assert_eq!(
+        run.idea_description.as_deref(),
+        Some("The input field is too narrow on mobile")
+    );
+}
+
+#[test]
+fn run_state_deserializes_without_idea_fields() {
+    let payload = serde_json::json!({
+        "id": "run-legacy-idea-fields",
+        "project_path": PROJECT,
+        "method_id": "execution_only",
+        "method_name": "Execution Only",
+        "involvement": "supervised",
+        "status": "active",
+        "phases": [
+            {
+                "id": "phase-001",
+                "template_id": "execute",
+                "name": "Execute",
+                "status": "active",
+                "checkpoint_policy": "manual",
+                "skill_hint": null,
+                "started_at": "2026-03-26T10:00:00Z",
+                "completed_at": null
+            }
+        ],
+        "current_phase_index": 0,
+        "active_checkpoint": null,
+        "session_id": "session-legacy",
+        "delegation_worker_id": null,
+        "status_message": "Drafting the implementation plan",
+        "created_at": "2026-03-26T10:00:00Z",
+        "updated_at": "2026-03-26T10:05:00Z"
+    });
+
+    let json = payload.to_string();
+    let run_state = serde_json::from_str::<RunState>(&json).expect("deserialize legacy run state");
+
+    assert_eq!(run_state.idea_id, None);
+    assert_eq!(run_state.idea_title, None);
+    assert_eq!(run_state.idea_description, None);
+}
+
+#[test]
+fn scenario_idea_fields_default_to_none_when_omitted() {
+    let runtime = CoreRuntime::new().expect("runtime");
+
+    let outcome = runtime
+        .mutate_run(create_cmd("run-idea-none", "execution_only"))
+        .expect("create");
+    assert!(outcome.ok, "create failed: {}", outcome.message);
+
+    let snap = runtime.app_snapshot().expect("snapshot");
+    let run = snap
+        .runs
+        .iter()
+        .find(|run| run.id == "run-idea-none")
+        .expect("created run");
+    assert_eq!(run.idea_id, None);
+    assert_eq!(run.idea_title, None);
+    assert_eq!(run.idea_description, None);
 }
 
 // ===========================================================================

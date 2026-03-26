@@ -36,6 +36,9 @@ fn base_cmd(run_id: &str) -> MutateRunCommand {
         session_id: None,
         delegation_worker_id: None,
         status_message: None,
+        idea_id: None,
+        idea_title: None,
+        idea_description: None,
         completed_media_artifacts: vec![],
     }
 }

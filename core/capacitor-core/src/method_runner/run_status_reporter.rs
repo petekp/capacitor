@@ -105,6 +105,9 @@ impl RuntimeRunStatusReporter {
             session_id: None,
             delegation_worker_id: None,
             status_message: event.status_message,
+            idea_id: None,
+            idea_title: None,
+            idea_description: None,
             completed_media_artifacts: Vec::new(),
         }
     }

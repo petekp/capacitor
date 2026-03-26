@@ -4156,6 +4156,9 @@ public struct MutateRunCommand {
      * Human-readable progress message for Start and Heartbeat mutations.
      */
     public var statusMessage: String?
+    public var ideaId: String?
+    public var ideaTitle: String?
+    public var ideaDescription: String?
     /**
      * Media artifact paths to attach via CaptureComplete.
      */
@@ -4169,7 +4172,7 @@ public struct MutateRunCommand {
          */captureUrl: String?, checkpointId: String?, captureRequestId: String?, clientId: String?, observedCaptureUrl: String?, captureFailureReason: String?, decisionAction: String?, decisionNote: String?, sessionId: String?, delegationWorkerId: String?, 
         /**
          * Human-readable progress message for Start and Heartbeat mutations.
-         */statusMessage: String?, 
+         */statusMessage: String?, ideaId: String?, ideaTitle: String?, ideaDescription: String?, 
         /**
          * Media artifact paths to attach via CaptureComplete.
          */completedMediaArtifacts: [MediaArtifact]) {
@@ -4196,6 +4199,9 @@ public struct MutateRunCommand {
         self.sessionId = sessionId
         self.delegationWorkerId = delegationWorkerId
         self.statusMessage = statusMessage
+        self.ideaId = ideaId
+        self.ideaTitle = ideaTitle
+        self.ideaDescription = ideaDescription
         self.completedMediaArtifacts = completedMediaArtifacts
     }
 }
@@ -4273,6 +4279,15 @@ extension MutateRunCommand: Equatable, Hashable {
         if lhs.statusMessage != rhs.statusMessage {
             return false
         }
+        if lhs.ideaId != rhs.ideaId {
+            return false
+        }
+        if lhs.ideaTitle != rhs.ideaTitle {
+            return false
+        }
+        if lhs.ideaDescription != rhs.ideaDescription {
+            return false
+        }
         if lhs.completedMediaArtifacts != rhs.completedMediaArtifacts {
             return false
         }
@@ -4303,6 +4318,9 @@ extension MutateRunCommand: Equatable, Hashable {
         hasher.combine(sessionId)
         hasher.combine(delegationWorkerId)
         hasher.combine(statusMessage)
+        hasher.combine(ideaId)
+        hasher.combine(ideaTitle)
+        hasher.combine(ideaDescription)
         hasher.combine(completedMediaArtifacts)
     }
 }
@@ -4338,6 +4356,9 @@ public struct FfiConverterTypeMutateRunCommand: FfiConverterRustBuffer {
                 sessionId: FfiConverterOptionString.read(from: &buf), 
                 delegationWorkerId: FfiConverterOptionString.read(from: &buf), 
                 statusMessage: FfiConverterOptionString.read(from: &buf), 
+                ideaId: FfiConverterOptionString.read(from: &buf), 
+                ideaTitle: FfiConverterOptionString.read(from: &buf), 
+                ideaDescription: FfiConverterOptionString.read(from: &buf), 
                 completedMediaArtifacts: FfiConverterSequenceTypeMediaArtifact.read(from: &buf)
         )
     }
@@ -4366,6 +4387,9 @@ public struct FfiConverterTypeMutateRunCommand: FfiConverterRustBuffer {
         FfiConverterOptionString.write(value.sessionId, into: &buf)
         FfiConverterOptionString.write(value.delegationWorkerId, into: &buf)
         FfiConverterOptionString.write(value.statusMessage, into: &buf)
+        FfiConverterOptionString.write(value.ideaId, into: &buf)
+        FfiConverterOptionString.write(value.ideaTitle, into: &buf)
+        FfiConverterOptionString.write(value.ideaDescription, into: &buf)
         FfiConverterSequenceTypeMediaArtifact.write(value.completedMediaArtifacts, into: &buf)
     }
 }
@@ -6336,6 +6360,12 @@ public struct RunState {
      * Human-readable progress message set by Start and Heartbeat mutations.
      */
     public var statusMessage: String?
+    /**
+     * Idea identity — set on Create, immutable after.
+     */
+    public var ideaId: String?
+    public var ideaTitle: String?
+    public var ideaDescription: String?
     public var createdAt: String
     public var updatedAt: String
 
@@ -6347,7 +6377,10 @@ public struct RunState {
          */delegationWorkerId: String?, 
         /**
          * Human-readable progress message set by Start and Heartbeat mutations.
-         */statusMessage: String?, createdAt: String, updatedAt: String) {
+         */statusMessage: String?, 
+        /**
+         * Idea identity — set on Create, immutable after.
+         */ideaId: String?, ideaTitle: String?, ideaDescription: String?, createdAt: String, updatedAt: String) {
         self.id = id
         self.projectPath = projectPath
         self.methodId = methodId
@@ -6360,6 +6393,9 @@ public struct RunState {
         self.sessionId = sessionId
         self.delegationWorkerId = delegationWorkerId
         self.statusMessage = statusMessage
+        self.ideaId = ideaId
+        self.ideaTitle = ideaTitle
+        self.ideaDescription = ideaDescription
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }
@@ -6405,6 +6441,15 @@ extension RunState: Equatable, Hashable {
         if lhs.statusMessage != rhs.statusMessage {
             return false
         }
+        if lhs.ideaId != rhs.ideaId {
+            return false
+        }
+        if lhs.ideaTitle != rhs.ideaTitle {
+            return false
+        }
+        if lhs.ideaDescription != rhs.ideaDescription {
+            return false
+        }
         if lhs.createdAt != rhs.createdAt {
             return false
         }
@@ -6427,6 +6472,9 @@ extension RunState: Equatable, Hashable {
         hasher.combine(sessionId)
         hasher.combine(delegationWorkerId)
         hasher.combine(statusMessage)
+        hasher.combine(ideaId)
+        hasher.combine(ideaTitle)
+        hasher.combine(ideaDescription)
         hasher.combine(createdAt)
         hasher.combine(updatedAt)
     }
@@ -6452,6 +6500,9 @@ public struct FfiConverterTypeRunState: FfiConverterRustBuffer {
                 sessionId: FfiConverterOptionString.read(from: &buf), 
                 delegationWorkerId: FfiConverterOptionString.read(from: &buf), 
                 statusMessage: FfiConverterOptionString.read(from: &buf), 
+                ideaId: FfiConverterOptionString.read(from: &buf), 
+                ideaTitle: FfiConverterOptionString.read(from: &buf), 
+                ideaDescription: FfiConverterOptionString.read(from: &buf), 
                 createdAt: FfiConverterString.read(from: &buf), 
                 updatedAt: FfiConverterString.read(from: &buf)
         )
@@ -6470,6 +6521,9 @@ public struct FfiConverterTypeRunState: FfiConverterRustBuffer {
         FfiConverterOptionString.write(value.sessionId, into: &buf)
         FfiConverterOptionString.write(value.delegationWorkerId, into: &buf)
         FfiConverterOptionString.write(value.statusMessage, into: &buf)
+        FfiConverterOptionString.write(value.ideaId, into: &buf)
+        FfiConverterOptionString.write(value.ideaTitle, into: &buf)
+        FfiConverterOptionString.write(value.ideaDescription, into: &buf)
         FfiConverterString.write(value.createdAt, into: &buf)
         FfiConverterString.write(value.updatedAt, into: &buf)
     }

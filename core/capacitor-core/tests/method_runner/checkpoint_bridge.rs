@@ -552,6 +552,9 @@ fn runtime_create_cmd(project_path: &str, run_id: &str, method_id: &str) -> Muta
         session_id: None,
         delegation_worker_id: None,
         status_message: None,
+        idea_id: None,
+        idea_title: None,
+        idea_description: None,
         completed_media_artifacts: vec![],
     }
 }
@@ -581,6 +584,9 @@ fn runtime_base_cmd(project_path: &str, run_id: &str) -> MutateRunCommand {
         session_id: None,
         delegation_worker_id: None,
         status_message: None,
+        idea_id: None,
+        idea_title: None,
+        idea_description: None,
         completed_media_artifacts: vec![],
     }
 }

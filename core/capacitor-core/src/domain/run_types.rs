@@ -269,6 +269,13 @@ pub struct RunState {
     /// Human-readable progress message set by Start and Heartbeat mutations.
     #[serde(default)]
     pub status_message: Option<String>,
+    /// Idea identity — set on Create, immutable after.
+    #[serde(default)]
+    pub idea_id: Option<String>,
+    #[serde(default)]
+    pub idea_title: Option<String>,
+    #[serde(default)]
+    pub idea_description: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -317,6 +324,12 @@ pub struct MutateRunCommand {
     /// Human-readable progress message for Start and Heartbeat mutations.
     #[serde(default)]
     pub status_message: Option<String>,
+    #[serde(default)]
+    pub idea_id: Option<String>,
+    #[serde(default)]
+    pub idea_title: Option<String>,
+    #[serde(default)]
+    pub idea_description: Option<String>,
     /// Media artifact paths to attach via CaptureComplete.
     pub completed_media_artifacts: Vec<MediaArtifact>,
 }
