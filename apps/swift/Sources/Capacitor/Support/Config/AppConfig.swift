@@ -77,7 +77,9 @@ struct FeatureFlags: Equatable, Codable {
             FeatureFlags(
                 ideaCapture: true,
                 projectDetails: true,
-                workstreams: true,
+                // Keep frontier focused on the idea-to-run surface until
+                // workstreams are integrated into the same detail flow.
+                workstreams: false,
                 projectCreation: true,
                 llmFeatures: true,
                 delegationLoop: false,

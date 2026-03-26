@@ -65,6 +65,7 @@ struct ParsedOptions {
     interactive_mode: InteractiveMode,
     bridge_run_id: Option<String>,
     bridge_project_path: Option<PathBuf>,
+    timeout_secs: Option<u64>,
 }
 
 /// Embedded YAML definitions for built-in methods.
@@ -104,6 +105,18 @@ struct Command {
     real_adapters: bool,
     interactive_mode: InteractiveMode,
     bridge: Option<BridgeOptions>,
+    timeout_secs: Option<u64>,
+}
+
+fn resolve_worker_cwd(
+    root: &Path,
+    bridge: Option<&BridgeOptions>,
+    current_dir: Option<PathBuf>,
+) -> PathBuf {
+    bridge
+        .map(|options| options.project_path.clone())
+        .or(current_dir)
+        .unwrap_or_else(|| root.to_path_buf())
 }
 
 fn main() -> ExitCode {
@@ -138,6 +151,14 @@ fn main() -> ExitCode {
                             return ExitCode::FAILURE;
                         }
                     };
+                let worker_cwd = resolve_worker_cwd(
+                    &command.root,
+                    command.bridge.as_ref(),
+                    env::current_dir().ok(),
+                );
+
+                let timeout = Duration::from_secs(command.timeout_secs.unwrap_or(900));
+
                 if command.real_adapters {
                     let script = match find_compose_script() {
                         Ok(p) => p,
@@ -156,8 +177,8 @@ fn main() -> ExitCode {
                     let config = match AdapterConfig::new(
                         script,
                         codex,
-                        command.root.clone(),
-                        Duration::from_secs(300),
+                        worker_cwd,
+                        timeout,
                         Duration::from_secs(5),
                     ) {
                         Ok(c) => c,
@@ -222,6 +243,14 @@ fn main() -> ExitCode {
                             return ExitCode::FAILURE;
                         }
                     };
+                let resume_worker_cwd = resolve_worker_cwd(
+                    &command.root,
+                    command.bridge.as_ref(),
+                    env::current_dir().ok(),
+                );
+
+                let timeout = Duration::from_secs(command.timeout_secs.unwrap_or(900));
+
                 if command.real_adapters {
                     let script = match find_compose_script() {
                         Ok(p) => p,
@@ -240,8 +269,8 @@ fn main() -> ExitCode {
                     let config = match AdapterConfig::new(
                         script,
                         codex,
-                        command.root.clone(),
-                        Duration::from_secs(300),
+                        resume_worker_cwd,
+                        timeout,
                         Duration::from_secs(5),
                     ) {
                         Ok(c) => c,
@@ -336,6 +365,7 @@ where
         interactive_mode,
         bridge_run_id,
         bridge_project_path,
+        timeout_secs,
     } = parse_options(args)?;
     let root = root.ok_or_else(|| format!("missing required --root for {}", kind.as_str()))?;
 
@@ -375,6 +405,7 @@ where
         real_adapters,
         interactive_mode,
         bridge,
+        timeout_secs,
     })
 }
 
@@ -421,6 +452,13 @@ where
             "--bridge-project-path" => {
                 parsed.bridge_project_path =
                     Some(next_path_value(&mut args, "--bridge-project-path")?);
+            }
+            "--timeout" => {
+                let value = next_string_value(&mut args, "--timeout")?;
+                parsed.timeout_secs =
+                    Some(value.parse::<u64>().map_err(|_| {
+                        format!("--timeout must be a positive integer, got '{value}'")
+                    })?);
             }
             "--help" | "-h" | "help" => return Err("help requested".to_string()),
             _ => return Err(format!("unrecognized argument: {flag}")),
@@ -526,16 +564,121 @@ fn make_interactive_io(
 fn usage() -> &'static str {
     "Usage:
   method-runner normalize --definition <path> --root <path>
-  method-runner run       (--definition <path> | --method-id <id>) --root <path> [--real] [--approve|--reject|--response-dir <path>] [--bridge-run-id <run-id>] [--bridge-project-path <path>]
-  method-runner resume    --root <path> [--real] [--approve|--reject|--response-dir <path>] [--bridge-run-id <run-id>] [--bridge-project-path <path>]
+  method-runner run       (--definition <path> | --method-id <id>) --root <path> [--real] [--timeout <seconds>] [--approve|--reject|--response-dir <path>] [--bridge-run-id <run-id>] [--bridge-project-path <path>]
+  method-runner resume    --root <path> [--real] [--timeout <seconds>] [--approve|--reject|--response-dir <path>] [--bridge-run-id <run-id>] [--bridge-project-path <path>]
 
 Flags:
   --definition           Path to a YAML method definition file
   --method-id            Built-in method id (execution_only, shape_and_execute, deep_debug, greenfield_build)
   --real                 Use real subprocess adapters (ShellPromptBuilder + CodexWorkerDispatcher)
+  --timeout              Worker dispatch timeout in seconds (default: 900)
   --approve              Auto-approve all interactive checkpoints (default)
   --reject               Auto-reject all interactive checkpoints
   --response-dir         Read checkpoint responses from JSON files in <path>
   --bridge-run-id        Enable runtime-service bridge mode for the given run id
   --bridge-project-path  Override the bridge project path (defaults to --root)"
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn worker_cwd_prefers_bridge_project_path_over_current_dir_and_root() {
+        let root = PathBuf::from("/tmp/run-root");
+        let bridge = BridgeOptions {
+            run_id: "run-123".to_string(),
+            project_path: PathBuf::from("/tmp/project-root"),
+        };
+
+        let resolved = resolve_worker_cwd(
+            &root,
+            Some(&bridge),
+            Some(PathBuf::from("/tmp/current-dir")),
+        );
+
+        assert_eq!(resolved, PathBuf::from("/tmp/project-root"));
+    }
+
+    #[test]
+    fn worker_cwd_uses_current_dir_when_bridge_is_absent() {
+        let root = PathBuf::from("/tmp/run-root");
+
+        let resolved = resolve_worker_cwd(&root, None, Some(PathBuf::from("/tmp/current-dir")));
+
+        assert_eq!(resolved, PathBuf::from("/tmp/current-dir"));
+    }
+
+    #[test]
+    fn worker_cwd_falls_back_to_execution_root_without_bridge_or_current_dir() {
+        let root = PathBuf::from("/tmp/run-root");
+
+        let resolved = resolve_worker_cwd(&root, None, None);
+
+        assert_eq!(resolved, root);
+    }
+
+    #[test]
+    fn parse_cli_timeout_flag_sets_timeout_secs() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let root = temp.path().join("run-root");
+
+        let command = parse_cli([
+            OsString::from("method-runner"),
+            OsString::from("run"),
+            OsString::from("--method-id"),
+            OsString::from("execution_only"),
+            OsString::from("--root"),
+            root.as_os_str().to_os_string(),
+            OsString::from("--timeout"),
+            OsString::from("1800"),
+        ])
+        .expect("parse command");
+
+        assert_eq!(command.timeout_secs, Some(1800));
+    }
+
+    #[test]
+    fn parse_cli_omitted_timeout_defaults_to_none() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let root = temp.path().join("run-root");
+
+        let command = parse_cli([
+            OsString::from("method-runner"),
+            OsString::from("run"),
+            OsString::from("--method-id"),
+            OsString::from("execution_only"),
+            OsString::from("--root"),
+            root.as_os_str().to_os_string(),
+        ])
+        .expect("parse command");
+
+        assert_eq!(command.timeout_secs, None);
+    }
+
+    #[test]
+    fn parse_cli_preserves_bridge_project_override_for_run_commands() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let root = temp.path().join("run-root");
+        let project = temp.path().join("project-root");
+        std::fs::create_dir_all(&project).expect("project dir");
+
+        let command = parse_cli([
+            OsString::from("method-runner"),
+            OsString::from("run"),
+            OsString::from("--method-id"),
+            OsString::from("execution_only"),
+            OsString::from("--root"),
+            root.as_os_str().to_os_string(),
+            OsString::from("--bridge-run-id"),
+            OsString::from("run-123"),
+            OsString::from("--bridge-project-path"),
+            project.as_os_str().to_os_string(),
+        ])
+        .expect("parse command");
+
+        let bridge = command.bridge.expect("bridge options");
+        assert_eq!(bridge.run_id, "run-123");
+        assert_eq!(bridge.project_path, project);
+    }
 }

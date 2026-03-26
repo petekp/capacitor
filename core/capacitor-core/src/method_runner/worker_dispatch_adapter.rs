@@ -59,7 +59,23 @@ impl WorkerDispatcher for CodexWorkerDispatcher {
             ))
         })?;
 
-        // 2. Build argv: codex exec --full-auto -o <last-message-path> -
+        // 2. Build argv: codex exec --full-auto -o <tmp-output-path> -
+        //
+        // The relay root lives under ~/.capacitor/runs/ which is outside
+        // the codex sandbox allowlist. We write to $TMPDIR instead, then
+        // copy the result back after the process exits.
+        let tmpdir = std::env::var("TMPDIR").unwrap_or_else(|_| "/tmp".to_string());
+        let unique_suffix = format!("{}-{:x}", request.worker_id, {
+            use std::hash::{Hash, Hasher};
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            request.relay_root.hash(&mut h);
+            h.finish()
+        });
+        let tmp_output_dir =
+            std::path::PathBuf::from(&tmpdir).join(format!("capacitor-run-{}", unique_suffix));
+        std::fs::create_dir_all(&tmp_output_dir)?;
+        let tmp_last_message = tmp_output_dir.join("last-message.txt");
+
         let last_message_path = request.relay_root.join("last-message.txt");
         let codex_path = &self.config.codex_path;
 
@@ -67,7 +83,7 @@ impl WorkerDispatcher for CodexWorkerDispatcher {
             "exec".into(),
             "--full-auto".into(),
             "-o".into(),
-            last_message_path.to_string_lossy().into_owned(),
+            tmp_last_message.to_string_lossy().into_owned(),
             "-".into(), // read from stdin
         ];
 
@@ -188,6 +204,7 @@ impl WorkerDispatcher for CodexWorkerDispatcher {
             "timed_out": timed_out,
             "timeout_secs": timeout.as_secs_f64(),
             "prompt_path": request.prompt_path.to_string_lossy(),
+            "tmp_last_message_path": tmp_last_message.to_string_lossy(),
             "last_message_path": last_message_path.to_string_lossy(),
             "worker_id": &request.worker_id,
         });
@@ -198,8 +215,17 @@ impl WorkerDispatcher for CodexWorkerDispatcher {
 
         // 10. Return Timeout error if timed out
         if timed_out {
+            // Best-effort cleanup of temp dir even on timeout
+            let _ = std::fs::remove_dir_all(&tmp_output_dir);
             return Err(AdapterError::Timeout);
         }
+
+        // 10b. Copy output from $TMPDIR back to relay root
+        if tmp_last_message.exists() {
+            std::fs::copy(&tmp_last_message, &last_message_path)?;
+        }
+        // Best-effort cleanup of temp dir
+        let _ = std::fs::remove_dir_all(&tmp_output_dir);
 
         // 11. Enforce -o contract on clean exit: last-message.txt must exist
         if exit_code == 0 && !last_message_path.exists() {

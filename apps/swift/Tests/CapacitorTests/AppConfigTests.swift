@@ -51,7 +51,7 @@ final class AppConfigTests: XCTestCase {
         XCTAssertFalse(config.featureFlags.llmFeatures)
     }
 
-    func testFrontierProfileEnablesAllFeatureFlagsOnAlphaChannel() {
+    func testFrontierProfileEnablesCuratedIdeaToRunFlagsOnAlphaChannel() {
         let config = AppConfig.resolve(
             environment: [
                 "CAPACITOR_CHANNEL": "alpha",
@@ -66,10 +66,12 @@ final class AppConfigTests: XCTestCase {
         XCTAssertEqual(config.profile, .frontier)
         XCTAssertTrue(config.featureFlags.ideaCapture)
         XCTAssertTrue(config.featureFlags.projectDetails)
-        XCTAssertTrue(config.featureFlags.workstreams)
+        XCTAssertFalse(config.featureFlags.workstreams)
         XCTAssertTrue(config.featureFlags.projectCreation)
         XCTAssertTrue(config.featureFlags.llmFeatures)
         XCTAssertFalse(config.featureFlags.delegationLoop)
+        XCTAssertTrue(config.featureFlags.methodRunner)
+        XCTAssertTrue(config.featureFlags.windowAnchoring)
     }
 
     func testDevFrontierEnablesDelegationLoopByDefault() {
@@ -149,7 +151,24 @@ final class AppConfigTests: XCTestCase {
         XCTAssertEqual(config.profile, .frontier)
         XCTAssertFalse(config.featureFlags.ideaCapture)
         XCTAssertTrue(config.featureFlags.projectDetails)
+        XCTAssertFalse(config.featureFlags.workstreams)
+        XCTAssertTrue(config.featureFlags.methodRunner)
+    }
+
+    func testEnvironmentCanExplicitlyReenableWorkstreamsOnFrontier() {
+        let config = AppConfig.resolve(
+            environment: [
+                "CAPACITOR_PROFILE": "frontier",
+                "CAPACITOR_FEATURES_ENABLED": "workstreams",
+            ],
+            info: [:],
+            configFile: nil,
+            defaultChannel: .prod,
+        )
+
+        XCTAssertEqual(config.profile, .frontier)
         XCTAssertTrue(config.featureFlags.workstreams)
+        XCTAssertTrue(config.featureFlags.methodRunner)
     }
 
     func testConfigFileFeatureFlagsOverrideDefaults() {

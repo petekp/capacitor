@@ -1219,6 +1219,14 @@ fn dispatch_attempt_workers(
             skills
         };
 
+        // Check for context.json in the execution root (written by Swift coordinator)
+        let context_path = paths.root().join("context.json");
+        let context_file = if context_path.exists() {
+            Some(context_path)
+        } else {
+            None
+        };
+
         let prompt_request = PromptBuildRequest {
             phase_id: phase_id.to_string(),
             step_id: step.id.clone(),
@@ -1227,6 +1235,7 @@ fn dispatch_attempt_workers(
             instructions: full_instructions,
             template: step.template.clone(),
             skills: merged_skills,
+            context_file,
         };
         let prompt_result = prompt_builder.build_prompt(&prompt_request)?;
 

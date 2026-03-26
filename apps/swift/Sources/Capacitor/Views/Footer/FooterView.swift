@@ -30,6 +30,11 @@ struct FooterView: View {
         return .normal
     }
 
+    private var isDetailViewActive: Bool {
+        if case .list = appState.projectView { return false }
+        return true
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             ZStack {
@@ -76,6 +81,12 @@ struct FooterView: View {
                 floatingMode ? Color.clear : Color.hudBackground
             }
         }
+        .opacity(isDetailViewActive ? 0 : 1)
+        .allowsHitTesting(!isDetailViewActive)
+        .animation(
+            reduceMotion ? AppMotion.reducedMotionFallback : .easeInOut(duration: 0.2),
+            value: isDetailViewActive,
+        )
     }
 
     private var defaultContent: some View {

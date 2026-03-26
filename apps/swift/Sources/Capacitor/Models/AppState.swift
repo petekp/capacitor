@@ -1703,16 +1703,21 @@ class AppState {
     // MARK: - Method Runner
 
     func listBuiltinMethods() -> [MethodTemplate] {
-        engine?.listBuiltinMethods() ?? []
+        let methods = engine?.listBuiltinMethods() ?? []
+        DebugLog.write("AppState.listBuiltinMethods count=\(methods.count) ids=\(methods.map(\.id).joined(separator: ","))")
+        return methods
     }
 
-    func runMethodOnIdea(_: Idea, method: MethodTemplate, for project: Project) {
+    func runMethodOnIdea(_ idea: Idea, method: MethodTemplate, for project: Project) {
+        DebugLog.write("AppState.runMethodOnIdea method=\(method.id) project=\(project.path) enabled=\(isMethodRunnerEnabled)")
+
         guard isMethodRunnerEnabled else {
             error = "Method runner is disabled for this build."
             return
         }
 
         let runId = UUID().uuidString.lowercased()
+        DebugLog.write("AppState.runMethodOnIdea runId=\(runId) creating...")
 
         _Concurrency.Task { [weak self] in
             guard let self else { return }
@@ -1757,6 +1762,8 @@ class AppState {
                                 runID: runId,
                                 methodID: method.id,
                                 projectPath: project.path,
+                                ideaTitle: idea.title,
+                                ideaDescription: idea.description,
                             )
                         } catch {
                             DebugLog.write(

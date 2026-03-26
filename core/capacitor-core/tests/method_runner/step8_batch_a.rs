@@ -698,6 +698,7 @@ fn if1_prompt_builder_idempotence() {
         instructions: "Do the thing.".to_string(),
         template: None,
         skills: vec![],
+        context_file: None,
     };
 
     let request2 = PromptBuildRequest {
@@ -708,6 +709,7 @@ fn if1_prompt_builder_idempotence() {
         instructions: "Do the thing.".to_string(),
         template: None,
         skills: vec![],
+        context_file: None,
     };
 
     let builder = FakePromptBuilder;

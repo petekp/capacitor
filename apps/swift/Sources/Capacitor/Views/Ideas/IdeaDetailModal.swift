@@ -9,119 +9,105 @@ struct IdeaDetailOverlay: View {
 
     @State private var appeared = false
 
-    private enum Layout {
-        static let contentPadding: CGFloat = 32
-        static let cornerPadding: CGFloat = 24
-        static let maxContentWidth: CGFloat = 500
-    }
-
     var body: some View {
-        ZStack {
-            // Main content - centered
-            VStack(alignment: .leading, spacing: 24) {
+        VStack(alignment: .leading, spacing: 0) {
+            // Header with dismiss
+            HStack {
+                Text("Added \(formatRelativeDate(idea.added))")
+                    .font(AppTypography.caption)
+                    .foregroundColor(.white.opacity(0.35))
+
+                Spacer()
+
+                Button(action: onDismiss) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(.white.opacity(0.5))
+                        .frame(width: 28, height: 28)
+                        .background(Color.white.opacity(0.1))
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier(AccessibilityIdentifiers.ideaDetailDismissIdentifier)
+            }
+            .padding(.horizontal, 24)
+            .padding(.top, 20)
+            .padding(.bottom, 16)
+
+            // Content
+            VStack(alignment: .leading, spacing: 12) {
                 Text(idea.title)
-                    .font(AppTypography.pageTitle.weight(.semibold))
+                    .font(AppTypography.sectionTitle.weight(.semibold))
                     .foregroundColor(.white)
                     .lineLimit(4)
+                    .fixedSize(horizontal: false, vertical: true)
 
                 if !idea.description.isEmpty {
                     Text(idea.description)
-                        .font(AppTypography.sectionTitle.weight(.regular))
-                        .foregroundColor(.white.opacity(0.9))
-                        .lineSpacing(4)
-                        .lineLimit(12)
+                        .font(AppTypography.bodyMedium)
+                        .foregroundColor(.white.opacity(0.7))
+                        .lineSpacing(3)
+                        .lineLimit(8)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .frame(maxWidth: Layout.maxContentWidth, alignment: .leading)
-            .padding(Layout.contentPadding)
+            .padding(.horizontal, 24)
 
-            // Corner elements
-            VStack {
-                HStack {
-                    Spacer()
+            Spacer(minLength: 20)
 
-                    // Top-right: Dismiss button
-                    Button(action: onDismiss) {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundColor(.white.opacity(0.5))
-                            .frame(width: 32, height: 32)
-                            .background(Color.white.opacity(0.1))
-                            .clipShape(Circle())
+            // Actions
+            HStack(spacing: 8) {
+                if let onRunMethod {
+                    Button(action: onRunMethod) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "play.fill")
+                                .font(.system(size: 11, weight: .medium))
+                            Text("Run Method")
+                                .font(AppTypography.caption.weight(.medium))
+                        }
+                        .foregroundColor(.black.opacity(0.85))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 7)
+                        .background(Color.white.opacity(0.9))
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
                     }
                     .buttonStyle(.plain)
-                    .accessibilityIdentifier(AccessibilityIdentifiers.ideaDetailDismissIdentifier)
-                    .padding(Layout.cornerPadding)
+                    .accessibilityIdentifier("idea_detail_run_method")
+                }
+
+                if let onDelegate {
+                    Button(action: onDelegate) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "bolt.fill")
+                                .font(.system(size: 11, weight: .medium))
+                            Text("Delegate")
+                                .font(AppTypography.caption.weight(.medium))
+                        }
+                        .foregroundColor(.white.opacity(0.8))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 7)
+                        .background(Color.white.opacity(0.12))
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier(AccessibilityIdentifiers.ideaDetailDelegateIdentifier)
                 }
 
                 Spacer()
 
-                HStack {
-                    // Bottom-left: Timestamp
-                    Text("Added \(formatRelativeDate(idea.added))")
-                        .font(AppTypography.bodyMedium)
-                        .foregroundColor(.white.opacity(0.4))
-                        .padding(Layout.cornerPadding)
-
-                    Spacer()
-
-                    HStack(spacing: 10) {
-                        if let onRunMethod {
-                            Button(action: onRunMethod) {
-                                HStack(spacing: 8) {
-                                    Image(systemName: "play.fill")
-                                        .font(.system(size: 14, weight: .medium))
-                                    Text("Run Method")
-                                        .font(AppTypography.bodyMedium)
-                                }
-                                .foregroundColor(.black.opacity(0.85))
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 10)
-                                .background(Color.white.opacity(0.9))
-                                .clipShape(RoundedRectangle(cornerRadius: 8))
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityIdentifier("idea_detail_run_method")
-                        }
-
-                        if let onDelegate {
-                            Button(action: onDelegate) {
-                                HStack(spacing: 8) {
-                                    Image(systemName: "bolt.fill")
-                                        .font(.system(size: 14, weight: .medium))
-                                    Text("Delegate")
-                                        .font(AppTypography.bodyMedium)
-                                }
-                                .foregroundColor(.white.opacity(0.85))
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 10)
-                                .background(Color.white.opacity(0.15))
-                                .clipShape(RoundedRectangle(cornerRadius: 8))
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityIdentifier(AccessibilityIdentifiers.ideaDetailDelegateIdentifier)
-                        }
-
-                        // Bottom-right: Remove button
-                        Button(action: onRemove) {
-                            HStack(spacing: 8) {
-                                Image(systemName: "trash")
-                                    .font(.system(size: 14, weight: .medium))
-                                Text("Remove")
-                                    .font(AppTypography.bodyMedium)
-                            }
-                            .foregroundColor(.red.opacity(0.8))
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 10)
-                            .background(Color.red.opacity(0.1))
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityIdentifier(AccessibilityIdentifiers.ideaDetailRemoveIdentifier)
-                    }
-                    .padding(Layout.cornerPadding)
+                Button(action: onRemove) {
+                    Image(systemName: "trash")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.red.opacity(0.6))
+                        .frame(width: 28, height: 28)
+                        .background(Color.red.opacity(0.08))
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
                 }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier(AccessibilityIdentifiers.ideaDetailRemoveIdentifier)
             }
+            .padding(.horizontal, 24)
+            .padding(.bottom, 20)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityIdentifier(AccessibilityIdentifiers.ideaDetailIdentifier)

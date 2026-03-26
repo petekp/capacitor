@@ -31,16 +31,19 @@ struct MethodSelectorView: View {
                 .font(AppTypography.bodySecondary)
                 .foregroundColor(.white.opacity(0.5))
 
-            VStack(spacing: 8) {
-                ForEach(methods, id: \.id) { method in
-                    MethodCard(method: method) {
-                        onSelect(method)
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(spacing: 8) {
+                    ForEach(methods, id: \.id) { method in
+                        MethodCard(method: method) {
+                            onSelect(method)
+                        }
                     }
                 }
             }
         }
         .padding(24)
         .frame(width: 380)
+        .frame(maxHeight: 500)
         .background(
             RoundedRectangle(cornerRadius: 12)
                 .fill(Color.hudBackground.opacity(0.95))

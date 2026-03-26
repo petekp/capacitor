@@ -83,6 +83,7 @@ fn interface_if1_fake_prompt_builder_idempotence() {
         instructions: "Do the thing.".into(),
         template: None,
         skills: vec![],
+        context_file: None,
     };
 
     let builder = FakePromptBuilder;
@@ -115,6 +116,7 @@ fn interface_if1_prompt_builder_creates_expected_files() {
         instructions: "Scan the codebase.".into(),
         template: None,
         skills: vec![],
+        context_file: None,
     };
 
     let builder = FakePromptBuilder;

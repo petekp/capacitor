@@ -142,6 +142,7 @@ fn t25_fake_prompt_builder_under_widened_request() {
         instructions: "Build it.".into(),
         template: Some("implement".into()),
         skills: vec!["base-skill".into(), "phase-skill".into()],
+        context_file: None,
     };
 
     let builder = FakePromptBuilder;

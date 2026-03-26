@@ -57,6 +57,9 @@ pub struct PromptBuildRequest {
     pub template: Option<String>,
     /// Merged skills list (method defaults + phase + step + worker), stable order.
     pub skills: Vec<String>,
+    /// Optional path to context.json containing idea title/description.
+    /// Written by the Swift coordinator before launching method-runner.
+    pub context_file: Option<PathBuf>,
 }
 
 /// Result from prompt composition.

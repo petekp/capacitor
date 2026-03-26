@@ -17,6 +17,9 @@ final class MethodRunCoordinator: @unchecked Sendable {
     /// Active processes keyed by runID, for crash detection and cleanup.
     private let lock = NSLock()
     private var activeProcesses: [String: Process] = [:]
+    /// Default timeout for method-runner subprocess dispatch, in seconds.
+    /// 30 minutes allows real implementation tasks (with full test suites) to complete.
+    private static let defaultTimeoutSeconds = 1800
 
     init(
         mutateRun: @escaping @Sendable (RuntimeRunMutationRequest) async throws -> Void,
@@ -34,12 +37,23 @@ final class MethodRunCoordinator: @unchecked Sendable {
     ///   - runID: The run ID (already created via runtime service mutation).
     ///   - methodID: Built-in method template ID (e.g. "execution_only").
     ///   - projectPath: The project path for bridge integration.
+    ///   - ideaTitle: Optional title of the idea being executed.
+    ///   - ideaDescription: Optional description of the idea being executed.
     func startRun(
         runID: String,
         methodID: String,
         projectPath: String,
+        ideaTitle: String? = nil,
+        ideaDescription: String? = nil,
     ) async throws {
         let executionRoot = prepareExecutionRoot(runID: runID)
+
+        // Write context.json so the Rust prompt builder can include task context
+        writeContextFile(
+            executionRoot: executionRoot,
+            title: ideaTitle,
+            description: ideaDescription,
+        )
         let binaryPath = try resolveMethodRunnerBinary()
 
         DebugLog.write(
@@ -57,6 +71,7 @@ final class MethodRunCoordinator: @unchecked Sendable {
             "--method-id", methodID,
             "--root", executionRoot,
             "--real",
+            "--timeout", "\(Self.defaultTimeoutSeconds)",
             "--bridge-run-id", runID,
             "--bridge-project-path", projectPath,
         ]
@@ -184,6 +199,33 @@ final class MethodRunCoordinator: @unchecked Sendable {
     }
 
     // MARK: - Private
+
+    private func writeContextFile(
+        executionRoot: String,
+        title: String?,
+        description: String?,
+    ) {
+        let context: [String: Any] = [
+            "version": 1,
+            "title": title ?? "",
+            "description": description ?? "",
+        ]
+        let data: Data
+        do {
+            data = try JSONSerialization.data(withJSONObject: context)
+        } catch {
+            DebugLog.write(
+                "Warning: MethodRunCoordinator.writeContextFile failed to serialize context.json for executionRoot=\(executionRoot): \(error)",
+            )
+            return
+        }
+        let contextPath = executionRoot + "/context.json"
+        if !FileManager.default.createFile(atPath: contextPath, contents: data) {
+            DebugLog.write(
+                "Warning: MethodRunCoordinator.writeContextFile failed to create context.json at \(contextPath)",
+            )
+        }
+    }
 
     private func prepareExecutionRoot(runID: String) -> String {
         let path = "\(capacitorRoot)/runs/\(runID)"

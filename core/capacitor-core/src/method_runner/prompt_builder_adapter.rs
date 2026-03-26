@@ -85,11 +85,51 @@ impl PromptBuilder for ShellPromptBuilder {
             }
         }
 
-        // 3. Write header file
+        // 3. Write header file (with optional task context from context.json)
         let header_path = request.relay_root.join("prompt-header.md");
+        let context_prefix = request
+            .context_file
+            .as_ref()
+            .and_then(|path| {
+                std::fs::read_to_string(path)
+                    .map_err(|e| {
+                        eprintln!(
+                            "warning: failed to read context file {}: {}",
+                            path.display(),
+                            e
+                        );
+                        e
+                    })
+                    .ok()
+            })
+            .and_then(|json| {
+                serde_json::from_str::<serde_json::Value>(&json)
+                    .map_err(|e| {
+                        eprintln!("warning: failed to parse context.json: {}", e);
+                        e
+                    })
+                    .ok()
+            })
+            .map(|v| {
+                let title = v["title"].as_str().unwrap_or("");
+                let desc = v["description"].as_str().unwrap_or("");
+                if title.is_empty() && desc.is_empty() {
+                    String::new()
+                } else if desc.is_empty() {
+                    format!("# Task: {}\n\n", title)
+                } else {
+                    format!("# Task: {}\n\n{}\n\n", title, desc)
+                }
+            })
+            .unwrap_or_default();
+
         let header_content = format!(
-            "# Step: {}\nPhase: {}\nAttempt: {}\n\n{}\n",
-            request.step_id, request.phase_id, request.attempt, request.instructions
+            "{}# Step: {}\nPhase: {}\nAttempt: {}\n\n{}\n",
+            context_prefix,
+            request.step_id,
+            request.phase_id,
+            request.attempt,
+            request.instructions
         );
         std::fs::write(&header_path, &header_content)?;
 

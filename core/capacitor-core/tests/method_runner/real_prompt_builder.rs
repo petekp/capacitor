@@ -1,4 +1,4 @@
-//! Integration tests for ShellPromptBuilder (IF1): T1–T8, T24, T28, T29.
+//! Integration tests for ShellPromptBuilder (IF1): T1–T12, T24, T28, T29.
 //!
 //! Tests exercise the real `compose-prompt.sh` script against a temp HOME
 //! directory with fabricated skill and template files.
@@ -101,6 +101,7 @@ fn make_builder_and_request(
         instructions: "Build the primary artifact.".into(),
         template,
         skills,
+        context_file: None,
     };
 
     (builder, request)
@@ -237,6 +238,7 @@ fn t4_script_nonzero_exit_returns_assembly_failed() {
         instructions: "Build it.".into(),
         template: None,
         skills: vec![],
+        context_file: None,
     };
 
     let result = builder.build_prompt(&request);
@@ -296,6 +298,7 @@ fn t5_script_exit_zero_no_output_returns_contract_violation() {
         instructions: "Build it.".into(),
         template: None,
         skills: vec![],
+        context_file: None,
     };
 
     let result = builder.build_prompt(&request);
@@ -335,6 +338,7 @@ fn t6_idempotent_output() {
         instructions: "Build the artifact.".into(),
         template: Some("implement".into()),
         skills: vec!["test-skill".into()],
+        context_file: None,
     };
 
     let mut request2 = request1.clone();
@@ -436,6 +440,7 @@ fn t8_stderr_captured() {
         instructions: "Build it.".into(),
         template: None,
         skills: vec![],
+        context_file: None,
     };
 
     let _result = builder.build_prompt(&request).unwrap();
@@ -582,4 +587,106 @@ fn t29_allowlisted_env_only() {
     }
 
     std::env::remove_var("__IF1_TEST_SECRET");
+}
+
+// =========================================================================
+// T9-T12: context_file handling
+// =========================================================================
+
+#[test]
+fn t9_context_file_with_title_and_description_prepended_to_header() {
+    let (tmp, home) = setup_temp_home();
+    let relay_root = tmp.path().join("relay");
+
+    let (builder, mut request) =
+        make_builder_and_request(&home, relay_root, None, vec!["test-skill".into()]);
+
+    let context_path = tmp.path().join("context.json");
+    std::fs::write(
+        &context_path,
+        r#"{"version":1,"title":"Fix login bug","description":"The login form crashes on empty email"}"#,
+    )
+    .unwrap();
+    request.context_file = Some(context_path);
+
+    let result = builder.build_prompt(&request).unwrap();
+    let header = std::fs::read_to_string(&result.header_path).unwrap();
+    assert!(
+        header.starts_with("# Task: Fix login bug"),
+        "header should start with task title, got: {}",
+        header
+    );
+    assert!(
+        header.contains("The login form crashes on empty email"),
+        "header should contain description"
+    );
+    assert!(
+        header.contains("# Step: s1"),
+        "header should still contain step metadata"
+    );
+}
+
+#[test]
+fn t10_context_file_with_empty_fields_produces_no_prefix() {
+    let (tmp, home) = setup_temp_home();
+    let relay_root = tmp.path().join("relay");
+
+    let (builder, mut request) =
+        make_builder_and_request(&home, relay_root, None, vec!["test-skill".into()]);
+
+    let context_path = tmp.path().join("context.json");
+    std::fs::write(
+        &context_path,
+        r#"{"version":1,"title":"","description":""}"#,
+    )
+    .unwrap();
+    request.context_file = Some(context_path);
+
+    let result = builder.build_prompt(&request).unwrap();
+    let header = std::fs::read_to_string(&result.header_path).unwrap();
+    assert!(
+        header.starts_with("# Step: s1"),
+        "empty context should produce no prefix, got: {}",
+        header
+    );
+}
+
+#[test]
+fn t11_context_file_missing_falls_back_gracefully() {
+    let (tmp, home) = setup_temp_home();
+    let relay_root = tmp.path().join("relay");
+
+    let (builder, mut request) =
+        make_builder_and_request(&home, relay_root, None, vec!["test-skill".into()]);
+
+    request.context_file = Some(tmp.path().join("nonexistent-context.json"));
+
+    let result = builder.build_prompt(&request).unwrap();
+    let header = std::fs::read_to_string(&result.header_path).unwrap();
+    assert!(
+        header.starts_with("# Step: s1"),
+        "missing context file should fall back gracefully, got: {}",
+        header
+    );
+}
+
+#[test]
+fn t12_context_file_malformed_json_falls_back_gracefully() {
+    let (tmp, home) = setup_temp_home();
+    let relay_root = tmp.path().join("relay");
+
+    let (builder, mut request) =
+        make_builder_and_request(&home, relay_root, None, vec!["test-skill".into()]);
+
+    let context_path = tmp.path().join("context.json");
+    std::fs::write(&context_path, "this is not json {{{").unwrap();
+    request.context_file = Some(context_path);
+
+    let result = builder.build_prompt(&request).unwrap();
+    let header = std::fs::read_to_string(&result.header_path).unwrap();
+    assert!(
+        header.starts_with("# Step: s1"),
+        "malformed JSON should fall back gracefully, got: {}",
+        header
+    );
 }

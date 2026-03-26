@@ -49,19 +49,54 @@ struct StatusChipsRow: View {
     var activeRunState: RuntimeRunState?
     var style: StatusChip.ChipStyle = .normal
 
+    enum Presentation: Equatable {
+        case run(status: String, hasCheckpoint: Bool)
+        case delegationReview
+        case delegationResuming
+        case delegationResumeFailed
+        case session(SessionState?)
+    }
+
+    static func presentation(
+        sessionState: ProjectSessionState?,
+        delegationState: RuntimeDelegationState?,
+        activeRunState: RuntimeRunState?,
+    ) -> Presentation {
+        // Runs win over delegation chips because a paused or active method run is the
+        // most urgent project-level state the card can surface.
+        if let run = activeRunState {
+            return .run(status: run.status, hasCheckpoint: run.activeCheckpoint != nil)
+        }
+        if delegationState?.status == "review_needed", delegationState?.currentReview != nil {
+            return .delegationReview
+        }
+        if delegationState?.status == "resume_pending" {
+            return .delegationResuming
+        }
+        if delegationState?.status == "resume_failed" {
+            return .delegationResumeFailed
+        }
+        return .session(sessionState?.state)
+    }
+
     var body: some View {
         Group {
-            if delegationState?.status == "review_needed", delegationState?.currentReview != nil {
+            switch Self.presentation(
+                sessionState: sessionState,
+                delegationState: delegationState,
+                activeRunState: activeRunState,
+            ) {
+            case let .run(status, hasCheckpoint):
+                RunStatusChip(runStatus: status, hasCheckpoint: hasCheckpoint, style: style)
+            case .delegationReview:
                 DelegationReviewChip(style: style)
-            } else if delegationState?.status == "resume_pending" {
+            case .delegationResuming:
                 DelegationResumingChip(style: style)
-            } else if delegationState?.status == "resume_failed" {
+            case .delegationResumeFailed:
                 DelegationResumeFailedChip(style: style)
-            } else if let run = activeRunState {
-                RunStatusChip(runStatus: run.status, hasCheckpoint: run.activeCheckpoint != nil, style: style)
-            } else {
+            case let .session(state):
                 StatusChip(
-                    state: sessionState?.state,
+                    state: state,
                     style: style,
                 )
             }
