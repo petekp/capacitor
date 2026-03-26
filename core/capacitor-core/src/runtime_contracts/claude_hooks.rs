@@ -39,31 +39,31 @@ const CLAUDE_HOOK_EVENT_CONTRACTS: [ClaudeHookEventContract; 18] = [
     ClaudeHookEventContract {
         event_name: "UserPromptSubmit",
         allowed_transports: FULL_INTERACTIVE,
-        managed_transport: Some(HookTransport::Http),
+        managed_transport: Some(HookTransport::Command),
         needs_matcher: false,
     },
     ClaudeHookEventContract {
         event_name: "PreToolUse",
         allowed_transports: FULL_INTERACTIVE,
-        managed_transport: Some(HookTransport::Http),
+        managed_transport: Some(HookTransport::Command),
         needs_matcher: true,
     },
     ClaudeHookEventContract {
         event_name: "PermissionRequest",
         allowed_transports: FULL_INTERACTIVE,
-        managed_transport: Some(HookTransport::Http),
+        managed_transport: Some(HookTransport::Command),
         needs_matcher: true,
     },
     ClaudeHookEventContract {
         event_name: "PostToolUse",
         allowed_transports: FULL_INTERACTIVE,
-        managed_transport: Some(HookTransport::Http),
+        managed_transport: Some(HookTransport::Command),
         needs_matcher: true,
     },
     ClaudeHookEventContract {
         event_name: "PostToolUseFailure",
         allowed_transports: FULL_INTERACTIVE,
-        managed_transport: Some(HookTransport::Http),
+        managed_transport: Some(HookTransport::Command),
         needs_matcher: true,
     },
     ClaudeHookEventContract {
@@ -75,7 +75,7 @@ const CLAUDE_HOOK_EVENT_CONTRACTS: [ClaudeHookEventContract; 18] = [
     ClaudeHookEventContract {
         event_name: "Stop",
         allowed_transports: COMMAND_HTTP,
-        managed_transport: Some(HookTransport::Http),
+        managed_transport: Some(HookTransport::Command),
         needs_matcher: false,
     },
     ClaudeHookEventContract {
@@ -87,7 +87,7 @@ const CLAUDE_HOOK_EVENT_CONTRACTS: [ClaudeHookEventContract; 18] = [
     ClaudeHookEventContract {
         event_name: "SubagentStop",
         allowed_transports: COMMAND_HTTP,
-        managed_transport: Some(HookTransport::Http),
+        managed_transport: Some(HookTransport::Command),
         needs_matcher: false,
     },
     ClaudeHookEventContract {
@@ -105,7 +105,7 @@ const CLAUDE_HOOK_EVENT_CONTRACTS: [ClaudeHookEventContract; 18] = [
     ClaudeHookEventContract {
         event_name: "TaskCompleted",
         allowed_transports: COMMAND_HTTP,
-        managed_transport: Some(HookTransport::Http),
+        managed_transport: Some(HookTransport::Command),
         needs_matcher: false,
     },
     ClaudeHookEventContract {

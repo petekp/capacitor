@@ -852,25 +852,14 @@ fn managed_inner_hook(contract: &ClaudeHookEventContract) -> InnerHook {
     let transport = contract
         .managed_transport
         .expect("managed hook contract must declare a transport");
-    if transport == HookTransport::Http {
-        InnerHook {
-            hook_type: Some("http".to_string()),
-            command: None,
-            url: Some(HOOK_HTTP_URL.to_string()),
-            async_hook: None,
-            timeout: None,
-            other: HashMap::new(),
-        }
-    } else {
-        debug_assert_eq!(transport, HookTransport::Command);
-        InnerHook {
-            hook_type: Some("command".to_string()),
-            command: Some(managed_command_hook_command()),
-            url: None,
-            async_hook: None,
-            timeout: None,
-            other: HashMap::new(),
-        }
+    debug_assert_eq!(transport, HookTransport::Command);
+    InnerHook {
+        hook_type: Some("command".to_string()),
+        command: Some(managed_command_hook_command()),
+        url: None,
+        async_hook: None,
+        timeout: None,
+        other: HashMap::new(),
     }
 }
 
@@ -878,22 +867,12 @@ fn apply_managed_contract(hook: &mut InnerHook, contract: &ClaudeHookEventContra
     let transport = contract
         .managed_transport
         .expect("managed hook contract must declare a transport");
-    if transport == HookTransport::Http {
-        hook.hook_type = Some("http".to_string());
-        hook.url = Some(HOOK_HTTP_URL.to_string());
-        hook.command = None;
-        hook.async_hook = None;
-        hook.timeout = None;
-    } else {
-        debug_assert_eq!(transport, HookTransport::Command);
-        {
-            hook.hook_type = Some("command".to_string());
-            hook.command = Some(managed_command_hook_command());
-            hook.url = None;
-            hook.async_hook = None;
-            hook.timeout = None;
-        }
-    }
+    debug_assert_eq!(transport, HookTransport::Command);
+    hook.hook_type = Some("command".to_string());
+    hook.command = Some(managed_command_hook_command());
+    hook.url = None;
+    hook.async_hook = None;
+    hook.timeout = None;
 }
 
 fn inner_hook_matches_managed_contract(
@@ -901,9 +880,6 @@ fn inner_hook_matches_managed_contract(
     contract: &ClaudeHookEventContract,
 ) -> bool {
     if let Some(transport) = contract.managed_transport {
-        if transport == HookTransport::Http {
-            return is_hud_hook_url(hook.url.as_deref());
-        }
         debug_assert_eq!(transport, HookTransport::Command);
         return is_current_managed_hook_command(hook.command.as_deref());
     }
@@ -1073,8 +1049,7 @@ mod tests {
     }
 
     #[test]
-    fn test_register_hooks_in_settings_uses_command_for_command_only_events_and_http_for_http_events(
-    ) {
+    fn test_register_hooks_in_settings_uses_command_transport_for_all_managed_events() {
         let (_temp, storage) = setup_test_env();
         let checker = SetupChecker::new(storage.clone());
 
@@ -1083,22 +1058,28 @@ mod tests {
         let settings_content = fs::read_to_string(storage.claude_settings_file()).unwrap();
         let settings: serde_json::Value = serde_json::from_str(&settings_content).unwrap();
 
-        assert_eq!(
-            settings["hooks"]["SessionStart"][0]["hooks"][0]["type"],
-            "command"
-        );
-        assert!(settings["hooks"]["SessionStart"][0]["hooks"][0]["command"]
-            .as_str()
-            .is_some_and(|value| value.contains("/usr/bin/curl") && value.contains("/hook")));
-
-        assert_eq!(
-            settings["hooks"]["PreToolUse"][0]["hooks"][0]["type"],
-            "http"
-        );
-        assert_eq!(
-            settings["hooks"]["PreToolUse"][0]["hooks"][0]["url"],
-            HOOK_HTTP_URL
-        );
+        // All managed events use command transport with the curl wrapper
+        for contract in managed_hook_event_contracts() {
+            let event = &settings["hooks"][contract.event_name];
+            assert!(
+                event.is_array(),
+                "{} should have hooks registered",
+                contract.event_name,
+            );
+            let inner_hook = &event[0]["hooks"][0];
+            assert_eq!(
+                inner_hook["type"], "command",
+                "{} should use command transport",
+                contract.event_name,
+            );
+            assert!(
+                inner_hook["command"]
+                    .as_str()
+                    .is_some_and(|v| v.contains("/usr/bin/curl") && v.contains("/hook")),
+                "{} should use the curl wrapper command",
+                contract.event_name,
+            );
+        }
     }
 
     #[test]
@@ -1106,16 +1087,17 @@ mod tests {
         let (_temp, storage) = setup_test_env();
         let checker = SetupChecker::new(storage.clone());
 
+        let managed_cmd = managed_command_hook_command();
         let existing = serde_json::json!({
             "hooks": {
                 "PreToolUse": [
                     {
                         "matcher": "*",
-                        "hooks": [{"type": "http", "url": HOOK_HTTP_URL}]
+                        "hooks": [{"type": "command", "command": managed_cmd}]
                     },
                     {
                         "matcher": "*",
-                        "hooks": [{"type": "http", "url": HOOK_HTTP_URL}]
+                        "hooks": [{"type": "command", "command": managed_cmd}]
                     },
                     {
                         "matcher": {"tools": ["BashTool"]},
@@ -1258,11 +1240,13 @@ mod tests {
 
         assert!(
             post_tool_use.iter().any(|entry| {
-                entry["hooks"][0]["type"] == "http"
-                    && entry["hooks"][0]["url"] == HOOK_HTTP_URL
+                entry["hooks"][0]["type"] == "command"
+                    && entry["hooks"][0]["command"]
+                        .as_str()
+                        .is_some_and(|v| v.contains("/usr/bin/curl") && v.contains("/hook"))
                     && entry["matcher"] == "*"
             }),
-            "Capacitor-managed HTTP hook should be registered"
+            "Capacitor-managed command hook should be registered"
         );
     }
 
@@ -1578,25 +1562,30 @@ mod tests {
         let (_temp, storage) = setup_test_env();
         let checker = SetupChecker::new(storage.clone());
 
-        // Write settings with tool events but missing matcher
-        let missing_matcher = r#"{
-            "hooks": {
-                "SessionStart": [{"hooks": [{"type": "command", "command": "/bin/sh -c '/usr/bin/curl -fsS --connect-timeout 1 --max-time 1 -X POST \"http://127.0.0.1:7474/hook\" -H \"Content-Type: application/json\" --data-binary @- >/dev/null 2>&1 || true'"}]}],
-                "SessionEnd": [{"hooks": [{"type": "command", "command": "/bin/sh -c '/usr/bin/curl -fsS --connect-timeout 1 --max-time 1 -X POST \"http://127.0.0.1:7474/hook\" -H \"Content-Type: application/json\" --data-binary @- >/dev/null 2>&1 || true'"}]}],
-                "UserPromptSubmit": [{"hooks": [{"type": "http", "url": "http://127.0.0.1:7474/hook"}]}],
-                "PreToolUse": [{"hooks": [{"type": "http", "url": "http://127.0.0.1:7474/hook"}]}],
-                "PostToolUse": [{"hooks": [{"type": "http", "url": "http://127.0.0.1:7474/hook"}]}],
-                "PostToolUseFailure": [{"hooks": [{"type": "http", "url": "http://127.0.0.1:7474/hook"}]}],
-                "PermissionRequest": [{"hooks": [{"type": "http", "url": "http://127.0.0.1:7474/hook"}]}],
-                "Stop": [{"hooks": [{"type": "http", "url": "http://127.0.0.1:7474/hook"}]}],
-                "PreCompact": [{"hooks": [{"type": "command", "command": "/bin/sh -c '/usr/bin/curl -fsS --connect-timeout 1 --max-time 1 -X POST \"http://127.0.0.1:7474/hook\" -H \"Content-Type: application/json\" --data-binary @- >/dev/null 2>&1 || true'"}]}],
-                "Notification": [{"hooks": [{"type": "command", "command": "/bin/sh -c '/usr/bin/curl -fsS --connect-timeout 1 --max-time 1 -X POST \"http://127.0.0.1:7474/hook\" -H \"Content-Type: application/json\" --data-binary @- >/dev/null 2>&1 || true'"}]}],
-                "SubagentStart": [{"hooks": [{"type": "command", "command": "/bin/sh -c '/usr/bin/curl -fsS --connect-timeout 1 --max-time 1 -X POST \"http://127.0.0.1:7474/hook\" -H \"Content-Type: application/json\" --data-binary @- >/dev/null 2>&1 || true'"}]}],
-                "SubagentStop": [{"hooks": [{"type": "http", "url": "http://127.0.0.1:7474/hook"}]}],
-                "TeammateIdle": [{"hooks": [{"type": "command", "command": "/bin/sh -c '/usr/bin/curl -fsS --connect-timeout 1 --max-time 1 -X POST \"http://127.0.0.1:7474/hook\" -H \"Content-Type: application/json\" --data-binary @- >/dev/null 2>&1 || true'"}]}],
-                "TaskCompleted": [{"hooks": [{"type": "http", "url": "http://127.0.0.1:7474/hook"}]}]
-            }
-        }"#;
+        // Write settings with all events using command transport but missing matchers
+        // on tool-scoped events (PreToolUse, PostToolUse, etc.)
+        let managed_cmd = managed_command_hook_command();
+        let missing_matcher = format!(
+            r#"{{
+            "hooks": {{
+                "SessionStart": [{{"hooks": [{{"type": "command", "command": "{cmd}"}}]}}],
+                "SessionEnd": [{{"hooks": [{{"type": "command", "command": "{cmd}"}}]}}],
+                "UserPromptSubmit": [{{"hooks": [{{"type": "command", "command": "{cmd}"}}]}}],
+                "PreToolUse": [{{"hooks": [{{"type": "command", "command": "{cmd}"}}]}}],
+                "PostToolUse": [{{"hooks": [{{"type": "command", "command": "{cmd}"}}]}}],
+                "PostToolUseFailure": [{{"hooks": [{{"type": "command", "command": "{cmd}"}}]}}],
+                "PermissionRequest": [{{"hooks": [{{"type": "command", "command": "{cmd}"}}]}}],
+                "Stop": [{{"hooks": [{{"type": "command", "command": "{cmd}"}}]}}],
+                "PreCompact": [{{"hooks": [{{"type": "command", "command": "{cmd}"}}]}}],
+                "Notification": [{{"hooks": [{{"type": "command", "command": "{cmd}"}}]}}],
+                "SubagentStart": [{{"hooks": [{{"type": "command", "command": "{cmd}"}}]}}],
+                "SubagentStop": [{{"hooks": [{{"type": "command", "command": "{cmd}"}}]}}],
+                "TeammateIdle": [{{"hooks": [{{"type": "command", "command": "{cmd}"}}]}}],
+                "TaskCompleted": [{{"hooks": [{{"type": "command", "command": "{cmd}"}}]}}]
+            }}
+        }}"#,
+            cmd = managed_cmd,
+        );
         fs::write(storage.claude_settings_file(), missing_matcher).unwrap();
 
         // hooks_registered_in_settings should return false since matcher is missing
@@ -1604,10 +1593,13 @@ mod tests {
     }
 
     #[test]
-    fn test_hooks_registered_rejects_http_transport_for_command_only_event() {
+    fn test_hooks_registered_rejects_http_transport_for_any_managed_event() {
         let (_temp, storage) = setup_test_env();
         let checker = SetupChecker::new(storage.clone());
 
+        // All events use command transport except SessionStart which uses HTTP —
+        // hooks_registered should reject because SessionStart's contract is command.
+        let managed_cmd = managed_command_hook_command();
         let invalid = format!(
             r#"{{
                 "hooks": {{
@@ -1618,26 +1610,26 @@ mod tests {
                         "hooks": [{{"type": "command", "command": "{command}"}}]
                     }}],
                     "UserPromptSubmit": [{{
-                        "hooks": [{{"type": "http", "url": "{hook_url}"}}]
+                        "hooks": [{{"type": "command", "command": "{command}"}}]
                     }}],
                     "PreToolUse": [{{
                         "matcher": "*",
-                        "hooks": [{{"type": "http", "url": "{hook_url}"}}]
+                        "hooks": [{{"type": "command", "command": "{command}"}}]
                     }}],
                     "PostToolUse": [{{
                         "matcher": "*",
-                        "hooks": [{{"type": "http", "url": "{hook_url}"}}]
+                        "hooks": [{{"type": "command", "command": "{command}"}}]
                     }}],
                     "PostToolUseFailure": [{{
                         "matcher": "*",
-                        "hooks": [{{"type": "http", "url": "{hook_url}"}}]
+                        "hooks": [{{"type": "command", "command": "{command}"}}]
                     }}],
                     "PermissionRequest": [{{
                         "matcher": "*",
-                        "hooks": [{{"type": "http", "url": "{hook_url}"}}]
+                        "hooks": [{{"type": "command", "command": "{command}"}}]
                     }}],
                     "Stop": [{{
-                        "hooks": [{{"type": "http", "url": "{hook_url}"}}]
+                        "hooks": [{{"type": "command", "command": "{command}"}}]
                     }}],
                     "PreCompact": [{{
                         "hooks": [{{"type": "command", "command": "{command}"}}]
@@ -1649,25 +1641,87 @@ mod tests {
                         "hooks": [{{"type": "command", "command": "{command}"}}]
                     }}],
                     "SubagentStop": [{{
-                        "hooks": [{{"type": "http", "url": "{hook_url}"}}]
+                        "hooks": [{{"type": "command", "command": "{command}"}}]
                     }}],
                     "TeammateIdle": [{{
                         "hooks": [{{"type": "command", "command": "{command}"}}]
                     }}],
                     "TaskCompleted": [{{
-                        "hooks": [{{"type": "http", "url": "{hook_url}"}}]
+                        "hooks": [{{"type": "command", "command": "{command}"}}]
                     }}]
                 }}
             }}"#,
             hook_url = HOOK_HTTP_URL,
-            command = managed_command_hook_command(),
+            command = managed_cmd,
         );
         fs::write(storage.claude_settings_file(), invalid).unwrap();
 
         assert!(
             !checker.hooks_registered_in_settings(),
-            "SessionStart is command-only and should reject HTTP configuration"
+            "HTTP hook on any managed event should be rejected since all contracts require command transport"
         );
+    }
+
+    #[test]
+    fn test_register_hooks_migrates_existing_http_hooks_to_command_transport() {
+        let (_temp, storage) = setup_test_env();
+        let checker = SetupChecker::new(storage.clone());
+
+        // Pre-migration state: HTTP hooks for formerly-HTTP-managed events
+        let existing = serde_json::json!({
+            "hooks": {
+                "PreToolUse": [{"matcher": "*", "hooks": [{"type": "http", "url": HOOK_HTTP_URL}]}],
+                "Stop": [{"hooks": [{"type": "http", "url": HOOK_HTTP_URL}]}],
+                "SubagentStop": [{"hooks": [{"type": "http", "url": HOOK_HTTP_URL}]}],
+                "TaskCompleted": [{"hooks": [{"type": "http", "url": HOOK_HTTP_URL}]}]
+            }
+        });
+        fs::write(
+            storage.claude_settings_file(),
+            serde_json::to_string_pretty(&existing).unwrap(),
+        )
+        .unwrap();
+
+        // Running register_hooks should migrate HTTP → command
+        checker.register_hooks_in_settings().unwrap();
+
+        let settings_content = fs::read_to_string(storage.claude_settings_file()).unwrap();
+        let settings: serde_json::Value = serde_json::from_str(&settings_content).unwrap();
+
+        // Verify the 4 previously-HTTP events are now command hooks
+        for event_name in ["PreToolUse", "Stop", "SubagentStop", "TaskCompleted"] {
+            let hooks = settings["hooks"][event_name]
+                .as_array()
+                .unwrap_or_else(|| panic!("{event_name} should have hooks"));
+            let managed = hooks.iter().find(|h| {
+                h["hooks"]
+                    .as_array()
+                    .map(|inner| {
+                        inner.iter().any(|hook| {
+                            hook["command"]
+                                .as_str()
+                                .is_some_and(|c| c.contains("/usr/bin/curl"))
+                        })
+                    })
+                    .unwrap_or(false)
+            });
+            assert!(
+                managed.is_some(),
+                "{event_name} should have been migrated to command transport"
+            );
+            let inner = &managed.unwrap()["hooks"][0];
+            assert_eq!(
+                inner["type"], "command",
+                "{event_name} should use command type after migration"
+            );
+            assert!(
+                inner["url"].is_null(),
+                "{event_name} should not have url field after migration"
+            );
+        }
+
+        // All managed events should be registered and valid
+        assert!(checker.hooks_registered_in_settings());
     }
 
     #[test]

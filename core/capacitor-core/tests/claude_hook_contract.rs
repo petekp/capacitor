@@ -19,7 +19,19 @@ fn managed_hook_contract_uses_only_documented_transports() {
 }
 
 #[test]
-fn command_only_events_are_not_marked_http_managed() {
+fn all_managed_events_use_command_transport() {
+    for contract in managed_hook_event_contracts() {
+        assert_eq!(
+            contract.managed_transport,
+            Some(HookTransport::Command),
+            "{} should use command transport (unified command transport)",
+            contract.event_name,
+        );
+    }
+}
+
+#[test]
+fn command_only_events_remain_command_only_in_allowed_transports() {
     for event_name in [
         "SessionStart",
         "SessionEnd",
@@ -33,12 +45,7 @@ fn command_only_events_are_not_marked_http_managed() {
         assert_eq!(
             contract.allowed_transports,
             &[HookTransport::Command],
-            "{event_name} should remain command-only in the checked-in contract",
-        );
-        assert_eq!(
-            contract.managed_transport,
-            Some(HookTransport::Command),
-            "{event_name} should not be installed as HTTP",
+            "{event_name} should remain command-only in allowed_transports",
         );
     }
 }
