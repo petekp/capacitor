@@ -25,7 +25,7 @@ final class IdeaCapturePopoverTests: XCTestCase {
         XCTAssertEqual(frame.maxY, 160, accuracy: 0.001)
     }
 
-    func testFocusControllerDefersFocusUntilTextViewHasWindow() {
+    func testFocusControllerDefersFocusUntilTextViewHasWindow() throws {
         let focusController = TextViewFocusController()
         let scrollView = NSScrollView(frame: CGRect(origin: .zero, size: ideaCaptureTestWindowSize))
         let textView = NSTextView(frame: scrollView.bounds)
@@ -46,6 +46,9 @@ final class IdeaCapturePopoverTests: XCTestCase {
         window.contentView = container
         container.addSubview(scrollView)
         scrollView.frame = container.bounds
+
+        window.makeKeyAndOrderFront(nil)
+        try XCTSkipUnless(window.isKeyWindow, "Requires window server (skipped in headless CI)")
 
         focusController.viewDidMoveToWindow()
         pumpRunLoop(for: 0.05)

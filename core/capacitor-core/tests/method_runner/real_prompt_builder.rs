@@ -4,7 +4,19 @@
 //! directory with fabricated skill and template files.
 
 use std::path::PathBuf;
+use std::sync::{Mutex, MutexGuard};
 use std::time::Duration;
+
+/// Tests in this module mutate the process-global HOME env var so that
+/// `compose-prompt.sh` can resolve skills and templates from a temp directory.
+/// A static mutex serializes all such tests to prevent races.
+static HOME_LOCK: Mutex<()> = Mutex::new(());
+
+fn lock_and_set_home(home: &std::path::Path) -> MutexGuard<'static, ()> {
+    let guard = HOME_LOCK.lock().unwrap();
+    std::env::set_var("HOME", home);
+    guard
+}
 
 use capacitor_core::method_runner::adapter_config::AdapterConfig;
 use capacitor_core::method_runner::adapters::{AdapterError, PromptBuildRequest, PromptBuilder};
@@ -80,15 +92,19 @@ fn make_config(home: &std::path::Path) -> AdapterConfig {
     .unwrap()
 }
 
-/// Build a builder + request, setting HOME to the temp dir.
+/// Build a builder + request, locking and setting HOME to the temp dir.
+/// The caller must hold the returned `MutexGuard` for the duration of the test.
 fn make_builder_and_request(
     home: &std::path::Path,
     relay_root: PathBuf,
     template: Option<String>,
     skills: Vec<String>,
-) -> (ShellPromptBuilder, PromptBuildRequest) {
-    // Override HOME so compose-prompt.sh resolves skills/templates from our temp dir
-    std::env::set_var("HOME", home);
+) -> (
+    MutexGuard<'static, ()>,
+    ShellPromptBuilder,
+    PromptBuildRequest,
+) {
+    let home_guard = lock_and_set_home(home);
 
     let config = make_config(home);
     let builder = ShellPromptBuilder::new(config);
@@ -104,7 +120,7 @@ fn make_builder_and_request(
         context_file: None,
     };
 
-    (builder, request)
+    (home_guard, builder, request)
 }
 
 // =========================================================================
@@ -117,7 +133,7 @@ fn t1_happy_path_real_compose_prompt() {
     let relay_tmp = tempfile::tempdir().unwrap();
     let relay_root = relay_tmp.path().join("relay");
 
-    let (builder, request) = make_builder_and_request(
+    let (_home_guard, builder, request) = make_builder_and_request(
         &home,
         relay_root.clone(),
         Some("implement".into()),
@@ -153,7 +169,7 @@ fn t2_missing_skill_fails_before_spawn() {
     let relay_tmp = tempfile::tempdir().unwrap();
     let relay_root = relay_tmp.path().join("relay");
 
-    let (builder, request) =
+    let (_home_guard, builder, request) =
         make_builder_and_request(&home, relay_root, None, vec!["nonexistent-skill".into()]);
 
     let result = builder.build_prompt(&request);
@@ -179,7 +195,7 @@ fn t3_missing_template_fails_before_spawn() {
     let relay_tmp = tempfile::tempdir().unwrap();
     let relay_root = relay_tmp.path().join("relay");
 
-    let (builder, request) = make_builder_and_request(
+    let (_home_guard, builder, request) = make_builder_and_request(
         &home,
         relay_root,
         Some("nonexistent-template".into()),
@@ -218,7 +234,7 @@ fn t4_script_nonzero_exit_returns_assembly_failed() {
         std::fs::set_permissions(&broken_script, std::fs::Permissions::from_mode(0o755)).unwrap();
     }
 
-    std::env::set_var("HOME", &home);
+    let _home_guard = lock_and_set_home(&home);
     let codex = create_fake_codex(&home);
     let config = AdapterConfig::new(
         broken_script,
@@ -278,7 +294,7 @@ fn t5_script_exit_zero_no_output_returns_contract_violation() {
         std::fs::set_permissions(&noop_script, std::fs::Permissions::from_mode(0o755)).unwrap();
     }
 
-    std::env::set_var("HOME", &home);
+    let _home_guard = lock_and_set_home(&home);
     let codex = create_fake_codex(&home);
     let config = AdapterConfig::new(
         noop_script,
@@ -325,7 +341,7 @@ fn t6_idempotent_output() {
     let relay_tmp1 = tempfile::tempdir().unwrap();
     let relay_tmp2 = tempfile::tempdir().unwrap();
 
-    std::env::set_var("HOME", &home);
+    let _home_guard = lock_and_set_home(&home);
     let config = make_config(&home);
 
     let builder = ShellPromptBuilder::new(config);
@@ -362,7 +378,8 @@ fn t7_metadata_json_written() {
     let relay_tmp = tempfile::tempdir().unwrap();
     let relay_root = relay_tmp.path().join("relay");
 
-    let (builder, request) = make_builder_and_request(&home, relay_root.clone(), None, vec![]);
+    let (_home_guard, builder, request) =
+        make_builder_and_request(&home, relay_root.clone(), None, vec![]);
 
     let _result = builder.build_prompt(&request).unwrap();
 
@@ -420,7 +437,7 @@ fn t8_stderr_captured() {
         std::fs::set_permissions(&warn_script, std::fs::Permissions::from_mode(0o755)).unwrap();
     }
 
-    std::env::set_var("HOME", &home);
+    let _home_guard = lock_and_set_home(&home);
     let codex = create_fake_codex(&home);
     let config = AdapterConfig::new(
         warn_script,
@@ -464,7 +481,8 @@ fn t24_preflight_json_written_on_first_call() {
     let relay_tmp = tempfile::tempdir().unwrap();
     let relay_root = relay_tmp.path().join("relay");
 
-    let (builder, request) = make_builder_and_request(&home, relay_root.clone(), None, vec![]);
+    let (_home_guard, builder, request) =
+        make_builder_and_request(&home, relay_root.clone(), None, vec![]);
 
     // Before call: no preflight
     let preflight_path = relay_root.join("adapter/preflight.json");
@@ -501,7 +519,7 @@ fn t28_all_file_args_are_absolute() {
     let relay_tmp = tempfile::tempdir().unwrap();
     let relay_root = relay_tmp.path().join("relay");
 
-    let (builder, request) = make_builder_and_request(
+    let (_home_guard, builder, request) = make_builder_and_request(
         &home,
         relay_root.clone(),
         Some("implement".into()),
@@ -598,7 +616,7 @@ fn t9_context_file_with_title_and_description_prepended_to_header() {
     let (tmp, home) = setup_temp_home();
     let relay_root = tmp.path().join("relay");
 
-    let (builder, mut request) =
+    let (_home_guard, builder, mut request) =
         make_builder_and_request(&home, relay_root, None, vec!["test-skill".into()]);
 
     let context_path = tmp.path().join("context.json");
@@ -631,7 +649,7 @@ fn t10_context_file_with_empty_fields_produces_no_prefix() {
     let (tmp, home) = setup_temp_home();
     let relay_root = tmp.path().join("relay");
 
-    let (builder, mut request) =
+    let (_home_guard, builder, mut request) =
         make_builder_and_request(&home, relay_root, None, vec!["test-skill".into()]);
 
     let context_path = tmp.path().join("context.json");
@@ -656,7 +674,7 @@ fn t11_context_file_missing_falls_back_gracefully() {
     let (tmp, home) = setup_temp_home();
     let relay_root = tmp.path().join("relay");
 
-    let (builder, mut request) =
+    let (_home_guard, builder, mut request) =
         make_builder_and_request(&home, relay_root, None, vec!["test-skill".into()]);
 
     request.context_file = Some(tmp.path().join("nonexistent-context.json"));
@@ -675,7 +693,7 @@ fn t12_context_file_malformed_json_falls_back_gracefully() {
     let (tmp, home) = setup_temp_home();
     let relay_root = tmp.path().join("relay");
 
-    let (builder, mut request) =
+    let (_home_guard, builder, mut request) =
         make_builder_and_request(&home, relay_root, None, vec!["test-skill".into()]);
 
     let context_path = tmp.path().join("context.json");
