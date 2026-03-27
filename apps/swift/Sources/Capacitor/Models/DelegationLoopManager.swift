@@ -273,40 +273,49 @@ actor DelegationLoopManager {
     private let worktreeService: WorktreeService
     private let fileManager: FileManager
     private var lastAttachedSessionIDs: [AttachedSessionKey: String] = [:]
+    private static let defaultClaudeProjectsDirectoryProvider: @Sendable () -> URL = {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".claude/projects", isDirectory: true)
+    }
+
+    private static let defaultClaudePathResolver: @Sendable () async -> String? = {
+        await ClaudeCliResolver.shared.resolveClaudePath()
+    }
 
     init(
         runtimeClient: RuntimeClient,
         worktreeService: WorktreeService = WorktreeService(),
         fileManager: FileManager = .default,
-        claudeProjectsDirectoryProvider: @escaping @Sendable () -> URL = {
-            FileManager.default.homeDirectoryForCurrentUser
-                .appendingPathComponent(".claude/projects", isDirectory: true)
-        },
-        claudePathResolver: @escaping @Sendable () async -> String? = {
-            await ClaudeCliResolver.shared.resolveClaudePath()
-        },
         claudeLauncher: ClaudeLauncher? = nil,
     ) {
-        let launcher = claudeLauncher ?? { request, onSessionID in
-            try await Self.launchClaudePrint(
-                request: request,
-                claudePathResolver: claudePathResolver,
-                onSessionID: onSessionID,
-            )
-        }
-
-        self.init(
-            mutateDelegation: { request in
-                try await runtimeClient.mutateDelegation(request)
-            },
-            worktreeService: worktreeService,
-            fileManager: fileManager,
-            sessionDiscovery: DelegationSessionDiscovery(
-                fileManager: fileManager,
-                claudeProjectsDirectory: claudeProjectsDirectoryProvider(),
-            ),
-            claudeLauncher: launcher,
+        runtimeMutation = Self.makeDelegationMutator(runtimeClient: runtimeClient)
+        self.claudeLauncher = claudeLauncher ?? Self.makeClaudeLauncher(
+            claudePathResolver: Self.defaultClaudePathResolver,
         )
+        sessionDiscovery = Self.makeSessionDiscovery(
+            fileManager: fileManager,
+            claudeProjectsDirectoryProvider: Self.defaultClaudeProjectsDirectoryProvider,
+        )
+        self.worktreeService = worktreeService
+        self.fileManager = fileManager
+    }
+
+    init(
+        runtimeClient: RuntimeClient,
+        worktreeService: WorktreeService = WorktreeService(),
+        fileManager: FileManager = .default,
+        claudeProjectsDirectoryProvider: @escaping @Sendable () -> URL,
+        claudePathResolver: @escaping @Sendable () async -> String?,
+        claudeLauncher: ClaudeLauncher? = nil,
+    ) {
+        runtimeMutation = Self.makeDelegationMutator(runtimeClient: runtimeClient)
+        self.claudeLauncher = claudeLauncher ?? Self.makeClaudeLauncher(claudePathResolver: claudePathResolver)
+        sessionDiscovery = Self.makeSessionDiscovery(
+            fileManager: fileManager,
+            claudeProjectsDirectoryProvider: claudeProjectsDirectoryProvider,
+        )
+        self.worktreeService = worktreeService
+        self.fileManager = fileManager
     }
 
     init(
@@ -321,6 +330,34 @@ actor DelegationLoopManager {
         self.sessionDiscovery = sessionDiscovery
         self.worktreeService = worktreeService
         self.fileManager = fileManager
+    }
+
+    private static func makeClaudeLauncher(
+        claudePathResolver: @escaping @Sendable () async -> String?,
+    ) -> ClaudeLauncher {
+        { request, onSessionID in
+            try await Self.launchClaudePrint(
+                request: request,
+                claudePathResolver: claudePathResolver,
+                onSessionID: onSessionID,
+            )
+        }
+    }
+
+    private static func makeDelegationMutator(runtimeClient: RuntimeClient) -> DelegationMutator {
+        { request in
+            try await runtimeClient.mutateDelegation(request)
+        }
+    }
+
+    private static func makeSessionDiscovery(
+        fileManager: FileManager,
+        claudeProjectsDirectoryProvider: () -> URL,
+    ) -> DelegationSessionDiscovery {
+        DelegationSessionDiscovery(
+            fileManager: fileManager,
+            claudeProjectsDirectory: claudeProjectsDirectoryProvider(),
+        )
     }
 
     func startDelegation(project: Project, idea: Idea) async throws {

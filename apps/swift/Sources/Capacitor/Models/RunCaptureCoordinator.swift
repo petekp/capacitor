@@ -36,35 +36,25 @@ actor RunCaptureCoordinator {
     private let clientID: String
     private var inFlightCheckpointIDs: Set<String> = []
 
+    private static let defaultHomeDirectoryProvider: @Sendable () -> URL = {
+        FileManager.default.homeDirectoryForCurrentUser
+    }
+
     init(
         runtimeClient: RuntimeClient,
         captureService: WebCaptureService = WebCaptureService(),
         fileManager: FileManager = .default,
-        homeDirectoryProvider: @escaping @Sendable () -> URL = {
-            FileManager.default.homeDirectoryForCurrentUser
-        },
-        clientID: String = "capacitor-mac-\(ProcessInfo.processInfo.processIdentifier)",
+        homeDirectoryProvider: @escaping @Sendable () -> URL = defaultHomeDirectoryProvider,
+        clientID: String = RunCaptureCoordinator.defaultClientID(),
     ) {
-        self.init(
-            mutateRun: { request in
-                try await runtimeClient.mutateRun(request)
-            },
-            captureURL: { url, outputPath in
-                try await captureService.captureURL(url, outputPath: outputPath)
-            },
-            captureMermaid: { source, outputPath in
-                try await captureService.captureMermaid(source: source, outputPath: outputPath)
-            },
-            closeBrowser: {
-                await captureService.closeBrowser()
-            },
-            isCaptureToolAvailable: {
-                await captureService.isAvailable()
-            },
-            fileManager: fileManager,
-            homeDirectoryProvider: homeDirectoryProvider,
-            clientID: clientID,
-        )
+        runtimeMutation = Self.makeRunMutator(runtimeClient: runtimeClient)
+        captureURL = Self.makeURLCaptureHandler(captureService: captureService)
+        captureMermaid = Self.makeMermaidCaptureHandler(captureService: captureService)
+        closeBrowser = Self.makeCloseBrowserHandler(captureService: captureService)
+        isCaptureToolAvailable = Self.makeCaptureAvailabilityChecker(captureService: captureService)
+        self.fileManager = fileManager
+        self.homeDirectoryProvider = homeDirectoryProvider
+        self.clientID = clientID
     }
 
     init(
@@ -75,7 +65,7 @@ actor RunCaptureCoordinator {
         isCaptureToolAvailable: @escaping @Sendable () async -> Bool,
         fileManager: FileManager = .default,
         homeDirectoryProvider: @escaping @Sendable () -> URL,
-        clientID: String = "capacitor-mac-\(ProcessInfo.processInfo.processIdentifier)",
+        clientID: String = RunCaptureCoordinator.defaultClientID(),
     ) {
         runtimeMutation = mutateRun
         self.captureURL = captureURL
@@ -85,6 +75,48 @@ actor RunCaptureCoordinator {
         self.fileManager = fileManager
         self.homeDirectoryProvider = homeDirectoryProvider
         self.clientID = clientID
+    }
+
+    private static func defaultClientID() -> String {
+        "capacitor-mac-\(ProcessInfo.processInfo.processIdentifier)"
+    }
+
+    private static func makeRunMutator(runtimeClient: RuntimeClient) -> RunMutator {
+        { request in
+            try await runtimeClient.mutateRun(request)
+        }
+    }
+
+    private static func makeURLCaptureHandler(
+        captureService: WebCaptureService,
+    ) -> @Sendable (String, String) async throws -> WebCaptureService.CaptureResult {
+        { url, outputPath in
+            try await captureService.captureURL(url, outputPath: outputPath)
+        }
+    }
+
+    private static func makeMermaidCaptureHandler(
+        captureService: WebCaptureService,
+    ) -> @Sendable (String, String) async throws -> WebCaptureService.CaptureResult {
+        { source, outputPath in
+            try await captureService.captureMermaid(source: source, outputPath: outputPath)
+        }
+    }
+
+    private static func makeCloseBrowserHandler(
+        captureService: WebCaptureService,
+    ) -> @Sendable () async -> Void {
+        {
+            await captureService.closeBrowser()
+        }
+    }
+
+    private static func makeCaptureAvailabilityChecker(
+        captureService: WebCaptureService,
+    ) -> @Sendable () async -> Bool {
+        {
+            await captureService.isAvailable()
+        }
     }
 
     func reconcile(runs: [RuntimeRunState]) async {
