@@ -279,7 +279,7 @@ struct RuntimeDelegationState: Decodable, Equatable {
     }
 }
 
-enum RuntimeCheckpointKind: Equatable, Sendable, Codable {
+enum RuntimeCheckpointKind: Equatable, Codable {
     case proposal
     case implementationMilestone
     case alignmentReview
@@ -357,7 +357,7 @@ enum RuntimeCheckpointKind: Equatable, Sendable, Codable {
     }
 }
 
-enum RuntimeCaptureStatus: Equatable, Sendable {
+enum RuntimeCaptureStatus: Equatable {
     case notRequested
     case pending
     case inProgress
@@ -365,14 +365,14 @@ enum RuntimeCaptureStatus: Equatable, Sendable {
     case failed(reason: String)
 }
 
-struct RuntimeCaptureClaim: Equatable, Sendable {
+struct RuntimeCaptureClaim: Equatable {
     let captureRequestId: String
     let clientId: String
     let claimedAt: String
     let observedCaptureUrl: String?
 }
 
-struct RuntimeMediaArtifact: Codable, Equatable, Sendable {
+struct RuntimeMediaArtifact: Codable, Equatable {
     let artifactType: String
     let path: String
     let label: String
@@ -390,7 +390,7 @@ struct RuntimeMediaArtifact: Codable, Equatable, Sendable {
     }
 }
 
-struct RuntimeMermaidSource: Codable, Equatable, Sendable {
+struct RuntimeMermaidSource: Codable, Equatable {
     let label: String
     let source: String
 
@@ -400,7 +400,7 @@ struct RuntimeMermaidSource: Codable, Equatable, Sendable {
     }
 }
 
-struct RuntimeCheckpointState: Equatable, Sendable {
+struct RuntimeCheckpointState: Equatable {
     let id: String
     let phaseId: String
     let kind: RuntimeCheckpointKind
@@ -418,7 +418,7 @@ struct RuntimeCheckpointState: Equatable, Sendable {
     let decidedAt: String?
 }
 
-struct RuntimeRunState: Equatable, Sendable {
+struct RuntimeRunState: Equatable {
     let id: String
     let projectPath: String
     let methodId: String
@@ -566,7 +566,7 @@ struct RuntimeDelegationMutationRequest: Encodable {
     }
 }
 
-struct RuntimeRunMutationRequest: Encodable, Equatable, Sendable {
+struct RuntimeRunMutationRequest: Encodable, Equatable {
     let kind: String
     let projectPath: String
     let runId: String

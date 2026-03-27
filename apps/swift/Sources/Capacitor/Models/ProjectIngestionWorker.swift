@@ -1,7 +1,7 @@
 import Foundation
 
 actor ProjectIngestionWorker {
-    struct AddProjectsOutcome: Sendable {
+    struct AddProjectsOutcome {
         var addedCount: Int
         var addedPaths: [String]
         var alreadyTrackedPaths: [String]

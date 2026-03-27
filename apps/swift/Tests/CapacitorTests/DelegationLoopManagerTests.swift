@@ -1960,7 +1960,7 @@ private actor MutationRecorder {
     }
 }
 
-private struct DelegationProjection: Sendable {
+private struct DelegationProjection {
     var sessionId: String?
     var status: String
     var submittedMilestoneId: String?

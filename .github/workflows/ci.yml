@@ -250,7 +250,7 @@ jobs:
 
       - name: Install swiftformat (pinned)
         env:
-          SWIFTFORMAT_VERSION: "0.59.1"
+          SWIFTFORMAT_VERSION: "0.60.1"
         run: |
           curl -sL "https://github.com/nicklockwood/SwiftFormat/releases/download/${SWIFTFORMAT_VERSION}/swiftformat.zip" -o /tmp/swiftformat.zip
           unzip -o /tmp/swiftformat.zip -d /usr/local/bin/

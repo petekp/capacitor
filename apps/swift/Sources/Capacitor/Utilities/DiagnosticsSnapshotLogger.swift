@@ -7,7 +7,7 @@ enum DiagnosticsSnapshotLogger {
         let activeSource: String
     }
 
-    private struct ProjectSnapshot: Encodable, Sendable {
+    private struct ProjectSnapshot: Encodable {
         let projectPath: String
         let sessionId: String?
         let state: String
@@ -17,7 +17,7 @@ enum DiagnosticsSnapshotLogger {
         let thinking: Bool?
     }
 
-    private struct StuckSession: Encodable, Sendable {
+    private struct StuckSession: Encodable {
         let projectPath: String
         let sessionId: String?
         let state: String
@@ -26,7 +26,7 @@ enum DiagnosticsSnapshotLogger {
         let thinking: Bool?
     }
 
-    private struct RuntimeSessionSnapshot: Encodable, Sendable {
+    private struct RuntimeSessionSnapshot: Encodable {
         let sessionId: String
         let pid: UInt32
         let state: String
@@ -40,7 +40,7 @@ enum DiagnosticsSnapshotLogger {
         let isAlive: Bool?
     }
 
-    private struct DiagnosticSnapshot: Encodable, Sendable {
+    private struct DiagnosticSnapshot: Encodable {
         let timestamp: String
         let reason: String
         let context: SnapshotContext

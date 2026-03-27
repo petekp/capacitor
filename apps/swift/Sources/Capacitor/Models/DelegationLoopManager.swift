@@ -1,6 +1,6 @@
 import Foundation
 
-struct DelegationClaudeLaunchRequest: Equatable, Sendable {
+struct DelegationClaudeLaunchRequest: Equatable {
     let workingDirectory: String
     let prompt: String
     let resumeSessionID: String?
@@ -195,7 +195,7 @@ enum DelegationUserFacingMessage {
 }
 
 actor DelegationLoopManager {
-    enum ReviewDecision: String, Sendable {
+    enum ReviewDecision: String {
         case approve
         case requestChanges = "request_changes"
     }
@@ -220,7 +220,7 @@ actor DelegationLoopManager {
         }
     }
 
-    struct AcceptedReviewDecisionContext: Sendable {
+    struct AcceptedReviewDecisionContext {
         let projectName: String
         let projectPath: String
         let workerId: String
@@ -243,7 +243,7 @@ actor DelegationLoopManager {
         let submittedMilestoneId: String
     }
 
-    private struct WorkerRootPaths: Sendable {
+    private struct WorkerRootPaths {
         let workerRoot: URL
         let milestonesRoot: URL
         let statusPath: URL
@@ -252,7 +252,7 @@ actor DelegationLoopManager {
         let resumePromptPath: URL
     }
 
-    private struct MilestonePaths: Sendable {
+    private struct MilestonePaths {
         let directory: URL
         let briefPath: URL
         let manifestPath: URL

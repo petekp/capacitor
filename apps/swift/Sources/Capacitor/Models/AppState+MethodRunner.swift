@@ -101,7 +101,7 @@ extension AppState {
     /// Returns the most-recent non-terminal run matching an idea.
     func activeRun(for idea: Idea, in project: Project) -> RuntimeRunState? {
         let normalizedProjectPath = PathNormalizer.normalize(project.path)
-        let terminalStatuses: Set<String> = ["completed", "failed", "cancelled"]
+        let terminalStatuses: Set = ["completed", "failed", "cancelled"]
 
         return runStatesByID.values
             .filter {

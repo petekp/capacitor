@@ -2,12 +2,11 @@
 import Foundation
 import Testing
 
-@Suite("WebCaptureService")
 struct WebCaptureServiceTests {
     // MARK: - Availability
 
-    @Test("isAvailable returns without crashing")
-    func isAvailableDoesNotCrash() async {
+    @Test
+    func `isAvailable returns without crashing`() async {
         let service = WebCaptureService()
         let available = await service.isAvailable()
         // On machines with agent-browser: true. On CI without it: false.
@@ -17,8 +16,8 @@ struct WebCaptureServiceTests {
 
     // MARK: - Error Handling
 
-    @Test("captureURL handles missing agent-browser or invalid URL gracefully")
-    func captureURLHandlesErrors() async throws {
+    @Test
+    func `captureURL handles missing agent-browser or invalid URL gracefully`() async throws {
         let service = WebCaptureService()
 
         let tempDir = NSTemporaryDirectory() + "cap-test-\(UUID().uuidString)"
@@ -37,8 +36,8 @@ struct WebCaptureServiceTests {
         }
     }
 
-    @Test("captureMermaid handles missing agent-browser gracefully")
-    func captureMermaidHandlesErrors() async throws {
+    @Test
+    func `captureMermaid handles missing agent-browser gracefully`() async throws {
         let service = WebCaptureService()
 
         let tempDir = NSTemporaryDirectory() + "cap-test-\(UUID().uuidString)"
@@ -58,8 +57,8 @@ struct WebCaptureServiceTests {
 
     // MARK: - Output Directory Creation
 
-    @Test("captureURL creates nested output directory before attempting capture")
-    func createsNestedOutputDirectory() async throws {
+    @Test
+    func `captureURL creates nested output directory before attempting capture`() async throws {
         let service = WebCaptureService()
         guard await service.isAvailable() else { return }
 
@@ -83,8 +82,8 @@ struct WebCaptureServiceTests {
 
     // MARK: - CaptureError descriptions
 
-    @Test("CaptureError provides human-readable descriptions")
-    func errorDescriptions() throws {
+    @Test
+    func `CaptureError provides human-readable descriptions`() throws {
         let errors: [WebCaptureService.CaptureError] = [
             .agentBrowserNotFound,
             .navigationFailed(url: "http://localhost:3000", stderr: "connection refused"),
@@ -103,10 +102,9 @@ struct WebCaptureServiceTests {
 
 // MARK: - Capture URL UniFFI Bridge Tests
 
-@Suite("Capture URL UniFFI bridge")
 struct CaptureURLBridgeTests {
-    @Test("CheckpointPacket carries capture_url through UniFFI bridge")
-    func checkpointPacketHasCaptureUrl() {
+    @Test
+    func `CheckpointPacket carries capture_url through UniFFI bridge`() {
         let packet = CheckpointPacket(
             kind: .implementationMilestone,
             title: "Test",
@@ -121,8 +119,8 @@ struct CaptureURLBridgeTests {
         #expect(packet.captureUrl == "http://localhost:3000")
     }
 
-    @Test("CheckpointPacket works without capture_url (nil)")
-    func checkpointPacketNilCaptureUrl() {
+    @Test
+    func `CheckpointPacket works without capture_url (nil)`() {
         let packet = CheckpointPacket(
             kind: .proposal,
             title: "No capture",
@@ -137,8 +135,8 @@ struct CaptureURLBridgeTests {
         #expect(packet.captureUrl == nil)
     }
 
-    @Test("ActiveCheckpoint exposes capture_url and capture_status")
-    func activeCheckpointHasCaptureFields() {
+    @Test
+    func `ActiveCheckpoint exposes capture_url and capture_status`() {
         let captureClaim = CaptureClaim(
             captureRequestId: "capture-001",
             clientId: "capacitor-mac-1234",
@@ -169,8 +167,8 @@ struct CaptureURLBridgeTests {
         #expect(checkpoint.captureClaim == captureClaim)
     }
 
-    @Test("MutateRunCommand carries capture_url")
-    func mutateRunCommandHasCaptureUrl() {
+    @Test
+    func `MutateRunCommand carries capture_url`() {
         let cmd = MutateRunCommand(
             kind: .emitCheckpoint,
             projectPath: "/test",
@@ -208,8 +206,8 @@ struct CaptureURLBridgeTests {
         #expect(cmd.observedCaptureUrl == "http://localhost:3000")
     }
 
-    @Test("CaptureClaim bridge value carries claim metadata")
-    func captureClaimBridgeRoundTrip() {
+    @Test
+    func `CaptureClaim bridge value carries claim metadata`() {
         let claim = CaptureClaim(
             captureRequestId: "capture-001",
             clientId: "capacitor-mac-1234",
@@ -223,8 +221,8 @@ struct CaptureURLBridgeTests {
         #expect(claim.observedCaptureUrl == "http://localhost:5173")
     }
 
-    @Test("MediaArtifact type includes Screenshot variant")
-    func mediaArtifactTypeScreenshot() {
+    @Test
+    func `MediaArtifact type includes Screenshot variant`() {
         let artifact = MediaArtifact(
             artifactType: .screenshot,
             path: "/tmp/capture.png",
@@ -238,8 +236,8 @@ struct CaptureURLBridgeTests {
         #expect(artifact.path == "/tmp/capture.png")
     }
 
-    @Test("CaptureStatus enum has expected variants")
-    func captureStatusVariants() {
+    @Test
+    func `CaptureStatus enum has expected variants`() {
         let statuses: [CaptureStatus] = [
             .notRequested,
             .pending,

@@ -1,6 +1,6 @@
 import Foundation
 
-struct SessionClock: Sendable {
+struct SessionClock {
     let now: @Sendable () -> Date
 
     init(now: @escaping @Sendable () -> Date = { Date() }) {

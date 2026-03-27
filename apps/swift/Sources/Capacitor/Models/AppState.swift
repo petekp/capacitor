@@ -40,7 +40,7 @@ enum AppFeatureError: LocalizedError {
     }
 }
 
-struct RuntimeRunKey: Hashable, Sendable {
+struct RuntimeRunKey: Hashable {
     let normalizedProjectPath: String
     let runID: String
 

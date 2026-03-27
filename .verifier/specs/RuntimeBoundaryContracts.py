@@ -7,6 +7,20 @@ from z3 import BoolVal, Solver, sat
 
 from _helpers import module_by_path, module_has_regex, violation
 
+def _read_reducer_source(repo_root):
+    """Read the combined reducer module source including the tests companion file.
+
+    The Rust reducer splits implementation (mod.rs) and tests (tests.rs) as
+    sibling files under the same module.  Both must be consulted when checking
+    for test-function definitions.
+    """
+    source = (repo_root / "core/capacitor-core/src/reduce/mod.rs").read_text()
+    tests_path = repo_root / "core/capacitor-core/src/reduce/tests.rs"
+    if tests_path.exists():
+        source += "\n" + tests_path.read_text()
+    return source
+
+
 SPEC_METADATA = {
     "spec_id": "RuntimeBoundaryContracts",
     "proof_kind": "python",
@@ -42,7 +56,7 @@ SPEC_METADATA = {
 }
 
 
-def verify_reducer_tmux_ownership(reducer_module, violations):
+def verify_reducer_tmux_ownership(reducer_module, repo_root, violations):
     if not module_has_regex(reducer_module, "references", r"\binfer_attached_tmux_terminal_app\b"):
         violations.append(
             violation(
@@ -54,11 +68,9 @@ def verify_reducer_tmux_ownership(reducer_module, violations):
             )
         )
 
-    if not module_has_regex(
-        reducer_module,
-        "definitions",
-        r"\brouting_infers_attached_tmux_terminal_app_from_host_tty_shell_evidence\b",
-    ):
+    reducer_source = _read_reducer_source(repo_root)
+
+    if re.search(r"\brouting_infers_attached_tmux_terminal_app_from_host_tty_shell_evidence\b", reducer_source) is None:
         violations.append(
             violation(
                 "attached_tmux_terminal_app_regression",
@@ -69,11 +81,7 @@ def verify_reducer_tmux_ownership(reducer_module, violations):
             )
         )
 
-    if not module_has_regex(
-        reducer_module,
-        "definitions",
-        r"\brouting_derives_non_active_tmux_pane_from_inventory\b",
-    ):
+    if re.search(r"\brouting_derives_non_active_tmux_pane_from_inventory\b", reducer_source) is None:
         violations.append(
             violation(
                 "tmux_pane_inventory_regression",
@@ -86,9 +94,7 @@ def verify_reducer_tmux_ownership(reducer_module, violations):
 
 
 def verify_reducer_routing_parity_proof(repo_root, violations):
-    reducer_source = (
-        repo_root / "core/capacitor-core/src/reduce/mod.rs"
-    ).read_text()
+    reducer_source = _read_reducer_source(repo_root)
     proof_registry = repo_root / ".verifier/specs/proof_registry.yaml"
 
     required_tests = {
@@ -144,9 +150,7 @@ def verify_reducer_routing_parity_proof(repo_root, violations):
 
 
 def verify_reducer_stale_shell_signal_proof(repo_root, violations):
-    reducer_source = (
-        repo_root / "core/capacitor-core/src/reduce/mod.rs"
-    ).read_text()
+    reducer_source = _read_reducer_source(repo_root)
     proof_registry = repo_root / ".verifier/specs/proof_registry.yaml"
 
     test_name = "routing_ignores_stale_shell_signal_for_same_pid"
@@ -190,9 +194,7 @@ def verify_reducer_stale_shell_signal_proof(repo_root, violations):
 
 
 def verify_reducer_inventory_preference_proof(repo_root, violations):
-    reducer_source = (
-        repo_root / "core/capacitor-core/src/reduce/mod.rs"
-    ).read_text()
+    reducer_source = _read_reducer_source(repo_root)
     proof_registry = repo_root / ".verifier/specs/proof_registry.yaml"
 
     required_tests = {
@@ -690,7 +692,7 @@ def verify(facts):
     serve_module = module_by_path(facts, "core/hud-hook/src/serve.rs")
     verify_runtime_service_endpoints(runtime_client, hook_manager, violations)
     verify_runtime_health_contract(repo_root, violations)
-    verify_reducer_tmux_ownership(reducer_module, violations)
+    verify_reducer_tmux_ownership(reducer_module, repo_root, violations)
     verify_reducer_routing_parity_proof(repo_root, violations)
     verify_reducer_stale_shell_signal_proof(repo_root, violations)
     verify_reducer_inventory_preference_proof(repo_root, violations)

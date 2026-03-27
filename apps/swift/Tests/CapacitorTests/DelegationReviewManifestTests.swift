@@ -2,10 +2,9 @@
 import Foundation
 import Testing
 
-@Suite("DelegationReviewManifest decoding")
 struct DelegationReviewManifestTests {
-    @Test("Decodes manifest with swift_changes true")
-    func decodesSwiftChangesTrue() throws {
+    @Test
+    func `Decodes manifest with swift_changes true`() throws {
         let json = """
         {
             "version": 1,
@@ -20,8 +19,8 @@ struct DelegationReviewManifestTests {
         #expect(manifest.swiftChanges == true)
     }
 
-    @Test("Decodes manifest with swift_changes false")
-    func decodesSwiftChangesFalse() throws {
+    @Test
+    func `Decodes manifest with swift_changes false`() throws {
         let json = """
         {
             "version": 1,
@@ -36,8 +35,8 @@ struct DelegationReviewManifestTests {
         #expect(manifest.swiftChanges == false)
     }
 
-    @Test("Decodes manifest without swift_changes field (backwards compat)")
-    func decodesWithoutSwiftChanges() throws {
+    @Test
+    func `Decodes manifest without swift_changes field (backwards compat)`() throws {
         let json = """
         {
             "version": 1,
@@ -51,8 +50,8 @@ struct DelegationReviewManifestTests {
         #expect(manifest.swiftChanges == nil)
     }
 
-    @Test("Decodes manifest with decisions and swift_changes")
-    func decodesFullManifest() throws {
+    @Test
+    func `Decodes manifest with decisions and swift_changes`() throws {
         let json = """
         {
             "version": 1,
@@ -75,8 +74,8 @@ struct DelegationReviewManifestTests {
         #expect(manifest.artifacts.count == 1)
     }
 
-    @Test("Decodes artifact with artifact_type field")
-    func decodesArtifactWithType() throws {
+    @Test
+    func `Decodes artifact with artifact_type field`() throws {
         let json = """
         {
             "version": 1,
@@ -106,8 +105,8 @@ struct DelegationReviewManifestTests {
         #expect(manifest.artifacts[2].isMedia == true)
     }
 
-    @Test("Decodes mermaid_diagram artifact type emitted by runtime capture")
-    func decodesArtifactWithMermaidDiagramType() throws {
+    @Test
+    func `Decodes mermaid_diagram artifact type emitted by runtime capture`() throws {
         let json = """
         {
             "version": 1,
@@ -125,8 +124,8 @@ struct DelegationReviewManifestTests {
         #expect(manifest.artifacts[0].isMedia == true)
     }
 
-    @Test("Decodes artifact without artifact_type (backwards compat)")
-    func decodesArtifactWithoutType() throws {
+    @Test
+    func `Decodes artifact without artifact_type (backwards compat)`() throws {
         let json = """
         {
             "version": 1,
