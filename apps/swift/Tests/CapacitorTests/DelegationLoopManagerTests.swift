@@ -800,6 +800,93 @@ final class DelegationLoopManagerTests: XCTestCase {
         XCTAssertEqual(requests.map(\.kind), ["complete"])
     }
 
+    func testReconcileCompletionCleansUpDelegationResourcesEvenWhenCleanupFails() async throws {
+        let projectPath = "/tmp/projects/test-\(UUID().uuidString)"
+        let workerRoot = CapacitorProjectPaths.projectDataDirectory(for: projectPath)
+            .appendingPathComponent("delegations", isDirectory: true)
+            .appendingPathComponent("worker-1", isDirectory: true)
+        addTeardownBlock {
+            try? FileManager.default.removeItem(
+                at: CapacitorProjectPaths.projectDataDirectory(for: projectPath),
+            )
+        }
+
+        try FileManager.default.createDirectory(at: workerRoot, withIntermediateDirectories: true)
+        try #"{"version":1,"status":"completed"}"#.write(
+            to: workerRoot.appendingPathComponent("completion.json"),
+            atomically: true,
+            encoding: .utf8,
+        )
+
+        let mutationRecorder = MutationRecorder()
+        let tmuxSessionRecorder = StringRecorder()
+        let gitCommandRecorder = GitCommandRecorder()
+        let worktreeService = WorktreeService(fileManager: .default) { arguments, cwd in
+            gitCommandRecorder.record(arguments: arguments, cwd: cwd)
+
+            if arguments == ["worktree", "remove", "--force", ".capacitor/worktrees/delegation-54da230f"] {
+                return WorktreeService.GitCommandResult(
+                    exitCode: 1,
+                    stdout: "",
+                    stderr: "remove failed",
+                )
+            }
+
+            return WorktreeService.GitCommandResult(
+                exitCode: 0,
+                stdout: "",
+                stderr: "",
+            )
+        }
+        let manager = DelegationLoopManager(
+            mutateDelegation: { request in
+                await mutationRecorder.record(request)
+            },
+            worktreeService: worktreeService,
+            sessionDiscovery: DelegationSessionDiscovery(
+                fileManager: .default,
+                claudeProjectsDirectory: FileManager.default.temporaryDirectory,
+            ),
+            claudeLauncher: { _, _ in
+                XCTFail("reconcile should not launch Claude")
+            },
+            tmuxSessionKiller: { sessionName in
+                await tmuxSessionRecorder.record(sessionName)
+                return false
+            },
+        )
+
+        await manager.reconcile(delegations: [
+            makeDelegation(
+                projectPath: projectPath,
+                sessionId: "session-200",
+                status: "working",
+                currentReview: nil,
+            ),
+        ])
+
+        let requests = await mutationRecorder.snapshot()
+        XCTAssertEqual(requests.map(\.kind), ["complete"])
+        let tmuxSessions = await tmuxSessionRecorder.snapshot()
+        XCTAssertEqual(tmuxSessions, ["delegation-54da230f"])
+
+        let gitCommands = gitCommandRecorder.snapshot()
+        XCTAssertTrue(
+            gitCommands.contains(where: {
+                $0.cwd == projectPath &&
+                    $0.arguments == ["worktree", "remove", "--force", ".capacitor/worktrees/delegation-54da230f"]
+            }),
+            "Completion cleanup should force-remove the delegation worktree",
+        )
+        XCTAssertTrue(
+            gitCommands.contains(where: {
+                $0.cwd == projectPath &&
+                    $0.arguments == ["branch", "-D", "pkp/delegation-54da230f"]
+            }),
+            "Branch deletion should still run even when worktree cleanup fails",
+        )
+    }
+
     func testReconcileReturnsNothingWhenAllMilestonesDecided() async throws {
         let projectPath = "/tmp/projects/test-\(UUID().uuidString)"
         let milestonesRoot = makeDelegationMilestonesRoot(projectPath: projectPath)
@@ -1957,6 +2044,40 @@ private actor MutationRecorder {
 
     func snapshot() -> [RuntimeDelegationMutationRequest] {
         requests
+    }
+}
+
+private actor StringRecorder {
+    private var values: [String] = []
+
+    func record(_ value: String) {
+        values.append(value)
+    }
+
+    func snapshot() -> [String] {
+        values
+    }
+}
+
+private struct GitCommandInvocation: Equatable {
+    let arguments: [String]
+    let cwd: String
+}
+
+private final class GitCommandRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var invocations: [GitCommandInvocation] = []
+
+    func record(arguments: [String], cwd: String) {
+        lock.lock()
+        invocations.append(GitCommandInvocation(arguments: arguments, cwd: cwd))
+        lock.unlock()
+    }
+
+    func snapshot() -> [GitCommandInvocation] {
+        lock.lock()
+        defer { lock.unlock() }
+        return invocations
     }
 }
 

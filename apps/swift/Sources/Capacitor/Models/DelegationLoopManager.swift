@@ -201,6 +201,7 @@ actor DelegationLoopManager {
     }
 
     typealias DelegationMutator = @Sendable (RuntimeDelegationMutationRequest) async throws -> Void
+    typealias TmuxSessionKiller = @Sendable (String) async -> Bool
     typealias ClaudeLauncher = @Sendable (
         DelegationClaudeLaunchRequest,
         @escaping @Sendable (String) async throws -> Void,
@@ -272,6 +273,7 @@ actor DelegationLoopManager {
     private let sessionDiscovery: DelegationSessionDiscovery
     private let worktreeService: WorktreeService
     private let fileManager: FileManager
+    private let tmuxSessionKiller: TmuxSessionKiller
     private var lastAttachedSessionIDs: [AttachedSessionKey: String] = [:]
     private static let defaultClaudeProjectsDirectoryProvider: @Sendable () -> URL = {
         FileManager.default.homeDirectoryForCurrentUser
@@ -298,6 +300,7 @@ actor DelegationLoopManager {
         )
         self.worktreeService = worktreeService
         self.fileManager = fileManager
+        tmuxSessionKiller = Self.makeTmuxSessionKiller()
     }
 
     init(
@@ -316,6 +319,7 @@ actor DelegationLoopManager {
         )
         self.worktreeService = worktreeService
         self.fileManager = fileManager
+        tmuxSessionKiller = Self.makeTmuxSessionKiller()
     }
 
     init(
@@ -324,12 +328,14 @@ actor DelegationLoopManager {
         fileManager: FileManager = .default,
         sessionDiscovery: DelegationSessionDiscovery,
         claudeLauncher: @escaping ClaudeLauncher,
+        tmuxSessionKiller: TmuxSessionKiller? = nil,
     ) {
         runtimeMutation = mutateDelegation
         self.claudeLauncher = claudeLauncher
         self.sessionDiscovery = sessionDiscovery
         self.worktreeService = worktreeService
         self.fileManager = fileManager
+        self.tmuxSessionKiller = tmuxSessionKiller ?? Self.makeTmuxSessionKiller()
     }
 
     private static func makeClaudeLauncher(
@@ -347,6 +353,14 @@ actor DelegationLoopManager {
     private static func makeDelegationMutator(runtimeClient: RuntimeClient) -> DelegationMutator {
         { request in
             try await runtimeClient.mutateDelegation(request)
+        }
+    }
+
+    private static func makeTmuxSessionKiller() -> TmuxSessionKiller {
+        { sessionName in
+            await TmuxRouter(
+                runScript: { await TerminalLauncher.runBashScriptWithResult($0) },
+            ).killSession(sessionName: sessionName)
         }
     }
 
@@ -701,23 +715,17 @@ actor DelegationLoopManager {
         )
 
         if fileManager.fileExists(atPath: context.completionMarkerPath.path) {
-            await mutateDelegationLoggedIgnoringFailure(
-                RuntimeDelegationMutationRequest(
-                    kind: "complete",
+            do {
+                try await completeDelegation(
                     projectPath: context.projectPath,
-                    workerId: context.workerId,
-                    ideaId: context.ideaId,
+                    workerID: context.workerId,
+                    ideaID: context.ideaId,
                     worktreeName: context.worktreeName,
                     worktreePath: context.worktreePath,
-                    sessionId: context.sessionId,
-                    milestoneId: nil,
-                    briefPath: nil,
-                    manifestPath: nil,
-                    reviewDecision: nil,
-                    note: nil,
-                ),
-                context: "complete_after_resume_failure worker=\(context.workerId)",
-            )
+                    sessionID: context.sessionId,
+                    context: "complete_after_resume_failure worker=\(context.workerId)",
+                )
+            } catch {}
         } else if let newerMilestoneID = activeMilestoneID(
             milestonesRoot: context.milestonesRoot,
             submittedMilestoneID: context.submittedMilestoneId,
@@ -797,21 +805,13 @@ actor DelegationLoopManager {
 
         if fileManager.fileExists(atPath: rootPaths.completionMarkerPath.path) {
             do {
-                try await mutateDelegationLogged(
-                    RuntimeDelegationMutationRequest(
-                        kind: "complete",
-                        projectPath: delegation.projectPath,
-                        workerId: delegation.workerId,
-                        ideaId: delegation.ideaId,
-                        worktreeName: delegation.worktreeName,
-                        worktreePath: delegation.worktreePath,
-                        sessionId: effectiveSessionID,
-                        milestoneId: nil,
-                        briefPath: nil,
-                        manifestPath: nil,
-                        reviewDecision: nil,
-                        note: nil,
-                    ),
+                try await completeDelegation(
+                    projectPath: delegation.projectPath,
+                    workerID: delegation.workerId,
+                    ideaID: delegation.ideaId,
+                    worktreeName: delegation.worktreeName,
+                    worktreePath: delegation.worktreePath,
+                    sessionID: effectiveSessionID,
                     context: "complete source=reconcile worker=\(delegation.workerId)",
                 )
             } catch {}
@@ -957,6 +957,40 @@ actor DelegationLoopManager {
         }
     }
 
+    private func completeDelegation(
+        projectPath: String,
+        workerID: String,
+        ideaID: String?,
+        worktreeName: String,
+        worktreePath: String,
+        sessionID: String?,
+        context: String,
+    ) async throws {
+        try await mutateDelegationLogged(
+            RuntimeDelegationMutationRequest(
+                kind: "complete",
+                projectPath: projectPath,
+                workerId: workerID,
+                ideaId: ideaID,
+                worktreeName: worktreeName,
+                worktreePath: worktreePath,
+                sessionId: sessionID,
+                milestoneId: nil,
+                briefPath: nil,
+                manifestPath: nil,
+                reviewDecision: nil,
+                note: nil,
+            ),
+            context: context,
+        )
+
+        await cleanupCompletedDelegation(
+            workerID: workerID,
+            projectPath: projectPath,
+            worktreeName: worktreeName,
+        )
+    }
+
     private func cleanupFailedStart(
         projectPath: String,
         workerID: String,
@@ -989,6 +1023,62 @@ actor DelegationLoopManager {
             ),
             context: "cleanup_after_failed_start worker=\(workerID)",
         )
+    }
+
+    private func cleanupCompletedDelegation(
+        workerID: String,
+        projectPath: String,
+    ) async {
+        let derivedWorktreeName = "delegation-\(workerID.prefix(8))"
+        await cleanupCompletedDelegation(
+            workerID: workerID,
+            projectPath: projectPath,
+            worktreeName: derivedWorktreeName,
+        )
+    }
+
+    private func cleanupCompletedDelegation(
+        workerID: String,
+        projectPath: String,
+        worktreeName: String,
+    ) async {
+        clearAttachedSession(projectPath: projectPath, workerID: workerID)
+
+        let sessionKilled = await tmuxSessionKiller(worktreeName)
+        DebugLog.write(
+            "DelegationLoopManager.cleanup_completed step=kill_session worker=\(workerID) session=\(worktreeName) success=\(sessionKilled)",
+        )
+
+        do {
+            try worktreeService.removeManagedWorktree(
+                in: projectPath,
+                name: worktreeName,
+                force: true,
+            )
+            DebugLog.write(
+                "DelegationLoopManager.cleanup_completed step=remove_worktree worker=\(workerID) worktree=\(worktreeName) success=true",
+            )
+        } catch {
+            DebugLog.write(
+                "DelegationLoopManager.cleanup_completed step=remove_worktree worker=\(workerID) worktree=\(worktreeName) success=false error=\(error.localizedDescription)",
+            )
+        }
+
+        let branchName = "pkp/\(worktreeName)"
+        do {
+            try worktreeService.deleteBranch(
+                in: projectPath,
+                name: branchName,
+                force: true,
+            )
+            DebugLog.write(
+                "DelegationLoopManager.cleanup_completed step=delete_branch worker=\(workerID) branch=\(branchName) success=true",
+            )
+        } catch {
+            DebugLog.write(
+                "DelegationLoopManager.cleanup_completed step=delete_branch worker=\(workerID) branch=\(branchName) success=false error=\(error.localizedDescription)",
+            )
+        }
     }
 
     private func attachedSessionKey(projectPath: String, workerID: String) -> AttachedSessionKey {

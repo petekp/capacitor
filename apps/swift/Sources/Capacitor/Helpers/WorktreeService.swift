@@ -223,6 +223,17 @@ struct WorktreeService {
         }
     }
 
+    func deleteBranch(
+        in repoPath: String,
+        name: String,
+        force: Bool = false,
+    ) throws {
+        let branchName = try validatedBranchName(name)
+        let arguments = ["branch", force ? "-D" : "-d", branchName]
+        let result = runGit(arguments, repoPath)
+        try ensureGitSuccess(result, arguments: arguments)
+    }
+
     private static func managedRootPath(in repoPath: String) -> String {
         let path = URL(fileURLWithPath: repoPath)
             .appendingPathComponent(".capacitor/worktrees", isDirectory: true)

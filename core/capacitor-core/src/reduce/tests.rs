@@ -4,10 +4,11 @@ use super::{
     select_canonical_routing_source, CanonicalRoutingSource, ReducerState, TmuxInventoryCandidate,
 };
 use crate::domain::{
-    default_workspace_id, DelegationMutationKind, DelegationReviewDecision, DelegationStatus,
-    HookEventType, IngestHookEventCommand, IngestShellSignalCommand, InvolvementLevel,
-    MutateDelegationCommand, PhaseInstance, PhaseStatus, ResolveRoutingCommand, RoutingStatus,
-    RoutingTargetKind, RoutingView, RunState, RunStatus, SessionState, ShellSignal, TmuxPaneInfo,
+    default_workspace_id, AppSnapshot, DelegationMutationKind, DelegationReviewDecision,
+    DelegationStatus, DiagnosticsSummary, HookEventType, IngestHookEventCommand,
+    IngestShellSignalCommand, InvolvementLevel, MutateDelegationCommand, PhaseInstance,
+    PhaseStatus, ResolveRoutingCommand, RoutingStatus, RoutingTargetKind, RoutingView, RunState,
+    RunStatus, SessionState, SessionSummary, ShellSignal, TmuxPaneInfo,
 };
 
 fn event_base(event_type: HookEventType) -> IngestHookEventCommand {
@@ -111,6 +112,54 @@ fn shell_signal_fixture(pid: u32, cwd: &str) -> ShellSignal {
         tmux_panes: vec![],
         updated_at: format!("2026-03-16T00:00:{:02}Z", pid % 60),
     }
+}
+
+fn session_summary_fixture(
+    session_id: &str,
+    pid: u32,
+    project_path: &str,
+    cwd: &str,
+    state: SessionState,
+    updated_at: &str,
+) -> SessionSummary {
+    SessionSummary {
+        session_id: session_id.to_string(),
+        pid,
+        cwd: cwd.to_string(),
+        project_id: project_path.to_string(),
+        project_path: project_path.to_string(),
+        workspace_id: default_workspace_id(project_path),
+        state,
+        state_changed_at: updated_at.to_string(),
+        updated_at: updated_at.to_string(),
+        last_event: None,
+        last_activity_at: None,
+        tools_in_flight: 0,
+        ready_reason: None,
+    }
+}
+
+fn routing_state_fixture(sessions: Vec<SessionSummary>, shells: Vec<ShellSignal>) -> ReducerState {
+    ReducerState::from_snapshot(AppSnapshot {
+        projects: vec![],
+        sessions,
+        shells,
+        routing: vec![],
+        delegations: vec![],
+        runs: vec![],
+        diagnostics: DiagnosticsSummary {
+            events_ingested: 0,
+            sessions_tracked: 0,
+            shell_signals_tracked: 0,
+            events_skipped: 0,
+            stale_events_skipped: 0,
+            informational_events_skipped: 0,
+            reducer_events_skipped: 0,
+            last_error: None,
+            last_hook_event_at: None,
+        },
+        generated_at: "2026-03-27T00:00:00Z".to_string(),
+    })
 }
 
 fn tmux_pane_fixture(pane_id: &str, pane_path: &str) -> TmuxPaneInfo {
@@ -1015,6 +1064,141 @@ fn routing_inventory_preference_matching_shell_beats_inventory() {
 }
 
 #[test]
+fn test_delegation_worktree_deprioritized_in_routing() {
+    let main_shell = ShellSignal {
+        tmux_session: Some("main".to_string()),
+        tmux_client_tty: Some("/dev/ttys110".to_string()),
+        tmux_pane: Some("%10".to_string()),
+        updated_at: "2026-03-27T00:00:01Z".to_string(),
+        ..shell_signal_fixture(10, "/repo")
+    };
+    let delegation_shell = ShellSignal {
+        tmux_session: Some("worker".to_string()),
+        tmux_client_tty: Some("/dev/ttys210".to_string()),
+        tmux_pane: Some("%20".to_string()),
+        updated_at: "2026-03-27T00:00:02Z".to_string(),
+        ..shell_signal_fixture(20, "/repo/.capacitor/worktrees/delegation-20")
+    };
+
+    let state = routing_state_fixture(
+        vec![
+            session_summary_fixture(
+                "session-main",
+                10,
+                "/repo",
+                "/repo",
+                SessionState::Idle,
+                "2026-03-27T00:00:01Z",
+            ),
+            session_summary_fixture(
+                "session-worker",
+                20,
+                "/repo",
+                "/repo/.capacitor/worktrees/delegation-20",
+                SessionState::Working,
+                "2026-03-27T00:00:02Z",
+            ),
+        ],
+        vec![main_shell, delegation_shell],
+    );
+
+    let route = persisted_route_for(&state, "/repo");
+
+    assert_eq!(route.status, RoutingStatus::Attached);
+    assert_eq!(route.target.kind, RoutingTargetKind::TmuxPane);
+    assert_eq!(route.target.session_name.as_deref(), Some("main"));
+    assert_eq!(route.target.pane_id.as_deref(), Some("%10"));
+    assert_eq!(route.target.host_tty.as_deref(), Some("/dev/ttys110"));
+}
+
+#[test]
+fn test_delegation_session_fallback_when_only_candidate() {
+    let delegation_shell = ShellSignal {
+        tmux_session: Some("worker".to_string()),
+        tmux_client_tty: Some("/dev/ttys220".to_string()),
+        tmux_pane: Some("%22".to_string()),
+        updated_at: "2026-03-27T00:00:03Z".to_string(),
+        ..shell_signal_fixture(22, "/repo/.capacitor/worktrees/delegation-22")
+    };
+
+    let state = routing_state_fixture(
+        vec![session_summary_fixture(
+            "session-worker",
+            22,
+            "/repo",
+            "/repo/.capacitor/worktrees/delegation-22",
+            SessionState::Working,
+            "2026-03-27T00:00:03Z",
+        )],
+        vec![delegation_shell],
+    );
+
+    let route = persisted_route_for(&state, "/repo");
+
+    assert_eq!(route.status, RoutingStatus::Attached);
+    assert_eq!(route.target.kind, RoutingTargetKind::TmuxPane);
+    assert_eq!(route.target.session_name.as_deref(), Some("worker"));
+    assert_eq!(route.target.pane_id.as_deref(), Some("%22"));
+    assert_eq!(route.target.host_tty.as_deref(), Some("/dev/ttys220"));
+}
+
+#[test]
+fn test_delegation_worktree_state_priority_doesnt_override() {
+    let main_shell = ShellSignal {
+        tmux_session: Some("main".to_string()),
+        tmux_client_tty: Some("/dev/ttys130".to_string()),
+        tmux_pane: Some("%30".to_string()),
+        updated_at: "2026-03-27T00:00:04Z".to_string(),
+        ..shell_signal_fixture(30, "/repo")
+    };
+    let delegation_shell = ShellSignal {
+        tmux_session: Some("worker".to_string()),
+        tmux_client_tty: Some("/dev/ttys230".to_string()),
+        tmux_pane: Some("%40".to_string()),
+        updated_at: "2026-03-27T00:00:05Z".to_string(),
+        ..shell_signal_fixture(40, "/repo/.capacitor/worktrees/delegation-40")
+    };
+
+    let state = routing_state_fixture(
+        vec![
+            session_summary_fixture(
+                "session-main",
+                30,
+                "/repo",
+                "/repo",
+                SessionState::Idle,
+                "2026-03-27T00:00:04Z",
+            ),
+            session_summary_fixture(
+                "session-worker",
+                40,
+                "/repo",
+                "/repo/.capacitor/worktrees/delegation-40",
+                SessionState::Working,
+                "2026-03-27T00:00:05Z",
+            ),
+        ],
+        vec![main_shell, delegation_shell],
+    );
+
+    let project = state
+        .snapshot()
+        .projects
+        .into_iter()
+        .find(|project| project.project_path == "/repo")
+        .expect("project");
+    assert_eq!(project.state, SessionState::Working);
+
+    let route = persisted_route_for(&state, "/repo");
+
+    assert_eq!(route.status, RoutingStatus::Attached);
+    assert_eq!(route.target.kind, RoutingTargetKind::TmuxPane);
+    assert_eq!(route.target.session_name.as_deref(), Some("main"));
+    assert_eq!(route.target.pane_id.as_deref(), Some("%30"));
+    assert_eq!(route.target.host_tty.as_deref(), Some("/dev/ttys130"));
+}
+
+#[test]
 fn routing_inventory_preference_matrix_selects_canonical_source() {
     enum ExpectedCanonicalSource<'a> {
         Shell(u32),
@@ -1498,5 +1682,167 @@ fn diagnostics_tracks_skip_counters() {
         diag.events_skipped,
         diag.stale_events_skipped + diag.informational_events_skipped + diag.reducer_events_skipped,
         "events_skipped should equal sum of sub-counters"
+    );
+}
+
+#[test]
+fn routing_deprioritizes_managed_worktree_shell_over_project_root_shell() {
+    let mut state = ReducerState::default();
+
+    let mut event = event_base(HookEventType::UserPromptSubmit);
+    event.project_path = "/users/pete/code/capacitor".to_string();
+    event.cwd = Some("/users/pete/code/capacitor".to_string());
+    event.recorded_at = "2026-03-25T10:00:00Z".to_string();
+    let _ = state.apply_hook_event(event);
+
+    // Main shell at project root
+    let _ = state.apply_shell_signal(IngestShellSignalCommand {
+        pid: 1000,
+        cwd: "/users/pete/code/capacitor".to_string(),
+        tty: "/dev/ttys001".to_string(),
+        parent_app: "ghostty".to_string(),
+        tmux_session: Some("capacitor".to_string()),
+        tmux_client_tty: Some("/dev/ttys099".to_string()),
+        tmux_pane: Some("%1".to_string()),
+        tmux_panes: vec![TmuxPaneInfo {
+            pane_id: "%1".to_string(),
+            pane_path: "/users/pete/code/capacitor".to_string(),
+            session_name: "capacitor".to_string(),
+            session_attached: true,
+        }],
+        recorded_at: "2026-03-25T10:00:00Z".to_string(),
+    });
+
+    // Delegation shell in managed worktree (more recent)
+    let _ = state.apply_shell_signal(IngestShellSignalCommand {
+        pid: 2000,
+        cwd: "/users/pete/code/capacitor/.capacitor/worktrees/delegation-abc12345".to_string(),
+        tty: "/dev/ttys002".to_string(),
+        parent_app: "ghostty".to_string(),
+        tmux_session: Some("delegation-abc12345".to_string()),
+        tmux_client_tty: Some("/dev/ttys098".to_string()),
+        tmux_pane: Some("%2".to_string()),
+        tmux_panes: vec![TmuxPaneInfo {
+            pane_id: "%2".to_string(),
+            pane_path: "/users/pete/code/capacitor/.capacitor/worktrees/delegation-abc12345"
+                .to_string(),
+            session_name: "delegation-abc12345".to_string(),
+            session_attached: true,
+        }],
+        recorded_at: "2026-03-25T12:00:00Z".to_string(),
+    });
+
+    let route = state.resolve_routing(ResolveRoutingCommand {
+        project_path: "/users/pete/code/capacitor".to_string(),
+        workspace_id: None,
+        session_name: None,
+        client_tty: None,
+    });
+
+    assert_eq!(route.status, RoutingStatus::Attached);
+    assert_eq!(
+        route.target.session_name.as_deref(),
+        Some("capacitor"),
+        "Should route to main session, not delegation worktree session"
+    );
+}
+
+#[test]
+fn routing_falls_back_to_managed_worktree_when_only_candidate() {
+    let mut state = ReducerState::default();
+
+    let mut event = event_base(HookEventType::UserPromptSubmit);
+    event.project_path = "/users/pete/code/capacitor".to_string();
+    event.cwd =
+        Some("/users/pete/code/capacitor/.capacitor/worktrees/delegation-abc12345".to_string());
+    event.recorded_at = "2026-03-25T10:00:00Z".to_string();
+    let _ = state.apply_hook_event(event);
+
+    // Only a delegation worktree shell exists
+    let _ = state.apply_shell_signal(IngestShellSignalCommand {
+        pid: 2000,
+        cwd: "/users/pete/code/capacitor/.capacitor/worktrees/delegation-abc12345".to_string(),
+        tty: "/dev/ttys002".to_string(),
+        parent_app: "ghostty".to_string(),
+        tmux_session: Some("delegation-abc12345".to_string()),
+        tmux_client_tty: Some("/dev/ttys098".to_string()),
+        tmux_pane: Some("%2".to_string()),
+        tmux_panes: vec![TmuxPaneInfo {
+            pane_id: "%2".to_string(),
+            pane_path: "/users/pete/code/capacitor/.capacitor/worktrees/delegation-abc12345"
+                .to_string(),
+            session_name: "delegation-abc12345".to_string(),
+            session_attached: true,
+        }],
+        recorded_at: "2026-03-25T12:00:00Z".to_string(),
+    });
+
+    let route = state.resolve_routing(ResolveRoutingCommand {
+        project_path: "/users/pete/code/capacitor".to_string(),
+        workspace_id: None,
+        session_name: None,
+        client_tty: None,
+    });
+
+    assert_ne!(
+        route.status,
+        RoutingStatus::Unavailable,
+        "Should still route to delegation session as fallback when it's the only candidate"
+    );
+}
+
+#[test]
+fn routing_deprioritizes_working_worktree_over_idle_main_session() {
+    let main_shell = ShellSignal {
+        tmux_session: Some("capacitor".to_string()),
+        tmux_client_tty: Some("/dev/ttys099".to_string()),
+        tmux_pane: Some("%1".to_string()),
+        updated_at: "2026-03-25T10:00:00Z".to_string(),
+        ..shell_signal_fixture(1000, "/users/pete/code/capacitor")
+    };
+    let delegation_shell = ShellSignal {
+        tmux_session: Some("delegation-abc12345".to_string()),
+        tmux_client_tty: Some("/dev/ttys098".to_string()),
+        tmux_pane: Some("%2".to_string()),
+        updated_at: "2026-03-25T12:00:00Z".to_string(),
+        ..shell_signal_fixture(
+            2000,
+            "/users/pete/code/capacitor/.capacitor/worktrees/delegation-abc12345",
+        )
+    };
+
+    let state = routing_state_fixture(
+        vec![
+            session_summary_fixture(
+                "session-main",
+                1000,
+                "/users/pete/code/capacitor",
+                "/users/pete/code/capacitor",
+                SessionState::Idle,
+                "2026-03-25T10:00:00Z",
+            ),
+            session_summary_fixture(
+                "session-delegation",
+                2000,
+                "/users/pete/code/capacitor",
+                "/users/pete/code/capacitor/.capacitor/worktrees/delegation-abc12345",
+                SessionState::Working,
+                "2026-03-25T12:00:00Z",
+            ),
+        ],
+        vec![main_shell, delegation_shell],
+    );
+
+    let route = state.resolve_routing(ResolveRoutingCommand {
+        project_path: "/users/pete/code/capacitor".to_string(),
+        workspace_id: None,
+        session_name: None,
+        client_tty: None,
+    });
+
+    assert_eq!(
+        route.target.session_name.as_deref(),
+        Some("capacitor"),
+        "Main session should win routing even when delegation session has higher state priority"
     );
 }

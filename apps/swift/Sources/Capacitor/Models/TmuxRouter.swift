@@ -45,6 +45,12 @@ struct TmuxRouter {
         return await selectPaneIfNeeded(targetPane)
     }
 
+    func killSession(sessionName: String) async -> Bool {
+        let escapedSession = shellEscape(sessionName)
+        let result = await runScript("tmux kill-session -t \(escapedSession) 2>&1")
+        return result.exitCode == 0
+    }
+
     func resolveAnyClientTty(
         preferredHostTty: String? = nil,
         targetSession: String? = nil,

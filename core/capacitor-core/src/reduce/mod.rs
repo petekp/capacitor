@@ -292,6 +292,13 @@ impl ReducerState {
                     return route.clone();
                 }
             }
+            if let Some(route) = self
+                .routing
+                .values()
+                .find(|route| route.project_path == project_path)
+            {
+                return route.clone();
+            }
         }
 
         derive_activation_routing_view(
@@ -556,6 +563,10 @@ fn select_shell_for_activation<'a>(
         })
 }
 
+fn is_managed_worktree_pane(pane: &TmuxPaneInfo) -> bool {
+    is_path_in_managed_worktree(pane.pane_path.as_str())
+}
+
 fn select_tmux_inventory_for_project<'a>(
     project_path: &str,
     shells: impl Iterator<Item = &'a ShellSignal>,
@@ -572,8 +583,9 @@ fn select_tmux_inventory_for_project<'a>(
             })
         })
         .max_by(|left, right| {
-            left.rank
-                .cmp(&right.rank)
+            (!is_managed_worktree_pane(left.pane))
+                .cmp(&(!is_managed_worktree_pane(right.pane)))
+                .then_with(|| left.rank.cmp(&right.rank))
                 .then_with(|| left.pane.session_attached.cmp(&right.pane.session_attached))
                 .then_with(|| {
                     compare_timestamp_strings(&left.carrier.updated_at, &right.carrier.updated_at)
@@ -583,14 +595,35 @@ fn select_tmux_inventory_for_project<'a>(
         })
 }
 
+fn is_path_in_managed_worktree(path: &str) -> bool {
+    let normalized = normalize_path_for_matching(path);
+    let marker = "/.capacitor/worktrees/";
+    let Some(idx) = normalized.find(marker) else {
+        return false;
+    };
+    // Must have at least one character (the worktree name) after the marker
+    idx + marker.len() < normalized.len()
+}
+
+fn is_managed_worktree_shell(shell: &ShellSignal) -> bool {
+    is_path_in_managed_worktree(shell.cwd.as_str())
+}
+
 fn compare_shell_candidates(
     left: &ShellSignal,
     right: &ShellSignal,
     project_path: &str,
     session_pids: &[u32],
 ) -> Ordering {
-    shell_match_rank(left, project_path, session_pids)
-        .cmp(&shell_match_rank(right, project_path, session_pids))
+    (!is_managed_worktree_shell(left))
+        .cmp(&(!is_managed_worktree_shell(right)))
+        .then_with(|| {
+            shell_match_rank(left, project_path, session_pids).cmp(&shell_match_rank(
+                right,
+                project_path,
+                session_pids,
+            ))
+        })
         .then_with(|| shell_target_rank(left).cmp(&shell_target_rank(right)))
         .then_with(|| compare_timestamp_strings(&left.updated_at, &right.updated_at))
         .then_with(|| left.pid.cmp(&right.pid))
@@ -866,19 +899,6 @@ fn tmux_inventory_match_rank(pane_path: &str, project_path: &str) -> Option<u8> 
     let pane_path = normalize_path_for_matching(pane_path);
     let project_path = normalize_path_for_matching(project_path);
 
-    let pane_managed_root = managed_worktree_root(pane_path.as_str());
-    let project_managed_root = managed_worktree_root(project_path.as_str());
-
-    if let Some(project_managed_root) = project_managed_root.as_deref() {
-        if pane_managed_root.as_deref() != Some(project_managed_root)
-            || !path_is_within_root(pane_path.as_str(), project_managed_root)
-        {
-            return None;
-        }
-    } else if pane_managed_root.is_some() {
-        return None;
-    }
-
     if pane_path == project_path {
         Some(2)
     } else if pane_path
@@ -889,22 +909,6 @@ fn tmux_inventory_match_rank(pane_path: &str, project_path: &str) -> Option<u8> 
     } else {
         None
     }
-}
-
-fn managed_worktree_root(path: &str) -> Option<String> {
-    let marker = "/.capacitor/worktrees/";
-    let marker_index = path.find(marker)?;
-    let suffix_start = marker_index + marker.len();
-    if suffix_start >= path.len() {
-        return None;
-    }
-    let suffix = &path[suffix_start..];
-    let next_slash = suffix.find('/')?;
-    Some(path[..suffix_start + next_slash].to_string())
-}
-
-fn path_is_within_root(path: &str, root: &str) -> bool {
-    path == root || path.starts_with(&format!("{root}/"))
 }
 
 fn routing_parent_app(value: &str) -> Option<String> {

@@ -604,6 +604,20 @@ final class TerminalLauncherTests: XCTestCase {
         )
     }
 
+    func testKillSessionTargetsNamedTmuxSession() async {
+        var commands: [String] = []
+
+        let killed = await TmuxRouter(
+            runScript: { command in
+                commands.append(command)
+                return (0, nil)
+            },
+        ).killSession(sessionName: "delegation-54da230f")
+
+        XCTAssertTrue(killed)
+        XCTAssertEqual(commands, ["tmux kill-session -t 'delegation-54da230f' 2>&1"])
+    }
+
     // MARK: - Helpers
 
     private func makeProject(name: String, path: String) -> Project {
