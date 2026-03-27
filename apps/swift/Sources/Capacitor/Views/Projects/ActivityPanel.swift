@@ -4,6 +4,18 @@ struct ActivityPanel: View {
     @Environment(AppState.self) var appState: AppState
     @Environment(\.floatingMode) private var floatingMode
 
+    private var visibleRunCompletions: [RuntimeRunState] {
+        appState.isMethodRunnerEnabled ? appState.recentTerminalRuns : []
+    }
+
+    private var hasActivity: Bool {
+        !visibleCreations.isEmpty || !visibleRunCompletions.isEmpty
+    }
+
+    private var activityCount: Int {
+        visibleCreations.count + visibleRunCompletions.count
+    }
+
     private var visibleCreations: [ProjectCreation] {
         let recent = Date().addingTimeInterval(-3600)
         return appState.activeCreations.filter { creation in
@@ -20,7 +32,7 @@ struct ActivityPanel: View {
     }
 
     var body: some View {
-        if !visibleCreations.isEmpty {
+        if hasActivity {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 6) {
                     Image(systemName: "bolt.fill")
@@ -31,7 +43,7 @@ struct ActivityPanel: View {
                         .font(AppTypography.labelMedium)
                         .foregroundColor(.white.opacity(0.5))
 
-                    Text("(\(visibleCreations.count))")
+                    Text("(\(activityCount))")
                         .font(AppTypography.label)
                         .foregroundColor(.white.opacity(0.3))
 
@@ -40,6 +52,10 @@ struct ActivityPanel: View {
 
                 ForEach(visibleCreations) { creation in
                     CreationCard(creation: creation)
+                }
+
+                ForEach(visibleRunCompletions, id: \.id) { run in
+                    RunCompletionCard(run: run)
                 }
             }
             .padding(.bottom, 8)
@@ -238,6 +254,105 @@ struct CreationCard: View {
         case .cancelled:
             Image(systemName: "xmark.circle.fill")
         }
+    }
+}
+
+// MARK: - Run Completion Card
+
+private struct RunCompletionCard: View {
+    let run: RuntimeRunState
+
+    private var isSuccess: Bool {
+        run.status == "completed"
+    }
+
+    private var statusColor: Color {
+        isSuccess ? .green : .red
+    }
+
+    private var statusIcon: String {
+        switch run.status {
+        case "completed":
+            "checkmark.circle.fill"
+        case "cancelled":
+            "xmark.circle.fill"
+        default:
+            "exclamationmark.triangle.fill"
+        }
+    }
+
+    private var title: String {
+        run.methodName
+    }
+
+    private var subtitle: String {
+        if isSuccess {
+            return "Run completed"
+        }
+        if let message = run.statusMessage?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !message.isEmpty
+        {
+            return message
+        }
+        return run.status == "cancelled" ? "Run cancelled" : "Run failed"
+    }
+
+    private var elapsedLabel: String? {
+        guard let start = parseISO8601Date(run.createdAt),
+              let end = parseISO8601Date(run.updatedAt)
+        else { return nil }
+        let elapsed = end.timeIntervalSince(start)
+        if elapsed < 60 {
+            return "\(Int(elapsed))s"
+        }
+        let minutes = Int(elapsed) / 60
+        let seconds = Int(elapsed) % 60
+        return seconds > 0 ? "\(minutes)m \(seconds)s" : "\(minutes)m"
+    }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            ZStack {
+                Circle()
+                    .fill(statusColor.opacity(0.15))
+                    .frame(width: 32, height: 32)
+
+                Image(systemName: statusIcon)
+                    .font(AppTypography.body)
+                    .foregroundColor(statusColor)
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(AppTypography.bodyMedium)
+                    .foregroundColor(.white)
+                    .lineLimit(1)
+
+                HStack(spacing: 6) {
+                    Text(subtitle)
+                        .font(AppTypography.labelMedium)
+                        .foregroundColor(isSuccess ? .white.opacity(0.5) : .red.opacity(0.7))
+                        .lineLimit(1)
+
+                    if let elapsed = elapsedLabel {
+                        Text(elapsed)
+                            .font(AppTypography.monoCaption)
+                            .foregroundColor(.white.opacity(0.35))
+                    }
+                }
+            }
+
+            Spacer()
+        }
+        .padding(12)
+        .background(Color.white.opacity(0.03))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(statusColor.opacity(0.2), lineWidth: 1),
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(title), \(subtitle)")
     }
 }
 

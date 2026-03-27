@@ -223,7 +223,17 @@ struct ProjectCardView: View {
     }
 
     private var runContextText: String? {
-        runVisualState.statusMessage
+        switch runVisualState {
+        case let .completed(statusMessage):
+            if let methodName = activeRunState?.methodName {
+                return "\(methodName) completed"
+            }
+            return statusMessage ?? "Run completed"
+        case let .failed(statusMessage):
+            return statusMessage ?? "Run failed"
+        default:
+            return runVisualState.statusMessage
+        }
     }
 
     private var delegationContextText: String? {

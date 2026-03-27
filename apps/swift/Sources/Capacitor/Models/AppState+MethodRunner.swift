@@ -98,6 +98,19 @@ extension AppState {
         runStatesByID[RuntimeRunKey(projectPath: projectPath, runID: runID)]
     }
 
+    var recentTerminalRuns: [RuntimeRunState] {
+        let cutoff = Date().addingTimeInterval(-3600)
+        let terminalStatuses: Set = ["completed", "failed", "cancelled"]
+        return runStatesByID.values
+            .filter { run in
+                terminalStatuses.contains(run.status)
+                    && (parseISO8601Date(run.updatedAt).map { $0 > cutoff } ?? false)
+            }
+            .sorted { lhs, rhs in
+                lhs.updatedAt > rhs.updatedAt
+            }
+    }
+
     /// Returns the most-recent non-terminal run matching an idea.
     func activeRun(for idea: Idea, in project: Project) -> RuntimeRunState? {
         let normalizedProjectPath = PathNormalizer.normalize(project.path)

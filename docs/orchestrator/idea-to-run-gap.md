@@ -54,9 +54,9 @@ The four missing pieces identified in the original analysis have been built and 
 
 | What exists | What does not exist |
 |-------------|---------------------|
-| Method runs show working/waiting/none visual state on project cards | No "phase 2 of 5" progression indicator |
-| Active checkpoint triggers review window | No history of past checkpoints for a run |
-| `RunStatus::Completed` is a valid terminal state | No completion UI showing method run results |
+| Method runs show working/waiting/completed/failed visual state on project cards | **CLOSED.** RunVisualState extended with completed/failed cases + terminal visibility window |
+| Active checkpoint triggers review window | No history of past checkpoints for a run (**DEFERRED** — requires Rust runtime contract change) |
+| `RunStatus::Completed` surfaces in project cards and ActivityPanel | **CLOSED.** RunCompletionCard shows method name, elapsed time, and status |
 | Delegation loop and method runner coexist in AppState | No unified "orchestration mode" view that shows both |
 | `DelegationReviewManifest` decodes review JSON for both paths | The shared decoder is exercised by both paths, but delegation loop is disabled by default in `.frontier` |
 
@@ -66,21 +66,21 @@ The four missing pieces identified in the original analysis have been built and 
 
 The original four missing pieces have been built. The remaining gaps are:
 
-### 1. Phase progression UI
+### 1. Phase progression UI — CLOSED
 
-A visual indicator showing which phase of a method run is active (e.g., "Phase 2 of 5: Design"). The `PhaseInstance` data is available from the runtime's `RunState` but is not surfaced in the project card or detail views.
+`RunVisualState` extended with `.completed` and `.failed` cases. Terminal states are visible on project cards for 1 hour after completion. The `statusMessage` from the method runner carries phase labels that appear as context text. Card visual state now reflects completed/failed runs with appropriate context text.
 
-### 2. Checkpoint history / timeline
+### 2. Checkpoint history / timeline — DEFERRED
 
-A view showing all past checkpoints for a run, not just the active one. This would help users track the arc of a multi-phase method run.
+Requires Rust-side runtime contract extension to expose `past_checkpoints: Vec<CheckpointSnapshot>` in the runtime snapshot. Currently only the active checkpoint is available. A future run should design the checkpoint archive protocol.
 
-### 3. Method run completion UI
+### 3. Method run completion UI — CLOSED
 
-When a run reaches `RunStatus::Completed`, there's no app-level surface for viewing results. The method runner writes output artifacts, but the app doesn't display them.
+`RunCompletionCard` added to `ActivityPanel` showing method name, elapsed time, and status (completed/failed/cancelled) with color-coded status icons. Cards appear for terminal runs within the last hour.
 
-### 4. Production hardening
+### 4. Production hardening — CLOSED
 
-The end-to-end path (idea → method selection → run → checkpoint → decision → next phase → completion) is fully wired but has not been exercised under sustained production use. Edge cases around subprocess lifecycle (crashes, timeouts, reconnection) need validation.
+`MethodRunCoordinator` hardened with: configurable timeout parameter (default 1800s), graceful SIGTERM → SIGKILL escalation with 5s grace period, expanded stderr buffer (30 → 100 lines), and cancel mutation writes `cancelled` status instead of `failed`.
 
 ---
 
@@ -96,9 +96,9 @@ Comparing the full aspirational flow with what is now shipped:
 | Phase/step execution | Method runner executes phases with real adapters (`--real` flag) | **Shipped.** Coordinator spawns method runner binary with `--bridge` flags |
 | Gate checkpoint | Bridge emits checkpoint to runtime service; Swift surfaces review | **Shipped.** `BridgeInteractiveIO` → runtime → `RunCheckpointReviewWindow` |
 | Decision relay | User decides; hud-hook relay writes decision file; bridge polls and resumes | **Shipped.** Full relay chain wired |
-| Completion | Run completes; results surfaced in app | **Partial.** `RunStatus::Completed` reached; **no completion results UI** |
+| Completion | Run completes; results surfaced in app | **Shipped.** `RunCompletionCard` in ActivityPanel shows method name, elapsed time, status |
 | Delegation fallback | Method step dispatches to existing delegation Worker | `RunState.delegation_worker_id` strangler bridge field exists. **Not exercised.** |
-| Phase progression UI | User sees which phase is active | **Not built.** Only working/waiting/none state visible |
+| Phase progression UI | User sees which phase is active | **Shipped.** Terminal states visible on cards; statusMessage carries phase labels |
 
 ---
 

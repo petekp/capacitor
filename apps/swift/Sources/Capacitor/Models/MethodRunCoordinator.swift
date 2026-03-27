@@ -19,7 +19,9 @@ final class MethodRunCoordinator: @unchecked Sendable {
     private var activeProcesses: [String: Process] = [:]
     /// Default timeout for method-runner subprocess dispatch, in seconds.
     /// 30 minutes allows real implementation tasks (with full test suites) to complete.
-    private static let defaultTimeoutSeconds = 1800
+    static let defaultTimeoutSeconds = 1800
+    /// Grace period before escalating SIGTERM to SIGKILL, in seconds.
+    private static let terminationGracePeriod: TimeInterval = 5
 
     init(
         mutateRun: @escaping @Sendable (RuntimeRunMutationRequest) async throws -> Void,
@@ -45,6 +47,7 @@ final class MethodRunCoordinator: @unchecked Sendable {
         projectPath: String,
         ideaTitle: String? = nil,
         ideaDescription: String? = nil,
+        timeoutSeconds: Int = defaultTimeoutSeconds,
     ) async throws {
         let executionRoot = prepareExecutionRoot(runID: runID)
 
@@ -71,7 +74,7 @@ final class MethodRunCoordinator: @unchecked Sendable {
             "--method-id", methodID,
             "--root", executionRoot,
             "--real",
-            "--timeout", "\(Self.defaultTimeoutSeconds)",
+            "--timeout", "\(timeoutSeconds)",
             "--bridge-run-id", runID,
             "--bridge-project-path", projectPath,
         ]
@@ -87,7 +90,7 @@ final class MethodRunCoordinator: @unchecked Sendable {
         activeProcesses[runID] = process
         lock.unlock()
 
-        let stderrBuffer = ProcessLineBuffer(limit: 30)
+        let stderrBuffer = ProcessLineBuffer(limit: 100)
 
         let drainTask = _Concurrency.Task.detached {
             do {
@@ -183,15 +186,68 @@ final class MethodRunCoordinator: @unchecked Sendable {
         }
     }
 
-    /// Cancel a running method run by terminating its process.
-    func cancelRun(runID: String) {
+    /// Cancel a running method run with graceful SIGTERM → SIGKILL escalation.
+    func cancelRun(runID: String, projectPath: String? = nil) {
         lock.lock()
         let process = activeProcesses[runID]
         lock.unlock()
 
-        if let process, process.isRunning {
-            DebugLog.write("MethodRunCoordinator.cancelRun runID=\(runID)")
-            process.terminate()
+        guard let process, process.isRunning else { return }
+
+        DebugLog.write("MethodRunCoordinator.cancelRun runID=\(runID) step=sigterm")
+        process.terminate()
+
+        // Escalate to SIGKILL after grace period if still running
+        DispatchQueue.global().asyncAfter(deadline: .now() + Self.terminationGracePeriod) { [weak self] in
+            guard let self else { return }
+            lock.lock()
+            let stillActive = activeProcesses[runID]
+            lock.unlock()
+            if let stillActive, stillActive.isRunning {
+                DebugLog.write("MethodRunCoordinator.cancelRun runID=\(runID) step=sigkill")
+                stillActive.interrupt()
+            }
+        }
+
+        // Write cancelled status (not failed)
+        if let projectPath {
+            _Concurrency.Task {
+                do {
+                    try await mutateRun(RuntimeRunMutationRequest(
+                        kind: "cancel",
+                        projectPath: projectPath,
+                        runId: runID,
+                        checkpointId: nil,
+                        methodId: nil,
+                        involvement: nil,
+                        checkpointKind: nil,
+                        checkpointTitle: nil,
+                        checkpointSummary: nil,
+                        checkpointBriefPath: nil,
+                        checkpointManifestPath: nil,
+                        checkpointMediaArtifacts: [],
+                        checkpointMermaidSources: [],
+                        captureUrl: nil,
+                        decisionAction: nil,
+                        decisionNote: nil,
+                        sessionId: nil,
+                        delegationWorkerId: nil,
+                        statusMessage: nil,
+                        captureRequestId: nil,
+                        clientId: nil,
+                        observedCaptureUrl: nil,
+                        captureFailureReason: nil,
+                        completedMediaArtifacts: [],
+                        ideaId: nil,
+                        ideaTitle: nil,
+                        ideaDescription: nil,
+                    ))
+                } catch {
+                    DebugLog.write(
+                        "MethodRunCoordinator.cancelRun cancel-mutation error runID=\(runID) error=\(error.localizedDescription)",
+                    )
+                }
+            }
         }
     }
 

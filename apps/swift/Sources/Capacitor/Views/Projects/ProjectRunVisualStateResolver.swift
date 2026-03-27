@@ -3,6 +3,8 @@ import Foundation
 enum RunVisualState: Equatable {
     case working(statusMessage: String?)
     case waiting(statusMessage: String?)
+    case completed(statusMessage: String?)
+    case failed(statusMessage: String?)
     case none
 
     var sessionState: SessionState? {
@@ -11,17 +13,29 @@ enum RunVisualState: Equatable {
             .working
         case .waiting:
             .waiting
-        case .none:
+        case .completed, .failed, .none:
             nil
         }
     }
 
     var statusMessage: String? {
         switch self {
-        case let .working(statusMessage), let .waiting(statusMessage):
+        case let .working(statusMessage),
+             let .waiting(statusMessage),
+             let .completed(statusMessage),
+             let .failed(statusMessage):
             statusMessage
         case .none:
             nil
+        }
+    }
+
+    var isTerminal: Bool {
+        switch self {
+        case .completed, .failed:
+            true
+        case .working, .waiting, .none:
+            false
         }
     }
 }
@@ -79,6 +93,16 @@ enum ProjectRunVisualStateResolver {
         {
             return .working(statusMessage: statusMessage)
         }
+        if run.status == "completed",
+           !isTerminalStale(updatedAt: run.updatedAt, now: now)
+        {
+            return .completed(statusMessage: statusMessage)
+        }
+        if run.status == "failed" || run.status == "cancelled",
+           !isTerminalStale(updatedAt: run.updatedAt, now: now)
+        {
+            return .failed(statusMessage: statusMessage)
+        }
         return .none
     }
 
@@ -90,15 +114,31 @@ enum ProjectRunVisualStateResolver {
                now: now,
            )
         {
-            return 2
+            return 3
         }
         if run.status == "active" {
+            return 2
+        }
+        if run.status == "completed",
+           !isTerminalStale(updatedAt: run.updatedAt, now: now)
+        {
+            return 1
+        }
+        if run.status == "failed" || run.status == "cancelled",
+           !isTerminalStale(updatedAt: run.updatedAt, now: now)
+        {
             return 1
         }
         if run.status == "created" {
             return 0
         }
         return nil
+    }
+
+    private static func isTerminalStale(updatedAt: String, now: Date) -> Bool {
+        guard let updatedDate = parseISO8601Date(updatedAt) else { return true }
+        let terminalVisibilityWindow: TimeInterval = 60 * 60
+        return now.timeIntervalSince(updatedDate) > terminalVisibilityWindow
     }
 
     private static func candidatePrecedes(
