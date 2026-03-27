@@ -19,9 +19,9 @@ struct MethodSelectorView: View {
                 Button(action: onDismiss) {
                     Image(systemName: "xmark")
                         .font(.system(size: 12, weight: .bold))
-                        .foregroundColor(.white.opacity(0.5))
+                        .foregroundColor(.white.opacity(0.68))
                         .frame(width: 28, height: 28)
-                        .background(Color.white.opacity(0.1))
+                        .background(Color.white.opacity(0.08))
                         .clipShape(Circle())
                 }
                 .buttonStyle(.plain)
@@ -29,29 +29,76 @@ struct MethodSelectorView: View {
 
             Text("Choose a workflow for this idea")
                 .font(AppTypography.bodySecondary)
-                .foregroundColor(.white.opacity(0.5))
+                .foregroundColor(.white.opacity(0.6))
 
             ScrollView(.vertical, showsIndicators: false) {
-                VStack(spacing: 8) {
+                VStack(spacing: 10) {
                     ForEach(methods, id: \.id) { method in
                         MethodCard(method: method) {
                             onSelect(method)
                         }
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .padding(24)
-        .frame(width: 380)
-        .frame(maxHeight: 500)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color.hudBackground.opacity(0.95))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .strokeBorder(Color.white.opacity(0.08), lineWidth: 1),
+        .frame(maxWidth: 400, alignment: .leading)
+        .frame(maxHeight: 500, alignment: .top)
+        .background(panelBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(panelBorder)
+        .shadow(color: .black.opacity(0.32), radius: 22, y: 14)
+    }
+
+    private var panelBackground: some View {
+        ZStack {
+            VibrancyView(
+                material: .popover,
+                blendingMode: .behindWindow,
+                isEmphasized: false,
+                forceDarkAppearance: true,
+            )
+
+            Color.black.opacity(0.22)
+
+            LinearGradient(
+                colors: [
+                    .white.opacity(0.12),
+                    .white.opacity(0.04),
+                    .clear,
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing,
+            )
+
+            VStack(spacing: 0) {
+                LinearGradient(
+                    colors: [.white.opacity(0.16), .clear],
+                    startPoint: .top,
+                    endPoint: .bottom,
+                )
+                .frame(height: 1)
+
+                Spacer()
+            }
+        }
+    }
+
+    private var panelBorder: some View {
+        RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .strokeBorder(
+                LinearGradient(
+                    colors: [
+                        .white.opacity(0.18),
+                        .white.opacity(0.08),
+                        .white.opacity(0.04),
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing,
                 ),
-        )
+                lineWidth: 0.75,
+            )
     }
 }
 
@@ -77,41 +124,60 @@ private struct MethodCard: View {
 
     var body: some View {
         Button(action: onTap) {
-            HStack(spacing: 14) {
-                Image(systemName: iconName)
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundColor(isHovered ? .white : .white.opacity(0.7))
-                    .frame(width: 32, height: 32)
-                    .background(Color.white.opacity(isHovered ? 0.15 : 0.08))
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
+            HStack(alignment: .top, spacing: 14) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .fill(Color.white.opacity(isHovered ? 0.15 : 0.08))
 
-                VStack(alignment: .leading, spacing: 3) {
+                    Image(systemName: iconName)
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(isHovered ? .white : .white.opacity(0.76))
+                }
+                .frame(width: 34, height: 34)
+
+                VStack(alignment: .leading, spacing: 5) {
                     Text(method.name)
                         .font(AppTypography.bodyMedium.weight(.medium))
                         .foregroundColor(.white)
 
                     Text(method.description)
                         .font(AppTypography.caption)
-                        .foregroundColor(.white.opacity(0.5))
-                        .lineLimit(1)
+                        .foregroundColor(.white.opacity(0.62))
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
-                Spacer()
+                Spacer(minLength: 12)
 
                 Text("\(phaseCount) \(phaseCount == 1 ? "phase" : "phases")")
-                    .font(AppTypography.caption)
-                    .foregroundColor(.white.opacity(0.35))
+                    .font(AppTypography.caption.weight(.medium))
+                    .foregroundColor(.white.opacity(0.68))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.white.opacity(isHovered ? 0.14 : 0.08))
+                    .clipShape(Capsule())
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
+            .padding(14)
             .background(
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(Color.white.opacity(isHovered ? 0.08 : 0.04)),
+                DarkFrostedCard(
+                    isHovered: isHovered,
+                    tintOpacity: isHovered ? 0.14 : 0.18,
+                    layoutMode: .vertical,
+                ),
             )
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(
+                        Color.white.opacity(isHovered ? 0.16 : 0.08),
+                        lineWidth: 0.75,
+                    ),
+            )
+            .scaleEffect(isHovered ? 1.01 : 1)
         }
         .buttonStyle(.plain)
         .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.15)) {
+            withAnimation(.spring(response: 0.2, dampingFraction: 0.86)) {
                 isHovered = hovering
             }
         }
