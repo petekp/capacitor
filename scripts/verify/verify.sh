@@ -412,7 +412,10 @@ run_layer3() {
     --run-manifest "$RUN_MANIFEST_PATH"
     --out "$TMP_DIR/layer3.json"
   )
-  if [[ "$CHANGED_ONLY" == true && "$FORCE_FULL_FOR_VERIFIER_CHANGE" == false ]]; then
+  # Layer 3 (elegance) always uses changed-only scoping when available.
+  # Elegance is per-file — a verifier config change doesn't affect an unchanged
+  # file's complexity. Full-scope escalation only applies to Layer 1 (structural).
+  if [[ "$CHANGED_ONLY" == true && -f "$SELECTED_PATHS_FILE" ]]; then
     args+=(--paths-file "$SELECTED_PATHS_FILE")
   fi
   if [[ "$REPORT_ONLY" == true ]]; then
