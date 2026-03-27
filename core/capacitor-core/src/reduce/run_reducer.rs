@@ -5,11 +5,16 @@
 
 use std::collections::BTreeMap;
 
+use chrono::{DateTime, Duration, Utc};
+
 use crate::domain::{
     method_registry, now_rfc3339, ActiveCheckpoint, CaptureClaim, CaptureStatus,
     CheckpointDecision, CheckpointStatus, MutateRunCommand, MutationOutcome, PhaseInstance,
     PhaseStatus, RunMutationKind, RunState, RunStatus,
 };
+
+const TERMINAL_RUN_RETENTION: Duration = Duration::hours(24);
+const CREATED_RUN_EXPIRY: Duration = Duration::hours(2);
 
 /// Apply a run mutation to the runs map. Returns a `MutationOutcome`.
 pub fn apply_run_mutation(
@@ -51,6 +56,26 @@ pub fn apply_run_mutation(
         RunMutationKind::Cancel => {
             handle_status_transition(runs, &key, RunStatus::Cancelled, "cancel")
         }
+    }
+}
+
+pub(crate) fn cleanup_runs(runs: &mut BTreeMap<String, RunState>) {
+    cleanup_runs_at(runs, Utc::now());
+}
+
+pub(crate) fn cleanup_runs_at(runs: &mut BTreeMap<String, RunState>, now: DateTime<Utc>) {
+    let expired_run_keys: Vec<_> = runs
+        .iter()
+        .filter(|(_, run)| is_expired_terminal_run(run, now))
+        .map(|(key, _)| key.clone())
+        .collect();
+
+    for run in runs.values_mut() {
+        expire_created_run_if_needed(run, now);
+    }
+
+    for key in expired_run_keys {
+        runs.remove(&key);
     }
 }
 
@@ -595,6 +620,38 @@ fn normalized_optional_text(value: Option<&str>) -> Option<String> {
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(ToOwned::to_owned)
+}
+
+fn is_expired_terminal_run(run: &RunState, now: DateTime<Utc>) -> bool {
+    run.status.is_terminal()
+        && timestamp_is_older_than(run.updated_at.as_str(), TERMINAL_RUN_RETENTION, now)
+}
+
+fn expire_created_run_if_needed(run: &mut RunState, now: DateTime<Utc>) {
+    if run.status != RunStatus::Created {
+        return;
+    }
+
+    if !timestamp_is_older_than(run.created_at.as_str(), CREATED_RUN_EXPIRY, now) {
+        return;
+    }
+
+    run.status = RunStatus::Failed;
+    run.updated_at = now.to_rfc3339();
+}
+
+fn timestamp_is_older_than(value: &str, threshold: Duration, now: DateTime<Utc>) -> bool {
+    let Some(timestamp) = parse_rfc3339(value) else {
+        return false;
+    };
+
+    now.signed_duration_since(timestamp) > threshold
+}
+
+fn parse_rfc3339(value: &str) -> Option<DateTime<Utc>> {
+    DateTime::parse_from_rfc3339(value)
+        .ok()
+        .map(|timestamp| timestamp.with_timezone(&Utc))
 }
 
 fn active_checkpoint_for_command<'a>(

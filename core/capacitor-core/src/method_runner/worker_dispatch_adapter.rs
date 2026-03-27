@@ -6,6 +6,7 @@
 
 use std::io::Write;
 use std::os::unix::process::CommandExt;
+use std::path::Path;
 use std::process::Command;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -23,6 +24,33 @@ use crate::method_runner::run_status_reporter::{
 };
 
 const WORKER_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
+
+fn execution_root_from_relay_root(relay_root: &Path) -> Option<std::path::PathBuf> {
+    relay_root.ancestors().find_map(|ancestor| {
+        if ancestor.file_name().and_then(|name| name.to_str()) == Some(".method") {
+            ancestor.parent().map(|parent| parent.to_path_buf())
+        } else {
+            None
+        }
+    })
+}
+
+fn build_codex_exec_args(relay_root: &Path, tmp_last_message: &Path) -> Vec<String> {
+    let mut args: Vec<String> = vec![
+        "exec".into(),
+        "--full-auto".into(),
+        "-o".into(),
+        tmp_last_message.to_string_lossy().into_owned(),
+    ];
+
+    if let Some(execution_root) = execution_root_from_relay_root(relay_root) {
+        args.push("--add-dir".into());
+        args.push(execution_root.to_string_lossy().into_owned());
+    }
+
+    args.push("-".into());
+    args
+}
 
 // ---------------------------------------------------------------------------
 // CodexWorkerDispatcher
@@ -73,7 +101,7 @@ impl WorkerDispatcher for CodexWorkerDispatcher {
             ))
         })?;
 
-        // 2. Build argv: codex exec --full-auto -o <tmp-output-path> -
+        // 2. Build argv: codex exec --full-auto -o <tmp-output-path> [--add-dir <execution-root>] -
         //
         // The relay root lives under ~/.capacitor/runs/ which is outside
         // the codex sandbox allowlist. We write to $TMPDIR instead, then
@@ -92,14 +120,7 @@ impl WorkerDispatcher for CodexWorkerDispatcher {
 
         let last_message_path = request.relay_root.join("last-message.txt");
         let codex_path = &self.config.codex_path;
-
-        let args: Vec<String> = vec![
-            "exec".into(),
-            "--full-auto".into(),
-            "-o".into(),
-            tmp_last_message.to_string_lossy().into_owned(),
-            "-".into(), // read from stdin
-        ];
+        let args = build_codex_exec_args(&request.relay_root, &tmp_last_message);
 
         // 3. Build allowlisted env with adapter-owned overrides
         let overrides: Vec<(&str, &str)> = self
@@ -265,5 +286,55 @@ impl WorkerDispatcher for CodexWorkerDispatcher {
             signal,
             elapsed,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_build_codex_args_includes_add_dir_when_execution_root_is_available() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let execution_root = temp.path();
+        let relay_root = execution_root
+            .join(".method")
+            .join("steps")
+            .join("phase-a")
+            .join("step-a")
+            .join("attempts")
+            .join("001")
+            .join("relay")
+            .join("workers")
+            .join("worker-a");
+        std::fs::create_dir_all(&relay_root).expect("relay root");
+
+        let args = build_codex_exec_args(&relay_root, Path::new("/tmp/last-message.txt"));
+
+        let add_dir_index = args
+            .iter()
+            .position(|arg| arg == "--add-dir")
+            .expect("expected --add-dir to be present");
+
+        assert_eq!(
+            args.get(add_dir_index + 1).map(String::as_str),
+            Some(execution_root.to_string_lossy().as_ref())
+        );
+        assert_eq!(args.last().map(String::as_str), Some("-"));
+    }
+
+    #[test]
+    fn test_build_codex_args_omits_add_dir_when_execution_root_is_unavailable() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let relay_root = temp.path().join("relay-root");
+        std::fs::create_dir_all(&relay_root).expect("relay root");
+
+        let args = build_codex_exec_args(&relay_root, Path::new("/tmp/last-message.txt"));
+
+        assert!(
+            !args.iter().any(|arg| arg == "--add-dir"),
+            "--add-dir should be omitted when execution root cannot be derived"
+        );
+        assert_eq!(args.last().map(String::as_str), Some("-"));
     }
 }

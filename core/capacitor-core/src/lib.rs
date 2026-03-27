@@ -306,10 +306,20 @@ impl CoreRuntime {
             return Err(CoreRuntimeError::from("snapshot_file path cannot be empty"));
         }
 
-        Self::from_storage(
+        let runtime = Self::from_storage(
             Arc::new(JsonFileSnapshotStorage::new(path)),
             StorageConfig::default(),
-        )
+        )?;
+
+        let snapshot_path = PathBuf::from(path);
+        if snapshot_path.exists() && runtime.app_snapshot()?.runs.is_empty() {
+            eprintln!(
+                "[capacitor-core] snapshot loaded with 0 runs from existing file: {}",
+                snapshot_path.display()
+            );
+        }
+
+        Ok(runtime)
     }
 
     pub fn app_snapshot(&self) -> Result<AppSnapshot, CoreRuntimeError> {

@@ -75,6 +75,7 @@ impl ReducerState {
             let key = format!("{}#{}", run.project_path, run.id);
             runs.insert(key, run);
         }
+        run_reducer::cleanup_runs(&mut runs);
 
         let mut shells = HashMap::new();
         for shell in snapshot_shells {
@@ -219,6 +220,7 @@ impl ReducerState {
     #[must_use]
     pub fn apply_run_mutation(&mut self, command: MutateRunCommand) -> MutationOutcome {
         self.events_ingested = self.events_ingested.saturating_add(1);
+        run_reducer::cleanup_runs(&mut self.runs);
         run_reducer::apply_run_mutation(&mut self.runs, command)
     }
 
@@ -629,7 +631,10 @@ impl ReducerState {
         shells.sort_by(|left, right| left.pid.cmp(&right.pid));
 
         let routing = self.routing.values().cloned().collect::<Vec<_>>();
-        let runs = self.runs.values().cloned().collect::<Vec<_>>();
+
+        let mut runs = self.runs.clone();
+        run_reducer::cleanup_runs(&mut runs);
+        let runs = runs.into_values().collect::<Vec<_>>();
 
         AppSnapshot {
             projects,
@@ -1795,15 +1800,18 @@ fn parse_rfc3339(value: &str) -> Option<DateTime<Utc>> {
 
 #[cfg(test)]
 mod tests {
+    use chrono::{Duration, Utc};
+
     use super::{
         select_canonical_routing_source, CanonicalRoutingSource, ReducerState,
         TmuxInventoryCandidate,
     };
     use crate::domain::{
         default_workspace_id, DelegationMutationKind, DelegationReviewDecision, DelegationStatus,
-        HookEventType, IngestHookEventCommand, IngestShellSignalCommand, MutateDelegationCommand,
-        ResolveRoutingCommand, RoutingStatus, RoutingTargetKind, RoutingView, SessionState,
-        ShellSignal, TmuxPaneInfo,
+        HookEventType, IngestHookEventCommand, IngestShellSignalCommand, InvolvementLevel,
+        MutateDelegationCommand, PhaseInstance, PhaseStatus, ResolveRoutingCommand, RoutingStatus,
+        RoutingTargetKind, RoutingView, RunState, RunStatus, SessionState, ShellSignal,
+        TmuxPaneInfo,
     };
 
     fn event_base(event_type: HookEventType) -> IngestHookEventCommand {
@@ -1853,6 +1861,46 @@ mod tests {
             .into_iter()
             .find(|route| route.project_path == project_path)
             .expect("persisted route")
+    }
+
+    fn run_state_fixture(
+        id: &str,
+        status: RunStatus,
+        created_at: String,
+        updated_at: String,
+    ) -> RunState {
+        RunState {
+            id: id.to_string(),
+            project_path: "/repo".to_string(),
+            method_id: "execution_only".to_string(),
+            method_name: "Execute".to_string(),
+            involvement: InvolvementLevel::Supervised,
+            status,
+            phases: vec![PhaseInstance {
+                id: "phase-001".to_string(),
+                template_id: "execute".to_string(),
+                name: "Execute".to_string(),
+                status: match status {
+                    RunStatus::Completed => PhaseStatus::Completed,
+                    RunStatus::Active | RunStatus::Paused => PhaseStatus::Active,
+                    _ => PhaseStatus::Pending,
+                },
+                checkpoint_policy: "manual".to_string(),
+                skill_hint: None,
+                started_at: None,
+                completed_at: None,
+            }],
+            current_phase_index: 0,
+            active_checkpoint: None,
+            session_id: None,
+            delegation_worker_id: None,
+            status_message: None,
+            idea_id: None,
+            idea_title: None,
+            idea_description: None,
+            created_at,
+            updated_at,
+        }
     }
 
     fn shell_signal_fixture(pid: u32, cwd: &str) -> ShellSignal {
@@ -2091,6 +2139,113 @@ mod tests {
             state.sessions.get("session-1").map(|session| session.state),
             Some(SessionState::Working)
         );
+    }
+
+    #[test]
+    fn snapshot_prunes_terminal_runs_older_than_24_hours() {
+        let now = Utc::now();
+        let stale_timestamp = (now - Duration::hours(25)).to_rfc3339();
+        let fresh_timestamp = (now - Duration::hours(2)).to_rfc3339();
+        let mut state = ReducerState::default();
+
+        state.runs.insert(
+            "/repo#failed-stale".to_string(),
+            run_state_fixture(
+                "failed-stale",
+                RunStatus::Failed,
+                stale_timestamp.clone(),
+                stale_timestamp.clone(),
+            ),
+        );
+        state.runs.insert(
+            "/repo#cancelled-stale".to_string(),
+            run_state_fixture(
+                "cancelled-stale",
+                RunStatus::Cancelled,
+                stale_timestamp.clone(),
+                stale_timestamp.clone(),
+            ),
+        );
+        state.runs.insert(
+            "/repo#completed-stale".to_string(),
+            run_state_fixture(
+                "completed-stale",
+                RunStatus::Completed,
+                stale_timestamp.clone(),
+                stale_timestamp,
+            ),
+        );
+        state.runs.insert(
+            "/repo#failed-fresh".to_string(),
+            run_state_fixture(
+                "failed-fresh",
+                RunStatus::Failed,
+                fresh_timestamp.clone(),
+                fresh_timestamp,
+            ),
+        );
+
+        let snapshot = state.snapshot();
+        let run_ids: Vec<_> = snapshot.runs.iter().map(|run| run.id.as_str()).collect();
+
+        assert!(!run_ids.contains(&"failed-stale"));
+        assert!(!run_ids.contains(&"cancelled-stale"));
+        assert!(!run_ids.contains(&"completed-stale"));
+        assert!(run_ids.contains(&"failed-fresh"));
+    }
+
+    #[test]
+    fn snapshot_marks_created_runs_older_than_two_hours_failed() {
+        let now = Utc::now();
+        let created_at = (now - Duration::hours(3)).to_rfc3339();
+        let updated_at = created_at.clone();
+        let mut state = ReducerState::default();
+
+        state.runs.insert(
+            "/repo#created-stale".to_string(),
+            run_state_fixture(
+                "created-stale",
+                RunStatus::Created,
+                created_at,
+                updated_at.clone(),
+            ),
+        );
+
+        let snapshot = state.snapshot();
+        let run = snapshot
+            .runs
+            .into_iter()
+            .find(|run| run.id == "created-stale")
+            .expect("created run");
+
+        assert_eq!(run.status, RunStatus::Failed);
+        assert_ne!(run.updated_at, updated_at);
+    }
+
+    #[test]
+    fn snapshot_leaves_old_paused_runs_intact() {
+        let now = Utc::now();
+        let stale_timestamp = (now - Duration::days(7)).to_rfc3339();
+        let mut state = ReducerState::default();
+
+        state.runs.insert(
+            "/repo#paused-stale".to_string(),
+            run_state_fixture(
+                "paused-stale",
+                RunStatus::Paused,
+                stale_timestamp.clone(),
+                stale_timestamp,
+            ),
+        );
+
+        let snapshot = state.snapshot();
+        let run = snapshot
+            .runs
+            .into_iter()
+            .find(|run| run.id == "paused-stale")
+            .expect("paused run");
+
+        assert_eq!(run.status, RunStatus::Paused);
     }
 
     #[test]

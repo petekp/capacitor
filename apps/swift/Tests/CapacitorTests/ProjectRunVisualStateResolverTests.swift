@@ -85,6 +85,60 @@ final class ProjectRunVisualStateResolverTests: XCTestCase {
         XCTAssertEqual(resolution.visualState, .none)
     }
 
+    func testStalePausedCheckpointRunResolvesToNone() throws {
+        let projectPath = "/tmp/core-project"
+        let updatedAt = "2026-03-26T10:06:00Z"
+        let now = try XCTUnwrap(parseISO8601Date(updatedAt)?.addingTimeInterval(31 * 60))
+        let pausedRun = makeRun(
+            id: "run-stale-paused",
+            projectPath: projectPath,
+            status: "paused",
+            updatedAt: updatedAt,
+            createdAt: "2026-03-26T10:00:00Z",
+            checkpointID: "checkpoint-1",
+        )
+
+        let resolution = ProjectRunVisualStateResolver.resolve(
+            projectPath: projectPath,
+            runsByID: runsByID([pausedRun]),
+            now: now,
+        )
+
+        XCTAssertNil(resolution.run)
+        XCTAssertEqual(resolution.visualState, .none)
+    }
+
+    func testFreshActiveRunWinsOverStalePausedCheckpointRun() throws {
+        let projectPath = "/tmp/core-project"
+        let pausedUpdatedAt = "2026-03-26T10:06:00Z"
+        let now = try XCTUnwrap(parseISO8601Date(pausedUpdatedAt)?.addingTimeInterval(31 * 60))
+        let stalePausedRun = makeRun(
+            id: "run-stale-paused",
+            projectPath: projectPath,
+            status: "paused",
+            updatedAt: pausedUpdatedAt,
+            createdAt: "2026-03-26T10:00:00Z",
+            checkpointID: "checkpoint-1",
+        )
+        let freshActiveRun = makeRun(
+            id: "run-fresh-active",
+            projectPath: projectPath,
+            status: "active",
+            updatedAt: "2026-03-26T10:36:30Z",
+            createdAt: "2026-03-26T10:35:00Z",
+            checkpointID: nil,
+        )
+
+        let resolution = ProjectRunVisualStateResolver.resolve(
+            projectPath: projectPath,
+            runsByID: runsByID([stalePausedRun, freshActiveRun]),
+            now: now,
+        )
+
+        XCTAssertEqual(resolution.run, freshActiveRun)
+        XCTAssertEqual(resolution.visualState, .working(statusMessage: nil))
+    }
+
     func testStatusMessagePassesThroughForWorkingAndWaitingRuns() throws {
         let projectPath = "/tmp/core-project"
         let now = try XCTUnwrap(parseISO8601Date("2026-03-26T10:06:10Z"))

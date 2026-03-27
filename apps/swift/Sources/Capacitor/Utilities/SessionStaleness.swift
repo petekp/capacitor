@@ -21,6 +21,10 @@ enum SessionStaleness {
     /// but short enough to feel responsive after an interrupt.
     static let workingStaleThreshold: TimeInterval = 30
 
+    /// Paused checkpoint reviews can linger much longer than active work, but they should
+    /// eventually stop driving project-card state if the run has gone cold.
+    static let pausedCheckpointStaleThreshold: TimeInterval = 30 * 60
+
     static func isWorkingStale(state: SessionState?, updatedAt: String?, now: Date = Date()) -> Bool {
         guard state == .working,
               let updatedAt,
@@ -33,5 +37,14 @@ enum SessionStaleness {
 
     static func isWorkingStale(state: SessionState?, updatedAt: String?, clock: SessionClock) -> Bool {
         isWorkingStale(state: state, updatedAt: updatedAt, now: clock.now())
+    }
+
+    static func isPausedCheckpointStale(updatedAt: String?, now: Date = Date()) -> Bool {
+        guard let updatedAt,
+              let date = parseISO8601Date(updatedAt)
+        else {
+            return false
+        }
+        return now.timeIntervalSince(date) > pausedCheckpointStaleThreshold
     }
 }

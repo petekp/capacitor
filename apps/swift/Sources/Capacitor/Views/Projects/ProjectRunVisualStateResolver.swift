@@ -41,7 +41,7 @@ enum ProjectRunVisualStateResolver {
         let selectedRun = runsByID.values
             .filter { PathNormalizer.normalize($0.projectPath) == normalizedProjectPath }
             .compactMap { run -> (priority: Int, run: RuntimeRunState)? in
-                guard let priority = priority(for: run) else { return nil }
+                guard let priority = priority(for: run, now: now) else { return nil }
                 return (priority, run)
             }
             .sorted(by: candidatePrecedes)
@@ -61,7 +61,13 @@ enum ProjectRunVisualStateResolver {
         guard let run else { return .none }
 
         let statusMessage = cleanedStatusMessage(run.statusMessage)
-        if run.status == "paused", run.activeCheckpoint != nil {
+        if run.status == "paused",
+           run.activeCheckpoint != nil,
+           !SessionStaleness.isPausedCheckpointStale(
+               updatedAt: run.updatedAt,
+               now: now,
+           )
+        {
             return .waiting(statusMessage: statusMessage)
         }
         if run.status == "active",
@@ -76,8 +82,14 @@ enum ProjectRunVisualStateResolver {
         return .none
     }
 
-    private static func priority(for run: RuntimeRunState) -> Int? {
-        if run.status == "paused", run.activeCheckpoint != nil {
+    private static func priority(for run: RuntimeRunState, now: Date) -> Int? {
+        if run.status == "paused",
+           run.activeCheckpoint != nil,
+           !SessionStaleness.isPausedCheckpointStale(
+               updatedAt: run.updatedAt,
+               now: now,
+           )
+        {
             return 2
         }
         if run.status == "active" {

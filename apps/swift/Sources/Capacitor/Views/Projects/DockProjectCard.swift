@@ -1,5 +1,22 @@
 import SwiftUI
 
+struct DockProjectCardPresentation: Equatable {
+    let currentState: SessionState
+    let contextLine: String?
+
+    static func resolve(
+        sessionState: ProjectSessionState?,
+        trackedRunVisualState: RunVisualState,
+    ) -> Self {
+        let currentState = trackedRunVisualState.sessionState ?? sessionState?.state ?? .idle
+
+        return Self(
+            currentState: currentState,
+            contextLine: trackedRunVisualState.statusMessage,
+        )
+    }
+}
+
 struct DockProjectCard: View {
     let project: Project
     let sessionState: ProjectSessionState?
@@ -24,6 +41,7 @@ struct DockProjectCard: View {
     @State private var isHovered = false
     @State private var isPressed = false
     @State private var flashOpacity: Double = 0
+    @State private var trackedRunVisualState: RunVisualState
 
     // Positional press feedback
     @State private var cursorLocation: CGPoint = .zero
@@ -32,19 +50,62 @@ struct DockProjectCard: View {
     @State private var distortionIntensity: Double = 0
     @State private var pressStartTime: Date?
 
+    init(
+        project: Project,
+        sessionState: ProjectSessionState?,
+        delegationState: RuntimeDelegationState?,
+        activeRunState: RuntimeRunState?,
+        projectStatus: ProjectStatus?,
+        flashState: SessionState?,
+        isActive: Bool,
+        onTap: @escaping () -> Void,
+        onInfoTap: (() -> Void)? = nil,
+        onMoveToDormant: @escaping () -> Void,
+        onCaptureIdea: ((CGRect) -> Void)? = nil,
+        onRemove: @escaping () -> Void,
+        onDragStarted: (() -> NSItemProvider)? = nil,
+        isDragging: Bool = false,
+    ) {
+        self.project = project
+        self.sessionState = sessionState
+        self.delegationState = delegationState
+        self.activeRunState = activeRunState
+        self.projectStatus = projectStatus
+        self.flashState = flashState
+        self.isActive = isActive
+        self.onTap = onTap
+        self.onInfoTap = onInfoTap
+        self.onMoveToDormant = onMoveToDormant
+        self.onCaptureIdea = onCaptureIdea
+        self.onRemove = onRemove
+        self.onDragStarted = onDragStarted
+        self.isDragging = isDragging
+        _trackedRunVisualState = State(
+            initialValue: ProjectRunVisualStateResolver.visualState(for: activeRunState),
+        )
+    }
+
     private var cornerRadius: CGFloat {
         GlassConfig.shared.cardCornerRadius(for: .dock)
     }
 
     private var currentState: SessionState {
-        if let runState = runVisualState.sessionState {
-            return runState
-        }
-        return sessionState?.state ?? .idle
+        presentation.currentState
     }
 
     private var runVisualState: RunVisualState {
         ProjectRunVisualStateResolver.visualState(for: activeRunState)
+    }
+
+    private var contextLine: String? {
+        presentation.contextLine
+    }
+
+    private var presentation: DockProjectCardPresentation {
+        DockProjectCardPresentation.resolve(
+            sessionState: sessionState,
+            trackedRunVisualState: trackedRunVisualState,
+        )
     }
 
     private var cardScale: CGFloat {
@@ -186,6 +247,11 @@ struct DockProjectCard: View {
             .animation(cardAnimation, value: cardScale)
             .animation(tiltAnimation, value: pressTiltX)
             .animation(tiltAnimation, value: pressTiltY)
+            .onChange(of: runVisualState) { _, newValue in
+                withAnimation(.easeInOut(duration: glassConfig.stateTransitionDuration)) {
+                    trackedRunVisualState = newValue
+                }
+            }
             .onLongPressGesture(minimumDuration: .infinity, pressing: { pressing in
                 if pressing {
                     pressPoint = cursorLocation
@@ -290,6 +356,17 @@ struct DockProjectCard: View {
                     style: .compact,
                 )
                 .padding(.top, glassConfig.dockChipTopPaddingRounded)
+
+                if let contextLine {
+                    HStack(spacing: 4) {
+                        Text(contextLine)
+                            .font(AppTypography.bodySecondary)
+                            .foregroundStyle(.white.opacity(0.55))
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
+                    .padding(.top, 4)
+                }
 
                 Spacer(minLength: 0)
 

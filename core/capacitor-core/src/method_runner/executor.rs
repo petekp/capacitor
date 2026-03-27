@@ -1380,7 +1380,8 @@ fn dispatch_attempt_workers(
                 }
 
                 // Ingest handoff if present (even for failed workers — we want the data)
-                let handoff_path = find_handoff(&relay_root);
+                let repo_handoffs_dir = paths.root().join("handoffs");
+                let handoff_path = find_handoff(&relay_root, &[repo_handoffs_dir.as_path()]);
                 if let Some(handoff_source) = handoff_path {
                     let _ingest_result = ingest_handoff(
                         paths,
@@ -2037,7 +2038,7 @@ fn build_run_summary(
     }))
 }
 
-fn find_handoff(relay_root: &Path) -> Option<std::path::PathBuf> {
+fn find_handoff(relay_root: &Path, fallback_dirs: &[&Path]) -> Option<std::path::PathBuf> {
     let uppercase = relay_root.join("HANDOFF.md");
     if uppercase.exists() {
         return Some(uppercase);
@@ -2046,7 +2047,59 @@ fn find_handoff(relay_root: &Path) -> Option<std::path::PathBuf> {
     if lowercase.exists() {
         return Some(lowercase);
     }
+
+    for dir in fallback_dirs {
+        let uppercase = dir.join("HANDOFF.md");
+        if uppercase.exists() {
+            return Some(uppercase);
+        }
+
+        let lowercase = dir.join("handoff.md");
+        if lowercase.exists() {
+            return Some(lowercase);
+        }
+    }
+
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::find_handoff;
+
+    #[test]
+    fn test_find_handoff_checks_fallback_dirs() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let relay_root = temp.path().join("relay");
+        let fallback = temp.path().join("handoffs");
+        std::fs::create_dir_all(&relay_root).expect("relay dir");
+        std::fs::create_dir_all(&fallback).expect("fallback dir");
+
+        let expected = fallback.join("HANDOFF.md");
+        std::fs::write(&expected, "# handoff").expect("write handoff");
+
+        let found = find_handoff(&relay_root, &[fallback.as_path()]);
+
+        assert_eq!(found, Some(expected));
+    }
+
+    #[test]
+    fn test_find_handoff_prefers_relay_root() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let relay_root = temp.path().join("relay");
+        let fallback = temp.path().join("handoffs");
+        std::fs::create_dir_all(&relay_root).expect("relay dir");
+        std::fs::create_dir_all(&fallback).expect("fallback dir");
+
+        let relay_handoff = relay_root.join("HANDOFF.md");
+        let fallback_handoff = fallback.join("HANDOFF.md");
+        std::fs::write(&relay_handoff, "# relay handoff").expect("write relay handoff");
+        std::fs::write(&fallback_handoff, "# fallback handoff").expect("write fallback handoff");
+
+        let found = find_handoff(&relay_root, &[fallback.as_path()]);
+
+        assert_eq!(found, Some(relay_handoff));
+    }
 }
 
 fn resolve_method_outputs(

@@ -25,6 +25,7 @@ const ENV_ALLOWLIST: &[&str] = &[
     "TERM",
     "TMPDIR",
     "XDG_RUNTIME_DIR",
+    "CAPACITOR_EXECUTION_ROOT",
 ];
 
 /// Build a filtered environment from the current process, keeping only
@@ -205,5 +206,25 @@ mod tests {
         let path = env.iter().find(|(k, _)| k == "PATH");
         assert!(path.is_some(), "PATH should still be present");
         assert_eq!(path.unwrap().1, "/override", "PATH should be overridden");
+    }
+
+    #[test]
+    fn test_env_allowlist_keeps_capacitor_execution_root() {
+        std::env::set_var("CAPACITOR_EXECUTION_ROOT", "/tmp/execution-root");
+
+        let env = build_allowed_env(&[]);
+        let execution_root = env.iter().find(|(k, _)| k == "CAPACITOR_EXECUTION_ROOT");
+
+        assert!(
+            execution_root.is_some(),
+            "CAPACITOR_EXECUTION_ROOT should be preserved"
+        );
+        assert_eq!(
+            execution_root.unwrap().1,
+            "/tmp/execution-root",
+            "CAPACITOR_EXECUTION_ROOT should keep its value"
+        );
+
+        std::env::remove_var("CAPACITOR_EXECUTION_ROOT");
     }
 }
