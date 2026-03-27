@@ -1000,6 +1000,9 @@ final class RunCaptureCoordinatorTests: XCTestCase {
                 createdAt: timestamp,
                 decidedAt: nil,
             ),
+            ideaId: nil,
+            ideaTitle: nil,
+            ideaDescription: nil,
         )
     }
 

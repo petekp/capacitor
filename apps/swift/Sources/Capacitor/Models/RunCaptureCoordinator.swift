@@ -470,6 +470,9 @@ actor RunCaptureCoordinator {
             observedCaptureUrl: observedCaptureURL,
             captureFailureReason: captureFailureReason,
             completedMediaArtifacts: completedMediaArtifacts,
+            ideaId: nil,
+            ideaTitle: nil,
+            ideaDescription: nil,
         )
     }
 

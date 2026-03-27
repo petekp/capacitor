@@ -430,6 +430,9 @@ struct RuntimeRunState: Equatable, Sendable {
     let createdAt: String
     let updatedAt: String
     let activeCheckpoint: RuntimeCheckpointState?
+    let ideaId: String?
+    let ideaTitle: String?
+    let ideaDescription: String?
 }
 
 struct CoreRoutingTarget: Decodable, Equatable {
@@ -963,6 +966,9 @@ private struct SnapshotRunPayload: Decodable {
     let createdAt: String
     let updatedAt: String
     let activeCheckpoint: SnapshotCheckpointPayload?
+    let ideaId: String?
+    let ideaTitle: String?
+    let ideaDescription: String?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -976,6 +982,9 @@ private struct SnapshotRunPayload: Decodable {
         case createdAt = "created_at"
         case updatedAt = "updated_at"
         case activeCheckpoint = "active_checkpoint"
+        case ideaId = "idea_id"
+        case ideaTitle = "idea_title"
+        case ideaDescription = "idea_description"
     }
 
     init(_ run: RunState) {
@@ -986,12 +995,13 @@ private struct SnapshotRunPayload: Decodable {
         status = RuntimeClient.snapshotRunStatusString(run.status)
         sessionId = run.sessionId
         delegationWorkerId = run.delegationWorkerId
-        // Runtime-service JSON snapshots carry `status_message`; the older bridge
-        // payload used here for fallback construction does not yet expose it.
-        statusMessage = nil
+        statusMessage = run.statusMessage
         createdAt = run.createdAt
         updatedAt = run.updatedAt
         activeCheckpoint = run.activeCheckpoint.map(SnapshotCheckpointPayload.init)
+        ideaId = run.ideaId
+        ideaTitle = run.ideaTitle
+        ideaDescription = run.ideaDescription
     }
 }
 
@@ -1064,6 +1074,9 @@ struct RuntimeRunMutationRequest: Encodable, Equatable, Sendable {
     let observedCaptureUrl: String?
     let captureFailureReason: String?
     let completedMediaArtifacts: [RuntimeMediaArtifact]
+    let ideaId: String?
+    let ideaTitle: String?
+    let ideaDescription: String?
 
     enum CodingKeys: String, CodingKey {
         case kind
@@ -1090,6 +1103,9 @@ struct RuntimeRunMutationRequest: Encodable, Equatable, Sendable {
         case observedCaptureUrl = "observed_capture_url"
         case captureFailureReason = "capture_failure_reason"
         case completedMediaArtifacts = "completed_media_artifacts"
+        case ideaId = "idea_id"
+        case ideaTitle = "idea_title"
+        case ideaDescription = "idea_description"
     }
 }
 
@@ -1891,5 +1907,8 @@ private extension RuntimeRunState {
         createdAt = payload.createdAt
         updatedAt = payload.updatedAt
         activeCheckpoint = payload.activeCheckpoint.map(RuntimeCheckpointState.init)
+        ideaId = payload.ideaId
+        ideaTitle = payload.ideaTitle
+        ideaDescription = payload.ideaDescription
     }
 }

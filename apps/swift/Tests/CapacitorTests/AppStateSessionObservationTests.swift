@@ -458,6 +458,9 @@ final class AppStateSessionObservationTests: XCTestCase {
             createdAt: timestamp,
             updatedAt: timestamp,
             activeCheckpoint: nil,
+            ideaId: nil,
+            ideaTitle: nil,
+            ideaDescription: nil,
         )
     }
 }

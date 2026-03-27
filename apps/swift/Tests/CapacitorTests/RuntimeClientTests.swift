@@ -810,6 +810,73 @@ final class RuntimeClientTests: XCTestCase {
         XCTAssertEqual(custom["label"] as? String, "QA hold")
     }
 
+    func testRuntimeRunMutationRequestEncodesIdeaFieldsUsingSnakeCaseKeys() throws {
+        let request = RuntimeRunMutationRequest(
+            kind: "create",
+            projectPath: "/tmp/core-project",
+            runId: "run-idea-encode",
+            checkpointId: nil,
+            methodId: "method-001",
+            involvement: nil,
+            checkpointKind: nil,
+            checkpointTitle: nil,
+            checkpointSummary: nil,
+            checkpointBriefPath: nil,
+            checkpointManifestPath: nil,
+            checkpointMediaArtifacts: [],
+            checkpointMermaidSources: [],
+            captureUrl: nil,
+            decisionAction: nil,
+            decisionNote: nil,
+            sessionId: nil,
+            delegationWorkerId: nil,
+            statusMessage: nil,
+            captureRequestId: nil,
+            clientId: nil,
+            observedCaptureUrl: nil,
+            captureFailureReason: nil,
+            completedMediaArtifacts: [],
+            ideaId: "test-1",
+            ideaTitle: "Fix bug",
+            ideaDescription: "Description",
+        )
+
+        let encoded = try JSONEncoder().encode(request)
+        let json = String(decoding: encoded, as: UTF8.self)
+
+        XCTAssertTrue(json.contains(#""idea_id":"test-1""#))
+        XCTAssertTrue(json.contains(#""idea_title":"Fix bug""#))
+        XCTAssertTrue(json.contains(#""idea_description":"Description""#))
+    }
+
+    func testFetchRuntimeSnapshotDecodesRunIdeaFields() async throws {
+        let client = try makeClient(
+            coreSnapshot: Self.makeRunIdeaFieldsSnapshot(
+                ideaFieldsJSON: #","idea_id":"test-1","idea_title":"Fix bug","idea_description":"Description""#,
+            ),
+        )
+
+        let snapshot = try await client.fetchRuntimeSnapshot(correlationId: "run-idea-fields")
+        let run = try XCTUnwrap(snapshot.runs.first)
+
+        XCTAssertEqual(run.ideaId, "test-1")
+        XCTAssertEqual(run.ideaTitle, "Fix bug")
+        XCTAssertEqual(run.ideaDescription, "Description")
+    }
+
+    func testFetchRuntimeSnapshotDecodesRunWithoutIdeaFieldsAsNil() async throws {
+        let client = try makeClient(
+            coreSnapshot: Self.makeRunIdeaFieldsSnapshot(),
+        )
+
+        let snapshot = try await client.fetchRuntimeSnapshot(correlationId: "run-idea-fields-omitted")
+        let run = try XCTUnwrap(snapshot.runs.first)
+
+        XCTAssertNil(run.ideaId)
+        XCTAssertNil(run.ideaTitle)
+        XCTAssertNil(run.ideaDescription)
+    }
+
     private func makeMutationClient(
         mutationResponse: String,
         statusCode: Int = 200,
@@ -969,6 +1036,16 @@ final class RuntimeClientTests: XCTestCase {
         )
     }
 
+    private static func makeRunIdeaFieldsSnapshot(
+        ideaFieldsJSON: String = "",
+    ) -> Data {
+        makeCoreSnapshotResponse(
+            runsJSON: """
+            ,"runs":[{"id":"run-idea-001","project_path":"/tmp/core-project","method_id":"method-001","method_name":"Execution","status":"active","session_id":"session-core","delegation_worker_id":"worker-1","status_message":"Drafting packet","created_at":"2026-02-28T19:00:00Z","updated_at":"2026-02-28T19:03:00Z","active_checkpoint":null\(ideaFieldsJSON)}]
+            """,
+        )
+    }
+
     private static func makeRunCustomCheckpointKindSnapshot() -> Data {
         makeCoreSnapshotResponse(
             runsJSON: """
@@ -1075,6 +1152,9 @@ final class RuntimeClientTests: XCTestCase {
             observedCaptureUrl: "http://localhost:3000",
             captureFailureReason: nil,
             completedMediaArtifacts: [],
+            ideaId: nil,
+            ideaTitle: nil,
+            ideaDescription: nil,
         )
     }
 }

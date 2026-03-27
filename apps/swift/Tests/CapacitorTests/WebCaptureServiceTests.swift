@@ -194,6 +194,10 @@ struct CaptureURLBridgeTests {
             decisionNote: nil,
             sessionId: nil,
             delegationWorkerId: nil,
+            statusMessage: nil,
+            ideaId: nil,
+            ideaTitle: nil,
+            ideaDescription: nil,
             completedMediaArtifacts: [],
         )
 

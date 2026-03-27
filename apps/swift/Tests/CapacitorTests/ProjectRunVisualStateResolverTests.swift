@@ -242,6 +242,9 @@ final class ProjectRunVisualStateResolverTests: XCTestCase {
             createdAt: createdAt,
             updatedAt: updatedAt,
             activeCheckpoint: checkpoint,
+            ideaId: nil,
+            ideaTitle: nil,
+            ideaDescription: nil,
         )
     }
 }

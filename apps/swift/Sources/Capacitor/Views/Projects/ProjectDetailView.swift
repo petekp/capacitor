@@ -55,6 +55,7 @@ struct ProjectDetailView: View {
                                         idea: idea,
                                         isGeneratingTitle: appState.isGeneratingTitle(for: idea.id),
                                         delegationState: delegationState,
+                                        runState: appState.activeRun(for: idea, in: project),
                                     )
                                 },
                                 onTapIdea: { idea, frame in
@@ -116,9 +117,11 @@ struct ProjectDetailView: View {
                         selectedIdeaFrame = nil
                     } : nil,
                     onRunMethod: appState.isMethodRunnerEnabled ? { idea in
-                        methodSelectorIdea = idea
-                        selectedIdea = nil
-                        selectedIdeaFrame = nil
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            methodSelectorIdea = idea
+                            selectedIdea = nil
+                            selectedIdeaFrame = nil
+                        }
                     } : nil,
                     onRemove: { idea in
                         withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
@@ -130,21 +133,20 @@ struct ProjectDetailView: View {
                 )
 
                 if let idea = methodSelectorIdea {
-                    ZStack {
-                        Color.black.opacity(0.3)
-                            .ignoresSafeArea()
-                            .onTapGesture { methodSelectorIdea = nil }
-
-                        MethodSelectorView(
-                            methods: appState.listBuiltinMethods(),
-                            onSelect: { method in
-                                appState.runMethodOnIdea(idea, method: method, for: project)
+                    MethodSelectorModalOverlay(
+                        methods: appState.listBuiltinMethods(),
+                        onSelect: { method in
+                            appState.runMethodOnIdea(idea, method: method, for: project)
+                            withAnimation(.easeInOut(duration: 0.2)) {
                                 methodSelectorIdea = nil
-                            },
-                            onDismiss: { methodSelectorIdea = nil },
-                        )
-                    }
-                    .transition(.opacity)
+                            }
+                        },
+                        onDismiss: {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                methodSelectorIdea = nil
+                            }
+                        },
+                    )
                 }
             }
         }

@@ -55,6 +55,19 @@ struct RuntimeRunKey: Hashable, Sendable {
     }
 }
 
+/// Trims whitespace and clamps idea descriptions to 500 characters for run context.
+func compactRunIdeaDescription(_ description: String?) -> String? {
+    guard let desc = description?.trimmingCharacters(in: .whitespacesAndNewlines),
+          !desc.isEmpty
+    else {
+        return nil
+    }
+    if desc.count <= 500 {
+        return desc
+    }
+    return String(desc.prefix(497)) + "..."
+}
+
 @Observable
 @MainActor
 class AppState {
@@ -1450,6 +1463,9 @@ class AppState {
             observedCaptureUrl: nil,
             captureFailureReason: nil,
             completedMediaArtifacts: [],
+            ideaId: nil,
+            ideaTitle: nil,
+            ideaDescription: nil,
         ))
     }
 
@@ -1747,6 +1763,9 @@ class AppState {
                     observedCaptureUrl: nil,
                     captureFailureReason: nil,
                     completedMediaArtifacts: [],
+                    ideaId: idea.id,
+                    ideaTitle: idea.title,
+                    ideaDescription: compactRunIdeaDescription(idea.description),
                 ))
 
                 await MainActor.run {
@@ -1791,6 +1810,21 @@ class AppState {
 
     func runState(projectPath: String, runID: String) -> RuntimeRunState? {
         runStatesByID[RuntimeRunKey(projectPath: projectPath, runID: runID)]
+    }
+
+    /// Returns the most-recent non-terminal run matching an idea.
+    func activeRun(for idea: Idea, in project: Project) -> RuntimeRunState? {
+        let normalizedProjectPath = PathNormalizer.normalize(project.path)
+        let terminalStatuses: Set<String> = ["completed", "failed", "cancelled"]
+
+        return runStatesByID.values
+            .filter {
+                PathNormalizer.normalize($0.projectPath) == normalizedProjectPath
+                    && $0.ideaId == idea.id
+                    && !terminalStatuses.contains($0.status)
+            }
+            .sorted(by: activeIdeaRunPrecedes)
+            .first
     }
 
     func activeRun(for project: Project) -> RuntimeRunState? {
@@ -1971,6 +2005,39 @@ class AppState {
         }
 
         return PathNormalizer.normalize(lhs.projectPath) < PathNormalizer.normalize(rhs.projectPath)
+    }
+
+    private func activeIdeaRunPrecedes(
+        _ lhs: RuntimeRunState,
+        _ rhs: RuntimeRunState,
+    ) -> Bool {
+        switch (parseISO8601Date(lhs.updatedAt), parseISO8601Date(rhs.updatedAt)) {
+        case let (.some(lhsDate), .some(rhsDate)) where lhsDate != rhsDate:
+            return lhsDate > rhsDate
+        case (.some, .none):
+            return true
+        case (.none, .some):
+            return false
+        default:
+            if lhs.updatedAt != rhs.updatedAt {
+                return lhs.updatedAt > rhs.updatedAt
+            }
+        }
+
+        switch (parseISO8601Date(lhs.createdAt), parseISO8601Date(rhs.createdAt)) {
+        case let (.some(lhsDate), .some(rhsDate)) where lhsDate != rhsDate:
+            return lhsDate > rhsDate
+        case (.some, .none):
+            return true
+        case (.none, .some):
+            return false
+        default:
+            if lhs.createdAt != rhs.createdAt {
+                return lhs.createdAt > rhs.createdAt
+            }
+        }
+
+        return lhs.id < rhs.id
     }
 
     private func runCheckpointState(

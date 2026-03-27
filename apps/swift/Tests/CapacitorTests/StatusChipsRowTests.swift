@@ -128,6 +128,9 @@ final class StatusChipsRowTests: XCTestCase {
             createdAt: timestamp,
             updatedAt: timestamp,
             activeCheckpoint: checkpoint,
+            ideaId: nil,
+            ideaTitle: nil,
+            ideaDescription: nil,
         )
     }
 }

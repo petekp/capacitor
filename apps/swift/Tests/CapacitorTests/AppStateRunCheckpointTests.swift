@@ -272,6 +272,9 @@ final class AppStateRunCheckpointTests: XCTestCase {
             createdAt: timestamp,
             updatedAt: timestamp,
             activeCheckpoint: activeCheckpoint,
+            ideaId: nil,
+            ideaTitle: nil,
+            ideaDescription: nil,
         )
     }
 }

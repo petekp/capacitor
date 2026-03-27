@@ -169,6 +169,9 @@ final class MethodRunCoordinator: @unchecked Sendable {
                     observedCaptureUrl: nil,
                     captureFailureReason: nil,
                     completedMediaArtifacts: [],
+                    ideaId: nil,
+                    ideaTitle: nil,
+                    ideaDescription: nil,
                 ))
             } catch {
                 DebugLog.write(
