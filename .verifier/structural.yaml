@@ -109,7 +109,6 @@ boundaries:
         - apps/swift/Sources/Capacitor/**/*.swift
       except:
         - apps/swift/Sources/Capacitor/Models/TmuxRouter.swift
-        - apps/swift/Sources/Capacitor/Models/TerminalCaptureService.swift
       must_not: shell_command_literal:^tmux\s
 
   - rule: ghostty_applescript_adapter_exclusive

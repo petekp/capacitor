@@ -92,10 +92,6 @@ class AppState {
         featureFlags.projectDetails
     }
 
-    var isWorkstreamsEnabled: Bool {
-        featureFlags.workstreams && isProjectDetailsEnabled
-    }
-
     var isProjectCreationEnabled: Bool {
         featureFlags.projectCreation
     }
@@ -211,16 +207,6 @@ class AppState {
     private let projectIngestionWorker = ProjectIngestionWorker()
     private(set) var projectCreationCoordinator: ProjectCreationCoordinator!
     private(set) var projectFeatureCoordinator: ProjectFeatureCoordinator!
-    @ObservationIgnored
-    lazy var workstreamsManager: WorkstreamsManager = .init(
-        openWorktree: { [weak self] worktreeProject in
-            self?.launchTerminal(for: worktreeProject)
-        },
-        activeWorktreePathsProvider: { [weak self] in
-            self?.activeWorktreePathsForGuardrails() ?? []
-        },
-    )
-
     private(set) var activeProjectResolver: ActiveProjectResolver!
 
     // MARK: - Private State

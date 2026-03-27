@@ -53,7 +53,6 @@ enum AppProfile: String, CaseIterable, Codable {
 struct FeatureFlags: Equatable, Codable {
     var ideaCapture: Bool
     var projectDetails: Bool
-    var workstreams: Bool
     var projectCreation: Bool
     var llmFeatures: Bool
     var delegationLoop: Bool
@@ -66,7 +65,6 @@ struct FeatureFlags: Equatable, Codable {
             FeatureFlags(
                 ideaCapture: false,
                 projectDetails: false,
-                workstreams: false,
                 projectCreation: false,
                 llmFeatures: false,
                 delegationLoop: false,
@@ -77,9 +75,6 @@ struct FeatureFlags: Equatable, Codable {
             FeatureFlags(
                 ideaCapture: true,
                 projectDetails: true,
-                // Keep frontier focused on the idea-to-run surface until
-                // workstreams are integrated into the same detail flow.
-                workstreams: false,
                 projectCreation: true,
                 llmFeatures: true,
                 delegationLoop: false,
@@ -113,8 +108,6 @@ struct FeatureFlags: Equatable, Codable {
             ideaCapture = enabled
         case .projectDetails:
             projectDetails = enabled
-        case .workstreams:
-            workstreams = enabled
         case .projectCreation:
             projectCreation = enabled
         case .llmFeatures:
@@ -316,7 +309,6 @@ struct AppConfig: Equatable {
 private enum FeatureKey: String, CaseIterable {
     case ideaCapture = "ideacapture"
     case projectDetails = "projectdetails"
-    case workstreams
     case projectCreation = "projectcreation"
     case llmFeatures = "llmfeatures"
     case delegationLoop = "delegationloop"

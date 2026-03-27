@@ -46,7 +46,7 @@ final class AppConfigTests: XCTestCase {
         XCTAssertEqual(config.channel, .alpha)
         XCTAssertFalse(config.featureFlags.ideaCapture)
         XCTAssertFalse(config.featureFlags.projectDetails)
-        XCTAssertFalse(config.featureFlags.workstreams)
+
         XCTAssertFalse(config.featureFlags.projectCreation)
         XCTAssertFalse(config.featureFlags.llmFeatures)
     }
@@ -66,7 +66,7 @@ final class AppConfigTests: XCTestCase {
         XCTAssertEqual(config.profile, .frontier)
         XCTAssertTrue(config.featureFlags.ideaCapture)
         XCTAssertTrue(config.featureFlags.projectDetails)
-        XCTAssertFalse(config.featureFlags.workstreams)
+
         XCTAssertTrue(config.featureFlags.projectCreation)
         XCTAssertTrue(config.featureFlags.llmFeatures)
         XCTAssertFalse(config.featureFlags.delegationLoop)
@@ -103,7 +103,7 @@ final class AppConfigTests: XCTestCase {
         XCTAssertEqual(config.profile, .stable)
         XCTAssertFalse(config.featureFlags.ideaCapture)
         XCTAssertFalse(config.featureFlags.projectDetails)
-        XCTAssertFalse(config.featureFlags.workstreams)
+
         XCTAssertFalse(config.featureFlags.projectCreation)
         XCTAssertFalse(config.featureFlags.llmFeatures)
     }
@@ -125,7 +125,7 @@ final class AppConfigTests: XCTestCase {
             environment: [
                 "CAPACITOR_CHANNEL": "alpha",
                 "CAPACITOR_FEATURES_ENABLED": "ideaCapture",
-                "CAPACITOR_FEATURES_DISABLED": "projectDetails,workstreams",
+                "CAPACITOR_FEATURES_DISABLED": "projectDetails",
             ],
             info: [:],
             configFile: nil,
@@ -134,7 +134,6 @@ final class AppConfigTests: XCTestCase {
 
         XCTAssertTrue(config.featureFlags.ideaCapture)
         XCTAssertFalse(config.featureFlags.projectDetails)
-        XCTAssertFalse(config.featureFlags.workstreams)
     }
 
     func testEnvironmentFeatureOverridesApplyAfterFrontierDefaults() {
@@ -151,23 +150,7 @@ final class AppConfigTests: XCTestCase {
         XCTAssertEqual(config.profile, .frontier)
         XCTAssertFalse(config.featureFlags.ideaCapture)
         XCTAssertTrue(config.featureFlags.projectDetails)
-        XCTAssertFalse(config.featureFlags.workstreams)
-        XCTAssertTrue(config.featureFlags.methodRunner)
-    }
 
-    func testEnvironmentCanExplicitlyReenableWorkstreamsOnFrontier() {
-        let config = AppConfig.resolve(
-            environment: [
-                "CAPACITOR_PROFILE": "frontier",
-                "CAPACITOR_FEATURES_ENABLED": "workstreams",
-            ],
-            info: [:],
-            configFile: nil,
-            defaultChannel: .prod,
-        )
-
-        XCTAssertEqual(config.profile, .frontier)
-        XCTAssertTrue(config.featureFlags.workstreams)
         XCTAssertTrue(config.featureFlags.methodRunner)
     }
 
