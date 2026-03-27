@@ -334,6 +334,9 @@ def verify_runtime_health_contract(repo_root, violations):
     runtime_client_source = (
         repo_root / "apps/swift/Sources/Capacitor/Models/RuntimeClient.swift"
     ).read_text()
+    runtime_client_types_path = repo_root / "apps/swift/Sources/Capacitor/Models/RuntimeClientTypes.swift"
+    if runtime_client_types_path.exists():
+        runtime_client_source += "\n" + runtime_client_types_path.read_text()
     hook_manager_source = (
         repo_root / "apps/swift/Sources/Capacitor/Models/HookServerManager.swift"
     ).read_text()

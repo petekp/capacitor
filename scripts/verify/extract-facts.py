@@ -709,11 +709,14 @@ def extract_constants(repo_root: pathlib.Path) -> dict[str, Any]:
                 constants[key] = int(match.group(1))
 
     routing_fields = []
-    runtime_client = repo_root / "apps/swift/Sources/Capacitor/Models/RuntimeClient.swift"
-    if runtime_client.exists():
-        content = read_text(runtime_client)
-        for field in re.findall(r'case\s+([A-Za-z0-9_]+)\s*=\s*"([A-Za-z0-9_]+)"', content):
-            routing_fields.append({"symbol": field[0], "wire": field[1]})
+    for runtime_client_file in [
+        repo_root / "apps/swift/Sources/Capacitor/Models/RuntimeClient.swift",
+        repo_root / "apps/swift/Sources/Capacitor/Models/RuntimeClientTypes.swift",
+    ]:
+        if runtime_client_file.exists():
+            content = read_text(runtime_client_file)
+            for field in re.findall(r'case\s+([A-Za-z0-9_]+)\s*=\s*"([A-Za-z0-9_]+)"', content):
+                routing_fields.append({"symbol": field[0], "wire": field[1]})
     if routing_fields:
         constants["runtime_client_coding_keys"] = routing_fields
 
