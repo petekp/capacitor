@@ -126,233 +126,167 @@ fn resolve_worker_cwd(
 fn main() -> ExitCode {
     match parse_cli(env::args_os()) {
         Ok(command) => match command.kind {
-            CommandKind::Normalize => {
-                let source = DefinitionSource {
-                    definition_path: command.definition.expect("--definition required"),
-                    execution_root: command.root,
-                };
-                match execute_normalize(&source) {
-                    Ok(()) => {
-                        println!("normalize complete: {}", source.execution_root.display());
-                        ExitCode::SUCCESS
-                    }
-                    Err(e) => {
-                        eprintln!("error: {e}");
-                        ExitCode::FAILURE
-                    }
-                }
-            }
-            CommandKind::Run => {
-                let source = DefinitionSource {
-                    definition_path: command.definition.expect("--definition required"),
-                    execution_root: command.root.clone(),
-                };
-                let interactive_io =
-                    match make_interactive_io(&command.interactive_mode, command.bridge.as_ref()) {
-                        Ok(interactive_io) => interactive_io,
-                        Err(error) => {
-                            eprintln!("error: {error}");
-                            return ExitCode::FAILURE;
-                        }
-                    };
-                let reporter = match make_run_status_reporter(command.bridge.as_ref()) {
-                    Ok(reporter) => reporter,
-                    Err(error) => {
-                        eprintln!("error: {error}");
-                        return ExitCode::FAILURE;
-                    }
-                };
-                let worker_cwd = resolve_worker_cwd(
-                    &command.root,
-                    command.bridge.as_ref(),
-                    env::current_dir().ok(),
-                );
-
-                let timeout = Duration::from_secs(command.timeout_secs.unwrap_or(900));
-
-                if command.real_adapters {
-                    let script = match find_compose_script() {
-                        Ok(p) => p,
-                        Err(e) => {
-                            eprintln!("error: {e}");
-                            return ExitCode::FAILURE;
-                        }
-                    };
-                    let codex = match find_codex_binary() {
-                        Ok(p) => p,
-                        Err(e) => {
-                            eprintln!("error: {e}");
-                            return ExitCode::FAILURE;
-                        }
-                    };
-                    let config = match AdapterConfig::new(
-                        script,
-                        codex,
-                        worker_cwd,
-                        timeout,
-                        Duration::from_secs(5),
-                    ) {
-                        Ok(c) => c,
-                        Err(e) => {
-                            eprintln!("adapter config error: {e}");
-                            return ExitCode::FAILURE;
-                        }
-                    };
-                    let prompt_builder = ShellPromptBuilder::new(config.clone());
-                    let dispatcher = CodexWorkerDispatcher::with_reporter(config, reporter.clone());
-                    match execute_run_with_reporter(
-                        &source,
-                        &prompt_builder,
-                        &dispatcher,
-                        interactive_io.as_ref(),
-                        reporter.as_ref(),
-                    ) {
-                        Ok(state) => {
-                            println!("run complete: run_id={}", state.run_id);
-                            println!("status: {:?}", state.status);
-                            println!(
-                                "phases: {}",
-                                state.phases.keys().cloned().collect::<Vec<_>>().join(", ")
-                            );
-                            ExitCode::SUCCESS
-                        }
-                        Err(e) => {
-                            eprintln!("error: {e}");
-                            ExitCode::FAILURE
-                        }
-                    }
-                } else {
-                    let prompt_builder = FakePromptBuilder;
-                    let dispatcher = FakeWorkerDispatcher;
-                    match execute_run_with_reporter(
-                        &source,
-                        &prompt_builder,
-                        &dispatcher,
-                        interactive_io.as_ref(),
-                        reporter.as_ref(),
-                    ) {
-                        Ok(state) => {
-                            println!("run complete: run_id={}", state.run_id);
-                            println!("status: {:?}", state.status);
-                            println!(
-                                "phases: {}",
-                                state.phases.keys().cloned().collect::<Vec<_>>().join(", ")
-                            );
-                            ExitCode::SUCCESS
-                        }
-                        Err(e) => {
-                            eprintln!("error: {e}");
-                            ExitCode::FAILURE
-                        }
-                    }
-                }
-            }
-            CommandKind::Resume => {
-                let interactive_io =
-                    match make_interactive_io(&command.interactive_mode, command.bridge.as_ref()) {
-                        Ok(interactive_io) => interactive_io,
-                        Err(error) => {
-                            eprintln!("error: {error}");
-                            return ExitCode::FAILURE;
-                        }
-                    };
-                let reporter = match make_run_status_reporter(command.bridge.as_ref()) {
-                    Ok(reporter) => reporter,
-                    Err(error) => {
-                        eprintln!("error: {error}");
-                        return ExitCode::FAILURE;
-                    }
-                };
-                let resume_worker_cwd = resolve_worker_cwd(
-                    &command.root,
-                    command.bridge.as_ref(),
-                    env::current_dir().ok(),
-                );
-
-                let timeout = Duration::from_secs(command.timeout_secs.unwrap_or(900));
-
-                if command.real_adapters {
-                    let script = match find_compose_script() {
-                        Ok(p) => p,
-                        Err(e) => {
-                            eprintln!("error: {e}");
-                            return ExitCode::FAILURE;
-                        }
-                    };
-                    let codex = match find_codex_binary() {
-                        Ok(p) => p,
-                        Err(e) => {
-                            eprintln!("error: {e}");
-                            return ExitCode::FAILURE;
-                        }
-                    };
-                    let config = match AdapterConfig::new(
-                        script,
-                        codex,
-                        resume_worker_cwd,
-                        timeout,
-                        Duration::from_secs(5),
-                    ) {
-                        Ok(c) => c,
-                        Err(e) => {
-                            eprintln!("adapter config error: {e}");
-                            return ExitCode::FAILURE;
-                        }
-                    };
-                    let prompt_builder = ShellPromptBuilder::new(config.clone());
-                    let dispatcher = CodexWorkerDispatcher::with_reporter(config, reporter.clone());
-                    match resume_run_with_reporter(
-                        &command.root,
-                        &prompt_builder,
-                        &dispatcher,
-                        interactive_io.as_ref(),
-                        reporter.as_ref(),
-                    ) {
-                        Ok(state) => {
-                            println!("resume complete: run_id={}", state.run_id);
-                            println!("status: {:?}", state.status);
-                            println!(
-                                "phases: {}",
-                                state.phases.keys().cloned().collect::<Vec<_>>().join(", ")
-                            );
-                            ExitCode::SUCCESS
-                        }
-                        Err(e) => {
-                            eprintln!("error: {e}");
-                            ExitCode::FAILURE
-                        }
-                    }
-                } else {
-                    let prompt_builder = FakePromptBuilder;
-                    let dispatcher = FakeWorkerDispatcher;
-                    match resume_run_with_reporter(
-                        &command.root,
-                        &prompt_builder,
-                        &dispatcher,
-                        interactive_io.as_ref(),
-                        reporter.as_ref(),
-                    ) {
-                        Ok(state) => {
-                            println!("resume complete: run_id={}", state.run_id);
-                            println!("status: {:?}", state.status);
-                            println!(
-                                "phases: {}",
-                                state.phases.keys().cloned().collect::<Vec<_>>().join(", ")
-                            );
-                            ExitCode::SUCCESS
-                        }
-                        Err(e) => {
-                            eprintln!("error: {e}");
-                            ExitCode::FAILURE
-                        }
-                    }
-                }
-            }
+            CommandKind::Normalize => execute_normalize_command(&command),
+            CommandKind::Run => execute_run_command(&command),
+            CommandKind::Resume => execute_resume_command(&command),
         },
         Err(message) => {
             eprintln!("{message}");
             eprintln!();
             eprintln!("{}", usage());
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn execute_normalize_command(command: &Command) -> ExitCode {
+    let source = DefinitionSource {
+        definition_path: command.definition.clone().expect("--definition required"),
+        execution_root: command.root.clone(),
+    };
+    match execute_normalize(&source) {
+        Ok(()) => {
+            println!("normalize complete: {}", source.execution_root.display());
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("error: {e}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn execute_run_command(command: &Command) -> ExitCode {
+    let source = DefinitionSource {
+        definition_path: command.definition.clone().expect("--definition required"),
+        execution_root: command.root.clone(),
+    };
+    let (interactive_io, reporter, worker_cwd, timeout) = match setup_adapters(command) {
+        Ok(v) => v,
+        Err(code) => return code,
+    };
+
+    let result = if command.real_adapters {
+        let config = match build_real_adapter_config(worker_cwd, timeout) {
+            Ok(c) => c,
+            Err(code) => return code,
+        };
+        let prompt_builder = ShellPromptBuilder::new(config.clone());
+        let dispatcher = CodexWorkerDispatcher::with_reporter(config, reporter.clone());
+        execute_run_with_reporter(
+            &source,
+            &prompt_builder,
+            &dispatcher,
+            interactive_io.as_ref(),
+            reporter.as_ref(),
+        )
+    } else {
+        execute_run_with_reporter(
+            &source,
+            &FakePromptBuilder,
+            &FakeWorkerDispatcher,
+            interactive_io.as_ref(),
+            reporter.as_ref(),
+        )
+    };
+    print_run_result("run", result)
+}
+
+fn execute_resume_command(command: &Command) -> ExitCode {
+    let (interactive_io, reporter, worker_cwd, timeout) = match setup_adapters(command) {
+        Ok(v) => v,
+        Err(code) => return code,
+    };
+
+    let result = if command.real_adapters {
+        let config = match build_real_adapter_config(worker_cwd, timeout) {
+            Ok(c) => c,
+            Err(code) => return code,
+        };
+        let prompt_builder = ShellPromptBuilder::new(config.clone());
+        let dispatcher = CodexWorkerDispatcher::with_reporter(config, reporter.clone());
+        resume_run_with_reporter(
+            &command.root,
+            &prompt_builder,
+            &dispatcher,
+            interactive_io.as_ref(),
+            reporter.as_ref(),
+        )
+    } else {
+        resume_run_with_reporter(
+            &command.root,
+            &FakePromptBuilder,
+            &FakeWorkerDispatcher,
+            interactive_io.as_ref(),
+            reporter.as_ref(),
+        )
+    };
+    print_run_result("resume", result)
+}
+
+type AdapterSetup = (
+    Box<dyn capacitor_core::method_runner::adapters::InteractiveIO>,
+    Arc<dyn capacitor_core::method_runner::run_status_reporter::RunStatusReporter + Send + Sync>,
+    PathBuf,
+    Duration,
+);
+
+fn setup_adapters(command: &Command) -> Result<AdapterSetup, ExitCode> {
+    let interactive_io = make_interactive_io(&command.interactive_mode, command.bridge.as_ref())
+        .map_err(|e| {
+            eprintln!("error: {e}");
+            ExitCode::FAILURE
+        })?;
+    let reporter = make_run_status_reporter(command.bridge.as_ref()).map_err(|e| {
+        eprintln!("error: {e}");
+        ExitCode::FAILURE
+    })?;
+    let worker_cwd = resolve_worker_cwd(
+        &command.root,
+        command.bridge.as_ref(),
+        env::current_dir().ok(),
+    );
+    let timeout = Duration::from_secs(command.timeout_secs.unwrap_or(900));
+    Ok((interactive_io, reporter, worker_cwd, timeout))
+}
+
+fn build_real_adapter_config(
+    worker_cwd: PathBuf,
+    timeout: Duration,
+) -> Result<AdapterConfig, ExitCode> {
+    let script = find_compose_script().map_err(|e| {
+        eprintln!("error: {e}");
+        ExitCode::FAILURE
+    })?;
+    let codex = find_codex_binary().map_err(|e| {
+        eprintln!("error: {e}");
+        ExitCode::FAILURE
+    })?;
+    AdapterConfig::new(script, codex, worker_cwd, timeout, Duration::from_secs(5)).map_err(|e| {
+        eprintln!("adapter config error: {e}");
+        ExitCode::FAILURE
+    })
+}
+
+fn print_run_result(
+    label: &str,
+    result: Result<
+        capacitor_core::method_runner::state::MethodRunState,
+        capacitor_core::method_runner::executor::RunError,
+    >,
+) -> ExitCode {
+    match result {
+        Ok(state) => {
+            println!("{label} complete: run_id={}", state.run_id);
+            println!("status: {:?}", state.status);
+            println!(
+                "phases: {}",
+                state.phases.keys().cloned().collect::<Vec<_>>().join(", ")
+            );
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("error: {e}");
             ExitCode::FAILURE
         }
     }

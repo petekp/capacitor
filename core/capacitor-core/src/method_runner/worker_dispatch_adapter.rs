@@ -25,6 +25,33 @@ use crate::method_runner::run_status_reporter::{
 
 const WORKER_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
 
+struct DispatchWorkspace {
+    adapter_dir: std::path::PathBuf,
+    tmp_output_dir: std::path::PathBuf,
+    tmp_last_message: std::path::PathBuf,
+    last_message_path: std::path::PathBuf,
+}
+
+struct SpawnedDispatch {
+    child: std::process::Child,
+    child_pid: u32,
+    stderr_handle: Option<std::process::ChildStderr>,
+    start: Instant,
+}
+
+struct TimedStatus {
+    status: std::process::ExitStatus,
+    timed_out: bool,
+}
+
+struct DispatchOutcome {
+    exit_code: i32,
+    signal: Option<i32>,
+    elapsed: Duration,
+    timed_out: bool,
+    stderr: String,
+}
+
 fn execution_root_from_relay_root(relay_root: &Path) -> Option<std::path::PathBuf> {
     relay_root.ancestors().find_map(|ancestor| {
         if ancestor.file_name().and_then(|name| name.to_str()) == Some(".method") {
@@ -52,11 +79,6 @@ fn build_codex_exec_args(relay_root: &Path, tmp_last_message: &Path) -> Vec<Stri
     args
 }
 
-// ---------------------------------------------------------------------------
-// CodexWorkerDispatcher
-// ---------------------------------------------------------------------------
-
-/// Real worker dispatcher that delegates to `codex exec`.
 pub struct CodexWorkerDispatcher {
     config: AdapterConfig,
     reporter: Arc<dyn RunStatusReporter + Send + Sync>,
@@ -80,213 +102,293 @@ impl WorkerDispatcher for CodexWorkerDispatcher {
         &self,
         request: &WorkerDispatchRequest,
     ) -> Result<WorkerDispatchResult, AdapterError> {
-        // Write preflight record on first call
         write_preflight_if_needed(&request.relay_root, &self.config)
             .map_err(AdapterError::IoError)?;
-
-        // Ensure relay root and adapter dir exist
-        std::fs::create_dir_all(&request.relay_root)?;
-        let adapter_dir = request.relay_root.join("adapter");
-        std::fs::create_dir_all(&adapter_dir)?;
-
-        // 1. Read prompt from prompt_path
-        let prompt_bytes = std::fs::read(&request.prompt_path).map_err(|e| {
-            AdapterError::IoError(std::io::Error::new(
-                e.kind(),
-                format!(
-                    "failed to read prompt at {}: {}",
-                    request.prompt_path.display(),
-                    e
-                ),
-            ))
-        })?;
-
-        // 2. Build argv: codex exec --full-auto -o <tmp-output-path> [--add-dir <execution-root>] -
-        //
-        // The relay root lives under ~/.capacitor/runs/ which is outside
-        // the codex sandbox allowlist. We write to $TMPDIR instead, then
-        // copy the result back after the process exits.
-        let tmpdir = std::env::var("TMPDIR").unwrap_or_else(|_| "/tmp".to_string());
-        let unique_suffix = format!("{}-{:x}", request.worker_id, {
-            use std::hash::{Hash, Hasher};
-            let mut h = std::collections::hash_map::DefaultHasher::new();
-            request.relay_root.hash(&mut h);
-            h.finish()
-        });
-        let tmp_output_dir =
-            std::path::PathBuf::from(&tmpdir).join(format!("capacitor-run-{}", unique_suffix));
-        std::fs::create_dir_all(&tmp_output_dir)?;
-        let tmp_last_message = tmp_output_dir.join("last-message.txt");
-
-        let last_message_path = request.relay_root.join("last-message.txt");
-        let codex_path = &self.config.codex_path;
-        let args = build_codex_exec_args(&request.relay_root, &tmp_last_message);
-
-        // 3. Build allowlisted env with adapter-owned overrides
-        let overrides: Vec<(&str, &str)> = self
-            .config
-            .env_overrides
-            .iter()
-            .map(|(k, v)| (k.as_str(), v.as_str()))
-            .collect();
-        let env = build_allowed_env(&overrides);
-
-        // 4. Spawn with process group isolation and stdin pipe
-        let start = Instant::now();
-
-        let mut child = Command::new(codex_path.to_string_lossy().as_ref())
-            .args(&args)
-            .env_clear()
-            .envs(env.iter().map(|(k, v)| (k.as_str(), v.as_str())))
-            .current_dir(&self.config.project_root)
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .process_group(0) // new process group for containment
-            .spawn()
-            .map_err(|e| AdapterError::SpawnFailed(format!("codex exec spawn failed: {}", e)))?;
-
-        // 5. Pipe prompt to stdin and close
-        let child_pid = child.id();
-        if let Some(mut stdin) = child.stdin.take() {
-            let _ = stdin.write_all(&prompt_bytes);
-            // stdin is dropped (closed) here
-        }
-
-        // Take stdout/stderr handles before wait (wait_timeout needs &mut child)
-        let _stdout_handle = child.stdout.take();
-        let stderr_handle = child.stderr.take();
-
-        // 6. Wait with timeout — TERM→grace→KILL process group escalation
-        let timeout = self.config.default_timeout;
-        let timed_out;
-        let status;
-
-        let mut remaining = timeout;
-        loop {
-            let wait_slice = remaining.min(WORKER_HEARTBEAT_INTERVAL);
-            match child.wait_timeout(wait_slice) {
-                Ok(Some(s)) => {
-                    timed_out = false;
-                    status = s;
-                    break;
-                }
-                Ok(None) => {
-                    let elapsed_secs = start.elapsed().as_secs();
-                    remaining = timeout.saturating_sub(start.elapsed());
-                    if remaining.is_zero() {
-                        timed_out = true;
-                        let pgid = child_pid as i32; // process_group(0) means pgid = child pid
-
-                        unsafe {
-                            libc::killpg(pgid, libc::SIGTERM);
-                        }
-
-                        match child.wait_timeout(self.config.kill_grace_period) {
-                            Ok(Some(s)) => {
-                                status = s;
-                            }
-                            Ok(None) | Err(_) => {
-                                unsafe {
-                                    libc::killpg(pgid, libc::SIGKILL);
-                                }
-                                status = child
-                                    .wait()
-                                    .unwrap_or_else(|_| std::process::ExitStatus::default());
-                            }
-                        }
-                        break;
-                    }
-
-                    report_status_message(
-                        self.reporter.as_ref(),
-                        RunStatusEventKind::Heartbeat,
-                        format!("Waiting for worker ({elapsed_secs}s)"),
-                    );
-                }
-                Err(e) => {
-                    return Err(AdapterError::SpawnFailed(format!(
-                        "codex exec wait failed: {}",
-                        e
-                    )));
-                }
-            }
-        }
-
-        let elapsed = start.elapsed();
-
-        // 7. Extract exit code and signal
-        let exit_code = status.code().unwrap_or(-1);
-        let signal = {
-            use std::os::unix::process::ExitStatusExt;
-            status.signal()
-        };
-
-        // 8. Capture stderr (read what we can from the handle)
-        let stderr = stderr_handle
-            .map(|mut h| {
-                let mut buf = Vec::new();
-                let _ = std::io::Read::read_to_end(&mut h, &mut buf);
-                String::from_utf8_lossy(&buf).to_string()
-            })
-            .unwrap_or_default();
-
-        if !stderr.is_empty() {
-            let stderr_path = adapter_dir.join("worker-dispatch.stderr.log");
-            let _ = std::fs::write(&stderr_path, &stderr);
-        }
-
-        // 9. Write metadata
-        let metadata = serde_json::json!({
-            "argv": args,
-            "cwd": self.config.project_root.to_string_lossy(),
-            "codex_path": codex_path.to_string_lossy(),
-            "pid": child_pid,
-            "pgid": child_pid, // process_group(0) → pgid = pid
-            "exit_code": exit_code,
-            "signal": signal,
-            "elapsed_ms": elapsed.as_millis(),
-            "timed_out": timed_out,
-            "timeout_secs": timeout.as_secs_f64(),
-            "prompt_path": request.prompt_path.to_string_lossy(),
-            "tmp_last_message_path": tmp_last_message.to_string_lossy(),
-            "last_message_path": last_message_path.to_string_lossy(),
-            "worker_id": &request.worker_id,
-        });
-        let _ = std::fs::write(
-            adapter_dir.join("worker-dispatch.metadata.json"),
-            serde_json::to_string_pretty(&metadata).unwrap_or_default(),
+        let workspace = prepare_dispatch_workspace(request)?;
+        let prompt_bytes = read_prompt_bytes(request)?;
+        let args = build_codex_exec_args(&request.relay_root, &workspace.tmp_last_message);
+        let env = build_dispatch_env(&self.config);
+        let spawned = spawn_dispatch_process(&self.config, &args, &env, &prompt_bytes)?;
+        let child_pid = spawned.child_pid;
+        let outcome = wait_for_dispatch(
+            spawned,
+            self.config.default_timeout,
+            self.config.kill_grace_period,
+            self.reporter.as_ref(),
+        )?;
+        write_dispatch_stderr(&workspace, &outcome.stderr);
+        write_dispatch_metadata(
+            &workspace,
+            &self.config,
+            request,
+            &args,
+            child_pid,
+            &outcome,
         );
-
-        // 10. Return Timeout error if timed out
-        if timed_out {
-            // Best-effort cleanup of temp dir even on timeout
-            let _ = std::fs::remove_dir_all(&tmp_output_dir);
-            return Err(AdapterError::Timeout);
-        }
-
-        // 10b. Copy output from $TMPDIR back to relay root
-        if tmp_last_message.exists() {
-            std::fs::copy(&tmp_last_message, &last_message_path)?;
-        }
-        // Best-effort cleanup of temp dir
-        let _ = std::fs::remove_dir_all(&tmp_output_dir);
-
-        // 11. Enforce -o contract on clean exit: last-message.txt must exist
-        if exit_code == 0 && !last_message_path.exists() {
-            return Err(AdapterError::ContractViolation(
-                "codex exec exited 0 but last-message.txt does not exist (suppressed -o output)"
-                    .into(),
-            ));
-        }
+        finalize_dispatch_output(&workspace, &outcome)?;
 
         Ok(WorkerDispatchResult {
             worker_id: request.worker_id.clone(),
-            exit_code,
-            signal,
-            elapsed,
+            exit_code: outcome.exit_code,
+            signal: outcome.signal,
+            elapsed: outcome.elapsed,
         })
     }
+}
+
+fn prepare_dispatch_workspace(
+    request: &WorkerDispatchRequest,
+) -> Result<DispatchWorkspace, AdapterError> {
+    std::fs::create_dir_all(&request.relay_root)?;
+    let adapter_dir = request.relay_root.join("adapter");
+    std::fs::create_dir_all(&adapter_dir)?;
+    let tmpdir = std::env::var("TMPDIR").unwrap_or_else(|_| "/tmp".to_string());
+    let tmp_output_dir = std::path::PathBuf::from(tmpdir)
+        .join(format!("capacitor-run-{}", unique_worker_suffix(request)));
+    std::fs::create_dir_all(&tmp_output_dir)?;
+    Ok(DispatchWorkspace {
+        adapter_dir,
+        tmp_last_message: tmp_output_dir.join("last-message.txt"),
+        last_message_path: request.relay_root.join("last-message.txt"),
+        tmp_output_dir,
+    })
+}
+
+fn unique_worker_suffix(request: &WorkerDispatchRequest) -> String {
+    use std::hash::{Hash, Hasher};
+
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    request.relay_root.hash(&mut hasher);
+    format!("{}-{:x}", request.worker_id, hasher.finish())
+}
+
+fn read_prompt_bytes(request: &WorkerDispatchRequest) -> Result<Vec<u8>, AdapterError> {
+    std::fs::read(&request.prompt_path).map_err(|error| {
+        AdapterError::IoError(std::io::Error::new(
+            error.kind(),
+            format!(
+                "failed to read prompt at {}: {}",
+                request.prompt_path.display(),
+                error
+            ),
+        ))
+    })
+}
+
+fn build_dispatch_env(config: &AdapterConfig) -> Vec<(String, String)> {
+    let overrides: Vec<(&str, &str)> = config
+        .env_overrides
+        .iter()
+        .map(|(key, value)| (key.as_str(), value.as_str()))
+        .collect();
+    build_allowed_env(&overrides)
+}
+
+fn spawn_dispatch_process(
+    config: &AdapterConfig,
+    args: &[String],
+    env: &[(String, String)],
+    prompt_bytes: &[u8],
+) -> Result<SpawnedDispatch, AdapterError> {
+    let start = Instant::now();
+    let mut child = Command::new(config.codex_path.to_string_lossy().as_ref())
+        .args(args)
+        .env_clear()
+        .envs(
+            env.iter()
+                .map(|(key, value)| (key.as_str(), value.as_str())),
+        )
+        .current_dir(&config.project_root)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .process_group(0)
+        .spawn()
+        .map_err(|error| {
+            AdapterError::SpawnFailed(format!("codex exec spawn failed: {}", error))
+        })?;
+    let child_pid = child.id();
+    if let Some(mut stdin) = child.stdin.take() {
+        let _ = stdin.write_all(prompt_bytes);
+    }
+    let _stdout_handle = child.stdout.take();
+    let stderr_handle = child.stderr.take();
+    Ok(SpawnedDispatch {
+        child,
+        child_pid,
+        stderr_handle,
+        start,
+    })
+}
+
+fn wait_for_dispatch(
+    mut spawned: SpawnedDispatch,
+    timeout: Duration,
+    kill_grace_period: Duration,
+    reporter: &dyn RunStatusReporter,
+) -> Result<DispatchOutcome, AdapterError> {
+    let status = wait_for_dispatch_status(
+        &mut spawned.child,
+        spawned.child_pid,
+        spawned.start,
+        timeout,
+        kill_grace_period,
+        reporter,
+    )?;
+    let elapsed = spawned.start.elapsed();
+    let timed_out = status.timed_out;
+    let exit_code = status.status.code().unwrap_or(-1);
+    let signal = {
+        use std::os::unix::process::ExitStatusExt;
+        status.status.signal()
+    };
+    Ok(DispatchOutcome {
+        exit_code,
+        signal,
+        elapsed,
+        timed_out,
+        stderr: read_dispatch_stderr(spawned.stderr_handle),
+    })
+}
+
+fn wait_for_dispatch_status(
+    child: &mut std::process::Child,
+    child_pid: u32,
+    start: Instant,
+    timeout: Duration,
+    kill_grace_period: Duration,
+    reporter: &dyn RunStatusReporter,
+) -> Result<TimedStatus, AdapterError> {
+    let mut remaining = timeout;
+    loop {
+        let wait_slice = remaining.min(WORKER_HEARTBEAT_INTERVAL);
+        match child.wait_timeout(wait_slice) {
+            Ok(Some(status)) => {
+                return Ok(TimedStatus {
+                    status,
+                    timed_out: false,
+                });
+            }
+            Ok(None) => {
+                remaining = timeout.saturating_sub(start.elapsed());
+                if remaining.is_zero() {
+                    return wait_for_timed_out_dispatch(child, child_pid, kill_grace_period);
+                }
+                report_waiting_for_worker(start, reporter);
+            }
+            Err(error) => {
+                return Err(AdapterError::SpawnFailed(format!(
+                    "codex exec wait failed: {}",
+                    error
+                )));
+            }
+        }
+    }
+}
+
+fn wait_for_timed_out_dispatch(
+    child: &mut std::process::Child,
+    child_pid: u32,
+    kill_grace_period: Duration,
+) -> Result<TimedStatus, AdapterError> {
+    let pgid = child_pid as i32;
+    signal_process_group(pgid, libc::SIGTERM);
+    let status = match child.wait_timeout(kill_grace_period) {
+        Ok(Some(status)) => status,
+        Ok(None) | Err(_) => {
+            signal_process_group(pgid, libc::SIGKILL);
+            child
+                .wait()
+                .unwrap_or_else(|_| std::process::ExitStatus::default())
+        }
+    };
+    Ok(TimedStatus {
+        status,
+        timed_out: true,
+    })
+}
+
+fn signal_process_group(pgid: i32, signal: i32) {
+    unsafe {
+        libc::killpg(pgid, signal);
+    }
+}
+
+fn report_waiting_for_worker(start: Instant, reporter: &dyn RunStatusReporter) {
+    let elapsed_secs = start.elapsed().as_secs();
+    report_status_message(
+        reporter,
+        RunStatusEventKind::Heartbeat,
+        format!("Waiting for worker ({elapsed_secs}s)"),
+    );
+}
+
+fn read_dispatch_stderr(stderr_handle: Option<std::process::ChildStderr>) -> String {
+    stderr_handle
+        .map(|mut handle| {
+            let mut buffer = Vec::new();
+            let _ = std::io::Read::read_to_end(&mut handle, &mut buffer);
+            String::from_utf8_lossy(&buffer).to_string()
+        })
+        .unwrap_or_default()
+}
+
+fn write_dispatch_stderr(workspace: &DispatchWorkspace, stderr: &str) {
+    if stderr.is_empty() {
+        return;
+    }
+    let stderr_path = workspace.adapter_dir.join("worker-dispatch.stderr.log");
+    let _ = std::fs::write(stderr_path, stderr);
+}
+
+fn write_dispatch_metadata(
+    workspace: &DispatchWorkspace,
+    config: &AdapterConfig,
+    request: &WorkerDispatchRequest,
+    args: &[String],
+    child_pid: u32,
+    outcome: &DispatchOutcome,
+) {
+    let metadata = serde_json::json!({
+        "argv": args,
+        "cwd": config.project_root.to_string_lossy(),
+        "codex_path": config.codex_path.to_string_lossy(),
+        "pid": child_pid,
+        "pgid": child_pid,
+        "exit_code": outcome.exit_code,
+        "signal": outcome.signal,
+        "elapsed_ms": outcome.elapsed.as_millis(),
+        "timed_out": outcome.timed_out,
+        "timeout_secs": config.default_timeout.as_secs_f64(),
+        "prompt_path": request.prompt_path.to_string_lossy(),
+        "tmp_last_message_path": workspace.tmp_last_message.to_string_lossy(),
+        "last_message_path": workspace.last_message_path.to_string_lossy(),
+        "worker_id": &request.worker_id,
+    });
+    let _ = std::fs::write(
+        workspace.adapter_dir.join("worker-dispatch.metadata.json"),
+        serde_json::to_string_pretty(&metadata).unwrap_or_default(),
+    );
+}
+
+fn finalize_dispatch_output(
+    workspace: &DispatchWorkspace,
+    outcome: &DispatchOutcome,
+) -> Result<(), AdapterError> {
+    if outcome.timed_out {
+        let _ = std::fs::remove_dir_all(&workspace.tmp_output_dir);
+        return Err(AdapterError::Timeout);
+    }
+    if workspace.tmp_last_message.exists() {
+        std::fs::copy(&workspace.tmp_last_message, &workspace.last_message_path)?;
+    }
+    let _ = std::fs::remove_dir_all(&workspace.tmp_output_dir);
+    if outcome.exit_code == 0 && !workspace.last_message_path.exists() {
+        return Err(AdapterError::ContractViolation(
+            "codex exec exited 0 but last-message.txt does not exist (suppressed -o output)".into(),
+        ));
+    }
+    Ok(())
 }
 
 #[cfg(test)]

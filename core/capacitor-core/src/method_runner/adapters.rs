@@ -451,33 +451,85 @@ pub struct FakeWorkerDispatcher;
 
 impl FakeWorkerDispatcher {
     fn write_handoff(request: &WorkerDispatchRequest) -> Result<(), std::io::Error> {
+        Self::write_handoff_document(
+            request,
+            HandoffDocumentContent {
+                verification: "(fake) verified",
+                verdict: "CLEAN",
+                completion_claim: "COMPLETE",
+                issues_found: "None",
+                next_steps: "None",
+            },
+        )
+    }
+
+    fn write_handoff_document(
+        request: &WorkerDispatchRequest,
+        content: HandoffDocumentContent<'_>,
+    ) -> Result<(), std::io::Error> {
         let handoff_path = request.relay_root.join("HANDOFF.md");
         let mut f = std::fs::File::create(&handoff_path)?;
-
-        writeln!(f, "# Handoff: {} / {}", request.phase_id, request.step_id)?;
-        writeln!(f)?;
-        writeln!(f, "### Files Changed")?;
-        writeln!(f, "- (fake) no files changed")?;
-        writeln!(f)?;
-        writeln!(f, "### Tests Run")?;
-        writeln!(f, "- (fake) no tests run")?;
-        writeln!(f)?;
-        writeln!(f, "### Verification")?;
-        writeln!(f, "- (fake) verified")?;
-        writeln!(f)?;
-        writeln!(f, "### Verdict")?;
-        writeln!(f, "CLEAN")?;
-        writeln!(f)?;
-        writeln!(f, "### Completion Claim")?;
-        writeln!(f, "COMPLETE")?;
-        writeln!(f)?;
-        writeln!(f, "### Issues Found")?;
-        writeln!(f, "None")?;
-        writeln!(f)?;
-        writeln!(f, "### Next Steps")?;
-        writeln!(f, "None")?;
-        Ok(())
+        write_handoff_heading(&mut f, request)?;
+        write_handoff_activity(&mut f)?;
+        write_handoff_verification(&mut f, content.verification)?;
+        write_handoff_outcome(
+            &mut f,
+            content.verdict,
+            content.completion_claim,
+            content.issues_found,
+            content.next_steps,
+        )
     }
+}
+
+fn write_handoff_heading(
+    f: &mut std::fs::File,
+    request: &WorkerDispatchRequest,
+) -> Result<(), std::io::Error> {
+    writeln!(f, "# Handoff: {} / {}", request.phase_id, request.step_id)?;
+    writeln!(f)?;
+    Ok(())
+}
+
+fn write_handoff_activity(f: &mut std::fs::File) -> Result<(), std::io::Error> {
+    writeln!(f, "### Files Changed")?;
+    writeln!(f, "- (fake) no files changed")?;
+    writeln!(f)?;
+    writeln!(f, "### Tests Run")?;
+    writeln!(f, "- (fake) no tests run")?;
+    writeln!(f)?;
+    Ok(())
+}
+
+fn write_handoff_verification(
+    f: &mut std::fs::File,
+    verification: &str,
+) -> Result<(), std::io::Error> {
+    writeln!(f, "### Verification")?;
+    writeln!(f, "- {}", verification)?;
+    writeln!(f)?;
+    Ok(())
+}
+
+fn write_handoff_outcome(
+    f: &mut std::fs::File,
+    verdict: &str,
+    completion_claim: &str,
+    issues_found: &str,
+    next_steps: &str,
+) -> Result<(), std::io::Error> {
+    writeln!(f, "### Verdict")?;
+    writeln!(f, "{}", verdict)?;
+    writeln!(f)?;
+    writeln!(f, "### Completion Claim")?;
+    writeln!(f, "{}", completion_claim)?;
+    writeln!(f)?;
+    writeln!(f, "### Issues Found")?;
+    writeln!(f, "{}", issues_found)?;
+    writeln!(f)?;
+    writeln!(f, "### Next Steps")?;
+    writeln!(f, "{}", next_steps)?;
+    Ok(())
 }
 
 impl WorkerDispatcher for FakeWorkerDispatcher {
@@ -543,60 +595,71 @@ impl WorkerDispatcher for ConfigurableDispatcher {
         request: &WorkerDispatchRequest,
     ) -> Result<WorkerDispatchResult, AdapterError> {
         let key = (request.step_id.clone(), request.attempt);
+        self.fail_if_configured(&key, request)?;
+        std::fs::create_dir_all(&request.relay_root)?;
 
-        // Check for hard failure (adapter error)
-        if self.fail_on.contains(&key) {
+        if self.crash_on.contains(&key) {
+            return self.dispatch_crash(request);
+        }
+
+        self.dispatch_clean(request)
+    }
+}
+
+struct HandoffDocumentContent<'a> {
+    verification: &'a str,
+    verdict: &'a str,
+    completion_claim: &'a str,
+    issues_found: &'a str,
+    next_steps: &'a str,
+}
+
+impl ConfigurableDispatcher {
+    fn fail_if_configured(
+        &self,
+        key: &(String, u32),
+        request: &WorkerDispatchRequest,
+    ) -> Result<(), AdapterError> {
+        if self.fail_on.contains(key) {
             return Err(AdapterError::SpawnFailed(format!(
                 "configured failure for step '{}' attempt {}",
                 request.step_id, request.attempt
             )));
         }
+        Ok(())
+    }
 
-        std::fs::create_dir_all(&request.relay_root)?;
+    fn dispatch_crash(
+        &self,
+        request: &WorkerDispatchRequest,
+    ) -> Result<WorkerDispatchResult, AdapterError> {
+        FakeWorkerDispatcher::write_handoff_document(
+            request,
+            HandoffDocumentContent {
+                verification: "(fake) NOT verified",
+                verdict: "ISSUES",
+                completion_claim: "INCOMPLETE",
+                issues_found: &format!("Worker crashed on attempt {}", request.attempt),
+                next_steps: "Retry",
+            },
+        )?;
+        Ok(Self::dispatch_result(request, 1))
+    }
 
-        // Check for crash (produces handoff with ISSUES verdict)
-        if self.crash_on.contains(&key) {
-            let handoff_path = request.relay_root.join("HANDOFF.md");
-            let mut f = std::fs::File::create(&handoff_path)?;
-            writeln!(f, "# Handoff: {} / {}", request.phase_id, request.step_id)?;
-            writeln!(f)?;
-            writeln!(f, "### Files Changed")?;
-            writeln!(f, "- (fake) no files changed")?;
-            writeln!(f)?;
-            writeln!(f, "### Tests Run")?;
-            writeln!(f, "- (fake) no tests run")?;
-            writeln!(f)?;
-            writeln!(f, "### Verification")?;
-            writeln!(f, "- (fake) NOT verified")?;
-            writeln!(f)?;
-            writeln!(f, "### Verdict")?;
-            writeln!(f, "ISSUES")?;
-            writeln!(f)?;
-            writeln!(f, "### Completion Claim")?;
-            writeln!(f, "INCOMPLETE")?;
-            writeln!(f)?;
-            writeln!(f, "### Issues Found")?;
-            writeln!(f, "Worker crashed on attempt {}", request.attempt)?;
-            writeln!(f)?;
-            writeln!(f, "### Next Steps")?;
-            writeln!(f, "Retry")?;
-
-            return Ok(WorkerDispatchResult {
-                worker_id: request.worker_id.clone(),
-                exit_code: 1,
-                signal: None,
-                elapsed: Duration::ZERO,
-            });
-        }
-
-        // Happy path: clean handoff
+    fn dispatch_clean(
+        &self,
+        request: &WorkerDispatchRequest,
+    ) -> Result<WorkerDispatchResult, AdapterError> {
         FakeWorkerDispatcher::write_handoff(request)?;
+        Ok(Self::dispatch_result(request, 0))
+    }
 
-        Ok(WorkerDispatchResult {
+    fn dispatch_result(request: &WorkerDispatchRequest, exit_code: i32) -> WorkerDispatchResult {
+        WorkerDispatchResult {
             worker_id: request.worker_id.clone(),
-            exit_code: 0,
+            exit_code,
             signal: None,
             elapsed: Duration::ZERO,
-        })
+        }
     }
 }

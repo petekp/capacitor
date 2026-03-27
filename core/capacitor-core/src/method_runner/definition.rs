@@ -664,50 +664,7 @@ impl Normalizer {
                         step_id: raw.id.clone(),
                     }
                 })?;
-                let workers = match &cfg.workers {
-                    Some(raw_workers) => {
-                        let mut normalized = Vec::new();
-                        for w in raw_workers {
-                            Self::validate_id(&w.id, &format!("worker in step '{}'", raw.id))?;
-                            normalized.push(NormalizedWorkerSpec {
-                                id: w.id.clone(),
-                                title: w.title.clone().unwrap_or_else(|| w.id.clone()),
-                                instructions: w.instructions.clone(),
-                                skills: w.skills.clone().unwrap_or_default(),
-                                inputs: w.inputs.clone().unwrap_or_default(),
-                                outputs: w
-                                    .outputs
-                                    .as_ref()
-                                    .map(|o| {
-                                        o.iter()
-                                            .map(|(k, v)| {
-                                                (
-                                                    k.clone(),
-                                                    NormalizedStepOutput {
-                                                        path: v.path.clone(),
-                                                        output_type: v.output_type.clone(),
-                                                    },
-                                                )
-                                            })
-                                            .collect()
-                                    })
-                                    .unwrap_or_default(),
-                            });
-                        }
-                        normalized
-                    }
-                    None => {
-                        // Implicit single "primary" worker
-                        vec![NormalizedWorkerSpec {
-                            id: "primary".to_string(),
-                            title: "primary".to_string(),
-                            instructions: cfg.instructions.clone(),
-                            skills: Vec::new(),
-                            inputs: Vec::new(),
-                            outputs: BTreeMap::new(),
-                        }]
-                    }
-                };
+                let workers = Self::normalize_dispatch_workers(raw, cfg)?;
                 Ok(StepActionConfig::Dispatch {
                     instructions: cfg.instructions.clone(),
                     workers,
@@ -748,6 +705,71 @@ impl Normalizer {
                     outputs: cfg.outputs.clone().unwrap_or_default(),
                 })
             }
+        }
+    }
+
+    fn normalize_dispatch_workers(
+        raw: &RawStep,
+        cfg: &RawDispatchConfig,
+    ) -> Result<Vec<NormalizedWorkerSpec>, NormalizationError> {
+        let Some(raw_workers) = &cfg.workers else {
+            return Ok(vec![Self::implicit_primary_worker(cfg)]);
+        };
+
+        let mut workers = Vec::new();
+        for raw_worker in raw_workers {
+            workers.push(Self::normalize_dispatch_worker(raw, raw_worker)?);
+        }
+        Ok(workers)
+    }
+
+    fn normalize_dispatch_worker(
+        raw: &RawStep,
+        raw_worker: &RawWorkerSpec,
+    ) -> Result<NormalizedWorkerSpec, NormalizationError> {
+        Self::validate_id(&raw_worker.id, &format!("worker in step '{}'", raw.id))?;
+        Ok(NormalizedWorkerSpec {
+            id: raw_worker.id.clone(),
+            title: raw_worker
+                .title
+                .clone()
+                .unwrap_or_else(|| raw_worker.id.clone()),
+            instructions: raw_worker.instructions.clone(),
+            skills: raw_worker.skills.clone().unwrap_or_default(),
+            inputs: raw_worker.inputs.clone().unwrap_or_default(),
+            outputs: Self::normalize_worker_outputs(raw_worker),
+        })
+    }
+
+    fn normalize_worker_outputs(
+        raw_worker: &RawWorkerSpec,
+    ) -> BTreeMap<String, NormalizedStepOutput> {
+        let Some(outputs) = &raw_worker.outputs else {
+            return BTreeMap::new();
+        };
+
+        outputs
+            .iter()
+            .map(|(key, value)| {
+                (
+                    key.clone(),
+                    NormalizedStepOutput {
+                        path: value.path.clone(),
+                        output_type: value.output_type.clone(),
+                    },
+                )
+            })
+            .collect()
+    }
+
+    fn implicit_primary_worker(cfg: &RawDispatchConfig) -> NormalizedWorkerSpec {
+        NormalizedWorkerSpec {
+            id: "primary".to_string(),
+            title: "primary".to_string(),
+            instructions: cfg.instructions.clone(),
+            skills: Vec::new(),
+            inputs: Vec::new(),
+            outputs: BTreeMap::new(),
         }
     }
 

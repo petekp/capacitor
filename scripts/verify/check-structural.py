@@ -255,94 +255,51 @@ def validate_config(config: dict[str, Any], rules: list[dict[str, Any]]) -> None
         validate_selector(rule, rule.get("constraint", {}))
 
 
-def check_rule_with_audit(
-    rule: dict[str, Any],
+def _check_only_may_rule(
+    rule_id: str,
+    description: str,
+    groups: list[str],
+    severity: str,
+    selector: dict[str, Any],
     modules: list[dict[str, Any]],
     repo_root: pathlib.Path,
+    audit: dict[str, Any],
 ) -> tuple[list[Violation], dict[str, Any]]:
-    if rule_layer(rule) != 1:
-        return [], {
-            "rule": rule["rule"],
-            "modules_considered": len(modules),
-            "modules_scoped": 0,
-            "exceptions_applied": 0,
-            "generated_excluded": 0,
-            "modules_selected": 0,
-            "scope_empty": True,
-            "matches_found": 0,
-        }
-
-    selector = rule.get("constraint", {})
-    rule_id = rule["rule"]
-    description = rule.get("description", rule_id)
-    groups = normalize_patterns(rule.get("groups"))
-    severity = "warning" if rule_enforcement(rule) == "advisory" else "error"
-    hard_gate = rule_enforcement(rule) == "hard"
-    exclude_generated = hard_gate and not selector.get("include_generated", False)
-    audit = {
-        "rule": rule_id,
-        "modules_considered": len(modules),
-        "modules_scoped": 0,
-        "exceptions_applied": 0,
-        "generated_excluded": 0,
-        "modules_selected": 0,
-        "scope_empty": False,
-        "matches_found": 0,
-    }
-
-    if "only" in selector and "may" in selector:
-        allowed_patterns = normalize_patterns(selector["only"])
-        violating: list[Violation] = []
-        for module in modules:
-            if any(matches_name_or_path(module, pattern) for pattern in allowed_patterns):
-                continue
-            matches = matches_fact(module, repo_root, selector["may"])
-            for match in matches:
-                audit["matches_found"] += 1
-                violating.append(
-                    Violation(
-                        layer="1",
-                        rule=rule_id,
-                        path=module["path"],
-                        line=match.get("line"),
-                        message=description,
-                        diagnosis=f"{module['path']} is outside the allowed owner set for {selector['may']}.",
-                        fix=f"Move this usage into one of: {', '.join(allowed_patterns)}",
-                        group=groups[0] if groups else None,
-                        severity=severity,
-                    )
+    allowed_patterns = normalize_patterns(selector["only"])
+    violating: list[Violation] = []
+    for module in modules:
+        if any(matches_name_or_path(module, pattern) for pattern in allowed_patterns):
+            continue
+        matches = matches_fact(module, repo_root, selector["may"])
+        for match in matches:
+            audit["matches_found"] += 1
+            violating.append(
+                Violation(
+                    layer="1",
+                    rule=rule_id,
+                    path=module["path"],
+                    line=match.get("line"),
+                    message=description,
+                    diagnosis=f"{module['path']} is outside the allowed owner set for {selector['may']}.",
+                    fix=f"Move this usage into one of: {', '.join(allowed_patterns)}",
+                    group=groups[0] if groups else None,
+                    severity=severity,
                 )
-        return violating, audit
-
-    selected, selection_audit = select_modules_with_audit(
-        modules,
-        selector,
-        exclude_generated=exclude_generated,
-    )
-    audit.update(selection_audit)
-    violations: list[Violation] = []
-    empty_scope_is_error = (
-        hard_gate
-        and not selector.get("allow_empty_scope", False)
-        and (audit["modules_scoped"] == 0 or (audit["modules_selected"] == 0 and audit["generated_excluded"] > 0))
-    )
-    if empty_scope_is_error:
-        violations.append(
-            Violation(
-                layer="1",
-                rule=rule_id,
-                path=None,
-                line=None,
-                message="Hard structural rule selected zero authored modules",
-                diagnosis=(
-                    f"Rule {rule_id} scoped zero authored modules after exceptions and generated-surface exclusion. "
-                    "This would silently disable a correctness gate."
-                ),
-                fix="Tighten the selector, set include_generated intentionally, or declare allow_empty_scope for this rule.",
             )
-        )
-        return violations, audit
+    return violating, audit
 
+
+def _check_must_not_must_rule(
+    rule_id: str,
+    description: str,
+    groups: list[str],
+    severity: str,
+    selector: dict[str, Any],
+    selected: list[dict[str, Any]],
+    repo_root: pathlib.Path,
+    audit: dict[str, Any],
+) -> tuple[list[Violation], dict[str, Any]]:
+    violations: list[Violation] = []
     for module in selected:
         fact_key = selector.get("must_not") or selector.get("must")
         if not fact_key:
@@ -381,6 +338,76 @@ def check_rule_with_audit(
     return violations, audit
 
 
+def check_rule_with_audit(
+    rule: dict[str, Any],
+    modules: list[dict[str, Any]],
+    repo_root: pathlib.Path,
+) -> tuple[list[Violation], dict[str, Any]]:
+    if rule_layer(rule) != 1:
+        return [], {
+            "rule": rule["rule"],
+            "modules_considered": len(modules),
+            "modules_scoped": 0,
+            "exceptions_applied": 0,
+            "generated_excluded": 0,
+            "modules_selected": 0,
+            "scope_empty": True,
+            "matches_found": 0,
+        }
+
+    selector = rule.get("constraint", {})
+    rule_id = rule["rule"]
+    description = rule.get("description", rule_id)
+    groups = normalize_patterns(rule.get("groups"))
+    severity = "warning" if rule_enforcement(rule) == "advisory" else "error"
+    hard_gate = rule_enforcement(rule) == "hard"
+    exclude_generated = hard_gate and not selector.get("include_generated", False)
+    audit = {
+        "rule": rule_id,
+        "modules_considered": len(modules),
+        "modules_scoped": 0,
+        "exceptions_applied": 0,
+        "generated_excluded": 0,
+        "modules_selected": 0,
+        "scope_empty": False,
+        "matches_found": 0,
+    }
+
+    if "only" in selector and "may" in selector:
+        return _check_only_may_rule(rule_id, description, groups, severity, selector, modules, repo_root, audit)
+
+    selected, selection_audit = select_modules_with_audit(
+        modules,
+        selector,
+        exclude_generated=exclude_generated,
+    )
+    audit.update(selection_audit)
+    violations: list[Violation] = []
+    empty_scope_is_error = (
+        hard_gate
+        and not selector.get("allow_empty_scope", False)
+        and (audit["modules_scoped"] == 0 or (audit["modules_selected"] == 0 and audit["generated_excluded"] > 0))
+    )
+    if empty_scope_is_error:
+        violations.append(
+            Violation(
+                layer="1",
+                rule=rule_id,
+                path=None,
+                line=None,
+                message="Hard structural rule selected zero authored modules",
+                diagnosis=(
+                    f"Rule {rule_id} scoped zero authored modules after exceptions and generated-surface exclusion. "
+                    "This would silently disable a correctness gate."
+                ),
+                fix="Tighten the selector, set include_generated intentionally, or declare allow_empty_scope for this rule.",
+            )
+        )
+        return violations, audit
+
+    return _check_must_not_must_rule(rule_id, description, groups, severity, selector, selected, repo_root, audit)
+
+
 def check_rule(
     rule: dict[str, Any],
     modules: list[dict[str, Any]],
@@ -390,15 +417,7 @@ def check_rule(
     return violations
 
 
-def evolve_violations(
-    config: dict[str, Any],
-    rules: list[dict[str, Any]],
-    facts: dict[str, Any],
-) -> list[Violation]:
-    canonical_docs = normalize_patterns(config.get("meta", {}).get("canonical_docs"))
-    doc_modules = [module for module in facts["modules"] if module["path"] in canonical_docs]
-    violations: list[Violation] = []
-
+def _build_claims_by_id(doc_modules: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     claims_by_id: dict[str, dict[str, Any]] = {}
     for module in doc_modules:
         for claim in module.get("doc_claims", []):
@@ -411,7 +430,15 @@ def evolve_violations(
                 "value": claim["value"],
                 "owner_scopes": claim.get("owner_scopes", []),
             }
+    return claims_by_id
 
+
+def _evolve_claim_id_violations(
+    rules: list[dict[str, Any]],
+    claims_by_id: dict[str, dict[str, Any]],
+    all_modules: list[dict[str, Any]],
+) -> tuple[list[Violation], set[str]]:
+    violations: list[Violation] = []
     covered_claim_ids: set[str] = set()
     for rule in rules:
         for claim_id in normalize_patterns(rule.get("claim_ids")):
@@ -434,7 +461,7 @@ def evolve_violations(
             if owner_scopes:
                 owner_matches = [
                     module
-                    for module in facts["modules"]
+                    for module in all_modules
                     if any(matches_name_or_path(module, pattern) for pattern in owner_scopes)
                 ]
                 if not owner_matches:
@@ -449,12 +476,15 @@ def evolve_violations(
                             fix="Update the owner_scope in docs or restore the claimed owner module.",
                         )
                     )
+    return violations, covered_claim_ids
 
+
+def _evolve_doc_pattern_violations(
+    rules: list[dict[str, Any]],
+    doc_modules: list[dict[str, Any]],
+) -> tuple[list[Violation], set[tuple[str, int]]]:
+    violations: list[Violation] = []
     covered_claims: set[tuple[str, int]] = set()
-    enforced_claim_patterns = [
-        re.compile(pattern, flags=re.IGNORECASE)
-        for pattern in normalize_patterns(config.get("meta", {}).get("doc_claim_patterns"))
-    ]
     for rule in rules:
         source_docs = set(normalize_patterns(rule.get("source_docs")))
         patterns = normalize_patterns(rule.get("doc_patterns"))
@@ -482,7 +512,16 @@ def evolve_violations(
                         fix="Update doc_patterns or the source document intentionally.",
                     )
                 )
+    return violations, covered_claims
 
+
+def _evolve_uncovered_claim_violations(
+    doc_modules: list[dict[str, Any]],
+    enforced_claim_patterns: list[re.Pattern[str]],
+    covered_claim_ids: set[str],
+    covered_claims: set[tuple[str, int]],
+) -> list[Violation]:
+    violations: list[Violation] = []
     for module in doc_modules:
         for claim in module.get("doc_claims", []):
             if enforced_claim_patterns and not any(pattern.search(claim["value"]) for pattern in enforced_claim_patterns):
@@ -505,6 +544,151 @@ def evolve_violations(
                 )
             )
     return violations
+
+
+def evolve_violations(
+    config: dict[str, Any],
+    rules: list[dict[str, Any]],
+    facts: dict[str, Any],
+) -> list[Violation]:
+    canonical_docs = normalize_patterns(config.get("meta", {}).get("canonical_docs"))
+    doc_modules = [module for module in facts["modules"] if module["path"] in canonical_docs]
+    violations: list[Violation] = []
+
+    claims_by_id = _build_claims_by_id(doc_modules)
+
+    claim_id_violations, covered_claim_ids = _evolve_claim_id_violations(rules, claims_by_id, facts["modules"])
+    violations.extend(claim_id_violations)
+
+    doc_pattern_violations, covered_claims = _evolve_doc_pattern_violations(rules, doc_modules)
+    violations.extend(doc_pattern_violations)
+
+    enforced_claim_patterns = [
+        re.compile(pattern, flags=re.IGNORECASE)
+        for pattern in normalize_patterns(config.get("meta", {}).get("doc_claim_patterns"))
+    ]
+    violations.extend(_evolve_uncovered_claim_violations(doc_modules, enforced_claim_patterns, covered_claim_ids, covered_claims))
+
+    return violations
+
+
+def _ledger_audit_violations(ledger_audit: dict[str, Any]) -> list[Violation]:
+    violations: list[Violation] = []
+    for claim_id in ledger_audit["missing_claims"]:
+        violations.append(
+            Violation(
+                layer="1",
+                rule="ledger_missing_claim",
+                path=None,
+                line=None,
+                message="Hard canonical claim is missing from the verifier ledger",
+                diagnosis=f"{claim_id} has no ledger entry.",
+                fix="Add the claim to .verifier/ledger.yaml with structural rules/specs and proof fixtures.",
+            )
+        )
+    for claim_id in ledger_audit["missing_positive_fixtures"]:
+        violations.append(
+            Violation(
+                layer="1",
+                rule="ledger_missing_positive_fixture",
+                path=None,
+                line=None,
+                message="Hard canonical claim is missing a positive proof fixture",
+                diagnosis=f"{claim_id} has no positive proof artifact in the ledger.",
+                fix="Add a dedicated positive proof artifact for this claim.",
+            )
+        )
+    for claim_id in ledger_audit["missing_negative_fixtures"]:
+        violations.append(
+            Violation(
+                layer="1",
+                rule="ledger_missing_negative_fixture",
+                path=None,
+                line=None,
+                message="Hard canonical claim is missing a negative proof fixture",
+                diagnosis=f"{claim_id} has no negative proof artifact in the ledger.",
+                fix="Add a dedicated negative proof artifact for this claim.",
+            )
+        )
+    for claim_id in ledger_audit["missing_fixture_artifacts"]:
+        violations.append(
+            Violation(
+                layer="1",
+                rule="ledger_missing_fixture_artifact",
+                path=None,
+                line=None,
+                message="Ledger fixture entry points at a missing proof artifact",
+                diagnosis=f"{claim_id} references a fixture path that does not exist in the repo.",
+                fix="Fix the ledger pointer or add the missing proof artifact.",
+            )
+        )
+    for rule_id in ledger_audit["orphaned_rules"]:
+        violations.append(
+            Violation(
+                layer="1",
+                rule="ledger_orphaned_rule",
+                path=None,
+                line=None,
+                message="Hard structural rule is not mapped to any canonical claim",
+                diagnosis=f"{rule_id} is not mapped in the verifier ledger.",
+                fix="Assign the rule to a canonical claim in .verifier/ledger.yaml.",
+            )
+        )
+    for spec_id in ledger_audit["orphaned_specs"]:
+        violations.append(
+            Violation(
+                layer="1",
+                rule="ledger_orphaned_spec",
+                path=None,
+                line=None,
+                message="Behavioral spec is not mapped to any canonical claim",
+                diagnosis=f"{spec_id} is not mapped in the verifier ledger.",
+                fix="Assign the behavioral spec to one or more canonical claims in .verifier/ledger.yaml.",
+            )
+        )
+    return violations
+
+
+def _run_ledger_audit(
+    args: argparse.Namespace,
+    config: dict[str, Any],
+    repo_root: pathlib.Path,
+) -> dict[str, Any] | None:
+    if not (args.canonical_claims and args.ledger and args.specs_dir):
+        return None
+    canonical_claims_path = pathlib.Path(args.canonical_claims)
+    ledger_path = pathlib.Path(args.ledger)
+    specs_dir_path = pathlib.Path(args.specs_dir)
+    if not (canonical_claims_path.exists() and ledger_path.exists() and specs_dir_path.exists()):
+        return None
+    return audit_ledger(
+        structural_config=config,
+        canonical_claims=load_yaml(canonical_claims_path),
+        ledger_config=load_yaml(ledger_path),
+        spec_ids=sorted(
+            path.stem
+            for path in specs_dir_path.glob("*.py")
+            if not path.name.startswith("_")
+        ),
+        repo_root=repo_root,
+    )
+
+
+def _run_rule_checks(
+    rules: list[dict[str, Any]],
+    selected_groups: set[str] | None,
+    modules: list[dict[str, Any]],
+    repo_root: pathlib.Path,
+) -> tuple[list[Violation], list[dict[str, Any]]]:
+    violations: list[Violation] = []
+    selector_audits: list[dict[str, Any]] = []
+    for rule in rules:
+        if not matching_rule_groups(rule, selected_groups):
+            continue
+        rule_violations, rule_audit = check_rule_with_audit(rule, modules, repo_root)
+        violations.extend(rule_violations)
+        selector_audits.append(rule_audit)
+    return violations, selector_audits
 
 
 def main() -> None:
@@ -548,107 +732,17 @@ def main() -> None:
                         fix="Re-run the verifier so facts and structural checks share the same run manifest.",
                     )
                 )
-        selector_audits: list[dict[str, Any]] = []
-        for rule in rules:
-            if not matching_rule_groups(rule, selected_groups):
-                continue
-            rule_violations, rule_audit = check_rule_with_audit(rule, facts["modules"], repo_root)
-            violations.extend(rule_violations)
-            selector_audits.append(rule_audit)
+
+        rule_violations, selector_audits = _run_rule_checks(rules, selected_groups, facts["modules"], repo_root)
+        violations.extend(rule_violations)
 
         if args.evolve:
             violations.extend(evolve_violations(config, rules, facts))
             violations.extend(doc_governance_violations(repo_root, config))
 
-        ledger_audit = None
-        if args.canonical_claims and args.ledger and args.specs_dir:
-            canonical_claims_path = pathlib.Path(args.canonical_claims)
-            ledger_path = pathlib.Path(args.ledger)
-            specs_dir_path = pathlib.Path(args.specs_dir)
-            if canonical_claims_path.exists() and ledger_path.exists() and specs_dir_path.exists():
-                ledger_audit = audit_ledger(
-                    structural_config=config,
-                    canonical_claims=load_yaml(canonical_claims_path),
-                    ledger_config=load_yaml(ledger_path),
-                    spec_ids=sorted(
-                        path.stem
-                        for path in specs_dir_path.glob("*.py")
-                        if not path.name.startswith("_")
-                    ),
-                    repo_root=repo_root,
-                )
-                for claim_id in ledger_audit["missing_claims"]:
-                    violations.append(
-                        Violation(
-                            layer="1",
-                            rule="ledger_missing_claim",
-                            path=None,
-                            line=None,
-                            message="Hard canonical claim is missing from the verifier ledger",
-                            diagnosis=f"{claim_id} has no ledger entry.",
-                            fix="Add the claim to .verifier/ledger.yaml with structural rules/specs and proof fixtures.",
-                        )
-                    )
-                for claim_id in ledger_audit["missing_positive_fixtures"]:
-                    violations.append(
-                        Violation(
-                            layer="1",
-                            rule="ledger_missing_positive_fixture",
-                            path=None,
-                            line=None,
-                            message="Hard canonical claim is missing a positive proof fixture",
-                            diagnosis=f"{claim_id} has no positive proof artifact in the ledger.",
-                            fix="Add a dedicated positive proof artifact for this claim.",
-                        )
-                    )
-                for claim_id in ledger_audit["missing_negative_fixtures"]:
-                    violations.append(
-                        Violation(
-                            layer="1",
-                            rule="ledger_missing_negative_fixture",
-                            path=None,
-                            line=None,
-                            message="Hard canonical claim is missing a negative proof fixture",
-                            diagnosis=f"{claim_id} has no negative proof artifact in the ledger.",
-                            fix="Add a dedicated negative proof artifact for this claim.",
-                        )
-                    )
-                for claim_id in ledger_audit["missing_fixture_artifacts"]:
-                    violations.append(
-                        Violation(
-                            layer="1",
-                            rule="ledger_missing_fixture_artifact",
-                            path=None,
-                            line=None,
-                            message="Ledger fixture entry points at a missing proof artifact",
-                            diagnosis=f"{claim_id} references a fixture path that does not exist in the repo.",
-                            fix="Fix the ledger pointer or add the missing proof artifact.",
-                        )
-                    )
-                for rule_id in ledger_audit["orphaned_rules"]:
-                    violations.append(
-                        Violation(
-                            layer="1",
-                            rule="ledger_orphaned_rule",
-                            path=None,
-                            line=None,
-                            message="Hard structural rule is not mapped to any canonical claim",
-                            diagnosis=f"{rule_id} is not mapped in the verifier ledger.",
-                            fix="Assign the rule to a canonical claim in .verifier/ledger.yaml.",
-                        )
-                    )
-                for spec_id in ledger_audit["orphaned_specs"]:
-                    violations.append(
-                        Violation(
-                            layer="1",
-                            rule="ledger_orphaned_spec",
-                            path=None,
-                            line=None,
-                            message="Behavioral spec is not mapped to any canonical claim",
-                            diagnosis=f"{spec_id} is not mapped in the verifier ledger.",
-                            fix="Assign the behavioral spec to one or more canonical claims in .verifier/ledger.yaml.",
-                        )
-                    )
+        ledger_audit = _run_ledger_audit(args, config, repo_root)
+        if ledger_audit is not None:
+            violations.extend(_ledger_audit_violations(ledger_audit))
 
         if selected_paths:
             violations = [violation for violation in violations if not violation.path or violation.path in selected_paths]

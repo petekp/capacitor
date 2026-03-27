@@ -72,530 +72,7 @@ pub enum RunError {
     },
 }
 
-// ---------------------------------------------------------------------------
-// Gate evaluation
-// ---------------------------------------------------------------------------
-
-/// Outcome of evaluating a phase or step gate.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum GateOutcome {
-    Approved,
-    Rejected,
-    Waiting,
-    TimedOut,
-    ValidationFailed { reason: String },
-}
-
-impl GateOutcome {
-    pub fn as_str(&self) -> &str {
-        match self {
-            GateOutcome::Approved => "approved",
-            GateOutcome::Rejected => "rejected",
-            GateOutcome::Waiting => "waiting",
-            GateOutcome::TimedOut => "timed_out",
-            GateOutcome::ValidationFailed { .. } => "validation_failed",
-        }
-    }
-
-    pub fn reason(&self) -> Option<&str> {
-        match self {
-            GateOutcome::ValidationFailed { reason } => Some(reason.as_str()),
-            _ => None,
-        }
-    }
-}
-
-#[derive(Debug)]
-struct HumanGateArtifacts {
-    manifest: CheckpointManifest,
-    media_artifacts: Vec<MediaArtifact>,
-    mermaid_sources: Vec<MermaidSource>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ReviewArtifactKind {
-    Text,
-    Screenshot,
-    Recording,
-    Mermaid,
-}
-
-impl ReviewArtifactKind {
-    fn manifest_type(self) -> &'static str {
-        match self {
-            ReviewArtifactKind::Text => "text",
-            ReviewArtifactKind::Screenshot => "screenshot",
-            ReviewArtifactKind::Recording => "recording",
-            ReviewArtifactKind::Mermaid => "mermaid",
-        }
-    }
-
-    fn media_artifact_type(self) -> Option<MediaArtifactType> {
-        match self {
-            ReviewArtifactKind::Screenshot => Some(MediaArtifactType::Screenshot),
-            ReviewArtifactKind::Recording => Some(MediaArtifactType::Recording),
-            ReviewArtifactKind::Text | ReviewArtifactKind::Mermaid => None,
-        }
-    }
-}
-
-fn human_gate_prompt_message(gate: &NormalizedGate) -> String {
-    if gate.gate_type == "approval" {
-        format!("Gate '{}': Do you approve this phase?", gate.id)
-    } else {
-        format!("Gate '{}': Have manual tests been completed?", gate.id)
-    }
-}
-
-fn human_gate_checkpoint_kind(gate_type: &str) -> CheckpointKind {
-    match gate_type {
-        "approval" => CheckpointKind::AlignmentReview,
-        "manual_test_complete" => CheckpointKind::ImplementationMilestone,
-        other => CheckpointKind::Custom {
-            label: other.to_string(),
-        },
-    }
-}
-
-fn latest_completed_attempt(
-    step_state: &crate::method_runner::state::StepState,
-) -> Option<(u32, &crate::method_runner::state::AttemptState)> {
-    step_state
-        .attempts
-        .iter()
-        .rev()
-        .find(|(_, attempt)| {
-            attempt.status == crate::method_runner::state::AttemptStatus::Completed
-                || attempt.status == crate::method_runner::state::AttemptStatus::OutputBound
-        })
-        .map(|(attempt_num, attempt)| (*attempt_num, attempt))
-}
-
-fn output_attempt_number(step_state: &crate::method_runner::state::StepState) -> Option<u32> {
-    if step_state.current_attempt > 0
-        && step_state
-            .attempts
-            .contains_key(&step_state.current_attempt)
-    {
-        Some(step_state.current_attempt)
-    } else {
-        latest_completed_attempt(step_state).map(|(attempt_num, _)| attempt_num)
-    }
-}
-
-fn review_artifact_kind(output_type: &str, artifact_path: &Path) -> ReviewArtifactKind {
-    let normalized_type = output_type.trim().to_ascii_lowercase();
-    match normalized_type.as_str() {
-        "screenshot" => ReviewArtifactKind::Screenshot,
-        "recording" => ReviewArtifactKind::Recording,
-        "mermaid" | "mermaid_diagram" => ReviewArtifactKind::Mermaid,
-        _ => match artifact_path.extension().and_then(|ext| ext.to_str()) {
-            Some("png" | "jpg" | "jpeg" | "webp") => ReviewArtifactKind::Screenshot,
-            Some("mov" | "mp4" | "gif" | "webm") => ReviewArtifactKind::Recording,
-            Some("mmd") => ReviewArtifactKind::Mermaid,
-            _ => ReviewArtifactKind::Text,
-        },
-    }
-}
-
-fn apply_human_gate_decision_hints(
-    manifest: CheckpointManifest,
-    gate_type: &str,
-) -> CheckpointManifest {
-    match gate_type {
-        "manual_test_complete" => manifest
-            .decision_hint_approve(
-                "Tests complete",
-                "Manual verification is complete and the phase can continue.",
-            )
-            .decision_hint_request_changes(
-                "Needs fixes",
-                "Manual verification found issues that need another pass.",
-            ),
-        _ => manifest
-            .decision_hint_approve(
-                "Approve phase",
-                "This phase is aligned and ready to continue.",
-            )
-            .decision_hint_request_changes(
-                "Request changes",
-                "This phase needs changes before continuing.",
-            ),
-    }
-}
-
-fn build_human_gate_artifacts(
-    gate: &NormalizedGate,
-    phase: &NormalizedPhase,
-    state: &MethodRunState,
-    paths: &MethodRunPaths,
-) -> HumanGateArtifacts {
-    let mut manifest = CheckpointManifest::new(&gate.id);
-    if !phase.description.trim().is_empty() {
-        manifest = manifest.summary(&phase.description);
-    }
-    manifest = apply_human_gate_decision_hints(manifest, &gate.gate_type);
-
-    let mut media_artifacts = Vec::new();
-    let mut mermaid_sources = Vec::new();
-
-    let Some(phase_state) = state.phases.get(&phase.id) else {
-        return HumanGateArtifacts {
-            manifest,
-            media_artifacts,
-            mermaid_sources,
-        };
-    };
-
-    for step in &phase.steps {
-        let Some(step_state) = phase_state.steps.get(&step.id) else {
-            continue;
-        };
-
-        if step.action == ActionKind::Dispatch {
-            if let Some((attempt_num, attempt_state)) = latest_completed_attempt(step_state) {
-                for worker_id in attempt_state.workers.keys() {
-                    let handoff_path =
-                        paths.canonical_handoff(&phase.id, &step.id, attempt_num, worker_id);
-                    if handoff_path.exists() {
-                        let label = if attempt_state.workers.len() > 1 {
-                            format!("{} handoff ({worker_id})", step.title)
-                        } else {
-                            format!("{} handoff", step.title)
-                        };
-                        manifest = manifest.artifact(
-                            &label,
-                            handoff_path.to_string_lossy().as_ref(),
-                            ReviewArtifactKind::Text.manifest_type(),
-                        );
-                    }
-                }
-            }
-        }
-
-        let Some(attempt_num) = output_attempt_number(step_state) else {
-            continue;
-        };
-
-        for (output_name, relative_path) in &step_state.outputs {
-            let Some(output_def) = step.outputs.get(output_name) else {
-                continue;
-            };
-
-            let output_path = paths
-                .attempt_dir(&phase.id, &step.id, attempt_num)
-                .join(relative_path);
-            let label = format!("{}: {}", step.title, output_name);
-            let artifact_kind = review_artifact_kind(&output_def.output_type, &output_path);
-
-            manifest = manifest.artifact(
-                &label,
-                output_path.to_string_lossy().as_ref(),
-                artifact_kind.manifest_type(),
-            );
-
-            if let Some(media_type) = artifact_kind.media_artifact_type() {
-                media_artifacts.push(MediaArtifact {
-                    artifact_type: media_type,
-                    path: output_path.to_string_lossy().into_owned(),
-                    label: label.clone(),
-                    width: None,
-                    height: None,
-                    duration_secs: None,
-                });
-            }
-
-            if artifact_kind == ReviewArtifactKind::Mermaid {
-                match std::fs::read_to_string(&output_path) {
-                    Ok(source) => mermaid_sources.push(MermaidSource {
-                        label: label.clone(),
-                        source,
-                    }),
-                    Err(error) => eprintln!(
-                        "warning: failed to read mermaid source for phase '{}' step '{}' output '{}' at {:?}: {}",
-                        phase.id, step.id, output_name, output_path, error
-                    ),
-                }
-            }
-        }
-    }
-
-    HumanGateArtifacts {
-        manifest,
-        media_artifacts,
-        mermaid_sources,
-    }
-}
-
-fn build_human_gate_checkpoint_context(
-    gate: &NormalizedGate,
-    phase: &NormalizedPhase,
-    state: &MethodRunState,
-    paths: &MethodRunPaths,
-) -> Result<GateCheckpointContext, std::io::Error> {
-    let prompt_message = human_gate_prompt_message(gate);
-    let artifacts = build_human_gate_artifacts(gate, phase, state, paths);
-    let manifest_path = paths.gate_manifest_path(&phase.id, &gate.id);
-    artifacts.manifest.write_to_path(&manifest_path)?;
-
-    Ok(GateCheckpointContext {
-        gate_id: gate.id.clone(),
-        gate_type: gate.gate_type.clone(),
-        phase_id: phase.id.clone(),
-        checkpoint_kind: human_gate_checkpoint_kind(&gate.gate_type),
-        checkpoint_title: phase.title.clone(),
-        checkpoint_summary: phase.description.clone(),
-        manifest_path,
-        media_artifacts: artifacts.media_artifacts,
-        mermaid_sources: artifacts.mermaid_sources,
-        prompt_message,
-    })
-}
-
-/// Evaluate a phase gate after all steps in the phase have completed.
-///
-/// Gate types:
-/// - `approval` — prompts via InteractiveIO, expects "approved" or "rejected"
-/// - `outputs_present` — checks that all named outputs in gate.outputs exist in state
-/// - `handoff_verdict` — checks all steps have handoffs with CLEAN verdict
-/// - `completion_claim` — checks all steps have COMPLETE claim
-/// - `manual_test_complete` — prompts via InteractiveIO (same as approval)
-/// - `pipeline_clean` — v1-deferred, always returns blocked (waiting)
-pub fn evaluate_gate(
-    gate: &NormalizedGate,
-    phase: &NormalizedPhase,
-    state: &MethodRunState,
-    paths: &MethodRunPaths,
-    interactive_io: &dyn InteractiveIO,
-) -> GateOutcome {
-    match gate.gate_type.as_str() {
-        "approval" | "manual_test_complete" => {
-            let prompt_msg = human_gate_prompt_message(gate);
-            match build_human_gate_checkpoint_context(gate, phase, state, paths) {
-                Ok(context) => interactive_io.emit_gate_checkpoint(&context),
-                Err(error) => {
-                    eprintln!(
-                        "warning: failed to synthesize gate checkpoint for phase '{}' gate '{}': {}",
-                        phase.id, gate.id, error
-                    );
-                    interactive_io.emit_prompt(&InteractivePrompt {
-                        message: prompt_msg.clone(),
-                    });
-                }
-            }
-            let response = interactive_io.capture_response();
-            let normalized = response.body.trim().to_lowercase();
-            match normalized.as_str() {
-                "approved" => GateOutcome::Approved,
-                "rejected" => GateOutcome::Rejected,
-                _ => GateOutcome::Rejected,
-            }
-        }
-        "outputs_present" => {
-            // Check that all named outputs in gate.outputs exist in the state
-            let phase_id = &phase.id;
-            if let Some(phase_state) = state.phases.get(phase_id) {
-                for output_name in &gate.outputs {
-                    // Search for the output across all steps in this phase
-                    let mut found = false;
-                    for step_state in phase_state.steps.values() {
-                        if step_state.outputs.contains_key(output_name) {
-                            found = true;
-                            break;
-                        }
-                    }
-                    if !found {
-                        return GateOutcome::ValidationFailed {
-                            reason: format!(
-                                "output '{}' not found in phase '{}'",
-                                output_name, phase_id
-                            ),
-                        };
-                    }
-                }
-                GateOutcome::Approved
-            } else {
-                GateOutcome::ValidationFailed {
-                    reason: format!("phase '{}' not found in state", phase_id),
-                }
-            }
-        }
-        "handoff_verdict" => {
-            // Check that all steps in the phase have handoffs with CLEAN verdict
-            for step_def in &phase.steps {
-                if step_def.action != ActionKind::Dispatch {
-                    continue; // Only dispatch steps have handoffs
-                }
-                // Find the completed attempt's handoff
-                let phase_state = match state.phases.get(&phase.id) {
-                    Some(ps) => ps,
-                    None => {
-                        return GateOutcome::ValidationFailed {
-                            reason: format!("phase '{}' not found in state", phase.id),
-                        }
-                    }
-                };
-                let step_state = match phase_state.steps.get(&step_def.id) {
-                    Some(ss) => ss,
-                    None => {
-                        return GateOutcome::ValidationFailed {
-                            reason: format!("step '{}' not found in state", step_def.id),
-                        }
-                    }
-                };
-                // Find the latest completed attempt
-                let completed_attempt = step_state.attempts.iter().rev().find(|(_, a)| {
-                    a.status == crate::method_runner::state::AttemptStatus::Completed
-                        || a.status == crate::method_runner::state::AttemptStatus::OutputBound
-                });
-                if let Some((attempt_num, attempt_state)) = completed_attempt {
-                    // Check each worker's handoff
-                    for worker_id in attempt_state.workers.keys() {
-                        let handoff_path = paths.canonical_handoff(
-                            &phase.id,
-                            &step_def.id,
-                            *attempt_num,
-                            worker_id,
-                        );
-                        if handoff_path.exists() {
-                            let content = match std::fs::read_to_string(&handoff_path) {
-                                Ok(c) => c,
-                                Err(_) => {
-                                    return GateOutcome::ValidationFailed {
-                                        reason: format!(
-                                            "cannot read handoff for worker '{}'",
-                                            worker_id
-                                        ),
-                                    }
-                                }
-                            };
-                            let parsed = match crate::method_runner::handoff::parse_handoff(
-                                &content, worker_id,
-                            ) {
-                                Ok(p) => p,
-                                Err(_) => {
-                                    return GateOutcome::ValidationFailed {
-                                        reason: format!(
-                                            "cannot parse handoff for worker '{}'",
-                                            worker_id
-                                        ),
-                                    }
-                                }
-                            };
-                            if parsed.verdict.as_deref() != Some("CLEAN") {
-                                return GateOutcome::ValidationFailed {
-                                    reason: format!(
-                                        "worker '{}' has verdict '{}'",
-                                        worker_id,
-                                        parsed.verdict.as_deref().unwrap_or("none")
-                                    ),
-                                };
-                            }
-                        } else {
-                            return GateOutcome::ValidationFailed {
-                                reason: format!("no handoff found for worker '{}'", worker_id),
-                            };
-                        }
-                    }
-                } else {
-                    return GateOutcome::ValidationFailed {
-                        reason: format!("no completed attempt for step '{}'", step_def.id),
-                    };
-                }
-            }
-            GateOutcome::Approved
-        }
-        "completion_claim" => {
-            // Check that all steps have COMPLETE claim in their handoffs
-            for step_def in &phase.steps {
-                if step_def.action != ActionKind::Dispatch {
-                    continue;
-                }
-                let phase_state = match state.phases.get(&phase.id) {
-                    Some(ps) => ps,
-                    None => {
-                        return GateOutcome::ValidationFailed {
-                            reason: format!("phase '{}' not found in state", phase.id),
-                        }
-                    }
-                };
-                let step_state = match phase_state.steps.get(&step_def.id) {
-                    Some(ss) => ss,
-                    None => {
-                        return GateOutcome::ValidationFailed {
-                            reason: format!("step '{}' not found in state", step_def.id),
-                        }
-                    }
-                };
-                let completed_attempt = step_state.attempts.iter().rev().find(|(_, a)| {
-                    a.status == crate::method_runner::state::AttemptStatus::Completed
-                        || a.status == crate::method_runner::state::AttemptStatus::OutputBound
-                });
-                if let Some((attempt_num, attempt_state)) = completed_attempt {
-                    for worker_id in attempt_state.workers.keys() {
-                        let handoff_path = paths.canonical_handoff(
-                            &phase.id,
-                            &step_def.id,
-                            *attempt_num,
-                            worker_id,
-                        );
-                        if handoff_path.exists() {
-                            let content = match std::fs::read_to_string(&handoff_path) {
-                                Ok(c) => c,
-                                Err(_) => {
-                                    return GateOutcome::ValidationFailed {
-                                        reason: format!(
-                                            "cannot read handoff for worker '{}'",
-                                            worker_id
-                                        ),
-                                    }
-                                }
-                            };
-                            let parsed = match crate::method_runner::handoff::parse_handoff(
-                                &content, worker_id,
-                            ) {
-                                Ok(p) => p,
-                                Err(_) => {
-                                    return GateOutcome::ValidationFailed {
-                                        reason: format!(
-                                            "cannot parse handoff for worker '{}'",
-                                            worker_id
-                                        ),
-                                    }
-                                }
-                            };
-                            if parsed.completion_claim.as_deref() != Some("COMPLETE") {
-                                return GateOutcome::ValidationFailed {
-                                    reason: format!(
-                                        "worker '{}' has completion claim '{}'",
-                                        worker_id,
-                                        parsed.completion_claim.as_deref().unwrap_or("none")
-                                    ),
-                                };
-                            }
-                        } else {
-                            return GateOutcome::ValidationFailed {
-                                reason: format!("no handoff found for worker '{}'", worker_id),
-                            };
-                        }
-                    }
-                } else {
-                    return GateOutcome::ValidationFailed {
-                        reason: format!("no completed attempt for step '{}'", step_def.id),
-                    };
-                }
-            }
-            GateOutcome::Approved
-        }
-        "pipeline_clean" => {
-            // v1-deferred: always returns waiting (blocked)
-            GateOutcome::Waiting
-        }
-        _ => GateOutcome::ValidationFailed {
-            reason: format!("unknown gate type '{}'", gate.gate_type),
-        },
-    }
-}
+include!("executor_gate_support.rs");
 
 // ---------------------------------------------------------------------------
 // Normalize-only entrypoint
@@ -696,242 +173,21 @@ pub fn execute_run_with_reporter(
     }
     report_status_message(reporter, RunStatusEventKind::Start, "Run started");
 
-    // 10. Execute phases (serial or parallel depending on mode)
+    // 10. Execute phases
     let run_start = std::time::Instant::now();
-    let mut suppress_phase_started_heartbeat = false;
-    for (phase_index, phase) in normalized.method.phases.iter().enumerate() {
-        // PhaseStarted
-        {
-            let mut env = make_envelope(&run_id, MethodEventKind::PhaseStarted);
-            env.phase_id = Some(phase.id.clone());
-            append_event(&events_path, &mut env, &mut current_seq)?;
-        }
-        if suppress_phase_started_heartbeat {
-            suppress_phase_started_heartbeat = false;
-        } else {
-            report_status_message(
-                reporter,
-                RunStatusEventKind::Heartbeat,
-                phase_started_message(&phase.title),
-            );
-        }
-
-        if phase.execution == ExecutionMode::Parallel {
-            // Parallel: execute all steps regardless of individual failures
-            let mut step_results: Vec<(&NormalizedStep, Result<(), RunError>)> = Vec::new();
-            for step in &phase.steps {
-                let result = if step.action == ActionKind::PipelineExecute {
-                    let mut env = make_envelope(&run_id, MethodEventKind::StepBlocked);
-                    env.phase_id = Some(phase.id.clone());
-                    env.step_id = Some(step.id.clone());
-                    env.payload = serde_json::json!({
-                        "blocked_reason": {
-                            "category": "pipeline_blocked",
-                            "details": "pipeline_execute not supported in v1"
-                        }
-                    });
-                    append_event(&events_path, &mut env, &mut current_seq)?;
-                    Err(RunError::PipelineExecuteBlocked(step.id.clone()))
-                } else {
-                    execute_step(
-                        &paths,
-                        &events_path,
-                        &run_id,
-                        &mut current_seq,
-                        &phase.id,
-                        step,
-                        prompt_builder,
-                        dispatcher,
-                        interactive_io,
-                        reporter,
-                    )
-                };
-                step_results.push((step, result));
-            }
-
-            // Join semantics: check outcomes
-            let mut any_failed = false;
-            let mut any_blocked = false;
-            let mut all_ok = true;
-            for (_step, result) in &step_results {
-                match result {
-                    Ok(()) => {}
-                    Err(RunError::StepBlocked { .. })
-                    | Err(RunError::PipelineExecuteBlocked(_)) => {
-                        any_blocked = true;
-                        all_ok = false;
-                    }
-                    Err(_) => {
-                        any_failed = true;
-                        all_ok = false;
-                    }
-                }
-            }
-
-            if any_blocked {
-                // Phase blocked
-                let mut env = make_envelope(&run_id, MethodEventKind::PhaseBlocked);
-                env.phase_id = Some(phase.id.clone());
-                env.payload = serde_json::json!({ "reason": "one or more parallel steps blocked" });
-                append_event(&events_path, &mut env, &mut current_seq)?;
-
-                // Emit RunBlocked with summary
-                {
-                    let summary = build_run_summary(&events_path, &normalized, run_start)?;
-                    let mut env = make_envelope(&run_id, MethodEventKind::RunBlocked);
-                    env.payload = summary;
-                    append_event(&events_path, &mut env, &mut current_seq)?;
-                }
-                report_status_kind(reporter, RunStatusEventKind::Fail);
-
-                let events = crate::method_runner::events::recover_events(&events_path)?;
-                let state = project(&events)?;
-                write_state_atomic(&paths.state_json(), &state).map_err(RunError::IoError)?;
-                return Ok(state);
-            } else if any_failed && !all_ok {
-                // Phase failed
-                let mut env = make_envelope(&run_id, MethodEventKind::PhaseFailed);
-                env.phase_id = Some(phase.id.clone());
-                env.payload = serde_json::json!({ "reason": "one or more parallel steps failed" });
-                append_event(&events_path, &mut env, &mut current_seq)?;
-
-                // Emit RunFailed with summary
-                {
-                    let summary = build_run_summary(&events_path, &normalized, run_start)?;
-                    let mut env = make_envelope(&run_id, MethodEventKind::RunFailed);
-                    env.payload = summary;
-                    append_event(&events_path, &mut env, &mut current_seq)?;
-                }
-                report_status_kind(reporter, RunStatusEventKind::Fail);
-
-                let events = crate::method_runner::events::recover_events(&events_path)?;
-                let state = project(&events)?;
-                write_state_atomic(&paths.state_json(), &state).map_err(RunError::IoError)?;
-                return Ok(state);
-            }
-            // all_ok: fall through to gate evaluation and PhaseCompleted
-        } else {
-            // Serial: existing behavior — step failure stops the phase
-            for step in &phase.steps {
-                // Check for pipeline_execute — blocked
-                if step.action == ActionKind::PipelineExecute {
-                    // Emit StepBlocked event before returning error
-                    let mut env = make_envelope(&run_id, MethodEventKind::StepBlocked);
-                    env.phase_id = Some(phase.id.clone());
-                    env.step_id = Some(step.id.clone());
-                    env.payload = serde_json::json!({
-                        "blocked_reason": {
-                            "category": "pipeline_blocked",
-                            "details": "pipeline_execute not supported in v1"
-                        }
-                    });
-                    append_event(&events_path, &mut env, &mut current_seq)?;
-
-                    report_status_kind(reporter, RunStatusEventKind::Fail);
-                    return Err(RunError::PipelineExecuteBlocked(step.id.clone()));
-                }
-
-                if let Err(error) = execute_step(
-                    &paths,
-                    &events_path,
-                    &run_id,
-                    &mut current_seq,
-                    &phase.id,
-                    step,
-                    prompt_builder,
-                    dispatcher,
-                    interactive_io,
-                    reporter,
-                ) {
-                    report_status_kind(reporter, RunStatusEventKind::Fail);
-                    return Err(error);
-                }
-            }
-        }
-
-        // Evaluate phase gate (if present) after all steps complete
-        if let Some(ref gate) = phase.gate {
-            // Project current state to evaluate gate against
-            let current_events = crate::method_runner::events::recover_events(&events_path)?;
-            let current_state = project(&current_events)?;
-
-            report_status_message(
-                reporter,
-                RunStatusEventKind::Heartbeat,
-                "Waiting for checkpoint",
-            );
-            let outcome = evaluate_gate(gate, phase, &current_state, &paths, interactive_io);
-
-            // Emit GateEvaluated event
-            {
-                let mut env = make_envelope(&run_id, MethodEventKind::GateEvaluated);
-                env.phase_id = Some(phase.id.clone());
-                let mut payload = serde_json::json!({
-                    "gate_id": gate.id,
-                    "gate_type": gate.gate_type,
-                    "outcome": outcome.as_str(),
-                });
-                if let Some(reason) = outcome.reason() {
-                    payload["reason"] = serde_json::Value::String(reason.to_string());
-                }
-                env.payload = payload;
-                append_event(&events_path, &mut env, &mut current_seq)?;
-            }
-
-            match outcome {
-                GateOutcome::Approved => {
-                    // Phase completes normally — fall through to PhaseCompleted
-                }
-                GateOutcome::Rejected
-                | GateOutcome::ValidationFailed { .. }
-                | GateOutcome::TimedOut
-                | GateOutcome::Waiting => {
-                    let reason = match &outcome {
-                        GateOutcome::Rejected => "gate rejected".to_string(),
-                        GateOutcome::ValidationFailed { reason } => {
-                            format!("validation failed: {}", reason)
-                        }
-                        GateOutcome::TimedOut => "gate timed out".to_string(),
-                        GateOutcome::Waiting => {
-                            "pipeline_clean requires pipeline-execute, not implemented in v1"
-                                .to_string()
-                        }
-                        _ => unreachable!(),
-                    };
-
-                    // Emit PhaseBlocked
-                    {
-                        let mut env = make_envelope(&run_id, MethodEventKind::PhaseBlocked);
-                        env.phase_id = Some(phase.id.clone());
-                        env.payload = serde_json::json!({ "reason": reason });
-                        append_event(&events_path, &mut env, &mut current_seq)?;
-                    }
-                    report_status_kind(reporter, RunStatusEventKind::Fail);
-
-                    return Err(RunError::PhaseGateBlocked {
-                        phase_id: phase.id.clone(),
-                        gate_id: gate.id.clone(),
-                        reason,
-                    });
-                }
-            }
-        }
-
-        // PhaseCompleted
-        {
-            let mut env = make_envelope(&run_id, MethodEventKind::PhaseCompleted);
-            env.phase_id = Some(phase.id.clone());
-            append_event(&events_path, &mut env, &mut current_seq)?;
-        }
-        if let Some(next_phase) = normalized.method.phases.get(phase_index + 1) {
-            report_status_kind(reporter, RunStatusEventKind::AdvancePhase);
-            report_status_message(
-                reporter,
-                RunStatusEventKind::Heartbeat,
-                phase_started_message(&next_phase.title),
-            );
-            suppress_phase_started_heartbeat = true;
-        }
+    if let Some(early_state) = execute_all_phases(
+        &paths,
+        &events_path,
+        &run_id,
+        &mut current_seq,
+        &normalized,
+        run_start,
+        prompt_builder,
+        dispatcher,
+        interactive_io,
+        reporter,
+    )? {
+        return Ok(early_state);
     }
 
     // 11. Resolve method-level outputs
@@ -960,6 +216,102 @@ pub fn execute_run_with_reporter(
     Ok(state)
 }
 
+/// Execute all phases in the method definition. Returns `Ok(Some(state))`
+/// for early termination from a parallel phase (blocked/failed), or `Ok(None)` on success.
+#[allow(clippy::too_many_arguments)]
+fn execute_all_phases(
+    paths: &MethodRunPaths,
+    events_path: &Path,
+    run_id: &str,
+    current_seq: &mut u64,
+    normalized: &NormalizedDefinitionFile,
+    run_start: std::time::Instant,
+    prompt_builder: &dyn PromptBuilder,
+    dispatcher: &dyn WorkerDispatcher,
+    interactive_io: &dyn InteractiveIO,
+    reporter: &dyn RunStatusReporter,
+) -> Result<Option<MethodRunState>, RunError> {
+    let mut suppress_phase_started_heartbeat = false;
+    for (phase_index, phase) in normalized.method.phases.iter().enumerate() {
+        // PhaseStarted
+        {
+            let mut env = make_envelope(run_id, MethodEventKind::PhaseStarted);
+            env.phase_id = Some(phase.id.clone());
+            append_event(events_path, &mut env, current_seq)?;
+        }
+        if suppress_phase_started_heartbeat {
+            suppress_phase_started_heartbeat = false;
+        } else {
+            report_status_message(
+                reporter,
+                RunStatusEventKind::Heartbeat,
+                phase_started_message(&phase.title),
+            );
+        }
+
+        if phase.execution == ExecutionMode::Parallel {
+            if let Some(early_state) = execute_parallel_phase_steps(
+                paths,
+                events_path,
+                run_id,
+                current_seq,
+                phase,
+                normalized,
+                run_start,
+                prompt_builder,
+                dispatcher,
+                interactive_io,
+                reporter,
+            )? {
+                return Ok(Some(early_state));
+            }
+        } else {
+            execute_serial_phase_steps(
+                paths,
+                events_path,
+                run_id,
+                current_seq,
+                phase,
+                prompt_builder,
+                dispatcher,
+                interactive_io,
+                reporter,
+            )?;
+        }
+
+        // Evaluate phase gate (if present) after all steps complete
+        if let Some(ref gate) = phase.gate {
+            emit_and_enforce_gate(
+                gate,
+                phase,
+                paths,
+                events_path,
+                run_id,
+                current_seq,
+                interactive_io,
+                reporter,
+            )?;
+        }
+
+        // PhaseCompleted
+        {
+            let mut env = make_envelope(run_id, MethodEventKind::PhaseCompleted);
+            env.phase_id = Some(phase.id.clone());
+            append_event(events_path, &mut env, current_seq)?;
+        }
+        if let Some(next_phase) = normalized.method.phases.get(phase_index + 1) {
+            report_status_kind(reporter, RunStatusEventKind::AdvancePhase);
+            report_status_message(
+                reporter,
+                RunStatusEventKind::Heartbeat,
+                phase_started_message(&next_phase.title),
+            );
+            suppress_phase_started_heartbeat = true;
+        }
+    }
+    Ok(None)
+}
+
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
@@ -971,6 +323,245 @@ fn create_method_dirs(paths: &MethodRunPaths) -> Result<(), std::io::Error> {
     std::fs::create_dir_all(paths.method_root().join("artifacts").join("handoffs"))?;
     std::fs::create_dir_all(paths.method_root().join("artifacts").join("outputs"))?;
     Ok(())
+}
+
+/// Execute all steps in a parallel phase. Returns `Ok(Some(state))` for early
+/// termination (blocked/failed), or `Ok(None)` when all steps succeeded.
+#[allow(clippy::too_many_arguments)]
+fn execute_parallel_phase_steps(
+    paths: &MethodRunPaths,
+    events_path: &Path,
+    run_id: &str,
+    current_seq: &mut u64,
+    phase: &NormalizedPhase,
+    normalized: &NormalizedDefinitionFile,
+    run_start: std::time::Instant,
+    prompt_builder: &dyn PromptBuilder,
+    dispatcher: &dyn WorkerDispatcher,
+    interactive_io: &dyn InteractiveIO,
+    reporter: &dyn RunStatusReporter,
+) -> Result<Option<MethodRunState>, RunError> {
+    let mut step_results: Vec<(&NormalizedStep, Result<(), RunError>)> = Vec::new();
+    for step in &phase.steps {
+        let result = if step.action == ActionKind::PipelineExecute {
+            emit_pipeline_blocked(events_path, run_id, current_seq, &phase.id, &step.id)?;
+            Err(RunError::PipelineExecuteBlocked(step.id.clone()))
+        } else {
+            execute_step(
+                paths,
+                events_path,
+                run_id,
+                current_seq,
+                &phase.id,
+                step,
+                prompt_builder,
+                dispatcher,
+                interactive_io,
+                reporter,
+            )
+        };
+        step_results.push((step, result));
+    }
+
+    let mut any_failed = false;
+    let mut any_blocked = false;
+    for (_step, result) in &step_results {
+        match result {
+            Ok(()) => {}
+            Err(RunError::StepBlocked { .. }) | Err(RunError::PipelineExecuteBlocked(_)) => {
+                any_blocked = true;
+            }
+            Err(_) => {
+                any_failed = true;
+            }
+        }
+    }
+
+    if any_blocked {
+        return emit_parallel_phase_terminal(
+            paths,
+            events_path,
+            run_id,
+            current_seq,
+            &phase.id,
+            "one or more parallel steps blocked",
+            MethodEventKind::PhaseBlocked,
+            MethodEventKind::RunBlocked,
+            normalized,
+            run_start,
+            reporter,
+        );
+    }
+    if any_failed {
+        return emit_parallel_phase_terminal(
+            paths,
+            events_path,
+            run_id,
+            current_seq,
+            &phase.id,
+            "one or more parallel steps failed",
+            MethodEventKind::PhaseFailed,
+            MethodEventKind::RunFailed,
+            normalized,
+            run_start,
+            reporter,
+        );
+    }
+
+    Ok(None)
+}
+
+/// Emit phase-terminal + run-terminal events for a parallel phase that
+/// blocked or failed, then project and return the state for early exit.
+#[allow(clippy::too_many_arguments)]
+fn emit_parallel_phase_terminal(
+    paths: &MethodRunPaths,
+    events_path: &Path,
+    run_id: &str,
+    current_seq: &mut u64,
+    phase_id: &str,
+    reason: &str,
+    phase_event: MethodEventKind,
+    run_event: MethodEventKind,
+    normalized: &NormalizedDefinitionFile,
+    run_start: std::time::Instant,
+    reporter: &dyn RunStatusReporter,
+) -> Result<Option<MethodRunState>, RunError> {
+    let mut env = make_envelope(run_id, phase_event);
+    env.phase_id = Some(phase_id.to_string());
+    env.payload = serde_json::json!({ "reason": reason });
+    append_event(events_path, &mut env, current_seq)?;
+
+    {
+        let summary = build_run_summary(events_path, normalized, run_start)?;
+        let mut env = make_envelope(run_id, run_event);
+        env.payload = summary;
+        append_event(events_path, &mut env, current_seq)?;
+    }
+    report_status_kind(reporter, RunStatusEventKind::Fail);
+
+    let events = crate::method_runner::events::recover_events(events_path)?;
+    let state = project(&events)?;
+    write_state_atomic(&paths.state_json(), &state).map_err(RunError::IoError)?;
+    Ok(Some(state))
+}
+
+/// Execute steps serially within a phase. Returns early on blocked or failure.
+#[allow(clippy::too_many_arguments)]
+fn execute_serial_phase_steps(
+    paths: &MethodRunPaths,
+    events_path: &Path,
+    run_id: &str,
+    current_seq: &mut u64,
+    phase: &NormalizedPhase,
+    prompt_builder: &dyn PromptBuilder,
+    dispatcher: &dyn WorkerDispatcher,
+    interactive_io: &dyn InteractiveIO,
+    reporter: &dyn RunStatusReporter,
+) -> Result<(), RunError> {
+    for step in &phase.steps {
+        if step.action == ActionKind::PipelineExecute {
+            emit_pipeline_blocked(events_path, run_id, current_seq, &phase.id, &step.id)?;
+            report_status_kind(reporter, RunStatusEventKind::Fail);
+            return Err(RunError::PipelineExecuteBlocked(step.id.clone()));
+        }
+
+        if let Err(error) = execute_step(
+            paths,
+            events_path,
+            run_id,
+            current_seq,
+            &phase.id,
+            step,
+            prompt_builder,
+            dispatcher,
+            interactive_io,
+            reporter,
+        ) {
+            report_status_kind(reporter, RunStatusEventKind::Fail);
+            return Err(error);
+        }
+    }
+    Ok(())
+}
+
+fn emit_pipeline_blocked(
+    events_path: &Path,
+    run_id: &str,
+    current_seq: &mut u64,
+    phase_id: &str,
+    step_id: &str,
+) -> Result<(), RunError> {
+    let mut env = make_envelope(run_id, MethodEventKind::StepBlocked);
+    env.phase_id = Some(phase_id.to_string());
+    env.step_id = Some(step_id.to_string());
+    env.payload = serde_json::json!({
+        "blocked_reason": {
+            "category": "pipeline_blocked",
+            "details": "pipeline_execute not supported in v1"
+        }
+    });
+    append_event(events_path, &mut env, current_seq)?;
+    Ok(())
+}
+
+/// Evaluate a phase gate, emit the GateEvaluated event, and block if not approved.
+#[allow(clippy::too_many_arguments)]
+fn emit_and_enforce_gate(
+    gate: &NormalizedGate,
+    phase: &NormalizedPhase,
+    paths: &MethodRunPaths,
+    events_path: &Path,
+    run_id: &str,
+    current_seq: &mut u64,
+    interactive_io: &dyn InteractiveIO,
+    reporter: &dyn RunStatusReporter,
+) -> Result<(), RunError> {
+    let current_events = crate::method_runner::events::recover_events(events_path)?;
+    let current_state = project(&current_events)?;
+
+    report_status_message(
+        reporter,
+        RunStatusEventKind::Heartbeat,
+        "Waiting for checkpoint",
+    );
+    let outcome = evaluate_gate(gate, phase, &current_state, paths, interactive_io);
+
+    // Emit GateEvaluated event
+    {
+        let mut env = make_envelope(run_id, MethodEventKind::GateEvaluated);
+        env.phase_id = Some(phase.id.clone());
+        let mut payload = serde_json::json!({
+            "gate_id": gate.id,
+            "gate_type": gate.gate_type,
+            "outcome": outcome.as_str(),
+        });
+        if let Some(reason) = outcome.reason() {
+            payload["reason"] = serde_json::Value::String(reason.to_string());
+        }
+        env.payload = payload;
+        append_event(events_path, &mut env, current_seq)?;
+    }
+
+    if outcome == GateOutcome::Approved {
+        return Ok(());
+    }
+
+    let reason = gate_outcome_reason(&outcome);
+
+    {
+        let mut env = make_envelope(run_id, MethodEventKind::PhaseBlocked);
+        env.phase_id = Some(phase.id.clone());
+        env.payload = serde_json::json!({ "reason": reason });
+        append_event(events_path, &mut env, current_seq)?;
+    }
+    report_status_kind(reporter, RunStatusEventKind::Fail);
+
+    Err(RunError::PhaseGateBlocked {
+        phase_id: phase.id.clone(),
+        gate_id: gate.id.clone(),
+        reason,
+    })
 }
 
 /// Public wrapper for `execute_step` used by the resume module.
@@ -1435,123 +1026,7 @@ fn dispatch_attempt_workers(
     }
 }
 
-/// Evaluate whether the completion policy is satisfied given worker results.
-fn evaluate_completion_policy(
-    policy: CompletionPolicy,
-    results: &[(String, bool)],
-    workers: &[crate::method_runner::definition::NormalizedWorkerSpec],
-) -> bool {
-    match policy {
-        CompletionPolicy::AllComplete => {
-            // All workers must have succeeded
-            results.iter().all(|(_, ok)| *ok)
-        }
-        CompletionPolicy::FirstClean => {
-            // First worker in definition order that succeeded is enough.
-            // We check workers in definition order, not results order.
-            for worker_spec in workers {
-                if let Some((_, ok)) = results.iter().find(|(id, _)| *id == worker_spec.id) {
-                    if *ok {
-                        return true;
-                    }
-                }
-            }
-            false
-        }
-    }
-}
-
-/// Bind outputs for a successful attempt. Emits OutputBound events.
-#[allow(clippy::too_many_arguments)]
-fn bind_attempt_outputs(
-    _paths: &MethodRunPaths,
-    events_path: &Path,
-    run_id: &str,
-    current_seq: &mut u64,
-    phase_id: &str,
-    step: &NormalizedStep,
-    attempt: u32,
-    workers: &[crate::method_runner::definition::NormalizedWorkerSpec],
-) -> Result<(), RunError> {
-    let attempt_dir = _paths.attempt_dir(phase_id, &step.id, attempt);
-
-    // Determine which worker to bind from based on completion policy
-    let binding_worker_id = match step.completion_policy {
-        CompletionPolicy::FirstClean => {
-            // Use the first worker in definition order (for first-clean,
-            // that's the winning worker)
-            workers.first().map(|w| w.id.as_str()).unwrap_or("primary")
-        }
-        CompletionPolicy::AllComplete => {
-            // For all_complete with single worker, use "primary"
-            // For multi-worker all_complete, outputs come from each worker
-            workers.first().map(|w| w.id.as_str()).unwrap_or("primary")
-        }
-    };
-
-    let mut output_bindings: BTreeMap<String, serde_json::Value> = BTreeMap::new();
-    for (output_name, output_def) in &step.outputs {
-        let resolved_path = output_def.path.clone();
-        output_bindings.insert(
-            output_name.clone(),
-            serde_json::json!({
-                "path": resolved_path,
-                "type": output_def.output_type,
-                "worker_id": binding_worker_id,
-            }),
-        );
-
-        // OutputBound event
-        let mut env = make_envelope(run_id, MethodEventKind::OutputBound);
-        env.phase_id = Some(phase_id.to_string());
-        env.step_id = Some(step.id.clone());
-        env.attempt = Some(attempt);
-        env.worker_id = Some(binding_worker_id.to_string());
-        env.payload = serde_json::json!({
-            "name": output_name,
-            "path": resolved_path,
-            "type": output_def.output_type,
-        });
-        append_event(events_path, &mut env, current_seq)?;
-    }
-
-    let bindings_json = serde_json::json!({ "outputs": output_bindings });
-    let json = serde_json::to_string_pretty(&bindings_json).map_err(std::io::Error::other)?;
-    std::fs::write(attempt_dir.join("output-bindings.json"), json)?;
-
-    Ok(())
-}
-
-/// Write input-bindings.json to an attempt directory.
-fn write_input_bindings(attempt_dir: &Path, inputs: &[String]) -> Result<(), std::io::Error> {
-    let inputs_map: BTreeMap<String, String> = inputs
-        .iter()
-        .map(|input| (input.clone(), input.clone()))
-        .collect();
-    let bindings = serde_json::json!({ "inputs": inputs_map });
-    let json = serde_json::to_string_pretty(&bindings).map_err(std::io::Error::other)?;
-    std::fs::write(attempt_dir.join("input-bindings.json"), json)
-}
-
-/// Write attempt.json with status and timestamps.
-fn write_attempt_json(
-    attempt_dir: &Path,
-    phase_id: &str,
-    step_id: &str,
-    attempt: u32,
-    status: &str,
-) -> Result<(), std::io::Error> {
-    let attempt_json = serde_json::json!({
-        "phase_id": phase_id,
-        "step_id": step_id,
-        "attempt": attempt,
-        "status": status,
-        "started_at": chrono::Utc::now().to_rfc3339(),
-        "completed_at": chrono::Utc::now().to_rfc3339(),
-    });
-    let json = serde_json::to_string_pretty(&attempt_json).map_err(std::io::Error::other)?;
-    std::fs::write(attempt_dir.join("attempt.json"), json)
-}
+include!("executor_step_support.rs");
 
 // ---------------------------------------------------------------------------
 // Synthesis step execution
@@ -1565,42 +1040,16 @@ fn execute_synthesis_step(
     phase_id: &str,
     step: &NormalizedStep,
 ) -> Result<(), RunError> {
-    // StepStarted
-    {
-        let mut env = make_envelope(run_id, MethodEventKind::StepStarted);
-        env.phase_id = Some(phase_id.to_string());
-        env.step_id = Some(step.id.clone());
-        append_event(events_path, &mut env, current_seq)?;
-    }
-
     let attempt: u32 = 1;
-
-    // Create attempt dir — NO relay directory (C3: synthesis has no relay root)
-    let attempt_dir = paths.attempt_dir(phase_id, &step.id, attempt);
-    std::fs::create_dir_all(&attempt_dir)?;
-
-    // Write input-bindings.json
-    {
-        let inputs_map: BTreeMap<String, String> = step
-            .inputs
-            .iter()
-            .map(|input| (input.clone(), input.clone()))
-            .collect();
-        let bindings = serde_json::json!({ "inputs": inputs_map });
-        let json = serde_json::to_string_pretty(&bindings).map_err(std::io::Error::other)?;
-        std::fs::write(attempt_dir.join("input-bindings.json"), json)?;
-    }
-
-    let attempt_start = std::time::Instant::now();
-
-    // AttemptStarted
-    {
-        let mut env = make_envelope(run_id, MethodEventKind::AttemptStarted);
-        env.phase_id = Some(phase_id.to_string());
-        env.step_id = Some(step.id.clone());
-        env.attempt = Some(attempt);
-        append_event(events_path, &mut env, current_seq)?;
-    }
+    let (attempt_dir, attempt_start) = emit_step_and_attempt_start(
+        paths,
+        events_path,
+        run_id,
+        current_seq,
+        phase_id,
+        step,
+        attempt,
+    )?;
 
     // SynthesisStarted
     {
@@ -1608,62 +1057,14 @@ fn execute_synthesis_step(
         env.phase_id = Some(phase_id.to_string());
         env.step_id = Some(step.id.clone());
         env.attempt = Some(attempt);
-        // No worker_id for synthesis
         append_event(events_path, &mut env, current_seq)?;
     }
 
-    // Resolve declared inputs from current state (prior step outputs)
-    let resolved_inputs: BTreeMap<String, String> = {
-        let current_events = crate::method_runner::events::recover_events(events_path)?;
-        let current_state = project(&current_events)?;
-        let mut resolved = BTreeMap::new();
-        for input_ref in &step.inputs {
-            // Input refs are locator-style: "phase.step.output_name"
-            let segments: Vec<&str> = input_ref.split('.').collect();
-            if segments.len() >= 3 {
-                let ref_phase = segments[0];
-                let ref_step = segments[1];
-                let ref_output = segments.last().unwrap();
-                if let Some(phase_state) = current_state.phases.get(ref_phase) {
-                    if let Some(step_state) = phase_state.steps.get(ref_step) {
-                        if let Some(output_path) = step_state.outputs.get(*ref_output) {
-                            resolved.insert(input_ref.clone(), output_path.clone());
-                        }
-                    }
-                }
-            }
-            // If not resolved, record as unresolved
-            if !resolved.contains_key(input_ref) {
-                resolved.insert(input_ref.clone(), format!("(unresolved: {})", input_ref));
-            }
-        }
-        resolved
-    };
+    // Resolve declared inputs and write output artifacts
+    let resolved_inputs = resolve_step_inputs(events_path, &step.inputs)?;
+    write_synthesis_output_artifacts(&attempt_dir, step, &resolved_inputs)?;
 
-    // Write output artifacts for each declared output (with resolved inputs)
-    for output_def in step.outputs.values() {
-        let output_path = attempt_dir.join(&output_def.path);
-        if let Some(parent) = output_path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        let instructions = match &step.config {
-            StepActionConfig::Synthesis { instructions, .. } => instructions.clone(),
-            _ => String::new(),
-        };
-
-        // Build content with resolved input references
-        let mut content = format!("# Synthesized\n\nInstructions: {}\n", instructions);
-        if !resolved_inputs.is_empty() {
-            content.push_str("\n## Consumed Inputs\n\n");
-            for (input_name, input_path) in &resolved_inputs {
-                content.push_str(&format!("- {}: {}\n", input_name, input_path));
-            }
-        }
-        content.push('\n');
-        std::fs::write(&output_path, content)?;
-    }
-
-    // SynthesisCompleted — emitted after output artifacts written, before OutputBound events
+    // SynthesisCompleted
     {
         let mut env = make_envelope(run_id, MethodEventKind::SynthesisCompleted);
         env.phase_id = Some(phase_id.to_string());
@@ -1672,72 +1073,17 @@ fn execute_synthesis_step(
         append_event(events_path, &mut env, current_seq)?;
     }
 
-    // Write output-bindings.json and emit OutputBound events
-    {
-        let mut output_bindings: BTreeMap<String, serde_json::Value> = BTreeMap::new();
-        for (output_name, output_def) in &step.outputs {
-            let resolved_path = output_def.path.clone();
-            output_bindings.insert(
-                output_name.clone(),
-                serde_json::json!({
-                    "path": resolved_path,
-                    "type": output_def.output_type,
-                }),
-            );
-
-            // OutputBound event — no worker_id for synthesis
-            let mut env = make_envelope(run_id, MethodEventKind::OutputBound);
-            env.phase_id = Some(phase_id.to_string());
-            env.step_id = Some(step.id.clone());
-            env.attempt = Some(attempt);
-            env.payload = serde_json::json!({
-                "name": output_name,
-                "path": resolved_path,
-                "type": output_def.output_type,
-            });
-            append_event(events_path, &mut env, current_seq)?;
-        }
-
-        let bindings_json = serde_json::json!({ "outputs": output_bindings });
-        let json = serde_json::to_string_pretty(&bindings_json).map_err(std::io::Error::other)?;
-        std::fs::write(attempt_dir.join("output-bindings.json"), json)?;
-    }
-
-    // Write attempt.json
-    {
-        let attempt_json = serde_json::json!({
-            "phase_id": phase_id,
-            "step_id": step.id,
-            "attempt": attempt,
-            "status": "completed",
-            "action": "synthesis",
-            "started_at": chrono::Utc::now().to_rfc3339(),
-            "completed_at": chrono::Utc::now().to_rfc3339(),
-        });
-        let json = serde_json::to_string_pretty(&attempt_json).map_err(std::io::Error::other)?;
-        std::fs::write(attempt_dir.join("attempt.json"), json)?;
-    }
-
-    // AttemptCompleted with timing
-    {
-        let elapsed_ms = attempt_start.elapsed().as_millis() as u64;
-        let mut env = make_envelope(run_id, MethodEventKind::AttemptCompleted);
-        env.phase_id = Some(phase_id.to_string());
-        env.step_id = Some(step.id.clone());
-        env.attempt = Some(attempt);
-        env.payload = serde_json::json!({ "elapsed_ms": elapsed_ms });
-        append_event(events_path, &mut env, current_seq)?;
-    }
-
-    // StepCompleted
-    {
-        let mut env = make_envelope(run_id, MethodEventKind::StepCompleted);
-        env.phase_id = Some(phase_id.to_string());
-        env.step_id = Some(step.id.clone());
-        append_event(events_path, &mut env, current_seq)?;
-    }
-
-    Ok(())
+    emit_output_bindings_and_complete(
+        &attempt_dir,
+        events_path,
+        run_id,
+        current_seq,
+        phase_id,
+        step,
+        attempt,
+        attempt_start,
+        "synthesis",
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -1753,42 +1099,16 @@ fn execute_interactive_step(
     step: &NormalizedStep,
     interactive_io: &dyn InteractiveIO,
 ) -> Result<(), RunError> {
-    // StepStarted
-    {
-        let mut env = make_envelope(run_id, MethodEventKind::StepStarted);
-        env.phase_id = Some(phase_id.to_string());
-        env.step_id = Some(step.id.clone());
-        append_event(events_path, &mut env, current_seq)?;
-    }
-
     let attempt: u32 = 1;
-
-    // Create attempt dir — NO relay directory (interactive has no relay root)
-    let attempt_dir = paths.attempt_dir(phase_id, &step.id, attempt);
-    std::fs::create_dir_all(&attempt_dir)?;
-
-    // Write input-bindings.json
-    {
-        let inputs_map: BTreeMap<String, String> = step
-            .inputs
-            .iter()
-            .map(|input| (input.clone(), input.clone()))
-            .collect();
-        let bindings = serde_json::json!({ "inputs": inputs_map });
-        let json = serde_json::to_string_pretty(&bindings).map_err(std::io::Error::other)?;
-        std::fs::write(attempt_dir.join("input-bindings.json"), json)?;
-    }
-
-    let attempt_start = std::time::Instant::now();
-
-    // AttemptStarted
-    {
-        let mut env = make_envelope(run_id, MethodEventKind::AttemptStarted);
-        env.phase_id = Some(phase_id.to_string());
-        env.step_id = Some(step.id.clone());
-        env.attempt = Some(attempt);
-        append_event(events_path, &mut env, current_seq)?;
-    }
+    let (attempt_dir, attempt_start) = emit_step_and_attempt_start(
+        paths,
+        events_path,
+        run_id,
+        current_seq,
+        phase_id,
+        step,
+        attempt,
+    )?;
 
     // Extract prompt and response_type from interactive config
     let (prompt_message, response_type) = match &step.config {
@@ -1813,7 +1133,6 @@ fn execute_interactive_step(
             "prompt": prompt_message,
             "response_type": response_type,
         });
-        // No worker_id for interactive
         append_event(events_path, &mut env, current_seq)?;
     }
 
@@ -1826,34 +1145,16 @@ fn execute_interactive_step(
     // Validate response against declared response_type
     if !response_type.is_empty() {
         if let Err(validation_err) = validate_interactive_response(&response_type, &response.body) {
-            let elapsed_ms = attempt_start.elapsed().as_millis() as u64;
-            // Emit AttemptFailed with timing and error category
-            {
-                let mut env = make_envelope(run_id, MethodEventKind::AttemptFailed);
-                env.phase_id = Some(phase_id.to_string());
-                env.step_id = Some(step.id.clone());
-                env.attempt = Some(attempt);
-                env.payload = serde_json::json!({
-                    "reason": validation_err,
-                    "elapsed_ms": elapsed_ms,
-                    "error_category": "validation_failed",
-                });
-                append_event(events_path, &mut env, current_seq)?;
-            }
-            // Emit StepBlocked with structured blocked_reason
-            {
-                let mut env = make_envelope(run_id, MethodEventKind::StepBlocked);
-                env.phase_id = Some(phase_id.to_string());
-                env.step_id = Some(step.id.clone());
-                env.payload = serde_json::json!({
-                    "reason": format!("response validation failed: {}", validation_err),
-                    "blocked_reason": {
-                        "category": "gate_rejected",
-                        "details": format!("response validation failed: {}", validation_err),
-                    }
-                });
-                append_event(events_path, &mut env, current_seq)?;
-            }
+            emit_interactive_validation_failure(
+                events_path,
+                run_id,
+                current_seq,
+                phase_id,
+                step,
+                attempt,
+                attempt_start,
+                &validation_err,
+            )?;
             return Err(RunError::StepBlocked {
                 step_id: step.id.clone(),
                 reason: format!("response validation failed: {}", validation_err),
@@ -1883,71 +1184,57 @@ fn execute_interactive_step(
         std::fs::write(&output_path, &response.body)?;
     }
 
-    // Write output-bindings.json and emit OutputBound events
+    emit_output_bindings_and_complete(
+        &attempt_dir,
+        events_path,
+        run_id,
+        current_seq,
+        phase_id,
+        step,
+        attempt,
+        attempt_start,
+        "interactive",
+    )
+}
+
+/// Emit AttemptFailed + StepBlocked events for interactive validation failure.
+#[allow(clippy::too_many_arguments)]
+fn emit_interactive_validation_failure(
+    events_path: &Path,
+    run_id: &str,
+    current_seq: &mut u64,
+    phase_id: &str,
+    step: &NormalizedStep,
+    attempt: u32,
+    attempt_start: std::time::Instant,
+    validation_err: &str,
+) -> Result<(), RunError> {
+    let elapsed_ms = attempt_start.elapsed().as_millis() as u64;
     {
-        let mut output_bindings: BTreeMap<String, serde_json::Value> = BTreeMap::new();
-        for (output_name, output_def) in &step.outputs {
-            let resolved_path = output_def.path.clone();
-            output_bindings.insert(
-                output_name.clone(),
-                serde_json::json!({
-                    "path": resolved_path,
-                    "type": output_def.output_type,
-                }),
-            );
-
-            // OutputBound event — no worker_id for interactive
-            let mut env = make_envelope(run_id, MethodEventKind::OutputBound);
-            env.phase_id = Some(phase_id.to_string());
-            env.step_id = Some(step.id.clone());
-            env.attempt = Some(attempt);
-            env.payload = serde_json::json!({
-                "name": output_name,
-                "path": resolved_path,
-                "type": output_def.output_type,
-            });
-            append_event(events_path, &mut env, current_seq)?;
-        }
-
-        let bindings_json = serde_json::json!({ "outputs": output_bindings });
-        let json = serde_json::to_string_pretty(&bindings_json).map_err(std::io::Error::other)?;
-        std::fs::write(attempt_dir.join("output-bindings.json"), json)?;
-    }
-
-    // Write attempt.json
-    {
-        let attempt_json = serde_json::json!({
-            "phase_id": phase_id,
-            "step_id": step.id,
-            "attempt": attempt,
-            "status": "completed",
-            "action": "interactive",
-            "started_at": chrono::Utc::now().to_rfc3339(),
-            "completed_at": chrono::Utc::now().to_rfc3339(),
-        });
-        let json = serde_json::to_string_pretty(&attempt_json).map_err(std::io::Error::other)?;
-        std::fs::write(attempt_dir.join("attempt.json"), json)?;
-    }
-
-    // AttemptCompleted with timing
-    {
-        let elapsed_ms = attempt_start.elapsed().as_millis() as u64;
-        let mut env = make_envelope(run_id, MethodEventKind::AttemptCompleted);
+        let mut env = make_envelope(run_id, MethodEventKind::AttemptFailed);
         env.phase_id = Some(phase_id.to_string());
         env.step_id = Some(step.id.clone());
         env.attempt = Some(attempt);
-        env.payload = serde_json::json!({ "elapsed_ms": elapsed_ms });
+        env.payload = serde_json::json!({
+            "reason": validation_err,
+            "elapsed_ms": elapsed_ms,
+            "error_category": "validation_failed",
+        });
         append_event(events_path, &mut env, current_seq)?;
     }
-
-    // StepCompleted
     {
-        let mut env = make_envelope(run_id, MethodEventKind::StepCompleted);
+        let mut env = make_envelope(run_id, MethodEventKind::StepBlocked);
         env.phase_id = Some(phase_id.to_string());
         env.step_id = Some(step.id.clone());
+        env.payload = serde_json::json!({
+            "reason": format!("response validation failed: {}", validation_err),
+            "blocked_reason": {
+                "category": "gate_rejected",
+                "details": format!("response validation failed: {}", validation_err),
+            }
+        });
         append_event(events_path, &mut env, current_seq)?;
     }
-
     Ok(())
 }
 

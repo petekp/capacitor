@@ -316,370 +316,425 @@ fn apply_event(
 ) -> Result<(), ProjectionError> {
     let seq = event.seq;
     match event.kind {
-        MethodEventKind::DefinitionFrozen => {
-            state.definition_frozen = true;
-            state.run_id.clone_from(&event.run_id);
-        }
-        MethodEventKind::RunStarted => {
-            state.run_id.clone_from(&event.run_id);
-            state.status = state
-                .status
-                .transition_to(RunStatus::Running, &state.run_id.clone())
-                .map_err(|e| ProjectionError::TransitionError { seq, source: e })?;
-        }
-        MethodEventKind::RunCompleted => {
-            state.status = state
-                .status
-                .transition_to(RunStatus::Completed, &state.run_id.clone())
-                .map_err(|e| ProjectionError::TransitionError { seq, source: e })?;
-        }
-        MethodEventKind::RunFailed => {
-            state.status = state
-                .status
-                .transition_to(RunStatus::Failed, &state.run_id.clone())
-                .map_err(|e| ProjectionError::TransitionError { seq, source: e })?;
-        }
-        MethodEventKind::RunBlocked => {
-            state.status = state
-                .status
-                .transition_to(RunStatus::Blocked, &state.run_id.clone())
-                .map_err(|e| ProjectionError::TransitionError { seq, source: e })?;
-        }
-        MethodEventKind::PhaseStarted => {
-            let phase_id = event.phase_id.as_deref().unwrap_or("unknown");
-            let phase = state
-                .phases
-                .entry(phase_id.to_string())
-                .or_insert_with(|| PhaseState {
-                    status: PhaseStatus::Pending,
-                    steps: BTreeMap::new(),
-                    gate_result: None,
-                });
-            phase.status = phase
-                .status
-                .transition_to(PhaseStatus::Running, phase_id)
-                .map_err(|e| ProjectionError::TransitionError { seq, source: e })?;
-        }
+        MethodEventKind::DefinitionFrozen => apply_definition_frozen(state, event),
+        MethodEventKind::RunStarted => apply_run_status(state, RunStatus::Running, event, seq),
+        MethodEventKind::RunCompleted => apply_run_status(state, RunStatus::Completed, event, seq),
+        MethodEventKind::RunFailed => apply_run_status(state, RunStatus::Failed, event, seq),
+        MethodEventKind::RunBlocked => apply_run_status(state, RunStatus::Blocked, event, seq),
+        MethodEventKind::PhaseStarted => apply_phase_started(state, event, seq),
         MethodEventKind::PhaseCompleted => {
-            let phase_id = event.phase_id.as_deref().unwrap_or("unknown");
-            if let Some(phase) = state.phases.get_mut(phase_id) {
-                phase.status = phase
-                    .status
-                    .transition_to(PhaseStatus::Completed, phase_id)
-                    .map_err(|e| ProjectionError::TransitionError { seq, source: e })?;
-            }
+            apply_phase_transition(state, PhaseStatus::Completed, event, seq)
         }
         MethodEventKind::PhaseFailed => {
-            let phase_id = event.phase_id.as_deref().unwrap_or("unknown");
-            if let Some(phase) = state.phases.get_mut(phase_id) {
-                phase.status = phase
-                    .status
-                    .transition_to(PhaseStatus::Failed, phase_id)
-                    .map_err(|e| ProjectionError::TransitionError { seq, source: e })?;
-            }
+            apply_phase_transition(state, PhaseStatus::Failed, event, seq)
         }
         MethodEventKind::PhaseBlocked => {
-            let phase_id = event.phase_id.as_deref().unwrap_or("unknown");
-            if let Some(phase) = state.phases.get_mut(phase_id) {
-                phase.status = phase
-                    .status
-                    .transition_to(PhaseStatus::Blocked, phase_id)
-                    .map_err(|e| ProjectionError::TransitionError { seq, source: e })?;
-            }
+            apply_phase_transition(state, PhaseStatus::Blocked, event, seq)
         }
-        MethodEventKind::StepStarted => {
-            let phase_id = event.phase_id.as_deref().unwrap_or("unknown");
-            let step_id = event.step_id.as_deref().unwrap_or("unknown");
-            if let Some(phase) = state.phases.get_mut(phase_id) {
-                let step = phase
-                    .steps
-                    .entry(step_id.to_string())
-                    .or_insert_with(|| StepState {
-                        status: StepStatus::Pending,
-                        current_attempt: 0,
-                        attempts: BTreeMap::new(),
-                        outputs: BTreeMap::new(),
-                    });
-                step.status = step
-                    .status
-                    .transition_to(StepStatus::Running, step_id)
-                    .map_err(|e| ProjectionError::TransitionError { seq, source: e })?;
-            }
-        }
+        MethodEventKind::StepStarted => apply_step_started(state, event, seq),
         MethodEventKind::StepCompleted => {
-            let phase_id = event.phase_id.as_deref().unwrap_or("unknown");
-            let step_id = event.step_id.as_deref().unwrap_or("unknown");
-            if let Some(phase) = state.phases.get_mut(phase_id) {
-                if let Some(step) = phase.steps.get_mut(step_id) {
-                    step.status = step
-                        .status
-                        .transition_to(StepStatus::Completed, step_id)
-                        .map_err(|e| ProjectionError::TransitionError { seq, source: e })?;
-                }
-            }
+            apply_step_transition(state, StepStatus::Completed, event, seq)
         }
-        MethodEventKind::StepFailed => {
-            let phase_id = event.phase_id.as_deref().unwrap_or("unknown");
-            let step_id = event.step_id.as_deref().unwrap_or("unknown");
-            if let Some(phase) = state.phases.get_mut(phase_id) {
-                if let Some(step) = phase.steps.get_mut(step_id) {
-                    step.status = step
-                        .status
-                        .transition_to(StepStatus::Failed, step_id)
-                        .map_err(|e| ProjectionError::TransitionError { seq, source: e })?;
-                }
-            }
-        }
+        MethodEventKind::StepFailed => apply_step_transition(state, StepStatus::Failed, event, seq),
         MethodEventKind::StepBlocked => {
-            let phase_id = event.phase_id.as_deref().unwrap_or("unknown");
-            let step_id = event.step_id.as_deref().unwrap_or("unknown");
-            if let Some(phase) = state.phases.get_mut(phase_id) {
-                if let Some(step) = phase.steps.get_mut(step_id) {
-                    step.status = step
-                        .status
-                        .transition_to(StepStatus::Blocked, step_id)
-                        .map_err(|e| ProjectionError::TransitionError { seq, source: e })?;
-                }
-            }
+            apply_step_transition(state, StepStatus::Blocked, event, seq)
         }
-        MethodEventKind::AttemptStarted => {
-            let phase_id = event.phase_id.as_deref().unwrap_or("unknown");
-            let step_id = event.step_id.as_deref().unwrap_or("unknown");
-            let attempt_num = event.attempt.unwrap_or(1);
-            if let Some(phase) = state.phases.get_mut(phase_id) {
-                if let Some(step) = phase.steps.get_mut(step_id) {
-                    step.current_attempt = attempt_num;
-                    step.attempts.insert(
-                        attempt_num,
-                        AttemptState {
-                            status: AttemptStatus::Created,
-                            workers: BTreeMap::new(),
-                            output_bindings: BTreeMap::new(),
-                        },
-                    );
-                }
-            }
-        }
+        MethodEventKind::AttemptStarted => apply_attempt_started(state, event),
         MethodEventKind::AttemptCompleted => {
-            let phase_id = event.phase_id.as_deref().unwrap_or("unknown");
-            let step_id = event.step_id.as_deref().unwrap_or("unknown");
-            let attempt_num = event.attempt.unwrap_or(1);
-            let attempt_id = format!("{step_id}:attempt:{attempt_num}");
-            if let Some(phase) = state.phases.get_mut(phase_id) {
-                if let Some(step) = phase.steps.get_mut(step_id) {
-                    if let Some(attempt) = step.attempts.get_mut(&attempt_num) {
-                        attempt.status = attempt
-                            .status
-                            .transition_to(AttemptStatus::Completed, &attempt_id)
-                            .map_err(|e| ProjectionError::TransitionError { seq, source: e })?;
-                    }
-                }
-            }
+            apply_attempt_terminal(state, AttemptStatus::Completed, event, seq)
         }
         MethodEventKind::AttemptFailed => {
-            let phase_id = event.phase_id.as_deref().unwrap_or("unknown");
-            let step_id = event.step_id.as_deref().unwrap_or("unknown");
-            let attempt_num = event.attempt.unwrap_or(1);
-            let attempt_id = format!("{step_id}:attempt:{attempt_num}");
-            if let Some(phase) = state.phases.get_mut(phase_id) {
-                if let Some(step) = phase.steps.get_mut(step_id) {
-                    if let Some(attempt) = step.attempts.get_mut(&attempt_num) {
-                        attempt.status = attempt
-                            .status
-                            .transition_to(AttemptStatus::Failed, &attempt_id)
-                            .map_err(|e| ProjectionError::TransitionError { seq, source: e })?;
-                    }
-                }
-            }
+            apply_attempt_terminal(state, AttemptStatus::Failed, event, seq)
         }
-        MethodEventKind::WorkerDispatched => {
-            let phase_id = event.phase_id.as_deref().unwrap_or("unknown");
-            let step_id = event.step_id.as_deref().unwrap_or("unknown");
-            let attempt_num = event.attempt.unwrap_or(1);
-            let worker_id = event.worker_id.as_deref().unwrap_or("primary");
-            if let Some(phase) = state.phases.get_mut(phase_id) {
-                if let Some(step) = phase.steps.get_mut(step_id) {
-                    if let Some(attempt) = step.attempts.get_mut(&attempt_num) {
-                        // Transition attempt Created → Dispatching
-                        if attempt.status == AttemptStatus::Created {
-                            let attempt_id = format!("{step_id}:attempt:{attempt_num}");
-                            attempt.status = attempt
-                                .status
-                                .transition_to(AttemptStatus::Dispatching, &attempt_id)
-                                .map_err(|e| ProjectionError::TransitionError { seq, source: e })?;
-                        }
-                        attempt.workers.insert(
-                            worker_id.to_string(),
-                            WorkerState {
-                                status: WorkerStatus::Dispatched,
-                                handoff_received: false,
-                            },
-                        );
-                    }
-                }
-            }
-        }
-        MethodEventKind::WorkerCompleted => {
-            let phase_id = event.phase_id.as_deref().unwrap_or("unknown");
-            let step_id = event.step_id.as_deref().unwrap_or("unknown");
-            let attempt_num = event.attempt.unwrap_or(1);
-            let worker_id = event.worker_id.as_deref().unwrap_or("primary");
-            if let Some(phase) = state.phases.get_mut(phase_id) {
-                if let Some(step) = phase.steps.get_mut(step_id) {
-                    if let Some(attempt) = step.attempts.get_mut(&attempt_num) {
-                        // Transition attempt Dispatching → Running if needed
-                        if attempt.status == AttemptStatus::Dispatching {
-                            let attempt_id = format!("{step_id}:attempt:{attempt_num}");
-                            attempt.status = attempt
-                                .status
-                                .transition_to(AttemptStatus::Running, &attempt_id)
-                                .map_err(|e| ProjectionError::TransitionError { seq, source: e })?;
-                        }
-                        if let Some(worker) = attempt.workers.get_mut(worker_id) {
-                            // Dispatched → Running → Completed
-                            if worker.status == WorkerStatus::Dispatched {
-                                worker.status = worker
-                                    .status
-                                    .transition_to(WorkerStatus::Running, worker_id)
-                                    .map_err(|e| ProjectionError::TransitionError {
-                                        seq,
-                                        source: e,
-                                    })?;
-                            }
-                            worker.status = worker
-                                .status
-                                .transition_to(WorkerStatus::Completed, worker_id)
-                                .map_err(|e| ProjectionError::TransitionError { seq, source: e })?;
-                        }
-                    }
-                }
-            }
-        }
-        MethodEventKind::WorkerFailed => {
-            let phase_id = event.phase_id.as_deref().unwrap_or("unknown");
-            let step_id = event.step_id.as_deref().unwrap_or("unknown");
-            let attempt_num = event.attempt.unwrap_or(1);
-            let worker_id = event.worker_id.as_deref().unwrap_or("primary");
-            if let Some(phase) = state.phases.get_mut(phase_id) {
-                if let Some(step) = phase.steps.get_mut(step_id) {
-                    if let Some(attempt) = step.attempts.get_mut(&attempt_num) {
-                        if let Some(worker) = attempt.workers.get_mut(worker_id) {
-                            if worker.status == WorkerStatus::Dispatched {
-                                worker.status = worker
-                                    .status
-                                    .transition_to(WorkerStatus::Running, worker_id)
-                                    .map_err(|e| ProjectionError::TransitionError {
-                                        seq,
-                                        source: e,
-                                    })?;
-                            }
-                            worker.status = worker
-                                .status
-                                .transition_to(WorkerStatus::Failed, worker_id)
-                                .map_err(|e| ProjectionError::TransitionError { seq, source: e })?;
-                        }
-                    }
-                }
-            }
-        }
-        MethodEventKind::HandoffIngested => {
-            let phase_id = event.phase_id.as_deref().unwrap_or("unknown");
-            let step_id = event.step_id.as_deref().unwrap_or("unknown");
-            let attempt_num = event.attempt.unwrap_or(1);
-            let worker_id = event.worker_id.as_deref().unwrap_or("primary");
-            if let Some(phase) = state.phases.get_mut(phase_id) {
-                if let Some(step) = phase.steps.get_mut(step_id) {
-                    if let Some(attempt) = step.attempts.get_mut(&attempt_num) {
-                        // Transition attempt Running → HandoffReceived
-                        if attempt.status == AttemptStatus::Running {
-                            let attempt_id = format!("{step_id}:attempt:{attempt_num}");
-                            attempt.status = attempt
-                                .status
-                                .transition_to(AttemptStatus::HandoffReceived, &attempt_id)
-                                .map_err(|e| ProjectionError::TransitionError { seq, source: e })?;
-                        }
-                        if let Some(worker) = attempt.workers.get_mut(worker_id) {
-                            worker.handoff_received = true;
-                        }
-                    }
-                }
-            }
-        }
-        MethodEventKind::OutputBound => {
-            let phase_id = event.phase_id.as_deref().unwrap_or("unknown");
-            let step_id = event.step_id.as_deref().unwrap_or("unknown");
-            let attempt_num = event.attempt.unwrap_or(1);
-            if let Some(phase) = state.phases.get_mut(phase_id) {
-                if let Some(step) = phase.steps.get_mut(step_id) {
-                    if let Some(attempt) = step.attempts.get_mut(&attempt_num) {
-                        // Transition attempt → OutputBound
-                        // HandoffReceived → OutputBound (dispatch path)
-                        // Created → OutputBound (synthesis/interactive path: no worker dispatch)
-                        if attempt.status == AttemptStatus::HandoffReceived
-                            || attempt.status == AttemptStatus::Created
-                        {
-                            let attempt_id = format!("{step_id}:attempt:{attempt_num}");
-                            attempt.status = attempt
-                                .status
-                                .transition_to(AttemptStatus::OutputBound, &attempt_id)
-                                .map_err(|e| ProjectionError::TransitionError { seq, source: e })?;
-                        }
-                        // Record the binding from payload
-                        if let Some(name) = event.payload.get("name").and_then(|v| v.as_str()) {
-                            if let Some(path) = event.payload.get("path").and_then(|v| v.as_str()) {
-                                attempt
-                                    .output_bindings
-                                    .insert(name.to_string(), path.to_string());
-                                step.outputs.insert(name.to_string(), path.to_string());
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        MethodEventKind::GateEvaluated => {
-            let phase_id = event.phase_id.as_deref().unwrap_or("unknown");
-            if let Some(phase) = state.phases.get_mut(phase_id) {
-                let gate_id = event
-                    .payload
-                    .get("gate_id")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("unknown")
-                    .to_string();
-                let gate_type = event
-                    .payload
-                    .get("gate_type")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("unknown")
-                    .to_string();
-                let outcome = event
-                    .payload
-                    .get("outcome")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("unknown")
-                    .to_string();
-                let reason = event
-                    .payload
-                    .get("reason")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string());
-
-                phase.gate_result = Some(GateResult {
-                    gate_id,
-                    gate_type,
-                    outcome,
-                    reason,
-                });
-            }
-        }
+        MethodEventKind::WorkerDispatched => apply_worker_dispatched(state, event, seq),
+        MethodEventKind::WorkerCompleted => apply_worker_completed(state, event, seq),
+        MethodEventKind::WorkerFailed => apply_worker_failed(state, event, seq),
+        MethodEventKind::HandoffIngested => apply_handoff_ingested(state, event, seq),
+        MethodEventKind::OutputBound => apply_output_bound(state, event, seq),
+        MethodEventKind::GateEvaluated => apply_gate_evaluated(state, event),
         // Events we acknowledge but don't need special state for in tracer bullet
         MethodEventKind::InteractivePrompted
         | MethodEventKind::InteractiveResponseReceived
         | MethodEventKind::SynthesisStarted
         | MethodEventKind::SynthesisCompleted
-        | MethodEventKind::PipelineExecuteBlocked => {}
+        | MethodEventKind::PipelineExecuteBlocked => Ok(()),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Per-event-kind projection helpers
+// ---------------------------------------------------------------------------
+
+fn apply_definition_frozen(
+    state: &mut MethodRunState,
+    event: &MethodEventEnvelope,
+) -> Result<(), ProjectionError> {
+    state.definition_frozen = true;
+    state.run_id.clone_from(&event.run_id);
+    Ok(())
+}
+
+fn apply_run_status(
+    state: &mut MethodRunState,
+    target: RunStatus,
+    event: &MethodEventEnvelope,
+    seq: u64,
+) -> Result<(), ProjectionError> {
+    if target == RunStatus::Running {
+        state.run_id.clone_from(&event.run_id);
+    }
+    state.status = state
+        .status
+        .transition_to(target, &state.run_id.clone())
+        .map_err(|e| ProjectionError::TransitionError { seq, source: e })?;
+    Ok(())
+}
+
+fn apply_phase_started(
+    state: &mut MethodRunState,
+    event: &MethodEventEnvelope,
+    seq: u64,
+) -> Result<(), ProjectionError> {
+    let phase_id = event.phase_id.as_deref().unwrap_or("unknown");
+    let phase = state
+        .phases
+        .entry(phase_id.to_string())
+        .or_insert_with(|| PhaseState {
+            status: PhaseStatus::Pending,
+            steps: BTreeMap::new(),
+            gate_result: None,
+        });
+    phase.status = phase
+        .status
+        .transition_to(PhaseStatus::Running, phase_id)
+        .map_err(|e| ProjectionError::TransitionError { seq, source: e })?;
+    Ok(())
+}
+
+fn apply_phase_transition(
+    state: &mut MethodRunState,
+    target: PhaseStatus,
+    event: &MethodEventEnvelope,
+    seq: u64,
+) -> Result<(), ProjectionError> {
+    let phase_id = event.phase_id.as_deref().unwrap_or("unknown");
+    if let Some(phase) = state.phases.get_mut(phase_id) {
+        phase.status = phase
+            .status
+            .transition_to(target, phase_id)
+            .map_err(|e| ProjectionError::TransitionError { seq, source: e })?;
     }
     Ok(())
+}
+
+fn apply_step_started(
+    state: &mut MethodRunState,
+    event: &MethodEventEnvelope,
+    seq: u64,
+) -> Result<(), ProjectionError> {
+    let phase_id = event.phase_id.as_deref().unwrap_or("unknown");
+    let step_id = event.step_id.as_deref().unwrap_or("unknown");
+    if let Some(phase) = state.phases.get_mut(phase_id) {
+        let step = phase
+            .steps
+            .entry(step_id.to_string())
+            .or_insert_with(|| StepState {
+                status: StepStatus::Pending,
+                current_attempt: 0,
+                attempts: BTreeMap::new(),
+                outputs: BTreeMap::new(),
+            });
+        step.status = step
+            .status
+            .transition_to(StepStatus::Running, step_id)
+            .map_err(|e| ProjectionError::TransitionError { seq, source: e })?;
+    }
+    Ok(())
+}
+
+fn apply_step_transition(
+    state: &mut MethodRunState,
+    target: StepStatus,
+    event: &MethodEventEnvelope,
+    seq: u64,
+) -> Result<(), ProjectionError> {
+    let phase_id = event.phase_id.as_deref().unwrap_or("unknown");
+    let step_id = event.step_id.as_deref().unwrap_or("unknown");
+    if let Some(phase) = state.phases.get_mut(phase_id) {
+        if let Some(step) = phase.steps.get_mut(step_id) {
+            step.status = step
+                .status
+                .transition_to(target, step_id)
+                .map_err(|e| ProjectionError::TransitionError { seq, source: e })?;
+        }
+    }
+    Ok(())
+}
+
+fn apply_attempt_started(
+    state: &mut MethodRunState,
+    event: &MethodEventEnvelope,
+) -> Result<(), ProjectionError> {
+    let phase_id = event.phase_id.as_deref().unwrap_or("unknown");
+    let step_id = event.step_id.as_deref().unwrap_or("unknown");
+    let attempt_num = event.attempt.unwrap_or(1);
+    if let Some(phase) = state.phases.get_mut(phase_id) {
+        if let Some(step) = phase.steps.get_mut(step_id) {
+            step.current_attempt = attempt_num;
+            step.attempts.insert(
+                attempt_num,
+                AttemptState {
+                    status: AttemptStatus::Created,
+                    workers: BTreeMap::new(),
+                    output_bindings: BTreeMap::new(),
+                },
+            );
+        }
+    }
+    Ok(())
+}
+
+fn apply_attempt_terminal(
+    state: &mut MethodRunState,
+    target: AttemptStatus,
+    event: &MethodEventEnvelope,
+    seq: u64,
+) -> Result<(), ProjectionError> {
+    let phase_id = event.phase_id.as_deref().unwrap_or("unknown");
+    let step_id = event.step_id.as_deref().unwrap_or("unknown");
+    let attempt_num = event.attempt.unwrap_or(1);
+    let attempt_id = format!("{step_id}:attempt:{attempt_num}");
+    if let Some(phase) = state.phases.get_mut(phase_id) {
+        if let Some(step) = phase.steps.get_mut(step_id) {
+            if let Some(attempt) = step.attempts.get_mut(&attempt_num) {
+                attempt.status = attempt
+                    .status
+                    .transition_to(target, &attempt_id)
+                    .map_err(|e| ProjectionError::TransitionError { seq, source: e })?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn apply_worker_dispatched(
+    state: &mut MethodRunState,
+    event: &MethodEventEnvelope,
+    seq: u64,
+) -> Result<(), ProjectionError> {
+    let phase_id = event.phase_id.as_deref().unwrap_or("unknown");
+    let step_id = event.step_id.as_deref().unwrap_or("unknown");
+    let attempt_num = event.attempt.unwrap_or(1);
+    let worker_id = event.worker_id.as_deref().unwrap_or("primary");
+    let attempt = lookup_attempt_mut(state, phase_id, step_id, attempt_num);
+    let Some(attempt) = attempt else {
+        return Ok(());
+    };
+    // Transition attempt Created -> Dispatching
+    if attempt.status == AttemptStatus::Created {
+        let attempt_id = format!("{step_id}:attempt:{attempt_num}");
+        attempt.status = attempt
+            .status
+            .transition_to(AttemptStatus::Dispatching, &attempt_id)
+            .map_err(|e| ProjectionError::TransitionError { seq, source: e })?;
+    }
+    attempt.workers.insert(
+        worker_id.to_string(),
+        WorkerState {
+            status: WorkerStatus::Dispatched,
+            handoff_received: false,
+        },
+    );
+    Ok(())
+}
+
+fn apply_worker_completed(
+    state: &mut MethodRunState,
+    event: &MethodEventEnvelope,
+    seq: u64,
+) -> Result<(), ProjectionError> {
+    let phase_id = event.phase_id.as_deref().unwrap_or("unknown");
+    let step_id = event.step_id.as_deref().unwrap_or("unknown");
+    let attempt_num = event.attempt.unwrap_or(1);
+    let worker_id = event.worker_id.as_deref().unwrap_or("primary");
+    let attempt = lookup_attempt_mut(state, phase_id, step_id, attempt_num);
+    let Some(attempt) = attempt else {
+        return Ok(());
+    };
+    // Transition attempt Dispatching -> Running if needed
+    if attempt.status == AttemptStatus::Dispatching {
+        let attempt_id = format!("{step_id}:attempt:{attempt_num}");
+        attempt.status = attempt
+            .status
+            .transition_to(AttemptStatus::Running, &attempt_id)
+            .map_err(|e| ProjectionError::TransitionError { seq, source: e })?;
+    }
+    if let Some(worker) = attempt.workers.get_mut(worker_id) {
+        // Dispatched -> Running -> Completed
+        if worker.status == WorkerStatus::Dispatched {
+            worker.status = worker
+                .status
+                .transition_to(WorkerStatus::Running, worker_id)
+                .map_err(|e| ProjectionError::TransitionError { seq, source: e })?;
+        }
+        worker.status = worker
+            .status
+            .transition_to(WorkerStatus::Completed, worker_id)
+            .map_err(|e| ProjectionError::TransitionError { seq, source: e })?;
+    }
+    Ok(())
+}
+
+fn apply_worker_failed(
+    state: &mut MethodRunState,
+    event: &MethodEventEnvelope,
+    seq: u64,
+) -> Result<(), ProjectionError> {
+    let phase_id = event.phase_id.as_deref().unwrap_or("unknown");
+    let step_id = event.step_id.as_deref().unwrap_or("unknown");
+    let attempt_num = event.attempt.unwrap_or(1);
+    let worker_id = event.worker_id.as_deref().unwrap_or("primary");
+    let attempt = lookup_attempt_mut(state, phase_id, step_id, attempt_num);
+    let Some(attempt) = attempt else {
+        return Ok(());
+    };
+    if let Some(worker) = attempt.workers.get_mut(worker_id) {
+        if worker.status == WorkerStatus::Dispatched {
+            worker.status = worker
+                .status
+                .transition_to(WorkerStatus::Running, worker_id)
+                .map_err(|e| ProjectionError::TransitionError { seq, source: e })?;
+        }
+        worker.status = worker
+            .status
+            .transition_to(WorkerStatus::Failed, worker_id)
+            .map_err(|e| ProjectionError::TransitionError { seq, source: e })?;
+    }
+    Ok(())
+}
+
+fn apply_handoff_ingested(
+    state: &mut MethodRunState,
+    event: &MethodEventEnvelope,
+    seq: u64,
+) -> Result<(), ProjectionError> {
+    let phase_id = event.phase_id.as_deref().unwrap_or("unknown");
+    let step_id = event.step_id.as_deref().unwrap_or("unknown");
+    let attempt_num = event.attempt.unwrap_or(1);
+    let worker_id = event.worker_id.as_deref().unwrap_or("primary");
+    let attempt = lookup_attempt_mut(state, phase_id, step_id, attempt_num);
+    let Some(attempt) = attempt else {
+        return Ok(());
+    };
+    // Transition attempt Running -> HandoffReceived
+    if attempt.status == AttemptStatus::Running {
+        let attempt_id = format!("{step_id}:attempt:{attempt_num}");
+        attempt.status = attempt
+            .status
+            .transition_to(AttemptStatus::HandoffReceived, &attempt_id)
+            .map_err(|e| ProjectionError::TransitionError { seq, source: e })?;
+    }
+    if let Some(worker) = attempt.workers.get_mut(worker_id) {
+        worker.handoff_received = true;
+    }
+    Ok(())
+}
+
+fn apply_output_bound(
+    state: &mut MethodRunState,
+    event: &MethodEventEnvelope,
+    seq: u64,
+) -> Result<(), ProjectionError> {
+    let phase_id = event.phase_id.as_deref().unwrap_or("unknown");
+    let step_id = event.step_id.as_deref().unwrap_or("unknown");
+    let attempt_num = event.attempt.unwrap_or(1);
+    let step = state
+        .phases
+        .get_mut(phase_id)
+        .and_then(|p| p.steps.get_mut(step_id));
+    let Some(step) = step else {
+        return Ok(());
+    };
+    let Some(attempt) = step.attempts.get_mut(&attempt_num) else {
+        return Ok(());
+    };
+    // Transition attempt -> OutputBound
+    // HandoffReceived -> OutputBound (dispatch path)
+    // Created -> OutputBound (synthesis/interactive path: no worker dispatch)
+    if attempt.status == AttemptStatus::HandoffReceived || attempt.status == AttemptStatus::Created
+    {
+        let attempt_id = format!("{step_id}:attempt:{attempt_num}");
+        attempt.status = attempt
+            .status
+            .transition_to(AttemptStatus::OutputBound, &attempt_id)
+            .map_err(|e| ProjectionError::TransitionError { seq, source: e })?;
+    }
+    // Record the binding from payload
+    if let Some(name) = event.payload.get("name").and_then(|v| v.as_str()) {
+        if let Some(path) = event.payload.get("path").and_then(|v| v.as_str()) {
+            attempt
+                .output_bindings
+                .insert(name.to_string(), path.to_string());
+            step.outputs.insert(name.to_string(), path.to_string());
+        }
+    }
+    Ok(())
+}
+
+fn apply_gate_evaluated(
+    state: &mut MethodRunState,
+    event: &MethodEventEnvelope,
+) -> Result<(), ProjectionError> {
+    let phase_id = event.phase_id.as_deref().unwrap_or("unknown");
+    if let Some(phase) = state.phases.get_mut(phase_id) {
+        let gate_id = event
+            .payload
+            .get("gate_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown")
+            .to_string();
+        let gate_type = event
+            .payload
+            .get("gate_type")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown")
+            .to_string();
+        let outcome = event
+            .payload
+            .get("outcome")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown")
+            .to_string();
+        let reason = event
+            .payload
+            .get("reason")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+
+        phase.gate_result = Some(GateResult {
+            gate_id,
+            gate_type,
+            outcome,
+            reason,
+        });
+    }
+    Ok(())
+}
+
+/// Shared helper to navigate state -> phase -> step -> attempt.
+fn lookup_attempt_mut<'a>(
+    state: &'a mut MethodRunState,
+    phase_id: &str,
+    step_id: &str,
+    attempt_num: u32,
+) -> Option<&'a mut AttemptState> {
+    state
+        .phases
+        .get_mut(phase_id)?
+        .steps
+        .get_mut(step_id)?
+        .attempts
+        .get_mut(&attempt_num)
 }
 
 // ---------------------------------------------------------------------------

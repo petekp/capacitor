@@ -128,58 +128,11 @@ pub fn resolve_and_write_output(
     definition: &NormalizedMethodDefinition,
 ) -> Result<OutputRecord, ResolveError> {
     let loc = parse_locator(locator)?;
-
-    // Verify the phase exists in state
-    let phase_state = state
-        .phases
-        .get(&loc.phase_id)
-        .ok_or_else(|| ResolveError::PhaseNotFound(loc.phase_id.clone()))?;
-
-    // Verify the step exists in state
-    let step_state = phase_state
-        .steps
-        .get(&loc.step_id)
-        .ok_or_else(|| ResolveError::StepNotFound(loc.step_id.clone()))?;
-
-    // Check the step is in a terminal state
-    if step_state.status != StepStatus::Completed && step_state.status != StepStatus::Failed {
-        return Err(ResolveError::OutputNotAvailable(format!(
-            "step '{}' is not in a terminal state (status: {:?})",
-            loc.step_id, step_state.status
-        )));
-    }
-
-    // Verify the output is declared in the definition
-    let _phase_def = definition
-        .phases
-        .iter()
-        .find(|p| p.id == loc.phase_id)
-        .ok_or_else(|| ResolveError::PhaseNotFound(loc.phase_id.clone()))?;
-
-    // Find output binding from the completed attempt
-    let resolved_path = step_state
-        .outputs
-        .get(&loc.output_name)
-        .ok_or_else(|| ResolveError::OutputNotAvailable(loc.output_name.clone()))?
-        .clone();
-
-    // Find the worker_id from the completed attempt
-    let mut resolved_worker_id = loc.worker_id.clone();
-    if resolved_worker_id.is_none() {
-        // Find the first completed attempt and its first completed worker
-        for attempt in step_state.attempts.values() {
-            if attempt.status == AttemptStatus::Completed
-                || attempt.status == AttemptStatus::OutputBound
-            {
-                if let Some(wid) = attempt.workers.keys().next() {
-                    resolved_worker_id = Some(wid.clone());
-                }
-                if resolved_worker_id.is_some() {
-                    break;
-                }
-            }
-        }
-    }
+    let step_state = resolve_step_state(state, &loc)?;
+    ensure_step_is_terminal(step_state, &loc)?;
+    ensure_phase_declared(definition, &loc)?;
+    let resolved_path = resolve_output_path(step_state, &loc)?;
+    let resolved_worker_id = resolve_worker_id(step_state, &loc);
 
     let record = OutputRecord {
         locator: locator.to_string(),
@@ -188,14 +141,97 @@ pub fn resolve_and_write_output(
         resolved_at: chrono::Utc::now().to_rfc3339(),
         worker_id: resolved_worker_id,
     };
+    write_output_record(paths, name, &record)?;
 
-    // Write the output record
+    Ok(record)
+}
+
+fn resolve_step_state<'a>(
+    state: &'a MethodRunState,
+    locator: &OutputLocator,
+) -> Result<&'a crate::method_runner::state::StepState, ResolveError> {
+    let phase_state = state
+        .phases
+        .get(&locator.phase_id)
+        .ok_or_else(|| ResolveError::PhaseNotFound(locator.phase_id.clone()))?;
+    phase_state
+        .steps
+        .get(&locator.step_id)
+        .ok_or_else(|| ResolveError::StepNotFound(locator.step_id.clone()))
+}
+
+fn ensure_step_is_terminal(
+    step_state: &crate::method_runner::state::StepState,
+    locator: &OutputLocator,
+) -> Result<(), ResolveError> {
+    if step_state.status == StepStatus::Completed || step_state.status == StepStatus::Failed {
+        return Ok(());
+    }
+
+    Err(ResolveError::OutputNotAvailable(format!(
+        "step '{}' is not in a terminal state (status: {:?})",
+        locator.step_id, step_state.status
+    )))
+}
+
+fn ensure_phase_declared(
+    definition: &NormalizedMethodDefinition,
+    locator: &OutputLocator,
+) -> Result<(), ResolveError> {
+    definition
+        .phases
+        .iter()
+        .find(|phase| phase.id == locator.phase_id)
+        .ok_or_else(|| ResolveError::PhaseNotFound(locator.phase_id.clone()))?;
+    Ok(())
+}
+
+fn resolve_output_path(
+    step_state: &crate::method_runner::state::StepState,
+    locator: &OutputLocator,
+) -> Result<String, ResolveError> {
+    step_state
+        .outputs
+        .get(&locator.output_name)
+        .cloned()
+        .ok_or_else(|| ResolveError::OutputNotAvailable(locator.output_name.clone()))
+}
+
+fn resolve_worker_id(
+    step_state: &crate::method_runner::state::StepState,
+    locator: &OutputLocator,
+) -> Option<String> {
+    let mut resolved_worker_id = locator.worker_id.clone();
+    if resolved_worker_id.is_some() {
+        return resolved_worker_id;
+    }
+
+    for attempt in step_state.attempts.values() {
+        if attempt.status == AttemptStatus::Completed
+            || attempt.status == AttemptStatus::OutputBound
+        {
+            if let Some(worker_id) = attempt.workers.keys().next() {
+                resolved_worker_id = Some(worker_id.clone());
+            }
+            if resolved_worker_id.is_some() {
+                break;
+            }
+        }
+    }
+
+    resolved_worker_id
+}
+
+fn write_output_record(
+    paths: &MethodRunPaths,
+    name: &str,
+    record: &OutputRecord,
+) -> Result<(), ResolveError> {
     let record_path = paths.output_record(name);
     if let Some(parent) = record_path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let json = serde_json::to_string_pretty(&record)?;
+    let json = serde_json::to_string_pretty(record)?;
     std::fs::write(&record_path, json)?;
-
-    Ok(record)
+    Ok(())
 }

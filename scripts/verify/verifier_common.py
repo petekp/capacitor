@@ -18,6 +18,7 @@ import yaml
 
 EXCLUDED_DIRS = {
     ".git",
+    ".capacitor",
     ".claude/worktrees",
     ".worktrees",
     ".verifier/facts",
