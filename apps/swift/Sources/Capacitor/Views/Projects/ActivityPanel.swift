@@ -353,6 +353,7 @@ private struct RunCompletionCard: View {
         )
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(title), \(subtitle)")
+        .accessibilityIdentifier(AccessibilityIdentifiers.runCompletionIdentifier)
     }
 }
 

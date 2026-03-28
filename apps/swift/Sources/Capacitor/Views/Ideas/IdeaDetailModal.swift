@@ -72,7 +72,7 @@ struct IdeaDetailOverlay: View {
                         .clipShape(RoundedRectangle(cornerRadius: 6))
                     }
                     .buttonStyle(.plain)
-                    .accessibilityIdentifier("idea_detail_run_method")
+                    .accessibilityIdentifier(AccessibilityIdentifiers.ideaDetailRunMethodIdentifier)
                 }
 
                 if let onDelegate {

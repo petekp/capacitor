@@ -92,6 +92,7 @@ struct IdeaCaptureOverlay: View {
                 focusTextArea()
             }
         }
+        .accessibilityIdentifier(AccessibilityIdentifiers.ideaCaptureOverlayIdentifier)
     }
 
     private var topBar: some View {
@@ -533,6 +534,7 @@ struct CenteredTextEditor: NSViewRepresentable {
         }
 
         scrollView.documentView = textView
+        scrollView.setAccessibilityIdentifier(AccessibilityIdentifiers.ideaCaptureTextAreaIdentifier)
         context.coordinator.attach(textView: textView, scrollView: scrollView)
 
         return scrollView

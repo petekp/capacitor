@@ -15,6 +15,19 @@ enum AccessibilityIdentifiers {
     static let runCheckpointRequestChangesIdentifier = "ax.run-checkpoint-review.request-changes"
     static let runCheckpointNotesIdentifier = "ax.run-checkpoint-review.notes"
 
+    static let ideaCaptureOverlayIdentifier = "ax.idea-capture-overlay"
+    static let ideaCaptureTextAreaIdentifier = "ax.idea-capture-textarea"
+
+    static let methodSelectorIdentifier = "ax.method-selector"
+    static let methodSelectorDismissIdentifier = "ax.method-selector.dismiss"
+    static func methodCardIdentifier(for methodId: String) -> String {
+        "ax.method-card.\(methodId)"
+    }
+
+    static let runCompletionIdentifier = "ax.run-completion"
+    static let ideaDetailRunMethodIdentifier = "ax.idea-detail.run-method"
+    static let ideaQueueFirstRowIdentifier = "ax.idea-queue-first"
+
     static func projectCardIdentifier(for project: Project) -> String {
         "ax.project-card.\(slug(for: project))"
     }

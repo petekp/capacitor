@@ -296,6 +296,7 @@ struct IdeaQueueRow: View {
             onTap?()
         }
         .accessibilityElement(children: .combine)
+        .accessibilityIdentifier(isFirst ? AccessibilityIdentifiers.ideaQueueFirstRowIdentifier : "ax.idea-queue-row.\(idea.id)")
         .accessibilityLabel(idea.title)
         .accessibilityValue(activity?.accessibilityLabel ?? "")
         .accessibilityHint(isFirst ? "Top of queue - next to work on" : "Drag to reorder")

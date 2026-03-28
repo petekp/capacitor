@@ -25,6 +25,7 @@ struct MethodSelectorView: View {
                         .clipShape(Circle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier(AccessibilityIdentifiers.methodSelectorDismissIdentifier)
             }
 
             Text("Choose a workflow for this idea")
@@ -49,6 +50,7 @@ struct MethodSelectorView: View {
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(panelBorder)
         .shadow(color: .black.opacity(0.32), radius: 22, y: 14)
+        .accessibilityIdentifier(AccessibilityIdentifiers.methodSelectorIdentifier)
     }
 
     private var panelBackground: some View {
@@ -176,6 +178,7 @@ private struct MethodCard: View {
             .scaleEffect(isHovered ? 1.01 : 1)
         }
         .buttonStyle(.plain)
+        .accessibilityIdentifier(AccessibilityIdentifiers.methodCardIdentifier(for: method.id))
         .onHover { hovering in
             withAnimation(.spring(response: 0.2, dampingFraction: 0.86)) {
                 isHovered = hovering

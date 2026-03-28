@@ -7,6 +7,7 @@ workspace_root="$(cd "${script_dir}/../.." && pwd -P)"
 
 projects_file="${CAPACITOR_PROJECTS_FILE:-$HOME/.capacitor/projects.json}"
 skip_details_phase=0
+skip_method_runner_phase=0
 artifact_dir=""
 
 usage() {
@@ -16,11 +17,13 @@ Usage: bash scripts/ci/non-demo-ax-smoke.sh [options]
 Runs non-demo AX smoke coverage against the debug build:
 1) Stable profile: card interactions + layout toggles.
 2) Frontier profile: details navigation flow.
+3) Frontier profile: method runner identifier smoke.
 
 Options:
   --projects-file <path>  Override projects json (default: ~/.capacitor/projects.json)
   --artifacts-dir <path>  Override artifact directory (default: artifacts/manual-testing)
-  --skip-details          Skip the frontier/details phase.
+  --skip-details          Skip the frontier/details phase (also skips method runner).
+  --skip-method-runner    Skip the method runner phase only.
   --help                  Show this help text.
 USAGE
 }
@@ -39,6 +42,10 @@ while [[ $# -gt 0 ]]; do
         ;;
     --skip-details)
         skip_details_phase=1
+        shift
+        ;;
+    --skip-method-runner)
+        skip_method_runner_phase=1
         shift
         ;;
     --help)
@@ -130,8 +137,10 @@ mkdir -p "$artifact_dir"
 
 cards_scenario="${artifact_dir}/non-demo-ax-smoke-cards-${timestamp}.json"
 details_scenario="${artifact_dir}/non-demo-ax-smoke-details-${timestamp}.json"
+method_runner_scenario="${artifact_dir}/non-demo-ax-smoke-method-runner-${timestamp}.json"
 cards_log="${artifact_dir}/non-demo-ax-smoke-cards-${timestamp}.log"
 details_log="${artifact_dir}/non-demo-ax-smoke-details-${timestamp}.log"
+method_runner_log="${artifact_dir}/non-demo-ax-smoke-method-runner-${timestamp}.log"
 
 cat >"$cards_scenario" <<JSON
 {
@@ -204,7 +213,87 @@ swift "${workspace_root}/scripts/ax/ax_runner.swift" \
     --scenario "$details_scenario" \
     --click-mode visible | tee "$details_log"
 
+if [[ "$skip_method_runner_phase" -eq 1 ]]; then
+    echo ""
+    echo "Skipped method runner phase (--skip-method-runner)."
+    echo "Cards log:   $cards_log"
+    echo "Details log: $details_log"
+    exit 0
+fi
+
+# Phase 3 reuses the frontier app already launched by Phase 2.
+# It exercises the method runner AX identifiers: navigates to project details,
+# opens an idea detail modal (if ideas exist), opens the method selector via
+# "Run Method", then dismisses. If no ideas are queued the scenario exercises
+# only the details-level identifiers and exits cleanly.
+#
+# Check whether the primary project has ideas queued by inspecting the runtime
+# state. If no ideas are found, generate a simpler scenario that validates
+# the project details view renders under frontier profile without error.
+
+has_ideas=0
+ideas_file="$HOME/.capacitor/ideas.json"
+if [[ -f "$ideas_file" ]]; then
+    idea_count="$(jq --arg p "$primary_path" '[.ideas[]? | select(.projectPath == $p)] | length' "$ideas_file" 2>/dev/null || echo 0)"
+    if [[ "$idea_count" -gt 0 ]]; then
+        has_ideas=1
+    fi
+fi
+
+if [[ "$has_ideas" -eq 1 ]]; then
+    echo ""
+    echo "[phase 3] Frontier profile method runner smoke (with ideas)"
+
+    cat >"$method_runner_scenario" <<JSON
+{
+  "steps": [
+    { "type": "wait", "duration": 1.2 },
+    { "type": "key", "chord": "cmd+1" },
+    { "type": "wait", "duration": 0.8 },
+    { "type": "click", "identifier": "${details_primary_id}", "timeout": 12.0, "visible": true },
+    { "type": "wait", "duration": 1.5 },
+    { "type": "click", "identifier": "ax.idea-queue-first", "timeout": 8.0, "visible": true },
+    { "type": "wait", "duration": 1.0 },
+    { "type": "click", "identifier": "ax.idea-detail.run-method", "timeout": 8.0, "visible": true },
+    { "type": "wait", "duration": 1.2 },
+    { "type": "click", "identifier": "ax.method-selector.dismiss", "timeout": 8.0, "visible": true },
+    { "type": "wait", "duration": 0.8 },
+    { "type": "click", "identifier": "ax.idea-detail.dismiss", "timeout": 8.0, "visible": true },
+    { "type": "wait", "duration": 0.8 },
+    { "type": "click", "identifier": "ax.nav.back-projects", "timeout": 12.0, "visible": true },
+    { "type": "wait", "duration": 1.5 }
+  ]
+}
+JSON
+else
+    echo ""
+    echo "[phase 3] Frontier profile method runner smoke (no ideas — details-only)"
+
+    # Without ideas, we can only verify the details view renders in frontier
+    # profile. The method selector and idea detail identifiers require ideas.
+    cat >"$method_runner_scenario" <<JSON
+{
+  "steps": [
+    { "type": "wait", "duration": 1.2 },
+    { "type": "key", "chord": "cmd+1" },
+    { "type": "wait", "duration": 0.8 },
+    { "type": "click", "identifier": "${details_primary_id}", "timeout": 12.0, "visible": true },
+    { "type": "wait", "duration": 1.5 },
+    { "type": "click", "identifier": "ax.nav.back-projects", "timeout": 12.0, "visible": true },
+    { "type": "wait", "duration": 1.5 }
+  ]
+}
+JSON
+fi
+
+echo "Method runner scenario: $method_runner_scenario"
+swift "${workspace_root}/scripts/ax/ax_runner.swift" \
+    --bundle-id com.capacitor.app.debug \
+    --scenario "$method_runner_scenario" \
+    --click-mode visible | tee "$method_runner_log"
+
 echo ""
 echo "Non-demo AX smoke complete."
-echo "Cards log:   $cards_log"
-echo "Details log: $details_log"
+echo "Cards log:         $cards_log"
+echo "Details log:       $details_log"
+echo "Method runner log: $method_runner_log"
