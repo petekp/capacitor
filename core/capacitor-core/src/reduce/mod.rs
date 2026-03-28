@@ -569,6 +569,18 @@ fn is_managed_worktree_pane(pane: &TmuxPaneInfo) -> bool {
     is_path_in_managed_worktree(pane.pane_path.as_str())
 }
 
+/// Returns true if this pane belongs to a managed-worktree session — either
+/// the session name matches the delegation naming convention, or the session
+/// contains panes whose paths are in managed worktrees.
+fn is_pane_in_managed_worktree_session(pane: &TmuxPaneInfo, all_panes: &[TmuxPaneInfo]) -> bool {
+    if is_managed_session_name(&pane.session_name) {
+        return true;
+    }
+    all_panes.iter().any(|p| {
+        p.session_name == pane.session_name && is_path_in_managed_worktree(p.pane_path.as_str())
+    })
+}
+
 fn select_tmux_inventory_for_project<'a>(
     project_path: &str,
     shells: impl Iterator<Item = &'a ShellSignal>,
@@ -584,7 +596,13 @@ fn select_tmux_inventory_for_project<'a>(
                 })
             })
         })
-        .filter(|candidate| !is_managed_worktree_pane(candidate.pane))
+        .filter(|candidate| {
+            !is_managed_worktree_pane(candidate.pane)
+                && !is_pane_in_managed_worktree_session(
+                    candidate.pane,
+                    &candidate.carrier.tmux_panes,
+                )
+        })
         .max_by(|left, right| {
             (!is_managed_worktree_pane(left.pane))
                 .cmp(&(!is_managed_worktree_pane(right.pane)))
@@ -609,7 +627,28 @@ fn is_path_in_managed_worktree(path: &str) -> bool {
 }
 
 fn is_managed_worktree_shell(shell: &ShellSignal) -> bool {
-    is_path_in_managed_worktree(shell.cwd.as_str())
+    if is_path_in_managed_worktree(shell.cwd.as_str()) {
+        return true;
+    }
+    if let Some(session) = shell.tmux_session.as_ref() {
+        // The session itself is a managed-worktree session (named "delegation-<hex>")
+        if is_managed_session_name(session) {
+            return true;
+        }
+        // Or the session contains panes whose paths are in managed worktrees
+        if shell.tmux_panes.iter().any(|pane| {
+            pane.session_name == *session && is_path_in_managed_worktree(pane.pane_path.as_str())
+        }) {
+            return true;
+        }
+    }
+    false
+}
+
+/// Returns true if a tmux session name matches the naming convention used by
+/// managed worktree sessions (delegation workers).
+fn is_managed_session_name(name: &str) -> bool {
+    name.starts_with("delegation-")
 }
 
 fn compare_shell_candidates(
