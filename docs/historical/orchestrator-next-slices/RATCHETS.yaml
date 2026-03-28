@@ -1,0 +1,35 @@
+# Anti-pattern ratchets
+# Budgets can only decrease.
+
+ratchets:
+  - id: ratchet-001
+    label: "Legacy WorkstreamsManager references in Swift"
+    pattern: "\\bWorkstreamsManager\\b"
+    scope: "apps/swift/Sources,apps/swift/Tests"
+    budget: 15
+    rationale: "Workstreams is legacy and slated for excision. New orchestrator work should drive this count downward, never upward."
+    notes: "Initial budget captured on 2026-03-16."
+
+  - id: ratchet-002
+    label: "Legacy WorkstreamsPanel references in Swift"
+    pattern: "\\bWorkstreamsPanel\\b"
+    scope: "apps/swift/Sources,apps/swift/Tests"
+    budget: 2
+    rationale: "The legacy Workstreams UI should not spread while the orchestrator is being built."
+    notes: "Initial budget captured on 2026-03-16."
+
+  - id: ratchet-003
+    label: "Legacy workstreams feature-flag references in Swift"
+    pattern: "featureFlags\\.workstreams|case workstreams|\\bworkstreams\\b"
+    scope: "apps/swift/Sources,apps/swift/Tests"
+    budget: 15
+    rationale: "The plan is to excise Workstreams. The legacy feature flag and related references must trend toward removal."
+    notes: "Initial budget captured on 2026-03-16."
+
+  - id: ratchet-004
+    label: "Migration placeholder markers in orchestrator control-plane docs"
+    pattern: "TODO\\(migration\\)|FIXME\\(migration\\)"
+    scope: "docs/plans/orchestrator-next-slices"
+    budget: 0
+    rationale: "The control-plane package should stay clean and explicit."
+    notes: "Initial budget captured on 2026-03-16."
