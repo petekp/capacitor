@@ -237,7 +237,9 @@ run_command_with_fail_closed_output() {
     return
   fi
 
-  if "${command[@]}" >"$layer_log" 2>&1; then
+  "${command[@]}" >"$layer_log" 2>&1 &
+  CHILD_PIDS+=($!)
+  if wait_with_timeout $! "$VERIFY_TIMEOUT"; then
     if [[ ! -s "$tmp_out" ]]; then
       create_error_payload "$tmp_out" "Layer ${layer} completed without producing output."
       OVERALL_STATUS=1
@@ -250,7 +252,7 @@ run_command_with_fail_closed_output() {
       local message
       message="$(tr '\n' ' ' < "$layer_log" | sed 's/[[:space:]]\+/ /g' | sed 's/^ //; s/ $//')"
       if [[ -z "$message" ]]; then
-        message="Layer ${layer} failed without producing output."
+        message="Layer ${layer} failed or timed out."
       fi
       create_error_payload "$tmp_out" "$message"
     fi
@@ -285,11 +287,39 @@ if [[ "$CHANGED_ONLY" == true && "$LAYERS" == *"2"* ]]; then
   exit 2
 fi
 
+VERIFY_TIMEOUT="${VERIFY_TIMEOUT:-300}"
 TMP_DIR="$(mktemp -d)"
+CHILD_PIDS=()
+
+# Wait for a background PID with a timeout (seconds). Returns the child's exit
+# code on success, or kills the child and returns 1 on timeout.
+wait_with_timeout() {
+  local pid="$1"
+  local timeout="$2"
+  local elapsed=0
+  while kill -0 "$pid" 2>/dev/null; do
+    if (( elapsed >= timeout )); then
+      echo "verify.sh: killing PID $pid after ${timeout}s timeout" >&2
+      kill "$pid" 2>/dev/null || true
+      sleep 1
+      kill -9 "$pid" 2>/dev/null || true
+      wait "$pid" 2>/dev/null || true
+      return 1
+    fi
+    sleep 1
+    (( elapsed++ )) || true
+  done
+  wait "$pid" 2>/dev/null
+}
+
 cleanup() {
+  for pid in "${CHILD_PIDS[@]}"; do
+    kill "$pid" 2>/dev/null && wait "$pid" 2>/dev/null || true
+  done
+  CHILD_PIDS=()
   rm -rf "$TMP_DIR"
 }
-trap cleanup EXIT
+trap cleanup EXIT INT TERM HUP
 
 "$JSON_PYTHON" - <<'PY' "$REPO_ROOT" "$SELECTED_PATHS_FILE" "$STRUCTURAL_CONFIG" "$ELEGANCE_CONFIG" "$CANONICAL_CLAIMS_PATH" "$LEDGER_PATH" "$SPECS_DIR" "$BOOTSTRAP_MANIFEST" "$RUN_MANIFEST_PATH" "$SCRIPT_DIR"
 import pathlib
@@ -349,13 +379,15 @@ else
     extract_args+=(--changed-only)
   fi
 
-  if "${extract_args[@]}" >"$TMP_DIR/extract.log" 2>&1; then
+  "${extract_args[@]}" >"$TMP_DIR/extract.log" 2>&1 &
+  CHILD_PIDS+=($!)
+  if wait_with_timeout $! "$VERIFY_TIMEOUT"; then
     promote_output "$TMP_FACTS" "$FACTS_PATH"
   else
     EXTRACT_STATUS=1
     EXTRACT_ERROR="$(tr '\n' ' ' < "$TMP_DIR/extract.log" | sed 's/[[:space:]]\+/ /g' | sed 's/^ //; s/ $//')"
     if [[ -z "$EXTRACT_ERROR" ]]; then
-      EXTRACT_ERROR="Fact extraction failed."
+      EXTRACT_ERROR="Fact extraction failed or timed out."
     fi
   fi
 fi

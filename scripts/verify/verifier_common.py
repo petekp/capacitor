@@ -35,6 +35,10 @@ EXCLUDED_DIRS = {
     "apps/swift/.swiftpm",
 }
 
+# Directory basenames that should be excluded anywhere in the tree, not just at
+# the repo root.  Matches any path component (e.g. apps/www/node_modules).
+_EXCLUDED_ANYWHERE = {"node_modules", ".build", ".next", "__pycache__"}
+
 PRODUCTION_EXTENSIONS = {
     ".rs",
     ".swift",
@@ -152,6 +156,12 @@ def is_excluded_path(relative_path: str) -> bool:
     for excluded in EXCLUDED_DIRS:
         excluded_norm = excluded.replace("\\", "/")
         if normalized == excluded_norm or normalized.startswith(excluded_norm + "/"):
+            return True
+    # Check if any path component matches _EXCLUDED_ANYWHERE (catches nested
+    # node_modules, .build, .next, etc. that the prefix check misses).
+    parts = normalized.split("/")
+    for part in parts:
+        if part in _EXCLUDED_ANYWHERE:
             return True
     return False
 
@@ -296,18 +306,28 @@ def find_git_changed_files(repo_root: pathlib.Path) -> list[str]:
     return sorted(tracked | staged | untracked)
 
 
+_parser_cache: dict[str, Any] = {}
+
+
 def get_tree_sitter_parser(language: str):
+    cached = _parser_cache.get(language)
+    if cached is not None:
+        return cached
     last_error: Exception | None = None
     try:
         from tree_sitter_language_pack import get_parser  # type: ignore
 
-        return get_parser(language)
+        parser = get_parser(language)
+        _parser_cache[language] = parser
+        return parser
     except Exception as error:  # pragma: no cover - dependency import fallback
         last_error = error
     try:
         from tree_sitter_languages import get_parser  # type: ignore
 
-        return get_parser(language)
+        parser = get_parser(language)
+        _parser_cache[language] = parser
+        return parser
     except Exception as error:  # pragma: no cover - dependency import fallback
         last_error = error
     raise RuntimeError(
@@ -315,9 +335,10 @@ def get_tree_sitter_parser(language: str):
     ) from last_error
 
 
-def tree_sitter_string_literals(language: str, content: str) -> list[dict[str, Any]]:
-    parser = get_tree_sitter_parser(language)
-    tree = parser.parse(content.encode("utf-8"))
+def tree_sitter_string_literals(language: str, content: str, *, tree=None) -> list[dict[str, Any]]:
+    if tree is None:
+        parser = get_tree_sitter_parser(language)
+        tree = parser.parse(content.encode("utf-8"))
     string_types = {
         "rust": {"string_literal", "raw_string_literal"},
         "swift": {"line_string_literal", "multi_line_string_literal", "string_literal"},

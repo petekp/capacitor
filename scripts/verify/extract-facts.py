@@ -188,12 +188,13 @@ def raw_text_entries(content: str) -> list[dict[str, Any]]:
     )
 
 
-def identifier_refs_for(language: str, content: str) -> list[dict[str, Any]]:
+def identifier_refs_for(language: str, content: str, *, tree=None) -> list[dict[str, Any]]:
     if language not in {"python", "rust", "swift"}:
         return []
 
-    parser = get_tree_sitter_parser(language)
-    tree = parser.parse(content.encode("utf-8"))
+    if tree is None:
+        parser = get_tree_sitter_parser(language)
+        tree = parser.parse(content.encode("utf-8"))
     excluded_node_types = {
         "comment",
         "block_comment",
@@ -427,9 +428,10 @@ def rust_definition_value(node, content: str) -> str | None:
     return None
 
 
-def ast_fact_sets(language: str, content: str) -> dict[str, list[dict[str, Any]]]:
-    parser = get_tree_sitter_parser(language)
-    tree = parser.parse(content.encode("utf-8"))
+def ast_fact_sets(language: str, content: str, *, tree=None) -> dict[str, list[dict[str, Any]]]:
+    if tree is None:
+        parser = get_tree_sitter_parser(language)
+        tree = parser.parse(content.encode("utf-8"))
     facts = {
         "imports": [],
         "calls": [],
@@ -620,8 +622,13 @@ def extract_module(path: pathlib.Path, repo_root: pathlib.Path) -> dict[str, Any
     language = detect_language(path, content)
     relative_path = relpath(path, repo_root)
     string_literals = []
+
+    # Parse once, share the tree across all tree-sitter consumers.
+    tree = None
     if language in {"rust", "swift"}:
-        string_literals = tree_sitter_string_literals(language, content)
+        parser = get_tree_sitter_parser(language)
+        tree = parser.parse(content.encode("utf-8"))
+        string_literals = tree_sitter_string_literals(language, content, tree=tree)
     bindings = static_string_bindings(language, content)
 
     imports = []
@@ -630,7 +637,7 @@ def extract_module(path: pathlib.Path, repo_root: pathlib.Path) -> dict[str, Any
     definitions_entries = []
     references_entries = []
     if language in {"rust", "swift"}:
-        ast_facts = ast_fact_sets(language, content)
+        ast_facts = ast_fact_sets(language, content, tree=tree)
         imports = ast_facts["imports"]
         calls = ast_facts["calls"]
         implements = ast_facts["implements"]
@@ -661,7 +668,7 @@ def extract_module(path: pathlib.Path, repo_root: pathlib.Path) -> dict[str, Any
         "references": references_entries
         or decorate_lexical_entries(references_for(content), kind="reference", language=language, confidence="low"),
         "identifier_refs": decorate_lexical_entries(
-            identifier_refs_for(language, content),
+            identifier_refs_for(language, content, tree=tree),
             kind="identifier_ref",
             language=language,
             confidence="medium",
