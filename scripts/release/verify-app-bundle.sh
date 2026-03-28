@@ -181,6 +181,20 @@ echo "  Launching app from bundle (not via swift run)..."
 
 # Launch the app in background (portable - no GNU timeout required)
 LAUNCH_LOG=$(mktemp)
+
+cleanup_launch() {
+    local app_pid
+    app_pid=$(pgrep -f "Capacitor.app/Contents/MacOS/Capacitor" || true)
+    if [[ -n "$app_pid" ]]; then
+        kill "$app_pid" 2>/dev/null || true
+    fi
+    if [[ -n "${OPEN_PID:-}" ]]; then
+        kill "$OPEN_PID" 2>/dev/null || true
+    fi
+    rm -f "$LAUNCH_LOG"
+}
+trap cleanup_launch EXIT INT TERM HUP
+
 open "$APP_BUNDLE" 2>"$LAUNCH_LOG" &
 OPEN_PID=$!
 
@@ -214,7 +228,7 @@ else
     fi
 fi
 
-# Clean up the open command if still running
+# Clean up (also handled by EXIT trap for abnormal exit)
 kill "$OPEN_PID" 2>/dev/null || true
 rm -f "$LAUNCH_LOG"
 

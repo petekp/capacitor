@@ -69,6 +69,16 @@ DMG_NAME="Capacitor-v$VERSION-$(uname -m).dmg"
 DMG_PATH="$DIST_DIR/$DMG_NAME"
 VOLUME_NAME="Capacitor"
 TEMP_DIR=$(mktemp -d)
+ATTACHED_DEVICE=""
+
+cleanup() {
+    if [[ -n "$ATTACHED_DEVICE" ]]; then
+        hdiutil detach "$ATTACHED_DEVICE" -quiet 2>/dev/null || true
+    fi
+    rm -f "$DMG_PATH.tmp" 2>/dev/null || true
+    rm -rf "$TEMP_DIR"
+}
+trap cleanup EXIT INT TERM HUP
 
 echo -e "${YELLOW}Step 1/4: Preparing DMG contents...${NC}"
 cp -R "$APP_BUNDLE" "$TEMP_DIR/"
@@ -89,6 +99,7 @@ if [ -f "$PROJECT_ROOT/assets/dmg-background.png" ]; then
         "$DMG_PATH.tmp"
 
     DEVICE=$(hdiutil attach -readwrite -noverify -noautoopen "$DMG_PATH.tmp" | egrep '^/dev/' | sed 1q | awk '{print $1}')
+    ATTACHED_DEVICE="$DEVICE"
 
     echo '
        tell application "Finder"
@@ -114,6 +125,7 @@ if [ -f "$PROJECT_ROOT/assets/dmg-background.png" ]; then
 
     sync
     hdiutil detach "$DEVICE" -quiet
+    ATTACHED_DEVICE=""
 
     hdiutil convert "$DMG_PATH.tmp" -format UDZO -imagekey zlib-level=9 -o "$DMG_PATH"
     rm -f "$DMG_PATH.tmp"
@@ -125,7 +137,6 @@ else
         "$DMG_PATH"
 fi
 
-rm -rf "$TEMP_DIR"
 echo -e "${GREEN}✓ DMG created${NC}"
 echo ""
 
