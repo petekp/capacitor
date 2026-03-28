@@ -277,12 +277,12 @@ classify_phase_failure() {
         printf 'missing_log\n'
         return
     fi
-    if ! has_runner_complete "$path"; then
-        printf 'missing_runner_complete\n'
-        return
-    fi
     if contains_runner_error "$path"; then
         printf 'runner_error\n'
+        return
+    fi
+    if ! has_runner_complete "$path"; then
+        printf 'missing_runner_complete\n'
         return
     fi
     printf '\n'
@@ -446,7 +446,17 @@ restore_runtime_ideas_file() {
     fi
 }
 
-    main() {
+cleanup_seeded_files() {
+    if [[ "${seeded_files_cleaned:-0}" -eq 1 ]]; then
+        return
+    fi
+
+    seeded_files_cleaned=1
+    restore_runtime_ideas_file "$run_dir" "$restore_ideas_mode"
+    restore_runtime_projects_file "$run_dir" "$restore_projects_mode"
+}
+
+main() {
     parse_args "$@"
 
     require_cmd jq
@@ -476,6 +486,21 @@ restore_runtime_ideas_file() {
         global_window_lifecycle_health="pass"
     fi
 
+    local -a expected_phase_list=()
+    local phase=""
+    while IFS= read -r phase; do
+        expected_phase_list+=("$phase")
+    done < <(expected_phases)
+
+    local coverage_mode="full"
+    local -a phases_exercised_arr=()
+    local -a phase_statuses=()
+    local -a phase_reasons=()
+    for phase in "${expected_phase_list[@]}"; do
+        phase_statuses+=("pass")
+        phase_reasons+=("")
+    done
+
     local run_index=0
     while [[ "$run_index" -lt "$runs" ]]; do
         run_index=$((run_index + 1))
@@ -491,9 +516,11 @@ restore_runtime_ideas_file() {
         projects_path="$(prepare_projects_file "$run_dir")"
         local ideas_path
         ideas_path="$(prepare_ideas_file "$run_dir" "$projects_path")"
-        local restore_projects_mode=""
+        local restore_projects_mode="remove"
+        local restore_ideas_mode="remove"
+        local seeded_files_cleaned=0
+        trap cleanup_seeded_files EXIT
         restore_projects_mode="$(install_runtime_projects_file "$run_dir" "$projects_path")"
-        local restore_ideas_mode=""
         restore_ideas_mode="$(install_runtime_ideas_file "$run_dir" "$ideas_path")"
 
         local debug_log_start_size
@@ -505,15 +532,10 @@ restore_runtime_ideas_file() {
         else
             smoke_status=$?
         fi
-        restore_runtime_ideas_file "$run_dir" "$restore_ideas_mode"
-        restore_runtime_projects_file "$run_dir" "$restore_projects_mode"
+        cleanup_seeded_files
+        trap - EXIT
 
         slice_debug_log "$debug_log" "$debug_log_start_size" "$run_debug_log"
-
-        local -a phases=()
-        while IFS= read -r phase; do
-            phases+=("$phase")
-        done < <(expected_phases)
 
         local outcome="pass"
         local failure_context="none"
@@ -525,8 +547,16 @@ restore_runtime_ideas_file() {
         details_log="$(collect_phase_log "$smoke_artifacts_dir" "details")"
         method_runner_log="$(collect_phase_log "$smoke_artifacts_dir" "method_runner")"
 
-        local phase=""
-        for phase in "${phases[@]}"; do
+        local -a run_phase_statuses=()
+        local -a run_phase_reasons=()
+        local phase_index=0
+        for phase in "${expected_phase_list[@]}"; do
+            run_phase_statuses+=("skip")
+            run_phase_reasons+=("")
+        done
+
+        for ((phase_index = 0; phase_index < ${#expected_phase_list[@]}; phase_index++)); do
+            phase="${expected_phase_list[$phase_index]}"
             local phase_log=""
             case "$phase" in
             cards)
@@ -540,9 +570,23 @@ restore_runtime_ideas_file() {
                 ;;
             esac
 
+            if [[ -n "$phase_log" && -f "$phase_log" ]]; then
+                local phase_seen=0
+                local exercised_phase=""
+                for exercised_phase in "${phases_exercised_arr[@]:-}"; do
+                    if [[ "$exercised_phase" == "$phase" ]]; then
+                        phase_seen=1
+                        break
+                    fi
+                done
+                if [[ "$phase_seen" -eq 0 ]]; then
+                    phases_exercised_arr+=("$phase")
+                fi
+            fi
+
             local reason=""
             reason="$(classify_phase_failure "$phase_log")"
-            if [[ -z "$reason" && "$smoke_status" -ne 0 ]]; then
+            if [[ "$reason" == "missing_log" && "$smoke_status" -ne 0 ]]; then
                 reason="$(classify_phase_failure "$run_log")"
                 if [[ -z "$reason" ]]; then
                     reason="smoke_exit_status_${smoke_status}"
@@ -550,15 +594,40 @@ restore_runtime_ideas_file() {
             fi
 
             if [[ -n "$reason" ]]; then
+                coverage_mode="degraded"
                 if [[ "$allow_untrusted" -eq 1 && "$reason" == "accessibility_not_trusted" ]]; then
                     outcome="skipped_untrusted"
                     failure_context="run=${run_index} phase=${phase} reason=${reason}(non_blocking)"
+                    run_phase_statuses[$phase_index]="skip"
                     break
                 fi
                 outcome="fail"
                 failure_context="run=${run_index} phase=${phase} reason=${reason}"
+                run_phase_statuses[$phase_index]="fail"
+                run_phase_reasons[$phase_index]="$reason"
                 break
             fi
+            run_phase_statuses[$phase_index]="pass"
+        done
+
+        if [[ "$outcome" == "pass" && "$smoke_status" -ne 0 ]]; then
+            outcome="fail"
+            failure_context="run=${run_index} phase=smoke reason=smoke_exit_status_${smoke_status}"
+        fi
+
+        for ((phase_index = 0; phase_index < ${#expected_phase_list[@]}; phase_index++)); do
+            case "${run_phase_statuses[$phase_index]}" in
+            fail)
+                phase_statuses[$phase_index]="fail"
+                phase_reasons[$phase_index]="${run_phase_reasons[$phase_index]}"
+                ;;
+            skip)
+                if [[ "${phase_statuses[$phase_index]}" != "fail" ]]; then
+                    phase_statuses[$phase_index]="skip"
+                    phase_reasons[$phase_index]=""
+                fi
+                ;;
+            esac
         done
 
         if [[ "$outcome" == "pass" && "$require_log_health" -eq 1 ]]; then
@@ -618,12 +687,43 @@ restore_runtime_ideas_file() {
         echo "summary_json=${summary_json}"
     } | tee "$summary_file"
 
+    local phases_exercised_json="[]"
+    if [[ "${#phases_exercised_arr[@]}" -gt 0 ]]; then
+        phases_exercised_json="$(printf '%s\n' "${phases_exercised_arr[@]}" | jq -R . | jq -s .)"
+    fi
+
+    local phase_results_json="[]"
+    local phase_index=0
+    for ((phase_index = 0; phase_index < ${#expected_phase_list[@]}; phase_index++)); do
+        if [[ "${phase_statuses[$phase_index]}" == "fail" ]]; then
+            phase_results_json="$(
+                jq -cn \
+                    --argjson current "$phase_results_json" \
+                    --arg phase "${expected_phase_list[$phase_index]}" \
+                    --arg reason "${phase_reasons[$phase_index]}" \
+                    '$current + [{phase: $phase, status: "fail", reason: $reason}]'
+            )"
+            continue
+        fi
+
+        phase_results_json="$(
+            jq -cn \
+                --argjson current "$phase_results_json" \
+                --arg phase "${expected_phase_list[$phase_index]}" \
+                --arg status "${phase_statuses[$phase_index]}" \
+                '$current + [{phase: $phase, status: $status}]'
+        )"
+    done
+
     jq -n \
         --argjson runs_requested "$runs" \
         --argjson runs_passed "$runs_passed" \
         --argjson runs_skipped_untrusted "$runs_skipped_untrusted" \
         --arg window_lifecycle_health "$global_window_lifecycle_health" \
         --arg first_failure_context "$first_failure_context" \
+        --arg coverage_mode "$coverage_mode" \
+        --argjson phases_exercised "$phases_exercised_json" \
+        --argjson phase_results "$phase_results_json" \
         --arg artifacts_dir "$artifact_session_dir" \
         --arg runs_report "$runs_report" \
         '{
@@ -631,6 +731,9 @@ restore_runtime_ideas_file() {
             runs_passed: $runs_passed,
             runs_skipped_untrusted: $runs_skipped_untrusted,
             window_lifecycle_health: $window_lifecycle_health,
+            coverage_mode: $coverage_mode,
+            phases_exercised: $phases_exercised,
+            phase_results: $phase_results,
             first_failure_context: $first_failure_context,
             artifacts_dir: $artifacts_dir,
             runs_report: $runs_report
