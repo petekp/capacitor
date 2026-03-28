@@ -659,6 +659,31 @@ case "$command" in
     "$0" hooks 2>/dev/null | sed 's/^/  /'
     echo ""
 
+    echo "--- AX Verification ---"
+    local ax_artifacts_dir
+    ax_artifacts_dir="$(cd "$(dirname "$0")/../.." 2>/dev/null && pwd -P)/artifacts/ax-automation-verification"
+    if [[ -d "$ax_artifacts_dir" ]] && command -v jq >/dev/null 2>&1; then
+      local latest_ax_summary=""
+      latest_ax_summary="$(find "$ax_artifacts_dir" -name 'summary.json' -type f 2>/dev/null | sort | tail -n 1)"
+      if [[ -n "$latest_ax_summary" && -f "$latest_ax_summary" ]]; then
+        local ax_dir
+        ax_dir="$(dirname "$latest_ax_summary")"
+        echo "  latest: $(basename "$ax_dir")"
+        jq -r '
+          "  runs: \(.runs_passed)/\(.runs_requested)",
+          "  coverage_mode: \(.coverage_mode // "unknown")",
+          "  phases_exercised: \(.phases_exercised // [] | join(", "))",
+          "  first_failure: \(.first_failure_context)",
+          "  window_health: \(.window_lifecycle_health)"
+        ' "$latest_ax_summary" 2>/dev/null || echo "  (parse error)"
+      else
+        echo "  (no AX verification results found)"
+      fi
+    else
+      echo "  (no AX verification artifacts directory)"
+    fi
+    echo ""
+
     echo "--- Routing Summary ---"
     if [[ -n "$snapshot_payload" ]]; then
       echo "$snapshot_payload" | jq '.routing | map({project_path, status, target_kind, reason_code})' 2>/dev/null || echo "  (parse error)"

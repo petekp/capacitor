@@ -70,9 +70,10 @@ Think of the AX stack as three layers:
 
 The verifier has a few CI-oriented setup behaviors on purpose:
 
-- If the environment does not already have two distinct pinned projects, it creates a temporary projects file and installs it at the runtime path the app actually reads: `~/.capacitor/projects.json`.
+- If the environment does not already have two distinct pinned projects, it creates a temporary projects file and installs it at the runtime path the app actually reads: `~/.capacitor/projects.json`. Both projects and ideas files are protected by EXIT traps for cleanup on abnormal exit.
+- The verifier seeds `~/.capacitor/ideas.json` with a test idea for the primary project, enabling the full Phase 3 method runner scenario. Without seeded ideas, Phase 3 falls back to a details-only scenario and reports `coverage_mode: "degraded"`.
 - In CI mode, it can provision a temporary/stub `claude` CLI so setup validation does not fall back to onboarding just because the GitHub runner lacks the real CLI.
-- `scripts/ci/runtime-reliability.sh` launches the AX lane with `CAPACITOR_SKIP_SETUP_VALIDATION=1` so the debug app opens directly to the project surface instead of `WelcomeView`.
+- `scripts/ci/runtime-reliability.sh` launches the AX lane with `CAPACITOR_SKIP_SETUP_VALIDATION=1` so the debug app opens directly to the project surface instead of `WelcomeView`. The CI wrapper uses `--skip-details`, which means only the cards phase runs. Phases 2 and 3 only run when `--skip-details` is NOT set.
 
 That last point matters architecturally: the AX lane is verifying project-surface automation, not first-run setup.
 
