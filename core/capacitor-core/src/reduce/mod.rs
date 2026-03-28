@@ -543,6 +543,7 @@ fn select_shell_for_project<'a>(
 
     shells
         .filter(|shell| shell_matches_project(shell, project.project_path.as_str(), &session_pids))
+        .filter(|shell| !is_managed_worktree_shell(shell))
         .max_by(|left, right| {
             compare_shell_candidates(left, right, project.project_path.as_str(), &session_pids)
         })
@@ -558,6 +559,7 @@ fn select_shell_for_activation<'a>(
         .filter(|shell| {
             activation_shell_match_rank(shell, project_path, session_name, client_tty) > 0
         })
+        .filter(|shell| !is_managed_worktree_shell(shell))
         .max_by(|left, right| {
             compare_activation_shell_candidates(left, right, project_path, session_name, client_tty)
         })
@@ -582,6 +584,7 @@ fn select_tmux_inventory_for_project<'a>(
                 })
             })
         })
+        .filter(|candidate| !is_managed_worktree_pane(candidate.pane))
         .max_by(|left, right| {
             (!is_managed_worktree_pane(left.pane))
                 .cmp(&(!is_managed_worktree_pane(right.pane)))

@@ -1064,7 +1064,7 @@ fn routing_inventory_preference_matching_shell_beats_inventory() {
 }
 
 #[test]
-fn test_delegation_worktree_deprioritized_in_routing() {
+fn routing_managed_worktree_shell_does_not_override_project_root_shell() {
     let main_shell = ShellSignal {
         tmux_session: Some("main".to_string()),
         tmux_client_tty: Some("/dev/ttys110".to_string()),
@@ -1112,7 +1112,7 @@ fn test_delegation_worktree_deprioritized_in_routing() {
 }
 
 #[test]
-fn test_delegation_session_fallback_when_only_candidate() {
+fn routing_managed_worktree_only_shell_produces_unavailable_route() {
     let delegation_shell = ShellSignal {
         tmux_session: Some("worker".to_string()),
         tmux_client_tty: Some("/dev/ttys220".to_string()),
@@ -1135,11 +1135,48 @@ fn test_delegation_session_fallback_when_only_candidate() {
 
     let route = persisted_route_for(&state, "/repo");
 
-    assert_eq!(route.status, RoutingStatus::Attached);
-    assert_eq!(route.target.kind, RoutingTargetKind::TmuxPane);
-    assert_eq!(route.target.session_name.as_deref(), Some("worker"));
-    assert_eq!(route.target.pane_id.as_deref(), Some("%22"));
-    assert_eq!(route.target.host_tty.as_deref(), Some("/dev/ttys220"));
+    assert_eq!(route.status, RoutingStatus::Unavailable);
+    assert_eq!(route.target.kind, RoutingTargetKind::None);
+    assert_eq!(route.target.session_name, None);
+    assert_eq!(route.target.pane_id, None);
+    assert_eq!(route.target.host_tty, None);
+    assert_eq!(route.reason_code, "NO_TRUSTED_EVIDENCE");
+}
+
+#[test]
+fn routing_managed_worktree_only_inventory_pane_produces_unavailable_route() {
+    let inventory_carrier = ShellSignal {
+        tmux_session: Some("worker".to_string()),
+        tmux_client_tty: Some("/dev/ttys220".to_string()),
+        tmux_pane: Some("%22".to_string()),
+        tmux_panes: vec![tmux_pane_fixture(
+            "%22",
+            "/repo/.capacitor/worktrees/delegation-22",
+        )],
+        updated_at: "2026-03-27T00:00:03Z".to_string(),
+        ..shell_signal_fixture(22, "/other")
+    };
+
+    let state = routing_state_fixture(
+        vec![session_summary_fixture(
+            "session-main",
+            10,
+            "/repo",
+            "/repo",
+            SessionState::Idle,
+            "2026-03-27T00:00:03Z",
+        )],
+        vec![inventory_carrier],
+    );
+
+    let route = persisted_route_for(&state, "/repo");
+
+    assert_eq!(route.status, RoutingStatus::Unavailable);
+    assert_eq!(route.target.kind, RoutingTargetKind::None);
+    assert_eq!(route.target.session_name, None);
+    assert_eq!(route.target.pane_id, None);
+    assert_eq!(route.target.host_tty, None);
+    assert_eq!(route.reason_code, "NO_TRUSTED_EVIDENCE");
 }
 
 #[test]
@@ -1748,7 +1785,7 @@ fn routing_deprioritizes_managed_worktree_shell_over_project_root_shell() {
 }
 
 #[test]
-fn routing_falls_back_to_managed_worktree_when_only_candidate() {
+fn routing_resolved_route_is_unavailable_when_only_managed_worktree_candidate_exists() {
     let mut state = ReducerState::default();
 
     let mut event = event_base(HookEventType::UserPromptSubmit);
@@ -1784,11 +1821,49 @@ fn routing_falls_back_to_managed_worktree_when_only_candidate() {
         client_tty: None,
     });
 
-    assert_ne!(
-        route.status,
-        RoutingStatus::Unavailable,
-        "Should still route to delegation session as fallback when it's the only candidate"
-    );
+    assert_eq!(route.status, RoutingStatus::Unavailable);
+    assert_eq!(route.target.kind, RoutingTargetKind::None);
+    assert_eq!(route.target.session_name, None);
+    assert_eq!(route.target.pane_id, None);
+    assert_eq!(route.target.host_tty, None);
+    assert_eq!(route.reason_code, "NO_TRUSTED_EVIDENCE");
+}
+
+#[test]
+fn routing_activation_query_ignores_managed_worktree_only_shell() {
+    let mut state = ReducerState::default();
+
+    let _ = state.apply_shell_signal(IngestShellSignalCommand {
+        pid: 2000,
+        cwd: "/users/pete/code/capacitor/.capacitor/worktrees/delegation-abc12345".to_string(),
+        tty: "/dev/ttys002".to_string(),
+        parent_app: "ghostty".to_string(),
+        tmux_session: Some("delegation-abc12345".to_string()),
+        tmux_client_tty: Some("/dev/ttys098".to_string()),
+        tmux_pane: Some("%2".to_string()),
+        tmux_panes: vec![TmuxPaneInfo {
+            pane_id: "%2".to_string(),
+            pane_path: "/users/pete/code/capacitor/.capacitor/worktrees/delegation-abc12345"
+                .to_string(),
+            session_name: "delegation-abc12345".to_string(),
+            session_attached: true,
+        }],
+        recorded_at: "2026-03-25T12:00:00Z".to_string(),
+    });
+
+    let route = state.resolve_routing(ResolveRoutingCommand {
+        project_path: "/users/pete/code/capacitor".to_string(),
+        workspace_id: None,
+        session_name: Some("delegation-abc12345".to_string()),
+        client_tty: Some("/dev/ttys098".to_string()),
+    });
+
+    assert_eq!(route.status, RoutingStatus::Unavailable);
+    assert_eq!(route.target.kind, RoutingTargetKind::None);
+    assert_eq!(route.target.session_name, None);
+    assert_eq!(route.target.pane_id, None);
+    assert_eq!(route.target.host_tty, None);
+    assert_eq!(route.reason_code, "NO_TRUSTED_EVIDENCE");
 }
 
 #[test]
