@@ -47,7 +47,7 @@
         "tty": "/dev/ttys011",
         "parent_app": "ghostty",
         "tmux_session": "monorepo",
-        "recorded_at": "2026-02-28T00:00:01Z"
+        "recorded_at": "2099-02-28T00:00:01Z"
       }
     },
     {
@@ -96,7 +96,7 @@
         "tty": "/dev/ttys012",
         "parent_app": "ghostty",
         "tmux_session": "monorepo",
-        "recorded_at": "2026-02-28T00:00:03Z"
+        "recorded_at": "2099-02-28T00:00:03Z"
       }
     }
   ],

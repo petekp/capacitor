@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap};
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 
 use crate::domain::{
     default_workspace_id, display_name, normalize_path_for_matching, now_rfc3339,
@@ -17,6 +17,7 @@ pub mod delegation;
 pub mod run_reducer;
 
 const STALE_EVENT_GRACE_SECS: i64 = 5;
+const SHELL_SIGNAL_RETENTION: Duration = Duration::hours(4);
 
 #[derive(Debug, Default, Clone)]
 pub struct ReducerState {
@@ -244,10 +245,19 @@ impl ReducerState {
                 .then_with(|| left.session_id.cmp(&right.session_id))
         });
 
-        let mut shells = self.shells.values().cloned().collect::<Vec<_>>();
+        let mut cleaned_shells = self.shells.clone();
+        cleanup_shells(&mut cleaned_shells);
+        let mut shells = cleaned_shells.values().cloned().collect::<Vec<_>>();
         shells.sort_by(|left, right| left.pid.cmp(&right.pid));
+        let shell_count = shells.len() as u64;
 
-        let routing = self.routing.values().cloned().collect::<Vec<_>>();
+        let routing = if cleaned_shells.len() == self.shells.len() {
+            self.routing.values().cloned().collect::<Vec<_>>()
+        } else {
+            routing_views_for(&self.projects, &self.sessions, &cleaned_shells)
+                .into_values()
+                .collect::<Vec<_>>()
+        };
 
         let mut runs = self.runs.clone();
         run_reducer::cleanup_runs(&mut runs);
@@ -263,7 +273,7 @@ impl ReducerState {
             diagnostics: DiagnosticsSummary {
                 events_ingested: self.events_ingested,
                 sessions_tracked: self.sessions.len() as u64,
-                shell_signals_tracked: self.shells.len() as u64,
+                shell_signals_tracked: shell_count,
                 events_skipped: self.stale_events_skipped
                     + self.informational_events_skipped
                     + self.reducer_events_skipped,
@@ -387,26 +397,7 @@ impl ReducerState {
     }
 
     fn recompute_routing(&mut self) {
-        let mut next = BTreeMap::new();
-
-        for project in self
-            .projects
-            .values()
-            .filter(|project| project.session_count > 0)
-        {
-            let sessions = self
-                .sessions
-                .values()
-                .filter(|session| session.project_path == project.project_path)
-                .collect::<Vec<_>>();
-            let route = derive_routing_view(project, &sessions, self.shells.values());
-            next.insert(
-                routing_key(route.workspace_id.as_str(), route.project_path.as_str()),
-                route,
-            );
-        }
-
-        self.routing = next;
+        self.routing = routing_views_for(&self.projects, &self.sessions, &self.shells);
     }
 }
 
@@ -1412,6 +1403,25 @@ fn is_shell_signal_stale(current: Option<&ShellSignal>, incoming_recorded_at: &s
     is_timestamp_stale(current.updated_at.as_str(), incoming_recorded_at)
 }
 
+fn cleanup_shells(shells: &mut HashMap<u32, ShellSignal>) {
+    cleanup_shells_at(shells, Utc::now());
+}
+
+fn cleanup_shells_at(shells: &mut HashMap<u32, ShellSignal>, now: DateTime<Utc>) {
+    let expired_pids: Vec<u32> = shells
+        .iter()
+        .filter(|(_, shell)| {
+            parse_rfc3339(&shell.updated_at)
+                .map(|ts| now.signed_duration_since(ts) > SHELL_SIGNAL_RETENTION)
+                .unwrap_or(false)
+        })
+        .map(|(pid, _)| *pid)
+        .collect();
+    for pid in expired_pids {
+        shells.remove(&pid);
+    }
+}
+
 fn is_timestamp_stale(current_updated_at: &str, incoming_recorded_at: &str) -> bool {
     let Some(incoming_time) = parse_rfc3339(incoming_recorded_at) else {
         return false;
@@ -1452,6 +1462,31 @@ fn parse_rfc3339(value: &str) -> Option<DateTime<Utc>> {
     DateTime::parse_from_rfc3339(value)
         .ok()
         .map(|value| value.with_timezone(&Utc))
+}
+
+fn routing_views_for(
+    projects: &BTreeMap<String, ProjectSummary>,
+    sessions: &HashMap<String, SessionSummary>,
+    shells: &HashMap<u32, ShellSignal>,
+) -> BTreeMap<String, RoutingView> {
+    let mut next = BTreeMap::new();
+
+    for project in projects
+        .values()
+        .filter(|project| project.session_count > 0)
+    {
+        let sessions = sessions
+            .values()
+            .filter(|session| session.project_path == project.project_path)
+            .collect::<Vec<_>>();
+        let route = derive_routing_view(project, &sessions, shells.values());
+        next.insert(
+            routing_key(route.workspace_id.as_str(), route.project_path.as_str()),
+            route,
+        );
+    }
+
+    next
 }
 
 #[cfg(test)]

@@ -10,69 +10,78 @@ setup() {
     mkdir -p "$TEST_DIR/scripts/ci" "$TEST_DIR/apps/swift" "$TEST_DIR/core"
     cp "$PROJECT_ROOT/scripts/ci/ax-automation-verify.sh" "$TEST_DIR/scripts/ci/"
     chmod +x "$TEST_DIR/scripts/ci/ax-automation-verify.sh"
-
-    cat > "$TEST_DIR/scripts/ci/fake-non-demo-ax-smoke.sh" <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-
-artifacts_dir=""
-projects_file=""
-
-while [[ $# -gt 0 ]]; do
-    case "$1" in
-        --artifacts-dir)
-            artifacts_dir="$2"
-            shift 2
-            ;;
-        --projects-file)
-            projects_file="$2"
-            shift 2
-            ;;
-        --skip-details)
-            shift
-            ;;
-        *)
-            shift
-            ;;
-    esac
-done
-
-jq -er '.pinned_projects | length == 2' "$projects_file" >/dev/null
-jq -er '.pinned_projects | length == 2' "$HOME/.capacitor/projects.json" >/dev/null
-if [[ -n "${AX_VERIFY_EXPECT_CLAUDE_STUB:-}" ]]; then
-    [[ -x "${AX_VERIFY_EXPECT_CLAUDE_STUB}" ]]
-fi
-mkdir -p "$artifacts_dir"
-printf '%s\n' '{"event":"runner.complete"}' > "$artifacts_dir/non-demo-ax-smoke-cards-fixture.log"
-EOF
-    chmod +x "$TEST_DIR/scripts/ci/fake-non-demo-ax-smoke.sh"
 }
 
 teardown() {
     rm -rf "$TEST_DIR"
 }
 
-@test "ax verifier seeds a two-project file when no projects.json exists" {
-    run env \
-        HOME="$TEST_DIR/home" \
-        AX_AUTOMATION_SMOKE_SCRIPT="$TEST_DIR/scripts/ci/fake-non-demo-ax-smoke.sh" \
-        /bin/bash -lc "cd '$TEST_DIR' && bash scripts/ci/ax-automation-verify.sh --runs 1 --skip-details --artifacts-dir '$TEST_DIR/artifacts'"
+@test "prepare_projects_file seeds a two-project file when no projects.json exists" {
+    run env HOME="$TEST_DIR/home" /bin/bash -lc "
+        source '$TEST_DIR/scripts/ci/ax-automation-verify.sh'
+        prepared=\$(prepare_projects_file '$TEST_DIR/run')
+        jq -er '.pinned_projects | length == 2' \"\$prepared\" >/dev/null
+        printf '%s\n' \"\$prepared\"
+    "
 
     [ "$status" -eq 0 ]
-    [[ "$output" == *"runs_requested=1"* ]]
-    [[ "$output" == *"runs_passed=1"* ]]
-    [[ "$output" == *"first_failure_context=none"* ]]
+    [[ "$output" == *"$TEST_DIR/run/projects.seed.json"* ]]
 }
 
-@test "ax verifier can install a claude stub for CI-style setup checks" {
+@test "ensure_claude_cli_for_runtime can install a claude stub for CI-style setup checks" {
     run env \
         HOME="$TEST_DIR/home" \
-        AX_AUTOMATION_SMOKE_SCRIPT="$TEST_DIR/scripts/ci/fake-non-demo-ax-smoke.sh" \
         AX_VERIFY_CLAUDE_STUB_DIR="$TEST_DIR/claude-bin" \
         AX_VERIFY_FORCE_CLAUDE_STUB=1 \
-        AX_VERIFY_EXPECT_CLAUDE_STUB="$TEST_DIR/claude-bin/claude" \
-        /bin/bash -lc "cd '$TEST_DIR' && bash scripts/ci/ax-automation-verify.sh --runs 1 --skip-details --artifacts-dir '$TEST_DIR/artifacts'"
+        /bin/bash -lc "
+            source '$TEST_DIR/scripts/ci/ax-automation-verify.sh'
+            ensure_claude_cli_for_runtime
+            test -x '$TEST_DIR/claude-bin/claude'
+        "
 
     [ "$status" -eq 0 ]
-    [ -x "$TEST_DIR/claude-bin/claude" ]
+}
+
+@test "ideas seeding installs one primary-project idea and restores the original file" {
+    mkdir -p "$TEST_DIR/home/.capacitor"
+    printf '%s\n' '{"ideas":[{"projectPath":"/preserve","title":"keep"}]}' > "$TEST_DIR/home/.capacitor/ideas.json"
+
+    run env HOME="$TEST_DIR/home" /bin/bash -lc "
+        source '$TEST_DIR/scripts/ci/ax-automation-verify.sh'
+        prepared_projects=\$(prepare_projects_file '$TEST_DIR/run')
+        prepared_ideas=\$(prepare_ideas_file '$TEST_DIR/run' \"\$prepared_projects\")
+        primary_path=\$(jq -r '.pinned_projects[0]' \"\$prepared_projects\")
+
+        jq -er --arg p \"\$primary_path\" '.ideas | length == 1 and .[0].projectPath == \$p' \"\$prepared_ideas\" >/dev/null
+
+        restore_mode=\$(install_runtime_ideas_file '$TEST_DIR/run' \"\$prepared_ideas\")
+        jq -er --arg p \"\$primary_path\" '.ideas | length == 1 and .[0].projectPath == \$p' '$TEST_DIR/home/.capacitor/ideas.json' >/dev/null
+        restore_runtime_ideas_file '$TEST_DIR/run' \"\$restore_mode\"
+
+        restored=\$(cat '$TEST_DIR/home/.capacitor/ideas.json')
+        [[ \"\$restored\" == '{\"ideas\":[{\"projectPath\":\"/preserve\",\"title\":\"keep\"}]}' ]]
+    "
+
+    [ "$status" -eq 0 ]
+}
+
+@test "method runner is a first-class phase with independent log classification" {
+    mkdir -p "$TEST_DIR/artifacts"
+    printf '%s\n' 'Timed out waiting 12.0s for AX identifier' > "$TEST_DIR/artifacts/non-demo-ax-smoke-method-runner-fixture.log"
+
+    run env HOME="$TEST_DIR/home" /bin/bash -lc "
+        source '$TEST_DIR/scripts/ci/ax-automation-verify.sh'
+        skip_details=0
+        phases=()
+        while IFS= read -r phase; do
+            phases+=(\"\$phase\")
+        done < <(expected_phases)
+        [[ \"\${phases[*]}\" == 'cards details method_runner' ]]
+
+        phase_log=\$(collect_phase_log '$TEST_DIR/artifacts' method_runner)
+        [[ \"\$phase_log\" == *'non-demo-ax-smoke-method-runner-fixture.log' ]]
+        [[ \"\$(classify_phase_failure \"\$phase_log\")\" == 'timeout' ]]
+    "
+
+    [ "$status" -eq 0 ]
 }

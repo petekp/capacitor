@@ -8,4 +8,32 @@ final class AccessibilityIdentifiersTests: XCTestCase {
         XCTAssertEqual(AccessibilityIdentifiers.ideaDetailDelegateIdentifier, "ax.idea-detail.delegate")
         XCTAssertEqual(AccessibilityIdentifiers.ideaDetailRemoveIdentifier, "ax.idea-detail.remove")
     }
+
+    func testProjectDetailViewIdentifierIsDistinctFromDockNavigationIdentifier() {
+        let project = Project(
+            name: "Capacitor",
+            path: "/Users/petepetrash/Code/capacitor",
+            displayPath: "/Users/petepetrash/Code/capacitor",
+            lastActive: nil,
+            claudeMdPath: nil,
+            claudeMdPreview: nil,
+            hasLocalSettings: false,
+            taskCount: 0,
+            stats: nil,
+            isMissing: false,
+        )
+
+        XCTAssertEqual(
+            AccessibilityIdentifiers.projectDetailsIdentifier(for: project),
+            "ax.project-details.capacitor",
+        )
+        XCTAssertEqual(
+            AccessibilityIdentifiers.projectDetailViewIdentifier(for: project),
+            "ax.project-detail-view.capacitor",
+        )
+        XCTAssertNotEqual(
+            AccessibilityIdentifiers.projectDetailsIdentifier(for: project),
+            AccessibilityIdentifiers.projectDetailViewIdentifier(for: project),
+        )
+    }
 }

@@ -23,7 +23,7 @@ fn valid_shell_signal_command() -> IngestShellSignalCommand {
         tmux_client_tty: Some("/dev/ttys099".to_string()),
         tmux_pane: Some("%42".to_string()),
         tmux_panes: vec![],
-        recorded_at: "2026-02-28T19:00:00Z".to_string(),
+        recorded_at: "2099-02-28T19:00:00Z".to_string(),
     }
 }
 
@@ -127,7 +127,7 @@ fn ffi_ingest_hook_event_validates_required_fields() {
             "missing_session_id",
             IngestHookEventCommand {
                 session_id: "".to_string(),
-                recorded_at: "2026-02-28T19:00:01Z".to_string(),
+                recorded_at: "2099-02-28T19:00:01Z".to_string(),
                 ..valid_hook_event_command()
             },
             "missing session_id",
@@ -167,7 +167,7 @@ fn ffi_ingest_shell_signal_validates_required_fields() {
             "missing_tty",
             IngestShellSignalCommand {
                 tty: "".to_string(),
-                recorded_at: "2026-02-28T19:00:01Z".to_string(),
+                recorded_at: "2099-02-28T19:00:01Z".to_string(),
                 ..valid_shell_signal_command()
             },
             "missing cwd or tty",
@@ -232,7 +232,7 @@ fn ffi_ingest_shell_signal_infers_attached_tmux_terminal_app_from_host_tty_evide
         tmux_client_tty: Some("/dev/ttys099".to_string()),
         tmux_pane: Some("%1".to_string()),
         tmux_panes: vec![],
-        recorded_at: "2026-02-28T18:59:59Z".to_string(),
+        recorded_at: "2099-02-28T18:59:59Z".to_string(),
     };
     assert!(
         runtime
@@ -297,7 +297,7 @@ fn ffi_ingest_shell_signal_derives_non_active_tmux_pane_from_inventory() {
                     session_attached: true,
                 },
             ],
-            recorded_at: "2026-02-28T19:00:00Z".to_string(),
+            recorded_at: "2099-02-28T19:00:00Z".to_string(),
         })
         .expect("shell signal outcome");
 
@@ -351,7 +351,7 @@ fn ffi_routing_inventory_preference_snapshot_prefers_inventory_for_mismatched_sh
                     session_attached: true,
                 },
             ],
-            recorded_at: "2026-03-16T01:00:00Z".to_string(),
+            recorded_at: "2099-03-16T01:00:00Z".to_string(),
         })
         .expect("shell signal outcome");
 
@@ -371,7 +371,7 @@ fn ffi_routing_inventory_preference_snapshot_prefers_inventory_for_mismatched_sh
     assert_eq!(route.target.host_tty.as_deref(), Some("/dev/ttys099"));
     assert_eq!(route.reason_code, "TMUX_PANE_ATTACHED");
     assert_eq!(route.reason, "Matched tmux pane '%1' from pane inventory");
-    assert_eq!(route.updated_at, "2026-03-16T01:00:00Z");
+    assert_eq!(route.updated_at, "2099-03-16T01:00:00Z");
 }
 
 #[test]
@@ -401,7 +401,7 @@ fn ffi_routing_inventory_preference_resolve_prefers_inventory_for_hinted_mismatc
                     session_attached: true,
                 },
             ],
-            recorded_at: "2026-03-16T01:00:01Z".to_string(),
+            recorded_at: "2099-03-16T01:00:01Z".to_string(),
         })
         .expect("shell signal outcome");
 
@@ -424,7 +424,7 @@ fn ffi_routing_inventory_preference_resolve_prefers_inventory_for_hinted_mismatc
     assert_eq!(route.target.host_tty.as_deref(), Some("/dev/ttys040"));
     assert_eq!(route.reason_code, "TMUX_PANE_ATTACHED");
     assert_eq!(route.reason, "Matched tmux pane '%5' from pane inventory");
-    assert_eq!(route.updated_at, "2026-03-16T01:00:01Z");
+    assert_eq!(route.updated_at, "2099-03-16T01:00:01Z");
 }
 
 #[test]
@@ -446,7 +446,7 @@ fn ffi_routing_inventory_preference_resolve_keeps_matching_shell_canonical() {
                 pane_path: "/tmp/repo".to_string(),
                 session_attached: true,
             }],
-            recorded_at: "2026-03-16T01:00:02Z".to_string(),
+            recorded_at: "2099-03-16T01:00:02Z".to_string(),
         })
         .expect("shell signal outcome");
 
@@ -469,7 +469,7 @@ fn ffi_routing_inventory_preference_resolve_keeps_matching_shell_canonical() {
     assert_eq!(route.target.host_tty.as_deref(), Some("/dev/ttys041"));
     assert_eq!(route.reason_code, "TMUX_PANE_ATTACHED");
     assert_eq!(route.reason, "Matched tmux pane '%42'");
-    assert_eq!(route.updated_at, "2026-03-16T01:00:02Z");
+    assert_eq!(route.updated_at, "2099-03-16T01:00:02Z");
 }
 
 #[test]
@@ -569,8 +569,8 @@ fn fixture_snapshot_json() -> &'static str {
       "project_path": "/tmp/core-project",
       "display_name": "core-project",
       "state": "working",
-      "updated_at": "2026-02-28T19:00:00Z",
-      "state_changed_at": "2026-02-28T19:00:00Z",
+      "updated_at": "2099-02-28T19:00:00Z",
+      "state_changed_at": "2099-02-28T19:00:00Z",
       "representative_session_id": "session-core",
       "latest_session_id": "session-core",
       "session_count": 1,
@@ -587,10 +587,10 @@ fn fixture_snapshot_json() -> &'static str {
       "project_path": "/tmp/core-project",
       "workspace_id": "workspace-core",
       "state": "working",
-      "state_changed_at": "2026-02-28T19:00:00Z",
-      "updated_at": "2026-02-28T19:00:00Z",
+      "state_changed_at": "2099-02-28T19:00:00Z",
+      "updated_at": "2099-02-28T19:00:00Z",
       "last_event": "user_prompt_submit",
-      "last_activity_at": "2026-02-28T19:00:00Z",
+      "last_activity_at": "2099-02-28T19:00:00Z",
       "tools_in_flight": 1,
       "ready_reason": null
     }
@@ -603,7 +603,7 @@ fn fixture_snapshot_json() -> &'static str {
       "parent_app": "Ghostty",
       "tmux_session": "core",
       "tmux_pane": "%42",
-      "updated_at": "2026-02-28T19:00:00Z"
+      "updated_at": "2099-02-28T19:00:00Z"
     }
   ],
   "routing": [
@@ -620,7 +620,7 @@ fn fixture_snapshot_json() -> &'static str {
       },
       "reason_code": "TMUX_PANE_ATTACHED",
       "reason": "Matched tmux pane '%42'",
-      "updated_at": "2026-02-28T19:00:00Z"
+      "updated_at": "2099-02-28T19:00:00Z"
     }
   ],
   "delegations": [],
@@ -634,6 +634,6 @@ fn fixture_snapshot_json() -> &'static str {
     "reducer_events_skipped": 0,
     "last_error": null
   },
-  "generated_at": "2026-02-28T19:00:00Z"
+  "generated_at": "2099-02-28T19:00:00Z"
 }"#
 }

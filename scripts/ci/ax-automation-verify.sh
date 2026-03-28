@@ -10,6 +10,7 @@ default_artifacts_dir="${workspace_root}/artifacts/ax-automation-verification"
 default_debug_log="${CAPACITOR_APP_DEBUG_LOG:-$HOME/.capacitor/runtime/app-debug.log}"
 default_projects_file="${CAPACITOR_PROJECTS_FILE:-$HOME/.capacitor/projects.json}"
 runtime_projects_target="$HOME/.capacitor/projects.json"
+runtime_ideas_target="$HOME/.capacitor/ideas.json"
 claude_stub_dir="${AX_VERIFY_CLAUDE_STUB_DIR:-}"
 force_claude_stub="${AX_VERIFY_FORCE_CLAUDE_STUB:-0}"
 
@@ -154,6 +155,60 @@ prepare_projects_file() {
     printf '%s\n' "$seeded_projects_file"
 }
 
+primary_project_path() {
+    local projects_path="$1"
+    jq -r '.pinned_projects[0]? // empty' "$projects_path"
+}
+
+build_seeded_ideas_file() {
+    local output_path="$1"
+    local projects_path="$2"
+    local primary_path
+    primary_path="$(primary_project_path "$projects_path")"
+    if [[ -z "$primary_path" ]]; then
+        echo "Could not determine the primary project path for seeded ideas." >&2
+        return 1
+    fi
+
+    local seeded_at
+    seeded_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+    mkdir -p "$(dirname "$output_path")"
+    jq -n \
+        --arg id "ax-verify-idea-1" \
+        --arg project_path "$primary_path" \
+        --arg title "AX verifier seeded idea" \
+        --arg description "Temporary idea seeded for AX method runner verification." \
+        --arg status "open" \
+        --arg effort "small" \
+        --arg triage "pending" \
+        --arg seeded_at "$seeded_at" \
+        '{
+            ideas: [
+                {
+                    id: $id,
+                    projectPath: $project_path,
+                    title: $title,
+                    description: $description,
+                    status: $status,
+                    effort: $effort,
+                    triage: $triage,
+                    createdAt: $seeded_at,
+                    updatedAt: $seeded_at,
+                    added: $seeded_at
+                }
+            ]
+        }' >"$output_path"
+}
+
+prepare_ideas_file() {
+    local run_dir="$1"
+    local projects_path="$2"
+    local seeded_ideas_file="${run_dir}/ideas.seed.json"
+    build_seeded_ideas_file "$seeded_ideas_file" "$projects_path"
+    printf '%s\n' "$seeded_ideas_file"
+}
+
 log_file_size() {
     local path="$1"
     if [[ -f "$path" ]]; then
@@ -259,11 +314,32 @@ classify_window_lifecycle_health() {
     printf 'pass\n'
 }
 
+phase_artifact_name() {
+    case "$1" in
+    method_runner)
+        printf 'method-runner\n'
+        ;;
+    *)
+        printf '%s\n' "$1"
+        ;;
+    esac
+}
+
+expected_phases() {
+    printf 'cards\n'
+    if [[ "$skip_details" -eq 0 ]]; then
+        printf 'details\n'
+        printf 'method_runner\n'
+    fi
+}
+
 collect_phase_log() {
     local smoke_artifacts_dir="$1"
     local phase="$2"
+    local artifact_phase
+    artifact_phase="$(phase_artifact_name "$phase")"
 
-    find "$smoke_artifacts_dir" -maxdepth 1 -type f -name "non-demo-ax-smoke-${phase}-*.log" | LC_ALL=C sort | tail -n 1
+    find "$smoke_artifacts_dir" -maxdepth 1 -type f -name "non-demo-ax-smoke-${artifact_phase}-*.log" | LC_ALL=C sort | tail -n 1
 }
 
 run_smoke() {
@@ -342,6 +418,34 @@ restore_runtime_projects_file() {
     fi
 }
 
+install_runtime_ideas_file() {
+    local run_dir="$1"
+    local source_path="$2"
+    local backup_path="${run_dir}/ideas.runtime.backup.json"
+    local restore_mode="remove"
+
+    mkdir -p "$(dirname "$runtime_ideas_target")"
+    if [[ -f "$runtime_ideas_target" ]]; then
+        cp "$runtime_ideas_target" "$backup_path"
+        restore_mode="restore"
+    fi
+
+    cp "$source_path" "$runtime_ideas_target"
+    printf '%s\n' "$restore_mode"
+}
+
+restore_runtime_ideas_file() {
+    local run_dir="$1"
+    local restore_mode="$2"
+    local backup_path="${run_dir}/ideas.runtime.backup.json"
+
+    if [[ "$restore_mode" == "restore" && -f "$backup_path" ]]; then
+        mv "$backup_path" "$runtime_ideas_target"
+    else
+        rm -f "$runtime_ideas_target"
+    fi
+}
+
     main() {
     parse_args "$@"
 
@@ -385,8 +489,12 @@ restore_runtime_projects_file() {
 
         local projects_path
         projects_path="$(prepare_projects_file "$run_dir")"
-        local restore_mode=""
-        restore_mode="$(install_runtime_projects_file "$run_dir" "$projects_path")"
+        local ideas_path
+        ideas_path="$(prepare_ideas_file "$run_dir" "$projects_path")"
+        local restore_projects_mode=""
+        restore_projects_mode="$(install_runtime_projects_file "$run_dir" "$projects_path")"
+        local restore_ideas_mode=""
+        restore_ideas_mode="$(install_runtime_ideas_file "$run_dir" "$ideas_path")"
 
         local debug_log_start_size
         debug_log_start_size="$(log_file_size "$debug_log")"
@@ -397,25 +505,28 @@ restore_runtime_projects_file() {
         else
             smoke_status=$?
         fi
-        restore_runtime_projects_file "$run_dir" "$restore_mode"
+        restore_runtime_ideas_file "$run_dir" "$restore_ideas_mode"
+        restore_runtime_projects_file "$run_dir" "$restore_projects_mode"
 
         slice_debug_log "$debug_log" "$debug_log_start_size" "$run_debug_log"
 
-        local -a expected_phases=("cards")
-        if [[ "$skip_details" -eq 0 ]]; then
-            expected_phases+=("details")
-        fi
+        local -a phases=()
+        while IFS= read -r phase; do
+            phases+=("$phase")
+        done < <(expected_phases)
 
         local outcome="pass"
         local failure_context="none"
         local window_health="skipped"
         local cards_log=""
         local details_log=""
+        local method_runner_log=""
         cards_log="$(collect_phase_log "$smoke_artifacts_dir" "cards")"
         details_log="$(collect_phase_log "$smoke_artifacts_dir" "details")"
+        method_runner_log="$(collect_phase_log "$smoke_artifacts_dir" "method_runner")"
 
         local phase=""
-        for phase in "${expected_phases[@]}"; do
+        for phase in "${phases[@]}"; do
             local phase_log=""
             case "$phase" in
             cards)
@@ -423,6 +534,9 @@ restore_runtime_projects_file() {
                 ;;
             details)
                 phase_log="$details_log"
+                ;;
+            method_runner)
+                phase_log="$method_runner_log"
                 ;;
             esac
 

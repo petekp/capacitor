@@ -149,7 +149,7 @@ struct ProjectDetailView: View {
         .onExitCommand {
             appState.showProjectList()
         }
-        .accessibilityIdentifier(AccessibilityIdentifiers.projectDetailsIdentifier(for: project))
+        .accessibilityIdentifier(AccessibilityIdentifiers.projectDetailViewIdentifier(for: project))
     }
 }
 

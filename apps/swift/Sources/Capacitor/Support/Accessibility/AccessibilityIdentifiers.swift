@@ -32,8 +32,14 @@ enum AccessibilityIdentifiers {
         "ax.project-card.\(slug(for: project))"
     }
 
+    /// Identifier for the clickable project title in the dock card (navigation trigger).
     static func projectDetailsIdentifier(for project: Project) -> String {
         "ax.project-details.\(slug(for: project))"
+    }
+
+    /// Identifier for the project detail view (destination screen).
+    static func projectDetailViewIdentifier(for project: Project) -> String {
+        "ax.project-detail-view.\(slug(for: project))"
     }
 
     static func slug(for project: Project) -> String {

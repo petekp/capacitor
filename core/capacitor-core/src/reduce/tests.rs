@@ -110,7 +110,7 @@ fn shell_signal_fixture(pid: u32, cwd: &str) -> ShellSignal {
         tmux_client_tty: Some("/dev/ttys099".to_string()),
         tmux_pane: Some(format!("%{pid}")),
         tmux_panes: vec![],
-        updated_at: format!("2026-03-16T00:00:{:02}Z", pid % 60),
+        updated_at: format!("2099-03-16T00:00:{:02}Z", pid % 60),
     }
 }
 
@@ -614,7 +614,7 @@ fn reducer_tracks_shell_signals() {
         tmux_client_tty: Some("/dev/ttys099".to_string()),
         tmux_pane: Some("%42".to_string()),
         tmux_panes: vec![],
-        recorded_at: "2026-02-28T00:00:00Z".to_string(),
+        recorded_at: "2099-02-28T00:00:00Z".to_string(),
     });
 
     assert!(outcome.ok);
@@ -649,7 +649,7 @@ fn routing_prefers_tmux_pane_targets_for_matching_shells() {
         tmux_client_tty: Some("/dev/ttys099".to_string()),
         tmux_pane: Some("%42".to_string()),
         tmux_panes: vec![],
-        recorded_at: "2026-02-28T00:00:00Z".to_string(),
+        recorded_at: "2099-02-28T00:00:00Z".to_string(),
     });
 
     let snapshot = state.snapshot();
@@ -681,7 +681,7 @@ fn routing_parity_matches_persisted_attached_tmux_pane_from_active_shell_evidenc
         tmux_client_tty: Some("/dev/ttys099".to_string()),
         tmux_pane: Some("%42".to_string()),
         tmux_panes: vec![],
-        recorded_at: "2026-02-28T00:00:00Z".to_string(),
+        recorded_at: "2099-02-28T00:00:00Z".to_string(),
     });
 
     assert_persisted_routing_matches_resolved_routing(&state, "/repo");
@@ -701,7 +701,7 @@ fn routing_falls_back_to_tmux_session_when_pane_missing() {
         tmux_client_tty: Some("/dev/ttys099".to_string()),
         tmux_pane: None,
         tmux_panes: vec![],
-        recorded_at: "2026-02-28T00:00:00Z".to_string(),
+        recorded_at: "2099-02-28T00:00:00Z".to_string(),
     });
 
     let route = state
@@ -776,7 +776,7 @@ fn routing_does_not_match_parent_directory_shells_to_descendant_projects() {
         tmux_client_tty: Some("/dev/ttys026".to_string()),
         tmux_pane: Some("%27".to_string()),
         tmux_panes: vec![],
-        recorded_at: "2026-03-13T02:35:59Z".to_string(),
+        recorded_at: "2099-03-13T02:35:59Z".to_string(),
     });
     let _ = state.apply_shell_signal(IngestShellSignalCommand {
         pid: 4200,
@@ -787,7 +787,7 @@ fn routing_does_not_match_parent_directory_shells_to_descendant_projects() {
         tmux_client_tty: Some("/dev/ttys009".to_string()),
         tmux_pane: Some("%0".to_string()),
         tmux_panes: vec![],
-        recorded_at: "2026-03-13T02:40:41Z".to_string(),
+        recorded_at: "2099-03-13T02:40:41Z".to_string(),
     });
 
     let snapshot = state.snapshot();
@@ -832,7 +832,7 @@ fn routing_still_matches_shells_inside_project_subdirectories() {
         tmux_client_tty: Some("/dev/ttys022".to_string()),
         tmux_pane: Some("%21".to_string()),
         tmux_panes: vec![],
-        recorded_at: "2026-03-13T02:45:30Z".to_string(),
+        recorded_at: "2099-03-13T02:45:30Z".to_string(),
     });
 
     let route = state
@@ -869,7 +869,7 @@ fn routing_infers_attached_tmux_terminal_app_from_host_tty_shell_evidence() {
         tmux_client_tty: Some("/dev/ttys099".to_string()),
         tmux_pane: Some("%1".to_string()),
         tmux_panes: vec![],
-        recorded_at: "2026-03-14T20:00:01Z".to_string(),
+        recorded_at: "2099-03-14T20:00:01Z".to_string(),
     });
     let _ = state.apply_shell_signal(IngestShellSignalCommand {
         pid: 4242,
@@ -880,7 +880,7 @@ fn routing_infers_attached_tmux_terminal_app_from_host_tty_shell_evidence() {
         tmux_client_tty: Some("/dev/ttys099".to_string()),
         tmux_pane: Some("%42".to_string()),
         tmux_panes: vec![],
-        recorded_at: "2026-03-14T20:00:02Z".to_string(),
+        recorded_at: "2099-03-14T20:00:02Z".to_string(),
     });
 
     let route = state
@@ -918,7 +918,7 @@ fn routing_parity_matches_persisted_attached_tmux_terminal_app_inferred_from_hos
         tmux_client_tty: Some("/dev/ttys099".to_string()),
         tmux_pane: Some("%1".to_string()),
         tmux_panes: vec![],
-        recorded_at: "2026-03-14T20:00:01Z".to_string(),
+        recorded_at: "2099-03-14T20:00:01Z".to_string(),
     });
     let _ = state.apply_shell_signal(IngestShellSignalCommand {
         pid: 4242,
@@ -929,7 +929,7 @@ fn routing_parity_matches_persisted_attached_tmux_terminal_app_inferred_from_hos
         tmux_client_tty: Some("/dev/ttys099".to_string()),
         tmux_pane: Some("%42".to_string()),
         tmux_panes: vec![],
-        recorded_at: "2026-03-14T20:00:02Z".to_string(),
+        recorded_at: "2099-03-14T20:00:02Z".to_string(),
     });
 
     assert_persisted_routing_matches_resolved_routing(&state, "/tmp/core-project");
@@ -968,7 +968,7 @@ fn routing_derives_non_active_tmux_pane_from_inventory() {
                 session_attached: true,
             },
         ],
-        recorded_at: "2026-03-15T03:00:01Z".to_string(),
+        recorded_at: "2099-03-15T03:00:01Z".to_string(),
     });
 
     let route = state
@@ -1019,7 +1019,7 @@ fn routing_parity_matches_persisted_non_active_tmux_pane_from_inventory() {
                 session_attached: true,
             },
         ],
-        recorded_at: "2026-03-15T03:00:01Z".to_string(),
+        recorded_at: "2099-03-15T03:00:01Z".to_string(),
     });
 
     assert_persisted_routing_matches_resolved_routing(
@@ -1047,7 +1047,7 @@ fn routing_inventory_preference_matching_shell_beats_inventory() {
             pane_path: "/repo".to_string(),
             session_attached: true,
         }],
-        recorded_at: "2026-03-16T00:00:00Z".to_string(),
+        recorded_at: "2099-03-16T00:00:00Z".to_string(),
     });
 
     let route = persisted_route_for(&state, "/repo");
@@ -1060,7 +1060,7 @@ fn routing_inventory_preference_matching_shell_beats_inventory() {
     assert_eq!(route.target.host_tty.as_deref(), Some("/dev/ttys099"));
     assert_eq!(route.reason_code, "TMUX_PANE_ATTACHED");
     assert_eq!(route.reason, "Matched tmux pane '%42'");
-    assert_eq!(route.updated_at, "2026-03-16T00:00:00Z");
+    assert_eq!(route.updated_at, "2099-03-16T00:00:00Z");
 }
 
 #[test]
@@ -1069,14 +1069,14 @@ fn routing_managed_worktree_shell_does_not_override_project_root_shell() {
         tmux_session: Some("main".to_string()),
         tmux_client_tty: Some("/dev/ttys110".to_string()),
         tmux_pane: Some("%10".to_string()),
-        updated_at: "2026-03-27T00:00:01Z".to_string(),
+        updated_at: "2099-03-27T00:00:01Z".to_string(),
         ..shell_signal_fixture(10, "/repo")
     };
     let delegation_shell = ShellSignal {
         tmux_session: Some("worker".to_string()),
         tmux_client_tty: Some("/dev/ttys210".to_string()),
         tmux_pane: Some("%20".to_string()),
-        updated_at: "2026-03-27T00:00:02Z".to_string(),
+        updated_at: "2099-03-27T00:00:02Z".to_string(),
         ..shell_signal_fixture(20, "/repo/.capacitor/worktrees/delegation-20")
     };
 
@@ -1117,7 +1117,7 @@ fn routing_managed_worktree_only_shell_produces_unavailable_route() {
         tmux_session: Some("worker".to_string()),
         tmux_client_tty: Some("/dev/ttys220".to_string()),
         tmux_pane: Some("%22".to_string()),
-        updated_at: "2026-03-27T00:00:03Z".to_string(),
+        updated_at: "2099-03-27T00:00:03Z".to_string(),
         ..shell_signal_fixture(22, "/repo/.capacitor/worktrees/delegation-22")
     };
 
@@ -1153,7 +1153,7 @@ fn routing_managed_worktree_only_inventory_pane_produces_unavailable_route() {
             "%22",
             "/repo/.capacitor/worktrees/delegation-22",
         )],
-        updated_at: "2026-03-27T00:00:03Z".to_string(),
+        updated_at: "2099-03-27T00:00:03Z".to_string(),
         ..shell_signal_fixture(22, "/other")
     };
 
@@ -1185,14 +1185,14 @@ fn test_delegation_worktree_state_priority_doesnt_override() {
         tmux_session: Some("main".to_string()),
         tmux_client_tty: Some("/dev/ttys130".to_string()),
         tmux_pane: Some("%30".to_string()),
-        updated_at: "2026-03-27T00:00:04Z".to_string(),
+        updated_at: "2099-03-27T00:00:04Z".to_string(),
         ..shell_signal_fixture(30, "/repo")
     };
     let delegation_shell = ShellSignal {
         tmux_session: Some("worker".to_string()),
         tmux_client_tty: Some("/dev/ttys230".to_string()),
         tmux_pane: Some("%40".to_string()),
-        updated_at: "2026-03-27T00:00:05Z".to_string(),
+        updated_at: "2099-03-27T00:00:05Z".to_string(),
         ..shell_signal_fixture(40, "/repo/.capacitor/worktrees/delegation-40")
     };
 
@@ -1339,7 +1339,7 @@ fn routing_inventory_preference_persisted_mismatched_shell_prefers_inventory() {
                 session_attached: true,
             },
         ],
-        recorded_at: "2026-03-16T00:00:01Z".to_string(),
+        recorded_at: "2099-03-16T00:00:01Z".to_string(),
     });
 
     let route = persisted_route_for(&state, "/target");
@@ -1352,7 +1352,7 @@ fn routing_inventory_preference_persisted_mismatched_shell_prefers_inventory() {
     assert_eq!(route.target.host_tty.as_deref(), Some("/dev/ttys099"));
     assert_eq!(route.reason_code, "TMUX_PANE_ATTACHED");
     assert_eq!(route.reason, "Matched tmux pane '%1' from pane inventory");
-    assert_eq!(route.updated_at, "2026-03-16T00:00:01Z");
+    assert_eq!(route.updated_at, "2099-03-16T00:00:01Z");
 }
 
 #[test]
@@ -1381,7 +1381,7 @@ fn routing_inventory_preference_hinted_mismatched_shell_prefers_inventory() {
                 session_attached: true,
             },
         ],
-        recorded_at: "2026-03-16T00:00:02Z".to_string(),
+        recorded_at: "2099-03-16T00:00:02Z".to_string(),
     });
 
     let route = state.resolve_routing(ResolveRoutingCommand {
@@ -1399,7 +1399,7 @@ fn routing_inventory_preference_hinted_mismatched_shell_prefers_inventory() {
     assert_eq!(route.target.host_tty.as_deref(), Some("/dev/ttys040"));
     assert_eq!(route.reason_code, "TMUX_PANE_ATTACHED");
     assert_eq!(route.reason, "Matched tmux pane '%5' from pane inventory");
-    assert_eq!(route.updated_at, "2026-03-16T00:00:02Z");
+    assert_eq!(route.updated_at, "2099-03-16T00:00:02Z");
 }
 
 #[test]
@@ -1420,7 +1420,7 @@ fn routing_inventory_preference_matching_shell_stays_canonical_for_activation() 
             pane_path: "/repo".to_string(),
             session_attached: true,
         }],
-        recorded_at: "2026-03-16T00:00:03Z".to_string(),
+        recorded_at: "2099-03-16T00:00:03Z".to_string(),
     });
 
     let route = state.resolve_routing(ResolveRoutingCommand {
@@ -1438,7 +1438,7 @@ fn routing_inventory_preference_matching_shell_stays_canonical_for_activation() 
     assert_eq!(route.target.host_tty.as_deref(), Some("/dev/ttys041"));
     assert_eq!(route.reason_code, "TMUX_PANE_ATTACHED");
     assert_eq!(route.reason, "Matched tmux pane '%0'");
-    assert_eq!(route.updated_at, "2026-03-16T00:00:03Z");
+    assert_eq!(route.updated_at, "2099-03-16T00:00:03Z");
 }
 
 #[test]
@@ -1455,7 +1455,7 @@ fn routing_parity_matches_persisted_detached_terminal_app_route() {
         tmux_client_tty: None,
         tmux_pane: None,
         tmux_panes: vec![],
-        recorded_at: "2026-03-15T06:00:00Z".to_string(),
+        recorded_at: "2099-03-15T06:00:00Z".to_string(),
     });
 
     assert_persisted_routing_matches_resolved_routing(&state, "/repo");
@@ -1474,7 +1474,7 @@ fn routing_query_prefers_client_tty_match_for_untracked_project() {
         tmux_client_tty: Some("/dev/ttys001".to_string()),
         tmux_pane: None,
         tmux_panes: vec![],
-        recorded_at: "2026-03-15T05:40:00Z".to_string(),
+        recorded_at: "2099-03-15T05:40:00Z".to_string(),
     });
 
     let _ = state.apply_shell_signal(IngestShellSignalCommand {
@@ -1486,7 +1486,7 @@ fn routing_query_prefers_client_tty_match_for_untracked_project() {
         tmux_client_tty: Some("/dev/ttys002".to_string()),
         tmux_pane: None,
         tmux_panes: vec![],
-        recorded_at: "2026-03-15T05:40:01Z".to_string(),
+        recorded_at: "2099-03-15T05:40:01Z".to_string(),
     });
 
     let route = state.resolve_routing(ResolveRoutingCommand {
@@ -1516,7 +1516,7 @@ fn routing_query_falls_back_to_session_match_for_untracked_project() {
         tmux_client_tty: None,
         tmux_pane: None,
         tmux_panes: vec![],
-        recorded_at: "2026-03-15T05:41:00Z".to_string(),
+        recorded_at: "2099-03-15T05:41:00Z".to_string(),
     });
 
     let route = state.resolve_routing(ResolveRoutingCommand {
@@ -1546,7 +1546,7 @@ fn routing_query_prefers_exact_project_path_when_client_tty_unknown() {
         tmux_client_tty: None,
         tmux_pane: None,
         tmux_panes: vec![],
-        recorded_at: "2026-03-15T05:42:00Z".to_string(),
+        recorded_at: "2099-03-15T05:42:00Z".to_string(),
     });
 
     let _ = state.apply_shell_signal(IngestShellSignalCommand {
@@ -1558,7 +1558,7 @@ fn routing_query_prefers_exact_project_path_when_client_tty_unknown() {
         tmux_client_tty: None,
         tmux_pane: None,
         tmux_panes: vec![],
-        recorded_at: "2026-03-15T05:41:00Z".to_string(),
+        recorded_at: "2099-03-15T05:41:00Z".to_string(),
     });
 
     let route = state.resolve_routing(ResolveRoutingCommand {
@@ -1590,7 +1590,7 @@ fn routing_ignores_stale_shell_signal_for_same_pid() {
         tmux_client_tty: Some("/dev/ttys099".to_string()),
         tmux_pane: Some("%42".to_string()),
         tmux_panes: vec![],
-        recorded_at: "2026-02-28T00:00:10Z".to_string(),
+        recorded_at: "2099-02-28T00:00:10Z".to_string(),
     });
 
     let outcome = state.apply_shell_signal(IngestShellSignalCommand {
@@ -1602,7 +1602,7 @@ fn routing_ignores_stale_shell_signal_for_same_pid() {
         tmux_client_tty: None,
         tmux_pane: None,
         tmux_panes: vec![],
-        recorded_at: "2026-02-28T00:00:00Z".to_string(),
+        recorded_at: "2099-02-28T00:00:00Z".to_string(),
     });
 
     assert!(outcome.ok);
@@ -1625,7 +1625,73 @@ fn routing_ignores_stale_shell_signal_for_same_pid() {
 
     let shell = state.shells.get(&1234).expect("shell");
     assert_eq!(shell.cwd, "/repo");
-    assert_eq!(shell.updated_at, "2026-02-28T00:00:10Z");
+    assert_eq!(shell.updated_at, "2099-02-28T00:00:10Z");
+}
+
+#[test]
+fn cleanup_shells_evicts_expired_entries() {
+    let now = Utc::now();
+    let mut shells = std::collections::HashMap::new();
+
+    shells.insert(
+        1000,
+        ShellSignal {
+            updated_at: (now - Duration::hours(5)).to_rfc3339(),
+            ..shell_signal_fixture(1000, "/stale")
+        },
+    );
+    shells.insert(
+        2000,
+        ShellSignal {
+            updated_at: (now - Duration::hours(1)).to_rfc3339(),
+            ..shell_signal_fixture(2000, "/fresh")
+        },
+    );
+
+    super::cleanup_shells_at(&mut shells, now);
+
+    assert!(!shells.contains_key(&1000), "stale shell should be evicted");
+    assert!(shells.contains_key(&2000), "fresh shell should remain");
+}
+
+#[test]
+fn snapshot_omits_expired_shells() {
+    let now = Utc::now();
+    let state = ReducerState::from_snapshot(AppSnapshot {
+        projects: vec![],
+        sessions: vec![],
+        shells: vec![
+            ShellSignal {
+                updated_at: (now - Duration::hours(5)).to_rfc3339(),
+                ..shell_signal_fixture(1000, "/stale")
+            },
+            ShellSignal {
+                updated_at: (now - Duration::hours(1)).to_rfc3339(),
+                ..shell_signal_fixture(2000, "/fresh")
+            },
+        ],
+        routing: vec![],
+        delegations: vec![],
+        runs: vec![],
+        diagnostics: DiagnosticsSummary {
+            events_ingested: 0,
+            sessions_tracked: 0,
+            shell_signals_tracked: 2,
+            events_skipped: 0,
+            stale_events_skipped: 0,
+            informational_events_skipped: 0,
+            reducer_events_skipped: 0,
+            last_error: None,
+            last_hook_event_at: None,
+        },
+        generated_at: now.to_rfc3339(),
+    });
+
+    let snapshot = state.snapshot();
+
+    assert_eq!(snapshot.shells.len(), 1);
+    assert_eq!(snapshot.shells[0].pid, 2000);
+    assert_eq!(snapshot.diagnostics.shell_signals_tracked, 1);
 }
 
 #[test]
@@ -1747,7 +1813,7 @@ fn routing_deprioritizes_managed_worktree_shell_over_project_root_shell() {
             session_name: "capacitor".to_string(),
             session_attached: true,
         }],
-        recorded_at: "2026-03-25T10:00:00Z".to_string(),
+        recorded_at: "2099-03-25T10:00:00Z".to_string(),
     });
 
     // Delegation shell in managed worktree (more recent)
@@ -1766,7 +1832,7 @@ fn routing_deprioritizes_managed_worktree_shell_over_project_root_shell() {
             session_name: "delegation-abc12345".to_string(),
             session_attached: true,
         }],
-        recorded_at: "2026-03-25T12:00:00Z".to_string(),
+        recorded_at: "2099-03-25T12:00:00Z".to_string(),
     });
 
     let route = state.resolve_routing(ResolveRoutingCommand {
@@ -1811,7 +1877,7 @@ fn routing_resolved_route_is_unavailable_when_only_managed_worktree_candidate_ex
             session_name: "delegation-abc12345".to_string(),
             session_attached: true,
         }],
-        recorded_at: "2026-03-25T12:00:00Z".to_string(),
+        recorded_at: "2099-03-25T12:00:00Z".to_string(),
     });
 
     let route = state.resolve_routing(ResolveRoutingCommand {
@@ -1848,7 +1914,7 @@ fn routing_activation_query_ignores_managed_worktree_only_shell() {
             session_name: "delegation-abc12345".to_string(),
             session_attached: true,
         }],
-        recorded_at: "2026-03-25T12:00:00Z".to_string(),
+        recorded_at: "2099-03-25T12:00:00Z".to_string(),
     });
 
     let route = state.resolve_routing(ResolveRoutingCommand {
@@ -1872,14 +1938,14 @@ fn routing_deprioritizes_working_worktree_over_idle_main_session() {
         tmux_session: Some("capacitor".to_string()),
         tmux_client_tty: Some("/dev/ttys099".to_string()),
         tmux_pane: Some("%1".to_string()),
-        updated_at: "2026-03-25T10:00:00Z".to_string(),
+        updated_at: "2099-03-25T10:00:00Z".to_string(),
         ..shell_signal_fixture(1000, "/users/pete/code/capacitor")
     };
     let delegation_shell = ShellSignal {
         tmux_session: Some("delegation-abc12345".to_string()),
         tmux_client_tty: Some("/dev/ttys098".to_string()),
         tmux_pane: Some("%2".to_string()),
-        updated_at: "2026-03-25T12:00:00Z".to_string(),
+        updated_at: "2099-03-25T12:00:00Z".to_string(),
         ..shell_signal_fixture(
             2000,
             "/users/pete/code/capacitor/.capacitor/worktrees/delegation-abc12345",

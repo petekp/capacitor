@@ -189,7 +189,7 @@ fn seeded_snapshot_without_routing() -> serde_json::Value {
                 "tmux_session": "runtime-service-project",
                 "tmux_client_tty": "/dev/ttys111",
                 "tmux_pane": null,
-                "updated_at": "2026-03-12T00:00:00Z"
+                "updated_at": "2099-03-12T00:00:00Z"
             }
         ],
         "routing": [],
