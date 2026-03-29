@@ -64,7 +64,9 @@ struct StatusIndicator: View {
 
 // MARK: - Animated Ellipsis
 
-/// Animated ellipsis that cycles through 0-3 dots with fixed width to prevent layout shift
+/// Animated ellipsis that cycles through 0-3 dots with fixed dimensions to prevent layout shift.
+/// A hidden "..." reference holds the frame height constant so `Text("")` at dotCount 0
+/// doesn't collapse the intrinsic line height and cause a ~1px vertical jitter.
 struct AnimatedEllipsis: View {
     let color: Color
 
@@ -83,10 +85,17 @@ struct AnimatedEllipsis: View {
     }
 
     private func ellipsisText(dotCount: Int) -> some View {
-        Text(String(repeating: ".", count: dotCount))
+        // Use "..." as hidden sizing reference so height never varies with dot count.
+        Text("...")
             .font(.system(.callout, design: .monospaced).weight(.semibold))
             .tracking(-1)
-            .foregroundStyle(color)
+            .hidden()
+            .overlay(alignment: .leading) {
+                Text(String(repeating: ".", count: dotCount))
+                    .font(.system(.callout, design: .monospaced).weight(.semibold))
+                    .tracking(-1)
+                    .foregroundStyle(color)
+            }
             .frame(width: 24, alignment: .leading)
             .accessibilityHidden(true)
     }
