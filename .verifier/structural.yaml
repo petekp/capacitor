@@ -17,7 +17,6 @@ meta:
       - .claude/docs/release-guide.md
       - .claude/docs/terminal-activation-ux-spec.md
       - docs/channel-profile-workflow.md
-      - docs/SESSION_STATE_RELEASE_MATRIX.md
     historical_globs:
       - docs/audits/**/*.md
       - docs/manual-qa/**/*.md

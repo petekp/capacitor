@@ -7,7 +7,6 @@
 - Tester:
 - Build/Commit:
 - Environment: macOS version, terminal(s), tmux version
-- Gate doc: `docs/SESSION_STATE_RELEASE_MATRIX.md`
 
 ## Run Markers
 

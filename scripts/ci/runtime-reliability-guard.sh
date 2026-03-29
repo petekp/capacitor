@@ -72,6 +72,12 @@ check_file_contains() {
     local path="$2"
     local pattern="$3"
 
+    if [ ! -f "$path" ]; then
+        printf "${RED}MISSING${NC} %-42s path=%s (file does not exist)\n" "$name" "$path"
+        FAILURES=$((FAILURES + 1))
+        return
+    fi
+
     if grep -q -- "$pattern" "$path"; then
         printf "${GREEN}WIRED${NC} %-44s pattern present\n" "$name"
     else
@@ -84,6 +90,12 @@ check_file_lacks() {
     local name="$1"
     local path="$2"
     local pattern="$3"
+
+    if [ ! -f "$path" ]; then
+        printf "${RED}MISSING${NC} %-42s path=%s (file does not exist)\n" "$name" "$path"
+        FAILURES=$((FAILURES + 1))
+        return
+    fi
 
     if grep -q "$pattern" "$path"; then
         printf "${RED}DENYLIST${NC} %-42s path=%s pattern=%s\n" "$name" "$path" "$pattern"
@@ -143,11 +155,9 @@ check_denylist "ProjectsView concrete debug cards" 'DebugActiveStateCard|DebugAc
 check_denylist "WelcomeView setup preview internals" 'debugScenario|\.preview\(' "apps/swift/Sources/Capacitor/Views/Setup/WelcomeView.swift"
 check_path_absent "Debug-owned GlassConfig path" "apps/swift/Sources/Capacitor/Views/Debug/UITuningPanel/GlassConfig.swift"
 check_file_contains "Architecture doc service title" "docs/ARCHITECTURE.md" 'Dedicated Runtime Service'
-check_file_contains "Release matrix service scope" "docs/SESSION_STATE_RELEASE_MATRIX.md" 'Runtime Service + Operations'
 check_file_lacks "Architecture doc snapshot title" "docs/ARCHITECTURE.md" 'Runtime-Snapshot Model'
 check_file_lacks "Architecture doc no-process claim" "docs/ARCHITECTURE.md" 'No separate runtime process boundary'
 check_file_lacks "Architecture doc socket removal claim" "docs/ARCHITECTURE.md" 'socket process removed'
-check_file_lacks "Release matrix snapshot architecture wording" "docs/SESSION_STATE_RELEASE_MATRIX.md" 'runtime-snapshot architecture'
 
 echo ""
 echo "── Operational Verification Wiring ──"

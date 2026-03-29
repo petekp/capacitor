@@ -40,7 +40,6 @@ Required sign-off artifacts:
 
 If the release includes changes to hook ingest, reducer/query/session transitions, local runtime service snapshot projection, or Swift-side session/shell projection and hysteresis behavior, run:
 
-- `docs/SESSION_STATE_RELEASE_MATRIX.md` (canonical session-state gate)
 - `docs/manual-qa/session-state-matrix-template.md` (manual evidence template)
 - `scripts/ci/runtime-reliability.sh ci` (automated pre-merge gate runner)
 

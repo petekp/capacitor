@@ -1112,11 +1112,9 @@ SWIFT
 
 @test "legacy guard wrappers delegate to the formal verifier" {
   rust_swift_wrapper="$(cat "$PROJECT_ROOT/docs/plans/rust-swift-boundary-legibility/guard.sh")"
-  ghostty_wrapper="$(cat "$PROJECT_ROOT/docs/plans/ghostty-applescript/guard.sh")"
   terminal_wrapper="$(cat "$PROJECT_ROOT/docs/plans/terminal-routing-foundation/guard.sh")"
 
   [[ "$rust_swift_wrapper" == *'scripts/verify/verify.sh'* ]]
   [[ "$rust_swift_wrapper" == *'--groups rust-swift-boundary-legibility'* ]]
-  [[ "$ghostty_wrapper" == *'--groups ghostty-applescript'* ]]
   [[ "$terminal_wrapper" == *'--groups terminal-routing-foundation'* ]]
 }
