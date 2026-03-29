@@ -63,6 +63,10 @@ event/type contract. Do not add ad hoc hook fallbacks or alternate config shapes
 to patch setup problems. The live ingress flows through the local hook endpoint
 into the runtime service.
 
+Setup diagnostics now distinguish `NotInstalled`, `PartiallyConfigured`, and
+`SettingsUnreadable`. Do not collapse all non-installed states back into "hooks
+missing" when triaging setup reports.
+
 ## Swift
 
 ### `OSLog` is unreliable in unsigned debug runs
@@ -146,6 +150,11 @@ first-run onboarding. In CI it launches the debug bundle with setup validation
 skipped so `WelcomeView` does not hide the cards under test. Do not copy that
 mode into normal user-facing startup logic without being explicit about why.
 
+Hook repair failures are no longer launch-blocking in normal startup. The app
+should continue into the main UI and surface setup guidance; `WelcomeView`
+should now be reserved for required dependency failures and explicit hook policy
+blocks.
+
 ### Shell snippets must call `hud-hook cwd`
 
 The source of truth for shell integration text is:
@@ -167,4 +176,6 @@ Use:
 ```
 
 That script resets app prefs, runtime state, installed hook configuration, and
-development bundle state so onboarding can be tested honestly.
+development bundle state so onboarding can be tested honestly. Because it
+removes `~/.capacitor/`, it also clears the persisted
+`~/.capacitor/setup_complete` marker used for first-run detection.

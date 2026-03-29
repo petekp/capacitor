@@ -2,7 +2,7 @@
 
 > Doc role: `canonical-spec`
 > Status: Current architecture spec. Read after `.claude/docs/architecture-primer.md`.
-> Rationale: `docs/architecture-decisions/004-dedicated-local-runtime-service.md`
+> Rationale: `docs/architecture-decisions/004-dedicated-local-runtime-service.md`, `docs/architecture-decisions/005-authority-based-multi-signal-state-detection.md`
 
 ## System Boundary
 
@@ -22,11 +22,22 @@ Capacitor uses a dedicated local runtime service as its live application boundar
 
 ## Runtime Data Flow
 
-1. Claude hook events and shell cwd signals reach `hud-hook serve`.
+1. Claude hook events and shell cwd signals reach `hud-hook serve` as distinct live signals into the runtime boundary.
 2. `hud-hook serve` normalizes adapter input and forwards it into the canonical `capacitor-core` runtime.
-3. `capacitor-core` applies ingest, reducer, and query logic, then persists runtime artifacts for durability and replay.
+3. `capacitor-core` applies ingest, reducer, and query logic, then persists runtime artifacts for durability and replay. Under ADR-005, hooks are one state signal within a larger authority model rather than the whole state-detection contract.
 4. The Swift app reads typed runtime state from authenticated `/runtime/*` endpoints exposed by the service.
-5. Swift projection layers apply presentation-only freshness guards and hysteresis before updating visible UI state.
+5. Swift projection layers apply presentation-only freshness guards and hysteresis before updating visible UI state. Hook setup failure now degrades to coarse state plus diagnostics instead of blocking startup behind setup.
+
+## State Detection Architecture
+
+ADR-005 defines state detection as an authority-based multi-signal system, not a hook-only contract.
+
+- Hooks are the authority for nuanced session state when available.
+- Transcript evidence owns existence, recency, and recovery/backfill responsibilities.
+- Shell `cwd` contributes routing only.
+- Phase 1 shipped the launch behavior change: hook install or repair failure is informational and degraded, not launch-blocking. Only required dependency failures and explicit policy-blocked hook states still gate setup.
+
+See `docs/architecture-decisions/005-authority-based-multi-signal-state-detection.md` for the authority matrix and binding completion conditions.
 
 ## Activation Boundaries
 

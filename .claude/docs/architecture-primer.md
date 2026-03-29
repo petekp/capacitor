@@ -8,6 +8,7 @@ Capacitor's architecture hierarchy is intentionally strict:
 1. `.claude/docs/architecture-primer.md`
 2. `docs/ARCHITECTURE.md`
 3. `docs/architecture-decisions/004-dedicated-local-runtime-service.md`
+4. `docs/architecture-decisions/005-authority-based-multi-signal-state-detection.md`
 
 Use `AGENT_CHANGELOG.md` only after the canonical read path when you need recent deltas or retired seams to avoid resurrecting.
 
@@ -31,6 +32,7 @@ Use `AGENT_CHANGELOG.md` only after the canonical read path when you need recent
 
 - Current system boundary or live ownership split: `docs/ARCHITECTURE.md`
 - Why the dedicated runtime service exists: `docs/architecture-decisions/004-dedicated-local-runtime-service.md`
+- Authority-based state detection, degraded-mode rules, and the signal authority matrix: `docs/architecture-decisions/005-authority-based-multi-signal-state-detection.md`
 - Orchestration, checkpoints, and review surfaces: `docs/orchestrator/` (start with `checkpoint-bridge.md`)
 - Orchestrator terminology and disambiguation: `docs/orchestrator/terminology.md`
 - Recent migrations and retired seams to avoid reintroducing: `AGENT_CHANGELOG.md`
@@ -46,4 +48,3 @@ Use `AGENT_CHANGELOG.md` only after the canonical read path when you need recent
 - `docs/plans/`
 - `docs/manual-qa/`
 - `docs/archive/` (all subdirectories — retired docs preserved for history)
-

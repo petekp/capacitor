@@ -10,6 +10,7 @@ Use this guide for runtime and activation debugging only.
 These are the runtime paths you will touch while debugging:
 
 - Runtime service connection: `~/.capacitor/runtime/runtime-service.json`
+- Setup marker: `~/.capacitor/setup_complete`
 - Hook binary: `~/.local/bin/hud-hook`
 - Persisted runtime artifact: `~/.capacitor/runtime/app_snapshot.json`
 - Runtime directory: `~/.capacitor/runtime/`
@@ -129,7 +130,18 @@ When session or shell updates stop arriving:
 ```
 
 4. Verify hook install state in the app setup UI or via setup diagnostics.
+   Distinguish `NotInstalled`, `PartiallyConfigured`, and `SettingsUnreadable`
+   rather than treating every configuration problem as "hooks missing."
 5. Confirm that shell cwd changes produce new runtime snapshot data.
+
+## Setup And First-Run Debugging
+
+When onboarding or setup gating looks wrong:
+
+1. Check whether `~/.capacitor/setup_complete` exists.
+2. `isFirstRun` is derived from that marker, not from hook health or "no hook events seen."
+3. Hook install/repair failures should now surface as diagnostics and degraded state, not a startup block.
+4. Only missing Claude CLI and explicit hook policy blocks should keep the app in setup.
 
 ## Event Loss Debugging
 

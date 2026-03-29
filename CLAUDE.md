@@ -16,7 +16,8 @@ A fun, glanceable, bring-your-own terminal UI for navigating multiple coding age
 1. `.claude/docs/architecture-primer.md`
 2. `docs/ARCHITECTURE.md`
 3. `docs/architecture-decisions/004-dedicated-local-runtime-service.md`
-4. `AGENT_CHANGELOG.md` only when you need recent deltas or retired seams
+4. `docs/architecture-decisions/005-authority-based-multi-signal-state-detection.md`
+5. `AGENT_CHANGELOG.md` only when you need recent deltas or retired seams
 
 ## Commands
 
@@ -133,6 +134,6 @@ Optional browser UI + local telemetry sink: `node scripts/transparent-ui-server.
 - **UniFFI Task shadows Swift Task** — Use `_Concurrency.Task` explicitly in async code
 - **Swift app links release Rust core** — The Swift package links `../../target/release`, so Rust-side API changes need a fresh release build before standalone Swift package commands
 - **Prefer the AX verifier over raw `ax_runner.swift`** — `scripts/ci/ax-automation-verify.sh` seeds runtime project state, captures artifacts, and classifies failures. Drop to the raw runner only when debugging the AX interface itself.
-- **Runtime AX CI is intentionally not onboarding-sensitive** — the runtime reliability wrapper launches the AX lane with setup validation bypassed so CI verifies the project surface rather than `WelcomeView`.
+- **Runtime AX CI is intentionally not onboarding-sensitive** — the runtime reliability wrapper launches the AX lane with setup validation bypassed so CI verifies the project surface rather than `WelcomeView`. In normal startup, hook repair failures are already non-blocking; only missing Claude CLI and explicit hook policy blocks should hold the app in setup.
 
 **Full gotchas reference:** `.claude/docs/gotchas.md`
