@@ -513,7 +513,7 @@ fn reducer_ignores_stale_events() {
 }
 
 #[test]
-fn reducer_tracks_tools_in_flight_and_idle_prompt_gate() {
+fn test_idle_prompt_corrects_drift_without_hiding_live_work() {
     let mut state = ReducerState::default();
 
     let _ = state.apply_hook_event(event_base(HookEventType::PreToolUse));
@@ -522,26 +522,274 @@ fn reducer_tracks_tools_in_flight_and_idle_prompt_gate() {
     notification.notification_type = Some("idle_prompt".to_string());
     notification.recorded_at = "2026-01-31T00:00:01Z".to_string();
 
-    let skipped = state.apply_hook_event(notification.clone());
-    assert_eq!(
-        skipped.message,
-        "event skipped: idle_prompt_tools_in_flight"
-    );
+    let applied = state.apply_hook_event(notification);
+    assert!(applied.ok);
     assert_eq!(
         state.sessions.get("session-1").map(|session| session.state),
         Some(SessionState::Working)
     );
+    assert_eq!(
+        state
+            .sessions
+            .get("session-1")
+            .map(|session| session.tools_in_flight),
+        Some(0)
+    );
+    assert_eq!(
+        state
+            .sessions
+            .get("session-1")
+            .and_then(|session| session.ready_reason.as_deref()),
+        None
+    );
+}
 
-    let mut post_tool = event_base(HookEventType::PostToolUse);
-    post_tool.recorded_at = "2026-01-31T00:00:02Z".to_string();
-    let _ = state.apply_hook_event(post_tool);
+#[test]
+fn test_idle_prompt_no_tools_still_ready() {
+    let mut state = ReducerState::default();
 
-    notification.recorded_at = "2026-01-31T00:00:03Z".to_string();
+    let _ = state.apply_hook_event(event_base(HookEventType::UserPromptSubmit));
+
+    let mut notification = event_base(HookEventType::Notification);
+    notification.notification_type = Some("idle_prompt".to_string());
+    notification.recorded_at = "2026-01-31T00:00:01Z".to_string();
+
     let applied = state.apply_hook_event(notification);
     assert!(applied.ok);
     assert_eq!(
         state.sessions.get("session-1").map(|session| session.state),
         Some(SessionState::Ready)
+    );
+}
+
+#[test]
+fn test_idle_prompt_transitions_to_ready_after_drift_correction() {
+    let mut state = ReducerState::default();
+
+    let _ = state.apply_hook_event(event_base(HookEventType::PreToolUse));
+
+    let mut first_idle = event_base(HookEventType::Notification);
+    first_idle.notification_type = Some("idle_prompt".to_string());
+    first_idle.recorded_at = "2026-01-31T00:00:01Z".to_string();
+    let applied = state.apply_hook_event(first_idle);
+    assert!(applied.ok);
+    assert_eq!(
+        state.sessions.get("session-1").map(|session| session.state),
+        Some(SessionState::Working)
+    );
+    assert_eq!(
+        state
+            .sessions
+            .get("session-1")
+            .map(|session| session.tools_in_flight),
+        Some(0)
+    );
+
+    let mut second_idle = event_base(HookEventType::Notification);
+    second_idle.notification_type = Some("idle_prompt".to_string());
+    second_idle.recorded_at = "2026-01-31T00:00:02Z".to_string();
+    let applied = state.apply_hook_event(second_idle);
+    assert!(applied.ok);
+    assert_eq!(
+        state.sessions.get("session-1").map(|session| session.state),
+        Some(SessionState::Ready)
+    );
+    assert_eq!(
+        state
+            .sessions
+            .get("session-1")
+            .and_then(|session| session.ready_reason.as_deref()),
+        Some("idle_prompt")
+    );
+}
+
+#[test]
+fn test_out_of_order_idle_prompt_does_not_hide_live_tool_work_within_stale_grace() {
+    let mut state = ReducerState::default();
+
+    let _ = state.apply_hook_event(event_base(HookEventType::SessionStart));
+
+    let mut pre_tool = event_base(HookEventType::PreToolUse);
+    pre_tool.recorded_at = "2026-01-31T00:00:03Z".to_string();
+    let _ = state.apply_hook_event(pre_tool);
+
+    let mut delayed_idle = event_base(HookEventType::Notification);
+    delayed_idle.notification_type = Some("idle_prompt".to_string());
+    delayed_idle.recorded_at = "2026-01-31T00:00:01Z".to_string();
+
+    let applied = state.apply_hook_event(delayed_idle);
+    assert!(applied.ok);
+    assert_eq!(
+        state.sessions.get("session-1").map(|session| session.state),
+        Some(SessionState::Working)
+    );
+    assert_eq!(
+        state
+            .sessions
+            .get("session-1")
+            .map(|session| session.tools_in_flight),
+        Some(0)
+    );
+}
+
+#[test]
+fn test_subagent_start_sets_working() {
+    let mut state = ReducerState::default();
+
+    let _ = state.apply_hook_event(event_base(HookEventType::SessionStart));
+
+    let mut start = event_base(HookEventType::SubagentStart);
+    start.recorded_at = "2026-01-31T00:00:01Z".to_string();
+
+    let outcome = state.apply_hook_event(start);
+
+    assert!(outcome.ok);
+    assert_eq!(
+        state.sessions.get("session-1").map(|session| session.state),
+        Some(SessionState::Working)
+    );
+}
+
+#[test]
+fn test_subagent_stop_sets_ready() {
+    let mut state = ReducerState::default();
+
+    let _ = state.apply_hook_event(event_base(HookEventType::UserPromptSubmit));
+
+    let mut stop = event_base(HookEventType::SubagentStop);
+    stop.recorded_at = "2026-01-31T00:00:01Z".to_string();
+
+    let outcome = state.apply_hook_event(stop);
+
+    assert!(outcome.ok);
+    assert_eq!(
+        state.sessions.get("session-1").map(|session| session.state),
+        Some(SessionState::Ready)
+    );
+    assert_eq!(
+        state
+            .sessions
+            .get("session-1")
+            .and_then(|session| session.ready_reason.as_deref()),
+        Some("subagent_stop")
+    );
+}
+
+#[test]
+fn test_subagent_stop_stays_working_with_tools_in_flight() {
+    let mut state = ReducerState::default();
+
+    let _ = state.apply_hook_event(event_base(HookEventType::PreToolUse));
+
+    let mut stop = event_base(HookEventType::SubagentStop);
+    stop.recorded_at = "2026-01-31T00:00:01Z".to_string();
+
+    let outcome = state.apply_hook_event(stop);
+
+    assert!(outcome.ok);
+    assert_eq!(
+        state.sessions.get("session-1").map(|session| session.state),
+        Some(SessionState::Working)
+    );
+    assert_eq!(
+        state
+            .sessions
+            .get("session-1")
+            .map(|session| session.tools_in_flight),
+        Some(1)
+    );
+}
+
+#[test]
+fn test_subagent_start_preserves_waiting() {
+    let mut state = ReducerState::default();
+
+    let _ = state.apply_hook_event(event_base(HookEventType::PermissionRequest));
+
+    let mut start = event_base(HookEventType::SubagentStart);
+    start.recorded_at = "2026-01-31T00:00:01Z".to_string();
+
+    let outcome = state.apply_hook_event(start);
+
+    assert!(outcome.ok);
+    assert_eq!(
+        state.sessions.get("session-1").map(|session| session.state),
+        Some(SessionState::Waiting)
+    );
+}
+
+#[test]
+fn test_subagent_start_preserves_compacting() {
+    let mut state = ReducerState::default();
+
+    let _ = state.apply_hook_event(event_base(HookEventType::PreCompact));
+
+    let mut start = event_base(HookEventType::SubagentStart);
+    start.recorded_at = "2026-01-31T00:00:01Z".to_string();
+
+    let outcome = state.apply_hook_event(start);
+
+    assert!(outcome.ok);
+    assert_eq!(
+        state.sessions.get("session-1").map(|session| session.state),
+        Some(SessionState::Compacting)
+    );
+}
+
+#[test]
+fn test_subagent_stop_preserves_compacting() {
+    let mut state = ReducerState::default();
+
+    let _ = state.apply_hook_event(event_base(HookEventType::PreCompact));
+
+    let mut stop = event_base(HookEventType::SubagentStop);
+    stop.recorded_at = "2026-01-31T00:00:01Z".to_string();
+
+    let outcome = state.apply_hook_event(stop);
+
+    assert!(outcome.ok);
+    assert_eq!(
+        state.sessions.get("session-1").map(|session| session.state),
+        Some(SessionState::Compacting)
+    );
+}
+
+#[test]
+fn test_subagent_stop_preserves_waiting() {
+    let mut state = ReducerState::default();
+
+    let _ = state.apply_hook_event(event_base(HookEventType::PermissionRequest));
+
+    let mut stop = event_base(HookEventType::SubagentStop);
+    stop.recorded_at = "2026-01-31T00:00:01Z".to_string();
+
+    let outcome = state.apply_hook_event(stop);
+
+    assert!(outcome.ok);
+    assert_eq!(
+        state.sessions.get("session-1").map(|session| session.state),
+        Some(SessionState::Waiting)
+    );
+}
+
+#[test]
+fn test_subagent_start_does_not_update_activity() {
+    let mut state = ReducerState::default();
+
+    let _ = state.apply_hook_event(event_base(HookEventType::SessionStart));
+
+    let mut start = event_base(HookEventType::SubagentStart);
+    start.recorded_at = "2026-01-31T00:00:01Z".to_string();
+
+    let outcome = state.apply_hook_event(start);
+
+    assert!(outcome.ok);
+    assert_eq!(
+        state
+            .sessions
+            .get("session-1")
+            .and_then(|session| session.last_activity_at.as_deref()),
+        None
     );
 }
 
@@ -561,6 +809,72 @@ fn reducer_stop_guard_skips_for_subagent() {
         state.sessions.get("session-1").map(|session| session.state),
         Some(SessionState::Working)
     );
+}
+
+#[test]
+fn reducer_parent_stop_transitions_to_ready() {
+    let mut state = ReducerState::default();
+    let _ = state.apply_hook_event(event_base(HookEventType::UserPromptSubmit));
+
+    let mut stop = event_base(HookEventType::Stop);
+    stop.stop_hook_active = Some(false);
+    stop.recorded_at = "2026-01-31T00:00:05Z".to_string();
+
+    let outcome = state.apply_hook_event(stop);
+    assert!(outcome.ok);
+    assert_eq!(
+        state.sessions.get("session-1").map(|session| session.state),
+        Some(SessionState::Ready)
+    );
+    assert_eq!(
+        state
+            .sessions
+            .get("session-1")
+            .and_then(|session| session.ready_reason.as_deref()),
+        Some("stop_gate")
+    );
+}
+
+#[test]
+fn reducer_stop_guard_skips_when_stop_hook_active() {
+    let mut state = ReducerState::default();
+    let _ = state.apply_hook_event(event_base(HookEventType::UserPromptSubmit));
+
+    let mut stop = event_base(HookEventType::Stop);
+    stop.stop_hook_active = Some(true);
+    stop.recorded_at = "2026-01-31T00:00:05Z".to_string();
+
+    let outcome = state.apply_hook_event(stop);
+    assert_eq!(outcome.message, "event skipped: stop_guard");
+    assert_eq!(
+        state.sessions.get("session-1").map(|session| session.state),
+        Some(SessionState::Working)
+    );
+}
+
+#[test]
+fn should_skip_stop_is_false_for_parent_session_stop() {
+    let mut stop = event_base(HookEventType::Stop);
+    stop.stop_hook_active = Some(false);
+
+    assert!(!super::should_skip_stop(&stop));
+}
+
+#[test]
+fn should_skip_stop_is_true_for_stop_hook_active() {
+    let mut stop = event_base(HookEventType::Stop);
+    stop.stop_hook_active = Some(true);
+
+    assert!(super::should_skip_stop(&stop));
+}
+
+#[test]
+fn should_skip_stop_is_true_for_subagent_stop() {
+    let mut stop = event_base(HookEventType::Stop);
+    stop.stop_hook_active = Some(false);
+    stop.agent_id = Some("agent-1".to_string());
+
+    assert!(super::should_skip_stop(&stop));
 }
 
 #[test]
@@ -603,6 +917,21 @@ fn session_end_with_dead_pid_deletes_session() {
 }
 
 #[test]
+fn test_is_pid_alive_zero_returns_true() {
+    assert!(super::pid_alive_from_probe_result(0, None));
+}
+
+#[test]
+fn test_is_pid_alive_eperm_returns_true() {
+    assert!(super::pid_alive_from_probe_result(-1, Some(libc::EPERM)));
+}
+
+#[test]
+fn test_is_pid_alive_esrch_returns_false() {
+    assert!(!super::pid_alive_from_probe_result(-1, Some(libc::ESRCH)));
+}
+
+#[test]
 fn reducer_tracks_shell_signals() {
     let mut state = ReducerState::default();
     let outcome = state.apply_shell_signal(IngestShellSignalCommand {
@@ -633,6 +962,561 @@ fn reducer_tracks_shell_signals() {
             .and_then(|shell| shell.tmux_pane.as_deref()),
         Some("%42")
     );
+}
+
+#[test]
+fn test_informational_events_have_distinct_skip_reasons() {
+    let mut state = ReducerState::default();
+
+    let cases = [
+        (
+            HookEventType::TeammateIdle,
+            "event skipped: teammate_idle_informational",
+        ),
+        (
+            HookEventType::WorktreeCreate,
+            "event skipped: worktree_create_informational",
+        ),
+        (
+            HookEventType::WorktreeRemove,
+            "event skipped: worktree_remove_informational",
+        ),
+        (
+            HookEventType::ConfigChange,
+            "event skipped: config_change_informational",
+        ),
+        (HookEventType::Unknown, "event skipped: unknown_event_type"),
+    ];
+
+    for (index, (event_type, expected_message)) in cases.into_iter().enumerate() {
+        let mut event = event_base(event_type);
+        event.event_id = format!("evt-{index}");
+        event.recorded_at = format!("2026-01-31T00:00:0{index}Z");
+
+        let outcome = state.apply_hook_event(event);
+        assert_eq!(outcome.message, expected_message);
+    }
+}
+
+#[test]
+fn test_reducer_17_event_contract_matrix() {
+    #[derive(Clone, Copy)]
+    struct EventExpectation {
+        event_type: HookEventType,
+        setup: Option<HookEventType>,
+        notification_type: Option<&'static str>,
+        expected_state: Option<SessionState>,
+        expected_skip_reason: Option<&'static str>,
+        description: &'static str,
+    }
+
+    let expectations = [
+        EventExpectation {
+            event_type: HookEventType::SessionStart,
+            setup: None,
+            notification_type: None,
+            expected_state: Some(SessionState::Ready),
+            expected_skip_reason: None,
+            description: "session_start (no prior state)",
+        },
+        EventExpectation {
+            event_type: HookEventType::SessionStart,
+            setup: Some(HookEventType::UserPromptSubmit),
+            notification_type: None,
+            expected_state: None,
+            expected_skip_reason: Some("session_start_already_active"),
+            description: "session_start (already Working)",
+        },
+        EventExpectation {
+            event_type: HookEventType::UserPromptSubmit,
+            setup: Some(HookEventType::SessionStart),
+            notification_type: None,
+            expected_state: Some(SessionState::Working),
+            expected_skip_reason: None,
+            description: "user_prompt_submit",
+        },
+        EventExpectation {
+            event_type: HookEventType::PreToolUse,
+            setup: Some(HookEventType::SessionStart),
+            notification_type: None,
+            expected_state: Some(SessionState::Working),
+            expected_skip_reason: None,
+            description: "pre_tool_use",
+        },
+        EventExpectation {
+            event_type: HookEventType::PostToolUse,
+            setup: Some(HookEventType::PreToolUse),
+            notification_type: None,
+            expected_state: Some(SessionState::Working),
+            expected_skip_reason: None,
+            description: "post_tool_use",
+        },
+        EventExpectation {
+            event_type: HookEventType::PostToolUseFailure,
+            setup: Some(HookEventType::PreToolUse),
+            notification_type: None,
+            expected_state: Some(SessionState::Working),
+            expected_skip_reason: None,
+            description: "post_tool_use_failure",
+        },
+        EventExpectation {
+            event_type: HookEventType::PermissionRequest,
+            setup: Some(HookEventType::SessionStart),
+            notification_type: None,
+            expected_state: Some(SessionState::Waiting),
+            expected_skip_reason: None,
+            description: "permission_request",
+        },
+        EventExpectation {
+            event_type: HookEventType::PreCompact,
+            setup: Some(HookEventType::PreToolUse),
+            notification_type: None,
+            expected_state: Some(SessionState::Compacting),
+            expected_skip_reason: None,
+            description: "pre_compact",
+        },
+        EventExpectation {
+            event_type: HookEventType::Notification,
+            setup: Some(HookEventType::UserPromptSubmit),
+            notification_type: Some("idle_prompt"),
+            expected_state: Some(SessionState::Ready),
+            expected_skip_reason: None,
+            description: "notification (idle_prompt)",
+        },
+        EventExpectation {
+            event_type: HookEventType::Notification,
+            setup: Some(HookEventType::UserPromptSubmit),
+            notification_type: Some("auth_success"),
+            expected_state: Some(SessionState::Ready),
+            expected_skip_reason: None,
+            description: "notification (auth_success)",
+        },
+        EventExpectation {
+            event_type: HookEventType::Notification,
+            setup: Some(HookEventType::UserPromptSubmit),
+            notification_type: Some("permission_prompt"),
+            expected_state: Some(SessionState::Waiting),
+            expected_skip_reason: None,
+            description: "notification (permission_prompt)",
+        },
+        EventExpectation {
+            event_type: HookEventType::Notification,
+            setup: Some(HookEventType::UserPromptSubmit),
+            notification_type: Some("elicitation_dialog"),
+            expected_state: Some(SessionState::Waiting),
+            expected_skip_reason: None,
+            description: "notification (elicitation_dialog)",
+        },
+        EventExpectation {
+            event_type: HookEventType::Notification,
+            setup: Some(HookEventType::UserPromptSubmit),
+            notification_type: Some("other"),
+            expected_state: None,
+            expected_skip_reason: Some("notification_non_stateful"),
+            description: "notification (other)",
+        },
+        EventExpectation {
+            event_type: HookEventType::SubagentStart,
+            setup: Some(HookEventType::SessionStart),
+            notification_type: None,
+            expected_state: Some(SessionState::Working),
+            expected_skip_reason: None,
+            description: "subagent_start (from Ready)",
+        },
+        EventExpectation {
+            event_type: HookEventType::SubagentStart,
+            setup: Some(HookEventType::PermissionRequest),
+            notification_type: None,
+            expected_state: None,
+            expected_skip_reason: Some("subagent_start_higher_priority_active"),
+            description: "subagent_start (from Waiting)",
+        },
+        EventExpectation {
+            event_type: HookEventType::SubagentStop,
+            setup: Some(HookEventType::UserPromptSubmit),
+            notification_type: None,
+            expected_state: Some(SessionState::Ready),
+            expected_skip_reason: None,
+            description: "subagent_stop (from Working, no tools)",
+        },
+        EventExpectation {
+            event_type: HookEventType::SubagentStop,
+            setup: Some(HookEventType::PreToolUse),
+            notification_type: None,
+            expected_state: Some(SessionState::Working),
+            expected_skip_reason: None,
+            description: "subagent_stop (from Working, tools in flight)",
+        },
+        EventExpectation {
+            event_type: HookEventType::SubagentStop,
+            setup: Some(HookEventType::PermissionRequest),
+            notification_type: None,
+            expected_state: None,
+            expected_skip_reason: Some("subagent_stop_higher_priority_active"),
+            description: "subagent_stop (from Waiting)",
+        },
+        EventExpectation {
+            event_type: HookEventType::Stop,
+            setup: Some(HookEventType::UserPromptSubmit),
+            notification_type: None,
+            expected_state: Some(SessionState::Ready),
+            expected_skip_reason: None,
+            description: "stop (parent session)",
+        },
+        EventExpectation {
+            event_type: HookEventType::Stop,
+            setup: Some(HookEventType::UserPromptSubmit),
+            notification_type: None,
+            expected_state: None,
+            expected_skip_reason: Some("stop_guard"),
+            description: "stop (subagent, agent_id present)",
+        },
+        EventExpectation {
+            event_type: HookEventType::Stop,
+            setup: Some(HookEventType::UserPromptSubmit),
+            notification_type: None,
+            expected_state: None,
+            expected_skip_reason: Some("stop_guard"),
+            description: "stop (stop_hook_active)",
+        },
+        EventExpectation {
+            event_type: HookEventType::TaskCompleted,
+            setup: Some(HookEventType::UserPromptSubmit),
+            notification_type: None,
+            expected_state: Some(SessionState::Ready),
+            expected_skip_reason: None,
+            description: "task_completed (parent)",
+        },
+        EventExpectation {
+            event_type: HookEventType::TaskCompleted,
+            setup: Some(HookEventType::UserPromptSubmit),
+            notification_type: None,
+            expected_state: None,
+            expected_skip_reason: Some("auxiliary_task_metadata"),
+            description: "task_completed (auxiliary, agent_id present)",
+        },
+        EventExpectation {
+            event_type: HookEventType::TeammateIdle,
+            setup: Some(HookEventType::UserPromptSubmit),
+            notification_type: None,
+            expected_state: None,
+            expected_skip_reason: Some("teammate_idle_informational"),
+            description: "teammate_idle",
+        },
+        EventExpectation {
+            event_type: HookEventType::WorktreeCreate,
+            setup: Some(HookEventType::UserPromptSubmit),
+            notification_type: None,
+            expected_state: None,
+            expected_skip_reason: Some("worktree_create_informational"),
+            description: "worktree_create",
+        },
+        EventExpectation {
+            event_type: HookEventType::WorktreeRemove,
+            setup: Some(HookEventType::UserPromptSubmit),
+            notification_type: None,
+            expected_state: None,
+            expected_skip_reason: Some("worktree_remove_informational"),
+            description: "worktree_remove",
+        },
+        EventExpectation {
+            event_type: HookEventType::ConfigChange,
+            setup: Some(HookEventType::UserPromptSubmit),
+            notification_type: None,
+            expected_state: None,
+            expected_skip_reason: Some("config_change_informational"),
+            description: "config_change",
+        },
+        EventExpectation {
+            event_type: HookEventType::Unknown,
+            setup: Some(HookEventType::UserPromptSubmit),
+            notification_type: None,
+            expected_state: None,
+            expected_skip_reason: Some("unknown_event_type"),
+            description: "unknown",
+        },
+    ];
+
+    assert_eq!(expectations.len(), 28);
+
+    // SessionEnd is intentionally covered by the dedicated PID-sensitive tests:
+    // `session_end_with_live_pid_transitions_to_ready` and
+    // `session_end_with_dead_pid_deletes_session`.
+    for event_type in [
+        HookEventType::SessionStart,
+        HookEventType::UserPromptSubmit,
+        HookEventType::PreToolUse,
+        HookEventType::PostToolUse,
+        HookEventType::PostToolUseFailure,
+        HookEventType::PermissionRequest,
+        HookEventType::PreCompact,
+        HookEventType::Notification,
+        HookEventType::SubagentStart,
+        HookEventType::SubagentStop,
+        HookEventType::Stop,
+        HookEventType::TeammateIdle,
+        HookEventType::TaskCompleted,
+        HookEventType::WorktreeCreate,
+        HookEventType::WorktreeRemove,
+        HookEventType::ConfigChange,
+        HookEventType::Unknown,
+    ] {
+        assert!(
+            expectations.iter().any(|row| row.event_type == event_type),
+            "{event_type:?} should appear in the matrix",
+        );
+    }
+
+    for (index, expectation) in expectations.iter().enumerate() {
+        let mut state = ReducerState::default();
+
+        if let Some(setup_event_type) = expectation.setup {
+            let mut setup = event_base(setup_event_type);
+            setup.event_id = format!("setup-{index}");
+            setup.recorded_at = "2026-01-31T00:00:00Z".to_string();
+
+            let outcome = state.apply_hook_event(setup);
+            assert!(outcome.ok, "setup failed for {}", expectation.description);
+        }
+
+        let before = state.sessions.get("session-1").cloned();
+
+        let mut event = event_base(expectation.event_type);
+        event.event_id = format!("matrix-{index}");
+        event.recorded_at = format!("2026-01-31T00:00:{:02}Z", index + 1);
+        event.notification_type = expectation.notification_type.map(str::to_string);
+
+        match expectation.description {
+            "stop (parent session)" | "stop (subagent, agent_id present)" => {
+                event.stop_hook_active = Some(false);
+            }
+            "stop (stop_hook_active)" => {
+                event.stop_hook_active = Some(true);
+            }
+            _ => {}
+        }
+
+        match expectation.description {
+            "stop (subagent, agent_id present)"
+            | "task_completed (auxiliary, agent_id present)" => {
+                event.agent_id = Some("agent-1".to_string());
+            }
+            _ => {}
+        }
+
+        let outcome = state.apply_hook_event(event);
+        assert!(
+            outcome.ok,
+            "{} should produce a successful mutation outcome: {:?}",
+            expectation.description, outcome
+        );
+
+        if let Some(skip_reason) = expectation.expected_skip_reason {
+            assert_eq!(
+                outcome.message,
+                format!("event skipped: {skip_reason}"),
+                "{} should skip with the expected reason",
+                expectation.description
+            );
+        } else {
+            assert_eq!(
+                outcome.message, "event ingested",
+                "{} should be ingested",
+                expectation.description
+            );
+        }
+
+        let after = state.sessions.get("session-1").cloned();
+        match expectation.expected_state {
+            Some(expected_state) => {
+                let session = after
+                    .as_ref()
+                    .unwrap_or_else(|| panic!("{} should keep a session", expectation.description));
+                assert_eq!(
+                    session.state, expected_state,
+                    "{} should produce the expected session state",
+                    expectation.description
+                );
+
+                let expected_ready_reason = match expectation.description {
+                    "notification (idle_prompt)" => Some("idle_prompt"),
+                    "notification (auth_success)" => Some("auth_success"),
+                    "stop (parent session)" => Some("stop_gate"),
+                    "task_completed (parent)" => Some("task_completed"),
+                    "subagent_stop (from Working, no tools)" => Some("subagent_stop"),
+                    _ => None,
+                };
+                assert_eq!(
+                    session.ready_reason.as_deref(),
+                    expected_ready_reason,
+                    "{} should have the expected ready_reason semantics",
+                    expectation.description
+                );
+
+                match expectation.description {
+                    "pre_tool_use" => assert_eq!(session.tools_in_flight, 1),
+                    "post_tool_use" | "post_tool_use_failure" | "pre_compact" => {
+                        assert_eq!(session.tools_in_flight, 0)
+                    }
+                    "subagent_stop (from Working, tools in flight)" => {
+                        assert_eq!(session.tools_in_flight, 1)
+                    }
+                    _ => {}
+                }
+            }
+            None => {
+                assert_eq!(
+                    after, before,
+                    "{} should leave the session unchanged",
+                    expectation.description
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn test_stale_idle_prompt_does_not_overwrite_fresh_working() {
+    let mut state = ReducerState::default();
+
+    let mut pre_tool = event_base(HookEventType::PreToolUse);
+    pre_tool.recorded_at = "2026-01-31T00:00:00Z".to_string();
+    let outcome = state.apply_hook_event(pre_tool);
+    assert!(outcome.ok);
+
+    let before = state
+        .sessions
+        .get("session-1")
+        .cloned()
+        .expect("session should exist after pre_tool_use");
+
+    let mut idle_prompt = event_base(HookEventType::Notification);
+    idle_prompt.event_id = "evt-stale-idle".to_string();
+    idle_prompt.recorded_at = "2026-01-30T23:59:54Z".to_string();
+    idle_prompt.notification_type = Some("idle_prompt".to_string());
+
+    let outcome = state.apply_hook_event(idle_prompt);
+    assert!(outcome.ok);
+    assert_eq!(outcome.message, "stale event skipped");
+    assert_eq!(state.stale_events_skipped, 1);
+    assert_eq!(state.sessions.get("session-1"), Some(&before));
+}
+
+#[test]
+fn test_near_boundary_idle_prompt_applies() {
+    let mut state = ReducerState::default();
+
+    let mut pre_tool = event_base(HookEventType::PreToolUse);
+    pre_tool.recorded_at = "2026-01-31T00:00:00Z".to_string();
+    let outcome = state.apply_hook_event(pre_tool);
+    assert!(outcome.ok);
+
+    let mut idle_prompt = event_base(HookEventType::Notification);
+    idle_prompt.event_id = "evt-near-boundary-idle".to_string();
+    idle_prompt.recorded_at = "2026-01-30T23:59:56Z".to_string();
+    idle_prompt.notification_type = Some("idle_prompt".to_string());
+
+    let outcome = state.apply_hook_event(idle_prompt);
+    assert!(outcome.ok);
+    assert_eq!(outcome.message, "event ingested");
+
+    let session = state
+        .sessions
+        .get("session-1")
+        .expect("session should exist");
+    assert_eq!(session.state, SessionState::Working);
+    assert_eq!(session.tools_in_flight, 0);
+    assert_eq!(session.ready_reason, None);
+}
+
+#[test]
+fn test_out_of_order_pretool_then_idle_prompt() {
+    let mut state = ReducerState::default();
+
+    let mut pre_tool = event_base(HookEventType::PreToolUse);
+    pre_tool.recorded_at = "2026-01-31T00:00:00Z".to_string();
+    let outcome = state.apply_hook_event(pre_tool);
+    assert!(outcome.ok);
+
+    let mut idle_prompt = event_base(HookEventType::Notification);
+    idle_prompt.event_id = "evt-out-of-order-idle".to_string();
+    idle_prompt.recorded_at = "2026-01-31T00:00:01Z".to_string();
+    idle_prompt.notification_type = Some("idle_prompt".to_string());
+
+    let outcome = state.apply_hook_event(idle_prompt);
+    assert!(outcome.ok);
+    assert_eq!(outcome.message, "event ingested");
+
+    let session = state
+        .sessions
+        .get("session-1")
+        .expect("session should exist");
+    assert_eq!(session.state, SessionState::Working);
+    assert_eq!(session.tools_in_flight, 0);
+    assert_eq!(session.ready_reason, None);
+}
+
+#[test]
+fn test_task_completed_parent_session_transitions_to_ready() {
+    let mut state = ReducerState::default();
+
+    let _ = state.apply_hook_event(event_base(HookEventType::UserPromptSubmit));
+
+    let mut task_completed = event_base(HookEventType::TaskCompleted);
+    task_completed.recorded_at = "2026-01-31T00:00:01Z".to_string();
+
+    let outcome = state.apply_hook_event(task_completed);
+    assert!(outcome.ok);
+    assert_eq!(outcome.message, "event ingested");
+
+    let session = state
+        .sessions
+        .get("session-1")
+        .expect("session should exist");
+    assert_eq!(session.state, SessionState::Ready);
+    assert_eq!(session.ready_reason.as_deref(), Some("task_completed"));
+}
+
+#[test]
+fn test_task_completed_with_agent_id_skipped() {
+    let mut state = ReducerState::default();
+
+    let _ = state.apply_hook_event(event_base(HookEventType::UserPromptSubmit));
+    let before = state
+        .sessions
+        .get("session-1")
+        .cloned()
+        .expect("session should exist");
+
+    let mut task_completed = event_base(HookEventType::TaskCompleted);
+    task_completed.recorded_at = "2026-01-31T00:00:01Z".to_string();
+    task_completed.agent_id = Some("agent-1".to_string());
+
+    let outcome = state.apply_hook_event(task_completed);
+    assert!(outcome.ok);
+    assert_eq!(outcome.message, "event skipped: auxiliary_task_metadata");
+    assert_eq!(state.sessions.get("session-1"), Some(&before));
+}
+
+#[test]
+fn test_task_completed_with_teammate_name_skipped() {
+    let mut state = ReducerState::default();
+
+    let _ = state.apply_hook_event(event_base(HookEventType::UserPromptSubmit));
+    let before = state
+        .sessions
+        .get("session-1")
+        .cloned()
+        .expect("session should exist");
+
+    let mut task_completed = event_base(HookEventType::TaskCompleted);
+    task_completed.recorded_at = "2026-01-31T00:00:01Z".to_string();
+    task_completed.teammate_name = Some("teammate-1".to_string());
+
+    let outcome = state.apply_hook_event(task_completed);
+    assert!(outcome.ok);
+    assert_eq!(outcome.message, "event skipped: auxiliary_task_metadata");
+    assert_eq!(state.sessions.get("session-1"), Some(&before));
 }
 
 #[test]
@@ -1746,15 +2630,15 @@ fn diagnostics_tracks_skip_counters() {
     let mut config_change = event_base(HookEventType::ConfigChange);
     config_change.recorded_at = "2026-01-31T00:00:01Z".to_string();
     let outcome = state.apply_hook_event(config_change);
-    assert!(outcome.message.contains("informational_event"));
+    assert!(outcome.message.contains("config_change_informational"));
 
     // 3) Another informational event to prove counting
     let mut worktree = event_base(HookEventType::WorktreeCreate);
     worktree.recorded_at = "2026-01-31T00:00:02Z".to_string();
     let outcome = state.apply_hook_event(worktree);
-    assert!(outcome.message.contains("informational_event"));
+    assert!(outcome.message.contains("worktree_create_informational"));
 
-    // 4) Idle prompt while tools in flight → idle_prompt_skipped
+    // 4) Idle prompt while tools are drifted in flight should self-correct
     let mut pre_tool = event_base(HookEventType::PreToolUse);
     pre_tool.recorded_at = "2026-01-31T00:00:03Z".to_string();
     let _ = state.apply_hook_event(pre_tool);
@@ -1763,7 +2647,18 @@ fn diagnostics_tracks_skip_counters() {
     idle.notification_type = Some("idle_prompt".to_string());
     idle.recorded_at = "2026-01-31T00:00:04Z".to_string();
     let outcome = state.apply_hook_event(idle);
-    assert!(outcome.message.contains("idle_prompt_tools_in_flight"));
+    assert_eq!(outcome.message, "event ingested");
+    assert_eq!(
+        state.sessions.get("session-1").map(|session| session.state),
+        Some(SessionState::Working)
+    );
+    assert_eq!(
+        state
+            .sessions
+            .get("session-1")
+            .map(|session| session.tools_in_flight),
+        Some(0)
+    );
 
     // Verify skip counters in snapshot
     let diag = state.snapshot().diagnostics;

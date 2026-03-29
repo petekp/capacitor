@@ -146,10 +146,13 @@ impl ReducerState {
             SessionUpdate::Delete(session_id) => {
                 self.sessions.remove(session_id);
             }
-            SessionUpdate::Skip(reason) => match *reason {
-                "informational_event" => self.informational_events_skipped += 1,
-                _ => self.reducer_events_skipped += 1,
-            },
+            SessionUpdate::Skip(reason) => {
+                if is_informational_skip_reason(reason) {
+                    self.informational_events_skipped += 1;
+                } else {
+                    self.reducer_events_skipped += 1;
+                }
+            }
         }
 
         self.recompute_projects();
@@ -1066,7 +1069,16 @@ fn reduce_session(
                     .map(|record| record.tools_in_flight > 0)
                     .unwrap_or(false)
                 {
-                    SessionUpdate::Skip("idle_prompt_tools_in_flight")
+                    let mut corrected = upsert_session(
+                        current,
+                        event,
+                        current
+                            .map(|record| record.state)
+                            .unwrap_or(SessionState::Working),
+                        current.and_then(|record| record.ready_reason.clone()),
+                    );
+                    corrected.tools_in_flight = 0;
+                    SessionUpdate::Upsert(corrected)
                 } else {
                     SessionUpdate::Upsert(upsert_session(
                         current,
@@ -1133,13 +1145,35 @@ fn reduce_session(
                 SessionUpdate::Delete(event.session_id.clone())
             }
         }
-        HookEventType::SubagentStart
-        | HookEventType::SubagentStop
-        | HookEventType::TeammateIdle
-        | HookEventType::WorktreeCreate
-        | HookEventType::WorktreeRemove
-        | HookEventType::ConfigChange
-        | HookEventType::Unknown => SessionUpdate::Skip("informational_event"),
+        HookEventType::SubagentStart => {
+            if current_has_higher_priority_state(current) {
+                SessionUpdate::Skip("subagent_start_higher_priority_active")
+            } else {
+                SessionUpdate::Upsert(upsert_session(current, event, SessionState::Working, None))
+            }
+        }
+        HookEventType::SubagentStop => {
+            if current_has_higher_priority_state(current) {
+                SessionUpdate::Skip("subagent_stop_higher_priority_active")
+            } else if current
+                .map(|record| record.tools_in_flight > 0)
+                .unwrap_or(false)
+            {
+                SessionUpdate::Upsert(upsert_session(current, event, SessionState::Working, None))
+            } else {
+                SessionUpdate::Upsert(upsert_session(
+                    current,
+                    event,
+                    SessionState::Ready,
+                    Some("subagent_stop".to_string()),
+                ))
+            }
+        }
+        HookEventType::TeammateIdle => SessionUpdate::Skip("teammate_idle_informational"),
+        HookEventType::WorktreeCreate => SessionUpdate::Skip("worktree_create_informational"),
+        HookEventType::WorktreeRemove => SessionUpdate::Skip("worktree_remove_informational"),
+        HookEventType::ConfigChange => SessionUpdate::Skip("config_change_informational"),
+        HookEventType::Unknown => SessionUpdate::Skip("unknown_event_type"),
     }
 }
 
@@ -1346,6 +1380,14 @@ fn should_update_activity(event_type: HookEventType) -> bool {
     )
 }
 
+fn current_has_higher_priority_state(current: Option<&SessionSummary>) -> bool {
+    current
+        .map(|record| {
+            record.state == SessionState::Waiting || record.state == SessionState::Compacting
+        })
+        .unwrap_or(false)
+}
+
 fn adjust_tools_in_flight(current: u32, event_type: HookEventType) -> u32 {
     match event_type {
         HookEventType::PreToolUse => current.saturating_add(1),
@@ -1357,6 +1399,17 @@ fn adjust_tools_in_flight(current: u32, event_type: HookEventType) -> u32 {
         | HookEventType::TaskCompleted => 0,
         _ => current,
     }
+}
+
+fn is_informational_skip_reason(reason: &str) -> bool {
+    matches!(
+        reason,
+        "informational_event"
+            | "teammate_idle_informational"
+            | "worktree_create_informational"
+            | "worktree_remove_informational"
+            | "config_change_informational"
+    )
 }
 
 fn has_auxiliary_task_metadata(event: &IngestHookEventCommand) -> bool {
@@ -1390,7 +1443,19 @@ fn should_skip_stop(event: &IngestHookEventCommand) -> bool {
 fn is_pid_alive(pid: u32) -> bool {
     // SAFETY: kill(pid, 0) is a standard POSIX call that checks process existence
     // without sending any signal. Returns 0 if the process exists, -1 otherwise.
-    unsafe { libc::kill(pid as libc::pid_t, 0) == 0 }
+    unsafe {
+        let result = libc::kill(pid as libc::pid_t, 0);
+        let errno = if result == -1 {
+            std::io::Error::last_os_error().raw_os_error()
+        } else {
+            None
+        };
+        pid_alive_from_probe_result(result, errno)
+    }
+}
+
+fn pid_alive_from_probe_result(result: libc::c_int, errno: Option<i32>) -> bool {
+    result == 0 || (result == -1 && errno == Some(libc::EPERM))
 }
 
 fn is_event_stale(current: Option<&SessionSummary>, event: &IngestHookEventCommand) -> bool {

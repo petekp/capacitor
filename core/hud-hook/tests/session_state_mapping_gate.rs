@@ -61,12 +61,12 @@ fn session_state_mapping_gate_ss_p0_1_exhaustive_known_hook_events_map_to_expect
         MappingCase {
             hook_event_name: "SubagentStart",
             input_patch: json!({}),
-            expected_state: None,
+            expected_state: Some("working"),
         },
         MappingCase {
             hook_event_name: "SubagentStop",
             input_patch: json!({}),
-            expected_state: None,
+            expected_state: Some("ready"),
         },
         MappingCase {
             hook_event_name: "Stop",
