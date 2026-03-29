@@ -277,7 +277,9 @@ struct DockProjectCard: View {
             }
             .contentShape(Rectangle())
             .onHover { hovering in
-                isHovered = hovering
+                withAnimation(.easeOut(duration: glassConfig.hoverTransitionDuration)) {
+                    isHovered = hovering
+                }
             }
             .onTapGesture {
                 if pressStartTime == nil {
@@ -357,16 +359,18 @@ struct DockProjectCard: View {
                 )
                 .padding(.top, glassConfig.dockChipTopPaddingRounded)
 
-                if let contextLine {
-                    HStack(spacing: 4) {
-                        Text(contextLine)
-                            .font(AppTypography.bodySecondary)
-                            .foregroundStyle(.white.opacity(0.55))
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                    }
-                    .padding(.top, 4)
+                // Always render context line to reserve layout height; fade opacity
+                // to prevent height jumps during state transitions.
+                HStack(spacing: 4) {
+                    Text(contextLine ?? " ")
+                        .font(AppTypography.bodySecondary)
+                        .foregroundStyle(.white.opacity(0.55))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                 }
+                .opacity(contextLine != nil ? 1 : 0)
+                .animation(reduceMotion ? AppMotion.reducedMotionFallback : .easeInOut(duration: 0.25), value: contextLine != nil)
+                .padding(.top, 4)
 
                 Spacer(minLength: 0)
 

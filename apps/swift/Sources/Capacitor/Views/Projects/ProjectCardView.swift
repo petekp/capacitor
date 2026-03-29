@@ -559,17 +559,19 @@ private struct ProjectCardContent: View {
     let contextLine: String?
     let isMissing: Bool
 
+    @Environment(\.prefersReducedMotion) private var reduceMotion
+
     var body: some View {
-        Group {
-            if let contextLine {
-                Text(contextLine)
-                    .font(AppTypography.bodySecondary)
-                    .foregroundStyle(isMissing ? .white.opacity(0.4) : .white.opacity(0.55))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        // Always render the text to reserve layout height; fade opacity to prevent
+        // height jumps when the context line appears/disappears during state transitions.
+        Text(contextLine ?? " ")
+            .font(AppTypography.bodySecondary)
+            .foregroundStyle(isMissing ? .white.opacity(0.4) : .white.opacity(0.55))
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .opacity(contextLine != nil ? 1 : 0)
+            .animation(reduceMotion ? AppMotion.reducedMotionFallback : .easeInOut(duration: 0.25), value: contextLine != nil)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

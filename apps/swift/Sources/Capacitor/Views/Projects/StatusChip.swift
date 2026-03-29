@@ -78,26 +78,37 @@ struct StatusChipsRow: View {
         return .session(sessionState?.state)
     }
 
+    @Environment(\.prefersReducedMotion) private var reduceMotion
+
+    private var currentPresentation: Presentation {
+        Self.presentation(
+            sessionState: sessionState,
+            delegationState: delegationState,
+            activeRunState: activeRunState,
+        )
+    }
+
     var body: some View {
         Group {
-            switch Self.presentation(
-                sessionState: sessionState,
-                delegationState: delegationState,
-                activeRunState: activeRunState,
-            ) {
+            switch currentPresentation {
             case .delegationReview:
                 DelegationReviewChip(style: style)
+                    .transition(.opacity)
             case .delegationResuming:
                 DelegationResumingChip(style: style)
+                    .transition(.opacity)
             case .delegationResumeFailed:
                 DelegationResumeFailedChip(style: style)
+                    .transition(.opacity)
             case let .session(state):
                 StatusChip(
                     state: state,
                     style: style,
                 )
+                .transition(.opacity)
             }
         }
+        .animation(reduceMotion ? AppMotion.reducedMotionFallback : .smooth(duration: 0.3), value: currentPresentation)
     }
 }
 

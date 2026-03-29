@@ -120,17 +120,25 @@ struct AnimatedCompactingText: View {
     }
 
     private var animatedText: some View {
-        TimelineView(.animation) { timeline in
-            let params = trackingParameters
-            let time = timeline.date.timeIntervalSinceReferenceDate
-            let phase = time.truncatingRemainder(dividingBy: params.cycleLength) / params.cycleLength
-            let tracking = computeTracking(phase: phase, params: params)
+        // Hidden text at max tracking reserves stable width; animated text overlays on top.
+        // This prevents layout shift in the header HStack as tracking oscillates.
+        Text("COMPACTING")
+            .font(.system(.callout, design: .monospaced).weight(.semibold))
+            .tracking(trackingParameters.maxTracking)
+            .hidden()
+            .overlay(alignment: .leading) {
+                TimelineView(.animation) { timeline in
+                    let params = trackingParameters
+                    let time = timeline.date.timeIntervalSinceReferenceDate
+                    let phase = time.truncatingRemainder(dividingBy: params.cycleLength) / params.cycleLength
+                    let tracking = computeTracking(phase: phase, params: params)
 
-            Text("COMPACTING")
-                .font(.system(.callout, design: .monospaced).weight(.semibold))
-                .tracking(tracking)
-                .foregroundStyle(color)
-        }
+                    Text("COMPACTING")
+                        .font(.system(.callout, design: .monospaced).weight(.semibold))
+                        .tracking(tracking)
+                        .foregroundStyle(color)
+                }
+            }
     }
 
     private var trackingParameters: CompactingTrackingParameters {
