@@ -15,9 +15,8 @@ logs
 *.log
 npm-debug.log*
 dist/
-artifacts/demo/
-artifacts/manual-testing/
-artifacts/ax-automation-verification/
+artifacts/
+handoffs/
 
 # Rust
 target/
