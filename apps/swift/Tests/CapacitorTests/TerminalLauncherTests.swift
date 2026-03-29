@@ -387,7 +387,23 @@ final class TerminalLauncherTests: XCTestCase {
         XCTAssertFalse(ok)
     }
 
-    /// Client exists → switch + focus
+    /// Direct focus succeeds → ensureAndSwitch is skipped entirely
+    func testUnifiedActivationSkipsTmuxSwitchWhenDirectFocusSucceeds() async {
+        let ok = await TerminalActivationCoordinator.runActivationFlow(
+            sessionName: "arc-design-studio",
+            projectPath: "/path/to/arc-design-studio",
+            resolveAnyClientTty: { "/dev/ttys001" },
+            ensureAndSwitch: { _, _, _, _ in XCTFail("should not be called"); return false },
+            launchTerminalWithTmux: { _, _ in XCTFail("should not launch"); return false },
+            activateTerminal: { tty, _, _ in
+                // Direct focus (nil tty) finds non-tmux terminal by CWD
+                tty == nil ? .focused : .focused
+            },
+        )
+        XCTAssertTrue(ok)
+    }
+
+    /// Direct focus fails, client exists → switch + focus
     func testUnifiedActivationSwitchesWhenClientExists() async {
         var switchedSession: String?
         var switchedPane: String?
@@ -403,7 +419,11 @@ final class TerminalLauncherTests: XCTestCase {
                 return true
             },
             launchTerminalWithTmux: { _, _ in XCTFail("should not launch"); return false },
-            activateTerminal: { _, _, _ in terminalActivated = true; return .focused },
+            activateTerminal: { tty, _, _ in
+                if tty == nil { return .relaunchNeeded } // Direct focus: no match
+                terminalActivated = true
+                return .focused
+            },
             resolveTargetPane: { _ in "%2" },
         )
         XCTAssertTrue(ok)
@@ -412,7 +432,7 @@ final class TerminalLauncherTests: XCTestCase {
         XCTAssertTrue(terminalActivated)
     }
 
-    /// Session doesn't exist → ensureAndSwitch creates + switches
+    /// Direct focus fails, session doesn't exist → ensureAndSwitch creates + switches
     func testUnifiedActivationCreatesSessionWhenMissing() async {
         var ensureCalled = false
         let ok = await TerminalActivationCoordinator.runActivationFlow(
@@ -426,13 +446,16 @@ final class TerminalLauncherTests: XCTestCase {
                 return true
             },
             launchTerminalWithTmux: { _, _ in XCTFail("should not launch"); return false },
-            activateTerminal: { _, _, _ in .focused },
+            activateTerminal: { tty, _, _ in
+                if tty == nil { return .relaunchNeeded }
+                return .focused
+            },
         )
         XCTAssertTrue(ok)
         XCTAssertTrue(ensureCalled)
     }
 
-    /// Switch fails → returns false
+    /// Direct focus fails, switch fails → returns false
     func testUnifiedActivationReturnsFalseWhenSwitchFails() async {
         let ok = await TerminalActivationCoordinator.runActivationFlow(
             sessionName: "broken",
@@ -440,7 +463,10 @@ final class TerminalLauncherTests: XCTestCase {
             resolveAnyClientTty: { "/dev/ttys001" },
             ensureAndSwitch: { _, _, _, _ in false },
             launchTerminalWithTmux: { _, _ in true },
-            activateTerminal: { _, _, _ in .focused },
+            activateTerminal: { tty, _, _ in
+                if tty == nil { return .relaunchNeeded }
+                return .focused
+            },
         )
         XCTAssertFalse(ok)
     }
@@ -455,7 +481,7 @@ final class TerminalLauncherTests: XCTestCase {
             resolveAnyClientTty: { "/dev/ttys001" },
             ensureAndSwitch: { _, _, _, _ in true },
             launchTerminalWithTmux: { _, _ in launched = true; return true },
-            activateTerminal: { _, _, _ in .relaunchNeeded }, // Terminal focus FAILS (tab gone)
+            activateTerminal: { _, _, _ in .relaunchNeeded }, // Both direct and post-switch focus fail
         )
         XCTAssertTrue(ok, "Should succeed via fresh launch")
         XCTAssertTrue(launched, "Should launch new terminal when focus fails")

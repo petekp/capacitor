@@ -58,6 +58,14 @@ final class TerminalActivationCoordinator {
             return true
         }
 
+        // Try to focus an existing terminal by content (CWD, title) before
+        // switching tmux. Avoids switching the tmux client's session when
+        // the target project has a non-tmux terminal already open.
+        let directFocus = await activateTerminal(nil, projectPath, nil)
+        if directFocus == .focused {
+            return true
+        }
+
         let targetPane = await resolveTargetPane?(clientTty)
         let switched = await ensureAndSwitch(sessionName, projectPath, clientTty, targetPane)
         guard switched else {

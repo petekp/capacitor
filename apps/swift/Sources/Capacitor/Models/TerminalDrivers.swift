@@ -55,17 +55,31 @@ final class GhosttyTerminalDriver: TerminalDriver {
             }
 
             let cachedTerminalID = resolvedTty.flatMap { terminalIDByClientTTY[$0] }
+
+            // When a tmux session hint is present, skip the cached terminal ID.
+            // The cache may point to a non-tmux terminal from a prior activation
+            // that matched by CWD while using this same tmux client TTY.
+            let preferredID = tmuxSessionHint != nil ? nil : cachedTerminalID
+
             if let route = bestGhosttyRouteMatch(
                 snapshot: snapshot,
                 projectPath: projectPath,
                 tmuxSessionHint: tmuxSessionHint,
-                preferredTerminalID: cachedTerminalID,
+                preferredTerminalID: preferredID,
             ) {
-                if executeRoute(route, clientTty: resolvedTty) {
+                // When clientTty is nil (direct focus), skip CWD matches in the
+                // already-selected tab — the CWD may be stale from a prior tmux
+                // session, and re-focusing the visible tab is a no-op that would
+                // incorrectly short-circuit ensureAndSwitch.
+                let isStaleDirectFocusMatch = resolvedTty == nil
+                    && route.source == .terminalWorkingDirectory
+                    && route.tab?.isSelected == true
+
+                if !isStaleDirectFocusMatch, executeRoute(route, clientTty: resolvedTty) {
                     return .focused
                 }
 
-                if cachedTerminalID != nil, let resolvedTty {
+                if preferredID != nil, let resolvedTty {
                     terminalIDByClientTTY.removeValue(forKey: resolvedTty)
                     if let fallbackRoute = bestGhosttyRouteMatch(
                         snapshot: snapshot,
@@ -75,6 +89,25 @@ final class GhosttyTerminalDriver: TerminalDriver {
                     ), executeRoute(fallbackRoute, clientTty: resolvedTty) {
                         return .focused
                     }
+                }
+            }
+
+            // No match on initial snapshot. After tmux switch-client, the terminal
+            // title may not have propagated yet — re-read the snapshot after a delay.
+            if tmuxSessionHint != nil {
+                try? await _Concurrency.Task.sleep(nanoseconds: 300_000_000)
+
+                if case let .success(retrySnapshot) = automationClient.readSnapshot(),
+                   !retrySnapshot.windows.isEmpty,
+                   let route = bestGhosttyRouteMatch(
+                       snapshot: retrySnapshot,
+                       projectPath: projectPath,
+                       tmuxSessionHint: tmuxSessionHint,
+                       preferredTerminalID: nil,
+                   ),
+                   executeRoute(route, clientTty: resolvedTty)
+                {
+                    return .focused
                 }
             }
 
@@ -153,7 +186,12 @@ final class GhosttyTerminalDriver: TerminalDriver {
 
             switch automationClient.focusTerminal(id: terminal.id) {
             case .success:
-                if let clientTty {
+                // Only cache the terminal ID when the match source indicates this
+                // terminal actually hosts the tmux client. CWD matches can find
+                // non-tmux terminals that happen to share the project path.
+                if let clientTty,
+                   route.source == .sessionHint || route.source == .cachedTerminalID
+                {
                     terminalIDByClientTTY[clientTty] = terminal.id
                 }
                 return true
