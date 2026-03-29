@@ -63,6 +63,7 @@ struct CapacitorApp: App {
                         withAnimation(.easeInOut(duration: 0.4)) {
                             setupComplete = true
                         }
+                        AppDelegate.persistSetupMarker()
                     })
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background {
@@ -199,7 +200,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.regular)
 
         // Re-validate hook setup on every launch.
-        // If hooks aren't configured, reset setupComplete to show WelcomeView.
+        // Only Claude-missing and policy-blocked states should still gate startup.
         validateHookSetup()
 
         // Lift subsidiary windows (Settings, About, Sparkle) above the main window
@@ -265,7 +266,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Attempt silent auto-setup on every launch.
     /// Only shows WelcomeView if something genuinely needs user attention
-    /// (e.g. Claude CLI not installed, hook install failed, policy blocked).
+    /// (e.g. Claude CLI not installed or policy blocked).
     private func validateHookSetup() {
         if AppLaunchOverrides.shouldSkipSetupValidation(info: Bundle.main.infoDictionary ?? [:]) {
             UserDefaults.standard.set(true, forKey: "setupComplete")
@@ -287,10 +288,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             DebugLog.write(startup: event)
             if attemptAutoRepair(engine: engine) {
                 DebugLog.write(startup: .hooksAutoRepairSucceeded)
-            } else {
-                DebugLog.write(startup: .hooksAutoRepairFailedShowingWelcome)
-                UserDefaults.standard.set(false, forKey: "setupComplete")
-                return
             }
         }
 
@@ -306,7 +303,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        // 3. Everything is ready — skip the setup screen
+        // 3. Everything is ready — skip the setup screen and persist first-run completion.
+        Self.persistSetupMarker(capacitorRootPath: engine.capacitorDir())
         if !UserDefaults.standard.bool(forKey: "setupComplete") {
             DebugLog.write(startup: .autoSetupComplete)
             UserDefaults.standard.set(true, forKey: "setupComplete")
@@ -320,6 +318,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         return true
+    }
+
+    fileprivate static func persistSetupMarker(capacitorRootPath: String? = nil) {
+        let capacitorRootURL = capacitorRootPath.map { URL(fileURLWithPath: $0, isDirectory: true) }
+            ?? CapacitorProjectPaths.capacitorRoot()
+        let markerURL = capacitorRootURL.appendingPathComponent("setup_complete")
+
+        do {
+            try FileManager.default.createDirectory(
+                at: capacitorRootURL,
+                withIntermediateDirectories: true,
+            )
+            try Data("complete".utf8).write(to: markerURL, options: .atomic)
+        } catch {
+            DebugLog.write("[Startup] Failed to persist setup marker: \(error.localizedDescription)")
+        }
     }
 
     /// When always-on-top is active, subsidiary windows (Settings, About, Sparkle

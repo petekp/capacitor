@@ -898,7 +898,7 @@ impl CoreRuntime {
 
         let config_ok = matches!(setup_status.hooks, HookStatus::Installed { .. });
         let firing_ok = matches!(health.status, runtime_types::HookHealthStatus::Healthy);
-        let is_first_run = matches!(health.status, runtime_types::HookHealthStatus::Unknown);
+        let is_first_run = !self.app_storage.setup_marker_path().exists();
 
         let primary_issue: Option<HookIssue> = match &setup_status.hooks {
             HookStatus::PolicyBlocked { reason } => Some(HookIssue::PolicyBlocked {
@@ -912,7 +912,9 @@ impl CoreRuntime {
                 reason: reason.clone(),
             }),
             _ if !binary_ok => Some(HookIssue::BinaryMissing),
-            HookStatus::NotInstalled => Some(HookIssue::ConfigMissing),
+            HookStatus::NotInstalled
+            | HookStatus::PartiallyConfigured { .. }
+            | HookStatus::SettingsUnreadable { .. } => Some(HookIssue::ConfigMissing),
             HookStatus::Installed { .. } => match &health.status {
                 runtime_types::HookHealthStatus::Healthy => None,
                 runtime_types::HookHealthStatus::Unknown => Some(HookIssue::NotFiring {
@@ -923,7 +925,6 @@ impl CoreRuntime {
                         last_seen_secs: Some(*last_seen_secs),
                     })
                 }
-                runtime_types::HookHealthStatus::Unreadable { .. } => None,
             },
         };
 
@@ -1221,6 +1222,40 @@ mod tests {
         assert!(result.hook_activity_ok, "result was {result:?}");
         assert!(result.runtime_service_ok, "result was {result:?}");
         runtime_service.finish();
+    }
+
+    #[test]
+    fn test_is_first_run_true_when_no_setup_marker() {
+        let runtime = make_runtime_with_storage(&setup_hook_health_env());
+
+        let report = runtime.get_hook_diagnostic();
+
+        assert!(report.is_first_run, "report was {report:?}");
+    }
+
+    #[test]
+    fn test_is_first_run_false_when_setup_marker_exists() {
+        let env = setup_hook_health_env();
+        fs::write(env.storage.setup_marker_path(), "complete").expect("write setup marker");
+        let runtime = make_runtime_with_storage(&env);
+
+        let report = runtime.get_hook_diagnostic();
+
+        assert!(!report.is_first_run, "report was {report:?}");
+    }
+
+    #[test]
+    fn test_is_first_run_false_even_with_unknown_hook_health() {
+        let env = setup_hook_health_env();
+        fs::write(env.storage.setup_marker_path(), "complete").expect("write setup marker");
+        let runtime = make_runtime_with_storage(&env);
+
+        let health = runtime.check_hook_health();
+        assert!(matches!(health.status, HookHealthStatus::Unknown));
+
+        let report = runtime.get_hook_diagnostic();
+
+        assert!(!report.is_first_run, "report was {report:?}");
     }
 
     fn make_runtime_session_record(

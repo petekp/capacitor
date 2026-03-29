@@ -15,7 +15,7 @@ final class SetupStepCatalogTests: XCTestCase {
                 "Add hook to ~/.zshrc to auto-detect which project each terminal is in",
             ],
         )
-        XCTAssertEqual(steps.map(\.isOptional), [false, false, true])
+        XCTAssertEqual(steps.map(\.isOptional), [false, true, true])
     }
 
     func testClaudeCatalogBuilderPreservesProvidedStatus() {

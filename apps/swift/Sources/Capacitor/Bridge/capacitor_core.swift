@@ -2453,7 +2453,7 @@ public struct HookDiagnosticReport {
      */
     public var canAutoFix: Bool
     /**
-     * Whether this appears to be a first-time setup (no hook activity seen yet)
+     * Whether Capacitor setup has never completed on this machine.
      */
     public var isFirstRun: Bool
     /**
@@ -2488,7 +2488,7 @@ public struct HookDiagnosticReport {
             * True if "Fix All" can resolve the issue
             */ canAutoFix: Bool,
         /* 
-            * Whether this appears to be a first-time setup (no hook activity seen yet)
+            * Whether Capacitor setup has never completed on this machine.
             */ isFirstRun: Bool,
         /* 
             * Detailed status for checklist display
@@ -7746,10 +7746,6 @@ public enum HookHealthStatus {
      * Hook activity is stale (hooks stopped firing)
      */
     case stale(lastSeenSecs: UInt64)
-    /**
-     * Hook activity state could not be read
-     */
-    case unreadable(reason: String)
 }
 
 #if swift(>=5.8)
@@ -7767,8 +7763,6 @@ public struct FfiConverterTypeHookHealthStatus: FfiConverterRustBuffer {
 
         case 3: return try .stale(lastSeenSecs: FfiConverterUInt64.read(from: &buf))
 
-        case 4: return try .unreadable(reason: FfiConverterString.read(from: &buf))
-
         default: throw UniffiInternalError.unexpectedEnumCase
         }
     }
@@ -7784,10 +7778,6 @@ public struct FfiConverterTypeHookHealthStatus: FfiConverterRustBuffer {
         case let .stale(lastSeenSecs):
             writeInt(&buf, Int32(3))
             FfiConverterUInt64.write(lastSeenSecs, into: &buf)
-
-        case let .unreadable(reason):
-            writeInt(&buf, Int32(4))
-            FfiConverterString.write(reason, into: &buf)
         }
     }
 }
@@ -7918,6 +7908,8 @@ extension HookIssue: Equatable, Hashable {}
 
 public enum HookStatus {
     case notInstalled
+    case partiallyConfigured(missingEvents: [String], reason: String)
+    case settingsUnreadable(reason: String)
     case installed(version: String)
     case policyBlocked(reason: String)
     case binaryBroken(reason: String)
@@ -7938,13 +7930,17 @@ public struct FfiConverterTypeHookStatus: FfiConverterRustBuffer {
         switch variant {
         case 1: return .notInstalled
 
-        case 2: return try .installed(version: FfiConverterString.read(from: &buf))
+        case 2: return try .partiallyConfigured(missingEvents: FfiConverterSequenceString.read(from: &buf), reason: FfiConverterString.read(from: &buf))
 
-        case 3: return try .policyBlocked(reason: FfiConverterString.read(from: &buf))
+        case 3: return try .settingsUnreadable(reason: FfiConverterString.read(from: &buf))
 
-        case 4: return try .binaryBroken(reason: FfiConverterString.read(from: &buf))
+        case 4: return try .installed(version: FfiConverterString.read(from: &buf))
 
-        case 5: return try .symlinkBroken(target: FfiConverterString.read(from: &buf), reason: FfiConverterString.read(from: &buf))
+        case 5: return try .policyBlocked(reason: FfiConverterString.read(from: &buf))
+
+        case 6: return try .binaryBroken(reason: FfiConverterString.read(from: &buf))
+
+        case 7: return try .symlinkBroken(target: FfiConverterString.read(from: &buf), reason: FfiConverterString.read(from: &buf))
 
         default: throw UniffiInternalError.unexpectedEnumCase
         }
@@ -7955,20 +7951,29 @@ public struct FfiConverterTypeHookStatus: FfiConverterRustBuffer {
         case .notInstalled:
             writeInt(&buf, Int32(1))
 
-        case let .installed(version):
+        case let .partiallyConfigured(missingEvents, reason):
             writeInt(&buf, Int32(2))
-            FfiConverterString.write(version, into: &buf)
+            FfiConverterSequenceString.write(missingEvents, into: &buf)
+            FfiConverterString.write(reason, into: &buf)
 
-        case let .policyBlocked(reason):
+        case let .settingsUnreadable(reason):
             writeInt(&buf, Int32(3))
             FfiConverterString.write(reason, into: &buf)
 
-        case let .binaryBroken(reason):
+        case let .installed(version):
             writeInt(&buf, Int32(4))
+            FfiConverterString.write(version, into: &buf)
+
+        case let .policyBlocked(reason):
+            writeInt(&buf, Int32(5))
+            FfiConverterString.write(reason, into: &buf)
+
+        case let .binaryBroken(reason):
+            writeInt(&buf, Int32(6))
             FfiConverterString.write(reason, into: &buf)
 
         case let .symlinkBroken(target, reason):
-            writeInt(&buf, Int32(5))
+            writeInt(&buf, Int32(7))
             FfiConverterString.write(target, into: &buf)
             FfiConverterString.write(reason, into: &buf)
         }

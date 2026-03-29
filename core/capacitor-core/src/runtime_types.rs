@@ -306,8 +306,6 @@ pub enum HookHealthStatus {
     Unknown,
     /// Hook activity is stale (hooks stopped firing)
     Stale { last_seen_secs: u64 },
-    /// Hook activity state could not be read
-    Unreadable { reason: String },
 }
 
 /// Full health report for hook activity freshness.
@@ -369,7 +367,7 @@ pub struct HookDiagnosticReport {
     pub primary_issue: Option<HookIssue>,
     /// True if "Fix All" can resolve the issue
     pub can_auto_fix: bool,
-    /// Whether this appears to be a first-time setup (no hook activity seen yet)
+    /// Whether Capacitor setup has never completed on this machine.
     pub is_first_run: bool,
     /// Detailed status for checklist display
     pub binary_ok: bool,

@@ -15,6 +15,19 @@ final class SetupStatusCopyContractTests: XCTestCase {
                 expected: .actionNeeded(message: "Tap Install to connect"),
             ),
             LabeledExpectationScenario(
+                label: "partially-configured",
+                input: .partiallyConfigured(
+                    missingEvents: ["TaskCompleted"],
+                    reason: "Missing or invalid managed hook configuration for 1 event(s)",
+                ),
+                expected: .error(message: "Session tracking needs repair"),
+            ),
+            LabeledExpectationScenario(
+                label: "settings-unreadable",
+                input: .settingsUnreadable(reason: "Failed to parse settings.json"),
+                expected: .error(message: "Claude settings file is unreadable"),
+            ),
+            LabeledExpectationScenario(
                 label: "policy-blocked",
                 input: .policyBlocked(reason: "disableAllHooks is enabled"),
                 expected: .error(message: "Your Claude settings prevent hook installation"),
