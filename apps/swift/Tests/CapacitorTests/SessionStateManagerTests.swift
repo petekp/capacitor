@@ -353,6 +353,187 @@ final class SessionStateManagerTests: XCTestCase {
         XCTAssertEqual(state?.state, .working)
     }
 
+    // MARK: - PID-Liveness Gated Downgrade
+
+    func testStaleWorkingSessionStaysWorkingWhenProcessAlive() {
+        let manager = SessionStateManager(
+            clock: .fixed(fixtureNow),
+            processLiveness: { _ in true },
+        )
+        let project = makeProject("pid-project", path: "/tmp/pid-project")
+        let session = makeRuntimeSession(sessionId: "session-alive", pid: 12345, state: "working")
+
+        manager.applyRuntimeProjectStates(
+            [
+                makeRuntimeProjectState(
+                    projectPath: project.path,
+                    state: "working",
+                    sessionId: "session-alive",
+                    updatedAt: formatISO8601Timestamp(fixtureNow.addingTimeInterval(-400)),
+                    stateChangedAt: formatISO8601Timestamp(fixtureNow.addingTimeInterval(-400)),
+                ),
+            ],
+            sessions: [session],
+            for: [project],
+            correlationId: "pid-alive-test",
+        )
+
+        XCTAssertEqual(
+            manager.getSessionState(for: project)?.state,
+            .working,
+            "A stale working session must remain working when its process is alive.",
+        )
+    }
+
+    func testStaleWorkingSessionDowngradesToReadyWhenProcessDead() {
+        let manager = SessionStateManager(
+            clock: .fixed(fixtureNow),
+            processLiveness: { _ in false },
+        )
+        let project = makeProject("pid-project", path: "/tmp/pid-project")
+        let session = makeRuntimeSession(sessionId: "session-dead", pid: 99999, state: "working")
+
+        manager.applyRuntimeProjectStates(
+            [
+                makeRuntimeProjectState(
+                    projectPath: project.path,
+                    state: "working",
+                    sessionId: "session-dead",
+                    updatedAt: formatISO8601Timestamp(fixtureNow.addingTimeInterval(-400)),
+                    stateChangedAt: formatISO8601Timestamp(fixtureNow.addingTimeInterval(-400)),
+                ),
+            ],
+            sessions: [session],
+            for: [project],
+            correlationId: "pid-dead-test",
+        )
+
+        XCTAssertEqual(
+            manager.getSessionState(for: project)?.state,
+            .ready,
+            "A stale working session must downgrade to ready when its process is dead.",
+        )
+    }
+
+    func testStaleWorkingSessionDowngradesWhenNoSessionDataProvided() {
+        let manager = SessionStateManager(
+            clock: .fixed(fixtureNow),
+            processLiveness: { _ in true },
+        )
+        let project = makeProject("pid-project", path: "/tmp/pid-project")
+
+        manager.applyRuntimeProjectStates(
+            [
+                makeRuntimeProjectState(
+                    projectPath: project.path,
+                    state: "working",
+                    sessionId: "session-no-lookup",
+                    updatedAt: formatISO8601Timestamp(fixtureNow.addingTimeInterval(-400)),
+                    stateChangedAt: formatISO8601Timestamp(fixtureNow.addingTimeInterval(-400)),
+                ),
+            ],
+            sessions: [],
+            for: [project],
+            correlationId: "no-session-test",
+        )
+
+        XCTAssertEqual(
+            manager.getSessionState(for: project)?.state,
+            .ready,
+            "When session lookup fails (empty sessions list), stale working must fall back to ready.",
+        )
+    }
+
+    func testFreshWorkingSessionUnaffectedByLivenessCheck() {
+        let manager = SessionStateManager(
+            clock: .fixed(fixtureNow),
+            processLiveness: { _ in false },
+        )
+        let project = makeProject("pid-project", path: "/tmp/pid-project")
+        let session = makeRuntimeSession(sessionId: "session-fresh", pid: 99999, state: "working")
+
+        manager.applyRuntimeProjectStates(
+            [
+                makeRuntimeProjectState(
+                    projectPath: project.path,
+                    state: "working",
+                    sessionId: "session-fresh",
+                    updatedAt: formatISO8601Timestamp(fixtureNow.addingTimeInterval(-10)),
+                    stateChangedAt: formatISO8601Timestamp(fixtureNow.addingTimeInterval(-10)),
+                ),
+            ],
+            sessions: [session],
+            for: [project],
+            correlationId: "fresh-working-test",
+        )
+
+        XCTAssertEqual(
+            manager.getSessionState(for: project)?.state,
+            .working,
+            "A fresh working session must stay working even if the process appears dead — staleness threshold not reached.",
+        )
+    }
+
+    func testShouldReplaceRespectsLivenessForPriority() {
+        let manager = SessionStateManager(
+            clock: .fixed(fixtureNow),
+            processLiveness: { _ in true },
+        )
+        let project = makeProject("priority-project", path: "/tmp/priority-project")
+        let session = makeRuntimeSession(sessionId: "session-old-working", pid: 12345, state: "working")
+
+        manager.applyRuntimeProjectStates(
+            [
+                makeRuntimeProjectState(
+                    projectPath: project.path,
+                    state: "working",
+                    sessionId: "session-old-working",
+                    updatedAt: formatISO8601Timestamp(fixtureNow.addingTimeInterval(-400)),
+                    stateChangedAt: formatISO8601Timestamp(fixtureNow.addingTimeInterval(-400)),
+                ),
+                makeRuntimeProjectState(
+                    projectPath: project.path,
+                    state: "ready",
+                    sessionId: "session-new-ready",
+                    updatedAt: formatISO8601Timestamp(fixtureNow.addingTimeInterval(-10)),
+                    stateChangedAt: formatISO8601Timestamp(fixtureNow.addingTimeInterval(-10)),
+                ),
+            ],
+            sessions: [session],
+            for: [project],
+            correlationId: "priority-test",
+        )
+
+        XCTAssertEqual(
+            manager.getSessionState(for: project)?.state,
+            .working,
+            "An alive working session must win priority over a newer ready session.",
+        )
+    }
+
+    private func makeRuntimeSession(
+        sessionId: String,
+        pid: UInt32,
+        state: String,
+    ) -> RuntimeSession {
+        RuntimeSession(
+            sessionId: sessionId,
+            pid: pid,
+            state: state,
+            cwd: "/tmp",
+            projectId: nil,
+            workspaceId: nil,
+            projectPath: "/tmp",
+            updatedAt: fixtureStateTimestamp,
+            stateChangedAt: fixtureStateTimestamp,
+            lastEvent: nil,
+            lastActivityAt: nil,
+            toolsInFlight: nil,
+            readyReason: nil,
+            isAlive: nil,
+        )
+    }
+
     private func makeSessionState(state: SessionState, sessionId: String?) -> ProjectSessionState {
         ProjectSessionState(
             state: state,

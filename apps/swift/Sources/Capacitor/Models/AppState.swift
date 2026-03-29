@@ -600,6 +600,7 @@ class AppState {
 
         sessionStateManager.applyRuntimeProjectStates(
             snapshot.projectStates,
+            sessions: snapshot.sessions,
             for: projects,
             correlationId: correlationId,
         )

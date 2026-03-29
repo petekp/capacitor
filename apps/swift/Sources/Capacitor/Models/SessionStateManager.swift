@@ -53,6 +53,7 @@ final class SessionStateManager {
     private struct BestProjectState {
         let state: RuntimeProjectState
         let priority: MatchPriority
+        let representativePid: UInt32?
     }
 
     private enum Constants {
@@ -89,22 +90,30 @@ final class SessionStateManager {
     private var applyGeneration: UInt64 = 0
     private var refreshCorrelationCounter: UInt64 = 0
     private let clock: SessionClock
+    private let checkProcessLiveness: ProcessLivenessChecker
 
-    init(clock: SessionClock = .live) {
+    init(clock: SessionClock = .live, processLiveness: ProcessLivenessChecker? = nil) {
         self.clock = clock
+        checkProcessLiveness = processLiveness ?? ProcessLiveness.checker
     }
 
     /// Applies runtime project states directly without initiating a network refresh.
     /// Used by the consolidated AppSnapshot tick in AppState.
     func applyRuntimeProjectStates(
         _ runtimeProjects: [RuntimeProjectState],
+        sessions: [RuntimeSession] = [],
         for projects: [Project],
         correlationId: String? = nil,
     ) {
         applyGeneration &+= 1
         let cid = correlationId ?? nextRefreshCorrelationId()
+        let sessionIndex = Dictionary(
+            sessions.map { ($0.sessionId, $0) },
+            uniquingKeysWith: { first, _ in first },
+        )
         applyRuntimeProjectStatesInternal(
             runtimeProjects,
+            sessionIndex: sessionIndex,
             projects: projects,
             correlationId: cid,
             requestGeneration: applyGeneration,
@@ -118,11 +127,12 @@ final class SessionStateManager {
 
     private func applyRuntimeProjectStatesInternal(
         _ runtimeProjects: [RuntimeProjectState],
+        sessionIndex: [String: RuntimeSession],
         projects: [Project],
         correlationId: String,
         requestGeneration: UInt64,
     ) {
-        let mergeResult = mergeRuntimeProjectStates(runtimeProjects, projects: projects, now: clock.now())
+        let mergeResult = mergeRuntimeProjectStates(runtimeProjects, sessionIndex: sessionIndex, projects: projects, now: clock.now(), processLiveness: checkProcessLiveness)
         let merged = mergeResult.states
         let emptyStabilized = stabilizeEmptyRuntimeSnapshotIfNeeded(merged)
         let stabilized = stabilizeIdleTransitions(emptyStabilized)
@@ -346,8 +356,10 @@ final class SessionStateManager {
 
     private nonisolated func mergeRuntimeProjectStates(
         _ states: [RuntimeProjectState],
+        sessionIndex: [String: RuntimeSession],
         projects: [Project],
         now: Date,
+        processLiveness: ProcessLivenessChecker,
     ) -> MergeResult {
         let homeNormalized = PathNormalizer.normalize(NSHomeDirectory())
         var projectInfos: [ProjectMatchInfo] = []
@@ -421,9 +433,10 @@ final class SessionStateManager {
                 {
                     for candidate in candidates {
                         let projectPath = candidate.project.path
-                        let candidateBest = BestProjectState(state: state, priority: .repoFallback)
+                        let pid = state.sessionId.flatMap { sessionIndex[$0]?.pid }
+                        let candidateBest = BestProjectState(state: state, priority: .repoFallback, representativePid: pid)
                         if let existing = bestStates[projectPath] {
-                            if shouldReplace(existing: existing, with: candidateBest, now: now) {
+                            if shouldReplace(existing: existing, with: candidateBest, now: now, processLiveness: processLiveness) {
                                 bestStates[projectPath] = candidateBest
                             }
                         } else {
@@ -438,9 +451,10 @@ final class SessionStateManager {
             }
 
             let projectPath = match.project.path
-            let candidateBest = BestProjectState(state: state, priority: .direct)
+            let pid = state.sessionId.flatMap { sessionIndex[$0]?.pid }
+            let candidateBest = BestProjectState(state: state, priority: .direct, representativePid: pid)
             if let existing = bestStates[projectPath] {
-                if shouldReplace(existing: existing, with: candidateBest, now: now) {
+                if shouldReplace(existing: existing, with: candidateBest, now: now, processLiveness: processLiveness) {
                     bestStates[projectPath] = candidateBest
                 }
             } else {
@@ -458,7 +472,7 @@ final class SessionStateManager {
         var latestSessionIds: [String: String] = [:]
         for (projectPath, best) in bestStates {
             let state = best.state
-            let mappedState = normalizedRuntimeState(state, now: now)
+            let mappedState = normalizedRuntimeState(state, pid: best.representativePid, now: now, processLiveness: processLiveness)
             let sessionState = ProjectSessionState(
                 state: mappedState,
                 stateChangedAt: state.stateChangedAt,
@@ -545,9 +559,20 @@ final class SessionStateManager {
         }
     }
 
-    private nonisolated func shouldReplace(existing: BestProjectState, with candidate: BestProjectState, now: Date) -> Bool {
+    private nonisolated func shouldReplace(existing: BestProjectState, with candidate: BestProjectState, now: Date, processLiveness: ProcessLivenessChecker) -> Bool {
         if candidate.priority != existing.priority {
             return candidate.priority.rawValue > existing.priority.rawValue
+        }
+
+        // Activity (PID-aware) before recency: an alive working session beats
+        // a more-recent ready session. When PID liveness normalizes both to the
+        // same activity level, recency breaks the tie as before.
+        if candidate.priority == .direct {
+            let candidateActivity = stateActivityPriority(candidate.state, pid: candidate.representativePid, now: now, processLiveness: processLiveness)
+            let existingActivity = stateActivityPriority(existing.state, pid: existing.representativePid, now: now, processLiveness: processLiveness)
+            if candidateActivity != existingActivity {
+                return candidateActivity > existingActivity
+            }
         }
 
         let candidateMoreRecent = isMoreRecent(candidate.state, than: existing.state)
@@ -556,18 +581,11 @@ final class SessionStateManager {
             return candidateMoreRecent
         }
 
-        if candidate.priority == .direct {
-            let candidateActivity = stateActivityPriority(candidate.state, now: now)
-            let existingActivity = stateActivityPriority(existing.state, now: now)
-            if candidateActivity != existingActivity {
-                return candidateActivity > existingActivity
-            }
-        }
         return false
     }
 
-    private nonisolated func stateActivityPriority(_ state: RuntimeProjectState, now: Date) -> Int {
-        switch normalizedRuntimeState(state, now: now) {
+    private nonisolated func stateActivityPriority(_ state: RuntimeProjectState, pid: UInt32?, now: Date, processLiveness: ProcessLivenessChecker) -> Int {
+        switch normalizedRuntimeState(state, pid: pid, now: now, processLiveness: processLiveness) {
         case .working, .waiting, .compacting:
             1
         case .ready, .idle:
@@ -575,12 +593,15 @@ final class SessionStateManager {
         }
     }
 
-    private nonisolated func normalizedRuntimeState(_ state: RuntimeProjectState, now: Date) -> SessionState {
+    private nonisolated func normalizedRuntimeState(_ state: RuntimeProjectState, pid: UInt32?, now: Date, processLiveness: ProcessLivenessChecker) -> SessionState {
         var mappedState = mapRuntimeState(state.state)
-        // If working but no events for 2 minutes, downgrade to ready.
-        // Claude Code doesn't always fire Stop on interrupt.
+        // If working with no events beyond the stale threshold AND the process is dead,
+        // downgrade to ready. This catches interrupted sessions that never fired Stop.
         if SessionStaleness.isWorkingStale(state: mappedState, updatedAt: state.updatedAt, now: now) {
-            mappedState = .ready
+            let processAlive = pid.map { processLiveness($0) } ?? false
+            if !processAlive {
+                mappedState = .ready
+            }
         }
         return mappedState
     }

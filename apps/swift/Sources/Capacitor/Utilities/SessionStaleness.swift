@@ -15,11 +15,13 @@ struct SessionClock {
 }
 
 enum SessionStaleness {
-    /// If a session has been "working" with no events for this long, treat it as ready.
-    /// Claude Code doesn't always fire a Stop hook when the user interrupts a response.
-    /// 30s is well beyond the longest normal gap between tool-use events (~5-15s)
-    /// but short enough to feel responsive after an interrupt.
-    static let workingStaleThreshold: TimeInterval = 30
+    /// Fallback threshold for when PID liveness is unavailable.
+    ///
+    /// The primary working-stale gate is PID liveness (`kill(pid, 0)`).
+    /// This timestamp threshold is the safety net for edge cases where
+    /// the PID is zero, unavailable, or a zombie that outlives reaping.
+    /// 5 minutes is generous — it should almost never be the deciding factor.
+    static let workingStaleThreshold: TimeInterval = 300
 
     /// Paused checkpoint reviews can linger much longer than active work, but they should
     /// eventually stop driving project-card state if the run has gone cold.
