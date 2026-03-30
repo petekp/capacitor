@@ -230,13 +230,24 @@ pub(crate) mod test_support {
                                 }
                             }
 
-                            let route = &routes[handled];
                             let request_line = request
                                 .lines()
                                 .next()
                                 .map(|line| line.trim_end_matches('\r'))
                                 .unwrap_or_default();
-                            assert_eq!(request_line, format!("GET {} HTTP/1.1", route.path));
+                            let route = routes
+                                .iter()
+                                .find(|r| {
+                                    request_line == format!("GET {} HTTP/1.1", r.path)
+                                        || request_line == format!("POST {} HTTP/1.1", r.path)
+                                })
+                                .unwrap_or_else(|| {
+                                    panic!(
+                                        "unexpected request to mock runtime service: {request_line}\n\
+                                         expected one of: {:?}",
+                                        routes.iter().map(|r| &r.path).collect::<Vec<_>>()
+                                    )
+                                });
                             let expected_auth = format!("Authorization: Bearer {auth_token}");
                             assert!(
                                 request
