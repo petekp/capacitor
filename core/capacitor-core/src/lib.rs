@@ -898,9 +898,11 @@ impl CoreRuntime {
 
         let config_ok = matches!(setup_status.hooks, HookStatus::Installed { .. });
         let firing_ok = matches!(health.status, runtime_types::HookHealthStatus::Healthy);
-        let is_first_run = matches!(health.status, runtime_types::HookHealthStatus::Unknown);
+        let is_first_run = !self.app_storage.setup_marker_path().exists();
 
-        let primary_issue: Option<HookIssue> = match &setup_status.hooks {
+        let hook_status = &setup_status.hooks;
+
+        let primary_issue: Option<HookIssue> = match hook_status {
             HookStatus::PolicyBlocked { reason } => Some(HookIssue::PolicyBlocked {
                 reason: reason.clone(),
             }),
@@ -912,7 +914,9 @@ impl CoreRuntime {
                 reason: reason.clone(),
             }),
             _ if !binary_ok => Some(HookIssue::BinaryMissing),
-            HookStatus::NotInstalled => Some(HookIssue::ConfigMissing),
+            HookStatus::NotInstalled
+            | HookStatus::PartiallyConfigured { .. }
+            | HookStatus::SettingsUnreadable { .. } => Some(HookIssue::ConfigMissing),
             HookStatus::Installed { .. } => match &health.status {
                 runtime_types::HookHealthStatus::Healthy => None,
                 runtime_types::HookHealthStatus::Unknown => Some(HookIssue::NotFiring {
@@ -923,11 +927,11 @@ impl CoreRuntime {
                         last_seen_secs: Some(*last_seen_secs),
                     })
                 }
-                runtime_types::HookHealthStatus::Unreadable { .. } => None,
             },
         };
 
-        let can_auto_fix = !matches!(primary_issue, Some(HookIssue::PolicyBlocked { .. }));
+        let can_auto_fix = !matches!(primary_issue, Some(HookIssue::PolicyBlocked { .. }))
+            && !matches!(hook_status, HookStatus::SettingsUnreadable { .. });
         let is_healthy = primary_issue.is_none();
 
         let symlink_path = dirs::home_dir()
@@ -1002,7 +1006,7 @@ mod tests {
     };
     use crate::runtime_state::snapshot::{RuntimeSessionRecord, RuntimeSessionsSnapshot};
     use crate::runtime_storage::StorageConfig;
-    use crate::runtime_types::HookHealthStatus;
+    use crate::runtime_types::{HookHealthStatus, HookIssue};
     use crate::storage::InMemorySnapshotStorage;
     use chrono::{Duration, Utc};
     use std::fs;
@@ -1221,6 +1225,81 @@ mod tests {
         assert!(result.hook_activity_ok, "result was {result:?}");
         assert!(result.runtime_service_ok, "result was {result:?}");
         runtime_service.finish();
+    }
+
+    #[test]
+    fn test_is_first_run_true_when_no_setup_marker() {
+        let runtime = make_runtime_with_storage(&setup_hook_health_env());
+
+        let report = runtime.get_hook_diagnostic();
+
+        assert!(report.is_first_run, "report was {report:?}");
+    }
+
+    #[test]
+    fn test_is_first_run_false_when_setup_marker_exists() {
+        let env = setup_hook_health_env();
+        fs::write(env.storage.setup_marker_path(), "complete").expect("write setup marker");
+        let runtime = make_runtime_with_storage(&env);
+
+        let report = runtime.get_hook_diagnostic();
+
+        assert!(!report.is_first_run, "report was {report:?}");
+    }
+
+    #[test]
+    fn test_is_first_run_false_even_with_unknown_hook_health() {
+        let env = setup_hook_health_env();
+        fs::write(env.storage.setup_marker_path(), "complete").expect("write setup marker");
+        let runtime = make_runtime_with_storage(&env);
+
+        let health = runtime.check_hook_health();
+        assert!(matches!(health.status, HookHealthStatus::Unknown));
+
+        let report = runtime.get_hook_diagnostic();
+
+        assert!(!report.is_first_run, "report was {report:?}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_settings_unreadable_hook_diagnostic_is_not_auto_fixable() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let _guard = env_lock();
+        let env = setup_hook_health_env();
+        let _home_guard =
+            EnvVarGuard::set("HOME", env._temp.path().to_str().expect("temp home path"));
+
+        let bin_dir = env._temp.path().join(".local/bin");
+        fs::create_dir_all(&bin_dir).expect("create bin dir");
+        let binary_path = bin_dir.join("hud-hook");
+        fs::write(
+            &binary_path,
+            "#!/bin/sh\n\
+             if [ \"$1\" = \"--help\" ]; then\n\
+               echo \"Commands: serve cwd\"\n\
+               exit 0\n\
+             fi\n\
+             exit 0\n",
+        )
+        .expect("write hook binary");
+        let mut permissions = fs::metadata(&binary_path)
+            .expect("binary metadata")
+            .permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&binary_path, permissions).expect("set binary permissions");
+        fs::write(
+            env.storage.claude_root().join("settings.json"),
+            "{ invalid json }",
+        )
+        .expect("write corrupt settings");
+
+        let runtime = make_runtime_with_storage(&env);
+        let report = runtime.get_hook_diagnostic();
+
+        assert_eq!(report.primary_issue, Some(HookIssue::ConfigMissing));
+        assert!(!report.can_auto_fix, "report was {report:?}");
     }
 
     fn make_runtime_session_record(

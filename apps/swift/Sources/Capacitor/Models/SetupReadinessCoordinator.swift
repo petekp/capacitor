@@ -15,7 +15,7 @@ enum SetupReadinessCoordinator {
             return .ready
         case let .policyBlocked(reason):
             return .showWelcome(event: .hooksBlockedByPolicy(reason: reason))
-        case .notInstalled, .binaryBroken, .symlinkBroken:
+        case .notInstalled, .partiallyConfigured, .settingsUnreadable, .binaryBroken, .symlinkBroken:
             return .attemptHookRepair(event: .hooksNeedAutoRepair(status: setupStatus.hooks))
         }
     }

@@ -33,6 +33,7 @@ enum SetupStepCatalog {
             title: "Session tracking",
             description: "See which projects are active and what Claude is working on",
             status: status,
+            isOptional: true,
         )
     }
 

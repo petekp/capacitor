@@ -2,6 +2,20 @@
 import XCTest
 
 final class HookPresentationPolicyTests: XCTestCase {
+    func testSetupStepStatusHandlesNewHookStatusVariants() {
+        XCTAssertEqual(
+            HookPresentationPolicy.setupStepStatus(for: .partiallyConfigured(
+                missingEvents: ["TaskCompleted"],
+                reason: "Missing or invalid managed hook configuration for 1 event(s)",
+            )),
+            .error(message: "Session tracking needs repair"),
+        )
+        XCTAssertEqual(
+            HookPresentationPolicy.setupStepStatus(for: .settingsUnreadable(reason: "Failed to parse settings.json")),
+            .error(message: "Claude settings file is unreadable"),
+        )
+    }
+
     func testSetupCardHeaderScenariosMatchCanonicalContract() {
         let scenarios: [LabeledExpectationScenario<(issue: HookIssue?, isFirstRun: Bool), String>] = [
             LabeledExpectationScenario(

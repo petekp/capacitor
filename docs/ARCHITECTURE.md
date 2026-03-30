@@ -2,7 +2,7 @@
 
 > Doc role: `canonical-spec`
 > Status: Current architecture spec. Read after `.claude/docs/architecture-primer.md`.
-> Rationale: `docs/architecture-decisions/004-dedicated-local-runtime-service.md`
+> Rationale: `docs/architecture-decisions/004-dedicated-local-runtime-service.md`, `docs/architecture-decisions/005-authority-based-multi-signal-state-detection.md`
 
 ## System Boundary
 
@@ -22,11 +22,21 @@ Capacitor uses a dedicated local runtime service as its live application boundar
 
 ## Runtime Data Flow
 
-1. Claude hook events and shell cwd signals reach `hud-hook serve`.
+1. Claude hook events and shell cwd signals reach `hud-hook serve` as distinct live signals into the runtime boundary.
 2. `hud-hook serve` normalizes adapter input and forwards it into the canonical `capacitor-core` runtime.
-3. `capacitor-core` applies ingest, reducer, and query logic, then persists runtime artifacts for durability and replay.
+3. `capacitor-core` applies ingest, reducer, and query logic, then persists runtime artifacts for durability and replay. ADR-005's shipped Phase 1 keeps hooks as the live state source while making hook setup non-blocking at launch; the broader multi-signal authority model is still planned.
 4. The Swift app reads typed runtime state from authenticated `/runtime/*` endpoints exposed by the service.
-5. Swift projection layers apply presentation-only freshness guards and hysteresis before updating visible UI state.
+5. Swift projection layers apply presentation-only freshness guards and hysteresis before updating visible UI state. Hook setup failure is non-blocking: the app launches with diagnostics surfaced in the setup UI rather than gating startup.
+
+## State Detection Architecture
+
+ADR-005 defines the planned state-detection direction. Today, only Phase 1 is shipped.
+
+- Hooks are optional at startup: hook install or repair failure is informational, not launch-blocking. Only a missing Claude CLI binary or an explicit hook policy block still gates setup.
+- `HookStatus` distinguishes granular setup states, and `isFirstRun` is driven by a persisted setup marker instead of `HookHealthStatus::Unknown`.
+- Future ADR-005 phases add transcript-backed existence and recency evidence, the authority matrix contract, and evidence replay/backfill. Shell `cwd` remains routing-only in that target design.
+
+See `docs/architecture-decisions/005-authority-based-multi-signal-state-detection.md` for the full phase plan and binding completion conditions.
 
 ## Activation Boundaries
 

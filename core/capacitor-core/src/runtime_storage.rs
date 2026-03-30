@@ -96,6 +96,11 @@ impl StorageConfig {
         self.root.join("config.json")
     }
 
+    /// Path to the persisted setup-complete marker.
+    pub fn setup_marker_path(&self) -> PathBuf {
+        self.root.join("setup_complete")
+    }
+
     // ─────────────────────────────────────────────────────────────────────────────
     // Directories
     // ─────────────────────────────────────────────────────────────────────────────

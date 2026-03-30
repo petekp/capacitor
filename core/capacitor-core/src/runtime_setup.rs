@@ -39,6 +39,13 @@ pub struct DependencyStatus {
 #[derive(Debug, Clone, uniffi::Enum)]
 pub enum HookStatus {
     NotInstalled,
+    PartiallyConfigured {
+        missing_events: Vec<String>,
+        reason: String,
+    },
+    SettingsUnreadable {
+        reason: String,
+    },
     Installed {
         version: String,
     },
@@ -73,6 +80,19 @@ pub struct InstallResult {
 
 pub struct SetupChecker {
     storage: StorageConfig,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum HookSettingsStatus {
+    NotInstalled,
+    PartiallyConfigured {
+        missing_events: Vec<String>,
+        reason: String,
+    },
+    SettingsUnreadable {
+        reason: String,
+    },
+    Installed,
 }
 
 struct ResolvedSymlinkTarget {
@@ -115,6 +135,10 @@ impl SetupChecker {
             ))
         } else if let HookStatus::BinaryBroken { ref reason } = hooks {
             Some(format!("Hook binary broken: {}", reason))
+        } else if let HookStatus::SettingsUnreadable { ref reason } = hooks {
+            Some(format!("Claude settings unreadable: {}", reason))
+        } else if let HookStatus::PartiallyConfigured { ref reason, .. } = hooks {
+            Some(format!("Hooks partially configured: {}", reason))
         } else if !hooks_ok {
             Some("Hooks not installed".to_string())
         } else if !storage_ready {
@@ -250,12 +274,21 @@ impl SetupChecker {
         }
 
         // Check if hooks are registered in settings and match the current contract.
-        if !self.hooks_registered_in_settings() {
-            return HookStatus::NotInstalled;
-        }
-
-        HookStatus::Installed {
-            version: "binary".to_string(),
+        match self.hooks_registered_in_settings() {
+            HookSettingsStatus::NotInstalled => HookStatus::NotInstalled,
+            HookSettingsStatus::PartiallyConfigured {
+                missing_events,
+                reason,
+            } => HookStatus::PartiallyConfigured {
+                missing_events,
+                reason,
+            },
+            HookSettingsStatus::SettingsUnreadable { reason } => {
+                HookStatus::SettingsUnreadable { reason }
+            }
+            HookSettingsStatus::Installed => HookStatus::Installed {
+                version: "binary".to_string(),
+            },
         }
     }
 
@@ -350,39 +383,63 @@ impl SetupChecker {
         }
     }
 
-    fn hooks_registered_in_settings(&self) -> bool {
+    fn hooks_registered_in_settings(&self) -> HookSettingsStatus {
         let settings_path = self.storage.claude_settings_file();
         if !settings_path.exists() {
-            return false;
+            return HookSettingsStatus::NotInstalled;
         }
 
         let content = match fs::read_to_string(&settings_path) {
             Ok(c) => c,
-            Err(_) => return false,
+            Err(error) => {
+                return HookSettingsStatus::SettingsUnreadable {
+                    reason: format!("Failed to read settings.json: {error}"),
+                };
+            }
         };
 
         let settings: SettingsFile = match serde_json::from_str(&content) {
             Ok(s) => s,
-            Err(_) => return false,
+            Err(error) => {
+                return HookSettingsStatus::SettingsUnreadable {
+                    reason: format!("Failed to parse settings.json: {error}"),
+                };
+            }
         };
 
         let hooks = match settings.hooks {
             Some(h) => h,
-            None => return false,
+            None => return HookSettingsStatus::NotInstalled,
         };
 
-        for contract in managed_hook_event_contracts() {
-            let has_hook = hooks
-                .get(contract.event_name)
-                .map(|h| self.has_hud_hook_with_correct_config(h, contract))
-                .unwrap_or(false);
+        let missing_events: Vec<String> = managed_hook_event_contracts()
+            .filter_map(|contract| {
+                let has_hook = hooks
+                    .get(contract.event_name)
+                    .map(|configured_hooks| {
+                        self.has_hud_hook_with_correct_config(configured_hooks, contract)
+                    })
+                    .unwrap_or(false);
 
-            if !has_hook {
-                return false;
+                if has_hook {
+                    None
+                } else {
+                    Some(contract.event_name.to_string())
+                }
+            })
+            .collect();
+
+        if missing_events.is_empty() {
+            HookSettingsStatus::Installed
+        } else {
+            HookSettingsStatus::PartiallyConfigured {
+                reason: format!(
+                    "Missing or invalid managed hook configuration for {} event(s)",
+                    missing_events.len()
+                ),
+                missing_events,
             }
         }
-
-        true
     }
 
     fn has_hud_hook_with_correct_config(
@@ -981,6 +1038,21 @@ mod tests {
         fs::set_permissions(path, perms).expect("set executable permission");
     }
 
+    #[cfg(unix)]
+    fn install_working_hook_binary(home: &std::path::Path) {
+        let bin_dir = home.join(".local/bin");
+        fs::create_dir_all(&bin_dir).expect("create bin dir");
+        write_executable_script(
+            &bin_dir.join("hud-hook"),
+            "#!/bin/sh\n\
+             if [ \"$1\" = \"--help\" ]; then\n\
+               echo \"Commands: serve cwd\"\n\
+               exit 0\n\
+             fi\n\
+             exit 0\n",
+        );
+    }
+
     fn setup_test_env() -> (TempDir, StorageConfig) {
         let temp = TempDir::new().unwrap();
         let capacitor_root = temp.path().join(".capacitor");
@@ -1021,6 +1093,100 @@ mod tests {
         let _home_guard = EnvVarGuard::set("HOME", temp.path());
         let checker = SetupChecker::new(storage);
         let status = checker.check_hooks_status();
+        assert!(matches!(status, HookStatus::NotInstalled));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_hooks_status_settings_unreadable() {
+        let _guard = env_lock();
+        let (temp, storage) = setup_test_env();
+        let _home_guard = EnvVarGuard::set("HOME", temp.path());
+        install_working_hook_binary(temp.path());
+        fs::write(storage.claude_settings_file(), "{ invalid json }").unwrap();
+
+        let checker = SetupChecker::new(storage);
+        let status = checker.check_hooks_status();
+
+        assert!(
+            matches!(status, HookStatus::SettingsUnreadable { .. }),
+            "status was {status:?}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_hooks_status_partially_configured() {
+        let _guard = env_lock();
+        let (temp, storage) = setup_test_env();
+        let _home_guard = EnvVarGuard::set("HOME", temp.path());
+        install_working_hook_binary(temp.path());
+        let command = managed_command_hook_command();
+        let partial = serde_json::json!({
+            "hooks": {
+                "SessionStart": [{"hooks": [{"type": "command", "command": command.clone()}]}],
+                "UserPromptSubmit": [{"hooks": [{"type": "command", "command": command.clone()}]}],
+                "PreToolUse": [{"matcher": "*", "hooks": [{"type": "command", "command": command.clone()}]}],
+                "PermissionRequest": [{"matcher": "*", "hooks": [{"type": "command", "command": command.clone()}]}],
+                "PostToolUse": [{"matcher": "*", "hooks": [{"type": "command", "command": command.clone()}]}],
+                "PostToolUseFailure": [{"matcher": "*", "hooks": [{"type": "command", "command": command.clone()}]}],
+                "Notification": [{"hooks": [{"type": "command", "command": command.clone()}]}],
+                "Stop": [{"hooks": [{"type": "command", "command": command.clone()}]}],
+                "SubagentStart": [{"hooks": [{"type": "command", "command": command.clone()}]}],
+                "SubagentStop": [{"hooks": [{"type": "command", "command": command.clone()}]}],
+                "PreCompact": [{"hooks": [{"type": "command", "command": command.clone()}]}],
+                "TeammateIdle": [{"hooks": [{"type": "command", "command": command}]}]
+            }
+        });
+        fs::write(
+            storage.claude_settings_file(),
+            serde_json::to_string_pretty(&partial).unwrap(),
+        )
+        .unwrap();
+
+        let checker = SetupChecker::new(storage);
+        let status = checker.check_hooks_status();
+
+        assert!(
+            matches!(
+                &status,
+                HookStatus::PartiallyConfigured { missing_events, .. }
+                    if missing_events
+                        == &vec![
+                            "TaskCompleted".to_string(),
+                            "SessionEnd".to_string(),
+                        ]
+            ),
+            "status was {status:?}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_hooks_status_not_installed_when_no_hooks_key() {
+        let _guard = env_lock();
+        let (temp, storage) = setup_test_env();
+        let _home_guard = EnvVarGuard::set("HOME", temp.path());
+        install_working_hook_binary(temp.path());
+        fs::write(storage.claude_settings_file(), r#"{"theme":"dark"}"#).unwrap();
+
+        let checker = SetupChecker::new(storage);
+        let status = checker.check_hooks_status();
+
+        assert!(matches!(status, HookStatus::NotInstalled));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_hooks_status_not_installed_when_no_settings_file() {
+        let _guard = env_lock();
+        let (temp, storage) = setup_test_env();
+        let _home_guard = EnvVarGuard::set("HOME", temp.path());
+        install_working_hook_binary(temp.path());
+
+        let checker = SetupChecker::new(storage);
+        let status = checker.check_hooks_status();
+
         assert!(matches!(status, HookStatus::NotInstalled));
     }
 
@@ -1202,7 +1368,10 @@ mod tests {
             settings["hooks"]["CustomEvent"][0]["hooks"].is_null(),
             "unrelated flat entries should stay untouched in the current contract path"
         );
-        assert!(checker.hooks_registered_in_settings());
+        assert_eq!(
+            checker.hooks_registered_in_settings(),
+            HookSettingsStatus::Installed
+        );
     }
 
     #[test]
@@ -1543,18 +1712,27 @@ mod tests {
         let checker = SetupChecker::new(storage.clone());
 
         // Write settings with only SessionStart (missing others)
-        let partial = format!(
-            r#"{{
-                "hooks": {{
-                    "SessionStart": [{{"hooks": [{{"type": "command", "command": "{command}"}}]}}]
-                }}
-            }}"#,
-            command = managed_command_hook_command(),
-        );
-        fs::write(storage.claude_settings_file(), partial).unwrap();
+        let partial = serde_json::json!({
+            "hooks": {
+                "SessionStart": [{
+                    "hooks": [{
+                        "type": "command",
+                        "command": managed_command_hook_command(),
+                    }],
+                }],
+            },
+        });
+        fs::write(
+            storage.claude_settings_file(),
+            serde_json::to_string_pretty(&partial).unwrap(),
+        )
+        .unwrap();
 
         // hooks_registered_in_settings should return false since required events are missing
-        assert!(!checker.hooks_registered_in_settings());
+        assert!(matches!(
+            checker.hooks_registered_in_settings(),
+            HookSettingsStatus::PartiallyConfigured { .. }
+        ));
     }
 
     #[test]
@@ -1565,31 +1743,35 @@ mod tests {
         // Write settings with all events using command transport but missing matchers
         // on tool-scoped events (PreToolUse, PostToolUse, etc.)
         let managed_cmd = managed_command_hook_command();
-        let missing_matcher = format!(
-            r#"{{
-            "hooks": {{
-                "SessionStart": [{{"hooks": [{{"type": "command", "command": "{cmd}"}}]}}],
-                "SessionEnd": [{{"hooks": [{{"type": "command", "command": "{cmd}"}}]}}],
-                "UserPromptSubmit": [{{"hooks": [{{"type": "command", "command": "{cmd}"}}]}}],
-                "PreToolUse": [{{"hooks": [{{"type": "command", "command": "{cmd}"}}]}}],
-                "PostToolUse": [{{"hooks": [{{"type": "command", "command": "{cmd}"}}]}}],
-                "PostToolUseFailure": [{{"hooks": [{{"type": "command", "command": "{cmd}"}}]}}],
-                "PermissionRequest": [{{"hooks": [{{"type": "command", "command": "{cmd}"}}]}}],
-                "Stop": [{{"hooks": [{{"type": "command", "command": "{cmd}"}}]}}],
-                "PreCompact": [{{"hooks": [{{"type": "command", "command": "{cmd}"}}]}}],
-                "Notification": [{{"hooks": [{{"type": "command", "command": "{cmd}"}}]}}],
-                "SubagentStart": [{{"hooks": [{{"type": "command", "command": "{cmd}"}}]}}],
-                "SubagentStop": [{{"hooks": [{{"type": "command", "command": "{cmd}"}}]}}],
-                "TeammateIdle": [{{"hooks": [{{"type": "command", "command": "{cmd}"}}]}}],
-                "TaskCompleted": [{{"hooks": [{{"type": "command", "command": "{cmd}"}}]}}]
-            }}
-        }}"#,
-            cmd = managed_cmd,
-        );
-        fs::write(storage.claude_settings_file(), missing_matcher).unwrap();
+        let missing_matcher = serde_json::json!({
+            "hooks": {
+                "SessionStart": [{"hooks": [{"type": "command", "command": managed_cmd.clone()}]}],
+                "SessionEnd": [{"hooks": [{"type": "command", "command": managed_cmd.clone()}]}],
+                "UserPromptSubmit": [{"hooks": [{"type": "command", "command": managed_cmd.clone()}]}],
+                "PreToolUse": [{"hooks": [{"type": "command", "command": managed_cmd.clone()}]}],
+                "PostToolUse": [{"hooks": [{"type": "command", "command": managed_cmd.clone()}]}],
+                "PostToolUseFailure": [{"hooks": [{"type": "command", "command": managed_cmd.clone()}]}],
+                "PermissionRequest": [{"hooks": [{"type": "command", "command": managed_cmd.clone()}]}],
+                "Stop": [{"hooks": [{"type": "command", "command": managed_cmd.clone()}]}],
+                "PreCompact": [{"hooks": [{"type": "command", "command": managed_cmd.clone()}]}],
+                "Notification": [{"hooks": [{"type": "command", "command": managed_cmd.clone()}]}],
+                "SubagentStart": [{"hooks": [{"type": "command", "command": managed_cmd.clone()}]}],
+                "SubagentStop": [{"hooks": [{"type": "command", "command": managed_cmd.clone()}]}],
+                "TeammateIdle": [{"hooks": [{"type": "command", "command": managed_cmd.clone()}]}],
+                "TaskCompleted": [{"hooks": [{"type": "command", "command": managed_cmd}]}],
+            },
+        });
+        fs::write(
+            storage.claude_settings_file(),
+            serde_json::to_string_pretty(&missing_matcher).unwrap(),
+        )
+        .unwrap();
 
         // hooks_registered_in_settings should return false since matcher is missing
-        assert!(!checker.hooks_registered_in_settings());
+        assert!(matches!(
+            checker.hooks_registered_in_settings(),
+            HookSettingsStatus::PartiallyConfigured { .. }
+        ));
     }
 
     #[test]
@@ -1600,64 +1782,35 @@ mod tests {
         // All events use command transport except SessionStart which uses HTTP —
         // hooks_registered should reject because SessionStart's contract is command.
         let managed_cmd = managed_command_hook_command();
-        let invalid = format!(
-            r#"{{
-                "hooks": {{
-                    "SessionStart": [{{
-                        "hooks": [{{"type": "http", "url": "{hook_url}"}}]
-                    }}],
-                    "SessionEnd": [{{
-                        "hooks": [{{"type": "command", "command": "{command}"}}]
-                    }}],
-                    "UserPromptSubmit": [{{
-                        "hooks": [{{"type": "command", "command": "{command}"}}]
-                    }}],
-                    "PreToolUse": [{{
-                        "matcher": "*",
-                        "hooks": [{{"type": "command", "command": "{command}"}}]
-                    }}],
-                    "PostToolUse": [{{
-                        "matcher": "*",
-                        "hooks": [{{"type": "command", "command": "{command}"}}]
-                    }}],
-                    "PostToolUseFailure": [{{
-                        "matcher": "*",
-                        "hooks": [{{"type": "command", "command": "{command}"}}]
-                    }}],
-                    "PermissionRequest": [{{
-                        "matcher": "*",
-                        "hooks": [{{"type": "command", "command": "{command}"}}]
-                    }}],
-                    "Stop": [{{
-                        "hooks": [{{"type": "command", "command": "{command}"}}]
-                    }}],
-                    "PreCompact": [{{
-                        "hooks": [{{"type": "command", "command": "{command}"}}]
-                    }}],
-                    "Notification": [{{
-                        "hooks": [{{"type": "command", "command": "{command}"}}]
-                    }}],
-                    "SubagentStart": [{{
-                        "hooks": [{{"type": "command", "command": "{command}"}}]
-                    }}],
-                    "SubagentStop": [{{
-                        "hooks": [{{"type": "command", "command": "{command}"}}]
-                    }}],
-                    "TeammateIdle": [{{
-                        "hooks": [{{"type": "command", "command": "{command}"}}]
-                    }}],
-                    "TaskCompleted": [{{
-                        "hooks": [{{"type": "command", "command": "{command}"}}]
-                    }}]
-                }}
-            }}"#,
-            hook_url = HOOK_HTTP_URL,
-            command = managed_cmd,
-        );
-        fs::write(storage.claude_settings_file(), invalid).unwrap();
+        let invalid = serde_json::json!({
+            "hooks": {
+                "SessionStart": [{"hooks": [{"type": "http", "url": HOOK_HTTP_URL}]}],
+                "SessionEnd": [{"hooks": [{"type": "command", "command": managed_cmd.clone()}]}],
+                "UserPromptSubmit": [{"hooks": [{"type": "command", "command": managed_cmd.clone()}]}],
+                "PreToolUse": [{"matcher": "*", "hooks": [{"type": "command", "command": managed_cmd.clone()}]}],
+                "PostToolUse": [{"matcher": "*", "hooks": [{"type": "command", "command": managed_cmd.clone()}]}],
+                "PostToolUseFailure": [{"matcher": "*", "hooks": [{"type": "command", "command": managed_cmd.clone()}]}],
+                "PermissionRequest": [{"matcher": "*", "hooks": [{"type": "command", "command": managed_cmd.clone()}]}],
+                "Stop": [{"hooks": [{"type": "command", "command": managed_cmd.clone()}]}],
+                "PreCompact": [{"hooks": [{"type": "command", "command": managed_cmd.clone()}]}],
+                "Notification": [{"hooks": [{"type": "command", "command": managed_cmd.clone()}]}],
+                "SubagentStart": [{"hooks": [{"type": "command", "command": managed_cmd.clone()}]}],
+                "SubagentStop": [{"hooks": [{"type": "command", "command": managed_cmd.clone()}]}],
+                "TeammateIdle": [{"hooks": [{"type": "command", "command": managed_cmd.clone()}]}],
+                "TaskCompleted": [{"hooks": [{"type": "command", "command": managed_cmd}]}],
+            },
+        });
+        fs::write(
+            storage.claude_settings_file(),
+            serde_json::to_string_pretty(&invalid).unwrap(),
+        )
+        .unwrap();
 
         assert!(
-            !checker.hooks_registered_in_settings(),
+            matches!(
+                checker.hooks_registered_in_settings(),
+                HookSettingsStatus::PartiallyConfigured { .. }
+            ),
             "HTTP hook on any managed event should be rejected since all contracts require command transport"
         );
     }
@@ -1721,7 +1874,10 @@ mod tests {
         }
 
         // All managed events should be registered and valid
-        assert!(checker.hooks_registered_in_settings());
+        assert_eq!(
+            checker.hooks_registered_in_settings(),
+            HookSettingsStatus::Installed
+        );
     }
 
     #[test]

@@ -31,6 +31,38 @@ final class SetupReadinessCoordinatorTests: XCTestCase {
                 expected: .attemptHookRepair(event: .hooksNeedAutoRepair(status: .notInstalled)),
             ),
             LabeledExpectationScenario(
+                label: "hooks-partially-configured",
+                input: (
+                    dependencies: [presentClaudeDependency],
+                    hooks: .partiallyConfigured(
+                        missingEvents: ["TaskCompleted", "SessionEnd"],
+                        reason: "Missing or invalid managed hook configuration for 2 event(s)",
+                    ),
+                ),
+                expected: .attemptHookRepair(event: .hooksNeedAutoRepair(status: .partiallyConfigured(
+                    missingEvents: ["TaskCompleted", "SessionEnd"],
+                    reason: "Missing or invalid managed hook configuration for 2 event(s)",
+                ))),
+            ),
+            LabeledExpectationScenario(
+                label: "hooks-settings-unreadable",
+                input: (
+                    dependencies: [presentClaudeDependency],
+                    hooks: .settingsUnreadable(reason: "Failed to parse settings.json"),
+                ),
+                expected: .attemptHookRepair(event: .hooksNeedAutoRepair(status: .settingsUnreadable(
+                    reason: "Failed to parse settings.json",
+                ))),
+            ),
+            LabeledExpectationScenario(
+                label: "hooks-binary-broken",
+                input: (
+                    dependencies: [presentClaudeDependency],
+                    hooks: .binaryBroken(reason: "codesign error"),
+                ),
+                expected: .attemptHookRepair(event: .hooksNeedAutoRepair(status: .binaryBroken(reason: "codesign error"))),
+            ),
+            LabeledExpectationScenario(
                 label: "ready",
                 input: (
                     dependencies: [presentClaudeDependency],

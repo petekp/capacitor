@@ -7,7 +7,6 @@ enum DebugLog {
         case hooksBlockedByPolicy(reason: String)
         case hooksNeedAutoRepair(status: HookStatus)
         case hooksAutoRepairSucceeded
-        case hooksAutoRepairFailedShowingWelcome
         case hooksAutoRepairFailed(error: String)
         case shellIntegrationInstalled(configFile: String)
         case shellIntegrationSkipped(reason: String)
@@ -133,8 +132,6 @@ enum DebugLog {
             "Hook status \(startupStatusLabel(for: status)) requires auto-repair"
         case .hooksAutoRepairSucceeded:
             "Hook auto-repair succeeded"
-        case .hooksAutoRepairFailedShowingWelcome:
-            "Hook auto-repair failed, showing WelcomeView"
         case let .hooksAutoRepairFailed(error):
             "Hook auto-repair failed: \(error)"
         case let .shellIntegrationInstalled(configFile):
@@ -151,6 +148,10 @@ enum DebugLog {
         switch hookStatus {
         case .notInstalled:
             "notInstalled"
+        case .partiallyConfigured:
+            "partiallyConfigured"
+        case .settingsUnreadable:
+            "settingsUnreadable"
         case .installed:
             "installed"
         case .policyBlocked:

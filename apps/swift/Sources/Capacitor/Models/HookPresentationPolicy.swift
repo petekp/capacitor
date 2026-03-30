@@ -3,6 +3,7 @@ enum HookPresentationPolicy {
     static let installPrompt = "Tap Install to connect"
     static let policyBlockedSetupError = "Your Claude settings prevent hook installation"
     static let repairNeededSetupError = "Session tracking needs repair"
+    static let settingsUnreadableSetupError = "Claude settings file is unreadable"
 
     static func setupStepStatus(for hookStatus: HookStatus) -> SetupStepStatus {
         switch hookStatus {
@@ -10,6 +11,10 @@ enum HookPresentationPolicy {
             .completed(detail: connectedDetail)
         case .notInstalled:
             .actionNeeded(message: installPrompt)
+        case .partiallyConfigured:
+            .error(message: repairNeededSetupError)
+        case .settingsUnreadable:
+            .error(message: settingsUnreadableSetupError)
         case .policyBlocked:
             .error(message: policyBlockedSetupError)
         case .binaryBroken, .symlinkBroken:
