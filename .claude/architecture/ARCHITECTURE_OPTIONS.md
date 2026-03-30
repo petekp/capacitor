@@ -1,3 +1,9 @@
+> **Historical context** — This document uses "method" terminology from an earlier
+> iteration of the orchestration system. As of 2026-03-29, the workflow surface
+> has been extracted into the Circuit plugin (`~/Code/circuit`). The architectural
+> concepts (runs, phases, checkpoints, involvement levels) remain valid; the
+> implementation path is now `circuit:*` rather than `method:*`.
+
 # Architecture Exploration: Human-Agent Work Orchestration
 
 ## Goal

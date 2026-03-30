@@ -1,3 +1,7 @@
+> **ARCHIVED** — This document described authoring the `method` skill, which has been
+> extracted into the Circuit plugin as `circuit:create`. See `~/Code/circuit/skills/circuit-create/`
+> for the current implementation. Retained for historical reference only.
+
 # Prompt: Create the "method" Skill
 
 ## What This Skill Does
