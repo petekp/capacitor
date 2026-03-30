@@ -1229,6 +1229,7 @@ mod tests {
 
     #[test]
     fn test_is_first_run_true_when_no_setup_marker() {
+        let _guard = env_lock();
         let runtime = make_runtime_with_storage(&setup_hook_health_env());
 
         let report = runtime.get_hook_diagnostic();
@@ -1238,6 +1239,7 @@ mod tests {
 
     #[test]
     fn test_is_first_run_false_when_setup_marker_exists() {
+        let _guard = env_lock();
         let env = setup_hook_health_env();
         fs::write(env.storage.setup_marker_path(), "complete").expect("write setup marker");
         let runtime = make_runtime_with_storage(&env);
@@ -1249,6 +1251,7 @@ mod tests {
 
     #[test]
     fn test_is_first_run_false_even_with_unknown_hook_health() {
+        let _guard = env_lock();
         let env = setup_hook_health_env();
         fs::write(env.storage.setup_marker_path(), "complete").expect("write setup marker");
         let runtime = make_runtime_with_storage(&env);
