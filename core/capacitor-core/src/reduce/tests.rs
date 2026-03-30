@@ -704,7 +704,11 @@ fn test_subagent_stop_stays_working_with_tools_in_flight() {
 fn test_subagent_start_preserves_waiting() {
     let mut state = ReducerState::default();
 
-    let _ = state.apply_hook_event(event_base(HookEventType::PermissionRequest));
+    // PreToolUse first so tools_in_flight > 0, then PermissionRequest sets Waiting
+    let _ = state.apply_hook_event(event_base(HookEventType::PreToolUse));
+    let mut perm = event_base(HookEventType::PermissionRequest);
+    perm.recorded_at = "2026-01-31T00:00:00.5Z".to_string();
+    let _ = state.apply_hook_event(perm);
 
     let mut start = event_base(HookEventType::SubagentStart);
     start.recorded_at = "2026-01-31T00:00:01Z".to_string();
@@ -758,7 +762,11 @@ fn test_subagent_stop_preserves_compacting() {
 fn test_subagent_stop_preserves_waiting() {
     let mut state = ReducerState::default();
 
-    let _ = state.apply_hook_event(event_base(HookEventType::PermissionRequest));
+    // PreToolUse first so tools_in_flight > 0, then PermissionRequest sets Waiting
+    let _ = state.apply_hook_event(event_base(HookEventType::PreToolUse));
+    let mut perm = event_base(HookEventType::PermissionRequest);
+    perm.recorded_at = "2026-01-31T00:00:00.5Z".to_string();
+    let _ = state.apply_hook_event(perm);
 
     let mut stop = event_base(HookEventType::SubagentStop);
     stop.recorded_at = "2026-01-31T00:00:01Z".to_string();
@@ -1061,7 +1069,7 @@ fn test_reducer_17_event_contract_matrix() {
         },
         EventExpectation {
             event_type: HookEventType::PermissionRequest,
-            setup: Some(HookEventType::SessionStart),
+            setup: Some(HookEventType::PreToolUse),
             notification_type: None,
             expected_state: Some(SessionState::Waiting),
             expected_skip_reason: None,
@@ -1093,7 +1101,7 @@ fn test_reducer_17_event_contract_matrix() {
         },
         EventExpectation {
             event_type: HookEventType::Notification,
-            setup: Some(HookEventType::UserPromptSubmit),
+            setup: Some(HookEventType::PreToolUse),
             notification_type: Some("permission_prompt"),
             expected_state: Some(SessionState::Waiting),
             expected_skip_reason: None,
@@ -1101,7 +1109,7 @@ fn test_reducer_17_event_contract_matrix() {
         },
         EventExpectation {
             event_type: HookEventType::Notification,
-            setup: Some(HookEventType::UserPromptSubmit),
+            setup: Some(HookEventType::PreToolUse),
             notification_type: Some("elicitation_dialog"),
             expected_state: Some(SessionState::Waiting),
             expected_skip_reason: None,
@@ -1271,6 +1279,15 @@ fn test_reducer_17_event_contract_matrix() {
         let mut state = ReducerState::default();
 
         if let Some(setup_event_type) = expectation.setup {
+            // PermissionRequest and waiting-state notifications require tools_in_flight > 0.
+            // Fire a PreToolUse first when the setup event needs it.
+            if setup_event_type == HookEventType::PermissionRequest {
+                let mut pre = event_base(HookEventType::PreToolUse);
+                pre.event_id = format!("pre-setup-{index}");
+                pre.recorded_at = "2026-01-30T23:59:59Z".to_string();
+                let _ = state.apply_hook_event(pre);
+            }
+
             let mut setup = event_base(setup_event_type);
             setup.event_id = format!("setup-{index}");
             setup.recorded_at = "2026-01-31T00:00:00Z".to_string();
@@ -2589,6 +2606,12 @@ fn default_workspace_is_stable() {
 fn projects_are_reduced_by_priority_and_recency() {
     let mut state = ReducerState::default();
 
+    // PreToolUse first so tools_in_flight > 0 when PermissionRequest arrives
+    let mut pre = event_base(HookEventType::PreToolUse);
+    pre.session_id = "session-1".to_string();
+    pre.recorded_at = "2026-01-31T00:00:00Z".to_string();
+    let _ = state.apply_hook_event(pre);
+
     let mut first = event_base(HookEventType::PermissionRequest);
     first.session_id = "session-1".to_string();
     first.recorded_at = "2026-01-31T00:00:01Z".to_string();
@@ -2880,5 +2903,145 @@ fn routing_deprioritizes_working_worktree_over_idle_main_session() {
         route.target.session_name.as_deref(),
         Some("capacitor"),
         "Main session should win routing even when delegation session has higher state priority"
+    );
+}
+
+// ────────────────────────────────────────────────────────────
+// Late-arriving waiting-state notification guard
+// ────────────────────────────────────────────────────────────
+
+#[test]
+fn test_elicitation_dialog_skipped_when_tools_not_in_flight() {
+    // Scenario: PreToolUse → PostToolUse → late Notification(elicitation_dialog)
+    // The notification arrives AFTER the tool completed, so tools_in_flight == 0.
+    // It should be skipped rather than overwriting Working back to Waiting.
+    let mut state = ReducerState::default();
+
+    // 1. Start session and begin working
+    let _ = state.apply_hook_event(event_base(HookEventType::UserPromptSubmit));
+    let session = state.sessions.get("session-1").expect("session");
+    assert_eq!(session.state, SessionState::Working);
+    assert_eq!(session.tools_in_flight, 0);
+
+    // 2. PreToolUse → tools_in_flight = 1
+    let mut pre = event_base(HookEventType::PreToolUse);
+    pre.recorded_at = "2026-01-31T00:00:01Z".to_string();
+    let _ = state.apply_hook_event(pre);
+    let session = state.sessions.get("session-1").expect("session");
+    assert_eq!(session.state, SessionState::Working);
+    assert_eq!(session.tools_in_flight, 1);
+
+    // 3. PostToolUse → tools_in_flight = 0, state = Working
+    let mut post = event_base(HookEventType::PostToolUse);
+    post.recorded_at = "2026-01-31T00:00:02Z".to_string();
+    let _ = state.apply_hook_event(post);
+    let session = state.sessions.get("session-1").expect("session");
+    assert_eq!(session.state, SessionState::Working);
+    assert_eq!(session.tools_in_flight, 0);
+
+    // 4. Late-arriving Notification(elicitation_dialog) — should NOT overwrite Working
+    let mut notif = event_base(HookEventType::Notification);
+    notif.notification_type = Some("elicitation_dialog".to_string());
+    notif.recorded_at = "2026-01-31T00:00:03Z".to_string();
+    let outcome = state.apply_hook_event(notif);
+    assert!(outcome.ok);
+
+    let session = state.sessions.get("session-1").expect("session");
+    assert_eq!(
+        session.state,
+        SessionState::Working,
+        "Late elicitation_dialog with tools_in_flight=0 should not overwrite Working"
+    );
+}
+
+#[test]
+fn test_permission_prompt_skipped_when_tools_not_in_flight() {
+    // Same scenario but with permission_prompt notification
+    let mut state = ReducerState::default();
+
+    let _ = state.apply_hook_event(event_base(HookEventType::UserPromptSubmit));
+
+    let mut pre = event_base(HookEventType::PreToolUse);
+    pre.recorded_at = "2026-01-31T00:00:01Z".to_string();
+    let _ = state.apply_hook_event(pre);
+
+    let mut post = event_base(HookEventType::PostToolUse);
+    post.recorded_at = "2026-01-31T00:00:02Z".to_string();
+    let _ = state.apply_hook_event(post);
+
+    let session = state.sessions.get("session-1").expect("session");
+    assert_eq!(session.tools_in_flight, 0);
+
+    let mut notif = event_base(HookEventType::Notification);
+    notif.notification_type = Some("permission_prompt".to_string());
+    notif.recorded_at = "2026-01-31T00:00:03Z".to_string();
+    let outcome = state.apply_hook_event(notif);
+    assert!(outcome.ok);
+
+    let session = state.sessions.get("session-1").expect("session");
+    assert_eq!(
+        session.state,
+        SessionState::Working,
+        "Late permission_prompt with tools_in_flight=0 should not overwrite Working"
+    );
+}
+
+#[test]
+fn test_elicitation_dialog_allowed_when_tools_in_flight() {
+    // Normal flow: PreToolUse → Notification(elicitation_dialog) (tool is still running)
+    // tools_in_flight > 0, so the notification should be processed normally.
+    let mut state = ReducerState::default();
+
+    let _ = state.apply_hook_event(event_base(HookEventType::UserPromptSubmit));
+
+    let mut pre = event_base(HookEventType::PreToolUse);
+    pre.recorded_at = "2026-01-31T00:00:01Z".to_string();
+    let _ = state.apply_hook_event(pre);
+    let session = state.sessions.get("session-1").expect("session");
+    assert_eq!(session.tools_in_flight, 1);
+
+    // Notification arrives while tool is in flight — this is the normal case
+    let mut notif = event_base(HookEventType::Notification);
+    notif.notification_type = Some("elicitation_dialog".to_string());
+    notif.recorded_at = "2026-01-31T00:00:02Z".to_string();
+    let outcome = state.apply_hook_event(notif);
+    assert!(outcome.ok);
+
+    let session = state.sessions.get("session-1").expect("session");
+    assert_eq!(
+        session.state,
+        SessionState::Waiting,
+        "elicitation_dialog with tools_in_flight=1 should set Waiting (normal flow)"
+    );
+}
+
+#[test]
+fn test_permission_request_skipped_when_tools_not_in_flight() {
+    // PermissionRequest arriving after tool completed — defensive guard
+    let mut state = ReducerState::default();
+
+    let _ = state.apply_hook_event(event_base(HookEventType::UserPromptSubmit));
+
+    let mut pre = event_base(HookEventType::PreToolUse);
+    pre.recorded_at = "2026-01-31T00:00:01Z".to_string();
+    let _ = state.apply_hook_event(pre);
+
+    let mut post = event_base(HookEventType::PostToolUse);
+    post.recorded_at = "2026-01-31T00:00:02Z".to_string();
+    let _ = state.apply_hook_event(post);
+
+    let session = state.sessions.get("session-1").expect("session");
+    assert_eq!(session.tools_in_flight, 0);
+
+    let mut perm = event_base(HookEventType::PermissionRequest);
+    perm.recorded_at = "2026-01-31T00:00:03Z".to_string();
+    let outcome = state.apply_hook_event(perm);
+    assert!(outcome.ok);
+
+    let session = state.sessions.get("session-1").expect("session");
+    assert_eq!(
+        session.state,
+        SessionState::Working,
+        "Late PermissionRequest with tools_in_flight=0 should not overwrite Working"
     );
 }

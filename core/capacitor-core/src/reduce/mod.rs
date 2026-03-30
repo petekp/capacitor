@@ -1055,7 +1055,13 @@ fn reduce_session(
             SessionUpdate::Upsert(upsert_session(current, event, SessionState::Working, None))
         }
         HookEventType::PermissionRequest => {
-            SessionUpdate::Upsert(upsert_session(current, event, SessionState::Waiting, None))
+            // Guard: if tools_in_flight == 0, the tool already completed and this
+            // PermissionRequest arrived late. Skip it to avoid overwriting Working.
+            if current.map(|r| r.tools_in_flight).unwrap_or(0) == 0 {
+                SessionUpdate::Skip("permission_request_no_tools_in_flight")
+            } else {
+                SessionUpdate::Upsert(upsert_session(current, event, SessionState::Waiting, None))
+            }
         }
         HookEventType::PreCompact => SessionUpdate::Upsert(upsert_session(
             current,
@@ -1094,14 +1100,33 @@ fn reduce_session(
                 SessionState::Ready,
                 Some("auth_success".to_string()),
             )),
-            Some("permission_prompt") => SessionUpdate::Upsert(upsert_session(
-                current,
-                event,
-                SessionState::Waiting,
-                Some("permission_prompt".to_string()),
-            )),
+            Some("permission_prompt") => {
+                // Guard: if tools_in_flight == 0, the tool already completed and
+                // this notification arrived late. Skip to avoid overwriting Working.
+                if current.map(|r| r.tools_in_flight).unwrap_or(0) == 0 {
+                    SessionUpdate::Skip("permission_prompt_no_tools_in_flight")
+                } else {
+                    SessionUpdate::Upsert(upsert_session(
+                        current,
+                        event,
+                        SessionState::Waiting,
+                        Some("permission_prompt".to_string()),
+                    ))
+                }
+            }
             Some("elicitation_dialog") => {
-                SessionUpdate::Upsert(upsert_session(current, event, SessionState::Waiting, None))
+                // Guard: if tools_in_flight == 0, the tool already completed and
+                // this notification arrived late. Skip to avoid overwriting Working.
+                if current.map(|r| r.tools_in_flight).unwrap_or(0) == 0 {
+                    SessionUpdate::Skip("elicitation_dialog_no_tools_in_flight")
+                } else {
+                    SessionUpdate::Upsert(upsert_session(
+                        current,
+                        event,
+                        SessionState::Waiting,
+                        None,
+                    ))
+                }
             }
             _ => SessionUpdate::Skip("notification_non_stateful"),
         },

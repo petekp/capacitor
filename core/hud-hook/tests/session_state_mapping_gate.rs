@@ -7,6 +7,9 @@ struct MappingCase {
     hook_event_name: &'static str,
     input_patch: serde_json::Value,
     expected_state: Option<&'static str>,
+    /// If true, send a PreToolUse first so tools_in_flight > 0 (required for
+    /// PermissionRequest and waiting-state notifications that guard on this).
+    needs_pretool_setup: bool,
 }
 
 #[test]
@@ -17,86 +20,103 @@ fn session_state_mapping_gate_ss_p0_1_exhaustive_known_hook_events_map_to_expect
             hook_event_name: "SessionStart",
             input_patch: json!({}),
             expected_state: Some("ready"),
+            needs_pretool_setup: false,
         },
         MappingCase {
             hook_event_name: "SessionEnd",
             input_patch: json!({}),
             expected_state: None,
+            needs_pretool_setup: false,
         },
         MappingCase {
             hook_event_name: "UserPromptSubmit",
             input_patch: json!({}),
             expected_state: Some("working"),
+            needs_pretool_setup: false,
         },
         MappingCase {
             hook_event_name: "PreToolUse",
             input_patch: json!({"tool_name": "Edit"}),
             expected_state: Some("working"),
+            needs_pretool_setup: false,
         },
         MappingCase {
             hook_event_name: "PostToolUse",
             input_patch: json!({"tool_name": "Edit"}),
             expected_state: Some("working"),
+            needs_pretool_setup: false,
         },
         MappingCase {
             hook_event_name: "PostToolUseFailure",
             input_patch: json!({"tool_name": "Edit"}),
             expected_state: Some("working"),
+            needs_pretool_setup: false,
         },
         MappingCase {
             hook_event_name: "PermissionRequest",
             input_patch: json!({}),
             expected_state: Some("waiting"),
+            needs_pretool_setup: true,
         },
         MappingCase {
             hook_event_name: "PreCompact",
             input_patch: json!({}),
             expected_state: Some("compacting"),
+            needs_pretool_setup: false,
         },
         MappingCase {
             hook_event_name: "Notification",
             input_patch: json!({"notification_type": "idle_prompt"}),
             expected_state: Some("ready"),
+            needs_pretool_setup: false,
         },
         MappingCase {
             hook_event_name: "SubagentStart",
             input_patch: json!({}),
             expected_state: Some("working"),
+            needs_pretool_setup: false,
         },
         MappingCase {
             hook_event_name: "SubagentStop",
             input_patch: json!({}),
             expected_state: Some("ready"),
+            needs_pretool_setup: false,
         },
         MappingCase {
             hook_event_name: "Stop",
             input_patch: json!({"stop_hook_active": false}),
             expected_state: Some("ready"),
+            needs_pretool_setup: false,
         },
         MappingCase {
             hook_event_name: "TeammateIdle",
             input_patch: json!({}),
             expected_state: None,
+            needs_pretool_setup: false,
         },
         MappingCase {
             hook_event_name: "TaskCompleted",
             input_patch: json!({}),
             expected_state: Some("ready"),
+            needs_pretool_setup: false,
         },
         MappingCase {
             hook_event_name: "WorktreeCreate",
             input_patch: json!({}),
             expected_state: None,
+            needs_pretool_setup: false,
         },
         MappingCase {
             hook_event_name: "WorktreeRemove",
             input_patch: json!({}),
             expected_state: None,
+            needs_pretool_setup: false,
         },
         MappingCase {
             hook_event_name: "ConfigChange",
             input_patch: json!({}),
             expected_state: None,
+            needs_pretool_setup: false,
         },
     ];
 
@@ -105,6 +125,22 @@ fn session_state_mapping_gate_ss_p0_1_exhaustive_known_hook_events_map_to_expect
         let temp_dir = unique_temp_dir("hud-hook-mapping-gate");
         let snapshot_path = temp_dir.join("snapshot.json");
         let (_guard, port) = ServerGuard::spawn_ready(&temp_dir, &snapshot_path);
+
+        // Send a PreToolUse first if the case requires tools_in_flight > 0
+        if case.needs_pretool_setup {
+            let setup = json!({
+                "hook_event_name": "PreToolUse",
+                "session_id": "session-gate",
+                "cwd": "/tmp/hud-hook-gate",
+                "tool_name": "Edit"
+            });
+            let (status, _) = post_hook(port, &setup);
+            assert_eq!(
+                status, 200,
+                "PreToolUse setup failed for {}",
+                case.hook_event_name
+            );
+        }
 
         let mut input = json!({
             "hook_event_name": case.hook_event_name,
@@ -126,10 +162,12 @@ fn session_state_mapping_gate_ss_p0_1_exhaustive_known_hook_events_map_to_expect
         );
 
         let snapshot = read_snapshot(&snapshot_path);
+        let expected_events: u64 = if case.needs_pretool_setup { 2 } else { 1 };
         assert_eq!(
             snapshot["diagnostics"]["events_ingested"].as_u64(),
-            Some(1),
-            "events_ingested should increment for {}",
+            Some(expected_events),
+            "events_ingested should be {} for {}",
+            expected_events,
             case.hook_event_name
         );
 
