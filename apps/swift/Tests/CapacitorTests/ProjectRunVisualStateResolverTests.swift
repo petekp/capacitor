@@ -238,6 +238,42 @@ final class ProjectRunVisualStateResolverTests: XCTestCase {
         XCTAssertEqual(newerCreatedResolution.run, newerCreatedRun)
     }
 
+    func testActiveRunWithPhasesShowsFormattedStepLine() throws {
+        let projectPath = "/tmp/core-project"
+        let now = try XCTUnwrap(parseISO8601Date("2026-03-26T10:06:10Z"))
+        let phases: [RuntimePhaseInstance] = [
+            RuntimePhaseInstance(id: "p1", name: "Research", status: "completed", startedAt: nil, completedAt: nil),
+            RuntimePhaseInstance(id: "p2", name: "Implementation", status: "active", startedAt: nil, completedAt: nil),
+            RuntimePhaseInstance(id: "p3", name: "Review", status: "pending", startedAt: nil, completedAt: nil),
+        ]
+        let run = RuntimeRunState(
+            id: "run-phased",
+            projectPath: projectPath,
+            methodId: "shape_and_execute",
+            methodName: "Shape & Execute",
+            status: "active",
+            sessionId: "s1",
+            delegationWorkerId: nil,
+            statusMessage: "Legacy status",
+            phases: phases,
+            currentPhaseIndex: 1,
+            createdAt: "2026-03-26T10:00:00Z",
+            updatedAt: "2026-03-26T10:05:30Z",
+            activeCheckpoint: nil,
+            ideaId: nil,
+            ideaTitle: nil,
+            ideaDescription: nil,
+        )
+
+        let resolution = ProjectRunVisualStateResolver.resolve(
+            projectPath: projectPath,
+            runsByID: runsByID([run]),
+            now: now,
+        )
+
+        XCTAssertEqual(resolution.visualState, .working(statusMessage: "2/3 Implementation"))
+    }
+
     func testNoRunsReturnsNone() throws {
         let resolution = try ProjectRunVisualStateResolver.resolve(
             projectPath: "/tmp/core-project",

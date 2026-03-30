@@ -223,13 +223,19 @@ struct ProjectCardView: View {
     }
 
     private var runContextText: String? {
+        // When phases are present, the formatter already produced "N/M Label" for all states
+        // including completion and failure — prefer that over the generic fallback messages.
+        let hasPhases = activeRunState.map { !$0.phases.isEmpty } ?? false
+
         switch runVisualState {
         case let .completed(statusMessage):
+            if hasPhases { return statusMessage }
             if let methodName = activeRunState?.methodName {
                 return "\(methodName) completed"
             }
             return statusMessage ?? "Run completed"
         case let .failed(statusMessage):
+            if hasPhases { return statusMessage }
             return statusMessage ?? "Run failed"
         default:
             return runVisualState.statusMessage
@@ -562,16 +568,23 @@ private struct ProjectCardContent: View {
     @Environment(\.prefersReducedMotion) private var reduceMotion
 
     var body: some View {
-        // Always render the text to reserve layout height; fade opacity to prevent
-        // height jumps when the context line appears/disappears during state transitions.
+        // Always render text to reserve layout height. The .id() modifier forces SwiftUI to
+        // treat each distinct contextLine as a new view, triggering the push transition —
+        // old text slides up and fades out, new text slides in from below and fades in.
         Text(contextLine ?? " ")
             .font(AppTypography.bodySecondary)
             .foregroundStyle(isMissing ? .white.opacity(0.4) : .white.opacity(0.55))
             .lineLimit(1)
             .truncationMode(.tail)
+            .id(contextLine)
+            .transition(reduceMotion ? .opacity : .push(from: .bottom))
             .opacity(contextLine != nil ? 1 : 0)
-            .animation(reduceMotion ? AppMotion.reducedMotionFallback : .easeInOut(duration: 0.25), value: contextLine != nil)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .clipped()
+            .animation(
+                reduceMotion ? AppMotion.reducedMotionFallback : .smooth(duration: 0.3),
+                value: contextLine,
+            )
     }
 }
 

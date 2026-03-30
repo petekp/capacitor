@@ -367,9 +367,15 @@ struct DockProjectCard: View {
                         .foregroundStyle(.white.opacity(0.55))
                         .lineLimit(1)
                         .truncationMode(.tail)
+                        .id(contextLine)
+                        .transition(reduceMotion ? .opacity : .push(from: .bottom))
                 }
                 .opacity(contextLine != nil ? 1 : 0)
-                .animation(reduceMotion ? AppMotion.reducedMotionFallback : .easeInOut(duration: 0.25), value: contextLine != nil)
+                .clipped()
+                .animation(
+                    reduceMotion ? AppMotion.reducedMotionFallback : .smooth(duration: 0.3),
+                    value: contextLine,
+                )
                 .padding(.top, 4)
 
                 Spacer(minLength: 0)

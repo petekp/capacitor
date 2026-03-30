@@ -74,7 +74,12 @@ enum ProjectRunVisualStateResolver {
     ) -> RunVisualState {
         guard let run else { return .none }
 
-        let statusMessage = cleanedStatusMessage(run.statusMessage)
+        let statusMessage = PhaseStepFormatter.format(
+            phases: run.phases,
+            currentPhaseIndex: run.currentPhaseIndex,
+            runStatus: run.status,
+            statusMessage: cleanedStatusMessage(run.statusMessage),
+        )
         if run.status == "paused",
            run.activeCheckpoint != nil,
            !SessionStaleness.isPausedCheckpointStale(

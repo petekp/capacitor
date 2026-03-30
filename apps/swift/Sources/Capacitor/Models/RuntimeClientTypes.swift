@@ -418,6 +418,22 @@ struct RuntimeCheckpointState: Equatable {
     let decidedAt: String?
 }
 
+struct RuntimePhaseInstance: Equatable, Decodable {
+    let id: String
+    let name: String
+    let status: String
+    let startedAt: String?
+    let completedAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case status
+        case startedAt = "started_at"
+        case completedAt = "completed_at"
+    }
+}
+
 struct RuntimeRunState: Equatable {
     let id: String
     let projectPath: String
@@ -427,12 +443,50 @@ struct RuntimeRunState: Equatable {
     let sessionId: String?
     let delegationWorkerId: String?
     let statusMessage: String?
+    let phases: [RuntimePhaseInstance]
+    let currentPhaseIndex: Int
     let createdAt: String
     let updatedAt: String
     let activeCheckpoint: RuntimeCheckpointState?
     let ideaId: String?
     let ideaTitle: String?
     let ideaDescription: String?
+
+    init(
+        id: String,
+        projectPath: String,
+        methodId: String,
+        methodName: String,
+        status: String,
+        sessionId: String?,
+        delegationWorkerId: String?,
+        statusMessage: String?,
+        phases: [RuntimePhaseInstance] = [],
+        currentPhaseIndex: Int = 0,
+        createdAt: String,
+        updatedAt: String,
+        activeCheckpoint: RuntimeCheckpointState?,
+        ideaId: String?,
+        ideaTitle: String?,
+        ideaDescription: String?,
+    ) {
+        self.id = id
+        self.projectPath = projectPath
+        self.methodId = methodId
+        self.methodName = methodName
+        self.status = status
+        self.sessionId = sessionId
+        self.delegationWorkerId = delegationWorkerId
+        self.statusMessage = statusMessage
+        self.phases = phases
+        self.currentPhaseIndex = currentPhaseIndex
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        self.activeCheckpoint = activeCheckpoint
+        self.ideaId = ideaId
+        self.ideaTitle = ideaTitle
+        self.ideaDescription = ideaDescription
+    }
 }
 
 struct CoreRoutingTarget: Decodable, Equatable {

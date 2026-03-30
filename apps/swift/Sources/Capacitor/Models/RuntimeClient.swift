@@ -1121,6 +1121,22 @@ private struct SnapshotCheckpointPayload: Decodable {
     }
 }
 
+private struct SnapshotPhasePayload: Decodable {
+    let id: String
+    let name: String
+    let status: String
+    let startedAt: String?
+    let completedAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case status
+        case startedAt = "started_at"
+        case completedAt = "completed_at"
+    }
+}
+
 private struct SnapshotRunPayload: Decodable {
     let id: String
     let projectPath: String
@@ -1130,6 +1146,8 @@ private struct SnapshotRunPayload: Decodable {
     let sessionId: String?
     let delegationWorkerId: String?
     let statusMessage: String?
+    let phases: [SnapshotPhasePayload]
+    let currentPhaseIndex: Int
     let createdAt: String
     let updatedAt: String
     let activeCheckpoint: SnapshotCheckpointPayload?
@@ -1146,12 +1164,34 @@ private struct SnapshotRunPayload: Decodable {
         case sessionId = "session_id"
         case delegationWorkerId = "delegation_worker_id"
         case statusMessage = "status_message"
+        case phases
+        case currentPhaseIndex = "current_phase_index"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
         case activeCheckpoint = "active_checkpoint"
         case ideaId = "idea_id"
         case ideaTitle = "idea_title"
         case ideaDescription = "idea_description"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        projectPath = try container.decode(String.self, forKey: .projectPath)
+        methodId = try container.decode(String.self, forKey: .methodId)
+        methodName = try container.decode(String.self, forKey: .methodName)
+        status = try container.decode(String.self, forKey: .status)
+        sessionId = try container.decodeIfPresent(String.self, forKey: .sessionId)
+        delegationWorkerId = try container.decodeIfPresent(String.self, forKey: .delegationWorkerId)
+        statusMessage = try container.decodeIfPresent(String.self, forKey: .statusMessage)
+        phases = try container.decodeIfPresent([SnapshotPhasePayload].self, forKey: .phases) ?? []
+        currentPhaseIndex = try container.decodeIfPresent(Int.self, forKey: .currentPhaseIndex) ?? 0
+        createdAt = try container.decode(String.self, forKey: .createdAt)
+        updatedAt = try container.decode(String.self, forKey: .updatedAt)
+        activeCheckpoint = try container.decodeIfPresent(SnapshotCheckpointPayload.self, forKey: .activeCheckpoint)
+        ideaId = try container.decodeIfPresent(String.self, forKey: .ideaId)
+        ideaTitle = try container.decodeIfPresent(String.self, forKey: .ideaTitle)
+        ideaDescription = try container.decodeIfPresent(String.self, forKey: .ideaDescription)
     }
 
     init(_ run: RunState) {
@@ -1163,6 +1203,23 @@ private struct SnapshotRunPayload: Decodable {
         sessionId = run.sessionId
         delegationWorkerId = run.delegationWorkerId
         statusMessage = run.statusMessage
+        phases = run.phases.map { phase in
+            SnapshotPhasePayload(
+                id: phase.id,
+                name: phase.name,
+                status: {
+                    switch phase.status {
+                    case .pending: "pending"
+                    case .active: "active"
+                    case .completed: "completed"
+                    case .skipped: "skipped"
+                    }
+                }(),
+                startedAt: phase.startedAt,
+                completedAt: phase.completedAt,
+            )
+        }
+        currentPhaseIndex = Int(run.currentPhaseIndex)
         createdAt = run.createdAt
         updatedAt = run.updatedAt
         activeCheckpoint = run.activeCheckpoint.map(SnapshotCheckpointPayload.init)
@@ -1270,6 +1327,16 @@ private extension RuntimeRunState {
         sessionId = payload.sessionId
         delegationWorkerId = payload.delegationWorkerId
         statusMessage = payload.statusMessage
+        phases = payload.phases.map { phase in
+            RuntimePhaseInstance(
+                id: phase.id,
+                name: phase.name,
+                status: phase.status,
+                startedAt: phase.startedAt,
+                completedAt: phase.completedAt,
+            )
+        }
+        currentPhaseIndex = payload.currentPhaseIndex
         createdAt = payload.createdAt
         updatedAt = payload.updatedAt
         activeCheckpoint = payload.activeCheckpoint.map(RuntimeCheckpointState.init)
