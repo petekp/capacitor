@@ -1,27 +1,56 @@
 #!/usr/bin/env bash
-# compose-prompt.sh — Assemble a Codex worker prompt from header + skills + template
+# compose-prompt.sh — Assemble a worker prompt from header + skills + template
 #
 # Usage:
 #   ./scripts/relay/compose-prompt.sh --header .relay/prompt-header.md --skills swift-apps,rust --out .relay/prompt.md
 #   ./scripts/relay/compose-prompt.sh --header .relay/review-header.md --template review --out .relay/review-prompt.md
 #   ./scripts/relay/compose-prompt.sh --header .relay/prompt-header.md --template implement --root /tmp/relay-root --out .relay/prompt.md
+#   ./scripts/relay/compose-prompt.sh --header .relay/prompt-header.md --backend agent --out .relay/prompt.md
 #
 # Options:
 #   --header FILE    — Task-specific header (required)
 #   --skills LIST    — Comma-separated domain skill names (optional)
+#   --circuit ID     — Circuit id for config-file skill lookup (optional, used when --skills is omitted)
+#   --config FILE    — Path to circuit.config.yaml (optional, auto-discovered from ./circuit.config.yaml or ~/.claude/circuit.config.yaml)
 #   --template NAME  — Template to append: implement, review, ship-review, converge (optional)
 #   --root DIR       — Substitute literal {relay_root} tokens after assembly (optional unless placeholders are used)
+#   --backend MODE   — Dispatch backend hint: "codex" or "agent" (optional; auto-detected if omitted)
 #   --out FILE       — Output path (required)
 
 set -euo pipefail
 
 HEADER=""
 SKILLS=""
+CIRCUIT=""
+CONFIG=""
 TEMPLATE=""
 ROOT=""
+BACKEND=""
 OUT=""
-SKILL_DIR="$HOME/.claude/skills"
-MANAGE_CODEX_DIR="$HOME/.claude/skills/manage-codex/references"
+
+# Resolve SKILL_DIR: env var > sibling skills/ dir > ~/.claude/skills
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PLUGIN_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+if [[ -n "${CIRCUIT_PLUGIN_SKILL_DIR:-}" ]]; then
+  SKILL_DIR="$CIRCUIT_PLUGIN_SKILL_DIR"
+elif [[ -d "$PLUGIN_ROOT/skills" ]]; then
+  SKILL_DIR="$PLUGIN_ROOT/skills"
+else
+  SKILL_DIR="$HOME/.claude/skills"
+fi
+
+# Resolve MANAGE_CODEX_DIR: env var > script-local references/ dir >
+# plugin-relative references/ dir > ~/.claude/skills
+if [[ -n "${CIRCUIT_PLUGIN_CODEX_DIR:-}" ]]; then
+  MANAGE_CODEX_DIR="$CIRCUIT_PLUGIN_CODEX_DIR"
+elif [[ -d "$SCRIPT_DIR/references" ]]; then
+  MANAGE_CODEX_DIR="$SCRIPT_DIR/references"
+elif [[ -d "$PLUGIN_ROOT/skills/manage-codex/references" ]]; then
+  MANAGE_CODEX_DIR="$PLUGIN_ROOT/skills/manage-codex/references"
+else
+  MANAGE_CODEX_DIR="$HOME/.claude/skills/manage-codex/references"
+fi
+
 RELAY_ROOT_SOURCES=()
 
 track_relay_root_source() {
@@ -123,8 +152,11 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --header)   HEADER="$2"; shift 2 ;;
     --skills)   SKILLS="$2"; shift 2 ;;
+    --circuit)  CIRCUIT="$2"; shift 2 ;;
+    --config)   CONFIG="$2"; shift 2 ;;
     --template) TEMPLATE="$2"; shift 2 ;;
     --root)     ROOT="$2"; shift 2 ;;
+    --backend)  BACKEND="$2"; shift 2 ;;
     --out)      OUT="$2"; shift 2 ;;
     *) echo "Unknown option: $1" >&2; exit 1 ;;
   esac
@@ -148,6 +180,39 @@ fi
 if [[ ! -f "$HEADER" ]]; then
   echo "ERROR: header file not found: $HEADER" >&2
   exit 1
+fi
+
+# Resolve skills from config file when --skills is not provided but --circuit is
+if [[ -z "$SKILLS" && -n "$CIRCUIT" ]]; then
+  # Auto-discover config file if --config not specified
+  if [[ -z "$CONFIG" ]]; then
+    if [[ -f "./circuit.config.yaml" ]]; then
+      CONFIG="./circuit.config.yaml"
+    elif [[ -f "$HOME/.claude/circuit.config.yaml" ]]; then
+      CONFIG="$HOME/.claude/circuit.config.yaml"
+    fi
+  fi
+
+  # Read skills from config if available
+  if [[ -n "$CONFIG" && -f "$CONFIG" ]]; then
+    # Extract skills for the given circuit id using basic YAML parsing
+    # Supports format: circuits.<id>.skills: [skill1, skill2]
+    # or: circuits.<id>.skills:\n  - skill1\n  - skill2
+    CONFIG_SKILLS="$(python3 -c "
+import yaml, sys
+try:
+    with open('$CONFIG') as f:
+        cfg = yaml.safe_load(f)
+    circuits = cfg.get('circuits', {})
+    entry = circuits.get('$CIRCUIT', {})
+    skills = entry.get('skills', [])
+    if isinstance(skills, list):
+        print(','.join(str(s) for s in skills))
+" 2>/dev/null || true)"
+    if [[ -n "$CONFIG_SKILLS" ]]; then
+      SKILLS="$CONFIG_SKILLS"
+    fi
+  fi
 fi
 
 # Start with header
@@ -194,4 +259,16 @@ fi
 
 fail_if_unresolved_relay_root "$OUT"
 
-echo "Composed: $OUT ($(wc -l < "$OUT" | tr -d ' ') lines)"
+# Auto-detect backend if not specified
+if [[ -z "$BACKEND" ]]; then
+  if command -v codex >/dev/null 2>&1; then
+    BACKEND="codex"
+  else
+    BACKEND="agent"
+  fi
+fi
+
+# Emit backend hint as a metadata comment at the end of the composed prompt
+printf '\n<!-- dispatch-backend: %s -->\n' "$BACKEND" >> "$OUT"
+
+echo "Composed: $OUT ($(wc -l < "$OUT" | tr -d ' ') lines, backend=$BACKEND)"

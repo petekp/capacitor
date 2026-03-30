@@ -26,6 +26,8 @@ const ENV_ALLOWLIST: &[&str] = &[
     "TMPDIR",
     "XDG_RUNTIME_DIR",
     "CAPACITOR_EXECUTION_ROOT",
+    "CIRCUIT_PLUGIN_SKILL_DIR",
+    "CIRCUIT_PLUGIN_CODEX_DIR",
 ];
 
 /// Build a filtered environment from the current process, keeping only

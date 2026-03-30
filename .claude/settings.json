@@ -9,5 +9,8 @@
       "Bash(cargo build:*)",
       "Bash(pkill -x Capacitor 2>/dev/null; sleep 0.5; swift run 2>&1 &:*)"
     ]
+  },
+  "enabledPlugins": {
+    "circuit@local": true
   }
 }

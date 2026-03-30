@@ -15,6 +15,14 @@ static HOME_LOCK: Mutex<()> = Mutex::new(());
 fn lock_and_set_home(home: &std::path::Path) -> MutexGuard<'static, ()> {
     let guard = HOME_LOCK.lock().unwrap();
     std::env::set_var("HOME", home);
+    // Override compose-prompt.sh resolution so it uses the temp HOME's
+    // skill/template dirs instead of script-local references/ (which may
+    // exist in the real project tree).
+    std::env::set_var("CIRCUIT_PLUGIN_SKILL_DIR", home.join(".claude/skills"));
+    std::env::set_var(
+        "CIRCUIT_PLUGIN_CODEX_DIR",
+        home.join(".claude/skills/manage-codex/references"),
+    );
     guard
 }
 
@@ -599,6 +607,9 @@ fn t29_allowlisted_env_only() {
         "TERM",
         "TMPDIR",
         "XDG_RUNTIME_DIR",
+        "CAPACITOR_EXECUTION_ROOT",
+        "CIRCUIT_PLUGIN_SKILL_DIR",
+        "CIRCUIT_PLUGIN_CODEX_DIR",
     ];
     for key in &keys {
         assert!(allowed.contains(key), "unexpected key in env: {}", key);

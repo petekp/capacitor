@@ -1,0 +1,18 @@
+circuits:
+  develop:
+    skills: [tdd, clean-architecture]
+  decide:
+    skills: [architecture-exploration, solution-explorer]
+  harden-spec:
+    skills: [architecture-exploration, clean-architecture]
+  repair-flow:
+    skills: [tdd, agent-telemetry]
+  migrate:
+    skills: [audit-and-migrate, tdd]
+  ratchet-quality:
+    skills: [formal-verify, clean-architecture]
+  cleanup:
+    skills: [dead-code-sweep]
+
+dispatch:
+  engine: codex
