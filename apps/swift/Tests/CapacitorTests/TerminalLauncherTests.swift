@@ -280,7 +280,9 @@ final class TerminalLauncherTests: XCTestCase {
         XCTAssertEqual(results.first?.success, false)
     }
 
-    func testLaunchTerminalPrefersActivationIntentSessionOverFallbackResolver() async {
+    func testLaunchTerminalPrefersMatchingActivationIntentSessionOverFallbackResolver() async {
+        // When the routed session name matches the project directory name,
+        // it should be preferred over the fallback resolver.
         let project = makeProject(name: "project-a", path: "/Users/pete/Code/project-a")
         let exp = expectation(description: "launch result")
         var resolvedSession: String?
@@ -296,7 +298,7 @@ final class TerminalLauncherTests: XCTestCase {
         launcher.activationIntentResolver = { _, _, _ in
             ActivationPolicyIntent(
                 terminalApp: ActivationPolicyTerminalAppDecision(app: .ghostty, source: .runtimeRoute),
-                sessionName: "routed-session",
+                sessionName: "project-a",
                 hostTty: "/dev/ttys001",
                 paneId: "%12",
             )
@@ -308,7 +310,44 @@ final class TerminalLauncherTests: XCTestCase {
         launcher.launchTerminal(for: project)
         await fulfillment(of: [exp], timeout: 1.0)
 
-        XCTAssertEqual(resolvedSession, "routed-session")
+        XCTAssertEqual(resolvedSession, "project-a")
+    }
+
+    /// When the routed session name comes from a different project's tmux
+    /// session (CWD drift), it should be rejected in favor of the project
+    /// directory name to prevent cross-project activation.
+    func testLaunchTerminalRejectsCrossProjectRoutedSessionName() async {
+        let project = makeProject(name: "circuit", path: "/Users/pete/Code/circuit")
+        let exp = expectation(description: "launch result")
+        var resolvedSession: String?
+
+        let launcher = TerminalLauncher(
+            appleScript: StubAppleScriptClient(shouldSucceed: true),
+            sessionResolutionPolicy: SessionResolutionPolicy(),
+            activateProjectSessionOverride: { sessionName, _ in
+                resolvedSession = sessionName
+                return true
+            },
+        )
+        // Simulate CWD drift: routing engine returns "arc-design-studio"
+        // because that tmux session has a pane whose CWD is /Code/circuit
+        launcher.activationIntentResolver = { _, _, _ in
+            ActivationPolicyIntent(
+                terminalApp: ActivationPolicyTerminalAppDecision(app: .ghostty, source: .runtimeRoute),
+                sessionName: "arc-design-studio",
+                hostTty: "/dev/ttys008",
+                paneId: "%9",
+            )
+        }
+        launcher.onActivationResult = { _ in
+            exp.fulfill()
+        }
+
+        launcher.launchTerminal(for: project)
+        await fulfillment(of: [exp], timeout: 1.0)
+
+        // Should use the project directory name, not the cross-project session
+        XCTAssertEqual(resolvedSession, "circuit")
     }
 
     // MARK: - Unified Activation Tests

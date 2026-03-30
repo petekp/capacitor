@@ -115,16 +115,26 @@ final class TerminalLauncher {
 
     private lazy var activationCoordinator = TerminalActivationCoordinator(
         resolveSessionName: { [weak self] project in
+            let projectDirectoryName = URL(fileURLWithPath: project.path).lastPathComponent
             guard let self else {
-                return URL(fileURLWithPath: project.path).lastPathComponent
+                return projectDirectoryName
+            }
+            let intent = await resolveActivationIntent(
+                clientTty: nil,
+                projectPath: project.path,
+                sessionName: nil,
+            )
+            // Guard against cross-project CWD drift: only trust the routed
+            // session name when it matches the project directory. When a tool
+            // cd's into a different project inside an existing tmux session,
+            // the routing engine follows the CWD and returns the foreign
+            // session name, which would switch the user to the wrong session.
+            let routedSessionName: String? = intent.sessionName.flatMap { name in
+                name == projectDirectoryName ? name : nil
             }
             return await sessionResolutionPolicy.chooseSessionName(
                 projectPath: project.path,
-                routedSessionName: resolveActivationIntent(
-                    clientTty: nil,
-                    projectPath: project.path,
-                    sessionName: nil,
-                ).sessionName,
+                routedSessionName: routedSessionName,
             )
         },
         runResolvedActivation: { [weak self] sessionName, projectPath in
