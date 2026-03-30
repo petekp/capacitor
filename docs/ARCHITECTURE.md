@@ -24,20 +24,19 @@ Capacitor uses a dedicated local runtime service as its live application boundar
 
 1. Claude hook events and shell cwd signals reach `hud-hook serve` as distinct live signals into the runtime boundary.
 2. `hud-hook serve` normalizes adapter input and forwards it into the canonical `capacitor-core` runtime.
-3. `capacitor-core` applies ingest, reducer, and query logic, then persists runtime artifacts for durability and replay. Under ADR-005, hooks are one state signal within a larger authority model rather than the whole state-detection contract.
+3. `capacitor-core` applies ingest, reducer, and query logic, then persists runtime artifacts for durability and replay. ADR-005's shipped Phase 1 keeps hooks as the live state source while making hook setup non-blocking at launch; the broader multi-signal authority model is still planned.
 4. The Swift app reads typed runtime state from authenticated `/runtime/*` endpoints exposed by the service.
-5. Swift projection layers apply presentation-only freshness guards and hysteresis before updating visible UI state. Hook setup failure now degrades to coarse state plus diagnostics instead of blocking startup behind setup.
+5. Swift projection layers apply presentation-only freshness guards and hysteresis before updating visible UI state. Hook setup failure is non-blocking: the app launches with diagnostics surfaced in the setup UI rather than gating startup.
 
 ## State Detection Architecture
 
-ADR-005 defines state detection as an authority-based multi-signal system, not a hook-only contract.
+ADR-005 defines the planned state-detection direction. Today, only Phase 1 is shipped.
 
-- Hooks are the authority for nuanced session state when available.
-- Transcript evidence owns existence, recency, and recovery/backfill responsibilities.
-- Shell `cwd` contributes routing only.
-- Phase 1 shipped the launch behavior change: hook install or repair failure is informational and degraded, not launch-blocking. Only required dependency failures and explicit policy-blocked hook states still gate setup.
+- Hooks are optional at startup: hook install or repair failure is informational, not launch-blocking. Only a missing Claude CLI binary or an explicit hook policy block still gates setup.
+- `HookStatus` distinguishes granular setup states, and `isFirstRun` is driven by a persisted setup marker instead of `HookHealthStatus::Unknown`.
+- Future ADR-005 phases add transcript-backed existence and recency evidence, the authority matrix contract, and evidence replay/backfill. Shell `cwd` remains routing-only in that target design.
 
-See `docs/architecture-decisions/005-authority-based-multi-signal-state-detection.md` for the authority matrix and binding completion conditions.
+See `docs/architecture-decisions/005-authority-based-multi-signal-state-detection.md` for the full phase plan and binding completion conditions.
 
 ## Activation Boundaries
 

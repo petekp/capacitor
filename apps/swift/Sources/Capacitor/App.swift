@@ -15,6 +15,92 @@ enum AppLaunchOverrides {
     }
 }
 
+protocol StartupSetupRuntime: AnyObject, HookRuntimeInstalling {
+    func checkSetupStatus() -> SetupStatus
+    func capacitorDir() -> String
+}
+
+extension CoreRuntime: StartupSetupRuntime {}
+
+struct StartupSetupValidationHooks {
+    let shouldSkipSetupValidation: () -> Bool
+    let makeRuntime: () throws -> any StartupSetupRuntime
+    let startupDecision: (SetupStatus) -> StartupSetupDecision
+    let writeStartupLog: (DebugLog.StartupEvent) -> Void
+    let setSetupComplete: (Bool) -> Void
+    let isSetupComplete: () -> Bool
+    let attemptAutoRepair: (any StartupSetupRuntime) -> Bool
+    let installShellIntegrationIfNeeded: () -> Void
+    let persistSetupMarker: (String) -> Void
+
+    static func live() -> StartupSetupValidationHooks {
+        StartupSetupValidationHooks(
+            shouldSkipSetupValidation: {
+                AppLaunchOverrides.shouldSkipSetupValidation(info: Bundle.main.infoDictionary ?? [:])
+            },
+            makeRuntime: { try CoreRuntime() },
+            startupDecision: { SetupReadinessCoordinator.startupDecision(from: $0) },
+            writeStartupLog: { DebugLog.write(startup: $0) },
+            setSetupComplete: { UserDefaults.standard.set($0, forKey: "setupComplete") },
+            isSetupComplete: { UserDefaults.standard.bool(forKey: "setupComplete") },
+            attemptAutoRepair: { engine in
+                if let hookInstallError = HookInstaller.ensureHooksInstalled(using: engine) {
+                    DebugLog.write(startup: .hooksAutoRepairFailed(error: hookInstallError))
+                    return false
+                }
+
+                return true
+            },
+            installShellIntegrationIfNeeded: {
+                let shellType = ShellType.current
+                if shellType != .unsupported, !shellType.isSnippetInstalled {
+                    switch shellType.installSnippet() {
+                    case .success:
+                        DebugLog.write(startup: .shellIntegrationInstalled(configFile: shellType.configFile))
+                    case let .failure(error):
+                        // Non-blocking — shell integration is optional
+                        DebugLog.write(startup: .shellIntegrationSkipped(reason: error.localizedDescription))
+                    }
+                }
+            },
+            persistSetupMarker: { AppDelegate.persistSetupMarker(capacitorRootPath: $0) },
+        )
+    }
+}
+
+enum StartupSetupValidator {
+    static func validate(using hooks: StartupSetupValidationHooks = .live()) {
+        if hooks.shouldSkipSetupValidation() {
+            hooks.setSetupComplete(true)
+            return
+        }
+
+        guard let engine = try? hooks.makeRuntime() else { return }
+
+        let setupStatus = engine.checkSetupStatus()
+        switch hooks.startupDecision(setupStatus) {
+        case .ready:
+            break
+        case let .showWelcome(event):
+            hooks.writeStartupLog(event)
+            hooks.setSetupComplete(false)
+            return
+        case let .attemptHookRepair(event):
+            hooks.writeStartupLog(event)
+            if hooks.attemptAutoRepair(engine) {
+                hooks.writeStartupLog(.hooksAutoRepairSucceeded)
+            }
+        }
+
+        hooks.installShellIntegrationIfNeeded()
+        hooks.persistSetupMarker(engine.capacitorDir())
+        if !hooks.isSetupComplete() {
+            hooks.writeStartupLog(.autoSetupComplete)
+            hooks.setSetupComplete(true)
+        }
+    }
+}
+
 @main
 struct CapacitorApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
@@ -268,56 +354,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// Only shows WelcomeView if something genuinely needs user attention
     /// (e.g. Claude CLI not installed or policy blocked).
     private func validateHookSetup() {
-        if AppLaunchOverrides.shouldSkipSetupValidation(info: Bundle.main.infoDictionary ?? [:]) {
-            UserDefaults.standard.set(true, forKey: "setupComplete")
-            return
-        }
-
-        guard let engine = try? CoreRuntime() else { return }
-
-        // 1. Evaluate startup readiness from one canonical setup status snapshot.
-        let setupStatus = engine.checkSetupStatus()
-        switch SetupReadinessCoordinator.startupDecision(from: setupStatus) {
-        case .ready:
-            break
-        case let .showWelcome(event):
-            DebugLog.write(startup: event)
-            UserDefaults.standard.set(false, forKey: "setupComplete")
-            return
-        case let .attemptHookRepair(event):
-            DebugLog.write(startup: event)
-            if attemptAutoRepair(engine: engine) {
-                DebugLog.write(startup: .hooksAutoRepairSucceeded)
-            }
-        }
-
-        // 2. Auto-install shell integration if not already configured
-        let shellType = ShellType.current
-        if shellType != .unsupported, !shellType.isSnippetInstalled {
-            switch shellType.installSnippet() {
-            case .success:
-                DebugLog.write(startup: .shellIntegrationInstalled(configFile: shellType.configFile))
-            case let .failure(error):
-                // Non-blocking — shell integration is optional
-                DebugLog.write(startup: .shellIntegrationSkipped(reason: error.localizedDescription))
-            }
-        }
-
-        // 3. Everything is ready — skip the setup screen and persist first-run completion.
-        Self.persistSetupMarker(capacitorRootPath: engine.capacitorDir())
-        if !UserDefaults.standard.bool(forKey: "setupComplete") {
-            DebugLog.write(startup: .autoSetupComplete)
-            UserDefaults.standard.set(true, forKey: "setupComplete")
-        }
-    }
-
-    private func attemptAutoRepair(engine: CoreRuntime) -> Bool {
-        if let hookInstallError = HookInstaller.ensureHooksInstalled(using: engine) {
-            DebugLog.write(startup: .hooksAutoRepairFailed(error: hookInstallError))
-            return false
-        }
-
-        return true
+        StartupSetupValidator.validate()
     }
 
     fileprivate static func persistSetupMarker(capacitorRootPath: String? = nil) {
