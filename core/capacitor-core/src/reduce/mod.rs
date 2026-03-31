@@ -1310,13 +1310,40 @@ fn derive_project_identity(
     let has_project_path = !event.project_path.trim().is_empty();
 
     let identity = if has_project_path {
-        let anchor = resolve_project_identity(&event.project_path);
+        let mut anchor = resolve_project_identity(&event.project_path);
 
-        // Only use file_path identity if it stays within the anchor's boundary:
-        // same git repo AND the file's resolved project_path is the anchor or
-        // a descendant of it (not a sibling package).
-        let refined = identity_from_file.as_ref().and_then(|file_id| {
-            anchor.as_ref().and_then(|anchor_id| {
+        // Block lateral sibling drift: if the session already has a project_path
+        // and the new event's anchor resolves to the same git repo (project_id)
+        // but neither path is an ancestor of the other, keep the established path.
+        // This prevents successive events with different CWDs (e.g., packages/api
+        // then packages/web) from bouncing the session between monorepo siblings.
+        if let Some(current_record) = current {
+            if !current_record.project_path.trim().is_empty() {
+                if let Some(ref anchor_id) = anchor {
+                    if let Some(current_id) = resolve_project_identity(&current_record.project_path)
+                    {
+                        if anchor_id.project_id == current_id.project_id
+                            && !path_is_parent_or_self(
+                                &anchor_id.project_path,
+                                &current_id.project_path,
+                            )
+                            && !path_is_parent_or_self(
+                                &current_id.project_path,
+                                &anchor_id.project_path,
+                            )
+                        {
+                            anchor = Some(current_id);
+                        }
+                    }
+                }
+            }
+        }
+
+        if let Some(ref anchor_id) = anchor {
+            // Only use file_path identity if it stays within the anchor's boundary:
+            // same git repo AND the file's resolved project_path is the anchor or
+            // a descendant of it (not a sibling package).
+            let refined = identity_from_file.as_ref().and_then(|file_id| {
                 if file_id.project_id == anchor_id.project_id
                     && path_is_parent_or_self(&anchor_id.project_path, &file_id.project_path)
                 {
@@ -1324,10 +1351,18 @@ fn derive_project_identity(
                 } else {
                     None
                 }
+            });
+            refined.or(anchor)
+        } else {
+            // Anchor unresolvable (stale/deleted path). Fall back to file_path -> cwd.
+            identity_from_file.or_else(|| {
+                if cwd.trim().is_empty() {
+                    None
+                } else {
+                    resolve_project_identity(cwd)
+                }
             })
-        });
-
-        refined.or(anchor)
+        }
     } else {
         // Fallback when event.project_path is empty: file_path -> cwd.
         identity_from_file.or_else(|| {

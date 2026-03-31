@@ -3393,3 +3393,83 @@ fn monorepo_sibling_package_file_path_does_not_reassign_session() {
         "Session must not be attributed to sibling package"
     );
 }
+
+#[test]
+fn test_project_path_drift_across_sibling_packages_blocked() {
+    // Monorepo with two sibling packages.
+    // Session starts in packages/api. A later event arrives with
+    // project_path pointing at packages/web (sibling). Session must
+    // stay in packages/api — lateral sibling moves are blocked.
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let monorepo = tmp.path().join("monorepo");
+    std::fs::create_dir_all(monorepo.join(".git")).expect("create .git");
+
+    let pkg_api = monorepo.join("packages").join("api");
+    let pkg_web = monorepo.join("packages").join("web");
+    std::fs::create_dir_all(&pkg_api).expect("create api");
+    std::fs::create_dir_all(&pkg_web).expect("create web");
+    std::fs::write(pkg_api.join("package.json"), "{}").expect("api marker");
+    std::fs::write(pkg_web.join("package.json"), "{}").expect("web marker");
+
+    let pkg_api = std::fs::canonicalize(&pkg_api).expect("canonicalize api");
+    let pkg_web = std::fs::canonicalize(&pkg_web).expect("canonicalize web");
+    let pkg_api_str = pkg_api.to_string_lossy().to_string();
+    let pkg_web_str = pkg_web.to_string_lossy().to_string();
+
+    let mut state = ReducerState::default();
+
+    // SessionStart in packages/api
+    let mut start = event_base(HookEventType::SessionStart);
+    start.project_path = pkg_api_str.clone();
+    start.cwd = Some(pkg_api_str.clone());
+    start.recorded_at = "2026-01-31T00:00:00Z".to_string();
+    let _ = state.apply_hook_event(start);
+
+    let session = state.sessions.get("session-1").expect("after start");
+    let api_normalized = crate::domain::normalize_path_for_matching(&pkg_api_str);
+    assert_eq!(session.project_path, api_normalized);
+
+    // Later event arrives with project_path pointing at the sibling package
+    let mut prompt = event_base(HookEventType::UserPromptSubmit);
+    prompt.project_path = pkg_web_str.clone();
+    prompt.cwd = Some(pkg_web_str.clone());
+    prompt.recorded_at = "2026-01-31T00:00:01Z".to_string();
+    let _ = state.apply_hook_event(prompt);
+
+    let session = state.sessions.get("session-1").expect("after prompt");
+    assert_eq!(
+        session.project_path, api_normalized,
+        "Session in packages/api must not drift to sibling packages/web via project_path change"
+    );
+}
+
+#[test]
+fn test_stale_project_path_falls_back_to_file_path() {
+    // When event.project_path points to a nonexistent directory but
+    // file_path points to a valid file in a real repo, the session
+    // should get identity from file_path rather than being stranded.
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let real_repo = make_git_repo(tmp.path(), "real-repo");
+    let real_repo_str = real_repo.to_string_lossy().to_string();
+    let real_file = real_repo.join("src").join("lib.rs");
+
+    let mut state = ReducerState::default();
+
+    let mut event = event_base(HookEventType::UserPromptSubmit);
+    event.project_path = "/nonexistent/stale/project/path".to_string();
+    event.cwd = Some(real_repo_str.clone());
+    event.file_path = Some(real_file.to_string_lossy().to_string());
+    event.recorded_at = "2026-01-31T00:00:00Z".to_string();
+    let _ = state.apply_hook_event(event);
+
+    let session = state.sessions.get("session-1").expect("session");
+    let real_normalized = crate::domain::normalize_path_for_matching(&real_repo_str);
+    assert_eq!(
+        session.project_path, real_normalized,
+        "Stale project_path should fall back to file_path-derived identity"
+    );
+    assert_ne!(
+        session.project_path, "/nonexistent/stale/project/path",
+        "Session must not be stranded on a nonexistent path"
+    );
+}
