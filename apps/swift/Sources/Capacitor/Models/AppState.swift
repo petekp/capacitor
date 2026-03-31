@@ -202,6 +202,7 @@ class AppState {
     let sessionStateManager = SessionStateManager()
     let hookServerManager: HookServerManager
     let projectDetailsManager = ProjectDetailsManager()
+    let sessionSummarizer = SessionSummarizer()
     private(set) var delegationLoopManager: DelegationLoopManager!
     let runCaptureCoordinator: RunCaptureCoordinator
     private let projectIngestionWorker = ProjectIngestionWorker()
@@ -754,6 +755,15 @@ class AppState {
                 "source": String(describing: activeProjectResolver.activeSource),
             ])
         }
+
+        // Evaluate session summarization for standalone sessions.
+        // Not gated behind llmFeatures — this is a standalone card enhancement
+        // that gracefully degrades when the claude CLI is unavailable.
+        sessionSummarizer.evaluateProjects(
+            projects: projects,
+            sessionStates: sessionStateManager.sessionStates,
+            delegationStates: delegationStates,
+        )
     }
 
     // MARK: - Hook Diagnostic

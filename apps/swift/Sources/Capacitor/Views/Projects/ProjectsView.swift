@@ -258,6 +258,17 @@ struct ProjectsView: View {
                 scrollbarInset: scrollbarInset,
                 floatingMode: floatingMode,
             )
+            .background {
+                GeometryReader { geo in
+                    Color.clear
+                        .onAppear {
+                            appState.sessionSummarizer.cardContentWidth = geo.size.width - listHorizontalPadding * 2
+                        }
+                        .onChange(of: geo.size.width) { _, newWidth in
+                            appState.sessionSummarizer.cardContentWidth = newWidth - listHorizontalPadding * 2
+                        }
+                }
+            }
             .onChange(of: appState.reviewWindowTarget?.workerID) { oldValue, newValue in
                 if oldValue == nil, newValue != nil {
                     openWindow(id: "delegation-review")
@@ -291,6 +302,7 @@ struct ProjectsView: View {
             delegationState: appState.delegationState(for: project),
             activeRunState: appState.activeRun(for: project),
             projectStatus: projectStatus,
+            sessionSummary: appState.sessionSummarizer.bestSummary(for: project.path),
             flashState: flashState,
             isActive: appState.activeProjectPath == project.path,
             onTap: {

@@ -8,6 +8,7 @@ struct ProjectCardView: View {
     let delegationState: RuntimeDelegationState?
     let activeRunState: RuntimeRunState?
     let projectStatus: ProjectStatus?
+    var sessionSummary: String?
     let flashState: SessionState?
     let isActive: Bool
     let onTap: () -> Void
@@ -222,60 +223,14 @@ struct ProjectCardView: View {
         delegationState?.status
     }
 
-    private var runContextText: String? {
-        // When phases are present, the formatter already produced "N/M Label" for all states
-        // including completion and failure — prefer that over the generic fallback messages.
-        let hasPhases = activeRunState.map { !$0.phases.isEmpty } ?? false
-
-        switch runVisualState {
-        case let .completed(statusMessage):
-            if hasPhases { return statusMessage }
-            if let methodName = activeRunState?.methodName {
-                return "\(methodName) completed"
-            }
-            return statusMessage ?? "Run completed"
-        case let .failed(statusMessage):
-            if hasPhases { return statusMessage }
-            return statusMessage ?? "Run failed"
-        default:
-            return runVisualState.statusMessage
-        }
-    }
-
-    private var delegationContextText: String? {
-        guard let delegationState else { return nil }
-
-        if let workingOn = projectStatus?.workingOn?
-            .trimmingCharacters(in: .whitespacesAndNewlines),
-            !workingOn.isEmpty
-        {
-            return workingOn
-        }
-
-        let milestoneID = delegationState.currentReview?.milestoneId ?? delegationState.submittedMilestoneId
-
-        switch delegationState.status {
-        case "review_needed":
-            if let milestoneID, !milestoneID.isEmpty {
-                return "Milestone \(milestoneID) awaiting review"
-            }
-            return "Review ready"
-        case "resume_pending":
-            if let milestoneID, !milestoneID.isEmpty {
-                return "Resuming milestone \(milestoneID)"
-            }
-            return "Delegation is resuming"
-        case "resume_failed":
-            if let milestoneID, !milestoneID.isEmpty {
-                return "Resume failed for milestone \(milestoneID)"
-            }
-            return "Resume failed"
-        default:
-            if let milestoneID, !milestoneID.isEmpty {
-                return "Milestone \(milestoneID) in progress"
-            }
-            return "Delegation in progress"
-        }
+    private var resolvedContextLine: String? {
+        ProjectCardContextLineResolver.resolve(.init(
+            runVisualState: runVisualState,
+            activeRunState: activeRunState,
+            delegationState: delegationState,
+            projectStatus: projectStatus,
+            sessionSummary: sessionSummary,
+        ))
     }
 
     private var hasOpenDelegationReview: Bool {
@@ -410,12 +365,7 @@ struct ProjectCardView: View {
                 )
 
                 ProjectCardContent(
-                    contextLine: runContextText ?? {
-                        if runVisualState == .none {
-                            return delegationContextText
-                        }
-                        return nil
-                    }(),
+                    contextLine: resolvedContextLine,
                     isMissing: project.isMissing,
                 )
             }
@@ -566,25 +516,36 @@ private struct ProjectCardContent: View {
     let isMissing: Bool
 
     @Environment(\.prefersReducedMotion) private var reduceMotion
+    @State private var displayedLine: String?
 
     var body: some View {
-        // Always render text to reserve layout height. The .id() modifier forces SwiftUI to
-        // treat each distinct contextLine as a new view, triggering the push transition —
-        // old text slides up and fades out, new text slides in from below and fades in.
-        Text(contextLine ?? " ")
-            .font(AppTypography.bodySecondary)
-            .foregroundStyle(isMissing ? .white.opacity(0.4) : .white.opacity(0.55))
-            .lineLimit(1)
-            .truncationMode(.tail)
-            .id(contextLine)
-            .transition(reduceMotion ? .opacity : .push(from: .bottom))
-            .opacity(contextLine != nil ? 1 : 0)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .clipped()
-            .animation(
-                reduceMotion ? AppMotion.reducedMotionFallback : .smooth(duration: 0.3),
-                value: contextLine,
-            )
+        // The .id() modifier forces SwiftUI to treat each distinct displayedLine as a new
+        // view, triggering the push transition — old text slides up and fades out, new text
+        // slides in from below. We use @State + onChange + withAnimation so the transition
+        // has an explicit animation transaction driving it.
+        VStack(spacing: 0) {
+            Text(displayedLine ?? " ")
+                .font(AppTypography.bodySecondary)
+                .foregroundStyle(isMissing ? .white.opacity(0.4) : .white.opacity(0.55))
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .id(displayedLine)
+                .transition(reduceMotion ? .opacity : .push(from: .bottom).combined(with: .opacity))
+                .opacity(displayedLine != nil ? 1 : 0)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .clipped()
+        .onAppear { displayedLine = contextLine }
+        .onChange(of: contextLine) { _, newValue in
+            guard newValue != displayedLine else { return }
+            if reduceMotion {
+                displayedLine = newValue
+            } else {
+                withAnimation(.smooth(duration: 0.35)) {
+                    displayedLine = newValue
+                }
+            }
+        }
     }
 }
 
