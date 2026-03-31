@@ -3335,3 +3335,61 @@ fn project_path_anchors_identity_across_multiple_events() {
         "Session project_path must remain stable across all event types"
     );
 }
+
+#[test]
+fn monorepo_sibling_package_file_path_does_not_reassign_session() {
+    // Single git repo with two sibling package boundaries.
+    // A session anchored to packages/api must NOT be reassigned when
+    // file_path points into packages/web (same project_id, but sibling).
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let monorepo = tmp.path().join("monorepo");
+    std::fs::create_dir_all(monorepo.join(".git")).expect("create .git");
+
+    let pkg_api = monorepo.join("packages").join("api");
+    let pkg_web = monorepo.join("packages").join("web");
+    std::fs::create_dir_all(pkg_api.join("src")).expect("create api/src");
+    std::fs::create_dir_all(pkg_web.join("src")).expect("create web/src");
+
+    // package.json is a project boundary marker (priority 2)
+    std::fs::write(pkg_api.join("package.json"), "{}").expect("write api marker");
+    std::fs::write(pkg_web.join("package.json"), "{}").expect("write web marker");
+    std::fs::write(pkg_web.join("src").join("index.ts"), "// placeholder").expect("write web file");
+
+    let pkg_api = std::fs::canonicalize(&pkg_api).expect("canonicalize api");
+    let pkg_web = std::fs::canonicalize(&pkg_web).expect("canonicalize web");
+    let pkg_api_str = pkg_api.to_string_lossy().to_string();
+    let pkg_web_str = pkg_web.to_string_lossy().to_string();
+
+    let mut state = ReducerState::default();
+
+    // Session starts in packages/api
+    let mut start = event_base(HookEventType::SessionStart);
+    start.project_path = pkg_api_str.clone();
+    start.cwd = Some(pkg_api_str.clone());
+    start.recorded_at = "2026-01-31T00:00:00Z".to_string();
+    let _ = state.apply_hook_event(start);
+
+    let session = state.sessions.get("session-1").expect("after start");
+    let api_normalized = crate::domain::normalize_path_for_matching(&pkg_api_str);
+    assert_eq!(session.project_path, api_normalized);
+
+    // Tool event touches a file in the sibling package (packages/web)
+    let foreign_file = pkg_web.join("src").join("index.ts");
+    let mut tool_event = event_base(HookEventType::PreToolUse);
+    tool_event.project_path = pkg_api_str.clone();
+    tool_event.cwd = Some(pkg_api_str.clone());
+    tool_event.file_path = Some(foreign_file.to_string_lossy().to_string());
+    tool_event.recorded_at = "2026-01-31T00:00:01Z".to_string();
+    let _ = state.apply_hook_event(tool_event);
+
+    let session = state.sessions.get("session-1").expect("after tool");
+    assert_eq!(
+        session.project_path, api_normalized,
+        "Session in packages/api must not leak to sibling packages/web via file_path"
+    );
+    let web_normalized = crate::domain::normalize_path_for_matching(&pkg_web_str);
+    assert_ne!(
+        session.project_path, web_normalized,
+        "Session must not be attributed to sibling package"
+    );
+}

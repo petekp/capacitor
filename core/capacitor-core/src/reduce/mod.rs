@@ -1303,18 +1303,23 @@ fn derive_project_identity(
 
     // When event.project_path is present, use it as the authoritative anchor.
     // file_path identity is only accepted if it resolves to the same project_id
-    // (i.e. same git common_dir), which handles monorepo workspace refinement.
-    // This prevents cross-project state leak when a session in Project A edits
-    // files in Project B's directory.
+    // (i.e. same git common_dir) AND the file's project_path is a descendant of
+    // the anchor's project_path. This prevents both cross-repo leaks and
+    // cross-package leaks within a monorepo (sibling packages share project_id
+    // but are not descendants of each other).
     let has_project_path = !event.project_path.trim().is_empty();
 
     let identity = if has_project_path {
         let anchor = resolve_project_identity(&event.project_path);
 
-        // Only use file_path identity if it stays within the same project boundary.
+        // Only use file_path identity if it stays within the anchor's boundary:
+        // same git repo AND the file's resolved project_path is the anchor or
+        // a descendant of it (not a sibling package).
         let refined = identity_from_file.as_ref().and_then(|file_id| {
             anchor.as_ref().and_then(|anchor_id| {
-                if file_id.project_id == anchor_id.project_id {
+                if file_id.project_id == anchor_id.project_id
+                    && path_is_parent_or_self(&anchor_id.project_path, &file_id.project_path)
+                {
                     Some(file_id.clone())
                 } else {
                     None
