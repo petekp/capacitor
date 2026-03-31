@@ -3156,3 +3156,182 @@ fn test_permission_request_skipped_when_tools_not_in_flight() {
         "Late PermissionRequest with tools_in_flight=0 should not overwrite Working"
     );
 }
+
+// --- Cross-project state leak regression tests ---
+//
+// These tests verify that derive_project_identity() does not re-attribute
+// a session to a foreign project when file_path or cwd points elsewhere.
+// They use tempfile-backed git repos so resolve_project_identity() actually
+// resolves real project boundaries rather than falling through to raw strings.
+
+fn make_git_repo(base: &std::path::Path, name: &str) -> std::path::PathBuf {
+    let repo = base.join(name);
+    std::fs::create_dir_all(repo.join(".git")).expect("create .git dir");
+    std::fs::create_dir_all(repo.join("src")).expect("create src dir");
+    std::fs::write(repo.join("src").join("lib.rs"), "// placeholder").expect("write file");
+    // Canonicalize to resolve macOS /var -> /private/var symlinks so test
+    // assertions match the canonicalized paths produced by resolve_project_identity.
+    std::fs::canonicalize(&repo).expect("canonicalize repo path")
+}
+
+#[test]
+fn file_path_in_different_project_does_not_reassign_session() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let repo_a = make_git_repo(tmp.path(), "project-a");
+    let repo_b = make_git_repo(tmp.path(), "project-b");
+
+    let repo_a_str = repo_a.to_string_lossy().to_string();
+    let repo_b_str = repo_b.to_string_lossy().to_string();
+
+    let mut state = ReducerState::default();
+
+    // First event establishes the session in project-a.
+    let mut start = event_base(HookEventType::SessionStart);
+    start.project_path = repo_a_str.clone();
+    start.cwd = Some(repo_a_str.clone());
+    start.recorded_at = "2026-01-31T00:00:00Z".to_string();
+    let _ = state.apply_hook_event(start);
+
+    let session = state
+        .sessions
+        .get("session-1")
+        .expect("session after start");
+    let initial_project = session.project_path.clone();
+
+    // Second event has a file_path in a completely different project.
+    let foreign_file = repo_b.join("src").join("lib.rs");
+    let mut tool_event = event_base(HookEventType::PreToolUse);
+    tool_event.project_path = repo_a_str.clone();
+    tool_event.cwd = Some(repo_a_str.clone());
+    tool_event.file_path = Some(foreign_file.to_string_lossy().to_string());
+    tool_event.recorded_at = "2026-01-31T00:00:01Z".to_string();
+    let _ = state.apply_hook_event(tool_event);
+
+    let session = state
+        .sessions
+        .get("session-1")
+        .expect("session after tool event");
+    assert_eq!(
+        session.project_path, initial_project,
+        "Session should stay in project-a, not leak to project-b via file_path"
+    );
+    // Verify it did NOT get assigned to project-b.
+    let repo_b_normalized = crate::domain::normalize_path_for_matching(&repo_b_str);
+    assert_ne!(
+        session.project_path, repo_b_normalized,
+        "Session must not be attributed to project-b"
+    );
+}
+
+#[test]
+fn cwd_in_different_project_does_not_reassign_when_project_path_set() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let repo_a = make_git_repo(tmp.path(), "project-a");
+    let repo_b = make_git_repo(tmp.path(), "project-b");
+
+    let repo_a_str = repo_a.to_string_lossy().to_string();
+    let repo_b_str = repo_b.to_string_lossy().to_string();
+
+    let mut state = ReducerState::default();
+
+    // Event with project_path pointing at project-a, but cwd at project-b.
+    let mut event = event_base(HookEventType::UserPromptSubmit);
+    event.project_path = repo_a_str.clone();
+    event.cwd = Some(repo_b_str.clone());
+    event.recorded_at = "2026-01-31T00:00:00Z".to_string();
+    let _ = state.apply_hook_event(event);
+
+    let session = state.sessions.get("session-1").expect("session");
+    let repo_a_normalized = crate::domain::normalize_path_for_matching(&repo_a_str);
+    assert_eq!(
+        session.project_path, repo_a_normalized,
+        "Session should be attributed to project-a (from project_path), not project-b (from cwd)"
+    );
+}
+
+#[test]
+fn empty_project_path_falls_back_to_cwd() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let repo = make_git_repo(tmp.path(), "fallback-repo");
+    let repo_str = repo.to_string_lossy().to_string();
+
+    let mut state = ReducerState::default();
+
+    let mut event = event_base(HookEventType::UserPromptSubmit);
+    event.project_path = String::new();
+    event.cwd = Some(repo_str.clone());
+    event.recorded_at = "2026-01-31T00:00:00Z".to_string();
+    let _ = state.apply_hook_event(event);
+
+    let session = state.sessions.get("session-1").expect("session");
+    let repo_normalized = crate::domain::normalize_path_for_matching(&repo_str);
+    assert_eq!(
+        session.project_path, repo_normalized,
+        "With empty project_path, session should fall back to cwd-resolved identity"
+    );
+}
+
+#[test]
+fn project_path_anchors_identity_across_multiple_events() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let repo_a = make_git_repo(tmp.path(), "stable-project");
+    let repo_b = make_git_repo(tmp.path(), "foreign-project");
+
+    let repo_a_str = repo_a.to_string_lossy().to_string();
+    let repo_a_normalized = crate::domain::normalize_path_for_matching(&repo_a_str);
+
+    let foreign_file = repo_b.join("src").join("lib.rs");
+
+    let mut state = ReducerState::default();
+
+    // SessionStart in project-a.
+    let mut start = event_base(HookEventType::SessionStart);
+    start.project_path = repo_a_str.clone();
+    start.cwd = Some(repo_a_str.clone());
+    start.recorded_at = "2026-01-31T00:00:00Z".to_string();
+    let _ = state.apply_hook_event(start);
+
+    let session = state.sessions.get("session-1").expect("after start");
+    assert_eq!(session.project_path, repo_a_normalized);
+
+    // PreToolUse with foreign file_path.
+    let mut pre = event_base(HookEventType::PreToolUse);
+    pre.project_path = repo_a_str.clone();
+    pre.cwd = Some(repo_a_str.clone());
+    pre.file_path = Some(foreign_file.to_string_lossy().to_string());
+    pre.recorded_at = "2026-01-31T00:00:01Z".to_string();
+    let _ = state.apply_hook_event(pre);
+
+    let session = state.sessions.get("session-1").expect("after pre-tool");
+    assert_eq!(
+        session.project_path, repo_a_normalized,
+        "PreToolUse with foreign file_path should not reassign session"
+    );
+
+    // PostToolUse with foreign file_path.
+    let mut post = event_base(HookEventType::PostToolUse);
+    post.project_path = repo_a_str.clone();
+    post.cwd = Some(repo_a_str.clone());
+    post.file_path = Some(foreign_file.to_string_lossy().to_string());
+    post.recorded_at = "2026-01-31T00:00:02Z".to_string();
+    let _ = state.apply_hook_event(post);
+
+    let session = state.sessions.get("session-1").expect("after post-tool");
+    assert_eq!(
+        session.project_path, repo_a_normalized,
+        "PostToolUse with foreign file_path should not reassign session"
+    );
+
+    // UserPromptSubmit without file_path — should still be in project-a.
+    let mut prompt = event_base(HookEventType::UserPromptSubmit);
+    prompt.project_path = repo_a_str.clone();
+    prompt.cwd = Some(repo_a_str.clone());
+    prompt.recorded_at = "2026-01-31T00:00:03Z".to_string();
+    let _ = state.apply_hook_event(prompt);
+
+    let session = state.sessions.get("session-1").expect("after prompt");
+    assert_eq!(
+        session.project_path, repo_a_normalized,
+        "Session project_path must remain stable across all event types"
+    );
+}

@@ -426,12 +426,26 @@ final class SessionStateManager {
                 )
             }) else {
                 // If runtime state reports activity for a different workspace within the same repo,
-                // apply that state to pinned workspaces in that repo root. This is common when
-                // users pin a subdirectory of a monorepo but agent sessions run elsewhere in it.
+                // apply that state to pinned workspaces that share a parent-child path relationship
+                // with the state's project path. This prevents sibling packages in a monorepo
+                // (e.g. /monorepo/packages/api vs /monorepo/packages/web) from cross-pollinating.
                 if let repoInfo = stateInfo.repoInfo,
                    let candidates = pinnedProjectsByRepoKey[repoInfo.commonDir ?? repoInfo.repoRoot]
                 {
                     for candidate in candidates {
+                        // Only apply repo fallback when the state's project is an ancestor
+                        // of the candidate (session ran at a broader scope) or the candidate
+                        // is an ancestor of the state (session ran inside this project's tree).
+                        let candidateNormalized = candidate.normalizedPath
+                        guard isParentOrSelfExcludingHome(
+                            parent: stateInfo.normalizedPath,
+                            child: candidateNormalized,
+                            homeNormalized: homeNormalized,
+                        ) || isParentOrSelfExcludingHome(
+                            parent: candidateNormalized,
+                            child: stateInfo.normalizedPath,
+                            homeNormalized: homeNormalized,
+                        ) else { continue }
                         let projectPath = candidate.project.path
                         let pid = state.sessionId.flatMap { sessionIndex[$0]?.pid }
                         let candidateBest = BestProjectState(state: state, priority: .repoFallback, representativePid: pid)

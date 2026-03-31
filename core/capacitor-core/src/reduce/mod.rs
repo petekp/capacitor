@@ -1301,21 +1301,38 @@ fn derive_project_identity(
         .and_then(|file_path| resolve_file_path(cwd, file_path))
         .and_then(|resolved| resolve_project_identity(&resolved));
 
-    let identity = identity_from_file
-        .or_else(|| {
+    // When event.project_path is present, use it as the authoritative anchor.
+    // file_path identity is only accepted if it resolves to the same project_id
+    // (i.e. same git common_dir), which handles monorepo workspace refinement.
+    // This prevents cross-project state leak when a session in Project A edits
+    // files in Project B's directory.
+    let has_project_path = !event.project_path.trim().is_empty();
+
+    let identity = if has_project_path {
+        let anchor = resolve_project_identity(&event.project_path);
+
+        // Only use file_path identity if it stays within the same project boundary.
+        let refined = identity_from_file.as_ref().and_then(|file_id| {
+            anchor.as_ref().and_then(|anchor_id| {
+                if file_id.project_id == anchor_id.project_id {
+                    Some(file_id.clone())
+                } else {
+                    None
+                }
+            })
+        });
+
+        refined.or(anchor)
+    } else {
+        // Fallback when event.project_path is empty: file_path -> cwd.
+        identity_from_file.or_else(|| {
             if cwd.trim().is_empty() {
                 None
             } else {
                 resolve_project_identity(cwd)
             }
         })
-        .or_else(|| {
-            if event.project_path.trim().is_empty() {
-                None
-            } else {
-                resolve_project_identity(&event.project_path)
-            }
-        });
+    };
 
     let mut project_path = identity
         .as_ref()
@@ -1326,7 +1343,10 @@ fn derive_project_identity(
                 .filter(|value| !value.trim().is_empty())
         })
         .or_else(|| {
-            if cwd.trim().is_empty() {
+            // When project_path is present, prefer it over cwd for the fallback.
+            if has_project_path {
+                Some(event.project_path.clone())
+            } else if cwd.trim().is_empty() {
                 None
             } else {
                 Some(cwd.to_string())
