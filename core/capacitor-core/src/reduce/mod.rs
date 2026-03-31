@@ -1392,13 +1392,6 @@ fn derive_project_identity(
                 Some(cwd.to_string())
             }
         })
-        .or_else(|| {
-            if event.project_path.trim().is_empty() {
-                None
-            } else {
-                Some(event.project_path.clone())
-            }
-        })
         .unwrap_or_default();
 
     let mut project_id = identity
