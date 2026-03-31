@@ -651,39 +651,66 @@ fn test_subagent_start_sets_working() {
 }
 
 #[test]
-fn test_subagent_stop_sets_ready() {
-    let mut state = ReducerState::default();
-
-    let _ = state.apply_hook_event(event_base(HookEventType::UserPromptSubmit));
-
-    let mut stop = event_base(HookEventType::SubagentStop);
-    stop.recorded_at = "2026-01-31T00:00:01Z".to_string();
-
-    let outcome = state.apply_hook_event(stop);
-
-    assert!(outcome.ok);
-    assert_eq!(
-        state.sessions.get("session-1").map(|session| session.state),
-        Some(SessionState::Ready)
-    );
-    assert_eq!(
-        state
-            .sessions
-            .get("session-1")
-            .and_then(|session| session.ready_reason.as_deref()),
-        Some("subagent_stop")
-    );
-}
-
-#[test]
-fn test_subagent_stop_stays_working_with_tools_in_flight() {
+fn subagent_stop_skips_when_working_with_no_tools_in_flight() {
     let mut state = ReducerState::default();
 
     let _ = state.apply_hook_event(event_base(HookEventType::PreToolUse));
 
-    let mut stop = event_base(HookEventType::SubagentStop);
-    stop.recorded_at = "2026-01-31T00:00:01Z".to_string();
+    let mut post = event_base(HookEventType::PostToolUse);
+    post.event_id = "evt-2".to_string();
+    post.recorded_at = "2026-01-31T00:00:01Z".to_string();
+    let _ = state.apply_hook_event(post);
 
+    // Capture updated_at after PostToolUse — SubagentStop should not refresh it.
+    let updated_at_before = state
+        .sessions
+        .get("session-1")
+        .map(|s| s.updated_at.clone())
+        .unwrap();
+
+    let mut stop = event_base(HookEventType::SubagentStop);
+    stop.event_id = "evt-3".to_string();
+    stop.recorded_at = "2026-01-31T00:00:02Z".to_string();
+
+    let outcome = state.apply_hook_event(stop);
+
+    // Skip: preserves Working without refreshing the staleness clock.
+    assert_eq!(
+        outcome.message,
+        "event skipped: subagent_stop_working_no_tools"
+    );
+    assert_eq!(
+        state.sessions.get("session-1").map(|session| session.state),
+        Some(SessionState::Working)
+    );
+    // updated_at must NOT have been refreshed.
+    let updated_at_after = state
+        .sessions
+        .get("session-1")
+        .map(|s| s.updated_at.clone())
+        .unwrap();
+    assert_eq!(updated_at_before, updated_at_after);
+}
+
+#[test]
+fn subagent_stop_preserves_working_with_parallel_agents() {
+    let mut state = ReducerState::default();
+
+    let _ = state.apply_hook_event(event_base(HookEventType::PreToolUse));
+
+    let mut second_pre = event_base(HookEventType::PreToolUse);
+    second_pre.event_id = "evt-2".to_string();
+    second_pre.recorded_at = "2026-01-31T00:00:01Z".to_string();
+    let _ = state.apply_hook_event(second_pre);
+
+    let mut first_post = event_base(HookEventType::PostToolUse);
+    first_post.event_id = "evt-3".to_string();
+    first_post.recorded_at = "2026-01-31T00:00:02Z".to_string();
+    let _ = state.apply_hook_event(first_post);
+
+    let mut stop = event_base(HookEventType::SubagentStop);
+    stop.event_id = "evt-4".to_string();
+    stop.recorded_at = "2026-01-31T00:00:03Z".to_string();
     let outcome = state.apply_hook_event(stop);
 
     assert!(outcome.ok);
@@ -698,6 +725,91 @@ fn test_subagent_stop_stays_working_with_tools_in_flight() {
             .map(|session| session.tools_in_flight),
         Some(1)
     );
+
+    let mut second_post = event_base(HookEventType::PostToolUse);
+    second_post.event_id = "evt-5".to_string();
+    second_post.recorded_at = "2026-01-31T00:00:04Z".to_string();
+    let _ = state.apply_hook_event(second_post);
+
+    // Capture timestamp — final SubagentStop should Skip and not refresh it.
+    let updated_at_before = state
+        .sessions
+        .get("session-1")
+        .map(|s| s.updated_at.clone())
+        .unwrap();
+
+    let mut final_stop = event_base(HookEventType::SubagentStop);
+    final_stop.event_id = "evt-6".to_string();
+    final_stop.recorded_at = "2026-01-31T00:00:05Z".to_string();
+
+    let outcome = state.apply_hook_event(final_stop);
+
+    // Last agent: tools_in_flight == 0, so Skip (don't refresh staleness clock).
+    assert_eq!(
+        outcome.message,
+        "event skipped: subagent_stop_working_no_tools"
+    );
+    assert_eq!(
+        state.sessions.get("session-1").map(|session| session.state),
+        Some(SessionState::Working)
+    );
+    assert_eq!(
+        state
+            .sessions
+            .get("session-1")
+            .map(|session| session.tools_in_flight),
+        Some(0)
+    );
+    let updated_at_after = state
+        .sessions
+        .get("session-1")
+        .map(|s| s.updated_at.clone())
+        .unwrap();
+    assert_eq!(updated_at_before, updated_at_after);
+}
+
+#[test]
+fn subagent_stop_skips_when_session_is_ready() {
+    let mut state = ReducerState::default();
+
+    let _ = state.apply_hook_event(event_base(HookEventType::UserPromptSubmit));
+
+    let mut stop = event_base(HookEventType::Stop);
+    stop.event_id = "evt-2".to_string();
+    stop.recorded_at = "2026-01-31T00:00:01Z".to_string();
+    stop.stop_hook_active = Some(false);
+    let _ = state.apply_hook_event(stop);
+
+    let mut subagent_stop = event_base(HookEventType::SubagentStop);
+    subagent_stop.event_id = "evt-3".to_string();
+    subagent_stop.recorded_at = "2026-01-31T00:00:02Z".to_string();
+
+    let outcome = state.apply_hook_event(subagent_stop);
+
+    assert_eq!(
+        outcome.message,
+        "event skipped: subagent_stop_session_not_working"
+    );
+    assert_eq!(
+        state.sessions.get("session-1").map(|session| session.state),
+        Some(SessionState::Ready)
+    );
+}
+
+#[test]
+fn subagent_stop_skips_when_session_is_idle_or_absent() {
+    let mut state = ReducerState::default();
+
+    let mut stop = event_base(HookEventType::SubagentStop);
+    stop.recorded_at = "2026-01-31T00:00:01Z".to_string();
+
+    let outcome = state.apply_hook_event(stop);
+
+    assert_eq!(
+        outcome.message,
+        "event skipped: subagent_stop_session_not_working"
+    );
+    assert!(!state.sessions.contains_key("session-1"));
 }
 
 #[test]
@@ -1143,8 +1255,8 @@ fn test_reducer_17_event_contract_matrix() {
             event_type: HookEventType::SubagentStop,
             setup: Some(HookEventType::UserPromptSubmit),
             notification_type: None,
-            expected_state: Some(SessionState::Ready),
-            expected_skip_reason: None,
+            expected_state: None,
+            expected_skip_reason: Some("subagent_stop_working_no_tools"),
             description: "subagent_stop (from Working, no tools)",
         },
         EventExpectation {
@@ -1360,7 +1472,6 @@ fn test_reducer_17_event_contract_matrix() {
                     "notification (auth_success)" => Some("auth_success"),
                     "stop (parent session)" => Some("stop_gate"),
                     "task_completed (parent)" => Some("task_completed"),
-                    "subagent_stop (from Working, no tools)" => Some("subagent_stop"),
                     _ => None,
                 };
                 assert_eq!(

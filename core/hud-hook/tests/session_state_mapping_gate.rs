@@ -79,7 +79,7 @@ fn session_state_mapping_gate_ss_p0_1_exhaustive_known_hook_events_map_to_expect
         MappingCase {
             hook_event_name: "SubagentStop",
             input_patch: json!({}),
-            expected_state: Some("ready"),
+            expected_state: None, // Skipped: no existing Working session to preserve
             needs_pretool_setup: false,
         },
         MappingCase {

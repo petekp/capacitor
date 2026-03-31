@@ -1181,17 +1181,23 @@ fn reduce_session(
             if current_has_higher_priority_state(current) {
                 SessionUpdate::Skip("subagent_stop_higher_priority_active")
             } else if current
-                .map(|record| record.tools_in_flight > 0)
+                .map(|record| record.state == SessionState::Working && record.tools_in_flight > 0)
                 .unwrap_or(false)
             {
+                // Other tools are still in flight — the session is genuinely active.
                 SessionUpdate::Upsert(upsert_session(current, event, SessionState::Working, None))
+            } else if current
+                .map(|record| record.state == SessionState::Working)
+                .unwrap_or(false)
+            {
+                // Working with no tools in flight: the parent LLM may still be
+                // generating, but we must not refresh updated_at so the existing
+                // staleness clock (SessionStaleness + PID liveness) remains valid
+                // as a self-heal backstop if Stop never fires.
+                SessionUpdate::Skip("subagent_stop_working_no_tools")
             } else {
-                SessionUpdate::Upsert(upsert_session(
-                    current,
-                    event,
-                    SessionState::Ready,
-                    Some("subagent_stop".to_string()),
-                ))
+                // Late background-agent completions must not upgrade or create a session.
+                SessionUpdate::Skip("subagent_stop_session_not_working")
             }
         }
         HookEventType::TeammateIdle => SessionUpdate::Skip("teammate_idle_informational"),
