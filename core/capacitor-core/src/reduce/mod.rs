@@ -17,6 +17,7 @@ pub mod delegation;
 pub mod run_reducer;
 
 const STALE_EVENT_GRACE_SECS: i64 = 5;
+const ORPHANED_SESSION_GRACE: Duration = Duration::minutes(5);
 const SHELL_SIGNAL_RETENTION: Duration = Duration::hours(4);
 
 #[derive(Debug, Default, Clone)]
@@ -137,6 +138,12 @@ impl ReducerState {
             };
         }
 
+        let recorded_at = if command.recorded_at.is_empty() {
+            now_rfc3339()
+        } else {
+            command.recorded_at.clone()
+        };
+
         let update = reduce_session(current.as_ref(), &command);
         match &update {
             SessionUpdate::Upsert(session) => {
@@ -152,6 +159,18 @@ impl ReducerState {
                 } else {
                     self.reducer_events_skipped += 1;
                 }
+            }
+        }
+
+        if matches!(&update, SessionUpdate::Upsert(_)) {
+            if let Some(session) = self.sessions.get(&command.session_id).cloned() {
+                cleanup_orphaned_same_project_sessions(
+                    &mut self.sessions,
+                    &self.shells,
+                    &session.project_path,
+                    &session.session_id,
+                    recorded_at.as_str(),
+                );
             }
         }
 
@@ -236,8 +255,66 @@ impl ReducerState {
         self.events_ingested = self.events_ingested.saturating_add(1);
         delegation::apply_delegation_mutation(&mut self.delegations, &mut self.last_error, command)
     }
+    pub fn gc_stale_sessions(&mut self) {
+        self.gc_stale_sessions_at(Utc::now());
+    }
+
+    pub fn gc_stale_sessions_at(&mut self, now: DateTime<Utc>) {
+        // Group sessions by normalized project path.  For each project we only
+        // evict stale non-Idle sessions when at least one session will *survive*
+        // the GC pass.  A survivor is either Idle (always survives) or fresh
+        // enough (anchor within ORPHANED_SESSION_GRACE).  This prevents the
+        // pathological case where all concurrent workers are quiet (e.g. two
+        // Codex sessions between hook events) and the GC wipes the entire
+        // project to zero sessions.
+        let mut project_sessions: HashMap<String, Vec<&SessionSummary>> = HashMap::new();
+        for session in self.sessions.values() {
+            if session.project_path.is_empty() {
+                continue;
+            }
+            let key = normalize_path_for_matching(&session.project_path);
+            project_sessions.entry(key).or_default().push(session);
+        }
+
+        let mut expired_session_ids: Vec<String> = Vec::new();
+
+        for sessions in project_sessions.values() {
+            if sessions.len() <= 1 {
+                // Sole session is never evicted at snapshot time.
+                continue;
+            }
+
+            let stale: Vec<&str> = sessions
+                .iter()
+                .filter(|s| is_session_evictable(s, now, &self.shells))
+                .map(|s| s.session_id.as_str())
+                .collect();
+
+            // A survivor is any session that is NOT evictable: either Idle
+            // or fresh enough to be within the grace window.
+            let has_survivor = sessions
+                .iter()
+                .any(|s| !is_session_evictable(s, now, &self.shells));
+
+            if has_survivor {
+                expired_session_ids.extend(stale.into_iter().map(String::from));
+            }
+            // If no survivor exists, skip eviction for this project entirely.
+        }
+
+        if !expired_session_ids.is_empty() {
+            for id in &expired_session_ids {
+                self.sessions.remove(id);
+            }
+            self.recompute_projects();
+            self.recompute_routing();
+        }
+    }
+
     #[must_use]
-    pub fn snapshot(&self) -> AppSnapshot {
+    pub fn snapshot(&mut self) -> AppSnapshot {
+        self.gc_stale_sessions();
+
         let projects = self.projects.values().cloned().collect::<Vec<_>>();
         let delegations = self.delegations.values().cloned().collect::<Vec<_>>();
 
@@ -293,10 +370,10 @@ impl ReducerState {
     #[must_use]
     pub fn resolve_routing(&self, command: ResolveRoutingCommand) -> RoutingView {
         let project_path = normalize_path_for_matching(command.project_path.as_str());
-        let workspace_id = normalized_value(command.workspace_id.as_deref())
+        let workspace_id = trimmed_value(command.workspace_id.as_deref())
             .unwrap_or_else(|| default_workspace_id(project_path.as_str()));
-        let session_name = normalized_value(command.session_name.as_deref());
-        let client_tty = normalized_value(command.client_tty.as_deref());
+        let session_name = trimmed_value(command.session_name.as_deref());
+        let client_tty = trimmed_value(command.client_tty.as_deref());
 
         if session_name.is_none() && client_tty.is_none() {
             let key = routing_key(workspace_id.as_str(), project_path.as_str());
@@ -327,10 +404,11 @@ impl ReducerState {
         let mut next = BTreeMap::new();
 
         for existing in self.projects.values() {
+            let normalized_key = normalize_path_for_matching(&existing.project_path);
             next.insert(
-                existing.project_path.clone(),
+                normalized_key.clone(),
                 ProjectSummary {
-                    project_path: existing.project_path.clone(),
+                    project_path: normalized_key,
                     project_id: existing.project_id.clone(),
                     workspace_id: existing.workspace_id.clone(),
                     display_name: existing.display_name.clone(),
@@ -352,7 +430,7 @@ impl ReducerState {
                 continue;
             }
             by_project
-                .entry(session.project_path.clone())
+                .entry(normalize_path_for_matching(&session.project_path))
                 .or_default()
                 .push(session);
         }
@@ -598,9 +676,8 @@ fn select_tmux_inventory_for_project<'a>(
                 )
         })
         .max_by(|left, right| {
-            (!is_managed_worktree_pane(left.pane))
-                .cmp(&(!is_managed_worktree_pane(right.pane)))
-                .then_with(|| left.rank.cmp(&right.rank))
+            left.rank
+                .cmp(&right.rank)
                 .then_with(|| left.pane.session_attached.cmp(&right.pane.session_attached))
                 .then_with(|| {
                     compare_timestamp_strings(&left.carrier.updated_at, &right.carrier.updated_at)
@@ -956,13 +1033,6 @@ fn routing_parent_app(value: &str) -> Option<String> {
     serde_json::to_string(&normalized)
         .ok()
         .map(|value| value.trim_matches('"').to_string())
-}
-
-fn normalized_value(value: Option<&str>) -> Option<String> {
-    value
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(ToString::to_string)
 }
 
 fn trimmed_value(value: Option<&str>) -> Option<String> {
@@ -1461,6 +1531,7 @@ fn should_update_activity(event_type: HookEventType) -> bool {
             | HookEventType::PostToolUse
             | HookEventType::PostToolUseFailure
             | HookEventType::PreCompact
+            | HookEventType::Stop
     )
 }
 
@@ -1545,6 +1616,84 @@ fn pid_alive_from_probe_result(result: libc::c_int, errno: Option<i32>) -> bool 
 fn is_event_stale(current: Option<&SessionSummary>, event: &IngestHookEventCommand) -> bool {
     let Some(current) = current else { return false };
     is_timestamp_stale(current.updated_at.as_str(), event.recorded_at.as_str())
+}
+
+fn cleanup_orphaned_same_project_sessions(
+    sessions: &mut HashMap<String, SessionSummary>,
+    shells: &HashMap<u32, ShellSignal>,
+    project_path: &str,
+    current_session_id: &str,
+    incoming_recorded_at: &str,
+) {
+    let project_path = normalize_path_for_matching(project_path);
+    if project_path.is_empty() {
+        return;
+    }
+
+    let Some(reference_time) = parse_rfc3339(incoming_recorded_at) else {
+        return;
+    };
+
+    let expired_session_ids: Vec<String> = sessions
+        .values()
+        .filter(|session| session.session_id != current_session_id)
+        .filter(|session| normalize_path_for_matching(&session.project_path) == project_path)
+        .filter(|session| is_session_evictable(session, reference_time, shells))
+        .map(|session| session.session_id.clone())
+        .collect();
+
+    for session_id in expired_session_ids {
+        sessions.remove(&session_id);
+    }
+}
+
+fn is_session_evictable(
+    session: &SessionSummary,
+    reference_time: DateTime<Utc>,
+    shells: &HashMap<u32, ShellSignal>,
+) -> bool {
+    // Idle sessions are never evictable — they represent terminal windows
+    // the user may return to.
+    if session.state == SessionState::Idle {
+        return false;
+    }
+    let anchor = orphaned_session_gc_anchor_at(session);
+    let age_expired = parse_rfc3339(anchor)
+        .map(|ts| reference_time.signed_duration_since(ts) > ORPHANED_SESSION_GRACE)
+        .unwrap_or(false);
+    if !age_expired {
+        return false;
+    }
+    // Active sessions with a corroborating shell signal are protected.
+    // The shell signal proves the process is (or was recently) alive.
+    // Stale shell signals are cleaned by cleanup_shells during snapshot,
+    // so this protection expires naturally within one GC cycle after PID death.
+    if session.state.is_active() && session.pid > 0 && shells.contains_key(&session.pid) {
+        return false;
+    }
+    true
+}
+
+fn orphaned_session_gc_anchor_at(session: &SessionSummary) -> &str {
+    if session.state == SessionState::Ready {
+        let Some(last_activity_at) = session
+            .last_activity_at
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+        else {
+            return session.state_changed_at.as_str();
+        };
+
+        if compare_timestamp_strings(last_activity_at, session.state_changed_at.as_str())
+            == Ordering::Less
+        {
+            session.state_changed_at.as_str()
+        } else {
+            last_activity_at
+        }
+    } else {
+        session.updated_at.as_str()
+    }
 }
 
 fn is_shell_signal_stale(current: Option<&ShellSignal>, incoming_recorded_at: &str) -> bool {

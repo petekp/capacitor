@@ -323,8 +323,8 @@ impl CoreRuntime {
     }
 
     pub fn app_snapshot(&self) -> Result<AppSnapshot, CoreRuntimeError> {
-        let state = self.lock_state()?;
-        Ok(query::app_snapshot(&state))
+        let mut state = self.lock_state()?;
+        Ok(query::app_snapshot(&mut state))
     }
 
     pub fn resolve_routing(
@@ -1057,7 +1057,7 @@ mod tests {
         runtime
             .ingest_hook_event(IngestHookEventCommand {
                 event_id: "evt-1".to_string(),
-                recorded_at: "2026-02-28T00:00:00Z".to_string(),
+                recorded_at: "2099-02-28T00:00:00Z".to_string(),
                 event_type: HookEventType::UserPromptSubmit,
                 session_id: "session-1".to_string(),
                 pid: Some(42),

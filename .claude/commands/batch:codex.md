@@ -1,11 +1,12 @@
-# /batch
+# /batch:codex
 
 Fan out parallel work across Codex workers for independent, same-layer changes.
+Uses the relay infrastructure (dispatch.sh, compose-prompt.sh, update-batch.sh).
 
 ## Usage
 
 ```
-/batch <description of work>
+/batch:codex <description of work>
 ```
 
 ## How it works

@@ -119,16 +119,30 @@ fn handle_hook_input_with_home(hook_input: HookInput, home: &Path) -> Result<(),
         &cwd,
     );
     if runtime_sent {
-        tracing::debug!(
-            gate_id = SESSION_STATE_GATE_ID,
-            scenario_id = SESSION_STATE_MAPPING_SCENARIO_ID,
-            classification,
-            transition,
-            skip_reason,
-            event = ?hook_input.hook_event_name,
-            session = %session_id,
-            "Runtime accepted event"
-        );
+        if let Some(notification_type) = notification_type_for_log(&event) {
+            tracing::debug!(
+                gate_id = SESSION_STATE_GATE_ID,
+                scenario_id = SESSION_STATE_MAPPING_SCENARIO_ID,
+                classification,
+                transition,
+                skip_reason,
+                event = ?hook_input.hook_event_name,
+                notification_type = %notification_type,
+                session = %session_id,
+                "Runtime accepted event"
+            );
+        } else {
+            tracing::debug!(
+                gate_id = SESSION_STATE_GATE_ID,
+                scenario_id = SESSION_STATE_MAPPING_SCENARIO_ID,
+                classification,
+                transition,
+                skip_reason,
+                event = ?hook_input.hook_event_name,
+                session = %session_id,
+                "Runtime accepted event"
+            );
+        }
         return Ok(());
     }
 
@@ -192,6 +206,15 @@ fn action_label(action: Action) -> &'static str {
         Action::Refresh => "refresh",
         Action::Delete => "delete",
         Action::Skip => "skip",
+    }
+}
+
+fn notification_type_for_log(event: &HookEvent) -> Option<&str> {
+    match event {
+        HookEvent::Notification { notification_type } if !notification_type.is_empty() => {
+            Some(notification_type.as_str())
+        }
+        _ => None,
     }
 }
 
@@ -287,6 +310,13 @@ fn process_event(
 mod tests {
     use super::*;
     use crate::test_support::env_lock;
+    use std::collections::BTreeMap;
+    use std::fmt;
+    use std::sync::{Arc, Mutex, OnceLock};
+    use tracing::field::{Field, Visit};
+    use tracing::Subscriber;
+    use tracing_subscriber::{layer::Context, prelude::*, Layer};
+
     struct EnvGuard {
         key: &'static str,
         prior: Option<String>,
@@ -366,5 +396,138 @@ mod tests {
 
         let result = handle_hook_input_with_home(hook_input, &temp_dir);
         assert!(result.is_ok());
+    }
+
+    #[derive(Debug, Clone, Default)]
+    struct CapturedEvent {
+        fields: BTreeMap<String, String>,
+    }
+
+    impl CapturedEvent {
+        fn field_matches(&self, key: &str, expected: &str) -> bool {
+            self.fields
+                .get(key)
+                .map(|value| value.trim_matches('"') == expected)
+                .unwrap_or(false)
+        }
+    }
+
+    struct FieldCaptureLayer {
+        events: Arc<Mutex<Vec<CapturedEvent>>>,
+    }
+
+    impl FieldCaptureLayer {
+        fn new(events: Arc<Mutex<Vec<CapturedEvent>>>) -> Self {
+            Self { events }
+        }
+    }
+
+    impl<S> Layer<S> for FieldCaptureLayer
+    where
+        S: Subscriber,
+    {
+        fn on_event(&self, event: &tracing::Event<'_>, _ctx: Context<'_, S>) {
+            let mut visitor = FieldVisitor::default();
+            event.record(&mut visitor);
+            self.events
+                .lock()
+                .expect("capture events lock")
+                .push(CapturedEvent {
+                    fields: visitor.fields,
+                });
+        }
+    }
+
+    #[derive(Default)]
+    struct FieldVisitor {
+        fields: BTreeMap<String, String>,
+    }
+
+    impl FieldVisitor {
+        fn insert(&mut self, field: &Field, value: String) {
+            self.fields.insert(field.name().to_string(), value);
+        }
+    }
+
+    impl Visit for FieldVisitor {
+        fn record_debug(&mut self, field: &Field, value: &dyn fmt::Debug) {
+            self.insert(field, format!("{value:?}"));
+        }
+
+        fn record_str(&mut self, field: &Field, value: &str) {
+            self.insert(field, value.to_string());
+        }
+
+        fn record_bool(&mut self, field: &Field, value: bool) {
+            self.insert(field, value.to_string());
+        }
+
+        fn record_i64(&mut self, field: &Field, value: i64) {
+            self.insert(field, value.to_string());
+        }
+
+        fn record_u64(&mut self, field: &Field, value: u64) {
+            self.insert(field, value.to_string());
+        }
+    }
+
+    fn ensure_registered_runtime() {
+        static TEST_RUNTIME: OnceLock<()> = OnceLock::new();
+
+        TEST_RUNTIME.get_or_init(|| {
+            let runtime = capacitor_core::CoreRuntime::new().expect("test runtime");
+            crate::runtime_client::register_service_runtime(runtime)
+                .expect("register test runtime");
+        });
+    }
+
+    #[test]
+    fn notification_runtime_log_includes_notification_type() {
+        let _guard = env_lock();
+        let _enabled = EnvGuard::set("CAPACITOR_CORE_ENABLED", "1");
+        ensure_registered_runtime();
+
+        let temp_dir = std::env::temp_dir().join(format!(
+            "hud-hook-test-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&temp_dir).expect("create temp dir");
+
+        let hook_input = HookInput {
+            hook_event_name: Some("Notification".to_string()),
+            session_id: Some("session-1".to_string()),
+            cwd: Some("/repo".to_string()),
+            notification_type: Some("permission_prompt".to_string()),
+            stop_hook_active: None,
+            tool_name: None,
+            tool_input: None,
+            tool_response: None,
+            agent_id: None,
+            teammate_name: None,
+        };
+
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let subscriber =
+            tracing_subscriber::registry().with(FieldCaptureLayer::new(Arc::clone(&events)));
+
+        let result = tracing::subscriber::with_default(subscriber, || {
+            handle_hook_input_with_home(hook_input, &temp_dir)
+        });
+        assert!(result.is_ok());
+
+        let captured = events.lock().expect("captured events lock");
+        let runtime_event = captured
+            .iter()
+            .find(|event| event.field_matches("message", "Runtime accepted event"))
+            .cloned()
+            .expect("expected runtime acceptance log event");
+
+        assert!(
+            runtime_event.field_matches("notification_type", "permission_prompt"),
+            "expected Runtime accepted event log to include notification_type=permission_prompt, got {captured:?}"
+        );
     }
 }

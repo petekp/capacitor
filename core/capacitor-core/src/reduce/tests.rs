@@ -14,7 +14,7 @@ use crate::domain::{
 fn event_base(event_type: HookEventType) -> IngestHookEventCommand {
     IngestHookEventCommand {
         event_id: "evt-1".to_string(),
-        recorded_at: "2026-01-31T00:00:00Z".to_string(),
+        recorded_at: "2099-01-31T00:00:00Z".to_string(),
         event_type,
         session_id: "session-1".to_string(),
         pid: Some(1234),
@@ -31,7 +31,7 @@ fn event_base(event_type: HookEventType) -> IngestHookEventCommand {
 }
 
 fn assert_persisted_routing_matches_resolved_routing(
-    state: &ReducerState,
+    state: &mut ReducerState,
     expected_project_path: &str,
 ) {
     let persisted = state
@@ -51,7 +51,7 @@ fn assert_persisted_routing_matches_resolved_routing(
     assert_eq!(resolved, persisted);
 }
 
-fn persisted_route_for(state: &ReducerState, project_path: &str) -> RoutingView {
+fn persisted_route_for(state: &mut ReducerState, project_path: &str) -> RoutingView {
     state
         .snapshot()
         .routing
@@ -158,7 +158,7 @@ fn routing_state_fixture(sessions: Vec<SessionSummary>, shells: Vec<ShellSignal>
             last_error: None,
             last_hook_event_at: None,
         },
-        generated_at: "2026-03-27T00:00:00Z".to_string(),
+        generated_at: "2099-03-27T00:00:00Z".to_string(),
     })
 }
 
@@ -497,11 +497,11 @@ fn reducer_ignores_stale_events() {
     let mut state = ReducerState::default();
 
     let mut current = event_base(HookEventType::UserPromptSubmit);
-    current.recorded_at = "2026-01-31T00:00:10Z".to_string();
+    current.recorded_at = "2099-01-31T00:00:10Z".to_string();
     let _ = state.apply_hook_event(current);
 
     let mut stale = event_base(HookEventType::PermissionRequest);
-    stale.recorded_at = "2026-01-31T00:00:00Z".to_string();
+    stale.recorded_at = "2099-01-31T00:00:00Z".to_string();
     let outcome = state.apply_hook_event(stale);
 
     assert!(outcome.ok);
@@ -520,7 +520,7 @@ fn test_idle_prompt_corrects_drift_without_hiding_live_work() {
 
     let mut notification = event_base(HookEventType::Notification);
     notification.notification_type = Some("idle_prompt".to_string());
-    notification.recorded_at = "2026-01-31T00:00:01Z".to_string();
+    notification.recorded_at = "2099-01-31T00:00:01Z".to_string();
 
     let applied = state.apply_hook_event(notification);
     assert!(applied.ok);
@@ -552,7 +552,7 @@ fn test_idle_prompt_no_tools_still_ready() {
 
     let mut notification = event_base(HookEventType::Notification);
     notification.notification_type = Some("idle_prompt".to_string());
-    notification.recorded_at = "2026-01-31T00:00:01Z".to_string();
+    notification.recorded_at = "2099-01-31T00:00:01Z".to_string();
 
     let applied = state.apply_hook_event(notification);
     assert!(applied.ok);
@@ -570,7 +570,7 @@ fn test_idle_prompt_transitions_to_ready_after_drift_correction() {
 
     let mut first_idle = event_base(HookEventType::Notification);
     first_idle.notification_type = Some("idle_prompt".to_string());
-    first_idle.recorded_at = "2026-01-31T00:00:01Z".to_string();
+    first_idle.recorded_at = "2099-01-31T00:00:01Z".to_string();
     let applied = state.apply_hook_event(first_idle);
     assert!(applied.ok);
     assert_eq!(
@@ -587,7 +587,7 @@ fn test_idle_prompt_transitions_to_ready_after_drift_correction() {
 
     let mut second_idle = event_base(HookEventType::Notification);
     second_idle.notification_type = Some("idle_prompt".to_string());
-    second_idle.recorded_at = "2026-01-31T00:00:02Z".to_string();
+    second_idle.recorded_at = "2099-01-31T00:00:02Z".to_string();
     let applied = state.apply_hook_event(second_idle);
     assert!(applied.ok);
     assert_eq!(
@@ -610,12 +610,12 @@ fn test_out_of_order_idle_prompt_does_not_hide_live_tool_work_within_stale_grace
     let _ = state.apply_hook_event(event_base(HookEventType::SessionStart));
 
     let mut pre_tool = event_base(HookEventType::PreToolUse);
-    pre_tool.recorded_at = "2026-01-31T00:00:03Z".to_string();
+    pre_tool.recorded_at = "2099-01-31T00:00:03Z".to_string();
     let _ = state.apply_hook_event(pre_tool);
 
     let mut delayed_idle = event_base(HookEventType::Notification);
     delayed_idle.notification_type = Some("idle_prompt".to_string());
-    delayed_idle.recorded_at = "2026-01-31T00:00:01Z".to_string();
+    delayed_idle.recorded_at = "2099-01-31T00:00:01Z".to_string();
 
     let applied = state.apply_hook_event(delayed_idle);
     assert!(applied.ok);
@@ -639,7 +639,7 @@ fn test_subagent_start_sets_working() {
     let _ = state.apply_hook_event(event_base(HookEventType::SessionStart));
 
     let mut start = event_base(HookEventType::SubagentStart);
-    start.recorded_at = "2026-01-31T00:00:01Z".to_string();
+    start.recorded_at = "2099-01-31T00:00:01Z".to_string();
 
     let outcome = state.apply_hook_event(start);
 
@@ -658,7 +658,7 @@ fn subagent_stop_skips_when_working_with_no_tools_in_flight() {
 
     let mut post = event_base(HookEventType::PostToolUse);
     post.event_id = "evt-2".to_string();
-    post.recorded_at = "2026-01-31T00:00:01Z".to_string();
+    post.recorded_at = "2099-01-31T00:00:01Z".to_string();
     let _ = state.apply_hook_event(post);
 
     // Capture updated_at after PostToolUse — SubagentStop should not refresh it.
@@ -670,7 +670,7 @@ fn subagent_stop_skips_when_working_with_no_tools_in_flight() {
 
     let mut stop = event_base(HookEventType::SubagentStop);
     stop.event_id = "evt-3".to_string();
-    stop.recorded_at = "2026-01-31T00:00:02Z".to_string();
+    stop.recorded_at = "2099-01-31T00:00:02Z".to_string();
 
     let outcome = state.apply_hook_event(stop);
 
@@ -700,17 +700,17 @@ fn subagent_stop_preserves_working_with_parallel_agents() {
 
     let mut second_pre = event_base(HookEventType::PreToolUse);
     second_pre.event_id = "evt-2".to_string();
-    second_pre.recorded_at = "2026-01-31T00:00:01Z".to_string();
+    second_pre.recorded_at = "2099-01-31T00:00:01Z".to_string();
     let _ = state.apply_hook_event(second_pre);
 
     let mut first_post = event_base(HookEventType::PostToolUse);
     first_post.event_id = "evt-3".to_string();
-    first_post.recorded_at = "2026-01-31T00:00:02Z".to_string();
+    first_post.recorded_at = "2099-01-31T00:00:02Z".to_string();
     let _ = state.apply_hook_event(first_post);
 
     let mut stop = event_base(HookEventType::SubagentStop);
     stop.event_id = "evt-4".to_string();
-    stop.recorded_at = "2026-01-31T00:00:03Z".to_string();
+    stop.recorded_at = "2099-01-31T00:00:03Z".to_string();
     let outcome = state.apply_hook_event(stop);
 
     assert!(outcome.ok);
@@ -728,7 +728,7 @@ fn subagent_stop_preserves_working_with_parallel_agents() {
 
     let mut second_post = event_base(HookEventType::PostToolUse);
     second_post.event_id = "evt-5".to_string();
-    second_post.recorded_at = "2026-01-31T00:00:04Z".to_string();
+    second_post.recorded_at = "2099-01-31T00:00:04Z".to_string();
     let _ = state.apply_hook_event(second_post);
 
     // Capture timestamp — final SubagentStop should Skip and not refresh it.
@@ -740,7 +740,7 @@ fn subagent_stop_preserves_working_with_parallel_agents() {
 
     let mut final_stop = event_base(HookEventType::SubagentStop);
     final_stop.event_id = "evt-6".to_string();
-    final_stop.recorded_at = "2026-01-31T00:00:05Z".to_string();
+    final_stop.recorded_at = "2099-01-31T00:00:05Z".to_string();
 
     let outcome = state.apply_hook_event(final_stop);
 
@@ -776,13 +776,13 @@ fn subagent_stop_skips_when_session_is_ready() {
 
     let mut stop = event_base(HookEventType::Stop);
     stop.event_id = "evt-2".to_string();
-    stop.recorded_at = "2026-01-31T00:00:01Z".to_string();
+    stop.recorded_at = "2099-01-31T00:00:01Z".to_string();
     stop.stop_hook_active = Some(false);
     let _ = state.apply_hook_event(stop);
 
     let mut subagent_stop = event_base(HookEventType::SubagentStop);
     subagent_stop.event_id = "evt-3".to_string();
-    subagent_stop.recorded_at = "2026-01-31T00:00:02Z".to_string();
+    subagent_stop.recorded_at = "2099-01-31T00:00:02Z".to_string();
 
     let outcome = state.apply_hook_event(subagent_stop);
 
@@ -801,7 +801,7 @@ fn subagent_stop_skips_when_session_is_idle_or_absent() {
     let mut state = ReducerState::default();
 
     let mut stop = event_base(HookEventType::SubagentStop);
-    stop.recorded_at = "2026-01-31T00:00:01Z".to_string();
+    stop.recorded_at = "2099-01-31T00:00:01Z".to_string();
 
     let outcome = state.apply_hook_event(stop);
 
@@ -819,11 +819,11 @@ fn test_subagent_start_preserves_waiting() {
     // PreToolUse first so tools_in_flight > 0, then PermissionRequest sets Waiting
     let _ = state.apply_hook_event(event_base(HookEventType::PreToolUse));
     let mut perm = event_base(HookEventType::PermissionRequest);
-    perm.recorded_at = "2026-01-31T00:00:00.5Z".to_string();
+    perm.recorded_at = "2099-01-31T00:00:00.5Z".to_string();
     let _ = state.apply_hook_event(perm);
 
     let mut start = event_base(HookEventType::SubagentStart);
-    start.recorded_at = "2026-01-31T00:00:01Z".to_string();
+    start.recorded_at = "2099-01-31T00:00:01Z".to_string();
 
     let outcome = state.apply_hook_event(start);
 
@@ -841,7 +841,7 @@ fn test_subagent_start_preserves_compacting() {
     let _ = state.apply_hook_event(event_base(HookEventType::PreCompact));
 
     let mut start = event_base(HookEventType::SubagentStart);
-    start.recorded_at = "2026-01-31T00:00:01Z".to_string();
+    start.recorded_at = "2099-01-31T00:00:01Z".to_string();
 
     let outcome = state.apply_hook_event(start);
 
@@ -859,7 +859,7 @@ fn test_subagent_stop_preserves_compacting() {
     let _ = state.apply_hook_event(event_base(HookEventType::PreCompact));
 
     let mut stop = event_base(HookEventType::SubagentStop);
-    stop.recorded_at = "2026-01-31T00:00:01Z".to_string();
+    stop.recorded_at = "2099-01-31T00:00:01Z".to_string();
 
     let outcome = state.apply_hook_event(stop);
 
@@ -877,11 +877,11 @@ fn test_subagent_stop_preserves_waiting() {
     // PreToolUse first so tools_in_flight > 0, then PermissionRequest sets Waiting
     let _ = state.apply_hook_event(event_base(HookEventType::PreToolUse));
     let mut perm = event_base(HookEventType::PermissionRequest);
-    perm.recorded_at = "2026-01-31T00:00:00.5Z".to_string();
+    perm.recorded_at = "2099-01-31T00:00:00.5Z".to_string();
     let _ = state.apply_hook_event(perm);
 
     let mut stop = event_base(HookEventType::SubagentStop);
-    stop.recorded_at = "2026-01-31T00:00:01Z".to_string();
+    stop.recorded_at = "2099-01-31T00:00:01Z".to_string();
 
     let outcome = state.apply_hook_event(stop);
 
@@ -899,7 +899,7 @@ fn test_subagent_start_does_not_update_activity() {
     let _ = state.apply_hook_event(event_base(HookEventType::SessionStart));
 
     let mut start = event_base(HookEventType::SubagentStart);
-    start.recorded_at = "2026-01-31T00:00:01Z".to_string();
+    start.recorded_at = "2099-01-31T00:00:01Z".to_string();
 
     let outcome = state.apply_hook_event(start);
 
@@ -921,7 +921,7 @@ fn reducer_stop_guard_skips_for_subagent() {
     let mut stop = event_base(HookEventType::Stop);
     stop.agent_id = Some("agent-1".to_string());
     stop.stop_hook_active = Some(false);
-    stop.recorded_at = "2026-01-31T00:00:05Z".to_string();
+    stop.recorded_at = "2099-01-31T00:00:05Z".to_string();
 
     let outcome = state.apply_hook_event(stop);
     assert_eq!(outcome.message, "event skipped: stop_guard");
@@ -938,7 +938,7 @@ fn reducer_parent_stop_transitions_to_ready() {
 
     let mut stop = event_base(HookEventType::Stop);
     stop.stop_hook_active = Some(false);
-    stop.recorded_at = "2026-01-31T00:00:05Z".to_string();
+    stop.recorded_at = "2099-01-31T00:00:05Z".to_string();
 
     let outcome = state.apply_hook_event(stop);
     assert!(outcome.ok);
@@ -962,7 +962,7 @@ fn reducer_stop_guard_skips_when_stop_hook_active() {
 
     let mut stop = event_base(HookEventType::Stop);
     stop.stop_hook_active = Some(true);
-    stop.recorded_at = "2026-01-31T00:00:05Z".to_string();
+    stop.recorded_at = "2099-01-31T00:00:05Z".to_string();
 
     let outcome = state.apply_hook_event(stop);
     assert_eq!(outcome.message, "event skipped: stop_guard");
@@ -1005,7 +1005,7 @@ fn session_end_with_live_pid_transitions_to_ready() {
     let mut end = event_base(HookEventType::SessionEnd);
     // Use the current process PID so is_pid_alive returns true
     end.pid = Some(std::process::id());
-    end.recorded_at = "2026-01-31T00:00:05Z".to_string();
+    end.recorded_at = "2099-01-31T00:00:05Z".to_string();
 
     let outcome = state.apply_hook_event(end);
     assert!(outcome.ok);
@@ -1029,7 +1029,7 @@ fn session_end_with_dead_pid_deletes_session() {
 
     let mut end = event_base(HookEventType::SessionEnd);
     // PID 1234 from event_base is not alive → should delete
-    end.recorded_at = "2026-01-31T00:00:05Z".to_string();
+    end.recorded_at = "2099-01-31T00:00:05Z".to_string();
 
     let outcome = state.apply_hook_event(end);
     assert!(outcome.ok);
@@ -1111,7 +1111,7 @@ fn test_informational_events_have_distinct_skip_reasons() {
     for (index, (event_type, expected_message)) in cases.into_iter().enumerate() {
         let mut event = event_base(event_type);
         event.event_id = format!("evt-{index}");
-        event.recorded_at = format!("2026-01-31T00:00:0{index}Z");
+        event.recorded_at = format!("2099-01-31T00:00:0{index}Z");
 
         let outcome = state.apply_hook_event(event);
         assert_eq!(outcome.message, expected_message);
@@ -1396,13 +1396,13 @@ fn test_reducer_17_event_contract_matrix() {
             if setup_event_type == HookEventType::PermissionRequest {
                 let mut pre = event_base(HookEventType::PreToolUse);
                 pre.event_id = format!("pre-setup-{index}");
-                pre.recorded_at = "2026-01-30T23:59:59Z".to_string();
+                pre.recorded_at = "2099-01-30T23:59:59Z".to_string();
                 let _ = state.apply_hook_event(pre);
             }
 
             let mut setup = event_base(setup_event_type);
             setup.event_id = format!("setup-{index}");
-            setup.recorded_at = "2026-01-31T00:00:00Z".to_string();
+            setup.recorded_at = "2099-01-31T00:00:00Z".to_string();
 
             let outcome = state.apply_hook_event(setup);
             assert!(outcome.ok, "setup failed for {}", expectation.description);
@@ -1412,7 +1412,7 @@ fn test_reducer_17_event_contract_matrix() {
 
         let mut event = event_base(expectation.event_type);
         event.event_id = format!("matrix-{index}");
-        event.recorded_at = format!("2026-01-31T00:00:{:02}Z", index + 1);
+        event.recorded_at = format!("2099-01-31T00:00:{:02}Z", index + 1);
         event.notification_type = expectation.notification_type.map(str::to_string);
 
         match expectation.description {
@@ -1508,7 +1508,7 @@ fn test_stale_idle_prompt_does_not_overwrite_fresh_working() {
     let mut state = ReducerState::default();
 
     let mut pre_tool = event_base(HookEventType::PreToolUse);
-    pre_tool.recorded_at = "2026-01-31T00:00:00Z".to_string();
+    pre_tool.recorded_at = "2099-01-31T00:00:00Z".to_string();
     let outcome = state.apply_hook_event(pre_tool);
     assert!(outcome.ok);
 
@@ -1520,7 +1520,7 @@ fn test_stale_idle_prompt_does_not_overwrite_fresh_working() {
 
     let mut idle_prompt = event_base(HookEventType::Notification);
     idle_prompt.event_id = "evt-stale-idle".to_string();
-    idle_prompt.recorded_at = "2026-01-30T23:59:54Z".to_string();
+    idle_prompt.recorded_at = "2099-01-30T23:59:54Z".to_string();
     idle_prompt.notification_type = Some("idle_prompt".to_string());
 
     let outcome = state.apply_hook_event(idle_prompt);
@@ -1535,13 +1535,13 @@ fn test_near_boundary_idle_prompt_applies() {
     let mut state = ReducerState::default();
 
     let mut pre_tool = event_base(HookEventType::PreToolUse);
-    pre_tool.recorded_at = "2026-01-31T00:00:00Z".to_string();
+    pre_tool.recorded_at = "2099-01-31T00:00:00Z".to_string();
     let outcome = state.apply_hook_event(pre_tool);
     assert!(outcome.ok);
 
     let mut idle_prompt = event_base(HookEventType::Notification);
     idle_prompt.event_id = "evt-near-boundary-idle".to_string();
-    idle_prompt.recorded_at = "2026-01-30T23:59:56Z".to_string();
+    idle_prompt.recorded_at = "2099-01-30T23:59:56Z".to_string();
     idle_prompt.notification_type = Some("idle_prompt".to_string());
 
     let outcome = state.apply_hook_event(idle_prompt);
@@ -1562,13 +1562,13 @@ fn test_out_of_order_pretool_then_idle_prompt() {
     let mut state = ReducerState::default();
 
     let mut pre_tool = event_base(HookEventType::PreToolUse);
-    pre_tool.recorded_at = "2026-01-31T00:00:00Z".to_string();
+    pre_tool.recorded_at = "2099-01-31T00:00:00Z".to_string();
     let outcome = state.apply_hook_event(pre_tool);
     assert!(outcome.ok);
 
     let mut idle_prompt = event_base(HookEventType::Notification);
     idle_prompt.event_id = "evt-out-of-order-idle".to_string();
-    idle_prompt.recorded_at = "2026-01-31T00:00:01Z".to_string();
+    idle_prompt.recorded_at = "2099-01-31T00:00:01Z".to_string();
     idle_prompt.notification_type = Some("idle_prompt".to_string());
 
     let outcome = state.apply_hook_event(idle_prompt);
@@ -1591,7 +1591,7 @@ fn test_task_completed_parent_session_transitions_to_ready() {
     let _ = state.apply_hook_event(event_base(HookEventType::UserPromptSubmit));
 
     let mut task_completed = event_base(HookEventType::TaskCompleted);
-    task_completed.recorded_at = "2026-01-31T00:00:01Z".to_string();
+    task_completed.recorded_at = "2099-01-31T00:00:01Z".to_string();
 
     let outcome = state.apply_hook_event(task_completed);
     assert!(outcome.ok);
@@ -1617,7 +1617,7 @@ fn test_task_completed_with_agent_id_skipped() {
         .expect("session should exist");
 
     let mut task_completed = event_base(HookEventType::TaskCompleted);
-    task_completed.recorded_at = "2026-01-31T00:00:01Z".to_string();
+    task_completed.recorded_at = "2099-01-31T00:00:01Z".to_string();
     task_completed.agent_id = Some("agent-1".to_string());
 
     let outcome = state.apply_hook_event(task_completed);
@@ -1638,7 +1638,7 @@ fn test_task_completed_with_teammate_name_skipped() {
         .expect("session should exist");
 
     let mut task_completed = event_base(HookEventType::TaskCompleted);
-    task_completed.recorded_at = "2026-01-31T00:00:01Z".to_string();
+    task_completed.recorded_at = "2099-01-31T00:00:01Z".to_string();
     task_completed.teammate_name = Some("teammate-1".to_string());
 
     let outcome = state.apply_hook_event(task_completed);
@@ -1696,7 +1696,7 @@ fn routing_parity_matches_persisted_attached_tmux_pane_from_active_shell_evidenc
         recorded_at: "2099-02-28T00:00:00Z".to_string(),
     });
 
-    assert_persisted_routing_matches_resolved_routing(&state, "/repo");
+    assert_persisted_routing_matches_resolved_routing(&mut state, "/repo");
 }
 
 #[test]
@@ -1756,7 +1756,7 @@ fn routing_parity_matches_persisted_unavailable_route_without_trusted_evidence()
 
     let _ = state.apply_hook_event(event_base(HookEventType::UserPromptSubmit));
 
-    assert_persisted_routing_matches_resolved_routing(&state, "/repo");
+    assert_persisted_routing_matches_resolved_routing(&mut state, "/repo");
 }
 
 #[test]
@@ -1768,7 +1768,7 @@ fn routing_does_not_match_parent_directory_shells_to_descendant_projects() {
     attune.pid = Some(4100);
     attune.project_path = "/users/petepetrash/code/attune".to_string();
     attune.cwd = Some("/users/petepetrash/code/attune".to_string());
-    attune.recorded_at = "2026-03-13T02:35:00Z".to_string();
+    attune.recorded_at = "2099-03-13T02:35:00Z".to_string();
     let _ = state.apply_hook_event(attune);
 
     let mut pete = event_base(HookEventType::UserPromptSubmit);
@@ -1776,7 +1776,7 @@ fn routing_does_not_match_parent_directory_shells_to_descendant_projects() {
     pete.pid = Some(4200);
     pete.project_path = "/users/petepetrash/code/pete-2025".to_string();
     pete.cwd = Some("/users/petepetrash/code/pete-2025".to_string());
-    pete.recorded_at = "2026-03-13T02:35:01Z".to_string();
+    pete.recorded_at = "2099-03-13T02:35:01Z".to_string();
     let _ = state.apply_hook_event(pete);
 
     let _ = state.apply_shell_signal(IngestShellSignalCommand {
@@ -1832,7 +1832,7 @@ fn routing_still_matches_shells_inside_project_subdirectories() {
     let mut event = event_base(HookEventType::UserPromptSubmit);
     event.project_path = "/users/petepetrash/code/capacitor".to_string();
     event.cwd = Some("/users/petepetrash/code/capacitor".to_string());
-    event.recorded_at = "2026-03-13T02:45:00Z".to_string();
+    event.recorded_at = "2099-03-13T02:45:00Z".to_string();
     let _ = state.apply_hook_event(event);
 
     let _ = state.apply_shell_signal(IngestShellSignalCommand {
@@ -1869,7 +1869,7 @@ fn routing_infers_attached_tmux_terminal_app_from_host_tty_shell_evidence() {
     event.pid = Some(4242);
     event.project_path = "/tmp/core-project".to_string();
     event.cwd = Some("/tmp/core-project".to_string());
-    event.recorded_at = "2026-03-14T20:00:00Z".to_string();
+    event.recorded_at = "2099-03-14T20:00:00Z".to_string();
     let _ = state.apply_hook_event(event);
 
     let _ = state.apply_shell_signal(IngestShellSignalCommand {
@@ -1918,7 +1918,7 @@ fn routing_parity_matches_persisted_attached_tmux_terminal_app_inferred_from_hos
     event.pid = Some(4242);
     event.project_path = "/tmp/core-project".to_string();
     event.cwd = Some("/tmp/core-project".to_string());
-    event.recorded_at = "2026-03-14T20:00:00Z".to_string();
+    event.recorded_at = "2099-03-14T20:00:00Z".to_string();
     let _ = state.apply_hook_event(event);
 
     let _ = state.apply_shell_signal(IngestShellSignalCommand {
@@ -1944,7 +1944,7 @@ fn routing_parity_matches_persisted_attached_tmux_terminal_app_inferred_from_hos
         recorded_at: "2099-03-14T20:00:02Z".to_string(),
     });
 
-    assert_persisted_routing_matches_resolved_routing(&state, "/tmp/core-project");
+    assert_persisted_routing_matches_resolved_routing(&mut state, "/tmp/core-project");
 }
 
 #[test]
@@ -1955,7 +1955,7 @@ fn routing_derives_non_active_tmux_pane_from_inventory() {
     event.pid = Some(4242);
     event.project_path = "/users/petepetrash/code/aui/mcp-app-studio-starter".to_string();
     event.cwd = Some("/users/petepetrash/code/aui/mcp-app-studio-starter".to_string());
-    event.recorded_at = "2026-03-15T03:00:00Z".to_string();
+    event.recorded_at = "2099-03-15T03:00:00Z".to_string();
     let _ = state.apply_hook_event(event);
 
     let _ = state.apply_shell_signal(IngestShellSignalCommand {
@@ -2006,7 +2006,7 @@ fn routing_parity_matches_persisted_non_active_tmux_pane_from_inventory() {
     event.pid = Some(4242);
     event.project_path = "/users/petepetrash/code/aui/mcp-app-studio-starter".to_string();
     event.cwd = Some("/users/petepetrash/code/aui/mcp-app-studio-starter".to_string());
-    event.recorded_at = "2026-03-15T03:00:00Z".to_string();
+    event.recorded_at = "2099-03-15T03:00:00Z".to_string();
     let _ = state.apply_hook_event(event);
 
     let _ = state.apply_shell_signal(IngestShellSignalCommand {
@@ -2035,7 +2035,7 @@ fn routing_parity_matches_persisted_non_active_tmux_pane_from_inventory() {
     });
 
     assert_persisted_routing_matches_resolved_routing(
-        &state,
+        &mut state,
         "/users/petepetrash/code/aui/mcp-app-studio-starter",
     );
 }
@@ -2062,7 +2062,7 @@ fn routing_inventory_preference_matching_shell_beats_inventory() {
         recorded_at: "2099-03-16T00:00:00Z".to_string(),
     });
 
-    let route = persisted_route_for(&state, "/repo");
+    let route = persisted_route_for(&mut state, "/repo");
 
     assert_eq!(route.status, RoutingStatus::Attached);
     assert_eq!(route.target.kind, RoutingTargetKind::TmuxPane);
@@ -2092,7 +2092,7 @@ fn routing_managed_worktree_shell_does_not_override_project_root_shell() {
         ..shell_signal_fixture(20, "/repo/.capacitor/worktrees/delegation-20")
     };
 
-    let state = routing_state_fixture(
+    let mut state = routing_state_fixture(
         vec![
             session_summary_fixture(
                 "session-main",
@@ -2100,7 +2100,7 @@ fn routing_managed_worktree_shell_does_not_override_project_root_shell() {
                 "/repo",
                 "/repo",
                 SessionState::Idle,
-                "2026-03-27T00:00:01Z",
+                "2099-03-27T00:00:01Z",
             ),
             session_summary_fixture(
                 "session-worker",
@@ -2108,13 +2108,13 @@ fn routing_managed_worktree_shell_does_not_override_project_root_shell() {
                 "/repo",
                 "/repo/.capacitor/worktrees/delegation-20",
                 SessionState::Working,
-                "2026-03-27T00:00:02Z",
+                "2099-03-27T00:00:02Z",
             ),
         ],
         vec![main_shell, delegation_shell],
     );
 
-    let route = persisted_route_for(&state, "/repo");
+    let route = persisted_route_for(&mut state, "/repo");
 
     assert_eq!(route.status, RoutingStatus::Attached);
     assert_eq!(route.target.kind, RoutingTargetKind::TmuxPane);
@@ -2133,19 +2133,19 @@ fn routing_managed_worktree_only_shell_produces_unavailable_route() {
         ..shell_signal_fixture(22, "/repo/.capacitor/worktrees/delegation-22")
     };
 
-    let state = routing_state_fixture(
+    let mut state = routing_state_fixture(
         vec![session_summary_fixture(
             "session-worker",
             22,
             "/repo",
             "/repo/.capacitor/worktrees/delegation-22",
             SessionState::Working,
-            "2026-03-27T00:00:03Z",
+            "2099-03-27T00:00:03Z",
         )],
         vec![delegation_shell],
     );
 
-    let route = persisted_route_for(&state, "/repo");
+    let route = persisted_route_for(&mut state, "/repo");
 
     assert_eq!(route.status, RoutingStatus::Unavailable);
     assert_eq!(route.target.kind, RoutingTargetKind::None);
@@ -2169,19 +2169,19 @@ fn routing_managed_worktree_only_inventory_pane_produces_unavailable_route() {
         ..shell_signal_fixture(22, "/other")
     };
 
-    let state = routing_state_fixture(
+    let mut state = routing_state_fixture(
         vec![session_summary_fixture(
             "session-main",
             10,
             "/repo",
             "/repo",
             SessionState::Idle,
-            "2026-03-27T00:00:03Z",
+            "2099-03-27T00:00:03Z",
         )],
         vec![inventory_carrier],
     );
 
-    let route = persisted_route_for(&state, "/repo");
+    let route = persisted_route_for(&mut state, "/repo");
 
     assert_eq!(route.status, RoutingStatus::Unavailable);
     assert_eq!(route.target.kind, RoutingTargetKind::None);
@@ -2208,7 +2208,7 @@ fn test_delegation_worktree_state_priority_doesnt_override() {
         ..shell_signal_fixture(40, "/repo/.capacitor/worktrees/delegation-40")
     };
 
-    let state = routing_state_fixture(
+    let mut state = routing_state_fixture(
         vec![
             session_summary_fixture(
                 "session-main",
@@ -2216,7 +2216,7 @@ fn test_delegation_worktree_state_priority_doesnt_override() {
                 "/repo",
                 "/repo",
                 SessionState::Idle,
-                "2026-03-27T00:00:04Z",
+                "2099-03-27T00:00:04Z",
             ),
             session_summary_fixture(
                 "session-worker",
@@ -2224,7 +2224,7 @@ fn test_delegation_worktree_state_priority_doesnt_override() {
                 "/repo",
                 "/repo/.capacitor/worktrees/delegation-40",
                 SessionState::Working,
-                "2026-03-27T00:00:05Z",
+                "2099-03-27T00:00:05Z",
             ),
         ],
         vec![main_shell, delegation_shell],
@@ -2238,7 +2238,7 @@ fn test_delegation_worktree_state_priority_doesnt_override() {
         .expect("project");
     assert_eq!(project.state, SessionState::Working);
 
-    let route = persisted_route_for(&state, "/repo");
+    let route = persisted_route_for(&mut state, "/repo");
 
     assert_eq!(route.status, RoutingStatus::Attached);
     assert_eq!(route.target.kind, RoutingTargetKind::TmuxPane);
@@ -2354,7 +2354,7 @@ fn routing_inventory_preference_persisted_mismatched_shell_prefers_inventory() {
         recorded_at: "2099-03-16T00:00:01Z".to_string(),
     });
 
-    let route = persisted_route_for(&state, "/target");
+    let route = persisted_route_for(&mut state, "/target");
 
     assert_eq!(route.status, RoutingStatus::Attached);
     assert_eq!(route.target.kind, RoutingTargetKind::TmuxPane);
@@ -2470,7 +2470,7 @@ fn routing_parity_matches_persisted_detached_terminal_app_route() {
         recorded_at: "2099-03-15T06:00:00Z".to_string(),
     });
 
-    assert_persisted_routing_matches_resolved_routing(&state, "/repo");
+    assert_persisted_routing_matches_resolved_routing(&mut state, "/repo");
 }
 
 #[test]
@@ -2669,7 +2669,7 @@ fn cleanup_shells_evicts_expired_entries() {
 #[test]
 fn snapshot_omits_expired_shells() {
     let now = Utc::now();
-    let state = ReducerState::from_snapshot(AppSnapshot {
+    let mut state = ReducerState::from_snapshot(AppSnapshot {
         projects: vec![],
         sessions: vec![],
         shells: vec![
@@ -2720,17 +2720,17 @@ fn projects_are_reduced_by_priority_and_recency() {
     // PreToolUse first so tools_in_flight > 0 when PermissionRequest arrives
     let mut pre = event_base(HookEventType::PreToolUse);
     pre.session_id = "session-1".to_string();
-    pre.recorded_at = "2026-01-31T00:00:00Z".to_string();
+    pre.recorded_at = "2099-01-31T00:00:00Z".to_string();
     let _ = state.apply_hook_event(pre);
 
     let mut first = event_base(HookEventType::PermissionRequest);
     first.session_id = "session-1".to_string();
-    first.recorded_at = "2026-01-31T00:00:01Z".to_string();
+    first.recorded_at = "2099-01-31T00:00:01Z".to_string();
     let _ = state.apply_hook_event(first);
 
     let mut second = event_base(HookEventType::UserPromptSubmit);
     second.session_id = "session-2".to_string();
-    second.recorded_at = "2026-01-31T00:00:02Z".to_string();
+    second.recorded_at = "2099-01-31T00:00:02Z".to_string();
     let _ = state.apply_hook_event(second);
 
     let snapshot = state.snapshot();
@@ -2744,6 +2744,180 @@ fn projects_are_reduced_by_priority_and_recency() {
     assert_eq!(project.session_count, 2);
     assert_eq!(project.active_count, 2);
     assert!(project.has_session);
+}
+
+#[test]
+fn orphaned_session_gc_evicts_stale_same_project_sibling_on_new_session_start() {
+    let mut state = ReducerState::from_snapshot(AppSnapshot {
+        projects: vec![],
+        sessions: vec![session_summary_fixture(
+            "ghost-session",
+            11,
+            "/repo",
+            "/repo",
+            SessionState::Working,
+            "2099-03-27T12:00:00Z",
+        )],
+        shells: vec![],
+        routing: vec![],
+        delegations: vec![],
+        runs: vec![],
+        diagnostics: DiagnosticsSummary {
+            events_ingested: 0,
+            sessions_tracked: 1,
+            shell_signals_tracked: 0,
+            events_skipped: 0,
+            stale_events_skipped: 0,
+            informational_events_skipped: 0,
+            reducer_events_skipped: 0,
+            last_error: None,
+            last_hook_event_at: None,
+        },
+        generated_at: "2099-03-31T00:00:00Z".to_string(),
+    });
+
+    let mut fresh_start = event_base(HookEventType::SessionStart);
+    fresh_start.session_id = "fresh-session".to_string();
+    fresh_start.pid = Some(22);
+    fresh_start.recorded_at = "2099-03-31T12:00:00Z".to_string();
+
+    let outcome = state.apply_hook_event(fresh_start);
+
+    assert!(outcome.ok, "{outcome:?}");
+    assert!(!state.sessions.contains_key("ghost-session"));
+
+    let fresh = state.sessions.get("fresh-session").expect("fresh session");
+    assert_eq!(fresh.state, SessionState::Ready);
+
+    let project = state
+        .snapshot()
+        .projects
+        .into_iter()
+        .find(|project| project.project_path == "/repo")
+        .expect("project");
+
+    assert_eq!(project.state, SessionState::Ready);
+    assert_eq!(
+        project.representative_session_id.as_deref(),
+        Some("fresh-session")
+    );
+    assert_eq!(project.latest_session_id.as_deref(), Some("fresh-session"));
+    assert_eq!(project.session_count, 1);
+}
+
+#[test]
+fn orphaned_session_gc_uses_stop_timestamp_before_evicting_stale_ready_session() {
+    let mut state = ReducerState::default();
+
+    let mut old_work = event_base(HookEventType::UserPromptSubmit);
+    old_work.session_id = "old-session".to_string();
+    old_work.pid = Some(11);
+    old_work.recorded_at = "2099-03-31T00:00:00Z".to_string();
+    let outcome = state.apply_hook_event(old_work);
+    assert!(outcome.ok, "{outcome:?}");
+
+    let mut old_stop = event_base(HookEventType::Stop);
+    old_stop.session_id = "old-session".to_string();
+    old_stop.pid = Some(11);
+    old_stop.recorded_at = "2099-03-31T00:05:00Z".to_string();
+    old_stop.stop_hook_active = Some(false);
+    let outcome = state.apply_hook_event(old_stop);
+    assert!(outcome.ok, "{outcome:?}");
+
+    let old_ready = state
+        .sessions
+        .get("old-session")
+        .expect("old ready session");
+    assert_eq!(old_ready.state, SessionState::Ready);
+    assert_eq!(old_ready.updated_at, "2099-03-31T00:05:00Z");
+    assert_eq!(
+        old_ready.last_activity_at.as_deref(),
+        Some("2099-03-31T00:05:00Z")
+    );
+
+    let mut new_start = event_base(HookEventType::SessionStart);
+    new_start.session_id = "new-session".to_string();
+    new_start.pid = Some(22);
+    new_start.recorded_at = "2099-03-31T00:09:59Z".to_string();
+    let outcome = state.apply_hook_event(new_start);
+    assert!(outcome.ok, "{outcome:?}");
+    assert!(
+        state.sessions.contains_key("old-session"),
+        "ready sibling should survive until it is stale for more than five minutes from Stop"
+    );
+
+    let mut new_activity = event_base(HookEventType::UserPromptSubmit);
+    new_activity.session_id = "new-session".to_string();
+    new_activity.pid = Some(22);
+    new_activity.recorded_at = "2099-03-31T00:10:01Z".to_string();
+    let outcome = state.apply_hook_event(new_activity);
+
+    assert!(outcome.ok, "{outcome:?}");
+    assert!(!state.sessions.contains_key("old-session"));
+
+    let project = state
+        .snapshot()
+        .projects
+        .into_iter()
+        .find(|project| project.project_path == "/repo")
+        .expect("project");
+
+    assert_eq!(project.state, SessionState::Working);
+    assert_eq!(
+        project.representative_session_id.as_deref(),
+        Some("new-session")
+    );
+    assert_eq!(project.latest_session_id.as_deref(), Some("new-session"));
+    assert_eq!(project.session_count, 1);
+}
+
+#[test]
+fn orphaned_session_gc_uses_ready_transition_timestamp_for_task_completed() {
+    let mut state = ReducerState::default();
+
+    let mut old_work = event_base(HookEventType::UserPromptSubmit);
+    old_work.session_id = "old-session".to_string();
+    old_work.pid = Some(11);
+    old_work.recorded_at = "2099-03-31T00:00:00Z".to_string();
+    let outcome = state.apply_hook_event(old_work);
+    assert!(outcome.ok, "{outcome:?}");
+
+    let mut completed = event_base(HookEventType::TaskCompleted);
+    completed.session_id = "old-session".to_string();
+    completed.pid = Some(11);
+    completed.recorded_at = "2099-03-31T00:05:00Z".to_string();
+    let outcome = state.apply_hook_event(completed);
+    assert!(outcome.ok, "{outcome:?}");
+
+    let old_ready = state
+        .sessions
+        .get("old-session")
+        .expect("old ready session");
+    assert_eq!(old_ready.state, SessionState::Ready);
+    assert_eq!(old_ready.state_changed_at, "2099-03-31T00:05:00Z");
+    assert_eq!(
+        old_ready.last_activity_at.as_deref(),
+        Some("2099-03-31T00:00:00Z")
+    );
+
+    let mut new_start = event_base(HookEventType::SessionStart);
+    new_start.session_id = "new-session".to_string();
+    new_start.pid = Some(22);
+    new_start.recorded_at = "2099-03-31T00:09:59Z".to_string();
+    let outcome = state.apply_hook_event(new_start);
+    assert!(outcome.ok, "{outcome:?}");
+    assert!(
+        state.sessions.contains_key("old-session"),
+        "ready sibling should use the newer Ready-transition timestamp as its GC anchor"
+    );
+
+    let mut new_activity = event_base(HookEventType::UserPromptSubmit);
+    new_activity.session_id = "new-session".to_string();
+    new_activity.pid = Some(22);
+    new_activity.recorded_at = "2099-03-31T00:10:01Z".to_string();
+    let outcome = state.apply_hook_event(new_activity);
+    assert!(outcome.ok, "{outcome:?}");
+    assert!(!state.sessions.contains_key("old-session"));
 }
 
 #[test]
@@ -2762,24 +2936,24 @@ fn diagnostics_tracks_skip_counters() {
 
     // 2) Informational event → informational_events_skipped
     let mut config_change = event_base(HookEventType::ConfigChange);
-    config_change.recorded_at = "2026-01-31T00:00:01Z".to_string();
+    config_change.recorded_at = "2099-01-31T00:00:01Z".to_string();
     let outcome = state.apply_hook_event(config_change);
     assert!(outcome.message.contains("config_change_informational"));
 
     // 3) Another informational event to prove counting
     let mut worktree = event_base(HookEventType::WorktreeCreate);
-    worktree.recorded_at = "2026-01-31T00:00:02Z".to_string();
+    worktree.recorded_at = "2099-01-31T00:00:02Z".to_string();
     let outcome = state.apply_hook_event(worktree);
     assert!(outcome.message.contains("worktree_create_informational"));
 
     // 4) Idle prompt while tools are drifted in flight should self-correct
     let mut pre_tool = event_base(HookEventType::PreToolUse);
-    pre_tool.recorded_at = "2026-01-31T00:00:03Z".to_string();
+    pre_tool.recorded_at = "2099-01-31T00:00:03Z".to_string();
     let _ = state.apply_hook_event(pre_tool);
 
     let mut idle = event_base(HookEventType::Notification);
     idle.notification_type = Some("idle_prompt".to_string());
-    idle.recorded_at = "2026-01-31T00:00:04Z".to_string();
+    idle.recorded_at = "2099-01-31T00:00:04Z".to_string();
     let outcome = state.apply_hook_event(idle);
     assert_eq!(outcome.message, "event ingested");
     assert_eq!(
@@ -2824,7 +2998,7 @@ fn routing_deprioritizes_managed_worktree_shell_over_project_root_shell() {
     let mut event = event_base(HookEventType::UserPromptSubmit);
     event.project_path = "/users/pete/code/capacitor".to_string();
     event.cwd = Some("/users/pete/code/capacitor".to_string());
-    event.recorded_at = "2026-03-25T10:00:00Z".to_string();
+    event.recorded_at = "2099-03-25T10:00:00Z".to_string();
     let _ = state.apply_hook_event(event);
 
     // Main shell at project root
@@ -2887,7 +3061,7 @@ fn routing_resolved_route_is_unavailable_when_only_managed_worktree_candidate_ex
     event.project_path = "/users/pete/code/capacitor".to_string();
     event.cwd =
         Some("/users/pete/code/capacitor/.capacitor/worktrees/delegation-abc12345".to_string());
-    event.recorded_at = "2026-03-25T10:00:00Z".to_string();
+    event.recorded_at = "2099-03-25T10:00:00Z".to_string();
     let _ = state.apply_hook_event(event);
 
     // Only a delegation worktree shell exists
@@ -2989,7 +3163,7 @@ fn routing_deprioritizes_working_worktree_over_idle_main_session() {
                 "/users/pete/code/capacitor",
                 "/users/pete/code/capacitor",
                 SessionState::Idle,
-                "2026-03-25T10:00:00Z",
+                "2099-03-25T10:00:00Z",
             ),
             session_summary_fixture(
                 "session-delegation",
@@ -2997,7 +3171,7 @@ fn routing_deprioritizes_working_worktree_over_idle_main_session() {
                 "/users/pete/code/capacitor",
                 "/users/pete/code/capacitor/.capacitor/worktrees/delegation-abc12345",
                 SessionState::Working,
-                "2026-03-25T12:00:00Z",
+                "2099-03-25T12:00:00Z",
             ),
         ],
         vec![main_shell, delegation_shell],
@@ -3036,7 +3210,7 @@ fn test_elicitation_dialog_skipped_when_tools_not_in_flight() {
 
     // 2. PreToolUse → tools_in_flight = 1
     let mut pre = event_base(HookEventType::PreToolUse);
-    pre.recorded_at = "2026-01-31T00:00:01Z".to_string();
+    pre.recorded_at = "2099-01-31T00:00:01Z".to_string();
     let _ = state.apply_hook_event(pre);
     let session = state.sessions.get("session-1").expect("session");
     assert_eq!(session.state, SessionState::Working);
@@ -3044,7 +3218,7 @@ fn test_elicitation_dialog_skipped_when_tools_not_in_flight() {
 
     // 3. PostToolUse → tools_in_flight = 0, state = Working
     let mut post = event_base(HookEventType::PostToolUse);
-    post.recorded_at = "2026-01-31T00:00:02Z".to_string();
+    post.recorded_at = "2099-01-31T00:00:02Z".to_string();
     let _ = state.apply_hook_event(post);
     let session = state.sessions.get("session-1").expect("session");
     assert_eq!(session.state, SessionState::Working);
@@ -3053,7 +3227,7 @@ fn test_elicitation_dialog_skipped_when_tools_not_in_flight() {
     // 4. Late-arriving Notification(elicitation_dialog) — should NOT overwrite Working
     let mut notif = event_base(HookEventType::Notification);
     notif.notification_type = Some("elicitation_dialog".to_string());
-    notif.recorded_at = "2026-01-31T00:00:03Z".to_string();
+    notif.recorded_at = "2099-01-31T00:00:03Z".to_string();
     let outcome = state.apply_hook_event(notif);
     assert!(outcome.ok);
 
@@ -3073,11 +3247,11 @@ fn test_permission_prompt_skipped_when_tools_not_in_flight() {
     let _ = state.apply_hook_event(event_base(HookEventType::UserPromptSubmit));
 
     let mut pre = event_base(HookEventType::PreToolUse);
-    pre.recorded_at = "2026-01-31T00:00:01Z".to_string();
+    pre.recorded_at = "2099-01-31T00:00:01Z".to_string();
     let _ = state.apply_hook_event(pre);
 
     let mut post = event_base(HookEventType::PostToolUse);
-    post.recorded_at = "2026-01-31T00:00:02Z".to_string();
+    post.recorded_at = "2099-01-31T00:00:02Z".to_string();
     let _ = state.apply_hook_event(post);
 
     let session = state.sessions.get("session-1").expect("session");
@@ -3085,7 +3259,7 @@ fn test_permission_prompt_skipped_when_tools_not_in_flight() {
 
     let mut notif = event_base(HookEventType::Notification);
     notif.notification_type = Some("permission_prompt".to_string());
-    notif.recorded_at = "2026-01-31T00:00:03Z".to_string();
+    notif.recorded_at = "2099-01-31T00:00:03Z".to_string();
     let outcome = state.apply_hook_event(notif);
     assert!(outcome.ok);
 
@@ -3106,7 +3280,7 @@ fn test_elicitation_dialog_allowed_when_tools_in_flight() {
     let _ = state.apply_hook_event(event_base(HookEventType::UserPromptSubmit));
 
     let mut pre = event_base(HookEventType::PreToolUse);
-    pre.recorded_at = "2026-01-31T00:00:01Z".to_string();
+    pre.recorded_at = "2099-01-31T00:00:01Z".to_string();
     let _ = state.apply_hook_event(pre);
     let session = state.sessions.get("session-1").expect("session");
     assert_eq!(session.tools_in_flight, 1);
@@ -3114,7 +3288,7 @@ fn test_elicitation_dialog_allowed_when_tools_in_flight() {
     // Notification arrives while tool is in flight — this is the normal case
     let mut notif = event_base(HookEventType::Notification);
     notif.notification_type = Some("elicitation_dialog".to_string());
-    notif.recorded_at = "2026-01-31T00:00:02Z".to_string();
+    notif.recorded_at = "2099-01-31T00:00:02Z".to_string();
     let outcome = state.apply_hook_event(notif);
     assert!(outcome.ok);
 
@@ -3134,18 +3308,18 @@ fn test_permission_request_skipped_when_tools_not_in_flight() {
     let _ = state.apply_hook_event(event_base(HookEventType::UserPromptSubmit));
 
     let mut pre = event_base(HookEventType::PreToolUse);
-    pre.recorded_at = "2026-01-31T00:00:01Z".to_string();
+    pre.recorded_at = "2099-01-31T00:00:01Z".to_string();
     let _ = state.apply_hook_event(pre);
 
     let mut post = event_base(HookEventType::PostToolUse);
-    post.recorded_at = "2026-01-31T00:00:02Z".to_string();
+    post.recorded_at = "2099-01-31T00:00:02Z".to_string();
     let _ = state.apply_hook_event(post);
 
     let session = state.sessions.get("session-1").expect("session");
     assert_eq!(session.tools_in_flight, 0);
 
     let mut perm = event_base(HookEventType::PermissionRequest);
-    perm.recorded_at = "2026-01-31T00:00:03Z".to_string();
+    perm.recorded_at = "2099-01-31T00:00:03Z".to_string();
     let outcome = state.apply_hook_event(perm);
     assert!(outcome.ok);
 
@@ -3268,6 +3442,229 @@ fn empty_project_path_falls_back_to_cwd() {
     assert_eq!(
         session.project_path, repo_normalized,
         "With empty project_path, session should fall back to cwd-resolved identity"
+    );
+}
+
+#[test]
+fn snapshot_preserves_sole_stale_working_session() {
+    // A sole stale Working session must NOT be evicted — it may be a legitimate
+    // long-running worker (e.g., Codex) in a quiet period between hook events.
+    // Only evict when a competing session exists for the same project.
+    let now = Utc::now();
+    let stale_ts = (now - Duration::minutes(10)).to_rfc3339();
+
+    let mut state = ReducerState::from_snapshot(AppSnapshot {
+        projects: vec![],
+        sessions: vec![session_summary_fixture(
+            "stale-working",
+            10,
+            "/repo",
+            "/repo",
+            SessionState::Working,
+            &stale_ts,
+        )],
+        shells: vec![],
+        routing: vec![],
+        delegations: vec![],
+        runs: vec![],
+        diagnostics: DiagnosticsSummary {
+            events_ingested: 0,
+            sessions_tracked: 1,
+            shell_signals_tracked: 0,
+            events_skipped: 0,
+            stale_events_skipped: 0,
+            informational_events_skipped: 0,
+            reducer_events_skipped: 0,
+            last_error: None,
+            last_hook_event_at: None,
+        },
+        generated_at: now.to_rfc3339(),
+    });
+
+    assert_eq!(state.sessions.len(), 1);
+
+    state.gc_stale_sessions_at(now);
+
+    assert_eq!(
+        state.sessions.len(),
+        1,
+        "Sole stale working session must survive snapshot GC"
+    );
+    assert!(state.sessions.contains_key("stale-working"));
+}
+
+#[test]
+fn snapshot_preserves_fresh_working_session() {
+    let now = Utc::now();
+    let fresh_ts = (now - Duration::minutes(1)).to_rfc3339();
+
+    let mut state = ReducerState::from_snapshot(AppSnapshot {
+        projects: vec![],
+        sessions: vec![session_summary_fixture(
+            "fresh-working",
+            10,
+            "/repo",
+            "/repo",
+            SessionState::Working,
+            &fresh_ts,
+        )],
+        shells: vec![],
+        routing: vec![],
+        delegations: vec![],
+        runs: vec![],
+        diagnostics: DiagnosticsSummary {
+            events_ingested: 0,
+            sessions_tracked: 1,
+            shell_signals_tracked: 0,
+            events_skipped: 0,
+            stale_events_skipped: 0,
+            informational_events_skipped: 0,
+            reducer_events_skipped: 0,
+            last_error: None,
+            last_hook_event_at: None,
+        },
+        generated_at: now.to_rfc3339(),
+    });
+
+    state.gc_stale_sessions_at(now);
+
+    assert_eq!(
+        state.sessions.len(),
+        1,
+        "Fresh working session should survive snapshot GC"
+    );
+    let session = state.sessions.get("fresh-working").expect("session");
+    assert_eq!(session.state, SessionState::Working);
+}
+
+#[test]
+fn snapshot_preserves_sole_stale_ready_session() {
+    // A sole stale Ready session must NOT be evicted — same reasoning as Working.
+    let now = Utc::now();
+    let stale_ts = (now - Duration::minutes(10)).to_rfc3339();
+
+    let mut state = ReducerState::from_snapshot(AppSnapshot {
+        projects: vec![],
+        sessions: vec![SessionSummary {
+            state: SessionState::Ready,
+            state_changed_at: stale_ts.clone(),
+            updated_at: stale_ts.clone(),
+            last_activity_at: Some(stale_ts.clone()),
+            ..session_summary_fixture(
+                "stale-ready",
+                10,
+                "/repo",
+                "/repo",
+                SessionState::Ready,
+                &stale_ts,
+            )
+        }],
+        shells: vec![],
+        routing: vec![],
+        delegations: vec![],
+        runs: vec![],
+        diagnostics: DiagnosticsSummary {
+            events_ingested: 0,
+            sessions_tracked: 1,
+            shell_signals_tracked: 0,
+            events_skipped: 0,
+            stale_events_skipped: 0,
+            informational_events_skipped: 0,
+            reducer_events_skipped: 0,
+            last_error: None,
+            last_hook_event_at: None,
+        },
+        generated_at: now.to_rfc3339(),
+    });
+
+    assert_eq!(state.sessions.len(), 1);
+
+    state.gc_stale_sessions_at(now);
+
+    assert_eq!(
+        state.sessions.len(),
+        1,
+        "Sole stale ready session must survive snapshot GC"
+    );
+    assert!(state.sessions.contains_key("stale-ready"));
+}
+
+#[test]
+fn snapshot_gc_fixes_project_state_with_orphan_and_idle_session() {
+    let now = Utc::now();
+    let stale_ts = (now - Duration::minutes(10)).to_rfc3339();
+    let fresh_ts = (now - Duration::minutes(1)).to_rfc3339();
+
+    let mut state = ReducerState::from_snapshot(AppSnapshot {
+        projects: vec![],
+        sessions: vec![
+            session_summary_fixture(
+                "orphan-working",
+                10,
+                "/repo",
+                "/repo",
+                SessionState::Working,
+                &stale_ts,
+            ),
+            session_summary_fixture(
+                "current-idle",
+                20,
+                "/repo",
+                "/repo",
+                SessionState::Idle,
+                &fresh_ts,
+            ),
+        ],
+        shells: vec![],
+        routing: vec![],
+        delegations: vec![],
+        runs: vec![],
+        diagnostics: DiagnosticsSummary {
+            events_ingested: 0,
+            sessions_tracked: 2,
+            shell_signals_tracked: 0,
+            events_skipped: 0,
+            stale_events_skipped: 0,
+            informational_events_skipped: 0,
+            reducer_events_skipped: 0,
+            last_error: None,
+            last_hook_event_at: None,
+        },
+        generated_at: now.to_rfc3339(),
+    });
+
+    assert_eq!(state.sessions.len(), 2);
+
+    let project_before = state
+        .projects
+        .values()
+        .find(|p| p.project_path == "/repo")
+        .expect("project");
+    assert_eq!(
+        project_before.state,
+        SessionState::Working,
+        "Project should show Working before GC due to orphan session"
+    );
+
+    state.gc_stale_sessions_at(now);
+
+    assert_eq!(
+        state.sessions.len(),
+        1,
+        "Only the idle session should survive"
+    );
+    assert!(state.sessions.contains_key("current-idle"));
+    assert!(!state.sessions.contains_key("orphan-working"));
+
+    let project = state
+        .projects
+        .values()
+        .find(|p| p.project_path == "/repo")
+        .expect("project");
+    assert_eq!(
+        project.state,
+        SessionState::Idle,
+        "Project state should be Idle after orphan eviction"
     );
 }
 
@@ -3471,5 +3868,933 @@ fn test_stale_project_path_falls_back_to_file_path() {
     assert_ne!(
         session.project_path, "/nonexistent/stale/project/path",
         "Session must not be stranded on a nonexistent path"
+    );
+}
+
+#[test]
+fn snapshot_gc_preserves_all_stale_sessions_when_no_survivor() {
+    // Two Working sessions both stale — no survivor would remain if we evicted,
+    // so the GC must keep both.  This prevents the bug where all legitimate
+    // concurrent workers in a quiet period get wiped.
+    let now = Utc::now();
+    let stale_ts = (now - Duration::minutes(10)).to_rfc3339();
+
+    let mut state = ReducerState::from_snapshot(AppSnapshot {
+        projects: vec![],
+        sessions: vec![
+            session_summary_fixture(
+                "worker-a",
+                10,
+                "/repo",
+                "/repo",
+                SessionState::Working,
+                &stale_ts,
+            ),
+            session_summary_fixture(
+                "worker-b",
+                20,
+                "/repo",
+                "/repo",
+                SessionState::Working,
+                &stale_ts,
+            ),
+        ],
+        shells: vec![],
+        routing: vec![],
+        delegations: vec![],
+        runs: vec![],
+        diagnostics: DiagnosticsSummary {
+            events_ingested: 0,
+            sessions_tracked: 2,
+            shell_signals_tracked: 0,
+            events_skipped: 0,
+            stale_events_skipped: 0,
+            informational_events_skipped: 0,
+            reducer_events_skipped: 0,
+            last_error: None,
+            last_hook_event_at: None,
+        },
+        generated_at: now.to_rfc3339(),
+    });
+
+    assert_eq!(state.sessions.len(), 2);
+
+    state.gc_stale_sessions_at(now);
+
+    assert_eq!(
+        state.sessions.len(),
+        2,
+        "Both stale sessions must survive when no survivor would remain"
+    );
+    assert!(state.sessions.contains_key("worker-a"));
+    assert!(state.sessions.contains_key("worker-b"));
+
+    let project = state
+        .projects
+        .values()
+        .find(|p| p.project_path == "/repo")
+        .expect("project");
+    assert_eq!(
+        project.state,
+        SessionState::Working,
+        "Project should still show Working when both sessions are preserved"
+    );
+}
+
+#[test]
+fn snapshot_gc_evicts_stale_when_fresh_session_exists() {
+    // Three sessions for /repo: A and B are stale Working, C is fresh Working.
+    // C survives as the fresh survivor, so A and B should be evicted.
+    let now = Utc::now();
+    let stale_ts = (now - Duration::minutes(10)).to_rfc3339();
+    let fresh_ts = (now - Duration::minutes(1)).to_rfc3339();
+
+    let mut state = ReducerState::from_snapshot(AppSnapshot {
+        projects: vec![],
+        sessions: vec![
+            session_summary_fixture(
+                "stale-a",
+                10,
+                "/repo",
+                "/repo",
+                SessionState::Working,
+                &stale_ts,
+            ),
+            session_summary_fixture(
+                "stale-b",
+                20,
+                "/repo",
+                "/repo",
+                SessionState::Working,
+                &stale_ts,
+            ),
+            session_summary_fixture(
+                "fresh-c",
+                30,
+                "/repo",
+                "/repo",
+                SessionState::Working,
+                &fresh_ts,
+            ),
+        ],
+        shells: vec![],
+        routing: vec![],
+        delegations: vec![],
+        runs: vec![],
+        diagnostics: DiagnosticsSummary {
+            events_ingested: 0,
+            sessions_tracked: 3,
+            shell_signals_tracked: 0,
+            events_skipped: 0,
+            stale_events_skipped: 0,
+            informational_events_skipped: 0,
+            reducer_events_skipped: 0,
+            last_error: None,
+            last_hook_event_at: None,
+        },
+        generated_at: now.to_rfc3339(),
+    });
+
+    assert_eq!(state.sessions.len(), 3);
+
+    state.gc_stale_sessions_at(now);
+
+    assert_eq!(
+        state.sessions.len(),
+        1,
+        "Only the fresh session should survive"
+    );
+    assert!(!state.sessions.contains_key("stale-a"));
+    assert!(!state.sessions.contains_key("stale-b"));
+    assert!(state.sessions.contains_key("fresh-c"));
+
+    let project = state
+        .projects
+        .values()
+        .find(|p| p.project_path == "/repo")
+        .expect("project");
+    assert_eq!(
+        project.state,
+        SessionState::Working,
+        "Project should still show Working from the fresh survivor"
+    );
+}
+
+/// IMP-9: event-time GC does NOT evict Idle siblings.
+///
+/// When a Working session sends a new event, the event-time cleanup
+/// (`cleanup_orphaned_same_project_sessions`) must preserve Idle siblings
+/// even when they are stale (updated > 10 minutes ago).  Idle represents
+/// a terminal window the user may return to, so it should never be
+/// evicted by the shared `is_session_evictable` predicate.
+#[test]
+fn orphaned_session_gc_preserves_stale_idle_sibling() {
+    let mut state = ReducerState::from_snapshot(AppSnapshot {
+        projects: vec![],
+        sessions: vec![
+            // Working session: fresh
+            session_summary_fixture(
+                "working-session",
+                11,
+                "/repo",
+                "/repo",
+                SessionState::Working,
+                "2099-04-01T12:00:00Z",
+            ),
+            // Idle session: stale (updated 10+ minutes ago)
+            session_summary_fixture(
+                "idle-session",
+                22,
+                "/repo",
+                "/repo",
+                SessionState::Idle,
+                "2099-04-01T11:45:00Z",
+            ),
+        ],
+        shells: vec![],
+        routing: vec![],
+        delegations: vec![],
+        runs: vec![],
+        diagnostics: DiagnosticsSummary {
+            events_ingested: 0,
+            sessions_tracked: 2,
+            shell_signals_tracked: 0,
+            events_skipped: 0,
+            stale_events_skipped: 0,
+            informational_events_skipped: 0,
+            reducer_events_skipped: 0,
+            last_error: None,
+            last_hook_event_at: None,
+        },
+        generated_at: "2099-04-01T12:00:00Z".to_string(),
+    });
+
+    // Send a SessionStart from a brand-new session on the same project.
+    // The incoming timestamp is 15 minutes after the Idle session's last
+    // update — well past the 5-minute grace window.
+    let mut fresh_start = event_base(HookEventType::SessionStart);
+    fresh_start.session_id = "new-session".to_string();
+    fresh_start.pid = Some(33);
+    fresh_start.recorded_at = "2099-04-01T12:00:01Z".to_string();
+
+    let outcome = state.apply_hook_event(fresh_start);
+    assert!(outcome.ok, "{outcome:?}");
+
+    // The Idle session must survive — it is exempt from eviction.
+    assert!(
+        state.sessions.contains_key("idle-session"),
+        "Idle session should NOT be evicted regardless of staleness"
+    );
+
+    // The new session should exist.
+    assert!(state.sessions.contains_key("new-session"));
+
+    // The Working session was stale relative to the new event (12:00:00 vs
+    // 12:00:01, but only 1 second apart — within grace), so it also survives.
+    // If it didn't survive, the Idle assertion above is still the key check.
+    // Let's verify the project state reflects all survivors.
+    let project = state
+        .snapshot()
+        .projects
+        .into_iter()
+        .find(|p| p.project_path == "/repo")
+        .expect("project");
+
+    assert!(
+        project.session_count >= 2,
+        "At least the Idle and new sessions should remain, got {}",
+        project.session_count
+    );
+}
+
+/// IMP-2: Snapshot-time GC isolates eviction decisions per project.
+///
+/// Two projects each have a stale Working session and a fresh survivor.
+/// GC must evict the stale session in each project independently while
+/// preserving the fresh survivors, and each project must end up with
+/// exactly 1 session.
+#[test]
+fn snapshot_gc_cross_project_isolation() {
+    let base = chrono::DateTime::parse_from_rfc3339("2099-01-01T00:00:00Z")
+        .unwrap()
+        .with_timezone(&chrono::Utc);
+    let stale_ts = (base - Duration::minutes(10)).to_rfc3339();
+    let fresh_ts = (base - Duration::minutes(1)).to_rfc3339();
+
+    let mut state = ReducerState::from_snapshot(AppSnapshot {
+        projects: vec![],
+        sessions: vec![
+            // /repo-a: stale Working + fresh Working
+            session_summary_fixture(
+                "a-stale",
+                10,
+                "/repo-a",
+                "/repo-a",
+                SessionState::Working,
+                &stale_ts,
+            ),
+            session_summary_fixture(
+                "a-fresh",
+                11,
+                "/repo-a",
+                "/repo-a",
+                SessionState::Working,
+                &fresh_ts,
+            ),
+            // /repo-b: stale Working + fresh Idle
+            session_summary_fixture(
+                "b-stale",
+                20,
+                "/repo-b",
+                "/repo-b",
+                SessionState::Working,
+                &stale_ts,
+            ),
+            session_summary_fixture(
+                "b-fresh",
+                21,
+                "/repo-b",
+                "/repo-b",
+                SessionState::Idle,
+                &fresh_ts,
+            ),
+        ],
+        shells: vec![],
+        routing: vec![],
+        delegations: vec![],
+        runs: vec![],
+        diagnostics: DiagnosticsSummary {
+            events_ingested: 0,
+            sessions_tracked: 4,
+            shell_signals_tracked: 0,
+            events_skipped: 0,
+            stale_events_skipped: 0,
+            informational_events_skipped: 0,
+            reducer_events_skipped: 0,
+            last_error: None,
+            last_hook_event_at: None,
+        },
+        generated_at: base.to_rfc3339(),
+    });
+
+    assert_eq!(state.sessions.len(), 4);
+
+    state.gc_stale_sessions_at(base);
+
+    // Stale sessions evicted in both projects.
+    assert!(
+        !state.sessions.contains_key("a-stale"),
+        "/repo-a stale session should be evicted"
+    );
+    assert!(
+        !state.sessions.contains_key("b-stale"),
+        "/repo-b stale session should be evicted"
+    );
+
+    // Fresh sessions survive.
+    assert!(
+        state.sessions.contains_key("a-fresh"),
+        "/repo-a fresh survivor must remain"
+    );
+    assert!(
+        state.sessions.contains_key("b-fresh"),
+        "/repo-b fresh survivor must remain"
+    );
+
+    assert_eq!(state.sessions.len(), 2, "Exactly 2 sessions should remain");
+
+    // Each project has exactly 1 session.
+    let project_a = state
+        .projects
+        .values()
+        .find(|p| p.project_path == "/repo-a")
+        .expect("/repo-a project");
+    assert_eq!(
+        project_a.session_count, 1,
+        "/repo-a should have exactly 1 session"
+    );
+
+    let project_b = state
+        .projects
+        .values()
+        .find(|p| p.project_path == "/repo-b")
+        .expect("/repo-b project");
+    assert_eq!(
+        project_b.session_count, 1,
+        "/repo-b should have exactly 1 session"
+    );
+}
+
+/// IMP-3: Event-time GC never evicts the current session even if it is
+/// the sole session for its project.
+///
+/// When a `SessionStart` event arrives for a session that is the only
+/// session in its project, the `session_id != current_session_id` filter
+/// in `cleanup_orphaned_same_project_sessions` must exclude it.
+#[test]
+fn orphaned_session_gc_sole_session_no_eviction() {
+    let mut state = ReducerState::from_snapshot(AppSnapshot {
+        projects: vec![],
+        sessions: vec![session_summary_fixture(
+            "sole-session",
+            10,
+            "/repo",
+            "/repo",
+            SessionState::Working,
+            "2099-01-01T00:00:00Z",
+        )],
+        shells: vec![],
+        routing: vec![],
+        delegations: vec![],
+        runs: vec![],
+        diagnostics: DiagnosticsSummary {
+            events_ingested: 0,
+            sessions_tracked: 1,
+            shell_signals_tracked: 0,
+            events_skipped: 0,
+            stale_events_skipped: 0,
+            informational_events_skipped: 0,
+            reducer_events_skipped: 0,
+            last_error: None,
+            last_hook_event_at: None,
+        },
+        generated_at: "2099-01-01T00:00:00Z".to_string(),
+    });
+
+    assert_eq!(state.sessions.len(), 1);
+
+    // Ingest a SessionStart for the same session.
+    let mut event = event_base(HookEventType::SessionStart);
+    event.session_id = "sole-session".to_string();
+    event.pid = Some(10);
+    event.recorded_at = "2099-01-01T00:10:00Z".to_string();
+
+    let outcome = state.apply_hook_event(event);
+    assert!(outcome.ok, "{outcome:?}");
+
+    // The sole session must NOT be evicted.
+    assert!(
+        state.sessions.contains_key("sole-session"),
+        "Sole session should survive event-time GC"
+    );
+    assert_eq!(state.sessions.len(), 1, "Session count should still be 1");
+}
+
+/// IMP-4: Snapshot-time GC uses the correct anchor for Ready sessions.
+///
+/// For Ready sessions the eviction anchor is `max(state_changed_at,
+/// last_activity_at)`.  This test covers three scenarios:
+///   A) `last_activity_at` fresh, `state_changed_at` stale — not evicted
+///   B) `state_changed_at` fresh, `last_activity_at` stale — not evicted
+///   C) Both stale — evicted
+#[test]
+fn snapshot_gc_ready_session_uses_correct_anchor() {
+    let base = chrono::DateTime::parse_from_rfc3339("2099-01-01T00:10:00Z")
+        .unwrap()
+        .with_timezone(&chrono::Utc);
+    let stale_ts = (base - Duration::minutes(10)).to_rfc3339();
+    let fresh_ts = (base - Duration::minutes(1)).to_rfc3339();
+
+    // --- Scenario A: last_activity_at is fresh, state_changed_at is stale ---
+    {
+        let ready_session = SessionSummary {
+            session_id: "ready-a".to_string(),
+            pid: 10,
+            cwd: "/repo".to_string(),
+            project_id: "/repo".to_string(),
+            project_path: "/repo".to_string(),
+            workspace_id: default_workspace_id("/repo"),
+            state: SessionState::Ready,
+            state_changed_at: stale_ts.clone(),
+            updated_at: stale_ts.clone(),
+            last_event: None,
+            last_activity_at: Some(fresh_ts.clone()),
+            tools_in_flight: 0,
+            ready_reason: None,
+        };
+        let survivor = session_summary_fixture(
+            "idle-survivor-a",
+            11,
+            "/repo",
+            "/repo",
+            SessionState::Idle,
+            &fresh_ts,
+        );
+
+        let mut state = ReducerState::from_snapshot(AppSnapshot {
+            projects: vec![],
+            sessions: vec![ready_session, survivor],
+            shells: vec![],
+            routing: vec![],
+            delegations: vec![],
+            runs: vec![],
+            diagnostics: DiagnosticsSummary {
+                events_ingested: 0,
+                sessions_tracked: 2,
+                shell_signals_tracked: 0,
+                events_skipped: 0,
+                stale_events_skipped: 0,
+                informational_events_skipped: 0,
+                reducer_events_skipped: 0,
+                last_error: None,
+                last_hook_event_at: None,
+            },
+            generated_at: base.to_rfc3339(),
+        });
+
+        state.gc_stale_sessions_at(base);
+
+        assert!(
+            state.sessions.contains_key("ready-a"),
+            "Scenario A: Ready session with fresh last_activity_at should survive"
+        );
+    }
+
+    // --- Scenario B: state_changed_at is fresh, last_activity_at is stale ---
+    {
+        let ready_session = SessionSummary {
+            session_id: "ready-b".to_string(),
+            pid: 20,
+            cwd: "/repo".to_string(),
+            project_id: "/repo".to_string(),
+            project_path: "/repo".to_string(),
+            workspace_id: default_workspace_id("/repo"),
+            state: SessionState::Ready,
+            state_changed_at: fresh_ts.clone(),
+            updated_at: fresh_ts.clone(),
+            last_event: None,
+            last_activity_at: Some(stale_ts.clone()),
+            tools_in_flight: 0,
+            ready_reason: None,
+        };
+        let survivor = session_summary_fixture(
+            "idle-survivor-b",
+            21,
+            "/repo",
+            "/repo",
+            SessionState::Idle,
+            &fresh_ts,
+        );
+
+        let mut state = ReducerState::from_snapshot(AppSnapshot {
+            projects: vec![],
+            sessions: vec![ready_session, survivor],
+            shells: vec![],
+            routing: vec![],
+            delegations: vec![],
+            runs: vec![],
+            diagnostics: DiagnosticsSummary {
+                events_ingested: 0,
+                sessions_tracked: 2,
+                shell_signals_tracked: 0,
+                events_skipped: 0,
+                stale_events_skipped: 0,
+                informational_events_skipped: 0,
+                reducer_events_skipped: 0,
+                last_error: None,
+                last_hook_event_at: None,
+            },
+            generated_at: base.to_rfc3339(),
+        });
+
+        state.gc_stale_sessions_at(base);
+
+        assert!(
+            state.sessions.contains_key("ready-b"),
+            "Scenario B: Ready session with fresh state_changed_at should survive"
+        );
+    }
+
+    // --- Scenario C: Both timestamps stale — should be evicted ---
+    {
+        let ready_session = SessionSummary {
+            session_id: "ready-c".to_string(),
+            pid: 30,
+            cwd: "/repo".to_string(),
+            project_id: "/repo".to_string(),
+            project_path: "/repo".to_string(),
+            workspace_id: default_workspace_id("/repo"),
+            state: SessionState::Ready,
+            state_changed_at: stale_ts.clone(),
+            updated_at: stale_ts.clone(),
+            last_event: None,
+            last_activity_at: Some(stale_ts.clone()),
+            tools_in_flight: 0,
+            ready_reason: None,
+        };
+        let survivor = session_summary_fixture(
+            "idle-survivor-c",
+            31,
+            "/repo",
+            "/repo",
+            SessionState::Idle,
+            &fresh_ts,
+        );
+
+        let mut state = ReducerState::from_snapshot(AppSnapshot {
+            projects: vec![],
+            sessions: vec![ready_session, survivor],
+            shells: vec![],
+            routing: vec![],
+            delegations: vec![],
+            runs: vec![],
+            diagnostics: DiagnosticsSummary {
+                events_ingested: 0,
+                sessions_tracked: 2,
+                shell_signals_tracked: 0,
+                events_skipped: 0,
+                stale_events_skipped: 0,
+                informational_events_skipped: 0,
+                reducer_events_skipped: 0,
+                last_error: None,
+                last_hook_event_at: None,
+            },
+            generated_at: base.to_rfc3339(),
+        });
+
+        state.gc_stale_sessions_at(base);
+
+        assert!(
+            !state.sessions.contains_key("ready-c"),
+            "Scenario C: Ready session with both timestamps stale should be evicted"
+        );
+        assert!(
+            state.sessions.contains_key("idle-survivor-c"),
+            "Scenario C: Idle survivor should remain"
+        );
+    }
+}
+
+/// BA-4: `recompute_projects` must normalize path variants so that
+/// sessions with `/repo` and `/repo/` collapse into a single project
+/// entry rather than creating two separate project rows.
+#[test]
+fn recompute_projects_normalizes_path_variants() {
+    let state = ReducerState::from_snapshot(AppSnapshot {
+        projects: vec![],
+        sessions: vec![
+            session_summary_fixture(
+                "session-no-slash",
+                10,
+                "/repo",
+                "/repo",
+                SessionState::Working,
+                "2099-01-01T00:00:00Z",
+            ),
+            session_summary_fixture(
+                "session-trailing-slash",
+                20,
+                "/repo/",
+                "/repo/",
+                SessionState::Idle,
+                "2099-01-01T00:01:00Z",
+            ),
+        ],
+        shells: vec![],
+        routing: vec![],
+        delegations: vec![],
+        runs: vec![],
+        diagnostics: DiagnosticsSummary {
+            events_ingested: 0,
+            sessions_tracked: 2,
+            shell_signals_tracked: 0,
+            events_skipped: 0,
+            stale_events_skipped: 0,
+            informational_events_skipped: 0,
+            reducer_events_skipped: 0,
+            last_error: None,
+            last_hook_event_at: None,
+        },
+        generated_at: "2099-01-01T00:01:00Z".to_string(),
+    });
+
+    // There must be exactly one project entry.
+    assert_eq!(
+        state.projects.len(),
+        1,
+        "Path variants should collapse into a single project, got: {:?}",
+        state.projects.keys().collect::<Vec<_>>()
+    );
+
+    let project = state.projects.values().next().unwrap();
+    assert_eq!(
+        project.session_count, 2,
+        "Both sessions should be counted under the single project"
+    );
+}
+
+/// Shell-corroborated Working session survives snapshot-time GC.
+///
+/// A Working session that is past the grace period but has a matching
+/// shell signal (proving the process is still alive) must NOT be evicted.
+#[test]
+fn shell_corroborated_working_session_survives_snapshot_gc() {
+    let base = chrono::DateTime::parse_from_rfc3339("2099-04-01T12:00:00Z")
+        .unwrap()
+        .with_timezone(&chrono::Utc);
+    let stale_ts = (base - Duration::minutes(10)).to_rfc3339();
+    let fresh_ts = base.to_rfc3339();
+
+    let mut state = ReducerState::from_snapshot(AppSnapshot {
+        projects: vec![],
+        sessions: vec![
+            // Working session: stale (updated 10 minutes ago)
+            session_summary_fixture(
+                "working-session",
+                11,
+                "/repo",
+                "/repo",
+                SessionState::Working,
+                &stale_ts,
+            ),
+            // Idle session: fresh survivor
+            session_summary_fixture(
+                "idle-session",
+                22,
+                "/repo",
+                "/repo",
+                SessionState::Idle,
+                &fresh_ts,
+            ),
+        ],
+        // Shell signal corroborates the Working session's PID
+        shells: vec![ShellSignal {
+            pid: 11,
+            cwd: "/repo".to_string(),
+            tty: "/dev/ttys011".to_string(),
+            parent_app: "ghostty".to_string(),
+            tmux_session: None,
+            tmux_client_tty: None,
+            tmux_pane: None,
+            tmux_panes: vec![],
+            updated_at: fresh_ts.clone(),
+        }],
+        routing: vec![],
+        delegations: vec![],
+        runs: vec![],
+        diagnostics: DiagnosticsSummary {
+            events_ingested: 0,
+            sessions_tracked: 2,
+            shell_signals_tracked: 1,
+            events_skipped: 0,
+            stale_events_skipped: 0,
+            informational_events_skipped: 0,
+            reducer_events_skipped: 0,
+            last_error: None,
+            last_hook_event_at: None,
+        },
+        generated_at: fresh_ts,
+    });
+
+    state.gc_stale_sessions_at(base);
+
+    assert_eq!(
+        state.sessions.len(),
+        2,
+        "Shell-corroborated Working session must survive snapshot GC"
+    );
+    assert!(
+        state.sessions.contains_key("working-session"),
+        "Working session with shell signal must not be evicted"
+    );
+}
+
+/// Working session WITHOUT shell signal is evicted at snapshot time
+/// (preserves existing behavior for true orphans).
+#[test]
+fn working_session_without_shell_signal_evicted_at_snapshot() {
+    let base = chrono::DateTime::parse_from_rfc3339("2099-04-01T12:00:00Z")
+        .unwrap()
+        .with_timezone(&chrono::Utc);
+    let stale_ts = (base - Duration::minutes(10)).to_rfc3339();
+    let fresh_ts = base.to_rfc3339();
+
+    let mut state = ReducerState::from_snapshot(AppSnapshot {
+        projects: vec![],
+        sessions: vec![
+            // Working session: stale, NO shell signal
+            session_summary_fixture(
+                "orphan-worker",
+                11,
+                "/repo",
+                "/repo",
+                SessionState::Working,
+                &stale_ts,
+            ),
+            // Idle session: survivor
+            session_summary_fixture(
+                "idle-session",
+                22,
+                "/repo",
+                "/repo",
+                SessionState::Idle,
+                &fresh_ts,
+            ),
+        ],
+        shells: vec![], // No shell signals — no corroboration
+        routing: vec![],
+        delegations: vec![],
+        runs: vec![],
+        diagnostics: DiagnosticsSummary {
+            events_ingested: 0,
+            sessions_tracked: 2,
+            shell_signals_tracked: 0,
+            events_skipped: 0,
+            stale_events_skipped: 0,
+            informational_events_skipped: 0,
+            reducer_events_skipped: 0,
+            last_error: None,
+            last_hook_event_at: None,
+        },
+        generated_at: fresh_ts,
+    });
+
+    state.gc_stale_sessions_at(base);
+
+    assert_eq!(
+        state.sessions.len(),
+        1,
+        "Working session without shell corroboration should be evicted"
+    );
+    assert!(
+        state.sessions.contains_key("idle-session"),
+        "Only the Idle survivor should remain"
+    );
+}
+
+/// Shell-corroborated Working session survives event-time GC.
+///
+/// When a new session event arrives, the inline cleanup must also respect
+/// shell corroboration for active siblings.
+#[test]
+fn shell_corroborated_working_session_survives_event_time_gc() {
+    let mut state = ReducerState::from_snapshot(AppSnapshot {
+        projects: vec![],
+        sessions: vec![
+            // Working session: stale but has shell signal
+            session_summary_fixture(
+                "live-worker",
+                11,
+                "/repo",
+                "/repo",
+                SessionState::Working,
+                "2099-04-01T11:50:00Z",
+            ),
+        ],
+        shells: vec![ShellSignal {
+            pid: 11,
+            cwd: "/repo".to_string(),
+            tty: "/dev/ttys011".to_string(),
+            parent_app: "ghostty".to_string(),
+            tmux_session: None,
+            tmux_client_tty: None,
+            tmux_pane: None,
+            tmux_panes: vec![],
+            updated_at: "2099-04-01T12:00:00Z".to_string(),
+        }],
+        routing: vec![],
+        delegations: vec![],
+        runs: vec![],
+        diagnostics: DiagnosticsSummary {
+            events_ingested: 0,
+            sessions_tracked: 1,
+            shell_signals_tracked: 1,
+            events_skipped: 0,
+            stale_events_skipped: 0,
+            informational_events_skipped: 0,
+            reducer_events_skipped: 0,
+            last_error: None,
+            last_hook_event_at: None,
+        },
+        generated_at: "2099-04-01T12:00:00Z".to_string(),
+    });
+
+    // New session start arrives — triggers event-time cleanup
+    let mut event = event_base(HookEventType::SessionStart);
+    event.session_id = "new-session".to_string();
+    event.pid = Some(33);
+    event.recorded_at = "2099-04-01T12:01:00Z".to_string();
+
+    let outcome = state.apply_hook_event(event);
+    assert!(outcome.ok, "{outcome:?}");
+
+    assert!(
+        state.sessions.contains_key("live-worker"),
+        "Shell-corroborated Working session must survive event-time GC"
+    );
+    assert!(
+        state.sessions.contains_key("new-session"),
+        "New session must be created"
+    );
+}
+
+/// Both a stale shell-corroborated Working session and a stale Idle session
+/// survive — they are protected by different mechanisms (shell corroboration
+/// vs. Idle immunity).
+#[test]
+fn quiet_live_worker_with_idle_sibling_both_survive() {
+    let base = chrono::DateTime::parse_from_rfc3339("2099-04-01T12:00:00Z")
+        .unwrap()
+        .with_timezone(&chrono::Utc);
+    let worker_ts = (base - Duration::minutes(7)).to_rfc3339();
+    let idle_ts = (base - Duration::minutes(15)).to_rfc3339();
+    let fresh_ts = base.to_rfc3339();
+
+    let mut state = ReducerState::from_snapshot(AppSnapshot {
+        projects: vec![],
+        sessions: vec![
+            // Working session: stale, has shell signal
+            session_summary_fixture(
+                "quiet-worker",
+                11,
+                "/repo",
+                "/repo",
+                SessionState::Working,
+                &worker_ts,
+            ),
+            // Idle session: stale too
+            session_summary_fixture(
+                "idle-terminal",
+                22,
+                "/repo",
+                "/repo",
+                SessionState::Idle,
+                &idle_ts,
+            ),
+        ],
+        shells: vec![ShellSignal {
+            pid: 11,
+            cwd: "/repo".to_string(),
+            tty: "/dev/ttys011".to_string(),
+            parent_app: "ghostty".to_string(),
+            tmux_session: None,
+            tmux_client_tty: None,
+            tmux_pane: None,
+            tmux_panes: vec![],
+            updated_at: fresh_ts.clone(),
+        }],
+        routing: vec![],
+        delegations: vec![],
+        runs: vec![],
+        diagnostics: DiagnosticsSummary {
+            events_ingested: 0,
+            sessions_tracked: 2,
+            shell_signals_tracked: 1,
+            events_skipped: 0,
+            stale_events_skipped: 0,
+            informational_events_skipped: 0,
+            reducer_events_skipped: 0,
+            last_error: None,
+            last_hook_event_at: None,
+        },
+        generated_at: fresh_ts,
+    });
+
+    state.gc_stale_sessions_at(base);
+
+    assert_eq!(
+        state.sessions.len(),
+        2,
+        "Both sessions should survive: Working (shell-corroborated) + Idle (always immune)"
     );
 }

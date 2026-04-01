@@ -33,11 +33,8 @@ struct ActivationPolicy {
         fallbackTerminalApp: () -> SupportedTerminalApp = { ActivationPolicyFallback.defaultTerminalApp() },
     ) -> ActivationPolicyIntent {
         let resolvedSessionName = normalized(sessionName) ?? resolvePreferredSessionName(route: route)
-        let hostTty = resolvePreferredHostTty(route: route, sessionName: resolvedSessionName)
-        let paneId = resolvePreferredTmuxPane(
-            sessionName: resolvedSessionName,
-            route: route,
-        )
+        let hostTty = resolvePreferredHostTty(route: route)
+        let paneId = resolvePreferredTmuxPane(route: route)
 
         if let app = resolveRoutedTerminalApp(route: route) {
             return ActivationPolicyIntent(
@@ -77,29 +74,14 @@ struct ActivationPolicy {
         return normalized(route.target.sessionName)
     }
 
-    private func resolvePreferredHostTty(route: RuntimeRoutingView?, sessionName: String?) -> String? {
-        guard let route else {
-            return nil
-        }
-
-        let resolvedSessionName = normalized(sessionName)
-        guard resolvedSessionName == nil || normalized(route.target.sessionName) == resolvedSessionName else {
-            return nil
-        }
-
-        return normalized(route.target.hostTty)
+    private func resolvePreferredHostTty(route: RuntimeRoutingView?) -> String? {
+        normalized(route?.target.hostTty)
     }
 
-    private func resolvePreferredTmuxPane(
-        sessionName: String?,
-        route: RuntimeRoutingView?,
-    ) -> String? {
-        let resolvedSessionName = normalized(sessionName)
-
+    private func resolvePreferredTmuxPane(route: RuntimeRoutingView?) -> String? {
         if let route,
            route.target.kind == "tmux_pane",
-           let paneId = normalized(route.target.paneId),
-           resolvedSessionName == nil || normalized(route.target.sessionName) == resolvedSessionName
+           let paneId = normalized(route.target.paneId)
         {
             return paneId
         }

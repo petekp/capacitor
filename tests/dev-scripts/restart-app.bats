@@ -13,6 +13,20 @@ teardown() {
     rm -rf "$TEST_DIR"
 }
 
+write_minimal_plist() {
+    local path="$1"
+
+    mkdir -p "$(dirname "$path")"
+    cat > "$path" <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+</dict>
+</plist>
+EOF
+}
+
 run_restart_cleanup_shell() {
     local script_body="$1"
     shift
@@ -94,6 +108,36 @@ reap_runtime_service "$TEST_PORT"
 
     run grep -F -- "-KILL $listener_pid" "$signals_log"
     [ "$status" -eq 1 ]
+}
+
+@test "write_debug_bundle_metadata stamps llm feature overrides into the debug app plist" {
+    local debug_app="$TEST_DIR/CapacitorDebug.app"
+    local plist="$debug_app/Contents/Info.plist"
+
+    mkdir -p "$debug_app/Contents"
+    write_minimal_plist "$plist"
+
+    run env \
+        /bin/bash -lc "
+            CAPACITOR_RESTART_APP_SOURCE_ONLY=1
+            CHANNEL='alpha'
+            PROFILE='stable'
+            SKIP_SETUP_VALIDATION='0'
+            CAPACITOR_FEATURES_ENABLED='projectDetails,llmFeatures'
+            CAPACITOR_FEATURES_DISABLED='delegationLoop'
+            source '$SCRIPT_PATH'
+            write_debug_bundle_metadata '$plist'
+            /usr/libexec/PlistBuddy -c 'Print :CapacitorFeaturesEnabled' '$plist'
+            /usr/libexec/PlistBuddy -c 'Print :CapacitorFeaturesDisabled' '$plist'
+            /usr/libexec/PlistBuddy -c 'Print :CapacitorChannel' '$plist'
+            /usr/libexec/PlistBuddy -c 'Print :CapacitorProfile' '$plist'
+        "
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"projectDetails,llmFeatures"* ]]
+    [[ "$output" == *"delegationLoop"* ]]
+    [[ "$output" == *"alpha"* ]]
+    [[ "$output" == *"stable"* ]]
 }
 
 @test "kill_stale_capacitor_daemon removes legacy daemon residue" {

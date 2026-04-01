@@ -136,6 +136,25 @@ final class AppConfigTests: XCTestCase {
         XCTAssertFalse(config.featureFlags.projectDetails)
     }
 
+    func testInfoFeatureOverridesApplyAfterDefaults() {
+        let config = AppConfig.resolve(
+            environment: [
+                "CAPACITOR_CHANNEL": "alpha",
+                "CAPACITOR_PROFILE": "stable",
+            ],
+            info: [
+                "CapacitorFeaturesEnabled": "projectDetails,llmFeatures",
+            ],
+            configFile: nil,
+            defaultChannel: .prod,
+        )
+
+        XCTAssertEqual(config.channel, .alpha)
+        XCTAssertEqual(config.profile, .stable)
+        XCTAssertTrue(config.featureFlags.projectDetails)
+        XCTAssertTrue(config.featureFlags.llmFeatures)
+    }
+
     func testEnvironmentFeatureOverridesApplyAfterFrontierDefaults() {
         let config = AppConfig.resolve(
             environment: [

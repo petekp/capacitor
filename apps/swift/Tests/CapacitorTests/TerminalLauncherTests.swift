@@ -280,16 +280,14 @@ final class TerminalLauncherTests: XCTestCase {
         XCTAssertEqual(results.first?.success, false)
     }
 
-    func testLaunchTerminalPrefersMatchingActivationIntentSessionOverFallbackResolver() async {
-        // When the routed session name matches the project directory name,
-        // it should be preferred over the fallback resolver.
-        let project = makeProject(name: "project-a", path: "/Users/pete/Code/project-a")
+    func testLaunchTerminalUsesRustSessionNameAsPrimaryTarget() async {
+        let project = makeProject(name: "capacitor", path: "/Code/capacitor")
         let exp = expectation(description: "launch result")
         var resolvedSession: String?
 
         let launcher = TerminalLauncher(
             appleScript: StubAppleScriptClient(shouldSucceed: true),
-            sessionResolutionPolicy: SessionResolutionPolicy(discoverFallbackSession: { _ in "fallback-session" }),
+            sessionResolutionPolicy: SessionResolutionPolicy(discoverFallbackSession: { _ in "capacitor" }),
             activateProjectSessionOverride: { sessionName, _ in
                 resolvedSession = sessionName
                 return true
@@ -298,7 +296,7 @@ final class TerminalLauncherTests: XCTestCase {
         launcher.activationIntentResolver = { _, _, _ in
             ActivationPolicyIntent(
                 terminalApp: ActivationPolicyTerminalAppDecision(app: .ghostty, source: .runtimeRoute),
-                sessionName: "project-a",
+                sessionName: "capacitor-dev",
                 hostTty: "/dev/ttys001",
                 paneId: "%12",
             )
@@ -310,13 +308,10 @@ final class TerminalLauncherTests: XCTestCase {
         launcher.launchTerminal(for: project)
         await fulfillment(of: [exp], timeout: 1.0)
 
-        XCTAssertEqual(resolvedSession, "project-a")
+        XCTAssertEqual(resolvedSession, "capacitor-dev")
     }
 
-    /// When the routed session name comes from a different project's tmux
-    /// session (CWD drift), it should be rejected in favor of the project
-    /// directory name to prevent cross-project activation.
-    func testLaunchTerminalRejectsCrossProjectRoutedSessionName() async {
+    func testLaunchTerminalFallsBackToProjectBasenameWhenRustSessionNameMissing() async {
         let project = makeProject(name: "circuit", path: "/Users/pete/Code/circuit")
         let exp = expectation(description: "launch result")
         var resolvedSession: String?
@@ -329,12 +324,10 @@ final class TerminalLauncherTests: XCTestCase {
                 return true
             },
         )
-        // Simulate CWD drift: routing engine returns "arc-design-studio"
-        // because that tmux session has a pane whose CWD is /Code/circuit
         launcher.activationIntentResolver = { _, _, _ in
             ActivationPolicyIntent(
                 terminalApp: ActivationPolicyTerminalAppDecision(app: .ghostty, source: .runtimeRoute),
-                sessionName: "arc-design-studio",
+                sessionName: " ",
                 hostTty: "/dev/ttys008",
                 paneId: "%9",
             )
@@ -346,8 +339,35 @@ final class TerminalLauncherTests: XCTestCase {
         launcher.launchTerminal(for: project)
         await fulfillment(of: [exp], timeout: 1.0)
 
-        // Should use the project directory name, not the cross-project session
         XCTAssertEqual(resolvedSession, "circuit")
+    }
+
+    func testActivationPolicyPreservesHostTtyAndPaneWhenSessionNamesDiffer() {
+        let intent = ActivationPolicy().resolveIntent(
+            projectPath: "/Code/capacitor",
+            clientTty: nil,
+            sessionName: "capacitor",
+            route: RuntimeRoutingView(
+                workspaceId: "workspace-capacitor",
+                projectPath: "/Code/capacitor",
+                status: "attached",
+                target: CoreRoutingTarget(
+                    kind: "tmux_pane",
+                    terminalApp: "ghostty",
+                    sessionName: "caps",
+                    paneId: "%42",
+                    hostTty: "/dev/ttys002",
+                ),
+                reasonCode: "TMUX_PANE_ATTACHED",
+                reason: "Attached tmux pane",
+                updatedAt: "2026-03-31T00:00:00Z",
+            ),
+            fallbackTerminalApp: { .terminal },
+        )
+
+        XCTAssertEqual(intent.sessionName, "capacitor")
+        XCTAssertEqual(intent.hostTty, "/dev/ttys002")
+        XCTAssertEqual(intent.paneId, "%42")
     }
 
     // MARK: - Unified Activation Tests
@@ -555,8 +575,8 @@ final class TerminalLauncherTests: XCTestCase {
         XCTAssertEqual(tty, "/dev/ttys002", "Should prefer client already on target session")
     }
 
-    /// When no client is on the target session, fall back to the first available TTY.
-    func testResolveClientTtyFallsBackWhenNoSessionMatch() async {
+    /// When no client is on the target session, return nil instead of picking an unrelated client.
+    func testResolveClientTtyReturnsNilWhenNoSessionMatches() async {
         let tty = await TerminalLauncher.resolveAnyTmuxClientTty(
             targetSession: "nonexistent-session",
             runScript: { cmd in
@@ -566,7 +586,7 @@ final class TerminalLauncherTests: XCTestCase {
                 return (0, "/dev/ttys001 alpha\n/dev/ttys002 beta\n")
             },
         )
-        XCTAssertEqual(tty, "/dev/ttys001", "Should fall back to first client when no session matches")
+        XCTAssertNil(tty, "Should return nil when no session matches")
     }
 
     func testResolveClientTtyPrefersExplicitHostTtyWhenAttached() async {
@@ -681,6 +701,162 @@ final class TerminalLauncherTests: XCTestCase {
 
         XCTAssertTrue(killed)
         XCTAssertEqual(commands, ["tmux kill-session -t 'delegation-54da230f' 2>&1"])
+    }
+
+    func testResolveAnyClientTtyReturnsNilWhenNoClientMatchesHints() async {
+        let tty = await TmuxRouter(
+            runScript: { command in
+                switch command {
+                case "tmux display-message -p '#{client_tty}' 2>/dev/null":
+                    return (1, nil)
+                case "tmux list-clients -F '#{client_tty} #{session_name}' 2>/dev/null":
+                    return (0, """
+                    /dev/ttys001 unrelated
+                    /dev/ttys002 another
+                    """)
+                default:
+                    XCTFail("Unexpected command: \(command)")
+                    return (1, nil)
+                }
+            },
+        ).resolveAnyClientTty(
+            preferredHostTty: "/dev/ttys099",
+            targetSession: "caps",
+        )
+
+        XCTAssertNil(tty)
+    }
+
+    // MARK: - Cross-Project Session Name Validation
+
+    func testTrustsRoutedSessionNameFromRuntime() async {
+        // The runtime router resolved that "arc-design-studio" is associated with
+        // the circuit project (a shell in that session cd'd into /Code/circuit).
+        // The launcher should trust the runtime's resolution and activate that session.
+        let project = makeProject(name: "circuit", path: "/Users/pete/Code/circuit")
+        let exp = expectation(description: "launch result")
+        var resolvedSession: String?
+
+        let launcher = TerminalLauncher(
+            appleScript: StubAppleScriptClient(shouldSucceed: true),
+            sessionResolutionPolicy: SessionResolutionPolicy(),
+            activateProjectSessionOverride: { sessionName, _ in
+                resolvedSession = sessionName
+                return true
+            },
+        )
+        launcher.activationIntentResolver = { _, _, _ in
+            ActivationPolicyIntent(
+                terminalApp: ActivationPolicyTerminalAppDecision(app: .ghostty, source: .runtimeRoute),
+                sessionName: "arc-design-studio",
+                hostTty: "/dev/ttys001",
+                paneId: "%12",
+            )
+        }
+        launcher.onActivationResult = { _ in
+            exp.fulfill()
+        }
+
+        launcher.launchTerminal(for: project)
+        await fulfillment(of: [exp], timeout: 1.0)
+
+        XCTAssertEqual(resolvedSession, "arc-design-studio",
+                       "Runtime-routed session names should be trusted")
+    }
+
+    func testClearsStaleHintsWhenIntentSessionDiffersFromResolved() async {
+        let project = makeProject(name: "circuit", path: "/Users/pete/Code/circuit")
+        let exp = expectation(description: "launch result")
+        var resolvedSession: String?
+
+        let launcher = TerminalLauncher(
+            appleScript: StubAppleScriptClient(shouldSucceed: true),
+            sessionResolutionPolicy: SessionResolutionPolicy(discoverFallbackSession: { _ in "local-session" }),
+            activateProjectSessionOverride: { sessionName, _ in
+                resolvedSession = sessionName
+                return true
+            },
+        )
+        launcher.activationIntentResolver = { _, _, sessionName in
+            ActivationPolicyIntent(
+                terminalApp: ActivationPolicyTerminalAppDecision(app: .ghostty, source: .runtimeRoute),
+                sessionName: sessionName == nil ? nil : "foreign-session",
+                hostTty: "/dev/ttys099",
+                paneId: "%42",
+            )
+        }
+        launcher.onActivationResult = { _ in
+            exp.fulfill()
+        }
+
+        launcher.launchTerminal(for: project)
+        await fulfillment(of: [exp], timeout: 1.0)
+
+        XCTAssertEqual(resolvedSession, "local-session",
+                       "Resolved session should come from fallback discovery, not the stale intent session name")
+    }
+
+    func testAcceptsSameProjectSessionName() async {
+        let project = makeProject(name: "circuit", path: "/Users/pete/Code/circuit")
+        let exp = expectation(description: "launch result")
+        var resolvedSession: String?
+
+        let launcher = TerminalLauncher(
+            appleScript: StubAppleScriptClient(shouldSucceed: true),
+            sessionResolutionPolicy: SessionResolutionPolicy(),
+            activateProjectSessionOverride: { sessionName, _ in
+                resolvedSession = sessionName
+                return true
+            },
+        )
+        launcher.activationIntentResolver = { _, _, _ in
+            ActivationPolicyIntent(
+                terminalApp: ActivationPolicyTerminalAppDecision(app: .ghostty, source: .runtimeRoute),
+                sessionName: "circuit",
+                hostTty: "/dev/ttys001",
+                paneId: "%5",
+            )
+        }
+        launcher.onActivationResult = { _ in
+            exp.fulfill()
+        }
+
+        launcher.launchTerminal(for: project)
+        await fulfillment(of: [exp], timeout: 1.0)
+
+        XCTAssertEqual(resolvedSession, "circuit")
+    }
+
+    func testAcceptsGenericSessionName() async {
+        let project = makeProject(name: "circuit", path: "/Users/pete/Code/circuit")
+        let exp = expectation(description: "launch result")
+        var resolvedSession: String?
+
+        let launcher = TerminalLauncher(
+            appleScript: StubAppleScriptClient(shouldSucceed: true),
+            sessionResolutionPolicy: SessionResolutionPolicy(),
+            activateProjectSessionOverride: { sessionName, _ in
+                resolvedSession = sessionName
+                return true
+            },
+        )
+        launcher.activationIntentResolver = { _, _, _ in
+            ActivationPolicyIntent(
+                terminalApp: ActivationPolicyTerminalAppDecision(app: .ghostty, source: .runtimeRoute),
+                sessionName: "dev",
+                hostTty: "/dev/ttys003",
+                paneId: "%1",
+            )
+        }
+        launcher.onActivationResult = { _ in
+            exp.fulfill()
+        }
+
+        launcher.launchTerminal(for: project)
+        await fulfillment(of: [exp], timeout: 1.0)
+
+        XCTAssertEqual(resolvedSession, "dev",
+                       "Generic session names should be accepted for any project")
     }
 
     // MARK: - Helpers

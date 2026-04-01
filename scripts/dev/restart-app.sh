@@ -201,6 +201,34 @@ kill_stale_capacitor_daemon() {
     rm -rf "$(legacy_daemon_dir_path)"
 }
 
+write_plist_string() {
+    local plist_path="$1"
+    local key="$2"
+    local value="$3"
+
+    if ! /usr/libexec/PlistBuddy -c "Set :$key $value" "$plist_path" 2>/dev/null; then
+        /usr/libexec/PlistBuddy -c "Add :$key string $value" "$plist_path" 2>/dev/null || true
+    fi
+}
+
+write_debug_bundle_metadata() {
+    local plist_path="$1"
+
+    write_plist_string "$plist_path" "CFBundleIdentifier" "com.capacitor.app.debug"
+    write_plist_string "$plist_path" "CFBundleName" "Capacitor"
+    write_plist_string "$plist_path" "CFBundleDisplayName" "Capacitor"
+    write_plist_string "$plist_path" "CapacitorChannel" "$CHANNEL"
+    write_plist_string "$plist_path" "CapacitorProfile" "$PROFILE"
+    write_plist_string "$plist_path" "CapacitorSkipSetupValidation" "$SKIP_SETUP_VALIDATION"
+
+    if [[ -n "${CAPACITOR_FEATURES_ENABLED:-}" ]]; then
+        write_plist_string "$plist_path" "CapacitorFeaturesEnabled" "$CAPACITOR_FEATURES_ENABLED"
+    fi
+    if [[ -n "${CAPACITOR_FEATURES_DISABLED:-}" ]]; then
+        write_plist_string "$plist_path" "CapacitorFeaturesDisabled" "$CAPACITOR_FEATURES_DISABLED"
+    fi
+}
+
 if [[ "${CAPACITOR_RESTART_APP_SOURCE_ONLY:-0}" == "1" ]]; then
     return 0 2>/dev/null || exit 0
 fi
@@ -536,20 +564,7 @@ if [ -d "${TEMPLATE_APP:-}" ]; then
 fi
 
 # Ensure the debug bundle is distinct from the release app.
-/usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier com.capacitor.app.debug" "$DEBUG_APP/Contents/Info.plist"
-/usr/libexec/PlistBuddy -c "Set :CFBundleName Capacitor" "$DEBUG_APP/Contents/Info.plist"
-if ! /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName Capacitor" "$DEBUG_APP/Contents/Info.plist" 2>/dev/null; then
-    /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string Capacitor" "$DEBUG_APP/Contents/Info.plist" 2>/dev/null || true
-fi
-if ! /usr/libexec/PlistBuddy -c "Set :CapacitorChannel $CHANNEL" "$DEBUG_APP/Contents/Info.plist" 2>/dev/null; then
-    /usr/libexec/PlistBuddy -c "Add :CapacitorChannel string $CHANNEL" "$DEBUG_APP/Contents/Info.plist" 2>/dev/null || true
-fi
-if ! /usr/libexec/PlistBuddy -c "Set :CapacitorProfile $PROFILE" "$DEBUG_APP/Contents/Info.plist" 2>/dev/null; then
-    /usr/libexec/PlistBuddy -c "Add :CapacitorProfile string $PROFILE" "$DEBUG_APP/Contents/Info.plist" 2>/dev/null || true
-fi
-if ! /usr/libexec/PlistBuddy -c "Set :CapacitorSkipSetupValidation $SKIP_SETUP_VALIDATION" "$DEBUG_APP/Contents/Info.plist" 2>/dev/null; then
-    /usr/libexec/PlistBuddy -c "Add :CapacitorSkipSetupValidation string $SKIP_SETUP_VALIDATION" "$DEBUG_APP/Contents/Info.plist" 2>/dev/null || true
-fi
+write_debug_bundle_metadata "$DEBUG_APP/Contents/Info.plist"
 
 # Replace the app executable with the debug binary.
 cp "$DEBUG_BIN" "$DEBUG_APP/Contents/MacOS/Capacitor"

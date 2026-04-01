@@ -63,13 +63,24 @@ struct TmuxRouter {
             }
             return value
         }()
+        let normalizedTargetSession: String? = {
+            guard let value = targetSession?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !value.isEmpty
+            else {
+                return nil
+            }
+            return value
+        }()
+        let requiresHintMatch = normalizedPreferredHostTty != nil || normalizedTargetSession != nil
 
         let currentClient = await runScript("tmux display-message -p '#{client_tty}' 2>/dev/null")
         if currentClient.exitCode == 0,
            let output = currentClient.output?.trimmingCharacters(in: .whitespacesAndNewlines),
            !output.isEmpty
         {
-            return output
+            if !requiresHintMatch || output == normalizedPreferredHostTty {
+                return output
+            }
         }
 
         let clients = await runScript("tmux list-clients -F '#{client_tty} #{session_name}' 2>/dev/null")
@@ -96,9 +107,13 @@ struct TmuxRouter {
                 return tty
             }
 
-            if let targetSession, let session, session == targetSession {
+            if let normalizedTargetSession, let session, session == normalizedTargetSession {
                 return tty
             }
+        }
+
+        guard !requiresHintMatch else {
+            return nil
         }
 
         return firstTty

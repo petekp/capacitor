@@ -3,7 +3,7 @@ use capacitor_core::domain::{HookEventType, IngestHookEventCommand};
 pub fn valid_hook_event_command(event_type: HookEventType) -> IngestHookEventCommand {
     IngestHookEventCommand {
         event_id: "evt-1".to_string(),
-        recorded_at: "2026-02-28T19:00:00Z".to_string(),
+        recorded_at: "2099-02-28T19:00:00Z".to_string(),
         event_type,
         session_id: "session-1".to_string(),
         pid: Some(4242),

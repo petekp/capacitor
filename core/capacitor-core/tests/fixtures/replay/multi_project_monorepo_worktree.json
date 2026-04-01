@@ -5,7 +5,7 @@
       "kind": "hook",
       "command": {
         "event_id": "evt-1",
-        "recorded_at": "2026-02-28T00:00:00Z",
+        "recorded_at": "2099-02-28T00:00:00Z",
         "event_type": "session_start",
         "session_id": "session-api",
         "pid": 100,
@@ -24,7 +24,7 @@
       "kind": "hook",
       "command": {
         "event_id": "evt-2",
-        "recorded_at": "2026-02-28T00:00:01Z",
+        "recorded_at": "2099-02-28T00:00:01Z",
         "event_type": "user_prompt_submit",
         "session_id": "session-api",
         "pid": 100,
@@ -54,7 +54,7 @@
       "kind": "hook",
       "command": {
         "event_id": "evt-3",
-        "recorded_at": "2026-02-28T00:00:02Z",
+        "recorded_at": "2099-02-28T00:00:02Z",
         "event_type": "session_start",
         "session_id": "session-web",
         "pid": 200,
@@ -73,7 +73,7 @@
       "kind": "hook",
       "command": {
         "event_id": "evt-4",
-        "recorded_at": "2026-02-28T00:00:02.5Z",
+        "recorded_at": "2099-02-28T00:00:02.5Z",
         "event_type": "pre_tool_use",
         "session_id": "session-web",
         "pid": 200,
@@ -92,7 +92,7 @@
       "kind": "hook",
       "command": {
         "event_id": "evt-5",
-        "recorded_at": "2026-02-28T00:00:03Z",
+        "recorded_at": "2099-02-28T00:00:03Z",
         "event_type": "permission_request",
         "session_id": "session-web",
         "pid": 200,

@@ -115,26 +115,17 @@ final class TerminalLauncher {
 
     private lazy var activationCoordinator = TerminalActivationCoordinator(
         resolveSessionName: { [weak self] project in
-            let projectDirectoryName = URL(fileURLWithPath: project.path).lastPathComponent
             guard let self else {
-                return projectDirectoryName
+                return URL(fileURLWithPath: project.path).lastPathComponent
             }
             let intent = await resolveActivationIntent(
                 clientTty: nil,
                 projectPath: project.path,
                 sessionName: nil,
             )
-            // Guard against cross-project CWD drift: only trust the routed
-            // session name when it matches the project directory. When a tool
-            // cd's into a different project inside an existing tmux session,
-            // the routing engine follows the CWD and returns the foreign
-            // session name, which would switch the user to the wrong session.
-            let routedSessionName: String? = intent.sessionName.flatMap { name in
-                name == projectDirectoryName ? name : nil
-            }
             return await sessionResolutionPolicy.chooseSessionName(
                 projectPath: project.path,
-                routedSessionName: routedSessionName,
+                routedSessionName: intent.sessionName,
             )
         },
         runResolvedActivation: { [weak self] sessionName, projectPath in
@@ -200,12 +191,17 @@ final class TerminalLauncher {
             sessionName: sessionName,
             projectPath: projectPath,
             resolveAnyClientTty: {
-                await tmuxRouter.resolveAnyClientTty(
-                    preferredHostTty: resolveActivationIntent(
-                        clientTty: nil,
-                        projectPath: projectPath,
-                        sessionName: sessionName,
-                    ).hostTty,
+                let intent = await resolveActivationIntent(
+                    clientTty: nil,
+                    projectPath: projectPath,
+                    sessionName: sessionName,
+                )
+                // Clear stale hostTty if the resolved session name differs from the route.
+                // The intent's hostTty belongs to the routed session, not necessarily the
+                // session we resolved to activate.
+                let preferredTty = (intent.sessionName == sessionName) ? intent.hostTty : nil
+                return await tmuxRouter.resolveAnyClientTty(
+                    preferredHostTty: preferredTty,
                     targetSession: sessionName,
                 )
             },
@@ -230,11 +226,14 @@ final class TerminalLauncher {
                 )
             },
             resolveTargetPane: { [weak self] clientTty in
-                await self?.resolveActivationIntent(
+                guard let self else { return nil }
+                let intent = await resolveActivationIntent(
                     clientTty: clientTty,
                     projectPath: projectPath,
                     sessionName: sessionName,
-                ).paneId
+                )
+                // Clear stale paneId if the resolved session name differs from the route.
+                return (intent.sessionName == sessionName) ? intent.paneId : nil
             },
             pollForNewClient: { [weak self] in
                 await self?.tmuxRouter.pollForNewClient()
