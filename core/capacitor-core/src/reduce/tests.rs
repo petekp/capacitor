@@ -2803,6 +2803,65 @@ fn snapshot_populates_session_is_alive_from_cleaned_shells() {
 }
 
 #[test]
+fn session_is_alive_via_shell_cwd_matching() {
+    fn snapshot_is_alive(shell_cwd: &str) -> bool {
+        let mut state = routing_state_fixture(
+            vec![session_summary_fixture(
+                "session-1",
+                0,
+                "/users/pete/code/myproject",
+                "/users/pete/code/myproject",
+                SessionState::Working,
+                "2099-04-01T12:00:00Z",
+            )],
+            vec![],
+        );
+
+        let outcome = state.apply_shell_signal(IngestShellSignalCommand {
+            pid: 4242,
+            cwd: shell_cwd.to_string(),
+            tty: "/dev/ttys4242".to_string(),
+            parent_app: "ghostty".to_string(),
+            tmux_session: None,
+            tmux_client_tty: None,
+            tmux_pane: None,
+            tmux_panes: vec![],
+            recorded_at: "2099-04-01T12:01:00Z".to_string(),
+        });
+        assert!(outcome.ok, "{outcome:?}");
+
+        state
+            .snapshot()
+            .sessions
+            .into_iter()
+            .find(|session| session.session_id == "session-1")
+            .expect("session")
+            .is_alive
+    }
+
+    assert!(
+        snapshot_is_alive("/users/pete/code/myproject"),
+        "Shell at project root should mark the session alive"
+    );
+    assert!(
+        snapshot_is_alive("/users/pete/code/myproject/src"),
+        "Shell inside a project subdirectory should still mark the session alive"
+    );
+    assert!(
+        !snapshot_is_alive("/users/pete/code/other"),
+        "Unrelated shell cwd should not mark the session alive"
+    );
+    assert!(
+        snapshot_is_alive("/users/pete/code"),
+        "Shell at ancestor of project path should mark session alive"
+    );
+    assert!(
+        !snapshot_is_alive("/users/pete/code/myproject-v2"),
+        "Shell at sibling with shared prefix should not falsely match"
+    );
+}
+
+#[test]
 fn default_workspace_is_stable() {
     let a = default_workspace_id("/Users/Pete/Code/Repo");
     let b = default_workspace_id("/users/pete/code/repo");

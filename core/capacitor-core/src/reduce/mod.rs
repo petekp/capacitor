@@ -1873,10 +1873,19 @@ fn session_is_alive_map(
     sessions
         .values()
         .map(|session| {
-            (
-                session.session_id.clone(),
-                session.pid > 0 && shells.contains_key(&session.pid),
-            )
+            let normalized_project = normalize_path_for_matching(&session.project_path);
+            let alive = !normalized_project.is_empty()
+                && shells.values().any(|shell| {
+                    shell.cwd == normalized_project
+                        || shell
+                            .cwd
+                            .strip_prefix(normalized_project.as_str())
+                            .is_some_and(|rest| rest.starts_with('/'))
+                        || normalized_project
+                            .strip_prefix(shell.cwd.as_str())
+                            .is_some_and(|rest| rest.starts_with('/'))
+                });
+            (session.session_id.clone(), alive)
         })
         .collect()
 }
