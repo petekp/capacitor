@@ -33,7 +33,7 @@ pub mod storage;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Condvar, Mutex};
 
 use chrono::{DateTime, Utc};
 use domain::{
@@ -77,10 +77,67 @@ impl From<&str> for CoreRuntimeError {
 
 #[derive(uniffi::Object)]
 pub struct CoreRuntime {
-    state: std::sync::Mutex<reduce::ReducerState>,
+    state: Mutex<reduce::ReducerState>,
     snapshot_storage: Arc<dyn SnapshotStorage>,
     app_storage: StorageConfig,
     version: AtomicU64,
+    notifier: VersionNotifier,
+}
+
+pub(crate) struct VersionNotifier {
+    lock: Mutex<()>,
+    condvar: Condvar,
+}
+
+impl VersionNotifier {
+    pub fn new() -> Self {
+        Self {
+            lock: Mutex::new(()),
+            condvar: Condvar::new(),
+        }
+    }
+
+    pub fn notify(&self) {
+        let _guard = self.lock.lock().unwrap();
+        self.condvar.notify_all();
+    }
+
+    /// Wait until version differs from `since_version` or timeout.
+    /// Returns the new version, or None on timeout.
+    pub fn wait_for_change(
+        &self,
+        version: &AtomicU64,
+        since_version: u64,
+        timeout: std::time::Duration,
+    ) -> Option<u64> {
+        let current = version.load(Ordering::Relaxed);
+        if current != since_version {
+            return Some(current);
+        }
+
+        let deadline = std::time::Instant::now() + timeout;
+        let mut guard = self.lock.lock().unwrap();
+
+        loop {
+            let current = version.load(Ordering::Relaxed);
+            if current != since_version {
+                return Some(current);
+            }
+
+            let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+            if remaining.is_zero() {
+                return None;
+            }
+
+            let (next_guard, wait_result) = self.condvar.wait_timeout(guard, remaining).unwrap();
+            guard = next_guard;
+
+            if wait_result.timed_out() {
+                let current = version.load(Ordering::Relaxed);
+                return (current != since_version).then_some(current);
+            }
+        }
+    }
 }
 
 impl CoreRuntime {
@@ -95,10 +152,11 @@ impl CoreRuntime {
             .unwrap_or_default();
 
         Ok(Arc::new(Self {
-            state: std::sync::Mutex::new(state),
+            state: Mutex::new(state),
             snapshot_storage,
             app_storage,
             version: AtomicU64::new(0),
+            notifier: VersionNotifier::new(),
         }))
     }
 
@@ -108,6 +166,20 @@ impl CoreRuntime {
         self.state
             .lock()
             .map_err(|_| CoreRuntimeError::from("runtime state lock poisoned"))
+    }
+
+    fn bump_version_and_notify(&self) {
+        self.version.fetch_add(1, Ordering::Relaxed);
+        self.notifier.notify();
+    }
+
+    pub fn wait_for_version_change(
+        &self,
+        since_version: u64,
+        timeout: std::time::Duration,
+    ) -> Option<u64> {
+        self.notifier
+            .wait_for_change(&self.version, since_version, timeout)
     }
 
     fn persist_snapshot(&self, snapshot: &AppSnapshot) -> Result<(), CoreRuntimeError> {
@@ -336,7 +408,7 @@ impl CoreRuntime {
         let mut state = self.lock_state()?;
         let changed = state.gc_stale_sessions();
         if changed {
-            self.version.fetch_add(1, Ordering::Relaxed);
+            self.bump_version_and_notify();
             let snapshot = state.snapshot();
             drop(state);
             self.persist_snapshot(&snapshot)?;
@@ -362,7 +434,7 @@ impl CoreRuntime {
         let normalized = ingest::normalize_hook_event(command);
         let mut state = self.lock_state()?;
         let outcome = state.apply_hook_event(normalized);
-        self.version.fetch_add(1, Ordering::Relaxed);
+        self.bump_version_and_notify();
         let snapshot = state.snapshot();
         drop(state);
         self.persist_snapshot(&snapshot)?;
@@ -376,7 +448,7 @@ impl CoreRuntime {
         let normalized = ingest::normalize_shell_signal(command);
         let mut state = self.lock_state()?;
         let outcome = state.apply_shell_signal(normalized);
-        self.version.fetch_add(1, Ordering::Relaxed);
+        self.bump_version_and_notify();
         let snapshot = state.snapshot();
         drop(state);
         self.persist_snapshot(&snapshot)?;
@@ -468,7 +540,7 @@ impl CoreRuntime {
         };
 
         if outcome.ok {
-            self.version.fetch_add(1, Ordering::Relaxed);
+            self.bump_version_and_notify();
         }
         let snapshot = state.snapshot();
         drop(state);
@@ -487,7 +559,7 @@ impl CoreRuntime {
             command.kind, command.project_path, command.idea_id
         );
         let outcome = MutationOutcome { ok: true, message };
-        self.version.fetch_add(1, Ordering::Relaxed);
+        self.bump_version_and_notify();
         let snapshot = state.snapshot();
         drop(state);
         self.persist_snapshot(&snapshot)?;
@@ -505,7 +577,7 @@ impl CoreRuntime {
             command.kind, command.repo_path, command.worktree_name, command.force
         );
         let outcome = MutationOutcome { ok: true, message };
-        self.version.fetch_add(1, Ordering::Relaxed);
+        self.bump_version_and_notify();
         let snapshot = state.snapshot();
         drop(state);
         self.persist_snapshot(&snapshot)?;
@@ -518,7 +590,7 @@ impl CoreRuntime {
     ) -> Result<MutationOutcome, CoreRuntimeError> {
         let mut state = self.lock_state()?;
         let outcome = state.apply_delegation_mutation(command);
-        self.version.fetch_add(1, Ordering::Relaxed);
+        self.bump_version_and_notify();
         let snapshot = state.snapshot();
         drop(state);
         self.persist_snapshot(&snapshot)?;
@@ -531,7 +603,7 @@ impl CoreRuntime {
     ) -> Result<MutationOutcome, CoreRuntimeError> {
         let mut state = self.lock_state()?;
         let outcome = state.apply_run_mutation(command);
-        self.version.fetch_add(1, Ordering::Relaxed);
+        self.bump_version_and_notify();
         let snapshot = state.snapshot();
         drop(state);
         self.persist_snapshot(&snapshot)?;
@@ -1024,11 +1096,13 @@ impl CoreRuntime {
 
 #[cfg(test)]
 mod tests {
-    use super::CoreRuntime;
+    use super::{CoreRuntime, VersionNotifier};
     use crate::domain::{
-        default_workspace_id, AppSnapshot, DiagnosticsSummary, HookEventType,
-        IngestHookEventCommand, MutateProjectCommand, ProjectMutationKind, ProjectSummary,
-        SessionState, SessionSummary,
+        default_workspace_id, AppSnapshot, DelegationMutationKind, DiagnosticsSummary,
+        HookEventType, IdeaMutationKind, IngestHookEventCommand, IngestShellSignalCommand,
+        MutateDelegationCommand, MutateIdeaCommand, MutateProjectCommand, MutateRunCommand,
+        MutateWorktreeCommand, ProjectMutationKind, ProjectSummary, RunMutationKind, SessionState,
+        SessionSummary, WorktreeMutationKind,
     };
     use crate::runtime_service::{RUNTIME_SERVICE_PORT_ENV, RUNTIME_SERVICE_TOKEN_ENV};
     use crate::runtime_state::snapshot::test_support::{
@@ -1040,7 +1114,10 @@ mod tests {
     use crate::storage::{InMemorySnapshotStorage, SnapshotStorage};
     use chrono::{Duration, Utc};
     use std::fs;
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::sync::Arc;
+    use std::thread;
+    use std::time::{Duration as StdDuration, Instant};
     use tempfile::TempDir;
 
     const IGNORED_SNAPSHOT_ENV_NAME: &str = concat!("CAPACITOR_", "CORE_", "SNAPSHOT");
@@ -1176,6 +1253,173 @@ mod tests {
         let mut normalized_first = first.clone();
         normalized_first.generated_at = second.generated_at.clone();
         assert_eq!(normalized_first, second);
+    }
+
+    #[test]
+    fn test_version_notifier_immediate_return() {
+        let notifier = VersionNotifier::new();
+        let version = AtomicU64::new(5);
+
+        let start = Instant::now();
+        let changed = notifier.wait_for_change(&version, 3, StdDuration::from_secs(1));
+
+        assert_eq!(changed, Some(5));
+        assert!(
+            start.elapsed() < StdDuration::from_millis(50),
+            "immediate version mismatch should not block",
+        );
+    }
+
+    #[test]
+    fn test_version_notifier_wait_and_wake() {
+        let runtime = CoreRuntime::new().expect("runtime");
+        let since_version = current_version(runtime.as_ref());
+        let worker_runtime = Arc::clone(&runtime);
+
+        let worker = thread::spawn(move || {
+            thread::sleep(StdDuration::from_millis(100));
+            worker_runtime
+                .ingest_hook_event(make_hook_event_command("evt-wake", "session-wake", "/repo"))
+                .expect("ingest hook event");
+        });
+
+        let start = Instant::now();
+        let changed = runtime.wait_for_version_change(since_version, StdDuration::from_secs(5));
+        let elapsed = start.elapsed();
+
+        worker.join().expect("worker thread");
+
+        assert_eq!(changed, Some(since_version + 1));
+        assert!(
+            elapsed < StdDuration::from_millis(500),
+            "wait should wake promptly after the mutation, elapsed={elapsed:?}",
+        );
+    }
+
+    #[test]
+    fn test_version_notifier_timeout() {
+        let runtime = CoreRuntime::new().expect("runtime");
+        let since_version = current_version(runtime.as_ref());
+
+        let start = Instant::now();
+        let changed = runtime.wait_for_version_change(since_version, StdDuration::from_millis(200));
+        let elapsed = start.elapsed();
+
+        assert_eq!(changed, None);
+        assert!(
+            elapsed >= StdDuration::from_millis(150),
+            "timeout path should block for roughly the requested interval, elapsed={elapsed:?}",
+        );
+    }
+
+    #[test]
+    fn test_version_notifier_spurious_safe() {
+        let notifier = VersionNotifier::new();
+        let version = AtomicU64::new(7);
+
+        notifier.notify();
+        let changed = notifier.wait_for_change(&version, 7, StdDuration::from_millis(100));
+
+        assert_eq!(changed, None);
+    }
+
+    #[test]
+    fn test_all_mutation_paths_notify() {
+        assert_mutation_advances_version_and_wakes(
+            CoreRuntime::new().expect("runtime"),
+            |runtime| {
+                runtime
+                    .ingest_hook_event(make_hook_event_command(
+                        "evt-all-hook",
+                        "session-hook",
+                        "/repo/hook",
+                    ))
+                    .map(|_| ())
+            },
+        );
+
+        assert_mutation_advances_version_and_wakes(
+            CoreRuntime::new().expect("runtime"),
+            |runtime| {
+                runtime
+                    .ingest_shell_signal(make_shell_signal_command(1001, "/repo/shell"))
+                    .map(|_| ())
+            },
+        );
+
+        assert_mutation_advances_version_and_wakes(
+            CoreRuntime::new().expect("runtime"),
+            |runtime| {
+                runtime
+                    .mutate_project(MutateProjectCommand {
+                        kind: ProjectMutationKind::Add,
+                        project_path: "/repo/project".to_string(),
+                        display_name: Some("project".to_string()),
+                    })
+                    .map(|_| ())
+            },
+        );
+
+        assert_mutation_advances_version_and_wakes(
+            CoreRuntime::new().expect("runtime"),
+            |runtime| {
+                runtime
+                    .mutate_idea(MutateIdeaCommand {
+                        kind: IdeaMutationKind::Add,
+                        project_path: "/repo/idea".to_string(),
+                        idea_id: "idea-001".to_string(),
+                        title: Some("Version notifier".to_string()),
+                        description: Some("prove wakeups".to_string()),
+                        status: Some("new".to_string()),
+                    })
+                    .map(|_| ())
+            },
+        );
+
+        assert_mutation_advances_version_and_wakes(
+            CoreRuntime::new().expect("runtime"),
+            |runtime| {
+                runtime
+                    .mutate_worktree(MutateWorktreeCommand {
+                        kind: WorktreeMutationKind::Create,
+                        repo_path: "/repo/worktree".to_string(),
+                        worktree_name: "notifier-proof".to_string(),
+                        force: false,
+                    })
+                    .map(|_| ())
+            },
+        );
+
+        assert_mutation_advances_version_and_wakes(
+            CoreRuntime::new().expect("runtime"),
+            |runtime| {
+                runtime
+                    .mutate_delegation(make_delegation_start_command(
+                        "/repo/delegation",
+                        "worker-001",
+                    ))
+                    .map(|_| ())
+            },
+        );
+
+        assert_mutation_advances_version_and_wakes(
+            CoreRuntime::new().expect("runtime"),
+            |runtime| {
+                runtime
+                    .mutate_run(make_run_create_command("run-001", "/repo/run"))
+                    .map(|_| ())
+            },
+        );
+
+        let storage = Arc::new(InMemorySnapshotStorage::default());
+        storage
+            .save_snapshot(&stale_dead_snapshot_for_gc_notify_test())
+            .expect("save stale snapshot");
+        let gc_runtime =
+            CoreRuntime::from_storage(storage, StorageConfig::default()).expect("gc runtime");
+        assert_mutation_advances_version_and_wakes(gc_runtime, |runtime| {
+            runtime.run_gc().map(|_| ())
+        });
     }
 
     #[test]
@@ -1454,6 +1698,36 @@ mod tests {
         .expect("runtime")
     }
 
+    fn current_version(runtime: &CoreRuntime) -> u64 {
+        runtime.version.load(Ordering::Relaxed)
+    }
+
+    fn assert_mutation_advances_version_and_wakes<F>(runtime: Arc<CoreRuntime>, mutate: F)
+    where
+        F: FnOnce(&CoreRuntime) -> Result<(), super::CoreRuntimeError> + Send + 'static,
+    {
+        let since_version = current_version(runtime.as_ref());
+        let worker_runtime = Arc::clone(&runtime);
+
+        let worker = thread::spawn(move || {
+            thread::sleep(StdDuration::from_millis(50));
+            mutate(worker_runtime.as_ref()).expect("mutation");
+        });
+
+        let start = Instant::now();
+        let changed = runtime.wait_for_version_change(since_version, StdDuration::from_secs(2));
+        let elapsed = start.elapsed();
+
+        worker.join().expect("mutation thread");
+
+        assert_eq!(changed, Some(since_version + 1));
+        assert_eq!(current_version(runtime.as_ref()), since_version + 1);
+        assert!(
+            elapsed < StdDuration::from_millis(500),
+            "mutation wait should wake promptly, elapsed={elapsed:?}",
+        );
+    }
+
     fn stale_dead_snapshot_for_gc_read_test() -> AppSnapshot {
         let now = "2099-04-01T12:00:00Z".to_string();
         let stale = "2099-04-01T11:30:00Z".to_string();
@@ -1494,6 +1768,138 @@ mod tests {
             },
             generated_at: now,
             snapshot_version: 0,
+        }
+    }
+
+    fn stale_dead_snapshot_for_gc_notify_test() -> AppSnapshot {
+        let now = Utc::now();
+        let stale = (now - Duration::minutes(30)).to_rfc3339();
+
+        AppSnapshot {
+            projects: vec![],
+            sessions: vec![SessionSummary {
+                session_id: "stale-gc-session".to_string(),
+                pid: 0,
+                cwd: "/repo/gc".to_string(),
+                project_id: "/repo/gc".to_string(),
+                project_path: "/repo/gc".to_string(),
+                workspace_id: default_workspace_id("/repo/gc"),
+                state: SessionState::Working,
+                state_changed_at: stale.clone(),
+                updated_at: stale.clone(),
+                last_event: Some("notification".to_string()),
+                last_activity_at: Some(stale),
+                tools_in_flight: 0,
+                ready_reason: None,
+                is_alive: false,
+                gc_reason: None,
+            }],
+            shells: vec![],
+            routing: vec![],
+            delegations: vec![],
+            runs: vec![],
+            diagnostics: DiagnosticsSummary {
+                events_ingested: 0,
+                sessions_tracked: 1,
+                shell_signals_tracked: 0,
+                events_skipped: 0,
+                stale_events_skipped: 0,
+                informational_events_skipped: 0,
+                reducer_events_skipped: 0,
+                last_error: None,
+                last_hook_event_at: None,
+            },
+            generated_at: now.to_rfc3339(),
+            snapshot_version: 0,
+        }
+    }
+
+    fn make_hook_event_command(
+        event_id: &str,
+        session_id: &str,
+        project_path: &str,
+    ) -> IngestHookEventCommand {
+        IngestHookEventCommand {
+            event_id: event_id.to_string(),
+            recorded_at: Utc::now().to_rfc3339(),
+            event_type: HookEventType::UserPromptSubmit,
+            session_id: session_id.to_string(),
+            pid: Some(42),
+            project_path: project_path.to_string(),
+            cwd: Some(project_path.to_string()),
+            file_path: None,
+            workspace_id: None,
+            notification_type: None,
+            stop_hook_active: None,
+            tool_name: None,
+            agent_id: None,
+            teammate_name: None,
+        }
+    }
+
+    fn make_shell_signal_command(pid: u32, cwd: &str) -> IngestShellSignalCommand {
+        IngestShellSignalCommand {
+            pid,
+            cwd: cwd.to_string(),
+            tty: format!("/dev/ttys{pid}"),
+            parent_app: "terminal".to_string(),
+            tmux_session: None,
+            tmux_client_tty: None,
+            tmux_pane: None,
+            tmux_panes: vec![],
+            recorded_at: Utc::now().to_rfc3339(),
+        }
+    }
+
+    fn make_delegation_start_command(
+        project_path: &str,
+        worker_id: &str,
+    ) -> MutateDelegationCommand {
+        MutateDelegationCommand {
+            kind: DelegationMutationKind::Start,
+            project_path: project_path.to_string(),
+            worker_id: worker_id.to_string(),
+            idea_id: None,
+            worktree_name: Some("notifier-proof".to_string()),
+            worktree_path: Some(format!("{project_path}/.worktrees/notifier-proof")),
+            session_id: None,
+            milestone_id: None,
+            brief_path: None,
+            manifest_path: None,
+            review_decision: None,
+            note: None,
+        }
+    }
+
+    fn make_run_create_command(run_id: &str, project_path: &str) -> MutateRunCommand {
+        MutateRunCommand {
+            kind: RunMutationKind::Create,
+            project_path: project_path.to_string(),
+            run_id: run_id.to_string(),
+            method_id: Some("execution_only".to_string()),
+            involvement: None,
+            checkpoint_kind: None,
+            checkpoint_title: None,
+            checkpoint_summary: None,
+            checkpoint_brief_path: None,
+            checkpoint_manifest_path: None,
+            checkpoint_media_artifacts: vec![],
+            checkpoint_mermaid_sources: vec![],
+            capture_url: None,
+            checkpoint_id: None,
+            capture_request_id: None,
+            client_id: None,
+            observed_capture_url: None,
+            capture_failure_reason: None,
+            decision_action: None,
+            decision_note: None,
+            session_id: None,
+            delegation_worker_id: None,
+            status_message: None,
+            idea_id: None,
+            idea_title: None,
+            idea_description: None,
+            completed_media_artifacts: vec![],
         }
     }
 
