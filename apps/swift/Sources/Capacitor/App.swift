@@ -289,6 +289,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Only Claude-missing and policy-blocked states should still gate startup.
         validateHookSetup()
 
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self,
+            selector: #selector(systemWillSleep(_:)),
+            name: NSWorkspace.willSleepNotification,
+            object: nil,
+        )
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self,
+            selector: #selector(systemDidWake(_:)),
+            name: NSWorkspace.didWakeNotification,
+            object: nil,
+        )
+
         // Lift subsidiary windows (Settings, About, Sparkle) above the main window
         // when always-on-top is active, so they aren't hidden behind it
         windowObserver = NotificationCenter.default.addObserver(
@@ -306,6 +319,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_: Notification) {
         appState?.shutdown()
+    }
+
+    @MainActor
+    @objc func systemWillSleep(_ notification: Notification) {
+        _ = notification
+        guard let client = appState?.systemPowerRuntimeClient else { return }
+        _Concurrency.Task {
+            try? await client.reportSleep()
+        }
+    }
+
+    @MainActor
+    @objc func systemDidWake(_ notification: Notification) {
+        _ = notification
+        guard let client = appState?.systemPowerRuntimeClient else { return }
+        _Concurrency.Task {
+            try? await client.reportWake()
+        }
     }
 
     /// Shows a custom About panel with the app icon and version info

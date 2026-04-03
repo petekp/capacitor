@@ -12,15 +12,42 @@ use capacitor_core::{
 };
 use chrono::Utc;
 use rand::RngCore;
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 
 const ENABLE_ENV: &str = "CAPACITOR_CORE_ENABLED";
 
-use crate::hook_types::{HookEvent, HookInput};
+use crate::{
+    hook_types::{HookEvent, HookInput},
+    power::SleepTracker,
+};
 
-static REGISTERED_SERVICE_RUNTIME: OnceLock<Arc<CoreRuntime>> = OnceLock::new();
+static REGISTERED_SERVICE_RUNTIME: OnceLock<RegisteredServiceRuntime> = OnceLock::new();
 
+#[derive(Clone)]
+struct RegisteredServiceRuntime {
+    runtime: Arc<CoreRuntime>,
+    sleep_tracker: Option<Arc<Mutex<SleepTracker>>>,
+}
+
+#[cfg(test)]
 pub fn register_service_runtime(runtime: Arc<CoreRuntime>) -> Result<(), String> {
+    register_registered_service_runtime(RegisteredServiceRuntime {
+        runtime,
+        sleep_tracker: None,
+    })
+}
+
+pub fn register_service_runtime_with_sleep_tracker(
+    runtime: Arc<CoreRuntime>,
+    sleep_tracker: Arc<Mutex<SleepTracker>>,
+) -> Result<(), String> {
+    register_registered_service_runtime(RegisteredServiceRuntime {
+        runtime,
+        sleep_tracker: Some(sleep_tracker),
+    })
+}
+
+fn register_registered_service_runtime(runtime: RegisteredServiceRuntime) -> Result<(), String> {
     REGISTERED_SERVICE_RUNTIME
         .set(runtime)
         .map_err(|_| "runtime service already registered in this process".to_string())
@@ -92,10 +119,25 @@ pub fn runtime_enabled() -> bool {
 fn send_event(command: IngestHookEventCommand) -> Result<(), String> {
     match runtime_transport()? {
         RuntimeTransport::Service(endpoint) => endpoint.ingest_hook_event(&command).map(|_| ()),
-        RuntimeTransport::RegisteredService(runtime) => runtime
-            .ingest_hook_event(command)
-            .map(|_| ())
-            .map_err(|error| error.to_string()),
+        RuntimeTransport::RegisteredService(runtime) => {
+            let adjusted_gc_reference_time = runtime
+                .sleep_tracker
+                .as_ref()
+                .and_then(adjusted_gc_reference_time);
+
+            match adjusted_gc_reference_time {
+                Some(adjusted_gc_reference_time) => runtime
+                    .runtime
+                    .ingest_hook_event_with_gc_reference_time(command, adjusted_gc_reference_time)
+                    .map(|_| ())
+                    .map_err(|error| error.to_string()),
+                None => runtime
+                    .runtime
+                    .ingest_hook_event(command)
+                    .map(|_| ())
+                    .map_err(|error| error.to_string()),
+            }
+        }
     }
 }
 
@@ -103,6 +145,7 @@ fn send_shell_signal(command: IngestShellSignalCommand) -> Result<(), String> {
     match runtime_transport()? {
         RuntimeTransport::Service(endpoint) => endpoint.ingest_shell_signal(&command).map(|_| ()),
         RuntimeTransport::RegisteredService(runtime) => runtime
+            .runtime
             .ingest_shell_signal(command)
             .map(|_| ())
             .map_err(|error| error.to_string()),
@@ -111,7 +154,7 @@ fn send_shell_signal(command: IngestShellSignalCommand) -> Result<(), String> {
 
 enum RuntimeTransport {
     Service(RuntimeServiceEndpoint),
-    RegisteredService(Arc<CoreRuntime>),
+    RegisteredService(RegisteredServiceRuntime),
 }
 
 fn runtime_transport() -> Result<RuntimeTransport, String> {
@@ -120,7 +163,7 @@ fn runtime_transport() -> Result<RuntimeTransport, String> {
     }
 
     if let Some(runtime) = REGISTERED_SERVICE_RUNTIME.get() {
-        return Ok(RuntimeTransport::RegisteredService(Arc::clone(runtime)));
+        return Ok(RuntimeTransport::RegisteredService(runtime.clone()));
     }
 
     runtime_service_endpoint()?
@@ -131,6 +174,18 @@ fn runtime_transport() -> Result<RuntimeTransport, String> {
 fn runtime_service_endpoint() -> Result<Option<RuntimeServiceEndpoint>, String> {
     let home = dirs::home_dir().ok_or("Cannot determine home directory")?;
     RuntimeServiceEndpoint::discover(&home, RUNTIME_SERVICE_DEFAULT_PORT)
+}
+
+fn adjusted_gc_reference_time(
+    sleep_tracker: &Arc<Mutex<SleepTracker>>,
+) -> Option<chrono::DateTime<Utc>> {
+    match sleep_tracker.lock() {
+        Ok(sleep_tracker) => Some(sleep_tracker.adjusted_now()),
+        Err(_) => {
+            tracing::warn!("Sleep tracker lock poisoned; falling back to unadjusted hook ingest");
+            None
+        }
+    }
 }
 
 fn event_type_for_hook(event: &HookEvent) -> Option<HookEventType> {

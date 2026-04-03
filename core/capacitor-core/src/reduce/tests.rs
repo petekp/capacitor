@@ -10,7 +10,6 @@ use crate::domain::{
     PhaseStatus, ResolveRoutingCommand, RoutingStatus, RoutingTargetKind, RoutingView, RunState,
     RunStatus, SessionState, SessionSummary, ShellSignal, TmuxPaneInfo,
 };
-
 fn event_base(event_type: HookEventType) -> IngestHookEventCommand {
     IngestHookEventCommand {
         event_id: "evt-1".to_string(),
@@ -4211,6 +4210,72 @@ fn orphaned_session_gc_preserves_stale_idle_sibling() {
         "At least the Idle and new sessions should remain, got {}",
         project.session_count
     );
+}
+
+#[test]
+fn event_time_cleanup_uses_adjusted_gc_reference_time_when_provided() {
+    let stale_anchor = "2099-04-01T12:00:00Z";
+    let raw_recorded_at = "2099-04-01T12:06:00Z";
+    let adjusted_gc_reference_time = chrono::DateTime::parse_from_rfc3339("2099-04-01T12:04:00Z")
+        .unwrap()
+        .with_timezone(&Utc);
+
+    let snapshot = AppSnapshot {
+        projects: vec![],
+        sessions: vec![session_summary_fixture(
+            "stale-worker",
+            11,
+            "/repo",
+            "/repo",
+            SessionState::Working,
+            stale_anchor,
+        )],
+        shells: vec![],
+        routing: vec![],
+        delegations: vec![],
+        runs: vec![],
+        diagnostics: DiagnosticsSummary {
+            events_ingested: 0,
+            sessions_tracked: 1,
+            shell_signals_tracked: 0,
+            events_skipped: 0,
+            stale_events_skipped: 0,
+            informational_events_skipped: 0,
+            reducer_events_skipped: 0,
+            last_error: None,
+            last_hook_event_at: None,
+        },
+        generated_at: raw_recorded_at.to_string(),
+        snapshot_version: 0,
+    };
+
+    let mut raw_state = ReducerState::from_snapshot(snapshot.clone());
+    let mut raw_event = event_base(HookEventType::SessionStart);
+    raw_event.session_id = "fresh-session".to_string();
+    raw_event.pid = Some(22);
+    raw_event.recorded_at = raw_recorded_at.to_string();
+
+    let outcome = raw_state.apply_hook_event(raw_event);
+    assert!(outcome.ok, "{outcome:?}");
+    assert!(
+        !raw_state.sessions.contains_key("stale-worker"),
+        "raw recorded_at should evict the stale sibling once it is 6 minutes old"
+    );
+
+    let mut adjusted_state = ReducerState::from_snapshot(snapshot);
+    let mut adjusted_event = event_base(HookEventType::SessionStart);
+    adjusted_event.session_id = "fresh-session".to_string();
+    adjusted_event.pid = Some(22);
+    adjusted_event.recorded_at = raw_recorded_at.to_string();
+
+    let outcome = adjusted_state
+        .apply_hook_event_with_gc_reference_time(adjusted_event, Some(adjusted_gc_reference_time));
+    assert!(outcome.ok, "{outcome:?}");
+    assert!(
+        adjusted_state.sessions.contains_key("stale-worker"),
+        "adjusted gc_reference_time should preserve the sibling because its effective age is 4 minutes"
+    );
+    assert!(adjusted_state.sessions.contains_key("fresh-session"));
 }
 
 /// IMP-2: Snapshot-time GC isolates eviction decisions per project.

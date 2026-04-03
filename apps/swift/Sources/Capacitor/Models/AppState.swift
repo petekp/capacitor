@@ -247,6 +247,10 @@ class AppState {
         runtimeClient
     }
 
+    var systemPowerRuntimeClient: RuntimeClient {
+        runtimeClient
+    }
+
     var methodRunnerCoordinator: MethodRunCoordinator? {
         methodRunCoordinator
     }

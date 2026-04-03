@@ -17,8 +17,9 @@ use capacitor_core::{
     runtime_service::RuntimeServiceBootstrap,
     CoreRuntime,
 };
+use chrono::{DateTime, Utc};
 
-use crate::hook_types::HookInput;
+use crate::{hook_types::HookInput, power::SleepTracker};
 
 static SHUTDOWN: AtomicBool = AtomicBool::new(false);
 static POLL_WAITERS: AtomicUsize = AtomicUsize::new(0);
@@ -53,6 +54,7 @@ struct RuntimeServerState {
     bootstrap: Option<RuntimeServiceBootstrap>,
     home_dir: PathBuf,
     runtime: Option<Arc<CoreRuntime>>,
+    sleep_tracker: Arc<Mutex<SleepTracker>>,
 }
 
 impl RuntimeServerState {
@@ -63,12 +65,17 @@ impl RuntimeServerState {
         let runtime =
             CoreRuntime::new_with_snapshot_file(artifact_path.to_string_lossy().to_string())
                 .map_err(|error| error.to_string())?;
-        crate::runtime_client::register_service_runtime(Arc::clone(&runtime))?;
+        let sleep_tracker = Arc::new(Mutex::new(SleepTracker::new()));
+        crate::runtime_client::register_service_runtime_with_sleep_tracker(
+            Arc::clone(&runtime),
+            Arc::clone(&sleep_tracker),
+        )?;
 
         Ok(Self {
             bootstrap,
             home_dir,
             runtime: Some(runtime),
+            sleep_tracker,
         })
     }
 }
@@ -135,7 +142,8 @@ pub fn run(port: u16) -> Result<(), String> {
 
             if wait_result.1.timed_out() {
                 if let Some(runtime) = gc_state.runtime.as_ref() {
-                    if let Err(error) = runtime.run_gc() {
+                    let adjusted_now = adjusted_gc_reference_time(&gc_state.sleep_tracker);
+                    if let Err(error) = runtime.run_gc_at(adjusted_now) {
                         tracing::warn!(error = %error, "Periodic GC tick failed");
                     }
                 }
@@ -202,6 +210,12 @@ fn dispatch(request: tiny_http::Request, runtime_service: &RuntimeServerState) {
         }
         (&tiny_http::Method::Post, "/runtime/ingest/hook-event") => {
             handle_runtime_ingest_hook_event(request, runtime_service)
+        }
+        (&tiny_http::Method::Post, "/runtime/power/sleep") => {
+            handle_runtime_power_sleep(request, runtime_service)
+        }
+        (&tiny_http::Method::Post, "/runtime/power/wake") => {
+            handle_runtime_power_wake(request, runtime_service)
         }
         (&tiny_http::Method::Post, "/runtime/ingest/shell-signal") => {
             handle_runtime_ingest_shell_signal(request, runtime_service)
@@ -357,13 +371,62 @@ fn handle_runtime_ingest_hook_event(mut request: tiny_http::Request, state: &Run
         }
     };
 
-    match runtime.ingest_hook_event(command) {
+    let gc_reference_time = adjusted_gc_reference_time(&state.sleep_tracker);
+    match runtime.ingest_hook_event_with_gc_reference_time(command, gc_reference_time) {
         Ok(outcome) => respond_json(request, 200, &outcome),
         Err(error) => {
             tracing::warn!(error = %error, "Runtime hook ingest request failed");
             let _ = request.respond(json_error(500, "runtime hook ingest failed"));
         }
     }
+}
+
+fn handle_runtime_power_sleep(request: tiny_http::Request, state: &RuntimeServerState) {
+    if !authorize_runtime_request(&request, state.bootstrap.as_ref()) {
+        let _ = request.respond(json_error(401, "unauthorized"));
+        return;
+    }
+
+    let generation = match state.sleep_tracker.lock() {
+        Ok(mut sleep_tracker) => {
+            sleep_tracker.report_sleep();
+            sleep_tracker.generation()
+        }
+        Err(_) => {
+            let _ = request.respond(json_error(500, "sleep tracker unavailable"));
+            return;
+        }
+    };
+
+    respond_json(
+        request,
+        200,
+        &serde_json::json!({ "ok": true, "generation": generation }),
+    );
+}
+
+fn handle_runtime_power_wake(request: tiny_http::Request, state: &RuntimeServerState) {
+    if !authorize_runtime_request(&request, state.bootstrap.as_ref()) {
+        let _ = request.respond(json_error(401, "unauthorized"));
+        return;
+    }
+
+    let generation = match state.sleep_tracker.lock() {
+        Ok(mut sleep_tracker) => {
+            sleep_tracker.report_wake();
+            sleep_tracker.generation()
+        }
+        Err(_) => {
+            let _ = request.respond(json_error(500, "sleep tracker unavailable"));
+            return;
+        }
+    };
+
+    respond_json(
+        request,
+        200,
+        &serde_json::json!({ "ok": true, "generation": generation }),
+    );
 }
 
 fn handle_runtime_resolve_routing(mut request: tiny_http::Request, state: &RuntimeServerState) {
@@ -605,6 +668,16 @@ fn runtime_artifact_path() -> Result<PathBuf, String> {
 
     let home = dirs::home_dir().ok_or("Cannot determine home directory")?;
     Ok(home.join(DEFAULT_RUNTIME_ARTIFACT_RELATIVE_PATH))
+}
+
+fn adjusted_gc_reference_time(sleep_tracker: &Arc<Mutex<SleepTracker>>) -> DateTime<Utc> {
+    match sleep_tracker.lock() {
+        Ok(sleep_tracker) => sleep_tracker.adjusted_now(),
+        Err(_) => {
+            tracing::warn!("Sleep tracker lock poisoned; falling back to current time");
+            Utc::now()
+        }
+    }
 }
 
 fn json_error(status: u16, message: &str) -> tiny_http::ResponseBox {

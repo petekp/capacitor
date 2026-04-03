@@ -196,6 +196,44 @@ impl CoreRuntime {
             .map_err(CoreRuntimeError::from)
     }
 
+    pub fn run_gc_at(&self, now: DateTime<Utc>) -> Result<bool, CoreRuntimeError> {
+        let mut state = self.lock_state()?;
+        let changed = state.gc_stale_sessions_at(now);
+        if changed {
+            self.bump_version_and_notify();
+            let snapshot = state.snapshot();
+            drop(state);
+            self.persist_snapshot(&snapshot)?;
+            tracing::info!("gc_tick state_changed=true");
+        } else {
+            tracing::trace!("gc_tick state_changed=false");
+        }
+        Ok(changed)
+    }
+
+    fn ingest_hook_event_internal(
+        &self,
+        command: IngestHookEventCommand,
+        gc_reference_time: Option<DateTime<Utc>>,
+    ) -> Result<MutationOutcome, CoreRuntimeError> {
+        let normalized = ingest::normalize_hook_event(command);
+        let mut state = self.lock_state()?;
+        let outcome = state.apply_hook_event_with_gc_reference_time(normalized, gc_reference_time);
+        self.bump_version_and_notify();
+        let snapshot = state.snapshot();
+        drop(state);
+        self.persist_snapshot(&snapshot)?;
+        Ok(outcome)
+    }
+
+    pub fn ingest_hook_event_with_gc_reference_time(
+        &self,
+        command: IngestHookEventCommand,
+        gc_reference_time: DateTime<Utc>,
+    ) -> Result<MutationOutcome, CoreRuntimeError> {
+        self.ingest_hook_event_internal(command, Some(gc_reference_time))
+    }
+
     fn setup_checker(&self) -> SetupChecker {
         SetupChecker::new(self.app_storage.clone())
     }
@@ -413,18 +451,7 @@ impl CoreRuntime {
     }
 
     pub fn run_gc(&self) -> Result<bool, CoreRuntimeError> {
-        let mut state = self.lock_state()?;
-        let changed = state.gc_stale_sessions();
-        if changed {
-            self.bump_version_and_notify();
-            let snapshot = state.snapshot();
-            drop(state);
-            self.persist_snapshot(&snapshot)?;
-            tracing::info!("gc_tick state_changed=true");
-        } else {
-            tracing::trace!("gc_tick state_changed=false");
-        }
-        Ok(changed)
+        self.run_gc_at(Utc::now())
     }
 
     pub fn resolve_routing(
@@ -439,14 +466,7 @@ impl CoreRuntime {
         &self,
         command: IngestHookEventCommand,
     ) -> Result<MutationOutcome, CoreRuntimeError> {
-        let normalized = ingest::normalize_hook_event(command);
-        let mut state = self.lock_state()?;
-        let outcome = state.apply_hook_event(normalized);
-        self.bump_version_and_notify();
-        let snapshot = state.snapshot();
-        drop(state);
-        self.persist_snapshot(&snapshot)?;
-        Ok(outcome)
+        self.ingest_hook_event_internal(command, None)
     }
 
     pub fn ingest_shell_signal(
@@ -1428,6 +1448,123 @@ mod tests {
         assert_mutation_advances_version_and_wakes(gc_runtime, |runtime| {
             runtime.run_gc().map(|_| ())
         });
+    }
+
+    #[test]
+    fn run_gc_at_uses_explicit_reference_time() {
+        let now = Utc::now();
+        let stale_ts = (now - Duration::minutes(6)).to_rfc3339();
+        let idle_ts = (now - Duration::minutes(1)).to_rfc3339();
+        let adjusted_now = now - Duration::minutes(4);
+
+        let snapshot = AppSnapshot {
+            projects: vec![],
+            sessions: vec![
+                SessionSummary {
+                    session_id: "stale-worker".to_string(),
+                    pid: 0,
+                    cwd: "/repo/gc".to_string(),
+                    project_id: "/repo/gc".to_string(),
+                    project_path: "/repo/gc".to_string(),
+                    workspace_id: default_workspace_id("/repo/gc"),
+                    state: SessionState::Working,
+                    state_changed_at: stale_ts.clone(),
+                    updated_at: stale_ts.clone(),
+                    last_event: Some("notification".to_string()),
+                    last_activity_at: Some(stale_ts),
+                    tools_in_flight: 0,
+                    ready_reason: None,
+                    is_alive: false,
+                    gc_reason: None,
+                },
+                SessionSummary {
+                    session_id: "idle-survivor".to_string(),
+                    pid: 0,
+                    cwd: "/repo/gc".to_string(),
+                    project_id: "/repo/gc".to_string(),
+                    project_path: "/repo/gc".to_string(),
+                    workspace_id: default_workspace_id("/repo/gc"),
+                    state: SessionState::Idle,
+                    state_changed_at: idle_ts.clone(),
+                    updated_at: idle_ts.clone(),
+                    last_event: None,
+                    last_activity_at: None,
+                    tools_in_flight: 0,
+                    ready_reason: None,
+                    is_alive: false,
+                    gc_reason: None,
+                },
+            ],
+            shells: vec![],
+            routing: vec![],
+            delegations: vec![],
+            runs: vec![],
+            diagnostics: DiagnosticsSummary {
+                events_ingested: 0,
+                sessions_tracked: 2,
+                shell_signals_tracked: 0,
+                events_skipped: 0,
+                stale_events_skipped: 0,
+                informational_events_skipped: 0,
+                reducer_events_skipped: 0,
+                last_error: None,
+                last_hook_event_at: None,
+            },
+            generated_at: now.to_rfc3339(),
+            snapshot_version: 0,
+        };
+
+        let real_time_storage = Arc::new(InMemorySnapshotStorage::default());
+        real_time_storage
+            .save_snapshot(&snapshot.clone())
+            .expect("save real-time snapshot");
+        let real_time_runtime =
+            CoreRuntime::from_storage(real_time_storage, StorageConfig::default())
+                .expect("real-time runtime");
+
+        let changed = real_time_runtime.run_gc().expect("run gc at current time");
+        assert!(changed, "real-time gc should evict the stale sibling");
+        let real_time_snapshot = real_time_runtime
+            .app_snapshot()
+            .expect("real-time snapshot");
+        assert!(
+            !real_time_snapshot
+                .sessions
+                .iter()
+                .any(|session| session.session_id == "stale-worker"),
+            "run_gc() should remove the stale sibling at wall-clock time"
+        );
+
+        let adjusted_storage = Arc::new(InMemorySnapshotStorage::default());
+        adjusted_storage
+            .save_snapshot(&snapshot)
+            .expect("save adjusted snapshot");
+        let adjusted_runtime =
+            CoreRuntime::from_storage(adjusted_storage, StorageConfig::default())
+                .expect("adjusted runtime");
+
+        let changed = adjusted_runtime
+            .run_gc_at(adjusted_now)
+            .expect("run gc at adjusted time");
+        assert!(
+            !changed,
+            "adjusted gc time should keep the stale sibling within the 5-minute grace window"
+        );
+        let adjusted_snapshot = adjusted_runtime.app_snapshot().expect("adjusted snapshot");
+        assert!(
+            adjusted_snapshot
+                .sessions
+                .iter()
+                .any(|session| session.session_id == "stale-worker"),
+            "run_gc_at(adjusted_now) should preserve the stale sibling"
+        );
+        assert!(
+            adjusted_snapshot
+                .sessions
+                .iter()
+                .any(|session| session.session_id == "idle-survivor"),
+            "the survivor must remain present"
+        );
     }
 
     #[test]

@@ -12,6 +12,7 @@ mod cwd;
 mod handle;
 mod hook_types;
 mod logging;
+mod power;
 mod runtime_client;
 mod serve;
 

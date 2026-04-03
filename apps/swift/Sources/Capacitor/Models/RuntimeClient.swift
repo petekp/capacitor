@@ -223,6 +223,54 @@ final class RuntimeClient {
         }
     }
 
+    func reportSleep() async throws {
+        guard isEnabled else {
+            throw RuntimeClientError.disabled
+        }
+
+        var request = try runtimeServiceRequest(path: "/runtime/power/sleep")
+        request.httpMethod = "POST"
+
+        do {
+            let (_, response) = try await sendRequest(request)
+            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+                throw RuntimeClientError.runtimeUnavailable(
+                    "Runtime power sleep request failed for \(request.url?.absoluteString ?? "unknown")",
+                )
+            }
+        } catch let error as RuntimeClientError {
+            throw error
+        } catch {
+            throw RuntimeClientError.runtimeUnavailable(
+                "Runtime power sleep unavailable: \(error.localizedDescription)",
+            )
+        }
+    }
+
+    func reportWake() async throws {
+        guard isEnabled else {
+            throw RuntimeClientError.disabled
+        }
+
+        var request = try runtimeServiceRequest(path: "/runtime/power/wake")
+        request.httpMethod = "POST"
+
+        do {
+            let (_, response) = try await sendRequest(request)
+            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+                throw RuntimeClientError.runtimeUnavailable(
+                    "Runtime power wake request failed for \(request.url?.absoluteString ?? "unknown")",
+                )
+            }
+        } catch let error as RuntimeClientError {
+            throw error
+        } catch {
+            throw RuntimeClientError.runtimeUnavailable(
+                "Runtime power wake unavailable: \(error.localizedDescription)",
+            )
+        }
+    }
+
     private struct MutationOutcomeResponse: Decodable {
         let ok: Bool
         let message: String

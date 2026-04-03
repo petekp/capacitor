@@ -12,7 +12,6 @@ use crate::domain::{
     ShellSignal, TmuxPaneInfo,
 };
 use crate::runtime_types::ParentApp;
-
 pub mod delegation;
 pub mod run_reducer;
 
@@ -120,6 +119,15 @@ impl ReducerState {
 
     #[must_use]
     pub fn apply_hook_event(&mut self, command: IngestHookEventCommand) -> MutationOutcome {
+        self.apply_hook_event_with_gc_reference_time(command, None)
+    }
+
+    #[must_use]
+    pub fn apply_hook_event_with_gc_reference_time(
+        &mut self,
+        command: IngestHookEventCommand,
+        gc_reference_time: Option<DateTime<Utc>>,
+    ) -> MutationOutcome {
         self.events_ingested = self.events_ingested.saturating_add(1);
 
         if command.event_id.is_empty() {
@@ -185,6 +193,7 @@ impl ReducerState {
                     &session.project_path,
                     &session.session_id,
                     recorded_at.as_str(),
+                    gc_reference_time,
                 );
             }
         }
@@ -1737,13 +1746,15 @@ fn cleanup_orphaned_same_project_sessions(
     project_path: &str,
     current_session_id: &str,
     incoming_recorded_at: &str,
+    gc_reference_time: Option<DateTime<Utc>>,
 ) {
     let project_path = normalize_path_for_matching(project_path);
     if project_path.is_empty() {
         return;
     }
 
-    let Some(reference_time) = parse_rfc3339(incoming_recorded_at) else {
+    let Some(reference_time) = gc_reference_time.or_else(|| parse_rfc3339(incoming_recorded_at))
+    else {
         return;
     };
 
