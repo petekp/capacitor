@@ -62,6 +62,8 @@ pub struct SessionSummary {
     pub last_activity_at: Option<String>,
     pub tools_in_flight: u32,
     pub ready_reason: Option<String>,
+    #[serde(default)]
+    pub is_alive: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Record)]

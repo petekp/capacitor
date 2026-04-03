@@ -1486,6 +1486,7 @@ mod tests {
             last_activity_at: Some(timestamp),
             tools_in_flight: 0,
             ready_reason,
+            is_alive: is_alive.unwrap_or(false),
         }
     }
 }

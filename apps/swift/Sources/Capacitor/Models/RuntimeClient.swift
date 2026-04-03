@@ -358,7 +358,7 @@ final class RuntimeClient {
                 lastActivityAt: session.lastActivityAt,
                 toolsInFlight: Int(session.toolsInFlight),
                 readyReason: session.readyReason,
-                isAlive: nil,
+                isAlive: session.isAlive,
             )
         }
     }
@@ -796,6 +796,7 @@ private struct SnapshotSessionPayload: Decodable {
     let lastActivityAt: String?
     let toolsInFlight: UInt32
     let readyReason: String?
+    let isAlive: Bool?
 
     enum CodingKeys: String, CodingKey {
         case sessionId = "session_id"
@@ -811,6 +812,7 @@ private struct SnapshotSessionPayload: Decodable {
         case lastActivityAt = "last_activity_at"
         case toolsInFlight = "tools_in_flight"
         case readyReason = "ready_reason"
+        case isAlive = "is_alive"
     }
 
     init(_ session: SessionSummary) {
@@ -827,6 +829,7 @@ private struct SnapshotSessionPayload: Decodable {
         lastActivityAt = session.lastActivityAt
         toolsInFlight = session.toolsInFlight
         readyReason = session.readyReason
+        isAlive = session.isAlive
     }
 }
 

@@ -18,7 +18,10 @@ pub mod run_reducer;
 
 const STALE_EVENT_GRACE_SECS: i64 = 5;
 const ORPHANED_SESSION_GRACE: Duration = Duration::minutes(5);
-const SHELL_SIGNAL_RETENTION: Duration = Duration::hours(4);
+const SOLE_DEAD_SESSION_GRACE: Duration = Duration::minutes(10);
+/// Must equal SOLE_DEAD_SESSION_GRACE — a shell signal that expires during one
+/// GC cycle makes the sole session eligible for Idle transition on the next.
+const SHELL_GC_RETENTION: Duration = Duration::minutes(10);
 
 #[derive(Debug, Default, Clone)]
 pub struct ReducerState {
@@ -84,6 +87,14 @@ impl ReducerState {
             shells.insert(shell.pid, shell);
         }
 
+        let session_is_alive = session_is_alive_map(&sessions, &shells);
+        for session in sessions.values_mut() {
+            session.is_alive = session_is_alive
+                .get(&session.session_id)
+                .copied()
+                .unwrap_or(false);
+        }
+
         let mut state = Self {
             projects,
             delegations,
@@ -144,7 +155,7 @@ impl ReducerState {
             command.recorded_at.clone()
         };
 
-        let update = reduce_session(current.as_ref(), &command);
+        let update = reduce_session(current.as_ref(), &self.shells, &command);
         match &update {
             SessionUpdate::Upsert(session) => {
                 self.sessions
@@ -260,6 +271,17 @@ impl ReducerState {
     }
 
     pub fn gc_stale_sessions_at(&mut self, now: DateTime<Utc>) {
+        let shell_count_before_gc = self.shells.len();
+        cleanup_shells_at(&mut self.shells, now);
+
+        let session_is_alive = session_is_alive_map(&self.sessions, &self.shells);
+        for session in self.sessions.values_mut() {
+            session.is_alive = session_is_alive
+                .get(&session.session_id)
+                .copied()
+                .unwrap_or(false);
+        }
+
         // Group sessions by normalized project path.  For each project we only
         // evict stale non-Idle sessions when at least one session will *survive*
         // the GC pass.  A survivor is either Idle (always survives) or fresh
@@ -267,45 +289,80 @@ impl ReducerState {
         // pathological case where all concurrent workers are quiet (e.g. two
         // Codex sessions between hook events) and the GC wipes the entire
         // project to zero sessions.
-        let mut project_sessions: HashMap<String, Vec<&SessionSummary>> = HashMap::new();
+        let mut project_sessions: HashMap<String, Vec<String>> = HashMap::new();
         for session in self.sessions.values() {
             if session.project_path.is_empty() {
                 continue;
             }
             let key = normalize_path_for_matching(&session.project_path);
-            project_sessions.entry(key).or_default().push(session);
+            project_sessions
+                .entry(key)
+                .or_default()
+                .push(session.session_id.clone());
         }
 
         let mut expired_session_ids: Vec<String> = Vec::new();
+        let mut idle_session_ids: Vec<String> = Vec::new();
 
-        for sessions in project_sessions.values() {
-            if sessions.len() <= 1 {
-                // Sole session is never evicted at snapshot time.
+        for session_ids in project_sessions.values() {
+            if session_ids.len() <= 1 {
+                // Sole session — only transition to Idle if conclusively dead
+                // with no corroborating shell signal and well beyond the dead
+                // session grace period.
+                if let Some(session_id) = session_ids.first() {
+                    if let Some(session) = self.sessions.get(session_id) {
+                        if is_sole_session_conclusively_dead(session, now, &self.shells) {
+                            idle_session_ids.push(session_id.clone());
+                        }
+                    }
+                }
                 continue;
             }
 
-            let stale: Vec<&str> = sessions
+            let stale: Vec<String> = session_ids
                 .iter()
-                .filter(|s| is_session_evictable(s, now, &self.shells))
-                .map(|s| s.session_id.as_str())
+                .filter_map(|session_id| {
+                    self.sessions
+                        .get(session_id)
+                        .filter(|session| is_session_evictable(session, now, &self.shells))
+                        .map(|_| session_id.clone())
+                })
                 .collect();
 
             // A survivor is any session that is NOT evictable: either Idle
             // or fresh enough to be within the grace window.
-            let has_survivor = sessions
-                .iter()
-                .any(|s| !is_session_evictable(s, now, &self.shells));
+            let has_survivor = session_ids.iter().any(|session_id| {
+                self.sessions
+                    .get(session_id)
+                    .map(|session| !is_session_evictable(session, now, &self.shells))
+                    .unwrap_or(false)
+            });
 
             if has_survivor {
-                expired_session_ids.extend(stale.into_iter().map(String::from));
+                expired_session_ids.extend(stale);
             }
             // If no survivor exists, skip eviction for this project entirely.
+        }
+
+        let mut needs_recompute = shell_count_before_gc != self.shells.len();
+
+        for session_id in idle_session_ids {
+            if let Some(session) = self.sessions.get_mut(&session_id) {
+                session.state = SessionState::Idle;
+                session.state_changed_at = now.to_rfc3339();
+                session.is_alive = false;
+                needs_recompute = true;
+            }
         }
 
         if !expired_session_ids.is_empty() {
             for id in &expired_session_ids {
                 self.sessions.remove(id);
             }
+            needs_recompute = true;
+        }
+
+        if needs_recompute {
             self.recompute_projects();
             self.recompute_routing();
         }
@@ -318,7 +375,14 @@ impl ReducerState {
         let projects = self.projects.values().cloned().collect::<Vec<_>>();
         let delegations = self.delegations.values().cloned().collect::<Vec<_>>();
 
+        let session_is_alive = session_is_alive_map(&self.sessions, &self.shells);
         let mut sessions = self.sessions.values().cloned().collect::<Vec<_>>();
+        for session in &mut sessions {
+            session.is_alive = session_is_alive
+                .get(&session.session_id)
+                .copied()
+                .unwrap_or(false);
+        }
         sessions.sort_by(|left, right| {
             left.project_path
                 .cmp(&right.project_path)
@@ -1103,6 +1167,7 @@ fn reduce_project_sessions(
 
 fn reduce_session(
     current: Option<&SessionSummary>,
+    shells: &HashMap<u32, ShellSignal>,
     event: &IngestHookEventCommand,
 ) -> SessionUpdate {
     match event.event_type {
@@ -1115,26 +1180,39 @@ fn reduce_session(
             if already_working {
                 SessionUpdate::Skip("session_start_already_active")
             } else {
-                SessionUpdate::Upsert(upsert_session(current, event, SessionState::Ready, None))
+                SessionUpdate::Upsert(upsert_session(
+                    current,
+                    shells,
+                    event,
+                    SessionState::Ready,
+                    None,
+                ))
             }
         }
-        HookEventType::UserPromptSubmit | HookEventType::PreToolUse => {
-            SessionUpdate::Upsert(upsert_session(current, event, SessionState::Working, None))
-        }
-        HookEventType::PostToolUse | HookEventType::PostToolUseFailure => {
-            SessionUpdate::Upsert(upsert_session(current, event, SessionState::Working, None))
-        }
+        HookEventType::UserPromptSubmit | HookEventType::PreToolUse => SessionUpdate::Upsert(
+            upsert_session(current, shells, event, SessionState::Working, None),
+        ),
+        HookEventType::PostToolUse | HookEventType::PostToolUseFailure => SessionUpdate::Upsert(
+            upsert_session(current, shells, event, SessionState::Working, None),
+        ),
         HookEventType::PermissionRequest => {
             // Guard: if tools_in_flight == 0, the tool already completed and this
             // PermissionRequest arrived late. Skip it to avoid overwriting Working.
             if current.map(|r| r.tools_in_flight).unwrap_or(0) == 0 {
                 SessionUpdate::Skip("permission_request_no_tools_in_flight")
             } else {
-                SessionUpdate::Upsert(upsert_session(current, event, SessionState::Waiting, None))
+                SessionUpdate::Upsert(upsert_session(
+                    current,
+                    shells,
+                    event,
+                    SessionState::Waiting,
+                    None,
+                ))
             }
         }
         HookEventType::PreCompact => SessionUpdate::Upsert(upsert_session(
             current,
+            shells,
             event,
             SessionState::Compacting,
             None,
@@ -1147,6 +1225,7 @@ fn reduce_session(
                 {
                     let mut corrected = upsert_session(
                         current,
+                        shells,
                         event,
                         current
                             .map(|record| record.state)
@@ -1158,6 +1237,7 @@ fn reduce_session(
                 } else {
                     SessionUpdate::Upsert(upsert_session(
                         current,
+                        shells,
                         event,
                         SessionState::Ready,
                         Some("idle_prompt".to_string()),
@@ -1166,6 +1246,7 @@ fn reduce_session(
             }
             Some("auth_success") => SessionUpdate::Upsert(upsert_session(
                 current,
+                shells,
                 event,
                 SessionState::Ready,
                 Some("auth_success".to_string()),
@@ -1178,6 +1259,7 @@ fn reduce_session(
                 } else {
                     SessionUpdate::Upsert(upsert_session(
                         current,
+                        shells,
                         event,
                         SessionState::Waiting,
                         Some("permission_prompt".to_string()),
@@ -1192,6 +1274,7 @@ fn reduce_session(
                 } else {
                     SessionUpdate::Upsert(upsert_session(
                         current,
+                        shells,
                         event,
                         SessionState::Waiting,
                         None,
@@ -1206,6 +1289,7 @@ fn reduce_session(
             } else {
                 SessionUpdate::Upsert(upsert_session(
                     current,
+                    shells,
                     event,
                     SessionState::Ready,
                     Some("stop_gate".to_string()),
@@ -1218,6 +1302,7 @@ fn reduce_session(
             } else {
                 SessionUpdate::Upsert(upsert_session(
                     current,
+                    shells,
                     event,
                     SessionState::Ready,
                     Some("task_completed".to_string()),
@@ -1232,6 +1317,7 @@ fn reduce_session(
             if pid > 0 && is_pid_alive(pid) {
                 SessionUpdate::Upsert(upsert_session(
                     current,
+                    shells,
                     event,
                     SessionState::Ready,
                     Some("session_cleared".to_string()),
@@ -1244,7 +1330,13 @@ fn reduce_session(
             if current_has_higher_priority_state(current) {
                 SessionUpdate::Skip("subagent_start_higher_priority_active")
             } else {
-                SessionUpdate::Upsert(upsert_session(current, event, SessionState::Working, None))
+                SessionUpdate::Upsert(upsert_session(
+                    current,
+                    shells,
+                    event,
+                    SessionState::Working,
+                    None,
+                ))
             }
         }
         HookEventType::SubagentStop => {
@@ -1255,7 +1347,13 @@ fn reduce_session(
                 .unwrap_or(false)
             {
                 // Other tools are still in flight — the session is genuinely active.
-                SessionUpdate::Upsert(upsert_session(current, event, SessionState::Working, None))
+                SessionUpdate::Upsert(upsert_session(
+                    current,
+                    shells,
+                    event,
+                    SessionState::Working,
+                    None,
+                ))
             } else if current
                 .map(|record| record.state == SessionState::Working)
                 .unwrap_or(false)
@@ -1280,6 +1378,7 @@ fn reduce_session(
 
 fn upsert_session(
     current: Option<&SessionSummary>,
+    shells: &HashMap<u32, ShellSignal>,
     event: &IngestHookEventCommand,
     new_state: SessionState,
     ready_reason: Option<String>,
@@ -1357,6 +1456,7 @@ fn upsert_session(
         last_activity_at,
         tools_in_flight,
         ready_reason: next_ready_reason,
+        is_alive: pid > 0 && shells.contains_key(&pid),
     }
 }
 
@@ -1647,6 +1747,28 @@ fn cleanup_orphaned_same_project_sessions(
     }
 }
 
+fn is_sole_session_conclusively_dead(
+    session: &SessionSummary,
+    now: DateTime<Utc>,
+    shells: &HashMap<u32, ShellSignal>,
+) -> bool {
+    // Only active states (Working/Waiting/Compacting) can be dead — Idle and
+    // Ready are resting states that represent terminal windows the user may
+    // return to.
+    if !session.state.is_active() {
+        return false;
+    }
+    // Shell corroboration means the process is (or was recently) alive.
+    if session.pid > 0 && shells.contains_key(&session.pid) {
+        return false;
+    }
+    // No corroboration + active state + well beyond the generous grace period = dead.
+    let anchor = orphaned_session_gc_anchor_at(session);
+    parse_rfc3339(anchor)
+        .map(|ts| now.signed_duration_since(ts) > SOLE_DEAD_SESSION_GRACE)
+        .unwrap_or(false)
+}
+
 fn is_session_evictable(
     session: &SessionSummary,
     reference_time: DateTime<Utc>,
@@ -1666,7 +1788,7 @@ fn is_session_evictable(
     }
     // Active sessions with a corroborating shell signal are protected.
     // The shell signal proves the process is (or was recently) alive.
-    // Stale shell signals are cleaned by cleanup_shells during snapshot,
+    // Stale shell signals are cleaned by cleanup_shells during GC,
     // so this protection expires naturally within one GC cycle after PID death.
     if session.state.is_active() && session.pid > 0 && shells.contains_key(&session.pid) {
         return false;
@@ -1710,7 +1832,7 @@ fn cleanup_shells_at(shells: &mut HashMap<u32, ShellSignal>, now: DateTime<Utc>)
         .iter()
         .filter(|(_, shell)| {
             parse_rfc3339(&shell.updated_at)
-                .map(|ts| now.signed_duration_since(ts) > SHELL_SIGNAL_RETENTION)
+                .map(|ts| now.signed_duration_since(ts) > SHELL_GC_RETENTION)
                 .unwrap_or(false)
         })
         .map(|(pid, _)| *pid)
@@ -1718,6 +1840,21 @@ fn cleanup_shells_at(shells: &mut HashMap<u32, ShellSignal>, now: DateTime<Utc>)
     for pid in expired_pids {
         shells.remove(&pid);
     }
+}
+
+fn session_is_alive_map(
+    sessions: &HashMap<String, SessionSummary>,
+    shells: &HashMap<u32, ShellSignal>,
+) -> HashMap<String, bool> {
+    sessions
+        .values()
+        .map(|session| {
+            (
+                session.session_id.clone(),
+                session.pid > 0 && shells.contains_key(&session.pid),
+            )
+        })
+        .collect()
 }
 
 fn is_timestamp_stale(current_updated_at: &str, incoming_recorded_at: &str) -> bool {

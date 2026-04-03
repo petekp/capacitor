@@ -54,6 +54,7 @@ final class SessionStateManager {
         let state: RuntimeProjectState
         let priority: MatchPriority
         let representativePid: UInt32?
+        let isAlive: Bool?
     }
 
     private enum Constants {
@@ -447,8 +448,8 @@ final class SessionStateManager {
                             homeNormalized: homeNormalized,
                         ) else { continue }
                         let projectPath = candidate.project.path
-                        let pid = state.sessionId.flatMap { sessionIndex[$0]?.pid }
-                        let candidateBest = BestProjectState(state: state, priority: .repoFallback, representativePid: pid)
+                        let representativeSession = state.sessionId.flatMap { sessionIndex[$0] }
+                        let candidateBest = BestProjectState(state: state, priority: .repoFallback, representativePid: representativeSession?.pid, isAlive: representativeSession?.isAlive)
                         if let existing = bestStates[projectPath] {
                             if shouldReplace(existing: existing, with: candidateBest, now: now, processLiveness: processLiveness) {
                                 bestStates[projectPath] = candidateBest
@@ -465,8 +466,8 @@ final class SessionStateManager {
             }
 
             let projectPath = match.project.path
-            let pid = state.sessionId.flatMap { sessionIndex[$0]?.pid }
-            let candidateBest = BestProjectState(state: state, priority: .direct, representativePid: pid)
+            let representativeSession = state.sessionId.flatMap { sessionIndex[$0] }
+            let candidateBest = BestProjectState(state: state, priority: .direct, representativePid: representativeSession?.pid, isAlive: representativeSession?.isAlive)
             if let existing = bestStates[projectPath] {
                 if shouldReplace(existing: existing, with: candidateBest, now: now, processLiveness: processLiveness) {
                     bestStates[projectPath] = candidateBest
@@ -486,7 +487,7 @@ final class SessionStateManager {
         var latestSessionIds: [String: String] = [:]
         for (projectPath, best) in bestStates {
             let state = best.state
-            let mappedState = normalizedRuntimeState(state, pid: best.representativePid, now: now, processLiveness: processLiveness)
+            let mappedState = normalizedRuntimeState(state, pid: best.representativePid, isAlive: best.isAlive, now: now, processLiveness: processLiveness)
             let sessionState = ProjectSessionState(
                 state: mappedState,
                 stateChangedAt: state.stateChangedAt,
@@ -582,8 +583,8 @@ final class SessionStateManager {
         // a more-recent ready session. When PID liveness normalizes both to the
         // same activity level, recency breaks the tie as before.
         if candidate.priority == .direct {
-            let candidateActivity = stateActivityPriority(candidate.state, pid: candidate.representativePid, now: now, processLiveness: processLiveness)
-            let existingActivity = stateActivityPriority(existing.state, pid: existing.representativePid, now: now, processLiveness: processLiveness)
+            let candidateActivity = stateActivityPriority(candidate.state, pid: candidate.representativePid, isAlive: candidate.isAlive, now: now, processLiveness: processLiveness)
+            let existingActivity = stateActivityPriority(existing.state, pid: existing.representativePid, isAlive: existing.isAlive, now: now, processLiveness: processLiveness)
             if candidateActivity != existingActivity {
                 return candidateActivity > existingActivity
             }
@@ -598,8 +599,8 @@ final class SessionStateManager {
         return false
     }
 
-    private nonisolated func stateActivityPriority(_ state: RuntimeProjectState, pid: UInt32?, now: Date, processLiveness: ProcessLivenessChecker) -> Int {
-        switch normalizedRuntimeState(state, pid: pid, now: now, processLiveness: processLiveness) {
+    private nonisolated func stateActivityPriority(_ state: RuntimeProjectState, pid: UInt32?, isAlive: Bool?, now: Date, processLiveness: ProcessLivenessChecker) -> Int {
+        switch normalizedRuntimeState(state, pid: pid, isAlive: isAlive, now: now, processLiveness: processLiveness) {
         case .working, .waiting, .compacting:
             1
         case .ready, .idle:
@@ -607,14 +608,22 @@ final class SessionStateManager {
         }
     }
 
-    private nonisolated func normalizedRuntimeState(_ state: RuntimeProjectState, pid: UInt32?, now: Date, processLiveness: ProcessLivenessChecker) -> SessionState {
+    private nonisolated func normalizedRuntimeState(_ state: RuntimeProjectState, pid: UInt32?, isAlive: Bool?, now: Date, processLiveness: ProcessLivenessChecker) -> SessionState {
         var mappedState = mapRuntimeState(state.state)
-        // If working with no events beyond the stale threshold AND the process is dead,
-        // downgrade to ready. This catches interrupted sessions that never fired Stop.
-        if SessionStaleness.isWorkingStale(state: mappedState, updatedAt: state.updatedAt, now: now) {
-            let processAlive = pid.map { processLiveness($0) } ?? false
-            if !processAlive {
+        // Use Rust-computed is_alive (shell corroboration) as the primary liveness signal.
+        // Falls back to Swift-side PID check + timestamp staleness when is_alive is nil
+        // (runtime service path or pre-migration snapshots).
+        if SessionStaleness.isSessionEffectivelyDead(isAlive: isAlive, state: mappedState, updatedAt: state.updatedAt, now: now) {
+            // When isAlive is non-nil, isSessionEffectivelyDead only returns true
+            // if isAlive==false, so we can downgrade unconditionally.
+            // When isAlive is nil (runtime service path), fall back to PID check.
+            if isAlive != nil {
                 mappedState = .ready
+            } else {
+                let processAlive = pid.map { processLiveness($0) } ?? false
+                if !processAlive {
+                    mappedState = .ready
+                }
             }
         }
         return mappedState

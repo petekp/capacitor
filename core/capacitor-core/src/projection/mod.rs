@@ -91,6 +91,7 @@ mod tests {
                 last_activity_at: Some("2026-03-09T12:00:00Z".to_string()),
                 tools_in_flight: 0,
                 ready_reason: None,
+                is_alive: true,
             }],
             shells: vec![ShellSignal {
                 pid: 42,

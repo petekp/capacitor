@@ -90,8 +90,7 @@ enum ProjectRunVisualStateResolver {
             return .waiting(statusMessage: statusMessage)
         }
         if run.status == "active",
-           !SessionStaleness.isWorkingStale(
-               state: .working,
+           !SessionStaleness.isRunFreshnessExpired(
                updatedAt: run.updatedAt,
                now: now,
            )

@@ -6273,10 +6273,11 @@ public struct SessionSummary {
     public var lastActivityAt: String?
     public var toolsInFlight: UInt32
     public var readyReason: String?
+    public var isAlive: Bool
 
     /// Default memberwise initializers are never public by default, so we
     /// declare one manually.
-    public init(sessionId: String, pid: UInt32, cwd: String, projectId: String, projectPath: String, workspaceId: String, state: SessionState, stateChangedAt: String, updatedAt: String, lastEvent: String?, lastActivityAt: String?, toolsInFlight: UInt32, readyReason: String?) {
+    public init(sessionId: String, pid: UInt32, cwd: String, projectId: String, projectPath: String, workspaceId: String, state: SessionState, stateChangedAt: String, updatedAt: String, lastEvent: String?, lastActivityAt: String?, toolsInFlight: UInt32, readyReason: String?, isAlive: Bool) {
         self.sessionId = sessionId
         self.pid = pid
         self.cwd = cwd
@@ -6290,6 +6291,7 @@ public struct SessionSummary {
         self.lastActivityAt = lastActivityAt
         self.toolsInFlight = toolsInFlight
         self.readyReason = readyReason
+        self.isAlive = isAlive
     }
 }
 
@@ -6334,6 +6336,9 @@ extension SessionSummary: Equatable, Hashable {
         if lhs.readyReason != rhs.readyReason {
             return false
         }
+        if lhs.isAlive != rhs.isAlive {
+            return false
+        }
         return true
     }
 
@@ -6351,6 +6356,7 @@ extension SessionSummary: Equatable, Hashable {
         hasher.combine(lastActivityAt)
         hasher.combine(toolsInFlight)
         hasher.combine(readyReason)
+        hasher.combine(isAlive)
     }
 }
 
@@ -6373,7 +6379,8 @@ public struct FfiConverterTypeSessionSummary: FfiConverterRustBuffer {
                 lastEvent: FfiConverterOptionString.read(from: &buf),
                 lastActivityAt: FfiConverterOptionString.read(from: &buf),
                 toolsInFlight: FfiConverterUInt32.read(from: &buf),
-                readyReason: FfiConverterOptionString.read(from: &buf)
+                readyReason: FfiConverterOptionString.read(from: &buf),
+                isAlive: FfiConverterBool.read(from: &buf)
             )
     }
 
@@ -6391,6 +6398,7 @@ public struct FfiConverterTypeSessionSummary: FfiConverterRustBuffer {
         FfiConverterOptionString.write(value.lastActivityAt, into: &buf)
         FfiConverterUInt32.write(value.toolsInFlight, into: &buf)
         FfiConverterOptionString.write(value.readyReason, into: &buf)
+        FfiConverterBool.write(value.isAlive, into: &buf)
     }
 }
 
