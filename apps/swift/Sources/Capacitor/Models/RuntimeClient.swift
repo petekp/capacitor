@@ -88,31 +88,56 @@ final class RuntimeClient {
 
     func fetchRuntimeSnapshot(correlationId: String? = nil) async throws -> RuntimeSnapshot {
         let snapshot = try await requireSnapshot(correlationId: correlationId, operation: "fetchRuntimeSnapshot")
-        let projectStates = mapProjectStates(snapshot)
-        let sessions = mapSessions(snapshot)
-        let runs = mapRuns(snapshot)
-        guard let shellState = mapShellState(
-            snapshot,
+        return try makeRuntimeSnapshot(
+            from: snapshot,
             correlationId: correlationId,
             operation: "fetchRuntimeSnapshot",
-        ) else {
-            throw RuntimeClientError.invalidResponse
+        )
+    }
+
+    func longPollSnapshot(sinceVersion: UInt64) async throws -> LongPollResponse {
+        guard isEnabled else {
+            throw RuntimeClientError.disabled
         }
 
-        let cid = correlationId ?? "none"
-        DebugLog.write(
-            "RuntimeClient.fetchRuntimeSnapshot source=\(runtimeSourceLabel) cid=\(cid) projects=\(projectStates.count) sessions=\(sessions.count) shells=\(shellState.shells.count) runs=\(runs.count)",
+        var request = try runtimeServiceRequest(
+            path: "/runtime/snapshot/poll",
+            queryItems: [URLQueryItem(name: "since_version", value: String(sinceVersion))],
         )
+        request.timeoutInterval = 35
 
-        return RuntimeSnapshot(
-            projectStates: projectStates,
-            sessions: sessions,
-            shellState: shellState,
-            routingViews: mapRoutingViews(snapshot),
-            delegations: mapDelegations(snapshot),
-            runs: runs,
-            snapshotVersion: snapshot.snapshotVersion,
-        )
+        do {
+            let (data, response) = try await sendRequest(request)
+            guard let http = response as? HTTPURLResponse else {
+                throw RuntimeClientError.invalidResponse
+            }
+
+            switch http.statusCode {
+            case 200:
+                let metadata = try JSONDecoder().decode(LongPollMetadata.self, from: data)
+                guard metadata.changed else {
+                    return .unchanged(snapshotVersion: metadata.snapshotVersion ?? sinceVersion)
+                }
+
+                let snapshot = try makeRuntimeSnapshot(
+                    from: decodeSnapshotPayload(data),
+                    operation: "longPollSnapshot",
+                )
+                return .changed(snapshot)
+            case 404:
+                return .unavailable
+            default:
+                throw RuntimeClientError.runtimeUnavailable(
+                    "Runtime service long-poll request failed for \(request.url?.absoluteString ?? "unknown")",
+                )
+            }
+        } catch let error as RuntimeClientError {
+            throw error
+        } catch {
+            throw RuntimeClientError.runtimeUnavailable(
+                "Runtime service long-poll unavailable: \(error.localizedDescription)",
+            )
+        }
     }
 
     func fetchCoreRoutingSnapshot(
@@ -266,7 +291,7 @@ final class RuntimeClient {
                     "Runtime service snapshot request failed for \(request.url?.absoluteString ?? "unknown")",
                 )
             }
-            return try JSONDecoder().decode(SnapshotPayload.self, from: data)
+            return try decodeSnapshotPayload(data)
         } catch let error as RuntimeClientError {
             throw error
         } catch {
@@ -323,6 +348,65 @@ final class RuntimeClient {
         var request = URLRequest(url: url)
         request.setValue("Bearer \(connection.bearerToken)", forHTTPHeaderField: "Authorization")
         return request
+    }
+
+    private func runtimeServiceRequest(
+        path: String,
+        queryItems: [URLQueryItem],
+    ) throws -> URLRequest {
+        guard let connection = runtimeServiceConnectionOverride ?? loadRuntimeServiceConnection() else {
+            throw RuntimeClientError.runtimeUnavailable("Runtime service connection unavailable")
+        }
+
+        let normalizedPath = path.hasPrefix("/") ? String(path.dropFirst()) : path
+        let url = connection.baseURL.appendingPathComponent(normalizedPath)
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            throw RuntimeClientError.invalidResponse
+        }
+        components.queryItems = queryItems
+        guard let resolvedURL = components.url else {
+            throw RuntimeClientError.invalidResponse
+        }
+
+        var request = URLRequest(url: resolvedURL)
+        request.setValue("Bearer \(connection.bearerToken)", forHTTPHeaderField: "Authorization")
+        return request
+    }
+
+    private func decodeSnapshotPayload(_ data: Data) throws -> SnapshotPayload {
+        try JSONDecoder().decode(SnapshotPayload.self, from: data)
+    }
+
+    private func makeRuntimeSnapshot(
+        from snapshot: SnapshotPayload,
+        correlationId: String? = nil,
+        operation: String,
+    ) throws -> RuntimeSnapshot {
+        let projectStates = mapProjectStates(snapshot)
+        let sessions = mapSessions(snapshot)
+        let runs = mapRuns(snapshot)
+        guard let shellState = mapShellState(
+            snapshot,
+            correlationId: correlationId,
+            operation: operation,
+        ) else {
+            throw RuntimeClientError.invalidResponse
+        }
+
+        let cid = correlationId ?? "none"
+        DebugLog.write(
+            "RuntimeClient.\(operation) source=\(runtimeSourceLabel) cid=\(cid) projects=\(projectStates.count) sessions=\(sessions.count) shells=\(shellState.shells.count) runs=\(runs.count)",
+        )
+
+        return RuntimeSnapshot(
+            projectStates: projectStates,
+            sessions: sessions,
+            shellState: shellState,
+            routingViews: mapRoutingViews(snapshot),
+            delegations: mapDelegations(snapshot),
+            runs: runs,
+            snapshotVersion: snapshot.snapshotVersion,
+        )
     }
 
     private func mapProjectStates(_ snapshot: SnapshotPayload) -> [RuntimeProjectState] {
@@ -702,6 +786,22 @@ final class RuntimeClient {
         }
 
         return mirror.children.first?.value as? String
+    }
+}
+
+private struct LongPollMetadata: Decodable {
+    let changed: Bool
+    let snapshotVersion: UInt64?
+
+    enum CodingKeys: String, CodingKey {
+        case changed
+        case snapshotVersion = "snapshot_version"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        changed = try container.decodeIfPresent(Bool.self, forKey: .changed) ?? true
+        snapshotVersion = try container.decodeIfPresent(UInt64.self, forKey: .snapshotVersion)
     }
 }
 

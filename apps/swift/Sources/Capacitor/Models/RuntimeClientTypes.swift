@@ -214,6 +214,16 @@ struct RuntimeSnapshot {
     let snapshotVersion: UInt64
 }
 
+/// Response from the long-poll snapshot endpoint.
+enum LongPollResponse {
+    /// Snapshot changed and includes a full runtime snapshot payload.
+    case changed(RuntimeSnapshot)
+    /// Snapshot did not change before the server-side timeout elapsed.
+    case unchanged(snapshotVersion: UInt64)
+    /// The runtime service does not expose the long-poll endpoint yet.
+    case unavailable
+}
+
 struct RuntimeDelegationReview: Decodable, Equatable {
     let milestoneId: String
     let briefPath: String

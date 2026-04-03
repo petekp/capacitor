@@ -433,6 +433,65 @@ final class AppStateSessionObservationTests: XCTestCase {
         )
     }
 
+    func testOlderSnapshotVersionDoesNotOverrideNewerAppliedSnapshot() async {
+        let appState = AppState()
+        appState.cancelRuntimeAutomationForTesting()
+        let project = makeProject(name: "Capacitor", path: "/Users/petepetrash/Code/capacitor")
+        let baselineRun = makeRun(projectPath: project.path, runID: "run-baseline")
+        let staleRun = makeRun(projectPath: project.path, runID: "run-stale")
+        appState.projects = [project]
+        appState.setRuntimeSnapshotGenerationForTesting(1)
+
+        await appState.applyRuntimeSnapshotForTesting(
+            makeRuntimeSnapshot(
+                projectPath: project.path,
+                sessionId: "baseline-session",
+                shellCwd: "/baseline",
+                shellPid: "111",
+                runs: [baselineRun],
+                snapshotVersion: 12,
+            ),
+            refreshGeneration: 1,
+            correlationId: "baseline-versioned",
+            projects: [project],
+        )
+
+        var observedLines: [String] = []
+        DebugLog.setTestObserver { line in
+            observedLines.append(line)
+        }
+        defer { DebugLog.setTestObserver(nil) }
+
+        await appState.applyRuntimeSnapshotForTesting(
+            makeRuntimeSnapshot(
+                projectPath: project.path,
+                sessionId: "stale-session",
+                shellCwd: "/stale",
+                shellPid: "111",
+                runs: [staleRun],
+                snapshotVersion: 11,
+            ),
+            refreshGeneration: 1,
+            correlationId: "older-version",
+            projects: [project],
+        )
+
+        XCTAssertEqual(appState.getSessionState(for: project)?.sessionId, "baseline-session")
+        XCTAssertEqual(appState.shellStateStore.state?.shells["111"]?.cwd, "/baseline")
+        XCTAssertEqual(
+            appState.routingStateStore.routingView(projectPath: project.path, workspaceId: nil)?.target.sessionName,
+            "baseline-session",
+        )
+        XCTAssertEqual(appState.runStatesByID[RuntimeRunKey(run: baselineRun)], baselineRun)
+        XCTAssertNil(appState.runStatesByID[RuntimeRunKey(run: staleRun)])
+        XCTAssertTrue(
+            observedLines.contains {
+                $0.contains("source=runtime_snapshot_drop_stale_version") && $0.contains("version=11")
+            },
+            "expected stale-version log when an older snapshot arrives after a newer one",
+        )
+    }
+
     func testSnapshotVersionZeroNeverSkipsProjectionFanOut() async {
         let appState = AppState()
         appState.cancelRuntimeAutomationForTesting()

@@ -204,6 +204,82 @@ final class RuntimeClientTests: XCTestCase {
         XCTAssertEqual(checkpoint.captureClaim?.observedCaptureUrl, "http://localhost:3000")
     }
 
+    func testLongPollSnapshotReturnsChangedSnapshotWhenServerReportsChanged() async throws {
+        var capturedRequest: URLRequest?
+        let client = try RuntimeClient(
+            runtimeServiceConnectionOverride: RuntimeServiceConnection(
+                baseURL: XCTUnwrap(URL(string: "http://127.0.0.1:7812")),
+                bearerToken: "service-secret",
+            ),
+            sendRequest: { request in
+                capturedRequest = request
+                let response = try XCTUnwrap(
+                    HTTPURLResponse(
+                        url: request.url!,
+                        statusCode: 200,
+                        httpVersion: nil,
+                        headerFields: ["Content-Type": "application/json"],
+                    ),
+                )
+                return (Self.makeLongPollChangedResponse(snapshotVersion: 17), response)
+            },
+        )
+
+        let response = try await client.longPollSnapshot(sinceVersion: 11)
+
+        XCTAssertEqual(capturedRequest?.url?.path, "/runtime/snapshot/poll")
+        XCTAssertEqual(
+            try URLComponents(url: XCTUnwrap(capturedRequest?.url), resolvingAgainstBaseURL: false)?
+                .queryItems?
+                .first(where: { $0.name == "since_version" })?
+                .value,
+            "11",
+        )
+        XCTAssertEqual(
+            capturedRequest?.value(forHTTPHeaderField: "Authorization"),
+            "Bearer service-secret",
+        )
+        XCTAssertEqual(try XCTUnwrap(capturedRequest?.timeoutInterval), 35, accuracy: 0.01)
+
+        switch response {
+        case let .changed(snapshot):
+            XCTAssertEqual(snapshot.snapshotVersion, 17)
+            XCTAssertEqual(snapshot.projectStates.first?.projectPath, "/tmp/core-project")
+            XCTAssertEqual(snapshot.sessions.first?.sessionId, "session-core")
+        default:
+            XCTFail("expected changed long-poll response")
+        }
+    }
+
+    func testLongPollSnapshotReturnsUnchangedVersionWhenServerReportsNoChange() async throws {
+        let client = try RuntimeClient(
+            runtimeServiceConnectionOverride: RuntimeServiceConnection(
+                baseURL: XCTUnwrap(URL(string: "http://127.0.0.1:7812")),
+                bearerToken: "service-secret",
+            ),
+            sendRequest: { request in
+                let response = try XCTUnwrap(
+                    HTTPURLResponse(
+                        url: request.url!,
+                        statusCode: 200,
+                        httpVersion: nil,
+                        headerFields: ["Content-Type": "application/json"],
+                    ),
+                )
+                return (Self.makeLongPollUnchangedResponse(snapshotVersion: 42), response)
+            },
+        )
+
+        let response = try await client.longPollSnapshot(sinceVersion: 41)
+
+        switch response {
+        case let .unchanged(snapshotVersion):
+            XCTAssertEqual(snapshotVersion, 42)
+        default:
+            XCTFail("expected unchanged long-poll response")
+        }
+    }
+
     func testFetchRuntimeSnapshotMapsRunCheckpointCaptureStatusStrings() async throws {
         let scenarios: [LabeledExpectationScenario<String, RuntimeCaptureStatus>] = [
             LabeledExpectationScenario(
@@ -1120,6 +1196,21 @@ final class RuntimeClientTests: XCTestCase {
         {"workspace_id":"\(unresolvedWorkspaceId)","project_path":"\(requestProjectPath)","status":"unavailable","target":{"kind":"none","terminal_app":null,"session_name":null,"pane_id":null,"host_tty":null},"reason_code":"NO_TRUSTED_EVIDENCE","reason":"No routing evidence available in runtime service","updated_at":"2026-02-28T19:00:00Z"}
         """
         return Data(json.utf8)
+    }
+
+    private static func makeLongPollChangedResponse(snapshotVersion: UInt64) -> Data {
+        guard var object = try? JSONSerialization.jsonObject(
+            with: makeCoreSnapshotResponse(snapshotVersion: snapshotVersion),
+        ) as? [String: Any]
+        else {
+            return Data()
+        }
+        object["changed"] = true
+        return (try? JSONSerialization.data(withJSONObject: object)) ?? Data()
+    }
+
+    private static func makeLongPollUnchangedResponse(snapshotVersion: UInt64) -> Data {
+        Data(#"{"changed":false,"snapshot_version":\#(snapshotVersion)}"#.utf8)
     }
 
     private static func makeCoreSnapshotResponse(

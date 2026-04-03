@@ -218,10 +218,12 @@ class AppState {
     private var methodRunCoordinator: MethodRunCoordinator?
     private var engine: CoreRuntime?
     private var refreshTimer: Timer?
+    private var longPollTask: _Concurrency.Task<Void, Never>?
     private var runtimeBootstrapTask: _Concurrency.Task<Void, Never>?
     private var runtimeSnapshotTask: _Concurrency.Task<Void, Never>?
     private var runtimeSnapshotGeneration: UInt64 = 0
     private var lastAppliedSnapshotVersion: UInt64 = 0
+    private var lastPolledSnapshotVersion: UInt64 = 0
     private var runtimeSnapshotCorrelationCounter: UInt64 = 0
     private var consecutiveRuntimeSnapshotFailures = 0
     private(set) var sessionStateRevision = 0
@@ -461,6 +463,8 @@ class AppState {
 
         runtimeBootstrapTask?.cancel()
         runtimeBootstrapTask = nil
+        longPollTask?.cancel()
+        longPollTask = nil
         runtimeSnapshotTask?.cancel()
         runtimeSnapshotTask = nil
         refreshTimer?.invalidate()
@@ -476,7 +480,11 @@ class AppState {
     private var runtimeHealthCheckCounter = 0
 
     private func setupRefreshTimer() {
-        refreshTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+        refreshTimer?.invalidate()
+        refreshTimer = nil
+        startRuntimeSnapshotLongPoll()
+
+        refreshTimer = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: true) { [weak self] _ in
             guard let self else { return }
             DispatchQueue.main.async {
                 self.refreshSessionStates()
@@ -486,30 +494,75 @@ class AppState {
 
                 // Check hook diagnostic every ~10 seconds
                 self.hookHealthCheckCounter += 1
-                if self.hookHealthCheckCounter >= 5 {
+                if self.hookHealthCheckCounter >= 1 {
                     self.hookHealthCheckCounter = 0
                     self.checkHookDiagnostic()
                 }
 
                 // Check hook server health every ~10 seconds
                 self.hookServerHealthCounter += 1
-                if self.hookServerHealthCounter >= 5 {
+                if self.hookServerHealthCounter >= 1 {
                     self.hookServerHealthCounter = 0
                     self.hookServerManager.checkHealth()
                 }
 
-                // Check runtime health every ~16 seconds
+                // Check runtime health every ~20 seconds
                 self.runtimeHealthCheckCounter += 1
-                if self.runtimeHealthCheckCounter >= 8 {
+                if self.runtimeHealthCheckCounter >= 2 {
                     self.runtimeHealthCheckCounter = 0
                     self.checkRuntimeHealth()
                 }
 
                 // Refresh stats (including latestSummary from JSONL) every ~30 seconds
                 self.statsRefreshCounter += 1
-                if self.statsRefreshCounter >= 15 {
+                if self.statsRefreshCounter >= 3 {
                     self.statsRefreshCounter = 0
                     self.loadDashboard()
+                }
+            }
+        }
+    }
+
+    private func startRuntimeSnapshotLongPoll() {
+        longPollTask?.cancel()
+        longPollTask = nil
+
+        guard runtimeClient.isEnabled else { return }
+
+        longPollTask = _Concurrency.Task { [weak self] in
+            guard let self else { return }
+
+            while !_Concurrency.Task.isCancelled {
+                let sinceVersion = max(lastPolledSnapshotVersion, lastAppliedSnapshotVersion)
+
+                do {
+                    let response = try await runtimeClient.longPollSnapshot(sinceVersion: sinceVersion)
+                    guard !_Concurrency.Task.isCancelled else { return }
+
+                    switch response {
+                    case let .changed(snapshot):
+                        lastPolledSnapshotVersion = max(lastPolledSnapshotVersion, snapshot.snapshotVersion)
+                        await applyRuntimeSnapshotIfFresh(
+                            snapshot,
+                            correlationId: nextRuntimeSnapshotCorrelationId(),
+                            projects: projects,
+                        )
+                    case let .unchanged(snapshotVersion):
+                        lastPolledSnapshotVersion = max(lastPolledSnapshotVersion, snapshotVersion)
+                    case .unavailable:
+                        DebugLog.write(
+                            "AppState.longPollSnapshot source=runtime_snapshot_long_poll_unavailable fallback=timer_only",
+                        )
+                        return
+                    }
+
+                    try? await _Concurrency.Task.sleep(nanoseconds: 50_000_000)
+                } catch {
+                    if _Concurrency.Task.isCancelled { return }
+                    DebugLog.write(
+                        "AppState.longPollSnapshot source=runtime_snapshot_long_poll_error error=\(String(describing: error))",
+                    )
+                    try? await _Concurrency.Task.sleep(nanoseconds: 1_000_000_000)
                 }
             }
         }
@@ -598,14 +651,38 @@ class AppState {
             return
         }
 
+        await applyRuntimeSnapshotIfFresh(
+            snapshot,
+            correlationId: correlationId,
+            projects: projects,
+        )
+    }
+
+    @MainActor
+    private func applyRuntimeSnapshotIfFresh(
+        _ snapshot: RuntimeSnapshot,
+        correlationId: String,
+        projects: [Project],
+    ) async {
+        lastPolledSnapshotVersion = max(lastPolledSnapshotVersion, snapshot.snapshotVersion)
+
         guard !_Concurrency.Task.isCancelled else { return }
 
-        if snapshot.snapshotVersion > 0, snapshot.snapshotVersion == lastAppliedSnapshotVersion {
-            DebugLog.write(
-                "AppState.refreshSessionStates source=runtime_snapshot_noop cid=\(correlationId) version=\(snapshot.snapshotVersion)",
-            )
-            consecutiveRuntimeSnapshotFailures = 0
-            return
+        if snapshot.snapshotVersion > 0 {
+            if snapshot.snapshotVersion < lastAppliedSnapshotVersion {
+                DebugLog.write(
+                    "AppState.refreshSessionStates source=runtime_snapshot_drop_stale_version cid=\(correlationId) version=\(snapshot.snapshotVersion) current=\(lastAppliedSnapshotVersion)",
+                )
+                return
+            }
+
+            if snapshot.snapshotVersion == lastAppliedSnapshotVersion {
+                DebugLog.write(
+                    "AppState.refreshSessionStates source=runtime_snapshot_noop cid=\(correlationId) version=\(snapshot.snapshotVersion)",
+                )
+                consecutiveRuntimeSnapshotFailures = 0
+                return
+            }
         }
 
         sessionStateManager.applyRuntimeProjectStates(
@@ -662,7 +739,8 @@ class AppState {
         DebugLog.write(
             "AppState.refreshSessionStates source=runtime_snapshot_apply cid=\(correlationId) projects=\(snapshot.projectStates.count) sessions=\(snapshot.sessions.count) shells=\(snapshot.shellState.shells.count) routing=\(snapshot.routingViews.count) runs=\(snapshot.runs.count)",
         )
-        lastAppliedSnapshotVersion = snapshot.snapshotVersion
+        lastAppliedSnapshotVersion = max(lastAppliedSnapshotVersion, snapshot.snapshotVersion)
+        lastPolledSnapshotVersion = max(lastPolledSnapshotVersion, snapshot.snapshotVersion)
         if isDelegationLoopEnabled {
             _Concurrency.Task { [delegationLoopManager] in
                 await delegationLoopManager?.reconcile(delegations: snapshot.delegations)
@@ -740,6 +818,8 @@ class AppState {
         func cancelRuntimeAutomationForTesting() {
             runtimeBootstrapTask?.cancel()
             runtimeBootstrapTask = nil
+            longPollTask?.cancel()
+            longPollTask = nil
             runtimeSnapshotTask?.cancel()
             runtimeSnapshotTask = nil
             refreshTimer?.invalidate()
@@ -1393,7 +1473,7 @@ class AppState {
     }
 
     /// Batch-refresh project statuses from the Rust engine.
-    /// Called on the 2-second timer alongside session state refresh.
+    /// Called on the 10-second safety timer alongside session state refresh.
     /// Replaces per-card FFI calls with a single batch update.
     private func refreshProjectStatuses() {
         guard let engine else { return }
