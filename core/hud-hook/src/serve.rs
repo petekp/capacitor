@@ -5,8 +5,9 @@
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
-use std::time::Instant;
+use std::sync::{Arc, Condvar, Mutex};
+use std::thread;
+use std::time::Duration;
 
 use capacitor_core::{
     domain::{
@@ -49,12 +50,18 @@ impl RuntimeServerState {
 }
 
 pub fn run(port: u16) -> Result<(), String> {
+    const GC_INTERVAL: Duration = Duration::from_secs(10);
+    const SHUTDOWN_POLL_INTERVAL: Duration = Duration::from_millis(100);
+    const WORKER_THREAD_COUNT: usize = 4;
+
+    SHUTDOWN.store(false, Ordering::Relaxed);
     install_signal_handlers();
 
     let addr = format!("127.0.0.1:{port}");
-    let server =
-        tiny_http::Server::http(&addr).map_err(|e| format!("Failed to bind {addr}: {e}"))?;
-    let runtime_service = RuntimeServerState::new(port)?;
+    let server = Arc::new(
+        tiny_http::Server::http(&addr).map_err(|e| format!("Failed to bind {addr}: {e}"))?,
+    );
+    let runtime_service = Arc::new(RuntimeServerState::new(port)?);
 
     tracing::info!(port, "hud-hook serve listening");
 
@@ -65,45 +72,87 @@ pub fn run(port: u16) -> Result<(), String> {
         .map(|bootstrap| bootstrap.write_token_file(&runtime_service.home_dir))
         .transpose()?;
 
-    // tiny_http::Server::incoming_requests() blocks until a request arrives
-    // or the server is shut down. We use recv_timeout so we can check the
-    // shutdown flag periodically.
-    let mut last_gc = Instant::now();
-    loop {
+    let gc_shutdown = Arc::new((Mutex::new(()), Condvar::new()));
+
+    let shutdown_server = Arc::clone(&server);
+    let shutdown_signal = Arc::clone(&gc_shutdown);
+    let shutdown_handle = thread::spawn(move || loop {
+        thread::sleep(SHUTDOWN_POLL_INTERVAL);
+
         if SHUTDOWN.load(Ordering::Relaxed) {
-            tracing::info!("Shutdown signal received, exiting");
+            let (_, shutdown_condvar) = &*shutdown_signal;
+            shutdown_condvar.notify_all();
+            for _ in 0..WORKER_THREAD_COUNT {
+                shutdown_server.unblock();
+            }
             break;
         }
+    });
 
-        // Poll with 500ms timeout so SIGTERM is noticed promptly.
-        let request = match server.recv_timeout(std::time::Duration::from_millis(500)) {
-            Ok(Some(req)) => req,
-            Ok(None) => {
-                if last_gc.elapsed() >= std::time::Duration::from_secs(10) {
-                    if let Some(runtime) = runtime_service.runtime.as_ref() {
-                        if let Err(e) = runtime.run_gc() {
-                            tracing::warn!(error = %e, "Periodic GC tick failed");
-                        }
+    let gc_signal = Arc::clone(&gc_shutdown);
+    let gc_state = Arc::clone(&runtime_service);
+    let gc_handle = thread::spawn(move || {
+        let (shutdown_lock, shutdown_condvar) = &*gc_signal;
+        let mut guard = shutdown_lock.lock().expect("gc shutdown lock poisoned");
+
+        loop {
+            let wait_result = shutdown_condvar
+                .wait_timeout(guard, GC_INTERVAL)
+                .expect("gc shutdown condvar poisoned");
+            guard = wait_result.0;
+
+            if SHUTDOWN.load(Ordering::Relaxed) {
+                break;
+            }
+
+            if wait_result.1.timed_out() {
+                if let Some(runtime) = gc_state.runtime.as_ref() {
+                    if let Err(error) = runtime.run_gc() {
+                        tracing::warn!(error = %error, "Periodic GC tick failed");
                     }
-                    last_gc = Instant::now();
-                }
-                continue;
-            }
-            Err(e) => {
-                tracing::warn!(error = %e, "Error receiving request");
-                continue;
-            }
-        };
-
-        dispatch(request, &runtime_service);
-        if last_gc.elapsed() >= std::time::Duration::from_secs(10) {
-            if let Some(runtime) = runtime_service.runtime.as_ref() {
-                if let Err(e) = runtime.run_gc() {
-                    tracing::warn!(error = %e, "Periodic GC tick failed");
                 }
             }
-            last_gc = Instant::now();
         }
+    });
+
+    let mut worker_handles = Vec::with_capacity(WORKER_THREAD_COUNT);
+    for worker_id in 0..WORKER_THREAD_COUNT {
+        let worker_server = Arc::clone(&server);
+        let worker_state = Arc::clone(&runtime_service);
+        worker_handles.push(thread::spawn(move || loop {
+            match worker_server.recv() {
+                Ok(request) => dispatch(request, worker_state.as_ref()),
+                Err(error) => {
+                    if !SHUTDOWN.load(Ordering::Relaxed) {
+                        tracing::warn!(worker_id, error = %error, "Error receiving request");
+                        SHUTDOWN.store(true, Ordering::Relaxed);
+                    }
+                    break;
+                }
+            }
+
+            if SHUTDOWN.load(Ordering::Relaxed) {
+                break;
+            }
+        }));
+    }
+
+    while !SHUTDOWN.load(Ordering::Relaxed) {
+        thread::sleep(SHUTDOWN_POLL_INTERVAL);
+    }
+
+    tracing::info!("Shutdown signal received, exiting");
+
+    shutdown_handle
+        .join()
+        .map_err(|_| "shutdown coordinator thread panicked".to_string())?;
+    gc_handle
+        .join()
+        .map_err(|_| "gc thread panicked".to_string())?;
+    for worker_handle in worker_handles {
+        worker_handle
+            .join()
+            .map_err(|_| "worker thread panicked".to_string())?;
     }
 
     Ok(())

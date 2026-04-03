@@ -14,8 +14,10 @@ use common::{
     unique_temp_dir, ServerGuard,
 };
 use std::fs;
-use std::net::TcpListener;
+use std::io::{Read as _, Write as _};
+use std::net::{Shutdown, TcpListener, TcpStream};
 use std::path::Path;
+use std::sync::{mpsc, Arc, Barrier};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -311,6 +313,140 @@ fn wait_for_snapshot_session_count(
     }
 }
 
+fn runtime_ingest_hook_event_payload(event_id: &str, session_id: &str) -> serde_json::Value {
+    serde_json::json!({
+        "event_id": event_id,
+        "recorded_at": "2099-04-01T12:00:00Z",
+        "event_type": "user_prompt_submit",
+        "session_id": session_id,
+        "pid": 4242,
+        "project_path": "/tmp/runtime-service-project",
+        "cwd": "/tmp/runtime-service-project",
+        "file_path": null,
+        "workspace_id": null,
+        "notification_type": null,
+        "stop_hook_active": null,
+        "tool_name": null,
+        "agent_id": null,
+        "teammate_name": null
+    })
+}
+
+fn parse_http_response(response: &str) -> (u16, String) {
+    let status = response
+        .lines()
+        .next()
+        .and_then(|line| line.split_whitespace().nth(1))
+        .and_then(|code| code.parse::<u16>().ok())
+        .unwrap_or(0);
+
+    let raw_body = response
+        .find("\r\n\r\n")
+        .map(|pos| &response[pos + 4..])
+        .unwrap_or("");
+
+    let body = if raw_body.contains("\r\n") && !raw_body.starts_with('{') {
+        raw_body
+            .lines()
+            .find(|line| line.starts_with('{'))
+            .unwrap_or(raw_body)
+    } else {
+        raw_body
+    };
+
+    (status, body.to_string())
+}
+
+fn read_http_response(stream: &mut TcpStream) -> (u16, String) {
+    let mut buf = vec![0_u8; 8192];
+    let mut total = 0;
+    loop {
+        if total == buf.len() {
+            buf.resize(buf.len() * 2, 0);
+        }
+
+        match stream.read(&mut buf[total..]) {
+            Ok(0) => break,
+            Ok(n) => total += n,
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => break,
+            Err(error) if error.kind() == std::io::ErrorKind::TimedOut => break,
+            Err(error) => panic!("read HTTP response: {error}"),
+        }
+    }
+
+    let response = String::from_utf8_lossy(&buf[..total]).to_string();
+    parse_http_response(&response)
+}
+
+fn send_blocked_chunked_runtime_ingest_request(
+    port: u16,
+    authorization: &str,
+    body: &str,
+    started_tx: mpsc::Sender<()>,
+    release_rx: mpsc::Receiver<()>,
+) -> (u16, String) {
+    let mut stream =
+        TcpStream::connect(format!("127.0.0.1:{port}")).expect("connect for chunked ingest");
+    stream
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .expect("set chunked ingest read timeout");
+
+    let request = format!(
+        "POST /runtime/ingest/hook-event HTTP/1.1\r\n\
+         Host: 127.0.0.1:{port}\r\n\
+         Content-Type: application/json\r\n\
+         Transfer-Encoding: chunked\r\n\
+         Authorization: {authorization}\r\n\
+         Connection: close\r\n\
+         \r\n"
+    );
+    stream
+        .write_all(request.as_bytes())
+        .expect("write chunked ingest request headers");
+
+    let body_bytes = body.as_bytes();
+    let midpoint = std::cmp::max(1, body_bytes.len() / 2);
+    let first_chunk = &body_bytes[..midpoint];
+    let second_chunk = &body_bytes[midpoint..];
+
+    stream
+        .write_all(format!("{:X}\r\n", first_chunk.len()).as_bytes())
+        .expect("write first chunk size");
+    stream
+        .write_all(first_chunk)
+        .expect("write first chunk body");
+    stream
+        .write_all(b"\r\n")
+        .expect("write first chunk terminator");
+    stream.flush().expect("flush first chunk");
+
+    started_tx
+        .send(())
+        .expect("signal chunked ingest request started");
+    release_rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("release chunked ingest request");
+
+    if !second_chunk.is_empty() {
+        stream
+            .write_all(format!("{:X}\r\n", second_chunk.len()).as_bytes())
+            .expect("write second chunk size");
+        stream
+            .write_all(second_chunk)
+            .expect("write second chunk body");
+        stream
+            .write_all(b"\r\n")
+            .expect("write second chunk terminator");
+    }
+    stream
+        .write_all(b"0\r\n\r\n")
+        .expect("write final chunk terminator");
+    let _ = stream.flush();
+    let _ = stream.shutdown(Shutdown::Write);
+
+    read_http_response(&mut stream)
+}
+
 #[test]
 fn health_endpoint_returns_ok() {
     let temp_dir = unique_temp_dir("serve-health");
@@ -459,6 +595,136 @@ fn hook_endpoint_and_runtime_snapshot_share_service_runtime_state() {
     assert_eq!(
         snapshot_json["sessions"][0]["state"].as_str(),
         Some("working")
+    );
+}
+
+#[test]
+fn test_concurrent_snapshot_and_ingest() {
+    let temp_dir = unique_temp_dir("serve-concurrent-snapshot-ingest");
+    let snapshot_path = temp_dir.join("snapshot.json");
+    let auth_token = "concurrent-snapshot-token";
+
+    let (_server, port) =
+        ServerGuard::spawn_service_bootstrap_ready(&temp_dir, &snapshot_path, auth_token);
+
+    let authorization = format!("Bearer {auth_token}");
+    let ingest_body =
+        runtime_ingest_hook_event_payload("evt-concurrent-snapshot", "session-concurrent");
+
+    let (started_tx, started_rx) = mpsc::channel();
+    let (release_tx, release_rx) = mpsc::channel();
+    let authorization_for_ingest = authorization.clone();
+    let ingest_payload = ingest_body.to_string();
+    let ingest_handle = thread::spawn(move || {
+        send_blocked_chunked_runtime_ingest_request(
+            port,
+            &authorization_for_ingest,
+            &ingest_payload,
+            started_tx,
+            release_rx,
+        )
+    });
+
+    started_rx
+        .recv_timeout(Duration::from_secs(1))
+        .expect("ingest request should start streaming");
+    thread::sleep(Duration::from_millis(200));
+
+    let (snapshot_tx, snapshot_rx) = mpsc::channel();
+    let authorization_for_snapshot = authorization.clone();
+    let snapshot_handle = thread::spawn(move || {
+        let response = http_request_with_headers(
+            port,
+            "GET",
+            "/runtime/snapshot",
+            &[("Authorization", authorization_for_snapshot.as_str())],
+            None,
+        );
+        let _ = snapshot_tx.send(response);
+    });
+
+    let snapshot_result = match snapshot_rx.recv_timeout(Duration::from_secs(1)) {
+        Ok(response) => response,
+        Err(error) => {
+            let _ = release_tx.send(());
+            let _ = snapshot_handle.join();
+            let _ = ingest_handle.join();
+            panic!("runtime snapshot stayed blocked behind an incomplete ingest body: {error}");
+        }
+    };
+
+    release_tx
+        .send(())
+        .expect("release blocked chunked ingest request");
+    let (ingest_status, ingest_response_body) = ingest_handle
+        .join()
+        .expect("join chunked ingest request thread");
+    snapshot_handle
+        .join()
+        .expect("join runtime snapshot request thread");
+
+    assert_eq!(snapshot_result.0, 200, "body: {}", snapshot_result.1);
+    assert_eq!(ingest_status, 200, "body: {ingest_response_body}");
+}
+
+#[test]
+fn test_concurrent_mutations() {
+    let temp_dir = unique_temp_dir("serve-concurrent-mutations");
+    let snapshot_path = temp_dir.join("snapshot.json");
+    let auth_token = "concurrent-mutations-token";
+
+    let (_server, port) =
+        ServerGuard::spawn_service_bootstrap_ready(&temp_dir, &snapshot_path, auth_token);
+
+    let authorization = format!("Bearer {auth_token}");
+    let barrier = Arc::new(Barrier::new(10));
+    let handles = (0..10)
+        .map(|index| {
+            let barrier = Arc::clone(&barrier);
+            let authorization = authorization.clone();
+            thread::spawn(move || {
+                barrier.wait();
+                let payload = runtime_ingest_hook_event_payload(
+                    &format!("evt-concurrent-{index}"),
+                    &format!("session-concurrent-{index}"),
+                );
+                let body = payload.to_string();
+                (
+                    index,
+                    http_request_with_headers(
+                        port,
+                        "POST",
+                        "/runtime/ingest/hook-event",
+                        &[("Authorization", authorization.as_str())],
+                        Some(&body),
+                    ),
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+
+    for handle in handles {
+        let (index, (status, body)) = handle.join().expect("join concurrent mutation thread");
+        assert_eq!(status, 200, "mutation {index} body: {body}");
+    }
+
+    let (snapshot_status, snapshot_body) = http_request_with_headers(
+        port,
+        "GET",
+        "/runtime/snapshot",
+        &[("Authorization", authorization.as_str())],
+        None,
+    );
+    assert_eq!(snapshot_status, 200, "body: {snapshot_body}");
+
+    let snapshot_json: serde_json::Value =
+        serde_json::from_str(&snapshot_body).expect("runtime snapshot json");
+    let snapshot_version = snapshot_json["snapshot_version"]
+        .as_u64()
+        .expect("snapshot_version");
+    assert!(
+        snapshot_version >= 10,
+        "expected snapshot_version to reflect at least 10 mutations, got {snapshot_version}"
     );
 }
 
