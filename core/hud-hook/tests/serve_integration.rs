@@ -332,6 +332,35 @@ fn runtime_ingest_hook_event_payload(event_id: &str, session_id: &str) -> serde_
     })
 }
 
+fn fetch_runtime_snapshot(port: u16, authorization: &str) -> serde_json::Value {
+    let (status, body) = http_request_with_headers(
+        port,
+        "GET",
+        "/runtime/snapshot",
+        &[("Authorization", authorization)],
+        None,
+    );
+    assert_eq!(status, 200, "body: {body}");
+    serde_json::from_str(&body).expect("runtime snapshot json")
+}
+
+fn current_runtime_snapshot_version(port: u16, authorization: &str) -> u64 {
+    fetch_runtime_snapshot(port, authorization)["snapshot_version"]
+        .as_u64()
+        .expect("snapshot_version")
+}
+
+fn poll_runtime_snapshot(port: u16, authorization: &str, since_version: u64) -> (u16, String) {
+    let path = format!("/runtime/snapshot/poll?since_version={since_version}");
+    http_request_with_headers(
+        port,
+        "GET",
+        &path,
+        &[("Authorization", authorization)],
+        None,
+    )
+}
+
 fn parse_http_response(response: &str) -> (u16, String) {
     let status = response
         .lines()
@@ -596,6 +625,256 @@ fn hook_endpoint_and_runtime_snapshot_share_service_runtime_state() {
         snapshot_json["sessions"][0]["state"].as_str(),
         Some("working")
     );
+}
+
+#[test]
+fn long_poll_returns_immediately_when_version_behind() {
+    let temp_dir = unique_temp_dir("serve-runtime-poll-immediate");
+    let snapshot_path = temp_dir.join("snapshot.json");
+    let auth_token = "poll-immediate-token";
+
+    let (_server, port) =
+        ServerGuard::spawn_service_bootstrap_ready(&temp_dir, &snapshot_path, auth_token);
+
+    let authorization = format!("Bearer {auth_token}");
+    let ingest_payload = runtime_ingest_hook_event_payload("evt-poll-immediate", "session-poll");
+    let (ingest_status, ingest_body) = http_request_with_headers(
+        port,
+        "POST",
+        "/runtime/ingest/hook-event",
+        &[("Authorization", authorization.as_str())],
+        Some(&ingest_payload.to_string()),
+    );
+    assert_eq!(ingest_status, 200, "body: {ingest_body}");
+
+    let start = Instant::now();
+    let (poll_status, poll_body) = http_request_with_headers(
+        port,
+        "GET",
+        "/runtime/snapshot/poll?since_version=0",
+        &[("Authorization", authorization.as_str())],
+        None,
+    );
+    let elapsed = start.elapsed();
+
+    assert_eq!(poll_status, 200, "body: {poll_body}");
+    assert!(
+        elapsed < Duration::from_secs(1),
+        "expected immediate response when server version is ahead, elapsed={elapsed:?}",
+    );
+
+    let poll_json: serde_json::Value =
+        serde_json::from_str(&poll_body).expect("runtime poll snapshot json");
+    assert_eq!(poll_json["changed"].as_bool(), Some(true));
+    assert!(
+        poll_json["snapshot_version"].as_u64().unwrap_or_default() >= 1,
+        "body: {poll_body}"
+    );
+}
+
+#[test]
+fn long_poll_blocks_then_wakes_on_mutation() {
+    let temp_dir = unique_temp_dir("serve-runtime-poll-wake");
+    let snapshot_path = temp_dir.join("snapshot.json");
+    let auth_token = "poll-wake-token";
+
+    let (_server, port) =
+        ServerGuard::spawn_service_bootstrap_ready(&temp_dir, &snapshot_path, auth_token);
+
+    let authorization = format!("Bearer {auth_token}");
+    let since_version = current_runtime_snapshot_version(port, authorization.as_str());
+
+    let (poll_tx, poll_rx) = mpsc::channel();
+    let authorization_for_poll = authorization.clone();
+    let poll_handle = thread::spawn(move || {
+        let response = poll_runtime_snapshot(port, authorization_for_poll.as_str(), since_version);
+        let _ = poll_tx.send(response);
+    });
+
+    thread::sleep(Duration::from_millis(200));
+
+    let ingest_payload = runtime_ingest_hook_event_payload("evt-poll-wake", "session-poll-wake");
+    let (ingest_status, ingest_body) = http_request_with_headers(
+        port,
+        "POST",
+        "/runtime/ingest/hook-event",
+        &[("Authorization", authorization.as_str())],
+        Some(&ingest_payload.to_string()),
+    );
+    assert_eq!(ingest_status, 200, "body: {ingest_body}");
+
+    let (poll_status, poll_body) = poll_rx
+        .recv_timeout(Duration::from_secs(2))
+        .expect("poll request should wake after mutation");
+    poll_handle.join().expect("join poll request thread");
+
+    assert_eq!(poll_status, 200, "body: {poll_body}");
+    let poll_json: serde_json::Value =
+        serde_json::from_str(&poll_body).expect("runtime poll snapshot json");
+    assert_eq!(poll_json["changed"].as_bool(), Some(true));
+    assert!(
+        poll_json["snapshot_version"]
+            .as_u64()
+            .expect("snapshot_version")
+            > since_version,
+        "body: {poll_body}"
+    );
+}
+
+#[test]
+fn long_poll_timeout_returns_changed_false() {
+    let temp_dir = unique_temp_dir("serve-runtime-poll-timeout");
+    let snapshot_path = temp_dir.join("snapshot.json");
+    let auth_token = "poll-timeout-token";
+
+    let (_server, port) = ServerGuard::spawn_service_bootstrap_ready_with_env(
+        &temp_dir,
+        &snapshot_path,
+        auth_token,
+        &[("CAPACITOR_POLL_TIMEOUT_SECS", "1")],
+    );
+
+    let authorization = format!("Bearer {auth_token}");
+    let since_version = current_runtime_snapshot_version(port, authorization.as_str());
+
+    let start = Instant::now();
+    let (poll_status, poll_body) =
+        poll_runtime_snapshot(port, authorization.as_str(), since_version);
+    let elapsed = start.elapsed();
+
+    assert_eq!(poll_status, 200, "body: {poll_body}");
+    assert!(
+        elapsed >= Duration::from_millis(700),
+        "expected timeout response to wait close to 1s, elapsed={elapsed:?}",
+    );
+    assert!(
+        elapsed < Duration::from_secs(3),
+        "timeout override should keep test fast, elapsed={elapsed:?}",
+    );
+
+    let poll_json: serde_json::Value =
+        serde_json::from_str(&poll_body).expect("runtime poll timeout json");
+    assert_eq!(poll_json["changed"].as_bool(), Some(false));
+    assert_eq!(
+        poll_json["snapshot_version"].as_u64(),
+        Some(since_version),
+        "body: {poll_body}"
+    );
+}
+
+#[test]
+fn long_poll_returns_immediately_when_since_version_is_ahead() {
+    let temp_dir = unique_temp_dir("serve-runtime-poll-reset");
+    let snapshot_path = temp_dir.join("snapshot.json");
+    let auth_token = "poll-reset-token";
+
+    let (_server, port) =
+        ServerGuard::spawn_service_bootstrap_ready(&temp_dir, &snapshot_path, auth_token);
+
+    let authorization = format!("Bearer {auth_token}");
+    let current_version = current_runtime_snapshot_version(port, authorization.as_str());
+
+    let start = Instant::now();
+    let (poll_status, poll_body) = poll_runtime_snapshot(port, authorization.as_str(), 999_999);
+    let elapsed = start.elapsed();
+
+    assert_eq!(poll_status, 200, "body: {poll_body}");
+    assert!(
+        elapsed < Duration::from_secs(1),
+        "version mismatch should not block, elapsed={elapsed:?}",
+    );
+
+    let poll_json: serde_json::Value =
+        serde_json::from_str(&poll_body).expect("runtime poll snapshot json");
+    assert_eq!(poll_json["changed"].as_bool(), Some(true));
+    assert_eq!(
+        poll_json["snapshot_version"].as_u64(),
+        Some(current_version),
+        "body: {poll_body}"
+    );
+}
+
+#[test]
+fn long_poll_requires_auth() {
+    let temp_dir = unique_temp_dir("serve-runtime-poll-auth");
+    let snapshot_path = temp_dir.join("snapshot.json");
+    let auth_token = "poll-auth-token";
+
+    let (_server, port) =
+        ServerGuard::spawn_service_bootstrap_ready(&temp_dir, &snapshot_path, auth_token);
+
+    let (status, body) = http_request(port, "GET", "/runtime/snapshot/poll?since_version=0", None);
+    assert_eq!(status, 401, "body: {body}");
+}
+
+#[test]
+fn long_poll_rejects_requests_above_concurrent_waiter_limit() {
+    let temp_dir = unique_temp_dir("serve-runtime-poll-limit");
+    let snapshot_path = temp_dir.join("snapshot.json");
+    let auth_token = "poll-limit-token";
+
+    let (_server, port) = ServerGuard::spawn_service_bootstrap_ready_with_env(
+        &temp_dir,
+        &snapshot_path,
+        auth_token,
+        &[("CAPACITOR_POLL_TIMEOUT_SECS", "2")],
+    );
+
+    let authorization = format!("Bearer {auth_token}");
+    let since_version = current_runtime_snapshot_version(port, authorization.as_str());
+    let (started_tx, started_rx) = mpsc::channel();
+
+    let poll_handles = (0..2)
+        .map(|_| {
+            let authorization = authorization.clone();
+            let started_tx = started_tx.clone();
+            thread::spawn(move || {
+                let _ = started_tx.send(());
+                poll_runtime_snapshot(port, authorization.as_str(), since_version)
+            })
+        })
+        .collect::<Vec<_>>();
+    drop(started_tx);
+
+    for _ in 0..2 {
+        started_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("poll worker should start");
+    }
+    thread::sleep(Duration::from_millis(200));
+
+    let start = Instant::now();
+    let (limit_status, limit_body) =
+        poll_runtime_snapshot(port, authorization.as_str(), since_version);
+    let elapsed = start.elapsed();
+
+    assert_eq!(limit_status, 503, "body: {limit_body}");
+    assert!(
+        elapsed < Duration::from_secs(1),
+        "limit rejection should be immediate, elapsed={elapsed:?}",
+    );
+    assert!(
+        limit_body.contains("too many concurrent poll requests"),
+        "body: {limit_body}"
+    );
+
+    let ingest_payload = runtime_ingest_hook_event_payload("evt-poll-limit", "session-poll-limit");
+    let (ingest_status, ingest_body) = http_request_with_headers(
+        port,
+        "POST",
+        "/runtime/ingest/hook-event",
+        &[("Authorization", authorization.as_str())],
+        Some(&ingest_payload.to_string()),
+    );
+    assert_eq!(ingest_status, 200, "body: {ingest_body}");
+
+    for handle in poll_handles {
+        let (poll_status, poll_body) = handle.join().expect("join blocked poll thread");
+        assert_eq!(poll_status, 200, "body: {poll_body}");
+        let poll_json: serde_json::Value =
+            serde_json::from_str(&poll_body).expect("runtime poll snapshot json");
+        assert_eq!(poll_json["changed"].as_bool(), Some(true));
+    }
 }
 
 #[test]

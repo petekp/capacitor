@@ -56,6 +56,16 @@ impl ServerGuard {
         snapshot_path: &Path,
         auth_token: &str,
     ) -> Self {
+        Self::spawn_service_bootstrap_with_env(port, home, snapshot_path, auth_token, &[])
+    }
+
+    pub fn spawn_service_bootstrap_with_env(
+        port: u16,
+        home: &Path,
+        snapshot_path: &Path,
+        auth_token: &str,
+        envs: &[(&str, &str)],
+    ) -> Self {
         let child = Command::new(env!("CARGO_BIN_EXE_hud-hook"))
             .args(["serve", "--port", &port.to_string()])
             .env("HOME", home)
@@ -64,6 +74,7 @@ impl ServerGuard {
             .env("CAPACITOR_RUNTIME_SERVICE_BOOTSTRAP", "1")
             .env("CAPACITOR_RUNTIME_SERVICE_PORT", port.to_string())
             .env("CAPACITOR_RUNTIME_SERVICE_TOKEN", auth_token)
+            .envs(envs.iter().copied())
             .stdout(Stdio::null())
             .stderr(Stdio::piped())
             .spawn()
@@ -100,10 +111,20 @@ impl ServerGuard {
         snapshot_path: &Path,
         auth_token: &str,
     ) -> (Self, u16) {
+        Self::spawn_service_bootstrap_ready_with_env(home, snapshot_path, auth_token, &[])
+    }
+
+    pub fn spawn_service_bootstrap_ready_with_env(
+        home: &Path,
+        snapshot_path: &Path,
+        auth_token: &str,
+        envs: &[(&str, &str)],
+    ) -> (Self, u16) {
         Self::spawn_service_bootstrap_ready_with_candidates(
             home,
             snapshot_path,
             auth_token,
+            envs,
             (0..Self::STARTUP_ATTEMPTS).map(|_| free_port()),
         )
     }
@@ -112,6 +133,7 @@ impl ServerGuard {
         home: &Path,
         snapshot_path: &Path,
         auth_token: &str,
+        envs: &[(&str, &str)],
         ports: I,
     ) -> (Self, u16)
     where
@@ -119,7 +141,9 @@ impl ServerGuard {
     {
         Self::spawn_with_retry(
             ports,
-            |port| Self::spawn_service_bootstrap(port, home, snapshot_path, auth_token),
+            |port| {
+                Self::spawn_service_bootstrap_with_env(port, home, snapshot_path, auth_token, envs)
+            },
             |server, port| server.wait_until_ready_with_auth(port, auth_token),
         )
     }

@@ -182,6 +182,14 @@ impl CoreRuntime {
             .wait_for_change(&self.version, since_version, timeout)
     }
 
+    pub fn snapshot_version(&self) -> u64 {
+        self.version.load(Ordering::Relaxed)
+    }
+
+    pub fn notify_version_waiters(&self) {
+        self.notifier.notify();
+    }
+
     fn persist_snapshot(&self, snapshot: &AppSnapshot) -> Result<(), CoreRuntimeError> {
         self.snapshot_storage
             .save_snapshot(snapshot)

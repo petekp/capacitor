@@ -4,7 +4,7 @@
 //! Processes events through the canonical `handle::handle_hook_input` pipeline.
 
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -21,9 +21,33 @@ use capacitor_core::{
 use crate::hook_types::HookInput;
 
 static SHUTDOWN: AtomicBool = AtomicBool::new(false);
+static POLL_WAITERS: AtomicUsize = AtomicUsize::new(0);
 const RUNTIME_ARTIFACT_PATH_ENV: &str = "CAPACITOR_RUNTIME_ARTIFACT_PATH";
+const POLL_TIMEOUT_SECS_ENV: &str = "CAPACITOR_POLL_TIMEOUT_SECS";
 const DEFAULT_RUNTIME_ARTIFACT_RELATIVE_PATH: &str = ".capacitor/runtime/app_snapshot.json";
+const DEFAULT_POLL_TIMEOUT_SECS: u64 = 30;
+const MAX_POLL_WAITERS: usize = 2;
 const MAX_BODY_BYTES: u64 = 1_024 * 1_024;
+
+struct PollWaiterGuard;
+
+impl PollWaiterGuard {
+    fn try_acquire() -> Option<Self> {
+        let current_waiters = POLL_WAITERS.fetch_add(1, Ordering::Relaxed);
+        if current_waiters >= MAX_POLL_WAITERS {
+            POLL_WAITERS.fetch_sub(1, Ordering::Relaxed);
+            return None;
+        }
+
+        Some(Self)
+    }
+}
+
+impl Drop for PollWaiterGuard {
+    fn drop(&mut self) {
+        POLL_WAITERS.fetch_sub(1, Ordering::Relaxed);
+    }
+}
 
 struct RuntimeServerState {
     bootstrap: Option<RuntimeServiceBootstrap>,
@@ -76,12 +100,16 @@ pub fn run(port: u16) -> Result<(), String> {
 
     let shutdown_server = Arc::clone(&server);
     let shutdown_signal = Arc::clone(&gc_shutdown);
+    let shutdown_runtime = runtime_service.runtime.as_ref().map(Arc::clone);
     let shutdown_handle = thread::spawn(move || loop {
         thread::sleep(SHUTDOWN_POLL_INTERVAL);
 
         if SHUTDOWN.load(Ordering::Relaxed) {
             let (_, shutdown_condvar) = &*shutdown_signal;
             shutdown_condvar.notify_all();
+            if let Some(runtime) = shutdown_runtime.as_ref() {
+                runtime.notify_version_waiters();
+            }
             for _ in 0..WORKER_THREAD_COUNT {
                 shutdown_server.unblock();
             }
@@ -163,6 +191,9 @@ fn dispatch(request: tiny_http::Request, runtime_service: &RuntimeServerState) {
         (&tiny_http::Method::Get, "/health") => {
             handle_health(request, runtime_service.bootstrap.as_ref())
         }
+        (&tiny_http::Method::Get, url) if url.starts_with("/runtime/snapshot/poll") => {
+            handle_runtime_poll_snapshot(request, runtime_service)
+        }
         (&tiny_http::Method::Get, "/runtime/snapshot") => {
             handle_runtime_snapshot(request, runtime_service)
         }
@@ -233,6 +264,77 @@ fn handle_runtime_snapshot(request: tiny_http::Request, state: &RuntimeServerSta
             tracing::warn!(error = %error, "Runtime snapshot request failed");
             let _ = request.respond(json_error(500, "runtime snapshot failed"));
         }
+    }
+}
+
+fn handle_runtime_poll_snapshot(request: tiny_http::Request, state: &RuntimeServerState) {
+    let Some(runtime) = state.runtime.as_ref() else {
+        let _ = request.respond(json_error(404, "runtime service not enabled"));
+        return;
+    };
+
+    if !authorize_runtime_request(&request, state.bootstrap.as_ref()) {
+        let _ = request.respond(json_error(401, "unauthorized"));
+        return;
+    }
+
+    let since_version = match parse_since_version(request.url()) {
+        Some(since_version) => since_version,
+        None => {
+            let _ = request.respond(json_error(
+                400,
+                "missing or invalid since_version parameter",
+            ));
+            return;
+        }
+    };
+
+    let _waiter_guard = match PollWaiterGuard::try_acquire() {
+        Some(guard) => guard,
+        None => {
+            let _ = request.respond(json_error(503, "too many concurrent poll requests"));
+            return;
+        }
+    };
+
+    if SHUTDOWN.load(Ordering::Relaxed) {
+        let _ = request.respond(json_error(503, "shutting down"));
+        return;
+    }
+
+    let version_change = runtime.wait_for_version_change(since_version, runtime_poll_timeout());
+
+    if SHUTDOWN.load(Ordering::Relaxed) {
+        let _ = request.respond(json_error(503, "shutting down"));
+        return;
+    }
+
+    match version_change {
+        Some(_) => match runtime.app_snapshot() {
+            Ok(snapshot) => match serde_json::to_value(&snapshot) {
+                Ok(mut value) => {
+                    if let Some(object) = value.as_object_mut() {
+                        object.insert("changed".to_string(), serde_json::Value::Bool(true));
+                    }
+                    respond_json(request, 200, &value);
+                }
+                Err(_) => {
+                    let _ = request.respond(json_error(500, "serialization failed"));
+                }
+            },
+            Err(error) => {
+                tracing::warn!(error = %error, "Long-poll snapshot request failed");
+                let _ = request.respond(json_error(500, "runtime snapshot failed"));
+            }
+        },
+        None => respond_json(
+            request,
+            200,
+            &serde_json::json!({
+                "changed": false,
+                "snapshot_version": runtime.snapshot_version(),
+            }),
+        ),
     }
 }
 
@@ -474,6 +576,23 @@ where
         .with_status_code(status)
         .with_header(json_content_type());
     let _ = request.respond(response);
+}
+
+fn parse_since_version(url: &str) -> Option<u64> {
+    let query = url.split_once('?')?.1;
+    query.split('&').find_map(|param| {
+        param
+            .strip_prefix("since_version=")
+            .and_then(|value| value.parse::<u64>().ok())
+    })
+}
+
+fn runtime_poll_timeout() -> Duration {
+    std::env::var(POLL_TIMEOUT_SECS_ENV)
+        .ok()
+        .and_then(|value| value.trim().parse::<u64>().ok())
+        .map(Duration::from_secs)
+        .unwrap_or(Duration::from_secs(DEFAULT_POLL_TIMEOUT_SECS))
 }
 
 fn runtime_artifact_path() -> Result<PathBuf, String> {
