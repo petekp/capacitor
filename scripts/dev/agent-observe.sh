@@ -612,7 +612,8 @@ case "$command" in
         last_event: (.last_event // "unknown"),
         last_activity_at: (.last_activity_at // "unknown"),
         age_seconds: ((now - ((.updated_at // "1970-01-01T00:00:00Z") | parse_ts)) | floor),
-        pid_alive: (if .pid > 0 then "check: kill -0 \(.pid)" else "no_pid" end)
+        pid_alive: (if .pid > 0 then "check: kill -0 \(.pid)" else "no_pid" end),
+        gc_reason: (.gc_reason // null)
       }]' 2>/dev/null)
       count=$(echo "$stuck" | jq 'length' 2>/dev/null || echo "0")
       if [[ "$count" -gt 0 ]]; then
@@ -620,6 +621,21 @@ case "$command" in
         echo "$stuck" | jq .
       else
         echo "  ok (no stuck sessions)"
+      fi
+    else
+      echo "  (requires jq + runtime snapshot)"
+    fi
+    echo ""
+
+    echo "--- GC Reasons ---"
+    if [[ -n "$snapshot_payload" ]]; then
+      gc_sessions=$(echo "$snapshot_payload" | jq '[.sessions[] | select(.gc_reason != null) | {session_id, project_path, state, gc_reason}]' 2>/dev/null)
+      gc_count=$(echo "$gc_sessions" | jq 'length' 2>/dev/null || echo "0")
+      if [[ "$gc_count" -gt 0 ]]; then
+        echo "  $gc_count session(s) with GC reason:"
+        echo "$gc_sessions" | jq .
+      else
+        echo "  ok (no sessions pending GC)"
       fi
     else
       echo "  (requires jq + runtime snapshot)"
@@ -660,13 +676,13 @@ case "$command" in
     echo ""
 
     echo "--- AX Verification ---"
-    local ax_artifacts_dir
+    ax_artifacts_dir=""
     ax_artifacts_dir="$(cd "$(dirname "$0")/../.." 2>/dev/null && pwd -P)/artifacts/ax-automation-verification"
     if [[ -d "$ax_artifacts_dir" ]] && command -v jq >/dev/null 2>&1; then
-      local latest_ax_summary=""
+      latest_ax_summary=""
       latest_ax_summary="$(find "$ax_artifacts_dir" -name 'summary.json' -type f 2>/dev/null | sort | tail -n 1)"
       if [[ -n "$latest_ax_summary" && -f "$latest_ax_summary" ]]; then
-        local ax_dir
+        ax_dir=""
         ax_dir="$(dirname "$latest_ax_summary")"
         echo "  latest: $(basename "$ax_dir")"
         jq -r '

@@ -218,6 +218,7 @@ final class AppStateSessionObservationTests: XCTestCase {
                 routingViews: [],
                 delegations: [],
                 runs: [runA, runB],
+                snapshotVersion: 0,
             ),
             refreshGeneration: 1,
             correlationId: "composite-runs",
@@ -375,6 +376,159 @@ final class AppStateSessionObservationTests: XCTestCase {
         )
     }
 
+    func testRepeatedNonZeroSnapshotVersionSkipsProjectionFanOut() async {
+        let appState = AppState()
+        appState.cancelRuntimeAutomationForTesting()
+        let project = makeProject(name: "Capacitor", path: "/Users/petepetrash/Code/capacitor")
+        let baselineRun = makeRun(projectPath: project.path, runID: "run-baseline")
+        let updatedRun = makeRun(projectPath: project.path, runID: "run-updated")
+        appState.projects = [project]
+        appState.setRuntimeSnapshotGenerationForTesting(1)
+
+        await appState.applyRuntimeSnapshotForTesting(
+            makeRuntimeSnapshot(
+                projectPath: project.path,
+                sessionId: "baseline-session",
+                shellCwd: "/baseline",
+                shellPid: "111",
+                runs: [baselineRun],
+                snapshotVersion: 9,
+            ),
+            refreshGeneration: 1,
+            correlationId: "baseline-versioned",
+            projects: [project],
+        )
+
+        var observedLines: [String] = []
+        DebugLog.setTestObserver { line in
+            observedLines.append(line)
+        }
+        defer { DebugLog.setTestObserver(nil) }
+
+        await appState.applyRuntimeSnapshotForTesting(
+            makeRuntimeSnapshot(
+                projectPath: project.path,
+                sessionId: "updated-session",
+                shellCwd: "/updated",
+                shellPid: "111",
+                runs: [updatedRun],
+                snapshotVersion: 9,
+            ),
+            refreshGeneration: 1,
+            correlationId: "same-version",
+            projects: [project],
+        )
+
+        XCTAssertEqual(appState.getSessionState(for: project)?.sessionId, "baseline-session")
+        XCTAssertEqual(appState.shellStateStore.state?.shells["111"]?.cwd, "/baseline")
+        XCTAssertEqual(
+            appState.routingStateStore.routingView(projectPath: project.path, workspaceId: nil)?.target.sessionName,
+            "baseline-session",
+        )
+        XCTAssertEqual(appState.runStatesByID[RuntimeRunKey(run: baselineRun)], baselineRun)
+        XCTAssertNil(appState.runStatesByID[RuntimeRunKey(run: updatedRun)])
+        XCTAssertTrue(
+            observedLines.contains { $0.contains("source=runtime_snapshot_noop") && $0.contains("version=9") },
+            "expected no-op log for repeated nonzero snapshot version",
+        )
+    }
+
+    func testSnapshotVersionZeroNeverSkipsProjectionFanOut() async {
+        let appState = AppState()
+        appState.cancelRuntimeAutomationForTesting()
+        let project = makeProject(name: "Capacitor", path: "/Users/petepetrash/Code/capacitor")
+        let baselineRun = makeRun(projectPath: project.path, runID: "run-baseline")
+        let updatedRun = makeRun(projectPath: project.path, runID: "run-updated")
+        appState.projects = [project]
+        appState.setRuntimeSnapshotGenerationForTesting(1)
+
+        await appState.applyRuntimeSnapshotForTesting(
+            makeRuntimeSnapshot(
+                projectPath: project.path,
+                sessionId: "baseline-session",
+                shellCwd: "/baseline",
+                shellPid: "111",
+                runs: [baselineRun],
+                snapshotVersion: 0,
+            ),
+            refreshGeneration: 1,
+            correlationId: "baseline-unknown-version",
+            projects: [project],
+        )
+
+        var observedLines: [String] = []
+        DebugLog.setTestObserver { line in
+            observedLines.append(line)
+        }
+        defer { DebugLog.setTestObserver(nil) }
+
+        await appState.applyRuntimeSnapshotForTesting(
+            makeRuntimeSnapshot(
+                projectPath: project.path,
+                sessionId: "updated-session",
+                shellCwd: "/updated",
+                shellPid: "111",
+                runs: [updatedRun],
+                snapshotVersion: 0,
+            ),
+            refreshGeneration: 1,
+            correlationId: "unknown-version",
+            projects: [project],
+        )
+
+        XCTAssertEqual(appState.getSessionState(for: project)?.sessionId, "updated-session")
+        XCTAssertEqual(appState.shellStateStore.state?.shells["111"]?.cwd, "/updated")
+        XCTAssertEqual(
+            appState.routingStateStore.routingView(projectPath: project.path, workspaceId: nil)?.target.sessionName,
+            "updated-session",
+        )
+        XCTAssertEqual(appState.runStatesByID[RuntimeRunKey(run: updatedRun)], updatedRun)
+        XCTAssertNil(appState.runStatesByID[RuntimeRunKey(run: baselineRun)])
+        XCTAssertFalse(
+            observedLines.contains { $0.contains("source=runtime_snapshot_noop") },
+            "unknown snapshot versions must never short-circuit projection",
+        )
+    }
+
+    func testFreshRuntimeSnapshotLogsGcReasonSessions() async {
+        let appState = AppState()
+        appState.cancelRuntimeAutomationForTesting()
+        let project = makeProject(name: "Capacitor", path: "/Users/petepetrash/Code/capacitor")
+        appState.projects = [project]
+        appState.setRuntimeSnapshotGenerationForTesting(1)
+
+        var observedLines: [String] = []
+        DebugLog.setTestObserver { line in
+            observedLines.append(line)
+        }
+        defer { DebugLog.setTestObserver(nil) }
+
+        await appState.applyRuntimeSnapshotForTesting(
+            makeRuntimeSnapshot(
+                projectPath: project.path,
+                sessionId: "fresh-session",
+                shellCwd: "/fresh",
+                shellPid: "111",
+                runtimeSessions: [
+                    makeRuntimeSession(
+                        sessionId: "session-gc",
+                        projectPath: project.path,
+                        gcReason: "pid_reaped",
+                    ),
+                ],
+                snapshotVersion: 12,
+            ),
+            refreshGeneration: 1,
+            correlationId: "gc-log",
+            projects: [project],
+        )
+
+        XCTAssertTrue(
+            observedLines.contains { $0.contains("AppState.gc_reason sessions=session-gc:pid_reaped") },
+            "expected gc_reason log when runtime snapshot includes gc-tagged sessions",
+        )
+    }
+
     private func makeProject(name: String, path: String) -> Project {
         Project(
             name: name,
@@ -396,6 +550,8 @@ final class AppStateSessionObservationTests: XCTestCase {
         shellCwd: String,
         shellPid: String,
         runs: [RuntimeRunState] = [],
+        runtimeSessions: [RuntimeSession] = [],
+        snapshotVersion: UInt64 = 0,
     ) -> RuntimeSnapshot {
         let timestamp = "2026-03-05T00:00:00Z"
         return RuntimeSnapshot(
@@ -414,7 +570,7 @@ final class AppStateSessionObservationTests: XCTestCase {
                     hasSession: true,
                 ),
             ],
-            sessions: [],
+            sessions: runtimeSessions,
             shellState: ShellCwdState(
                 version: 1,
                 shells: [
@@ -441,6 +597,32 @@ final class AppStateSessionObservationTests: XCTestCase {
             ],
             delegations: [],
             runs: runs,
+            snapshotVersion: snapshotVersion,
+        )
+    }
+
+    private func makeRuntimeSession(
+        sessionId: String,
+        projectPath: String,
+        gcReason: String? = nil,
+    ) -> RuntimeSession {
+        let timestamp = "2026-03-05T00:00:00Z"
+        return RuntimeSession(
+            sessionId: sessionId,
+            pid: 4242,
+            state: "working",
+            cwd: projectPath,
+            projectId: nil,
+            workspaceId: nil,
+            projectPath: projectPath,
+            updatedAt: timestamp,
+            stateChangedAt: timestamp,
+            lastEvent: nil,
+            lastActivityAt: timestamp,
+            toolsInFlight: 0,
+            readyReason: nil,
+            gcReason: gcReason,
+            isAlive: true,
         )
     }
 

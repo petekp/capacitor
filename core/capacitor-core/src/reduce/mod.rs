@@ -16,6 +16,9 @@ use crate::runtime_types::ParentApp;
 pub mod delegation;
 pub mod run_reducer;
 
+pub const GC_REASON_SOLE_DEAD_NO_SHELL: &str = "sole_dead_no_shell";
+pub const GC_REASON_ORPHANED_STALE: &str = "orphaned_stale";
+
 const STALE_EVENT_GRACE_SECS: i64 = 5;
 const ORPHANED_SESSION_GRACE: Duration = Duration::minutes(5);
 const SOLE_DEAD_SESSION_GRACE: Duration = Duration::minutes(10);
@@ -58,6 +61,7 @@ impl ReducerState {
             runs: snapshot_runs,
             diagnostics,
             generated_at: _,
+            snapshot_version: _,
         } = snapshot;
 
         let mut projects = BTreeMap::new();
@@ -266,11 +270,11 @@ impl ReducerState {
         self.events_ingested = self.events_ingested.saturating_add(1);
         delegation::apply_delegation_mutation(&mut self.delegations, &mut self.last_error, command)
     }
-    pub fn gc_stale_sessions(&mut self) {
-        self.gc_stale_sessions_at(Utc::now());
+    pub fn gc_stale_sessions(&mut self) -> bool {
+        self.gc_stale_sessions_at(Utc::now())
     }
 
-    pub fn gc_stale_sessions_at(&mut self, now: DateTime<Utc>) {
+    pub fn gc_stale_sessions_at(&mut self, now: DateTime<Utc>) -> bool {
         let shell_count_before_gc = self.shells.len();
         cleanup_shells_at(&mut self.shells, now);
 
@@ -351,12 +355,18 @@ impl ReducerState {
                 session.state = SessionState::Idle;
                 session.state_changed_at = now.to_rfc3339();
                 session.is_alive = false;
+                session.gc_reason = Some(GC_REASON_SOLE_DEAD_NO_SHELL.to_string());
                 needs_recompute = true;
             }
         }
 
         if !expired_session_ids.is_empty() {
             for id in &expired_session_ids {
+                tracing::info!(
+                    session_id = %id,
+                    reason = GC_REASON_ORPHANED_STALE,
+                    "GC: removing expired session"
+                );
                 self.sessions.remove(id);
             }
             needs_recompute = true;
@@ -366,16 +376,19 @@ impl ReducerState {
             self.recompute_projects();
             self.recompute_routing();
         }
+
+        needs_recompute
     }
 
     #[must_use]
-    pub fn snapshot(&mut self) -> AppSnapshot {
-        self.gc_stale_sessions();
-
+    pub fn snapshot(&self) -> AppSnapshot {
         let projects = self.projects.values().cloned().collect::<Vec<_>>();
         let delegations = self.delegations.values().cloned().collect::<Vec<_>>();
 
-        let session_is_alive = session_is_alive_map(&self.sessions, &self.shells);
+        let mut cleaned_shells = self.shells.clone();
+        cleanup_shells(&mut cleaned_shells);
+
+        let session_is_alive = session_is_alive_map(&self.sessions, &cleaned_shells);
         let mut sessions = self.sessions.values().cloned().collect::<Vec<_>>();
         for session in &mut sessions {
             session.is_alive = session_is_alive
@@ -389,8 +402,6 @@ impl ReducerState {
                 .then_with(|| left.session_id.cmp(&right.session_id))
         });
 
-        let mut cleaned_shells = self.shells.clone();
-        cleanup_shells(&mut cleaned_shells);
         let mut shells = cleaned_shells.values().cloned().collect::<Vec<_>>();
         shells.sort_by(|left, right| left.pid.cmp(&right.pid));
         let shell_count = shells.len() as u64;
@@ -428,6 +439,7 @@ impl ReducerState {
                 last_hook_event_at: self.last_hook_event_at.clone(),
             },
             generated_at: now_rfc3339(),
+            snapshot_version: 0,
         }
     }
 
@@ -1457,6 +1469,7 @@ fn upsert_session(
         tools_in_flight,
         ready_reason: next_ready_reason,
         is_alive: pid > 0 && shells.contains_key(&pid),
+        gc_reason: None,
     }
 }
 

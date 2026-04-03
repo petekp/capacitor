@@ -154,6 +154,7 @@ struct RuntimeSession: Decodable {
     let lastActivityAt: String?
     let toolsInFlight: Int?
     let readyReason: String?
+    let gcReason: String?
     let isAlive: Bool?
 
     enum CodingKeys: String, CodingKey {
@@ -170,6 +171,7 @@ struct RuntimeSession: Decodable {
         case lastActivityAt = "last_activity_at"
         case toolsInFlight = "tools_in_flight"
         case readyReason = "ready_reason"
+        case gcReason = "gc_reason"
         case isAlive = "is_alive"
     }
 }
@@ -209,6 +211,7 @@ struct RuntimeSnapshot {
     let routingViews: [RuntimeRoutingView]
     let delegations: [RuntimeDelegationState]
     let runs: [RuntimeRunState]
+    let snapshotVersion: UInt64
 }
 
 struct RuntimeDelegationReview: Decodable, Equatable {

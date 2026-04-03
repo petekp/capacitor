@@ -530,6 +530,7 @@ final class SessionStateManagerTests: XCTestCase {
             lastActivityAt: nil,
             toolsInFlight: nil,
             readyReason: nil,
+            gcReason: nil,
             isAlive: nil,
         )
     }

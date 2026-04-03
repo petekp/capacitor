@@ -111,6 +111,7 @@ final class RuntimeClient {
             routingViews: mapRoutingViews(snapshot),
             delegations: mapDelegations(snapshot),
             runs: runs,
+            snapshotVersion: snapshot.snapshotVersion,
         )
     }
 
@@ -358,6 +359,7 @@ final class RuntimeClient {
                 lastActivityAt: session.lastActivityAt,
                 toolsInFlight: Int(session.toolsInFlight),
                 readyReason: session.readyReason,
+                gcReason: session.gcReason,
                 isAlive: session.isAlive,
             )
         }
@@ -704,6 +706,7 @@ final class RuntimeClient {
 }
 
 private struct SnapshotPayload: Decodable {
+    let snapshotVersion: UInt64
     let projects: [SnapshotProjectPayload]
     let sessions: [SnapshotSessionPayload]
     let shells: [SnapshotShellPayload]
@@ -712,6 +715,7 @@ private struct SnapshotPayload: Decodable {
     let runs: [SnapshotRunPayload]
 
     enum CodingKeys: String, CodingKey {
+        case snapshotVersion = "snapshot_version"
         case projects
         case sessions
         case shells
@@ -722,6 +726,7 @@ private struct SnapshotPayload: Decodable {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        snapshotVersion = try container.decodeIfPresent(UInt64.self, forKey: .snapshotVersion) ?? 0
         projects = try container.decode([SnapshotProjectPayload].self, forKey: .projects)
         sessions = try container.decode([SnapshotSessionPayload].self, forKey: .sessions)
         shells = try container.decode([SnapshotShellPayload].self, forKey: .shells)
@@ -731,6 +736,7 @@ private struct SnapshotPayload: Decodable {
     }
 
     init(_ snapshot: AppSnapshot) {
+        snapshotVersion = snapshot.snapshotVersion
         projects = snapshot.projects.map(SnapshotProjectPayload.init)
         sessions = snapshot.sessions.map(SnapshotSessionPayload.init)
         shells = snapshot.shells.map(SnapshotShellPayload.init)
@@ -796,6 +802,7 @@ private struct SnapshotSessionPayload: Decodable {
     let lastActivityAt: String?
     let toolsInFlight: UInt32
     let readyReason: String?
+    let gcReason: String?
     let isAlive: Bool?
 
     enum CodingKeys: String, CodingKey {
@@ -812,6 +819,7 @@ private struct SnapshotSessionPayload: Decodable {
         case lastActivityAt = "last_activity_at"
         case toolsInFlight = "tools_in_flight"
         case readyReason = "ready_reason"
+        case gcReason = "gc_reason"
         case isAlive = "is_alive"
     }
 
@@ -829,6 +837,7 @@ private struct SnapshotSessionPayload: Decodable {
         lastActivityAt = session.lastActivityAt
         toolsInFlight = session.toolsInFlight
         readyReason = session.readyReason
+        gcReason = session.gcReason
         isAlive = session.isAlive
     }
 }

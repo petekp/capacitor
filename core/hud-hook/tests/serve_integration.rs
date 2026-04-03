@@ -15,6 +15,9 @@ use common::{
 };
 use std::fs;
 use std::net::TcpListener;
+use std::path::Path;
+use std::thread;
+use std::time::{Duration, Instant};
 
 fn create_run_with_active_checkpoint(port: u16, authorization: &str, run_id: &str) -> String {
     let create_payload = serde_json::json!({
@@ -208,6 +211,104 @@ fn seeded_snapshot_without_routing() -> serde_json::Value {
         },
         "generated_at": "2026-03-12T00:00:00Z"
     })
+}
+
+fn seeded_snapshot_with_gc_candidate() -> serde_json::Value {
+    serde_json::json!({
+        "projects": [
+            {
+                "project_path": "/tmp/runtime-service-project",
+                "project_id": "/tmp/runtime-service-project/.git",
+                "workspace_id": "workspace-runtime-service-project",
+                "display_name": "runtime-service-project",
+                "state": "ready",
+                "state_changed_at": "2000-01-01T00:00:00Z",
+                "updated_at": "2000-01-01T00:00:00Z",
+                "representative_session_id": "runtime-service-idle",
+                "latest_session_id": "runtime-service-idle",
+                "session_count": 2,
+                "active_count": 1,
+                "has_session": true
+            }
+        ],
+        "sessions": [
+            {
+                "session_id": "runtime-service-stale",
+                "pid": 4242,
+                "cwd": "/tmp/runtime-service-project",
+                "project_id": "/tmp/runtime-service-project/.git",
+                "project_path": "/tmp/runtime-service-project",
+                "workspace_id": "workspace-runtime-service-project",
+                "state": "working",
+                "state_changed_at": "2000-01-01T00:00:00Z",
+                "updated_at": "2000-01-01T00:00:00Z",
+                "last_event": "user_prompt_submit",
+                "last_activity_at": "2000-01-01T00:00:00Z",
+                "tools_in_flight": 0,
+                "ready_reason": null
+            },
+            {
+                "session_id": "runtime-service-idle",
+                "pid": 4243,
+                "cwd": "/tmp/runtime-service-project",
+                "project_id": "/tmp/runtime-service-project/.git",
+                "project_path": "/tmp/runtime-service-project",
+                "workspace_id": "workspace-runtime-service-project",
+                "state": "idle",
+                "state_changed_at": "2000-01-01T00:00:00Z",
+                "updated_at": "2000-01-01T00:00:00Z",
+                "last_event": "session_start",
+                "last_activity_at": "2000-01-01T00:00:00Z",
+                "tools_in_flight": 0,
+                "ready_reason": null
+            }
+        ],
+        "shells": [],
+        "routing": [],
+        "delegations": [],
+        "runs": [],
+        "diagnostics": {
+            "events_ingested": 2,
+            "sessions_tracked": 2,
+            "shell_signals_tracked": 0,
+            "events_skipped": 0,
+            "stale_events_skipped": 0,
+            "informational_events_skipped": 0,
+            "reducer_events_skipped": 0,
+            "last_error": null,
+            "last_hook_event_at": "2026-03-12T00:00:00Z"
+        },
+        "generated_at": "2026-03-12T00:00:00Z"
+    })
+}
+
+fn wait_for_snapshot_session_count(
+    snapshot_path: &Path,
+    expected_count: usize,
+    timeout: Duration,
+) -> serde_json::Value {
+    let deadline = Instant::now() + timeout;
+    let mut last_snapshot = None;
+
+    loop {
+        if snapshot_path.exists() {
+            let snapshot = read_snapshot(snapshot_path);
+            if snapshot["sessions"].as_array().map(Vec::len) == Some(expected_count) {
+                return snapshot;
+            }
+            last_snapshot = Some(snapshot);
+        }
+
+        if Instant::now() >= deadline {
+            panic!(
+                "snapshot did not converge to {expected_count} sessions within {:?}; last snapshot: {:?}",
+                timeout,
+                last_snapshot
+            );
+        }
+
+        thread::sleep(Duration::from_millis(200));
+    }
 }
 
 #[test]
@@ -409,6 +510,57 @@ fn runtime_snapshot_recomputes_routing_from_seeded_snapshot_on_startup() {
     assert_eq!(
         snapshot_json["routing"][0]["reason_code"].as_str(),
         Some("TMUX_SESSION_ATTACHED")
+    );
+}
+
+#[test]
+fn gc_tick_runs_after_idle_timeouts_without_followup_requests() {
+    let temp_dir = unique_temp_dir("serve-runtime-gc-timeout");
+    let snapshot_path = temp_dir.join("snapshot.json");
+
+    fs::write(
+        &snapshot_path,
+        serde_json::to_vec_pretty(&seeded_snapshot_with_gc_candidate())
+            .expect("serialize seeded snapshot"),
+    )
+    .expect("write seeded snapshot");
+
+    let (_server, _port) = ServerGuard::spawn_ready(&temp_dir, &snapshot_path);
+
+    let snapshot = wait_for_snapshot_session_count(&snapshot_path, 1, Duration::from_secs(13));
+    assert_eq!(
+        snapshot["sessions"][0]["session_id"].as_str(),
+        Some("runtime-service-idle"),
+        "idle survivor should remain after timeout-driven GC"
+    );
+}
+
+#[test]
+fn gc_tick_runs_after_request_dispatch_under_sustained_load() {
+    let temp_dir = unique_temp_dir("serve-runtime-gc-dispatch");
+    let snapshot_path = temp_dir.join("snapshot.json");
+
+    fs::write(
+        &snapshot_path,
+        serde_json::to_vec_pretty(&seeded_snapshot_with_gc_candidate())
+            .expect("serialize seeded snapshot"),
+    )
+    .expect("write seeded snapshot");
+
+    let (_server, port) = ServerGuard::spawn_ready(&temp_dir, &snapshot_path);
+    let deadline = Instant::now() + Duration::from_secs(12);
+
+    while Instant::now() < deadline {
+        let (status, body) = http_request(port, "GET", "/health", None);
+        assert_eq!(status, 200, "body: {body}");
+        thread::sleep(Duration::from_millis(300));
+    }
+
+    let snapshot = wait_for_snapshot_session_count(&snapshot_path, 1, Duration::from_secs(2));
+    assert_eq!(
+        snapshot["sessions"][0]["session_id"].as_str(),
+        Some("runtime-service-idle"),
+        "idle survivor should remain after dispatch-driven GC"
     );
 }
 

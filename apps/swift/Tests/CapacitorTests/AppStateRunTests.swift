@@ -146,6 +146,7 @@ final class AppStateRunTests: XCTestCase {
             routingViews: [],
             delegations: [],
             runs: runs,
+            snapshotVersion: 0,
         )
     }
 

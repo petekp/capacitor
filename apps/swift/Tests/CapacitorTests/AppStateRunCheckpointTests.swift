@@ -227,6 +227,7 @@ final class AppStateRunCheckpointTests: XCTestCase {
             routingViews: [],
             delegations: [],
             runs: runs,
+            snapshotVersion: 0,
         )
     }
 

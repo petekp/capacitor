@@ -6,6 +6,7 @@
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::time::Instant;
 
 use capacitor_core::{
     domain::{
@@ -67,6 +68,7 @@ pub fn run(port: u16) -> Result<(), String> {
     // tiny_http::Server::incoming_requests() blocks until a request arrives
     // or the server is shut down. We use recv_timeout so we can check the
     // shutdown flag periodically.
+    let mut last_gc = Instant::now();
     loop {
         if SHUTDOWN.load(Ordering::Relaxed) {
             tracing::info!("Shutdown signal received, exiting");
@@ -76,7 +78,17 @@ pub fn run(port: u16) -> Result<(), String> {
         // Poll with 500ms timeout so SIGTERM is noticed promptly.
         let request = match server.recv_timeout(std::time::Duration::from_millis(500)) {
             Ok(Some(req)) => req,
-            Ok(None) => continue, // timeout, loop back to check shutdown
+            Ok(None) => {
+                if last_gc.elapsed() >= std::time::Duration::from_secs(10) {
+                    if let Some(runtime) = runtime_service.runtime.as_ref() {
+                        if let Err(e) = runtime.run_gc() {
+                            tracing::warn!(error = %e, "Periodic GC tick failed");
+                        }
+                    }
+                    last_gc = Instant::now();
+                }
+                continue;
+            }
             Err(e) => {
                 tracing::warn!(error = %e, "Error receiving request");
                 continue;
@@ -84,6 +96,14 @@ pub fn run(port: u16) -> Result<(), String> {
         };
 
         dispatch(request, &runtime_service);
+        if last_gc.elapsed() >= std::time::Duration::from_secs(10) {
+            if let Some(runtime) = runtime_service.runtime.as_ref() {
+                if let Err(e) = runtime.run_gc() {
+                    tracing::warn!(error = %e, "Periodic GC tick failed");
+                }
+            }
+            last_gc = Instant::now();
+        }
     }
 
     Ok(())

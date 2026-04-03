@@ -229,6 +229,7 @@ mod tests {
                 tools_in_flight: 0,
                 ready_reason: None,
                 is_alive: true,
+                gc_reason: None,
             }],
             shells: vec![ShellSignal {
                 pid: 10,
@@ -270,6 +271,7 @@ mod tests {
             delegations: vec![],
             runs,
             generated_at: "2026-02-28T00:00:00Z".to_string(),
+            snapshot_version: 0,
         }
     }
 

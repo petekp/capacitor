@@ -32,6 +32,7 @@ pub mod storage;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
@@ -79,6 +80,7 @@ pub struct CoreRuntime {
     state: std::sync::Mutex<reduce::ReducerState>,
     snapshot_storage: Arc<dyn SnapshotStorage>,
     app_storage: StorageConfig,
+    version: AtomicU64,
 }
 
 impl CoreRuntime {
@@ -96,6 +98,7 @@ impl CoreRuntime {
             state: std::sync::Mutex::new(state),
             snapshot_storage,
             app_storage,
+            version: AtomicU64::new(0),
         }))
     }
 
@@ -323,8 +326,25 @@ impl CoreRuntime {
     }
 
     pub fn app_snapshot(&self) -> Result<AppSnapshot, CoreRuntimeError> {
+        let state = self.lock_state()?;
+        let mut snapshot = query::app_snapshot(&state);
+        snapshot.snapshot_version = self.version.load(Ordering::Relaxed);
+        Ok(snapshot)
+    }
+
+    pub fn run_gc(&self) -> Result<bool, CoreRuntimeError> {
         let mut state = self.lock_state()?;
-        Ok(query::app_snapshot(&mut state))
+        let changed = state.gc_stale_sessions();
+        if changed {
+            self.version.fetch_add(1, Ordering::Relaxed);
+            let snapshot = state.snapshot();
+            drop(state);
+            self.persist_snapshot(&snapshot)?;
+            tracing::info!("gc_tick state_changed=true");
+        } else {
+            tracing::trace!("gc_tick state_changed=false");
+        }
+        Ok(changed)
     }
 
     pub fn resolve_routing(
@@ -342,6 +362,7 @@ impl CoreRuntime {
         let normalized = ingest::normalize_hook_event(command);
         let mut state = self.lock_state()?;
         let outcome = state.apply_hook_event(normalized);
+        self.version.fetch_add(1, Ordering::Relaxed);
         let snapshot = state.snapshot();
         drop(state);
         self.persist_snapshot(&snapshot)?;
@@ -355,6 +376,7 @@ impl CoreRuntime {
         let normalized = ingest::normalize_shell_signal(command);
         let mut state = self.lock_state()?;
         let outcome = state.apply_shell_signal(normalized);
+        self.version.fetch_add(1, Ordering::Relaxed);
         let snapshot = state.snapshot();
         drop(state);
         self.persist_snapshot(&snapshot)?;
@@ -445,6 +467,9 @@ impl CoreRuntime {
             }
         };
 
+        if outcome.ok {
+            self.version.fetch_add(1, Ordering::Relaxed);
+        }
         let snapshot = state.snapshot();
         drop(state);
         self.persist_snapshot(&snapshot)?;
@@ -462,6 +487,7 @@ impl CoreRuntime {
             command.kind, command.project_path, command.idea_id
         );
         let outcome = MutationOutcome { ok: true, message };
+        self.version.fetch_add(1, Ordering::Relaxed);
         let snapshot = state.snapshot();
         drop(state);
         self.persist_snapshot(&snapshot)?;
@@ -479,6 +505,7 @@ impl CoreRuntime {
             command.kind, command.repo_path, command.worktree_name, command.force
         );
         let outcome = MutationOutcome { ok: true, message };
+        self.version.fetch_add(1, Ordering::Relaxed);
         let snapshot = state.snapshot();
         drop(state);
         self.persist_snapshot(&snapshot)?;
@@ -491,6 +518,7 @@ impl CoreRuntime {
     ) -> Result<MutationOutcome, CoreRuntimeError> {
         let mut state = self.lock_state()?;
         let outcome = state.apply_delegation_mutation(command);
+        self.version.fetch_add(1, Ordering::Relaxed);
         let snapshot = state.snapshot();
         drop(state);
         self.persist_snapshot(&snapshot)?;
@@ -503,6 +531,7 @@ impl CoreRuntime {
     ) -> Result<MutationOutcome, CoreRuntimeError> {
         let mut state = self.lock_state()?;
         let outcome = state.apply_run_mutation(command);
+        self.version.fetch_add(1, Ordering::Relaxed);
         let snapshot = state.snapshot();
         drop(state);
         self.persist_snapshot(&snapshot)?;
@@ -997,8 +1026,9 @@ impl CoreRuntime {
 mod tests {
     use super::CoreRuntime;
     use crate::domain::{
-        AppSnapshot, DiagnosticsSummary, HookEventType, IngestHookEventCommand,
-        MutateProjectCommand, ProjectMutationKind, ProjectSummary, SessionState, SessionSummary,
+        default_workspace_id, AppSnapshot, DiagnosticsSummary, HookEventType,
+        IngestHookEventCommand, MutateProjectCommand, ProjectMutationKind, ProjectSummary,
+        SessionState, SessionSummary,
     };
     use crate::runtime_service::{RUNTIME_SERVICE_PORT_ENV, RUNTIME_SERVICE_TOKEN_ENV};
     use crate::runtime_state::snapshot::test_support::{
@@ -1007,7 +1037,7 @@ mod tests {
     use crate::runtime_state::snapshot::{RuntimeSessionRecord, RuntimeSessionsSnapshot};
     use crate::runtime_storage::StorageConfig;
     use crate::runtime_types::{HookHealthStatus, HookIssue};
-    use crate::storage::InMemorySnapshotStorage;
+    use crate::storage::{InMemorySnapshotStorage, SnapshotStorage};
     use chrono::{Duration, Utc};
     use std::fs;
     use std::sync::Arc;
@@ -1078,6 +1108,74 @@ mod tests {
         assert_eq!(snapshot.sessions.len(), 1);
         assert_eq!(snapshot.sessions[0].project_path, "/repo");
         assert_eq!(snapshot.projects[0].session_count, 1);
+    }
+
+    #[test]
+    fn test_snapshot_version_increments_on_mutation() {
+        let runtime = CoreRuntime::new().expect("runtime");
+
+        let initial = runtime.app_snapshot().expect("initial snapshot");
+        assert_eq!(initial.snapshot_version, 0);
+
+        runtime
+            .ingest_hook_event(IngestHookEventCommand {
+                event_id: "evt-1".to_string(),
+                recorded_at: "2099-04-01T12:00:00Z".to_string(),
+                event_type: HookEventType::UserPromptSubmit,
+                session_id: "session-1".to_string(),
+                pid: Some(42),
+                project_path: "/repo".to_string(),
+                cwd: Some("/repo".to_string()),
+                file_path: None,
+                workspace_id: None,
+                notification_type: None,
+                stop_hook_active: None,
+                tool_name: None,
+                agent_id: None,
+                teammate_name: None,
+            })
+            .expect("ingest hook event");
+
+        let updated = runtime.app_snapshot().expect("updated snapshot");
+        assert!(
+            updated.snapshot_version > initial.snapshot_version,
+            "expected mutation to advance snapshot version, got {} -> {}",
+            initial.snapshot_version,
+            updated.snapshot_version
+        );
+    }
+
+    #[test]
+    fn test_snapshot_version_stable_on_read() {
+        let runtime = CoreRuntime::new().expect("runtime");
+
+        let first = runtime.app_snapshot().expect("first snapshot");
+        let second = runtime.app_snapshot().expect("second snapshot");
+
+        assert_eq!(first.snapshot_version, second.snapshot_version);
+    }
+
+    #[test]
+    fn test_snapshot_idempotent_without_gc() {
+        let storage = Arc::new(InMemorySnapshotStorage::default());
+        storage
+            .save_snapshot(&stale_dead_snapshot_for_gc_read_test())
+            .expect("save fixture snapshot");
+        let runtime =
+            CoreRuntime::from_storage(storage, StorageConfig::default()).expect("runtime");
+
+        let first = runtime.app_snapshot().expect("first snapshot");
+        let second = runtime.app_snapshot().expect("second snapshot");
+
+        assert_eq!(first.snapshot_version, 0);
+        assert_eq!(second.snapshot_version, 0);
+        assert_eq!(first.sessions, second.sessions);
+        assert_eq!(first.sessions.len(), 1);
+        assert_eq!(first.sessions[0].state, SessionState::Waiting);
+
+        let mut normalized_first = first.clone();
+        normalized_first.generated_at = second.generated_at.clone();
+        assert_eq!(normalized_first, second);
     }
 
     #[test]
@@ -1356,6 +1454,49 @@ mod tests {
         .expect("runtime")
     }
 
+    fn stale_dead_snapshot_for_gc_read_test() -> AppSnapshot {
+        let now = "2099-04-01T12:00:00Z".to_string();
+        let stale = "2099-04-01T11:30:00Z".to_string();
+
+        AppSnapshot {
+            projects: vec![],
+            sessions: vec![SessionSummary {
+                session_id: "dead-session".to_string(),
+                pid: 0,
+                cwd: "/repo".to_string(),
+                project_id: "/repo".to_string(),
+                project_path: "/repo".to_string(),
+                workspace_id: default_workspace_id("/repo"),
+                state: SessionState::Waiting,
+                state_changed_at: stale.clone(),
+                updated_at: stale.clone(),
+                last_event: Some("notification".to_string()),
+                last_activity_at: Some(stale),
+                tools_in_flight: 1,
+                ready_reason: None,
+                is_alive: false,
+                gc_reason: None,
+            }],
+            shells: vec![],
+            routing: vec![],
+            delegations: vec![],
+            runs: vec![],
+            diagnostics: DiagnosticsSummary {
+                events_ingested: 0,
+                sessions_tracked: 1,
+                shell_signals_tracked: 0,
+                events_skipped: 0,
+                stale_events_skipped: 0,
+                informational_events_skipped: 0,
+                reducer_events_skipped: 0,
+                last_error: None,
+                last_hook_event_at: None,
+            },
+            generated_at: now,
+            snapshot_version: 0,
+        }
+    }
+
     fn snapshot_payload(
         sessions: Vec<SessionSummary>,
         last_hook_event_at: Option<String>,
@@ -1398,6 +1539,7 @@ mod tests {
                 last_hook_event_at: None,
             },
             generated_at: now,
+            snapshot_version: 0,
         };
         let mut value = serde_json::to_value(snapshot).expect("serialize snapshot to value");
         if let Some(last_hook_event_at) = last_hook_event_at {
@@ -1487,6 +1629,7 @@ mod tests {
             tools_in_flight: 0,
             ready_reason,
             is_alive: is_alive.unwrap_or(false),
+            gc_reason: None,
         }
     }
 }

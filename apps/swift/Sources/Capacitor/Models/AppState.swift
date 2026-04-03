@@ -221,6 +221,7 @@ class AppState {
     private var runtimeBootstrapTask: _Concurrency.Task<Void, Never>?
     private var runtimeSnapshotTask: _Concurrency.Task<Void, Never>?
     private var runtimeSnapshotGeneration: UInt64 = 0
+    private var lastAppliedSnapshotVersion: UInt64 = 0
     private var runtimeSnapshotCorrelationCounter: UInt64 = 0
     private var consecutiveRuntimeSnapshotFailures = 0
     private(set) var sessionStateRevision = 0
@@ -599,6 +600,14 @@ class AppState {
 
         guard !_Concurrency.Task.isCancelled else { return }
 
+        if snapshot.snapshotVersion > 0, snapshot.snapshotVersion == lastAppliedSnapshotVersion {
+            DebugLog.write(
+                "AppState.refreshSessionStates source=runtime_snapshot_noop cid=\(correlationId) version=\(snapshot.snapshotVersion)",
+            )
+            consecutiveRuntimeSnapshotFailures = 0
+            return
+        }
+
         sessionStateManager.applyRuntimeProjectStates(
             snapshot.projectStates,
             sessions: snapshot.sessions,
@@ -643,10 +652,17 @@ class AppState {
             nextRunsByID: nextRunsByID,
         )
         consecutiveRuntimeSnapshotFailures = 0
+        let gcSessions = snapshot.sessions.filter { $0.gcReason != nil }
+        if !gcSessions.isEmpty {
+            DebugLog.write(
+                "AppState.gc_reason sessions=\(gcSessions.map { "\($0.sessionId):\($0.gcReason ?? "")" }.joined(separator: ","))",
+            )
+        }
 
         DebugLog.write(
             "AppState.refreshSessionStates source=runtime_snapshot_apply cid=\(correlationId) projects=\(snapshot.projectStates.count) sessions=\(snapshot.sessions.count) shells=\(snapshot.shellState.shells.count) routing=\(snapshot.routingViews.count) runs=\(snapshot.runs.count)",
         )
+        lastAppliedSnapshotVersion = snapshot.snapshotVersion
         if isDelegationLoopEnabled {
             _Concurrency.Task { [delegationLoopManager] in
                 await delegationLoopManager?.reconcile(delegations: snapshot.delegations)

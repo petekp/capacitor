@@ -571,6 +571,8 @@ public protocol CoreRuntimeProtocol: AnyObject {
 
     func resolveRouting(command: ResolveRoutingCommand) throws -> RoutingView
 
+    func runGc() throws -> Bool
+
     func runHookTest() -> HookTestResult
 
     func saveIdeasOrder(projectPath: String, ideaIds: [String]) throws
@@ -854,6 +856,12 @@ open class CoreRuntime:
         return try FfiConverterTypeRoutingView.lift(rustCallWithError(FfiConverterTypeCoreRuntimeError.lift) {
             uniffi_capacitor_core_fn_method_coreruntime_resolve_routing(self.uniffiClonePointer(),
                                                                         FfiConverterTypeResolveRoutingCommand.lower(command), $0)
+        })
+    }
+
+    open func runGc() throws -> Bool {
+        return try FfiConverterBool.lift(rustCallWithError(FfiConverterTypeCoreRuntimeError.lift) {
+            uniffi_capacitor_core_fn_method_coreruntime_run_gc(self.uniffiClonePointer(), $0)
         })
     }
 
@@ -1160,10 +1168,11 @@ public struct AppSnapshot {
     public var runs: [RunState]
     public var diagnostics: DiagnosticsSummary
     public var generatedAt: String
+    public var snapshotVersion: UInt64
 
     /// Default memberwise initializers are never public by default, so we
     /// declare one manually.
-    public init(projects: [ProjectSummary], sessions: [SessionSummary], shells: [ShellSignal], routing: [RoutingView], delegations: [ProjectDelegationState], runs: [RunState], diagnostics: DiagnosticsSummary, generatedAt: String) {
+    public init(projects: [ProjectSummary], sessions: [SessionSummary], shells: [ShellSignal], routing: [RoutingView], delegations: [ProjectDelegationState], runs: [RunState], diagnostics: DiagnosticsSummary, generatedAt: String, snapshotVersion: UInt64) {
         self.projects = projects
         self.sessions = sessions
         self.shells = shells
@@ -1172,6 +1181,7 @@ public struct AppSnapshot {
         self.runs = runs
         self.diagnostics = diagnostics
         self.generatedAt = generatedAt
+        self.snapshotVersion = snapshotVersion
     }
 }
 
@@ -1201,6 +1211,9 @@ extension AppSnapshot: Equatable, Hashable {
         if lhs.generatedAt != rhs.generatedAt {
             return false
         }
+        if lhs.snapshotVersion != rhs.snapshotVersion {
+            return false
+        }
         return true
     }
 
@@ -1213,6 +1226,7 @@ extension AppSnapshot: Equatable, Hashable {
         hasher.combine(runs)
         hasher.combine(diagnostics)
         hasher.combine(generatedAt)
+        hasher.combine(snapshotVersion)
     }
 }
 
@@ -1230,7 +1244,8 @@ public struct FfiConverterTypeAppSnapshot: FfiConverterRustBuffer {
                 delegations: FfiConverterSequenceTypeProjectDelegationState.read(from: &buf),
                 runs: FfiConverterSequenceTypeRunState.read(from: &buf),
                 diagnostics: FfiConverterTypeDiagnosticsSummary.read(from: &buf),
-                generatedAt: FfiConverterString.read(from: &buf)
+                generatedAt: FfiConverterString.read(from: &buf),
+                snapshotVersion: FfiConverterUInt64.read(from: &buf)
             )
     }
 
@@ -1243,6 +1258,7 @@ public struct FfiConverterTypeAppSnapshot: FfiConverterRustBuffer {
         FfiConverterSequenceTypeRunState.write(value.runs, into: &buf)
         FfiConverterTypeDiagnosticsSummary.write(value.diagnostics, into: &buf)
         FfiConverterString.write(value.generatedAt, into: &buf)
+        FfiConverterUInt64.write(value.snapshotVersion, into: &buf)
     }
 }
 
@@ -6274,10 +6290,11 @@ public struct SessionSummary {
     public var toolsInFlight: UInt32
     public var readyReason: String?
     public var isAlive: Bool
+    public var gcReason: String?
 
     /// Default memberwise initializers are never public by default, so we
     /// declare one manually.
-    public init(sessionId: String, pid: UInt32, cwd: String, projectId: String, projectPath: String, workspaceId: String, state: SessionState, stateChangedAt: String, updatedAt: String, lastEvent: String?, lastActivityAt: String?, toolsInFlight: UInt32, readyReason: String?, isAlive: Bool) {
+    public init(sessionId: String, pid: UInt32, cwd: String, projectId: String, projectPath: String, workspaceId: String, state: SessionState, stateChangedAt: String, updatedAt: String, lastEvent: String?, lastActivityAt: String?, toolsInFlight: UInt32, readyReason: String?, isAlive: Bool, gcReason: String?) {
         self.sessionId = sessionId
         self.pid = pid
         self.cwd = cwd
@@ -6292,6 +6309,7 @@ public struct SessionSummary {
         self.toolsInFlight = toolsInFlight
         self.readyReason = readyReason
         self.isAlive = isAlive
+        self.gcReason = gcReason
     }
 }
 
@@ -6339,6 +6357,9 @@ extension SessionSummary: Equatable, Hashable {
         if lhs.isAlive != rhs.isAlive {
             return false
         }
+        if lhs.gcReason != rhs.gcReason {
+            return false
+        }
         return true
     }
 
@@ -6357,6 +6378,7 @@ extension SessionSummary: Equatable, Hashable {
         hasher.combine(toolsInFlight)
         hasher.combine(readyReason)
         hasher.combine(isAlive)
+        hasher.combine(gcReason)
     }
 }
 
@@ -6380,7 +6402,8 @@ public struct FfiConverterTypeSessionSummary: FfiConverterRustBuffer {
                 lastActivityAt: FfiConverterOptionString.read(from: &buf),
                 toolsInFlight: FfiConverterUInt32.read(from: &buf),
                 readyReason: FfiConverterOptionString.read(from: &buf),
-                isAlive: FfiConverterBool.read(from: &buf)
+                isAlive: FfiConverterBool.read(from: &buf),
+                gcReason: FfiConverterOptionString.read(from: &buf)
             )
     }
 
@@ -6399,6 +6422,7 @@ public struct FfiConverterTypeSessionSummary: FfiConverterRustBuffer {
         FfiConverterUInt32.write(value.toolsInFlight, into: &buf)
         FfiConverterOptionString.write(value.readyReason, into: &buf)
         FfiConverterBool.write(value.isAlive, into: &buf)
+        FfiConverterOptionString.write(value.gcReason, into: &buf)
     }
 }
 
@@ -9988,6 +10012,9 @@ private var initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if uniffi_capacitor_core_checksum_method_coreruntime_resolve_routing() != 15784 {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if uniffi_capacitor_core_checksum_method_coreruntime_run_gc() != 7191 {
         return InitializationResult.apiChecksumMismatch
     }
     if uniffi_capacitor_core_checksum_method_coreruntime_run_hook_test() != 23431 {

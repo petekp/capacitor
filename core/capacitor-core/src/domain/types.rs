@@ -64,6 +64,8 @@ pub struct SessionSummary {
     pub ready_reason: Option<String>,
     #[serde(default)]
     pub is_alive: bool,
+    #[serde(default)]
+    pub gc_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Record)]
@@ -165,6 +167,8 @@ pub struct AppSnapshot {
     pub runs: Vec<super::run_types::RunState>,
     pub diagnostics: DiagnosticsSummary,
     pub generated_at: String,
+    #[serde(default)]
+    pub snapshot_version: u64,
 }
 
 /// Increment when delegation or run mutation contracts change.
