@@ -90,7 +90,7 @@ impl ReducerState {
             shells.insert(shell.pid, shell);
         }
 
-        let session_is_alive = session_is_alive_map(&sessions, &shells);
+        let session_is_alive = session_is_alive_map(&sessions, &shells, Utc::now());
         for session in sessions.values_mut() {
             session.is_alive = session_is_alive
                 .get(&session.session_id)
@@ -287,7 +287,7 @@ impl ReducerState {
         let shell_count_before_gc = self.shells.len();
         cleanup_shells_at(&mut self.shells, now);
 
-        let session_is_alive = session_is_alive_map(&self.sessions, &self.shells);
+        let session_is_alive = session_is_alive_map(&self.sessions, &self.shells, now);
         for session in self.sessions.values_mut() {
             session.is_alive = session_is_alive
                 .get(&session.session_id)
@@ -397,7 +397,7 @@ impl ReducerState {
         let mut cleaned_shells = self.shells.clone();
         cleanup_shells(&mut cleaned_shells);
 
-        let session_is_alive = session_is_alive_map(&self.sessions, &cleaned_shells);
+        let session_is_alive = session_is_alive_map(&self.sessions, &cleaned_shells, Utc::now());
         let mut sessions = self.sessions.values().cloned().collect::<Vec<_>>();
         for session in &mut sessions {
             session.is_alive = session_is_alive
@@ -1866,26 +1866,42 @@ fn cleanup_shells_at(shells: &mut HashMap<u32, ShellSignal>, now: DateTime<Utc>)
     }
 }
 
+/// How recently a hook event must have arrived for the session to be
+/// considered alive without shell corroboration.
+const HOOK_ACTIVITY_ALIVE_SECS: i64 = 60;
+
 fn session_is_alive_map(
     sessions: &HashMap<String, SessionSummary>,
     shells: &HashMap<u32, ShellSignal>,
+    now: DateTime<Utc>,
 ) -> HashMap<String, bool> {
     sessions
         .values()
         .map(|session| {
-            let normalized_project = normalize_path_for_matching(&session.project_path);
-            let alive = !normalized_project.is_empty()
-                && shells.values().any(|shell| {
-                    shell.cwd == normalized_project
-                        || shell
-                            .cwd
-                            .strip_prefix(normalized_project.as_str())
-                            .is_some_and(|rest| rest.starts_with('/'))
-                        || normalized_project
-                            .strip_prefix(shell.cwd.as_str())
-                            .is_some_and(|rest| rest.starts_with('/'))
+            let has_recent_hook_activity =
+                parse_rfc3339(&session.updated_at).is_some_and(|updated| {
+                    now.signed_duration_since(updated).num_seconds() < HOOK_ACTIVITY_ALIVE_SECS
                 });
-            (session.session_id.clone(), alive)
+
+            let has_shell_match = {
+                let normalized_project = normalize_path_for_matching(&session.project_path);
+                !normalized_project.is_empty()
+                    && shells.values().any(|shell| {
+                        shell.cwd == normalized_project
+                            || shell
+                                .cwd
+                                .strip_prefix(normalized_project.as_str())
+                                .is_some_and(|rest| rest.starts_with('/'))
+                            || normalized_project
+                                .strip_prefix(shell.cwd.as_str())
+                                .is_some_and(|rest| rest.starts_with('/'))
+                    })
+            };
+
+            (
+                session.session_id.clone(),
+                has_shell_match || has_recent_hook_activity,
+            )
         })
         .collect()
 }

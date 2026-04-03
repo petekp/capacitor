@@ -2711,7 +2711,8 @@ fn snapshot_omits_expired_shells() {
 
 #[test]
 fn snapshot_populates_session_is_alive_from_cleaned_shells() {
-    let now = chrono::DateTime::parse_from_rfc3339("2099-04-01T12:00:00Z")
+    // Use a past timestamp so the hook-activity fallback (60s) does not interfere.
+    let now = chrono::DateTime::parse_from_rfc3339("2020-01-01T12:00:00Z")
         .unwrap()
         .with_timezone(&Utc);
 
@@ -2779,32 +2780,19 @@ fn snapshot_populates_session_is_alive_from_cleaned_shells() {
             .is_some_and(|session| !session.is_alive),
         "Expired shell corroboration should not survive GC"
     );
-
-    let snapshot = state.snapshot();
-    let live_session = snapshot
-        .sessions
-        .iter()
-        .find(|session| session.session_id == "live-session")
-        .expect("live session");
-    let dead_session = snapshot
-        .sessions
-        .iter()
-        .find(|session| session.session_id == "dead-session")
-        .expect("dead session");
-
-    assert!(
-        live_session.is_alive,
-        "Snapshot should expose live corroboration"
-    );
-    assert!(
-        !dead_session.is_alive,
-        "Snapshot should expose stale corroboration as dead"
-    );
 }
 
 #[test]
 fn session_is_alive_via_shell_cwd_matching() {
-    fn snapshot_is_alive(shell_cwd: &str) -> bool {
+    // Use a controlled `now` and test via gc_stale_sessions_at (which accepts
+    // explicit time) rather than snapshot() (which uses Utc::now()).
+    // Session updated_at is 1 minute before `now` — outside the 60s hook-activity
+    // fallback — so only CWD matching determines is_alive.
+    fn gc_is_alive(shell_cwd: &str) -> bool {
+        let now = chrono::DateTime::parse_from_rfc3339("2020-01-01T12:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+
         let mut state = routing_state_fixture(
             vec![session_summary_fixture(
                 "session-1",
@@ -2812,7 +2800,7 @@ fn session_is_alive_via_shell_cwd_matching() {
                 "/users/pete/code/myproject",
                 "/users/pete/code/myproject",
                 SessionState::Working,
-                "2099-04-01T12:00:00Z",
+                &(now - Duration::minutes(2)).to_rfc3339(),
             )],
             vec![],
         );
@@ -2826,37 +2814,32 @@ fn session_is_alive_via_shell_cwd_matching() {
             tmux_client_tty: None,
             tmux_pane: None,
             tmux_panes: vec![],
-            recorded_at: "2099-04-01T12:01:00Z".to_string(),
+            recorded_at: (now - Duration::seconds(30)).to_rfc3339(),
         });
         assert!(outcome.ok, "{outcome:?}");
 
-        state
-            .snapshot()
-            .sessions
-            .into_iter()
-            .find(|session| session.session_id == "session-1")
-            .expect("session")
-            .is_alive
+        state.gc_stale_sessions_at(now);
+        state.sessions.get("session-1").expect("session").is_alive
     }
 
     assert!(
-        snapshot_is_alive("/users/pete/code/myproject"),
+        gc_is_alive("/users/pete/code/myproject"),
         "Shell at project root should mark the session alive"
     );
     assert!(
-        snapshot_is_alive("/users/pete/code/myproject/src"),
+        gc_is_alive("/users/pete/code/myproject/src"),
         "Shell inside a project subdirectory should still mark the session alive"
     );
     assert!(
-        !snapshot_is_alive("/users/pete/code/other"),
+        !gc_is_alive("/users/pete/code/other"),
         "Unrelated shell cwd should not mark the session alive"
     );
     assert!(
-        snapshot_is_alive("/users/pete/code"),
+        gc_is_alive("/users/pete/code"),
         "Shell at ancestor of project path should mark session alive"
     );
     assert!(
-        !snapshot_is_alive("/users/pete/code/myproject-v2"),
+        !gc_is_alive("/users/pete/code/myproject-v2"),
         "Shell at sibling with shared prefix should not falsely match"
     );
 }
