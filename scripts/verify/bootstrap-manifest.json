@@ -2,7 +2,7 @@
   "schema_version": 1,
   "python_min_version": "3.10",
   "requirements_file": "scripts/verify/requirements.txt",
-  "requirements_sha256": "3352f56c9d2b640ab72e04ad8165641e849871d4b0cf7de8d0c0ebaf07ffcd27",
+  "requirements_sha256": "6e2f551cef0302108e77108b2ec1ad81e081d4a78401ec6827e0ebe3d112ccd9",
   "apalache": {
     "version": "0.52.2",
     "repo": "apalache-mc/apalache",

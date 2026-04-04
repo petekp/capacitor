@@ -1,7 +1,6 @@
 mod adapter_seam;
 mod adversarial;
 mod checkpoint_bridge;
-mod checkpoint_manifest;
 mod constraints;
 mod error_audit;
 mod integration;

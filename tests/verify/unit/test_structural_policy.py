@@ -40,12 +40,15 @@ class StructuralPolicyTests(unittest.TestCase):
                 "runtime_shadow_owners_stay_deleted",
                 "activation_policy_not_distributed",
                 "tmux_router_exclusive_command_owner",
+                "ghostty_applescript_adapter_exclusive",
                 "hud_hook_owns_runtime_routes",
                 "rust_runtime_health_probe_validates_bootstrap_contract",
                 "swift_runtime_health_consumers_validate_bootstrap_contract",
                 "no_snapshot_file_first_live_boundary",
                 "delegation_worker_launch_owned",
+                "runtime_health_status_only_checks_stay_deleted",
                 "no_launcher_detect_available_fallback",
+                "no_terminal_switch_cases_inside_launcher",
                 "launcher_does_not_own_session_discovery_fallback",
                 "swift_tmux_session_discovery_stays_deleted",
                 "swift_tmux_pane_recovery_stays_deleted",
@@ -60,12 +63,12 @@ class StructuralPolicyTests(unittest.TestCase):
             all(entry["fact_kind"] in self.policy.ALLOWED_HARD_LAYER1_FACT_KINDS for entry in hard_layer1.values())
         )
 
-    def test_unsound_rules_are_explicitly_reclassified(self) -> None:
+    def test_rules_are_explicitly_classified(self) -> None:
         audit = {entry["rule"]: entry for entry in self.policy.build_rule_audit(self.config)}
 
-        self.assertEqual("move_to_layer2", audit["ghostty_applescript_adapter_exclusive"]["decision"])
-        self.assertEqual("move_to_layer2", audit["runtime_health_status_only_checks_stay_deleted"]["decision"])
-        self.assertEqual("move_to_layer2", audit["no_terminal_switch_cases_inside_launcher"]["decision"])
+        self.assertEqual("stay_in_layer1", audit["ghostty_applescript_adapter_exclusive"]["decision"])
+        self.assertEqual("stay_in_layer1", audit["runtime_health_status_only_checks_stay_deleted"]["decision"])
+        self.assertEqual("stay_in_layer1", audit["no_terminal_switch_cases_inside_launcher"]["decision"])
         self.assertEqual("advisory", audit["no_legacy_ghostty_keystroke_or_ax_tokens"]["decision"])
         self.assertEqual("low", audit["no_legacy_ghostty_keystroke_or_ax_tokens"]["confidence"])
 

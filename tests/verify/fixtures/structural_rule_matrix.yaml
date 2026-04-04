@@ -86,13 +86,13 @@ hud_hook_owns_runtime_routes:
         - /runtime/snapshot
 rust_runtime_health_probe_validates_bootstrap_contract:
   pass:
-    - path: core/capacitor-core/src/runtime_service/mod.rs
+    - path: core/capacitor-core/src/runtime/service/mod.rs
       language: rust
       category: rust_source
       references:
         - validate_bootstrap_contract
   fail:
-    - path: core/capacitor-core/src/runtime_service/mod.rs
+    - path: core/capacitor-core/src/runtime/service/mod.rs
       language: rust
       category: rust_source
 swift_runtime_health_consumers_validate_bootstrap_contract:
@@ -107,7 +107,7 @@ swift_runtime_health_consumers_validate_bootstrap_contract:
       category: swift_source
       references:
         - isCompatibleBootstrapService
-    - path: apps/swift/Sources/Capacitor/Models/AppState.swift
+    - path: apps/swift/Sources/Capacitor/Models/AppState+Lifecycle.swift
       language: swift
       category: swift_source
       references:

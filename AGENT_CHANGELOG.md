@@ -13,7 +13,7 @@ Use this file only for recent migration context and retired seams that still mat
 
 **State detection architecture** (`77ebe7f..279e4bc`): ADR-005 decided the authority-based multi-signal direction: hooks remain the nuanced-state authority, transcripts own existence and recovery, and shell CWD stays routing-only. Phase 1 shipped the first behavior change: hook repair no longer blocks startup, `HookStatus` now distinguishes `NotInstalled`, `PartiallyConfigured`, and `SettingsUnreadable`, and `isFirstRun` now keys off the persisted `~/.capacitor/setup_complete` marker instead of "no hook events seen." Only missing Claude CLI and explicit hook policy blocks still gate setup.
 
-Key files: `docs/architecture-decisions/005-authority-based-multi-signal-state-detection.md`, `core/capacitor-core/src/runtime_setup.rs`, `core/capacitor-core/src/lib.rs`, `core/capacitor-core/src/runtime_storage.rs`, `apps/swift/Sources/Capacitor/App.swift`, `apps/swift/Sources/Capacitor/Models/SetupReadinessCoordinator.swift`, `apps/swift/Sources/Capacitor/Models/SetupStepCatalog.swift`.
+Key files: `docs/architecture-decisions/005-authority-based-multi-signal-state-detection.md`, `core/capacitor-core/src/runtime/setup/`, `core/capacitor-core/src/lib.rs`, `core/capacitor-core/src/runtime/storage.rs`, `apps/swift/Sources/Capacitor/App.swift`, `apps/swift/Sources/Capacitor/Models/SetupReadinessCoordinator.swift`, `apps/swift/Sources/Capacitor/Models/SetupStepCatalog.swift`.
 
 ### 2026-03-24 — Checkpoint Bridge Shipped + Documentation Sweep
 

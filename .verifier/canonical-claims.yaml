@@ -53,9 +53,3 @@ claims:
   - claim_id: runtime_activation_shadow_path_stays_deleted
     description: The retired Rust runtime_activation shadow owner path stays deleted.
     enforcement: hard
-  - claim_id: hook_setup_contracts
-    description: Hook setup symlink and mixed-entry contracts remain executable and intact.
-    enforcement: hard
-  - claim_id: replay_parity_contracts
-    description: Replay corpus and replay parity expectations remain executable and internally consistent.
-    enforcement: hard

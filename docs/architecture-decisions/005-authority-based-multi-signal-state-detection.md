@@ -18,7 +18,7 @@
 | Hook lifecycle callbacks | Only live-state producer for `/runtime/snapshot` | `claude_hooks.rs` (18 events, 14 managed), `handle.rs`, `reduce/mod.rs` |
 | Transcript scanning | Fragmented metadata/discovery sidecar | `runtime_projects.rs`, `runtime_stats.rs`, `ProjectCreationCoordinator.swift`, `DelegationLoopManager.swift` |
 | Shell CWD | Routing and terminal attribution | `cwd.rs`, `reduce/mod.rs:177-221` |
-| Setup/gating | Hard-blocks app on hook install | `runtime_setup.rs`, `App.swift:269-323`, `SetupReadinessCoordinator.swift` |
+| Setup/gating | Hard-blocks app on hook install | `runtime/setup/`, `App.swift:269-323`, `SetupReadinessCoordinator.swift` |
 | Runtime service | Authenticated local HTTP boundary | `serve.rs`, port 7474, bearer token auth |
 | Hook health | Freshness-based monitor | `lib.rs:888-956`, `HookHealthStatus` enum |
 

@@ -86,7 +86,7 @@ fi
 echo ""
 
 echo -e "${YELLOW}[6/10] Formal Verification${NC}"
-if env VENV_DIR="$VENV_DIR" ./scripts/verify/verify.sh --repo-root "$PROJECT_ROOT" --layers 1,2,3 2>&1; then
+if env VENV_DIR="$VENV_DIR" ./scripts/verify/verify.sh --repo-root "$PROJECT_ROOT" --layers 1 2>&1; then
     echo -e "${GREEN}✓ Formal verification passed${NC}"
 else
     echo -e "${RED}✗ Formal verification failed${NC}"

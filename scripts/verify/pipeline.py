@@ -50,35 +50,19 @@ def safe_version(distribution: str) -> str | None:
         return None
 
 
-def apalache_version() -> str | None:
-    completed = subprocess.run(
-        ["apalache-mc", "version"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if completed.returncode != 0:
-        return None
-    output = completed.stdout.strip() or completed.stderr.strip()
-    return output.splitlines()[0] if output else None
-
-
 def build_tool_versions() -> dict[str, Any]:
     return {
         "python": ".".join(str(part) for part in sys.version_info[:3]),
         "pyyaml": safe_version("PyYAML"),
         "z3-solver": safe_version("z3-solver"),
-        "lizard": safe_version("lizard"),
         "tree-sitter": safe_version("tree-sitter"),
         "tree-sitter-language-pack": safe_version("tree-sitter-language-pack"),
-        "apalache": apalache_version(),
     }
 
 
 def build_config_hashes(
     *,
     structural_config: pathlib.Path,
-    elegance_config: pathlib.Path,
     canonical_claims: pathlib.Path,
     ledger: pathlib.Path,
     specs_dir: pathlib.Path,
@@ -86,7 +70,6 @@ def build_config_hashes(
 ) -> dict[str, Any]:
     config_hashes: dict[str, Any] = {
         "structural": sha256_text(read_text(structural_config)) if structural_config.exists() else None,
-        "elegance": sha256_text(read_text(elegance_config)) if elegance_config.exists() else None,
         "canonical_claims": sha256_text(read_text(canonical_claims)) if canonical_claims.exists() else None,
         "ledger": sha256_text(read_text(ledger)) if ledger.exists() else None,
         "specs": {},

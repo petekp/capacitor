@@ -1,6 +1,7 @@
 //! Verify manifest JSON matches Swift DelegationReviewManifest decoder expectations.
 
 use capacitor_core::method_runner::checkpoint_manifest::CheckpointManifest;
+use std::fs;
 
 #[test]
 fn manifest_matches_swift_decoder_expectations() {
@@ -55,4 +56,20 @@ fn manifest_matches_swift_decoder_expectations() {
     for t in &types {
         assert!(valid_types.contains(t), "invalid artifact_type: {}", t);
     }
+}
+
+#[test]
+fn manifest_writes_to_relay_root() {
+    let tmp = tempfile::tempdir().unwrap();
+    let relay_root = tmp.path().join("relay");
+
+    let manifest = CheckpointManifest::new("test-gate").summary("Test checkpoint");
+    manifest.write_to(&relay_root).unwrap();
+
+    let path = relay_root.join("adapter/review-manifest.json");
+    assert!(path.exists(), "manifest file must be written");
+
+    let content: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+    assert_eq!(content["milestone_id"], "test-gate");
 }

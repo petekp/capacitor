@@ -15,8 +15,6 @@ Your primary working areas:
 |------|---------|
 | `scripts/verify/verify.sh` | Main verification entry point |
 | `.verifier/` | Verifier config, specs, reports, and proof artifacts |
-| `.verifier/specs/*.py` | Behavioral spec declarations |
-| `.verifier/specs/proof_registry.yaml` | Proof bindings for behavioral specs |
 | `.verifier/reports/last-run.json` | Most recent verification report |
 | `scripts/ci/` | CI scripts (AX automation, runtime reliability, linting) |
 
@@ -26,9 +24,7 @@ Your primary working areas:
 # Formal verification
 ./scripts/verify/verify.sh --bootstrap        # Install verifier deps and scaffold .verifier/
 ./scripts/verify/verify.sh --layers 1         # Structural ownership/boundary checks
-./scripts/verify/verify.sh --layers 1,2       # Structural + behavioral specs
-./scripts/verify/verify.sh --grade            # Elegance audit only
-./scripts/verify/verify.sh --evolve           # Check canonical doc/spec drift
+./scripts/verify/verify.sh --layers 1 --evolve  # Check canonical doc/spec drift
 ./scripts/verify/verify.sh --changed-only     # Scope to changed files (auto-escalates if verifier itself changed)
 
 # AX automation
@@ -47,8 +43,6 @@ bash scripts/ci/runtime-reliability.sh ci     # Full runtime suite including AX 
 - **Fail-closed** — layer crashes, missing outputs, invalid configs, or missing proof artifacts write `status=error` JSON and never reuse stale green reports
 - **`--changed-only` auto-escalates** when files under `scripts/verify/` or `.verifier/` changed — reports `selected_scope="full_due_to_verifier_change"`
 - **Layer 1 ownership facts** prefer code-aware kinds: `identifier_ref` for symbol bans, `process_exec` for command execution, `static_http_route` for runtime routes
-- **Behavioral specs** are thin contract declarations; real proof bindings live in `proof_registry.yaml`
-- **Swift proofs** run through `scripts/verify/run-swift-test-proof.sh` so the Rust dylib is staged first
 - **Canonical docs** use `VERIFIER_CLAIM(<id>): ...` markers; `--evolve` checks for uncovered claims, missing claim IDs, and mismatched owner scopes
 
 ## Diagnostics

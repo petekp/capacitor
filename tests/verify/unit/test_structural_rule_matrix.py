@@ -27,6 +27,14 @@ def entry_list(values: list[str]) -> list[dict[str, object]]:
     return [{"value": value, "line": 1} for value in values]
 
 
+def fact_kind_for_rule(rule: dict[str, object]) -> str | None:
+    selector = rule.get("constraint", {})
+    fact_spec = selector.get("must_not") or selector.get("must") or selector.get("may")
+    if not fact_spec:
+        return None
+    return str(fact_spec).split(":", 1)[0]
+
+
 def make_module(payload: dict[str, object]) -> dict[str, object]:
     return {
         "path": payload["path"],
@@ -54,8 +62,22 @@ class StructuralRuleMatrixTests(unittest.TestCase):
         cls.matrix = yaml.safe_load((ROOT / "tests/verify/fixtures/structural_rule_matrix.yaml").read_text())
 
     def test_every_hard_layer1_rule_has_a_pass_and_fail_fixture(self) -> None:
+        all_rules = self.check_structural.flatten_rules(self.config)
+        rules_by_id = {rule["rule"]: rule for rule in all_rules}
         audit = self.policy.build_rule_audit(self.config)
-        hard_layer1 = sorted(entry["rule"] for entry in audit if entry["decision"] == "stay_in_layer1")
+        # Rules that use contains_regex read from disk and cannot be exercised
+        # with purely synthetic module fixtures.
+        disk_rules = {
+            entry["rule"]
+            for entry in audit
+            if entry["decision"] == "stay_in_layer1"
+            and fact_kind_for_rule(rules_by_id[entry["rule"]]) == "contains_regex"
+        }
+        hard_layer1 = sorted(
+            entry["rule"]
+            for entry in audit
+            if entry["decision"] == "stay_in_layer1" and entry["rule"] not in disk_rules
+        )
         self.assertEqual(hard_layer1, sorted(self.matrix))
 
     def test_rule_matrix_exercises_each_hard_layer1_rule(self) -> None:

@@ -80,13 +80,12 @@ class PipelineTests(unittest.TestCase):
             git_commit="deadbeef",
             git_dirty=False,
         )
-        layer1 = {"passed": True, "violations": [], "run_manifest": dict(expected)}
-        layer2 = {"passed": True, "violations": [], "run_manifest": {**expected, "facts_hash": "wrong"}}
+        layer1 = {"passed": True, "violations": [], "run_manifest": {**expected, "facts_hash": "wrong"}}
 
         report = self.pipeline.aggregate_run_report(
             repo_root=str(ROOT),
-            layers=["1", "2"],
-            layer_results={"1": layer1, "2": layer2},
+            layers=["1"],
+            layer_results={"1": layer1},
             expected_manifest=expected,
             generated_at="2026-03-16T00:00:05Z",
         )

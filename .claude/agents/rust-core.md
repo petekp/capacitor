@@ -15,15 +15,15 @@ Your primary working area is `core/capacitor-core/src/`. Key modules:
 |--------|---------|
 | `lib.rs` | CoreRuntime facade — the public API surface |
 | `domain/types.rs` | Runtime and domain types shared across modules |
-| `runtime_setup.rs` | Runtime initialization and validation |
+| `runtime/setup/` | Runtime initialization and validation |
 | `ingest/` | Event ingestion pipeline |
 | `observation/` | Observation processing |
 | `reduce/` | State reduction logic |
 | `query/` | Query interface for Swift-side reads |
 | `projection/` | Projection computations |
-| `runtime_contracts/` | Behavioral contracts the runtime must satisfy |
-| `runtime_service/` | Service layer for the authenticated local runtime |
-| `runtime_state/` | Mutable runtime state management |
+| `runtime/contracts/` | Behavioral contracts the runtime must satisfy |
+| `runtime/service/` | Service layer for the authenticated local runtime |
+| `runtime/state/` | Mutable runtime state management |
 | `storage/` | Persisted snapshot and artifact storage |
 
 ## Commands

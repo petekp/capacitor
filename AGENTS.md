@@ -22,8 +22,7 @@ cargo test -p capacitor-core --test delegation_contract  # Delegation contracts
 swift test --package-path apps/swift       # All Swift tests
 
 # Formal verification
-./scripts/verify/verify.sh --layers 1,2    # Structural + behavioral specs
-./scripts/verify/verify.sh --grade         # Elegance audit
+./scripts/verify/verify.sh --layers 1      # Structural ownership/boundary checks
 
 # Full rebuild + relaunch
 ./scripts/dev/restart-alpha-stable.sh      # DEFAULT: switch to alpha+stable, relaunch

@@ -112,13 +112,9 @@ boundaries:
 
   - rule: ghostty_applescript_adapter_exclusive
     description: Ghostty AppleScript must stay inside the Ghostty automation adapter and out of docs/UX surfaces.
-    layer: 2
     groups:
       - formal-verify
       - ghostty-applescript
-    proof:
-      kind: behavioral_spec
-      spec: GhosttyAutomationContracts
     constraint:
       files_matching:
         - apps/swift/Sources/Capacitor/**/*.swift
@@ -209,13 +205,9 @@ patterns:
 
   - rule: runtime_health_status_only_checks_stay_deleted
     description: Status-only runtime health checks must stay deleted from Swift lifecycle code.
-    layer: 2
     groups:
       - formal-verify
       - runtime-boundary
-    proof:
-      kind: behavioral_spec
-      spec: RuntimeBoundaryContracts
     source_docs:
       - docs/architecture-decisions/004-dedicated-local-runtime-service.md
     doc_patterns:
@@ -239,13 +231,9 @@ migration:
 
   - rule: no_terminal_switch_cases_inside_launcher
     description: TerminalLauncher should not embed per-terminal switch logic.
-    layer: 2
     groups:
       - formal-verify
       - terminal-routing-foundation
-    proof:
-      kind: behavioral_spec
-      spec: TerminalRoutingContracts
     constraint:
       files_matching:
         - apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift

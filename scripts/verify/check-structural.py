@@ -634,18 +634,6 @@ def _ledger_audit_violations(ledger_audit: dict[str, Any]) -> list[Violation]:
                 fix="Assign the rule to a canonical claim in .verifier/ledger.yaml.",
             )
         )
-    for spec_id in ledger_audit["orphaned_specs"]:
-        violations.append(
-            Violation(
-                layer="1",
-                rule="ledger_orphaned_spec",
-                path=None,
-                line=None,
-                message="Behavioral spec is not mapped to any canonical claim",
-                diagnosis=f"{spec_id} is not mapped in the verifier ledger.",
-                fix="Assign the behavioral spec to one or more canonical claims in .verifier/ledger.yaml.",
-            )
-        )
     return violations
 
 
@@ -665,11 +653,6 @@ def _run_ledger_audit(
         structural_config=config,
         canonical_claims=load_yaml(canonical_claims_path),
         ledger_config=load_yaml(ledger_path),
-        spec_ids=sorted(
-            path.stem
-            for path in specs_dir_path.glob("*.py")
-            if not path.name.startswith("_")
-        ),
         repo_root=repo_root,
     )
 

@@ -20,11 +20,6 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 printf '%s\n' "$*" >> "$PROJECT_ROOT/verify-invocations.log"
 
-if [[ "$*" == *"--layers 1,2,3"* && "$*" == *"--changed-only"* ]]; then
-  echo "Layer 2 does not support path-scoped runs. Use --layers 1,3 or drop --changed-only." >&2
-  exit 2
-fi
-
 if [[ "$*" == *"--json"* ]]; then
   printf '{"layer_results":{"1":{"status":"failed"}}}\n'
   exit 0
@@ -69,13 +64,11 @@ copy_hook_installer() {
     run env TEST_DIR="$TEST_DIR" PATH="$TEST_DIR/fake-bin:/usr/bin:/bin:/usr/sbin:/sbin" /bin/bash -c 'cd "$TEST_DIR" && ./scripts/dev/pre-commit'
     [ "$status" -eq 1 ]
     [[ "$output" == *"Formal verification failed"* ]]
-    [[ "$output" != *"Layer 2 does not support path-scoped runs"* ]]
-
-    run grep -c -- '--layers 1,3 --changed-only' "$TEST_DIR/verify-invocations.log"
+    run grep -c -- '--layers 1 --changed-only' "$TEST_DIR/verify-invocations.log"
     [ "$status" -eq 0 ]
     [ "$output" = "2" ]
 
-    run grep -c -- '--layers 1,3 --changed-only --json' "$TEST_DIR/verify-invocations.log"
+    run grep -c -- '--layers 1 --changed-only --json' "$TEST_DIR/verify-invocations.log"
     [ "$status" -eq 0 ]
     [ "$output" = "1" ]
 }

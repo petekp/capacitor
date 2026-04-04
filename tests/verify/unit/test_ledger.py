@@ -30,22 +30,17 @@ class LedgerTests(unittest.TestCase):
         cls.structural = yaml.safe_load((ROOT / ".verifier/structural.yaml").read_text())
         cls.claims = yaml.safe_load((ROOT / ".verifier/canonical-claims.yaml").read_text())
         cls.ledger_config = yaml.safe_load((ROOT / ".verifier/ledger.yaml").read_text())
-        cls.spec_ids = sorted(
-            path.stem for path in (ROOT / ".verifier/specs").glob("*.py") if not path.name.startswith("_")
-        )
 
     def test_hard_claims_have_dedicated_proof_pairs(self) -> None:
         audit = self.ledger.audit_ledger(
             structural_config=self.structural,
             canonical_claims=self.claims,
             ledger_config=self.ledger_config,
-            spec_ids=self.spec_ids,
             repo_root=ROOT,
         )
 
         self.assertEqual([], audit["missing_claims"])
         self.assertEqual([], audit["orphaned_rules"])
-        self.assertEqual([], audit["orphaned_specs"])
         self.assertEqual([], audit["missing_positive_fixtures"])
         self.assertEqual([], audit["missing_negative_fixtures"])
         self.assertEqual([], audit["missing_fixture_artifacts"])
@@ -67,7 +62,6 @@ class LedgerTests(unittest.TestCase):
             structural_config=structural,
             canonical_claims=claims,
             ledger_config=ledger,
-            spec_ids=[],
             repo_root=ROOT,
         )
 
@@ -90,7 +84,6 @@ class LedgerTests(unittest.TestCase):
             structural_config=structural,
             canonical_claims=claims,
             ledger_config=ledger,
-            spec_ids=[],
             repo_root=ROOT,
         )
 

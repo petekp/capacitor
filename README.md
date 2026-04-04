@@ -59,9 +59,7 @@ Architecture docs for coding agents start at `.claude/docs/architecture-primer.m
 ```bash
 ./scripts/verify/verify.sh --bootstrap
 ./scripts/verify/verify.sh --layers 1
-./scripts/verify/verify.sh --layers 1,2
-./scripts/verify/verify.sh --grade
-./scripts/verify/verify.sh --evolve
+./scripts/verify/verify.sh --layers 1 --evolve
 ```
 
 Verifier specs and policy live under `.verifier/`. Cached facts and reports are generated locally under `.verifier/facts/` and `.verifier/reports/`.

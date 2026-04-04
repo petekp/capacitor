@@ -35,8 +35,6 @@ cargo test                        # Test
 # Formal verification
 ./scripts/verify/verify.sh --bootstrap   # Install verifier deps and scaffold .verifier/
 ./scripts/verify/verify.sh --layers 1    # Structural ownership/boundary checks
-./scripts/verify/verify.sh --layers 1,2  # Structural + behavioral specs
-./scripts/verify/verify.sh --grade       # Elegance audit only
 ./scripts/verify/verify.sh --layers 1 --evolve  # Check canonical doc/spec drift
 ./scripts/dev/run-tests.sh               # Full local test pass (includes verifier self-tests)
 
@@ -60,7 +58,6 @@ bash scripts/ci/runtime-reliability.sh ci    # Includes AX verifier lane in the 
   - `identifier_ref` for symbol bans that must ignore comments/prose
   - `process_exec` for command execution ownership
   - `static_http_route` for statically derivable runtime routes
-- Behavioral specs in `.verifier/specs/*.py` are now thin contract declarations. Real proof bindings live in `.verifier/specs/proof_registry.yaml`, and Swift proofs should run through `scripts/verify/run-swift-test-proof.sh` so the Rust dylib is staged before `swift test`.
 - Canonical verifier docs use `VERIFIER_CLAIM(<id>): ...` markers, and structural rules must reference those ids with `claim_ids`. `--evolve` now fails only for:
   - uncovered canonical claim ids
   - rules pointing at missing claim ids
@@ -70,7 +67,7 @@ bash scripts/ci/runtime-reliability.sh ci    # Includes AX verifier lane in the 
 
 ```
 capacitor/
-├── core/capacitor-core/src/      # Rust runtime: domain/, ingest/, observation/, reduce/, query/, projection/, runtime_contracts/, runtime_service/, runtime_state/, storage/
+├── core/capacitor-core/src/      # Rust runtime: domain/, ingest/, observation/, reduce/, query/, projection/, runtime/, storage/
 ├── core/hud-hook/src/            # Runtime-service shell plus hook/shell adapters
 ├── apps/swift/Sources/Capacitor/ # Swift app shell, projection/stabilization, lifecycle coordinators, runtime client, and macOS integrations
 └── .claude/docs/                 # Local engineering runbooks
@@ -91,7 +88,7 @@ capacitor/
 |---------|----------|
 | CoreRuntime facade | `core/capacitor-core/src/lib.rs` |
 | Runtime/domain types | `core/capacitor-core/src/domain/types.rs` |
-| Runtime setup + validation | `core/capacitor-core/src/runtime_setup.rs` |
+| Runtime setup + validation | `core/capacitor-core/src/runtime/setup/` |
 | App composition root | `apps/swift/Sources/Capacitor/Models/AppState.swift` |
 | Runtime service client | `apps/swift/Sources/Capacitor/Models/RuntimeClient.swift` |
 | Runtime service supervision | `apps/swift/Sources/Capacitor/Models/HookServerManager.swift` |

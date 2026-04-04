@@ -95,7 +95,7 @@ jobs:
         run: ./scripts/verify/verify.sh --bootstrap
 
       - name: Run formal verification
-        run: ./scripts/verify/verify.sh --layers 1,2,3 --json
+        run: ./scripts/verify/verify.sh --layers 1 --json
 
       - name: Upload verifier report artifact
         if: failure()
