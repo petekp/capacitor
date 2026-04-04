@@ -6,6 +6,9 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
+use crate::common::fixtures::{
+    crate_root, method_fixture_path, read_method_fixture, read_method_library_file,
+};
 use capacitor_core::method_runner::adapters::{
     AdapterError, FakeInteractiveIO, FakePromptBuilder, FakeWorkerDispatcher,
 };
@@ -23,19 +26,6 @@ use capacitor_core::method_runner::storage::MethodRunPaths;
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-fn crate_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-}
-
-fn fixture_path(relative: &str) -> PathBuf {
-    crate_root().join(relative)
-}
-
-fn load_fixture_yaml(relative: &str) -> String {
-    std::fs::read_to_string(fixture_path(relative))
-        .unwrap_or_else(|e| panic!("failed to read fixture {relative}: {e}"))
-}
 
 fn temp_exec_root(test_name: &str) -> PathBuf {
     let dir = std::env::temp_dir()
@@ -189,7 +179,7 @@ method:
 /// they don't carry dispatch config that would imply a relay root.
 #[test]
 fn c3_synthesis_steps_have_no_dispatch_config() {
-    let yaml = load_fixture_yaml("../../methods/library/spec-hardening.yaml");
+    let yaml = read_method_library_file("spec-hardening.yaml");
     let normalized = Normalizer::normalize(&yaml).expect("spec-hardening should normalize");
 
     let mut found_synthesis = false;
@@ -450,7 +440,7 @@ fn c6_transactional_handoff_ingestion() {
 /// while method-level outputs use locators (from: phase.step.output).
 #[test]
 fn c8_output_namespace_safety() {
-    let yaml = load_fixture_yaml("../../methods/fixtures/minimal-dispatch.yaml");
+    let yaml = read_method_fixture("minimal-dispatch.yaml");
     let normalized = Normalizer::normalize(&yaml).expect("should normalize");
 
     // Step outputs should be simple local names (no dots)
@@ -555,7 +545,7 @@ method:
 /// Normalize pipeline-blocked.yaml — must succeed (parse-only is valid).
 #[test]
 fn c9_pipeline_execute_normalizes_successfully() {
-    let yaml = load_fixture_yaml("../../methods/fixtures/pipeline-blocked.yaml");
+    let yaml = read_method_fixture("pipeline-blocked.yaml");
     let normalized = Normalizer::normalize(&yaml);
     assert!(
         normalized.is_ok(),
@@ -577,7 +567,7 @@ fn c9_pipeline_execute_normalizes_successfully() {
 #[test]
 fn c9_pipeline_execute_blocked_at_runtime() {
     let root = temp_exec_root("c9-pipeline-blocked");
-    let fixture = fixture_path("../../methods/fixtures/pipeline-blocked.yaml");
+    let fixture = method_fixture_path("pipeline-blocked.yaml");
 
     let source = capacitor_core::method_runner::definition::DefinitionSource {
         definition_path: fixture,

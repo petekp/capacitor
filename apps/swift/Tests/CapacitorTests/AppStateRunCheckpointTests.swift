@@ -8,8 +8,8 @@ final class AppStateRunCheckpointTests: XCTestCase {
         let appState = AppState()
         appState.cancelRuntimeAutomationForTesting()
         let project = makeProject(name: "Capacitor", path: "/Users/petepetrash/Code/capacitor")
-        appState.projects = [project]
-        appState.reviewWindowTarget = AppState.ReviewWindowTarget(
+        appState.projectState.projects = [project]
+        appState.uiState.reviewWindowTarget = AppState.ReviewWindowTarget(
             projectPath: project.path,
             workerID: "worker-existing",
         )
@@ -30,7 +30,7 @@ final class AppStateRunCheckpointTests: XCTestCase {
         )
 
         XCTAssertEqual(
-            appState.runCheckpointWindowTarget,
+            appState.uiState.runCheckpointWindowTarget,
             AppState.RunCheckpointWindowTarget(
                 projectPath: project.path,
                 runID: run.id,
@@ -38,7 +38,7 @@ final class AppStateRunCheckpointTests: XCTestCase {
             ),
         )
         XCTAssertEqual(
-            appState.reviewWindowTarget,
+            appState.uiState.reviewWindowTarget,
             AppState.ReviewWindowTarget(
                 projectPath: project.path,
                 workerID: "worker-existing",
@@ -51,7 +51,7 @@ final class AppStateRunCheckpointTests: XCTestCase {
         let appState = AppState()
         appState.cancelRuntimeAutomationForTesting()
         let project = makeProject(name: "Capacitor", path: "/Users/petepetrash/Code/capacitor")
-        appState.projects = [project]
+        appState.projectState.projects = [project]
         appState.setRuntimeSnapshotGenerationForTesting(1)
 
         let newerRun = makeRun(
@@ -75,7 +75,7 @@ final class AppStateRunCheckpointTests: XCTestCase {
         )
 
         XCTAssertEqual(
-            appState.runCheckpointWindowTarget,
+            appState.uiState.runCheckpointWindowTarget,
             AppState.RunCheckpointWindowTarget(
                 projectPath: project.path,
                 runID: olderRun.id,
@@ -88,7 +88,7 @@ final class AppStateRunCheckpointTests: XCTestCase {
         let appState = AppState()
         appState.cancelRuntimeAutomationForTesting()
         let project = makeProject(name: "Capacitor", path: "/Users/petepetrash/Code/capacitor")
-        appState.projects = [project]
+        appState.projectState.projects = [project]
         appState.setRuntimeSnapshotGenerationForTesting(1)
 
         let olderRun = makeRun(
@@ -112,7 +112,7 @@ final class AppStateRunCheckpointTests: XCTestCase {
         )
 
         XCTAssertEqual(
-            appState.runCheckpointWindowTarget,
+            appState.uiState.runCheckpointWindowTarget,
             AppState.RunCheckpointWindowTarget(
                 projectPath: project.path,
                 runID: olderRun.id,
@@ -134,7 +134,7 @@ final class AppStateRunCheckpointTests: XCTestCase {
         )
 
         XCTAssertEqual(
-            appState.runCheckpointWindowTarget,
+            appState.uiState.runCheckpointWindowTarget,
             AppState.RunCheckpointWindowTarget(
                 projectPath: project.path,
                 runID: newerRun.id,

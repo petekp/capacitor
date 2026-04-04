@@ -6,6 +6,10 @@
 
 use std::path::PathBuf;
 
+use crate::common::fixtures::{
+    approved_interactive_io as default_fake_io, interactive_only_path, pipeline_blocked_path,
+    synthesis_only_path,
+};
 use capacitor_core::method_runner::adapters::{
     FakeInteractiveIO, FakePromptBuilder, FakeWorkerDispatcher,
 };
@@ -15,28 +19,8 @@ use capacitor_core::method_runner::executor::{execute_run, RunError};
 use capacitor_core::method_runner::state::{rebuild_state, RunStatus};
 use capacitor_core::method_runner::storage::MethodRunPaths;
 
-fn crate_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-}
-
-fn synthesis_only_path() -> PathBuf {
-    crate_root().join("../../methods/fixtures/synthesis-only.yaml")
-}
-
-fn interactive_only_path() -> PathBuf {
-    crate_root().join("../../methods/fixtures/interactive-only.yaml")
-}
-
 fn mixed_actions_path() -> PathBuf {
-    crate_root().join("../../methods/fixtures/mixed-actions.yaml")
-}
-
-fn pipeline_blocked_path() -> PathBuf {
-    crate_root().join("../../methods/fixtures/pipeline-blocked.yaml")
-}
-
-fn default_fake_io() -> FakeInteractiveIO {
-    FakeInteractiveIO::new("approved")
+    crate::common::fixtures::method_fixture_path("mixed-actions.yaml")
 }
 
 // ============================================================================

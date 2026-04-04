@@ -39,12 +39,12 @@ struct ProjectsView: View {
     @State private var rowOrderTracker = RowOrderTracker()
 
     private var nonPausedProjects: [Project] {
-        appState.projects.filter { !appState.isManuallyDormant($0) }
+        appState.projectState.projects.filter { !appState.isManuallyDormant($0) }
     }
 
     private var pausedProjects: [Project] {
-        let paused = appState.projects.filter { appState.isManuallyDormant($0) }
-        return ProjectOrdering.orderedProjects(paused, customOrder: appState.projectOrder)
+        let paused = appState.projectState.projects.filter { appState.isManuallyDormant($0) }
+        return ProjectOrdering.orderedProjects(paused, customOrder: appState.projectState.projectOrder)
     }
 
     var body: some View {
@@ -86,13 +86,13 @@ struct ProjectsView: View {
         // Empty state: uses ScrollView with gradient mask for visual
         // consistency with the project list. Content flows naturally
         // (no .frame(maxHeight: .infinity) to avoid layout oscillation).
-        if !appState.isLoading, appState.projects.isEmpty {
+        if !appState.uiState.isLoading, appState.projectState.projects.isEmpty {
             ScrollView {
                 VStack(spacing: 0) {
                     ProjectListDiagnosticsSection()
                         .padding(.horizontal, listHorizontalPadding)
                         .padding(.bottom, 6)
-                    if let diagnostic = appState.hookDiagnostic, diagnostic.shouldShowSetupCard {
+                    if let diagnostic = appState.uiState.hookDiagnostic, diagnostic.shouldShowSetupCard {
                         SetupStatusCard(
                             diagnostic: diagnostic,
                             onFix: { appState.fixHooks() },
@@ -125,7 +125,7 @@ struct ProjectsView: View {
                         ProjectListDiagnosticsSection()
                             .padding(.bottom, 6)
                         // Setup status card - show regardless of project state
-                        if let diagnostic = appState.hookDiagnostic, diagnostic.shouldShowSetupCard {
+                        if let diagnostic = appState.uiState.hookDiagnostic, diagnostic.shouldShowSetupCard {
                             SetupStatusCard(
                                 diagnostic: diagnostic,
                                 onFix: { appState.fixHooks() },
@@ -138,7 +138,7 @@ struct ProjectsView: View {
                             .padding(.bottom, 4)
                         }
 
-                        if appState.isLoading {
+                        if appState.uiState.isLoading {
                             VStack(spacing: 8) {
                                 SkeletonCard()
                                 SkeletonCard()
@@ -148,7 +148,7 @@ struct ProjectsView: View {
                         } else {
                             let grouped = ProjectOrdering.orderedGroupedProjects(
                                 nonPausedProjects,
-                                order: appState.projectOrder,
+                                order: appState.projectState.projectOrder,
                                 sessionStates: sessionStates,
                             )
                             let activePaths = Set(grouped.active.map(\.path))
@@ -156,7 +156,7 @@ struct ProjectsView: View {
                             let reorderDirections = rowOrderTracker.snapshotAndDirections(for: rows.map(\.path))
                             let hasVisibleProjects = !grouped.active.isEmpty || !grouped.idle.isEmpty
 
-                            if appState.isProjectCreationEnabled {
+                            if appState.featureState.isProjectCreationEnabled {
                                 ActivityPanel()
                             }
 
@@ -269,12 +269,12 @@ struct ProjectsView: View {
                         }
                 }
             }
-            .onChange(of: appState.reviewWindowTarget?.workerID) { oldValue, newValue in
+            .onChange(of: appState.uiState.reviewWindowTarget?.workerID) { oldValue, newValue in
                 if oldValue == nil, newValue != nil {
                     openWindow(id: "delegation-review")
                 }
             }
-            .onChange(of: appState.runCheckpointWindowTarget?.checkpointID) { oldValue, newValue in
+            .onChange(of: appState.uiState.runCheckpointWindowTarget?.checkpointID) { oldValue, newValue in
                 if oldValue == nil, newValue != nil {
                     openWindow(id: "run-checkpoint-review")
                 }
@@ -293,8 +293,8 @@ struct ProjectsView: View {
         groupProjects: [Project],
         reorderZIndex: Double,
     ) -> some View {
-        let canShowDetails = appState.isProjectDetailsEnabled
-        let canCaptureIdeas = appState.isIdeaCaptureEnabled
+        let canShowDetails = appState.featureState.isProjectDetailsEnabled
+        let canCaptureIdeas = appState.featureState.isIdeaCaptureEnabled
 
         ProjectCardView(
             project: project,
@@ -345,7 +345,7 @@ struct ProjectsView: View {
             onTap: {
                 appState.launchTerminal(for: project)
             },
-            onInfoTap: appState.isProjectDetailsEnabled ? { appState.showProjectDetail(project) } : nil,
+            onInfoTap: appState.featureState.isProjectDetailsEnabled ? { appState.showProjectDetail(project) } : nil,
             onMoveToRecent: {
                 withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
                     appState.moveToRecent(project)
@@ -367,13 +367,13 @@ struct ProjectsView: View {
 
     #if DEBUG
         private func debugRenderedProjects(sessionStates: [String: ProjectSessionState]) -> [Project] {
-            guard !appState.isLoading, !appState.projects.isEmpty else {
+            guard !appState.uiState.isLoading, !appState.projectState.projects.isEmpty else {
                 return []
             }
 
             let grouped = ProjectOrdering.orderedGroupedProjects(
                 nonPausedProjects,
-                order: appState.projectOrder,
+                order: appState.projectState.projectOrder,
                 sessionStates: sessionStates,
             )
             return grouped.active + grouped.idle
@@ -785,7 +785,7 @@ struct EmptyProjectsView: View {
             .opacity(appeared || reduceMotion ? 1 : 0)
             .offset(y: appeared || reduceMotion ? 0 : 8)
 
-            if !appState.suggestedProjects.isEmpty {
+            if !appState.projectState.suggestedProjects.isEmpty {
                 suggestedProjectsList
                     .opacity(appeared || reduceMotion ? 1 : 0)
                     .offset(y: appeared || reduceMotion ? 0 : 10)
@@ -803,7 +803,7 @@ struct EmptyProjectsView: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Drop zone for project folders")
         .onAppear {
-            if appState.suggestedProjects.isEmpty {
+            if appState.projectState.suggestedProjects.isEmpty {
                 appState.refreshSuggestedProjects()
             }
             if !reduceMotion {
@@ -838,7 +838,7 @@ struct EmptyProjectsView: View {
 
     private var suggestedProjectsList: some View {
         VStack(spacing: 2) {
-            ForEach(appState.suggestedProjects, id: \.path) { suggestion in
+            ForEach(appState.projectState.suggestedProjects, id: \.path) { suggestion in
                 suggestionRow(suggestion)
             }
         }
@@ -846,14 +846,14 @@ struct EmptyProjectsView: View {
     }
 
     private func suggestionRow(_ suggestion: SuggestedProject) -> some View {
-        let isSelected = appState.selectedSuggestedPaths.contains(suggestion.path)
+        let isSelected = appState.projectState.selectedSuggestedPaths.contains(suggestion.path)
         let isHovered = hoveredPath == suggestion.path
         return Button {
             withAnimation(.easeOut(duration: 0.15)) {
                 if isSelected {
-                    appState.selectedSuggestedPaths.remove(suggestion.path)
+                    appState.projectState.selectedSuggestedPaths.remove(suggestion.path)
                 } else {
-                    appState.selectedSuggestedPaths.insert(suggestion.path)
+                    appState.projectState.selectedSuggestedPaths.insert(suggestion.path)
                 }
             }
         } label: {

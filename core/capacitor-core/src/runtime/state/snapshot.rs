@@ -4,7 +4,7 @@
 //! runtime service rather than reading persisted artifacts directly.
 
 use crate::domain::AppSnapshot;
-use crate::runtime_service::{RuntimeServiceEndpoint, RUNTIME_SERVICE_DEFAULT_PORT};
+use crate::runtime::service::{RuntimeServiceEndpoint, RUNTIME_SERVICE_DEFAULT_PORT};
 use serde::Deserialize;
 
 const ENABLE_ENV: &str = "CAPACITOR_CORE_ENABLED";
@@ -36,7 +36,7 @@ pub struct RuntimeSessionsSnapshot {
 }
 
 impl RuntimeSessionsSnapshot {
-    pub fn sessions(&self) -> &[RuntimeSessionRecord] {
+    pub(crate) fn sessions(&self) -> &[RuntimeSessionRecord] {
         &self.sessions
     }
 
@@ -320,7 +320,7 @@ mod tests {
         env_lock as shared_env_lock, MockRuntimeService, MockRuntimeServiceRoute,
     };
     use super::*;
-    use crate::runtime_service::{RUNTIME_SERVICE_PORT_ENV, RUNTIME_SERVICE_TOKEN_ENV};
+    use crate::runtime::service::{RUNTIME_SERVICE_PORT_ENV, RUNTIME_SERVICE_TOKEN_ENV};
 
     // Legacy env sentinel used to prove live runtime reads ignore the old
     // artifact-path boundary, even when a stale value is still present.

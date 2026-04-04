@@ -6,7 +6,7 @@ use crate::domain::{
     DelegationStatus, MutateDelegationCommand, MutationOutcome, ProjectDelegationState,
 };
 
-use super::trimmed_value;
+use super::utils::trimmed_value;
 
 /// Apply a delegation mutation, dispatching to the appropriate variant handler.
 pub(crate) fn apply_delegation_mutation(

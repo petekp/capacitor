@@ -5,12 +5,12 @@
 //! - Building project metadata from paths
 //! - Loading pinned projects with statistics
 
-use crate::runtime_config::{
+use crate::runtime::config::{
     load_hud_config_with_storage, load_stats_cache_with_storage, save_stats_cache_with_storage,
 };
+use crate::runtime::storage::StorageConfig;
+use crate::runtime::types::{Project, StatsCache};
 use crate::runtime_stats::compute_project_stats;
-use crate::runtime_storage::StorageConfig;
-use crate::runtime_types::{Project, StatsCache};
 use fs_err as fs;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
@@ -38,14 +38,14 @@ const PROJECT_INDICATORS: &[&str] = &[
 
 /// Checks if a directory contains project indicators.
 #[must_use]
-pub fn has_project_indicators(project_path: &Path) -> bool {
+pub(crate) fn has_project_indicators(project_path: &Path) -> bool {
     PROJECT_INDICATORS
         .iter()
         .any(|indicator| project_path.join(indicator).exists())
 }
 
 /// Formats a SystemTime as a human-readable relative time string.
-pub fn format_relative_time(system_time: SystemTime) -> String {
+pub(crate) fn format_relative_time(system_time: SystemTime) -> String {
     let now = SystemTime::now();
     let duration = now.duration_since(system_time).unwrap_or_default();
     let secs = duration.as_secs();
@@ -84,7 +84,7 @@ pub fn format_relative_time(system_time: SystemTime) -> String {
 }
 
 /// Extracts a preview of a CLAUDE.md file content.
-pub fn get_claude_md_preview(path: &Path) -> Option<String> {
+pub(crate) fn get_claude_md_preview(path: &Path) -> Option<String> {
     let content = fs::read_to_string(path).ok()?;
     let preview: String = content.chars().take(200).collect();
     if content.len() > 200 {
@@ -95,7 +95,7 @@ pub fn get_claude_md_preview(path: &Path) -> Option<String> {
 }
 
 /// Counts JSONL session files in a project directory.
-pub fn count_tasks_in_project(claude_projects_dir: &Path, encoded_name: &str) -> u32 {
+pub(crate) fn count_tasks_in_project(claude_projects_dir: &Path, encoded_name: &str) -> u32 {
     let project_dir = claude_projects_dir.join(encoded_name);
     if !project_dir.exists() {
         return 0;
@@ -145,12 +145,12 @@ fn latest_session_activity_mtime(claude_project_dir: &Path) -> Option<SystemTime
 }
 
 /// Encodes a path for use as a Claude projects directory name.
-pub fn encode_project_path(path: &str) -> String {
+pub(crate) fn encode_project_path(path: &str) -> String {
     path.replace('/', "-")
 }
 
 /// Attempts to resolve an encoded project path back to a real path.
-pub fn try_resolve_encoded_path(encoded_name: &str) -> Option<String> {
+pub(crate) fn try_resolve_encoded_path(encoded_name: &str) -> Option<String> {
     if encoded_name.is_empty() || !encoded_name.starts_with('-') {
         return None;
     }
@@ -179,7 +179,7 @@ pub fn try_resolve_encoded_path(encoded_name: &str) -> Option<String> {
 }
 
 /// Builds a Project from a filesystem path.
-pub fn build_project_from_path(
+pub(crate) fn build_project_from_path(
     path: &str,
     claude_dir: &Path,
     stats_cache: &mut StatsCache,
@@ -268,7 +268,7 @@ fn build_missing_project(path: &str) -> Project {
     }
 }
 
-pub fn load_projects_with_storage(storage: &StorageConfig) -> Result<Vec<Project>, String> {
+pub(crate) fn load_projects_with_storage(storage: &StorageConfig) -> Result<Vec<Project>, String> {
     let claude_dir = storage.claude_root();
     let config = load_hud_config_with_storage(storage);
     let projects_dir = claude_dir.join("projects");
@@ -300,7 +300,7 @@ pub fn load_projects_with_storage(storage: &StorageConfig) -> Result<Vec<Project
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::runtime_types::HudConfig;
+    use crate::runtime::types::HudConfig;
     use crate::save_hud_config_with_storage;
     use std::time::Duration;
     use tempfile::tempdir;

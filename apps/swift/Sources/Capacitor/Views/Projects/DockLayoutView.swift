@@ -16,7 +16,7 @@ struct DockLayoutView: View {
     }
 
     private var nonPausedProjects: [Project] {
-        appState.projects.filter { !appState.isManuallyDormant($0) }
+        appState.projectState.projects.filter { !appState.isManuallyDormant($0) }
     }
 
     var body: some View {
@@ -32,7 +32,7 @@ struct DockLayoutView: View {
         let pageIndicatorSpacing = glassConfig.dockPageIndicatorSpacingRounded
         let grouped = ProjectOrdering.orderedGroupedProjects(
             nonPausedProjects,
-            order: appState.projectOrder,
+            order: appState.projectState.projectOrder,
             sessionStates: sessionStates,
         )
         let activePaths = Set(grouped.active.map(\.path))
@@ -107,12 +107,12 @@ struct DockLayoutView: View {
         .background(floatingMode ? Color.clear : Color.hudBackground)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Project dock")
-        .onChange(of: appState.reviewWindowTarget?.workerID) { oldValue, newValue in
+        .onChange(of: appState.uiState.reviewWindowTarget?.workerID) { oldValue, newValue in
             if oldValue == nil, newValue != nil {
                 openWindow(id: "delegation-review")
             }
         }
-        .onChange(of: appState.runCheckpointWindowTarget?.checkpointID) { oldValue, newValue in
+        .onChange(of: appState.uiState.runCheckpointWindowTarget?.checkpointID) { oldValue, newValue in
             if oldValue == nil, newValue != nil {
                 openWindow(id: "run-checkpoint-review")
             }
@@ -163,8 +163,8 @@ struct DockLayoutView: View {
         grouped: (active: [Project], idle: [Project]),
     ) -> some View {
         let isActive = appState.activeProjectPath == project.path
-        let canShowDetails = appState.isProjectDetailsEnabled
-        let canCaptureIdeas = appState.isIdeaCaptureEnabled
+        let canShowDetails = appState.featureState.isProjectDetailsEnabled
+        let canCaptureIdeas = appState.featureState.isIdeaCaptureEnabled
         let group: ActivityGroup = activePaths.contains(project.path) ? .active : .idle
         let groupProjects = group == .active ? grouped.active : grouped.idle
         let activeRunState = appState.activeRun(for: project)

@@ -64,3 +64,10 @@ tests/verify/fixtures/*/.verifier/
 # Python bytecode caches
 __pycache__/
 *.pyc
+
+# Circuit ratchet artifacts
+.circuitry/
+reports/
+
+# Temporary build artifacts
+vischeck_reexport

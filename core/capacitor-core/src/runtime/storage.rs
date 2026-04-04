@@ -57,13 +57,13 @@ impl StorageConfig {
     }
 
     /// Returns the root directory for Capacitor data.
-    pub fn root(&self) -> &Path {
+    pub(crate) fn root(&self) -> &Path {
         &self.root
     }
 
     /// Returns the root directory for Claude Code data.
     /// Used for reading Claude artifacts (JSONL session files, plugins, etc.)
-    pub fn claude_root(&self) -> &Path {
+    pub(crate) fn claude_root(&self) -> &Path {
         &self.claude_root
     }
 
@@ -72,7 +72,7 @@ impl StorageConfig {
     // ─────────────────────────────────────────────────────────────────────────────
 
     /// Path to projects.json (tracked projects list).
-    pub fn projects_file(&self) -> PathBuf {
+    pub(crate) fn projects_file(&self) -> PathBuf {
         self.root.join("projects.json")
     }
 
@@ -87,7 +87,7 @@ impl StorageConfig {
     }
 
     /// Path to stats-cache.json (token usage cache).
-    pub fn stats_cache_file(&self) -> PathBuf {
+    pub(crate) fn stats_cache_file(&self) -> PathBuf {
         self.root.join("stats-cache.json")
     }
 
@@ -97,7 +97,7 @@ impl StorageConfig {
     }
 
     /// Path to the persisted setup-complete marker.
-    pub fn setup_marker_path(&self) -> PathBuf {
+    pub(crate) fn setup_marker_path(&self) -> PathBuf {
         self.root.join("setup_complete")
     }
 
@@ -121,20 +121,20 @@ impl StorageConfig {
 
     /// Path to a project's data directory.
     /// Example: ~/.capacitor/projects/p2_%2FUsers%2Fpete%2FCode%2Fmy-project/
-    pub fn project_data_dir(&self, project_path: &str) -> PathBuf {
+    pub(crate) fn project_data_dir(&self, project_path: &str) -> PathBuf {
         let encoded = Self::encode_path(project_path);
         self.root.join("projects").join(encoded)
     }
 
     /// Path to a project's ideas file.
     /// Example: ~/.capacitor/projects/p2_%2FUsers%2Fpete%2FCode%2Fmy-project/ideas.md
-    pub fn project_ideas_file(&self, project_path: &str) -> PathBuf {
+    pub(crate) fn project_ideas_file(&self, project_path: &str) -> PathBuf {
         self.project_data_dir(project_path).join("ideas.md")
     }
 
     /// Path to a project's idea order file.
     /// Example: ~/.capacitor/projects/p2_%2FUsers%2Fpete%2FCode%2Fmy-project/ideas-order.json
-    pub fn project_order_file(&self, project_path: &str) -> PathBuf {
+    pub(crate) fn project_order_file(&self, project_path: &str) -> PathBuf {
         self.project_data_dir(project_path).join("ideas-order.json")
     }
 
@@ -154,7 +154,7 @@ impl StorageConfig {
     }
 
     /// Path to Claude Code's settings file.
-    pub fn claude_settings_file(&self) -> PathBuf {
+    pub(crate) fn claude_settings_file(&self) -> PathBuf {
         self.claude_root.join("settings.json")
     }
 
@@ -165,7 +165,7 @@ impl StorageConfig {
     /// Encodes a filesystem path for use as a directory name.
     /// Uses a lossless, percent-encoded scheme with a versioned prefix.
     /// Example: `/Users/pete/Code/my-project` -> `p2_%2FUsers%2Fpete%2FCode%2Fmy-project`
-    pub fn encode_path(path: &str) -> String {
+    pub(crate) fn encode_path(path: &str) -> String {
         Self::encode_path_v2(path)
     }
 

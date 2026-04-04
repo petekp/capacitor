@@ -12,7 +12,7 @@ pub trait SnapshotStorage: Send + Sync {
 }
 
 #[derive(Default)]
-pub struct InMemorySnapshotStorage {
+pub(crate) struct InMemorySnapshotStorage {
     snapshot: std::sync::Mutex<Option<AppSnapshot>>,
 }
 
@@ -35,7 +35,7 @@ impl SnapshotStorage for InMemorySnapshotStorage {
     }
 }
 
-pub struct JsonFileSnapshotStorage {
+pub(crate) struct JsonFileSnapshotStorage {
     path: PathBuf,
     io_lock: std::sync::Mutex<()>,
 }
@@ -47,7 +47,7 @@ enum SnapshotFileReadError {
 }
 
 impl JsonFileSnapshotStorage {
-    pub fn new(path: impl Into<PathBuf>) -> Self {
+    pub(crate) fn new(path: impl Into<PathBuf>) -> Self {
         Self {
             path: path.into(),
             io_lock: std::sync::Mutex::new(()),

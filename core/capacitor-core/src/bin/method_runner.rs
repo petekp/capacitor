@@ -18,7 +18,7 @@ use capacitor_core::method_runner::run_status_reporter::{
     NoopRunStatusReporter, RunStatusReporter, RuntimeRunStatusReporter,
 };
 use capacitor_core::method_runner::worker_dispatch_adapter::CodexWorkerDispatcher;
-use capacitor_core::runtime_service::{RuntimeServiceEndpoint, RUNTIME_SERVICE_DEFAULT_PORT};
+use capacitor_core::runtime::service::{RuntimeServiceEndpoint, RUNTIME_SERVICE_DEFAULT_PORT};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct BridgeOptions {

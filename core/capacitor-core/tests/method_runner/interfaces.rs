@@ -7,6 +7,7 @@
 use std::io::Write;
 use std::path::PathBuf;
 
+use crate::common::fixtures::read_method_fixture as read_fixture;
 use capacitor_core::method_runner::adapters::{
     FakePromptBuilder, FakeWorkerDispatcher, InteractiveIO, InteractivePrompt, InteractiveResponse,
     PromptBuildRequest, PromptBuilder, WorkerDispatchRequest, WorkerDispatcher,
@@ -25,17 +26,6 @@ use capacitor_core::method_runner::storage::{acquire_lock, LockInfo, MethodRunPa
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-fn fixture_path(name: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../methods/fixtures")
-        .join(name)
-}
-
-fn read_fixture(name: &str) -> String {
-    std::fs::read_to_string(fixture_path(name))
-        .unwrap_or_else(|e| panic!("failed to read fixture {name}: {e}"))
-}
 
 /// Build the full canonical handoff content with all 7 headings.
 fn full_handoff_content() -> String {

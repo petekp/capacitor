@@ -16,7 +16,7 @@ pub struct ProjectStatus {
 }
 
 /// Reads project status from a project's .claude/hud-status.json file.
-pub fn read_project_status(project_path: &str) -> Option<ProjectStatus> {
+pub(crate) fn read_project_status(project_path: &str) -> Option<ProjectStatus> {
     let status_path = Path::new(project_path)
         .join(".claude")
         .join("hud-status.json");

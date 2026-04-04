@@ -10,6 +10,7 @@
 mod checkpoint_bridge_relay;
 mod cwd;
 mod handle;
+mod handlers;
 mod hook_types;
 mod logging;
 mod power;

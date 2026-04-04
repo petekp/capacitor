@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::io::Read;
 use std::io::Write;
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
@@ -9,6 +8,7 @@ use std::thread;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
+use crate::common::read_http_request;
 use capacitor_core::domain::{
     CheckpointKind, MediaArtifact, MediaArtifactType, MermaidSource, MutateRunCommand,
     RunMutationKind,
@@ -32,7 +32,7 @@ use capacitor_core::method_runner::state::{
     WorkerState, WorkerStatus,
 };
 use capacitor_core::method_runner::storage::MethodRunPaths;
-use capacitor_core::runtime_service::RuntimeServiceEndpoint;
+use capacitor_core::runtime::service::RuntimeServiceEndpoint;
 use capacitor_core::CoreRuntime;
 
 #[derive(Debug)]
@@ -267,64 +267,6 @@ impl Drop for StubMutationServer {
     }
 }
 
-fn read_http_request(stream: &mut std::net::TcpStream) -> String {
-    let mut request = Vec::new();
-    let mut headers_end = None;
-    let mut content_length = 0usize;
-    let deadline = std::time::Instant::now() + Duration::from_secs(2);
-
-    loop {
-        let mut buf = [0u8; 4096];
-        let read = match stream.read(&mut buf) {
-            Ok(read) => read,
-            Err(error)
-                if error.kind() == std::io::ErrorKind::WouldBlock
-                    || error.kind() == std::io::ErrorKind::TimedOut =>
-            {
-                if std::time::Instant::now() >= deadline {
-                    panic!("timed out reading bridge request: {error}");
-                }
-                thread::sleep(Duration::from_millis(10));
-                continue;
-            }
-            Err(error) => panic!("read bridge request: {error}"),
-        };
-        if read == 0 {
-            break;
-        }
-        request.extend_from_slice(&buf[..read]);
-
-        if headers_end.is_none() {
-            if let Some(end) = request.windows(4).position(|window| window == b"\r\n\r\n") {
-                let end = end + 4;
-                headers_end = Some(end);
-                let headers = String::from_utf8_lossy(&request[..end]);
-                content_length = headers
-                    .lines()
-                    .find_map(|line| {
-                        let line = line.trim_end_matches('\r');
-                        let (name, value) = line.split_once(':')?;
-                        if name.eq_ignore_ascii_case("Content-Length") {
-                            value.trim().parse::<usize>().ok()
-                        } else {
-                            None
-                        }
-                    })
-                    .unwrap_or(0);
-            }
-        }
-
-        if let Some(headers_end) = headers_end {
-            let body_len = request.len().saturating_sub(headers_end);
-            if body_len >= content_length {
-                break;
-            }
-        }
-    }
-
-    String::from_utf8(request).expect("request should be valid UTF-8")
-}
-
 fn bridge_context(manifest_path: &Path) -> GateCheckpointContext {
     GateCheckpointContext {
         gate_id: "gate-review".to_string(),
@@ -418,12 +360,8 @@ impl InteractiveIO for RecordingInteractiveIO {
     }
 }
 
-fn crate_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-}
-
 fn interactive_approval_fixture() -> PathBuf {
-    crate_root().join("../../methods/fixtures/interactive-approval.yaml")
+    crate::common::fixtures::method_fixture_path("interactive-approval.yaml")
 }
 
 fn empty_phase(phase_id: &str, title: &str, description: &str) -> NormalizedPhase {

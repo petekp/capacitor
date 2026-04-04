@@ -6,6 +6,7 @@
 
 use std::collections::BTreeMap;
 use std::path::Path;
+use std::time::Instant;
 
 use crate::domain::{CheckpointKind, MediaArtifact, MediaArtifactType, MermaidSource};
 use crate::method_runner::adapters::{
@@ -16,7 +17,7 @@ use crate::method_runner::checkpoint_manifest::CheckpointManifest;
 use crate::method_runner::definition::{
     write_snapshot, write_step_json, ActionKind, CompletionPolicy, DefinitionSource, ExecutionMode,
     NormalizationError, NormalizedDefinitionFile, NormalizedGate, NormalizedPhase, NormalizedStep,
-    Normalizer, StepActionConfig,
+    NormalizedWorkerSpec, Normalizer, StepActionConfig,
 };
 use crate::method_runner::events::{append_event, make_envelope, AppendError, MethodEventKind};
 use crate::method_runner::handoff::{ingest_handoff, HandoffParseError};
@@ -73,6 +74,141 @@ pub enum RunError {
 }
 
 include!("executor_gate_support.rs");
+
+struct ExecutionContext<'a> {
+    paths: &'a MethodRunPaths,
+    events_path: &'a Path,
+    run_id: &'a str,
+    current_seq: &'a mut u64,
+    normalized: &'a NormalizedDefinitionFile,
+    run_start: Instant,
+    prompt_builder: &'a dyn PromptBuilder,
+    dispatcher: &'a dyn WorkerDispatcher,
+    interactive_io: &'a dyn InteractiveIO,
+    reporter: &'a dyn RunStatusReporter,
+}
+
+/// Caller-provided execution inputs for a single step.
+pub struct StepExecutionContext<'a> {
+    pub paths: &'a MethodRunPaths,
+    pub events_path: &'a Path,
+    pub run_id: &'a str,
+    pub current_seq: &'a mut u64,
+    pub phase_id: &'a str,
+    pub step_definition: &'a NormalizedStep,
+    pub prompt_builder: &'a dyn PromptBuilder,
+    pub dispatcher: &'a dyn WorkerDispatcher,
+    pub interactive_io: &'a dyn InteractiveIO,
+}
+
+struct ReportedStepExecutionContext<'a> {
+    step: StepExecutionContext<'a>,
+    reporter: &'a dyn RunStatusReporter,
+}
+
+struct DispatchContext<'a> {
+    execution: ReportedStepExecutionContext<'a>,
+    workers: &'a [NormalizedWorkerSpec],
+    step_instructions: &'a str,
+    attempt: u32,
+    prior_failure: &'a str,
+}
+
+struct AttemptContext<'a> {
+    events_path: &'a Path,
+    run_id: &'a str,
+    current_seq: &'a mut u64,
+    phase_id: &'a str,
+    step_id: &'a str,
+    attempt: u32,
+    attempt_start: Instant,
+}
+
+impl<'a> ExecutionContext<'a> {
+    fn step_context<'b>(
+        &'b mut self,
+        phase_id: &'b str,
+        step_definition: &'b NormalizedStep,
+    ) -> ReportedStepExecutionContext<'b> {
+        ReportedStepExecutionContext {
+            step: StepExecutionContext {
+                paths: self.paths,
+                events_path: self.events_path,
+                run_id: self.run_id,
+                current_seq: &mut *self.current_seq,
+                phase_id,
+                step_definition,
+                prompt_builder: self.prompt_builder,
+                dispatcher: self.dispatcher,
+                interactive_io: self.interactive_io,
+            },
+            reporter: self.reporter,
+        }
+    }
+}
+
+impl<'a> StepExecutionContext<'a> {
+    fn with_reporter(
+        self,
+        reporter: &'a dyn RunStatusReporter,
+    ) -> ReportedStepExecutionContext<'a> {
+        ReportedStepExecutionContext {
+            step: self,
+            reporter,
+        }
+    }
+}
+
+impl<'a> ReportedStepExecutionContext<'a> {
+    fn reborrow<'b>(&'b mut self) -> ReportedStepExecutionContext<'b> {
+        ReportedStepExecutionContext {
+            step: StepExecutionContext {
+                paths: self.step.paths,
+                events_path: self.step.events_path,
+                run_id: self.step.run_id,
+                current_seq: &mut *self.step.current_seq,
+                phase_id: self.step.phase_id,
+                step_definition: self.step.step_definition,
+                prompt_builder: self.step.prompt_builder,
+                dispatcher: self.step.dispatcher,
+                interactive_io: self.step.interactive_io,
+            },
+            reporter: self.reporter,
+        }
+    }
+
+    fn dispatch_context<'b>(
+        &'b mut self,
+        workers: &'b [NormalizedWorkerSpec],
+        step_instructions: &'b str,
+        attempt: u32,
+        prior_failure: &'b str,
+    ) -> DispatchContext<'b> {
+        DispatchContext {
+            execution: self.reborrow(),
+            workers,
+            step_instructions,
+            attempt,
+            prior_failure,
+        }
+    }
+
+    fn attempt_context<'b>(
+        &'b mut self,
+        attempt: u32,
+        attempt_start: Instant,
+    ) -> AttemptContext<'b> {
+        AttemptContext {
+            events_path: self.step.events_path,
+            run_id: self.step.run_id,
+            current_seq: &mut *self.step.current_seq,
+            phase_id: self.step.phase_id,
+            step_id: self.step.step_definition.id.as_str(),
+            attempt,
+            attempt_start,
+        }
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Normalize-only entrypoint
@@ -174,33 +310,31 @@ pub fn execute_run_with_reporter(
     report_status_message(reporter, RunStatusEventKind::Start, "Run started");
 
     // 10. Execute phases
-    let run_start = std::time::Instant::now();
-    if let Some(early_state) = execute_all_phases(
-        &paths,
-        &events_path,
-        &run_id,
-        &mut current_seq,
-        &normalized,
-        run_start,
+    let mut execution_context = ExecutionContext {
+        paths: &paths,
+        events_path: &events_path,
+        run_id: &run_id,
+        current_seq: &mut current_seq,
+        normalized: &normalized,
+        run_start: Instant::now(),
         prompt_builder,
         dispatcher,
         interactive_io,
         reporter,
-    )? {
+    };
+    if let Some(early_state) = execute_all_phases(&mut execution_context)? {
         return Ok(early_state);
     }
 
     // 11. Resolve method-level outputs
-    if let Err(error) =
-        resolve_method_outputs(&paths, &events_path, &run_id, &mut current_seq, &normalized)
-    {
+    if let Err(error) = resolve_method_outputs(&mut execution_context) {
         report_status_kind(reporter, RunStatusEventKind::Fail);
         return Err(error);
     }
 
     // 12. RunCompleted with summary payload
     {
-        let summary = build_run_summary(&events_path, &normalized, run_start)?;
+        let summary = build_run_summary(&events_path, &normalized, execution_context.run_start)?;
         let mut env = make_envelope(&run_id, MethodEventKind::RunCompleted);
         env.payload = summary;
         append_event(&events_path, &mut env, &mut current_seq)?;
@@ -218,91 +352,49 @@ pub fn execute_run_with_reporter(
 
 /// Execute all phases in the method definition. Returns `Ok(Some(state))`
 /// for early termination from a parallel phase (blocked/failed), or `Ok(None)` on success.
-#[allow(clippy::too_many_arguments)]
-fn execute_all_phases(
-    paths: &MethodRunPaths,
-    events_path: &Path,
-    run_id: &str,
-    current_seq: &mut u64,
-    normalized: &NormalizedDefinitionFile,
-    run_start: std::time::Instant,
-    prompt_builder: &dyn PromptBuilder,
-    dispatcher: &dyn WorkerDispatcher,
-    interactive_io: &dyn InteractiveIO,
-    reporter: &dyn RunStatusReporter,
-) -> Result<Option<MethodRunState>, RunError> {
+fn execute_all_phases(ctx: &mut ExecutionContext<'_>) -> Result<Option<MethodRunState>, RunError> {
+    let normalized = ctx.normalized;
     let mut suppress_phase_started_heartbeat = false;
     for (phase_index, phase) in normalized.method.phases.iter().enumerate() {
         // PhaseStarted
         {
-            let mut env = make_envelope(run_id, MethodEventKind::PhaseStarted);
+            let mut env = make_envelope(ctx.run_id, MethodEventKind::PhaseStarted);
             env.phase_id = Some(phase.id.clone());
-            append_event(events_path, &mut env, current_seq)?;
+            append_event(ctx.events_path, &mut env, &mut *ctx.current_seq)?;
         }
         if suppress_phase_started_heartbeat {
             suppress_phase_started_heartbeat = false;
         } else {
             report_status_message(
-                reporter,
+                ctx.reporter,
                 RunStatusEventKind::Heartbeat,
                 phase_started_message(&phase.title),
             );
         }
 
         if phase.execution == ExecutionMode::Parallel {
-            if let Some(early_state) = execute_parallel_phase_steps(
-                paths,
-                events_path,
-                run_id,
-                current_seq,
-                phase,
-                normalized,
-                run_start,
-                prompt_builder,
-                dispatcher,
-                interactive_io,
-                reporter,
-            )? {
+            if let Some(early_state) = execute_parallel_phase_steps(ctx, phase)? {
                 return Ok(Some(early_state));
             }
         } else {
-            execute_serial_phase_steps(
-                paths,
-                events_path,
-                run_id,
-                current_seq,
-                phase,
-                prompt_builder,
-                dispatcher,
-                interactive_io,
-                reporter,
-            )?;
+            execute_serial_phase_steps(ctx, phase)?;
         }
 
         // Evaluate phase gate (if present) after all steps complete
         if let Some(ref gate) = phase.gate {
-            emit_and_enforce_gate(
-                gate,
-                phase,
-                paths,
-                events_path,
-                run_id,
-                current_seq,
-                interactive_io,
-                reporter,
-            )?;
+            emit_and_enforce_gate(ctx, phase, gate)?;
         }
 
         // PhaseCompleted
         {
-            let mut env = make_envelope(run_id, MethodEventKind::PhaseCompleted);
+            let mut env = make_envelope(ctx.run_id, MethodEventKind::PhaseCompleted);
             env.phase_id = Some(phase.id.clone());
-            append_event(events_path, &mut env, current_seq)?;
+            append_event(ctx.events_path, &mut env, &mut *ctx.current_seq)?;
         }
         if let Some(next_phase) = normalized.method.phases.get(phase_index + 1) {
-            report_status_kind(reporter, RunStatusEventKind::AdvancePhase);
+            report_status_kind(ctx.reporter, RunStatusEventKind::AdvancePhase);
             report_status_message(
-                reporter,
+                ctx.reporter,
                 RunStatusEventKind::Heartbeat,
                 phase_started_message(&next_phase.title),
             );
@@ -327,38 +419,24 @@ fn create_method_dirs(paths: &MethodRunPaths) -> Result<(), std::io::Error> {
 
 /// Execute all steps in a parallel phase. Returns `Ok(Some(state))` for early
 /// termination (blocked/failed), or `Ok(None)` when all steps succeeded.
-#[allow(clippy::too_many_arguments)]
 fn execute_parallel_phase_steps(
-    paths: &MethodRunPaths,
-    events_path: &Path,
-    run_id: &str,
-    current_seq: &mut u64,
+    ctx: &mut ExecutionContext<'_>,
     phase: &NormalizedPhase,
-    normalized: &NormalizedDefinitionFile,
-    run_start: std::time::Instant,
-    prompt_builder: &dyn PromptBuilder,
-    dispatcher: &dyn WorkerDispatcher,
-    interactive_io: &dyn InteractiveIO,
-    reporter: &dyn RunStatusReporter,
 ) -> Result<Option<MethodRunState>, RunError> {
     let mut step_results: Vec<(&NormalizedStep, Result<(), RunError>)> = Vec::new();
     for step in &phase.steps {
         let result = if step.action == ActionKind::PipelineExecute {
-            emit_pipeline_blocked(events_path, run_id, current_seq, &phase.id, &step.id)?;
+            emit_pipeline_blocked(
+                ctx.events_path,
+                ctx.run_id,
+                &mut *ctx.current_seq,
+                &phase.id,
+                &step.id,
+            )?;
             Err(RunError::PipelineExecuteBlocked(step.id.clone()))
         } else {
-            execute_step(
-                paths,
-                events_path,
-                run_id,
-                current_seq,
-                &phase.id,
-                step,
-                prompt_builder,
-                dispatcher,
-                interactive_io,
-                reporter,
-            )
+            let mut step_context = ctx.step_context(&phase.id, step);
+            execute_step(&mut step_context)
         };
         step_results.push((step, result));
     }
@@ -379,32 +457,20 @@ fn execute_parallel_phase_steps(
 
     if any_blocked {
         return emit_parallel_phase_terminal(
-            paths,
-            events_path,
-            run_id,
-            current_seq,
+            ctx,
             &phase.id,
             "one or more parallel steps blocked",
             MethodEventKind::PhaseBlocked,
             MethodEventKind::RunBlocked,
-            normalized,
-            run_start,
-            reporter,
         );
     }
     if any_failed {
         return emit_parallel_phase_terminal(
-            paths,
-            events_path,
-            run_id,
-            current_seq,
+            ctx,
             &phase.id,
             "one or more parallel steps failed",
             MethodEventKind::PhaseFailed,
             MethodEventKind::RunFailed,
-            normalized,
-            run_start,
-            reporter,
         );
     }
 
@@ -413,72 +479,53 @@ fn execute_parallel_phase_steps(
 
 /// Emit phase-terminal + run-terminal events for a parallel phase that
 /// blocked or failed, then project and return the state for early exit.
-#[allow(clippy::too_many_arguments)]
 fn emit_parallel_phase_terminal(
-    paths: &MethodRunPaths,
-    events_path: &Path,
-    run_id: &str,
-    current_seq: &mut u64,
+    ctx: &mut ExecutionContext<'_>,
     phase_id: &str,
     reason: &str,
     phase_event: MethodEventKind,
     run_event: MethodEventKind,
-    normalized: &NormalizedDefinitionFile,
-    run_start: std::time::Instant,
-    reporter: &dyn RunStatusReporter,
 ) -> Result<Option<MethodRunState>, RunError> {
-    let mut env = make_envelope(run_id, phase_event);
+    let mut env = make_envelope(ctx.run_id, phase_event);
     env.phase_id = Some(phase_id.to_string());
     env.payload = serde_json::json!({ "reason": reason });
-    append_event(events_path, &mut env, current_seq)?;
+    append_event(ctx.events_path, &mut env, &mut *ctx.current_seq)?;
 
     {
-        let summary = build_run_summary(events_path, normalized, run_start)?;
-        let mut env = make_envelope(run_id, run_event);
+        let summary = build_run_summary(ctx.events_path, ctx.normalized, ctx.run_start)?;
+        let mut env = make_envelope(ctx.run_id, run_event);
         env.payload = summary;
-        append_event(events_path, &mut env, current_seq)?;
+        append_event(ctx.events_path, &mut env, &mut *ctx.current_seq)?;
     }
-    report_status_kind(reporter, RunStatusEventKind::Fail);
+    report_status_kind(ctx.reporter, RunStatusEventKind::Fail);
 
-    let events = crate::method_runner::events::recover_events(events_path)?;
+    let events = crate::method_runner::events::recover_events(ctx.events_path)?;
     let state = project(&events)?;
-    write_state_atomic(&paths.state_json(), &state).map_err(RunError::IoError)?;
+    write_state_atomic(&ctx.paths.state_json(), &state).map_err(RunError::IoError)?;
     Ok(Some(state))
 }
 
 /// Execute steps serially within a phase. Returns early on blocked or failure.
-#[allow(clippy::too_many_arguments)]
 fn execute_serial_phase_steps(
-    paths: &MethodRunPaths,
-    events_path: &Path,
-    run_id: &str,
-    current_seq: &mut u64,
+    ctx: &mut ExecutionContext<'_>,
     phase: &NormalizedPhase,
-    prompt_builder: &dyn PromptBuilder,
-    dispatcher: &dyn WorkerDispatcher,
-    interactive_io: &dyn InteractiveIO,
-    reporter: &dyn RunStatusReporter,
 ) -> Result<(), RunError> {
     for step in &phase.steps {
         if step.action == ActionKind::PipelineExecute {
-            emit_pipeline_blocked(events_path, run_id, current_seq, &phase.id, &step.id)?;
-            report_status_kind(reporter, RunStatusEventKind::Fail);
+            emit_pipeline_blocked(
+                ctx.events_path,
+                ctx.run_id,
+                &mut *ctx.current_seq,
+                &phase.id,
+                &step.id,
+            )?;
+            report_status_kind(ctx.reporter, RunStatusEventKind::Fail);
             return Err(RunError::PipelineExecuteBlocked(step.id.clone()));
         }
 
-        if let Err(error) = execute_step(
-            paths,
-            events_path,
-            run_id,
-            current_seq,
-            &phase.id,
-            step,
-            prompt_builder,
-            dispatcher,
-            interactive_io,
-            reporter,
-        ) {
-            report_status_kind(reporter, RunStatusEventKind::Fail);
+        let mut step_context = ctx.step_context(&phase.id, step);
+        if let Err(error) = execute_step(&mut step_context) {
+            report_status_kind(ctx.reporter, RunStatusEventKind::Fail);
             return Err(error);
         }
     }
@@ -506,30 +553,24 @@ fn emit_pipeline_blocked(
 }
 
 /// Evaluate a phase gate, emit the GateEvaluated event, and block if not approved.
-#[allow(clippy::too_many_arguments)]
 fn emit_and_enforce_gate(
-    gate: &NormalizedGate,
+    ctx: &mut ExecutionContext<'_>,
     phase: &NormalizedPhase,
-    paths: &MethodRunPaths,
-    events_path: &Path,
-    run_id: &str,
-    current_seq: &mut u64,
-    interactive_io: &dyn InteractiveIO,
-    reporter: &dyn RunStatusReporter,
+    gate: &NormalizedGate,
 ) -> Result<(), RunError> {
-    let current_events = crate::method_runner::events::recover_events(events_path)?;
+    let current_events = crate::method_runner::events::recover_events(ctx.events_path)?;
     let current_state = project(&current_events)?;
 
     report_status_message(
-        reporter,
+        ctx.reporter,
         RunStatusEventKind::Heartbeat,
         "Waiting for checkpoint",
     );
-    let outcome = evaluate_gate(gate, phase, &current_state, paths, interactive_io);
+    let outcome = evaluate_gate(gate, phase, &current_state, ctx.paths, ctx.interactive_io);
 
     // Emit GateEvaluated event
     {
-        let mut env = make_envelope(run_id, MethodEventKind::GateEvaluated);
+        let mut env = make_envelope(ctx.run_id, MethodEventKind::GateEvaluated);
         env.phase_id = Some(phase.id.clone());
         let mut payload = serde_json::json!({
             "gate_id": gate.id,
@@ -540,7 +581,7 @@ fn emit_and_enforce_gate(
             payload["reason"] = serde_json::Value::String(reason.to_string());
         }
         env.payload = payload;
-        append_event(events_path, &mut env, current_seq)?;
+        append_event(ctx.events_path, &mut env, &mut *ctx.current_seq)?;
     }
 
     if outcome == GateOutcome::Approved {
@@ -550,12 +591,12 @@ fn emit_and_enforce_gate(
     let reason = gate_outcome_reason(&outcome);
 
     {
-        let mut env = make_envelope(run_id, MethodEventKind::PhaseBlocked);
+        let mut env = make_envelope(ctx.run_id, MethodEventKind::PhaseBlocked);
         env.phase_id = Some(phase.id.clone());
         env.payload = serde_json::json!({ "reason": reason });
-        append_event(events_path, &mut env, current_seq)?;
+        append_event(ctx.events_path, &mut env, &mut *ctx.current_seq)?;
     }
-    report_status_kind(reporter, RunStatusEventKind::Fail);
+    report_status_kind(ctx.reporter, RunStatusEventKind::Fail);
 
     Err(RunError::PhaseGateBlocked {
         phase_id: phase.id.clone(),
@@ -565,104 +606,44 @@ fn emit_and_enforce_gate(
 }
 
 /// Public wrapper for `execute_step` used by the resume module.
-#[allow(clippy::too_many_arguments)]
-pub fn execute_step_public(
-    paths: &MethodRunPaths,
-    events_path: &Path,
-    run_id: &str,
-    current_seq: &mut u64,
-    phase_id: &str,
-    step: &NormalizedStep,
-    prompt_builder: &dyn PromptBuilder,
-    dispatcher: &dyn WorkerDispatcher,
-    interactive_io: &dyn InteractiveIO,
-) -> Result<(), RunError> {
-    execute_step_public_with_reporter(
-        paths,
-        events_path,
-        run_id,
-        current_seq,
-        phase_id,
-        step,
-        prompt_builder,
-        dispatcher,
-        interactive_io,
-        &NoopRunStatusReporter,
-    )
+pub fn execute_step_public(context: StepExecutionContext<'_>) -> Result<(), RunError> {
+    execute_step_public_with_reporter(context, &NoopRunStatusReporter)
 }
 
-#[allow(clippy::too_many_arguments)]
-pub fn execute_step_public_with_reporter(
-    paths: &MethodRunPaths,
-    events_path: &Path,
-    run_id: &str,
-    current_seq: &mut u64,
-    phase_id: &str,
-    step: &NormalizedStep,
-    prompt_builder: &dyn PromptBuilder,
-    dispatcher: &dyn WorkerDispatcher,
-    interactive_io: &dyn InteractiveIO,
+pub(crate) fn execute_step_public_with_reporter(
+    context: StepExecutionContext<'_>,
     reporter: &dyn RunStatusReporter,
 ) -> Result<(), RunError> {
+    let step = context.step_definition;
+    let mut context = context.with_reporter(reporter);
+
     // Check for pipeline_execute at the public boundary
     if step.action == ActionKind::PipelineExecute {
-        let mut env = make_envelope(run_id, MethodEventKind::StepBlocked);
-        env.phase_id = Some(phase_id.to_string());
+        let mut env = make_envelope(context.step.run_id, MethodEventKind::StepBlocked);
+        env.phase_id = Some(context.step.phase_id.to_string());
         env.step_id = Some(step.id.clone());
-        append_event(events_path, &mut env, current_seq)?;
+        append_event(
+            context.step.events_path,
+            &mut env,
+            &mut *context.step.current_seq,
+        )?;
         return Err(RunError::PipelineExecuteBlocked(step.id.clone()));
     }
-    execute_step(
-        paths,
-        events_path,
-        run_id,
-        current_seq,
-        phase_id,
-        step,
-        prompt_builder,
-        dispatcher,
-        interactive_io,
-        reporter,
-    )
+    execute_step(&mut context)
 }
 
-#[allow(clippy::too_many_arguments)]
-fn execute_step(
-    paths: &MethodRunPaths,
-    events_path: &Path,
-    run_id: &str,
-    current_seq: &mut u64,
-    phase_id: &str,
-    step: &NormalizedStep,
-    prompt_builder: &dyn PromptBuilder,
-    dispatcher: &dyn WorkerDispatcher,
-    interactive_io: &dyn InteractiveIO,
-    reporter: &dyn RunStatusReporter,
-) -> Result<(), RunError> {
-    match step.action {
-        ActionKind::Dispatch => execute_dispatch_step(
-            paths,
-            events_path,
-            run_id,
-            current_seq,
-            phase_id,
-            step,
-            prompt_builder,
-            dispatcher,
-            reporter,
+fn execute_step(ctx: &mut ReportedStepExecutionContext<'_>) -> Result<(), RunError> {
+    match ctx.step.step_definition.action {
+        ActionKind::Dispatch => execute_dispatch_step(ctx),
+        ActionKind::Synthesis => execute_synthesis_step(
+            ctx.step.paths,
+            ctx.step.events_path,
+            ctx.step.run_id,
+            &mut *ctx.step.current_seq,
+            ctx.step.phase_id,
+            ctx.step.step_definition,
         ),
-        ActionKind::Synthesis => {
-            execute_synthesis_step(paths, events_path, run_id, current_seq, phase_id, step)
-        }
-        ActionKind::Interactive => execute_interactive_step(
-            paths,
-            events_path,
-            run_id,
-            current_seq,
-            phase_id,
-            step,
-            interactive_io,
-        ),
+        ActionKind::Interactive => execute_interactive_step(ctx),
         ActionKind::PipelineExecute => {
             unreachable!("pipeline_execute is blocked before execute_step is called")
         }
@@ -682,24 +663,19 @@ enum AttemptOutcome {
     Failed { reason: String },
 }
 
-#[allow(clippy::too_many_arguments)]
-fn execute_dispatch_step(
-    paths: &MethodRunPaths,
-    events_path: &Path,
-    run_id: &str,
-    current_seq: &mut u64,
-    phase_id: &str,
-    step: &NormalizedStep,
-    prompt_builder: &dyn PromptBuilder,
-    dispatcher: &dyn WorkerDispatcher,
-    reporter: &dyn RunStatusReporter,
-) -> Result<(), RunError> {
+fn execute_dispatch_step(ctx: &mut ReportedStepExecutionContext<'_>) -> Result<(), RunError> {
+    let paths = ctx.step.paths;
+    let events_path = ctx.step.events_path;
+    let run_id = ctx.step.run_id;
+    let phase_id = ctx.step.phase_id;
+    let step = ctx.step.step_definition;
+
     // StepStarted
     {
         let mut env = make_envelope(run_id, MethodEventKind::StepStarted);
         env.phase_id = Some(phase_id.to_string());
         env.step_id = Some(step.id.clone());
-        append_event(events_path, &mut env, current_seq)?;
+        append_event(events_path, &mut env, &mut *ctx.step.current_seq)?;
     }
 
     // Extract workers from config (always at least one: implicit "primary")
@@ -732,25 +708,15 @@ fn execute_dispatch_step(
             env.phase_id = Some(phase_id.to_string());
             env.step_id = Some(step.id.clone());
             env.attempt = Some(attempt);
-            append_event(events_path, &mut env, current_seq)?;
+            append_event(events_path, &mut env, &mut *ctx.step.current_seq)?;
         }
 
         // Dispatch all workers in this attempt
-        let outcome = dispatch_attempt_workers(
-            paths,
-            events_path,
-            run_id,
-            current_seq,
-            phase_id,
-            step,
-            &workers,
-            &step_instructions,
-            attempt,
-            &last_failure_reason,
-            prompt_builder,
-            dispatcher,
-            reporter,
-        )?;
+        let outcome = {
+            let mut dispatch_context =
+                ctx.dispatch_context(&workers, &step_instructions, attempt, &last_failure_reason);
+            dispatch_attempt_workers(&mut dispatch_context)?
+        };
 
         let elapsed_ms = attempt_start.elapsed().as_millis() as u64;
 
@@ -761,7 +727,7 @@ fn execute_dispatch_step(
                     paths,
                     events_path,
                     run_id,
-                    current_seq,
+                    &mut *ctx.step.current_seq,
                     phase_id,
                     step,
                     attempt,
@@ -778,7 +744,7 @@ fn execute_dispatch_step(
                     env.step_id = Some(step.id.clone());
                     env.attempt = Some(attempt);
                     env.payload = serde_json::json!({ "elapsed_ms": elapsed_ms });
-                    append_event(events_path, &mut env, current_seq)?;
+                    append_event(events_path, &mut env, &mut *ctx.step.current_seq)?;
                 }
 
                 // StepCompleted
@@ -786,7 +752,7 @@ fn execute_dispatch_step(
                     let mut env = make_envelope(run_id, MethodEventKind::StepCompleted);
                     env.phase_id = Some(phase_id.to_string());
                     env.step_id = Some(step.id.clone());
-                    append_event(events_path, &mut env, current_seq)?;
+                    append_event(events_path, &mut env, &mut *ctx.step.current_seq)?;
                 }
 
                 return Ok(());
@@ -809,7 +775,7 @@ fn execute_dispatch_step(
                         "elapsed_ms": elapsed_ms,
                         "error_category": error_category,
                     });
-                    append_event(events_path, &mut env, current_seq)?;
+                    append_event(events_path, &mut env, &mut *ctx.step.current_seq)?;
                 }
 
                 last_failure_reason = reason;
@@ -834,7 +800,7 @@ fn execute_dispatch_step(
                 "details": format!("all {} attempts exhausted", step.max_attempts),
             },
         });
-        append_event(events_path, &mut env, current_seq)?;
+        append_event(events_path, &mut env, &mut *ctx.step.current_seq)?;
     }
 
     // StepBlocked means the run cannot continue this step, but we don't
@@ -851,22 +817,20 @@ fn execute_dispatch_step(
 
 /// Dispatch all workers for a single attempt. Returns Success if the completion
 /// policy is satisfied, Failed otherwise.
-#[allow(clippy::too_many_arguments)]
-fn dispatch_attempt_workers(
-    paths: &MethodRunPaths,
-    events_path: &Path,
-    run_id: &str,
-    current_seq: &mut u64,
-    phase_id: &str,
-    step: &NormalizedStep,
-    workers: &[crate::method_runner::definition::NormalizedWorkerSpec],
-    step_instructions: &str,
-    attempt: u32,
-    prior_failure: &str,
-    prompt_builder: &dyn PromptBuilder,
-    dispatcher: &dyn WorkerDispatcher,
-    reporter: &dyn RunStatusReporter,
-) -> Result<AttemptOutcome, RunError> {
+fn dispatch_attempt_workers(ctx: &mut DispatchContext<'_>) -> Result<AttemptOutcome, RunError> {
+    let paths = ctx.execution.step.paths;
+    let events_path = ctx.execution.step.events_path;
+    let run_id = ctx.execution.step.run_id;
+    let phase_id = ctx.execution.step.phase_id;
+    let step = ctx.execution.step.step_definition;
+    let prompt_builder = ctx.execution.step.prompt_builder;
+    let dispatcher = ctx.execution.step.dispatcher;
+    let reporter = ctx.execution.reporter;
+    let attempt = ctx.attempt;
+    let workers = ctx.workers;
+    let step_instructions = ctx.step_instructions;
+    let prior_failure = ctx.prior_failure;
+
     let mut worker_results: Vec<(String, bool)> = Vec::new(); // (worker_id, success)
 
     for worker in workers {
@@ -932,7 +896,7 @@ fn dispatch_attempt_workers(
             env.step_id = Some(step.id.clone());
             env.attempt = Some(attempt);
             env.worker_id = Some(worker_id.clone());
-            append_event(events_path, &mut env, current_seq)?;
+            append_event(events_path, &mut env, &mut *ctx.execution.step.current_seq)?;
         }
 
         // Dispatch worker — prompt_path comes explicitly from IF1 result
@@ -958,7 +922,7 @@ fn dispatch_attempt_workers(
                     env.step_id = Some(step.id.clone());
                     env.attempt = Some(attempt);
                     env.worker_id = Some(worker_id.clone());
-                    append_event(events_path, &mut env, current_seq)?;
+                    append_event(events_path, &mut env, &mut *ctx.execution.step.current_seq)?;
                 } else {
                     // WorkerFailed (non-zero exit)
                     let mut env = make_envelope(run_id, MethodEventKind::WorkerFailed);
@@ -967,7 +931,7 @@ fn dispatch_attempt_workers(
                     env.attempt = Some(attempt);
                     env.worker_id = Some(worker_id.clone());
                     env.payload = serde_json::json!({ "exit_code": result.exit_code });
-                    append_event(events_path, &mut env, current_seq)?;
+                    append_event(events_path, &mut env, &mut *ctx.execution.step.current_seq)?;
                 }
 
                 // Ingest handoff if present (even for failed workers — we want the data)
@@ -989,7 +953,7 @@ fn dispatch_attempt_workers(
                     env.step_id = Some(step.id.clone());
                     env.attempt = Some(attempt);
                     env.worker_id = Some(worker_id.clone());
-                    append_event(events_path, &mut env, current_seq)?;
+                    append_event(events_path, &mut env, &mut *ctx.execution.step.current_seq)?;
                 }
 
                 worker_results.push((worker_id.clone(), clean_exit));
@@ -1002,7 +966,7 @@ fn dispatch_attempt_workers(
                 env.attempt = Some(attempt);
                 env.worker_id = Some(worker_id.clone());
                 env.payload = serde_json::json!({ "error": e.to_string() });
-                append_event(events_path, &mut env, current_seq)?;
+                append_event(events_path, &mut env, &mut *ctx.execution.step.current_seq)?;
 
                 worker_results.push((worker_id.clone(), false));
             }
@@ -1090,21 +1054,19 @@ fn execute_synthesis_step(
 // Interactive step execution
 // ---------------------------------------------------------------------------
 
-fn execute_interactive_step(
-    paths: &MethodRunPaths,
-    events_path: &Path,
-    run_id: &str,
-    current_seq: &mut u64,
-    phase_id: &str,
-    step: &NormalizedStep,
-    interactive_io: &dyn InteractiveIO,
-) -> Result<(), RunError> {
+fn execute_interactive_step(ctx: &mut ReportedStepExecutionContext<'_>) -> Result<(), RunError> {
+    let paths = ctx.step.paths;
+    let events_path = ctx.step.events_path;
+    let run_id = ctx.step.run_id;
+    let phase_id = ctx.step.phase_id;
+    let step = ctx.step.step_definition;
+
     let attempt: u32 = 1;
     let (attempt_dir, attempt_start) = emit_step_and_attempt_start(
         paths,
         events_path,
         run_id,
-        current_seq,
+        &mut *ctx.step.current_seq,
         phase_id,
         step,
         attempt,
@@ -1133,28 +1095,20 @@ fn execute_interactive_step(
             "prompt": prompt_message,
             "response_type": response_type,
         });
-        append_event(events_path, &mut env, current_seq)?;
+        append_event(events_path, &mut env, &mut *ctx.step.current_seq)?;
     }
 
     // Emit prompt and capture response via InteractiveIO
-    interactive_io.emit_prompt(&InteractivePrompt {
+    ctx.step.interactive_io.emit_prompt(&InteractivePrompt {
         message: prompt_message,
     });
-    let response = interactive_io.capture_response();
+    let response = ctx.step.interactive_io.capture_response();
 
     // Validate response against declared response_type
     if !response_type.is_empty() {
         if let Err(validation_err) = validate_interactive_response(&response_type, &response.body) {
-            emit_interactive_validation_failure(
-                events_path,
-                run_id,
-                current_seq,
-                phase_id,
-                step,
-                attempt,
-                attempt_start,
-                &validation_err,
-            )?;
+            let mut attempt_context = ctx.attempt_context(attempt, attempt_start);
+            emit_interactive_validation_failure(&mut attempt_context, &validation_err)?;
             return Err(RunError::StepBlocked {
                 step_id: step.id.clone(),
                 reason: format!("response validation failed: {}", validation_err),
@@ -1172,7 +1126,7 @@ fn execute_interactive_step(
             "response_length": response.body.len(),
             "response_type": response_type,
         });
-        append_event(events_path, &mut env, current_seq)?;
+        append_event(events_path, &mut env, &mut *ctx.step.current_seq)?;
     }
 
     // Write response as output artifact for each declared output
@@ -1188,7 +1142,7 @@ fn execute_interactive_step(
         &attempt_dir,
         events_path,
         run_id,
-        current_seq,
+        &mut *ctx.step.current_seq,
         phase_id,
         step,
         attempt,
@@ -1198,34 +1152,27 @@ fn execute_interactive_step(
 }
 
 /// Emit AttemptFailed + StepBlocked events for interactive validation failure.
-#[allow(clippy::too_many_arguments)]
 fn emit_interactive_validation_failure(
-    events_path: &Path,
-    run_id: &str,
-    current_seq: &mut u64,
-    phase_id: &str,
-    step: &NormalizedStep,
-    attempt: u32,
-    attempt_start: std::time::Instant,
+    ctx: &mut AttemptContext<'_>,
     validation_err: &str,
 ) -> Result<(), RunError> {
-    let elapsed_ms = attempt_start.elapsed().as_millis() as u64;
+    let elapsed_ms = ctx.attempt_start.elapsed().as_millis() as u64;
     {
-        let mut env = make_envelope(run_id, MethodEventKind::AttemptFailed);
-        env.phase_id = Some(phase_id.to_string());
-        env.step_id = Some(step.id.clone());
-        env.attempt = Some(attempt);
+        let mut env = make_envelope(ctx.run_id, MethodEventKind::AttemptFailed);
+        env.phase_id = Some(ctx.phase_id.to_string());
+        env.step_id = Some(ctx.step_id.to_string());
+        env.attempt = Some(ctx.attempt);
         env.payload = serde_json::json!({
             "reason": validation_err,
             "elapsed_ms": elapsed_ms,
             "error_category": "validation_failed",
         });
-        append_event(events_path, &mut env, current_seq)?;
+        append_event(ctx.events_path, &mut env, &mut *ctx.current_seq)?;
     }
     {
-        let mut env = make_envelope(run_id, MethodEventKind::StepBlocked);
-        env.phase_id = Some(phase_id.to_string());
-        env.step_id = Some(step.id.clone());
+        let mut env = make_envelope(ctx.run_id, MethodEventKind::StepBlocked);
+        env.phase_id = Some(ctx.phase_id.to_string());
+        env.step_id = Some(ctx.step_id.to_string());
         env.payload = serde_json::json!({
             "reason": format!("response validation failed: {}", validation_err),
             "blocked_reason": {
@@ -1233,7 +1180,7 @@ fn emit_interactive_validation_failure(
                 "details": format!("response validation failed: {}", validation_err),
             }
         });
-        append_event(events_path, &mut env, current_seq)?;
+        append_event(ctx.events_path, &mut env, &mut *ctx.current_seq)?;
     }
     Ok(())
 }
@@ -1389,19 +1336,15 @@ mod tests {
     }
 }
 
-fn resolve_method_outputs(
-    paths: &MethodRunPaths,
-    events_path: &Path,
-    run_id: &str,
-    current_seq: &mut u64,
-    normalized: &NormalizedDefinitionFile,
-) -> Result<(), RunError> {
+fn resolve_method_outputs(ctx: &mut ExecutionContext<'_>) -> Result<(), RunError> {
+    let normalized = ctx.normalized;
+
     // Project current state to resolve outputs against
-    let events = crate::method_runner::events::recover_events(events_path)?;
+    let events = crate::method_runner::events::recover_events(ctx.events_path)?;
     let state = project(&events)?;
 
     for (name, output) in &normalized.method.outputs {
-        match resolve_and_write_output(paths, name, &output.from, &state, &normalized.method) {
+        match resolve_and_write_output(ctx.paths, name, &output.from, &state, &normalized.method) {
             Ok(_record) => {}
             Err(e) => {
                 if output.required {
@@ -1419,12 +1362,12 @@ fn resolve_method_outputs(
     // Emit OutputBound events for method-level outputs (they're already bound at step level,
     // but we record the method-level resolution as well)
     for (name, output) in &normalized.method.outputs {
-        let mut env = make_envelope(run_id, MethodEventKind::OutputBound);
+        let mut env = make_envelope(ctx.run_id, MethodEventKind::OutputBound);
         env.payload = serde_json::json!({
             "method_output": name,
             "from": output.from,
         });
-        append_event(events_path, &mut env, current_seq)?;
+        append_event(ctx.events_path, &mut env, &mut *ctx.current_seq)?;
     }
 
     Ok(())

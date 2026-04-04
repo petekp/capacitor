@@ -8,8 +8,11 @@
 
 use std::path::PathBuf;
 
+use crate::common::fixtures::{
+    approved_interactive_io as default_interactive, minimal_dispatch_path, retry_dispatch_path,
+};
 use capacitor_core::method_runner::adapters::{
-    ConfigurableDispatcher, FakeInteractiveIO, FakePromptBuilder, FakeWorkerDispatcher,
+    ConfigurableDispatcher, FakePromptBuilder, FakeWorkerDispatcher,
 };
 use capacitor_core::method_runner::definition::DefinitionSource;
 use capacitor_core::method_runner::events::{recover_events, MethodEventKind};
@@ -17,24 +20,8 @@ use capacitor_core::method_runner::executor::execute_run;
 use capacitor_core::method_runner::state::{PhaseStatus, RunStatus, StepStatus};
 use capacitor_core::method_runner::storage::MethodRunPaths;
 
-fn crate_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-}
-
 fn parallel_phase_path() -> PathBuf {
-    crate_root().join("../../methods/fixtures/parallel-phase.yaml")
-}
-
-fn minimal_dispatch_path() -> PathBuf {
-    crate_root().join("../../methods/fixtures/minimal-dispatch.yaml")
-}
-
-fn retry_dispatch_path() -> PathBuf {
-    crate_root().join("../../methods/fixtures/retry-dispatch.yaml")
-}
-
-fn default_interactive() -> FakeInteractiveIO {
-    FakeInteractiveIO::new("approved")
+    crate::common::fixtures::method_fixture_path("parallel-phase.yaml")
 }
 
 // ============================================================================

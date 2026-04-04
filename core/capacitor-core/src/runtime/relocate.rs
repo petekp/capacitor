@@ -9,7 +9,8 @@ use std::os::unix::fs::MetadataExt;
 /// Captures the inode number and device ID for a directory path.
 ///
 /// Returns `None` if the path does not exist or metadata cannot be read.
-pub fn capture_inode_metadata(path: &str) -> Option<(u64, u64)> {
+#[allow(dead_code)]
+pub(crate) fn capture_inode_metadata(path: &str) -> Option<(u64, u64)> {
     let metadata = std::fs::metadata(path).ok()?;
     Some((metadata.ino(), metadata.dev()))
 }
@@ -23,7 +24,8 @@ pub fn capture_inode_metadata(path: &str) -> Option<(u64, u64)> {
 /// - The inode no longer exists on the device
 /// - The resolved path is inside `/.Trash/` (the directory was deleted)
 /// - Any FFI call fails
-pub fn try_resolve_relocated_path(inode: u64, device_id: u64) -> Option<String> {
+#[allow(dead_code)]
+pub(crate) fn try_resolve_relocated_path(inode: u64, device_id: u64) -> Option<String> {
     const F_GETPATH: libc::c_int = 50;
     let buf_size = libc::PATH_MAX as usize;
 

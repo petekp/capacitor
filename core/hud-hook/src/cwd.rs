@@ -14,7 +14,7 @@
 //! Target: < 15ms total execution time.
 //! The shell spawns this in the background, so users never wait.
 
-use capacitor_core::{domain::TmuxPaneInfo, runtime_types::ParentApp};
+use capacitor_core::{domain::TmuxPaneInfo, runtime::types::ParentApp};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::path::{Component, Path, PathBuf};

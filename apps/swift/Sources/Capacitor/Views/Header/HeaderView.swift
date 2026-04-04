@@ -7,7 +7,7 @@ struct HeaderView: View {
     @State private var isQuickFeedbackPresented = false
 
     private var isOnListView: Bool {
-        if case .list = appState.projectView { return true }
+        if case .list = appState.uiState.projectView { return true }
         return false
     }
 
@@ -42,10 +42,10 @@ struct HeaderView: View {
                         onDoubleClick: {
                             WindowFrameStore.shared.cycleCompactState()
                         },
-                        onDragBegan: appState.isWindowAnchoringEnabled ? { [weak appState] in
+                        onDragBegan: appState.featureState.isWindowAnchoringEnabled ? { [weak appState] in
                             appState?.anchoringController.hudDragBegan()
                         } : nil,
-                        onDragEnded: appState.isWindowAnchoringEnabled ? { [weak appState] frame in
+                        onDragEnded: appState.featureState.isWindowAnchoringEnabled ? { [weak appState] frame in
                             appState?.anchoringController.hudDragEnded(hudFrame: frame)
                         } : nil,
                     )

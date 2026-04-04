@@ -89,10 +89,10 @@ final class AppLifecycleTests: XCTestCase {
 
         appState.checkRuntimeHealth()
 
-        await waitUntil { appState.toast?.message == "Runtime service restarted for compatibility" }
+        await waitUntil { appState.uiState.toast?.message == "Runtime service restarted for compatibility" }
 
         XCTAssertEqual(launchCount, 1)
-        XCTAssertEqual(appState.toast?.message, "Runtime service restarted for compatibility")
+        XCTAssertEqual(appState.uiState.toast?.message, "Runtime service restarted for compatibility")
     }
 
     private func waitUntil(

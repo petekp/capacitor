@@ -84,8 +84,8 @@ final class AppStateTerminalActivationTests: XCTestCase {
             failureReason: nil,
         ))
 
-        XCTAssertEqual(appState.toast?.message, "Couldn't activate terminal.")
-        XCTAssertEqual(appState.toast?.isError, true)
+        XCTAssertEqual(appState.uiState.toast?.message, "Couldn't activate terminal.")
+        XCTAssertEqual(appState.uiState.toast?.isError, true)
     }
 
     func testActivationFailureUsesHostTerminalFailureMessage() {
@@ -105,9 +105,9 @@ final class AppStateTerminalActivationTests: XCTestCase {
         ))
 
         XCTAssertEqual(
-            appState.toast?.message,
+            appState.uiState.toast?.message,
             "Couldn't send the launch command to iTerm. Make sure macOS Automation access is granted. (Apple events denied)",
         )
-        XCTAssertEqual(appState.toast?.isError, true)
+        XCTAssertEqual(appState.uiState.toast?.isError, true)
     }
 }

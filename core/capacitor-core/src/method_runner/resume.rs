@@ -551,16 +551,20 @@ fn resume_phase_steps(
             continue;
         }
 
-        if let Err(error) = crate::method_runner::executor::execute_step_public_with_reporter(
+        let step_context = crate::method_runner::executor::StepExecutionContext {
             paths,
             events_path,
             run_id,
             current_seq,
-            &phase_def.id,
-            step_def,
+            phase_id: &phase_def.id,
+            step_definition: step_def,
             prompt_builder,
             dispatcher,
             interactive_io,
+        };
+
+        if let Err(error) = crate::method_runner::executor::execute_step_public_with_reporter(
+            step_context,
             reporter,
         ) {
             report_status_kind(reporter, RunStatusEventKind::Fail);

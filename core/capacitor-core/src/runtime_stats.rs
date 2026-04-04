@@ -4,15 +4,15 @@
 //! with intelligent mtime-based caching to avoid re-parsing unchanged files.
 //! Parsing is best-effort; malformed lines simply do not contribute to totals.
 
-use crate::runtime_patterns::*;
-use crate::runtime_types::{CachedFileInfo, CachedProjectStats, ProjectStats, StatsCache};
+use crate::runtime::patterns::*;
+use crate::runtime::types::{CachedFileInfo, CachedProjectStats, ProjectStats, StatsCache};
 use fs_err as fs;
 use std::collections::HashMap;
 use std::path::Path;
 use std::time::SystemTime;
 
 /// Parses statistics from session file content and accumulates into stats.
-pub fn parse_stats_from_content(content: &str, stats: &mut ProjectStats) {
+pub(crate) fn parse_stats_from_content(content: &str, stats: &mut ProjectStats) {
     for cap in RE_INPUT_TOKENS.captures_iter(content) {
         if let Ok(n) = cap[1].parse::<u64>() {
             stats.total_input_tokens += n;
@@ -69,7 +69,7 @@ pub fn parse_stats_from_content(content: &str, stats: &mut ProjectStats) {
 ///
 /// Uses file mtime to determine if re-parsing is needed, avoiding
 /// redundant file reads for unchanged session files.
-pub fn compute_project_stats(
+pub(crate) fn compute_project_stats(
     claude_projects_dir: &Path,
     encoded_name: &str,
     cache: &mut StatsCache,

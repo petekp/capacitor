@@ -107,7 +107,7 @@ impl CheckpointManifest {
     }
 
     /// Write the manifest directly to the provided file path.
-    pub fn write_to_path(&self, path: &std::path::Path) -> std::io::Result<()> {
+    pub(crate) fn write_to_path(&self, path: &std::path::Path) -> std::io::Result<()> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }

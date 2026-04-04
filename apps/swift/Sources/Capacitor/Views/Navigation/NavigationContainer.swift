@@ -32,13 +32,13 @@ struct NavigationContainer: View {
     }
 
     private var isListActive: Bool {
-        if case .list = appState.projectView { return true }
+        if case .list = appState.uiState.projectView { return true }
         return false
     }
 
     private var isDetailActive: Bool {
-        if case .detail = appState.projectView { return true }
-        if case .delegationReview = appState.projectView { return true }
+        if case .detail = appState.uiState.projectView { return true }
+        if case .delegationReview = appState.uiState.projectView { return true }
         return false
     }
 
@@ -73,7 +73,7 @@ struct NavigationContainer: View {
                 }
                 return .ignored
             }
-            .onChange(of: appState.projectView) { oldValue, newValue in
+            .onChange(of: appState.uiState.projectView) { oldValue, newValue in
                 handleNavigation(from: oldValue, to: newValue)
             }
         }
@@ -92,14 +92,14 @@ struct NavigationContainer: View {
                 }
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + animationDuration + 0.1) {
-                if case .list = appState.projectView {
+                if case .list = appState.uiState.projectView {
                     showSecondary = false
                     currentSecondaryView = nil
                 }
             }
 
         case let .detail(project):
-            guard appState.isProjectDetailsEnabled else {
+            guard appState.featureState.isProjectDetailsEnabled else {
                 appState.showProjectList()
                 return
             }
@@ -124,7 +124,7 @@ struct NavigationContainer: View {
             }
 
         case let .delegationReview(project):
-            guard appState.isDelegationLoopEnabled else {
+            guard appState.featureState.isDelegationLoopEnabled else {
                 appState.showProjectList()
                 return
             }
@@ -154,11 +154,11 @@ struct NavigationContainer: View {
     private func secondaryView(_ projectView: ProjectView) -> some View {
         switch projectView {
         case let .detail(project):
-            if appState.isProjectDetailsEnabled {
+            if appState.featureState.isProjectDetailsEnabled {
                 ProjectDetailView(project: project)
             }
         case let .delegationReview(project):
-            if appState.isDelegationLoopEnabled {
+            if appState.featureState.isDelegationLoopEnabled {
                 DelegationReviewView(project: project)
             }
         case .list:

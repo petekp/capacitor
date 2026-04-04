@@ -15,7 +15,7 @@ pub const CHECKPOINT_BRIDGE_PROTOCOL_VERSION: u32 = 1;
 
 /// Validate that an identifier is safe to use as a single filesystem path component.
 /// Rejects empty strings, strings containing path separators, "..", and absolute paths.
-pub fn validate_path_component(id: &str, label: &str) -> Result<(), String> {
+pub(crate) fn validate_path_component(id: &str, label: &str) -> Result<(), String> {
     if id.is_empty() {
         return Err(format!("{label} must not be empty"));
     }

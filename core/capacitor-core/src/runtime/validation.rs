@@ -11,10 +11,10 @@
 //! - Be helpful, not blocking (validation is advisory)
 //! - **Advisory**: Callers should treat results as guidance, not as hard errors.
 
-use crate::runtime_boundaries::{
+use crate::runtime::boundaries::{
     canonicalize_path, find_project_boundary, is_dangerous_path, PROJECT_MARKERS,
 };
-use crate::runtime_error::Result;
+use crate::runtime::error::Result;
 use std::path::Path;
 
 /// FFI-friendly validation result for Swift/Kotlin/Python.
@@ -180,7 +180,7 @@ pub enum ValidationResult {
 /// # Arguments
 /// * `path` - The path to validate
 /// * `pinned_projects` - List of already-pinned project paths (to detect duplicates)
-pub fn validate_project_path(path: &str, pinned_projects: &[String]) -> ValidationResult {
+pub(crate) fn validate_project_path(path: &str, pinned_projects: &[String]) -> ValidationResult {
     // Normalize trailing slashes
     let normalized = path.trim_end_matches('/');
     let normalized = if normalized.is_empty() {
@@ -268,13 +268,13 @@ pub fn validate_project_path(path: &str, pinned_projects: &[String]) -> Validati
 
 /// Checks if a path has a CLAUDE.md file.
 #[must_use]
-pub fn has_claude_md(path: &str) -> bool {
+pub(crate) fn has_claude_md(path: &str) -> bool {
     Path::new(path).join("CLAUDE.md").exists()
 }
 
 /// Checks if a path has any project markers (.git, package.json, etc.)
 #[must_use]
-pub fn has_any_project_marker(path: &str) -> bool {
+pub(crate) fn has_any_project_marker(path: &str) -> bool {
     let dir = Path::new(path);
     PROJECT_MARKERS
         .iter()
@@ -283,7 +283,7 @@ pub fn has_any_project_marker(path: &str) -> bool {
 
 /// Information extracted from package.json for CLAUDE.md generation.
 #[derive(Debug, Clone, Default)]
-pub struct PackageInfo {
+pub(crate) struct PackageInfo {
     pub name: Option<String>,
     pub description: Option<String>,
     pub scripts: Vec<String>,
@@ -291,13 +291,13 @@ pub struct PackageInfo {
 
 /// Information extracted from Cargo.toml for CLAUDE.md generation.
 #[derive(Debug, Clone, Default)]
-pub struct CargoInfo {
+pub(crate) struct CargoInfo {
     pub name: Option<String>,
     pub description: Option<String>,
 }
 
 /// Extracts package information from package.json if present.
-pub fn extract_package_json_info(project_path: &str) -> Option<PackageInfo> {
+pub(crate) fn extract_package_json_info(project_path: &str) -> Option<PackageInfo> {
     let package_json_path = Path::new(project_path).join("package.json");
     let content = std::fs::read_to_string(&package_json_path).ok()?;
 
@@ -326,7 +326,7 @@ pub fn extract_package_json_info(project_path: &str) -> Option<PackageInfo> {
 }
 
 /// Extracts crate information from Cargo.toml if present.
-pub fn extract_cargo_toml_info(project_path: &str) -> Option<CargoInfo> {
+pub(crate) fn extract_cargo_toml_info(project_path: &str) -> Option<CargoInfo> {
     let cargo_toml_path = Path::new(project_path).join("Cargo.toml");
     let content = std::fs::read_to_string(&cargo_toml_path).ok()?;
 
@@ -381,7 +381,7 @@ fn parse_toml_string_value(line: &str) -> Option<String> {
 ///
 /// Attempts to extract information from package.json, Cargo.toml, and README.md
 /// to pre-populate the template.
-pub fn generate_claude_md_content(project_path: &str) -> String {
+pub(crate) fn generate_claude_md_content(project_path: &str) -> String {
     // Try to extract project info from package.json or Cargo.toml
     let pkg_info = extract_package_json_info(project_path);
     let cargo_info = extract_cargo_toml_info(project_path);
@@ -443,8 +443,8 @@ pub fn generate_claude_md_content(project_path: &str) -> String {
 ///
 /// Returns Ok(()) if successful, or an error if the file couldn't be created.
 /// Does NOT overwrite existing files.
-pub fn create_claude_md(project_path: &str) -> Result<()> {
-    use crate::runtime_error::HudError;
+pub(crate) fn create_claude_md(project_path: &str) -> Result<()> {
+    use crate::runtime::error::HudError;
     use std::io::Write;
 
     let claude_md_path = Path::new(project_path).join("CLAUDE.md");

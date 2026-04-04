@@ -12,9 +12,9 @@
 //! - **Global storage**: All Capacitor data lives in `~/.capacitor/` for separation of concerns
 //! - **User-editable**: Parsing is best-effort to avoid breaking hand-edited markdown
 
-use crate::runtime_error::{HudError, Result};
-use crate::runtime_storage::StorageConfig;
-use crate::runtime_types::Idea;
+use crate::runtime::error::{HudError, Result};
+use crate::runtime::storage::StorageConfig;
+use crate::runtime::types::Idea;
 use chrono::Utc;
 use fs_err as fs;
 use regex::Regex;
@@ -792,7 +792,7 @@ impl IdeaBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::runtime_storage::StorageConfig;
+    use crate::runtime::storage::StorageConfig;
     use tempfile::TempDir;
 
     #[test]

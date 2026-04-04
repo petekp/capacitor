@@ -67,7 +67,7 @@ pub const DANGEROUS_PATHS: &[&str] = &["/", "/Users", "/home", "/var", "/tmp", "
 
 /// Represents a detected project boundary.
 #[derive(Debug, Clone, PartialEq)]
-pub struct ProjectBoundary {
+pub(crate) struct ProjectBoundary {
     /// Absolute path to the project root
     pub path: String,
     /// The marker file/directory that identified this as a project
@@ -94,7 +94,7 @@ pub struct ProjectBoundary {
 /// 5. CLAUDE.md at any level (outside ignored dirs) wins unless a nearer package marker was found
 /// 6. Otherwise, return the nearest boundary found
 /// 7. Stop at root, home directory, or max depth
-pub fn find_project_boundary(file_path: &str) -> Option<ProjectBoundary> {
+pub(crate) fn find_project_boundary(file_path: &str) -> Option<ProjectBoundary> {
     let path = Path::new(file_path);
 
     // If path doesn't exist, we can't traverse it
@@ -188,7 +188,7 @@ pub fn find_project_boundary(file_path: &str) -> Option<ProjectBoundary> {
 
 /// Checks if a directory name should be skipped during boundary detection.
 #[must_use]
-pub fn is_ignored_directory(name: &str) -> bool {
+pub(crate) fn is_ignored_directory(name: &str) -> bool {
     IGNORED_DIRECTORIES.contains(&name)
 }
 
@@ -197,7 +197,7 @@ pub fn is_ignored_directory(name: &str) -> bool {
 /// # Returns
 /// * `Some(reason)` if the path is dangerous, with an explanation
 /// * `None` if the path is safe
-pub fn is_dangerous_path(path: &str) -> Option<String> {
+pub(crate) fn is_dangerous_path(path: &str) -> Option<String> {
     // Normalize the path for comparison, handling root specially
     let trimmed = path.trim_end_matches('/');
     let normalized = if trimmed.is_empty() { "/" } else { trimmed };
@@ -235,7 +235,7 @@ pub fn is_dangerous_path(path: &str) -> Option<String> {
 /// - Resolves symlinks
 /// - Normalizes . and ..
 /// - Removes trailing slashes
-pub fn canonicalize_path(path: &str) -> std::io::Result<String> {
+pub(crate) fn canonicalize_path(path: &str) -> std::io::Result<String> {
     // Handle tilde expansion
     let expanded = if let Some(stripped) = path.strip_prefix("~/") {
         if let Some(home) = dirs::home_dir() {

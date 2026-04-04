@@ -1,3 +1,4 @@
+mod common;
 mod method_runner;
 
 use std::fs;
@@ -7,18 +8,16 @@ use capacitor_core::method_runner::storage::MethodRunPaths;
 
 #[test]
 fn method_runner_fixtures_are_readable_from_the_crate_root() {
-    let crate_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let fixture_paths = [
-        "../../methods/fixtures/minimal-dispatch.yaml",
-        "../../methods/fixtures/pipeline-blocked.yaml",
-        "../../methods/fixtures/synthesis-only.yaml",
-        "../../methods/fixtures/interactive-only.yaml",
-        "../../methods/fixtures/mixed-actions.yaml",
-        "../../methods/library/spec-hardening.yaml",
+        common::fixtures::minimal_dispatch_path(),
+        common::fixtures::pipeline_blocked_path(),
+        common::fixtures::synthesis_only_path(),
+        common::fixtures::interactive_only_path(),
+        common::fixtures::method_fixture_path("mixed-actions.yaml"),
+        common::fixtures::method_library_path("spec-hardening.yaml"),
     ];
 
-    for relative_path in fixture_paths {
-        let path = crate_root.join(relative_path);
+    for path in fixture_paths {
         let content = fs::read_to_string(&path)
             .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
         assert!(

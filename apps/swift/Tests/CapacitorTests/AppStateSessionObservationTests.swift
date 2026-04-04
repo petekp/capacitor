@@ -36,11 +36,11 @@ final class AppStateSessionObservationTests: XCTestCase {
         let appState = AppState()
         appState.cancelRuntimeAutomationForTesting()
         let project = makeProject(name: "Capacitor", path: "/Users/petepetrash/Code/capacitor")
-        appState.projects = [project]
+        appState.projectState.projects = [project]
 
         let invalidated = expectation(description: "grouped projects invalidated")
         withObservationTracking {
-            _ = appState.orderedGroupedProjects(appState.projects)
+            _ = appState.orderedGroupedProjects(appState.projectState.projects)
         } onChange: {
             invalidated.fulfill()
         }
@@ -87,7 +87,7 @@ final class AppStateSessionObservationTests: XCTestCase {
         let appState = AppState()
         appState.cancelRuntimeAutomationForTesting()
         let project = makeProject(name: "Capacitor", path: "/Users/petepetrash/Code/capacitor")
-        appState.projects = [project]
+        appState.projectState.projects = [project]
 
         let baselineSnapshot = makeRuntimeSnapshot(
             projectPath: project.path,
@@ -136,7 +136,7 @@ final class AppStateSessionObservationTests: XCTestCase {
         appState.cancelRuntimeAutomationForTesting()
         let project = makeProject(name: "Capacitor", path: "/Users/petepetrash/Code/capacitor")
         let baselineRun = makeRun(projectPath: project.path, runID: "run-baseline")
-        appState.projects = [project]
+        appState.projectState.projects = [project]
 
         // Apply a fresh snapshot with a run to establish baseline
         appState.setRuntimeSnapshotGenerationForTesting(2)
@@ -152,7 +152,7 @@ final class AppStateSessionObservationTests: XCTestCase {
             correlationId: "baseline-runs",
             projects: [project],
         )
-        XCTAssertEqual(appState.runStatesByID.count, 1, "baseline should have one run")
+        XCTAssertEqual(appState.runState.runStatesByID.count, 1, "baseline should have one run")
 
         // Apply a stale snapshot (generation 1 < current 2) with a different run
         let staleRun = makeRun(projectPath: project.path, runID: "run-stale")
@@ -169,9 +169,9 @@ final class AppStateSessionObservationTests: XCTestCase {
             projects: [project],
         )
 
-        XCTAssertEqual(appState.runStatesByID.count, 1, "stale generation should not mutate run sink")
+        XCTAssertEqual(appState.runState.runStatesByID.count, 1, "stale generation should not mutate run sink")
         XCTAssertEqual(
-            appState.runStatesByID[RuntimeRunKey(run: baselineRun)],
+            appState.runState.runStatesByID[RuntimeRunKey(run: baselineRun)],
             baselineRun,
             "stale generation should preserve baseline run, not replace with stale",
         )
@@ -182,7 +182,7 @@ final class AppStateSessionObservationTests: XCTestCase {
         appState.cancelRuntimeAutomationForTesting()
         let project = makeProject(name: "Capacitor", path: "/Users/petepetrash/Code/capacitor")
         let run = makeRun(projectPath: project.path, runID: "run-1")
-        appState.projects = [project]
+        appState.projectState.projects = [project]
         appState.setRuntimeSnapshotGenerationForTesting(1)
 
         await appState.applyRuntimeSnapshotForTesting(
@@ -198,8 +198,8 @@ final class AppStateSessionObservationTests: XCTestCase {
             projects: [project],
         )
 
-        XCTAssertEqual(appState.runStatesByID.count, 1)
-        XCTAssertEqual(appState.runStatesByID[RuntimeRunKey(run: run)], run)
+        XCTAssertEqual(appState.runState.runStatesByID.count, 1)
+        XCTAssertEqual(appState.runState.runStatesByID[RuntimeRunKey(run: run)], run)
     }
 
     func testFreshRuntimeSnapshotUsesCompositeRunKey() async {
@@ -225,16 +225,16 @@ final class AppStateSessionObservationTests: XCTestCase {
             projects: [],
         )
 
-        XCTAssertEqual(appState.runStatesByID.count, 2)
-        XCTAssertEqual(appState.runStatesByID[RuntimeRunKey(run: runA)], runA)
-        XCTAssertEqual(appState.runStatesByID[RuntimeRunKey(run: runB)], runB)
+        XCTAssertEqual(appState.runState.runStatesByID.count, 2)
+        XCTAssertEqual(appState.runState.runStatesByID[RuntimeRunKey(run: runA)], runA)
+        XCTAssertEqual(appState.runState.runStatesByID[RuntimeRunKey(run: runB)], runB)
     }
 
     func testRepeatedRuntimeSnapshotFailuresClearStaleActivityAfterThreshold() {
         let appState = AppState()
         appState.cancelRuntimeAutomationForTesting()
         let project = makeProject(name: "Capacitor", path: "/Users/petepetrash/Code/capacitor")
-        appState.projects = [project]
+        appState.projectState.projects = [project]
         appState.sessionStateManager.setSessionStatesForTesting([
             project.path: ProjectSessionState(
                 state: .working,
@@ -291,7 +291,7 @@ final class AppStateSessionObservationTests: XCTestCase {
         let appState = AppState()
         appState.cancelRuntimeAutomationForTesting()
         let project = makeProject(name: "Capacitor", path: "/Users/petepetrash/Code/capacitor")
-        appState.projects = [project]
+        appState.projectState.projects = [project]
         appState.setRuntimeSnapshotGenerationForTesting(5)
 
         appState.handleRuntimeSnapshotFailureForTesting(
@@ -338,7 +338,7 @@ final class AppStateSessionObservationTests: XCTestCase {
         appState.cancelRuntimeAutomationForTesting()
         let project = makeProject(name: "Capacitor", path: "/Users/petepetrash/Code/capacitor")
         let run = makeRun(projectPath: project.path, runID: "run-1")
-        appState.projects = [project]
+        appState.projectState.projects = [project]
         appState.setRuntimeSnapshotGenerationForTesting(1)
 
         await appState.applyRuntimeSnapshotForTesting(
@@ -354,14 +354,14 @@ final class AppStateSessionObservationTests: XCTestCase {
             projects: [project],
         )
 
-        XCTAssertEqual(appState.runStatesByID[RuntimeRunKey(run: run)], run)
+        XCTAssertEqual(appState.runState.runStatesByID[RuntimeRunKey(run: run)], run)
 
         appState.handleRuntimeSnapshotFailureForTesting(
             refreshGeneration: 1,
             correlationId: "failure-1",
             errorDescription: "unavailable",
         )
-        XCTAssertEqual(appState.runStatesByID[RuntimeRunKey(run: run)], run)
+        XCTAssertEqual(appState.runState.runStatesByID[RuntimeRunKey(run: run)], run)
 
         appState.handleRuntimeSnapshotFailureForTesting(
             refreshGeneration: 1,
@@ -370,7 +370,7 @@ final class AppStateSessionObservationTests: XCTestCase {
         )
 
         XCTAssertEqual(
-            appState.runStatesByID[RuntimeRunKey(run: run)],
+            appState.runState.runStatesByID[RuntimeRunKey(run: run)],
             run,
             "second consecutive fresh failure should preserve the last known run snapshot",
         )
@@ -382,7 +382,7 @@ final class AppStateSessionObservationTests: XCTestCase {
         let project = makeProject(name: "Capacitor", path: "/Users/petepetrash/Code/capacitor")
         let baselineRun = makeRun(projectPath: project.path, runID: "run-baseline")
         let updatedRun = makeRun(projectPath: project.path, runID: "run-updated")
-        appState.projects = [project]
+        appState.projectState.projects = [project]
         appState.setRuntimeSnapshotGenerationForTesting(1)
 
         await appState.applyRuntimeSnapshotForTesting(
@@ -425,8 +425,8 @@ final class AppStateSessionObservationTests: XCTestCase {
             appState.routingStateStore.routingView(projectPath: project.path, workspaceId: nil)?.target.sessionName,
             "baseline-session",
         )
-        XCTAssertEqual(appState.runStatesByID[RuntimeRunKey(run: baselineRun)], baselineRun)
-        XCTAssertNil(appState.runStatesByID[RuntimeRunKey(run: updatedRun)])
+        XCTAssertEqual(appState.runState.runStatesByID[RuntimeRunKey(run: baselineRun)], baselineRun)
+        XCTAssertNil(appState.runState.runStatesByID[RuntimeRunKey(run: updatedRun)])
         XCTAssertTrue(
             observedLines.contains { $0.contains("source=runtime_snapshot_noop") && $0.contains("version=9") },
             "expected no-op log for repeated nonzero snapshot version",
@@ -439,7 +439,7 @@ final class AppStateSessionObservationTests: XCTestCase {
         let project = makeProject(name: "Capacitor", path: "/Users/petepetrash/Code/capacitor")
         let baselineRun = makeRun(projectPath: project.path, runID: "run-baseline")
         let staleRun = makeRun(projectPath: project.path, runID: "run-stale")
-        appState.projects = [project]
+        appState.projectState.projects = [project]
         appState.setRuntimeSnapshotGenerationForTesting(1)
 
         await appState.applyRuntimeSnapshotForTesting(
@@ -482,8 +482,8 @@ final class AppStateSessionObservationTests: XCTestCase {
             appState.routingStateStore.routingView(projectPath: project.path, workspaceId: nil)?.target.sessionName,
             "baseline-session",
         )
-        XCTAssertEqual(appState.runStatesByID[RuntimeRunKey(run: baselineRun)], baselineRun)
-        XCTAssertNil(appState.runStatesByID[RuntimeRunKey(run: staleRun)])
+        XCTAssertEqual(appState.runState.runStatesByID[RuntimeRunKey(run: baselineRun)], baselineRun)
+        XCTAssertNil(appState.runState.runStatesByID[RuntimeRunKey(run: staleRun)])
         XCTAssertTrue(
             observedLines.contains {
                 $0.contains("source=runtime_snapshot_drop_stale_version") && $0.contains("version=11")
@@ -498,7 +498,7 @@ final class AppStateSessionObservationTests: XCTestCase {
         let project = makeProject(name: "Capacitor", path: "/Users/petepetrash/Code/capacitor")
         let baselineRun = makeRun(projectPath: project.path, runID: "run-baseline")
         let updatedRun = makeRun(projectPath: project.path, runID: "run-updated")
-        appState.projects = [project]
+        appState.projectState.projects = [project]
         appState.setRuntimeSnapshotGenerationForTesting(1)
 
         await appState.applyRuntimeSnapshotForTesting(
@@ -541,8 +541,8 @@ final class AppStateSessionObservationTests: XCTestCase {
             appState.routingStateStore.routingView(projectPath: project.path, workspaceId: nil)?.target.sessionName,
             "updated-session",
         )
-        XCTAssertEqual(appState.runStatesByID[RuntimeRunKey(run: updatedRun)], updatedRun)
-        XCTAssertNil(appState.runStatesByID[RuntimeRunKey(run: baselineRun)])
+        XCTAssertEqual(appState.runState.runStatesByID[RuntimeRunKey(run: updatedRun)], updatedRun)
+        XCTAssertNil(appState.runState.runStatesByID[RuntimeRunKey(run: baselineRun)])
         XCTAssertFalse(
             observedLines.contains { $0.contains("source=runtime_snapshot_noop") },
             "unknown snapshot versions must never short-circuit projection",
@@ -553,7 +553,7 @@ final class AppStateSessionObservationTests: XCTestCase {
         let appState = AppState()
         appState.cancelRuntimeAutomationForTesting()
         let project = makeProject(name: "Capacitor", path: "/Users/petepetrash/Code/capacitor")
-        appState.projects = [project]
+        appState.projectState.projects = [project]
         appState.setRuntimeSnapshotGenerationForTesting(1)
 
         var observedLines: [String] = []

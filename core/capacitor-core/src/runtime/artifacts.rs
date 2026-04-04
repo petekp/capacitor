@@ -13,7 +13,7 @@ use walkdir::WalkDir;
 /// For commands/agents: counts .md files
 ///
 /// Returns u32 for FFI compatibility (usize is platform-dependent).
-pub fn count_artifacts_in_dir(dir: &Path, artifact_type: &str) -> u32 {
+pub(crate) fn count_artifacts_in_dir(dir: &Path, artifact_type: &str) -> u32 {
     if !dir.exists() {
         return 0;
     }
@@ -46,7 +46,7 @@ pub fn count_artifacts_in_dir(dir: &Path, artifact_type: &str) -> u32 {
 /// Counts hooks in a plugin directory.
 ///
 /// Returns u32 for FFI compatibility.
-pub fn count_hooks_in_dir(dir: &Path) -> u32 {
+pub(crate) fn count_hooks_in_dir(dir: &Path) -> u32 {
     let hooks_json = dir.join("hooks").join("hooks.json");
     if hooks_json.exists() {
         1

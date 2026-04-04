@@ -3,6 +3,58 @@ import Foundation
 import XCTest
 
 final class ProjectCardAnimationPolicyTests: XCTestCase {
+    func testPressedInteractionStateUsesPressedScale() {
+        var state = ProjectCardInteractionState()
+        state.isHovered = true
+        state.isPressed = true
+
+        let scale = state.cardScale(
+            layoutMode: .vertical,
+            reduceMotion: false,
+            isDragging: false,
+            config: .shared,
+        )
+
+        XCTAssertEqual(scale, GlassConfig.shared.cardPressedScale(for: .vertical))
+    }
+
+    func testHoverInteractionStateUsesHoverScaleWhenNotPressed() {
+        var state = ProjectCardInteractionState()
+        state.isHovered = true
+
+        let scale = state.cardScale(
+            layoutMode: .dock,
+            reduceMotion: false,
+            isDragging: false,
+            config: .shared,
+        )
+
+        XCTAssertEqual(scale, GlassConfig.shared.cardHoverScale(for: .dock))
+    }
+
+    func testPressTiltUsesPressPointAndCardSize() {
+        var state = ProjectCardInteractionState()
+        state.isPressed = true
+        state.pressPoint = CGPoint(x: 180, y: 10)
+        state.cardSize = CGSize(width: 200, height: 100)
+
+        let tiltX = state.pressTiltX(reduceMotion: false, config: .shared)
+        let tiltY = state.pressTiltY(reduceMotion: false, config: .shared)
+
+        XCTAssertEqual(tiltX, GlassConfig.shared.cardPressTiltVertical * 0.8, accuracy: 0.0001)
+        XCTAssertEqual(tiltY, GlassConfig.shared.cardPressTiltHorizontal * 0.8, accuracy: 0.0001)
+    }
+
+    func testPressTiltCollapsesWhenReducedMotionIsEnabled() {
+        var state = ProjectCardInteractionState()
+        state.isPressed = true
+        state.pressPoint = CGPoint(x: 100, y: 50)
+        state.cardSize = CGSize(width: 200, height: 100)
+
+        XCTAssertEqual(state.pressTiltX(reduceMotion: true, config: .shared), 0)
+        XCTAssertEqual(state.pressTiltY(reduceMotion: true, config: .shared), 0)
+    }
+
     func testWaitingCardAnimatesWhenNotHoveredOrActive() {
         let shouldAnimate = CardEffectAnimationPolicy.shouldAnimate(
             isActive: false,

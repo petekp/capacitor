@@ -3,7 +3,7 @@ use crate::domain::{
 };
 
 #[must_use]
-pub fn normalize_hook_event(command: IngestHookEventCommand) -> IngestHookEventCommand {
+pub(crate) fn normalize_hook_event(command: IngestHookEventCommand) -> IngestHookEventCommand {
     IngestHookEventCommand {
         event_id: command.event_id.trim().to_string(),
         recorded_at: command.recorded_at.trim().to_string(),
@@ -23,7 +23,9 @@ pub fn normalize_hook_event(command: IngestHookEventCommand) -> IngestHookEventC
 }
 
 #[must_use]
-pub fn normalize_shell_signal(command: IngestShellSignalCommand) -> IngestShellSignalCommand {
+pub(crate) fn normalize_shell_signal(
+    command: IngestShellSignalCommand,
+) -> IngestShellSignalCommand {
     IngestShellSignalCommand {
         pid: command.pid,
         cwd: normalize_required_path(&command.cwd),

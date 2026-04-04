@@ -20,7 +20,7 @@ import SwiftUI
 
                     Spacer()
 
-                    if let trace = appState.activationTrace, !trace.isEmpty {
+                    if let trace = appState.uiState.activationTrace, !trace.isEmpty {
                         Button("Copy") {
                             copyTrace(trace)
                         }
@@ -29,7 +29,7 @@ import SwiftUI
                         .buttonStyle(.plain)
 
                         Button("Clear") {
-                            appState.activationTrace = nil
+                            appState.uiState.activationTrace = nil
                         }
                         .font(.caption2)
                         .foregroundColor(.white.opacity(0.7))
@@ -37,7 +37,7 @@ import SwiftUI
                     }
                 }
 
-                if let trace = appState.activationTrace, !trace.isEmpty {
+                if let trace = appState.uiState.activationTrace, !trace.isEmpty {
                     ScrollView(.vertical) {
                         Text(trace)
                             .font(.system(size: 11, weight: .regular, design: .monospaced))

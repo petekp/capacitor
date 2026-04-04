@@ -2,6 +2,6 @@ use crate::domain::AppSnapshot;
 use crate::reduce::ReducerState;
 
 #[must_use]
-pub fn app_snapshot(state: &ReducerState) -> AppSnapshot {
+pub(crate) fn app_snapshot(state: &ReducerState) -> AppSnapshot {
     state.snapshot()
 }

@@ -5,6 +5,7 @@
 
 use std::path::PathBuf;
 
+use crate::common::fixtures::minimal_dispatch_path;
 use capacitor_core::method_runner::adapters::{
     FakeInteractiveIO, FakePromptBuilder, FakeWorkerDispatcher,
 };
@@ -15,24 +16,16 @@ use capacitor_core::method_runner::resume::resume_run;
 use capacitor_core::method_runner::state::{rebuild_state, PhaseStatus, RunStatus};
 use capacitor_core::method_runner::storage::MethodRunPaths;
 
-fn crate_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-}
-
 fn gated_phase_path() -> PathBuf {
-    crate_root().join("../../methods/fixtures/gated-phase.yaml")
+    crate::common::fixtures::method_fixture_path("gated-phase.yaml")
 }
 
 fn gated_outputs_present_path() -> PathBuf {
-    crate_root().join("../../methods/fixtures/gated-outputs-present.yaml")
+    crate::common::fixtures::method_fixture_path("gated-outputs-present.yaml")
 }
 
 fn gated_pipeline_clean_path() -> PathBuf {
-    crate_root().join("../../methods/fixtures/gated-pipeline-clean.yaml")
-}
-
-fn minimal_dispatch_path() -> PathBuf {
-    crate_root().join("../../methods/fixtures/minimal-dispatch.yaml")
+    crate::common::fixtures::method_fixture_path("gated-pipeline-clean.yaml")
 }
 
 // ============================================================================

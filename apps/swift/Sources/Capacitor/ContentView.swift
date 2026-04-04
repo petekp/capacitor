@@ -15,20 +15,20 @@ struct ContentView: View {
     #endif
 
     private var isCaptureModalOpen: Bool {
-        appState.isIdeaCaptureEnabled &&
-            appState.showCaptureModal &&
-            appState.captureModalProject != nil
+        appState.featureState.isIdeaCaptureEnabled &&
+            appState.uiState.showCaptureModal &&
+            appState.uiState.captureModalProject != nil
     }
 
     var body: some View {
-        @Bindable var appState = appState
+        @Bindable var uiState = appState.uiState
 
         GeometryReader { geometry in
             let containerSize = geometry.size
 
             ZStack {
                 Group {
-                    switch appState.layoutMode {
+                    switch uiState.layoutMode {
                     case .vertical:
                         verticalLayout
                     case .dock:
@@ -39,13 +39,13 @@ struct ContentView: View {
                 .saturation(isCaptureModalOpen ? 0.8 : 1)
                 .animation(.easeInOut(duration: 0.25), value: isCaptureModalOpen)
 
-                if appState.isIdeaCaptureEnabled,
-                   let project = appState.captureModalProject
+                if appState.featureState.isIdeaCaptureEnabled,
+                   let project = uiState.captureModalProject
                 {
                     IdeaCaptureModalOverlay(
-                        isPresented: $appState.showCaptureModal,
+                        isPresented: $uiState.showCaptureModal,
                         projectName: project.name,
-                        originFrame: appState.captureModalOrigin,
+                        originFrame: uiState.captureModalOrigin,
                         containerSize: containerSize,
                         onCapture: { text in
                             appState.captureIdea(for: project, text: text)
@@ -54,14 +54,14 @@ struct ContentView: View {
                     .zIndex(100)
                 }
 
-                if !appState.isLoading, appState.projects.isEmpty, !isDragHovered, !appState.isFileDragOverCard {
+                if !uiState.isLoading, appState.projectState.projects.isEmpty, !isDragHovered, !uiState.isFileDragOverCard {
                     EmptyStateBorderGlow()
                         .transition(.opacity)
                 }
 
                 AnchorEdgeGlow(controller: appState.anchoringController)
 
-                ToastContainer(toast: $appState.toast)
+                ToastContainer(toast: $uiState.toast)
 
                 TipTooltipContainer(
                     showTip: $showDragDropTip,
@@ -69,31 +69,31 @@ struct ContentView: View {
                 )
 
                 Group {
-                    if isDragHovered || appState.isFileDragOverCard {
+                    if isDragHovered || uiState.isFileDragOverCard {
                         dropOverlay
                     }
                 }
                 .animation(.spring(response: 0.22, dampingFraction: 0.82), value: isDragHovered)
-                .animation(.spring(response: 0.22, dampingFraction: 0.82), value: appState.isFileDragOverCard)
+                .animation(.spring(response: 0.22, dampingFraction: 0.82), value: uiState.isFileDragOverCard)
             }
             .coordinateSpace(name: "contentView")
         }
-        .onChange(of: appState.pendingDragDropTip) { _, pending in
+        .onChange(of: uiState.pendingDragDropTip) { _, pending in
             guard pending, !hasSeenDragDropTip else {
-                appState.pendingDragDropTip = false
+                uiState.pendingDragDropTip = false
                 return
             }
             // Wait for toast to dismiss, then show tip
-            if appState.toast != nil {
+            if uiState.toast != nil {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
                     showDragDropTip = true
                     hasSeenDragDropTip = true
-                    appState.pendingDragDropTip = false
+                    uiState.pendingDragDropTip = false
                 }
             } else {
                 showDragDropTip = true
                 hasSeenDragDropTip = true
-                appState.pendingDragDropTip = false
+                uiState.pendingDragDropTip = false
             }
         }
         .onDrop(of: [UTType.fileURL], isTargeted: $isDragHovered) { providers in

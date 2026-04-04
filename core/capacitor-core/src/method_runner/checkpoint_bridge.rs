@@ -20,7 +20,7 @@ use crate::method_runner::checkpoint_bridge_protocol::{
     decision_path, pending_path, validate_path_component, write_json_atomic,
     CheckpointBridgeDecision, CheckpointBridgePending, CHECKPOINT_BRIDGE_PROTOCOL_VERSION,
 };
-use crate::runtime_service::RuntimeServiceEndpoint;
+use crate::runtime::service::RuntimeServiceEndpoint;
 
 /// Maximum time to wait for a decision file before falling back to "rejected".
 /// Human gate decisions can reasonably take a long time (reviewer is reading code),

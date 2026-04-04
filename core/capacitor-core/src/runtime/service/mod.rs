@@ -21,7 +21,7 @@ pub const RUNTIME_SERVICE_AUTH_MODE: &str = "bearer";
 pub const RUNTIME_SERVICE_MODE_BOOTSTRAP_ONLY: &str = "bootstrap_only";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct RuntimeServiceConnection {
+pub(crate) struct RuntimeServiceConnection {
     pub port: u16,
     pub auth_token: String,
 }
@@ -49,7 +49,7 @@ impl RuntimeServiceEndpoint {
         }
     }
 
-    pub fn from_env() -> Result<Option<Self>, String> {
+    pub(crate) fn from_env() -> Result<Option<Self>, String> {
         let port = std::env::var(RUNTIME_SERVICE_PORT_ENV)
             .ok()
             .and_then(|value| value.trim().parse::<u16>().ok());
@@ -147,22 +147,22 @@ impl RuntimeServiceEndpoint {
     }
 
     #[must_use]
-    pub fn run_mutate_url(&self) -> String {
+    pub(crate) fn run_mutate_url(&self) -> String {
         format!("http://{}:{}/runtime/run/mutate", self.host, self.port)
     }
 
     #[must_use]
-    pub fn auth_token(&self) -> &str {
+    pub(crate) fn auth_token(&self) -> &str {
         &self.auth_token
     }
 
-    pub fn probe_health(&self) -> Result<RuntimeServiceHealth, String> {
+    pub(crate) fn probe_health(&self) -> Result<RuntimeServiceHealth, String> {
         let health: RuntimeServiceHealth = self.get_json("/health")?;
         health.validate_bootstrap_contract()?;
         Ok(health)
     }
 
-    pub fn fetch_snapshot(&self) -> Result<AppSnapshot, String> {
+    pub(crate) fn fetch_snapshot(&self) -> Result<AppSnapshot, String> {
         self.get_json("/runtime/snapshot")
     }
 
@@ -295,7 +295,7 @@ impl RuntimeServiceBootstrap {
     }
 
     #[must_use]
-    pub fn authorization_header_value(&self) -> String {
+    pub(crate) fn authorization_header_value(&self) -> String {
         format!("Bearer {}", self.auth_token)
     }
 
@@ -345,7 +345,7 @@ impl RuntimeServiceBootstrap {
     }
 
     #[must_use]
-    pub fn token_file_path(home_dir: &Path, port: u16) -> PathBuf {
+    pub(crate) fn token_file_path(home_dir: &Path, port: u16) -> PathBuf {
         home_dir
             .join(".capacitor")
             .join("runtime")
@@ -353,7 +353,7 @@ impl RuntimeServiceBootstrap {
     }
 
     #[must_use]
-    pub fn connection_file_path(home_dir: &Path) -> PathBuf {
+    pub(crate) fn connection_file_path(home_dir: &Path) -> PathBuf {
         home_dir
             .join(".capacitor")
             .join("runtime")
@@ -402,7 +402,7 @@ pub struct RuntimeServiceHealth {
 }
 
 impl RuntimeServiceHealth {
-    pub fn validate_bootstrap_contract(&self) -> Result<(), String> {
+    pub(crate) fn validate_bootstrap_contract(&self) -> Result<(), String> {
         if self.status != "ok" {
             return Err(format!(
                 "Unexpected runtime service health status {:?}; expected \"ok\"",

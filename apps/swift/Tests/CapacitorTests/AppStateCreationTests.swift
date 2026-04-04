@@ -6,7 +6,7 @@ final class AppStateCreationTests: XCTestCase {
     func testDiscoveredSessionDoesNotReactivateCancelledCreation() {
         let appState = AppState()
         let creationId = "creation-cancelled"
-        appState.activeCreations = [
+        appState.projectState.activeCreations = [
             makeCreation(id: creationId, status: .cancelled),
         ]
 
@@ -17,7 +17,7 @@ final class AppStateCreationTests: XCTestCase {
 
         XCTAssertFalse(applied, "terminal creation must not be reactivated by late monitor callback")
         XCTAssertEqual(
-            appState.activeCreations.first(where: { $0.id == creationId })?.status,
+            appState.projectState.activeCreations.first(where: { $0.id == creationId })?.status,
             .cancelled,
         )
     }
@@ -25,7 +25,7 @@ final class AppStateCreationTests: XCTestCase {
     func testCancelCreationCancelsTrackedMonitorTasks() {
         let appState = AppState()
         let creationId = "creation-in-progress"
-        appState.activeCreations = [
+        appState.projectState.activeCreations = [
             makeCreation(id: creationId, status: .inProgress),
         ]
 

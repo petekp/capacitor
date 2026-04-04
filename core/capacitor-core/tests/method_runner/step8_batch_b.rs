@@ -5,6 +5,7 @@
 
 use std::path::PathBuf;
 
+use crate::common::fixtures::{interactive_only_path, synthesis_only_path};
 use capacitor_core::method_runner::adapters::{
     validate_interactive_response, CliInteractiveIO, FakeInteractiveIO, FakePromptBuilder,
     FakeWorkerDispatcher,
@@ -15,24 +16,12 @@ use capacitor_core::method_runner::executor::{execute_run, RunError};
 use capacitor_core::method_runner::state::RunStatus;
 use capacitor_core::method_runner::storage::MethodRunPaths;
 
-fn crate_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-}
-
 fn interactive_approval_path() -> PathBuf {
-    crate_root().join("../../methods/fixtures/interactive-approval.yaml")
-}
-
-fn interactive_only_path() -> PathBuf {
-    crate_root().join("../../methods/fixtures/interactive-only.yaml")
-}
-
-fn synthesis_only_path() -> PathBuf {
-    crate_root().join("../../methods/fixtures/synthesis-only.yaml")
+    crate::common::fixtures::method_fixture_path("interactive-approval.yaml")
 }
 
 fn dispatch_then_synthesis_path() -> PathBuf {
-    crate_root().join("../../methods/fixtures/dispatch-then-synthesis.yaml")
+    crate::common::fixtures::method_fixture_path("dispatch-then-synthesis.yaml")
 }
 
 // ============================================================================

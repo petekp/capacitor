@@ -233,38 +233,6 @@ extension View {
         )
     }
 
-    func cardInteractions(
-        isHovered: Binding<Bool>,
-        onTap: @escaping () -> Void,
-        onDragStarted: (() -> NSItemProvider)?,
-    ) -> some View {
-        contentShape(Rectangle())
-            .onTapGesture(perform: onTap)
-            .accessibilityAddTraits(.isButton)
-            .accessibilityAction { onTap() }
-            .focusable()
-            .focusEffectDisabled()
-            .onKeyPress(.return) {
-                onTap()
-                return .handled
-            }
-            .onKeyPress(.space) {
-                onTap()
-                return .handled
-            }
-            .onHover { hovering in
-                withAnimation(.easeOut(duration: GlassConfig.shared.hoverTransitionDuration)) {
-                    isHovered.wrappedValue = hovering
-                }
-            }
-            .onDrag {
-                _ = onDragStarted?()
-                return NSItemProvider(object: "" as NSString)
-            } preview: {
-                Color.clear.frame(width: 1, height: 1)
-            }
-    }
-
     @MainActor
     func cardLifecycleHandlers(
         projectPath: String,

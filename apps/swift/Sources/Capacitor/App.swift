@@ -105,7 +105,7 @@ enum StartupSetupValidator {
 struct CapacitorApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @State private var appState = AppState()
-    @StateObject private var updaterController = UpdaterController()
+    @State private var updaterController = UpdaterController()
     @AppStorage("floatingMode") private var floatingMode = true
     @AppStorage("alwaysOnTop") private var alwaysOnTop = false
     @AppStorage("layoutMode") private var layoutMode = "vertical"
@@ -124,20 +124,20 @@ struct CapacitorApp: App {
                         .environment(\.floatingMode, floatingMode)
                         .environment(\.alwaysOnTop, alwaysOnTop)
                         .readReduceMotion()
-                        .modifier(LayoutModeFrameModifier(layoutMode: appState.layoutMode))
+                        .modifier(LayoutModeFrameModifier(layoutMode: appState.uiState.layoutMode))
                         .background(FloatingWindowConfigurator(enabled: floatingMode, alwaysOnTop: alwaysOnTop, anchoringOwnsLevel: appState.anchoringController.state.isAnchored))
-                        .background(WindowFrameConfigurator(layoutMode: appState.layoutMode))
-                        .background(AnchoringConfigurator(controller: appState.anchoringController, enabled: appState.isWindowAnchoringEnabled))
+                        .background(WindowFrameConfigurator(layoutMode: appState.uiState.layoutMode))
+                        .background(AnchoringConfigurator(controller: appState.anchoringController, enabled: appState.featureState.isWindowAnchoringEnabled))
                         .onAppear {
                             if let mode = LayoutMode(rawValue: layoutMode) {
-                                appState.layoutMode = mode
+                                appState.uiState.layoutMode = mode
                             }
                             // Refresh diagnostic after WelcomeView completes (hooks may have just been installed)
                             appState.checkHookDiagnostic()
                         }
                         .onChange(of: layoutMode) { _, newValue in
                             if let mode = LayoutMode(rawValue: newValue) {
-                                appState.layoutMode = mode
+                                appState.uiState.layoutMode = mode
                             }
                         }
                         .transition(.asymmetric(
@@ -213,14 +213,14 @@ struct CapacitorApp: App {
             CommandGroup(replacing: .toolbar) {
                 Button("Vertical Layout") {
                     layoutMode = "vertical"
-                    appState.layoutMode = .vertical
+                    appState.uiState.layoutMode = .vertical
                 }
                 .keyboardShortcut("1", modifiers: .command)
                 .disabled(layoutMode == "vertical")
 
                 Button("Dock Layout") {
                     layoutMode = "dock"
-                    appState.layoutMode = .dock
+                    appState.uiState.layoutMode = .dock
                 }
                 .keyboardShortcut("2", modifiers: .command)
                 .disabled(layoutMode == "dock")

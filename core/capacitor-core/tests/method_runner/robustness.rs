@@ -4,9 +4,9 @@
 //! and end-to-end filesystem layout verification.
 
 use std::io::Write;
-use std::path::PathBuf;
 use std::time::Duration;
 
+use crate::common::fixtures::minimal_dispatch_path;
 use capacitor_core::method_runner::adapters::{
     FakeInteractiveIO, FakePromptBuilder, FakeWorkerDispatcher,
 };
@@ -17,10 +17,6 @@ use capacitor_core::method_runner::events::{
 use capacitor_core::method_runner::executor::execute_run;
 use capacitor_core::method_runner::state::{write_state_atomic, MethodRunState, RunStatus};
 use capacitor_core::method_runner::storage::{acquire_lock, LockInfo, MethodRunPaths};
-
-fn fixture_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../methods/fixtures/minimal-dispatch.yaml")
-}
 
 // =========================================================================
 // Lock protocol tests
@@ -378,7 +374,7 @@ fn robustness_state_file_is_valid_json() {
 fn robustness_method_tree_structure() {
     let tmp = tempfile::TempDir::new().unwrap();
     let source = DefinitionSource {
-        definition_path: fixture_path(),
+        definition_path: minimal_dispatch_path(),
         execution_root: tmp.path().to_path_buf(),
     };
 
@@ -479,11 +475,11 @@ fn robustness_clean_run_isolation() {
     let dispatcher = FakeWorkerDispatcher;
 
     let source_a = DefinitionSource {
-        definition_path: fixture_path(),
+        definition_path: minimal_dispatch_path(),
         execution_root: tmp_a.path().to_path_buf(),
     };
     let source_b = DefinitionSource {
-        definition_path: fixture_path(),
+        definition_path: minimal_dispatch_path(),
         execution_root: tmp_b.path().to_path_buf(),
     };
 
@@ -526,7 +522,7 @@ fn robustness_clean_run_isolation() {
 fn robustness_definition_snapshot_is_valid_yaml() {
     let tmp = tempfile::TempDir::new().unwrap();
     let source = DefinitionSource {
-        definition_path: fixture_path(),
+        definition_path: minimal_dispatch_path(),
         execution_root: tmp.path().to_path_buf(),
     };
 
@@ -550,7 +546,7 @@ fn robustness_definition_snapshot_is_valid_yaml() {
         .expect("definition.snapshot.yaml should parse as valid YAML");
 
     // Also verify against a fresh normalization of the source fixture
-    let fixture_yaml = std::fs::read_to_string(fixture_path()).unwrap();
+    let fixture_yaml = std::fs::read_to_string(minimal_dispatch_path()).unwrap();
     let expected = Normalizer::normalize(&fixture_yaml).unwrap();
 
     assert_eq!(

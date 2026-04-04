@@ -7,6 +7,7 @@
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
+use crate::common::fixtures::{minimal_dispatch_path, pipeline_blocked_path};
 use capacitor_core::method_runner::adapters::{
     FakeInteractiveIO, FakePromptBuilder, FakeWorkerDispatcher,
 };
@@ -16,20 +17,8 @@ use capacitor_core::method_runner::executor::{execute_normalize, execute_run, Ru
 use capacitor_core::method_runner::state::rebuild_state;
 use capacitor_core::method_runner::storage::MethodRunPaths;
 
-fn crate_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-}
-
-fn minimal_dispatch_path() -> PathBuf {
-    crate_root().join("../../methods/fixtures/minimal-dispatch.yaml")
-}
-
-fn pipeline_blocked_path() -> PathBuf {
-    crate_root().join("../../methods/fixtures/pipeline-blocked.yaml")
-}
-
 fn spec_hardening_path() -> PathBuf {
-    crate_root().join("../../methods/library/spec-hardening.yaml")
+    crate::common::fixtures::method_library_path("spec-hardening.yaml")
 }
 
 // ============================================================================

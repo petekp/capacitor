@@ -24,7 +24,7 @@ struct ProjectDetailView: View {
                         .opacity(appeared ? 1 : 0)
                         .offset(y: appeared ? 0 : 8)
 
-                    if appState.isLlmFeaturesEnabled {
+                    if appState.featureState.isLlmFeaturesEnabled {
                         DescriptionSection(
                             description: appState.getDescription(for: project),
                             isGenerating: appState.isGeneratingDescription(for: project),
@@ -34,7 +34,7 @@ struct ProjectDetailView: View {
                         .offset(y: appeared ? 0 : 12)
                     }
 
-                    if appState.isIdeaCaptureEnabled {
+                    if appState.featureState.isIdeaCaptureEnabled {
                         VStack(alignment: .leading, spacing: 12) {
                             DetailSectionLabel(title: "IDEA QUEUE")
 
@@ -94,7 +94,7 @@ struct ProjectDetailView: View {
             .animation(.easeInOut(duration: 0.25), value: isModalOpen)
             .background(floatingMode ? Color.clear : Color.hudBackground)
 
-            if appState.isIdeaCaptureEnabled {
+            if appState.featureState.isIdeaCaptureEnabled {
                 IdeaDetailModalOverlay(
                     idea: selectedIdea,
                     anchorFrame: selectedIdeaFrame,
@@ -102,12 +102,12 @@ struct ProjectDetailView: View {
                         selectedIdea = nil
                         selectedIdeaFrame = nil
                     },
-                    onDelegate: appState.isDelegationLoopEnabled ? { idea in
+                    onDelegate: appState.featureState.isDelegationLoopEnabled ? { idea in
                         appState.delegateIdea(idea, for: project)
                         selectedIdea = nil
                         selectedIdeaFrame = nil
                     } : nil,
-                    onRunMethod: appState.isMethodRunnerEnabled ? { idea in
+                    onRunMethod: appState.featureState.isMethodRunnerEnabled ? { idea in
                         withAnimation(.easeInOut(duration: 0.2)) {
                             methodSelectorIdea = idea
                             selectedIdea = nil

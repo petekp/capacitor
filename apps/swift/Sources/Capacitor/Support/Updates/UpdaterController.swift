@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 import Sparkle
 
 struct SparkleConfiguration {
@@ -23,20 +24,26 @@ struct SparkleConfiguration {
     }
 }
 
-final class UpdaterController: ObservableObject {
-    private var updaterController: SPUStandardUpdaterController?
+@Observable
+@MainActor
+final class UpdaterController {
+    @ObservationIgnored private var standardUpdaterController: SPUStandardUpdaterController?
+    @ObservationIgnored private var canCheckForUpdatesObservation: NSKeyValueObservation?
+    @ObservationIgnored private var lastUpdateCheckDateObservation: NSKeyValueObservation?
+    @ObservationIgnored private var automaticallyChecksForUpdatesObservation: NSKeyValueObservation?
     let configuration: SparkleConfiguration
 
-    @Published var canCheckForUpdates = false
-    @Published var lastUpdateCheckDate: Date?
-    @Published var automaticallyChecksForUpdates: Bool = false {
+    var canCheckForUpdates = false
+    var lastUpdateCheckDate: Date?
+    var automaticallyChecksForUpdates: Bool = false {
         didSet {
-            updaterController?.updater.automaticallyChecksForUpdates = automaticallyChecksForUpdates
+            guard standardUpdaterController?.updater.automaticallyChecksForUpdates != automaticallyChecksForUpdates else { return }
+            standardUpdaterController?.updater.automaticallyChecksForUpdates = automaticallyChecksForUpdates
         }
     }
 
     var isAvailable: Bool {
-        updaterController != nil
+        standardUpdaterController != nil
     }
 
     init(configuration: SparkleConfiguration = SparkleConfiguration()) {
@@ -51,18 +58,39 @@ final class UpdaterController: ObservableObject {
             updaterDelegate: nil,
             userDriverDelegate: nil,
         )
-        updaterController = controller
+        standardUpdaterController = controller
 
-        automaticallyChecksForUpdates = controller.updater.automaticallyChecksForUpdates
-
-        controller.updater.publisher(for: \.canCheckForUpdates)
-            .assign(to: &$canCheckForUpdates)
-
-        controller.updater.publisher(for: \.lastUpdateCheckDate)
-            .assign(to: &$lastUpdateCheckDate)
+        syncState(from: controller.updater)
+        installObservers(for: controller.updater)
     }
 
     func checkForUpdates() {
-        updaterController?.checkForUpdates(nil)
+        standardUpdaterController?.checkForUpdates(nil)
+    }
+
+    private func syncState(from updater: SPUUpdater) {
+        canCheckForUpdates = updater.canCheckForUpdates
+        lastUpdateCheckDate = updater.lastUpdateCheckDate
+        automaticallyChecksForUpdates = updater.automaticallyChecksForUpdates
+    }
+
+    private func installObservers(for updater: SPUUpdater) {
+        canCheckForUpdatesObservation = updater.observe(\.canCheckForUpdates, options: [.new]) { [weak self] updater, _ in
+            _Concurrency.Task { @MainActor [weak self] in
+                self?.canCheckForUpdates = updater.canCheckForUpdates
+            }
+        }
+
+        lastUpdateCheckDateObservation = updater.observe(\.lastUpdateCheckDate, options: [.new]) { [weak self] updater, _ in
+            _Concurrency.Task { @MainActor [weak self] in
+                self?.lastUpdateCheckDate = updater.lastUpdateCheckDate
+            }
+        }
+
+        automaticallyChecksForUpdatesObservation = updater.observe(\.automaticallyChecksForUpdates, options: [.new]) { [weak self] updater, _ in
+            _Concurrency.Task { @MainActor [weak self] in
+                self?.automaticallyChecksForUpdates = updater.automaticallyChecksForUpdates
+            }
+        }
     }
 }

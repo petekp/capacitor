@@ -1,8 +1,111 @@
 import SwiftUI
 
-// MARK: - Main Card View
+// MARK: - Main Card Views
 
 struct ProjectCardView: View {
+    let project: Project
+    let sessionState: ProjectSessionState?
+    let delegationState: RuntimeDelegationState?
+    let activeRunState: RuntimeRunState?
+    let projectStatus: ProjectStatus?
+    var sessionSummary: String?
+    let flashState: SessionState?
+    let isActive: Bool
+    let onTap: () -> Void
+    let onInfoTap: (() -> Void)?
+    let onMoveToDormant: () -> Void
+    var onCaptureIdea: ((CGRect) -> Void)?
+    let onRemove: () -> Void
+    var onDragStarted: (() -> NSItemProvider)?
+    var isDragging: Bool = false
+
+    var body: some View {
+        ProjectCard(
+            layoutMode: .vertical,
+            project: project,
+            sessionState: sessionState,
+            delegationState: delegationState,
+            activeRunState: activeRunState,
+            projectStatus: projectStatus,
+            sessionSummary: sessionSummary,
+            flashState: flashState,
+            isActive: isActive,
+            onTap: onTap,
+            onInfoTap: onInfoTap,
+            onMoveToDormant: onMoveToDormant,
+            onCaptureIdea: onCaptureIdea,
+            onRemove: onRemove,
+            onDragStarted: onDragStarted,
+            isDragging: isDragging,
+        )
+    }
+}
+
+struct ProjectCardInteractionState {
+    var isHovered = false
+    var isPressed = false
+    var flashOpacity: Double = 0
+    var cursorLocation: CGPoint = .zero
+    var pressPoint: CGPoint = .zero
+    var cardSize: CGSize = .zero
+    var distortionIntensity: Double = 0
+    var pressStartTime: Date?
+    func cardScale(
+        layoutMode: LayoutMode,
+        reduceMotion: Bool,
+        isDragging: Bool,
+        config: GlassConfig = .shared,
+    ) -> CGFloat {
+        guard !reduceMotion else { return 1.0 }
+        if isPressed || isDragging {
+            return config.cardPressedScale(for: layoutMode)
+        } else if isHovered {
+            return config.cardHoverScale(for: layoutMode)
+        }
+        return config.cardIdleScale(for: layoutMode)
+    }
+
+    func cardAnimation(
+        layoutMode: LayoutMode,
+        reduceMotion: Bool,
+        config: GlassConfig = .shared,
+    ) -> Animation {
+        guard !reduceMotion else { return AppMotion.reducedMotionFallback }
+        if isPressed {
+            return .spring(
+                response: config.cardPressedSpringResponse(for: layoutMode),
+                dampingFraction: config.cardPressedSpringDamping(for: layoutMode),
+            )
+        }
+        return .spring(
+            response: config.cardHoverSpringResponse(for: layoutMode),
+            dampingFraction: config.cardHoverSpringDamping(for: layoutMode),
+        )
+    }
+
+    func pressTiltX(reduceMotion: Bool, config: GlassConfig = .shared) -> Double {
+        guard isPressed, !reduceMotion, cardSize.height > 0 else { return 0 }
+        let normalizedY = (pressPoint.y / cardSize.height - 0.5) * 2
+        return -normalizedY * config.cardPressTiltVertical
+    }
+
+    func pressTiltY(reduceMotion: Bool, config: GlassConfig = .shared) -> Double {
+        guard isPressed, !reduceMotion, cardSize.width > 0 else { return 0 }
+        let normalizedX = (pressPoint.x / cardSize.width - 0.5) * 2
+        return normalizedX * config.cardPressTiltHorizontal
+    }
+
+    func tiltAnimation(reduceMotion: Bool) -> Animation {
+        guard !reduceMotion else { return AppMotion.reducedMotionFallback }
+        if isPressed {
+            return .spring(response: 0.15, dampingFraction: 0.6)
+        }
+        return .spring(response: 0.35, dampingFraction: 0.75)
+    }
+}
+
+struct ProjectCard: View {
+    let layoutMode: LayoutMode
     let project: Project
     let sessionState: ProjectSessionState?
     let delegationState: RuntimeDelegationState?
@@ -22,30 +125,69 @@ struct ProjectCardView: View {
     @Environment(\.floatingMode) private var floatingMode
     @Environment(\.prefersReducedMotion) private var reduceMotion
     @AppStorage("playReadyChime") private var playReadyChime = true
+
+    @State private var interactionState = ProjectCardInteractionState()
+    @State private var trackedRunVisualState: RunVisualState
     private let glassConfig = GlassConfig.shared
-
-    @State private var isHovered = false
-    @State private var isPressed = false
-    @State private var flashOpacity: Double = 0
-
-    // Positional press feedback
-    @State private var cursorLocation: CGPoint = .zero
-    @State private var pressPoint: CGPoint = .zero
-    @State private var cardSize: CGSize = .zero
-    @State private var distortionIntensity: Double = 0
-    @State private var pressStartTime: Date?
-
-    // MARK: - Computed Properties
-
-    private var currentState: SessionState {
-        if let runState = runVisualState.sessionState {
-            return runState
-        }
-        return sessionState?.state ?? .idle
+    init(
+        layoutMode: LayoutMode,
+        project: Project,
+        sessionState: ProjectSessionState?,
+        delegationState: RuntimeDelegationState?,
+        activeRunState: RuntimeRunState?,
+        projectStatus: ProjectStatus?,
+        sessionSummary: String? = nil,
+        flashState: SessionState?,
+        isActive: Bool,
+        onTap: @escaping () -> Void,
+        onInfoTap: (() -> Void)? = nil,
+        onMoveToDormant: @escaping () -> Void,
+        onCaptureIdea: ((CGRect) -> Void)? = nil,
+        onRemove: @escaping () -> Void,
+        onDragStarted: (() -> NSItemProvider)? = nil,
+        isDragging: Bool = false,
+    ) {
+        self.layoutMode = layoutMode
+        self.project = project
+        self.sessionState = sessionState
+        self.delegationState = delegationState
+        self.activeRunState = activeRunState
+        self.projectStatus = projectStatus
+        self.sessionSummary = sessionSummary
+        self.flashState = flashState
+        self.isActive = isActive
+        self.onTap = onTap
+        self.onInfoTap = onInfoTap
+        self.onMoveToDormant = onMoveToDormant
+        self.onCaptureIdea = onCaptureIdea
+        self.onRemove = onRemove
+        self.onDragStarted = onDragStarted
+        self.isDragging = isDragging
+        _trackedRunVisualState = State(
+            initialValue: ProjectRunVisualStateResolver.visualState(for: activeRunState),
+        )
     }
 
-    private var runVisualState: RunVisualState {
+    private var rawRunVisualState: RunVisualState {
         ProjectRunVisualStateResolver.visualState(for: activeRunState)
+    }
+
+    private var visibleRunVisualState: RunVisualState {
+        layoutMode == .dock ? trackedRunVisualState : rawRunVisualState
+    }
+
+    private var dockPresentation: DockProjectCardPresentation {
+        DockProjectCardPresentation.resolve(
+            sessionState: sessionState,
+            trackedRunVisualState: trackedRunVisualState,
+        )
+    }
+
+    private var currentState: SessionState {
+        if layoutMode == .dock {
+            return dockPresentation.currentState
+        }
+        return visibleRunVisualState.sessionState ?? sessionState?.state ?? .idle
     }
 
     private var nameColor: Color {
@@ -53,171 +195,41 @@ struct ProjectCardView: View {
     }
 
     private var cardScale: CGFloat {
-        guard !reduceMotion else { return 1.0 }
-        if isPressed || isDragging {
-            return glassConfig.cardPressedScale(for: .vertical)
-        } else if isHovered {
-            return glassConfig.cardHoverScale(for: .vertical)
-        }
-        return glassConfig.cardIdleScale(for: .vertical)
-    }
-
-    private var cardAnimation: Animation {
-        guard !reduceMotion else { return AppMotion.reducedMotionFallback }
-        if isPressed {
-            return .spring(
-                response: glassConfig.cardPressedSpringResponse(for: .vertical),
-                dampingFraction: glassConfig.cardPressedSpringDamping(for: .vertical),
-            )
-        }
-        return .spring(
-            response: glassConfig.cardHoverSpringResponse(for: .vertical),
-            dampingFraction: glassConfig.cardHoverSpringDamping(for: .vertical),
+        interactionState.cardScale(
+            layoutMode: layoutMode,
+            reduceMotion: reduceMotion,
+            isDragging: isDragging,
+            config: glassConfig,
         )
     }
 
-    // MARK: - Press Tilt
-
-    private var pressTiltX: Double {
-        guard isPressed, !reduceMotion, cardSize.height > 0 else { return 0 }
-        let normalizedY = (pressPoint.y / cardSize.height - 0.5) * 2
-        return -normalizedY * glassConfig.cardPressTiltVertical
-    }
-
-    private var pressTiltY: Double {
-        guard isPressed, !reduceMotion, cardSize.width > 0 else { return 0 }
-        let normalizedX = (pressPoint.x / cardSize.width - 0.5) * 2
-        return normalizedX * glassConfig.cardPressTiltHorizontal
+    private var cardAnimation: Animation {
+        interactionState.cardAnimation(
+            layoutMode: layoutMode,
+            reduceMotion: reduceMotion,
+            config: glassConfig,
+        )
     }
 
     private var tiltAnimation: Animation {
-        guard !reduceMotion else { return AppMotion.reducedMotionFallback }
-        if isPressed {
-            return .spring(response: 0.15, dampingFraction: 0.6)
-        }
-        return .spring(response: 0.35, dampingFraction: 0.75)
+        interactionState.tiltAnimation(reduceMotion: reduceMotion)
     }
 
-    // MARK: - Body
-
-    var body: some View {
-        #if DEBUG
-            let _ = ProjectCardRenderTelemetry.logIfChanged(
-                path: project.path,
-                name: project.name,
-                state: currentState,
-                source: "ProjectCardView",
-            )
-        #endif
-
-        let styledCard = cardContent
-            .cardStyling(
-                isHovered: isHovered,
-                currentState: currentState,
-                isActive: isActive,
-                flashState: flashState,
-                flashOpacity: flashOpacity,
-                floatingMode: floatingMode,
-                floatingCardBackground: floatingCardBackground,
-                solidCardBackground: solidCardBackground,
-                animationSeed: project.path,
-                isPressed: isPressed,
-            )
-            .pressDistortion(
-                pressPoint: pressPoint,
-                cardSize: cardSize,
-                intensity: distortionIntensity,
-            )
-            .overlay { pressRipple }
-            .onContinuousHover { phase in
-                switch phase {
-                case let .active(location):
-                    cursorLocation = location
-                case .ended:
-                    break
-                }
-            }
-            .background {
-                GeometryReader { geo in
-                    Color.clear
-                        .onAppear { cardSize = geo.size }
-                        .onChange(of: geo.size) { _, newSize in cardSize = newSize }
-                }
-            }
-
-        styledCard
-            .scaleEffect(cardScale)
-            .rotation3DEffect(
-                .degrees(pressTiltX),
-                axis: (x: 1, y: 0, z: 0),
-                perspective: 0.8,
-            )
-            .rotation3DEffect(
-                .degrees(pressTiltY),
-                axis: (x: 0, y: 1, z: 0),
-                perspective: 0.8,
-            )
-            .animation(cardAnimation, value: cardScale)
-            .animation(tiltAnimation, value: pressTiltX)
-            .animation(tiltAnimation, value: pressTiltY)
-            .onLongPressGesture(minimumDuration: .infinity, pressing: { pressing in
-                if pressing {
-                    pressPoint = cursorLocation
-                    pressStartTime = Date()
-                }
-                isPressed = pressing
-                let target = pressing ? glassConfig.cardPressDistortion : 0
-                withAnimation(pressing
-                    ? .spring(response: 0.12, dampingFraction: 0.55)
-                    : .spring(response: 0.4, dampingFraction: 0.8))
-                {
-                    distortionIntensity = target
-                }
-            }, perform: {})
-            .task(id: pressStartTime) {
-                guard pressStartTime != nil else { return }
-                do {
-                    try await _Concurrency.Task.sleep(for: .milliseconds(Int(rippleDuration * 1000)))
-                } catch {
-                    return
-                }
-                pressStartTime = nil
-            }
-            .cardInteractions(
-                isHovered: $isHovered,
-                onTap: {
-                    // Re-trigger ripple only if none is playing (avoids resetting
-                    // the mouseDown ripple on mouseUp during a single click, while
-                    // still firing on rapid clicks after the previous ripple expires)
-                    if pressStartTime == nil {
-                        pressPoint = cursorLocation
-                        pressStartTime = Date()
-                    }
-                    onTap()
-                },
-                onDragStarted: onDragStarted,
-            )
-            .cardLifecycleHandlers(
-                projectPath: project.path,
-                flashState: flashState,
-                currentState: currentState,
-                flashOpacity: $flashOpacity,
-                playReadyChime: playReadyChime,
-            )
-            .contextMenu { cardContextMenu }
-            .accessibilityElement(children: .contain)
-            .accessibilityIdentifier(AccessibilityIdentifiers.projectCardIdentifier(for: project))
-            .accessibilityLabel(project.name)
-            .accessibilityValue(accessibilityStatusDescription)
-            .accessibilityHint(accessibilityHintText)
-            .accessibilityAction(named: primaryAccessibilityActionName, onTap)
-            .applyIf(onInfoTap) { view, action in
-                view.accessibilityAction(named: "View Details", action)
-            }
-            .accessibilityAction(named: "Hide", onMoveToDormant)
+    private var pressTiltX: Double {
+        interactionState.pressTiltX(reduceMotion: reduceMotion, config: glassConfig)
     }
 
-    // MARK: - Computed View Helpers
+    private var pressTiltY: Double {
+        interactionState.pressTiltY(reduceMotion: reduceMotion, config: glassConfig)
+    }
+
+    private var cornerRadius: CGFloat {
+        glassConfig.cardCornerRadius(for: layoutMode)
+    }
+
+    private var telemetrySource: String {
+        layoutMode == .dock ? "DockProjectCard" : "ProjectCardView"
+    }
 
     private var delegationStatus: String? {
         delegationState?.status
@@ -225,12 +237,16 @@ struct ProjectCardView: View {
 
     private var resolvedContextLine: String? {
         ProjectCardContextLineResolver.resolve(.init(
-            runVisualState: runVisualState,
+            runVisualState: visibleRunVisualState,
             activeRunState: activeRunState,
             delegationState: delegationState,
             projectStatus: projectStatus,
             sessionSummary: sessionSummary,
         ))
+    }
+
+    private var contextLine: String? {
+        layoutMode == .dock ? dockPresentation.contextLine : resolvedContextLine
     }
 
     private var hasOpenDelegationReview: Bool {
@@ -240,14 +256,10 @@ struct ProjectCardView: View {
     }
 
     private var accessibilityStatusDescription: String {
-        if let runState = runVisualState.sessionState {
-            return switch runState {
-            case .ready: "Ready for input"
-            case .working: "Working"
-            case .waiting: "Waiting for user action"
-            case .compacting: "Compacting history"
-            case .idle: "Idle"
-            }
+        guard layoutMode == .vertical else { return currentState.accessibilityStatusDescription }
+
+        if let runState = visibleRunVisualState.sessionState {
+            return runState.accessibilityStatusDescription
         }
         if delegationStatus == "review_needed", delegationState?.currentReview != nil {
             return "Delegation review needed"
@@ -261,16 +273,12 @@ struct ProjectCardView: View {
         if delegationStatus == "resume_failed" {
             return "Worker resume failed"
         }
-        return switch currentState {
-        case .ready: "Ready for input"
-        case .working: "Working"
-        case .waiting: "Waiting for user action"
-        case .compacting: "Compacting history"
-        case .idle: "Idle"
-        }
+        return currentState.accessibilityStatusDescription
     }
 
     private var primaryAccessibilityActionName: String {
+        guard layoutMode == .vertical else { return "Open in Terminal" }
+
         if hasOpenDelegationReview {
             if delegationStatus == "resume_failed" {
                 return "Retry Review"
@@ -283,7 +291,9 @@ struct ProjectCardView: View {
         return "Open in Terminal"
     }
 
-    private var accessibilityHintText: String {
+    private var accessibilityHintText: String? {
+        guard layoutMode == .vertical else { return nil }
+
         if delegationStatus == "review_needed", delegationState?.currentReview != nil {
             return "Double-tap to review the delegated work. Use actions menu for more options."
         }
@@ -299,18 +309,6 @@ struct ProjectCardView: View {
         return "Double-tap to open in terminal. Use actions menu for more options."
     }
 
-    // MARK: - Press Highlight
-
-    private var pressRipple: some View {
-        MetallicPressHighlight(
-            pressPoint: pressPoint,
-            cardSize: cardSize,
-            cornerRadius: glassConfig.cardCornerRadius(for: .vertical),
-            intensity: glassConfig.cardPressRippleOpacity,
-            pressStartTime: pressStartTime,
-        )
-    }
-
     private var rippleDuration: Double {
         #if DEBUG
             glassConfig.highlightRippleDuration
@@ -319,41 +317,30 @@ struct ProjectCardView: View {
         #endif
     }
 
-    private var paddingTop: CGFloat {
+    private var verticalContentPadding: EdgeInsets {
         #if DEBUG
-            glassConfig.cardPaddingTopRounded
+            EdgeInsets(
+                top: glassConfig.cardPaddingTopRounded,
+                leading: glassConfig.cardPaddingLeadingRounded,
+                bottom: glassConfig.cardPaddingBottomRounded,
+                trailing: glassConfig.cardPaddingTrailingRounded,
+            )
         #else
-            14
+            EdgeInsets(top: 14, leading: 12, bottom: 8, trailing: 12)
         #endif
     }
 
-    private var paddingBottom: CGFloat {
-        #if DEBUG
-            glassConfig.cardPaddingBottomRounded
-        #else
-            8
-        #endif
+    @ViewBuilder
+    private var cardBodyContent: some View {
+        switch layoutMode {
+        case .vertical:
+            verticalCardContent
+        case .dock:
+            dockWrappedContent
+        }
     }
 
-    private var paddingLeading: CGFloat {
-        #if DEBUG
-            glassConfig.cardPaddingLeadingRounded
-        #else
-            12
-        #endif
-    }
-
-    private var paddingTrailing: CGFloat {
-        #if DEBUG
-            glassConfig.cardPaddingTrailingRounded
-        #else
-            12
-        #endif
-    }
-
-    // MARK: - Card Content
-
-    private var cardContent: some View {
+    private var verticalCardContent: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 6) {
                 ProjectCardHeader(
@@ -365,18 +352,15 @@ struct ProjectCardView: View {
                 )
 
                 ProjectCardContent(
-                    contextLine: resolvedContextLine,
+                    contextLine: contextLine,
                     isMissing: project.isMissing,
                 )
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.top, paddingTop)
-            .padding(.bottom, paddingBottom)
-            .padding(.leading, paddingLeading)
-            .padding(.trailing, paddingTrailing)
+            .padding(verticalContentPadding)
 
             ProjectCardActionBar(
-                isCardHovered: isHovered,
+                isCardHovered: interactionState.isHovered,
                 onCaptureIdea: onCaptureIdea,
                 onDetails: onInfoTap,
             )
@@ -384,59 +368,267 @@ struct ProjectCardView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    // MARK: - Context Menu
+    private var dockWrappedContent: some View {
+        let dockWidth = glassConfig.dockCardWidthRounded
+        let dockMinHeight = glassConfig.dockCardMinHeightRounded
+        let dockMaxHeight = glassConfig.dockCardMaxHeightRounded
 
-    @ViewBuilder
-    private var cardContextMenu: some View {
-        if project.isMissing {
-            if let onInfoTap {
-                Button(action: onInfoTap) {
-                    Label("View Details", systemImage: "info.circle")
+        return dockCardContent
+            .padding(.horizontal, glassConfig.dockCardPaddingH)
+            .padding(.vertical, glassConfig.dockCardPaddingV)
+            .frame(width: dockWidth)
+            .frame(
+                minHeight: dockMinHeight > 0 ? dockMinHeight : nil,
+                maxHeight: dockMaxHeight > 0 ? dockMaxHeight : nil,
+            )
+    }
+
+    private var dockCardContent: some View {
+        HStack(spacing: glassConfig.dockCardContentSpacingRounded) {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 6) {
+                    if let onInfoTap {
+                        ClickableProjectTitle(
+                            name: project.name,
+                            nameColor: .white.opacity(0.9),
+                            isMissing: project.isMissing,
+                            action: onInfoTap,
+                            font: AppTypography.sectionTitle.monospaced(),
+                            accessibilityIdentifier: AccessibilityIdentifiers.projectDetailsIdentifier(for: project),
+                        )
+                        .lineLimit(1)
+                    } else {
+                        Text(project.name)
+                            .font(AppTypography.sectionTitle.monospaced())
+                            .foregroundStyle(.white.opacity(0.9))
+                            .strikethrough(project.isMissing, color: .white.opacity(0.3))
+                            .lineLimit(1)
+                    }
+
+                    Spacer(minLength: 0)
                 }
-                Divider()
-            }
-            Button(role: .destructive, action: onRemove) {
-                Label("Disconnect", systemImage: "trash")
-            }
-        } else {
-            Button(action: onTap) {
-                Label("Open in Terminal", systemImage: "terminal")
-            }
-            if let onInfoTap {
-                Button(action: onInfoTap) {
-                    Label("View Details", systemImage: "info.circle")
+
+                StatusChipsRow(
+                    sessionState: sessionState,
+                    delegationState: delegationState,
+                    activeRunState: activeRunState,
+                    style: .compact,
+                )
+                .padding(.top, glassConfig.dockChipTopPaddingRounded)
+
+                HStack(spacing: 4) {
+                    Text(contextLine ?? " ")
+                        .font(AppTypography.bodySecondary)
+                        .foregroundStyle(.white.opacity(0.55))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .id(contextLine)
+                        .transition(reduceMotion ? .opacity : .push(from: .bottom))
+                }
+                .opacity(contextLine != nil ? 1 : 0)
+                .clipped()
+                .animation(
+                    reduceMotion ? AppMotion.reducedMotionFallback : .smooth(duration: 0.3),
+                    value: contextLine,
+                )
+                .padding(.top, 4)
+
+                Spacer(minLength: 0)
+
+                if delegationState?.status == "review_needed", delegationState?.currentReview != nil {
+                    HStack(spacing: 4) {
+                        Image(systemName: "text.badge.star")
+                            .font(AppTypography.captionSmall)
+                        Text("Review brief ready")
+                            .font(AppTypography.label)
+                            .lineLimit(1)
+                    }
+                    .foregroundColor(.orange.opacity(0.9))
+                    .padding(.top, 4)
+                }
+
+                if let blocker = projectStatus?.blocker, !blocker.isEmpty {
+                    HStack(spacing: 4) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(AppTypography.captionSmall)
+                        Text(blocker)
+                            .font(AppTypography.label)
+                            .lineLimit(1)
+                    }
+                    .foregroundColor(Color(hue: 0, saturation: 0.7, brightness: 0.85))
+                    .padding(.top, 4)
                 }
             }
-            if let onCaptureIdea {
-                Button(action: { onCaptureIdea(.zero) }) {
-                    Label("Capture Idea...", systemImage: "lightbulb")
-                }
-            }
-            Divider()
-            Button(action: onMoveToDormant) {
-                Label("Hide", systemImage: "eye.slash")
-            }
-            Button(role: .destructive, action: onRemove) {
-                Label("Disconnect", systemImage: "trash")
-            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            CardActionButtons(
+                isCardHovered: interactionState.isHovered,
+                onCaptureIdea: onCaptureIdea,
+                onDetails: onInfoTap,
+                style: .compact,
+            )
         }
     }
 
-    // MARK: - Background Styles
+    private var styledCard: some View {
+        cardBodyContent
+            .cardStyling(
+                isHovered: interactionState.isHovered,
+                currentState: currentState,
+                isActive: isActive,
+                flashState: flashState,
+                flashOpacity: interactionState.flashOpacity,
+                floatingMode: floatingMode,
+                floatingCardBackground: floatingCardBackground,
+                solidCardBackground: solidCardBackground,
+                animationSeed: project.path,
+                layoutMode: layoutMode,
+                isPressed: interactionState.isPressed,
+            )
+            .pressDistortion(
+                pressPoint: interactionState.pressPoint,
+                cardSize: interactionState.cardSize,
+                intensity: interactionState.distortionIntensity,
+            )
+            .overlay { pressRipple }
+            .onContinuousHover { phase in
+                switch phase {
+                case let .active(location):
+                    interactionState.cursorLocation = location
+                case .ended:
+                    break
+                }
+            }
+            .background {
+                GeometryReader { geo in
+                    Color.clear
+                        .onAppear { interactionState.cardSize = geo.size }
+                        .onChange(of: geo.size) { _, newSize in interactionState.cardSize = newSize }
+                }
+            }
+    }
+
+    private var interactiveCard: some View {
+        styledCard
+            .scaleEffect(cardScale)
+            .rotation3DEffect(
+                .degrees(pressTiltX),
+                axis: (x: 1, y: 0, z: 0),
+                perspective: 0.8,
+            )
+            .rotation3DEffect(
+                .degrees(pressTiltY),
+                axis: (x: 0, y: 1, z: 0),
+                perspective: 0.8,
+            )
+            .animation(cardAnimation, value: cardScale)
+            .animation(tiltAnimation, value: pressTiltX)
+            .animation(tiltAnimation, value: pressTiltY)
+            .onChange(of: rawRunVisualState) { _, newValue in
+                guard layoutMode == .dock else { return }
+                withAnimation(.easeInOut(duration: glassConfig.stateTransitionDuration)) {
+                    trackedRunVisualState = newValue
+                }
+            }
+            .onLongPressGesture(minimumDuration: .infinity, pressing: updatePressedState, perform: {})
+            .task(id: interactionState.pressStartTime) {
+                guard interactionState.pressStartTime != nil else { return }
+                do {
+                    try await _Concurrency.Task.sleep(for: .milliseconds(Int(rippleDuration * 1000)))
+                } catch {
+                    return
+                }
+                interactionState.pressStartTime = nil
+            }
+            .contentShape(Rectangle())
+            .onTapGesture(perform: handleTap)
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction { onTap() }
+            .onHover(perform: updateHover)
+            .onDrag { dragItemProvider() } preview: { dragPreview }
+            .cardLifecycleHandlers(
+                projectPath: project.path,
+                flashState: flashState,
+                currentState: currentState,
+                flashOpacity: $interactionState.flashOpacity,
+                playReadyChime: playReadyChime,
+            )
+            .contextMenu { cardContextMenu }
+            .applyIf(layoutMode == .vertical) { view in
+                view
+                    .focusable()
+                    .focusEffectDisabled()
+                    .onKeyPress(.return) {
+                        handleTap()
+                        return .handled
+                    }
+                    .onKeyPress(.space) {
+                        handleTap()
+                        return .handled
+                    }
+            }
+    }
+
+    var body: some View {
+        #if DEBUG
+            let _ = ProjectCardRenderTelemetry.logIfChanged(
+                path: project.path,
+                name: project.name,
+                state: currentState,
+                source: telemetrySource,
+            )
+        #endif
+
+        interactiveCard
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier(AccessibilityIdentifiers.projectCardIdentifier(for: project))
+            .accessibilityLabel(project.name)
+            .accessibilityValue(accessibilityStatusDescription)
+            .accessibilityAction(named: primaryAccessibilityActionName, onTap)
+            .applyIf(onInfoTap) { view, action in
+                view.accessibilityAction(named: "View Details", action)
+            }
+            .applyIf(accessibilityHintText) { view, hint in
+                view.accessibilityHint(hint)
+            }
+            .applyIf(layoutMode == .vertical ? onMoveToDormant : nil) { view, action in
+                view.accessibilityAction(named: "Hide", action)
+            }
+    }
+
+    private var pressRipple: some View {
+        MetallicPressHighlight(
+            pressPoint: interactionState.pressPoint,
+            cardSize: interactionState.cardSize,
+            cornerRadius: cornerRadius,
+            intensity: glassConfig.cardPressRippleOpacity,
+            pressStartTime: interactionState.pressStartTime,
+        )
+    }
+
+    private var cardContextMenu: some View {
+        ProjectContextMenu(
+            project: project,
+            onTap: onTap,
+            onInfoTap: onInfoTap,
+            onMoveToDormant: onMoveToDormant,
+            onCaptureIdea: onCaptureIdea.map { action in { action(.zero) } },
+            onRemove: onRemove,
+        )
+    }
 
     private var floatingCardBackground: some View {
-        DarkFrostedCard(isHovered: isHovered, layoutMode: .vertical, config: glassConfig)
+        DarkFrostedCard(isHovered: interactionState.isHovered, layoutMode: layoutMode, config: glassConfig)
     }
 
     private var solidCardBackground: some View {
-        let cornerRadius = GlassConfig.shared.cardCornerRadius(for: .vertical)
-        return ZStack {
+        ZStack {
             RoundedRectangle(cornerRadius: cornerRadius)
                 .fill(Color.hudCard)
 
             VStack(spacing: 0) {
                 LinearGradient(
-                    colors: [.white.opacity(isHovered ? 0.08 : 0.04), .clear],
+                    colors: [.white.opacity(interactionState.isHovered ? 0.08 : 0.04), .clear],
                     startPoint: .top,
                     endPoint: .bottom,
                 )
@@ -446,6 +638,56 @@ struct ProjectCardView: View {
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
         }
     }
+
+    @ViewBuilder
+    private var dragPreview: some View {
+        if layoutMode == .dock {
+            Text(project.name)
+                .font(AppTypography.sectionTitle.monospaced())
+                .padding(8)
+                .background(Color.hudCard.opacity(0.9))
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+        } else {
+            Color.clear.frame(width: 1, height: 1)
+        }
+    }
+
+    private func handleTap() {
+        if interactionState.pressStartTime == nil {
+            interactionState.pressPoint = interactionState.cursorLocation
+            interactionState.pressStartTime = Date()
+        }
+        onTap()
+    }
+
+    private func updateHover(_ hovering: Bool) {
+        withAnimation(.easeOut(duration: glassConfig.hoverTransitionDuration)) {
+            interactionState.isHovered = hovering
+        }
+    }
+
+    private func updatePressedState(_ pressing: Bool) {
+        if pressing {
+            interactionState.pressPoint = interactionState.cursorLocation
+            interactionState.pressStartTime = Date()
+        }
+        interactionState.isPressed = pressing
+        let target = pressing ? glassConfig.cardPressDistortion : 0
+        withAnimation(pressing
+            ? .spring(response: 0.12, dampingFraction: 0.55)
+            : .spring(response: 0.4, dampingFraction: 0.8))
+        {
+            interactionState.distortionIntensity = target
+        }
+    }
+
+    private func dragItemProvider() -> NSItemProvider {
+        _ = onDragStarted?()
+        if layoutMode == .dock {
+            return NSItemProvider(object: project.path as NSString)
+        }
+        return NSItemProvider(object: "" as NSString)
+    }
 }
 
 #if DEBUG
@@ -454,18 +696,7 @@ struct ProjectCardView: View {
         private static var lastByPath: [String: String] = [:]
 
         static func logIfChanged(path: String, name: String, state: SessionState?, source: String) {
-            let label = if let state {
-                switch state {
-                case .working: "Working"
-                case .ready: "Ready"
-                case .idle: "Idle"
-                case .compacting: "Compacting"
-                case .waiting: "Waiting"
-                }
-            } else {
-                "nil"
-            }
-
+            let label = state.map(\.telemetryLabel) ?? "nil"
             let summary = "\(name):\(label)"
             guard lastByPath[path] != summary else { return }
             lastByPath[path] = summary
@@ -473,6 +704,28 @@ struct ProjectCardView: View {
         }
     }
 #endif
+
+private extension SessionState {
+    var accessibilityStatusDescription: String {
+        switch self {
+        case .ready: "Ready for input"
+        case .working: "Working"
+        case .waiting: "Waiting for user action"
+        case .compacting: "Compacting history"
+        case .idle: "Idle"
+        }
+    }
+
+    var telemetryLabel: String {
+        switch self {
+        case .working: "Working"
+        case .ready: "Ready"
+        case .idle: "Idle"
+        case .compacting: "Compacting"
+        case .waiting: "Waiting"
+        }
+    }
+}
 
 // MARK: - Card Header Component
 
@@ -519,10 +772,6 @@ private struct ProjectCardContent: View {
     @State private var displayedLine: String?
 
     var body: some View {
-        // The .id() modifier forces SwiftUI to treat each distinct displayedLine as a new
-        // view, triggering the push transition — old text slides up and fades out, new text
-        // slides in from below. We use @State + onChange + withAnimation so the transition
-        // has an explicit animation transaction driving it.
         VStack(spacing: 0) {
             Text(displayedLine ?? " ")
                 .font(AppTypography.bodySecondary)
@@ -828,7 +1077,6 @@ private struct ProjectCardActionButton: View {
 
 // MARK: - Card Action Buttons
 
-/// Container for action buttons that appear on card hover with staggered animation
 struct CardActionButtons: View {
     let isCardHovered: Bool
     var onCaptureIdea: ((CGRect) -> Void)?
@@ -864,17 +1112,20 @@ struct CardActionButtons: View {
     }
 }
 
-// Note: StatusIndicator is in ProjectCardComponents.swift
-
-// Note: View modifiers and glow effects are in separate files:
-// - ProjectCardModifiers.swift (cardStyling, cardInteractions, cardLifecycleHandlers)
-// - ProjectCardGlow.swift (ReadyAmbientGlow, ReadyBorderGlow)
-
 private extension View {
     @ViewBuilder
     func applyIf<T>(_ value: T?, transform: (Self, T) -> some View) -> some View {
         if let value {
             transform(self, value)
+        } else {
+            self
+        }
+    }
+
+    @ViewBuilder
+    func applyIf(_ condition: Bool, transform: (Self) -> some View) -> some View {
+        if condition {
+            transform(self)
         } else {
             self
         }

@@ -5,7 +5,7 @@ struct ActivityPanel: View {
     @Environment(\.floatingMode) private var floatingMode
 
     private var visibleRunCompletions: [RuntimeRunState] {
-        appState.isMethodRunnerEnabled ? appState.recentTerminalRuns : []
+        appState.featureState.isMethodRunnerEnabled ? appState.recentTerminalRuns : []
     }
 
     private var hasActivity: Bool {
@@ -18,7 +18,7 @@ struct ActivityPanel: View {
 
     private var visibleCreations: [ProjectCreation] {
         let recent = Date().addingTimeInterval(-3600)
-        return appState.activeCreations.filter { creation in
+        return appState.projectState.activeCreations.filter { creation in
             switch creation.status {
             case .pending, .inProgress:
                 return true
@@ -202,7 +202,7 @@ struct CreationCard: View {
     }
 
     private func openProject() {
-        if let project = appState.projects.first(where: { $0.path == creation.path }) {
+        if let project = appState.projectState.projects.first(where: { $0.path == creation.path }) {
             appState.launchTerminal(for: project)
         } else {
             let projectURL = URL(fileURLWithPath: creation.path)

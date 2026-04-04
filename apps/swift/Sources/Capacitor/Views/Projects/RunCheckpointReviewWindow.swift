@@ -17,7 +17,7 @@ struct RunCheckpointReviewWindow: View {
     }
 
     private var target: AppState.RunCheckpointWindowTarget? {
-        appState.runCheckpointWindowTarget
+        appState.uiState.runCheckpointWindowTarget
     }
 
     private var context: Context? {
@@ -82,7 +82,7 @@ struct RunCheckpointReviewWindow: View {
         .task(id: targetIdentity ?? "no-checkpoint") {
             await loadManifest()
         }
-        .onChange(of: appState.runCheckpointWindowTarget) { _, newValue in
+        .onChange(of: appState.uiState.runCheckpointWindowTarget) { _, newValue in
             if newValue == nil {
                 dismissWindow(id: "run-checkpoint-review")
             }
@@ -99,7 +99,7 @@ struct RunCheckpointReviewWindow: View {
             manifestLoadError = nil
         }
         .onDisappear {
-            appState.runCheckpointWindowTarget = nil
+            appState.uiState.runCheckpointWindowTarget = nil
         }
     }
 
@@ -494,7 +494,7 @@ struct RunCheckpointReviewWindow: View {
     }
 
     private func projectName(for projectPath: String) -> String {
-        if let project = appState.projects.first(where: { $0.path == projectPath }) {
+        if let project = appState.projectState.projects.first(where: { $0.path == projectPath }) {
             return project.name
         }
 

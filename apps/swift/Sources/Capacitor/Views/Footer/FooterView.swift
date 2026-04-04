@@ -21,17 +21,17 @@ struct FooterView: View {
     }
 
     private var mode: FooterMode {
-        if !appState.selectedSuggestedPaths.isEmpty {
+        if !appState.projectState.selectedSuggestedPaths.isEmpty {
             return .connectCTA
         }
-        if !appState.isLoading, appState.projects.isEmpty {
+        if !appState.uiState.isLoading, appState.projectState.projects.isEmpty {
             return .browse
         }
         return .normal
     }
 
     private var isDetailViewActive: Bool {
-        if case .list = appState.projectView { return false }
+        if case .list = appState.uiState.projectView { return false }
         return true
     }
 
@@ -123,7 +123,7 @@ struct FooterView: View {
     private var ctaContent: some View {
         HStack {
             Spacer()
-            ConnectProjectsCTAButton(count: appState.selectedSuggestedPaths.count) {
+            ConnectProjectsCTAButton(count: appState.projectState.selectedSuggestedPaths.count) {
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                     appState.connectSelectedSuggestions()
                 }

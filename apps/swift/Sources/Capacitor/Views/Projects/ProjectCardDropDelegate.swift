@@ -15,7 +15,7 @@ struct ProjectCardDropDelegate: DropDelegate {
     func dropEntered(info: DropInfo) {
         // External file URL drag (from Finder) -> signal ContentView overlay.
         if isExternalFileDrag, info.hasItemsConforming(to: [.fileURL]) {
-            appState.isFileDragOverCard = true
+            appState.uiState.isFileDragOverCard = true
             return
         }
 
@@ -38,7 +38,7 @@ struct ProjectCardDropDelegate: DropDelegate {
 
     func dropExited(info _: DropInfo) {
         if isExternalFileDrag {
-            appState.isFileDragOverCard = false
+            appState.uiState.isFileDragOverCard = false
         }
     }
 
@@ -51,7 +51,7 @@ struct ProjectCardDropDelegate: DropDelegate {
 
     func performDrop(info: DropInfo) -> Bool {
         if isExternalFileDrag, info.hasItemsConforming(to: [.fileURL]) {
-            appState.isFileDragOverCard = false
+            appState.uiState.isFileDragOverCard = false
             let providers = info.itemProviders(for: [.fileURL])
             appState.handleFileURLDrop(providers)
             return true

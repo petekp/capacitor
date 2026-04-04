@@ -1,4 +1,4 @@
-use capacitor_core::runtime_contracts::{
+use capacitor_core::runtime::contracts::{
     all_claude_hook_event_contracts, find_claude_hook_event_contract, managed_hook_event_contracts,
     HookTransport,
 };

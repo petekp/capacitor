@@ -62,7 +62,7 @@ struct ProjectBoundary {
 }
 
 #[must_use]
-pub fn display_name(project_path: &str) -> String {
+pub(crate) fn display_name(project_path: &str) -> String {
     project_path
         .split('/')
         .rfind(|part| !part.is_empty())
@@ -71,7 +71,7 @@ pub fn display_name(project_path: &str) -> String {
 }
 
 #[must_use]
-pub fn normalize_path_for_matching(path: &str) -> String {
+pub(crate) fn normalize_path_for_matching(path: &str) -> String {
     let trimmed = path.trim();
     if trimmed.is_empty() {
         return String::new();
@@ -107,12 +107,12 @@ pub fn normalize_path_for_comparison(path: &str) -> String {
 }
 
 #[must_use]
-pub fn default_workspace_id(project_path: &str) -> String {
+pub(crate) fn default_workspace_id(project_path: &str) -> String {
     workspace_id(project_path, project_path)
 }
 
 #[must_use]
-pub fn workspace_id(project_id: &str, project_path: &str) -> String {
+pub(crate) fn workspace_id(project_id: &str, project_path: &str) -> String {
     let project_id = canonicalize_path(Path::new(project_id));
     let project_path = canonicalize_path(Path::new(project_path));
     let relative = workspace_relative_path(&project_id, &project_path);
@@ -124,7 +124,7 @@ pub fn workspace_id(project_id: &str, project_path: &str) -> String {
     format!("{:x}", md5::compute(source))
 }
 
-pub fn resolve_project_identity(path: &str) -> Option<ProjectIdentity> {
+pub(crate) fn resolve_project_identity(path: &str) -> Option<ProjectIdentity> {
     let boundary = find_project_boundary(path)?;
     let git_info = resolve_git_info(&boundary.path);
 

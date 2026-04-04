@@ -49,19 +49,19 @@ enum AppDebugSupport {
 
                 Section("Toast Testing") {
                     Button("Toast: 1 failed") {
-                        appState.toast = .error("project-a failed")
+                        appState.uiState.toast = .error("project-a failed")
                     }
                     Button("Toast: 2 failed, 1 added") {
-                        appState.toast = .error("project-a, project-b failed (1 added)")
+                        appState.uiState.toast = .error("project-a, project-b failed (1 added)")
                     }
                     Button("Toast: 5 failed, 3 added") {
-                        appState.toast = .error("project-a, project-b and 3 more failed (3 added)")
+                        appState.uiState.toast = .error("project-a, project-b and 3 more failed (3 added)")
                     }
                     Button("Toast: Already linked") {
-                        appState.toast = ToastMessage("Already linked!")
+                        appState.uiState.toast = ToastMessage("Already linked!")
                     }
                     Button("Toast: Moved to In Progress") {
-                        appState.toast = ToastMessage("Moved to In Progress")
+                        appState.uiState.toast = ToastMessage("Moved to In Progress")
                     }
                 }
 
@@ -69,7 +69,7 @@ enum AppDebugSupport {
 
                 Section("Tooltip Testing") {
                     Button("Show Drag-Drop Tip Now") {
-                        appState.pendingDragDropTip = true
+                        appState.uiState.pendingDragDropTip = true
                     }
                     Button("Reset Tip Flag (hasSeenDragDropTip)") {
                         UserDefaults.standard.removeObject(forKey: "hasSeenDragDropTip")
@@ -93,7 +93,7 @@ enum AppDebugSupport {
                 Divider()
 
                 Button("Clear All Projects (Empty State)") {
-                    for project in appState.projects {
+                    for project in appState.projectState.projects {
                         appState.removeProject(project.path)
                     }
                 }

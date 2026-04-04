@@ -9,31 +9,24 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 use std::time::Duration;
 
-use capacitor_core::{
-    domain::{
-        IngestHookEventCommand, IngestShellSignalCommand, MutateDelegationCommand,
-        MutateRunCommand, ResolveRoutingCommand,
-    },
-    runtime_service::RuntimeServiceBootstrap,
-    CoreRuntime,
-};
+use capacitor_core::{runtime::service::RuntimeServiceBootstrap, CoreRuntime};
 use chrono::{DateTime, Utc};
 
-use crate::{hook_types::HookInput, power::SleepTracker};
+use crate::{handlers, power::SleepTracker};
 
-static SHUTDOWN: AtomicBool = AtomicBool::new(false);
+pub(crate) static SHUTDOWN: AtomicBool = AtomicBool::new(false);
 static POLL_WAITERS: AtomicUsize = AtomicUsize::new(0);
 const RUNTIME_ARTIFACT_PATH_ENV: &str = "CAPACITOR_RUNTIME_ARTIFACT_PATH";
-const POLL_TIMEOUT_SECS_ENV: &str = "CAPACITOR_POLL_TIMEOUT_SECS";
 const DEFAULT_RUNTIME_ARTIFACT_RELATIVE_PATH: &str = ".capacitor/runtime/app_snapshot.json";
+const POLL_TIMEOUT_SECS_ENV: &str = "CAPACITOR_POLL_TIMEOUT_SECS";
 const DEFAULT_POLL_TIMEOUT_SECS: u64 = 30;
 const MAX_POLL_WAITERS: usize = 2;
 const MAX_BODY_BYTES: u64 = 1_024 * 1_024;
 
-struct PollWaiterGuard;
+pub(crate) struct PollWaiterGuard;
 
 impl PollWaiterGuard {
-    fn try_acquire() -> Option<Self> {
+    pub(crate) fn try_acquire() -> Option<Self> {
         let current_waiters = POLL_WAITERS.fetch_add(1, Ordering::Relaxed);
         if current_waiters >= MAX_POLL_WAITERS {
             POLL_WAITERS.fetch_sub(1, Ordering::Relaxed);
@@ -50,11 +43,11 @@ impl Drop for PollWaiterGuard {
     }
 }
 
-struct RuntimeServerState {
-    bootstrap: Option<RuntimeServiceBootstrap>,
-    home_dir: PathBuf,
-    runtime: Option<Arc<CoreRuntime>>,
-    sleep_tracker: Arc<Mutex<SleepTracker>>,
+pub(crate) struct RuntimeServerState {
+    pub(crate) bootstrap: Option<RuntimeServiceBootstrap>,
+    pub(crate) home_dir: PathBuf,
+    pub(crate) runtime: Option<Arc<CoreRuntime>>,
+    pub(crate) sleep_tracker: Arc<Mutex<SleepTracker>>,
 }
 
 impl RuntimeServerState {
@@ -197,396 +190,65 @@ pub fn run(port: u16) -> Result<(), String> {
 fn dispatch(request: tiny_http::Request, runtime_service: &RuntimeServerState) {
     match (request.method(), request.url()) {
         (&tiny_http::Method::Get, "/health") => {
-            handle_health(request, runtime_service.bootstrap.as_ref())
+            handlers::handle_health(request, runtime_service.bootstrap.as_ref())
         }
         (&tiny_http::Method::Get, url) if url.starts_with("/runtime/snapshot/poll") => {
-            handle_runtime_poll_snapshot(request, runtime_service)
+            handlers::handle_runtime_poll_snapshot(request, runtime_service)
         }
         (&tiny_http::Method::Get, "/runtime/snapshot") => {
-            handle_runtime_snapshot(request, runtime_service)
+            handlers::handle_runtime_snapshot(request, runtime_service)
         }
         (&tiny_http::Method::Post, "/runtime/routing/resolve") => {
-            handle_runtime_resolve_routing(request, runtime_service)
+            handlers::handle_runtime_resolve_routing(request, runtime_service)
         }
         (&tiny_http::Method::Post, "/runtime/ingest/hook-event") => {
-            handle_runtime_ingest_hook_event(request, runtime_service)
+            handlers::handle_runtime_ingest_hook_event(request, runtime_service)
         }
         (&tiny_http::Method::Post, "/runtime/power/sleep") => {
-            handle_runtime_power_sleep(request, runtime_service)
+            handlers::handle_runtime_power_sleep(request, runtime_service)
         }
         (&tiny_http::Method::Post, "/runtime/power/wake") => {
-            handle_runtime_power_wake(request, runtime_service)
+            handlers::handle_runtime_power_wake(request, runtime_service)
         }
         (&tiny_http::Method::Post, "/runtime/ingest/shell-signal") => {
-            handle_runtime_ingest_shell_signal(request, runtime_service)
+            handlers::handle_runtime_ingest_shell_signal(request, runtime_service)
         }
         (&tiny_http::Method::Post, "/runtime/delegation/mutate") => {
-            handle_runtime_mutate_delegation(request, runtime_service)
+            handlers::handle_runtime_mutate_delegation(request, runtime_service)
         }
         (&tiny_http::Method::Post, "/runtime/run/mutate") => {
-            handle_runtime_mutate_run(request, runtime_service)
+            handlers::handle_runtime_mutate_run(request, runtime_service)
         }
-        (&tiny_http::Method::Post, "/hook") => handle_hook(request),
-        _ => {
-            let _ = request.respond(json_error(404, "not found"));
-        }
+        (&tiny_http::Method::Post, "/hook") => handlers::handle_hook(request),
+        _ => handlers::respond_not_found(request),
     }
 }
 
-fn handle_health(request: tiny_http::Request, runtime_service: Option<&RuntimeServiceBootstrap>) {
-    let resp = if let Some(bootstrap) = runtime_service {
-        let authorization = request
-            .headers()
-            .iter()
-            .find(|header| header.field.equiv("Authorization"))
-            .map(|header| header.value.as_str());
-
-        if !bootstrap.is_authorized(authorization) {
-            json_error(401, "unauthorized")
-        } else {
-            tiny_http::Response::from_string(
-                serde_json::to_string(&bootstrap.health_report())
-                    .unwrap_or_else(|_| r#"{"error":"health unavailable"}"#.to_string()),
-            )
-            .with_status_code(200)
-            .with_header(json_content_type())
-            .boxed()
+fn runtime_artifact_path() -> Result<PathBuf, String> {
+    if let Ok(path) = std::env::var(RUNTIME_ARTIFACT_PATH_ENV) {
+        let trimmed = path.trim();
+        if !trimmed.is_empty() {
+            return Ok(PathBuf::from(trimmed));
         }
-    } else {
-        tiny_http::Response::from_string(r#"{"status":"ok"}"#)
-            .with_status_code(200)
-            .with_header(json_content_type())
-            .boxed()
-    };
-    let _ = request.respond(resp);
+    }
+
+    let home = dirs::home_dir().ok_or("Cannot determine home directory")?;
+    Ok(home.join(DEFAULT_RUNTIME_ARTIFACT_RELATIVE_PATH))
 }
 
-fn handle_runtime_snapshot(request: tiny_http::Request, state: &RuntimeServerState) {
-    let Some(runtime) = state.runtime.as_ref() else {
-        let _ = request.respond(json_error(404, "runtime service not enabled"));
-        return;
-    };
-
-    if !authorize_runtime_request(&request, state.bootstrap.as_ref()) {
-        let _ = request.respond(json_error(401, "unauthorized"));
-        return;
-    }
-
-    match runtime.app_snapshot() {
-        Ok(snapshot) => respond_json(request, 200, &snapshot),
-        Err(error) => {
-            tracing::warn!(error = %error, "Runtime snapshot request failed");
-            let _ = request.respond(json_error(500, "runtime snapshot failed"));
-        }
-    }
-}
-
-fn handle_runtime_poll_snapshot(request: tiny_http::Request, state: &RuntimeServerState) {
-    let Some(runtime) = state.runtime.as_ref() else {
-        let _ = request.respond(json_error(404, "runtime service not enabled"));
-        return;
-    };
-
-    if !authorize_runtime_request(&request, state.bootstrap.as_ref()) {
-        let _ = request.respond(json_error(401, "unauthorized"));
-        return;
-    }
-
-    let since_version = match parse_since_version(request.url()) {
-        Some(since_version) => since_version,
-        None => {
-            let _ = request.respond(json_error(
-                400,
-                "missing or invalid since_version parameter",
-            ));
-            return;
-        }
-    };
-
-    let _waiter_guard = match PollWaiterGuard::try_acquire() {
-        Some(guard) => guard,
-        None => {
-            let _ = request.respond(json_error(503, "too many concurrent poll requests"));
-            return;
-        }
-    };
-
-    if SHUTDOWN.load(Ordering::Relaxed) {
-        let _ = request.respond(json_error(503, "shutting down"));
-        return;
-    }
-
-    let version_change = runtime.wait_for_version_change(since_version, runtime_poll_timeout());
-
-    if SHUTDOWN.load(Ordering::Relaxed) {
-        let _ = request.respond(json_error(503, "shutting down"));
-        return;
-    }
-
-    match version_change {
-        Some(_) => match runtime.app_snapshot() {
-            Ok(snapshot) => match serde_json::to_value(&snapshot) {
-                Ok(mut value) => {
-                    if let Some(object) = value.as_object_mut() {
-                        object.insert("changed".to_string(), serde_json::Value::Bool(true));
-                    }
-                    respond_json(request, 200, &value);
-                }
-                Err(_) => {
-                    let _ = request.respond(json_error(500, "serialization failed"));
-                }
-            },
-            Err(error) => {
-                tracing::warn!(error = %error, "Long-poll snapshot request failed");
-                let _ = request.respond(json_error(500, "runtime snapshot failed"));
-            }
-        },
-        None => respond_json(
-            request,
-            200,
-            &serde_json::json!({
-                "changed": false,
-                "snapshot_version": runtime.snapshot_version(),
-            }),
-        ),
-    }
-}
-
-fn handle_runtime_ingest_hook_event(mut request: tiny_http::Request, state: &RuntimeServerState) {
-    let Some(runtime) = state.runtime.as_ref() else {
-        let _ = request.respond(json_error(404, "runtime service not enabled"));
-        return;
-    };
-
-    if !authorize_runtime_request(&request, state.bootstrap.as_ref()) {
-        let _ = request.respond(json_error(401, "unauthorized"));
-        return;
-    }
-
-    let command = match read_json::<IngestHookEventCommand>(&mut request) {
-        Ok(command) => command,
-        Err(response) => {
-            let _ = request.respond(response);
-            return;
-        }
-    };
-
-    let gc_reference_time = adjusted_gc_reference_time(&state.sleep_tracker);
-    match runtime.ingest_hook_event_with_gc_reference_time(command, gc_reference_time) {
-        Ok(outcome) => respond_json(request, 200, &outcome),
-        Err(error) => {
-            tracing::warn!(error = %error, "Runtime hook ingest request failed");
-            let _ = request.respond(json_error(500, "runtime hook ingest failed"));
-        }
-    }
-}
-
-fn handle_runtime_power_sleep(request: tiny_http::Request, state: &RuntimeServerState) {
-    if !authorize_runtime_request(&request, state.bootstrap.as_ref()) {
-        let _ = request.respond(json_error(401, "unauthorized"));
-        return;
-    }
-
-    let generation = match state.sleep_tracker.lock() {
-        Ok(mut sleep_tracker) => {
-            sleep_tracker.report_sleep();
-            sleep_tracker.generation()
-        }
+pub(crate) fn adjusted_gc_reference_time(
+    sleep_tracker: &Arc<Mutex<SleepTracker>>,
+) -> DateTime<Utc> {
+    match sleep_tracker.lock() {
+        Ok(sleep_tracker) => sleep_tracker.adjusted_now(),
         Err(_) => {
-            let _ = request.respond(json_error(500, "sleep tracker unavailable"));
-            return;
-        }
-    };
-
-    respond_json(
-        request,
-        200,
-        &serde_json::json!({ "ok": true, "generation": generation }),
-    );
-}
-
-fn handle_runtime_power_wake(request: tiny_http::Request, state: &RuntimeServerState) {
-    if !authorize_runtime_request(&request, state.bootstrap.as_ref()) {
-        let _ = request.respond(json_error(401, "unauthorized"));
-        return;
-    }
-
-    let generation = match state.sleep_tracker.lock() {
-        Ok(mut sleep_tracker) => {
-            sleep_tracker.report_wake();
-            sleep_tracker.generation()
-        }
-        Err(_) => {
-            let _ = request.respond(json_error(500, "sleep tracker unavailable"));
-            return;
-        }
-    };
-
-    respond_json(
-        request,
-        200,
-        &serde_json::json!({ "ok": true, "generation": generation }),
-    );
-}
-
-fn handle_runtime_resolve_routing(mut request: tiny_http::Request, state: &RuntimeServerState) {
-    let Some(runtime) = state.runtime.as_ref() else {
-        let _ = request.respond(json_error(404, "runtime service not enabled"));
-        return;
-    };
-
-    if !authorize_runtime_request(&request, state.bootstrap.as_ref()) {
-        let _ = request.respond(json_error(401, "unauthorized"));
-        return;
-    }
-
-    let command = match read_json::<ResolveRoutingCommand>(&mut request) {
-        Ok(command) => command,
-        Err(response) => {
-            let _ = request.respond(response);
-            return;
-        }
-    };
-
-    match runtime.resolve_routing(command) {
-        Ok(route) => respond_json(request, 200, &route),
-        Err(error) => {
-            tracing::warn!(error = %error, "Runtime route resolve request failed");
-            let _ = request.respond(json_error(500, "runtime route resolve failed"));
+            tracing::warn!("Sleep tracker lock poisoned; falling back to current time");
+            Utc::now()
         }
     }
 }
 
-fn handle_runtime_ingest_shell_signal(mut request: tiny_http::Request, state: &RuntimeServerState) {
-    let Some(runtime) = state.runtime.as_ref() else {
-        let _ = request.respond(json_error(404, "runtime service not enabled"));
-        return;
-    };
-
-    if !authorize_runtime_request(&request, state.bootstrap.as_ref()) {
-        let _ = request.respond(json_error(401, "unauthorized"));
-        return;
-    }
-
-    let command = match read_json::<IngestShellSignalCommand>(&mut request) {
-        Ok(command) => command,
-        Err(response) => {
-            let _ = request.respond(response);
-            return;
-        }
-    };
-
-    match runtime.ingest_shell_signal(command) {
-        Ok(outcome) => respond_json(request, 200, &outcome),
-        Err(error) => {
-            tracing::warn!(error = %error, "Runtime shell ingest request failed");
-            let _ = request.respond(json_error(500, "runtime shell ingest failed"));
-        }
-    }
-}
-
-fn handle_runtime_mutate_delegation(mut request: tiny_http::Request, state: &RuntimeServerState) {
-    let Some(runtime) = state.runtime.as_ref() else {
-        let _ = request.respond(json_error(404, "runtime service not enabled"));
-        return;
-    };
-
-    if !authorize_runtime_request(&request, state.bootstrap.as_ref()) {
-        let _ = request.respond(json_error(401, "unauthorized"));
-        return;
-    }
-
-    let command = match read_json::<MutateDelegationCommand>(&mut request) {
-        Ok(command) => command,
-        Err(response) => {
-            let _ = request.respond(response);
-            return;
-        }
-    };
-
-    match runtime.mutate_delegation(command) {
-        Ok(outcome) => respond_json(request, 200, &outcome),
-        Err(error) => {
-            tracing::warn!(error = %error, "Runtime delegation mutation request failed");
-            let _ = request.respond(json_error(500, "runtime delegation mutation failed"));
-        }
-    }
-}
-
-fn handle_runtime_mutate_run(mut request: tiny_http::Request, state: &RuntimeServerState) {
-    let Some(runtime) = state.runtime.as_ref() else {
-        let _ = request.respond(json_error(404, "runtime service not enabled"));
-        return;
-    };
-
-    if !authorize_runtime_request(&request, state.bootstrap.as_ref()) {
-        let _ = request.respond(json_error(401, "unauthorized"));
-        return;
-    }
-
-    let command = match read_json::<MutateRunCommand>(&mut request) {
-        Ok(command) => command,
-        Err(response) => {
-            let _ = request.respond(response);
-            return;
-        }
-    };
-
-    let command_clone = command.clone();
-    match runtime.mutate_run(command) {
-        Ok(outcome) => {
-            crate::checkpoint_bridge_relay::relay_decision(
-                &state.home_dir,
-                &command_clone,
-                &outcome,
-            );
-            respond_json(request, 200, &outcome);
-        }
-        Err(error) => {
-            tracing::warn!(error = %error, "Runtime run mutation request failed");
-            let _ = request.respond(json_error(500, "runtime run mutation failed"));
-        }
-    }
-}
-
-fn handle_hook(mut request: tiny_http::Request) {
-    let hook_input: HookInput = match read_json::<HookInput>(&mut request) {
-        Ok(input) => input,
-        Err(response) => {
-            let _ = request.respond(response);
-            return;
-        }
-    };
-
-    match crate::handle::handle_hook_input(hook_input) {
-        Ok(()) => {
-            respond_json(request, 200, &serde_json::json!({ "status": "ok" }));
-        }
-        Err(e) => {
-            tracing::warn!(error = %e, "Hook processing failed");
-            let _ = request.respond(json_error(500, "hook processing failed"));
-        }
-    }
-}
-
-fn authorize_runtime_request(
-    request: &tiny_http::Request,
-    runtime_service: Option<&RuntimeServiceBootstrap>,
-) -> bool {
-    let Some(bootstrap) = runtime_service else {
-        return false;
-    };
-
-    let authorization = request
-        .headers()
-        .iter()
-        .find(|header| header.field.equiv("Authorization"))
-        .map(|header| header.value.as_str());
-
-    bootstrap.is_authorized(authorization)
-}
-
-fn read_json<T>(request: &mut tiny_http::Request) -> Result<T, tiny_http::ResponseBox>
+pub(crate) fn read_json<T>(request: &mut tiny_http::Request) -> Result<T, tiny_http::ResponseBox>
 where
     T: serde::de::DeserializeOwned,
 {
@@ -629,7 +291,7 @@ fn read_request_body(request: &mut tiny_http::Request) -> Result<String, tiny_ht
     })
 }
 
-fn respond_json<T>(request: tiny_http::Request, status: u16, payload: &T)
+pub(crate) fn respond_json<T>(request: tiny_http::Request, status: u16, payload: &T)
 where
     T: serde::Serialize,
 {
@@ -641,7 +303,7 @@ where
     let _ = request.respond(response);
 }
 
-fn parse_since_version(url: &str) -> Option<u64> {
+pub(crate) fn parse_since_version(url: &str) -> Option<u64> {
     let query = url.split_once('?')?.1;
     query.split('&').find_map(|param| {
         param
@@ -650,7 +312,7 @@ fn parse_since_version(url: &str) -> Option<u64> {
     })
 }
 
-fn runtime_poll_timeout() -> Duration {
+pub(crate) fn runtime_poll_timeout() -> Duration {
     std::env::var(POLL_TIMEOUT_SECS_ENV)
         .ok()
         .and_then(|value| value.trim().parse::<u64>().ok())
@@ -658,37 +320,15 @@ fn runtime_poll_timeout() -> Duration {
         .unwrap_or(Duration::from_secs(DEFAULT_POLL_TIMEOUT_SECS))
 }
 
-fn runtime_artifact_path() -> Result<PathBuf, String> {
-    if let Ok(path) = std::env::var(RUNTIME_ARTIFACT_PATH_ENV) {
-        let trimmed = path.trim();
-        if !trimmed.is_empty() {
-            return Ok(PathBuf::from(trimmed));
-        }
-    }
-
-    let home = dirs::home_dir().ok_or("Cannot determine home directory")?;
-    Ok(home.join(DEFAULT_RUNTIME_ARTIFACT_RELATIVE_PATH))
-}
-
-fn adjusted_gc_reference_time(sleep_tracker: &Arc<Mutex<SleepTracker>>) -> DateTime<Utc> {
-    match sleep_tracker.lock() {
-        Ok(sleep_tracker) => sleep_tracker.adjusted_now(),
-        Err(_) => {
-            tracing::warn!("Sleep tracker lock poisoned; falling back to current time");
-            Utc::now()
-        }
-    }
-}
-
-fn json_error(status: u16, message: &str) -> tiny_http::ResponseBox {
-    let body = serde_json::json!({"error": message}).to_string();
+pub(crate) fn json_error(status: u16, message: &str) -> tiny_http::ResponseBox {
+    let body = serde_json::json!({ "error": message }).to_string();
     tiny_http::Response::from_string(body)
         .with_status_code(status)
         .with_header(json_content_type())
         .boxed()
 }
 
-fn json_content_type() -> tiny_http::Header {
+pub(crate) fn json_content_type() -> tiny_http::Header {
     "Content-Type: application/json"
         .parse()
         .expect("valid header")

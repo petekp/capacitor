@@ -4,67 +4,18 @@
 //! EmitCheckpoint (with mermaid) → SubmitDecision →
 //! AdvancePhase → EmitCheckpoint → SubmitDecision → Complete
 
+mod common;
+
 use capacitor_core::domain::{
     CheckpointKind, MermaidSource, MutateRunCommand, RunMutationKind, RunStatus,
 };
 use capacitor_core::CoreRuntime;
+use common::{active_checkpoint_id, mutate_run as mutate};
 
 const PROJECT: &str = "/test/idea-to-ship";
 
 fn base_cmd(run_id: &str) -> MutateRunCommand {
-    MutateRunCommand {
-        kind: RunMutationKind::Create, // overridden by mutate()
-        project_path: PROJECT.to_string(),
-        run_id: run_id.to_string(),
-        method_id: None,
-        involvement: None,
-        checkpoint_kind: None,
-        checkpoint_title: None,
-        checkpoint_summary: None,
-        checkpoint_brief_path: None,
-        checkpoint_manifest_path: None,
-        checkpoint_media_artifacts: vec![],
-        checkpoint_mermaid_sources: vec![],
-        capture_url: None,
-        checkpoint_id: None,
-        capture_request_id: None,
-        client_id: None,
-        observed_capture_url: None,
-        capture_failure_reason: None,
-        decision_action: None,
-        decision_note: None,
-        session_id: None,
-        delegation_worker_id: None,
-        status_message: None,
-        idea_id: None,
-        idea_title: None,
-        idea_description: None,
-        completed_media_artifacts: vec![],
-    }
-}
-
-fn mutate(
-    runtime: &CoreRuntime,
-    mut cmd: MutateRunCommand,
-    kind: RunMutationKind,
-) -> capacitor_core::domain::MutationOutcome {
-    cmd.kind = kind;
-    runtime.mutate_run(cmd).expect("mutation should not error")
-}
-
-fn active_checkpoint_id(runtime: &CoreRuntime, run_id: &str) -> String {
-    runtime
-        .app_snapshot()
-        .expect("snapshot")
-        .runs
-        .iter()
-        .find(|run| run.id == run_id)
-        .expect("run exists")
-        .active_checkpoint
-        .as_ref()
-        .expect("checkpoint exists")
-        .id
-        .clone()
+    common::run_kernel_base_cmd(PROJECT, run_id)
 }
 
 #[test]

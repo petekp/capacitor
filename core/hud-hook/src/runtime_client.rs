@@ -6,8 +6,8 @@
 
 use capacitor_core::{
     domain::{HookEventType, IngestHookEventCommand, IngestShellSignalCommand, TmuxPaneInfo},
-    runtime_service::{RuntimeServiceEndpoint, RUNTIME_SERVICE_DEFAULT_PORT},
-    runtime_types::ParentApp,
+    runtime::service::{RuntimeServiceEndpoint, RUNTIME_SERVICE_DEFAULT_PORT},
+    runtime::types::ParentApp,
     CoreRuntime,
 };
 use chrono::Utc;

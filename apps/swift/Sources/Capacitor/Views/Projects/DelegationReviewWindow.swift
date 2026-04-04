@@ -20,7 +20,7 @@ struct DelegationReviewWindow: View {
     @State private var autoCloseTask: _Concurrency.Task<Void, Never>?
 
     private var target: AppState.ReviewWindowTarget? {
-        appState.reviewWindowTarget
+        appState.uiState.reviewWindowTarget
     }
 
     private var delegation: RuntimeDelegationState? {
@@ -34,7 +34,7 @@ struct DelegationReviewWindow: View {
 
     private var project: Project? {
         guard let target else { return nil }
-        return appState.projects.first { $0.path == target.projectPath }
+        return appState.projectState.projects.first { $0.path == target.projectPath }
     }
 
     private var milestoneNumber: Int {
@@ -101,7 +101,7 @@ struct DelegationReviewWindow: View {
         .task(id: currentReview?.manifestPath ?? "no-review") {
             await loadReviewArtifacts()
         }
-        .onChange(of: appState.reviewWindowTarget) { _, newValue in
+        .onChange(of: appState.uiState.reviewWindowTarget) { _, newValue in
             if newValue == nil {
                 dismissWindow(id: "delegation-review")
             }
@@ -125,7 +125,7 @@ struct DelegationReviewWindow: View {
         }
         .onDisappear {
             autoCloseTask?.cancel()
-            appState.reviewWindowTarget = nil
+            appState.uiState.reviewWindowTarget = nil
         }
     }
 
@@ -703,7 +703,7 @@ struct DelegationReviewWindow: View {
         autoCloseTask = _Concurrency.Task { @MainActor in
             try? await _Concurrency.Task.sleep(nanoseconds: 2_000_000_000)
             guard case .submitted = phase else { return }
-            appState.reviewWindowTarget = nil
+            appState.uiState.reviewWindowTarget = nil
         }
     }
 

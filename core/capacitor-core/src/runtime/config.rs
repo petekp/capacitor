@@ -7,18 +7,18 @@
 //! Callers provide a `StorageConfig` so path resolution stays explicit and testable.
 //! Reads are best-effort; malformed files return defaults to keep the app usable.
 
-use crate::runtime_storage::StorageConfig;
-use crate::runtime_types::{HudConfig, StatsCache};
+use crate::runtime::storage::StorageConfig;
+use crate::runtime::types::{HudConfig, StatsCache};
 use fs_err as fs;
 use std::path::PathBuf;
 
 /// Returns the path to the projects configuration file for a specific storage root.
-pub fn get_projects_config_path_for(storage: &StorageConfig) -> PathBuf {
+pub(crate) fn get_projects_config_path_for(storage: &StorageConfig) -> PathBuf {
     storage.projects_file()
 }
 
 /// Loads the HUD configuration from a specific storage root.
-pub fn load_hud_config_with_storage(storage: &StorageConfig) -> HudConfig {
+pub(crate) fn load_hud_config_with_storage(storage: &StorageConfig) -> HudConfig {
     let path = get_projects_config_path_for(storage);
     fs::read_to_string(&path)
         .ok()
@@ -27,7 +27,7 @@ pub fn load_hud_config_with_storage(storage: &StorageConfig) -> HudConfig {
 }
 
 /// Saves the HUD configuration to disk for a specific storage root.
-pub fn save_hud_config_with_storage(
+pub(crate) fn save_hud_config_with_storage(
     storage: &StorageConfig,
     config: &HudConfig,
 ) -> Result<(), String> {
@@ -59,12 +59,12 @@ pub fn save_hud_config_with_storage(
 }
 
 /// Returns the path to the statistics cache file for a specific storage root.
-pub fn get_stats_cache_path_for(storage: &StorageConfig) -> PathBuf {
+pub(crate) fn get_stats_cache_path_for(storage: &StorageConfig) -> PathBuf {
     storage.stats_cache_file()
 }
 
 /// Loads the statistics cache for a specific storage root.
-pub fn load_stats_cache_with_storage(storage: &StorageConfig) -> StatsCache {
+pub(crate) fn load_stats_cache_with_storage(storage: &StorageConfig) -> StatsCache {
     let path = get_stats_cache_path_for(storage);
     fs::read_to_string(&path)
         .ok()
@@ -73,7 +73,7 @@ pub fn load_stats_cache_with_storage(storage: &StorageConfig) -> StatsCache {
 }
 
 /// Saves the statistics cache to disk for a specific storage root.
-pub fn save_stats_cache_with_storage(
+pub(crate) fn save_stats_cache_with_storage(
     storage: &StorageConfig,
     cache: &StatsCache,
 ) -> Result<(), String> {
@@ -105,7 +105,7 @@ pub fn save_stats_cache_with_storage(
 }
 
 /// Resolves a symlink to its canonical path.
-pub fn resolve_symlink(path: &PathBuf) -> Option<PathBuf> {
+pub(crate) fn resolve_symlink(path: &PathBuf) -> Option<PathBuf> {
     if path.exists() {
         fs::canonicalize(path).ok()
     } else {

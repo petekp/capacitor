@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use crate::domain::{MutateRunCommand, MutationOutcome, RunMutationKind};
-use crate::runtime_service::RuntimeServiceEndpoint;
+use crate::runtime::service::RuntimeServiceEndpoint;
 
 const RUNTIME_REPORT_TIMEOUT: Duration = Duration::from_secs(2);
 
@@ -154,7 +154,7 @@ impl RunStatusReporter for RuntimeRunStatusReporter {
     }
 }
 
-pub fn report_status_event(reporter: &dyn RunStatusReporter, event: RunStatusEvent) {
+pub(crate) fn report_status_event(reporter: &dyn RunStatusReporter, event: RunStatusEvent) {
     let kind = event.kind;
     let message = event.status_message.clone();
     if std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| reporter.report(event))).is_err() {
@@ -169,7 +169,7 @@ pub fn report_status_event(reporter: &dyn RunStatusReporter, event: RunStatusEve
     }
 }
 
-pub fn report_status_message(
+pub(crate) fn report_status_message(
     reporter: &dyn RunStatusReporter,
     kind: RunStatusEventKind,
     status_message: impl Into<String>,
@@ -180,11 +180,11 @@ pub fn report_status_message(
     );
 }
 
-pub fn report_status_kind(reporter: &dyn RunStatusReporter, kind: RunStatusEventKind) {
+pub(crate) fn report_status_kind(reporter: &dyn RunStatusReporter, kind: RunStatusEventKind) {
     report_status_event(reporter, RunStatusEvent::new(kind, None));
 }
 
 #[must_use]
-pub fn phase_started_message(phase_name: &str) -> String {
+pub(crate) fn phase_started_message(phase_name: &str) -> String {
     format!("Phase '{phase_name}' started")
 }

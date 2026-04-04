@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct SettingsView: View {
-    @ObservedObject var updaterController: UpdaterController
+    let updaterController: UpdaterController
     @AppStorage("floatingMode") private var floatingMode = true
     @AppStorage("alwaysOnTop") private var alwaysOnTop = false
     @AppStorage("playReadyChime") private var playReadyChime = true
@@ -18,6 +18,8 @@ struct SettingsView: View {
     }
 
     var body: some View {
+        @Bindable var updaterController = updaterController
+
         Form {
             Section("Appearance") {
                 Toggle("Floating Mode", isOn: $floatingMode)

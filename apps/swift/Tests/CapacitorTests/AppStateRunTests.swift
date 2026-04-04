@@ -8,7 +8,7 @@ final class AppStateRunTests: XCTestCase {
         appState.cancelRuntimeAutomationForTesting()
         let project = makeProject(path: "/tmp/core-project")
         let idea = makeIdea()
-        appState.projects = [project]
+        appState.projectState.projects = [project]
         appState.setRuntimeSnapshotGenerationForTesting(1)
 
         let olderPausedRun = makeRun(
@@ -43,7 +43,7 @@ final class AppStateRunTests: XCTestCase {
         appState.cancelRuntimeAutomationForTesting()
         let project = makeProject(path: "/tmp/core-project")
         let idea = makeIdea()
-        appState.projects = [project]
+        appState.projectState.projects = [project]
         appState.setRuntimeSnapshotGenerationForTesting(1)
 
         let completedRun = makeRun(
@@ -70,7 +70,7 @@ final class AppStateRunTests: XCTestCase {
         appState.cancelRuntimeAutomationForTesting()
         let project = makeProject(path: "/tmp/core-project")
         let idea = makeIdea()
-        appState.projects = [project]
+        appState.projectState.projects = [project]
         appState.setRuntimeSnapshotGenerationForTesting(1)
 
         let otherIdeaRun = makeRun(

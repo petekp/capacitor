@@ -6,6 +6,7 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
+use crate::common::fixtures::minimal_dispatch_path;
 use capacitor_core::method_runner::adapters::{
     FakeInteractiveIO, FakePromptBuilder, FakeWorkerDispatcher,
 };
@@ -27,16 +28,12 @@ use tempfile::TempDir;
 // Helpers
 // ---------------------------------------------------------------------------
 
-fn fixture_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../methods/fixtures/minimal-dispatch.yaml")
-}
-
 /// Run the executor against the minimal-dispatch fixture inside a fresh tempdir.
 /// Returns (tempdir_handle, paths, state).
 fn run_minimal_dispatch() -> (TempDir, MethodRunPaths, MethodRunState) {
     let tmp = TempDir::new().expect("failed to create tempdir");
     let source = DefinitionSource {
-        definition_path: fixture_path(),
+        definition_path: minimal_dispatch_path(),
         execution_root: tmp.path().to_path_buf(),
     };
     let state = execute_run(
@@ -52,7 +49,7 @@ fn run_minimal_dispatch() -> (TempDir, MethodRunPaths, MethodRunState) {
 
 /// Normalize the minimal-dispatch fixture from its YAML source.
 fn normalize_fixture() -> NormalizedDefinitionFile {
-    let yaml = std::fs::read_to_string(fixture_path()).expect("read fixture");
+    let yaml = std::fs::read_to_string(minimal_dispatch_path()).expect("read fixture");
     Normalizer::normalize(&yaml).expect("normalize")
 }
 
@@ -734,7 +731,7 @@ fn invariant_i10_definition_freeze() {
     // Now simulate modifying the source YAML after run start
     // Copy fixture to tempdir and modify it
     let modified_yaml_path = tmp.path().join("modified.yaml");
-    let mut yaml_content = std::fs::read_to_string(fixture_path()).expect("read fixture");
+    let mut yaml_content = std::fs::read_to_string(minimal_dispatch_path()).expect("read fixture");
     yaml_content = yaml_content.replace("Minimal Dispatch", "MODIFIED TITLE");
     std::fs::write(&modified_yaml_path, &yaml_content).expect("write modified");
 

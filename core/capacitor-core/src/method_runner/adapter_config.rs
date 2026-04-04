@@ -151,7 +151,10 @@ fn probe_codex_version(codex_path: &Path) -> Option<String> {
 
 /// Write `adapter/preflight.json` under `relay_root` if it doesn't already exist.
 /// Called lazily on the first real adapter invocation.
-pub fn write_preflight_if_needed(relay_root: &Path, config: &AdapterConfig) -> std::io::Result<()> {
+pub(crate) fn write_preflight_if_needed(
+    relay_root: &Path,
+    config: &AdapterConfig,
+) -> std::io::Result<()> {
     let adapter_dir = relay_root.join("adapter");
     let preflight_path = adapter_dir.join("preflight.json");
 
