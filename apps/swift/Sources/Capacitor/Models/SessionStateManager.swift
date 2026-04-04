@@ -646,18 +646,6 @@ final class SessionStateManager {
         }
     }
 
-    /// Applies deterministic session states without runtime I/O.
-    /// Used by demo-mode fixtures.
-    func applyFixtureSessionStates(_ states: [String: ProjectSessionState]) {
-        applyGeneration &+= 1
-        consecutiveEmptySnapshotCount = 0
-        sessionStates = states
-        sessionAttributions = [:]
-        latestSessionIds = [:]
-        pruneCachedStates()
-        checkForStateChanges()
-    }
-
     func clearRuntimeProjectStates() {
         applyGeneration &+= 1
         consecutiveEmptySnapshotCount = 0

@@ -636,13 +636,6 @@ final class HookServerManager {
         }
         return health
     }
-
-    nonisolated static func isCompatibleBootstrapServiceHealth(_ data: Data) -> Bool {
-        guard let health = try? JSONDecoder().decode(RuntimeHealth.self, from: data) else {
-            return false
-        }
-        return health.isCompatibleBootstrapService
-    }
 }
 
 extension HookServerManagerDependencies {

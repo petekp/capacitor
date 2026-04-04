@@ -7,6 +7,7 @@ use std::collections::BTreeMap;
 
 use chrono::{DateTime, Duration, Utc};
 
+use super::utils::parse_rfc3339;
 use crate::domain::{
     method_registry, now_rfc3339, ActiveCheckpoint, CaptureClaim, CaptureStatus,
     CheckpointDecision, CheckpointStatus, MutateRunCommand, MutationOutcome, PhaseInstance,
@@ -646,12 +647,6 @@ fn timestamp_is_older_than(value: &str, threshold: Duration, now: DateTime<Utc>)
     };
 
     now.signed_duration_since(timestamp) > threshold
-}
-
-fn parse_rfc3339(value: &str) -> Option<DateTime<Utc>> {
-    DateTime::parse_from_rfc3339(value)
-        .ok()
-        .map(|timestamp| timestamp.with_timezone(&Utc))
 }
 
 fn active_checkpoint_for_command<'a>(
