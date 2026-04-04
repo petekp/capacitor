@@ -21,8 +21,6 @@ meta:
       - docs/audits/**/*.md
       - docs/manual-qa/**/*.md
       - docs/plans/**/*.md
-    archived_globs:
-      - docs/archive/architecture-history/**/*.md
   doc_claim_patterns:
     - "Rust owns runtime semantics; Swift owns presentation, orchestration, and macOS side effects"
     - "Runtime boundary:\\s+authenticated local HTTP service hosted by `hud-hook serve`"

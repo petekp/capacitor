@@ -19,7 +19,6 @@ pub mod ingest;
 pub mod method_runner;
 pub mod observation;
 pub mod projection;
-pub mod query;
 pub mod reduce;
 pub mod runtime;
 pub mod runtime_stats;

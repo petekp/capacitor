@@ -4,7 +4,7 @@ use super::*;
 impl CoreRuntime {
     pub fn app_snapshot(&self) -> Result<AppSnapshot, CoreRuntimeError> {
         let state = self.lock_state()?;
-        let mut snapshot = query::app_snapshot(&state);
+        let mut snapshot = state.snapshot();
         snapshot.snapshot_version = self.version.load(Ordering::Relaxed);
         Ok(snapshot)
     }

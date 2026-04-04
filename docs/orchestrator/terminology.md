@@ -2,7 +2,7 @@
 
 > Doc role: `canonical-spec`
 > Status: Current. Normalized glossary for orchestrator, delegation, and checkpoint bridge terms.
-> Extends: `docs/historical/UBIQUITOUS_LANGUAGE.md` (historical baseline)
+> Extends: `docs/orchestrator/ubiquitous-language.md` (original baseline)
 
 This glossary normalizes terms across the delegation loop, run kernel, method runner, and checkpoint bridge subsystems. When a term has shifted from its historical definition, the update is noted inline. For the original definitions, see the historical baseline.
 
@@ -10,7 +10,7 @@ This glossary normalizes terms across the delegation loop, run kernel, method ru
 
 ## Core Terms (carried forward)
 
-These terms originate from `docs/historical/UBIQUITOUS_LANGUAGE.md` and remain accurate.
+These terms originate from `docs/orchestrator/ubiquitous-language.md` and remain accurate.
 
 | Term | Definition | Aliases to avoid |
 |------|-----------|-----------------|
