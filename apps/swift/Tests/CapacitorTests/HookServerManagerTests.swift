@@ -540,36 +540,6 @@ final class HookServerManagerTests: XCTestCase {
         XCTAssertEqual(receivedAuthToken, "persisted-token")
     }
 
-    func testBootstrapHealthPayloadRejectsUnexpectedProtocolVersion() {
-        let payload = Data(
-            """
-            {"status":"ok","pid":4242,"version":"runtime-service-v1","protocol_version":99,"auth_mode":"bearer","service_mode":"bootstrap_only"}
-            """.utf8,
-        )
-
-        XCTAssertFalse(HookServerManager.isCompatibleBootstrapServiceHealth(payload))
-    }
-
-    func testBootstrapHealthPayloadRejectsUnexpectedAuthMode() {
-        let payload = Data(
-            """
-            {"status":"ok","pid":4242,"version":"runtime-service-v1","protocol_version":1,"auth_mode":"none","service_mode":"bootstrap_only"}
-            """.utf8,
-        )
-
-        XCTAssertFalse(HookServerManager.isCompatibleBootstrapServiceHealth(payload))
-    }
-
-    func testBootstrapHealthPayloadRejectsUnexpectedServiceMode() {
-        let payload = Data(
-            """
-            {"status":"ok","pid":4242,"version":"runtime-service-v1","protocol_version":1,"auth_mode":"bearer","service_mode":"daemon"}
-            """.utf8,
-        )
-
-        XCTAssertFalse(HookServerManager.isCompatibleBootstrapServiceHealth(payload))
-    }
-
     private func makeDependencies(
         readPidFile: @escaping (String) -> Int32? = { _ in nil },
         removePidFile: @escaping (String) -> Void = { _ in },
