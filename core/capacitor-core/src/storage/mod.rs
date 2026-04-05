@@ -7,6 +7,8 @@ use std::path::{Path, PathBuf};
 use crate::domain::AppSnapshot;
 pub use observation_journal::{InMemoryObservationJournalStore, ObservationJournalStore};
 
+const CURRENT_SNAPSHOT_SCHEMA_VERSION: u32 = 1;
+
 pub trait SnapshotStorage: Send + Sync {
     fn load_snapshot(&self) -> Result<Option<AppSnapshot>, String>;
     fn save_snapshot(&self, snapshot: &AppSnapshot) -> Result<(), String>;
@@ -186,7 +188,22 @@ impl SnapshotStorage for JsonFileSnapshotStorage {
         let _file_lock = FileLockGuard::acquire(&Self::lock_path(&self.path))?;
 
         match Self::read_snapshot_file(&self.path) {
-            Ok(snapshot) => Ok(Some(snapshot)),
+            Ok(snapshot) => {
+                if snapshot.schema_version != CURRENT_SNAPSHOT_SCHEMA_VERSION {
+                    let quarantine_path = self.path.with_extension("json.quarantined");
+                    if let Err(e) = fs::rename(&self.path, &quarantine_path) {
+                        eprintln!("[capacitor-core] failed to quarantine snapshot: {e}");
+                    } else {
+                        eprintln!(
+                            "[capacitor-core] quarantined snapshot with schema version {} (expected {}): {}",
+                            snapshot.schema_version, CURRENT_SNAPSHOT_SCHEMA_VERSION, quarantine_path.display()
+                        );
+                    }
+                    Ok(None)
+                } else {
+                    Ok(Some(snapshot))
+                }
+            }
             Err(SnapshotFileReadError::Missing) => {
                 Ok(self.load_backup_snapshot("primary snapshot missing"))
             }
@@ -208,16 +225,28 @@ impl SnapshotStorage for JsonFileSnapshotStorage {
 
         Self::ensure_parent_dir(&self.path)?;
 
-        let payload = serde_json::to_vec_pretty(snapshot)
+        let mut versioned = snapshot.clone();
+        versioned.schema_version = CURRENT_SNAPSHOT_SCHEMA_VERSION;
+        let payload = serde_json::to_vec_pretty(&versioned)
             .map_err(|error| format!("failed serializing snapshot: {error}"))?;
 
         let temp_path = Self::temp_path(&self.path);
 
-        fs::write(&temp_path, payload)
+        fs::write(&temp_path, &payload)
             .map_err(|error| format!("failed writing snapshot temp file: {error}"))?;
+
+        let temp_file = fs::File::open(&temp_path)
+            .map_err(|e| format!("failed opening temp file for sync: {e}"))?;
+        temp_file
+            .sync_data()
+            .map_err(|e| format!("failed syncing temp file: {e}"))?;
+
         if self.path.exists() {
-            fs::copy(&self.path, Self::backup_path(&self.path))
-                .map_err(|error| format!("failed creating snapshot backup: {error}"))?;
+            let backup = Self::backup_path(&self.path);
+            let _ = fs::remove_file(&backup);
+            if let Err(e) = fs::hard_link(&self.path, &backup) {
+                eprintln!("[capacitor-core] warning: backup hard-link failed (non-fatal): {e}");
+            }
         }
         fs::rename(&temp_path, &self.path)
             .map_err(|error| format!("failed replacing snapshot file: {error}"))?;
@@ -346,6 +375,7 @@ mod tests {
             runs,
             generated_at: "2026-02-28T00:00:00Z".to_string(),
             snapshot_version: 0,
+            schema_version: 0,
         }
     }
 
@@ -550,4 +580,130 @@ mod tests {
     }
 
     use std::path::PathBuf;
+
+    // -----------------------------------------------------------------------
+    // Wave 3: Disk-full handling and schema migration tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_save_succeeds_when_backup_hardlink_fails() {
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let path = temp_dir.path().join("snapshot").join("app_snapshot.json");
+        let backup_path = temp_dir
+            .path()
+            .join("snapshot")
+            .join("app_snapshot.json.prev");
+
+        let storage = JsonFileSnapshotStorage::new(&path);
+        let first = fixture_snapshot("first", 1);
+        storage.save_snapshot(&first).expect("save first");
+
+        // Create a directory at the backup path so hard_link will fail
+        fs::remove_file(&backup_path).ok();
+        fs::create_dir_all(backup_path.join("blocker")).expect("create blocking dir");
+
+        let second = fixture_snapshot("second", 2);
+        storage.save_snapshot(&second).expect("save second");
+
+        let loaded = storage
+            .load_snapshot()
+            .expect("load")
+            .expect("snapshot exists");
+        assert_eq!(loaded.runs.len(), 2);
+        assert_eq!(loaded.runs[0].id, "run-second-0");
+    }
+
+    #[test]
+    fn test_save_stamps_schema_version_and_syncs() {
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let path = temp_dir.path().join("snapshot").join("app_snapshot.json");
+
+        let storage = JsonFileSnapshotStorage::new(&path);
+        let snapshot = fixture_snapshot("sync-test", 1);
+        assert_eq!(snapshot.schema_version, 0, "fixture should have version 0");
+
+        storage.save_snapshot(&snapshot).expect("save");
+
+        let raw = fs::read_to_string(&path).expect("read raw file");
+        let on_disk: AppSnapshot = serde_json::from_str(&raw).expect("parse");
+        assert_eq!(
+            on_disk.schema_version,
+            super::CURRENT_SNAPSHOT_SCHEMA_VERSION,
+            "save should stamp schema_version"
+        );
+        assert_eq!(on_disk.runs.len(), 1);
+        assert_eq!(on_disk.runs[0].id, "run-sync-test-0");
+    }
+
+    #[test]
+    fn test_load_quarantines_legacy_schema_version() {
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let path = temp_dir.path().join("snapshot").join("app_snapshot.json");
+        let quarantine_path = path.with_extension("json.quarantined");
+
+        JsonFileSnapshotStorage::ensure_parent_dir(&path).expect("create parent dir");
+
+        let legacy = fixture_snapshot("legacy", 1);
+        assert_eq!(legacy.schema_version, 0);
+        let payload = serde_json::to_string_pretty(&legacy).expect("serialize");
+        fs::write(&path, payload).expect("write legacy snapshot");
+
+        let storage = JsonFileSnapshotStorage::new(&path);
+        let loaded = storage.load_snapshot().expect("load should not error");
+
+        assert!(loaded.is_none(), "legacy snapshot should be quarantined");
+        assert!(
+            quarantine_path.exists(),
+            "quarantine file should exist at {}",
+            quarantine_path.display()
+        );
+        assert!(
+            !path.exists(),
+            "original file should be moved to quarantine"
+        );
+    }
+
+    #[test]
+    fn test_load_accepts_current_schema_version() {
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let path = temp_dir.path().join("snapshot").join("app_snapshot.json");
+
+        let storage = JsonFileSnapshotStorage::new(&path);
+        let snapshot = fixture_snapshot("current", 1);
+        storage.save_snapshot(&snapshot).expect("save");
+
+        let loaded = storage
+            .load_snapshot()
+            .expect("load")
+            .expect("current-version snapshot should load");
+        assert_eq!(
+            loaded.schema_version,
+            super::CURRENT_SNAPSHOT_SCHEMA_VERSION
+        );
+        assert_eq!(loaded.runs.len(), 1);
+        assert_eq!(loaded.runs[0].id, "run-current-0");
+    }
+
+    #[test]
+    fn test_load_quarantines_future_schema_version() {
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let path = temp_dir.path().join("snapshot").join("app_snapshot.json");
+        let quarantine_path = path.with_extension("json.quarantined");
+
+        JsonFileSnapshotStorage::ensure_parent_dir(&path).expect("create parent dir");
+
+        let mut future = fixture_snapshot("future", 1);
+        future.schema_version = super::CURRENT_SNAPSHOT_SCHEMA_VERSION + 99;
+        let payload = serde_json::to_string_pretty(&future).expect("serialize");
+        fs::write(&path, payload).expect("write future snapshot");
+
+        let storage = JsonFileSnapshotStorage::new(&path);
+        let loaded = storage.load_snapshot().expect("load should not error");
+
+        assert!(
+            loaded.is_none(),
+            "future-version snapshot should be quarantined"
+        );
+        assert!(quarantine_path.exists(), "quarantine file should exist");
+    }
 }

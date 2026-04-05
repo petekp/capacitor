@@ -161,6 +161,7 @@ fn routing_state_fixture(sessions: Vec<SessionSummary>, shells: Vec<ShellSignal>
         },
         generated_at: "2099-03-27T00:00:00Z".to_string(),
         snapshot_version: 0,
+        schema_version: 0,
     })
 }
 
@@ -2700,6 +2701,7 @@ fn snapshot_omits_expired_shells() {
         },
         generated_at: now.to_rfc3339(),
         snapshot_version: 0,
+        schema_version: 0,
     });
 
     let snapshot = state.snapshot();
@@ -2762,6 +2764,7 @@ fn snapshot_populates_session_is_alive_from_cleaned_shells() {
         },
         generated_at: now.to_rfc3339(),
         snapshot_version: 0,
+        schema_version: 0,
     });
 
     state.gc_stale_sessions_at(now);
@@ -2913,6 +2916,7 @@ fn orphaned_session_gc_evicts_stale_same_project_sibling_on_new_session_start() 
         },
         generated_at: "2099-03-31T00:00:00Z".to_string(),
         snapshot_version: 0,
+        schema_version: 0,
     });
 
     let mut fresh_start = event_base(HookEventType::SessionStart);
@@ -3619,6 +3623,7 @@ fn snapshot_preserves_sole_stale_working_session() {
         },
         generated_at: now.to_rfc3339(),
         snapshot_version: 0,
+        schema_version: 0,
     });
 
     assert_eq!(state.sessions.len(), 1);
@@ -3665,6 +3670,7 @@ fn snapshot_preserves_fresh_working_session() {
         },
         generated_at: now.to_rfc3339(),
         snapshot_version: 0,
+        schema_version: 0,
     });
 
     state.gc_stale_sessions_at(now);
@@ -3718,6 +3724,7 @@ fn snapshot_preserves_sole_stale_ready_session() {
         },
         generated_at: now.to_rfc3339(),
         snapshot_version: 0,
+        schema_version: 0,
     });
 
     assert_eq!(state.sessions.len(), 1);
@@ -3775,6 +3782,7 @@ fn snapshot_gc_fixes_project_state_with_orphan_and_idle_session() {
         },
         generated_at: now.to_rfc3339(),
         snapshot_version: 0,
+        schema_version: 0,
     });
 
     assert_eq!(state.sessions.len(), 2);
@@ -4060,6 +4068,7 @@ fn snapshot_gc_preserves_all_stale_sessions_when_no_survivor() {
         },
         generated_at: now.to_rfc3339(),
         snapshot_version: 0,
+        schema_version: 0,
     });
 
     assert_eq!(state.sessions.len(), 2);
@@ -4139,6 +4148,7 @@ fn snapshot_gc_evicts_stale_when_fresh_session_exists() {
         },
         generated_at: now.to_rfc3339(),
         snapshot_version: 0,
+        schema_version: 0,
     });
 
     assert_eq!(state.sessions.len(), 3);
@@ -4214,6 +4224,7 @@ fn orphaned_session_gc_preserves_stale_idle_sibling() {
         },
         generated_at: "2099-04-01T12:00:00Z".to_string(),
         snapshot_version: 0,
+        schema_version: 0,
     });
 
     // Send a SessionStart from a brand-new session on the same project.
@@ -4289,6 +4300,7 @@ fn event_time_cleanup_uses_adjusted_gc_reference_time_when_provided() {
         },
         generated_at: raw_recorded_at.to_string(),
         snapshot_version: 0,
+        schema_version: 0,
     };
 
     let mut raw_state = ReducerState::from_snapshot(snapshot.clone());
@@ -4389,6 +4401,7 @@ fn snapshot_gc_cross_project_isolation() {
         },
         generated_at: base.to_rfc3339(),
         snapshot_version: 0,
+        schema_version: 0,
     });
 
     assert_eq!(state.sessions.len(), 4);
@@ -4474,6 +4487,7 @@ fn orphaned_session_gc_sole_session_no_eviction() {
         },
         generated_at: "2099-01-01T00:00:00Z".to_string(),
         snapshot_version: 0,
+        schema_version: 0,
     });
 
     assert_eq!(state.sessions.len(), 1);
@@ -4558,6 +4572,7 @@ fn snapshot_gc_ready_session_uses_correct_anchor() {
             },
             generated_at: base.to_rfc3339(),
             snapshot_version: 0,
+            schema_version: 0,
         });
 
         state.gc_stale_sessions_at(base);
@@ -4616,6 +4631,7 @@ fn snapshot_gc_ready_session_uses_correct_anchor() {
             },
             generated_at: base.to_rfc3339(),
             snapshot_version: 0,
+            schema_version: 0,
         });
 
         state.gc_stale_sessions_at(base);
@@ -4674,6 +4690,7 @@ fn snapshot_gc_ready_session_uses_correct_anchor() {
             },
             generated_at: base.to_rfc3339(),
             snapshot_version: 0,
+            schema_version: 0,
         });
 
         state.gc_stale_sessions_at(base);
@@ -4731,6 +4748,7 @@ fn recompute_projects_normalizes_path_variants() {
         },
         generated_at: "2099-01-01T00:01:00Z".to_string(),
         snapshot_version: 0,
+        schema_version: 0,
     });
 
     // There must be exactly one project entry.
@@ -4810,6 +4828,7 @@ fn shell_corroborated_working_session_survives_snapshot_gc() {
         },
         generated_at: fresh_ts,
         snapshot_version: 0,
+        schema_version: 0,
     });
 
     state.gc_stale_sessions_at(base);
@@ -4874,6 +4893,7 @@ fn working_session_without_shell_signal_evicted_at_snapshot() {
         },
         generated_at: fresh_ts,
         snapshot_version: 0,
+        schema_version: 0,
     });
 
     state.gc_stale_sessions_at(base);
@@ -4935,6 +4955,7 @@ fn shell_corroborated_working_session_survives_event_time_gc() {
         },
         generated_at: "2099-04-01T12:00:00Z".to_string(),
         snapshot_version: 0,
+        schema_version: 0,
     });
 
     // New session start arrives — triggers event-time cleanup
@@ -5017,6 +5038,7 @@ fn quiet_live_worker_with_idle_sibling_both_survive() {
         },
         generated_at: fresh_ts,
         snapshot_version: 0,
+        schema_version: 0,
     });
 
     state.gc_stale_sessions_at(base);
@@ -5073,6 +5095,7 @@ fn snapshot_gc_transitions_sole_dead_session_to_idle() {
         },
         generated_at: now.to_rfc3339(),
         snapshot_version: 0,
+        schema_version: 0,
     });
 
     assert_eq!(state.sessions.len(), 1);
@@ -5136,6 +5159,7 @@ fn snapshot_gc_preserves_sole_stale_working_session_with_shell_corroboration() {
         },
         generated_at: now.to_rfc3339(),
         snapshot_version: 0,
+        schema_version: 0,
     });
 
     state.gc_stale_sessions_at(now);
@@ -5192,6 +5216,7 @@ fn snapshot_gc_transitions_sole_stale_working_session_after_shell_gc() {
         },
         generated_at: now.to_rfc3339(),
         snapshot_version: 0,
+        schema_version: 0,
     });
 
     state.gc_stale_sessions_at(now);
@@ -5256,6 +5281,7 @@ fn snapshot_gc_preserves_recently_dead_sole_session() {
         },
         generated_at: now.to_rfc3339(),
         snapshot_version: 0,
+        schema_version: 0,
     });
 
     state.gc_stale_sessions_at(now);
@@ -5301,6 +5327,7 @@ fn snapshot_gc_preserves_sole_idle_session_even_with_pid_zero() {
         },
         generated_at: now.to_rfc3339(),
         snapshot_version: 0,
+        schema_version: 0,
     });
 
     state.gc_stale_sessions_at(now);
@@ -5355,6 +5382,7 @@ fn test_gc_returns_true_on_change() {
         },
         generated_at: now.to_rfc3339(),
         snapshot_version: 0,
+        schema_version: 0,
     });
 
     let changed = state.gc_stale_sessions_at(now);
@@ -5396,6 +5424,7 @@ fn test_gc_returns_false_on_no_change() {
         },
         generated_at: now.to_rfc3339(),
         snapshot_version: 0,
+        schema_version: 0,
     });
 
     let changed = state.gc_stale_sessions_at(now);
@@ -5446,6 +5475,7 @@ fn test_gc_reason_set_on_idle_transition() {
         },
         generated_at: now.to_rfc3339(),
         snapshot_version: 0,
+        schema_version: 0,
     });
 
     let changed = state.gc_stale_sessions_at(now);
@@ -5491,6 +5521,7 @@ fn test_gc_reason_cleared_on_hook_event() {
         },
         generated_at: "2099-04-01T12:00:00Z".to_string(),
         snapshot_version: 0,
+        schema_version: 0,
     });
 
     let mut event = event_base(HookEventType::UserPromptSubmit);
@@ -5548,6 +5579,7 @@ fn test_gc_reason_not_set_on_removal() {
         },
         generated_at: now.to_rfc3339(),
         snapshot_version: 0,
+        schema_version: 0,
     });
 
     let changed = state.gc_stale_sessions_at(now);

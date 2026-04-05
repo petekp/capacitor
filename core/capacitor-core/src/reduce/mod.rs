@@ -74,6 +74,7 @@ impl ReducerState {
             diagnostics,
             generated_at: _,
             snapshot_version: _,
+            schema_version: _,
         } = snapshot;
 
         let mut projects = BTreeMap::new();
@@ -237,6 +238,7 @@ impl ReducerState {
             },
             generated_at: crate::domain::now_rfc3339(),
             snapshot_version: 0,
+            schema_version: 0,
         }
     }
 

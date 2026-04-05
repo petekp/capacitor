@@ -169,6 +169,8 @@ pub struct AppSnapshot {
     pub generated_at: String,
     #[serde(default)]
     pub snapshot_version: u64,
+    #[serde(default)]
+    pub schema_version: u32,
 }
 
 /// Increment when delegation or run mutation contracts change.

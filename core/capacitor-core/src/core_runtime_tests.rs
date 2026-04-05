@@ -362,6 +362,7 @@ fn run_gc_at_uses_explicit_reference_time() {
         },
         generated_at: now.to_rfc3339(),
         snapshot_version: 0,
+        schema_version: 0,
     };
 
     let real_time_storage = Arc::new(InMemorySnapshotStorage::default());
@@ -761,6 +762,7 @@ fn stale_dead_snapshot_for_gc_read_test() -> AppSnapshot {
         },
         generated_at: now,
         snapshot_version: 0,
+        schema_version: 0,
     }
 }
 
@@ -804,6 +806,7 @@ fn stale_dead_snapshot_for_gc_notify_test() -> AppSnapshot {
         },
         generated_at: now.to_rfc3339(),
         snapshot_version: 0,
+        schema_version: 0,
     }
 }
 
@@ -931,6 +934,7 @@ fn snapshot_payload(sessions: Vec<SessionSummary>, last_hook_event_at: Option<St
         },
         generated_at: now,
         snapshot_version: 0,
+        schema_version: 0,
     };
     let mut value = serde_json::to_value(snapshot).expect("serialize snapshot to value");
     if let Some(last_hook_event_at) = last_hook_event_at {

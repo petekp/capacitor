@@ -1169,10 +1169,11 @@ public struct AppSnapshot {
     public var diagnostics: DiagnosticsSummary
     public var generatedAt: String
     public var snapshotVersion: UInt64
+    public var schemaVersion: UInt32
 
     /// Default memberwise initializers are never public by default, so we
     /// declare one manually.
-    public init(projects: [ProjectSummary], sessions: [SessionSummary], shells: [ShellSignal], routing: [RoutingView], delegations: [ProjectDelegationState], runs: [RunState], diagnostics: DiagnosticsSummary, generatedAt: String, snapshotVersion: UInt64) {
+    public init(projects: [ProjectSummary], sessions: [SessionSummary], shells: [ShellSignal], routing: [RoutingView], delegations: [ProjectDelegationState], runs: [RunState], diagnostics: DiagnosticsSummary, generatedAt: String, snapshotVersion: UInt64, schemaVersion: UInt32) {
         self.projects = projects
         self.sessions = sessions
         self.shells = shells
@@ -1182,6 +1183,7 @@ public struct AppSnapshot {
         self.diagnostics = diagnostics
         self.generatedAt = generatedAt
         self.snapshotVersion = snapshotVersion
+        self.schemaVersion = schemaVersion
     }
 }
 
@@ -1214,6 +1216,9 @@ extension AppSnapshot: Equatable, Hashable {
         if lhs.snapshotVersion != rhs.snapshotVersion {
             return false
         }
+        if lhs.schemaVersion != rhs.schemaVersion {
+            return false
+        }
         return true
     }
 
@@ -1227,6 +1232,7 @@ extension AppSnapshot: Equatable, Hashable {
         hasher.combine(diagnostics)
         hasher.combine(generatedAt)
         hasher.combine(snapshotVersion)
+        hasher.combine(schemaVersion)
     }
 }
 
@@ -1245,7 +1251,8 @@ public struct FfiConverterTypeAppSnapshot: FfiConverterRustBuffer {
                 runs: FfiConverterSequenceTypeRunState.read(from: &buf),
                 diagnostics: FfiConverterTypeDiagnosticsSummary.read(from: &buf),
                 generatedAt: FfiConverterString.read(from: &buf),
-                snapshotVersion: FfiConverterUInt64.read(from: &buf)
+                snapshotVersion: FfiConverterUInt64.read(from: &buf),
+                schemaVersion: FfiConverterUInt32.read(from: &buf)
             )
     }
 
@@ -1259,6 +1266,7 @@ public struct FfiConverterTypeAppSnapshot: FfiConverterRustBuffer {
         FfiConverterTypeDiagnosticsSummary.write(value.diagnostics, into: &buf)
         FfiConverterString.write(value.generatedAt, into: &buf)
         FfiConverterUInt64.write(value.snapshotVersion, into: &buf)
+        FfiConverterUInt32.write(value.schemaVersion, into: &buf)
     }
 }
 

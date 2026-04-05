@@ -634,6 +634,7 @@ fn fixture_snapshot_json() -> &'static str {
     "reducer_events_skipped": 0,
     "last_error": null
   },
-  "generated_at": "2099-02-28T19:00:00Z"
+  "generated_at": "2099-02-28T19:00:00Z",
+  "schema_version": 1
 }"#
 }
