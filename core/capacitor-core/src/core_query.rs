@@ -161,8 +161,11 @@ impl CoreRuntime {
         Ok(suggestions.into_iter().take(8).map(|(s, _)| s).collect())
     }
 
-    pub fn get_project_status(&self, project_path: String) -> Option<ProjectStatus> {
-        runtime::sessions::read_project_status(&project_path)
+    pub fn get_project_status(
+        &self,
+        project_path: String,
+    ) -> Result<Option<ProjectStatus>, CoreRuntimeError> {
+        Ok(runtime::sessions::read_project_status(&project_path))
     }
 
     pub fn load_ideas(

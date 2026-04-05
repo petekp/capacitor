@@ -3,6 +3,7 @@
 //! Long-lived process that receives Claude Code hook events via HTTP POST.
 //! Processes events through the canonical `handle::handle_hook_input` pipeline.
 
+use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
@@ -369,6 +370,8 @@ impl PidFile {
 
         fs_err::create_dir_all(&runtime_dir)
             .map_err(|e| format!("Failed to create runtime dir: {e}"))?;
+        std::fs::set_permissions(&runtime_dir, std::fs::Permissions::from_mode(0o700))
+            .map_err(|e| format!("Failed to set runtime dir permissions: {e}"))?;
 
         let filename = if runtime_service_enabled {
             format!("runtime-service-{port}.pid")
@@ -380,6 +383,8 @@ impl PidFile {
 
         fs_err::write(&path, pid.to_string())
             .map_err(|e| format!("Failed to write PID file: {e}"))?;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))
+            .map_err(|e| format!("Failed to set PID file permissions: {e}"))?;
 
         tracing::debug!(?path, pid, "Wrote PID file");
         Ok(Self { path })

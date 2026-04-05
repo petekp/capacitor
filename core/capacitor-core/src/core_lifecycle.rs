@@ -66,17 +66,17 @@ impl CoreRuntime {
         save_hud_config_with_storage(&self.app_storage, &config).map_err(CoreRuntimeError::from)
     }
 
-    pub fn validate_project(&self, path: String) -> ValidationResultFfi {
+    pub fn validate_project(&self, path: String) -> Result<ValidationResultFfi, CoreRuntimeError> {
         let config = load_hud_config_with_storage(&self.app_storage);
-        validate_project_path(&path, &config.pinned_projects).into()
+        Ok(validate_project_path(&path, &config.pinned_projects).into())
     }
 
     pub fn create_project_claude_md(&self, project_path: String) -> Result<(), CoreRuntimeError> {
         create_claude_md(&project_path).map_err(|error| CoreRuntimeError::from(error.to_string()))
     }
 
-    pub fn check_setup_status(&self) -> SetupStatus {
-        self.setup_checker().check_setup_status()
+    pub fn check_setup_status(&self) -> Result<SetupStatus, CoreRuntimeError> {
+        Ok(self.setup_checker().check_setup_status())
     }
 
     pub fn check_dependency(&self, name: String) -> DependencyStatus {
@@ -104,7 +104,7 @@ impl CoreRuntime {
             .map_err(|error| CoreRuntimeError::from(error.to_string()))
     }
 
-    pub fn get_hook_status(&self) -> HookStatus {
-        self.setup_checker().check_setup_status().hooks
+    pub fn get_hook_status(&self) -> Result<HookStatus, CoreRuntimeError> {
+        Ok(self.setup_checker().check_setup_status().hooks)
     }
 }

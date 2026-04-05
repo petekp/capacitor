@@ -58,8 +58,8 @@ impl CoreRuntime {
         }
     }
 
-    pub fn get_hook_diagnostic(&self) -> HookDiagnosticReport {
-        let setup_status = self.check_setup_status();
+    pub fn get_hook_diagnostic(&self) -> Result<HookDiagnosticReport, CoreRuntimeError> {
+        let setup_status = self.check_setup_status()?;
         let health = self.check_hook_health();
 
         let binary_ok = setup_status
@@ -119,7 +119,7 @@ impl CoreRuntime {
             None
         };
 
-        HookDiagnosticReport {
+        Ok(HookDiagnosticReport {
             is_healthy,
             primary_issue,
             can_auto_fix,
@@ -130,10 +130,10 @@ impl CoreRuntime {
             symlink_path: symlink_path.to_string_lossy().to_string(),
             symlink_target,
             last_hook_event_age_secs: health.last_hook_event_age_secs,
-        }
+        })
     }
 
-    pub fn run_hook_test(&self) -> HookTestResult {
+    pub fn run_hook_test(&self) -> Result<HookTestResult, CoreRuntimeError> {
         let health = self.check_hook_health();
         let hook_activity_ok = matches!(health.status, runtime::types::HookHealthStatus::Healthy);
         let hook_activity_age = health.last_hook_event_age_secs;
@@ -156,12 +156,12 @@ impl CoreRuntime {
                 .to_string()
         };
 
-        HookTestResult {
+        Ok(HookTestResult {
             success,
             hook_activity_ok,
             hook_activity_age_secs: hook_activity_age,
             runtime_service_ok,
             message,
-        }
+        })
     }
 }

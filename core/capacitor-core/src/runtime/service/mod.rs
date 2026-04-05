@@ -1,7 +1,5 @@
-use std::io::{Read, Write};
-use std::net::TcpStream;
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
 
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -213,64 +211,30 @@ impl RuntimeServiceEndpoint {
         Request: Serialize,
         Response: DeserializeOwned,
     {
-        let body = payload
-            .map(serde_json::to_string)
-            .transpose()
-            .map_err(|error| {
-                format!("Failed to serialize runtime service payload for {path}: {error}")
-            })?
-            .unwrap_or_default();
-
-        let mut stream = TcpStream::connect((self.host.as_str(), self.port))
-            .map_err(|error| format!("Failed to connect to {}{}: {error}", self.host, path))?;
-        stream
-            .set_read_timeout(Some(Duration::from_secs(2)))
-            .map_err(|error| {
-                format!(
-                    "Failed to set read timeout for {}{}: {error}",
-                    self.host, path
-                )
-            })?;
-
+        let url = format!("http://{}:{}{}", self.host, self.port, path);
         let authorization = format!("Bearer {}", self.auth_token);
-        let request = format!(
-            "{method} {path} HTTP/1.1\r\nHost: {}:{}\r\nAuthorization: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-            self.host,
-            self.port,
-            authorization,
-            body.len(),
-            body
-        );
-        stream.write_all(request.as_bytes()).map_err(|error| {
-            format!("Failed to write runtime service request to {path}: {error}")
-        })?;
-        let _ = stream.flush();
 
-        let mut response = String::new();
-        stream.read_to_string(&mut response).map_err(|error| {
-            format!("Failed to read runtime service response from {path}: {error}")
-        })?;
+        let agent = ureq::AgentBuilder::new()
+            .timeout(std::time::Duration::from_secs(5))
+            .build();
 
-        let status = response
-            .lines()
-            .next()
-            .and_then(|line| line.split_whitespace().nth(1))
-            .and_then(|value| value.parse::<u16>().ok())
-            .ok_or_else(|| format!("Invalid runtime service response from {path}"))?;
-        let body = response
-            .split_once("\r\n\r\n")
-            .map(|(_, body)| body)
-            .unwrap_or_default();
-
-        if status != 200 {
-            return Err(format!(
-                "Runtime service request {method} {path} returned status {}: {}",
-                status,
-                body.trim()
-            ));
+        let request = match method {
+            "GET" => agent.get(&url),
+            "POST" => agent.post(&url),
+            _ => return Err(format!("Unsupported HTTP method: {method}")),
         }
+        .set("Authorization", &authorization)
+        .set("Content-Type", "application/json");
 
-        serde_json::from_str::<Response>(body)
+        let response = if let Some(payload) = payload {
+            request.send_json(payload)
+        } else {
+            request.call()
+        }
+        .map_err(|error| format!("Runtime service request {method} {path} failed: {error}"))?;
+
+        response
+            .into_json::<Response>()
             .map_err(|error| format!("Invalid runtime service payload from {path}: {error}"))
     }
 }
@@ -367,10 +331,15 @@ impl RuntimeServiceBootstrap {
         if let Some(parent) = path.parent() {
             fs_err::create_dir_all(parent)
                 .map_err(|error| format!("Failed to create runtime service dir: {error}"))?;
+            std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700)).map_err(
+                |error| format!("Failed to set runtime service dir permissions: {error}"),
+            )?;
         }
 
         fs_err::write(&path, &self.auth_token)
             .map_err(|error| format!("Failed to write runtime service token: {error}"))?;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))
+            .map_err(|error| format!("Failed to set token file permissions: {error}"))?;
 
         let connection = RuntimeServiceConnection {
             port: self.port,
@@ -383,6 +352,8 @@ impl RuntimeServiceBootstrap {
             })?,
         )
         .map_err(|error| format!("Failed to write runtime service connection: {error}"))?;
+        std::fs::set_permissions(&connection_path, std::fs::Permissions::from_mode(0o600))
+            .map_err(|error| format!("Failed to set connection file permissions: {error}"))?;
 
         Ok(RuntimeServiceTokenGuard {
             paths: vec![path, connection_path],
@@ -552,6 +523,68 @@ mod tests {
         assert!(
             error.contains("schema version"),
             "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn write_token_file_sets_restrictive_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp = tempfile::tempdir().unwrap();
+        let bootstrap = RuntimeServiceBootstrap::new(7474, "test-token");
+        let _guard = bootstrap.write_token_file(temp.path()).unwrap();
+
+        let token_path = temp
+            .path()
+            .join(".capacitor/runtime/runtime-service-7474.token");
+        let metadata = std::fs::metadata(&token_path).unwrap();
+        assert_eq!(
+            metadata.permissions().mode() & 0o777,
+            0o600,
+            "Token file should be 0600"
+        );
+
+        let dir_path = temp.path().join(".capacitor/runtime");
+        let dir_metadata = std::fs::metadata(&dir_path).unwrap();
+        assert_eq!(
+            dir_metadata.permissions().mode() & 0o777,
+            0o700,
+            "Runtime dir should be 0700"
+        );
+
+        let conn_path = temp.path().join(".capacitor/runtime/runtime-service.json");
+        let conn_metadata = std::fs::metadata(&conn_path).unwrap();
+        assert_eq!(
+            conn_metadata.permissions().mode() & 0o777,
+            0o600,
+            "Connection file should be 0600"
+        );
+    }
+
+    #[test]
+    fn request_json_times_out_on_unresponsive_server() {
+        use super::RuntimeServiceEndpoint;
+        use std::net::TcpListener;
+
+        // Bind to get a valid port, then drop the listener so the connection
+        // is refused immediately. This validates the ureq error path without
+        // blocking for the full 5-second timeout.
+        let port = {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            listener.local_addr().unwrap().port()
+        };
+
+        let endpoint = RuntimeServiceEndpoint::localhost(port, "test-token");
+
+        let start = std::time::Instant::now();
+        let result: Result<serde_json::Value, String> = endpoint.get_json("/health");
+        let elapsed = start.elapsed();
+
+        assert!(result.is_err());
+        assert!(
+            elapsed < std::time::Duration::from_secs(10),
+            "Should timeout within 10s, took {:?}",
+            elapsed
         );
     }
 }

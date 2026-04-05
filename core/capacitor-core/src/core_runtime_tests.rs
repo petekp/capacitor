@@ -554,7 +554,7 @@ fn run_hook_test_succeeds_with_recent_service_hook_activity_and_runtime_service_
     let _service_token = EnvVarGuard::set(RUNTIME_SERVICE_TOKEN_ENV, "hook-test-healthy");
 
     let runtime = make_runtime_with_storage(&temp);
-    let result = runtime.run_hook_test();
+    let result = runtime.run_hook_test().unwrap();
 
     assert!(result.success, "result was {result:?}");
     assert!(result.hook_activity_ok, "result was {result:?}");
@@ -567,7 +567,7 @@ fn test_is_first_run_true_when_no_setup_marker() {
     let _guard = env_lock();
     let runtime = make_runtime_with_storage(&setup_hook_health_env());
 
-    let report = runtime.get_hook_diagnostic();
+    let report = runtime.get_hook_diagnostic().unwrap();
 
     assert!(report.is_first_run, "report was {report:?}");
 }
@@ -579,7 +579,7 @@ fn test_is_first_run_false_when_setup_marker_exists() {
     fs::write(env.storage.setup_marker_path(), "complete").expect("write setup marker");
     let runtime = make_runtime_with_storage(&env);
 
-    let report = runtime.get_hook_diagnostic();
+    let report = runtime.get_hook_diagnostic().unwrap();
 
     assert!(!report.is_first_run, "report was {report:?}");
 }
@@ -588,13 +588,14 @@ fn test_is_first_run_false_when_setup_marker_exists() {
 fn test_is_first_run_false_even_with_unknown_hook_health() {
     let _guard = env_lock();
     let env = setup_hook_health_env();
+    let _home_guard = EnvVarGuard::set("HOME", env._temp.path().to_str().expect("temp home path"));
     fs::write(env.storage.setup_marker_path(), "complete").expect("write setup marker");
     let runtime = make_runtime_with_storage(&env);
 
     let health = runtime.check_hook_health();
     assert!(matches!(health.status, HookHealthStatus::Unknown));
 
-    let report = runtime.get_hook_diagnostic();
+    let report = runtime.get_hook_diagnostic().unwrap();
 
     assert!(!report.is_first_run, "report was {report:?}");
 }
@@ -633,7 +634,7 @@ fn test_settings_unreadable_hook_diagnostic_is_not_auto_fixable() {
     .expect("write corrupt settings");
 
     let runtime = make_runtime_with_storage(&env);
-    let report = runtime.get_hook_diagnostic();
+    let report = runtime.get_hook_diagnostic().unwrap();
 
     assert_eq!(report.primary_issue, Some(HookIssue::ConfigMissing));
     assert!(!report.can_auto_fix, "report was {report:?}");
