@@ -1,5 +1,24 @@
 const FEEDBACK_ID_PREFIX = "fb-";
 
+// Static salt prevents rainbow-table reversal of the ~4B IPv4 address space.
+// Not a secret — just makes precomputation infeasible without knowing the salt.
+const IP_HASH_SALT = "capacitor-ingest-v1";
+
+/**
+ * Hash an IP address using salted SHA-256 and return the first 16 hex characters.
+ * Returns null if no IP is provided.
+ * @param {string | null} ip
+ */
+export async function hashIP(ip) {
+  if (!ip) return null;
+  const data = new TextEncoder().encode(IP_HASH_SALT + ip);
+  const hash = await crypto.subtle.digest("SHA-256", data);
+  const hex = [...new Uint8Array(hash)]
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+  return hex.substring(0, 16);
+}
+
 /**
  * @param {Headers} headers
  * @param {string | undefined} ingestKey
@@ -69,7 +88,7 @@ export function normalizeFeedbackID(candidate) {
  * @param {Record<string, unknown>} body
  * @param {Request} request
  */
-export function normalizeFeedbackSubmission(body, request) {
+export async function normalizeFeedbackSubmission(body, request) {
   const app = asObject(body.app);
   const form = asObject(body.form);
   const privacy = asObject(body.privacy);
@@ -103,9 +122,8 @@ export function normalizeFeedbackSubmission(body, request) {
     session_thinking: asInteger(sessionSummary.thinking),
     activation_has_trace: asBoolInt(activationSignal.hasTrace),
     activation_trace_digest: asString(activationSignal.traceDigest),
-    source_ip: request.headers.get("cf-connecting-ip"),
+    source_ip: await hashIP(request.headers.get("cf-connecting-ip")),
     user_agent: request.headers.get("user-agent"),
-    raw_json: JSON.stringify(body),
   };
 }
 
@@ -113,7 +131,7 @@ export function normalizeFeedbackSubmission(body, request) {
  * @param {Record<string, unknown>} body
  * @param {Request} request
  */
-export function normalizeTelemetryEvent(body, request) {
+export async function normalizeTelemetryEvent(body, request) {
   const payload = asObject(body.payload);
 
   return {
@@ -122,8 +140,7 @@ export function normalizeTelemetryEvent(body, request) {
     occurred_at: asString(body.timestamp) || new Date().toISOString(),
     feedback_id: asString(payload.feedback_id) || asString(body.feedback_id),
     payload_json: JSON.stringify(payload),
-    raw_json: JSON.stringify(body),
-    source_ip: request.headers.get("cf-connecting-ip"),
+    source_ip: await hashIP(request.headers.get("cf-connecting-ip")),
     user_agent: request.headers.get("user-agent"),
   };
 }

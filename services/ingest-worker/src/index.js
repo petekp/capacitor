@@ -126,21 +126,21 @@ export async function pruneTelemetryEvents(env) {
   const legacy = await env.DB.prepare(
     `DELETE FROM telemetry_events
      WHERE event_type NOT IN (${ALLOWED_TELEMETRY_SQL_LIST})
-       AND datetime(occurred_at) < datetime('now', '-${LEGACY_EVENT_RETENTION_DAYS} days')`,
+       AND datetime(received_at) < datetime('now', '-${LEGACY_EVENT_RETENTION_DAYS} days')`,
   ).run();
   result.legacyDeleted = legacy.meta?.changes ?? 0;
 
   const highVolume = await env.DB.prepare(
     `DELETE FROM telemetry_events
      WHERE event_type IN (${HIGH_VOLUME_TELEMETRY_SQL_LIST})
-       AND datetime(occurred_at) < datetime('now', '-${HIGH_VOLUME_EVENT_RETENTION_DAYS} days')`,
+       AND datetime(received_at) < datetime('now', '-${HIGH_VOLUME_EVENT_RETENTION_DAYS} days')`,
   ).run();
   result.highVolumeDeleted = highVolume.meta?.changes ?? 0;
 
   const diagnostics = await env.DB.prepare(
     `DELETE FROM telemetry_events
      WHERE event_type IN (${DIAGNOSTIC_TELEMETRY_SQL_LIST})
-       AND datetime(occurred_at) < datetime('now', '-${DIAGNOSTIC_EVENT_RETENTION_DAYS} days')`,
+       AND datetime(received_at) < datetime('now', '-${DIAGNOSTIC_EVENT_RETENTION_DAYS} days')`,
   ).run();
   result.diagnosticDeleted = diagnostics.meta?.changes ?? 0;
 
@@ -157,7 +157,7 @@ async function handleFeedback(request, env) {
     return jsonResponse(400, { ok: false, error: "invalid_json" });
   }
 
-  const record = normalizeFeedbackSubmission(parsed.body, request);
+  const record = await normalizeFeedbackSubmission(parsed.body, request);
   if (!record.feedback_text) {
     return jsonResponse(422, { ok: false, error: "feedback_required" });
   }
@@ -190,9 +190,8 @@ async function handleFeedback(request, env) {
       activation_trace_digest,
       source_ip,
       user_agent,
-      raw_json,
       last_received_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
     ON CONFLICT(feedback_id) DO UPDATE SET
       submitted_at = excluded.submitted_at,
       feedback_text = excluded.feedback_text,
@@ -219,7 +218,6 @@ async function handleFeedback(request, env) {
       activation_trace_digest = excluded.activation_trace_digest,
       source_ip = excluded.source_ip,
       user_agent = excluded.user_agent,
-      raw_json = excluded.raw_json,
       last_received_at = datetime('now')`,
   )
     .bind(
@@ -249,7 +247,6 @@ async function handleFeedback(request, env) {
       record.activation_trace_digest,
       record.source_ip,
       record.user_agent,
-      record.raw_json,
     )
     .run();
 
@@ -266,7 +263,7 @@ async function handleTelemetry(request, env) {
     return jsonResponse(400, { ok: false, error: "invalid_json" });
   }
 
-  const event = normalizeTelemetryEvent(parsed.body, request);
+  const event = await normalizeTelemetryEvent(parsed.body, request);
   if (!ALLOWED_TELEMETRY_EVENT_TYPES.has(event.event_type)) {
     return jsonResponse(202, {
       ok: true,
@@ -290,10 +287,9 @@ async function handleTelemetry(request, env) {
       occurred_at,
       feedback_id,
       payload_json,
-      raw_json,
       source_ip,
       user_agent
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
   )
     .bind(
       event.event_type,
@@ -301,7 +297,6 @@ async function handleTelemetry(request, env) {
       event.occurred_at,
       event.feedback_id,
       event.payload_json,
-      event.raw_json,
       event.source_ip,
       event.user_agent,
     )

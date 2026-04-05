@@ -429,12 +429,12 @@ mod tests {
         fn on_event(&self, event: &tracing::Event<'_>, _ctx: Context<'_, S>) {
             let mut visitor = FieldVisitor::default();
             event.record(&mut visitor);
-            self.events
-                .lock()
-                .expect("capture events lock")
-                .push(CapturedEvent {
+            match self.events.lock() {
+                Ok(mut events) => events.push(CapturedEvent {
                     fields: visitor.fields,
-                });
+                }),
+                Err(_) => {}
+            }
         }
     }
 

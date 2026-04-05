@@ -603,10 +603,15 @@ fn hook_endpoint_and_runtime_snapshot_share_service_runtime_state() {
         "cwd": "/tmp/runtime-service-project"
     });
 
-    let (hook_status, hook_body) = http_request(port, "POST", "/hook", Some(&payload.to_string()));
-    assert_eq!(hook_status, 200, "body: {hook_body}");
-
     let authorization = format!("Bearer {auth_token}");
+    let (hook_status, hook_body) = http_request_with_headers(
+        port,
+        "POST",
+        "/hook",
+        &[("Authorization", authorization.as_str())],
+        Some(&payload.to_string()),
+    );
+    assert_eq!(hook_status, 200, "body: {hook_body}");
     let (snapshot_status, snapshot_body) = http_request_with_headers(
         port,
         "GET",
@@ -1784,6 +1789,37 @@ fn hook_endpoint_rejects_invalid_json() {
     let (status, body) = http_request(port, "POST", "/hook", Some("not json"));
     assert_eq!(status, 400, "body: {body}");
     assert!(body.contains("error"), "body: {body}");
+}
+
+#[test]
+fn hook_endpoint_rejects_unauthenticated_request_when_bootstrap_active() {
+    let temp_dir = unique_temp_dir("serve-hook-unauth");
+    let snapshot_path = temp_dir.join("snapshot.json");
+    let auth_token = "hook-auth-test-token";
+
+    let (_server, port) =
+        ServerGuard::spawn_service_bootstrap_ready(&temp_dir, &snapshot_path, auth_token);
+
+    let payload = serde_json::json!({
+        "hook_event_name": "UserPromptSubmit",
+        "session_id": "unauth-hook-session",
+        "cwd": "/tmp/unauth-test"
+    });
+
+    // No auth header → should be rejected
+    let (status, body) = http_request(port, "POST", "/hook", Some(&payload.to_string()));
+    assert_eq!(status, 401, "body: {body}");
+
+    // With auth header → should succeed
+    let authorization = format!("Bearer {auth_token}");
+    let (auth_status, auth_body) = http_request_with_headers(
+        port,
+        "POST",
+        "/hook",
+        &[("Authorization", authorization.as_str())],
+        Some(&payload.to_string()),
+    );
+    assert_eq!(auth_status, 200, "body: {auth_body}");
 }
 
 #[test]

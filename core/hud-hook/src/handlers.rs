@@ -526,7 +526,26 @@ pub(super) fn handle_runtime_mutate_run(
     }
 }
 
-pub(super) fn handle_hook(mut request: tiny_http::Request) {
+pub(super) fn handle_hook(mut request: tiny_http::Request, state: &RuntimeServerState) {
+    // Require auth when bootstrap is configured (runtime service mode).
+    // Legacy mode (no bootstrap) allows unauthenticated access.
+    // NOTE: This intentionally diverges from authorize_runtime_request() which
+    // rejects when bootstrap is None. /hook must remain open in legacy mode
+    // because Claude CLI hooks fire before the runtime service is available.
+    if let Some(bootstrap) = state.bootstrap.as_ref() {
+        let authorization = request
+            .headers()
+            .iter()
+            .find(|header| header.field.equiv("Authorization"))
+            .map(|header| header.value.as_str());
+        if !bootstrap.is_authorized(authorization) {
+            if let Err(e) = request.respond(json_error(401, "unauthorized")) {
+                tracing::debug!("failed to send HTTP response: {e}");
+            }
+            return;
+        }
+    }
+
     let hook_input: HookInput = match read_json::<HookInput>(&mut request) {
         Ok(input) => input,
         Err(response) => {

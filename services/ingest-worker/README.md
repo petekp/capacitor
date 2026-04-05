@@ -33,9 +33,55 @@ Telemetry retention is enforced by a scheduled worker task:
 - High-volume quick-feedback interaction events: 30 days
 - Diagnostic + submitted feedback telemetry: 90 days
 
+Retention is based on `received_at` (server-side timestamp), not client-provided `occurred_at`.
+
 `/v1/*` endpoints require bearer auth:
 
 - `Authorization: Bearer <INGEST_KEY>`
+
+## Data stored
+
+### Feedback submissions
+
+| Field | Description |
+|-------|-------------|
+| `feedback_id` | Client-provided or auto-generated identifier |
+| `submitted_at` | Client-provided submission timestamp |
+| `received_at` | Server-side receive timestamp (auto-set) |
+| `last_received_at` | Updated on upsert |
+| `feedback_text` | User feedback text |
+| `app_version` | App version string |
+| `build_number` | Build number |
+| `channel` | Release channel (e.g. alpha) |
+| `os_version` | macOS version |
+| `include_telemetry` | Whether user opted in to telemetry |
+| `include_project_paths` | Whether user opted in to project path sharing |
+| `runtime_enabled` | Runtime service enabled flag |
+| `runtime_healthy` | Runtime service health flag |
+| `runtime_version` | Runtime service version |
+| `active_source` | Active project source |
+| `project_count` | Number of projects |
+| `session_*` | Session state counts (total, working, ready, waiting, compacting, idle, with_attached, thinking) |
+| `activation_has_trace` | Whether activation trace is present |
+| `activation_trace_digest` | Activation trace digest |
+| `source_ip` | **Truncated SHA-256 hash** of the client IP (first 16 hex chars / 64 bits). Raw IP is never stored. |
+| `user_agent` | User-Agent header (low-PII, useful for debugging) |
+
+### Telemetry events
+
+| Field | Description |
+|-------|-------------|
+| `id` | Auto-incrementing row ID |
+| `received_at` | Server-side receive timestamp (auto-set) |
+| `event_type` | Event type from allowlist |
+| `message` | Event message |
+| `occurred_at` | Client-provided event timestamp (advisory) |
+| `feedback_id` | Associated feedback ID (if any) |
+| `payload_json` | Structured event payload |
+| `source_ip` | **Truncated SHA-256 hash** of the client IP (first 16 hex chars / 64 bits). Raw IP is never stored. |
+| `user_agent` | User-Agent header |
+
+**Note:** `raw_json` is no longer written. The column exists in the schema for backwards compatibility but is nullable and omitted from all INSERT statements.
 
 ## Setup
 

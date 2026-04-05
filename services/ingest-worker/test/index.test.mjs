@@ -10,6 +10,7 @@ function makeEnv() {
     feedbackInsertCalls: 0,
     feedbackBindValues: null,
     feedbackInsertSql: null,
+    telemetryInsertSql: null,
     events: [],
     cleanupStatements: [],
   };
@@ -53,11 +54,12 @@ function makeEnv() {
 
                 if (normalized.includes("insert into telemetry_events")) {
                   state.insertCalls += 1;
+                  state.telemetryInsertSql = sql;
                   state.events.push({
                     event_type: values[0],
                     message: values[1],
                     feedback_id: values[3] ?? null,
-                    source_ip: values[6] ?? null,
+                    source_ip: values[5] ?? null,
                   });
                 }
 
@@ -123,9 +125,27 @@ test("persists runtime feedback snapshot fields", async () => {
   assert.equal(state.feedbackInsertCalls, 1);
   assert.match(state.feedbackInsertSql ?? "", /runtime_enabled/i);
   assert.doesNotMatch(state.feedbackInsertSql ?? "", /daemon_enabled/i);
-  assert.equal(state.feedbackBindValues?.[9], 1);
-  assert.equal(state.feedbackBindValues?.[10], 0);
-  assert.equal(state.feedbackBindValues?.[11], "1.2.3");
+  // raw_json should not appear in the INSERT SQL
+  assert.doesNotMatch(state.feedbackInsertSql ?? "", /raw_json/i);
+  assert.equal(state.feedbackBindValues?.[9], 1);   // runtime_enabled
+  assert.equal(state.feedbackBindValues?.[10], 0);   // runtime_healthy
+  assert.equal(state.feedbackBindValues?.[11], "1.2.3"); // runtime_version
+});
+
+test("feedback INSERT does not include raw_json column", async () => {
+  const { env, state } = makeEnv();
+
+  await worker.fetch(
+    feedbackRequest({
+      feedback_id: "fb-raw-test",
+      submittedAt: "2026-02-16T12:00:00.000Z",
+      form: { summary: "Testing raw_json removal" },
+    }),
+    env,
+  );
+
+  assert.equal(state.feedbackInsertCalls, 1);
+  assert.doesNotMatch(state.feedbackInsertSql ?? "", /raw_json/i);
 });
 
 test("drops non-feedback telemetry event types to prevent ingest floods", async () => {
@@ -172,6 +192,23 @@ test("persists quick feedback telemetry event types", async () => {
   assert.equal(body.event_id, 42);
   assert.equal(state.insertCalls, 1);
   assert.equal(state.lastBindValues?.[0], "quick_feedback_submit_attempt");
+});
+
+test("telemetry INSERT does not include raw_json column", async () => {
+  const { env, state } = makeEnv();
+
+  await worker.fetch(
+    telemetryRequest({
+      type: "quick_feedback_submit_attempt",
+      message: "Test",
+      timestamp: "2026-02-16T12:01:00.000Z",
+      payload: {},
+    }),
+    env,
+  );
+
+  assert.equal(state.insertCalls, 1);
+  assert.doesNotMatch(state.telemetryInsertSql ?? "", /raw_json/i);
 });
 
 test("persists activation diagnostics telemetry event types", async () => {
@@ -302,7 +339,7 @@ test("drops unknown quick feedback event types not on allowlist", async () => {
   assert.equal(state.insertCalls, 0);
 });
 
-test("scheduled cleanup applies telemetry retention deletes", async () => {
+test("scheduled cleanup applies telemetry retention deletes using received_at", async () => {
   const { env, state } = makeEnv();
   const pending = [];
 
@@ -321,4 +358,39 @@ test("scheduled cleanup applies telemetry retention deletes", async () => {
   assert.match(state.cleanupStatements[0], /event_type NOT IN/i);
   assert.match(state.cleanupStatements[1], /event_type IN/i);
   assert.match(state.cleanupStatements[2], /event_type IN/i);
+  // All three DELETE statements should use received_at, not occurred_at
+  for (const stmt of state.cleanupStatements) {
+    assert.match(stmt, /received_at/, "DELETE should reference received_at for retention");
+    assert.doesNotMatch(stmt, /occurred_at/, "DELETE should not reference occurred_at for retention");
+  }
+});
+
+test("retention cleanup prunes by received_at regardless of occurred_at value", async () => {
+  // This test verifies the conceptual guarantee: an event with a future-dated
+  // occurred_at (client timestamp) should still be pruned based on received_at
+  // (server timestamp). We verify by checking the SQL uses received_at.
+  const { env, state } = makeEnv();
+  const pending = [];
+
+  await worker.scheduled(
+    {},
+    env,
+    {
+      waitUntil(promise) {
+        pending.push(promise);
+      },
+    },
+  );
+
+  await Promise.all(pending);
+
+  // The DELETE WHERE clauses should only reference received_at for time comparison,
+  // so a row with occurred_at far in the future but received_at in the past would
+  // still be deleted. We verify this by confirming the SQL shape.
+  for (const stmt of state.cleanupStatements) {
+    // Should contain received_at in the datetime comparison
+    assert.match(stmt, /datetime\(received_at\)/i);
+    // Should NOT contain occurred_at in the datetime comparison
+    assert.doesNotMatch(stmt, /datetime\(occurred_at\)/i);
+  }
 });

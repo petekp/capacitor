@@ -265,7 +265,7 @@ jobs:
         run: cargo build -p capacitor-core --release
 
       - name: Fix dylib install_name
-        run: install_name_tool -id "@rpath/libcapacitor_core.dylib" target/release/libcapacitor_core.dylib
+        run: ./scripts/dev/fix-dylib.sh
 
       - name: Build Swift and copy dylib
         working-directory: apps/swift
@@ -315,19 +315,30 @@ jobs:
         run: cargo build -p capacitor-core --release
 
       - name: Fix dylib install_name
-        run: install_name_tool -id "@rpath/libcapacitor_core.dylib" target/release/libcapacitor_core.dylib
+        run: ./scripts/dev/fix-dylib.sh
+
+      - name: Verify dylib install_name
+        run: ./scripts/dev/fix-dylib.sh --verify-only
 
       - name: Build Swift app (release)
         working-directory: apps/swift
         run: swift build -c release
 
-      - name: Verify VERSION file exists
+      - name: Verify version sync
         run: |
           if [ ! -f VERSION ]; then
             echo "ERROR: VERSION file not found"
             exit 1
           fi
-          echo "Version: $(cat VERSION)"
+          VERSION=$(cat VERSION | tr -d '[:space:]')
+          CARGO=$(grep -m1 '^version = ' Cargo.toml | sed -E 's/version = "(.*)"/\1/')
+          SWIFT=$(grep -o 'return "[0-9][0-9.a-zA-Z-]*"' apps/swift/Sources/Capacitor/App.swift | tail -1 | sed -E 's/return "(.*)"/\1/')
+          echo "VERSION=$VERSION  Cargo=$CARGO  Swift=$SWIFT"
+          FAIL=0
+          [ "$VERSION" != "$CARGO" ] && echo "MISMATCH: VERSION vs Cargo.toml" && FAIL=1
+          [ "$VERSION" != "$SWIFT" ] && echo "MISMATCH: VERSION vs App.swift fallback" && FAIL=1
+          [ "$FAIL" = "1" ] && exit 1
+          echo "All version surfaces in sync"
 
       - name: Test bump-version.sh (dry run)
         run: |
@@ -341,3 +352,42 @@ jobs:
 
           # Restore all files modified by bump-version
           git checkout -- VERSION Cargo.toml apps/swift/Sources/Capacitor/App.swift
+
+  test-worker:
+    name: Ingest Worker Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Install dependencies
+        working-directory: services/ingest-worker
+        run: npm ci
+
+      - name: Run tests
+        working-directory: services/ingest-worker
+        run: npm test
+
+  build-www:
+    name: Web Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Install dependencies
+        working-directory: apps/www
+        run: npm ci
+
+      - name: Build
+        working-directory: apps/www
+        run: npm run build
+

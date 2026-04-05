@@ -89,6 +89,10 @@ enum StartupSetupValidator {
             hooks.writeStartupLog(event)
             if hooks.attemptAutoRepair(engine) {
                 hooks.writeStartupLog(.hooksAutoRepairSucceeded)
+            } else {
+                // Repair failed — do NOT mark setup complete.
+                // The user will see WelcomeView and can retry manually.
+                return
             }
         }
 
@@ -378,7 +382,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         // Ultimate fallback (kept in sync by bump-version.sh)
-        return "0.2.0-alpha.1"
+        return "0.2.0-alpha.3"
     }
 
     /// Attempt silent auto-setup on every launch.

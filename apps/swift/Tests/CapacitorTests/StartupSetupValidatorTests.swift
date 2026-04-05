@@ -2,7 +2,7 @@
 import XCTest
 
 final class StartupSetupValidatorTests: XCTestCase {
-    func testRepairFailureStillCompletesStartupAndPersistsMarker() {
+    func testRepairFailureDoesNotMarkSetupComplete() {
         let runtime = StubStartupSetupRuntime(
             setupStatus: SetupTestFixtures.setupStatus(
                 dependencies: [SetupTestFixtures.claudeDependency(found: true)],
@@ -38,15 +38,15 @@ final class StartupSetupValidatorTests: XCTestCase {
         )
 
         XCTAssertEqual(repairAttemptCount, 1)
-        XCTAssertEqual(shellIntegrationCallCount, 1)
-        XCTAssertEqual(persistedMarkerRoots, ["/tmp/capacitor-startup"])
-        XCTAssertTrue(setupComplete)
+        // Repair failed → must NOT proceed to shell integration or completion
+        XCTAssertEqual(shellIntegrationCallCount, 0)
+        XCTAssertEqual(persistedMarkerRoots, [])
+        XCTAssertFalse(setupComplete)
         XCTAssertEqual(
             recordedEvents,
             [
                 .hooksNeedAutoRepair(status: .settingsUnreadable(reason: "Failed to parse settings.json")),
                 .hooksAutoRepairFailed(error: "settings parse failed"),
-                .autoSetupComplete,
             ],
         )
     }

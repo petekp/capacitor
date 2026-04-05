@@ -18,6 +18,25 @@ pub const RUNTIME_SERVICE_VERSION: &str = "runtime-service-prototype-v1";
 pub const RUNTIME_SERVICE_AUTH_MODE: &str = "bearer";
 pub const RUNTIME_SERVICE_MODE_BOOTSTRAP_ONLY: &str = "bootstrap_only";
 
+/// Verify that a credential file has restrictive permissions (owner-only).
+/// Rejects files readable by group or others to prevent token theft.
+fn verify_credential_file_permissions(path: &Path) -> Result<(), String> {
+    let metadata = std::fs::metadata(path).map_err(|error| {
+        format!(
+            "Failed to read metadata for credential file {:?}: {error}",
+            path
+        )
+    })?;
+    let mode = metadata.permissions().mode() & 0o777;
+    if mode & 0o077 != 0 {
+        return Err(format!(
+            "Credential file {:?} has unsafe permissions {:o} (expected 0600 or stricter)",
+            path, mode
+        ));
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub(crate) struct RuntimeServiceConnection {
     pub port: u16,
@@ -73,6 +92,7 @@ impl RuntimeServiceEndpoint {
 
         let connection_path = RuntimeServiceBootstrap::connection_file_path(home_dir);
         if connection_path.exists() {
+            verify_credential_file_permissions(&connection_path)?;
             let connection = serde_json::from_str::<RuntimeServiceConnection>(
                 &fs_err::read_to_string(&connection_path).map_err(|error| {
                     format!(
@@ -99,6 +119,7 @@ impl RuntimeServiceEndpoint {
             return Ok(None);
         }
 
+        verify_credential_file_permissions(&token_path)?;
         let auth_token = fs_err::read_to_string(&token_path)
             .map_err(|error| {
                 format!(
@@ -558,6 +579,36 @@ mod tests {
             conn_metadata.permissions().mode() & 0o777,
             0o600,
             "Connection file should be 0600"
+        );
+    }
+
+    #[test]
+    fn verify_credential_file_permissions_rejects_group_readable() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp = tempfile::tempdir().unwrap();
+        let file_path = temp.path().join("test-cred");
+        std::fs::write(&file_path, "secret").unwrap();
+
+        // 0644 (group/other readable) → must reject
+        std::fs::set_permissions(&file_path, std::fs::Permissions::from_mode(0o644)).unwrap();
+        assert!(
+            super::verify_credential_file_permissions(&file_path).is_err(),
+            "Should reject 0644"
+        );
+
+        // 0600 (owner-only) → must accept
+        std::fs::set_permissions(&file_path, std::fs::Permissions::from_mode(0o600)).unwrap();
+        assert!(
+            super::verify_credential_file_permissions(&file_path).is_ok(),
+            "Should accept 0600"
+        );
+
+        // 0640 (group readable) → must reject
+        std::fs::set_permissions(&file_path, std::fs::Permissions::from_mode(0o640)).unwrap();
+        assert!(
+            super::verify_credential_file_permissions(&file_path).is_err(),
+            "Should reject 0640"
         );
     }
 

@@ -89,10 +89,36 @@ fi
 APP_SWIFT="$PROJECT_ROOT/apps/swift/Sources/Capacitor/App.swift"
 if [ -f "$APP_SWIFT" ]; then
     echo -e "${YELLOW}Updating App.swift fallback version...${NC}"
-    sed -i '' "s/return \"[0-9]*\.[0-9]*\.[0-9]*\"  *\/\/ Ultimate fallback/return \"$NEW_VERSION\" \/\/ Ultimate fallback/" "$APP_SWIFT"
+    sed -i '' -E "s/return \"[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?\"  *\/\/ Ultimate fallback/return \"$NEW_VERSION\" \/\/ Ultimate fallback/" "$APP_SWIFT"
     # Alternative pattern without the comment (backwards compatibility)
-    sed -i '' "s/return \"[0-9]*\.[0-9]*\.[0-9]*\"\$/return \"$NEW_VERSION\"/" "$APP_SWIFT"
+    sed -i '' -E "s/return \"[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?\"\$/return \"$NEW_VERSION\"/" "$APP_SWIFT"
     echo -e "${GREEN}✓ App.swift fallback version updated${NC}"
+fi
+
+# Verify all version surfaces match
+echo -e "${YELLOW}Verifying version sync...${NC}"
+SYNC_OK=true
+VERSION_FILE_CONTENT=$(cat "$VERSION_FILE" | tr -d '[:space:]')
+CARGO_VERSION=$(grep -m1 '^version = ' "$CARGO_TOML" | sed -E 's/version = "(.*)"/\1/')
+SWIFT_VERSION=$(grep -o 'return "[0-9][0-9.a-zA-Z-]*"' "$APP_SWIFT" | tail -1 | sed -E 's/return "(.*)"/\1/')
+
+if [ "$VERSION_FILE_CONTENT" != "$NEW_VERSION" ]; then
+    echo -e "${RED}✗ VERSION file mismatch: got '$VERSION_FILE_CONTENT'${NC}"
+    SYNC_OK=false
+fi
+if [ "$CARGO_VERSION" != "$NEW_VERSION" ]; then
+    echo -e "${RED}✗ Cargo.toml mismatch: got '$CARGO_VERSION'${NC}"
+    SYNC_OK=false
+fi
+if [ "$SWIFT_VERSION" != "$NEW_VERSION" ]; then
+    echo -e "${RED}✗ App.swift fallback mismatch: got '$SWIFT_VERSION'${NC}"
+    SYNC_OK=false
+fi
+if [ "$SYNC_OK" = true ]; then
+    echo -e "${GREEN}✓ All version surfaces in sync${NC}"
+else
+    echo -e "${RED}Version sync failed! Check the files above.${NC}"
+    exit 1
 fi
 
 echo ""

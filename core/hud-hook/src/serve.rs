@@ -261,7 +261,7 @@ fn dispatch(request: tiny_http::Request, runtime_service: &RuntimeServerState) {
         (&tiny_http::Method::Post, "/runtime/run/mutate") => {
             handlers::handle_runtime_mutate_run(request, runtime_service)
         }
-        (&tiny_http::Method::Post, "/hook") => handlers::handle_hook(request),
+        (&tiny_http::Method::Post, "/hook") => handlers::handle_hook(request, runtime_service),
         _ => handlers::respond_not_found(request),
     }
 }

@@ -64,7 +64,7 @@ pub(super) fn is_managed_hook(hook: &InnerHook) -> bool {
 
 pub(super) fn managed_command_hook_command() -> String {
     format!(
-        "/bin/sh -c '/usr/bin/curl -fsS --connect-timeout 1 --max-time 1 -X POST \"{url}\" -H \"Content-Type: application/json\" --data-binary @- >/dev/null 2>&1 || true'",
+        "/bin/sh -c 'TOKEN=$(cat \"$HOME/.capacitor/runtime/runtime-service-7474.token\" 2>/dev/null); /usr/bin/curl -fsS --connect-timeout 1 --max-time 1 -X POST \"{url}\" -H \"Content-Type: application/json\" -H \"Authorization: Bearer $TOKEN\" --data-binary @- >/dev/null 2>&1 || true'",
         url = HOOK_HTTP_URL
     )
 }
