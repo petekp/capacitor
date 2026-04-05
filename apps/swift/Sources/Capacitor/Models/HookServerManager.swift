@@ -207,6 +207,11 @@ final class HookServerManager {
         self.binaryPath = binaryPath ?? Self.defaultBinaryPath
     }
 
+    deinit {
+        healthCheckTask?.cancel()
+        launchReadinessTask?.cancel()
+    }
+
     // MARK: - Lifecycle
 
     /// Starts the server if the binary exists and the server isn't already running.

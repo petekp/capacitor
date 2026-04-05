@@ -82,7 +82,7 @@ impl CoreRuntime {
         let mut suggestions: Vec<(SuggestedProject, u32)> = Vec::new();
 
         if let Ok(entries) = fs_err::read_dir(&projects_dir) {
-            for entry in entries.filter_map(|e| e.ok()) {
+            for entry in entries.filter_map(|e| e.ok()).take(200) {
                 if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
                     continue;
                 }

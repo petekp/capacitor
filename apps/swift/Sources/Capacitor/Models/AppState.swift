@@ -234,4 +234,11 @@ class AppState {
 
         scheduleRuntimeBootstrap()
     }
+
+    deinit {
+        refreshTimer?.invalidate()
+        longPollTask?.cancel()
+        runtimeBootstrapTask?.cancel()
+        runtimeSnapshotTask?.cancel()
+    }
 }

@@ -44,17 +44,23 @@ pub(super) fn handle_health(
             .with_header(json_content_type())
             .boxed()
     };
-    let _ = request.respond(resp);
+    if let Err(e) = request.respond(resp) {
+        tracing::debug!("failed to send HTTP response: {e}");
+    }
 }
 
 pub(super) fn handle_runtime_snapshot(request: tiny_http::Request, state: &RuntimeServerState) {
     let Some(runtime) = state.runtime.as_ref() else {
-        let _ = request.respond(json_error(404, "runtime service not enabled"));
+        if let Err(e) = request.respond(json_error(404, "runtime service not enabled")) {
+            tracing::debug!("failed to send HTTP response: {e}");
+        }
         return;
     };
 
     if !authorize_runtime_request(&request, state.bootstrap.as_ref()) {
-        let _ = request.respond(json_error(401, "unauthorized"));
+        if let Err(e) = request.respond(json_error(401, "unauthorized")) {
+            tracing::debug!("failed to send HTTP response: {e}");
+        }
         return;
     }
 
@@ -67,7 +73,9 @@ pub(super) fn handle_runtime_snapshot(request: tiny_http::Request, state: &Runti
         }
         Err(error) => {
             tracing::warn!(error = %error, "Runtime snapshot request failed");
-            let _ = request.respond(json_error(500, "runtime snapshot failed"));
+            if let Err(e) = request.respond(json_error(500, "runtime snapshot failed")) {
+                tracing::debug!("failed to send HTTP response: {e}");
+            }
         }
     }
 }
@@ -77,22 +85,28 @@ pub(super) fn handle_runtime_poll_snapshot(
     state: &RuntimeServerState,
 ) {
     let Some(runtime) = state.runtime.as_ref() else {
-        let _ = request.respond(json_error(404, "runtime service not enabled"));
+        if let Err(e) = request.respond(json_error(404, "runtime service not enabled")) {
+            tracing::debug!("failed to send HTTP response: {e}");
+        }
         return;
     };
 
     if !authorize_runtime_request(&request, state.bootstrap.as_ref()) {
-        let _ = request.respond(json_error(401, "unauthorized"));
+        if let Err(e) = request.respond(json_error(401, "unauthorized")) {
+            tracing::debug!("failed to send HTTP response: {e}");
+        }
         return;
     }
 
     let since_version = match parse_since_version(request.url()) {
         Some(since_version) => since_version,
         None => {
-            let _ = request.respond(json_error(
+            if let Err(e) = request.respond(json_error(
                 400,
                 "missing or invalid since_version parameter",
-            ));
+            )) {
+                tracing::debug!("failed to send HTTP response: {e}");
+            }
             return;
         }
     };
@@ -100,20 +114,26 @@ pub(super) fn handle_runtime_poll_snapshot(
     let _waiter_guard = match PollWaiterGuard::try_acquire() {
         Some(guard) => guard,
         None => {
-            let _ = request.respond(json_error(503, "too many concurrent poll requests"));
+            if let Err(e) = request.respond(json_error(503, "too many concurrent poll requests")) {
+                tracing::debug!("failed to send HTTP response: {e}");
+            }
             return;
         }
     };
 
     if SHUTDOWN.load(Ordering::Relaxed) {
-        let _ = request.respond(json_error(503, "shutting down"));
+        if let Err(e) = request.respond(json_error(503, "shutting down")) {
+            tracing::debug!("failed to send HTTP response: {e}");
+        }
         return;
     }
 
     let version_change = runtime.wait_for_version_change(since_version, runtime_poll_timeout());
 
     if SHUTDOWN.load(Ordering::Relaxed) {
-        let _ = request.respond(json_error(503, "shutting down"));
+        if let Err(e) = request.respond(json_error(503, "shutting down")) {
+            tracing::debug!("failed to send HTTP response: {e}");
+        }
         return;
     }
 
@@ -130,12 +150,16 @@ pub(super) fn handle_runtime_poll_snapshot(
                     respond_json(request, 200, &value);
                 }
                 Err(_) => {
-                    let _ = request.respond(json_error(500, "serialization failed"));
+                    if let Err(e) = request.respond(json_error(500, "serialization failed")) {
+                        tracing::debug!("failed to send HTTP response: {e}");
+                    }
                 }
             },
             Err(error) => {
                 tracing::warn!(error = %error, "Long-poll snapshot request failed");
-                let _ = request.respond(json_error(500, "runtime snapshot failed"));
+                if let Err(e) = request.respond(json_error(500, "runtime snapshot failed")) {
+                    tracing::debug!("failed to send HTTP response: {e}");
+                }
             }
         },
         None => respond_json(
@@ -154,19 +178,25 @@ pub(super) fn handle_runtime_ingest_hook_event(
     state: &RuntimeServerState,
 ) {
     let Some(runtime) = state.runtime.as_ref() else {
-        let _ = request.respond(json_error(404, "runtime service not enabled"));
+        if let Err(e) = request.respond(json_error(404, "runtime service not enabled")) {
+            tracing::debug!("failed to send HTTP response: {e}");
+        }
         return;
     };
 
     if !authorize_runtime_request(&request, state.bootstrap.as_ref()) {
-        let _ = request.respond(json_error(401, "unauthorized"));
+        if let Err(e) = request.respond(json_error(401, "unauthorized")) {
+            tracing::debug!("failed to send HTTP response: {e}");
+        }
         return;
     }
 
     let command = match read_json::<IngestHookEventCommand>(&mut request) {
         Ok(command) => command,
         Err(response) => {
-            let _ = request.respond(response);
+            if let Err(e) = request.respond(response) {
+                tracing::debug!("failed to send HTTP response: {e}");
+            }
             return;
         }
     };
@@ -181,14 +211,18 @@ pub(super) fn handle_runtime_ingest_hook_event(
         }
         Err(error) => {
             tracing::warn!(error = %error, "Runtime hook ingest request failed");
-            let _ = request.respond(json_error(500, "runtime hook ingest failed"));
+            if let Err(e) = request.respond(json_error(500, "runtime hook ingest failed")) {
+                tracing::debug!("failed to send HTTP response: {e}");
+            }
         }
     }
 }
 
 pub(super) fn handle_runtime_power_sleep(request: tiny_http::Request, state: &RuntimeServerState) {
     if !authorize_runtime_request(&request, state.bootstrap.as_ref()) {
-        let _ = request.respond(json_error(401, "unauthorized"));
+        if let Err(e) = request.respond(json_error(401, "unauthorized")) {
+            tracing::debug!("failed to send HTTP response: {e}");
+        }
         return;
     }
 
@@ -198,7 +232,9 @@ pub(super) fn handle_runtime_power_sleep(request: tiny_http::Request, state: &Ru
             sleep_tracker.generation()
         }
         Err(_) => {
-            let _ = request.respond(json_error(500, "sleep tracker unavailable"));
+            if let Err(e) = request.respond(json_error(500, "sleep tracker unavailable")) {
+                tracing::debug!("failed to send HTTP response: {e}");
+            }
             return;
         }
     };
@@ -212,7 +248,9 @@ pub(super) fn handle_runtime_power_sleep(request: tiny_http::Request, state: &Ru
 
 pub(super) fn handle_runtime_power_wake(request: tiny_http::Request, state: &RuntimeServerState) {
     if !authorize_runtime_request(&request, state.bootstrap.as_ref()) {
-        let _ = request.respond(json_error(401, "unauthorized"));
+        if let Err(e) = request.respond(json_error(401, "unauthorized")) {
+            tracing::debug!("failed to send HTTP response: {e}");
+        }
         return;
     }
 
@@ -222,7 +260,9 @@ pub(super) fn handle_runtime_power_wake(request: tiny_http::Request, state: &Run
             sleep_tracker.generation()
         }
         Err(_) => {
-            let _ = request.respond(json_error(500, "sleep tracker unavailable"));
+            if let Err(e) = request.respond(json_error(500, "sleep tracker unavailable")) {
+                tracing::debug!("failed to send HTTP response: {e}");
+            }
             return;
         }
     };
@@ -239,19 +279,25 @@ pub(super) fn handle_runtime_resolve_routing(
     state: &RuntimeServerState,
 ) {
     let Some(runtime) = state.runtime.as_ref() else {
-        let _ = request.respond(json_error(404, "runtime service not enabled"));
+        if let Err(e) = request.respond(json_error(404, "runtime service not enabled")) {
+            tracing::debug!("failed to send HTTP response: {e}");
+        }
         return;
     };
 
     if !authorize_runtime_request(&request, state.bootstrap.as_ref()) {
-        let _ = request.respond(json_error(401, "unauthorized"));
+        if let Err(e) = request.respond(json_error(401, "unauthorized")) {
+            tracing::debug!("failed to send HTTP response: {e}");
+        }
         return;
     }
 
     let command = match read_json::<ResolveRoutingCommand>(&mut request) {
         Ok(command) => command,
         Err(response) => {
-            let _ = request.respond(response);
+            if let Err(e) = request.respond(response) {
+                tracing::debug!("failed to send HTTP response: {e}");
+            }
             return;
         }
     };
@@ -260,7 +306,9 @@ pub(super) fn handle_runtime_resolve_routing(
         Ok(route) => respond_json(request, 200, &route),
         Err(error) => {
             tracing::warn!(error = %error, "Runtime route resolve request failed");
-            let _ = request.respond(json_error(500, "runtime route resolve failed"));
+            if let Err(e) = request.respond(json_error(500, "runtime route resolve failed")) {
+                tracing::debug!("failed to send HTTP response: {e}");
+            }
         }
     }
 }
@@ -270,19 +318,25 @@ pub(super) fn handle_runtime_ingest_shell_signal(
     state: &RuntimeServerState,
 ) {
     let Some(runtime) = state.runtime.as_ref() else {
-        let _ = request.respond(json_error(404, "runtime service not enabled"));
+        if let Err(e) = request.respond(json_error(404, "runtime service not enabled")) {
+            tracing::debug!("failed to send HTTP response: {e}");
+        }
         return;
     };
 
     if !authorize_runtime_request(&request, state.bootstrap.as_ref()) {
-        let _ = request.respond(json_error(401, "unauthorized"));
+        if let Err(e) = request.respond(json_error(401, "unauthorized")) {
+            tracing::debug!("failed to send HTTP response: {e}");
+        }
         return;
     }
 
     let command = match read_json::<IngestShellSignalCommand>(&mut request) {
         Ok(command) => command,
         Err(response) => {
-            let _ = request.respond(response);
+            if let Err(e) = request.respond(response) {
+                tracing::debug!("failed to send HTTP response: {e}");
+            }
             return;
         }
     };
@@ -296,7 +350,9 @@ pub(super) fn handle_runtime_ingest_shell_signal(
         }
         Err(error) => {
             tracing::warn!(error = %error, "Runtime shell ingest request failed");
-            let _ = request.respond(json_error(500, "runtime shell ingest failed"));
+            if let Err(e) = request.respond(json_error(500, "runtime shell ingest failed")) {
+                tracing::debug!("failed to send HTTP response: {e}");
+            }
         }
     }
 }
@@ -306,19 +362,25 @@ pub(super) fn handle_runtime_shell_unregister(
     state: &RuntimeServerState,
 ) {
     let Some(runtime) = state.runtime.as_ref() else {
-        let _ = request.respond(json_error(404, "runtime service not enabled"));
+        if let Err(e) = request.respond(json_error(404, "runtime service not enabled")) {
+            tracing::debug!("failed to send HTTP response: {e}");
+        }
         return;
     };
 
     if !authorize_runtime_request(&request, state.bootstrap.as_ref()) {
-        let _ = request.respond(json_error(401, "unauthorized"));
+        if let Err(e) = request.respond(json_error(401, "unauthorized")) {
+            tracing::debug!("failed to send HTTP response: {e}");
+        }
         return;
     }
 
     let command = match read_json::<ShellUnregisterCommand>(&mut request) {
         Ok(command) => command,
         Err(response) => {
-            let _ = request.respond(response);
+            if let Err(e) = request.respond(response) {
+                tracing::debug!("failed to send HTTP response: {e}");
+            }
             return;
         }
     };
@@ -327,14 +389,18 @@ pub(super) fn handle_runtime_shell_unregister(
         Ok(outcome) => respond_json(request, 200, &outcome),
         Err(error) => {
             tracing::warn!(error = %error, "Runtime shell unregister request failed");
-            let _ = request.respond(json_error(500, "runtime shell unregister failed"));
+            if let Err(e) = request.respond(json_error(500, "runtime shell unregister failed")) {
+                tracing::debug!("failed to send HTTP response: {e}");
+            }
         }
     }
 }
 
 pub(super) fn handle_runtime_diagnostics(request: tiny_http::Request, state: &RuntimeServerState) {
     if !authorize_runtime_request(&request, state.bootstrap.as_ref()) {
-        let _ = request.respond(json_error(401, "unauthorized"));
+        if let Err(e) = request.respond(json_error(401, "unauthorized")) {
+            tracing::debug!("failed to send HTTP response: {e}");
+        }
         return;
     }
 
@@ -379,19 +445,25 @@ pub(super) fn handle_runtime_mutate_delegation(
     state: &RuntimeServerState,
 ) {
     let Some(runtime) = state.runtime.as_ref() else {
-        let _ = request.respond(json_error(404, "runtime service not enabled"));
+        if let Err(e) = request.respond(json_error(404, "runtime service not enabled")) {
+            tracing::debug!("failed to send HTTP response: {e}");
+        }
         return;
     };
 
     if !authorize_runtime_request(&request, state.bootstrap.as_ref()) {
-        let _ = request.respond(json_error(401, "unauthorized"));
+        if let Err(e) = request.respond(json_error(401, "unauthorized")) {
+            tracing::debug!("failed to send HTTP response: {e}");
+        }
         return;
     }
 
     let command = match read_json::<MutateDelegationCommand>(&mut request) {
         Ok(command) => command,
         Err(response) => {
-            let _ = request.respond(response);
+            if let Err(e) = request.respond(response) {
+                tracing::debug!("failed to send HTTP response: {e}");
+            }
             return;
         }
     };
@@ -400,7 +472,9 @@ pub(super) fn handle_runtime_mutate_delegation(
         Ok(outcome) => respond_json(request, 200, &outcome),
         Err(error) => {
             tracing::warn!(error = %error, "Runtime delegation mutation request failed");
-            let _ = request.respond(json_error(500, "runtime delegation mutation failed"));
+            if let Err(e) = request.respond(json_error(500, "runtime delegation mutation failed")) {
+                tracing::debug!("failed to send HTTP response: {e}");
+            }
         }
     }
 }
@@ -410,19 +484,25 @@ pub(super) fn handle_runtime_mutate_run(
     state: &RuntimeServerState,
 ) {
     let Some(runtime) = state.runtime.as_ref() else {
-        let _ = request.respond(json_error(404, "runtime service not enabled"));
+        if let Err(e) = request.respond(json_error(404, "runtime service not enabled")) {
+            tracing::debug!("failed to send HTTP response: {e}");
+        }
         return;
     };
 
     if !authorize_runtime_request(&request, state.bootstrap.as_ref()) {
-        let _ = request.respond(json_error(401, "unauthorized"));
+        if let Err(e) = request.respond(json_error(401, "unauthorized")) {
+            tracing::debug!("failed to send HTTP response: {e}");
+        }
         return;
     }
 
     let command = match read_json::<MutateRunCommand>(&mut request) {
         Ok(command) => command,
         Err(response) => {
-            let _ = request.respond(response);
+            if let Err(e) = request.respond(response) {
+                tracing::debug!("failed to send HTTP response: {e}");
+            }
             return;
         }
     };
@@ -439,7 +519,9 @@ pub(super) fn handle_runtime_mutate_run(
         }
         Err(error) => {
             tracing::warn!(error = %error, "Runtime run mutation request failed");
-            let _ = request.respond(json_error(500, "runtime run mutation failed"));
+            if let Err(e) = request.respond(json_error(500, "runtime run mutation failed")) {
+                tracing::debug!("failed to send HTTP response: {e}");
+            }
         }
     }
 }
@@ -448,7 +530,9 @@ pub(super) fn handle_hook(mut request: tiny_http::Request) {
     let hook_input: HookInput = match read_json::<HookInput>(&mut request) {
         Ok(input) => input,
         Err(response) => {
-            let _ = request.respond(response);
+            if let Err(e) = request.respond(response) {
+                tracing::debug!("failed to send HTTP response: {e}");
+            }
             return;
         }
     };
@@ -459,13 +543,17 @@ pub(super) fn handle_hook(mut request: tiny_http::Request) {
         }
         Err(error) => {
             tracing::warn!(error = %error, "Hook processing failed");
-            let _ = request.respond(json_error(500, "hook processing failed"));
+            if let Err(e) = request.respond(json_error(500, "hook processing failed")) {
+                tracing::debug!("failed to send HTTP response: {e}");
+            }
         }
     }
 }
 
 pub(super) fn respond_not_found(request: tiny_http::Request) {
-    let _ = request.respond(json_error(404, "not found"));
+    if let Err(e) = request.respond(json_error(404, "not found")) {
+        tracing::debug!("failed to send HTTP response: {e}");
+    }
 }
 
 fn authorize_runtime_request(

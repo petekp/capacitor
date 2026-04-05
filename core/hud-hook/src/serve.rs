@@ -135,12 +135,28 @@ pub fn run(port: u16) -> Result<(), String> {
     let gc_state = Arc::clone(&runtime_service);
     let gc_handle = thread::spawn(move || {
         let (shutdown_lock, shutdown_condvar) = &*gc_signal;
-        let mut guard = shutdown_lock.lock().expect("gc shutdown lock poisoned");
+        let mut guard = match shutdown_lock.lock() {
+            Ok(g) => g,
+            Err(poisoned) => {
+                tracing::warn!(
+                    error = %poisoned,
+                    "GC shutdown lock poisoned; disabling periodic GC"
+                );
+                return;
+            }
+        };
 
         loop {
-            let wait_result = shutdown_condvar
-                .wait_timeout(guard, GC_INTERVAL)
-                .expect("gc shutdown condvar poisoned");
+            let wait_result = match shutdown_condvar.wait_timeout(guard, GC_INTERVAL) {
+                Ok(result) => result,
+                Err(poisoned) => {
+                    tracing::warn!(
+                        error = %poisoned,
+                        "GC shutdown condvar poisoned; disabling periodic GC"
+                    );
+                    break;
+                }
+            };
             guard = wait_result.0;
 
             if SHUTDOWN.load(Ordering::Relaxed) {
@@ -326,7 +342,9 @@ where
     let response = tiny_http::Response::from_string(body)
         .with_status_code(status)
         .with_header(json_content_type());
-    let _ = request.respond(response);
+    if let Err(e) = request.respond(response) {
+        tracing::debug!("failed to send HTTP response: {e}");
+    }
 }
 
 pub(crate) fn parse_since_version(url: &str) -> Option<u64> {

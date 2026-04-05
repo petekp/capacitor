@@ -94,7 +94,12 @@ impl VersionNotifier {
     }
 
     fn notify(&self) {
-        let _guard = self.lock.lock().unwrap();
+        // If the mutex is poisoned, skip notification. The version counter has
+        // already been bumped via AtomicU64, so the next poll will still observe
+        // the change. Panicking here would cross the FFI boundary into Swift.
+        let Ok(_guard) = self.lock.lock() else {
+            return;
+        };
         self.condvar.notify_all();
     }
 
@@ -112,7 +117,13 @@ impl VersionNotifier {
         }
 
         let deadline = std::time::Instant::now() + timeout;
-        let mut guard = self.lock.lock().unwrap();
+        // If the mutex is poisoned, return None so the caller treats it like a
+        // timeout and re-polls. This avoids a panic that would cross the FFI
+        // boundary into Swift.
+        let mut guard = match self.lock.lock() {
+            Ok(g) => g,
+            Err(_) => return None,
+        };
 
         loop {
             let current = version.load(Ordering::Relaxed);
@@ -125,7 +136,10 @@ impl VersionNotifier {
                 return None;
             }
 
-            let (next_guard, wait_result) = self.condvar.wait_timeout(guard, remaining).unwrap();
+            let (next_guard, wait_result) = match self.condvar.wait_timeout(guard, remaining) {
+                Ok(result) => result,
+                Err(_) => return None,
+            };
             guard = next_guard;
 
             if wait_result.timed_out() {

@@ -50,7 +50,8 @@ struct FileLockGuard {
 
 impl FileLockGuard {
     /// Opens (or creates) the lock file at `lock_path` and acquires an
-    /// exclusive `flock`. Blocks until the lock is available.
+    /// exclusive `flock`. Retries with a 5-second timeout to avoid hanging
+    /// the FFI caller if another process holds the lock indefinitely.
     fn acquire(lock_path: &Path) -> Result<Self, String> {
         // Ensure parent directory exists so we can create the lock file.
         if let Some(parent) = lock_path.parent() {
@@ -65,17 +66,28 @@ impl FileLockGuard {
             .open(lock_path)
             .map_err(|e| format!("failed opening lock file {}: {e}", lock_path.display()))?;
 
-        // LOCK_EX = exclusive lock, blocks until acquired.
-        let ret = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX) };
-        if ret != 0 {
+        // LOCK_NB = non-blocking attempt; retry with backoff up to 5 seconds.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        loop {
+            let ret = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
+            if ret == 0 {
+                return Ok(Self { file });
+            }
             let err = std::io::Error::last_os_error();
-            return Err(format!(
-                "failed acquiring file lock on {}: {err}",
-                lock_path.display()
-            ));
+            if err.kind() != std::io::ErrorKind::WouldBlock {
+                return Err(format!(
+                    "failed acquiring file lock on {}: {err}",
+                    lock_path.display()
+                ));
+            }
+            if std::time::Instant::now() >= deadline {
+                return Err(format!(
+                    "timed out waiting for file lock on {}",
+                    lock_path.display()
+                ));
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
         }
-
-        Ok(Self { file })
     }
 }
 
