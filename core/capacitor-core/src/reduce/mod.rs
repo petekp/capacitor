@@ -6,6 +6,7 @@ use crate::domain::{
     AppSnapshot, DiagnosticsSummary, IngestHookEventCommand, IngestShellSignalCommand,
     MutateDelegationCommand, MutateRunCommand, MutationOutcome, ProjectDelegationState,
     ProjectSummary, ResolveRoutingCommand, RoutingView, RunState, SessionSummary, ShellSignal,
+    ShellUnregisterCommand,
 };
 
 mod event_handler;
@@ -151,6 +152,14 @@ impl ReducerState {
         command: IngestShellSignalCommand,
     ) -> MutationOutcome {
         event_handler::apply_shell_signal(self, command)
+    }
+
+    #[must_use]
+    pub(crate) fn apply_shell_unregister(
+        &mut self,
+        command: ShellUnregisterCommand,
+    ) -> MutationOutcome {
+        event_handler::apply_shell_unregister(self, command)
     }
 
     #[must_use]

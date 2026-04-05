@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 
 use crate::domain::{
     normalize_path_for_matching, now_rfc3339, IngestHookEventCommand, IngestShellSignalCommand,
-    MutationOutcome, ShellSignal,
+    MutationOutcome, ShellSignal, ShellUnregisterCommand,
 };
 
 use super::gc::cleanup_orphaned_same_project_sessions;
@@ -153,5 +153,25 @@ pub(super) fn apply_shell_signal(
     MutationOutcome {
         ok: true,
         message: "shell signal ingested".to_string(),
+    }
+}
+
+pub(super) fn apply_shell_unregister(
+    state: &mut ReducerState,
+    command: ShellUnregisterCommand,
+) -> MutationOutcome {
+    state.events_ingested = state.events_ingested.saturating_add(1);
+
+    if state.shells.remove(&command.pid).is_some() {
+        state.recompute_routing();
+        MutationOutcome {
+            ok: true,
+            message: format!("shell {} unregistered", command.pid),
+        }
+    } else {
+        MutationOutcome {
+            ok: true,
+            message: format!("shell {} not found (already removed)", command.pid),
+        }
     }
 }

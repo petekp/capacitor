@@ -382,6 +382,11 @@ pub struct MutateDelegationCommand {
     pub note: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ShellUnregisterCommand {
+    pub pid: u32,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Record)]
 pub struct MutationOutcome {
     pub ok: bool,

@@ -5,10 +5,10 @@
 
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use capacitor_core::{runtime::service::RuntimeServiceBootstrap, CoreRuntime};
 use chrono::{DateTime, Utc};
@@ -49,6 +49,13 @@ pub(crate) struct RuntimeServerState {
     pub(crate) home_dir: PathBuf,
     pub(crate) runtime: Option<Arc<CoreRuntime>>,
     pub(crate) sleep_tracker: Arc<Mutex<SleepTracker>>,
+    // Observability metrics
+    pub(crate) started_at: Instant,
+    pub(crate) gc_cycle_count: AtomicU64,
+    pub(crate) gc_last_changed: AtomicBool,
+    pub(crate) last_snapshot_served_at: Mutex<Option<String>>,
+    pub(crate) last_hook_event_at: Mutex<Option<String>>,
+    pub(crate) last_shell_signal_at: Mutex<Option<String>>,
 }
 
 impl RuntimeServerState {
@@ -70,6 +77,12 @@ impl RuntimeServerState {
             home_dir,
             runtime: Some(runtime),
             sleep_tracker,
+            started_at: Instant::now(),
+            gc_cycle_count: AtomicU64::new(0),
+            gc_last_changed: AtomicBool::new(false),
+            last_snapshot_served_at: Mutex::new(None),
+            last_hook_event_at: Mutex::new(None),
+            last_shell_signal_at: Mutex::new(None),
         })
     }
 }
@@ -137,8 +150,14 @@ pub fn run(port: u16) -> Result<(), String> {
             if wait_result.1.timed_out() {
                 if let Some(runtime) = gc_state.runtime.as_ref() {
                     let adjusted_now = adjusted_gc_reference_time(&gc_state.sleep_tracker);
-                    if let Err(error) = runtime.run_gc_at(adjusted_now) {
-                        tracing::warn!(error = %error, "Periodic GC tick failed");
+                    match runtime.run_gc_at(adjusted_now) {
+                        Ok(changed) => {
+                            gc_state.gc_cycle_count.fetch_add(1, Ordering::Relaxed);
+                            gc_state.gc_last_changed.store(changed, Ordering::Relaxed);
+                        }
+                        Err(error) => {
+                            tracing::warn!(error = %error, "Periodic GC tick failed");
+                        }
                     }
                 }
             }
@@ -199,6 +218,9 @@ fn dispatch(request: tiny_http::Request, runtime_service: &RuntimeServerState) {
         (&tiny_http::Method::Get, "/runtime/snapshot") => {
             handlers::handle_runtime_snapshot(request, runtime_service)
         }
+        (&tiny_http::Method::Get, "/runtime/diagnostics") => {
+            handlers::handle_runtime_diagnostics(request, runtime_service)
+        }
         (&tiny_http::Method::Post, "/runtime/routing/resolve") => {
             handlers::handle_runtime_resolve_routing(request, runtime_service)
         }
@@ -213,6 +235,9 @@ fn dispatch(request: tiny_http::Request, runtime_service: &RuntimeServerState) {
         }
         (&tiny_http::Method::Post, "/runtime/ingest/shell-signal") => {
             handlers::handle_runtime_ingest_shell_signal(request, runtime_service)
+        }
+        (&tiny_http::Method::Post, "/runtime/shell/unregister") => {
+            handlers::handle_runtime_shell_unregister(request, runtime_service)
         }
         (&tiny_http::Method::Post, "/runtime/delegation/mutate") => {
             handlers::handle_runtime_mutate_delegation(request, runtime_service)

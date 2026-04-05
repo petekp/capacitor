@@ -1849,3 +1849,208 @@ fn pid_file_is_written() {
     let file_pid: u32 = pid_contents.trim().parse().expect("parse pid");
     assert_eq!(file_pid, server.child.id());
 }
+
+#[test]
+fn diagnostics_endpoint_returns_valid_metrics() {
+    let temp_dir = unique_temp_dir("serve-diagnostics");
+    let snapshot_path = temp_dir.join("snapshot.json");
+    let auth_token = "diag-token";
+
+    let seeded = seeded_snapshot_without_routing();
+    fs::write(&snapshot_path, serde_json::to_string(&seeded).unwrap()).expect("write snapshot");
+
+    let (_server, port) =
+        ServerGuard::spawn_service_bootstrap_ready(&temp_dir, &snapshot_path, auth_token);
+
+    let authorization = format!("Bearer {auth_token}");
+
+    let hook_payload = runtime_ingest_hook_event_payload("diag-evt-1", "diag-session-1");
+    let (hook_status, _) = http_request_with_headers(
+        port,
+        "POST",
+        "/runtime/ingest/hook-event",
+        &[("Authorization", authorization.as_str())],
+        Some(&hook_payload.to_string()),
+    );
+    assert_eq!(hook_status, 200);
+
+    let shell_payload = serde_json::json!({
+        "pid": 5555,
+        "cwd": "/tmp/diag-project",
+        "tty": "/dev/ttys200",
+        "parent_app": "ghostty",
+        "tmux_session": null,
+        "tmux_client_tty": null,
+        "tmux_pane": null,
+        "tmux_panes": [],
+        "recorded_at": "2099-04-01T12:00:00Z"
+    });
+    let (shell_status, _) = http_request_with_headers(
+        port,
+        "POST",
+        "/runtime/ingest/shell-signal",
+        &[("Authorization", authorization.as_str())],
+        Some(&shell_payload.to_string()),
+    );
+    assert_eq!(shell_status, 200);
+
+    let (snapshot_status, _) = http_request_with_headers(
+        port,
+        "GET",
+        "/runtime/snapshot",
+        &[("Authorization", authorization.as_str())],
+        None,
+    );
+    assert_eq!(snapshot_status, 200);
+
+    let (diag_status, diag_body) = http_request_with_headers(
+        port,
+        "GET",
+        "/runtime/diagnostics",
+        &[("Authorization", authorization.as_str())],
+        None,
+    );
+    assert_eq!(diag_status, 200, "body: {diag_body}");
+
+    let diag: serde_json::Value =
+        serde_json::from_str(&diag_body).expect("diagnostics should be valid JSON");
+
+    assert!(
+        diag["uptime_seconds"].is_number(),
+        "uptime_seconds should be a number: {diag}"
+    );
+    assert!(
+        diag["gc_cycle_count"].is_number(),
+        "gc_cycle_count should be a number: {diag}"
+    );
+    assert!(
+        diag["gc_last_changed"].is_boolean(),
+        "gc_last_changed should be a boolean: {diag}"
+    );
+    assert!(
+        diag["last_snapshot_served_at"].is_string(),
+        "last_snapshot_served_at should be populated: {diag}"
+    );
+    assert!(
+        diag["last_hook_event_at"].is_string(),
+        "last_hook_event_at should be populated: {diag}"
+    );
+    assert!(
+        diag["last_shell_signal_at"].is_string(),
+        "last_shell_signal_at should be populated: {diag}"
+    );
+}
+
+#[test]
+fn diagnostics_endpoint_requires_auth() {
+    let temp_dir = unique_temp_dir("serve-diagnostics-auth");
+    let snapshot_path = temp_dir.join("snapshot.json");
+    let auth_token = "diag-auth-token";
+
+    let (_server, port) =
+        ServerGuard::spawn_service_bootstrap_ready(&temp_dir, &snapshot_path, auth_token);
+
+    let (status, body) = http_request(port, "GET", "/runtime/diagnostics", None);
+    assert_eq!(status, 401, "body: {body}");
+}
+
+#[test]
+fn shell_unregister_endpoint_removes_shell_immediately() {
+    let temp_dir = unique_temp_dir("serve-shell-unregister");
+    let snapshot_path = temp_dir.join("snapshot.json");
+    let auth_token = "unreg-token";
+
+    let seeded = seeded_snapshot_without_routing();
+    fs::write(&snapshot_path, serde_json::to_string(&seeded).unwrap()).expect("write snapshot");
+
+    let (_server, port) =
+        ServerGuard::spawn_service_bootstrap_ready(&temp_dir, &snapshot_path, auth_token);
+
+    let authorization = format!("Bearer {auth_token}");
+
+    let snapshot = fetch_runtime_snapshot(port, &authorization);
+    let shell_count = snapshot["shells"].as_array().map(Vec::len).unwrap_or(0);
+    assert_eq!(shell_count, 1, "seeded snapshot should have 1 shell");
+    assert_eq!(
+        snapshot["shells"][0]["pid"].as_u64(),
+        Some(4242),
+        "seeded shell pid"
+    );
+
+    let unregister_payload = serde_json::json!({ "pid": 4242 });
+    let (status, body) = http_request_with_headers(
+        port,
+        "POST",
+        "/runtime/shell/unregister",
+        &[("Authorization", authorization.as_str())],
+        Some(&unregister_payload.to_string()),
+    );
+    assert_eq!(status, 200, "body: {body}");
+
+    let outcome: serde_json::Value = serde_json::from_str(&body).expect("outcome json");
+    assert_eq!(outcome["ok"], true);
+    assert!(
+        outcome["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("unregistered"),
+        "message: {}",
+        outcome["message"]
+    );
+
+    let snapshot = fetch_runtime_snapshot(port, &authorization);
+    let shell_count = snapshot["shells"].as_array().map(Vec::len).unwrap_or(0);
+    assert_eq!(shell_count, 0, "shell should be removed after unregister");
+}
+
+#[test]
+fn shell_unregister_endpoint_requires_auth() {
+    let temp_dir = unique_temp_dir("serve-shell-unreg-auth");
+    let snapshot_path = temp_dir.join("snapshot.json");
+    let auth_token = "unreg-auth-token";
+
+    let (_server, port) =
+        ServerGuard::spawn_service_bootstrap_ready(&temp_dir, &snapshot_path, auth_token);
+
+    let payload = serde_json::json!({ "pid": 1234 });
+    let (status, body) = http_request(
+        port,
+        "POST",
+        "/runtime/shell/unregister",
+        Some(&payload.to_string()),
+    );
+    assert_eq!(status, 401, "body: {body}");
+}
+
+#[test]
+fn shell_unregister_for_missing_pid_returns_ok_not_found() {
+    let temp_dir = unique_temp_dir("serve-shell-unreg-missing");
+    let snapshot_path = temp_dir.join("snapshot.json");
+    let auth_token = "unreg-missing-token";
+
+    let (_server, port) =
+        ServerGuard::spawn_service_bootstrap_ready(&temp_dir, &snapshot_path, auth_token);
+
+    let authorization = format!("Bearer {auth_token}");
+
+    let payload = serde_json::json!({ "pid": 99999 });
+    let (status, body) = http_request_with_headers(
+        port,
+        "POST",
+        "/runtime/shell/unregister",
+        &[("Authorization", authorization.as_str())],
+        Some(&payload.to_string()),
+    );
+    assert_eq!(status, 200, "body: {body}");
+
+    let outcome: serde_json::Value = serde_json::from_str(&body).expect("outcome json");
+    assert_eq!(outcome["ok"], true);
+    assert!(
+        outcome["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("not found"),
+        "message: {}",
+        outcome["message"]
+    );
+}

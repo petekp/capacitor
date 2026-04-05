@@ -4,7 +4,7 @@ use crate::domain::{
     IdeaMutationKind, IngestHookEventCommand, IngestShellSignalCommand, MutateDelegationCommand,
     MutateIdeaCommand, MutateProjectCommand, MutateRunCommand, MutateWorktreeCommand,
     ProjectMutationKind, ProjectSummary, RunMutationKind, SessionState, SessionSummary,
-    WorktreeMutationKind,
+    ShellUnregisterCommand, WorktreeMutationKind,
 };
 use crate::runtime::service::{RUNTIME_SERVICE_PORT_ENV, RUNTIME_SERVICE_TOKEN_ENV};
 use crate::runtime::state::snapshot::test_support::{
@@ -1021,4 +1021,48 @@ fn make_snapshot_session(state: &str, seconds_ago: i64, is_alive: Option<bool>) 
         is_alive: is_alive.unwrap_or(false),
         gc_reason: None,
     }
+}
+
+#[test]
+fn unregister_shell_removes_shell_from_state() {
+    let runtime = CoreRuntime::new().expect("runtime");
+
+    runtime
+        .ingest_shell_signal(IngestShellSignalCommand {
+            pid: 9999,
+            cwd: "/tmp/project".to_string(),
+            tty: "/dev/ttys001".to_string(),
+            parent_app: "ghostty".to_string(),
+            tmux_session: None,
+            tmux_client_tty: None,
+            tmux_pane: None,
+            tmux_panes: vec![],
+            recorded_at: "2099-01-01T00:00:00Z".to_string(),
+        })
+        .expect("shell signal");
+
+    let snapshot = runtime.app_snapshot().expect("snapshot");
+    assert_eq!(snapshot.shells.len(), 1);
+    assert_eq!(snapshot.shells[0].pid, 9999);
+
+    let outcome = runtime
+        .unregister_shell(ShellUnregisterCommand { pid: 9999 })
+        .expect("unregister shell");
+    assert!(outcome.ok);
+    assert!(outcome.message.contains("9999"));
+    assert!(outcome.message.contains("unregistered"));
+
+    let snapshot = runtime.app_snapshot().expect("snapshot after unregister");
+    assert!(snapshot.shells.is_empty());
+}
+
+#[test]
+fn unregister_shell_for_missing_pid_succeeds_with_not_found() {
+    let runtime = CoreRuntime::new().expect("runtime");
+
+    let outcome = runtime
+        .unregister_shell(ShellUnregisterCommand { pid: 7777 })
+        .expect("unregister shell");
+    assert!(outcome.ok);
+    assert!(outcome.message.contains("not found"));
 }

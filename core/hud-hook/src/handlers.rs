@@ -3,7 +3,7 @@ use std::sync::atomic::Ordering;
 use capacitor_core::{
     domain::{
         IngestHookEventCommand, IngestShellSignalCommand, MutateDelegationCommand,
-        MutateRunCommand, ResolveRoutingCommand,
+        MutateRunCommand, ResolveRoutingCommand, ShellUnregisterCommand,
     },
     runtime::service::RuntimeServiceBootstrap,
 };
@@ -59,7 +59,12 @@ pub(super) fn handle_runtime_snapshot(request: tiny_http::Request, state: &Runti
     }
 
     match runtime.app_snapshot() {
-        Ok(snapshot) => respond_json(request, 200, &snapshot),
+        Ok(snapshot) => {
+            if let Ok(mut guard) = state.last_snapshot_served_at.lock() {
+                *guard = Some(chrono::Utc::now().to_rfc3339());
+            }
+            respond_json(request, 200, &snapshot);
+        }
         Err(error) => {
             tracing::warn!(error = %error, "Runtime snapshot request failed");
             let _ = request.respond(json_error(500, "runtime snapshot failed"));
@@ -119,6 +124,9 @@ pub(super) fn handle_runtime_poll_snapshot(
                     if let Some(object) = value.as_object_mut() {
                         object.insert("changed".to_string(), serde_json::Value::Bool(true));
                     }
+                    if let Ok(mut guard) = state.last_snapshot_served_at.lock() {
+                        *guard = Some(chrono::Utc::now().to_rfc3339());
+                    }
                     respond_json(request, 200, &value);
                 }
                 Err(_) => {
@@ -165,7 +173,12 @@ pub(super) fn handle_runtime_ingest_hook_event(
 
     let gc_reference_time = adjusted_gc_reference_time(&state.sleep_tracker);
     match runtime.ingest_hook_event_with_gc_reference_time(command, gc_reference_time) {
-        Ok(outcome) => respond_json(request, 200, &outcome),
+        Ok(outcome) => {
+            if let Ok(mut guard) = state.last_hook_event_at.lock() {
+                *guard = Some(chrono::Utc::now().to_rfc3339());
+            }
+            respond_json(request, 200, &outcome);
+        }
         Err(error) => {
             tracing::warn!(error = %error, "Runtime hook ingest request failed");
             let _ = request.respond(json_error(500, "runtime hook ingest failed"));
@@ -275,12 +288,90 @@ pub(super) fn handle_runtime_ingest_shell_signal(
     };
 
     match runtime.ingest_shell_signal(command) {
-        Ok(outcome) => respond_json(request, 200, &outcome),
+        Ok(outcome) => {
+            if let Ok(mut guard) = state.last_shell_signal_at.lock() {
+                *guard = Some(chrono::Utc::now().to_rfc3339());
+            }
+            respond_json(request, 200, &outcome);
+        }
         Err(error) => {
             tracing::warn!(error = %error, "Runtime shell ingest request failed");
             let _ = request.respond(json_error(500, "runtime shell ingest failed"));
         }
     }
+}
+
+pub(super) fn handle_runtime_shell_unregister(
+    mut request: tiny_http::Request,
+    state: &RuntimeServerState,
+) {
+    let Some(runtime) = state.runtime.as_ref() else {
+        let _ = request.respond(json_error(404, "runtime service not enabled"));
+        return;
+    };
+
+    if !authorize_runtime_request(&request, state.bootstrap.as_ref()) {
+        let _ = request.respond(json_error(401, "unauthorized"));
+        return;
+    }
+
+    let command = match read_json::<ShellUnregisterCommand>(&mut request) {
+        Ok(command) => command,
+        Err(response) => {
+            let _ = request.respond(response);
+            return;
+        }
+    };
+
+    match runtime.unregister_shell(command) {
+        Ok(outcome) => respond_json(request, 200, &outcome),
+        Err(error) => {
+            tracing::warn!(error = %error, "Runtime shell unregister request failed");
+            let _ = request.respond(json_error(500, "runtime shell unregister failed"));
+        }
+    }
+}
+
+pub(super) fn handle_runtime_diagnostics(request: tiny_http::Request, state: &RuntimeServerState) {
+    if !authorize_runtime_request(&request, state.bootstrap.as_ref()) {
+        let _ = request.respond(json_error(401, "unauthorized"));
+        return;
+    }
+
+    let uptime_seconds = state.started_at.elapsed().as_secs();
+    let gc_cycle_count = state
+        .gc_cycle_count
+        .load(std::sync::atomic::Ordering::Relaxed);
+    let gc_last_changed = state
+        .gc_last_changed
+        .load(std::sync::atomic::Ordering::Relaxed);
+
+    let last_snapshot_served_at = state
+        .last_snapshot_served_at
+        .lock()
+        .ok()
+        .and_then(|guard| guard.clone());
+    let last_hook_event_at = state
+        .last_hook_event_at
+        .lock()
+        .ok()
+        .and_then(|guard| guard.clone());
+    let last_shell_signal_at = state
+        .last_shell_signal_at
+        .lock()
+        .ok()
+        .and_then(|guard| guard.clone());
+
+    let payload = serde_json::json!({
+        "uptime_seconds": uptime_seconds,
+        "gc_cycle_count": gc_cycle_count,
+        "gc_last_changed": gc_last_changed,
+        "last_snapshot_served_at": last_snapshot_served_at,
+        "last_hook_event_at": last_hook_event_at,
+        "last_shell_signal_at": last_shell_signal_at,
+    });
+
+    respond_json(request, 200, &payload);
 }
 
 pub(super) fn handle_runtime_mutate_delegation(

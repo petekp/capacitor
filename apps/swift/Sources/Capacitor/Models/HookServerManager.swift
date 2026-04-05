@@ -149,6 +149,11 @@ final class HookServerManager {
     private static let gracefulStopTimeout: TimeInterval = 2.0
     private nonisolated static let defaultLaunchReadinessAttempts = 10
     private nonisolated static let defaultLaunchReadinessInterval = Duration.milliseconds(500)
+    private static let healthCheckInterval: Duration = .seconds(3)
+    private static let initialBackoffSeconds: TimeInterval = 1
+    private static let maxBackoffSeconds: TimeInterval = 60
+    private static let crashBudgetLimit = 5
+    private static let crashBudgetWindow: TimeInterval = 600 // 10 minutes
 
     // MARK: - State
 
@@ -167,6 +172,7 @@ final class HookServerManager {
     private var process: (any HookServerProcessControlling)?
     private var adoptedPid: Int32?
     private var healthCheckTask: _Concurrency.Task<Void, Never>?
+    private var healthCheckLoopTask: _Concurrency.Task<Void, Never>?
     private var launchReadinessTask: _Concurrency.Task<Void, Never>?
     private var healthCheckToken: UUID?
     private var lifecycleGeneration: UInt64 = 0
@@ -178,6 +184,12 @@ final class HookServerManager {
     private let launchReadinessInterval: Duration
     private let dependencies: HookServerManagerDependencies
     private var lifecycleState = HookServerLifecycleState()
+    /// Current backoff delay in seconds before the next restart attempt. Doubles after each
+    /// restart, resets on successful health check. Exposed as internal for testability.
+    var restartBackoffSeconds: TimeInterval = HookServerManager.initialBackoffSeconds
+    /// Timestamps of recent restart attempts within the crash budget window.
+    /// Exposed as internal for testability (pre-seeding in unit tests).
+    var restartTimestamps: [Date] = []
 
     // MARK: - Init
 
@@ -280,10 +292,30 @@ final class HookServerManager {
         }
     }
 
+    /// Starts a periodic health check loop that calls `checkHealth()` every 3 seconds.
+    ///
+    /// Cancels any previously running loop. The loop runs until the manager is stopped
+    /// or the task is cancelled.
+    func startHealthCheckLoop() {
+        healthCheckLoopTask?.cancel()
+        healthCheckLoopTask = _Concurrency.Task { [weak self] in
+            while !_Concurrency.Task.isCancelled {
+                do {
+                    try await _Concurrency.Task.sleep(for: Self.healthCheckInterval)
+                } catch {
+                    return
+                }
+                guard let self, !_Concurrency.Task.isCancelled else { return }
+                checkHealth()
+            }
+        }
+    }
+
     /// Gracefully stops the server process, escalating to SIGKILL if it does not exit promptly.
     func stop() {
         lifecycleGeneration &+= 1
         cancelHealthCheck()
+        cancelHealthCheckLoop()
         cancelLaunchReadiness()
 
         let ownedProcess = process
@@ -397,7 +429,9 @@ final class HookServerManager {
             maxConsecutiveFailures: Self.maxConsecutiveFailures,
         ))
 
-        if !healthy {
+        if healthy {
+            restartBackoffSeconds = Self.initialBackoffSeconds
+        } else {
             DebugLog.write(
                 "HookServerManager: health check failed (\(previousFailures + 1)/\(Self.maxConsecutiveFailures))",
             )
@@ -420,6 +454,11 @@ final class HookServerManager {
         healthCheckTask?.cancel()
         healthCheckTask = nil
         healthCheckToken = nil
+    }
+
+    private func cancelHealthCheckLoop() {
+        healthCheckLoopTask?.cancel()
+        healthCheckLoopTask = nil
     }
 
     private func cancelLaunchReadiness() {
@@ -508,6 +547,7 @@ final class HookServerManager {
         }
 
         launchReadinessTask = nil
+        restartBackoffSeconds = Self.initialBackoffSeconds
 
         let directive = applyLifecycle(.healthCheckFinished(
             healthy: true,
@@ -568,12 +608,52 @@ final class HookServerManager {
         process = nil
         adoptedPid = nil
 
-        DebugLog.write("HookServerManager: restarting (was pid \(oldPid ?? 0))")
+        // Crash budget: prune old timestamps and check if budget is exhausted
+        let now = Date()
+        let windowStart = now.addingTimeInterval(-Self.crashBudgetWindow)
+        restartTimestamps = restartTimestamps.filter { $0 > windowStart }
+        restartTimestamps.append(now)
+
+        if restartTimestamps.count >= Self.crashBudgetLimit {
+            let message = "Runtime service exceeded crash budget (\(Self.crashBudgetLimit) restarts in 10 minutes)"
+            DebugLog.write("HookServerManager: \(message)")
+            Telemetry.emit("hook_server", "Crash budget exhausted", payload: [
+                "previous_pid": oldPid ?? 0,
+                "restart_count": restartTimestamps.count,
+            ])
+            cancelHealthCheckLoop()
+            _ = applyLifecycle(.launchFailed(message))
+            return
+        }
+
+        let backoff = restartBackoffSeconds
+        restartBackoffSeconds = min(restartBackoffSeconds * 2, Self.maxBackoffSeconds)
+
+        DebugLog.write("HookServerManager: restarting after \(backoff)s backoff (was pid \(oldPid ?? 0))")
         Telemetry.emit("hook_server", "Server restarting", payload: [
             "previous_pid": oldPid ?? 0,
+            "backoff_seconds": backoff,
         ])
 
-        start()
+        let restartGeneration = lifecycleGeneration
+        healthCheckTask = _Concurrency.Task { [weak self] in
+            do {
+                try await _Concurrency.Task.sleep(for: .seconds(backoff))
+            } catch {
+                return
+            }
+            guard let self,
+                  restartGeneration == lifecycleGeneration,
+                  !self.stopRequested
+            else { return }
+            await MainActor.run {
+                guard restartGeneration == self.lifecycleGeneration,
+                      !self.stopRequested
+                else { return }
+                self.healthCheckTask = nil
+                self.start()
+            }
+        }
     }
 
     private static var defaultBinaryPath: String {

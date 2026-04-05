@@ -23,6 +23,21 @@ impl CoreRuntime {
     ) -> Result<MutationOutcome, CoreRuntimeError> {
         self.ingest_hook_event_internal(command, Some(gc_reference_time))
     }
+
+    pub fn unregister_shell(
+        &self,
+        command: domain::ShellUnregisterCommand,
+    ) -> Result<MutationOutcome, CoreRuntimeError> {
+        let mut state = self.lock_state()?;
+        let outcome = state.apply_shell_unregister(command);
+        if outcome.ok {
+            self.bump_version_and_notify();
+        }
+        let snapshot = state.snapshot();
+        drop(state);
+        self.persist_snapshot(&snapshot)?;
+        Ok(outcome)
+    }
 }
 
 #[uniffi::export]
