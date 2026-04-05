@@ -278,7 +278,7 @@ extension AppState {
 
     func validateProject(_ path: String) -> ValidationResultFfi? {
         guard let engine else { return nil }
-        return engine.validateProject(path: path)
+        return try? engine.validateProject(path: path)
     }
 
     func getSessionState(for project: Project) -> ProjectSessionState? {

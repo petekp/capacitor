@@ -367,7 +367,7 @@ extension AppState {
 
     func checkHookDiagnostic() {
         guard let engine else { return }
-        uiState.hookDiagnostic = engine.getHookDiagnostic()
+        uiState.hookDiagnostic = try? engine.getHookDiagnostic()
     }
 
     func fixHooks() {
@@ -394,7 +394,17 @@ extension AppState {
                 message: "Engine not initialized",
             )
         }
-        return engine.runHookTest()
+        do {
+            return try engine.runHookTest()
+        } catch {
+            return HookTestResult(
+                success: false,
+                hookActivityOk: false,
+                hookActivityAgeSecs: nil,
+                runtimeServiceOk: false,
+                message: "Engine error: \(error.localizedDescription)",
+            )
+        }
     }
 
     func ensureRuntimeReady() {

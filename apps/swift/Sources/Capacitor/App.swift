@@ -16,7 +16,7 @@ enum AppLaunchOverrides {
 }
 
 protocol StartupSetupRuntime: AnyObject, HookRuntimeInstalling {
-    func checkSetupStatus() -> SetupStatus
+    func checkSetupStatus() throws -> SetupStatus
     func capacitorDir() -> String
 }
 
@@ -77,7 +77,7 @@ enum StartupSetupValidator {
 
         guard let engine = try? hooks.makeRuntime() else { return }
 
-        let setupStatus = engine.checkSetupStatus()
+        guard let setupStatus = try? engine.checkSetupStatus() else { return }
         switch hooks.startupDecision(setupStatus) {
         case .ready:
             break

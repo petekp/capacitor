@@ -243,7 +243,7 @@ final class SetupRequirementsManager {
         applyLifecycle(.checksStarted)
         defer { applyLifecycle(.checksFinished) }
 
-        let setupStatus = engine.checkSetupStatus()
+        guard let setupStatus = try? engine.checkSetupStatus() else { return }
 
         for dep in setupStatus.dependencies {
             await updateDependencyStatus(dep)
@@ -300,8 +300,9 @@ final class SetupRequirementsManager {
             let dep = engine.checkDependency(name: stepId.rawValue)
             await updateDependencyStatus(dep)
         case .hooks:
-            let status = engine.getHookStatus()
-            await updateHookStatus(status)
+            if let status = try? engine.getHookStatus() {
+                await updateHookStatus(status)
+            }
         case .shell:
             updateShellStatus()
         }
@@ -330,8 +331,11 @@ final class SetupRequirementsManager {
             return
         }
 
-        let status = engine.getHookStatus()
-        applyLifecycle(.hookInstallFinished(result: .success(status)))
+        if let status = try? engine.getHookStatus() {
+            applyLifecycle(.hookInstallFinished(result: .success(status)))
+        } else {
+            applyLifecycle(.hookInstallFinished(result: .failure("Failed to verify hook status after installation")))
+        }
     }
 
     private func applyLifecycle(_ event: SetupLifecycleState.Event) {

@@ -32,7 +32,7 @@ final class ProjectState {
 
         var updated: [String: ProjectStatus] = [:]
         for project in projects {
-            if let status = engine.getProjectStatus(projectPath: project.path) {
+            if let status = try? engine.getProjectStatus(projectPath: project.path) {
                 updated[project.path] = status
             }
         }

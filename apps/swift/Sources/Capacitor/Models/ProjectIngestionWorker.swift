@@ -61,7 +61,10 @@ actor ProjectIngestionWorker {
                 continue
             }
 
-            let result = engine.validateProject(path: path)
+            guard let result = try? engine.validateProject(path: path) else {
+                failedNames.append(URL(fileURLWithPath: path).lastPathComponent)
+                continue
+            }
 
             switch Self.decision(for: path, result: result) {
             case let .add(path):

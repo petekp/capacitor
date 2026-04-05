@@ -521,7 +521,7 @@ public protocol CoreRuntimeProtocol: AnyObject {
 
     func checkHookHealth() -> HookHealthReport
 
-    func checkSetupStatus() -> SetupStatus
+    func checkSetupStatus() throws -> SetupStatus
 
     func claudeDir() -> String
 
@@ -529,13 +529,13 @@ public protocol CoreRuntimeProtocol: AnyObject {
 
     func findBuiltinMethod(methodId: String) -> MethodTemplate?
 
-    func getHookDiagnostic() -> HookDiagnosticReport
+    func getHookDiagnostic() throws -> HookDiagnosticReport
 
-    func getHookStatus() -> HookStatus
+    func getHookStatus() throws -> HookStatus
 
     func getIdeasFilePath(projectPath: String) -> String
 
-    func getProjectStatus(projectPath: String) -> ProjectStatus?
+    func getProjectStatus(projectPath: String) throws -> ProjectStatus?
 
     func getSuggestedProjects() throws -> [SuggestedProject]
 
@@ -573,7 +573,7 @@ public protocol CoreRuntimeProtocol: AnyObject {
 
     func runGc() throws -> Bool
 
-    func runHookTest() -> HookTestResult
+    func runHookTest() throws -> HookTestResult
 
     func saveIdeasOrder(projectPath: String, ideaIds: [String]) throws
 
@@ -587,7 +587,7 @@ public protocol CoreRuntimeProtocol: AnyObject {
 
     func updateIdeaTriage(projectPath: String, ideaId: String, newTriage: String) throws
 
-    func validateProject(path: String) -> ValidationResultFfi
+    func validateProject(path: String) throws -> ValidationResultFfi
 }
 
 open class CoreRuntime:
@@ -693,8 +693,8 @@ open class CoreRuntime:
         })
     }
 
-    open func checkSetupStatus() -> SetupStatus {
-        return try! FfiConverterTypeSetupStatus.lift(try! rustCall {
+    open func checkSetupStatus() throws -> SetupStatus {
+        return try FfiConverterTypeSetupStatus.lift(rustCallWithError(FfiConverterTypeCoreRuntimeError.lift) {
             uniffi_capacitor_core_fn_method_coreruntime_check_setup_status(self.uniffiClonePointer(), $0)
         })
     }
@@ -719,14 +719,14 @@ open class CoreRuntime:
         })
     }
 
-    open func getHookDiagnostic() -> HookDiagnosticReport {
-        return try! FfiConverterTypeHookDiagnosticReport.lift(try! rustCall {
+    open func getHookDiagnostic() throws -> HookDiagnosticReport {
+        return try FfiConverterTypeHookDiagnosticReport.lift(rustCallWithError(FfiConverterTypeCoreRuntimeError.lift) {
             uniffi_capacitor_core_fn_method_coreruntime_get_hook_diagnostic(self.uniffiClonePointer(), $0)
         })
     }
 
-    open func getHookStatus() -> HookStatus {
-        return try! FfiConverterTypeHookStatus.lift(try! rustCall {
+    open func getHookStatus() throws -> HookStatus {
+        return try FfiConverterTypeHookStatus.lift(rustCallWithError(FfiConverterTypeCoreRuntimeError.lift) {
             uniffi_capacitor_core_fn_method_coreruntime_get_hook_status(self.uniffiClonePointer(), $0)
         })
     }
@@ -738,8 +738,8 @@ open class CoreRuntime:
         })
     }
 
-    open func getProjectStatus(projectPath: String) -> ProjectStatus? {
-        return try! FfiConverterOptionTypeProjectStatus.lift(try! rustCall {
+    open func getProjectStatus(projectPath: String) throws -> ProjectStatus? {
+        return try FfiConverterOptionTypeProjectStatus.lift(rustCallWithError(FfiConverterTypeCoreRuntimeError.lift) {
             uniffi_capacitor_core_fn_method_coreruntime_get_project_status(self.uniffiClonePointer(),
                                                                            FfiConverterString.lower(projectPath), $0)
         })
@@ -865,8 +865,8 @@ open class CoreRuntime:
         })
     }
 
-    open func runHookTest() -> HookTestResult {
-        return try! FfiConverterTypeHookTestResult.lift(try! rustCall {
+    open func runHookTest() throws -> HookTestResult {
+        return try FfiConverterTypeHookTestResult.lift(rustCallWithError(FfiConverterTypeCoreRuntimeError.lift) {
             uniffi_capacitor_core_fn_method_coreruntime_run_hook_test(self.uniffiClonePointer(), $0)
         })
     }
@@ -924,8 +924,8 @@ open class CoreRuntime:
         }
     }
 
-    open func validateProject(path: String) -> ValidationResultFfi {
-        return try! FfiConverterTypeValidationResultFfi.lift(try! rustCall {
+    open func validateProject(path: String) throws -> ValidationResultFfi {
+        return try FfiConverterTypeValidationResultFfi.lift(rustCallWithError(FfiConverterTypeCoreRuntimeError.lift) {
             uniffi_capacitor_core_fn_method_coreruntime_validate_project(self.uniffiClonePointer(),
                                                                          FfiConverterString.lower(path), $0)
         })
@@ -9939,7 +9939,7 @@ private var initializationResult: InitializationResult = {
     if uniffi_capacitor_core_checksum_method_coreruntime_check_hook_health() != 22780 {
         return InitializationResult.apiChecksumMismatch
     }
-    if uniffi_capacitor_core_checksum_method_coreruntime_check_setup_status() != 39917 {
+    if uniffi_capacitor_core_checksum_method_coreruntime_check_setup_status() != 9868 {
         return InitializationResult.apiChecksumMismatch
     }
     if uniffi_capacitor_core_checksum_method_coreruntime_claude_dir() != 62587 {
@@ -9951,16 +9951,16 @@ private var initializationResult: InitializationResult = {
     if uniffi_capacitor_core_checksum_method_coreruntime_find_builtin_method() != 6703 {
         return InitializationResult.apiChecksumMismatch
     }
-    if uniffi_capacitor_core_checksum_method_coreruntime_get_hook_diagnostic() != 54501 {
+    if uniffi_capacitor_core_checksum_method_coreruntime_get_hook_diagnostic() != 17436 {
         return InitializationResult.apiChecksumMismatch
     }
-    if uniffi_capacitor_core_checksum_method_coreruntime_get_hook_status() != 65516 {
+    if uniffi_capacitor_core_checksum_method_coreruntime_get_hook_status() != 21473 {
         return InitializationResult.apiChecksumMismatch
     }
     if uniffi_capacitor_core_checksum_method_coreruntime_get_ideas_file_path() != 52506 {
         return InitializationResult.apiChecksumMismatch
     }
-    if uniffi_capacitor_core_checksum_method_coreruntime_get_project_status() != 49408 {
+    if uniffi_capacitor_core_checksum_method_coreruntime_get_project_status() != 25606 {
         return InitializationResult.apiChecksumMismatch
     }
     if uniffi_capacitor_core_checksum_method_coreruntime_get_suggested_projects() != 31780 {
@@ -10017,7 +10017,7 @@ private var initializationResult: InitializationResult = {
     if uniffi_capacitor_core_checksum_method_coreruntime_run_gc() != 7191 {
         return InitializationResult.apiChecksumMismatch
     }
-    if uniffi_capacitor_core_checksum_method_coreruntime_run_hook_test() != 23431 {
+    if uniffi_capacitor_core_checksum_method_coreruntime_run_hook_test() != 8581 {
         return InitializationResult.apiChecksumMismatch
     }
     if uniffi_capacitor_core_checksum_method_coreruntime_save_ideas_order() != 37803 {
@@ -10038,7 +10038,7 @@ private var initializationResult: InitializationResult = {
     if uniffi_capacitor_core_checksum_method_coreruntime_update_idea_triage() != 9453 {
         return InitializationResult.apiChecksumMismatch
     }
-    if uniffi_capacitor_core_checksum_method_coreruntime_validate_project() != 50990 {
+    if uniffi_capacitor_core_checksum_method_coreruntime_validate_project() != 28644 {
         return InitializationResult.apiChecksumMismatch
     }
     if uniffi_capacitor_core_checksum_constructor_coreruntime_new() != 63655 {
