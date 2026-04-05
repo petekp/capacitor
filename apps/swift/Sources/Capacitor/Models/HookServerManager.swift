@@ -84,7 +84,7 @@ struct HookServerManagerDependencies {
     var waitForProcessExit: (Int32, TimeInterval) -> Bool
     var loadRuntimeServiceConnection: (UInt16) -> RuntimeServiceConnection?
     var launchProcess: (String, UInt16, [String: String], @escaping @Sendable (Int32) -> Void) throws -> any HookServerProcessControlling
-    var fetchHealth: (UInt16, String?) -> RuntimeHealth?
+    var fetchHealth: (UInt16, String?) async -> RuntimeHealth?
 }
 
 private final class LiveHookServerProcess: HookServerProcessControlling {
@@ -219,7 +219,7 @@ final class HookServerManager {
     /// On launch, checks for a stale PID file from a previous app session. If the
     /// old process is still alive and still points at the expected hook binary, we
     /// adopt it. If not, we clean up the PID file and start fresh.
-    func startIfNeeded() {
+    func startIfNeeded() async {
         guard status != .running, status != .starting else { return }
 
         guard dependencies.isExecutableFile(binaryPath) else {
@@ -251,7 +251,7 @@ final class HookServerManager {
         }
 
         if let connection = dependencies.loadRuntimeServiceConnection(port),
-           let health = dependencies.fetchHealth(port, connection.bearerToken),
+           let health = await dependencies.fetchHealth(port, connection.bearerToken),
            health.isCompatibleBootstrapService
         {
             beginLifecycleObservation(
@@ -290,7 +290,8 @@ final class HookServerManager {
         let authToken = healthAuthorizationToken
         healthCheckTask = _Concurrency.Task { [weak self] in
             guard let self else { return }
-            let healthy = dependencies.fetchHealth(port, authToken)?.isCompatibleBootstrapService ?? false
+            let health = await dependencies.fetchHealth(port, authToken)
+            let healthy = health?.isCompatibleBootstrapService ?? false
             await MainActor.run {
                 self.finishHealthCheck(healthy: healthy, token: token, generation: generation)
             }
@@ -498,7 +499,8 @@ final class HookServerManager {
                 return
             }
 
-            let healthy = dependencies.fetchHealth(port, authToken)?.isCompatibleBootstrapService ?? false
+            let health = await dependencies.fetchHealth(port, authToken)
+            let healthy = health?.isCompatibleBootstrapService ?? false
 
             guard generation == lifecycleGeneration, !stopRequested, status == .starting else {
                 return
@@ -688,7 +690,7 @@ final class HookServerManager {
             .appendingPathComponent(".capacitor/runtime/runtime-service-\(port).pid").path
     }
 
-    nonisolated static func fetchHealth(port: UInt16, authToken: String?) -> RuntimeHealth? {
+    static func fetchHealth(port: UInt16, authToken: String?) async -> RuntimeHealth? {
         guard let url = URL(string: "http://127.0.0.1:\(port)\(healthPath)") else {
             return nil
         }
@@ -699,27 +701,14 @@ final class HookServerManager {
             request.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
         }
 
-        let semaphore = DispatchSemaphore(value: 0)
-        var health: RuntimeHealth?
-        let task = URLSession.shared.dataTask(with: request) { data, response, error in
-            defer { semaphore.signal() }
-            guard error == nil,
-                  let http = response as? HTTPURLResponse,
-                  http.statusCode == 200,
-                  let data,
-                  let decoded = try? JSONDecoder().decode(RuntimeHealth.self, from: data)
-            else {
-                return
-            }
-            health = decoded
-        }
-        task.resume()
-
-        if semaphore.wait(timeout: .now() + 2) == .timedOut {
-            task.cancel()
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              let http = response as? HTTPURLResponse,
+              http.statusCode == 200,
+              let decoded = try? JSONDecoder().decode(RuntimeHealth.self, from: data)
+        else {
             return nil
         }
-        return health
+        return decoded
     }
 }
 
@@ -773,7 +762,7 @@ extension HookServerManagerDependencies {
             )
         },
         fetchHealth: { port, authToken in
-            HookServerManager.fetchHealth(port: port, authToken: authToken)
+            await HookServerManager.fetchHealth(port: port, authToken: authToken)
         },
     )
 }

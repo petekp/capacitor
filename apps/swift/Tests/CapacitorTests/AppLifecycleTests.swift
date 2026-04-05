@@ -5,7 +5,27 @@ import XCTest
 @MainActor
 final class AppLifecycleTests: XCTestCase {
     func testRuntimeBootstrapStartsHookServerBeforeCheckingRuntimeHealth() async {
-        let appState = AppState(runtimeClient: RuntimeClient(isEnabledOverride: false))
+        let hookServerManager = HookServerManager(
+            port: 8199,
+            binaryPath: "/nonexistent/hud-hook",
+            dependencies: HookServerManagerDependencies(
+                isExecutableFile: { _ in false },
+                readPidFile: { _ in nil },
+                removePidFile: { _ in },
+                isProcessAlive: { _ in false },
+                isManagedServerProcess: { _, _ in false },
+                terminatePid: { _ in },
+                killPid: { _ in },
+                waitForProcessExit: { _, _ in true },
+                loadRuntimeServiceConnection: { _ in nil },
+                launchProcess: { _, _, _, _ in AppLifecycleHookServerProcess(pid: 1) },
+                fetchHealth: { _, _ in nil },
+            ),
+        )
+        let appState = AppState(
+            runtimeClient: RuntimeClient(isEnabledOverride: false),
+            hookServerManager: hookServerManager,
+        )
 
         for _ in 0 ..< 200 where !appState.runtimeBootstrapTraceForTesting.contains("ensureRuntimeReady") {
             await _Concurrency.Task.yield()

@@ -12,7 +12,7 @@ extension AppState {
                 guard !_Concurrency.Task.isCancelled else { return }
 
                 recordRuntimeBootstrapStepForTesting("startHookServer")
-                hookServerManager.startIfNeeded()
+                await hookServerManager.startIfNeeded()
                 guard !_Concurrency.Task.isCancelled else { return }
 
                 recordRuntimeBootstrapStepForTesting("ensureRuntimeReady")
@@ -471,12 +471,12 @@ extension AppState {
     func handleIncompatibleRuntimeServiceSchema(
         observedSchemaVersion: Int,
         minimumSchemaVersion: Int,
-    ) {
+    ) async {
         DebugLog.write(
             "Runtime service schema version \(observedSchemaVersion) is older than required version \(minimumSchemaVersion). Restarting runtime.",
         )
         hookServerManager.stop()
-        hookServerManager.startIfNeeded()
+        await hookServerManager.startIfNeeded()
         uiState.toast = ToastMessage("Runtime service restarted for compatibility")
     }
 

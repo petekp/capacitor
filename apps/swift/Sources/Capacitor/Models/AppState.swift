@@ -89,12 +89,10 @@ class AppState {
 
         self.runtimeClient.setIncompatibleSchemaHandler { [weak self] health, minimumSchemaVersion in
             guard let self else { return }
-            await MainActor.run {
-                self.handleIncompatibleRuntimeServiceSchema(
-                    observedSchemaVersion: health.normalizedSchemaVersion,
-                    minimumSchemaVersion: minimumSchemaVersion,
-                )
-            }
+            await handleIncompatibleRuntimeServiceSchema(
+                observedSchemaVersion: health.normalizedSchemaVersion,
+                minimumSchemaVersion: minimumSchemaVersion,
+            )
         }
 
         DebugLog.write(

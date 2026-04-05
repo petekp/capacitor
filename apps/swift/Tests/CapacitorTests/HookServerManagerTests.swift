@@ -56,10 +56,10 @@ final class HookServerManagerTests: XCTestCase {
     func testStopPreventsLateFailedHealthCheckFromRestarting() async {
         let process = FakeHookServerProcess(pid: 41)
         var launchCount = 0
-        let fetchHealthRelease = DispatchSemaphore(value: 0)
         let unexpectedRestart = expectation(description: "late health failure must not relaunch")
         unexpectedRestart.isInverted = true
         var fetchHealthStarted = false
+        var fetchHealthReleased = false
 
         let manager = HookServerManager(
             port: 8123,
@@ -74,13 +74,15 @@ final class HookServerManagerTests: XCTestCase {
                 },
                 fetchHealth: { _, _ in
                     fetchHealthStarted = true
-                    fetchHealthRelease.wait()
+                    while !fetchHealthReleased {
+                        try? await _Concurrency.Task.sleep(for: .milliseconds(1))
+                    }
                     return nil
                 },
             ),
         )
 
-        manager.startIfNeeded()
+        await manager.startIfNeeded()
         for _ in 0 ..< 50 where !fetchHealthStarted {
             await _Concurrency.Task.yield()
         }
@@ -90,7 +92,7 @@ final class HookServerManagerTests: XCTestCase {
         XCTAssertEqual(launchCount, 1)
         XCTAssertEqual(process.terminateCallCount, 1)
 
-        fetchHealthRelease.signal()
+        fetchHealthReleased = true
         await _Concurrency.Task.yield()
         await fulfillment(of: [unexpectedRestart], timeout: 0.1)
 
@@ -98,7 +100,7 @@ final class HookServerManagerTests: XCTestCase {
         XCTAssertEqual(launchCount, 1, "explicit stop must dominate late health failures")
     }
 
-    func testStartIfNeededRemovesForeignLivePidAndLaunchesFreshProcess() {
+    func testStartIfNeededRemovesForeignLivePidAndLaunchesFreshProcess() async {
         let process = FakeHookServerProcess(pid: 51)
         var removedPidFilePaths: [String] = []
         var launchCount = 0
@@ -118,14 +120,14 @@ final class HookServerManagerTests: XCTestCase {
             ),
         )
 
-        manager.startIfNeeded()
+        await manager.startIfNeeded()
 
         XCTAssertEqual(removedPidFilePaths.count, 1)
         XCTAssertEqual(launchCount, 1)
         XCTAssertEqual(manager.status, HookServerManager.Status.starting)
     }
 
-    func testStartIfNeededRemovesStaleDeadPidAndLaunchesFreshProcess() {
+    func testStartIfNeededRemovesStaleDeadPidAndLaunchesFreshProcess() async {
         let process = FakeHookServerProcess(pid: 52)
         var removedPidFilePaths: [String] = []
         var launchCount = 0
@@ -144,14 +146,14 @@ final class HookServerManagerTests: XCTestCase {
             ),
         )
 
-        manager.startIfNeeded()
+        await manager.startIfNeeded()
 
         XCTAssertEqual(removedPidFilePaths.count, 1)
         XCTAssertEqual(launchCount, 1)
         XCTAssertEqual(manager.status, HookServerManager.Status.starting)
     }
 
-    func testStopTerminatesVerifiedAdoptedPid() {
+    func testStopTerminatesVerifiedAdoptedPid() async {
         var terminatedPids: [Int32] = []
         var waitedForPids: [(Int32, TimeInterval)] = []
         var launchCount = 0
@@ -181,7 +183,7 @@ final class HookServerManagerTests: XCTestCase {
             ),
         )
 
-        manager.startIfNeeded()
+        await manager.startIfNeeded()
         XCTAssertEqual(manager.status, HookServerManager.Status.starting)
         XCTAssertEqual(launchCount, 0)
 
@@ -198,7 +200,7 @@ final class HookServerManagerTests: XCTestCase {
         XCTAssertEqual(launchCount, 0)
     }
 
-    func testStopForceKillsOwnedProcessWhenGracefulExitTimesOut() {
+    func testStopForceKillsOwnedProcessWhenGracefulExitTimesOut() async {
         let process = FakeHookServerProcess(pid: 98, stopsOnTerminate: false)
         var killedPids: [Int32] = []
         var waitedForPids: [(Int32, TimeInterval)] = []
@@ -216,7 +218,7 @@ final class HookServerManagerTests: XCTestCase {
             ),
         )
 
-        manager.startIfNeeded()
+        await manager.startIfNeeded()
         manager.stop()
 
         guard let waited = waitedForPids.first else {
@@ -230,7 +232,7 @@ final class HookServerManagerTests: XCTestCase {
         XCTAssertEqual(killedPids, [98])
     }
 
-    func testStartIfNeededLaunchesServiceBootstrap() {
+    func testStartIfNeededLaunchesServiceBootstrap() async {
         var launchCount = 0
         var capturedEnvironment: [String: String] = [:]
 
@@ -246,7 +248,7 @@ final class HookServerManagerTests: XCTestCase {
             ),
         )
 
-        manager.startIfNeeded()
+        await manager.startIfNeeded()
 
         XCTAssertEqual(launchCount, 1)
         XCTAssertEqual(manager.status, HookServerManager.Status.starting)
@@ -272,7 +274,7 @@ final class HookServerManagerTests: XCTestCase {
             ),
         )
 
-        manager.startIfNeeded()
+        await manager.startIfNeeded()
         manager.checkHealth()
 
         for _ in 0 ..< 20 where receivedAuthToken == nil {
@@ -315,7 +317,7 @@ final class HookServerManagerTests: XCTestCase {
             ),
         )
 
-        manager.startIfNeeded()
+        await manager.startIfNeeded()
         XCTAssertEqual(launchCount, 0)
         XCTAssertEqual(manager.status, HookServerManager.Status.starting)
 
@@ -355,7 +357,7 @@ final class HookServerManagerTests: XCTestCase {
             launchReadinessInterval: .zero,
         )
 
-        manager.startIfNeeded()
+        await manager.startIfNeeded()
         manager.checkHealth()
         await waitUntil { manager.status == HookServerManager.Status.running }
 
@@ -366,8 +368,8 @@ final class HookServerManagerTests: XCTestCase {
     func testStartIfNeededFailsIfLaunchedProcessExitsBeforeReadinessSucceeds() async {
         let process = FakeHookServerProcess(pid: 93)
         var launchCount = 0
-        let fetchHealthRelease = DispatchSemaphore(value: 0)
         var fetchHealthStarted = false
+        var fetchHealthReleased = false
 
         let manager = HookServerManager(
             port: 8130,
@@ -380,7 +382,9 @@ final class HookServerManagerTests: XCTestCase {
                 },
                 fetchHealth: { _, _ in
                     fetchHealthStarted = true
-                    fetchHealthRelease.wait()
+                    while !fetchHealthReleased {
+                        try? await _Concurrency.Task.sleep(for: .milliseconds(1))
+                    }
                     return nil
                 },
             ),
@@ -388,12 +392,12 @@ final class HookServerManagerTests: XCTestCase {
             launchReadinessInterval: .zero,
         )
 
-        manager.startIfNeeded()
+        await manager.startIfNeeded()
         for _ in 0 ..< 50 where !fetchHealthStarted {
             await _Concurrency.Task.yield()
         }
         process.simulateExit(status: 48)
-        fetchHealthRelease.signal()
+        fetchHealthReleased = true
         await waitUntil {
             if case .failed = manager.status {
                 return true
@@ -429,7 +433,7 @@ final class HookServerManagerTests: XCTestCase {
             launchReadinessInterval: .zero,
         )
 
-        manager.startIfNeeded()
+        await manager.startIfNeeded()
         await waitUntil {
             if case .failed = manager.status {
                 return true
@@ -532,7 +536,7 @@ final class HookServerManagerTests: XCTestCase {
             ),
         )
 
-        manager.startIfNeeded()
+        await manager.startIfNeeded()
         manager.checkHealth()
         await waitUntil { manager.status == HookServerManager.Status.running }
 
@@ -571,7 +575,7 @@ final class HookServerManagerTests: XCTestCase {
         // Initial backoff should be 1 second
         XCTAssertEqual(manager.restartBackoffSeconds, 1.0, accuracy: 0.001)
 
-        manager.startIfNeeded()
+        await manager.startIfNeeded()
         await waitUntil { manager.status == HookServerManager.Status.running }
 
         // Trigger 3 consecutive health check failures to cause a restart
@@ -636,7 +640,7 @@ final class HookServerManagerTests: XCTestCase {
             launchReadinessInterval: .zero,
         )
 
-        manager.startIfNeeded()
+        await manager.startIfNeeded()
         await waitUntil { manager.status == HookServerManager.Status.running }
 
         // Pre-seed 4 recent restart timestamps (just under the budget of 5)
@@ -725,7 +729,7 @@ final class HookServerManagerTests: XCTestCase {
             launchReadinessInterval: .zero,
         )
 
-        manager.startIfNeeded()
+        await manager.startIfNeeded()
         await waitUntil { manager.status == HookServerManager.Status.running }
 
         // Trigger failures to increase backoff
@@ -768,7 +772,7 @@ final class HookServerManagerTests: XCTestCase {
             FakeHookServerProcess(pid: 11)
         },
         launchProcessWithTermination: ((String, UInt16, [String: String], @escaping @Sendable (Int32) -> Void) throws -> any HookServerProcessControlling)? = nil,
-        fetchHealth: @escaping (UInt16, String?) -> RuntimeHealth? = { _, _ in nil },
+        fetchHealth: @escaping (UInt16, String?) async -> RuntimeHealth? = { _, _ in nil },
     ) -> HookServerManagerDependencies {
         HookServerManagerDependencies(
             isExecutableFile: { _ in true },
