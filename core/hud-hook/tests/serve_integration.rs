@@ -212,7 +212,8 @@ fn seeded_snapshot_without_routing() -> serde_json::Value {
             "last_hook_event_at": "2026-03-12T00:00:00Z"
         },
         "generated_at": "2026-03-12T00:00:00Z",
-        "schema_version": 1
+        "snapshot_version": 1,
+        "schema_version": 3
     })
 }
 
@@ -282,7 +283,8 @@ fn seeded_snapshot_with_gc_candidate() -> serde_json::Value {
             "last_hook_event_at": "2026-03-12T00:00:00Z"
         },
         "generated_at": "2026-03-12T00:00:00Z",
-        "schema_version": 1
+        "snapshot_version": 1,
+        "schema_version": 3
     })
 }
 

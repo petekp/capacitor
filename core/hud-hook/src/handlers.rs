@@ -560,6 +560,8 @@ pub(super) fn handle_hook(mut request: tiny_http::Request, state: &RuntimeServer
             }
             return;
         }
+    } else {
+        tracing::info!("processing /hook without auth (legacy mode — no bootstrap configured)");
     }
 
     let hook_input: HookInput = match read_json::<HookInput>(&mut request) {
