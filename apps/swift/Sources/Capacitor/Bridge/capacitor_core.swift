@@ -557,12 +557,24 @@ public protocol CoreRuntimeProtocol: AnyObject {
 
     func mutateDelegation(command: MutateDelegationCommand) throws -> MutationOutcome
 
+    /**
+     * Accept an idea mutation command.
+     *
+     * STUB: logs the command and persists a version bump, but does not yet
+     * mutate model state. Callers receive `ok: true` as acknowledgment.
+     */
     func mutateIdea(command: MutateIdeaCommand) throws -> MutationOutcome
 
     func mutateProject(command: MutateProjectCommand) throws -> MutationOutcome
 
     func mutateRun(command: MutateRunCommand) throws -> MutationOutcome
 
+    /**
+     * Accept a worktree mutation command.
+     *
+     * STUB: logs the command and persists a version bump, but does not yet
+     * mutate model state. Callers receive `ok: true` as acknowledgment.
+     */
     func mutateWorktree(command: MutateWorktreeCommand) throws -> MutationOutcome
 
     func removeHooks() throws -> InstallResult
@@ -811,6 +823,12 @@ open class CoreRuntime:
         })
     }
 
+    /**
+     * Accept an idea mutation command.
+     *
+     * STUB: logs the command and persists a version bump, but does not yet
+     * mutate model state. Callers receive `ok: true` as acknowledgment.
+     */
     open func mutateIdea(command: MutateIdeaCommand) throws -> MutationOutcome {
         return try FfiConverterTypeMutationOutcome.lift(rustCallWithError(FfiConverterTypeCoreRuntimeError.lift) {
             uniffi_capacitor_core_fn_method_coreruntime_mutate_idea(self.uniffiClonePointer(),
@@ -832,6 +850,12 @@ open class CoreRuntime:
         })
     }
 
+    /**
+     * Accept a worktree mutation command.
+     *
+     * STUB: logs the command and persists a version bump, but does not yet
+     * mutate model state. Callers receive `ok: true` as acknowledgment.
+     */
     open func mutateWorktree(command: MutateWorktreeCommand) throws -> MutationOutcome {
         return try FfiConverterTypeMutationOutcome.lift(rustCallWithError(FfiConverterTypeCoreRuntimeError.lift) {
             uniffi_capacitor_core_fn_method_coreruntime_mutate_worktree(self.uniffiClonePointer(),
@@ -10001,7 +10025,7 @@ private var initializationResult: InitializationResult = {
     if uniffi_capacitor_core_checksum_method_coreruntime_mutate_delegation() != 22057 {
         return InitializationResult.apiChecksumMismatch
     }
-    if uniffi_capacitor_core_checksum_method_coreruntime_mutate_idea() != 36496 {
+    if uniffi_capacitor_core_checksum_method_coreruntime_mutate_idea() != 56147 {
         return InitializationResult.apiChecksumMismatch
     }
     if uniffi_capacitor_core_checksum_method_coreruntime_mutate_project() != 22074 {
@@ -10010,7 +10034,7 @@ private var initializationResult: InitializationResult = {
     if uniffi_capacitor_core_checksum_method_coreruntime_mutate_run() != 27321 {
         return InitializationResult.apiChecksumMismatch
     }
-    if uniffi_capacitor_core_checksum_method_coreruntime_mutate_worktree() != 17358 {
+    if uniffi_capacitor_core_checksum_method_coreruntime_mutate_worktree() != 63118 {
         return InitializationResult.apiChecksumMismatch
     }
     if uniffi_capacitor_core_checksum_method_coreruntime_remove_hooks() != 18263 {
