@@ -68,6 +68,8 @@ pub(super) fn handle_runtime_snapshot(request: tiny_http::Request, state: &Runti
         Ok(snapshot) => {
             if let Ok(mut guard) = state.last_snapshot_served_at.lock() {
                 *guard = Some(chrono::Utc::now().to_rfc3339());
+            } else {
+                tracing::warn!("last_snapshot_served_at mutex poisoned — timestamp not updated");
             }
             respond_json(request, 200, &snapshot);
         }
@@ -146,6 +148,10 @@ pub(super) fn handle_runtime_poll_snapshot(
                     }
                     if let Ok(mut guard) = state.last_snapshot_served_at.lock() {
                         *guard = Some(chrono::Utc::now().to_rfc3339());
+                    } else {
+                        tracing::warn!(
+                            "last_snapshot_served_at mutex poisoned — timestamp not updated"
+                        );
                     }
                     respond_json(request, 200, &value);
                 }
@@ -206,6 +212,8 @@ pub(super) fn handle_runtime_ingest_hook_event(
         Ok(outcome) => {
             if let Ok(mut guard) = state.last_hook_event_at.lock() {
                 *guard = Some(chrono::Utc::now().to_rfc3339());
+            } else {
+                tracing::warn!("last_hook_event_at mutex poisoned — timestamp not updated");
             }
             respond_json(request, 200, &outcome);
         }
@@ -345,6 +353,8 @@ pub(super) fn handle_runtime_ingest_shell_signal(
         Ok(outcome) => {
             if let Ok(mut guard) = state.last_shell_signal_at.lock() {
                 *guard = Some(chrono::Utc::now().to_rfc3339());
+            } else {
+                tracing::warn!("last_shell_signal_at mutex poisoned — timestamp not updated");
             }
             respond_json(request, 200, &outcome);
         }
@@ -412,21 +422,27 @@ pub(super) fn handle_runtime_diagnostics(request: tiny_http::Request, state: &Ru
         .gc_last_changed
         .load(std::sync::atomic::Ordering::Relaxed);
 
-    let last_snapshot_served_at = state
-        .last_snapshot_served_at
-        .lock()
-        .ok()
-        .and_then(|guard| guard.clone());
-    let last_hook_event_at = state
-        .last_hook_event_at
-        .lock()
-        .ok()
-        .and_then(|guard| guard.clone());
-    let last_shell_signal_at = state
-        .last_shell_signal_at
-        .lock()
-        .ok()
-        .and_then(|guard| guard.clone());
+    let last_snapshot_served_at = match state.last_snapshot_served_at.lock() {
+        Ok(guard) => guard.clone(),
+        Err(_) => {
+            tracing::warn!("last_snapshot_served_at mutex poisoned — reporting None");
+            None
+        }
+    };
+    let last_hook_event_at = match state.last_hook_event_at.lock() {
+        Ok(guard) => guard.clone(),
+        Err(_) => {
+            tracing::warn!("last_hook_event_at mutex poisoned — reporting None");
+            None
+        }
+    };
+    let last_shell_signal_at = match state.last_shell_signal_at.lock() {
+        Ok(guard) => guard.clone(),
+        Err(_) => {
+            tracing::warn!("last_shell_signal_at mutex poisoned — reporting None");
+            None
+        }
+    };
 
     let payload = serde_json::json!({
         "uptime_seconds": uptime_seconds,

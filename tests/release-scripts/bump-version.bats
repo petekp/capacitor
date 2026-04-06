@@ -24,6 +24,14 @@ members = ["core"]
 version = "1.2.3"
 EOF
 
+    # Create mock App.swift with version fallback
+    mkdir -p "$TEST_DIR/apps/swift/Sources/Capacitor"
+    cat > "$TEST_DIR/apps/swift/Sources/Capacitor/App.swift" << 'APPEOF'
+    static var fallbackVersion: String {
+        return "1.2.3"
+    }
+APPEOF
+
     # Patch the script to use TEST_DIR as PROJECT_ROOT
     sed -i '' "s|PROJECT_ROOT=\"\$(cd \"\$SCRIPT_DIR/../..\" && pwd)\"|PROJECT_ROOT=\"$TEST_DIR\"|" "$TEST_DIR/scripts/bump-version.sh"
 }
@@ -90,4 +98,26 @@ run_bump_and_assert_version() {
     run "$TEST_DIR/scripts/bump-version.sh" patch
     [ "$status" -eq 1 ]
     [[ "$output" == *"VERSION file not found"* ]]
+}
+
+@test "skips App.swift verification when App.swift is missing" {
+    rm "$TEST_DIR/apps/swift/Sources/Capacitor/App.swift"
+    run "$TEST_DIR/scripts/bump-version.sh" patch
+    [ "$status" -eq 0 ]
+    [ "$(cat "$TEST_DIR/VERSION")" = "1.2.4" ]
+}
+
+@test "parses Cargo.toml version with quoted inline comments" {
+    cat > "$TEST_DIR/Cargo.toml" << 'EOF'
+[workspace]
+members = ["core"]
+
+[workspace.package]
+version = "1.2.3" # inline "quoted" comment
+EOF
+
+    run "$TEST_DIR/scripts/bump-version.sh" patch
+    [ "$status" -eq 0 ]
+    run grep 'version = "1.2.4" # inline "quoted" comment' "$TEST_DIR/Cargo.toml"
+    [ "$status" -eq 0 ]
 }

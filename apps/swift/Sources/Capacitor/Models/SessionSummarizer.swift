@@ -544,7 +544,7 @@ final class SessionSummarizer {
             "command-args",
         ]
 
-        let confirmationSet: Set<String> = [
+        let confirmationSet: Set = [
             "yes",
             "y",
             "ok",

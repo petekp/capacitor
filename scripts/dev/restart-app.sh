@@ -414,7 +414,7 @@ fi
 if [ "$SWIFT_ONLY" != true ]; then
     # Fix the dylib's install name so Swift can find it at runtime.
     # Without this, the library embeds an absolute path that breaks when moved.
-    install_name_tool -id "@rpath/libcapacitor_core.dylib" target/release/libcapacitor_core.dylib
+    "$PROJECT_ROOT/scripts/dev/fix-dylib.sh"
 
     # Always regenerate UniFFI bindings to prevent checksum mismatch crashes
     BINDINGS_TMP_DIR="$(mktemp -d)"
@@ -493,6 +493,7 @@ fi
 
 # Ensure the Rust dylib uses @rpath so it resolves via @loader_path at runtime.
 if [ -f "$SWIFT_DEBUG_DIR/libcapacitor_core.dylib" ]; then
+    # fix-dylib.sh only handles target/release/; this copy needs its own fixup
     install_name_tool -id "@rpath/libcapacitor_core.dylib" "$SWIFT_DEBUG_DIR/libcapacitor_core.dylib"
 fi
 
@@ -585,6 +586,7 @@ rm -rf "$DEBUG_APP/Contents/Frameworks/Sparkle.framework"
 cp -R "$SPARKLE_FRAMEWORK" "$DEBUG_APP/Contents/Frameworks/"
 if [ -f "$SWIFT_DEBUG_DIR/libcapacitor_core.dylib" ]; then
     cp "$SWIFT_DEBUG_DIR/libcapacitor_core.dylib" "$DEBUG_APP/Contents/Frameworks/"
+    # fix-dylib.sh only handles target/release/; this copy needs its own fixup
     install_name_tool -id "@rpath/libcapacitor_core.dylib" "$DEBUG_APP/Contents/Frameworks/libcapacitor_core.dylib"
 fi
 

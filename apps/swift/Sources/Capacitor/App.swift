@@ -75,9 +75,21 @@ enum StartupSetupValidator {
             return
         }
 
-        guard let engine = try? hooks.makeRuntime() else { return }
+        let engine: any StartupSetupRuntime
+        do {
+            engine = try hooks.makeRuntime()
+        } catch {
+            DebugLog.write("StartupSetupValidator: makeRuntime failed: \(error)")
+            return
+        }
 
-        guard let setupStatus = try? engine.checkSetupStatus() else { return }
+        let setupStatus: SetupStatus
+        do {
+            setupStatus = try engine.checkSetupStatus()
+        } catch {
+            DebugLog.write("StartupSetupValidator: checkSetupStatus failed: \(error)")
+            return
+        }
         switch hooks.startupDecision(setupStatus) {
         case .ready:
             break

@@ -246,8 +246,8 @@ impl ReducerState {
                 last_hook_event_at: self.last_hook_event_at.clone(),
             },
             generated_at: crate::domain::now_rfc3339(),
-            snapshot_version: 0,
-            schema_version: 0,
+            snapshot_version: crate::storage::CURRENT_SNAPSHOT_SCHEMA_VERSION as u64,
+            schema_version: crate::domain::SCHEMA_VERSION,
         }
     }
 

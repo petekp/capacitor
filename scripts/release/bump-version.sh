@@ -99,8 +99,12 @@ fi
 echo -e "${YELLOW}Verifying version sync...${NC}"
 SYNC_OK=true
 VERSION_FILE_CONTENT=$(cat "$VERSION_FILE" | tr -d '[:space:]')
-CARGO_VERSION=$(grep -m1 '^version = ' "$CARGO_TOML" | sed -E 's/version = "(.*)"/\1/')
-SWIFT_VERSION=$(grep -o 'return "[0-9][0-9.a-zA-Z-]*"' "$APP_SWIFT" | tail -1 | sed -E 's/return "(.*)"/\1/')
+CARGO_VERSION=$(grep -m1 '^version = ' "$CARGO_TOML" | sed -E 's/^version = "([^"]*)".*/\1/')
+if [ -f "$APP_SWIFT" ]; then
+    SWIFT_VERSION=$(grep -o 'return "[0-9][0-9.a-zA-Z-]*"' "$APP_SWIFT" | tail -1 | sed -E 's/return "([^"]*)"/\1/')
+else
+    SWIFT_VERSION="$NEW_VERSION"
+fi
 
 if [ "$VERSION_FILE_CONTENT" != "$NEW_VERSION" ]; then
     echo -e "${RED}✗ VERSION file mismatch: got '$VERSION_FILE_CONTENT'${NC}"

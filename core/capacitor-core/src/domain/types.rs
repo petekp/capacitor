@@ -173,7 +173,7 @@ pub struct AppSnapshot {
     pub schema_version: u32,
 }
 
-/// Increment when delegation or run mutation contracts change.
+/// Mutation/delegation protocol version (incremented when delegation or run mutation contracts change).
 pub const SCHEMA_VERSION: u32 = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Enum)]

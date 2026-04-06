@@ -3,7 +3,7 @@
 > Doc role: `recent-deltas`
 > Status: Recent deltas only. This file is not the current architecture spec.
 > Current read path: `.claude/docs/architecture-primer.md` -> `docs/ARCHITECTURE.md` -> `docs/architecture-decisions/004-dedicated-local-runtime-service.md` -> `docs/architecture-decisions/005-authority-based-multi-signal-state-detection.md`
-> Older history: `docs/archive/architecture-history/agent-changelog-history-through-2026-03-15.md`
+> Older history: removed (the referenced archive directory no longer exists)
 
 Use this file only for recent migration context and retired seams that still matter for current agent work.
 
@@ -21,15 +21,15 @@ Key files: `docs/architecture-decisions/005-authority-based-multi-signal-state-d
 
 Key files: `checkpoint_bridge.rs`, `checkpoint_bridge_protocol.rs` (capacitor-core), `checkpoint_bridge_relay.rs` (hud-hook), `RunCheckpointReviewWindow.swift`, `AppState.swift` (run checkpoint routing).
 
-**Documentation sweep**: 16 stale/superseded tracked docs retired to `docs/archive/`. 5 new canonical docs created under `docs/orchestrator/` (checkpoint-bridge, review-surfaces, appstate-checkpoint-policy, terminology, idea-to-run-gap). Module doc comments added to 3 Rust files. `ARCHITECTURE.md` and `architecture-primer.md` updated with orchestrator read path.
+**Documentation sweep**: 16 stale/superseded tracked docs were removed (the archive directory was later deleted). 5 new canonical docs created under `docs/orchestrator/` (checkpoint-bridge, review-surfaces, appstate-checkpoint-policy, terminology, idea-to-run-gap). Module doc comments added to 3 Rust files. `ARCHITECTURE.md` and `architecture-primer.md` updated with orchestrator read path.
 
 ## Stale Information Retired (2026-03-24)
 
 | Location | Retired To | Why |
 |----------|-----------|-----|
-| `docs/plans/orchestrator-status.md` | `docs/archive/orchestrator-history/` | Claimed request-changes is terminal (false since multi-round review shipped) |
-| `docs/method-runner-spec/step-6-closeout.md` | `docs/archive/method-runner-spec-history/` | Claimed real adapters deferred (false — `--real` flag wired to CLI) |
-| 14 additional review/process docs | `docs/archive/` | Superseded by amended-spec.md and execution-packet.md |
+| `docs/plans/orchestrator-status.md` | removed | Claimed request-changes is terminal (false since multi-round review shipped) |
+| `docs/method-runner-spec/step-6-closeout.md` | removed | Claimed real adapters deferred (false — `--real` flag wired to CLI) |
+| 14 additional review/process docs | removed | Superseded by amended-spec.md and execution-packet.md |
 
 ## Current Warning Surface
 

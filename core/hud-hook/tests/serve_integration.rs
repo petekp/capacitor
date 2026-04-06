@@ -2090,3 +2090,147 @@ fn shell_unregister_for_missing_pid_returns_ok_not_found() {
         outcome["message"]
     );
 }
+
+#[test]
+fn power_sleep_requires_auth_and_reports_generation() {
+    let temp_dir = unique_temp_dir("serve-power-sleep");
+    let snapshot_path = temp_dir.join("snapshot.json");
+    let auth_token = "power-sleep-token";
+
+    let (_server, port) =
+        ServerGuard::spawn_service_bootstrap_ready(&temp_dir, &snapshot_path, auth_token);
+
+    let (status, body) = http_request(port, "POST", "/runtime/power/sleep", None);
+    assert_eq!(status, 401, "body: {body}");
+
+    let authorization = format!("Bearer {auth_token}");
+    let (status, body) = http_request_with_headers(
+        port,
+        "POST",
+        "/runtime/power/sleep",
+        &[("Authorization", authorization.as_str())],
+        None,
+    );
+    assert_eq!(status, 200, "body: {body}");
+
+    let outcome: serde_json::Value = serde_json::from_str(&body).expect("outcome json");
+    assert_eq!(outcome["ok"], true);
+    assert_eq!(outcome["generation"].as_u64(), Some(1));
+}
+
+#[test]
+fn power_wake_requires_auth_and_reports_generation() {
+    let temp_dir = unique_temp_dir("serve-power-wake");
+    let snapshot_path = temp_dir.join("snapshot.json");
+    let auth_token = "power-wake-token";
+
+    let (_server, port) =
+        ServerGuard::spawn_service_bootstrap_ready(&temp_dir, &snapshot_path, auth_token);
+
+    let (status, body) = http_request(port, "POST", "/runtime/power/wake", None);
+    assert_eq!(status, 401, "body: {body}");
+
+    let authorization = format!("Bearer {auth_token}");
+    let (status, body) = http_request_with_headers(
+        port,
+        "POST",
+        "/runtime/power/wake",
+        &[("Authorization", authorization.as_str())],
+        None,
+    );
+    assert_eq!(status, 200, "body: {body}");
+
+    let outcome: serde_json::Value = serde_json::from_str(&body).expect("outcome json");
+    assert_eq!(outcome["ok"], true);
+    assert_eq!(outcome["generation"].as_u64(), Some(1));
+}
+
+#[test]
+fn routing_resolve_requires_auth_and_resolves_route() {
+    let temp_dir = unique_temp_dir("serve-routing-resolve");
+    let snapshot_path = temp_dir.join("snapshot.json");
+    let auth_token = "routing-resolve-token";
+
+    let (_server, port) =
+        ServerGuard::spawn_service_bootstrap_ready(&temp_dir, &snapshot_path, auth_token);
+
+    let resolve_payload = serde_json::json!({
+        "project_path": "/tmp/runtime-service-project",
+        "workspace_id": null,
+        "session_name": "runtime-service-project",
+        "client_tty": "/dev/ttys111"
+    });
+
+    let (status, body) = http_request(
+        port,
+        "POST",
+        "/runtime/routing/resolve",
+        Some(&resolve_payload.to_string()),
+    );
+    assert_eq!(status, 401, "body: {body}");
+
+    let authorization = format!("Bearer {auth_token}");
+
+    let (status, body) = http_request_with_headers(
+        port,
+        "POST",
+        "/runtime/routing/resolve",
+        &[("Authorization", authorization.as_str())],
+        Some("not json"),
+    );
+    assert_eq!(status, 400, "body: {body}");
+    assert!(body.contains("error"), "body: {body}");
+
+    let hook_payload =
+        runtime_ingest_hook_event_payload("routing-resolve-evt-1", "routing-resolve-session-1");
+    let (hook_status, hook_body) = http_request_with_headers(
+        port,
+        "POST",
+        "/runtime/ingest/hook-event",
+        &[("Authorization", authorization.as_str())],
+        Some(&hook_payload.to_string()),
+    );
+    assert_eq!(hook_status, 200, "body: {hook_body}");
+
+    let shell_payload = serde_json::json!({
+        "pid": 4242,
+        "cwd": "/tmp/runtime-service-project",
+        "tty": "/dev/ttys200",
+        "parent_app": "ghostty",
+        "tmux_session": "runtime-service-project",
+        "tmux_client_tty": "/dev/ttys111",
+        "tmux_pane": null,
+        "tmux_panes": [],
+        "recorded_at": "2099-04-01T12:00:00Z"
+    });
+    let (shell_status, shell_body) = http_request_with_headers(
+        port,
+        "POST",
+        "/runtime/ingest/shell-signal",
+        &[("Authorization", authorization.as_str())],
+        Some(&shell_payload.to_string()),
+    );
+    assert_eq!(shell_status, 200, "body: {shell_body}");
+
+    let (status, body) = http_request_with_headers(
+        port,
+        "POST",
+        "/runtime/routing/resolve",
+        &[("Authorization", authorization.as_str())],
+        Some(&resolve_payload.to_string()),
+    );
+    assert_eq!(status, 200, "body: {body}");
+
+    let route: serde_json::Value = serde_json::from_str(&body).expect("route json");
+    assert_eq!(
+        route["project_path"].as_str(),
+        Some("/tmp/runtime-service-project")
+    );
+    assert_eq!(route["status"].as_str(), Some("attached"));
+    assert_eq!(route["target"]["kind"].as_str(), Some("tmux_session"));
+    assert_eq!(
+        route["target"]["session_name"].as_str(),
+        Some("runtime-service-project")
+    );
+    assert_eq!(route["target"]["host_tty"].as_str(), Some("/dev/ttys111"));
+}

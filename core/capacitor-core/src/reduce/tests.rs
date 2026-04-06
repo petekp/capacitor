@@ -442,6 +442,19 @@ fn snapshot_prunes_terminal_runs_older_than_24_hours() {
 }
 
 #[test]
+fn snapshot_uses_correct_version_constants() {
+    let state = ReducerState::default();
+
+    let snapshot = state.snapshot();
+
+    assert_eq!(
+        snapshot.snapshot_version,
+        crate::storage::CURRENT_SNAPSHOT_SCHEMA_VERSION as u64
+    );
+    assert_eq!(snapshot.schema_version, crate::domain::SCHEMA_VERSION);
+}
+
+#[test]
 fn snapshot_marks_created_runs_older_than_two_hours_failed() {
     let now = Utc::now();
     let created_at = (now - Duration::hours(3)).to_rfc3339();

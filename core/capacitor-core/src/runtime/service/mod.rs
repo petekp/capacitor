@@ -361,6 +361,7 @@ impl RuntimeServiceBootstrap {
             .map_err(|error| format!("Failed to write runtime service token: {error}"))?;
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))
             .map_err(|error| format!("Failed to set token file permissions: {error}"))?;
+        verify_credential_file_permissions(&path)?;
 
         let connection = RuntimeServiceConnection {
             port: self.port,
@@ -375,6 +376,7 @@ impl RuntimeServiceBootstrap {
         .map_err(|error| format!("Failed to write runtime service connection: {error}"))?;
         std::fs::set_permissions(&connection_path, std::fs::Permissions::from_mode(0o600))
             .map_err(|error| format!("Failed to set connection file permissions: {error}"))?;
+        verify_credential_file_permissions(&connection_path)?;
 
         Ok(RuntimeServiceTokenGuard {
             paths: vec![path, connection_path],
@@ -577,6 +579,48 @@ mod tests {
         let conn_metadata = std::fs::metadata(&conn_path).unwrap();
         assert_eq!(
             conn_metadata.permissions().mode() & 0o777,
+            0o600,
+            "Connection file should be 0600"
+        );
+    }
+
+    #[test]
+    fn write_token_file_verify_credential_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp = tempfile::tempdir().unwrap();
+        let bootstrap = RuntimeServiceBootstrap::new(7474, "test-token");
+
+        let _guard = bootstrap
+            .write_token_file(temp.path())
+            .expect("write_token_file should verify credential permissions");
+
+        let token_path = temp
+            .path()
+            .join(".capacitor/runtime/runtime-service-7474.token");
+        let connection_path = temp.path().join(".capacitor/runtime/runtime-service.json");
+
+        assert!(token_path.exists(), "Token file should exist");
+        assert!(connection_path.exists(), "Connection file should exist");
+        assert!(
+            super::verify_credential_file_permissions(&token_path).is_ok(),
+            "Token file should pass credential verification"
+        );
+        assert!(
+            super::verify_credential_file_permissions(&connection_path).is_ok(),
+            "Connection file should pass credential verification"
+        );
+
+        let token_metadata = std::fs::metadata(&token_path).unwrap();
+        assert_eq!(
+            token_metadata.permissions().mode() & 0o777,
+            0o600,
+            "Token file should be 0600"
+        );
+
+        let connection_metadata = std::fs::metadata(&connection_path).unwrap();
+        assert_eq!(
+            connection_metadata.permissions().mode() & 0o777,
             0o600,
             "Connection file should be 0600"
         );

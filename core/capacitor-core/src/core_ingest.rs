@@ -156,6 +156,10 @@ impl CoreRuntime {
         Ok(outcome)
     }
 
+    /// Accept an idea mutation command.
+    ///
+    /// STUB: logs the command and persists a version bump, but does not yet
+    /// mutate model state. Callers receive `ok: true` as acknowledgment.
     pub fn mutate_idea(
         &self,
         command: MutateIdeaCommand,
@@ -163,7 +167,7 @@ impl CoreRuntime {
         let mut state = self.lock_state()?;
         state.events_ingested = state.events_ingested.saturating_add(1);
         let message = format!(
-            "idea mutation accepted kind={:?} project_path={} idea_id={}",
+            "idea mutation accepted kind={:?} project_path={} idea_id={} (stub)",
             command.kind, command.project_path, command.idea_id
         );
         let outcome = MutationOutcome { ok: true, message };
@@ -174,6 +178,10 @@ impl CoreRuntime {
         Ok(outcome)
     }
 
+    /// Accept a worktree mutation command.
+    ///
+    /// STUB: logs the command and persists a version bump, but does not yet
+    /// mutate model state. Callers receive `ok: true` as acknowledgment.
     pub fn mutate_worktree(
         &self,
         command: MutateWorktreeCommand,
@@ -181,7 +189,7 @@ impl CoreRuntime {
         let mut state = self.lock_state()?;
         state.events_ingested = state.events_ingested.saturating_add(1);
         let message = format!(
-            "worktree mutation accepted kind={:?} repo_path={} worktree_name={} force={}",
+            "worktree mutation accepted kind={:?} repo_path={} worktree_name={} force={} (stub)",
             command.kind, command.repo_path, command.worktree_name, command.force
         );
         let outcome = MutationOutcome { ok: true, message };

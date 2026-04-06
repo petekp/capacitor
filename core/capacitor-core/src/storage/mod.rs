@@ -7,7 +7,8 @@ use std::path::{Path, PathBuf};
 use crate::domain::AppSnapshot;
 pub use observation_journal::{InMemoryObservationJournalStore, ObservationJournalStore};
 
-const CURRENT_SNAPSHOT_SCHEMA_VERSION: u32 = 1;
+/// Snapshot disk format version (incremented when AppSnapshot serialization changes).
+pub(crate) const CURRENT_SNAPSHOT_SCHEMA_VERSION: u32 = 1;
 
 pub trait SnapshotStorage: Send + Sync {
     fn load_snapshot(&self) -> Result<Option<AppSnapshot>, String>;
