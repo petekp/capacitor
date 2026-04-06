@@ -101,12 +101,6 @@ pub(crate) fn normalize_path_for_matching(path: &str) -> String {
 }
 
 #[must_use]
-pub fn normalize_path_for_comparison(path: &str) -> String {
-    let resolved = resolve_symlinks(path);
-    normalize_path_for_matching(&resolved)
-}
-
-#[must_use]
 pub(crate) fn default_workspace_id(project_path: &str) -> String {
     workspace_id(project_path, project_path)
 }
@@ -337,17 +331,6 @@ fn canonicalize_worktree_path(path: &Path, git_info: &GitInfo) -> PathBuf {
 
 fn canonicalize_path(path: &Path) -> PathBuf {
     std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
-}
-
-fn resolve_symlinks(path: &str) -> String {
-    let path_obj = Path::new(path);
-    if path_obj.exists() {
-        if let Ok(canonical) = path_obj.canonicalize() {
-            return canonical.to_string_lossy().to_string();
-        }
-    }
-
-    path.to_string()
 }
 
 fn path_to_string(path: &Path) -> String {

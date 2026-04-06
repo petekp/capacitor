@@ -103,19 +103,6 @@ fn atomic_write(path: &Path, contents: &str) -> Result<()> {
     Ok(())
 }
 
-/// Captures a new idea by appending it to the project's ideas file.
-///
-/// The idea is appended to the `## 🟣 Untriaged` section with default metadata:
-/// - Effort: unknown
-/// - Status: open
-/// - Triage: pending
-/// - Related: None
-///
-/// Returns the generated ULID for the idea.
-pub fn capture_idea(project_path: &str, idea_text: &str) -> Result<String> {
-    capture_idea_with_storage(&StorageConfig::default(), project_path, idea_text)
-}
-
 pub(crate) fn capture_idea_with_storage(
     storage: &StorageConfig,
     project_path: &str,
@@ -152,14 +139,6 @@ pub(crate) fn capture_idea_with_storage(
     Ok(id)
 }
 
-/// Loads all ideas from the project's ideas file.
-///
-/// Returns an empty vector if the file doesn't exist or has no ideas.
-/// Uses graceful defaults for missing metadata fields.
-pub fn load_ideas(project_path: &str) -> Result<Vec<Idea>> {
-    load_ideas_with_storage(&StorageConfig::default(), project_path)
-}
-
 pub(crate) fn load_ideas_with_storage(
     storage: &StorageConfig,
     project_path: &str,
@@ -175,13 +154,6 @@ pub(crate) fn load_ideas_with_storage(
         source: e,
     })?;
     parse_ideas_file(&content)
-}
-
-/// Updates the status of an idea by ID.
-///
-/// Finds the idea block by its ULID and updates the `- **Status:** ` line.
-pub fn update_idea_status(project_path: &str, idea_id: &str, new_status: &str) -> Result<()> {
-    update_idea_status_with_storage(&StorageConfig::default(), project_path, idea_id, new_status)
 }
 
 pub(crate) fn update_idea_status_with_storage(
@@ -206,11 +178,6 @@ pub(crate) fn update_idea_status_with_storage(
     Ok(())
 }
 
-/// Updates the effort estimate of an idea by ID.
-pub fn update_idea_effort(project_path: &str, idea_id: &str, new_effort: &str) -> Result<()> {
-    update_idea_effort_with_storage(&StorageConfig::default(), project_path, idea_id, new_effort)
-}
-
 pub(crate) fn update_idea_effort_with_storage(
     storage: &StorageConfig,
     project_path: &str,
@@ -233,11 +200,6 @@ pub(crate) fn update_idea_effort_with_storage(
     Ok(())
 }
 
-/// Updates the triage status of an idea by ID.
-pub fn update_idea_triage(project_path: &str, idea_id: &str, new_triage: &str) -> Result<()> {
-    update_idea_triage_with_storage(&StorageConfig::default(), project_path, idea_id, new_triage)
-}
-
 pub(crate) fn update_idea_triage_with_storage(
     storage: &StorageConfig,
     project_path: &str,
@@ -258,15 +220,6 @@ pub(crate) fn update_idea_triage_with_storage(
     atomic_write(&ideas_file, &updated)?;
 
     Ok(())
-}
-
-/// Updates the title of an idea by ID.
-///
-/// This is used for async title generation - the idea is initially saved with
-/// a placeholder title, then updated once the AI-generated title is ready.
-/// The title is sanitized to prevent file corruption from malformed input.
-pub fn update_idea_title(project_path: &str, idea_id: &str, new_title: &str) -> Result<()> {
-    update_idea_title_with_storage(&StorageConfig::default(), project_path, idea_id, new_title)
 }
 
 pub(crate) fn update_idea_title_with_storage(
@@ -294,23 +247,6 @@ pub(crate) fn update_idea_title_with_storage(
     Ok(())
 }
 
-/// Updates the description of an idea by ID.
-///
-/// This is used for sensemaking - the idea is initially saved with the raw user input,
-/// then the description is updated with an AI-generated expansion.
-pub fn update_idea_description(
-    project_path: &str,
-    idea_id: &str,
-    new_description: &str,
-) -> Result<()> {
-    update_idea_description_with_storage(
-        &StorageConfig::default(),
-        project_path,
-        idea_id,
-        new_description,
-    )
-}
-
 pub(crate) fn update_idea_description_with_storage(
     storage: &StorageConfig,
     project_path: &str,
@@ -331,17 +267,6 @@ pub(crate) fn update_idea_description_with_storage(
     atomic_write(&ideas_file, &updated)?;
 
     Ok(())
-}
-
-/// Saves the display order of ideas for a project.
-///
-/// The order is stored separately from idea content in `~/.capacitor/projects/{encoded}/ideas-order.json`.
-/// This prevents churning the ideas markdown file on every reorder.
-///
-/// Ideas not in the order list will be appended at the end when loading.
-/// IDs in the order list that don't exist will be ignored when loading.
-pub fn save_ideas_order(project_path: &str, idea_ids: Vec<String>) -> Result<()> {
-    save_ideas_order_with_storage(&StorageConfig::default(), project_path, idea_ids)
 }
 
 pub(crate) fn save_ideas_order_with_storage(
@@ -367,14 +292,6 @@ pub(crate) fn save_ideas_order_with_storage(
 
     atomic_write(&order_file, &json)?;
     Ok(())
-}
-
-/// Loads the display order of ideas for a project.
-///
-/// Returns an empty vector if the order file doesn't exist (graceful degradation).
-/// The caller should sort ideas by this order, appending any ideas not in the list.
-pub fn load_ideas_order(project_path: &str) -> Result<Vec<String>> {
-    load_ideas_order_with_storage(&StorageConfig::default(), project_path)
 }
 
 pub(crate) fn load_ideas_order_with_storage(

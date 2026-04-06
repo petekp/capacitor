@@ -191,11 +191,6 @@ impl Drop for RunLock {
     }
 }
 
-/// Check if a process with the given PID is alive.
-pub fn is_pid_alive(pid: u32) -> bool {
-    unsafe { libc::kill(pid as i32, 0) == 0 }
-}
-
 /// Get a simplified process start time (PID as u64 for tracer bullet).
 pub fn get_process_start_time() -> u64 {
     std::process::id() as u64
@@ -236,7 +231,7 @@ pub fn acquire_lock(lock_path: &Path, timeout: Duration) -> Result<RunLock, Lock
                 // Lock file exists — check if stale
                 if let Ok(content) = std::fs::read_to_string(lock_path) {
                     if let Ok(info) = serde_json::from_str::<LockInfo>(&content) {
-                        if !is_pid_alive(info.pid) {
+                        if unsafe { libc::kill(info.pid as i32, 0) != 0 } {
                             // Stale lock — remove and retry
                             let _ = std::fs::remove_file(lock_path);
                             continue;

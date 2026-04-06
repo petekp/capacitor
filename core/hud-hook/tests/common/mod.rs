@@ -148,44 +148,6 @@ impl ServerGuard {
         )
     }
 
-    /// Wait for the server's /health endpoint to respond, panics after timeout.
-    ///
-    /// Uses the health endpoint rather than raw TCP connect because the PID file
-    /// is written after bind but before the request loop starts. A successful
-    /// health response guarantees all server initialization is complete.
-    pub fn wait_ready(port: u16) {
-        let deadline = Instant::now() + Self::STARTUP_TIMEOUT;
-        while Instant::now() < deadline {
-            if let Ok((200, body)) = try_http_request(port, "GET", "/health", None) {
-                if body.contains("\"ok\"") {
-                    return;
-                }
-            }
-            std::thread::sleep(Self::STARTUP_POLL_INTERVAL);
-        }
-        panic!("Server on port {port} did not become healthy within 5s");
-    }
-
-    pub fn wait_ready_with_auth(port: u16, auth_token: &str) {
-        let deadline = Instant::now() + Self::STARTUP_TIMEOUT;
-        let header_value = format!("Bearer {auth_token}");
-        while Instant::now() < deadline {
-            if let Ok((200, body)) = try_http_request_with_headers(
-                port,
-                "GET",
-                "/health",
-                &[("Authorization", header_value.as_str())],
-                None,
-            ) {
-                if body.contains("\"ok\"") {
-                    return;
-                }
-            }
-            std::thread::sleep(Self::STARTUP_POLL_INTERVAL);
-        }
-        panic!("Server on port {port} did not become healthy within 5s");
-    }
-
     fn spawn_with_retry<I, Spawn, Wait>(ports: I, mut spawn: Spawn, mut wait: Wait) -> (Self, u16)
     where
         I: IntoIterator<Item = u16>,
