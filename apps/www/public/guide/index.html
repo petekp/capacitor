@@ -86,10 +86,10 @@
     <li><strong>Read from <code>~/.claude/</code></strong>&thinsp;&mdash;&thinsp;transcripts, configuration, plugin registries. This is Claude Code's namespace.</li>
     <li><strong>Write to <code>~/.capacitor/</code></strong>&thinsp;&mdash;&thinsp;runtime artifacts, logs, state files. This is our namespace.</li>
     <li><strong>Never call the Anthropic API</strong>&thinsp;&mdash;&thinsp;if we need to invoke Claude, we call the <code>claude</code> CLI.</li>
-    <li><strong>Never modify Claude's state</strong>&thinsp;&mdash;&thinsp;no writing to Claude's config, no injecting behavior.</li>
+    <li><strong>Never modify Claude's session state</strong>&thinsp;&mdash;&thinsp;no transcript rewriting, no runtime injection. The one deliberate exception is installing managed hook entries in <code>~/.claude/settings.json</code>.</li>
   </ul>
 
-  <p>This isn't just a design preference&thinsp;&mdash;&thinsp;it's the load-bearing constraint. Capacitor must work with any version of Claude Code, must not interfere with ongoing sessions, and must gracefully degrade if Claude Code changes its hook contract. The sidecar principle keeps us on the safe side of all three.</p>
+  <p>This isn't just a design preference&thinsp;&mdash;&thinsp;it's the load-bearing constraint. Capacitor must work with any version of Claude Code, must not interfere with ongoing sessions, and must gracefully degrade if Claude Code changes its hook contract. The sidecar principle keeps us on the safe side of all three while still allowing one installation-time handshake back into Claude Code's config: managed hook entries in <code>~/.claude/settings.json</code>.</p>
 
   <p>The practical consequence is a clean data flow: Claude Code fires lifecycle hooks &rarr; Capacitor's Rust core ingests and reduces them into a world model &rarr; Swift reads that model and renders the UI. Information flows one direction, from Claude's namespace into ours, never the reverse.</p>
 </section>

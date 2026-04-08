@@ -228,11 +228,11 @@ final class SessionStateManagerTests: XCTestCase {
 
         // Active again — counter should reset
         manager.applyRuntimeProjectStates(
-            [makeRuntimeProjectState(projectPath: project.path, state: "ready", sessionId: "session-2")],
+            [makeRuntimeProjectState(projectPath: project.path, state: "waiting", sessionId: "session-2")],
             for: [project],
             correlationId: "idle-reset-3",
         )
-        XCTAssertEqual(manager.getSessionState(for: project)?.state, .ready)
+        XCTAssertEqual(manager.getSessionState(for: project)?.state, .waiting)
 
         // First idle again after reset — should be held (counter was reset)
         manager.applyRuntimeProjectStates(
@@ -242,7 +242,7 @@ final class SessionStateManagerTests: XCTestCase {
         )
         XCTAssertEqual(
             manager.getSessionState(for: project)?.state,
-            .ready,
+            .waiting,
             "After reset, the first idle snapshot should be held again.",
         )
     }
@@ -307,6 +307,146 @@ final class SessionStateManagerTests: XCTestCase {
             manager.getPreferredSessionId(for: projectB),
             "b-2",
             "Project B metadata should continue to update even when Project A is held.",
+        )
+    }
+
+    // MARK: - Working→Ready Stabilization (Hysteresis)
+
+    func testReadyStabilizationCommitsAfterThreshold() {
+        let manager = makeManager()
+        let project = makeProject("my-project", path: "/tmp/my-project")
+
+        // Establish Working state
+        manager.applyRuntimeProjectStates(
+            [makeRuntimeProjectState(projectPath: project.path, state: "working", sessionId: "session-1")],
+            for: [project],
+            correlationId: "ready-commit-1",
+        )
+        XCTAssertEqual(manager.getSessionState(for: project)?.state, .working)
+
+        // First Ready — held
+        manager.applyRuntimeProjectStates(
+            [makeRuntimeProjectState(projectPath: project.path, state: "ready", sessionId: "session-1")],
+            for: [project],
+            correlationId: "ready-commit-2",
+        )
+        XCTAssertEqual(
+            manager.getSessionState(for: project)?.state,
+            .working,
+            "First Ready snapshot after Working should be held.",
+        )
+
+        // Second Ready — committed
+        manager.applyRuntimeProjectStates(
+            [makeRuntimeProjectState(projectPath: project.path, state: "ready", sessionId: "session-1")],
+            for: [project],
+            correlationId: "ready-commit-3",
+        )
+        XCTAssertEqual(
+            manager.getSessionState(for: project)?.state,
+            .ready,
+            "Second consecutive Ready snapshot should commit the transition.",
+        )
+    }
+
+    func testReadyStabilizationResetsOnWorking() {
+        let manager = makeManager()
+        let project = makeProject("my-project", path: "/tmp/my-project")
+
+        // Establish Working state
+        manager.applyRuntimeProjectStates(
+            [makeRuntimeProjectState(projectPath: project.path, state: "working", sessionId: "session-1")],
+            for: [project],
+            correlationId: "ready-reset-1",
+        )
+
+        // First Ready — held
+        manager.applyRuntimeProjectStates(
+            [makeRuntimeProjectState(projectPath: project.path, state: "ready", sessionId: "session-1")],
+            for: [project],
+            correlationId: "ready-reset-2",
+        )
+        XCTAssertEqual(manager.getSessionState(for: project)?.state, .working)
+
+        // Back to Working — counter should reset
+        manager.applyRuntimeProjectStates(
+            [makeRuntimeProjectState(projectPath: project.path, state: "working", sessionId: "session-1")],
+            for: [project],
+            correlationId: "ready-reset-3",
+        )
+        XCTAssertEqual(manager.getSessionState(for: project)?.state, .working)
+
+        // First Ready again — should be held (counter was reset)
+        manager.applyRuntimeProjectStates(
+            [makeRuntimeProjectState(projectPath: project.path, state: "ready", sessionId: "session-1")],
+            for: [project],
+            correlationId: "ready-reset-4",
+        )
+        XCTAssertEqual(
+            manager.getSessionState(for: project)?.state,
+            .working,
+            "After reset, the first Ready snapshot should be held again.",
+        )
+    }
+
+    func testReadyStabilizationOnlyAppliesFromWorking() {
+        let manager = makeManager()
+        let project = makeProject("my-project", path: "/tmp/my-project")
+
+        // Establish idle state (not Working)
+        manager.applyRuntimeProjectStates(
+            [makeRuntimeProjectState(projectPath: project.path, state: "idle", sessionId: nil)],
+            for: [project],
+            correlationId: "ready-noop-1",
+        )
+
+        // Ready — should commit immediately (previous state was idle, not working)
+        manager.applyRuntimeProjectStates(
+            [makeRuntimeProjectState(projectPath: project.path, state: "ready", sessionId: "session-1")],
+            for: [project],
+            correlationId: "ready-noop-2",
+        )
+        XCTAssertEqual(
+            manager.getSessionState(for: project)?.state,
+            .ready,
+            "Ready should commit immediately when previous state was not Working.",
+        )
+    }
+
+    func testReadyStabilizationDoesNotAffectOtherProjects() {
+        let manager = makeManager()
+        let projectA = makeProject("project-a", path: "/tmp/project-a")
+        let projectB = makeProject("project-b", path: "/tmp/project-b")
+        let projects = [projectA, projectB]
+
+        // Both Working
+        manager.applyRuntimeProjectStates(
+            [
+                makeRuntimeProjectState(projectPath: projectA.path, state: "working", sessionId: "a-1"),
+                makeRuntimeProjectState(projectPath: projectB.path, state: "working", sessionId: "b-1"),
+            ],
+            for: projects,
+            correlationId: "ready-multi-1",
+        )
+
+        // A goes Ready (held), B stays Working
+        manager.applyRuntimeProjectStates(
+            [
+                makeRuntimeProjectState(projectPath: projectA.path, state: "ready", sessionId: "a-1"),
+                makeRuntimeProjectState(projectPath: projectB.path, state: "working", sessionId: "b-1"),
+            ],
+            for: projects,
+            correlationId: "ready-multi-2",
+        )
+        XCTAssertEqual(
+            manager.getSessionState(for: projectA)?.state,
+            .working,
+            "Project A's Ready should be held.",
+        )
+        XCTAssertEqual(
+            manager.getSessionState(for: projectB)?.state,
+            .working,
+            "Project B should remain unaffected.",
         )
     }
 

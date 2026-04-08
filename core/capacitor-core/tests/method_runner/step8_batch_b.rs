@@ -307,11 +307,11 @@ fn cli_interactive_io_reject() {
 }
 
 // ============================================================================
-// Slice 7: CLI adapter — response-file flag
+// Slice 7: file-backed helper adapter
 // ============================================================================
 
 #[test]
-fn cli_interactive_io_response_file() {
+fn cli_interactive_io_response_file_helper() {
     let tmp = tempfile::TempDir::new().unwrap();
 
     // Write a response file
@@ -325,7 +325,7 @@ fn cli_interactive_io_response_file() {
 
     let cli_io = CliInteractiveIO::from_file(response_file);
     let state = execute_run(&source, &FakePromptBuilder, &FakeWorkerDispatcher, &cli_io)
-        .expect("run should succeed with --response-file");
+        .expect("run should succeed with the file-backed helper adapter");
 
     assert_eq!(state.status, RunStatus::Completed);
 

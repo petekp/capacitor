@@ -2,7 +2,7 @@
 # dispatch.sh — Backend-agnostic dispatch for Circuit workers
 #
 # Detects whether Codex CLI is available and dispatches accordingly.
-# When Codex is installed, uses `codex exec --full-auto`.
+# When Codex is installed, uses `codex exec --full-auto --ephemeral`.
 # When Codex is not installed, emits an Agent tool invocation that the
 # orchestrator (Claude) should execute directly.
 #
@@ -15,7 +15,7 @@
 #   --backend MODE   — Force dispatch engine (optional; auto-detects if omitted)
 #
 #   Built-in engines:
-#     codex   — Codex CLI (`codex exec --full-auto`)
+#     codex   — Codex CLI (`codex exec --full-auto --ephemeral`)
 #     agent   — Claude Code Agent tool (isolation: "worktree")
 #
 #   Custom engines:
@@ -103,7 +103,7 @@ case "$BACKEND" in
       echo "Install with: npm install -g @openai/codex" >&2
       exit 1
     fi
-    cat "$PROMPT" | codex exec --full-auto -o "$OUTPUT" -
+    cat "$PROMPT" | codex exec --full-auto --ephemeral -o "$OUTPUT" -
     ;;
 
   agent)
@@ -130,13 +130,20 @@ AGENT_INSTRUCTIONS
 
   *)
     # Treat any other value as a custom command.
-    # The command receives the prompt file as $1 and output path as $2.
-    CMD_NAME="${BACKEND%% *}"
-    if ! command -v "$CMD_NAME" >/dev/null 2>&1 && [[ ! -x "$CMD_NAME" ]]; then
-      echo "ERROR: custom dispatch engine not found: $CMD_NAME" >&2
-      echo "Ensure the command exists and is executable." >&2
-      exit 1
+    # If the backend string itself is an executable path, run it directly so
+    # paths containing spaces still work. Otherwise treat it as a command line
+    # and split it into argv like the existing shipped contract expects.
+    if [[ -x "$BACKEND" ]]; then
+      "$BACKEND" "$PROMPT" "$OUTPUT"
+    else
+      read -r -a BACKEND_ARGS <<< "$BACKEND"
+      CMD_NAME="${BACKEND_ARGS[0]}"
+      if ! command -v "$CMD_NAME" >/dev/null 2>&1 && [[ ! -x "$CMD_NAME" ]]; then
+        echo "ERROR: custom dispatch engine not found: $CMD_NAME" >&2
+        echo "Ensure the command exists and is executable." >&2
+        exit 1
+      fi
+      "${BACKEND_ARGS[@]}" "$PROMPT" "$OUTPUT"
     fi
-    $BACKEND "$PROMPT" "$OUTPUT"
     ;;
 esac

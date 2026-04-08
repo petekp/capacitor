@@ -719,3 +719,76 @@ fn t12_context_file_malformed_json_falls_back_gracefully() {
         header
     );
 }
+
+#[test]
+fn t30_preflight_uses_env_override_skill_and_template_dirs() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path().join("home");
+    let relay_root = tmp.path().join("relay");
+    let custom_skill_dir = tmp.path().join("custom-skill-dir");
+    let custom_template_dir = tmp.path().join("custom-template-dir");
+
+    std::fs::create_dir_all(home.join(".claude")).unwrap();
+    std::fs::create_dir_all(custom_skill_dir.join("custom-skill")).unwrap();
+    std::fs::create_dir_all(&custom_template_dir).unwrap();
+
+    std::fs::write(
+        custom_skill_dir.join("custom-skill/SKILL.md"),
+        "# Custom Skill\nResolved from env override.\n",
+    )
+    .unwrap();
+    std::fs::write(
+        custom_template_dir.join("implement-template.md"),
+        "# Custom Template\nResolved from env override.\n",
+    )
+    .unwrap();
+    std::fs::write(
+        custom_template_dir.join("relay-protocol.md"),
+        "### Files Changed\n- placeholder\n\n### Tests Run\n- placeholder\n\n### Completion Claim\nCOMPLETE\n",
+    )
+    .unwrap();
+
+    let _home_guard = lock_and_set_home(&home);
+    let codex = create_fake_codex(tmp.path());
+    let mut config = AdapterConfig::new(
+        compose_script_path(),
+        codex,
+        home.clone(),
+        Duration::from_secs(300),
+        Duration::from_secs(5),
+    )
+    .unwrap();
+    config.env_overrides = vec![
+        (
+            "CIRCUIT_PLUGIN_SKILL_DIR".into(),
+            custom_skill_dir.to_string_lossy().into_owned(),
+        ),
+        (
+            "CIRCUIT_PLUGIN_CODEX_DIR".into(),
+            custom_template_dir.to_string_lossy().into_owned(),
+        ),
+    ];
+
+    let builder = ShellPromptBuilder::new(config);
+    let request = PromptBuildRequest {
+        phase_id: "p1".into(),
+        step_id: "s1".into(),
+        attempt: 1,
+        relay_root,
+        instructions: "Use the override directories.".into(),
+        template: Some("implement".into()),
+        skills: vec!["custom-skill".into()],
+        context_file: None,
+    };
+
+    let result = builder.build_prompt(&request).unwrap();
+    let prompt = std::fs::read_to_string(&result.prompt_path).unwrap();
+    assert!(
+        prompt.contains("Custom Skill"),
+        "prompt should use override skill"
+    );
+    assert!(
+        prompt.contains("Custom Template"),
+        "prompt should use override template"
+    );
+}

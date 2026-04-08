@@ -561,20 +561,45 @@ fn test_idle_prompt_corrects_drift_without_hiding_live_work() {
 }
 
 #[test]
-fn test_idle_prompt_no_tools_still_ready() {
+fn idle_prompt_skips_when_session_recently_active() {
     let mut state = ReducerState::default();
 
+    let _ = state.apply_hook_event(event_base(HookEventType::SessionStart));
     let _ = state.apply_hook_event(event_base(HookEventType::UserPromptSubmit));
 
     let mut notification = event_base(HookEventType::Notification);
     notification.notification_type = Some("idle_prompt".to_string());
-    notification.recorded_at = "2099-01-31T00:00:01Z".to_string();
+    notification.recorded_at = "2099-01-31T00:00:02Z".to_string();
+
+    let applied = state.apply_hook_event(notification);
+    assert_eq!(
+        applied.message,
+        "event skipped: idle_prompt_recent_activity"
+    );
+    assert_eq!(
+        state.sessions.get("session-1").map(|session| session.state),
+        Some(SessionState::Working),
+        "idle_prompt should skip when session is recently active"
+    );
+}
+
+#[test]
+fn idle_prompt_transitions_to_ready_when_stale() {
+    let mut state = ReducerState::default();
+
+    let _ = state.apply_hook_event(event_base(HookEventType::SessionStart));
+    let _ = state.apply_hook_event(event_base(HookEventType::UserPromptSubmit));
+
+    let mut notification = event_base(HookEventType::Notification);
+    notification.notification_type = Some("idle_prompt".to_string());
+    notification.recorded_at = "2099-01-31T00:00:15Z".to_string();
 
     let applied = state.apply_hook_event(notification);
     assert!(applied.ok);
     assert_eq!(
         state.sessions.get("session-1").map(|session| session.state),
-        Some(SessionState::Ready)
+        Some(SessionState::Ready),
+        "idle_prompt should transition when session is stale"
     );
 }
 
@@ -603,7 +628,7 @@ fn test_idle_prompt_transitions_to_ready_after_drift_correction() {
 
     let mut second_idle = event_base(HookEventType::Notification);
     second_idle.notification_type = Some("idle_prompt".to_string());
-    second_idle.recorded_at = "2099-01-31T00:00:02Z".to_string();
+    second_idle.recorded_at = "2099-01-31T00:00:10Z".to_string();
     let applied = state.apply_hook_event(second_idle);
     assert!(applied.ok);
     assert_eq!(
@@ -667,45 +692,64 @@ fn test_subagent_start_sets_working() {
 }
 
 #[test]
-fn subagent_stop_skips_when_working_with_no_tools_in_flight() {
+fn subagent_stop_refreshes_when_recently_active() {
     let mut state = ReducerState::default();
 
-    let _ = state.apply_hook_event(event_base(HookEventType::PreToolUse));
-
-    let mut post = event_base(HookEventType::PostToolUse);
-    post.event_id = "evt-2".to_string();
-    post.recorded_at = "2099-01-31T00:00:01Z".to_string();
-    let _ = state.apply_hook_event(post);
-
-    // Capture updated_at after PostToolUse — SubagentStop should not refresh it.
-    let updated_at_before = state
-        .sessions
-        .get("session-1")
-        .map(|s| s.updated_at.clone())
-        .unwrap();
+    let _ = state.apply_hook_event(event_base(HookEventType::SessionStart));
+    let _ = state.apply_hook_event(event_base(HookEventType::UserPromptSubmit));
 
     let mut stop = event_base(HookEventType::SubagentStop);
-    stop.event_id = "evt-3".to_string();
+    stop.event_id = "evt-2".to_string();
+    stop.agent_id = Some("agent-1".to_string());
     stop.recorded_at = "2099-01-31T00:00:02Z".to_string();
 
     let outcome = state.apply_hook_event(stop);
 
-    // Skip: preserves Working without refreshing the staleness clock.
+    assert!(outcome.ok, "{outcome:?}");
+    assert_eq!(
+        state.sessions.get("session-1").map(|session| session.state),
+        Some(SessionState::Working)
+    );
+    assert_eq!(
+        state
+            .sessions
+            .get("session-1")
+            .map(|session| session.updated_at.as_str()),
+        Some("2099-01-31T00:00:02Z"),
+        "updated_at should be refreshed when recently active"
+    );
+}
+
+#[test]
+fn subagent_stop_skips_when_stale() {
+    let mut state = ReducerState::default();
+
+    let _ = state.apply_hook_event(event_base(HookEventType::SessionStart));
+    let _ = state.apply_hook_event(event_base(HookEventType::UserPromptSubmit));
+
+    let mut stop = event_base(HookEventType::SubagentStop);
+    stop.event_id = "evt-2".to_string();
+    stop.agent_id = Some("agent-1".to_string());
+    stop.recorded_at = "2099-01-31T00:00:15Z".to_string();
+
+    let outcome = state.apply_hook_event(stop);
+
     assert_eq!(
         outcome.message,
-        "event skipped: subagent_stop_working_no_tools"
+        "event skipped: subagent_stop_working_no_tools_stale"
     );
     assert_eq!(
         state.sessions.get("session-1").map(|session| session.state),
         Some(SessionState::Working)
     );
-    // updated_at must NOT have been refreshed.
-    let updated_at_after = state
-        .sessions
-        .get("session-1")
-        .map(|s| s.updated_at.clone())
-        .unwrap();
-    assert_eq!(updated_at_before, updated_at_after);
+    assert_eq!(
+        state
+            .sessions
+            .get("session-1")
+            .map(|session| session.updated_at.as_str()),
+        Some("2099-01-31T00:00:00Z"),
+        "updated_at should not be refreshed when stale"
+    );
 }
 
 #[test]
@@ -747,7 +791,7 @@ fn subagent_stop_preserves_working_with_parallel_agents() {
     second_post.recorded_at = "2099-01-31T00:00:04Z".to_string();
     let _ = state.apply_hook_event(second_post);
 
-    // Capture timestamp — final SubagentStop should Skip and not refresh it.
+    // Capture timestamp before the last agent stops.
     let updated_at_before = state
         .sessions
         .get("session-1")
@@ -760,11 +804,7 @@ fn subagent_stop_preserves_working_with_parallel_agents() {
 
     let outcome = state.apply_hook_event(final_stop);
 
-    // Last agent: tools_in_flight == 0, so Skip (don't refresh staleness clock).
-    assert_eq!(
-        outcome.message,
-        "event skipped: subagent_stop_working_no_tools"
-    );
+    assert_eq!(outcome.message, "event ingested");
     assert_eq!(
         state.sessions.get("session-1").map(|session| session.state),
         Some(SessionState::Working)
@@ -781,7 +821,8 @@ fn subagent_stop_preserves_working_with_parallel_agents() {
         .get("session-1")
         .map(|s| s.updated_at.clone())
         .unwrap();
-    assert_eq!(updated_at_before, updated_at_after);
+    assert_ne!(updated_at_before, updated_at_after);
+    assert_eq!(updated_at_after, "2099-01-31T00:00:05Z");
 }
 
 #[test]
@@ -1101,7 +1142,7 @@ fn reducer_tracks_shell_signals() {
 }
 
 #[test]
-fn test_informational_events_have_distinct_skip_reasons() {
+fn test_skip_reasons_for_informational_and_sessionless_events_are_distinct() {
     let mut state = ReducerState::default();
 
     let cases = [
@@ -1111,7 +1152,7 @@ fn test_informational_events_have_distinct_skip_reasons() {
         ),
         (
             HookEventType::WorktreeCreate,
-            "event skipped: worktree_create_informational",
+            "event skipped: worktree_create_no_session",
         ),
         (
             HookEventType::WorktreeRemove,
@@ -1119,7 +1160,7 @@ fn test_informational_events_have_distinct_skip_reasons() {
         ),
         (
             HookEventType::ConfigChange,
-            "event skipped: config_change_informational",
+            "event skipped: config_change_no_session",
         ),
         (HookEventType::Unknown, "event skipped: unknown_event_type"),
     ];
@@ -1132,6 +1173,74 @@ fn test_informational_events_have_distinct_skip_reasons() {
         let outcome = state.apply_hook_event(event);
         assert_eq!(outcome.message, expected_message);
     }
+}
+
+#[test]
+fn worktree_create_refreshes_timestamps() {
+    let mut state = ReducerState::default();
+
+    let _ = state.apply_hook_event(event_base(HookEventType::SessionStart));
+    let _ = state.apply_hook_event(event_base(HookEventType::UserPromptSubmit));
+
+    let mut worktree = event_base(HookEventType::WorktreeCreate);
+    worktree.event_id = "evt-worktree-refresh".to_string();
+    worktree.recorded_at = "2099-01-31T00:00:05Z".to_string();
+
+    let outcome = state.apply_hook_event(worktree);
+
+    assert_eq!(outcome.message, "event ingested");
+    assert_eq!(
+        state.sessions.get("session-1").map(|session| session.state),
+        Some(SessionState::Working),
+        "State should be preserved"
+    );
+    assert_eq!(
+        state
+            .sessions
+            .get("session-1")
+            .map(|session| session.updated_at.as_str()),
+        Some("2099-01-31T00:00:05Z"),
+        "Timestamp should be refreshed"
+    );
+}
+
+#[test]
+fn config_change_refreshes_timestamps() {
+    let mut state = ReducerState::default();
+
+    let _ = state.apply_hook_event(event_base(HookEventType::SessionStart));
+    let _ = state.apply_hook_event(event_base(HookEventType::UserPromptSubmit));
+
+    let mut config_change = event_base(HookEventType::ConfigChange);
+    config_change.event_id = "evt-config-refresh".to_string();
+    config_change.recorded_at = "2099-01-31T00:00:05Z".to_string();
+
+    let outcome = state.apply_hook_event(config_change);
+
+    assert_eq!(outcome.message, "event ingested");
+    assert_eq!(
+        state.sessions.get("session-1").map(|session| session.state),
+        Some(SessionState::Working),
+        "State should be preserved"
+    );
+    assert_eq!(
+        state
+            .sessions
+            .get("session-1")
+            .map(|session| session.updated_at.as_str()),
+        Some("2099-01-31T00:00:05Z"),
+        "Timestamp should be refreshed"
+    );
+}
+
+#[test]
+fn worktree_create_skips_when_no_session() {
+    let mut state = ReducerState::default();
+
+    let outcome = state.apply_hook_event(event_base(HookEventType::WorktreeCreate));
+
+    assert_eq!(outcome.message, "event skipped: worktree_create_no_session");
+    assert!(!state.sessions.contains_key("session-1"));
 }
 
 #[test]
@@ -1272,7 +1381,7 @@ fn test_reducer_17_event_contract_matrix() {
             setup: Some(HookEventType::UserPromptSubmit),
             notification_type: None,
             expected_state: None,
-            expected_skip_reason: Some("subagent_stop_working_no_tools"),
+            expected_skip_reason: Some("subagent_stop_working_no_tools_stale"),
             description: "subagent_stop (from Working, no tools)",
         },
         EventExpectation {
@@ -1343,8 +1452,8 @@ fn test_reducer_17_event_contract_matrix() {
             event_type: HookEventType::WorktreeCreate,
             setup: Some(HookEventType::UserPromptSubmit),
             notification_type: None,
-            expected_state: None,
-            expected_skip_reason: Some("worktree_create_informational"),
+            expected_state: Some(SessionState::Working),
+            expected_skip_reason: None,
             description: "worktree_create",
         },
         EventExpectation {
@@ -1359,8 +1468,8 @@ fn test_reducer_17_event_contract_matrix() {
             event_type: HookEventType::ConfigChange,
             setup: Some(HookEventType::UserPromptSubmit),
             notification_type: None,
-            expected_state: None,
-            expected_skip_reason: Some("config_change_informational"),
+            expected_state: Some(SessionState::Working),
+            expected_skip_reason: None,
             description: "config_change",
         },
         EventExpectation {
@@ -2726,7 +2835,7 @@ fn snapshot_omits_expired_shells() {
 
 #[test]
 fn snapshot_populates_session_is_alive_from_cleaned_shells() {
-    // Use a past timestamp so the hook-activity fallback (60s) does not interfere.
+    // Use a past timestamp so the hook-activity fallback (180s) does not interfere.
     let now = chrono::DateTime::parse_from_rfc3339("2020-01-01T12:00:00Z")
         .unwrap()
         .with_timezone(&Utc);
@@ -2740,7 +2849,7 @@ fn snapshot_populates_session_is_alive_from_cleaned_shells() {
                 "/repo-a",
                 "/repo-a",
                 SessionState::Idle,
-                &(now - Duration::minutes(1)).to_rfc3339(),
+                &(now - Duration::minutes(4)).to_rfc3339(),
             ),
             session_summary_fixture(
                 "dead-session",
@@ -2748,12 +2857,12 @@ fn snapshot_populates_session_is_alive_from_cleaned_shells() {
                 "/repo-b",
                 "/repo-b",
                 SessionState::Idle,
-                &(now - Duration::minutes(1)).to_rfc3339(),
+                &(now - Duration::minutes(4)).to_rfc3339(),
             ),
         ],
         shells: vec![
             ShellSignal {
-                updated_at: (now - Duration::minutes(1)).to_rfc3339(),
+                updated_at: (now - Duration::minutes(4)).to_rfc3339(),
                 ..shell_signal_fixture(11, "/repo-a")
             },
             ShellSignal {
@@ -2802,7 +2911,7 @@ fn snapshot_populates_session_is_alive_from_cleaned_shells() {
 fn session_is_alive_via_shell_cwd_matching() {
     // Use a controlled `now` and test via gc_stale_sessions_at (which accepts
     // explicit time) rather than snapshot() (which uses Utc::now()).
-    // Session updated_at is 1 minute before `now` — outside the 60s hook-activity
+    // Session updated_at is 4 minutes before `now` — outside the 180s hook-activity
     // fallback — so only CWD matching determines is_alive.
     fn gc_is_alive(shell_cwd: &str) -> bool {
         let now = chrono::DateTime::parse_from_rfc3339("2020-01-01T12:00:00Z")
@@ -2816,7 +2925,7 @@ fn session_is_alive_via_shell_cwd_matching() {
                 "/users/pete/code/myproject",
                 "/users/pete/code/myproject",
                 SessionState::Working,
-                &(now - Duration::minutes(2)).to_rfc3339(),
+                &(now - Duration::minutes(4)).to_rfc3339(),
             )],
             vec![],
         );
@@ -3090,26 +3199,37 @@ fn diagnostics_tracks_skip_counters() {
     let outcome = state.apply_hook_event(stale);
     assert_eq!(outcome.message, "stale event skipped");
 
-    // 2) Informational event → informational_events_skipped
+    // 2) Config changes now refresh the session instead of being skipped
     let mut config_change = event_base(HookEventType::ConfigChange);
     config_change.recorded_at = "2099-01-31T00:00:01Z".to_string();
     let outcome = state.apply_hook_event(config_change);
-    assert!(outcome.message.contains("config_change_informational"));
+    assert_eq!(outcome.message, "event ingested");
 
-    // 3) Another informational event to prove counting
+    // 3) Worktree creates also refresh the session instead of being skipped
     let mut worktree = event_base(HookEventType::WorktreeCreate);
     worktree.recorded_at = "2099-01-31T00:00:02Z".to_string();
     let outcome = state.apply_hook_event(worktree);
-    assert!(outcome.message.contains("worktree_create_informational"));
+    assert_eq!(outcome.message, "event ingested");
 
-    // 4) Idle prompt while tools are drifted in flight should self-correct
+    // 4) Informational events still count when they genuinely skip
+    let mut teammate_idle = event_base(HookEventType::TeammateIdle);
+    teammate_idle.recorded_at = "2099-01-31T00:00:03Z".to_string();
+    let outcome = state.apply_hook_event(teammate_idle);
+    assert!(outcome.message.contains("teammate_idle_informational"));
+
+    let mut worktree_remove = event_base(HookEventType::WorktreeRemove);
+    worktree_remove.recorded_at = "2099-01-31T00:00:04Z".to_string();
+    let outcome = state.apply_hook_event(worktree_remove);
+    assert!(outcome.message.contains("worktree_remove_informational"));
+
+    // 5) Idle prompt while tools are drifted in flight should self-correct
     let mut pre_tool = event_base(HookEventType::PreToolUse);
-    pre_tool.recorded_at = "2099-01-31T00:00:03Z".to_string();
+    pre_tool.recorded_at = "2099-01-31T00:00:05Z".to_string();
     let _ = state.apply_hook_event(pre_tool);
 
     let mut idle = event_base(HookEventType::Notification);
     idle.notification_type = Some("idle_prompt".to_string());
-    idle.recorded_at = "2099-01-31T00:00:04Z".to_string();
+    idle.recorded_at = "2099-01-31T00:00:06Z".to_string();
     let outcome = state.apply_hook_event(idle);
     assert_eq!(outcome.message, "event ingested");
     assert_eq!(

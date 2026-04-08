@@ -80,7 +80,7 @@ Requires Rust-side runtime contract extension to expose `past_checkpoints: Vec<C
 
 ### 4. Production hardening — CLOSED
 
-`MethodRunCoordinator` hardened with: configurable timeout parameter (default 1800s), graceful SIGTERM → SIGKILL escalation with 5s grace period, expanded stderr buffer (30 → 100 lines), and cancel mutation writes `cancelled` status instead of `failed`.
+`MethodRunCoordinator` hardened with: configurable timeout parameter (default 1800s), graceful SIGTERM → SIGKILL escalation with 5s grace period, async-safe process tracking for Swift 6.2, expanded stderr buffer (30 → 100 lines), and cancel mutation writes `cancelled` status instead of `failed`.
 
 ---
 

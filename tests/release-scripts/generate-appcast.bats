@@ -42,7 +42,7 @@ assert_appcast_created() {
     [ "$status" -eq 0 ]
 }
 
-@test "generate-appcast --sign falls back to unsigned output when sign_update fails" {
+@test "generate-appcast --sign exits non-zero when sign_update fails" {
     require_arm64
 
     mkdir -p "$TEST_DIR/apps/swift/.build/artifacts/sparkle/Sparkle/bin"
@@ -54,10 +54,27 @@ EOF
     chmod +x "$TEST_DIR/apps/swift/.build/artifacts/sparkle/Sparkle/bin/sign_update"
 
     run env CI=1 "$TEST_DIR/scripts/release/generate-appcast.sh" --sign
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"sign_update failed"* ]]
+    [ ! -f "$TEST_DIR/dist/appcast.xml" ]
+}
+
+@test "generate-appcast --sign embeds sparkle:edSignature when sign_update succeeds" {
+    require_arm64
+
+    mkdir -p "$TEST_DIR/apps/swift/.build/artifacts/sparkle/Sparkle/bin"
+    cat > "$TEST_DIR/apps/swift/.build/artifacts/sparkle/Sparkle/bin/sign_update" <<'EOF'
+#!/bin/bash
+echo 'sparkle:edSignature="signed-value-123"'
+exit 0
+EOF
+    chmod +x "$TEST_DIR/apps/swift/.build/artifacts/sparkle/Sparkle/bin/sign_update"
+
+    run env CI=1 "$TEST_DIR/scripts/release/generate-appcast.sh" --sign
     [ "$status" -eq 0 ]
     assert_appcast_created
-    [[ "$output" == *"Signed: No"* ]]
+    [[ "$output" == *"Signed: Yes (EdDSA)"* ]]
 
-    run grep -q "sparkle:edSignature=" "$TEST_DIR/dist/appcast.xml"
-    [ "$status" -eq 1 ]
+    run grep -q 'sparkle:edSignature="signed-value-123"' "$TEST_DIR/dist/appcast.xml"
+    [ "$status" -eq 0 ]
 }

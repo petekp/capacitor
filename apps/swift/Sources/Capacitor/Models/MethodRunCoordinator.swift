@@ -1,4 +1,6 @@
+import Darwin
 import Foundation
+import os
 
 /// Coordinates the lifecycle of method-runner subprocess invocations.
 ///
@@ -15,8 +17,7 @@ final class MethodRunCoordinator: @unchecked Sendable {
     private let capacitorRoot: String
 
     /// Active processes keyed by runID, for crash detection and cleanup.
-    private let lock = NSLock()
-    private var activeProcesses: [String: Process] = [:]
+    private let activeProcesses = OSAllocatedUnfairLock<[String: Process]>(initialState: [:])
     /// Default timeout for method-runner subprocess dispatch, in seconds.
     /// 30 minutes allows real implementation tasks (with full test suites) to complete.
     static let defaultTimeoutSeconds = 1800
@@ -86,9 +87,9 @@ final class MethodRunCoordinator: @unchecked Sendable {
         env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:" + (env["PATH"] ?? "")
         process.environment = env
 
-        lock.lock()
-        activeProcesses[runID] = process
-        lock.unlock()
+        activeProcesses.withLock { processes in
+            processes[runID] = process
+        }
 
         let stderrBuffer = ProcessLineBuffer(limit: 100)
 
@@ -109,9 +110,9 @@ final class MethodRunCoordinator: @unchecked Sendable {
         do {
             try process.run()
         } catch {
-            lock.lock()
-            activeProcesses.removeValue(forKey: runID)
-            lock.unlock()
+            _ = activeProcesses.withLock { processes in
+                processes.removeValue(forKey: runID)
+            }
             DebugLog.write(
                 "MethodRunCoordinator.startRun launch failure runID=\(runID) error=\(error.localizedDescription)",
             )
@@ -128,9 +129,9 @@ final class MethodRunCoordinator: @unchecked Sendable {
         drainTask.cancel()
         stdoutDrainTask.cancel()
 
-        lock.lock()
-        activeProcesses.removeValue(forKey: runID)
-        lock.unlock()
+        _ = activeProcesses.withLock { processes in
+            processes.removeValue(forKey: runID)
+        }
 
         let exitCode = process.terminationStatus
         let stderrTail = await stderrBuffer.lines()
@@ -188,9 +189,9 @@ final class MethodRunCoordinator: @unchecked Sendable {
 
     /// Cancel a running method run with graceful SIGTERM → SIGKILL escalation.
     func cancelRun(runID: String, projectPath: String? = nil) {
-        lock.lock()
-        let process = activeProcesses[runID]
-        lock.unlock()
+        let process = activeProcesses.withLock { processes in
+            processes[runID]
+        }
 
         guard let process, process.isRunning else { return }
 
@@ -200,12 +201,16 @@ final class MethodRunCoordinator: @unchecked Sendable {
         // Escalate to SIGKILL after grace period if still running
         DispatchQueue.global().asyncAfter(deadline: .now() + Self.terminationGracePeriod) { [weak self] in
             guard let self else { return }
-            lock.lock()
-            let stillActive = activeProcesses[runID]
-            lock.unlock()
+            let stillActive = activeProcesses.withLock { processes in
+                processes[runID]
+            }
             if let stillActive, stillActive.isRunning {
                 DebugLog.write("MethodRunCoordinator.cancelRun runID=\(runID) step=sigkill")
-                stillActive.interrupt()
+                if kill(stillActive.processIdentifier, SIGKILL) != 0 {
+                    DebugLog.write(
+                        "MethodRunCoordinator.cancelRun runID=\(runID) step=sigkill-failed errno=\(errno)",
+                    )
+                }
             }
         }
 
@@ -253,9 +258,9 @@ final class MethodRunCoordinator: @unchecked Sendable {
 
     /// Whether a given run has an active subprocess.
     func isRunActive(runID: String) -> Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        return activeProcesses[runID]?.isRunning ?? false
+        activeProcesses.withLock { processes in
+            processes[runID]?.isRunning ?? false
+        }
     }
 
     // MARK: - Private

@@ -264,18 +264,8 @@ jobs:
       - name: Build Rust library
         run: cargo build -p capacitor-core --release
 
-      - name: Fix dylib install_name
-        run: ./scripts/dev/fix-dylib.sh
-
-      - name: Build Swift and copy dylib
-        working-directory: apps/swift
-        run: |
-          swift build
-          cp ../../target/release/libcapacitor_core.dylib "$(swift build --show-bin-path)/"
-
       - name: Run Swift tests
-        working-directory: apps/swift
-        run: swift test
+        run: swift test --package-path apps/swift
 
   build-smoke-test:
     name: Build Smoke Test
@@ -313,6 +303,9 @@ jobs:
 
       - name: Build Rust library (release)
         run: cargo build -p capacitor-core --release
+
+      - name: Check UniFFI bindings are fresh
+        run: ./scripts/ci/check-uniffi-bindings.sh
 
       - name: Fix dylib install_name
         run: ./scripts/dev/fix-dylib.sh
@@ -390,4 +383,3 @@ jobs:
       - name: Build
         working-directory: apps/www
         run: npm run build
-

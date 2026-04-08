@@ -253,7 +253,7 @@ git commit -m "feat(method-runner): wire real adapters via --real flag and add i
 - Modify: `core/capacitor-core/src/method_runner/adapters.rs`
 - Test: `core/capacitor-core/tests/method_runner/adapter_seam.rs` (extend)
 
-The existing `CliInteractiveIO` reads from CLI flags (`--approve`/`--reject`/`--response-file`). For end-to-end testing, we need an adapter that reads from a **directory** of pre-staged JSON response files, one per gate. This lets us test multi-gate methods non-interactively with different decisions per gate.
+The shipped v1 method-runner surface supports blanket `--approve` / `--reject` decisions plus `--response-dir` for staged JSON responses. For end-to-end testing, we need the directory-backed adapter path so we can test multi-gate methods non-interactively with different decisions per gate.
 
 - [ ] **Step 1: Write the failing test**
 

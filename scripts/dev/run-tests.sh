@@ -130,21 +130,14 @@ if [ "$QUICK" = false ]; then
 
     echo "Building Rust library for Swift tests..."
     cargo build -p capacitor-core --release
-    install_name_tool -id "@rpath/libcapacitor_core.dylib" target/release/libcapacitor_core.dylib
 
-    cd apps/swift
-    echo "Building Swift package and staging libcapacitor_core.dylib for test runtime..."
-    swift build
-    SWIFT_BIN_PATH="$(swift build --show-bin-path)"
-    cp ../../target/release/libcapacitor_core.dylib "$SWIFT_BIN_PATH/"
-
-    if swift test 2>&1; then
+    echo "Running the published Swift package test command..."
+    if swift test --package-path apps/swift 2>&1; then
         echo -e "${GREEN}✓ Swift tests passed${NC}"
     else
         echo -e "${RED}✗ Swift tests failed${NC}"
         FAILED=1
     fi
-    cd "$PROJECT_ROOT"
 else
     echo -e "${YELLOW}[10/10] Swift Tests${NC}"
     echo -e "${YELLOW}⚠ Skipped (--quick mode)${NC}"

@@ -28,8 +28,42 @@ impl ShellPromptBuilder {
         Self { config }
     }
 
-    /// Resolve skill name → absolute path to SKILL.md under the HOME-based skill dir.
-    fn skill_path(skill: &str) -> PathBuf {
+    fn env_override_value(&self, key: &str) -> Option<PathBuf> {
+        self.config
+            .env_overrides
+            .iter()
+            .find(|(env_key, _)| env_key == key)
+            .map(|(_, value)| PathBuf::from(value))
+            .or_else(|| std::env::var(key).ok().map(PathBuf::from))
+    }
+
+    fn script_dir(&self) -> Option<PathBuf> {
+        self.config
+            .script_path
+            .parent()
+            .map(|path| path.to_path_buf())
+    }
+
+    fn plugin_root(&self) -> Option<PathBuf> {
+        self.script_dir()
+            .and_then(|path| path.parent().map(|parent| parent.to_path_buf()))
+            .and_then(|path| path.parent().map(|parent| parent.to_path_buf()))
+    }
+
+    /// Resolve skill name → absolute path to SKILL.md using the same override
+    /// precedence as `compose-prompt.sh`.
+    fn skill_path(&self, skill: &str) -> PathBuf {
+        if let Some(skill_dir) = self.env_override_value("CIRCUIT_PLUGIN_SKILL_DIR") {
+            return skill_dir.join(skill).join("SKILL.md");
+        }
+
+        if let Some(plugin_root) = self.plugin_root() {
+            let skill_dir = plugin_root.join("skills");
+            if skill_dir.exists() {
+                return skill_dir.join(skill).join("SKILL.md");
+            }
+        }
+
         let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
         PathBuf::from(home)
             .join(".claude/skills")
@@ -37,8 +71,27 @@ impl ShellPromptBuilder {
             .join("SKILL.md")
     }
 
-    /// Resolve template name → absolute path to template file under the HOME-based dir.
-    fn template_path(template: &str) -> PathBuf {
+    /// Resolve template name → absolute path to template file using the same
+    /// override precedence as `compose-prompt.sh`.
+    fn template_path(&self, template: &str) -> PathBuf {
+        if let Some(codex_dir) = self.env_override_value("CIRCUIT_PLUGIN_CODEX_DIR") {
+            return codex_dir.join(format!("{}-template.md", template));
+        }
+
+        if let Some(script_dir) = self.script_dir() {
+            let script_local_references = script_dir.join("references");
+            if script_local_references.exists() {
+                return script_local_references.join(format!("{}-template.md", template));
+            }
+        }
+
+        if let Some(plugin_root) = self.plugin_root() {
+            let plugin_references = plugin_root.join("skills/manage-codex/references");
+            if plugin_references.exists() {
+                return plugin_references.join(format!("{}-template.md", template));
+            }
+        }
+
         let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
         PathBuf::from(home)
             .join(".claude/skills/manage-codex/references")
@@ -63,7 +116,7 @@ impl PromptBuilder for ShellPromptBuilder {
 
         // 1. Preflight skill paths
         for skill in &request.skills {
-            let path = Self::skill_path(skill);
+            let path = self.skill_path(skill);
             if !path.exists() {
                 return Err(AdapterError::SkillNotFound(format!(
                     "skill '{}' not found at {}",
@@ -75,7 +128,7 @@ impl PromptBuilder for ShellPromptBuilder {
 
         // 2. Preflight template path
         if let Some(ref template) = request.template {
-            let path = Self::template_path(template);
+            let path = self.template_path(template);
             if !path.exists() {
                 return Err(AdapterError::TemplateNotFound(format!(
                     "template '{}' not found at {}",

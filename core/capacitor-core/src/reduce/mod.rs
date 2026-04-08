@@ -30,7 +30,11 @@ const SOLE_DEAD_SESSION_GRACE: Duration = Duration::minutes(10);
 const SHELL_GC_RETENTION: Duration = Duration::minutes(10);
 /// How recently a hook event must have arrived for the session to be
 /// considered alive without shell corroboration.
-const HOOK_ACTIVITY_ALIVE_SECS: i64 = 60;
+/// Grace period for idle_prompt and SubagentStop: skip the Ready transition
+/// if the session received a hook event within this window. Covers the typical
+/// 2-6 second LLM thinking gap between tool calls.
+const IDLE_PROMPT_GRACE_SECS: i64 = 8;
+const HOOK_ACTIVITY_ALIVE_SECS: i64 = 180;
 
 #[derive(Debug, Default, Clone)]
 pub struct ReducerState {

@@ -174,8 +174,9 @@ response artifact. Returns typed response and path.
 
 **Error contract:** `UserAborted`, `InvalidResponse`, `IOError`.
 
-**CLI flags:** `--approve` / `--reject` (approval), `--response-file <path>`
-(markdown), `--select <index>` (selection), `--checklist <indices>` (checklist).
+**CLI flags:** `--approve` / `--reject` for blanket gate decisions, plus
+`--response-dir <path>` for staged JSON responses during scripted multi-gate
+runs.
 
 **Test obligation:** Verify each response type validates correctly. Verify
 `UserAborted` is emitted on interrupt. Verify response artifact is written before

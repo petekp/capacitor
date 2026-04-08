@@ -26,6 +26,7 @@ apps/swift/.build/
 apps/swift/.swiftpm/
 apps/swift/*.app
 apps/swift/Capacitor.app/
+apps/swift/bindings/
 apps/swift/resource_bundle_accessor-*
 
 # Claude local state and scratch working notes (not shared)

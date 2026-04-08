@@ -545,9 +545,9 @@ CLI protocol:
 | `response_type` | CLI Behavior |
 |---|---|
 | `approval` | Print the prompt. Accept `--approve` or `--reject` flag, or prompt interactively for `y/n`. |
-| `markdown` | Print the prompt. Accept `--response-file <path>` to provide a markdown response, or open `$EDITOR` for inline authoring. |
-| `selection` | Print the prompt with numbered options. Accept `--select <index>` or prompt interactively. |
-| `checklist` | Print the prompt with checkable items. Accept `--checklist <indices>` (comma-separated) or prompt interactively. |
+| `markdown` | Print the prompt. In v1, scripted runs stage responses through `--response-dir <path>`; otherwise the prompt is handled by the active interactive adapter. |
+| `selection` | Print the prompt with numbered options. In v1, scripted runs stage responses through `--response-dir <path>`; otherwise the prompt is handled by the active interactive adapter. |
+| `checklist` | Print the prompt with checkable items. In v1, scripted runs stage responses through `--response-dir <path>`; otherwise the prompt is handled by the active interactive adapter. |
 
 All interactive responses are recorded as typed artifacts in the attempt directory
 before the step advances. The CLI adapter must validate that the response satisfies
@@ -767,8 +767,8 @@ Lifecycle:
 ```
 
 Claude Code CLI implementation: terminal prompts with `--approve`, `--reject`,
-`--response-file`, `--select`, `--checklist` flags (see Interactive Step CLI
-Adapter above).
+and `--response-dir` for scripted JSON-backed responses (see Interactive Step
+CLI Adapter above).
 
 ### Portable vs Claude-Code-Specific
 

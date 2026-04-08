@@ -6,7 +6,7 @@ use crate::domain::{
 };
 
 use super::utils::is_timestamp_stale;
-use super::SessionUpdate;
+use super::{SessionUpdate, IDLE_PROMPT_GRACE_SECS};
 
 pub(super) fn reduce_session(
     current: Option<&SessionSummary>,
@@ -77,6 +77,8 @@ pub(super) fn reduce_session(
                     );
                     corrected.tools_in_flight = 0;
                     SessionUpdate::Upsert(corrected)
+                } else if is_recently_active(current, event) {
+                    SessionUpdate::Skip("idle_prompt_recent_activity")
                 } else {
                     SessionUpdate::Upsert(upsert_session(
                         current,
@@ -201,22 +203,69 @@ pub(super) fn reduce_session(
                 .map(|record| record.state == SessionState::Working)
                 .unwrap_or(false)
             {
-                // Working with no tools in flight: the parent LLM may still be
-                // generating, but we must not refresh updated_at so the existing
-                // staleness clock (SessionStaleness + PID liveness) remains valid
-                // as a self-heal backstop if Stop never fires.
-                SessionUpdate::Skip("subagent_stop_working_no_tools")
+                // Working with no tools in flight: if the session was recently
+                // active, refresh the timestamp to prevent is_alive decay during
+                // subagent-heavy workflows. If stale, preserve the skip to
+                // maintain the staleness safety net for abandoned sessions.
+                if is_recently_active(current, event) {
+                    SessionUpdate::Upsert(upsert_session(
+                        current,
+                        shells,
+                        event,
+                        SessionState::Working,
+                        None,
+                    ))
+                } else {
+                    SessionUpdate::Skip("subagent_stop_working_no_tools_stale")
+                }
             } else {
                 // Late background-agent completions must not upgrade or create a session.
                 SessionUpdate::Skip("subagent_stop_session_not_working")
             }
         }
         HookEventType::TeammateIdle => SessionUpdate::Skip("teammate_idle_informational"),
-        HookEventType::WorktreeCreate => SessionUpdate::Skip("worktree_create_informational"),
+        HookEventType::WorktreeCreate => {
+            if let Some(record) = current {
+                SessionUpdate::Upsert(upsert_session(
+                    current,
+                    shells,
+                    event,
+                    record.state,
+                    record.ready_reason.clone(),
+                ))
+            } else {
+                SessionUpdate::Skip("worktree_create_no_session")
+            }
+        }
         HookEventType::WorktreeRemove => SessionUpdate::Skip("worktree_remove_informational"),
-        HookEventType::ConfigChange => SessionUpdate::Skip("config_change_informational"),
+        HookEventType::ConfigChange => {
+            if let Some(record) = current {
+                SessionUpdate::Upsert(upsert_session(
+                    current,
+                    shells,
+                    event,
+                    record.state,
+                    record.ready_reason.clone(),
+                ))
+            } else {
+                SessionUpdate::Skip("config_change_no_session")
+            }
+        }
         HookEventType::Unknown => SessionUpdate::Skip("unknown_event_type"),
     }
+}
+
+fn is_recently_active(current: Option<&SessionSummary>, event: &IngestHookEventCommand) -> bool {
+    let Some(session) = current else {
+        return false;
+    };
+    let Some(event_time) = super::utils::parse_rfc3339(&event.recorded_at) else {
+        return false;
+    };
+    let Some(session_time) = super::utils::parse_rfc3339(&session.updated_at) else {
+        return false;
+    };
+    event_time.signed_duration_since(session_time).num_seconds() < IDLE_PROMPT_GRACE_SECS
 }
 
 fn upsert_session(

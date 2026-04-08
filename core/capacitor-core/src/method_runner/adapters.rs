@@ -257,10 +257,10 @@ impl InteractiveIO for FakeInteractiveIO {
 // CLI interactive IO
 // ---------------------------------------------------------------------------
 
-/// CLI interactive IO adapter. Reads responses from CLI flags:
-/// - `--approve` → "approved" for approval type
-/// - `--reject` → "rejected" for approval type
-/// - `--response-file <path>` → read response from file
+/// Helper interactive IO adapter used in focused tests.
+/// The shipped method-runner CLI surface is `--approve`, `--reject`, and
+/// `--response-dir`; this helper still supports file-backed response bodies for
+/// narrow unit coverage.
 pub struct CliInteractiveIO {
     mode: CliInteractiveMode,
 }
@@ -271,7 +271,7 @@ pub enum CliInteractiveMode {
     Approve,
     /// Fixed "rejected" response (from --reject flag).
     Reject,
-    /// Read response body from a file (from --response-file flag).
+    /// Read response body from a file for focused test coverage.
     ResponseFile(PathBuf),
 }
 

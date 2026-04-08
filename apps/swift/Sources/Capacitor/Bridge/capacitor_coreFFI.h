@@ -427,6 +427,11 @@ void uniffi_capacitor_core_fn_method_coreruntime_remove_project(void*_Nonnull pt
 RustBuffer uniffi_capacitor_core_fn_method_coreruntime_resolve_routing(void*_Nonnull ptr, RustBuffer command, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CAPACITOR_CORE_FN_METHOD_CORERUNTIME_RUN_GC
+#define UNIFFI_FFIDEF_UNIFFI_CAPACITOR_CORE_FN_METHOD_CORERUNTIME_RUN_GC
+int8_t uniffi_capacitor_core_fn_method_coreruntime_run_gc(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CAPACITOR_CORE_FN_METHOD_CORERUNTIME_RUN_HOOK_TEST
 #define UNIFFI_FFIDEF_UNIFFI_CAPACITOR_CORE_FN_METHOD_CORERUNTIME_RUN_HOOK_TEST
 RustBuffer uniffi_capacitor_core_fn_method_coreruntime_run_hook_test(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
@@ -930,6 +935,12 @@ uint16_t uniffi_capacitor_core_checksum_method_coreruntime_remove_project(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_CAPACITOR_CORE_CHECKSUM_METHOD_CORERUNTIME_RESOLVE_ROUTING
 #define UNIFFI_FFIDEF_UNIFFI_CAPACITOR_CORE_CHECKSUM_METHOD_CORERUNTIME_RESOLVE_ROUTING
 uint16_t uniffi_capacitor_core_checksum_method_coreruntime_resolve_routing(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CAPACITOR_CORE_CHECKSUM_METHOD_CORERUNTIME_RUN_GC
+#define UNIFFI_FFIDEF_UNIFFI_CAPACITOR_CORE_CHECKSUM_METHOD_CORERUNTIME_RUN_GC
+uint16_t uniffi_capacitor_core_checksum_method_coreruntime_run_gc(void
     
 );
 #endif

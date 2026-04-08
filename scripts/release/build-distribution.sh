@@ -112,18 +112,12 @@ cargo build -p capacitor-core -p hud-hook --release
 echo -e "${GREEN}✓ Rust libraries built (capacitor-core + hud-hook)${NC}"
 echo ""
 
-# Step 2: Regenerate UniFFI Swift bindings
-echo -e "${YELLOW}Step 2/7: Regenerating UniFFI Swift bindings...${NC}"
+# Step 2: Verify tracked UniFFI Swift bindings are fresh
+echo -e "${YELLOW}Step 2/7: Verifying UniFFI Swift bindings...${NC}"
 DYLIB_PATH="$PROJECT_ROOT/target/release/libcapacitor_core.dylib"
-BINDINGS_DIR="$SWIFT_DIR/bindings"
-BRIDGE_DIR="$SWIFT_DIR/Sources/Capacitor/Bridge"
-
-cd "$PROJECT_ROOT/core/capacitor-core"
-cargo run -p capacitor-core --bin uniffi-bindgen generate --library "$DYLIB_PATH" --language swift --out-dir "$BINDINGS_DIR" 2>&1
-
-# Copy bindings to where Swift compiles from
-cp "$BINDINGS_DIR/capacitor_core.swift" "$BRIDGE_DIR/"
-echo -e "${GREEN}✓ UniFFI bindings regenerated and copied${NC}"
+cd "$PROJECT_ROOT"
+./scripts/ci/check-uniffi-bindings.sh
+echo -e "${GREEN}✓ UniFFI bindings verified${NC}"
 echo ""
 
 # Step 3: Fix dylib install_name to use @rpath

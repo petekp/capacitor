@@ -63,6 +63,9 @@ final class SessionStateManager {
         /// Consecutive idle snapshots required before committing an active→idle transition.
         /// At 2s polling, threshold of 2 means a 4s hold before showing idle.
         static let idleCommitThreshold = 2
+        /// Consecutive Ready snapshots required before committing a Working→Ready transition.
+        /// At 50ms long-poll, threshold of 2 means ~100ms hold before showing Ready.
+        static let readyCommitThreshold = 2
     }
 
     @ObservationIgnored var onVisualStateChanged: (() -> Void)?
@@ -88,6 +91,8 @@ final class SessionStateManager {
     private var consecutiveEmptySnapshotCount = 0
     /// Per-project consecutive idle snapshot count for hysteresis stabilization.
     private var consecutiveIdleCounts: [String: Int] = [:]
+    /// Per-project consecutive Ready snapshot count for Working→Ready hysteresis.
+    private var consecutiveReadyCounts: [String: Int] = [:]
     private var applyGeneration: UInt64 = 0
     private var refreshCorrelationCounter: UInt64 = 0
     private let clock: SessionClock
@@ -136,7 +141,8 @@ final class SessionStateManager {
         let mergeResult = mergeRuntimeProjectStates(runtimeProjects, sessionIndex: sessionIndex, projects: projects, now: clock.now(), processLiveness: checkProcessLiveness)
         let merged = mergeResult.states
         let emptyStabilized = stabilizeEmptyRuntimeSnapshotIfNeeded(merged)
-        let stabilized = stabilizeIdleTransitions(emptyStabilized)
+        let idleStabilized = stabilizeIdleTransitions(emptyStabilized)
+        let stabilized = stabilizeWorkingToReadyTransitions(idleStabilized)
         let heldPaths = Set(stabilized.keys.filter { stabilized[$0] != merged[$0] })
         var nextAttributions = mergeResult.attributions
         var nextLatestSessionIds = mergeResult.latestSessionIds
@@ -269,6 +275,55 @@ final class SessionStateManager {
 
         // Prune counts for projects no longer in the snapshot
         consecutiveIdleCounts = consecutiveIdleCounts.filter { result[$0.key] != nil }
+
+        return result
+    }
+
+    /// Stabilizes Working→Ready transitions using asymmetric hysteresis.
+    ///
+    /// A project must show as Ready for `readyCommitThreshold` consecutive snapshots
+    /// before the Ready state is committed to the UI, but ONLY when the previous
+    /// committed state was Working. Transitions from Ready back to Working are
+    /// instant (no hold). This prevents brief Ready flickers caused by inter-tool
+    /// gaps in agentic workflows.
+    private func stabilizeWorkingToReadyTransitions(
+        _ incoming: [String: ProjectSessionState],
+    ) -> [String: ProjectSessionState] {
+        var result = incoming
+
+        for (path, incomingState) in incoming {
+            let isIncomingReady = incomingState.state == .ready
+            let wasWorking = sessionStates[path].map { $0.state == .working } ?? false
+
+            if isIncomingReady, wasWorking {
+                let count = (consecutiveReadyCounts[path] ?? 0) + 1
+                consecutiveReadyCounts[path] = count
+
+                if count < Constants.readyCommitThreshold {
+                    // Hold previous Working state
+                    result[path] = sessionStates[path]!
+                    DebugLog.write(
+                        "SessionStateManager.readyStabilize action=hold project=\(path) count=\(count)/\(Constants.readyCommitThreshold)",
+                    )
+                } else {
+                    // Threshold reached — commit the Ready transition
+                    consecutiveReadyCounts[path] = 0
+                    DebugLog.write(
+                        "SessionStateManager.readyStabilize action=commit project=\(path) count=\(count)",
+                    )
+                }
+            } else {
+                if consecutiveReadyCounts[path] != nil, consecutiveReadyCounts[path] != 0 {
+                    DebugLog.write(
+                        "SessionStateManager.readyStabilize action=reset project=\(path) (became \(incomingState.state))",
+                    )
+                }
+                consecutiveReadyCounts[path] = 0
+            }
+        }
+
+        // Prune counts for projects no longer in the snapshot
+        consecutiveReadyCounts = consecutiveReadyCounts.filter { result[$0.key] != nil }
 
         return result
     }
@@ -649,6 +704,7 @@ final class SessionStateManager {
     func clearRuntimeProjectStates() {
         applyGeneration &+= 1
         consecutiveEmptySnapshotCount = 0
+        consecutiveReadyCounts = [:]
         sessionStates = [:]
         sessionAttributions = [:]
         latestSessionIds = [:]
