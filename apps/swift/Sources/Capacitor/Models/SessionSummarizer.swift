@@ -742,6 +742,7 @@ final class SessionSummarizer {
 
     private func clearWorkingOn(for project: Project) {
         contextFingerprints.removeValue(forKey: project.path)
+        cachedVariants.removeValue(forKey: project.path)
 
         // Only clear if there is actually a working_on to clear
         let hudFile = URL(fileURLWithPath: project.path)

@@ -1049,4 +1049,45 @@ final class SessionSummarizerTests: XCTestCase {
         let summarizer = makeSummarizer()
         XCTAssertNil(summarizer.bestSummary(for: "/tmp/nonexistent"))
     }
+
+    // MARK: - Idle Cleanup Clears Cached Variants
+
+    func testIdleCleanupClearsCachedVariants() {
+        let idleClearDelay: TimeInterval = 300
+        var now = Date()
+        let summarizer = makeSummarizer(clock: { now })
+        let project = makeProject("Test", path: "/tmp/test-idle-clear-cache")
+
+        // Pre-populate a cached summary variant
+        summarizer.cachedVariantsForTesting[project.path] = SessionSummarizer.SummaryVariants(
+            short: "Old summary",
+            medium: "Old summary from prior session",
+            long: "Old summary from a completely different prior session",
+        )
+
+        // Set idle-since to just before the clear threshold
+        summarizer.idleSinceForTesting[project.path] = now.addingTimeInterval(-(idleClearDelay - 1))
+
+        // First evaluation: idle but not past threshold yet — cache should survive
+        summarizer.evaluateProjects(
+            projects: [project],
+            sessionStates: [project.path: makeSessionState(.idle)],
+            delegationStates: [:],
+        )
+        XCTAssertNotNil(summarizer.cachedVariantsForTesting[project.path],
+                        "Cache should survive before idle threshold")
+
+        // Advance past the idle-clear threshold
+        now = now.addingTimeInterval(2)
+
+        summarizer.evaluateProjects(
+            projects: [project],
+            sessionStates: [project.path: makeSessionState(.idle)],
+            delegationStates: [:],
+        )
+        XCTAssertNil(summarizer.cachedVariantsForTesting[project.path],
+                     "Cached variants must be cleared after idle threshold")
+        XCTAssertNil(summarizer.bestSummary(for: project.path),
+                     "bestSummary should return nil after idle cleanup")
+    }
 }

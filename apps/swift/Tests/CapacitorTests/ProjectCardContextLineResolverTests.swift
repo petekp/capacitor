@@ -246,6 +246,33 @@ final class ProjectCardContextLineResolverTests: XCTestCase {
                        "Session summary should show when waiting run has no displayable text")
     }
 
+    func testWorkingRunWithNilStatusAndNilSummaryFallsToWorkingOn() {
+        let inputs = ProjectCardContextLineResolver.Inputs(
+            runVisualState: .working(statusMessage: nil),
+            activeRunState: nil,
+            delegationState: nil,
+            projectStatus: makeStatus(workingOn: "Refactoring auth module"),
+        )
+
+        let result = ProjectCardContextLineResolver.resolve(inputs)
+
+        XCTAssertEqual(result, "Refactoring auth module",
+                       "workingOn from hud-status.json should serve as final fallback")
+    }
+
+    func testWorkingRunWithNilStatusAndNilSummaryAndNilWorkingOnReturnsNil() {
+        let inputs = ProjectCardContextLineResolver.Inputs(
+            runVisualState: .working(statusMessage: nil),
+            activeRunState: nil,
+            delegationState: nil,
+            projectStatus: nil,
+        )
+
+        let result = ProjectCardContextLineResolver.resolve(inputs)
+
+        XCTAssertNil(result, "Nil when all sources are exhausted")
+    }
+
     func testWorkingRunWithNilStatusFallsToDelegationBeforeSummary() {
         var inputs = ProjectCardContextLineResolver.Inputs(
             runVisualState: .working(statusMessage: nil),
@@ -259,6 +286,21 @@ final class ProjectCardContextLineResolverTests: XCTestCase {
 
         XCTAssertEqual(result, "Implementing auth flow",
                        "Delegation text should win over session summary even during active run fallthrough")
+    }
+
+    // MARK: - Dock isolation proof
+
+    func testDockPathDoesNotUseContextLineResolver() {
+        // Dock cards use DockProjectCardPresentation.resolve(), which only reads
+        // trackedRunVisualState.statusMessage — it never calls this resolver.
+        // This test documents the boundary: even with a session summary available,
+        // the dock presentation returns nil contextLine when the run has no text.
+        let dockPresentation = DockProjectCardPresentation.resolve(
+            sessionState: nil,
+            trackedRunVisualState: .working(statusMessage: nil),
+        )
+        XCTAssertNil(dockPresentation.contextLine,
+                     "Dock path must not show session summaries — it uses its own resolver")
     }
 
     // MARK: - Helpers

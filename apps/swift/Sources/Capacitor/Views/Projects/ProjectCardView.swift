@@ -770,6 +770,14 @@ private struct ProjectCardContent: View {
 
     @Environment(\.prefersReducedMotion) private var reduceMotion
     @State private var displayedLine: String?
+    /// Pending commit task — cancelled if the value changes again before the
+    /// stabilization window elapses, preventing animated flicker from transient
+    /// nil/non-nil run-status wobble.
+    @State private var pendingCommit: _Concurrency.Task<Void, Never>?
+
+    /// How long a new context line value must persist before committing to the UI.
+    /// Covers one polling cycle worth of transient state wobble.
+    private static let stabilizationDelay: Duration = .milliseconds(400)
 
     var body: some View {
         VStack(spacing: 0) {
@@ -786,12 +794,23 @@ private struct ProjectCardContent: View {
         .clipped()
         .onAppear { displayedLine = contextLine }
         .onChange(of: contextLine) { _, newValue in
-            guard newValue != displayedLine else { return }
+            guard newValue != displayedLine else {
+                pendingCommit?.cancel()
+                pendingCommit = nil
+                return
+            }
+            pendingCommit?.cancel()
             if reduceMotion {
                 displayedLine = newValue
+                pendingCommit = nil
             } else {
-                withAnimation(.smooth(duration: 0.35)) {
-                    displayedLine = newValue
+                pendingCommit = _Concurrency.Task { @MainActor in
+                    try? await _Concurrency.Task.sleep(for: Self.stabilizationDelay)
+                    guard !_Concurrency.Task.isCancelled else { return }
+                    withAnimation(.smooth(duration: 0.35)) {
+                        displayedLine = newValue
+                    }
+                    pendingCommit = nil
                 }
             }
         }
