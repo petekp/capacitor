@@ -355,7 +355,7 @@ final class RunCaptureCoordinatorTests: XCTestCase {
         await firstRunCoordinator.reconcile(runs: [run])
 
         // Verify: claim + failed capture_complete, artifacts preserved on disk.
-        var requests = await mutationRecorder.snapshot()
+        let requests = await mutationRecorder.snapshot()
         XCTAssertEqual(requests.map(\.kind), ["capture_claim", "capture_complete"])
 
         let captureDirectory = try captureDirectoryURL(
