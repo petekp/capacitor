@@ -214,6 +214,53 @@ final class ProjectCardContextLineResolverTests: XCTestCase {
         XCTAssertEqual(result, "3/3 Review")
     }
 
+    // MARK: - Fallthrough: Run with no text yields to session summary
+
+    func testWorkingRunWithNilStatusFallsToSessionSummary() {
+        var inputs = ProjectCardContextLineResolver.Inputs(
+            runVisualState: .working(statusMessage: nil),
+            activeRunState: nil,
+            delegationState: nil,
+            projectStatus: makeStatus(workingOn: "Refactoring auth"),
+        )
+        inputs.sessionSummary = "Updating unit tests for auth module"
+
+        let result = ProjectCardContextLineResolver.resolve(inputs)
+
+        XCTAssertEqual(result, "Updating unit tests for auth module",
+                       "Session summary should show when run has no displayable text")
+    }
+
+    func testWaitingRunWithNilStatusFallsToSessionSummary() {
+        var inputs = ProjectCardContextLineResolver.Inputs(
+            runVisualState: .waiting(statusMessage: nil),
+            activeRunState: nil,
+            delegationState: nil,
+            projectStatus: nil,
+        )
+        inputs.sessionSummary = "Waiting for review feedback"
+
+        let result = ProjectCardContextLineResolver.resolve(inputs)
+
+        XCTAssertEqual(result, "Waiting for review feedback",
+                       "Session summary should show when waiting run has no displayable text")
+    }
+
+    func testWorkingRunWithNilStatusFallsToDelegationBeforeSummary() {
+        var inputs = ProjectCardContextLineResolver.Inputs(
+            runVisualState: .working(statusMessage: nil),
+            activeRunState: nil,
+            delegationState: makeDelegation(status: "active"),
+            projectStatus: makeStatus(workingOn: "Implementing auth flow"),
+        )
+        inputs.sessionSummary = "Should not appear"
+
+        let result = ProjectCardContextLineResolver.resolve(inputs)
+
+        XCTAssertEqual(result, "Implementing auth flow",
+                       "Delegation text should win over session summary even during active run fallthrough")
+    }
+
     // MARK: - Helpers
 
     private func makeDelegation(

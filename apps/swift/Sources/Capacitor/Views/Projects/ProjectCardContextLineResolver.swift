@@ -31,9 +31,6 @@ enum ProjectCardContextLineResolver {
             return runText
         }
 
-        // Only consult lower-priority sources when no run is visually active
-        guard inputs.runVisualState == .none else { return nil }
-
         // Priority 2: Delegation context text
         if let delegationText = delegationContextText(
             delegationState: inputs.delegationState,
@@ -46,7 +43,6 @@ enum ProjectCardContextLineResolver {
         // fall back to projectStatus.workingOn from hud-status.json
         return sessionDescriptionText(
             delegationState: inputs.delegationState,
-            runVisualState: inputs.runVisualState,
             sessionSummary: inputs.sessionSummary,
             projectStatus: inputs.projectStatus,
         )
@@ -120,11 +116,10 @@ enum ProjectCardContextLineResolver {
 
     static func sessionDescriptionText(
         delegationState: RuntimeDelegationState?,
-        runVisualState: RunVisualState,
         sessionSummary: String?,
         projectStatus: ProjectStatus?,
     ) -> String? {
-        guard delegationState == nil, runVisualState == .none else { return nil }
+        guard delegationState == nil else { return nil }
 
         // Prefer the width-fitted variant from SessionSummarizer
         if let summary = sessionSummary, !summary.isEmpty {
