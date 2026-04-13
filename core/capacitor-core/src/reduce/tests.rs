@@ -5020,6 +5020,87 @@ fn session_start_after_idle_produces_ready() {
 }
 
 #[test]
+/// After a definitive Stop (with stop hook inactive), the session is Idle and
+/// should come back to Ready after SessionStart.
+fn session_start_after_stop_idle_produces_ready() {
+    let mut state = ReducerState::default();
+
+    let _ = state.apply_hook_event(event_base(HookEventType::UserPromptSubmit));
+
+    let mut stop = event_base(HookEventType::Stop);
+    stop.stop_hook_active = Some(false);
+    stop.recorded_at = "2099-01-31T00:00:05Z".to_string();
+    let _ = state.apply_hook_event(stop);
+
+    let session = state.sessions.get("session-1").expect("session");
+    assert_eq!(
+        session.state,
+        SessionState::Idle,
+        "Stop should transition session to Idle"
+    );
+    assert_eq!(
+        session.ready_reason.as_deref(),
+        Some("definitive_stop"),
+        "Stop should annotate Idle session with definitive_stop ready reason"
+    );
+
+    let mut restart = event_base(HookEventType::SessionStart);
+    restart.recorded_at = "2099-01-31T00:00:10Z".to_string();
+    let outcome = state.apply_hook_event(restart);
+    assert!(
+        outcome.ok,
+        "SessionStart should be accepted after definitive stop idle"
+    );
+
+    let session = state.sessions.get("session-1").expect("session");
+    assert_eq!(
+        session.state,
+        SessionState::Ready,
+        "SessionStart after Stop-idle should produce Ready"
+    );
+}
+
+#[test]
+/// After a definitive TaskCompleted transition to Idle, SessionStart should
+/// return the session to Ready.
+fn session_start_after_task_completed_idle_produces_ready() {
+    let mut state = ReducerState::default();
+
+    let _ = state.apply_hook_event(event_base(HookEventType::UserPromptSubmit));
+
+    let mut completed = event_base(HookEventType::TaskCompleted);
+    completed.recorded_at = "2099-01-31T00:00:05Z".to_string();
+    let _ = state.apply_hook_event(completed);
+
+    let session = state.sessions.get("session-1").expect("session");
+    assert_eq!(
+        session.state,
+        SessionState::Idle,
+        "TaskCompleted should transition session to Idle"
+    );
+    assert_eq!(
+        session.ready_reason.as_deref(),
+        Some("definitive_task_completed"),
+        "TaskCompleted should annotate Idle session with definitive_task_completed ready reason"
+    );
+
+    let mut restart = event_base(HookEventType::SessionStart);
+    restart.recorded_at = "2099-01-31T00:00:10Z".to_string();
+    let outcome = state.apply_hook_event(restart);
+    assert!(
+        outcome.ok,
+        "SessionStart should be accepted after definitive task completion idle"
+    );
+
+    let session = state.sessions.get("session-1").expect("session");
+    assert_eq!(
+        session.state,
+        SessionState::Ready,
+        "SessionStart after TaskCompleted-idle should produce Ready"
+    );
+}
+
+#[test]
 fn stop_event_does_not_update_last_activity_at() {
     let mut state = ReducerState::default();
 
@@ -5234,6 +5315,10 @@ fn classify_signal_covers_all_event_types() {
         SignalAuthority::Definitive
     );
     assert_eq!(
+        classify_signal(HookEventType::TaskCompleted),
+        SignalAuthority::Definitive
+    );
+    assert_eq!(
         classify_signal(HookEventType::SessionEnd),
         SignalAuthority::Definitive
     );
@@ -5253,7 +5338,6 @@ fn classify_signal_covers_all_event_types() {
         HookEventType::Notification,
         HookEventType::SubagentStart,
         HookEventType::SubagentStop,
-        HookEventType::TaskCompleted,
     ] {
         assert_eq!(
             classify_signal(event_type),

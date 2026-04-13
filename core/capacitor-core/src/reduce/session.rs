@@ -620,6 +620,7 @@ pub(super) fn classify_signal(event_type: HookEventType) -> SignalAuthority {
         HookEventType::Stop | HookEventType::SessionEnd | HookEventType::SessionStart => {
             SignalAuthority::Definitive
         }
+        HookEventType::TaskCompleted => SignalAuthority::Definitive,
         HookEventType::UserPromptSubmit
         | HookEventType::PreToolUse
         | HookEventType::PostToolUse
@@ -628,8 +629,7 @@ pub(super) fn classify_signal(event_type: HookEventType) -> SignalAuthority {
         | HookEventType::PreCompact
         | HookEventType::Notification
         | HookEventType::SubagentStart
-        | HookEventType::SubagentStop
-        | HookEventType::TaskCompleted => SignalAuthority::Observational,
+        | HookEventType::SubagentStop => SignalAuthority::Observational,
         _ => SignalAuthority::Inferential,
     }
 }

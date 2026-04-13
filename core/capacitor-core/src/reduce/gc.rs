@@ -142,6 +142,10 @@ pub(super) fn session_is_alive_map(
                 return (session.session_id.clone(), false);
             }
             // Definitive stop/end signals: not alive.
+            // Defense-in-depth: under current reducer rules, sessions with these
+            // reasons are already in Idle state and short-circuit above. These
+            // entries guard against hypothetical future changes that might route
+            // definitive signals to a non-Idle state.
             let terminated = matches!(
                 session.ready_reason.as_deref(),
                 Some("definitive_session_end")
