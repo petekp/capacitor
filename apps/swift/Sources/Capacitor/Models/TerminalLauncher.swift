@@ -374,17 +374,27 @@ final class TerminalLauncher {
                     process.environment = env
 
                     let pipe = Pipe()
+                    let errorPipe = Pipe()
                     process.standardOutput = pipe
-                    process.standardError = FileHandle.nullDevice
+                    process.standardError = errorPipe
 
                     let outputLock = NSLock()
                     var outputData = Data()
+                    var errorData = Data()
 
                     pipe.fileHandleForReading.readabilityHandler = { handle in
                         let data = handle.availableData
                         guard !data.isEmpty else { return }
                         outputLock.lock()
                         outputData.append(data)
+                        outputLock.unlock()
+                    }
+
+                    errorPipe.fileHandleForReading.readabilityHandler = { handle in
+                        let data = handle.availableData
+                        guard !data.isEmpty else { return }
+                        outputLock.lock()
+                        errorData.append(data)
                         outputLock.unlock()
                     }
 
@@ -404,6 +414,24 @@ final class TerminalLauncher {
                         }
                         let output = String(data: outputData, encoding: .utf8)
                         outputLock.unlock()
+
+                        errorPipe.fileHandleForReading.readabilityHandler = nil
+                        let trailingErrorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+                        outputLock.lock()
+                        if !trailingErrorData.isEmpty {
+                            errorData.append(trailingErrorData)
+                        }
+                        let stderr = String(data: errorData, encoding: .utf8)
+                        outputLock.unlock()
+
+                        if process.terminationStatus != 0,
+                           let stderr,
+                           !stderr.isEmpty
+                        {
+                            DebugLog.write(
+                                "[TerminalLauncher] runBashScriptWithResult failed script=\(String(script.prefix(200))) stderr=\(stderr)",
+                            )
+                        }
                         continuationBox.resume((process.terminationStatus, output))
                     }
 

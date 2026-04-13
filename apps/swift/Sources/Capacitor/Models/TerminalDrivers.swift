@@ -586,6 +586,7 @@ private func runHostLaunch(
 ) async -> Result<Void, TerminalActivationFailureReason> {
     let openResult = await runShell(hostTerminalOpenCommand(app: app, projectPath: projectPath))
     guard openResult.exitCode == 0 else {
+        DebugLog.write("[TerminalDrivers] hostLaunch open failed app=\(app.processName) exit=\(openResult.exitCode) output=\(openResult.output ?? "<nil>")")
         return .failure(.hostOperationFailed(
             app: app,
             operation: .openApplication,
@@ -599,6 +600,7 @@ private func runHostLaunch(
         isRunning: isRunning,
     ))
     guard sendCommandResult.exitCode == 0 else {
+        DebugLog.write("[TerminalDrivers] hostLaunch sendCommand failed app=\(app.processName) exit=\(sendCommandResult.exitCode) output=\(sendCommandResult.output ?? "<nil>")")
         return .failure(.hostOperationFailed(
             app: app,
             operation: .sendCommand,

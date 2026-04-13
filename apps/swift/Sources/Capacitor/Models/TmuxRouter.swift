@@ -34,11 +34,13 @@ struct TmuxRouter {
             "tmux new-session -d -s \(escapedSession) -c \(escapedPath) 2>&1",
         )
         guard createResult.exitCode == 0 else {
+            DebugLog.write("[TmuxRouter] ensureSessionAndSwitch create failed session=\(sessionName) path=\(projectPath) output=\(createResult.output ?? "<nil>")")
             return false
         }
 
         let retry = await runScript(switchCmd)
         guard retry.exitCode == 0 else {
+            DebugLog.write("[TmuxRouter] ensureSessionAndSwitch retry-switch failed session=\(sessionName) output=\(retry.output ?? "<nil>")")
             return false
         }
 
@@ -87,6 +89,7 @@ struct TmuxRouter {
         guard clients.exitCode == 0,
               let output = clients.output
         else {
+            DebugLog.write("[TmuxRouter] resolveAnyClientTty list-clients failed")
             return nil
         }
 
