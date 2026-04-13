@@ -303,9 +303,9 @@ fn test_all_mutation_paths_notify() {
 #[test]
 fn run_gc_at_uses_explicit_reference_time() {
     let now = Utc::now();
-    let stale_ts = (now - Duration::minutes(6)).to_rfc3339();
+    let stale_ts = (now - Duration::minutes(11)).to_rfc3339();
     let idle_ts = (now - Duration::minutes(1)).to_rfc3339();
-    let adjusted_now = now - Duration::minutes(4);
+    let adjusted_now = now - Duration::minutes(8);
 
     let snapshot = AppSnapshot {
         projects: vec![],
@@ -373,16 +373,19 @@ fn run_gc_at_uses_explicit_reference_time() {
         .expect("real-time runtime");
 
     let changed = real_time_runtime.run_gc().expect("run gc at current time");
-    assert!(changed, "real-time gc should evict the stale sibling");
+    assert!(changed, "real-time gc should transition the stale session");
     let real_time_snapshot = real_time_runtime
         .app_snapshot()
         .expect("real-time snapshot");
-    assert!(
-        !real_time_snapshot
-            .sessions
-            .iter()
-            .any(|session| session.session_id == "stale-worker"),
-        "run_gc() should remove the stale sibling at wall-clock time"
+    let stale_session = real_time_snapshot
+        .sessions
+        .iter()
+        .find(|session| session.session_id == "stale-worker")
+        .expect("stale session should be preserved as Idle, not removed");
+    assert_eq!(
+        stale_session.state,
+        SessionState::Idle,
+        "run_gc() should transition the stale session to Idle at wall-clock time"
     );
 
     let adjusted_storage = Arc::new(InMemorySnapshotStorage::default());
@@ -397,15 +400,18 @@ fn run_gc_at_uses_explicit_reference_time() {
         .expect("run gc at adjusted time");
     assert!(
         !changed,
-        "adjusted gc time should keep the stale sibling within the 5-minute grace window"
+        "adjusted gc time should keep the stale sibling within the 10-minute grace window"
     );
     let adjusted_snapshot = adjusted_runtime.app_snapshot().expect("adjusted snapshot");
-    assert!(
-        adjusted_snapshot
-            .sessions
-            .iter()
-            .any(|session| session.session_id == "stale-worker"),
-        "run_gc_at(adjusted_now) should preserve the stale sibling"
+    let adjusted_stale = adjusted_snapshot
+        .sessions
+        .iter()
+        .find(|session| session.session_id == "stale-worker")
+        .expect("stale session should survive at adjusted time");
+    assert_eq!(
+        adjusted_stale.state,
+        SessionState::Working,
+        "run_gc_at(adjusted_now) should preserve the stale sibling in Working state"
     );
     assert!(
         adjusted_snapshot

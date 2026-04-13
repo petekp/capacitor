@@ -19,15 +19,20 @@ mod utils;
 pub mod delegation;
 pub mod run_reducer;
 
-pub const GC_REASON_SOLE_DEAD_NO_SHELL: &str = "sole_dead_no_shell";
-pub const GC_REASON_ORPHANED_STALE: &str = "orphaned_stale";
+pub const GC_REASON_SIGNAL_ABSENCE: &str = "signal_absence";
 
 const STALE_EVENT_GRACE_SECS: i64 = 5;
-const ORPHANED_SESSION_GRACE: Duration = Duration::minutes(5);
-const SOLE_DEAD_SESSION_GRACE: Duration = Duration::minutes(10);
-/// Must equal SOLE_DEAD_SESSION_GRACE — a shell signal that expires during one
-/// GC cycle makes the sole session eligible for Idle transition on the next.
-const SHELL_GC_RETENTION: Duration = Duration::minutes(10);
+/// Single GC safety net. Sessions with no observational or definitive
+/// signal for this duration are transitioned to Idle. This is a recovery
+/// mechanism for lost events, not a primary lifecycle driver.
+const SIGNAL_ABSENCE_GRACE: Duration = Duration::minutes(10);
+/// Idle sessions older than this are removed entirely. This prevents
+/// unbounded accumulation from completed sessions.
+const IDLE_RETENTION: Duration = Duration::hours(24);
+/// Shell signals older than this are removed. Slightly longer than
+/// SIGNAL_ABSENCE_GRACE to prevent shell cleanup from racing with
+/// session GC.
+const SHELL_RETENTION: Duration = Duration::minutes(15);
 /// How recently a hook event must have arrived for the session to be
 /// considered alive without shell corroboration.
 /// Grace period for idle_prompt and SubagentStop: skip the Ready transition
@@ -55,6 +60,7 @@ pub struct ReducerState {
 #[allow(clippy::large_enum_variant)]
 enum SessionUpdate {
     Upsert(SessionSummary),
+    #[allow(dead_code)]
     Delete(String),
     Skip(&'static str),
 }
@@ -64,7 +70,7 @@ use gc::cleanup_shells_at;
 #[cfg(test)]
 use routing::{select_canonical_routing_source, CanonicalRoutingSource, TmuxInventoryCandidate};
 #[cfg(test)]
-use session::{pid_alive_from_probe_result, should_skip_stop};
+use session::{classify_signal, should_skip_stop, SignalAuthority};
 
 impl ReducerState {
     #[must_use]

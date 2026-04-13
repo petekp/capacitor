@@ -21,6 +21,8 @@ use std::sync::{mpsc, Arc, Barrier};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use chrono::Utc;
+
 fn create_run_with_active_checkpoint(port: u16, authorization: &str, run_id: &str) -> String {
     let create_payload = serde_json::json!({
         "kind": "create",
@@ -218,7 +220,8 @@ fn seeded_snapshot_without_routing() -> serde_json::Value {
 }
 
 fn seeded_snapshot_with_gc_candidate() -> serde_json::Value {
-    serde_json::json!({
+    let recent = Utc::now().to_rfc3339();
+    let mut snapshot = serde_json::json!({
         "projects": [
             {
                 "project_path": "/tmp/runtime-service-project",
@@ -285,7 +288,11 @@ fn seeded_snapshot_with_gc_candidate() -> serde_json::Value {
         "generated_at": "2026-03-12T00:00:00Z",
         "snapshot_version": 1,
         "schema_version": 3
-    })
+    });
+    // Use recent timestamps for the idle session so it survives IDLE_RETENTION (24hr).
+    snapshot["sessions"][1]["state_changed_at"] = serde_json::Value::String(recent.clone());
+    snapshot["sessions"][1]["updated_at"] = serde_json::Value::String(recent);
+    snapshot
 }
 
 fn wait_for_snapshot_session_count(
@@ -1081,11 +1088,20 @@ fn gc_tick_runs_after_idle_timeouts_without_followup_requests() {
 
     let (_server, _port) = ServerGuard::spawn_ready(&temp_dir, &snapshot_path);
 
-    let snapshot = wait_for_snapshot_session_count(&snapshot_path, 1, Duration::from_secs(13));
-    assert_eq!(
-        snapshot["sessions"][0]["session_id"].as_str(),
-        Some("runtime-service-idle"),
+    let snapshot = wait_for_snapshot_session_count(&snapshot_path, 2, Duration::from_secs(13));
+    let session_ids: Vec<&str> = snapshot["sessions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|s| s["session_id"].as_str())
+        .collect();
+    assert!(
+        session_ids.contains(&"runtime-service-idle"),
         "idle survivor should remain after timeout-driven GC"
+    );
+    assert!(
+        session_ids.contains(&"runtime-service-stale"),
+        "stale worker should transition to idle, not be removed"
     );
 }
 
@@ -1110,11 +1126,20 @@ fn gc_tick_runs_after_request_dispatch_under_sustained_load() {
         thread::sleep(Duration::from_millis(300));
     }
 
-    let snapshot = wait_for_snapshot_session_count(&snapshot_path, 1, Duration::from_secs(2));
-    assert_eq!(
-        snapshot["sessions"][0]["session_id"].as_str(),
-        Some("runtime-service-idle"),
+    let snapshot = wait_for_snapshot_session_count(&snapshot_path, 2, Duration::from_secs(2));
+    let session_ids: Vec<&str> = snapshot["sessions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|s| s["session_id"].as_str())
+        .collect();
+    assert!(
+        session_ids.contains(&"runtime-service-idle"),
         "idle survivor should remain after dispatch-driven GC"
+    );
+    assert!(
+        session_ids.contains(&"runtime-service-stale"),
+        "stale worker should transition to idle, not be removed"
     );
 }
 
@@ -1705,7 +1730,7 @@ fn hook_endpoint_skips_non_delete_when_cwd_missing() {
 }
 
 #[test]
-fn session_end_without_cwd_still_deletes_existing_session() {
+fn session_end_without_cwd_idles_existing_session() {
     let temp_dir = unique_temp_dir("serve-missing-cwd-delete");
     let snapshot_path = temp_dir.join("snapshot.json");
     let (_server, port) = ServerGuard::spawn_ready(&temp_dir, &snapshot_path);
@@ -1734,8 +1759,18 @@ fn session_end_without_cwd_still_deletes_existing_session() {
     let snapshot = read_snapshot(&snapshot_path);
     assert_eq!(
         snapshot["sessions"].as_array().map(Vec::len),
-        Some(0),
-        "SessionEnd should delete the existing session even when cwd is absent"
+        Some(1),
+        "SessionEnd should idle (not delete) the existing session"
+    );
+    assert_eq!(
+        snapshot["sessions"][0]["state"].as_str(),
+        Some("idle"),
+        "session should be in idle state after SessionEnd"
+    );
+    assert_eq!(
+        snapshot["sessions"][0]["ready_reason"].as_str(),
+        Some("definitive_session_end"),
+        "session should have definitive_session_end ready_reason"
     );
 }
 

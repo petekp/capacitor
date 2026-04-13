@@ -136,8 +136,8 @@ pub(super) fn reduce_session(
                     current,
                     shells,
                     event,
-                    SessionState::Ready,
-                    Some("stop_gate".to_string()),
+                    SessionState::Idle,
+                    Some("definitive_stop".to_string()),
                 ))
             }
         }
@@ -149,26 +149,22 @@ pub(super) fn reduce_session(
                     current,
                     shells,
                     event,
-                    SessionState::Ready,
-                    Some("task_completed".to_string()),
+                    SessionState::Idle,
+                    Some("definitive_task_completed".to_string()),
                 ))
             }
         }
         HookEventType::SessionEnd => {
-            let pid = event
-                .pid
-                .or_else(|| current.map(|record| record.pid))
-                .unwrap_or(0);
-            if pid > 0 && is_pid_alive(pid) {
+            if current.is_none() {
+                SessionUpdate::Skip("session_end_no_session")
+            } else {
                 SessionUpdate::Upsert(upsert_session(
                     current,
                     shells,
                     event,
-                    SessionState::Ready,
-                    Some("session_cleared".to_string()),
+                    SessionState::Idle,
+                    Some("definitive_session_end".to_string()),
                 ))
-            } else {
-                SessionUpdate::Delete(event.session_id.clone())
             }
         }
         HookEventType::SubagentStart => {
@@ -328,7 +324,7 @@ fn upsert_session(
         event.event_type,
     );
 
-    let next_ready_reason = if new_state == SessionState::Ready {
+    let next_ready_reason = if new_state == SessionState::Ready || new_state == SessionState::Idle {
         ready_reason.or_else(|| current.and_then(|record| record.ready_reason.clone()))
     } else {
         None
@@ -524,7 +520,6 @@ fn should_update_activity(event_type: HookEventType) -> bool {
             | HookEventType::PostToolUse
             | HookEventType::PostToolUseFailure
             | HookEventType::PreCompact
-            | HookEventType::Stop
     )
 }
 
@@ -582,30 +577,6 @@ pub(super) fn should_skip_stop(event: &IngestHookEventCommand) -> bool {
         .is_some_and(|value| !value.trim().is_empty())
 }
 
-/// Checks whether a process is still running via `kill(pid, 0)`.
-///
-/// Used to distinguish `/clear` (process stays alive) from a true session exit
-/// (process is gone). When the PID is alive at `SessionEnd` time, we transition
-/// to `Ready` instead of deleting the session — avoiding a transient idle flicker
-/// while Claude Code reinitializes the cleared conversation.
-fn is_pid_alive(pid: u32) -> bool {
-    // SAFETY: kill(pid, 0) is a standard POSIX call that checks process existence
-    // without sending any signal. Returns 0 if the process exists, -1 otherwise.
-    unsafe {
-        let result = libc::kill(pid as libc::pid_t, 0);
-        let errno = if result == -1 {
-            std::io::Error::last_os_error().raw_os_error()
-        } else {
-            None
-        };
-        pid_alive_from_probe_result(result, errno)
-    }
-}
-
-pub(super) fn pid_alive_from_probe_result(result: libc::c_int, errno: Option<i32>) -> bool {
-    result == 0 || (result == -1 && errno == Some(libc::EPERM))
-}
-
 pub(super) fn is_event_stale(
     current: Option<&SessionSummary>,
     event: &IngestHookEventCommand,
@@ -620,4 +591,41 @@ pub(super) fn is_shell_signal_stale(
 ) -> bool {
     let Some(current) = current else { return false };
     is_timestamp_stale(current.updated_at.as_str(), incoming_recorded_at)
+}
+
+// ── Signal Authority Classification ──────────────────────────────────
+//
+// Executable documentation of the authority hierarchy that governs
+// session lifecycle transitions. Not called at runtime — serves as a
+// testable contract for the design invariants.
+
+#[cfg(test)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum SignalAuthority {
+    /// Lifecycle boundary events that definitively terminate or start a session.
+    Definitive,
+    /// Hook events that prove active work is happening.
+    Observational,
+    /// Events with no direct evidence of session activity.
+    Inferential,
+}
+
+#[cfg(test)]
+pub(super) fn classify_signal(event_type: HookEventType) -> SignalAuthority {
+    match event_type {
+        HookEventType::Stop | HookEventType::SessionEnd | HookEventType::SessionStart => {
+            SignalAuthority::Definitive
+        }
+        HookEventType::UserPromptSubmit
+        | HookEventType::PreToolUse
+        | HookEventType::PostToolUse
+        | HookEventType::PostToolUseFailure
+        | HookEventType::PermissionRequest
+        | HookEventType::PreCompact
+        | HookEventType::Notification
+        | HookEventType::SubagentStart
+        | HookEventType::SubagentStop
+        | HookEventType::TaskCompleted => SignalAuthority::Observational,
+        _ => SignalAuthority::Inferential,
+    }
 }

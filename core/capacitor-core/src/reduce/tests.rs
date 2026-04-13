@@ -826,7 +826,7 @@ fn subagent_stop_preserves_working_with_parallel_agents() {
 }
 
 #[test]
-fn subagent_stop_skips_when_session_is_ready() {
+fn subagent_stop_skips_when_session_is_idle() {
     let mut state = ReducerState::default();
 
     let _ = state.apply_hook_event(event_base(HookEventType::UserPromptSubmit));
@@ -849,7 +849,7 @@ fn subagent_stop_skips_when_session_is_ready() {
     );
     assert_eq!(
         state.sessions.get("session-1").map(|session| session.state),
-        Some(SessionState::Ready)
+        Some(SessionState::Idle)
     );
 }
 
@@ -989,7 +989,7 @@ fn reducer_stop_guard_skips_for_subagent() {
 }
 
 #[test]
-fn reducer_parent_stop_transitions_to_ready() {
+fn reducer_parent_stop_transitions_to_idle() {
     let mut state = ReducerState::default();
     let _ = state.apply_hook_event(event_base(HookEventType::UserPromptSubmit));
 
@@ -1001,14 +1001,14 @@ fn reducer_parent_stop_transitions_to_ready() {
     assert!(outcome.ok);
     assert_eq!(
         state.sessions.get("session-1").map(|session| session.state),
-        Some(SessionState::Ready)
+        Some(SessionState::Idle)
     );
     assert_eq!(
         state
             .sessions
             .get("session-1")
             .and_then(|session| session.ready_reason.as_deref()),
-        Some("stop_gate")
+        Some("definitive_stop")
     );
 }
 
@@ -1055,12 +1055,11 @@ fn should_skip_stop_is_true_for_subagent_stop() {
 }
 
 #[test]
-fn session_end_with_live_pid_transitions_to_ready() {
+fn session_end_produces_idle_regardless_of_pid() {
     let mut state = ReducerState::default();
     let _ = state.apply_hook_event(event_base(HookEventType::UserPromptSubmit));
 
     let mut end = event_base(HookEventType::SessionEnd);
-    // Use the current process PID so is_pid_alive returns true
     end.pid = Some(std::process::id());
     end.recorded_at = "2099-01-31T00:00:05Z".to_string();
 
@@ -1068,44 +1067,52 @@ fn session_end_with_live_pid_transitions_to_ready() {
     assert!(outcome.ok);
     assert_eq!(
         state.sessions.get("session-1").map(|s| s.state),
-        Some(SessionState::Ready),
+        Some(SessionState::Idle),
     );
     assert_eq!(
         state
             .sessions
             .get("session-1")
             .and_then(|s| s.ready_reason.as_deref()),
-        Some("session_cleared"),
+        Some("definitive_session_end"),
     );
 }
 
 #[test]
-fn session_end_with_dead_pid_deletes_session() {
+fn session_end_with_dead_pid_produces_idle() {
     let mut state = ReducerState::default();
     let _ = state.apply_hook_event(event_base(HookEventType::UserPromptSubmit));
 
     let mut end = event_base(HookEventType::SessionEnd);
-    // PID 1234 from event_base is not alive → should delete
+    // PID 1234 from event_base is not alive — still produces Idle (no delete)
     end.recorded_at = "2099-01-31T00:00:05Z".to_string();
 
     let outcome = state.apply_hook_event(end);
     assert!(outcome.ok);
-    assert!(!state.sessions.contains_key("session-1"));
+    assert!(
+        state.sessions.contains_key("session-1"),
+        "SessionEnd should produce Idle, not delete"
+    );
+    assert_eq!(
+        state.sessions.get("session-1").map(|s| s.state),
+        Some(SessionState::Idle),
+    );
+    assert_eq!(
+        state
+            .sessions
+            .get("session-1")
+            .and_then(|s| s.ready_reason.as_deref()),
+        Some("definitive_session_end"),
+    );
 }
 
 #[test]
-fn test_is_pid_alive_zero_returns_true() {
-    assert!(super::pid_alive_from_probe_result(0, None));
-}
+fn session_end_without_existing_session_is_skipped() {
+    let mut state = ReducerState::default();
 
-#[test]
-fn test_is_pid_alive_eperm_returns_true() {
-    assert!(super::pid_alive_from_probe_result(-1, Some(libc::EPERM)));
-}
-
-#[test]
-fn test_is_pid_alive_esrch_returns_false() {
-    assert!(!super::pid_alive_from_probe_result(-1, Some(libc::ESRCH)));
+    let outcome = state.apply_hook_event(event_base(HookEventType::SessionEnd));
+    assert!(outcome.ok);
+    assert_eq!(state.sessions.len(), 0);
 }
 
 #[test]
@@ -1404,7 +1411,7 @@ fn test_reducer_17_event_contract_matrix() {
             event_type: HookEventType::Stop,
             setup: Some(HookEventType::UserPromptSubmit),
             notification_type: None,
-            expected_state: Some(SessionState::Ready),
+            expected_state: Some(SessionState::Idle),
             expected_skip_reason: None,
             description: "stop (parent session)",
         },
@@ -1428,7 +1435,7 @@ fn test_reducer_17_event_contract_matrix() {
             event_type: HookEventType::TaskCompleted,
             setup: Some(HookEventType::UserPromptSubmit),
             notification_type: None,
-            expected_state: Some(SessionState::Ready),
+            expected_state: Some(SessionState::Idle),
             expected_skip_reason: None,
             description: "task_completed (parent)",
         },
@@ -1484,9 +1491,9 @@ fn test_reducer_17_event_contract_matrix() {
 
     assert_eq!(expectations.len(), 28);
 
-    // SessionEnd is intentionally covered by the dedicated PID-sensitive tests:
-    // `session_end_with_live_pid_transitions_to_ready` and
-    // `session_end_with_dead_pid_deletes_session`.
+    // SessionEnd is intentionally covered by the dedicated tests:
+    // `session_end_produces_idle_regardless_of_pid` and
+    // `session_end_with_dead_pid_produces_idle`.
     for event_type in [
         HookEventType::SessionStart,
         HookEventType::UserPromptSubmit,
@@ -1595,8 +1602,8 @@ fn test_reducer_17_event_contract_matrix() {
                 let expected_ready_reason = match expectation.description {
                     "notification (idle_prompt)" => Some("idle_prompt"),
                     "notification (auth_success)" => Some("auth_success"),
-                    "stop (parent session)" => Some("stop_gate"),
-                    "task_completed (parent)" => Some("task_completed"),
+                    "stop (parent session)" => Some("definitive_stop"),
+                    "task_completed (parent)" => Some("definitive_task_completed"),
                     _ => None,
                 };
                 assert_eq!(
@@ -1710,7 +1717,7 @@ fn test_out_of_order_pretool_then_idle_prompt() {
 }
 
 #[test]
-fn test_task_completed_parent_session_transitions_to_ready() {
+fn test_task_completed_parent_session_transitions_to_idle() {
     let mut state = ReducerState::default();
 
     let _ = state.apply_hook_event(event_base(HookEventType::UserPromptSubmit));
@@ -1726,8 +1733,11 @@ fn test_task_completed_parent_session_transitions_to_ready() {
         .sessions
         .get("session-1")
         .expect("session should exist");
-    assert_eq!(session.state, SessionState::Ready);
-    assert_eq!(session.ready_reason.as_deref(), Some("task_completed"));
+    assert_eq!(session.state, SessionState::Idle);
+    assert_eq!(
+        session.ready_reason.as_deref(),
+        Some("definitive_task_completed")
+    );
 }
 
 #[test]
@@ -2770,10 +2780,11 @@ fn cleanup_shells_evicts_expired_entries() {
     let now = Utc::now();
     let mut shells = std::collections::HashMap::new();
 
+    // SHELL_RETENTION is 15 minutes
     shells.insert(
         1000,
         ShellSignal {
-            updated_at: (now - Duration::minutes(11)).to_rfc3339(),
+            updated_at: (now - Duration::minutes(16)).to_rfc3339(),
             ..shell_signal_fixture(1000, "/stale")
         },
     );
@@ -2799,7 +2810,7 @@ fn snapshot_omits_expired_shells() {
         sessions: vec![],
         shells: vec![
             ShellSignal {
-                updated_at: (now - Duration::minutes(11)).to_rfc3339(),
+                updated_at: (now - Duration::minutes(16)).to_rfc3339(),
                 ..shell_signal_fixture(1000, "/stale")
             },
             ShellSignal {
@@ -2834,8 +2845,10 @@ fn snapshot_omits_expired_shells() {
 }
 
 #[test]
-fn snapshot_populates_session_is_alive_from_cleaned_shells() {
-    // Use a past timestamp so the hook-activity fallback (180s) does not interfere.
+fn snapshot_populates_session_is_alive_from_last_activity_at() {
+    // Liveness is now driven by last_activity_at, not shell CWD matching.
+    // A Working session with recent last_activity_at should be alive;
+    // an Idle session is always not alive regardless of timestamps.
     let now = chrono::DateTime::parse_from_rfc3339("2020-01-01T12:00:00Z")
         .unwrap()
         .with_timezone(&Utc);
@@ -2843,40 +2856,34 @@ fn snapshot_populates_session_is_alive_from_cleaned_shells() {
     let mut state = ReducerState::from_snapshot(AppSnapshot {
         projects: vec![],
         sessions: vec![
+            SessionSummary {
+                last_activity_at: Some((now - Duration::seconds(60)).to_rfc3339()),
+                ..session_summary_fixture(
+                    "live-working",
+                    11,
+                    "/repo-a",
+                    "/repo-a",
+                    SessionState::Working,
+                    &(now - Duration::seconds(60)).to_rfc3339(),
+                )
+            },
             session_summary_fixture(
-                "live-session",
-                11,
-                "/repo-a",
-                "/repo-a",
-                SessionState::Idle,
-                &(now - Duration::minutes(4)).to_rfc3339(),
-            ),
-            session_summary_fixture(
-                "dead-session",
+                "idle-session",
                 22,
                 "/repo-b",
                 "/repo-b",
                 SessionState::Idle,
-                &(now - Duration::minutes(4)).to_rfc3339(),
+                &(now - Duration::seconds(60)).to_rfc3339(),
             ),
         ],
-        shells: vec![
-            ShellSignal {
-                updated_at: (now - Duration::minutes(4)).to_rfc3339(),
-                ..shell_signal_fixture(11, "/repo-a")
-            },
-            ShellSignal {
-                updated_at: (now - Duration::minutes(11)).to_rfc3339(),
-                ..shell_signal_fixture(22, "/repo-b")
-            },
-        ],
+        shells: vec![],
         routing: vec![],
         delegations: vec![],
         runs: vec![],
         diagnostics: DiagnosticsSummary {
             events_ingested: 0,
             sessions_tracked: 2,
-            shell_signals_tracked: 2,
+            shell_signals_tracked: 0,
             events_skipped: 0,
             stale_events_skipped: 0,
             informational_events_skipped: 0,
@@ -2894,78 +2901,58 @@ fn snapshot_populates_session_is_alive_from_cleaned_shells() {
     assert!(
         state
             .sessions
-            .get("live-session")
+            .get("live-working")
             .is_some_and(|session| session.is_alive),
-        "GC should mark shell-corroborated sessions as alive"
+        "Working session with recent last_activity_at should be alive"
     );
     assert!(
         state
             .sessions
-            .get("dead-session")
+            .get("idle-session")
             .is_some_and(|session| !session.is_alive),
-        "Expired shell corroboration should not survive GC"
+        "Idle session should always be not alive"
     );
 }
 
 #[test]
-fn session_is_alive_via_shell_cwd_matching() {
-    // Use a controlled `now` and test via gc_stale_sessions_at (which accepts
-    // explicit time) rather than snapshot() (which uses Utc::now()).
-    // Session updated_at is 4 minutes before `now` — outside the 180s hook-activity
-    // fallback — so only CWD matching determines is_alive.
-    fn gc_is_alive(shell_cwd: &str) -> bool {
-        let now = chrono::DateTime::parse_from_rfc3339("2020-01-01T12:00:00Z")
-            .unwrap()
-            .with_timezone(&Utc);
+fn shell_cwd_match_does_not_affect_liveness() {
+    // Shell CWD matching was removed — liveness is now driven exclusively by
+    // last_activity_at. Verify that even a matching shell CWD does not mark
+    // a session alive when last_activity_at is stale.
+    let now = chrono::DateTime::parse_from_rfc3339("2020-01-01T12:00:00Z")
+        .unwrap()
+        .with_timezone(&Utc);
 
-        let mut state = routing_state_fixture(
-            vec![session_summary_fixture(
-                "session-1",
-                0,
-                "/users/pete/code/myproject",
-                "/users/pete/code/myproject",
-                SessionState::Working,
-                &(now - Duration::minutes(4)).to_rfc3339(),
-            )],
-            vec![],
-        );
+    let mut state = routing_state_fixture(
+        vec![session_summary_fixture(
+            "session-1",
+            0,
+            "/users/pete/code/myproject",
+            "/users/pete/code/myproject",
+            SessionState::Working,
+            &(now - Duration::minutes(4)).to_rfc3339(),
+        )],
+        vec![],
+    );
 
-        let outcome = state.apply_shell_signal(IngestShellSignalCommand {
-            pid: 4242,
-            cwd: shell_cwd.to_string(),
-            tty: "/dev/ttys4242".to_string(),
-            parent_app: "ghostty".to_string(),
-            tmux_session: None,
-            tmux_client_tty: None,
-            tmux_pane: None,
-            tmux_panes: vec![],
-            recorded_at: (now - Duration::seconds(30)).to_rfc3339(),
-        });
-        assert!(outcome.ok, "{outcome:?}");
+    // Shell CWD matches the project root
+    let outcome = state.apply_shell_signal(IngestShellSignalCommand {
+        pid: 4242,
+        cwd: "/users/pete/code/myproject".to_string(),
+        tty: "/dev/ttys4242".to_string(),
+        parent_app: "ghostty".to_string(),
+        tmux_session: None,
+        tmux_client_tty: None,
+        tmux_pane: None,
+        tmux_panes: vec![],
+        recorded_at: (now - Duration::seconds(30)).to_rfc3339(),
+    });
+    assert!(outcome.ok, "{outcome:?}");
 
-        state.gc_stale_sessions_at(now);
-        state.sessions.get("session-1").expect("session").is_alive
-    }
-
+    state.gc_stale_sessions_at(now);
     assert!(
-        gc_is_alive("/users/pete/code/myproject"),
-        "Shell at project root should mark the session alive"
-    );
-    assert!(
-        gc_is_alive("/users/pete/code/myproject/src"),
-        "Shell inside a project subdirectory should still mark the session alive"
-    );
-    assert!(
-        !gc_is_alive("/users/pete/code/other"),
-        "Unrelated shell cwd should not mark the session alive"
-    );
-    assert!(
-        gc_is_alive("/users/pete/code"),
-        "Shell at ancestor of project path should mark session alive"
-    );
-    assert!(
-        !gc_is_alive("/users/pete/code/myproject-v2"),
-        "Shell at sibling with shared prefix should not falsely match"
+        !state.sessions.get("session-1").expect("session").is_alive,
+        "Shell CWD should not mark session alive — liveness uses last_activity_at only"
     );
 }
 
@@ -3071,7 +3058,7 @@ fn orphaned_session_gc_evicts_stale_same_project_sibling_on_new_session_start() 
 }
 
 #[test]
-fn orphaned_session_gc_uses_stop_timestamp_before_evicting_stale_ready_session() {
+fn stop_produces_idle_sibling_that_survives_event_time_gc() {
     let mut state = ReducerState::default();
 
     let mut old_work = event_base(HookEventType::UserPromptSubmit);
@@ -3089,36 +3076,21 @@ fn orphaned_session_gc_uses_stop_timestamp_before_evicting_stale_ready_session()
     let outcome = state.apply_hook_event(old_stop);
     assert!(outcome.ok, "{outcome:?}");
 
-    let old_ready = state
-        .sessions
-        .get("old-session")
-        .expect("old ready session");
-    assert_eq!(old_ready.state, SessionState::Ready);
-    assert_eq!(old_ready.updated_at, "2099-03-31T00:05:00Z");
-    assert_eq!(
-        old_ready.last_activity_at.as_deref(),
-        Some("2099-03-31T00:05:00Z")
-    );
+    let old_idle = state.sessions.get("old-session").expect("old idle session");
+    assert_eq!(old_idle.state, SessionState::Idle);
+    assert_eq!(old_idle.ready_reason.as_deref(), Some("definitive_stop"));
 
+    // New session starts long after -- Idle sibling is never evicted
     let mut new_start = event_base(HookEventType::SessionStart);
     new_start.session_id = "new-session".to_string();
     new_start.pid = Some(22);
-    new_start.recorded_at = "2099-03-31T00:09:59Z".to_string();
+    new_start.recorded_at = "2099-03-31T00:20:01Z".to_string();
     let outcome = state.apply_hook_event(new_start);
     assert!(outcome.ok, "{outcome:?}");
     assert!(
         state.sessions.contains_key("old-session"),
-        "ready sibling should survive until it is stale for more than five minutes from Stop"
+        "Idle session from Stop should survive event-time GC"
     );
-
-    let mut new_activity = event_base(HookEventType::UserPromptSubmit);
-    new_activity.session_id = "new-session".to_string();
-    new_activity.pid = Some(22);
-    new_activity.recorded_at = "2099-03-31T00:10:01Z".to_string();
-    let outcome = state.apply_hook_event(new_activity);
-
-    assert!(outcome.ok, "{outcome:?}");
-    assert!(!state.sessions.contains_key("old-session"));
 
     let project = state
         .snapshot()
@@ -3127,17 +3099,11 @@ fn orphaned_session_gc_uses_stop_timestamp_before_evicting_stale_ready_session()
         .find(|project| project.project_path == "/repo")
         .expect("project");
 
-    assert_eq!(project.state, SessionState::Working);
-    assert_eq!(
-        project.representative_session_id.as_deref(),
-        Some("new-session")
-    );
-    assert_eq!(project.latest_session_id.as_deref(), Some("new-session"));
-    assert_eq!(project.session_count, 1);
+    assert_eq!(project.session_count, 2);
 }
 
 #[test]
-fn orphaned_session_gc_uses_ready_transition_timestamp_for_task_completed() {
+fn task_completed_produces_idle_sibling_that_survives_event_time_gc() {
     let mut state = ReducerState::default();
 
     let mut old_work = event_base(HookEventType::UserPromptSubmit);
@@ -3154,35 +3120,28 @@ fn orphaned_session_gc_uses_ready_transition_timestamp_for_task_completed() {
     let outcome = state.apply_hook_event(completed);
     assert!(outcome.ok, "{outcome:?}");
 
-    let old_ready = state
-        .sessions
-        .get("old-session")
-        .expect("old ready session");
-    assert_eq!(old_ready.state, SessionState::Ready);
-    assert_eq!(old_ready.state_changed_at, "2099-03-31T00:05:00Z");
+    let old_idle = state.sessions.get("old-session").expect("old idle session");
+    assert_eq!(old_idle.state, SessionState::Idle);
     assert_eq!(
-        old_ready.last_activity_at.as_deref(),
+        old_idle.ready_reason.as_deref(),
+        Some("definitive_task_completed")
+    );
+    assert_eq!(
+        old_idle.last_activity_at.as_deref(),
         Some("2099-03-31T00:00:00Z")
     );
 
+    // New session starts long after — Idle sibling never evicted
     let mut new_start = event_base(HookEventType::SessionStart);
     new_start.session_id = "new-session".to_string();
     new_start.pid = Some(22);
-    new_start.recorded_at = "2099-03-31T00:09:59Z".to_string();
+    new_start.recorded_at = "2099-03-31T00:20:01Z".to_string();
     let outcome = state.apply_hook_event(new_start);
     assert!(outcome.ok, "{outcome:?}");
     assert!(
         state.sessions.contains_key("old-session"),
-        "ready sibling should use the newer Ready-transition timestamp as its GC anchor"
+        "Idle session from TaskCompleted should survive event-time GC"
     );
-
-    let mut new_activity = event_base(HookEventType::UserPromptSubmit);
-    new_activity.session_id = "new-session".to_string();
-    new_activity.pid = Some(22);
-    new_activity.recorded_at = "2099-03-31T00:10:01Z".to_string();
-    let outcome = state.apply_hook_event(new_activity);
-    assert!(outcome.ok, "{outcome:?}");
-    assert!(!state.sessions.contains_key("old-session"));
 }
 
 #[test]
@@ -3722,12 +3681,11 @@ fn empty_project_path_falls_back_to_cwd() {
 }
 
 #[test]
-fn snapshot_preserves_sole_stale_working_session() {
-    // A sole stale Working session must NOT be evicted — it may be a legitimate
-    // long-running worker (e.g., Codex) in a quiet period between hook events.
-    // Only evict when a competing session exists for the same project.
+fn gc_transitions_stale_working_to_idle_after_signal_absence() {
+    // A Working session with no activity for 10+ minutes is transitioned to Idle
+    // via the unified signal absence GC. No sole-vs-multi distinction.
     let now = Utc::now();
-    let stale_ts = (now - Duration::minutes(10)).to_rfc3339();
+    let stale_ts = (now - Duration::minutes(11)).to_rfc3339();
 
     let mut state = ReducerState::from_snapshot(AppSnapshot {
         projects: vec![],
@@ -3766,9 +3724,18 @@ fn snapshot_preserves_sole_stale_working_session() {
     assert_eq!(
         state.sessions.len(),
         1,
-        "Sole stale working session must survive snapshot GC"
+        "Session should be preserved as Idle"
     );
-    assert!(state.sessions.contains_key("stale-working"));
+    let session = state
+        .sessions
+        .get("stale-working")
+        .expect("session preserved");
+    assert_eq!(
+        session.state,
+        SessionState::Idle,
+        "Stale Working session should transition to Idle after signal absence"
+    );
+    assert_eq!(session.gc_reason.as_deref(), Some("signal_absence"),);
 }
 
 #[test]
@@ -3818,8 +3785,9 @@ fn snapshot_preserves_fresh_working_session() {
 }
 
 #[test]
-fn snapshot_preserves_sole_stale_ready_session() {
-    // A sole stale Ready session must NOT be evicted — same reasoning as Working.
+fn gc_boundary_at_signal_absence_grace() {
+    // At exactly 10 minutes (boundary), the session should survive because
+    // SIGNAL_ABSENCE_GRACE uses strict greater-than (>10min).
     let now = Utc::now();
     let stale_ts = (now - Duration::minutes(10)).to_rfc3339();
 
@@ -3832,7 +3800,7 @@ fn snapshot_preserves_sole_stale_ready_session() {
             last_activity_at: Some(stale_ts.clone()),
             is_alive: false,
             ..session_summary_fixture(
-                "stale-ready",
+                "boundary-ready",
                 10,
                 "/repo",
                 "/repo",
@@ -3867,15 +3835,20 @@ fn snapshot_preserves_sole_stale_ready_session() {
     assert_eq!(
         state.sessions.len(),
         1,
-        "Sole stale ready session must survive snapshot GC"
+        "Session at exact boundary should survive (strict greater-than)"
     );
-    assert!(state.sessions.contains_key("stale-ready"));
+    let session = state.sessions.get("boundary-ready").expect("session");
+    assert_eq!(
+        session.state,
+        SessionState::Ready,
+        "Session at 10-minute boundary should NOT be transitioned to Idle"
+    );
 }
 
 #[test]
 fn snapshot_gc_fixes_project_state_with_orphan_and_idle_session() {
     let now = Utc::now();
-    let stale_ts = (now - Duration::minutes(10)).to_rfc3339();
+    let stale_ts = (now - Duration::minutes(11)).to_rfc3339();
     let fresh_ts = (now - Duration::minutes(1)).to_rfc3339();
 
     let mut state = ReducerState::from_snapshot(AppSnapshot {
@@ -3933,13 +3906,19 @@ fn snapshot_gc_fixes_project_state_with_orphan_and_idle_session() {
 
     state.gc_stale_sessions_at(now);
 
+    // New GC transitions the orphan Working to Idle (rather than removing it).
+    // Both sessions end up Idle.
+    assert_eq!(state.sessions.len(), 2, "Both sessions should be preserved");
+    let orphan = state
+        .sessions
+        .get("orphan-working")
+        .expect("orphan preserved");
     assert_eq!(
-        state.sessions.len(),
-        1,
-        "Only the idle session should survive"
+        orphan.state,
+        SessionState::Idle,
+        "Orphan should be transitioned to Idle"
     );
-    assert!(state.sessions.contains_key("current-idle"));
-    assert!(!state.sessions.contains_key("orphan-working"));
+    assert_eq!(orphan.gc_reason.as_deref(), Some("signal_absence"));
 
     let project = state
         .projects
@@ -3949,7 +3928,7 @@ fn snapshot_gc_fixes_project_state_with_orphan_and_idle_session() {
     assert_eq!(
         project.state,
         SessionState::Idle,
-        "Project state should be Idle after orphan eviction"
+        "Project state should be Idle after orphan transition"
     );
 }
 
@@ -4157,12 +4136,11 @@ fn test_stale_project_path_falls_back_to_file_path() {
 }
 
 #[test]
-fn snapshot_gc_preserves_all_stale_sessions_when_no_survivor() {
-    // Two Working sessions both stale — no survivor would remain if we evicted,
-    // so the GC must keep both.  This prevents the bug where all legitimate
-    // concurrent workers in a quiet period get wiped.
+fn gc_transitions_all_stale_sessions_to_idle() {
+    // Two Working sessions both stale past the grace period. The new unified GC
+    // transitions both to Idle (no sole-vs-multi distinction, no removal).
     let now = Utc::now();
-    let stale_ts = (now - Duration::minutes(10)).to_rfc3339();
+    let stale_ts = (now - Duration::minutes(11)).to_rfc3339();
 
     let mut state = ReducerState::from_snapshot(AppSnapshot {
         projects: vec![],
@@ -4211,10 +4189,17 @@ fn snapshot_gc_preserves_all_stale_sessions_when_no_survivor() {
     assert_eq!(
         state.sessions.len(),
         2,
-        "Both stale sessions must survive when no survivor would remain"
+        "Both sessions should be preserved (transitioned to Idle, not removed)"
     );
-    assert!(state.sessions.contains_key("worker-a"));
-    assert!(state.sessions.contains_key("worker-b"));
+    for key in ["worker-a", "worker-b"] {
+        let session = state.sessions.get(key).expect(key);
+        assert_eq!(
+            session.state,
+            SessionState::Idle,
+            "{key} should be transitioned to Idle"
+        );
+        assert_eq!(session.gc_reason.as_deref(), Some("signal_absence"));
+    }
 
     let project = state
         .projects
@@ -4223,17 +4208,17 @@ fn snapshot_gc_preserves_all_stale_sessions_when_no_survivor() {
         .expect("project");
     assert_eq!(
         project.state,
-        SessionState::Working,
-        "Project should still show Working when both sessions are preserved"
+        SessionState::Idle,
+        "Project should show Idle after both sessions are transitioned"
     );
 }
 
 #[test]
 fn snapshot_gc_evicts_stale_when_fresh_session_exists() {
     // Three sessions for /repo: A and B are stale Working, C is fresh Working.
-    // C survives as the fresh survivor, so A and B should be evicted.
+    // A and B are transitioned to Idle by the unified GC. C stays Working.
     let now = Utc::now();
-    let stale_ts = (now - Duration::minutes(10)).to_rfc3339();
+    let stale_ts = (now - Duration::minutes(11)).to_rfc3339();
     let fresh_ts = (now - Duration::minutes(1)).to_rfc3339();
 
     let mut state = ReducerState::from_snapshot(AppSnapshot {
@@ -4288,14 +4273,18 @@ fn snapshot_gc_evicts_stale_when_fresh_session_exists() {
 
     state.gc_stale_sessions_at(now);
 
+    // Stale sessions are transitioned to Idle, not removed.
+    assert_eq!(state.sessions.len(), 3, "All sessions should be preserved");
+    let stale_a = state.sessions.get("stale-a").expect("stale-a");
+    assert_eq!(stale_a.state, SessionState::Idle, "stale-a should be Idle");
+    let stale_b = state.sessions.get("stale-b").expect("stale-b");
+    assert_eq!(stale_b.state, SessionState::Idle, "stale-b should be Idle");
+    let fresh_c = state.sessions.get("fresh-c").expect("fresh-c");
     assert_eq!(
-        state.sessions.len(),
-        1,
-        "Only the fresh session should survive"
+        fresh_c.state,
+        SessionState::Working,
+        "fresh-c should remain Working"
     );
-    assert!(!state.sessions.contains_key("stale-a"));
-    assert!(!state.sessions.contains_key("stale-b"));
-    assert!(state.sessions.contains_key("fresh-c"));
 
     let project = state
         .projects
@@ -4400,9 +4389,12 @@ fn orphaned_session_gc_preserves_stale_idle_sibling() {
 
 #[test]
 fn event_time_cleanup_uses_adjusted_gc_reference_time_when_provided() {
+    // SIGNAL_ABSENCE_GRACE is 10 minutes. raw_recorded_at is 11 min after stale_anchor,
+    // which exceeds the grace. adjusted_gc_reference_time is only 8 min after, which
+    // is within the grace.
     let stale_anchor = "2099-04-01T12:00:00Z";
-    let raw_recorded_at = "2099-04-01T12:06:00Z";
-    let adjusted_gc_reference_time = chrono::DateTime::parse_from_rfc3339("2099-04-01T12:04:00Z")
+    let raw_recorded_at = "2099-04-01T12:11:00Z";
+    let adjusted_gc_reference_time = chrono::DateTime::parse_from_rfc3339("2099-04-01T12:08:00Z")
         .unwrap()
         .with_timezone(&Utc);
 
@@ -4446,7 +4438,7 @@ fn event_time_cleanup_uses_adjusted_gc_reference_time_when_provided() {
     assert!(outcome.ok, "{outcome:?}");
     assert!(
         !raw_state.sessions.contains_key("stale-worker"),
-        "raw recorded_at should evict the stale sibling once it is 6 minutes old"
+        "raw recorded_at should evict the stale sibling once it is 11 minutes old"
     );
 
     let mut adjusted_state = ReducerState::from_snapshot(snapshot);
@@ -4460,7 +4452,7 @@ fn event_time_cleanup_uses_adjusted_gc_reference_time_when_provided() {
     assert!(outcome.ok, "{outcome:?}");
     assert!(
         adjusted_state.sessions.contains_key("stale-worker"),
-        "adjusted gc_reference_time should preserve the sibling because its effective age is 4 minutes"
+        "adjusted gc_reference_time should preserve the sibling because its effective age is 8 minutes"
     );
     assert!(adjusted_state.sessions.contains_key("fresh-session"));
 }
@@ -4476,7 +4468,7 @@ fn snapshot_gc_cross_project_isolation() {
     let base = chrono::DateTime::parse_from_rfc3339("2099-01-01T00:00:00Z")
         .unwrap()
         .with_timezone(&chrono::Utc);
-    let stale_ts = (base - Duration::minutes(10)).to_rfc3339();
+    let stale_ts = (base - Duration::minutes(11)).to_rfc3339();
     let fresh_ts = (base - Duration::minutes(1)).to_rfc3339();
 
     let mut state = ReducerState::from_snapshot(AppSnapshot {
@@ -4541,47 +4533,27 @@ fn snapshot_gc_cross_project_isolation() {
 
     state.gc_stale_sessions_at(base);
 
-    // Stale sessions evicted in both projects.
-    assert!(
-        !state.sessions.contains_key("a-stale"),
-        "/repo-a stale session should be evicted"
-    );
-    assert!(
-        !state.sessions.contains_key("b-stale"),
-        "/repo-b stale session should be evicted"
-    );
-
-    // Fresh sessions survive.
-    assert!(
-        state.sessions.contains_key("a-fresh"),
-        "/repo-a fresh survivor must remain"
-    );
-    assert!(
-        state.sessions.contains_key("b-fresh"),
-        "/repo-b fresh survivor must remain"
-    );
-
-    assert_eq!(state.sessions.len(), 2, "Exactly 2 sessions should remain");
-
-    // Each project has exactly 1 session.
-    let project_a = state
-        .projects
-        .values()
-        .find(|p| p.project_path == "/repo-a")
-        .expect("/repo-a project");
+    // Stale sessions are transitioned to Idle (not removed).
+    assert_eq!(state.sessions.len(), 4, "All sessions should be preserved");
     assert_eq!(
-        project_a.session_count, 1,
-        "/repo-a should have exactly 1 session"
+        state.sessions.get("a-stale").expect("a-stale").state,
+        SessionState::Idle,
+        "/repo-a stale session should be transitioned to Idle"
+    );
+    assert_eq!(
+        state.sessions.get("b-stale").expect("b-stale").state,
+        SessionState::Idle,
+        "/repo-b stale session should be transitioned to Idle"
     );
 
-    let project_b = state
-        .projects
-        .values()
-        .find(|p| p.project_path == "/repo-b")
-        .expect("/repo-b project");
+    // Fresh sessions stay in their original state.
     assert_eq!(
-        project_b.session_count, 1,
-        "/repo-b should have exactly 1 session"
+        state.sessions.get("a-fresh").expect("a-fresh").state,
+        SessionState::Working,
+    );
+    assert_eq!(
+        state.sessions.get("b-fresh").expect("b-fresh").state,
+        SessionState::Idle,
     );
 }
 
@@ -4646,15 +4618,15 @@ fn orphaned_session_gc_sole_session_no_eviction() {
 ///
 /// For Ready sessions the eviction anchor is `max(state_changed_at,
 /// last_activity_at)`.  This test covers three scenarios:
-///   A) `last_activity_at` fresh, `state_changed_at` stale — not evicted
-///   B) `state_changed_at` fresh, `last_activity_at` stale — not evicted
-///   C) Both stale — evicted
+///   A) `updated_at` fresh — not transitioned
+///   B) `updated_at` fresh — not transitioned
+///   C) `updated_at` stale — transitioned to Idle
 #[test]
 fn snapshot_gc_ready_session_uses_correct_anchor() {
-    let base = chrono::DateTime::parse_from_rfc3339("2099-01-01T00:10:00Z")
+    let base = chrono::DateTime::parse_from_rfc3339("2099-01-01T00:11:00Z")
         .unwrap()
         .with_timezone(&chrono::Utc);
-    let stale_ts = (base - Duration::minutes(10)).to_rfc3339();
+    let stale_ts = (base - Duration::minutes(11)).to_rfc3339();
     let fresh_ts = (base - Duration::minutes(1)).to_rfc3339();
 
     // --- Scenario A: last_activity_at is fresh, state_changed_at is stale ---
@@ -4828,9 +4800,11 @@ fn snapshot_gc_ready_session_uses_correct_anchor() {
 
         state.gc_stale_sessions_at(base);
 
-        assert!(
-            !state.sessions.contains_key("ready-c"),
-            "Scenario C: Ready session with both timestamps stale should be evicted"
+        let ready_c = state.sessions.get("ready-c").expect("ready-c preserved");
+        assert_eq!(
+            ready_c.state,
+            SessionState::Idle,
+            "Scenario C: Ready session with stale updated_at should be transitioned to Idle"
         );
         assert!(
             state.sessions.contains_key("idle-survivor-c"),
@@ -4899,123 +4873,36 @@ fn recompute_projects_normalizes_path_variants() {
     );
 }
 
-/// Shell-corroborated Working session survives snapshot-time GC.
-///
-/// A Working session that is past the grace period but has a matching
-/// shell signal (proving the process is still alive) must NOT be evicted.
 #[test]
-fn shell_corroborated_working_session_survives_snapshot_gc() {
+fn gc_does_not_touch_alive_sessions() {
+    // A Working session with recent last_activity_at should not be
+    // transitioned to Idle by GC, regardless of updated_at staleness.
     let base = chrono::DateTime::parse_from_rfc3339("2099-04-01T12:00:00Z")
         .unwrap()
         .with_timezone(&chrono::Utc);
-    let stale_ts = (base - Duration::minutes(10)).to_rfc3339();
-    let fresh_ts = base.to_rfc3339();
+    let stale_ts = (base - Duration::minutes(11)).to_rfc3339();
+    let recent_activity_ts = (base - Duration::seconds(60)).to_rfc3339();
 
     let mut state = ReducerState::from_snapshot(AppSnapshot {
         projects: vec![],
-        sessions: vec![
-            // Working session: stale (updated 10 minutes ago)
-            session_summary_fixture(
-                "working-session",
+        sessions: vec![SessionSummary {
+            last_activity_at: Some(recent_activity_ts),
+            ..session_summary_fixture(
+                "alive-working",
                 11,
                 "/repo",
                 "/repo",
                 SessionState::Working,
                 &stale_ts,
-            ),
-            // Idle session: fresh survivor
-            session_summary_fixture(
-                "idle-session",
-                22,
-                "/repo",
-                "/repo",
-                SessionState::Idle,
-                &fresh_ts,
-            ),
-        ],
-        // Shell signal corroborates the Working session's PID
-        shells: vec![ShellSignal {
-            pid: 11,
-            cwd: "/repo".to_string(),
-            tty: "/dev/ttys011".to_string(),
-            parent_app: "ghostty".to_string(),
-            tmux_session: None,
-            tmux_client_tty: None,
-            tmux_pane: None,
-            tmux_panes: vec![],
-            updated_at: fresh_ts.clone(),
+            )
         }],
+        shells: vec![],
         routing: vec![],
         delegations: vec![],
         runs: vec![],
         diagnostics: DiagnosticsSummary {
             events_ingested: 0,
-            sessions_tracked: 2,
-            shell_signals_tracked: 1,
-            events_skipped: 0,
-            stale_events_skipped: 0,
-            informational_events_skipped: 0,
-            reducer_events_skipped: 0,
-            last_error: None,
-            last_hook_event_at: None,
-        },
-        generated_at: fresh_ts,
-        snapshot_version: 0,
-        schema_version: 0,
-    });
-
-    state.gc_stale_sessions_at(base);
-
-    assert_eq!(
-        state.sessions.len(),
-        2,
-        "Shell-corroborated Working session must survive snapshot GC"
-    );
-    assert!(
-        state.sessions.contains_key("working-session"),
-        "Working session with shell signal must not be evicted"
-    );
-}
-
-/// Working session WITHOUT shell signal is evicted at snapshot time
-/// (preserves existing behavior for true orphans).
-#[test]
-fn working_session_without_shell_signal_evicted_at_snapshot() {
-    let base = chrono::DateTime::parse_from_rfc3339("2099-04-01T12:00:00Z")
-        .unwrap()
-        .with_timezone(&chrono::Utc);
-    let stale_ts = (base - Duration::minutes(10)).to_rfc3339();
-    let fresh_ts = base.to_rfc3339();
-
-    let mut state = ReducerState::from_snapshot(AppSnapshot {
-        projects: vec![],
-        sessions: vec![
-            // Working session: stale, NO shell signal
-            session_summary_fixture(
-                "orphan-worker",
-                11,
-                "/repo",
-                "/repo",
-                SessionState::Working,
-                &stale_ts,
-            ),
-            // Idle session: survivor
-            session_summary_fixture(
-                "idle-session",
-                22,
-                "/repo",
-                "/repo",
-                SessionState::Idle,
-                &fresh_ts,
-            ),
-        ],
-        shells: vec![], // No shell signals — no corroboration
-        routing: vec![],
-        delegations: vec![],
-        runs: vec![],
-        diagnostics: DiagnosticsSummary {
-            events_ingested: 0,
-            sessions_tracked: 2,
+            sessions_tracked: 1,
             shell_signals_tracked: 0,
             events_skipped: 0,
             stale_events_skipped: 0,
@@ -5024,61 +4911,51 @@ fn working_session_without_shell_signal_evicted_at_snapshot() {
             last_error: None,
             last_hook_event_at: None,
         },
-        generated_at: fresh_ts,
+        generated_at: base.to_rfc3339(),
         snapshot_version: 0,
         schema_version: 0,
     });
 
     state.gc_stale_sessions_at(base);
 
+    let session = state
+        .sessions
+        .get("alive-working")
+        .expect("session preserved");
     assert_eq!(
-        state.sessions.len(),
-        1,
-        "Working session without shell corroboration should be evicted"
+        session.state,
+        SessionState::Working,
+        "Alive session should not be transitioned to Idle"
     );
-    assert!(
-        state.sessions.contains_key("idle-session"),
-        "Only the Idle survivor should remain"
-    );
+    assert!(session.is_alive);
 }
 
-/// Shell-corroborated Working session survives event-time GC.
-///
-/// When a new session event arrives, the inline cleanup must also respect
-/// shell corroboration for active siblings.
 #[test]
-fn shell_corroborated_working_session_survives_event_time_gc() {
+fn gc_transitions_stale_orphan_to_idle() {
+    // A Working session past the grace period with no activity → Idle.
+    let base = chrono::DateTime::parse_from_rfc3339("2099-04-01T12:00:00Z")
+        .unwrap()
+        .with_timezone(&chrono::Utc);
+    let stale_ts = (base - Duration::minutes(11)).to_rfc3339();
+
     let mut state = ReducerState::from_snapshot(AppSnapshot {
         projects: vec![],
-        sessions: vec![
-            // Working session: stale but has shell signal
-            session_summary_fixture(
-                "live-worker",
-                11,
-                "/repo",
-                "/repo",
-                SessionState::Working,
-                "2099-04-01T11:50:00Z",
-            ),
-        ],
-        shells: vec![ShellSignal {
-            pid: 11,
-            cwd: "/repo".to_string(),
-            tty: "/dev/ttys011".to_string(),
-            parent_app: "ghostty".to_string(),
-            tmux_session: None,
-            tmux_client_tty: None,
-            tmux_pane: None,
-            tmux_panes: vec![],
-            updated_at: "2099-04-01T12:00:00Z".to_string(),
-        }],
+        sessions: vec![session_summary_fixture(
+            "orphan-worker",
+            11,
+            "/repo",
+            "/repo",
+            SessionState::Working,
+            &stale_ts,
+        )],
+        shells: vec![],
         routing: vec![],
         delegations: vec![],
         runs: vec![],
         diagnostics: DiagnosticsSummary {
             events_ingested: 0,
             sessions_tracked: 1,
-            shell_signals_tracked: 1,
+            shell_signals_tracked: 0,
             events_skipped: 0,
             stale_events_skipped: 0,
             informational_events_skipped: 0,
@@ -5086,100 +4963,186 @@ fn shell_corroborated_working_session_survives_event_time_gc() {
             last_error: None,
             last_hook_event_at: None,
         },
-        generated_at: "2099-04-01T12:00:00Z".to_string(),
-        snapshot_version: 0,
-        schema_version: 0,
-    });
-
-    // New session start arrives — triggers event-time cleanup
-    let mut event = event_base(HookEventType::SessionStart);
-    event.session_id = "new-session".to_string();
-    event.pid = Some(33);
-    event.recorded_at = "2099-04-01T12:01:00Z".to_string();
-
-    let outcome = state.apply_hook_event(event);
-    assert!(outcome.ok, "{outcome:?}");
-
-    assert!(
-        state.sessions.contains_key("live-worker"),
-        "Shell-corroborated Working session must survive event-time GC"
-    );
-    assert!(
-        state.sessions.contains_key("new-session"),
-        "New session must be created"
-    );
-}
-
-/// Both a stale shell-corroborated Working session and a stale Idle session
-/// survive — they are protected by different mechanisms (shell corroboration
-/// vs. Idle immunity).
-#[test]
-fn quiet_live_worker_with_idle_sibling_both_survive() {
-    let base = chrono::DateTime::parse_from_rfc3339("2099-04-01T12:00:00Z")
-        .unwrap()
-        .with_timezone(&chrono::Utc);
-    let worker_ts = (base - Duration::minutes(7)).to_rfc3339();
-    let idle_ts = (base - Duration::minutes(15)).to_rfc3339();
-    let fresh_ts = base.to_rfc3339();
-
-    let mut state = ReducerState::from_snapshot(AppSnapshot {
-        projects: vec![],
-        sessions: vec![
-            // Working session: stale, has shell signal
-            session_summary_fixture(
-                "quiet-worker",
-                11,
-                "/repo",
-                "/repo",
-                SessionState::Working,
-                &worker_ts,
-            ),
-            // Idle session: stale too
-            session_summary_fixture(
-                "idle-terminal",
-                22,
-                "/repo",
-                "/repo",
-                SessionState::Idle,
-                &idle_ts,
-            ),
-        ],
-        shells: vec![ShellSignal {
-            pid: 11,
-            cwd: "/repo".to_string(),
-            tty: "/dev/ttys011".to_string(),
-            parent_app: "ghostty".to_string(),
-            tmux_session: None,
-            tmux_client_tty: None,
-            tmux_pane: None,
-            tmux_panes: vec![],
-            updated_at: fresh_ts.clone(),
-        }],
-        routing: vec![],
-        delegations: vec![],
-        runs: vec![],
-        diagnostics: DiagnosticsSummary {
-            events_ingested: 0,
-            sessions_tracked: 2,
-            shell_signals_tracked: 1,
-            events_skipped: 0,
-            stale_events_skipped: 0,
-            informational_events_skipped: 0,
-            reducer_events_skipped: 0,
-            last_error: None,
-            last_hook_event_at: None,
-        },
-        generated_at: fresh_ts,
+        generated_at: base.to_rfc3339(),
         snapshot_version: 0,
         schema_version: 0,
     });
 
     state.gc_stale_sessions_at(base);
 
+    let session = state
+        .sessions
+        .get("orphan-worker")
+        .expect("session preserved");
     assert_eq!(
-        state.sessions.len(),
-        2,
-        "Both sessions should survive: Working (shell-corroborated) + Idle (always immune)"
+        session.state,
+        SessionState::Idle,
+        "Stale orphan Working session should be transitioned to Idle"
+    );
+    assert_eq!(session.gc_reason.as_deref(), Some("signal_absence"));
+}
+
+#[test]
+fn session_start_after_idle_produces_ready() {
+    // After a definitive stop (→ Idle), a SessionStart should resurrect
+    // the session to Ready. This is the /clear resurrection path.
+    let mut state = ReducerState::default();
+
+    let _ = state.apply_hook_event(event_base(HookEventType::UserPromptSubmit));
+
+    let mut stop = event_base(HookEventType::Stop);
+    stop.stop_hook_active = Some(false);
+    stop.recorded_at = "2099-01-31T00:00:05Z".to_string();
+    let _ = state.apply_hook_event(stop);
+
+    let session = state.sessions.get("session-1").expect("session");
+    assert_eq!(session.state, SessionState::Idle);
+
+    let mut restart = event_base(HookEventType::SessionStart);
+    restart.recorded_at = "2099-01-31T00:00:10Z".to_string();
+    let outcome = state.apply_hook_event(restart);
+    assert!(outcome.ok);
+
+    let session = state.sessions.get("session-1").expect("session");
+    assert_eq!(
+        session.state,
+        SessionState::Ready,
+        "SessionStart after Idle should produce Ready"
+    );
+}
+
+#[test]
+fn stop_event_does_not_update_last_activity_at() {
+    let mut state = ReducerState::default();
+
+    let _ = state.apply_hook_event(event_base(HookEventType::UserPromptSubmit));
+    let activity_before = state
+        .sessions
+        .get("session-1")
+        .and_then(|s| s.last_activity_at.clone());
+
+    let mut stop = event_base(HookEventType::Stop);
+    stop.stop_hook_active = Some(false);
+    stop.recorded_at = "2099-01-31T00:00:10Z".to_string();
+    let _ = state.apply_hook_event(stop);
+
+    let activity_after = state
+        .sessions
+        .get("session-1")
+        .and_then(|s| s.last_activity_at.clone());
+    assert_eq!(
+        activity_before, activity_after,
+        "Stop should not update last_activity_at"
+    );
+}
+
+#[test]
+fn session_alive_via_recent_last_activity_at() {
+    let now = chrono::DateTime::parse_from_rfc3339("2020-01-01T12:00:00Z")
+        .unwrap()
+        .with_timezone(&Utc);
+
+    let mut state = ReducerState::from_snapshot(AppSnapshot {
+        projects: vec![],
+        sessions: vec![SessionSummary {
+            last_activity_at: Some((now - Duration::seconds(60)).to_rfc3339()),
+            ..session_summary_fixture(
+                "session-1",
+                10,
+                "/repo",
+                "/repo",
+                SessionState::Working,
+                &(now - Duration::seconds(60)).to_rfc3339(),
+            )
+        }],
+        shells: vec![],
+        routing: vec![],
+        delegations: vec![],
+        runs: vec![],
+        diagnostics: DiagnosticsSummary {
+            events_ingested: 0,
+            sessions_tracked: 1,
+            shell_signals_tracked: 0,
+            events_skipped: 0,
+            stale_events_skipped: 0,
+            informational_events_skipped: 0,
+            reducer_events_skipped: 0,
+            last_error: None,
+            last_hook_event_at: None,
+        },
+        generated_at: now.to_rfc3339(),
+        snapshot_version: 0,
+        schema_version: 0,
+    });
+
+    state.gc_stale_sessions_at(now);
+    assert!(
+        state.sessions.get("session-1").expect("session").is_alive,
+        "Session with recent last_activity_at should be alive"
+    );
+}
+
+#[test]
+fn session_not_alive_when_last_activity_stale() {
+    let now = chrono::DateTime::parse_from_rfc3339("2020-01-01T12:00:00Z")
+        .unwrap()
+        .with_timezone(&Utc);
+
+    let mut state = ReducerState::from_snapshot(AppSnapshot {
+        projects: vec![],
+        sessions: vec![SessionSummary {
+            last_activity_at: Some((now - Duration::minutes(5)).to_rfc3339()),
+            ..session_summary_fixture(
+                "session-1",
+                10,
+                "/repo",
+                "/repo",
+                SessionState::Working,
+                &(now - Duration::minutes(5)).to_rfc3339(),
+            )
+        }],
+        shells: vec![],
+        routing: vec![],
+        delegations: vec![],
+        runs: vec![],
+        diagnostics: DiagnosticsSummary {
+            events_ingested: 0,
+            sessions_tracked: 1,
+            shell_signals_tracked: 0,
+            events_skipped: 0,
+            stale_events_skipped: 0,
+            informational_events_skipped: 0,
+            reducer_events_skipped: 0,
+            last_error: None,
+            last_hook_event_at: None,
+        },
+        generated_at: now.to_rfc3339(),
+        snapshot_version: 0,
+        schema_version: 0,
+    });
+
+    state.gc_stale_sessions_at(now);
+    assert!(
+        !state.sessions.get("session-1").expect("session").is_alive,
+        "Session with stale last_activity_at (5min > 180s) should not be alive"
+    );
+}
+
+#[test]
+fn session_not_alive_after_definitive_stop() {
+    let mut state = ReducerState::default();
+    let _ = state.apply_hook_event(event_base(HookEventType::UserPromptSubmit));
+
+    let mut stop = event_base(HookEventType::Stop);
+    stop.stop_hook_active = Some(false);
+    stop.recorded_at = "2099-01-31T00:00:05Z".to_string();
+    let _ = state.apply_hook_event(stop);
+
+    let session = state.sessions.get("session-1").expect("session");
+    assert_eq!(session.state, SessionState::Idle);
+    assert!(
+        !session.is_alive,
+        "Idle session from definitive stop should not be alive"
     );
 }
 
@@ -5252,121 +5215,59 @@ fn snapshot_gc_transitions_sole_dead_session_to_idle() {
     );
 }
 
-/// A sole active session with fresh shell corroboration should remain active
-/// even when it is well beyond the grace period.
 #[test]
-fn snapshot_gc_preserves_sole_stale_working_session_with_shell_corroboration() {
-    let now = chrono::DateTime::parse_from_rfc3339("2099-04-01T12:00:00Z")
-        .unwrap()
-        .with_timezone(&Utc);
-    let stale_ts = (now - Duration::minutes(30)).to_rfc3339();
+fn classify_signal_covers_all_event_types() {
+    use super::classify_signal;
+    use super::SignalAuthority;
 
-    let mut state = ReducerState::from_snapshot(AppSnapshot {
-        projects: vec![],
-        sessions: vec![session_summary_fixture(
-            "stale-working-real-pid",
-            42,
-            "/repo",
-            "/repo",
-            SessionState::Working,
-            &stale_ts,
-        )],
-        shells: vec![ShellSignal {
-            pid: 42,
-            updated_at: (now - Duration::minutes(1)).to_rfc3339(),
-            ..shell_signal_fixture(42, "/repo")
-        }],
-        routing: vec![],
-        delegations: vec![],
-        runs: vec![],
-        diagnostics: DiagnosticsSummary {
-            events_ingested: 0,
-            sessions_tracked: 1,
-            shell_signals_tracked: 1,
-            events_skipped: 0,
-            stale_events_skipped: 0,
-            informational_events_skipped: 0,
-            reducer_events_skipped: 0,
-            last_error: None,
-            last_hook_event_at: None,
-        },
-        generated_at: now.to_rfc3339(),
-        snapshot_version: 0,
-        schema_version: 0,
-    });
-
-    state.gc_stale_sessions_at(now);
-
-    let session = state
-        .sessions
-        .get("stale-working-real-pid")
-        .expect("shell-corroborated session");
+    // Definitive signals
     assert_eq!(
-        state.sessions.len(),
-        1,
-        "Shell-corroborated session should remain"
+        classify_signal(HookEventType::Stop),
+        SignalAuthority::Definitive
     );
-    assert_eq!(session.state, SessionState::Working);
-}
-
-/// A sole active session with only stale shell corroboration should lose that
-/// protection before GC makes its eviction decision.
-#[test]
-fn snapshot_gc_transitions_sole_stale_working_session_after_shell_gc() {
-    let now = chrono::DateTime::parse_from_rfc3339("2099-04-01T12:00:00Z")
-        .unwrap()
-        .with_timezone(&Utc);
-    let stale_ts = (now - Duration::minutes(30)).to_rfc3339();
-
-    let mut state = ReducerState::from_snapshot(AppSnapshot {
-        projects: vec![],
-        sessions: vec![session_summary_fixture(
-            "stale-worker",
-            77,
-            "/repo",
-            "/repo",
-            SessionState::Working,
-            &stale_ts,
-        )],
-        shells: vec![ShellSignal {
-            pid: 77,
-            updated_at: (now - Duration::minutes(11)).to_rfc3339(),
-            ..shell_signal_fixture(77, "/repo")
-        }],
-        routing: vec![],
-        delegations: vec![],
-        runs: vec![],
-        diagnostics: DiagnosticsSummary {
-            events_ingested: 0,
-            sessions_tracked: 1,
-            shell_signals_tracked: 1,
-            events_skipped: 0,
-            stale_events_skipped: 0,
-            informational_events_skipped: 0,
-            reducer_events_skipped: 0,
-            last_error: None,
-            last_hook_event_at: None,
-        },
-        generated_at: now.to_rfc3339(),
-        snapshot_version: 0,
-        schema_version: 0,
-    });
-
-    state.gc_stale_sessions_at(now);
-
-    let session = state
-        .sessions
-        .get("stale-worker")
-        .expect("session preserved");
     assert_eq!(
-        session.state,
-        SessionState::Idle,
-        "Expired shell corroboration should not protect a stale sole worker"
+        classify_signal(HookEventType::SessionEnd),
+        SignalAuthority::Definitive
     );
-    assert!(
-        !state.shells.contains_key(&77),
-        "GC should purge expired shell corroboration before evaluating sessions"
+    assert_eq!(
+        classify_signal(HookEventType::SessionStart),
+        SignalAuthority::Definitive
     );
+
+    // Observational signals
+    for event_type in [
+        HookEventType::UserPromptSubmit,
+        HookEventType::PreToolUse,
+        HookEventType::PostToolUse,
+        HookEventType::PostToolUseFailure,
+        HookEventType::PermissionRequest,
+        HookEventType::PreCompact,
+        HookEventType::Notification,
+        HookEventType::SubagentStart,
+        HookEventType::SubagentStop,
+        HookEventType::TaskCompleted,
+    ] {
+        assert_eq!(
+            classify_signal(event_type),
+            SignalAuthority::Observational,
+            "{event_type:?} should be Observational"
+        );
+    }
+
+    // Inferential signals (catch-all)
+    for event_type in [
+        HookEventType::TeammateIdle,
+        HookEventType::WorktreeCreate,
+        HookEventType::WorktreeRemove,
+        HookEventType::ConfigChange,
+        HookEventType::Unknown,
+    ] {
+        assert_eq!(
+            classify_signal(event_type),
+            SignalAuthority::Inferential,
+            "{event_type:?} should be Inferential"
+        );
+    }
 }
 
 /// A sole dead session (pid=0) that is only recently stale must survive —
@@ -5469,6 +5370,114 @@ fn snapshot_gc_preserves_sole_idle_session_even_with_pid_zero() {
         state.sessions.len(),
         1,
         "Sole Idle session must never be evicted, even with pid=0"
+    );
+}
+
+#[test]
+fn gc_removes_idle_sessions_past_retention() {
+    let now = Utc::now();
+    let stale_ts = (now - Duration::hours(25)).to_rfc3339();
+
+    let mut state = ReducerState::from_snapshot(AppSnapshot {
+        projects: vec![],
+        sessions: vec![SessionSummary {
+            state: SessionState::Idle,
+            state_changed_at: stale_ts.clone(),
+            updated_at: stale_ts.clone(),
+            last_activity_at: Some(stale_ts.clone()),
+            ..session_summary_fixture(
+                "idle-session",
+                10,
+                "/repo",
+                "/repo",
+                SessionState::Idle,
+                &stale_ts,
+            )
+        }],
+        shells: vec![],
+        routing: vec![],
+        delegations: vec![],
+        runs: vec![],
+        diagnostics: DiagnosticsSummary {
+            events_ingested: 0,
+            sessions_tracked: 1,
+            shell_signals_tracked: 0,
+            events_skipped: 0,
+            stale_events_skipped: 0,
+            informational_events_skipped: 0,
+            reducer_events_skipped: 0,
+            last_error: None,
+            last_hook_event_at: None,
+        },
+        generated_at: now.to_rfc3339(),
+        snapshot_version: 0,
+        schema_version: 0,
+    });
+
+    state.gc_stale_sessions_at(now);
+
+    assert_eq!(
+        state.sessions.len(),
+        0,
+        "Idle session beyond retention window should be removed"
+    );
+}
+
+#[test]
+fn gc_retains_recent_idle_sessions() {
+    let now = Utc::now();
+    let fresh_ts = (now - Duration::hours(1)).to_rfc3339();
+
+    let mut state = ReducerState::from_snapshot(AppSnapshot {
+        projects: vec![],
+        sessions: vec![SessionSummary {
+            state: SessionState::Idle,
+            state_changed_at: fresh_ts.clone(),
+            updated_at: fresh_ts.clone(),
+            last_activity_at: Some(fresh_ts.clone()),
+            ..session_summary_fixture(
+                "idle-session",
+                10,
+                "/repo",
+                "/repo",
+                SessionState::Idle,
+                &fresh_ts,
+            )
+        }],
+        shells: vec![],
+        routing: vec![],
+        delegations: vec![],
+        runs: vec![],
+        diagnostics: DiagnosticsSummary {
+            events_ingested: 0,
+            sessions_tracked: 1,
+            shell_signals_tracked: 0,
+            events_skipped: 0,
+            stale_events_skipped: 0,
+            informational_events_skipped: 0,
+            reducer_events_skipped: 0,
+            last_error: None,
+            last_hook_event_at: None,
+        },
+        generated_at: now.to_rfc3339(),
+        snapshot_version: 0,
+        schema_version: 0,
+    });
+
+    state.gc_stale_sessions_at(now);
+
+    assert_eq!(
+        state.sessions.len(),
+        1,
+        "Recent Idle session should remain in retention window"
+    );
+    assert_eq!(
+        state
+            .sessions
+            .get("idle-session")
+            .expect("session retained")
+            .state,
+        SessionState::Idle
     );
 }
 
@@ -5619,7 +5628,7 @@ fn test_gc_reason_set_on_idle_transition() {
         .get("dead-waiting")
         .expect("session preserved");
     assert_eq!(session.state, SessionState::Idle);
-    assert_eq!(session.gc_reason.as_deref(), Some("sole_dead_no_shell"));
+    assert_eq!(session.gc_reason.as_deref(), Some("signal_absence"));
 }
 
 #[test]
@@ -5627,7 +5636,7 @@ fn test_gc_reason_cleared_on_hook_event() {
     let mut state = ReducerState::from_snapshot(AppSnapshot {
         projects: vec![],
         sessions: vec![SessionSummary {
-            gc_reason: Some("sole_dead_no_shell".to_string()),
+            gc_reason: Some("signal_absence".to_string()),
             ..session_summary_fixture(
                 "session-1",
                 0,
@@ -5668,11 +5677,14 @@ fn test_gc_reason_cleared_on_hook_event() {
 }
 
 #[test]
-fn test_gc_reason_not_set_on_removal() {
+fn test_gc_transitions_stale_to_idle_with_gc_reason() {
+    // The new GC transitions stale non-Idle sessions to Idle (rather than
+    // removing them), and sets gc_reason = "signal_absence" on transitioned
+    // sessions. The idle survivor's gc_reason remains None.
     let now = chrono::DateTime::parse_from_rfc3339("2099-04-01T12:00:00Z")
         .unwrap()
         .with_timezone(&Utc);
-    let stale_ts = (now - Duration::minutes(10)).to_rfc3339();
+    let stale_ts = (now - Duration::minutes(11)).to_rfc3339();
     let fresh_ts = (now - Duration::minutes(1)).to_rfc3339();
 
     let mut state = ReducerState::from_snapshot(AppSnapshot {
@@ -5716,21 +5728,18 @@ fn test_gc_reason_not_set_on_removal() {
     });
 
     let changed = state.gc_stale_sessions_at(now);
-    assert!(changed, "expected stale sibling eviction");
+    assert!(changed, "expected GC to transition the stale session");
 
-    assert!(
-        !state.sessions.contains_key("stale-worker"),
-        "GC should remove stale siblings rather than transitioning them"
-    );
-    assert!(
-        state.sessions.contains_key("idle-survivor"),
-        "survivor should remain after GC"
-    );
-    assert!(
-        state
-            .sessions
-            .values()
-            .all(|session| session.gc_reason.is_none()),
-        "surviving sessions should not gain a GC reason during removal"
+    let stale = state
+        .sessions
+        .get("stale-worker")
+        .expect("stale session preserved as Idle");
+    assert_eq!(stale.state, SessionState::Idle);
+    assert_eq!(stale.gc_reason.as_deref(), Some("signal_absence"));
+
+    let survivor = state.sessions.get("idle-survivor").expect("idle survivor");
+    assert_eq!(
+        survivor.gc_reason, None,
+        "Idle survivor should not gain a gc_reason"
     );
 }

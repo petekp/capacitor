@@ -97,6 +97,9 @@ extension AppState {
         longPollTask = _Concurrency.Task { [weak self] in
             guard let self else { return }
 
+            var unavailableRetryDelay: UInt64 = 1_000_000_000 // 1s
+            let maxUnavailableRetryDelay: UInt64 = 30_000_000_000 // 30s
+
             while !_Concurrency.Task.isCancelled {
                 let sinceVersion = max(lastPolledSnapshotVersion, lastAppliedSnapshotVersion)
 
@@ -106,6 +109,7 @@ extension AppState {
 
                     switch response {
                     case let .changed(snapshot):
+                        unavailableRetryDelay = 1_000_000_000
                         lastPolledSnapshotVersion = max(lastPolledSnapshotVersion, snapshot.snapshotVersion)
                         await applyRuntimeSnapshotIfFresh(
                             snapshot,
@@ -113,12 +117,15 @@ extension AppState {
                             projects: projectState.projects,
                         )
                     case let .unchanged(snapshotVersion):
+                        unavailableRetryDelay = 1_000_000_000
                         lastPolledSnapshotVersion = max(lastPolledSnapshotVersion, snapshotVersion)
                     case .unavailable:
                         DebugLog.write(
-                            "AppState.longPollSnapshot source=runtime_snapshot_long_poll_unavailable fallback=timer_only",
+                            "AppState.longPollSnapshot source=runtime_snapshot_long_poll_unavailable retry_in_ms=\(unavailableRetryDelay / 1_000_000)",
                         )
-                        return
+                        try? await _Concurrency.Task.sleep(nanoseconds: unavailableRetryDelay)
+                        unavailableRetryDelay = min(unavailableRetryDelay * 2, maxUnavailableRetryDelay)
+                        continue
                     }
 
                     try? await _Concurrency.Task.sleep(nanoseconds: 50_000_000)

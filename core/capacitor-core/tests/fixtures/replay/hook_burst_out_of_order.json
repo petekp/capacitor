@@ -138,10 +138,10 @@
   "expected": {
     "events_ingested": 7,
     "project_states": {
-      "/users/pete/code/capacitor": "ready"
+      "/users/pete/code/capacitor": "idle"
     },
     "session_states": {
-      "session-burst": "ready"
+      "session-burst": "idle"
     },
     "shell_count": 0
   }
