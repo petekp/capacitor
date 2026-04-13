@@ -190,7 +190,7 @@ final class TerminalActivationCoordinatorTests: XCTestCase {
         XCTAssertTrue(ok)
         XCTAssertEqual(
             steps,
-            ["resolveAnyClientTty", "directFocus", "ensureAndSwitch", "postSwitchFocus", "launchTerminalWithTmux"],
+            ["directFocus", "resolveAnyClientTty", "ensureAndSwitch", "postSwitchFocus", "launchTerminalWithTmux"],
         )
         XCTAssertEqual(launchedSession, "coordinator-session")
         XCTAssertEqual(launchedPath, "/tmp/coordinator-project")

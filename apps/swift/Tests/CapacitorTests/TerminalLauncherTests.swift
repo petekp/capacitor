@@ -426,7 +426,12 @@ final class TerminalLauncherTests: XCTestCase {
                 launched = true
                 return true
             },
-            activateTerminal: { _, _, _ in XCTFail("should not be called"); return .failed(nil) },
+            activateTerminal: { tty, path, sessionName in
+                XCTAssertNil(tty)
+                XCTAssertEqual(path, "/path/to/project")
+                XCTAssertNil(sessionName)
+                return .relaunchNeeded
+            },
             pollForNewClient: { "/dev/ttys050" },
         )
         XCTAssertTrue(ok)
@@ -440,10 +445,33 @@ final class TerminalLauncherTests: XCTestCase {
             resolveAnyClientTty: { nil },
             ensureAndSwitch: { _, _, _, _ in XCTFail("should not be called"); return false },
             launchTerminalWithTmux: { _, _ in false },
-            activateTerminal: { _, _, _ in XCTFail("should not be called"); return .failed(nil) },
+            activateTerminal: { tty, path, sessionName in
+                XCTAssertNil(tty)
+                XCTAssertEqual(path, "/path/to/project")
+                XCTAssertNil(sessionName)
+                return .relaunchNeeded
+            },
         )
 
         XCTAssertFalse(ok)
+    }
+
+    func testUnifiedActivationDirectFocusSucceedsWithNoClients() async {
+        let ok = await TerminalActivationCoordinator.runActivationFlow(
+            sessionName: "my-project",
+            projectPath: "/path/to/project",
+            resolveAnyClientTty: { XCTFail("should not resolve client"); return nil },
+            ensureAndSwitch: { _, _, _, _ in XCTFail("should not be called"); return false },
+            launchTerminalWithTmux: { _, _ in XCTFail("should not launch"); return false },
+            activateTerminal: { tty, path, sessionName in
+                XCTAssertNil(tty)
+                XCTAssertEqual(path, "/path/to/project")
+                XCTAssertNil(sessionName)
+                return .focused
+            },
+        )
+
+        XCTAssertTrue(ok)
     }
 
     /// Direct focus succeeds → ensureAndSwitch is skipped entirely
@@ -451,7 +479,7 @@ final class TerminalLauncherTests: XCTestCase {
         let ok = await TerminalActivationCoordinator.runActivationFlow(
             sessionName: "arc-design-studio",
             projectPath: "/path/to/arc-design-studio",
-            resolveAnyClientTty: { "/dev/ttys001" },
+            resolveAnyClientTty: { XCTFail("should not resolve client"); return nil },
             ensureAndSwitch: { _, _, _, _ in XCTFail("should not be called"); return false },
             launchTerminalWithTmux: { _, _ in XCTFail("should not launch"); return false },
             activateTerminal: { tty, _, _ in

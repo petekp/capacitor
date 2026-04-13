@@ -45,6 +45,14 @@ final class TerminalActivationCoordinator {
         resolveTargetPane: ((String?) async -> String?)? = nil,
         pollForNewClient: (() async -> String?)? = nil,
     ) async -> Bool {
+        // Try to focus an existing terminal by content (CWD, title) before
+        // resolving tmux clients. This handles non-tmux terminals that are
+        // already open for the project.
+        let directFocus = await activateTerminal(nil, projectPath, nil)
+        if directFocus == .focused {
+            return true
+        }
+
         let clientTty = await resolveAnyClientTty()
 
         guard let clientTty else {
@@ -55,14 +63,6 @@ final class TerminalActivationCoordinator {
             if let poll = pollForNewClient {
                 _ = await poll()
             }
-            return true
-        }
-
-        // Try to focus an existing terminal by content (CWD, title) before
-        // switching tmux. Avoids switching the tmux client's session when
-        // the target project has a non-tmux terminal already open.
-        let directFocus = await activateTerminal(nil, projectPath, nil)
-        if directFocus == .focused {
             return true
         }
 
