@@ -136,8 +136,8 @@ pub(super) fn reduce_session(
                     current,
                     shells,
                     event,
-                    SessionState::Ready,
-                    Some("stop_gate".to_string()),
+                    SessionState::Idle,
+                    Some("definitive_stop".to_string()),
                 ))
             }
         }
@@ -149,8 +149,8 @@ pub(super) fn reduce_session(
                     current,
                     shells,
                     event,
-                    SessionState::Ready,
-                    Some("task_completed".to_string()),
+                    SessionState::Idle,
+                    Some("definitive_task_completed".to_string()),
                 ))
             }
         }

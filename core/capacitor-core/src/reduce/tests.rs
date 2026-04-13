@@ -849,7 +849,7 @@ fn subagent_stop_skips_when_session_is_idle() {
     );
     assert_eq!(
         state.sessions.get("session-1").map(|session| session.state),
-        Some(SessionState::Ready)
+        Some(SessionState::Idle)
     );
 }
 
@@ -989,7 +989,7 @@ fn reducer_stop_guard_skips_for_subagent() {
 }
 
 #[test]
-fn reducer_parent_stop_transitions_to_ready() {
+fn reducer_parent_stop_transitions_to_idle() {
     let mut state = ReducerState::default();
     let _ = state.apply_hook_event(event_base(HookEventType::UserPromptSubmit));
 
@@ -1001,14 +1001,14 @@ fn reducer_parent_stop_transitions_to_ready() {
     assert!(outcome.ok);
     assert_eq!(
         state.sessions.get("session-1").map(|session| session.state),
-        Some(SessionState::Ready)
+        Some(SessionState::Idle)
     );
     assert_eq!(
         state
             .sessions
             .get("session-1")
             .and_then(|session| session.ready_reason.as_deref()),
-        Some("stop_gate")
+        Some("definitive_stop")
     );
 }
 
@@ -1411,7 +1411,7 @@ fn test_reducer_17_event_contract_matrix() {
             event_type: HookEventType::Stop,
             setup: Some(HookEventType::UserPromptSubmit),
             notification_type: None,
-            expected_state: Some(SessionState::Ready),
+            expected_state: Some(SessionState::Idle),
             expected_skip_reason: None,
             description: "stop (parent session)",
         },
@@ -1435,7 +1435,7 @@ fn test_reducer_17_event_contract_matrix() {
             event_type: HookEventType::TaskCompleted,
             setup: Some(HookEventType::UserPromptSubmit),
             notification_type: None,
-            expected_state: Some(SessionState::Ready),
+            expected_state: Some(SessionState::Idle),
             expected_skip_reason: None,
             description: "task_completed (parent)",
         },
@@ -1602,8 +1602,8 @@ fn test_reducer_17_event_contract_matrix() {
                 let expected_ready_reason = match expectation.description {
                     "notification (idle_prompt)" => Some("idle_prompt"),
                     "notification (auth_success)" => Some("auth_success"),
-                    "stop (parent session)" => Some("stop_gate"),
-                    "task_completed (parent)" => Some("task_completed"),
+                    "stop (parent session)" => Some("definitive_stop"),
+                    "task_completed (parent)" => Some("definitive_task_completed"),
                     _ => None,
                 };
                 assert_eq!(
@@ -1717,7 +1717,7 @@ fn test_out_of_order_pretool_then_idle_prompt() {
 }
 
 #[test]
-fn test_task_completed_parent_session_transitions_to_ready() {
+fn test_task_completed_parent_session_transitions_to_idle() {
     let mut state = ReducerState::default();
 
     let _ = state.apply_hook_event(event_base(HookEventType::UserPromptSubmit));
@@ -1733,8 +1733,11 @@ fn test_task_completed_parent_session_transitions_to_ready() {
         .sessions
         .get("session-1")
         .expect("session should exist");
-    assert_eq!(session.state, SessionState::Ready);
-    assert_eq!(session.ready_reason.as_deref(), Some("task_completed"));
+    assert_eq!(session.state, SessionState::Idle);
+    assert_eq!(
+        session.ready_reason.as_deref(),
+        Some("definitive_task_completed")
+    );
 }
 
 #[test]
@@ -3055,7 +3058,7 @@ fn orphaned_session_gc_evicts_stale_same_project_sibling_on_new_session_start() 
 }
 
 #[test]
-fn stop_produces_ready_session_that_is_subject_to_event_time_gc() {
+fn stop_produces_idle_session_that_survives_orphan_event_time_gc() {
     let mut state = ReducerState::default();
 
     let mut old_work = event_base(HookEventType::UserPromptSubmit);
@@ -3074,10 +3077,10 @@ fn stop_produces_ready_session_that_is_subject_to_event_time_gc() {
     assert!(outcome.ok, "{outcome:?}");
 
     let old_session = state.sessions.get("old-session").expect("old session");
-    assert_eq!(old_session.state, SessionState::Ready);
-    assert_eq!(old_session.ready_reason.as_deref(), Some("stop_gate"));
+    assert_eq!(old_session.state, SessionState::Idle);
+    assert_eq!(old_session.ready_reason.as_deref(), Some("definitive_stop"));
 
-    // New session starts long after -- stale Ready sibling is evicted
+    // New session starts long after -- stale sibling is evaluated by orphan GC.
     let mut new_start = event_base(HookEventType::SessionStart);
     new_start.session_id = "new-session".to_string();
     new_start.pid = Some(22);
@@ -3085,8 +3088,8 @@ fn stop_produces_ready_session_that_is_subject_to_event_time_gc() {
     let outcome = state.apply_hook_event(new_start);
     assert!(outcome.ok, "{outcome:?}");
     assert!(
-        !state.sessions.contains_key("old-session"),
-        "Ready session from Stop should be evicted by event-time GC"
+        state.sessions.contains_key("old-session"),
+        "Idle session from Stop should survive orphan cleanup"
     );
 
     let project = state
@@ -3096,11 +3099,11 @@ fn stop_produces_ready_session_that_is_subject_to_event_time_gc() {
         .find(|project| project.project_path == "/repo")
         .expect("project");
 
-    assert_eq!(project.session_count, 1);
+    assert_eq!(project.session_count, 2);
 }
 
 #[test]
-fn task_completed_produces_ready_session_that_is_subject_to_event_time_gc() {
+fn task_completed_produces_idle_session_that_survives_orphan_event_time_gc() {
     let mut state = ReducerState::default();
 
     let mut old_work = event_base(HookEventType::UserPromptSubmit);
@@ -3118,14 +3121,17 @@ fn task_completed_produces_ready_session_that_is_subject_to_event_time_gc() {
     assert!(outcome.ok, "{outcome:?}");
 
     let old_session = state.sessions.get("old-session").expect("old session");
-    assert_eq!(old_session.state, SessionState::Ready);
-    assert_eq!(old_session.ready_reason.as_deref(), Some("task_completed"));
+    assert_eq!(old_session.state, SessionState::Idle);
+    assert_eq!(
+        old_session.ready_reason.as_deref(),
+        Some("definitive_task_completed")
+    );
     assert_eq!(
         old_session.last_activity_at.as_deref(),
         Some("2099-03-31T00:00:00Z")
     );
 
-    // New session starts long after — stale Ready sibling is evicted
+    // New session starts long after — orphan GC should retain the idle sibling.
     let mut new_start = event_base(HookEventType::SessionStart);
     new_start.session_id = "new-session".to_string();
     new_start.pid = Some(22);
@@ -3133,9 +3139,17 @@ fn task_completed_produces_ready_session_that_is_subject_to_event_time_gc() {
     let outcome = state.apply_hook_event(new_start);
     assert!(outcome.ok, "{outcome:?}");
     assert!(
-        !state.sessions.contains_key("old-session"),
-        "Ready session from TaskCompleted should be evicted by event-time GC"
+        state.sessions.contains_key("old-session"),
+        "Idle session from TaskCompleted should survive orphan cleanup"
     );
+
+    let project = state
+        .snapshot()
+        .projects
+        .into_iter()
+        .find(|project| project.project_path == "/repo")
+        .expect("project");
+    assert_eq!(project.session_count, 2);
 }
 
 #[test]

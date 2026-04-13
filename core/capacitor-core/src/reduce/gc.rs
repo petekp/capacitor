@@ -145,6 +145,8 @@ pub(super) fn session_is_alive_map(
             let terminated = matches!(
                 session.ready_reason.as_deref(),
                 Some("definitive_session_end")
+                    | Some("definitive_stop")
+                    | Some("definitive_task_completed")
             );
             if terminated {
                 return (session.session_id.clone(), false);
