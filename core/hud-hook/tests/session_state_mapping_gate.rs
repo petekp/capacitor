@@ -85,7 +85,7 @@ fn session_state_mapping_gate_ss_p0_1_exhaustive_known_hook_events_map_to_expect
         MappingCase {
             hook_event_name: "Stop",
             input_patch: json!({"stop_hook_active": false}),
-            expected_state: Some("idle"),
+            expected_state: Some("ready"),
             needs_pretool_setup: false,
         },
         MappingCase {
@@ -97,7 +97,7 @@ fn session_state_mapping_gate_ss_p0_1_exhaustive_known_hook_events_map_to_expect
         MappingCase {
             hook_event_name: "TaskCompleted",
             input_patch: json!({}),
-            expected_state: Some("idle"),
+            expected_state: Some("ready"),
             needs_pretool_setup: false,
         },
         MappingCase {
@@ -280,7 +280,7 @@ fn session_state_mapping_gate_ss_p2_2_cli_determinism_same_input_yields_same_sta
         assert_eq!(status, 200, "task completed run {} should succeed", idx);
 
         let snapshot = read_snapshot(&snapshot_path);
-        assert_eq!(snapshot["sessions"][0]["state"].as_str(), Some("idle"));
+        assert_eq!(snapshot["sessions"][0]["state"].as_str(), Some("ready"));
         assert_eq!(
             snapshot["sessions"][0]["session_id"].as_str(),
             Some("session-gate")

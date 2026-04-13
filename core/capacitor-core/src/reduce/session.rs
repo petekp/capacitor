@@ -136,8 +136,8 @@ pub(super) fn reduce_session(
                     current,
                     shells,
                     event,
-                    SessionState::Idle,
-                    Some("definitive_stop".to_string()),
+                    SessionState::Ready,
+                    Some("stop_gate".to_string()),
                 ))
             }
         }
@@ -149,8 +149,8 @@ pub(super) fn reduce_session(
                     current,
                     shells,
                     event,
-                    SessionState::Idle,
-                    Some("definitive_task_completed".to_string()),
+                    SessionState::Ready,
+                    Some("task_completed".to_string()),
                 ))
             }
         }
@@ -325,7 +325,11 @@ fn upsert_session(
     );
 
     let next_ready_reason = if new_state == SessionState::Ready || new_state == SessionState::Idle {
-        ready_reason.or_else(|| current.and_then(|record| record.ready_reason.clone()))
+        ready_reason.or_else(|| {
+            current
+                .filter(|record| record.state == new_state)
+                .and_then(|record| record.ready_reason.clone())
+        })
     } else {
         None
     };

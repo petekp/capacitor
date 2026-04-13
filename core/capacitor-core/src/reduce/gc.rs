@@ -144,7 +144,7 @@ pub(super) fn session_is_alive_map(
             // Definitive stop/end signals: not alive.
             let terminated = matches!(
                 session.ready_reason.as_deref(),
-                Some("definitive_stop") | Some("definitive_session_end")
+                Some("definitive_session_end")
             );
             if terminated {
                 return (session.session_id.clone(), false);
