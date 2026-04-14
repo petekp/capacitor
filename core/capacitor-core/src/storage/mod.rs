@@ -342,6 +342,7 @@ mod tests {
                 updated_at: "2026-02-28T00:00:00Z".to_string(),
                 last_event: Some("user_prompt_submit".to_string()),
                 last_activity_at: Some("2026-02-28T00:00:00Z".to_string()),
+                terminated_at: None,
                 tools_in_flight: 0,
                 ready_reason: None,
                 is_alive: true,

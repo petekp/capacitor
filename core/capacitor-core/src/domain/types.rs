@@ -60,6 +60,8 @@ pub struct SessionSummary {
     pub updated_at: String,
     pub last_event: Option<String>,
     pub last_activity_at: Option<String>,
+    #[serde(default)]
+    pub terminated_at: Option<String>,
     pub tools_in_flight: u32,
     pub ready_reason: Option<String>,
     #[serde(default)]

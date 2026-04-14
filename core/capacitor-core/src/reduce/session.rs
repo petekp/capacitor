@@ -136,8 +136,8 @@ pub(super) fn reduce_session(
                     current,
                     shells,
                     event,
-                    SessionState::Idle,
-                    Some("definitive_stop".to_string()),
+                    SessionState::Ready,
+                    Some("stop".to_string()),
                 ))
             }
         }
@@ -145,13 +145,7 @@ pub(super) fn reduce_session(
             if has_auxiliary_task_metadata(event) {
                 SessionUpdate::Skip("auxiliary_task_metadata")
             } else {
-                SessionUpdate::Upsert(upsert_session(
-                    current,
-                    shells,
-                    event,
-                    SessionState::Idle,
-                    Some("definitive_task_completed".to_string()),
-                ))
+                SessionUpdate::Skip("task_completed_intent_preserved")
             }
         }
         HookEventType::SessionEnd => {
@@ -334,6 +328,12 @@ fn upsert_session(
         None
     };
 
+    let terminated_at = if event.event_type == HookEventType::SessionEnd {
+        Some(updated_at.clone())
+    } else {
+        current.and_then(|record| record.terminated_at.clone())
+    };
+
     SessionSummary {
         session_id: event.session_id.clone(),
         pid,
@@ -346,6 +346,7 @@ fn upsert_session(
         updated_at,
         last_event: Some(event.event_type.as_str().to_string()),
         last_activity_at,
+        terminated_at,
         tools_in_flight,
         ready_reason: next_ready_reason,
         is_alive: pid > 0 && shells.contains_key(&pid),
@@ -616,6 +617,9 @@ pub(super) enum SignalAuthority {
 
 #[cfg(test)]
 pub(super) fn classify_signal(event_type: HookEventType) -> SignalAuthority {
+    // Stop and TaskCompleted are still classified as definitive here for test
+    // coverage completeness, but external evidence now treats them as
+    // ambiguous/vetoable intents pending a larger authority-model migration.
     match event_type {
         HookEventType::Stop | HookEventType::SessionEnd | HookEventType::SessionStart => {
             SignalAuthority::Definitive

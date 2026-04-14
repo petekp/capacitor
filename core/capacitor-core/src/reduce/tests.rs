@@ -133,6 +133,7 @@ fn session_summary_fixture(
         updated_at: updated_at.to_string(),
         last_event: None,
         last_activity_at: None,
+        terminated_at: None,
         tools_in_flight: 0,
         ready_reason: None,
         is_alive: false,
@@ -849,7 +850,7 @@ fn subagent_stop_skips_when_session_is_idle() {
     );
     assert_eq!(
         state.sessions.get("session-1").map(|session| session.state),
-        Some(SessionState::Idle)
+        Some(SessionState::Ready)
     );
 }
 
@@ -1001,14 +1002,14 @@ fn reducer_parent_stop_transitions_to_idle() {
     assert!(outcome.ok);
     assert_eq!(
         state.sessions.get("session-1").map(|session| session.state),
-        Some(SessionState::Idle)
+        Some(SessionState::Ready)
     );
     assert_eq!(
         state
             .sessions
             .get("session-1")
             .and_then(|session| session.ready_reason.as_deref()),
-        Some("definitive_stop")
+        Some("stop")
     );
 }
 
@@ -1411,7 +1412,7 @@ fn test_reducer_17_event_contract_matrix() {
             event_type: HookEventType::Stop,
             setup: Some(HookEventType::UserPromptSubmit),
             notification_type: None,
-            expected_state: Some(SessionState::Idle),
+            expected_state: Some(SessionState::Ready),
             expected_skip_reason: None,
             description: "stop (parent session)",
         },
@@ -1435,8 +1436,8 @@ fn test_reducer_17_event_contract_matrix() {
             event_type: HookEventType::TaskCompleted,
             setup: Some(HookEventType::UserPromptSubmit),
             notification_type: None,
-            expected_state: Some(SessionState::Idle),
-            expected_skip_reason: None,
+            expected_state: Some(SessionState::Working),
+            expected_skip_reason: Some("task_completed_intent_preserved"),
             description: "task_completed (parent)",
         },
         EventExpectation {
@@ -1602,8 +1603,7 @@ fn test_reducer_17_event_contract_matrix() {
                 let expected_ready_reason = match expectation.description {
                     "notification (idle_prompt)" => Some("idle_prompt"),
                     "notification (auth_success)" => Some("auth_success"),
-                    "stop (parent session)" => Some("definitive_stop"),
-                    "task_completed (parent)" => Some("definitive_task_completed"),
+                    "stop (parent session)" => Some("stop"),
                     _ => None,
                 };
                 assert_eq!(
@@ -1727,17 +1727,135 @@ fn test_task_completed_parent_session_transitions_to_idle() {
 
     let outcome = state.apply_hook_event(task_completed);
     assert!(outcome.ok);
-    assert_eq!(outcome.message, "event ingested");
+    assert_eq!(
+        outcome.message,
+        "event skipped: task_completed_intent_preserved"
+    );
 
     let session = state
         .sessions
         .get("session-1")
         .expect("session should exist");
-    assert_eq!(session.state, SessionState::Idle);
-    assert_eq!(
-        session.ready_reason.as_deref(),
-        Some("definitive_task_completed")
-    );
+    assert_eq!(session.state, SessionState::Working);
+    assert_eq!(session.ready_reason, None);
+}
+
+mod flicker_regression {
+    use super::*;
+
+    #[test]
+    fn live_session_never_reaches_idle_between_tool_bursts() {
+        let mut state = ReducerState::default();
+        let events = [
+            HookEventType::PreToolUse,
+            HookEventType::PostToolUse,
+            HookEventType::Stop,
+            HookEventType::PreToolUse,
+            HookEventType::PostToolUse,
+        ];
+
+        for (index, event_type) in events.into_iter().enumerate() {
+            let mut event = event_base(event_type);
+            event.recorded_at = format!("2099-01-31T00:00:0{index}Z");
+            if event_type == HookEventType::Stop {
+                event.stop_hook_active = Some(false);
+            }
+
+            let outcome = state.apply_hook_event(event);
+            assert!(outcome.ok, "event {event_type:?} should be accepted");
+
+            let session = state
+                .sessions
+                .get("session-1")
+                .expect("session should exist");
+            assert_ne!(
+                session.state,
+                SessionState::Idle,
+                "session should never flicker to Idle after {event_type:?}"
+            );
+        }
+
+        let session = state
+            .sessions
+            .get("session-1")
+            .expect("session should exist");
+        assert_eq!(session.state, SessionState::Working);
+    }
+
+    #[test]
+    fn task_completed_preserves_working_state() {
+        let mut state = ReducerState::default();
+        let events = [
+            HookEventType::PreToolUse,
+            HookEventType::PostToolUse,
+            HookEventType::TaskCompleted,
+            HookEventType::PreToolUse,
+            HookEventType::PostToolUse,
+        ];
+
+        for (index, event_type) in events.into_iter().enumerate() {
+            let mut event = event_base(event_type);
+            event.recorded_at = format!("2099-01-31T00:00:1{index}Z");
+
+            let outcome = state.apply_hook_event(event);
+            assert!(outcome.ok, "event {event_type:?} should be accepted");
+
+            let session = state
+                .sessions
+                .get("session-1")
+                .expect("session should exist");
+            assert_eq!(
+                session.state,
+                SessionState::Working,
+                "session should remain Working after {event_type:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn terminated_session_retained_across_project_switch() {
+        let mut state = ReducerState::default();
+
+        let mut prompt = event_base(HookEventType::UserPromptSubmit);
+        prompt.session_id = "terminated-session".to_string();
+        prompt.pid = Some(11);
+        prompt.recorded_at = "2099-03-31T00:00:00Z".to_string();
+        let outcome = state.apply_hook_event(prompt);
+        assert!(outcome.ok, "{outcome:?}");
+
+        let mut session_end = event_base(HookEventType::SessionEnd);
+        session_end.session_id = "terminated-session".to_string();
+        session_end.pid = Some(11);
+        session_end.recorded_at = "2099-03-31T00:05:00Z".to_string();
+        let outcome = state.apply_hook_event(session_end);
+        assert!(outcome.ok, "{outcome:?}");
+
+        let terminated = state
+            .sessions
+            .get("terminated-session")
+            .expect("terminated session");
+        assert_eq!(terminated.state, SessionState::Idle);
+        assert!(
+            terminated.terminated_at.is_some(),
+            "SessionEnd must set terminated_at"
+        );
+
+        let mut new_start = event_base(HookEventType::SessionStart);
+        new_start.session_id = "fresh-session".to_string();
+        new_start.pid = Some(22);
+        new_start.recorded_at = "2099-03-31T01:00:00Z".to_string();
+        let outcome = state.apply_hook_event(new_start);
+        assert!(outcome.ok, "{outcome:?}");
+
+        assert!(
+            state.sessions.contains_key("terminated-session"),
+            "terminated session must be retained via terminated_at, not evicted by orphan GC"
+        );
+        assert!(
+            state.sessions.contains_key("fresh-session"),
+            "new session should also be present"
+        );
+    }
 }
 
 #[test]
@@ -3058,101 +3176,6 @@ fn orphaned_session_gc_evicts_stale_same_project_sibling_on_new_session_start() 
 }
 
 #[test]
-fn stop_produces_idle_session_that_survives_orphan_event_time_gc() {
-    let mut state = ReducerState::default();
-
-    let mut old_work = event_base(HookEventType::UserPromptSubmit);
-    old_work.session_id = "old-session".to_string();
-    old_work.pid = Some(11);
-    old_work.recorded_at = "2099-03-31T00:00:00Z".to_string();
-    let outcome = state.apply_hook_event(old_work);
-    assert!(outcome.ok, "{outcome:?}");
-
-    let mut old_stop = event_base(HookEventType::Stop);
-    old_stop.session_id = "old-session".to_string();
-    old_stop.pid = Some(11);
-    old_stop.recorded_at = "2099-03-31T00:05:00Z".to_string();
-    old_stop.stop_hook_active = Some(false);
-    let outcome = state.apply_hook_event(old_stop);
-    assert!(outcome.ok, "{outcome:?}");
-
-    let old_session = state.sessions.get("old-session").expect("old session");
-    assert_eq!(old_session.state, SessionState::Idle);
-    assert_eq!(old_session.ready_reason.as_deref(), Some("definitive_stop"));
-
-    // New session starts long after -- stale sibling is evaluated by orphan GC.
-    let mut new_start = event_base(HookEventType::SessionStart);
-    new_start.session_id = "new-session".to_string();
-    new_start.pid = Some(22);
-    new_start.recorded_at = "2099-03-31T00:20:01Z".to_string();
-    let outcome = state.apply_hook_event(new_start);
-    assert!(outcome.ok, "{outcome:?}");
-    assert!(
-        state.sessions.contains_key("old-session"),
-        "Idle session from Stop should survive orphan cleanup"
-    );
-
-    let project = state
-        .snapshot()
-        .projects
-        .into_iter()
-        .find(|project| project.project_path == "/repo")
-        .expect("project");
-
-    assert_eq!(project.session_count, 2);
-}
-
-#[test]
-fn task_completed_produces_idle_session_that_survives_orphan_event_time_gc() {
-    let mut state = ReducerState::default();
-
-    let mut old_work = event_base(HookEventType::UserPromptSubmit);
-    old_work.session_id = "old-session".to_string();
-    old_work.pid = Some(11);
-    old_work.recorded_at = "2099-03-31T00:00:00Z".to_string();
-    let outcome = state.apply_hook_event(old_work);
-    assert!(outcome.ok, "{outcome:?}");
-
-    let mut completed = event_base(HookEventType::TaskCompleted);
-    completed.session_id = "old-session".to_string();
-    completed.pid = Some(11);
-    completed.recorded_at = "2099-03-31T00:05:00Z".to_string();
-    let outcome = state.apply_hook_event(completed);
-    assert!(outcome.ok, "{outcome:?}");
-
-    let old_session = state.sessions.get("old-session").expect("old session");
-    assert_eq!(old_session.state, SessionState::Idle);
-    assert_eq!(
-        old_session.ready_reason.as_deref(),
-        Some("definitive_task_completed")
-    );
-    assert_eq!(
-        old_session.last_activity_at.as_deref(),
-        Some("2099-03-31T00:00:00Z")
-    );
-
-    // New session starts long after — orphan GC should retain the idle sibling.
-    let mut new_start = event_base(HookEventType::SessionStart);
-    new_start.session_id = "new-session".to_string();
-    new_start.pid = Some(22);
-    new_start.recorded_at = "2099-03-31T00:20:01Z".to_string();
-    let outcome = state.apply_hook_event(new_start);
-    assert!(outcome.ok, "{outcome:?}");
-    assert!(
-        state.sessions.contains_key("old-session"),
-        "Idle session from TaskCompleted should survive orphan cleanup"
-    );
-
-    let project = state
-        .snapshot()
-        .projects
-        .into_iter()
-        .find(|project| project.project_path == "/repo")
-        .expect("project");
-    assert_eq!(project.session_count, 2);
-}
-
-#[test]
 fn diagnostics_tracks_skip_counters() {
     let mut state = ReducerState::default();
 
@@ -4306,15 +4329,13 @@ fn snapshot_gc_evicts_stale_when_fresh_session_exists() {
     );
 }
 
-/// IMP-9: event-time GC does NOT evict Idle siblings.
+/// IMP-9: event-time GC evicts stale non-terminated Idle siblings.
 ///
-/// When a Working session sends a new event, the event-time cleanup
-/// (`cleanup_orphaned_same_project_sessions`) must preserve Idle siblings
-/// even when they are stale (updated > 10 minutes ago).  Idle represents
-/// a terminal window the user may return to, so it should never be
-/// evicted by the shared `is_session_evictable` predicate.
+/// Under the structured provenance slice, orphan retention is keyed on
+/// `terminated_at`, not `state == Idle`. A stale idle sibling without a
+/// terminal marker must be evicted on a fresh same-project session start.
 #[test]
-fn orphaned_session_gc_preserves_stale_idle_sibling() {
+fn orphaned_session_gc_evicts_stale_idle_sibling_without_terminated_at() {
     let mut state = ReducerState::from_snapshot(AppSnapshot {
         projects: vec![],
         sessions: vec![
@@ -4368,19 +4389,16 @@ fn orphaned_session_gc_preserves_stale_idle_sibling() {
     let outcome = state.apply_hook_event(fresh_start);
     assert!(outcome.ok, "{outcome:?}");
 
-    // The Idle session must survive — it is exempt from eviction.
+    // The stale non-terminated Idle session must be evicted.
     assert!(
-        state.sessions.contains_key("idle-session"),
-        "Idle session should NOT be evicted regardless of staleness"
+        !state.sessions.contains_key("idle-session"),
+        "stale idle session without terminated_at should be evicted"
     );
 
     // The new session should exist.
     assert!(state.sessions.contains_key("new-session"));
 
-    // The Working session was stale relative to the new event (12:00:00 vs
-    // 12:00:01, but only 1 second apart — within grace), so it also survives.
-    // If it didn't survive, the Idle assertion above is still the key check.
-    // Let's verify the project state reflects all survivors.
+    // The Working session was within grace, so it survives alongside the new session.
     let project = state
         .snapshot()
         .projects
@@ -4388,11 +4406,7 @@ fn orphaned_session_gc_preserves_stale_idle_sibling() {
         .find(|p| p.project_path == "/repo")
         .expect("project");
 
-    assert!(
-        project.session_count >= 2,
-        "At least the Idle and new sessions should remain, got {}",
-        project.session_count
-    );
+    assert_eq!(project.session_count, 2);
 }
 
 #[test]
@@ -4651,6 +4665,7 @@ fn snapshot_gc_ready_session_uses_correct_anchor() {
             updated_at: stale_ts.clone(),
             last_event: None,
             last_activity_at: Some(fresh_ts.clone()),
+            terminated_at: None,
             tools_in_flight: 0,
             ready_reason: None,
             is_alive: false,
@@ -4710,6 +4725,7 @@ fn snapshot_gc_ready_session_uses_correct_anchor() {
             updated_at: fresh_ts.clone(),
             last_event: None,
             last_activity_at: Some(stale_ts.clone()),
+            terminated_at: None,
             tools_in_flight: 0,
             ready_reason: None,
             is_alive: false,
@@ -4769,6 +4785,7 @@ fn snapshot_gc_ready_session_uses_correct_anchor() {
             updated_at: stale_ts.clone(),
             last_event: None,
             last_activity_at: Some(stale_ts.clone()),
+            terminated_at: None,
             tools_in_flight: 0,
             ready_reason: None,
             is_alive: false,
@@ -5035,13 +5052,13 @@ fn session_start_after_stop_idle_produces_ready() {
     let session = state.sessions.get("session-1").expect("session");
     assert_eq!(
         session.state,
-        SessionState::Idle,
-        "Stop should transition session to Idle"
+        SessionState::Ready,
+        "Stop should route the session to Ready"
     );
     assert_eq!(
         session.ready_reason.as_deref(),
-        Some("definitive_stop"),
-        "Stop should annotate Idle session with definitive_stop ready reason"
+        Some("stop"),
+        "Stop should annotate the session with stop ready reason"
     );
 
     let mut restart = event_base(HookEventType::SessionStart);
@@ -5056,13 +5073,12 @@ fn session_start_after_stop_idle_produces_ready() {
     assert_eq!(
         session.state,
         SessionState::Ready,
-        "SessionStart after Stop-idle should produce Ready"
+        "SessionStart after Stop-ready should produce Ready"
     );
 }
 
 #[test]
-/// After a definitive TaskCompleted transition to Idle, SessionStart should
-/// return the session to Ready.
+/// TaskCompleted is a vetoable intent, so it should preserve the current state.
 fn session_start_after_task_completed_idle_produces_ready() {
     let mut state = ReducerState::default();
 
@@ -5075,13 +5091,13 @@ fn session_start_after_task_completed_idle_produces_ready() {
     let session = state.sessions.get("session-1").expect("session");
     assert_eq!(
         session.state,
-        SessionState::Idle,
-        "TaskCompleted should transition session to Idle"
+        SessionState::Working,
+        "TaskCompleted should preserve the current state"
     );
     assert_eq!(
         session.ready_reason.as_deref(),
-        Some("definitive_task_completed"),
-        "TaskCompleted should annotate Idle session with definitive_task_completed ready reason"
+        None,
+        "TaskCompleted should not annotate a preserved session"
     );
 
     let mut restart = event_base(HookEventType::SessionStart);
@@ -5089,14 +5105,14 @@ fn session_start_after_task_completed_idle_produces_ready() {
     let outcome = state.apply_hook_event(restart);
     assert!(
         outcome.ok,
-        "SessionStart should be accepted after definitive task completion idle"
+        "SessionStart should be accepted after task completion preserves working state"
     );
 
     let session = state.sessions.get("session-1").expect("session");
     assert_eq!(
         session.state,
-        SessionState::Ready,
-        "SessionStart after TaskCompleted-idle should produce Ready"
+        SessionState::Working,
+        "SessionStart after TaskCompleted-preserved-working should remain Working"
     );
 }
 
@@ -5258,6 +5274,7 @@ fn snapshot_gc_transitions_sole_dead_session_to_idle() {
             updated_at: stale_ts.clone(),
             last_event: Some("notification".to_string()),
             last_activity_at: Some(stale_ts.clone()),
+            terminated_at: None,
             tools_in_flight: 1,
             ready_reason: None,
             is_alive: false,
@@ -5385,6 +5402,7 @@ fn snapshot_gc_preserves_recently_dead_sole_session() {
             updated_at: recent_ts.clone(),
             last_event: Some("notification".to_string()),
             last_activity_at: Some(recent_ts.clone()),
+            terminated_at: None,
             tools_in_flight: 1,
             ready_reason: None,
             is_alive: false,

@@ -93,9 +93,9 @@ pub(super) fn cleanup_orphaned_same_project_sessions(
             crate::domain::normalize_path_for_matching(&session.project_path) == project_path
         })
         .filter(|session| {
-            // Idle sessions are never evictable — they represent terminal windows
-            // the user may return to.
-            if session.state == SessionState::Idle {
+            // Terminated sessions are never evictable — they represent terminal
+            // windows the user may return to.
+            if session.terminated_at.is_some() {
                 return false;
             }
             parse_rfc3339(&session.updated_at)
@@ -141,18 +141,7 @@ pub(super) fn session_is_alive_map(
             if session.state == SessionState::Idle {
                 return (session.session_id.clone(), false);
             }
-            // Definitive stop/end signals: not alive.
-            // Defense-in-depth: under current reducer rules, sessions with these
-            // reasons are already in Idle state and short-circuit above. These
-            // entries guard against hypothetical future changes that might route
-            // definitive signals to a non-Idle state.
-            let terminated = matches!(
-                session.ready_reason.as_deref(),
-                Some("definitive_session_end")
-                    | Some("definitive_stop")
-                    | Some("definitive_task_completed")
-            );
-            if terminated {
+            if session.terminated_at.is_some() {
                 return (session.session_id.clone(), false);
             }
             // Observational: recent activity proves alive.
