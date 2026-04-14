@@ -19,4 +19,8 @@ circuits:
     skills: [dead-code-sweep]
 
 dispatch:
-  engine: codex
+  default: auto
+  roles:
+    implementer: codex
+    reviewer: agent
+    researcher: agent
