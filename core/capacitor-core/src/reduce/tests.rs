@@ -553,12 +553,17 @@ fn test_idle_prompt_corrects_drift_without_hiding_live_work() {
             .map(|session| session.tools_in_flight),
         Some(0)
     );
+    // ADR-005 Phase 3 step 9: the drift-correcting Notification refreshes
+    // tools_in_flight and preserves Working state, but state_source remains
+    // pinned to the higher-authority PreToolUse — a lower-authority
+    // meta-notification does not regress the authority record within the
+    // freshness window.
     assert_eq!(
         state.sessions.get("session-1").and_then(|session| session
             .state_source
             .as_ref()
             .map(|source| source.event_kind)),
-        Some(HookEventType::Notification)
+        Some(HookEventType::PreToolUse)
     );
 }
 
@@ -5687,7 +5692,6 @@ mod authority_matrix_contract_tests {
     }
 
     #[test]
-    #[ignore = "Blocked on ADR-005 Phase 3 step 9 (reducer authority enforcement)"]
     fn test_definitive_terminal_blocks_meta_awaiting_input_override() {
         let state = apply_events(vec![
             {
@@ -5721,7 +5725,6 @@ mod authority_matrix_contract_tests {
     }
 
     #[test]
-    #[ignore = "Blocked on ADR-005 Phase 3 step 9 (reducer authority enforcement)"]
     fn test_definitive_transient_upgrades_from_inferential() {
         let state = apply_events(vec![
             {
@@ -5749,7 +5752,6 @@ mod authority_matrix_contract_tests {
     }
 
     #[test]
-    #[ignore = "Blocked on ADR-005 Phase 3 step 9 (reducer authority enforcement)"]
     fn test_authority_hierarchy_transitive_ordering() {
         let ordered_pairs = [
             (

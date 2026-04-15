@@ -129,7 +129,7 @@ Before claiming each phase is complete, answer:
 **Phase 3:**
 - [x] Does `SessionSummary` carry provenance fields across the FFI boundary?
 - [x] Complete (Slice 4, 2026-04-15). `ProjectSessionState` carries `state_source` and `last_authoritative_event_at` from the representative session; `DebugSessionStateCard` renders authority/eventKind; `SessionStateManager` stabilization logs include authority context.
-- [~] Partial (Slice 5, 2026-04-15). Authority matrix encoded as `AUTHORITY_MATRIX` const in `reduce/session.rs`; contract tests prove table coverage, classification equivalence, tier cardinality, and authority recording for each tier. Override-prevention tests staged as `#[ignore]` pending step 9 (reducer authority enforcement).
+- [x] Complete (Slice 6, 2026-04-15). Authority matrix encoded as `AUTHORITY_MATRIX` const in `reduce/session.rs` (Slice 5); reducer enforcement landed in Slice 6 via two-layer guard: (a) `terminal_authority_blocks_event` at the top of `reduce_session` makes `DefinitiveTerminal` sticky against strictly-lower events except `SessionStart` (resurrection path) for `AUTHORITY_TERMINAL_FRESHNESS_SECS = 300`, and (b) `should_preserve_state_source` inside `upsert_session` preserves the higher-authority `state_source` when a strictly-lower event upserts within `AUTHORITY_NONTERMINAL_FRESHNESS_SECS = 3` — state still transitions, only provenance is pinned. All 12 contract tests pass deliberately, including the 3 previously `#[ignore]`d override-prevention tests.
 - [ ] Does evidence replay on restart produce the same snapshot as continuous operation?
 
 ## Reopen Conditions

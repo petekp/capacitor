@@ -39,6 +39,23 @@ const SHELL_RETENTION: Duration = Duration::minutes(15);
 /// if the session received a hook event within this window. Covers the typical
 /// 2-6 second LLM thinking gap between tool calls.
 const IDLE_PROMPT_GRACE_SECS: i64 = 8;
+/// Freshness window for terminal-tier authority. Once a session receives a
+/// `DefinitiveTerminal` event (session ended), strictly lower-authority
+/// events cannot override it for this long. Long because "the session
+/// ended" is a sticky fact that shouldn't be contradicted by a late
+/// `idle_prompt` notification or an inferential observation. Sessions
+/// typically GC after `IDLE_RETENTION` anyway, so this is effectively
+/// lifetime-scoped under normal conditions. ADR-005 Phase 3 step 9.
+const AUTHORITY_TERMINAL_FRESHNESS_SECS: i64 = 300;
+/// Freshness window for non-terminal authority tiers (DefinitiveTransient,
+/// AmbiguousPerTurn, MetaAwaitingInput, Inferential). Short, because the
+/// state machine must be free to progress through hook-driven transitions
+/// (e.g., `PreToolUse` → `Stop` → `idle_prompt`) without the guard
+/// suppressing legitimate lower-authority events that arrive after a brief
+/// settling period. Sized to block immediate reordered/duplicate lower
+/// events (`< 3s` gap) while allowing the state machine to breathe.
+/// ADR-005 Phase 3 step 9.
+const AUTHORITY_NONTERMINAL_FRESHNESS_SECS: i64 = 3;
 const HOOK_ACTIVITY_ALIVE_SECS: i64 = 180;
 
 #[derive(Debug, Default, Clone)]

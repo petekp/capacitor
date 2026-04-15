@@ -7,13 +7,28 @@ use crate::domain::{
 };
 
 use super::utils::is_timestamp_stale;
-use super::{SessionUpdate, IDLE_PROMPT_GRACE_SECS};
+use super::{
+    SessionUpdate, AUTHORITY_NONTERMINAL_FRESHNESS_SECS, AUTHORITY_TERMINAL_FRESHNESS_SECS,
+    IDLE_PROMPT_GRACE_SECS,
+};
 
 pub(super) fn reduce_session(
     current: Option<&SessionSummary>,
     shells: &HashMap<u32, ShellSignal>,
     event: &IngestHookEventCommand,
 ) -> SessionUpdate {
+    // ADR-005 Phase 3 step 9: DefinitiveTerminal is sticky. Once a session
+    // receives a `DefinitiveTerminal` event (SessionEnd), strictly lower
+    // authority events cannot override the terminal state within the
+    // terminal freshness window. `SessionStart` is the one exception — it
+    // explicitly resurrects a terminated session (the /clear path). Other
+    // authority tiers use the lighter state_source preservation inside
+    // `upsert_session` instead, which allows state transitions (Working →
+    // Stop → Ready) without regressing `state_source.authority`.
+    if terminal_authority_blocks_event(current, event) {
+        return SessionUpdate::Skip("lower_authority_within_freshness_window");
+    }
+
     match event.event_type {
         HookEventType::SessionStart => {
             let already_working = current
@@ -282,11 +297,21 @@ fn upsert_session(
     };
 
     let authority = classify_signal(event.event_type);
-    let state_source = Some(StateSource {
-        event_kind: event.event_type,
-        authority,
-        observed_at: updated_at.clone(),
-    });
+    // ADR-005 Phase 3 step 9: within a higher-authority freshness window,
+    // preserve the existing state_source rather than regressing it to a
+    // strictly lower authority. The state itself may still transition
+    // (Working → Stop → Ready, drift-correction adjustments, etc) — this
+    // guard only enforces that the provenance record tracks the strongest
+    // authority observed in the window, not the most recent event.
+    let state_source = if should_preserve_state_source(current, event, authority) {
+        current.and_then(|record| record.state_source.clone())
+    } else {
+        Some(StateSource {
+            event_kind: event.event_type,
+            authority,
+            observed_at: updated_at.clone(),
+        })
+    };
     let last_authoritative_event_at = match authority {
         SignalAuthority::DefinitiveTerminal | SignalAuthority::DefinitiveTransient => {
             Some(updated_at.clone())
@@ -635,4 +660,112 @@ pub(super) fn classify_signal(event_type: HookEventType) -> SignalAuthority {
         .expect(
             "AUTHORITY_MATRIX missing HookEventType variant; see classify_signal_covers_all_event_types",
         )
+}
+
+/// Total ordering over `SignalAuthority` for override decisions. Higher
+/// numeric rank means stronger authority; strict inequality gates override.
+/// ADR-005 Phase 3 step 9.
+fn authority_rank(authority: SignalAuthority) -> u8 {
+    match authority {
+        SignalAuthority::DefinitiveTerminal => 5,
+        SignalAuthority::DefinitiveTransient => 4,
+        SignalAuthority::AmbiguousPerTurn => 3,
+        SignalAuthority::MetaAwaitingInput => 2,
+        SignalAuthority::Inferential => 1,
+    }
+}
+
+/// Freshness window (in seconds) during which the given authority tier
+/// suppresses strictly lower-authority overrides of `state_source`.
+/// `DefinitiveTerminal` is sticky (session termination is a long-lived
+/// fact); non-terminal tiers use a short window so the state machine can
+/// progress through natural hook transitions while retaining provenance.
+fn authority_freshness_window_secs(authority: SignalAuthority) -> i64 {
+    match authority {
+        SignalAuthority::DefinitiveTerminal => AUTHORITY_TERMINAL_FRESHNESS_SECS,
+        SignalAuthority::DefinitiveTransient
+        | SignalAuthority::AmbiguousPerTurn
+        | SignalAuthority::MetaAwaitingInput
+        | SignalAuthority::Inferential => AUTHORITY_NONTERMINAL_FRESHNESS_SECS,
+    }
+}
+
+/// Returns true iff the event was observed at or within the freshness window
+/// anchored on `observed_at`. Used to decide whether an established
+/// authority record still suppresses lower-authority signals. Returns false
+/// when either timestamp fails to parse (permissive fallback).
+fn within_freshness_window(observed_at: &str, event_recorded_at: &str, window_secs: i64) -> bool {
+    let Some(event_time) = super::utils::parse_rfc3339(event_recorded_at) else {
+        return false;
+    };
+    let Some(observed_time) = super::utils::parse_rfc3339(observed_at) else {
+        return false;
+    };
+    let delta_secs = event_time
+        .signed_duration_since(observed_time)
+        .num_seconds();
+    // Reordered or duplicate events (delta <= 0) are treated as still
+    // within the window — they must not override newer higher-authority
+    // state even when they land out of order.
+    delta_secs <= 0 || delta_secs < window_secs
+}
+
+/// Top-level guard. `DefinitiveTerminal` is the one authority tier that
+/// blocks state transitions (not just state_source) from lower-authority
+/// events. Applies only when:
+/// - Current state_source is DefinitiveTerminal and within its sticky window.
+/// - Incoming event is strictly lower authority.
+/// - Incoming event is NOT `SessionStart` (explicit resurrection — the
+///   /clear path legitimately revives a terminated session).
+fn terminal_authority_blocks_event(
+    current: Option<&SessionSummary>,
+    event: &IngestHookEventCommand,
+) -> bool {
+    if event.event_type == HookEventType::SessionStart {
+        return false;
+    }
+    let Some(session) = current else {
+        return false;
+    };
+    let Some(source) = session.state_source.as_ref() else {
+        return false;
+    };
+    if source.authority != SignalAuthority::DefinitiveTerminal {
+        return false;
+    }
+
+    let incoming_authority = classify_signal(event.event_type);
+    if authority_rank(incoming_authority) >= authority_rank(source.authority) {
+        return false;
+    }
+
+    within_freshness_window(
+        &source.observed_at,
+        &event.recorded_at,
+        AUTHORITY_TERMINAL_FRESHNESS_SECS,
+    )
+}
+
+/// `upsert_session` guard. When an incoming event carries strictly lower
+/// authority than the current state_source and arrives within the current
+/// authority's freshness window, preserve the existing state_source rather
+/// than regressing it. The session's state, `tools_in_flight`, and
+/// `updated_at` still transition as the per-event branch requests — only
+/// the provenance record is pinned.
+fn should_preserve_state_source(
+    current: Option<&SessionSummary>,
+    event: &IngestHookEventCommand,
+    incoming_authority: SignalAuthority,
+) -> bool {
+    let Some(session) = current else {
+        return false;
+    };
+    let Some(source) = session.state_source.as_ref() else {
+        return false;
+    };
+    if authority_rank(incoming_authority) >= authority_rank(source.authority) {
+        return false;
+    }
+    let window_secs = authority_freshness_window_secs(source.authority);
+    within_freshness_window(&source.observed_at, &event.recorded_at, window_secs)
 }
