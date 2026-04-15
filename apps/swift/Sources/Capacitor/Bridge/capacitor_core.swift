@@ -5367,6 +5367,18 @@ public struct ProjectSessionState {
      * Whether the runtime considers this project actively running.
      */
     public var hasSession: Bool
+    /**
+     * Typed provenance of the representative session's current state.
+     * `None` for legacy snapshots without state-source tracking, and when
+     * the session ID cannot be resolved in the session index.
+     */
+    public var stateSource: StateSource?
+    /**
+     * Timestamp (RFC3339) of the most recent DefinitiveTerminal-authority
+     * event observed for the representative session. Used by UI to show
+     * how stale an inferred/ambiguous state is.
+     */
+    public var lastAuthoritativeEventAt: String?
 
     /// Default memberwise initializers are never public by default, so we
     /// declare one manually.
@@ -5381,7 +5393,17 @@ public struct ProjectSessionState {
                     */ thinking: Bool?,
                 /* 
                     * Whether the runtime considers this project actively running.
-                    */ hasSession: Bool)
+                    */ hasSession: Bool,
+                /* 
+                    * Typed provenance of the representative session's current state.
+                    * `None` for legacy snapshots without state-source tracking, and when
+                    * the session ID cannot be resolved in the session index.
+                    */ stateSource: StateSource?,
+                /* 
+                    * Timestamp (RFC3339) of the most recent DefinitiveTerminal-authority
+                    * event observed for the representative session. Used by UI to show
+                    * how stale an inferred/ambiguous state is.
+                    */ lastAuthoritativeEventAt: String?)
     {
         self.state = state
         self.stateChangedAt = stateChangedAt
@@ -5391,6 +5413,8 @@ public struct ProjectSessionState {
         self.context = context
         self.thinking = thinking
         self.hasSession = hasSession
+        self.stateSource = stateSource
+        self.lastAuthoritativeEventAt = lastAuthoritativeEventAt
     }
 }
 
@@ -5420,6 +5444,12 @@ extension ProjectSessionState: Equatable, Hashable {
         if lhs.hasSession != rhs.hasSession {
             return false
         }
+        if lhs.stateSource != rhs.stateSource {
+            return false
+        }
+        if lhs.lastAuthoritativeEventAt != rhs.lastAuthoritativeEventAt {
+            return false
+        }
         return true
     }
 
@@ -5432,6 +5462,8 @@ extension ProjectSessionState: Equatable, Hashable {
         hasher.combine(context)
         hasher.combine(thinking)
         hasher.combine(hasSession)
+        hasher.combine(stateSource)
+        hasher.combine(lastAuthoritativeEventAt)
     }
 }
 
@@ -5449,7 +5481,9 @@ public struct FfiConverterTypeProjectSessionState: FfiConverterRustBuffer {
                 workingOn: FfiConverterOptionString.read(from: &buf),
                 context: FfiConverterOptionTypeContextInfo.read(from: &buf),
                 thinking: FfiConverterOptionBool.read(from: &buf),
-                hasSession: FfiConverterBool.read(from: &buf)
+                hasSession: FfiConverterBool.read(from: &buf),
+                stateSource: FfiConverterOptionTypeStateSource.read(from: &buf),
+                lastAuthoritativeEventAt: FfiConverterOptionString.read(from: &buf)
             )
     }
 
@@ -5462,6 +5496,8 @@ public struct FfiConverterTypeProjectSessionState: FfiConverterRustBuffer {
         FfiConverterOptionTypeContextInfo.write(value.context, into: &buf)
         FfiConverterOptionBool.write(value.thinking, into: &buf)
         FfiConverterBool.write(value.hasSession, into: &buf)
+        FfiConverterOptionTypeStateSource.write(value.stateSource, into: &buf)
+        FfiConverterOptionString.write(value.lastAuthoritativeEventAt, into: &buf)
     }
 }
 

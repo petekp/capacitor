@@ -113,7 +113,22 @@ import SwiftUI
             let stateColor = color(for: session.state)
             let toolsInFlight = session.toolsInFlight ?? 0
             let lastActivity = session.lastActivityAt ?? "nil"
-            let stateSource = session.stateSource.map(\.eventKind) ?? "nil"
+            let stateSourceLine: String = {
+                guard let src = session.stateSource else { return "state_source=nil" }
+                return "state_source=\(src.eventKind)/\(src.authority)"
+            }()
+            let lastAuthLine: String = {
+                guard let ts = session.lastAuthoritativeEventAt else { return "last_auth=nil" }
+                let formatter = ISO8601DateFormatter()
+                formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+                let parsed = formatter.date(from: ts) ?? ISO8601DateFormatter().date(from: ts)
+                guard let when = parsed else { return "last_auth=\(ts)" }
+                let ageSeconds = Date().timeIntervalSince(when)
+                if ageSeconds < 60, ageSeconds >= 0 {
+                    return "last_auth=\(Int(ageSeconds))s ago"
+                }
+                return "last_auth=\(ts)"
+            }()
             let isAlive = session.isAlive.map { $0 ? "alive" : "dead" } ?? "unknown"
 
             return VStack(alignment: .leading, spacing: 4) {
@@ -141,7 +156,11 @@ import SwiftUI
                     .font(.system(size: 10, weight: .regular, design: .monospaced))
                     .foregroundColor(.white.opacity(0.7))
 
-                Text("state_source=\(stateSource) pid=\(session.pid) \(isAlive)")
+                Text("\(stateSourceLine) pid=\(session.pid) \(isAlive)")
+                    .font(.system(size: 10, weight: .regular, design: .monospaced))
+                    .foregroundColor(.white.opacity(0.6))
+
+                Text(lastAuthLine)
                     .font(.system(size: 10, weight: .regular, design: .monospaced))
                     .foregroundColor(.white.opacity(0.6))
             }

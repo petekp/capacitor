@@ -151,6 +151,70 @@ final class SessionStateManagerTests: XCTestCase {
         XCTAssertEqual(manager.getPreferredSessionId(for: project), "session-new-ready")
     }
 
+    func testProjectionPreservesStateSourceWhenPresent() {
+        let manager = makeManager()
+        let project = makeProject("core-project", path: "/tmp/core-project")
+        let session = makeRuntimeSession(
+            sessionId: "session-1",
+            pid: 1234,
+            state: "working",
+            stateSource: RuntimeStateSource(
+                eventKind: "session_start",
+                authority: "definitive_terminal",
+                observedAt: "2026-04-15T12:00:00Z",
+            ),
+        )
+
+        manager.applyRuntimeProjectStates(
+            [makeRuntimeProjectState(projectPath: project.path, state: "working", sessionId: session.sessionId)],
+            sessions: [session],
+            for: [project],
+            correlationId: "projection-state-source",
+        )
+
+        let projected = manager.getSessionState(for: project)
+        XCTAssertEqual(projected?.stateSource?.eventKind, .sessionStart)
+        XCTAssertEqual(projected?.stateSource?.authority, .definitiveTerminal)
+    }
+
+    func testProjectionPreservesNilStateSourceForLegacySessions() {
+        let manager = makeManager()
+        let project = makeProject("core-project", path: "/tmp/core-project")
+        let session = makeRuntimeSession(sessionId: "session-1", pid: 1234, state: "working")
+
+        manager.applyRuntimeProjectStates(
+            [makeRuntimeProjectState(projectPath: project.path, state: "working", sessionId: session.sessionId)],
+            sessions: [session],
+            for: [project],
+            correlationId: "projection-state-source-nil",
+        )
+
+        XCTAssertNil(manager.getSessionState(for: project)?.stateSource)
+    }
+
+    func testProjectionPreservesLastAuthoritativeEventAt() {
+        let manager = makeManager()
+        let project = makeProject("core-project", path: "/tmp/core-project")
+        let session = makeRuntimeSession(
+            sessionId: "session-1",
+            pid: 1234,
+            state: "working",
+            lastAuthoritativeEventAt: "2026-04-15T12:00:00Z",
+        )
+
+        manager.applyRuntimeProjectStates(
+            [makeRuntimeProjectState(projectPath: project.path, state: "working", sessionId: session.sessionId)],
+            sessions: [session],
+            for: [project],
+            correlationId: "projection-last-authoritative",
+        )
+
+        XCTAssertEqual(
+            manager.getSessionState(for: project)?.lastAuthoritativeEventAt,
+            "2026-04-15T12:00:00Z",
+        )
+    }
+
     func testApplyRuntimeProjectStatesHoldsSingleEmptySnapshotThenCommitsSecond() {
         let manager = makeManager()
         let project = makeProject("core-project", path: "/tmp/core-project")
@@ -655,6 +719,8 @@ final class SessionStateManagerTests: XCTestCase {
         sessionId: String,
         pid: UInt32,
         state: String,
+        stateSource: RuntimeStateSource? = nil,
+        lastAuthoritativeEventAt: String? = nil,
     ) -> RuntimeSession {
         RuntimeSession(
             sessionId: sessionId,
@@ -669,7 +735,8 @@ final class SessionStateManagerTests: XCTestCase {
             lastEvent: nil,
             lastActivityAt: nil,
             toolsInFlight: nil,
-            stateSource: nil,
+            stateSource: stateSource,
+            lastAuthoritativeEventAt: lastAuthoritativeEventAt,
             gcReason: nil,
             isAlive: nil,
         )
@@ -685,6 +752,8 @@ final class SessionStateManagerTests: XCTestCase {
             context: nil,
             thinking: nil,
             hasSession: true,
+            stateSource: nil,
+            lastAuthoritativeEventAt: nil,
         )
     }
 

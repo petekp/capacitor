@@ -42,6 +42,8 @@ final class SessionSummarizerTests: XCTestCase {
             context: nil,
             thinking: nil,
             hasSession: true,
+            stateSource: nil,
+            lastAuthoritativeEventAt: nil,
         )
     }
 

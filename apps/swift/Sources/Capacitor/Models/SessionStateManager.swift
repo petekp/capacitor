@@ -1,6 +1,73 @@
 import Foundation
 import SwiftUI
 
+private func runtimeStateSourceToDomain(_ src: RuntimeStateSource) -> StateSource? {
+    guard let eventKind = hookEventType(from: src.eventKind),
+          let authority = signalAuthority(from: src.authority)
+    else { return nil }
+    return StateSource(eventKind: eventKind, authority: authority, observedAt: src.observedAt)
+}
+
+private func hookEventType(from value: String) -> HookEventType? {
+    switch value {
+    case "session_start", "sessionStart":
+        .sessionStart
+    case "user_prompt_submit", "userPromptSubmit":
+        .userPromptSubmit
+    case "pre_tool_use", "preToolUse":
+        .preToolUse
+    case "post_tool_use", "postToolUse":
+        .postToolUse
+    case "post_tool_use_failure", "postToolUseFailure":
+        .postToolUseFailure
+    case "permission_request", "permissionRequest":
+        .permissionRequest
+    case "pre_compact", "preCompact":
+        .preCompact
+    case "notification":
+        .notification
+    case "subagent_start", "subagentStart":
+        .subagentStart
+    case "subagent_stop", "subagentStop":
+        .subagentStop
+    case "stop":
+        .stop
+    case "teammate_idle", "teammateIdle":
+        .teammateIdle
+    case "task_completed", "taskCompleted":
+        .taskCompleted
+    case "worktree_create", "worktreeCreate":
+        .worktreeCreate
+    case "worktree_remove", "worktreeRemove":
+        .worktreeRemove
+    case "config_change", "configChange":
+        .configChange
+    case "session_end", "sessionEnd":
+        .sessionEnd
+    case "unknown":
+        .unknown
+    default:
+        nil
+    }
+}
+
+private func signalAuthority(from value: String) -> SignalAuthority? {
+    switch value {
+    case "definitive_terminal", "definitiveTerminal":
+        .definitiveTerminal
+    case "definitive_transient", "definitiveTransient":
+        .definitiveTransient
+    case "ambiguous_per_turn", "ambiguousPerTurn":
+        .ambiguousPerTurn
+    case "meta_awaiting_input", "metaAwaitingInput":
+        .metaAwaitingInput
+    case "inferential":
+        .inferential
+    default:
+        nil
+    }
+}
+
 /// Projects runtime service snapshot state into the UI-facing session model for projects.
 ///
 /// Rust remains authoritative for hook ingest, reducer/query policy, and persisted runtime
@@ -55,6 +122,7 @@ final class SessionStateManager {
         let priority: MatchPriority
         let representativePid: UInt32?
         let isAlive: Bool?
+        let representativeSession: RuntimeSession?
     }
 
     private enum Constants {
@@ -253,8 +321,10 @@ final class SessionStateManager {
                 if count < Constants.idleCommitThreshold {
                     // Hold previous active state
                     result[path] = sessionStates[path]!
+                    let heldAuthority = sessionStates[path]?.stateSource.map { "\($0.authority)" } ?? "nil"
+                    let heldEventKind = sessionStates[path]?.stateSource.map { "\($0.eventKind)" } ?? "nil"
                     DebugLog.write(
-                        "SessionStateManager.idleStabilize action=hold project=\(path) count=\(count)/\(Constants.idleCommitThreshold)",
+                        "SessionStateManager.idleStabilize action=hold project=\(path) count=\(count)/\(Constants.idleCommitThreshold) authority=\(heldAuthority) eventKind=\(heldEventKind)",
                     )
                 } else {
                     // Threshold reached — commit the idle transition
@@ -302,8 +372,10 @@ final class SessionStateManager {
                 if count < Constants.readyCommitThreshold {
                     // Hold previous Working state
                     result[path] = sessionStates[path]!
+                    let heldAuthority = sessionStates[path]?.stateSource.map { "\($0.authority)" } ?? "nil"
+                    let heldEventKind = sessionStates[path]?.stateSource.map { "\($0.eventKind)" } ?? "nil"
                     DebugLog.write(
-                        "SessionStateManager.readyStabilize action=hold project=\(path) count=\(count)/\(Constants.readyCommitThreshold)",
+                        "SessionStateManager.readyStabilize action=hold project=\(path) count=\(count)/\(Constants.readyCommitThreshold) authority=\(heldAuthority) eventKind=\(heldEventKind)",
                     )
                 } else {
                     // Threshold reached — commit the Ready transition
@@ -504,7 +576,13 @@ final class SessionStateManager {
                         ) else { continue }
                         let projectPath = candidate.project.path
                         let representativeSession = state.sessionId.flatMap { sessionIndex[$0] }
-                        let candidateBest = BestProjectState(state: state, priority: .repoFallback, representativePid: representativeSession?.pid, isAlive: representativeSession?.isAlive)
+                        let candidateBest = BestProjectState(
+                            state: state,
+                            priority: .repoFallback,
+                            representativePid: representativeSession?.pid,
+                            isAlive: representativeSession?.isAlive,
+                            representativeSession: representativeSession,
+                        )
                         if let existing = bestStates[projectPath] {
                             if shouldReplace(existing: existing, with: candidateBest, now: now, processLiveness: processLiveness) {
                                 bestStates[projectPath] = candidateBest
@@ -522,7 +600,13 @@ final class SessionStateManager {
 
             let projectPath = match.project.path
             let representativeSession = state.sessionId.flatMap { sessionIndex[$0] }
-            let candidateBest = BestProjectState(state: state, priority: .direct, representativePid: representativeSession?.pid, isAlive: representativeSession?.isAlive)
+            let candidateBest = BestProjectState(
+                state: state,
+                priority: .direct,
+                representativePid: representativeSession?.pid,
+                isAlive: representativeSession?.isAlive,
+                representativeSession: representativeSession,
+            )
             if let existing = bestStates[projectPath] {
                 if shouldReplace(existing: existing, with: candidateBest, now: now, processLiveness: processLiveness) {
                     bestStates[projectPath] = candidateBest
@@ -552,6 +636,8 @@ final class SessionStateManager {
                 context: nil,
                 thinking: nil,
                 hasSession: state.hasSession,
+                stateSource: best.representativeSession?.stateSource.flatMap(runtimeStateSourceToDomain),
+                lastAuthoritativeEventAt: best.representativeSession?.lastAuthoritativeEventAt,
             )
             merged[projectPath] = sessionState
             attributions[projectPath] = SessionAttribution(

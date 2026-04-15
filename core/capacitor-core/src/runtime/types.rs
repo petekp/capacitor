@@ -8,7 +8,7 @@
 //! **Note:** These types are exported via UniFFI for Swift consumption.
 //! Prefer additive changes; renames or removals are breaking for clients.
 
-use crate::domain::SessionState;
+use crate::domain::{SessionState, StateSource};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -229,6 +229,16 @@ pub struct ProjectSessionState {
     /// Whether the runtime considers this project actively running.
     #[serde(default)]
     pub has_session: bool,
+    /// Typed provenance of the representative session's current state.
+    /// `None` for legacy snapshots without state-source tracking, and when
+    /// the session ID cannot be resolved in the session index.
+    #[serde(default)]
+    pub state_source: Option<StateSource>,
+    /// Timestamp (RFC3339) of the most recent DefinitiveTerminal-authority
+    /// event observed for the representative session. Used by UI to show
+    /// how stale an inferred/ambiguous state is.
+    #[serde(default)]
+    pub last_authoritative_event_at: Option<String>,
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

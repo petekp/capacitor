@@ -497,6 +497,7 @@ final class RuntimeClient {
                         observedAt: $0.observedAt,
                     )
                 },
+                lastAuthoritativeEventAt: session.lastAuthoritativeEventAt,
                 gcReason: session.gcReason,
                 isAlive: session.isAlive,
             )
@@ -823,6 +824,7 @@ private struct SnapshotSessionPayload: Decodable {
     let lastActivityAt: String?
     let toolsInFlight: UInt32
     let stateSource: SnapshotStateSourcePayload?
+    let lastAuthoritativeEventAt: String?
     let gcReason: String?
     let isAlive: Bool?
 
@@ -840,6 +842,7 @@ private struct SnapshotSessionPayload: Decodable {
         case lastActivityAt = "last_activity_at"
         case toolsInFlight = "tools_in_flight"
         case stateSource = "state_source"
+        case lastAuthoritativeEventAt = "last_authoritative_event_at"
         case gcReason = "gc_reason"
         case isAlive = "is_alive"
     }
@@ -864,6 +867,7 @@ private struct SnapshotSessionPayload: Decodable {
                 observedAt: $0.observedAt,
             )
         }
+        lastAuthoritativeEventAt = session.lastAuthoritativeEventAt
         gcReason = session.gcReason
         isAlive = session.isAlive
     }

@@ -26,6 +26,8 @@ final class AppStateSessionObservationTests: XCTestCase {
                 context: nil,
                 thinking: nil,
                 hasSession: true,
+                stateSource: nil,
+                lastAuthoritativeEventAt: nil,
             ),
         ])
 
@@ -55,6 +57,8 @@ final class AppStateSessionObservationTests: XCTestCase {
                 context: nil,
                 thinking: nil,
                 hasSession: true,
+                stateSource: nil,
+                lastAuthoritativeEventAt: nil,
             ),
         ])
 
@@ -77,6 +81,8 @@ final class AppStateSessionObservationTests: XCTestCase {
                 context: nil,
                 thinking: nil,
                 hasSession: true,
+                stateSource: nil,
+                lastAuthoritativeEventAt: nil,
             ),
         ])
 
@@ -245,6 +251,8 @@ final class AppStateSessionObservationTests: XCTestCase {
                 context: nil,
                 thinking: nil,
                 hasSession: true,
+                stateSource: nil,
+                lastAuthoritativeEventAt: nil,
             ),
         ])
         appState.shellStateStore.applyRuntimeShellState(
@@ -680,6 +688,7 @@ final class AppStateSessionObservationTests: XCTestCase {
             lastActivityAt: timestamp,
             toolsInFlight: 0,
             stateSource: nil,
+            lastAuthoritativeEventAt: nil,
             gcReason: gcReason,
             isAlive: true,
         )

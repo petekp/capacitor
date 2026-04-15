@@ -273,6 +273,8 @@ final class QuickFeedbackSubmitterTests: XCTestCase {
                     context: nil,
                     thinking: true,
                     hasSession: true,
+                    stateSource: nil,
+                    lastAuthoritativeEventAt: nil,
                 ),
                 otherPath: ProjectSessionState(
                     state: .ready,
@@ -283,6 +285,8 @@ final class QuickFeedbackSubmitterTests: XCTestCase {
                     context: nil,
                     thinking: nil,
                     hasSession: true,
+                    stateSource: nil,
+                    lastAuthoritativeEventAt: nil,
                 ),
             ],
             activationTrace: "Ghostty activation succeeded for /Users/pete/Code/capacitor",

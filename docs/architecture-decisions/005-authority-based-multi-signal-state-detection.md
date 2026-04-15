@@ -128,7 +128,7 @@ Before claiming each phase is complete, answer:
 
 **Phase 3:**
 - [x] Does `SessionSummary` carry provenance fields across the FFI boundary?
-- [ ] Can Swift distinguish "hooks say working" from "transcript says active"?
+- [x] Complete (Slice 4, 2026-04-15). `ProjectSessionState` carries `state_source` and `last_authoritative_event_at` from the representative session; `DebugSessionStateCard` renders authority/eventKind; `SessionStateManager` stabilization logs include authority context.
 - [ ] Does the authority matrix contract test exist and pass?
 - [ ] Does evidence replay on restart produce the same snapshot as continuous operation?
 

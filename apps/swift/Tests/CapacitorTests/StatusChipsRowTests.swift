@@ -62,6 +62,8 @@ final class StatusChipsRowTests: XCTestCase {
             context: nil,
             thinking: nil,
             hasSession: state != .idle,
+            stateSource: nil,
+            lastAuthoritativeEventAt: nil,
         )
     }
 

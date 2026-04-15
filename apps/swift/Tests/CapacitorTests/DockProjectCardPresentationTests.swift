@@ -32,6 +32,8 @@ final class DockProjectCardPresentationTests: XCTestCase {
             context: nil,
             thinking: nil,
             hasSession: state != .idle,
+            stateSource: nil,
+            lastAuthoritativeEventAt: nil,
         )
     }
 }

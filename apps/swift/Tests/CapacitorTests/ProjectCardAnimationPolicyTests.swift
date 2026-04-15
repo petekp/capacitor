@@ -363,6 +363,8 @@ final class ProjectCardAnimationPolicyTests: XCTestCase {
             context: nil,
             thinking: nil,
             hasSession: true,
+            stateSource: nil,
+            lastAuthoritativeEventAt: nil,
         )
     }
 

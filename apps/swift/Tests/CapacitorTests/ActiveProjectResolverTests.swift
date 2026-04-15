@@ -19,6 +19,8 @@ final class ActiveProjectResolverTests: XCTestCase {
                 context: nil,
                 thinking: nil,
                 hasSession: true,
+                stateSource: nil,
+                lastAuthoritativeEventAt: nil,
             ),
             projectB.path: ProjectSessionState(
                 state: .ready,
@@ -29,6 +31,8 @@ final class ActiveProjectResolverTests: XCTestCase {
                 context: nil,
                 thinking: nil,
                 hasSession: true,
+                stateSource: nil,
+                lastAuthoritativeEventAt: nil,
             ),
         ])
 
@@ -55,6 +59,8 @@ final class ActiveProjectResolverTests: XCTestCase {
                 context: nil,
                 thinking: nil,
                 hasSession: true,
+                stateSource: nil,
+                lastAuthoritativeEventAt: nil,
             ),
             projectB.path: ProjectSessionState(
                 state: .ready,
@@ -65,6 +71,8 @@ final class ActiveProjectResolverTests: XCTestCase {
                 context: nil,
                 thinking: nil,
                 hasSession: true,
+                stateSource: nil,
+                lastAuthoritativeEventAt: nil,
             ),
         ])
 
