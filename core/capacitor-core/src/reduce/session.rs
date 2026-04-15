@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use crate::domain::{
     normalize_path_for_matching, now_rfc3339, resolve_project_identity, workspace_id,
     HookEventType, IngestHookEventCommand, SessionState, SessionSummary, ShellSignal,
+    SignalAuthority, StateSource,
 };
 
 use super::utils::is_timestamp_stale;
@@ -334,6 +335,19 @@ fn upsert_session(
         current.and_then(|record| record.terminated_at.clone())
     };
 
+    let authority = classify_signal(event.event_type);
+    let state_source = Some(StateSource {
+        event_kind: event.event_type,
+        authority,
+        observed_at: updated_at.clone(),
+    });
+    let last_authoritative_event_at = match authority {
+        SignalAuthority::DefinitiveTerminal | SignalAuthority::DefinitiveTransient => {
+            Some(updated_at.clone())
+        }
+        _ => current.and_then(|record| record.last_authoritative_event_at.clone()),
+    };
+
     SessionSummary {
         session_id: event.session_id.clone(),
         pid,
@@ -349,6 +363,8 @@ fn upsert_session(
         terminated_at,
         tools_in_flight,
         ready_reason: next_ready_reason,
+        state_source,
+        last_authoritative_event_at,
         is_alive: pid > 0 && shells.contains_key(&pid),
         gc_reason: None,
     }
@@ -598,42 +614,25 @@ pub(super) fn is_shell_signal_stale(
     is_timestamp_stale(current.updated_at.as_str(), incoming_recorded_at)
 }
 
-// ── Signal Authority Classification ──────────────────────────────────
-//
-// Executable documentation of the authority hierarchy that governs
-// session lifecycle transitions. Not called at runtime — serves as a
-// testable contract for the design invariants.
-
-#[cfg(test)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum SignalAuthority {
-    /// Lifecycle boundary events that definitively terminate or start a session.
-    Definitive,
-    /// Hook events that prove active work is happening.
-    Observational,
-    /// Events with no direct evidence of session activity.
-    Inferential,
-}
-
-#[cfg(test)]
 pub(super) fn classify_signal(event_type: HookEventType) -> SignalAuthority {
-    // Stop and TaskCompleted are still classified as definitive here for test
-    // coverage completeness, but external evidence now treats them as
-    // ambiguous/vetoable intents pending a larger authority-model migration.
     match event_type {
-        HookEventType::Stop | HookEventType::SessionEnd | HookEventType::SessionStart => {
-            SignalAuthority::Definitive
-        }
-        HookEventType::TaskCompleted => SignalAuthority::Definitive,
-        HookEventType::UserPromptSubmit
+        HookEventType::SessionEnd => SignalAuthority::DefinitiveTerminal,
+        HookEventType::SessionStart
         | HookEventType::PreToolUse
         | HookEventType::PostToolUse
         | HookEventType::PostToolUseFailure
-        | HookEventType::PermissionRequest
-        | HookEventType::PreCompact
-        | HookEventType::Notification
+        | HookEventType::UserPromptSubmit
         | HookEventType::SubagentStart
-        | HookEventType::SubagentStop => SignalAuthority::Observational,
-        _ => SignalAuthority::Inferential,
+        | HookEventType::PermissionRequest => SignalAuthority::DefinitiveTransient,
+        HookEventType::Stop | HookEventType::TaskCompleted | HookEventType::SubagentStop => {
+            SignalAuthority::AmbiguousPerTurn
+        }
+        HookEventType::Notification => SignalAuthority::MetaAwaitingInput,
+        HookEventType::PreCompact
+        | HookEventType::TeammateIdle
+        | HookEventType::WorktreeCreate
+        | HookEventType::WorktreeRemove
+        | HookEventType::ConfigChange
+        | HookEventType::Unknown => SignalAuthority::Inferential,
     }
 }

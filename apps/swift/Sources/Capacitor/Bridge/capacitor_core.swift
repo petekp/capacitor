@@ -6319,14 +6319,17 @@ public struct SessionSummary {
     public var updatedAt: String
     public var lastEvent: String?
     public var lastActivityAt: String?
+    public var terminatedAt: String?
     public var toolsInFlight: UInt32
     public var readyReason: String?
+    public var stateSource: StateSource?
+    public var lastAuthoritativeEventAt: String?
     public var isAlive: Bool
     public var gcReason: String?
 
     /// Default memberwise initializers are never public by default, so we
     /// declare one manually.
-    public init(sessionId: String, pid: UInt32, cwd: String, projectId: String, projectPath: String, workspaceId: String, state: SessionState, stateChangedAt: String, updatedAt: String, lastEvent: String?, lastActivityAt: String?, toolsInFlight: UInt32, readyReason: String?, isAlive: Bool, gcReason: String?) {
+    public init(sessionId: String, pid: UInt32, cwd: String, projectId: String, projectPath: String, workspaceId: String, state: SessionState, stateChangedAt: String, updatedAt: String, lastEvent: String?, lastActivityAt: String?, terminatedAt: String?, toolsInFlight: UInt32, readyReason: String?, stateSource: StateSource?, lastAuthoritativeEventAt: String?, isAlive: Bool, gcReason: String?) {
         self.sessionId = sessionId
         self.pid = pid
         self.cwd = cwd
@@ -6338,8 +6341,11 @@ public struct SessionSummary {
         self.updatedAt = updatedAt
         self.lastEvent = lastEvent
         self.lastActivityAt = lastActivityAt
+        self.terminatedAt = terminatedAt
         self.toolsInFlight = toolsInFlight
         self.readyReason = readyReason
+        self.stateSource = stateSource
+        self.lastAuthoritativeEventAt = lastAuthoritativeEventAt
         self.isAlive = isAlive
         self.gcReason = gcReason
     }
@@ -6380,10 +6386,19 @@ extension SessionSummary: Equatable, Hashable {
         if lhs.lastActivityAt != rhs.lastActivityAt {
             return false
         }
+        if lhs.terminatedAt != rhs.terminatedAt {
+            return false
+        }
         if lhs.toolsInFlight != rhs.toolsInFlight {
             return false
         }
         if lhs.readyReason != rhs.readyReason {
+            return false
+        }
+        if lhs.stateSource != rhs.stateSource {
+            return false
+        }
+        if lhs.lastAuthoritativeEventAt != rhs.lastAuthoritativeEventAt {
             return false
         }
         if lhs.isAlive != rhs.isAlive {
@@ -6407,8 +6422,11 @@ extension SessionSummary: Equatable, Hashable {
         hasher.combine(updatedAt)
         hasher.combine(lastEvent)
         hasher.combine(lastActivityAt)
+        hasher.combine(terminatedAt)
         hasher.combine(toolsInFlight)
         hasher.combine(readyReason)
+        hasher.combine(stateSource)
+        hasher.combine(lastAuthoritativeEventAt)
         hasher.combine(isAlive)
         hasher.combine(gcReason)
     }
@@ -6432,8 +6450,11 @@ public struct FfiConverterTypeSessionSummary: FfiConverterRustBuffer {
                 updatedAt: FfiConverterString.read(from: &buf),
                 lastEvent: FfiConverterOptionString.read(from: &buf),
                 lastActivityAt: FfiConverterOptionString.read(from: &buf),
+                terminatedAt: FfiConverterOptionString.read(from: &buf),
                 toolsInFlight: FfiConverterUInt32.read(from: &buf),
                 readyReason: FfiConverterOptionString.read(from: &buf),
+                stateSource: FfiConverterOptionTypeStateSource.read(from: &buf),
+                lastAuthoritativeEventAt: FfiConverterOptionString.read(from: &buf),
                 isAlive: FfiConverterBool.read(from: &buf),
                 gcReason: FfiConverterOptionString.read(from: &buf)
             )
@@ -6451,8 +6472,11 @@ public struct FfiConverterTypeSessionSummary: FfiConverterRustBuffer {
         FfiConverterString.write(value.updatedAt, into: &buf)
         FfiConverterOptionString.write(value.lastEvent, into: &buf)
         FfiConverterOptionString.write(value.lastActivityAt, into: &buf)
+        FfiConverterOptionString.write(value.terminatedAt, into: &buf)
         FfiConverterUInt32.write(value.toolsInFlight, into: &buf)
         FfiConverterOptionString.write(value.readyReason, into: &buf)
+        FfiConverterOptionTypeStateSource.write(value.stateSource, into: &buf)
+        FfiConverterOptionString.write(value.lastAuthoritativeEventAt, into: &buf)
         FfiConverterBool.write(value.isAlive, into: &buf)
         FfiConverterOptionString.write(value.gcReason, into: &buf)
     }
@@ -6672,6 +6696,75 @@ public func FfiConverterTypeShellSignal_lift(_ buf: RustBuffer) throws -> ShellS
 #endif
 public func FfiConverterTypeShellSignal_lower(_ value: ShellSignal) -> RustBuffer {
     return FfiConverterTypeShellSignal.lower(value)
+}
+
+public struct StateSource {
+    public var eventKind: HookEventType
+    public var authority: SignalAuthority
+    public var observedAt: String
+
+    /// Default memberwise initializers are never public by default, so we
+    /// declare one manually.
+    public init(eventKind: HookEventType, authority: SignalAuthority, observedAt: String) {
+        self.eventKind = eventKind
+        self.authority = authority
+        self.observedAt = observedAt
+    }
+}
+
+extension StateSource: Equatable, Hashable {
+    public static func == (lhs: StateSource, rhs: StateSource) -> Bool {
+        if lhs.eventKind != rhs.eventKind {
+            return false
+        }
+        if lhs.authority != rhs.authority {
+            return false
+        }
+        if lhs.observedAt != rhs.observedAt {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(eventKind)
+        hasher.combine(authority)
+        hasher.combine(observedAt)
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeStateSource: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> StateSource {
+        return
+            try StateSource(
+                eventKind: FfiConverterTypeHookEventType.read(from: &buf),
+                authority: FfiConverterTypeSignalAuthority.read(from: &buf),
+                observedAt: FfiConverterString.read(from: &buf)
+            )
+    }
+
+    public static func write(_ value: StateSource, into buf: inout [UInt8]) {
+        FfiConverterTypeHookEventType.write(value.eventKind, into: &buf)
+        FfiConverterTypeSignalAuthority.write(value.authority, into: &buf)
+        FfiConverterString.write(value.observedAt, into: &buf)
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeStateSource_lift(_ buf: RustBuffer) throws -> StateSource {
+    return try FfiConverterTypeStateSource.lift(buf)
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeStateSource_lower(_ value: StateSource) -> RustBuffer {
+    return FfiConverterTypeStateSource.lower(value)
 }
 
 /**
@@ -8929,6 +9022,76 @@ extension SessionState: Equatable, Hashable {}
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 
+public enum SignalAuthority {
+    case definitiveTerminal
+    case definitiveTransient
+    case ambiguousPerTurn
+    case metaAwaitingInput
+    case inferential
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSignalAuthority: FfiConverterRustBuffer {
+    typealias SwiftType = SignalAuthority
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SignalAuthority {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        case 1: return .definitiveTerminal
+
+        case 2: return .definitiveTransient
+
+        case 3: return .ambiguousPerTurn
+
+        case 4: return .metaAwaitingInput
+
+        case 5: return .inferential
+
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: SignalAuthority, into buf: inout [UInt8]) {
+        switch value {
+        case .definitiveTerminal:
+            writeInt(&buf, Int32(1))
+
+        case .definitiveTransient:
+            writeInt(&buf, Int32(2))
+
+        case .ambiguousPerTurn:
+            writeInt(&buf, Int32(3))
+
+        case .metaAwaitingInput:
+            writeInt(&buf, Int32(4))
+
+        case .inferential:
+            writeInt(&buf, Int32(5))
+        }
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSignalAuthority_lift(_ buf: RustBuffer) throws -> SignalAuthority {
+    return try FfiConverterTypeSignalAuthority.lift(buf)
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSignalAuthority_lower(_ value: SignalAuthority) -> RustBuffer {
+    return FfiConverterTypeSignalAuthority.lower(value)
+}
+
+extension SignalAuthority: Equatable, Hashable {}
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 public enum WorktreeMutationKind {
     case create
     case remove
@@ -9309,6 +9472,30 @@ private struct FfiConverterOptionTypeProjectStatus: FfiConverterRustBuffer {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeProjectStatus.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+private struct FfiConverterOptionTypeStateSource: FfiConverterRustBuffer {
+    typealias SwiftType = StateSource?
+
+    static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeStateSource.write(value, into: &buf)
+    }
+
+    static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeStateSource.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }

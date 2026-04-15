@@ -65,9 +65,30 @@ pub struct SessionSummary {
     pub tools_in_flight: u32,
     pub ready_reason: Option<String>,
     #[serde(default)]
+    pub state_source: Option<StateSource>,
+    #[serde(default)]
+    pub last_authoritative_event_at: Option<String>,
+    #[serde(default)]
     pub is_alive: bool,
     #[serde(default)]
     pub gc_reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Enum)]
+#[serde(rename_all = "snake_case")]
+pub enum SignalAuthority {
+    DefinitiveTerminal,
+    DefinitiveTransient,
+    AmbiguousPerTurn,
+    MetaAwaitingInput,
+    Inferential,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Record)]
+pub struct StateSource {
+    pub event_kind: HookEventType,
+    pub authority: SignalAuthority,
+    pub observed_at: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Record)]

@@ -92,6 +92,8 @@ mod tests {
                 terminated_at: None,
                 tools_in_flight: 0,
                 ready_reason: None,
+                state_source: None,
+                last_authoritative_event_at: None,
                 is_alive: true,
                 gc_reason: None,
             }],

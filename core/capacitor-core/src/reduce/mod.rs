@@ -70,7 +70,7 @@ use gc::cleanup_shells_at;
 #[cfg(test)]
 use routing::{select_canonical_routing_source, CanonicalRoutingSource, TmuxInventoryCandidate};
 #[cfg(test)]
-use session::{classify_signal, should_skip_stop, SignalAuthority};
+use session::{classify_signal, should_skip_stop};
 
 impl ReducerState {
     #[must_use]

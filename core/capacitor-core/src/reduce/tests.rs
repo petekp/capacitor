@@ -8,7 +8,7 @@ use crate::domain::{
     DelegationStatus, DiagnosticsSummary, HookEventType, IngestHookEventCommand,
     IngestShellSignalCommand, InvolvementLevel, MutateDelegationCommand, PhaseInstance,
     PhaseStatus, ResolveRoutingCommand, RoutingStatus, RoutingTargetKind, RoutingView, RunState,
-    RunStatus, SessionState, SessionSummary, ShellSignal, TmuxPaneInfo,
+    RunStatus, SessionState, SessionSummary, ShellSignal, SignalAuthority, TmuxPaneInfo,
 };
 fn event_base(event_type: HookEventType) -> IngestHookEventCommand {
     IngestHookEventCommand {
@@ -136,6 +136,8 @@ fn session_summary_fixture(
         terminated_at: None,
         tools_in_flight: 0,
         ready_reason: None,
+        state_source: None,
+        last_authoritative_event_at: None,
         is_alive: false,
         gc_reason: None,
     }
@@ -1854,6 +1856,54 @@ mod flicker_regression {
         assert!(
             state.sessions.contains_key("fresh-session"),
             "new session should also be present"
+        );
+    }
+
+    #[test]
+    fn state_source_populated_on_stop() {
+        let mut state = ReducerState::default();
+
+        let _ = state.apply_hook_event(event_base(HookEventType::UserPromptSubmit));
+
+        let mut stop = event_base(HookEventType::Stop);
+        stop.recorded_at = "2099-01-31T00:00:05Z".to_string();
+        stop.stop_hook_active = Some(false);
+
+        let outcome = state.apply_hook_event(stop);
+        assert!(outcome.ok, "{outcome:?}");
+
+        let session = state.sessions.get("session-1").expect("session");
+        let source = session.state_source.as_ref().expect("state_source");
+        assert_eq!(source.event_kind, HookEventType::Stop);
+        assert_eq!(source.authority, SignalAuthority::AmbiguousPerTurn);
+        assert_eq!(source.observed_at, "2099-01-31T00:00:05Z");
+        assert_eq!(
+            session.last_authoritative_event_at.as_deref(),
+            Some("2099-01-31T00:00:00Z"),
+            "ambiguous events should preserve the last definitive timestamp"
+        );
+    }
+
+    #[test]
+    fn state_source_populated_on_session_end() {
+        let mut state = ReducerState::default();
+
+        let _ = state.apply_hook_event(event_base(HookEventType::UserPromptSubmit));
+
+        let mut end = event_base(HookEventType::SessionEnd);
+        end.recorded_at = "2099-01-31T00:00:05Z".to_string();
+
+        let outcome = state.apply_hook_event(end);
+        assert!(outcome.ok, "{outcome:?}");
+
+        let session = state.sessions.get("session-1").expect("session");
+        let source = session.state_source.as_ref().expect("state_source");
+        assert_eq!(source.event_kind, HookEventType::SessionEnd);
+        assert_eq!(source.authority, SignalAuthority::DefinitiveTerminal);
+        assert_eq!(source.observed_at, "2099-01-31T00:00:05Z");
+        assert_eq!(
+            session.last_authoritative_event_at.as_deref(),
+            Some("2099-01-31T00:00:05Z")
         );
     }
 }
@@ -4668,6 +4718,8 @@ fn snapshot_gc_ready_session_uses_correct_anchor() {
             terminated_at: None,
             tools_in_flight: 0,
             ready_reason: None,
+            state_source: None,
+            last_authoritative_event_at: None,
             is_alive: false,
             gc_reason: None,
         };
@@ -4728,6 +4780,8 @@ fn snapshot_gc_ready_session_uses_correct_anchor() {
             terminated_at: None,
             tools_in_flight: 0,
             ready_reason: None,
+            state_source: None,
+            last_authoritative_event_at: None,
             is_alive: false,
             gc_reason: None,
         };
@@ -4788,6 +4842,8 @@ fn snapshot_gc_ready_session_uses_correct_anchor() {
             terminated_at: None,
             tools_in_flight: 0,
             ready_reason: None,
+            state_source: None,
+            last_authoritative_event_at: None,
             is_alive: false,
             gc_reason: None,
         };
@@ -5277,6 +5333,8 @@ fn snapshot_gc_transitions_sole_dead_session_to_idle() {
             terminated_at: None,
             tools_in_flight: 1,
             ready_reason: None,
+            state_source: None,
+            last_authoritative_event_at: None,
             is_alive: false,
             gc_reason: None,
         }],
@@ -5324,59 +5382,46 @@ fn snapshot_gc_transitions_sole_dead_session_to_idle() {
 #[test]
 fn classify_signal_covers_all_event_types() {
     use super::classify_signal;
-    use super::SignalAuthority;
-
-    // Definitive signals
-    assert_eq!(
-        classify_signal(HookEventType::Stop),
-        SignalAuthority::Definitive
-    );
-    assert_eq!(
-        classify_signal(HookEventType::TaskCompleted),
-        SignalAuthority::Definitive
-    );
     assert_eq!(
         classify_signal(HookEventType::SessionEnd),
-        SignalAuthority::Definitive
+        SignalAuthority::DefinitiveTerminal
     );
     assert_eq!(
         classify_signal(HookEventType::SessionStart),
-        SignalAuthority::Definitive
+        SignalAuthority::DefinitiveTransient
     );
-
-    // Observational signals
-    for event_type in [
-        HookEventType::UserPromptSubmit,
-        HookEventType::PreToolUse,
-        HookEventType::PostToolUse,
-        HookEventType::PostToolUseFailure,
-        HookEventType::PermissionRequest,
-        HookEventType::PreCompact,
-        HookEventType::Notification,
-        HookEventType::SubagentStart,
-        HookEventType::SubagentStop,
-    ] {
-        assert_eq!(
-            classify_signal(event_type),
-            SignalAuthority::Observational,
-            "{event_type:?} should be Observational"
-        );
-    }
-
-    // Inferential signals (catch-all)
-    for event_type in [
-        HookEventType::TeammateIdle,
-        HookEventType::WorktreeCreate,
-        HookEventType::WorktreeRemove,
-        HookEventType::ConfigChange,
-        HookEventType::Unknown,
-    ] {
-        assert_eq!(
-            classify_signal(event_type),
-            SignalAuthority::Inferential,
-            "{event_type:?} should be Inferential"
-        );
-    }
+    assert_eq!(
+        classify_signal(HookEventType::PreToolUse),
+        SignalAuthority::DefinitiveTransient
+    );
+    assert_eq!(
+        classify_signal(HookEventType::PostToolUse),
+        SignalAuthority::DefinitiveTransient
+    );
+    assert_eq!(
+        classify_signal(HookEventType::UserPromptSubmit),
+        SignalAuthority::DefinitiveTransient
+    );
+    assert_eq!(
+        classify_signal(HookEventType::Stop),
+        SignalAuthority::AmbiguousPerTurn
+    );
+    assert_eq!(
+        classify_signal(HookEventType::TaskCompleted),
+        SignalAuthority::AmbiguousPerTurn
+    );
+    assert_eq!(
+        classify_signal(HookEventType::SubagentStop),
+        SignalAuthority::AmbiguousPerTurn
+    );
+    assert_eq!(
+        classify_signal(HookEventType::Notification),
+        SignalAuthority::MetaAwaitingInput
+    );
+    assert_eq!(
+        classify_signal(HookEventType::PreCompact),
+        SignalAuthority::Inferential
+    );
 }
 
 /// A sole dead session (pid=0) that is only recently stale must survive —
@@ -5405,6 +5450,8 @@ fn snapshot_gc_preserves_recently_dead_sole_session() {
             terminated_at: None,
             tools_in_flight: 1,
             ready_reason: None,
+            state_source: None,
+            last_authoritative_event_at: None,
             is_alive: false,
             gc_reason: None,
         }],
