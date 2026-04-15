@@ -324,7 +324,6 @@ fn run_gc_at_uses_explicit_reference_time() {
                 last_activity_at: Some(stale_ts),
                 terminated_at: None,
                 tools_in_flight: 0,
-                ready_reason: None,
                 state_source: None,
                 last_authoritative_event_at: None,
                 is_alive: false,
@@ -344,7 +343,6 @@ fn run_gc_at_uses_explicit_reference_time() {
                 last_activity_at: None,
                 terminated_at: None,
                 tools_in_flight: 0,
-                ready_reason: None,
                 state_source: None,
                 last_authoritative_event_at: None,
                 is_alive: false,
@@ -671,7 +669,6 @@ fn make_runtime_session_record(
         last_event: None,
         last_activity_at: last_activity_at.map(|value| value.to_rfc3339()),
         tools_in_flight: 0,
-        ready_reason: None,
         is_alive,
     }
 }
@@ -754,7 +751,6 @@ fn stale_dead_snapshot_for_gc_read_test() -> AppSnapshot {
             last_activity_at: Some(stale),
             terminated_at: None,
             tools_in_flight: 1,
-            ready_reason: None,
             state_source: None,
             last_authoritative_event_at: None,
             is_alive: false,
@@ -801,7 +797,6 @@ fn stale_dead_snapshot_for_gc_notify_test() -> AppSnapshot {
             last_activity_at: Some(stale),
             terminated_at: None,
             tools_in_flight: 0,
-            ready_reason: None,
             state_source: None,
             last_authoritative_event_at: None,
             is_alive: false,
@@ -1009,13 +1004,6 @@ fn mock_runtime_health_and_snapshot_service(
 
 fn make_snapshot_session(state: &str, seconds_ago: i64, is_alive: Option<bool>) -> SessionSummary {
     let timestamp = (Utc::now() - Duration::seconds(seconds_ago)).to_rfc3339();
-    let ready_reason = is_alive.and_then(|alive| {
-        if alive {
-            Some("alive".to_string())
-        } else {
-            None
-        }
-    });
     SessionSummary {
         session_id: format!("{state}-{seconds_ago}"),
         pid: 42,
@@ -1036,7 +1024,6 @@ fn make_snapshot_session(state: &str, seconds_ago: i64, is_alive: Option<bool>) 
         last_activity_at: Some(timestamp),
         terminated_at: None,
         tools_in_flight: 0,
-        ready_reason,
         state_source: None,
         last_authoritative_event_at: None,
         is_alive: is_alive.unwrap_or(false),

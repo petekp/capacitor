@@ -26,8 +26,6 @@ pub struct RuntimeSessionRecord {
     #[serde(default)]
     pub tools_in_flight: u32,
     #[serde(default)]
-    pub ready_reason: Option<String>,
-    #[serde(default)]
     pub is_alive: Option<bool>,
 }
 
@@ -75,7 +73,6 @@ pub(crate) fn hook_health_snapshot() -> Option<HookHealthSnapshot> {
             last_event: session.last_event,
             last_activity_at: session.last_activity_at,
             tools_in_flight: session.tools_in_flight,
-            ready_reason: session.ready_reason,
             is_alive: None,
         })
         .collect();
@@ -418,8 +415,7 @@ mod tests {
                 "updated_at": "2026-03-05T00:00:00Z",
                 "last_event": "user_prompt_submit",
                 "last_activity_at": "2026-03-05T00:00:00Z",
-                "tools_in_flight": 1,
-                "ready_reason": null
+                "tools_in_flight": 1
             }],
             "shells": [],
             "routing": [],

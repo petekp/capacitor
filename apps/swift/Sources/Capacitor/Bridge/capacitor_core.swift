@@ -6321,7 +6321,6 @@ public struct SessionSummary {
     public var lastActivityAt: String?
     public var terminatedAt: String?
     public var toolsInFlight: UInt32
-    public var readyReason: String?
     public var stateSource: StateSource?
     public var lastAuthoritativeEventAt: String?
     public var isAlive: Bool
@@ -6329,7 +6328,7 @@ public struct SessionSummary {
 
     /// Default memberwise initializers are never public by default, so we
     /// declare one manually.
-    public init(sessionId: String, pid: UInt32, cwd: String, projectId: String, projectPath: String, workspaceId: String, state: SessionState, stateChangedAt: String, updatedAt: String, lastEvent: String?, lastActivityAt: String?, terminatedAt: String?, toolsInFlight: UInt32, readyReason: String?, stateSource: StateSource?, lastAuthoritativeEventAt: String?, isAlive: Bool, gcReason: String?) {
+    public init(sessionId: String, pid: UInt32, cwd: String, projectId: String, projectPath: String, workspaceId: String, state: SessionState, stateChangedAt: String, updatedAt: String, lastEvent: String?, lastActivityAt: String?, terminatedAt: String?, toolsInFlight: UInt32, stateSource: StateSource?, lastAuthoritativeEventAt: String?, isAlive: Bool, gcReason: String?) {
         self.sessionId = sessionId
         self.pid = pid
         self.cwd = cwd
@@ -6343,7 +6342,6 @@ public struct SessionSummary {
         self.lastActivityAt = lastActivityAt
         self.terminatedAt = terminatedAt
         self.toolsInFlight = toolsInFlight
-        self.readyReason = readyReason
         self.stateSource = stateSource
         self.lastAuthoritativeEventAt = lastAuthoritativeEventAt
         self.isAlive = isAlive
@@ -6392,9 +6390,6 @@ extension SessionSummary: Equatable, Hashable {
         if lhs.toolsInFlight != rhs.toolsInFlight {
             return false
         }
-        if lhs.readyReason != rhs.readyReason {
-            return false
-        }
         if lhs.stateSource != rhs.stateSource {
             return false
         }
@@ -6424,7 +6419,6 @@ extension SessionSummary: Equatable, Hashable {
         hasher.combine(lastActivityAt)
         hasher.combine(terminatedAt)
         hasher.combine(toolsInFlight)
-        hasher.combine(readyReason)
         hasher.combine(stateSource)
         hasher.combine(lastAuthoritativeEventAt)
         hasher.combine(isAlive)
@@ -6452,7 +6446,6 @@ public struct FfiConverterTypeSessionSummary: FfiConverterRustBuffer {
                 lastActivityAt: FfiConverterOptionString.read(from: &buf),
                 terminatedAt: FfiConverterOptionString.read(from: &buf),
                 toolsInFlight: FfiConverterUInt32.read(from: &buf),
-                readyReason: FfiConverterOptionString.read(from: &buf),
                 stateSource: FfiConverterOptionTypeStateSource.read(from: &buf),
                 lastAuthoritativeEventAt: FfiConverterOptionString.read(from: &buf),
                 isAlive: FfiConverterBool.read(from: &buf),
@@ -6474,7 +6467,6 @@ public struct FfiConverterTypeSessionSummary: FfiConverterRustBuffer {
         FfiConverterOptionString.write(value.lastActivityAt, into: &buf)
         FfiConverterOptionString.write(value.terminatedAt, into: &buf)
         FfiConverterUInt32.write(value.toolsInFlight, into: &buf)
-        FfiConverterOptionString.write(value.readyReason, into: &buf)
         FfiConverterOptionTypeStateSource.write(value.stateSource, into: &buf)
         FfiConverterOptionString.write(value.lastAuthoritativeEventAt, into: &buf)
         FfiConverterBool.write(value.isAlive, into: &buf)

@@ -344,7 +344,6 @@ mod tests {
                 last_activity_at: Some("2026-02-28T00:00:00Z".to_string()),
                 terminated_at: None,
                 tools_in_flight: 0,
-                ready_reason: None,
                 state_source: None,
                 last_authoritative_event_at: None,
                 is_alive: true,

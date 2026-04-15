@@ -113,7 +113,7 @@ import SwiftUI
             let stateColor = color(for: session.state)
             let toolsInFlight = session.toolsInFlight ?? 0
             let lastActivity = session.lastActivityAt ?? "nil"
-            let readyReason = session.readyReason ?? "nil"
+            let stateSource = session.stateSource.map(\.eventKind) ?? "nil"
             let isAlive = session.isAlive.map { $0 ? "alive" : "dead" } ?? "unknown"
 
             return VStack(alignment: .leading, spacing: 4) {
@@ -141,7 +141,7 @@ import SwiftUI
                     .font(.system(size: 10, weight: .regular, design: .monospaced))
                     .foregroundColor(.white.opacity(0.7))
 
-                Text("ready_reason=\(readyReason) pid=\(session.pid) \(isAlive)")
+                Text("state_source=\(stateSource) pid=\(session.pid) \(isAlive)")
                     .font(.system(size: 10, weight: .regular, design: .monospaced))
                     .foregroundColor(.white.opacity(0.6))
             }

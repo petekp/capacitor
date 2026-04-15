@@ -135,7 +135,6 @@ fn session_summary_fixture(
         last_activity_at: None,
         terminated_at: None,
         tools_in_flight: 0,
-        ready_reason: None,
         state_source: None,
         last_authoritative_event_at: None,
         is_alive: false,
@@ -555,11 +554,11 @@ fn test_idle_prompt_corrects_drift_without_hiding_live_work() {
         Some(0)
     );
     assert_eq!(
-        state
-            .sessions
-            .get("session-1")
-            .and_then(|session| session.ready_reason.as_deref()),
-        None
+        state.sessions.get("session-1").and_then(|session| session
+            .state_source
+            .as_ref()
+            .map(|source| source.event_kind)),
+        Some(HookEventType::Notification)
     );
 }
 
@@ -639,11 +638,11 @@ fn test_idle_prompt_transitions_to_ready_after_drift_correction() {
         Some(SessionState::Ready)
     );
     assert_eq!(
-        state
-            .sessions
-            .get("session-1")
-            .and_then(|session| session.ready_reason.as_deref()),
-        Some("idle_prompt")
+        state.sessions.get("session-1").and_then(|session| session
+            .state_source
+            .as_ref()
+            .map(|source| source.event_kind)),
+        Some(HookEventType::Notification)
     );
 }
 
@@ -1007,11 +1006,11 @@ fn reducer_parent_stop_transitions_to_idle() {
         Some(SessionState::Ready)
     );
     assert_eq!(
-        state
-            .sessions
-            .get("session-1")
-            .and_then(|session| session.ready_reason.as_deref()),
-        Some("stop")
+        state.sessions.get("session-1").and_then(|session| session
+            .state_source
+            .as_ref()
+            .map(|source| source.event_kind)),
+        Some(HookEventType::Stop)
     );
 }
 
@@ -1076,8 +1075,8 @@ fn session_end_produces_idle_regardless_of_pid() {
         state
             .sessions
             .get("session-1")
-            .and_then(|s| s.ready_reason.as_deref()),
-        Some("definitive_session_end"),
+            .and_then(|s| s.state_source.as_ref().map(|source| source.event_kind)),
+        Some(HookEventType::SessionEnd),
     );
 }
 
@@ -1104,8 +1103,8 @@ fn session_end_with_dead_pid_produces_idle() {
         state
             .sessions
             .get("session-1")
-            .and_then(|s| s.ready_reason.as_deref()),
-        Some("definitive_session_end"),
+            .and_then(|s| s.state_source.as_ref().map(|source| source.event_kind)),
+        Some(HookEventType::SessionEnd),
     );
 }
 
@@ -1602,18 +1601,23 @@ fn test_reducer_17_event_contract_matrix() {
                     expectation.description
                 );
 
-                let expected_ready_reason = match expectation.description {
-                    "notification (idle_prompt)" => Some("idle_prompt"),
-                    "notification (auth_success)" => Some("auth_success"),
-                    "stop (parent session)" => Some("stop"),
+                let expected_event_kind = match expectation.description {
+                    "notification (idle_prompt)" => Some(HookEventType::Notification),
+                    "notification (auth_success)" => Some(HookEventType::Notification),
+                    "stop (parent session)" => Some(HookEventType::Stop),
                     _ => None,
                 };
-                assert_eq!(
-                    session.ready_reason.as_deref(),
-                    expected_ready_reason,
-                    "{} should have the expected ready_reason semantics",
-                    expectation.description
-                );
+                if let Some(expected) = expected_event_kind {
+                    assert_eq!(
+                        session
+                            .state_source
+                            .as_ref()
+                            .map(|source| source.event_kind),
+                        Some(expected),
+                        "{} should record the event_kind via state_source",
+                        expectation.description
+                    );
+                }
 
                 match expectation.description {
                     "pre_tool_use" => assert_eq!(session.tools_in_flight, 1),
@@ -1688,7 +1692,6 @@ fn test_near_boundary_idle_prompt_applies() {
         .expect("session should exist");
     assert_eq!(session.state, SessionState::Working);
     assert_eq!(session.tools_in_flight, 0);
-    assert_eq!(session.ready_reason, None);
 }
 
 #[test]
@@ -1715,7 +1718,6 @@ fn test_out_of_order_pretool_then_idle_prompt() {
         .expect("session should exist");
     assert_eq!(session.state, SessionState::Working);
     assert_eq!(session.tools_in_flight, 0);
-    assert_eq!(session.ready_reason, None);
 }
 
 #[test]
@@ -1739,7 +1741,6 @@ fn test_task_completed_parent_session_transitions_to_idle() {
         .get("session-1")
         .expect("session should exist");
     assert_eq!(session.state, SessionState::Working);
-    assert_eq!(session.ready_reason, None);
 }
 
 mod flicker_regression {
@@ -4717,7 +4718,6 @@ fn snapshot_gc_ready_session_uses_correct_anchor() {
             last_activity_at: Some(fresh_ts.clone()),
             terminated_at: None,
             tools_in_flight: 0,
-            ready_reason: None,
             state_source: None,
             last_authoritative_event_at: None,
             is_alive: false,
@@ -4779,7 +4779,6 @@ fn snapshot_gc_ready_session_uses_correct_anchor() {
             last_activity_at: Some(stale_ts.clone()),
             terminated_at: None,
             tools_in_flight: 0,
-            ready_reason: None,
             state_source: None,
             last_authoritative_event_at: None,
             is_alive: false,
@@ -4841,7 +4840,6 @@ fn snapshot_gc_ready_session_uses_correct_anchor() {
             last_activity_at: Some(stale_ts.clone()),
             terminated_at: None,
             tools_in_flight: 0,
-            ready_reason: None,
             state_source: None,
             last_authoritative_event_at: None,
             is_alive: false,
@@ -5112,9 +5110,12 @@ fn session_start_after_stop_idle_produces_ready() {
         "Stop should route the session to Ready"
     );
     assert_eq!(
-        session.ready_reason.as_deref(),
-        Some("stop"),
-        "Stop should annotate the session with stop ready reason"
+        session
+            .state_source
+            .as_ref()
+            .map(|source| source.event_kind),
+        Some(HookEventType::Stop),
+        "Stop should record the originating event in state_source"
     );
 
     let mut restart = event_base(HookEventType::SessionStart);
@@ -5149,11 +5150,6 @@ fn session_start_after_task_completed_idle_produces_ready() {
         session.state,
         SessionState::Working,
         "TaskCompleted should preserve the current state"
-    );
-    assert_eq!(
-        session.ready_reason.as_deref(),
-        None,
-        "TaskCompleted should not annotate a preserved session"
     );
 
     let mut restart = event_base(HookEventType::SessionStart);
@@ -5332,7 +5328,6 @@ fn snapshot_gc_transitions_sole_dead_session_to_idle() {
             last_activity_at: Some(stale_ts.clone()),
             terminated_at: None,
             tools_in_flight: 1,
-            ready_reason: None,
             state_source: None,
             last_authoritative_event_at: None,
             is_alive: false,
@@ -5399,7 +5394,19 @@ fn classify_signal_covers_all_event_types() {
         SignalAuthority::DefinitiveTransient
     );
     assert_eq!(
+        classify_signal(HookEventType::PostToolUseFailure),
+        SignalAuthority::DefinitiveTransient
+    );
+    assert_eq!(
         classify_signal(HookEventType::UserPromptSubmit),
+        SignalAuthority::DefinitiveTransient
+    );
+    assert_eq!(
+        classify_signal(HookEventType::PermissionRequest),
+        SignalAuthority::DefinitiveTransient
+    );
+    assert_eq!(
+        classify_signal(HookEventType::SubagentStart),
         SignalAuthority::DefinitiveTransient
     );
     assert_eq!(
@@ -5420,6 +5427,26 @@ fn classify_signal_covers_all_event_types() {
     );
     assert_eq!(
         classify_signal(HookEventType::PreCompact),
+        SignalAuthority::Inferential
+    );
+    assert_eq!(
+        classify_signal(HookEventType::TeammateIdle),
+        SignalAuthority::Inferential
+    );
+    assert_eq!(
+        classify_signal(HookEventType::WorktreeCreate),
+        SignalAuthority::Inferential
+    );
+    assert_eq!(
+        classify_signal(HookEventType::WorktreeRemove),
+        SignalAuthority::Inferential
+    );
+    assert_eq!(
+        classify_signal(HookEventType::ConfigChange),
+        SignalAuthority::Inferential
+    );
+    assert_eq!(
+        classify_signal(HookEventType::Unknown),
         SignalAuthority::Inferential
     );
 }
@@ -5449,7 +5476,6 @@ fn snapshot_gc_preserves_recently_dead_sole_session() {
             last_activity_at: Some(recent_ts.clone()),
             terminated_at: None,
             tools_in_flight: 1,
-            ready_reason: None,
             state_source: None,
             last_authoritative_event_at: None,
             is_alive: false,

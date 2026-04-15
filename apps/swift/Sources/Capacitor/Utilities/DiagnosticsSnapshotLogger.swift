@@ -36,7 +36,6 @@ enum DiagnosticsSnapshotLogger {
         let lastEvent: String?
         let lastActivityAt: String?
         let toolsInFlight: Int?
-        let readyReason: String?
         let isAlive: Bool?
     }
 
@@ -111,7 +110,6 @@ enum DiagnosticsSnapshotLogger {
                     lastEvent: session.lastEvent,
                     lastActivityAt: session.lastActivityAt,
                     toolsInFlight: session.toolsInFlight,
-                    readyReason: session.readyReason,
                     isAlive: session.isAlive,
                 )
             }

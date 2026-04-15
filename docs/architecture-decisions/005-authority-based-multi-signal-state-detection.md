@@ -41,7 +41,7 @@
 
 These are prerequisites, not nice-to-haves:
 
-1. **Evidence provenance crosses the FFI boundary.** `AppSnapshot`, `ProjectSummary`, and `SessionSummary` grow fields for: which signal produced the current state, when, and whether the state is primary-authority or degraded-fallback. Swift can render accordingly.
+1. **Evidence provenance crosses the FFI boundary.** [x] Complete (Slice 3, 2026-04-15). `SessionSummary` carries `state_source: Option<StateSource>` (typed `event_kind: HookEventType`, typed `authority: SignalAuthority`, RFC3339 `observed_at`) and `last_authoritative_event_at: Option<String>`. The legacy stringly-typed `ready_reason` channel is retired.
 
 2. **Evidence replay on restart.** The runtime service persists raw evidence (hook events, transcript observations), not just fused snapshot conclusions. On restart, evidence is replayed to reconstruct state rather than loading a stale frozen snapshot.
 
@@ -90,7 +90,7 @@ These are prerequisites, not nice-to-haves:
 7. **Add cold-start reconstruction.** On runtime service startup with no snapshot, reconstruct session existence from transcript files.
 
 ### Phase 3: Provenance and authority (higher risk, completes the architecture)
-8. **Add provenance fields to snapshot types.** `SessionSummary` gains: `state_source: SignalSource`, `state_confidence: Confidence`, `degraded_reason: Option<String>`.
+8. **Add provenance fields to snapshot types.** `SessionSummary` gains: `state_source: Option<StateSource>` (containing `event_kind: HookEventType`, `authority: SignalAuthority`, `observed_at: String`) and `last_authoritative_event_at: Option<String>`. The original sketch's `state_confidence: Confidence` was implemented as the typed `authority: SignalAuthority` enum (5 tiers: `DefinitiveTerminal`, `DefinitiveTransient`, `AmbiguousPerTurn`, `MetaAwaitingInput`, `Inferential`); the proposed `degraded_reason: Option<String>` was not implemented, since the typed authority tiers obviate it. Shipped in commits `ae7157cc` (Slice 1: GC/reducer split), `9f64ba0d` (Slice 2: typed provenance), and Slice 3 (this slice: `ready_reason` retirement).
 9. **Implement authority enforcement in reducer.** For nuanced state questions, hooks always win when fresh. Transcript activity only produces coarse state. Shell CWD only produces routing.
 10. **Add evidence persistence.** Raw evidence log alongside snapshot persistence. Enable replay on restart.
 11. **Write authority matrix contract tests.** Encode the authority table as deterministic tests. Verify: hook-produced state is never overridden by transcript-derived state for nuanced questions.
@@ -127,7 +127,7 @@ Before claiming each phase is complete, answer:
 - [ ] Does cold-start reconstruction produce valid session entries in the snapshot?
 
 **Phase 3:**
-- [ ] Does `SessionSummary` carry provenance fields across the FFI boundary?
+- [x] Does `SessionSummary` carry provenance fields across the FFI boundary?
 - [ ] Can Swift distinguish "hooks say working" from "transcript says active"?
 - [ ] Does the authority matrix contract test exist and pass?
 - [ ] Does evidence replay on restart produce the same snapshot as continuous operation?

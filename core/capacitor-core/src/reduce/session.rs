@@ -24,20 +24,14 @@ pub(super) fn reduce_session(
             if already_working {
                 SessionUpdate::Skip("session_start_already_active")
             } else {
-                SessionUpdate::Upsert(upsert_session(
-                    current,
-                    shells,
-                    event,
-                    SessionState::Ready,
-                    None,
-                ))
+                SessionUpdate::Upsert(upsert_session(current, shells, event, SessionState::Ready))
             }
         }
         HookEventType::UserPromptSubmit | HookEventType::PreToolUse => SessionUpdate::Upsert(
-            upsert_session(current, shells, event, SessionState::Working, None),
+            upsert_session(current, shells, event, SessionState::Working),
         ),
         HookEventType::PostToolUse | HookEventType::PostToolUseFailure => SessionUpdate::Upsert(
-            upsert_session(current, shells, event, SessionState::Working, None),
+            upsert_session(current, shells, event, SessionState::Working),
         ),
         HookEventType::PermissionRequest => {
             // Guard: if tools_in_flight == 0, the tool already completed and this
@@ -50,7 +44,6 @@ pub(super) fn reduce_session(
                     shells,
                     event,
                     SessionState::Waiting,
-                    None,
                 ))
             }
         }
@@ -59,7 +52,6 @@ pub(super) fn reduce_session(
             shells,
             event,
             SessionState::Compacting,
-            None,
         )),
         HookEventType::Notification => match event.notification_type.as_deref() {
             Some("idle_prompt") => {
@@ -74,7 +66,6 @@ pub(super) fn reduce_session(
                         current
                             .map(|record| record.state)
                             .unwrap_or(SessionState::Working),
-                        current.and_then(|record| record.ready_reason.clone()),
                     );
                     corrected.tools_in_flight = 0;
                     SessionUpdate::Upsert(corrected)
@@ -86,17 +77,12 @@ pub(super) fn reduce_session(
                         shells,
                         event,
                         SessionState::Ready,
-                        Some("idle_prompt".to_string()),
                     ))
                 }
             }
-            Some("auth_success") => SessionUpdate::Upsert(upsert_session(
-                current,
-                shells,
-                event,
-                SessionState::Ready,
-                Some("auth_success".to_string()),
-            )),
+            Some("auth_success") => {
+                SessionUpdate::Upsert(upsert_session(current, shells, event, SessionState::Ready))
+            }
             Some("permission_prompt") => {
                 // Guard: if tools_in_flight == 0, the tool already completed and
                 // this notification arrived late. Skip to avoid overwriting Working.
@@ -108,7 +94,6 @@ pub(super) fn reduce_session(
                         shells,
                         event,
                         SessionState::Waiting,
-                        Some("permission_prompt".to_string()),
                     ))
                 }
             }
@@ -123,7 +108,6 @@ pub(super) fn reduce_session(
                         shells,
                         event,
                         SessionState::Waiting,
-                        None,
                     ))
                 }
             }
@@ -133,13 +117,7 @@ pub(super) fn reduce_session(
             if should_skip_stop(event) {
                 SessionUpdate::Skip("stop_guard")
             } else {
-                SessionUpdate::Upsert(upsert_session(
-                    current,
-                    shells,
-                    event,
-                    SessionState::Ready,
-                    Some("stop".to_string()),
-                ))
+                SessionUpdate::Upsert(upsert_session(current, shells, event, SessionState::Ready))
             }
         }
         HookEventType::TaskCompleted => {
@@ -153,13 +131,7 @@ pub(super) fn reduce_session(
             if current.is_none() {
                 SessionUpdate::Skip("session_end_no_session")
             } else {
-                SessionUpdate::Upsert(upsert_session(
-                    current,
-                    shells,
-                    event,
-                    SessionState::Idle,
-                    Some("definitive_session_end".to_string()),
-                ))
+                SessionUpdate::Upsert(upsert_session(current, shells, event, SessionState::Idle))
             }
         }
         HookEventType::SubagentStart => {
@@ -171,7 +143,6 @@ pub(super) fn reduce_session(
                     shells,
                     event,
                     SessionState::Working,
-                    None,
                 ))
             }
         }
@@ -188,7 +159,6 @@ pub(super) fn reduce_session(
                     shells,
                     event,
                     SessionState::Working,
-                    None,
                 ))
             } else if current
                 .map(|record| record.state == SessionState::Working)
@@ -204,7 +174,6 @@ pub(super) fn reduce_session(
                         shells,
                         event,
                         SessionState::Working,
-                        None,
                     ))
                 } else {
                     SessionUpdate::Skip("subagent_stop_working_no_tools_stale")
@@ -217,13 +186,7 @@ pub(super) fn reduce_session(
         HookEventType::TeammateIdle => SessionUpdate::Skip("teammate_idle_informational"),
         HookEventType::WorktreeCreate => {
             if let Some(record) = current {
-                SessionUpdate::Upsert(upsert_session(
-                    current,
-                    shells,
-                    event,
-                    record.state,
-                    record.ready_reason.clone(),
-                ))
+                SessionUpdate::Upsert(upsert_session(current, shells, event, record.state))
             } else {
                 SessionUpdate::Skip("worktree_create_no_session")
             }
@@ -231,13 +194,7 @@ pub(super) fn reduce_session(
         HookEventType::WorktreeRemove => SessionUpdate::Skip("worktree_remove_informational"),
         HookEventType::ConfigChange => {
             if let Some(record) = current {
-                SessionUpdate::Upsert(upsert_session(
-                    current,
-                    shells,
-                    event,
-                    record.state,
-                    record.ready_reason.clone(),
-                ))
+                SessionUpdate::Upsert(upsert_session(current, shells, event, record.state))
             } else {
                 SessionUpdate::Skip("config_change_no_session")
             }
@@ -264,7 +221,6 @@ fn upsert_session(
     shells: &HashMap<u32, ShellSignal>,
     event: &IngestHookEventCommand,
     new_state: SessionState,
-    ready_reason: Option<String>,
 ) -> SessionSummary {
     let pid = event
         .pid
@@ -319,16 +275,6 @@ fn upsert_session(
         event.event_type,
     );
 
-    let next_ready_reason = if new_state == SessionState::Ready || new_state == SessionState::Idle {
-        ready_reason.or_else(|| {
-            current
-                .filter(|record| record.state == new_state)
-                .and_then(|record| record.ready_reason.clone())
-        })
-    } else {
-        None
-    };
-
     let terminated_at = if event.event_type == HookEventType::SessionEnd {
         Some(updated_at.clone())
     } else {
@@ -362,7 +308,6 @@ fn upsert_session(
         last_activity_at,
         terminated_at,
         tools_in_flight,
-        ready_reason: next_ready_reason,
         state_source,
         last_authoritative_event_at,
         is_alive: pid > 0 && shells.contains_key(&pid),

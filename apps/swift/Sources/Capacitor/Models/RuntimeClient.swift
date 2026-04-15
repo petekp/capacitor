@@ -490,7 +490,13 @@ final class RuntimeClient {
                 lastEvent: session.lastEvent,
                 lastActivityAt: session.lastActivityAt,
                 toolsInFlight: Int(session.toolsInFlight),
-                readyReason: session.readyReason,
+                stateSource: session.stateSource.map {
+                    RuntimeStateSource(
+                        eventKind: String(describing: $0.eventKind),
+                        authority: String(describing: $0.authority),
+                        observedAt: $0.observedAt,
+                    )
+                },
                 gcReason: session.gcReason,
                 isAlive: session.isAlive,
             )
@@ -673,7 +679,7 @@ final class RuntimeClient {
         return unwrapOptionalString(reflectedValue)
     }
 
-    private static func snakeCaseEnumCaseName(_ value: some Any) -> String {
+    fileprivate static func snakeCaseEnumCaseName(_ value: some Any) -> String {
         let rawName = String(describing: value)
         guard !rawName.isEmpty else { return rawName }
 
@@ -816,7 +822,7 @@ private struct SnapshotSessionPayload: Decodable {
     let lastEvent: String?
     let lastActivityAt: String?
     let toolsInFlight: UInt32
-    let readyReason: String?
+    let stateSource: SnapshotStateSourcePayload?
     let gcReason: String?
     let isAlive: Bool?
 
@@ -833,7 +839,7 @@ private struct SnapshotSessionPayload: Decodable {
         case lastEvent = "last_event"
         case lastActivityAt = "last_activity_at"
         case toolsInFlight = "tools_in_flight"
-        case readyReason = "ready_reason"
+        case stateSource = "state_source"
         case gcReason = "gc_reason"
         case isAlive = "is_alive"
     }
@@ -851,9 +857,27 @@ private struct SnapshotSessionPayload: Decodable {
         lastEvent = session.lastEvent
         lastActivityAt = session.lastActivityAt
         toolsInFlight = session.toolsInFlight
-        readyReason = session.readyReason
+        stateSource = session.stateSource.map {
+            SnapshotStateSourcePayload(
+                eventKind: RuntimeClient.snakeCaseEnumCaseName($0.eventKind),
+                authority: RuntimeClient.snakeCaseEnumCaseName($0.authority),
+                observedAt: $0.observedAt,
+            )
+        }
         gcReason = session.gcReason
         isAlive = session.isAlive
+    }
+}
+
+private struct SnapshotStateSourcePayload: Decodable {
+    let eventKind: String
+    let authority: String
+    let observedAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case eventKind = "event_kind"
+        case authority
+        case observedAt = "observed_at"
     }
 }
 

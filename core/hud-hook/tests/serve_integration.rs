@@ -183,8 +183,7 @@ fn seeded_snapshot_without_routing() -> serde_json::Value {
                 "updated_at": "2099-03-12T00:00:00Z",
                 "last_event": "session_start",
                 "last_activity_at": "2099-03-12T00:00:00Z",
-                "tools_in_flight": 0,
-                "ready_reason": null
+                "tools_in_flight": 0
             }
         ],
         "shells": [
@@ -251,8 +250,7 @@ fn seeded_snapshot_with_gc_candidate() -> serde_json::Value {
                 "updated_at": "2000-01-01T00:00:00Z",
                 "last_event": "user_prompt_submit",
                 "last_activity_at": "2000-01-01T00:00:00Z",
-                "tools_in_flight": 0,
-                "ready_reason": null
+                "tools_in_flight": 0
             },
             {
                 "session_id": "runtime-service-idle",
@@ -266,8 +264,7 @@ fn seeded_snapshot_with_gc_candidate() -> serde_json::Value {
                 "updated_at": "2000-01-01T00:00:00Z",
                 "last_event": "session_start",
                 "last_activity_at": "2000-01-01T00:00:00Z",
-                "tools_in_flight": 0,
-                "ready_reason": null
+                "tools_in_flight": 0
             }
         ],
         "shells": [],
@@ -1768,9 +1765,14 @@ fn session_end_without_cwd_idles_existing_session() {
         "session should be in idle state after SessionEnd"
     );
     assert_eq!(
-        snapshot["sessions"][0]["ready_reason"].as_str(),
-        Some("definitive_session_end"),
-        "session should have definitive_session_end ready_reason"
+        snapshot["sessions"][0]["state_source"]["event_kind"].as_str(),
+        Some("session_end"),
+        "session should record SessionEnd as state_source.event_kind"
+    );
+    assert_eq!(
+        snapshot["sessions"][0]["state_source"]["authority"].as_str(),
+        Some("definitive_terminal"),
+        "SessionEnd is the only DefinitiveTerminal authority tier"
     );
 }
 

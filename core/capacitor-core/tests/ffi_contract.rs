@@ -591,8 +591,7 @@ fn fixture_snapshot_json() -> &'static str {
       "updated_at": "2099-02-28T19:00:00Z",
       "last_event": "user_prompt_submit",
       "last_activity_at": "2099-02-28T19:00:00Z",
-      "tools_in_flight": 1,
-      "ready_reason": null
+      "tools_in_flight": 1
     }
   ],
   "shells": [

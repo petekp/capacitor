@@ -679,7 +679,7 @@ final class AppStateSessionObservationTests: XCTestCase {
             lastEvent: nil,
             lastActivityAt: timestamp,
             toolsInFlight: 0,
-            readyReason: nil,
+            stateSource: nil,
             gcReason: gcReason,
             isAlive: true,
         )

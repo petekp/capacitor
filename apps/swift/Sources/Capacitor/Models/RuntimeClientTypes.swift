@@ -153,7 +153,7 @@ struct RuntimeSession: Decodable {
     let lastEvent: String?
     let lastActivityAt: String?
     let toolsInFlight: Int?
-    let readyReason: String?
+    let stateSource: RuntimeStateSource?
     let gcReason: String?
     let isAlive: Bool?
 
@@ -170,9 +170,21 @@ struct RuntimeSession: Decodable {
         case lastEvent = "last_event"
         case lastActivityAt = "last_activity_at"
         case toolsInFlight = "tools_in_flight"
-        case readyReason = "ready_reason"
+        case stateSource = "state_source"
         case gcReason = "gc_reason"
         case isAlive = "is_alive"
+    }
+}
+
+struct RuntimeStateSource: Decodable {
+    let eventKind: String
+    let authority: String
+    let observedAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case eventKind = "event_kind"
+        case authority
+        case observedAt = "observed_at"
     }
 }
 
