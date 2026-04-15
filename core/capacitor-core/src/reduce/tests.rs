@@ -5451,6 +5451,375 @@ fn classify_signal_covers_all_event_types() {
     );
 }
 
+mod authority_matrix_contract_tests {
+    use super::super::classify_signal;
+    use super::super::session::AUTHORITY_MATRIX;
+    use super::*;
+
+    /// The full list of HookEventType variants. MUST be updated in lockstep
+    /// with the enum. The covers-every-variant test ensures this stays in sync.
+    const ALL_HOOK_EVENT_TYPES: &[HookEventType] = &[
+        HookEventType::SessionStart,
+        HookEventType::UserPromptSubmit,
+        HookEventType::PreToolUse,
+        HookEventType::PostToolUse,
+        HookEventType::PostToolUseFailure,
+        HookEventType::PermissionRequest,
+        HookEventType::PreCompact,
+        HookEventType::Notification,
+        HookEventType::SubagentStart,
+        HookEventType::SubagentStop,
+        HookEventType::Stop,
+        HookEventType::TeammateIdle,
+        HookEventType::TaskCompleted,
+        HookEventType::WorktreeCreate,
+        HookEventType::WorktreeRemove,
+        HookEventType::ConfigChange,
+        HookEventType::SessionEnd,
+        HookEventType::Unknown,
+    ];
+
+    const ALL_SIGNAL_AUTHORITIES: &[SignalAuthority] = &[
+        SignalAuthority::DefinitiveTerminal,
+        SignalAuthority::DefinitiveTransient,
+        SignalAuthority::AmbiguousPerTurn,
+        SignalAuthority::MetaAwaitingInput,
+        SignalAuthority::Inferential,
+    ];
+
+    fn apply_events(events: Vec<IngestHookEventCommand>) -> ReducerState {
+        let mut state = ReducerState::default();
+        for event in events {
+            let outcome = state.apply_hook_event(event.clone());
+            assert!(outcome.ok, "{event:?} should be accepted: {outcome:?}");
+        }
+        state
+    }
+
+    fn session(state: &ReducerState) -> &SessionSummary {
+        state
+            .sessions
+            .get("session-1")
+            .expect("session should exist")
+    }
+
+    fn representative_event(
+        authority: SignalAuthority,
+        recorded_at: &str,
+    ) -> Vec<IngestHookEventCommand> {
+        match authority {
+            SignalAuthority::DefinitiveTerminal => {
+                let mut prompt = event_base(HookEventType::UserPromptSubmit);
+                prompt.recorded_at = "2099-01-31T00:00:00Z".to_string();
+
+                let mut end = event_base(HookEventType::SessionEnd);
+                end.recorded_at = recorded_at.to_string();
+                vec![prompt, end]
+            }
+            SignalAuthority::DefinitiveTransient => {
+                let mut event = event_base(HookEventType::PreToolUse);
+                event.recorded_at = recorded_at.to_string();
+                vec![event]
+            }
+            SignalAuthority::AmbiguousPerTurn => {
+                let mut prompt = event_base(HookEventType::UserPromptSubmit);
+                prompt.recorded_at = "2099-01-31T00:00:00Z".to_string();
+
+                let mut stop = event_base(HookEventType::Stop);
+                stop.recorded_at = recorded_at.to_string();
+                stop.stop_hook_active = Some(false);
+                vec![prompt, stop]
+            }
+            SignalAuthority::MetaAwaitingInput => {
+                let mut notification = event_base(HookEventType::Notification);
+                notification.recorded_at = recorded_at.to_string();
+                notification.notification_type = Some("idle_prompt".to_string());
+                vec![notification]
+            }
+            SignalAuthority::Inferential => {
+                let mut prompt = event_base(HookEventType::UserPromptSubmit);
+                prompt.recorded_at = "2099-01-31T00:00:00Z".to_string();
+
+                let mut worktree = event_base(HookEventType::WorktreeCreate);
+                worktree.recorded_at = recorded_at.to_string();
+                vec![prompt, worktree]
+            }
+        }
+    }
+
+    #[test]
+    fn test_authority_matrix_covers_every_hook_event_type_exactly_once() {
+        for variant in ALL_HOOK_EVENT_TYPES {
+            let count = AUTHORITY_MATRIX
+                .iter()
+                .filter(|(kind, _)| kind == variant)
+                .count();
+            assert_eq!(
+                count, 1,
+                "HookEventType::{variant:?} appears {count} times in AUTHORITY_MATRIX (expected exactly 1)"
+            );
+        }
+        assert_eq!(
+            AUTHORITY_MATRIX.len(),
+            ALL_HOOK_EVENT_TYPES.len(),
+            "AUTHORITY_MATRIX length ({}) diverged from ALL_HOOK_EVENT_TYPES length ({})",
+            AUTHORITY_MATRIX.len(),
+            ALL_HOOK_EVENT_TYPES.len(),
+        );
+    }
+
+    #[test]
+    fn test_classify_signal_agrees_with_authority_matrix_for_every_variant() {
+        for variant in ALL_HOOK_EVENT_TYPES {
+            let via_function = classify_signal(*variant);
+            let via_table = AUTHORITY_MATRIX
+                .iter()
+                .find_map(|(kind, authority)| {
+                    if kind == variant {
+                        Some(*authority)
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or_else(|| panic!("{variant:?} absent from AUTHORITY_MATRIX"));
+            assert_eq!(
+                via_function, via_table,
+                "classify_signal({variant:?}) returned {via_function:?} but table says {via_table:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn test_every_signal_authority_tier_has_at_least_one_mapped_event() {
+        for tier in ALL_SIGNAL_AUTHORITIES {
+            let any = AUTHORITY_MATRIX
+                .iter()
+                .any(|(_, authority)| authority == tier);
+            assert!(any, "SignalAuthority::{tier:?} has no mapped HookEventType");
+        }
+    }
+
+    #[test]
+    fn test_authority_recorded_as_definitive_terminal_for_session_end() {
+        let state = apply_events(representative_event(
+            SignalAuthority::DefinitiveTerminal,
+            "2099-01-31T00:00:05Z",
+        ));
+
+        let source = session(&state).state_source.as_ref().expect("state_source");
+        assert_eq!(source.event_kind, HookEventType::SessionEnd);
+        assert_eq!(source.authority, SignalAuthority::DefinitiveTerminal);
+    }
+
+    #[test]
+    fn test_authority_recorded_as_definitive_transient_for_pre_tool_use() {
+        let state = apply_events(representative_event(
+            SignalAuthority::DefinitiveTransient,
+            "2099-01-31T00:00:05Z",
+        ));
+
+        let source = session(&state).state_source.as_ref().expect("state_source");
+        assert_eq!(source.event_kind, HookEventType::PreToolUse);
+        assert_eq!(source.authority, SignalAuthority::DefinitiveTransient);
+    }
+
+    #[test]
+    fn test_authority_recorded_as_ambiguous_per_turn_for_stop() {
+        let state = apply_events(representative_event(
+            SignalAuthority::AmbiguousPerTurn,
+            "2099-01-31T00:00:05Z",
+        ));
+
+        let source = session(&state).state_source.as_ref().expect("state_source");
+        assert_eq!(source.event_kind, HookEventType::Stop);
+        assert_eq!(source.authority, SignalAuthority::AmbiguousPerTurn);
+    }
+
+    #[test]
+    fn test_authority_recorded_as_meta_awaiting_input_for_notification() {
+        let state = apply_events(representative_event(
+            SignalAuthority::MetaAwaitingInput,
+            "2099-01-31T00:00:10Z",
+        ));
+
+        let source = session(&state).state_source.as_ref().expect("state_source");
+        assert_eq!(source.event_kind, HookEventType::Notification);
+        assert_eq!(source.authority, SignalAuthority::MetaAwaitingInput);
+    }
+
+    #[test]
+    fn test_authority_recorded_as_inferential_for_worktree_create() {
+        let state = apply_events(representative_event(
+            SignalAuthority::Inferential,
+            "2099-01-31T00:00:05Z",
+        ));
+
+        let source = session(&state).state_source.as_ref().expect("state_source");
+        assert_eq!(source.event_kind, HookEventType::WorktreeCreate);
+        assert_eq!(source.authority, SignalAuthority::Inferential);
+    }
+
+    #[test]
+    fn test_last_authoritative_event_at_not_bumped_by_ambiguous_per_turn() {
+        let state = apply_events(vec![
+            {
+                let mut prompt = event_base(HookEventType::UserPromptSubmit);
+                prompt.recorded_at = "2099-01-31T00:00:00Z".to_string();
+                prompt
+            },
+            {
+                let mut end = event_base(HookEventType::SessionEnd);
+                end.recorded_at = "2099-01-31T00:00:10Z".to_string();
+                end
+            },
+            {
+                let mut stop = event_base(HookEventType::Stop);
+                stop.recorded_at = "2099-01-31T00:00:20Z".to_string();
+                stop.stop_hook_active = Some(false);
+                stop
+            },
+        ]);
+
+        assert_eq!(
+            session(&state).last_authoritative_event_at.as_deref(),
+            Some("2099-01-31T00:00:10Z")
+        );
+    }
+
+    #[test]
+    #[ignore = "Blocked on ADR-005 Phase 3 step 9 (reducer authority enforcement)"]
+    fn test_definitive_terminal_blocks_meta_awaiting_input_override() {
+        let state = apply_events(vec![
+            {
+                let mut prompt = event_base(HookEventType::UserPromptSubmit);
+                prompt.recorded_at = "2099-01-31T00:00:00Z".to_string();
+                prompt
+            },
+            {
+                let mut end = event_base(HookEventType::SessionEnd);
+                end.recorded_at = "2099-01-31T00:00:10Z".to_string();
+                end
+            },
+            {
+                let mut notification = event_base(HookEventType::Notification);
+                notification.recorded_at = "2099-01-31T00:00:30Z".to_string();
+                notification.notification_type = Some("idle_prompt".to_string());
+                notification
+            },
+        ]);
+
+        let current = session(&state);
+        assert_eq!(current.state, SessionState::Idle);
+        assert_eq!(
+            current
+                .state_source
+                .as_ref()
+                .expect("state_source")
+                .event_kind,
+            HookEventType::SessionEnd
+        );
+    }
+
+    #[test]
+    #[ignore = "Blocked on ADR-005 Phase 3 step 9 (reducer authority enforcement)"]
+    fn test_definitive_transient_upgrades_from_inferential() {
+        let state = apply_events(vec![
+            {
+                let mut prompt = event_base(HookEventType::UserPromptSubmit);
+                prompt.recorded_at = "2099-01-31T00:00:00Z".to_string();
+                prompt
+            },
+            {
+                let mut worktree = event_base(HookEventType::WorktreeCreate);
+                worktree.recorded_at = "2099-01-31T00:00:05Z".to_string();
+                worktree
+            },
+            {
+                let mut pre_tool = event_base(HookEventType::PreToolUse);
+                pre_tool.recorded_at = "2099-01-31T00:00:10Z".to_string();
+                pre_tool
+            },
+        ]);
+
+        let current = session(&state);
+        let source = current.state_source.as_ref().expect("state_source");
+        assert_eq!(current.state, SessionState::Working);
+        assert_eq!(source.authority, SignalAuthority::DefinitiveTransient);
+        assert_eq!(source.event_kind, HookEventType::PreToolUse);
+    }
+
+    #[test]
+    #[ignore = "Blocked on ADR-005 Phase 3 step 9 (reducer authority enforcement)"]
+    fn test_authority_hierarchy_transitive_ordering() {
+        let ordered_pairs = [
+            (
+                SignalAuthority::DefinitiveTerminal,
+                SignalAuthority::DefinitiveTransient,
+            ),
+            (
+                SignalAuthority::DefinitiveTerminal,
+                SignalAuthority::AmbiguousPerTurn,
+            ),
+            (
+                SignalAuthority::DefinitiveTerminal,
+                SignalAuthority::MetaAwaitingInput,
+            ),
+            (
+                SignalAuthority::DefinitiveTerminal,
+                SignalAuthority::Inferential,
+            ),
+            (
+                SignalAuthority::DefinitiveTransient,
+                SignalAuthority::AmbiguousPerTurn,
+            ),
+            (
+                SignalAuthority::DefinitiveTransient,
+                SignalAuthority::MetaAwaitingInput,
+            ),
+            (
+                SignalAuthority::DefinitiveTransient,
+                SignalAuthority::Inferential,
+            ),
+            (
+                SignalAuthority::AmbiguousPerTurn,
+                SignalAuthority::MetaAwaitingInput,
+            ),
+            (
+                SignalAuthority::AmbiguousPerTurn,
+                SignalAuthority::Inferential,
+            ),
+            (
+                SignalAuthority::MetaAwaitingInput,
+                SignalAuthority::Inferential,
+            ),
+        ];
+
+        for (index, (higher, lower)) in ordered_pairs.into_iter().enumerate() {
+            let higher_recorded_at = format!("2099-01-31T00:00:{:02}Z", index * 2);
+            let lower_recorded_at = format!("2099-01-31T00:00:{:02}Z", index * 2 + 1);
+
+            let higher_events = representative_event(higher, &higher_recorded_at);
+            let higher_kind = higher_events
+                .last()
+                .expect("higher event exists")
+                .event_type;
+            let lower_events = representative_event(lower, &lower_recorded_at);
+
+            let state = apply_events(higher_events.into_iter().chain(lower_events).collect());
+            let source = session(&state).state_source.as_ref().expect("state_source");
+
+            assert_eq!(
+                source.authority, higher,
+                "higher authority {higher:?} should survive lower authority {lower:?}"
+            );
+            assert_eq!(
+                source.event_kind, higher_kind,
+                "higher event kind should be retained when {higher:?} precedes {lower:?}"
+            );
+        }
+    }
+}
+
 /// A sole dead session (pid=0) that is only recently stale must survive —
 /// the tool call might still be in progress.
 #[test]

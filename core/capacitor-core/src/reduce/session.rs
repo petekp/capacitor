@@ -559,25 +559,80 @@ pub(super) fn is_shell_signal_stale(
     is_timestamp_stale(current.updated_at.as_str(), incoming_recorded_at)
 }
 
+/// Authority matrix. Single source of truth for `HookEventType` → `SignalAuthority`.
+/// Ordered by tier (highest authority first), alphabetically within tier.
+/// ADR-005 Phase 3 step 11 — do not hand-edit without updating the contract tests
+/// in `reduce/tests.rs::authority_matrix_contract_tests`.
+pub(super) const AUTHORITY_MATRIX: &[(HookEventType, SignalAuthority)] = &[
+    // DefinitiveTerminal — the system ended
+    (
+        HookEventType::SessionEnd,
+        SignalAuthority::DefinitiveTerminal,
+    ),
+    // DefinitiveTransient — hook reports concrete activity
+    (
+        HookEventType::PermissionRequest,
+        SignalAuthority::DefinitiveTransient,
+    ),
+    (
+        HookEventType::PostToolUse,
+        SignalAuthority::DefinitiveTransient,
+    ),
+    (
+        HookEventType::PostToolUseFailure,
+        SignalAuthority::DefinitiveTransient,
+    ),
+    (
+        HookEventType::PreToolUse,
+        SignalAuthority::DefinitiveTransient,
+    ),
+    (
+        HookEventType::SessionStart,
+        SignalAuthority::DefinitiveTransient,
+    ),
+    (
+        HookEventType::SubagentStart,
+        SignalAuthority::DefinitiveTransient,
+    ),
+    (
+        HookEventType::UserPromptSubmit,
+        SignalAuthority::DefinitiveTransient,
+    ),
+    // AmbiguousPerTurn — could mean idle or still working
+    (HookEventType::Stop, SignalAuthority::AmbiguousPerTurn),
+    (
+        HookEventType::SubagentStop,
+        SignalAuthority::AmbiguousPerTurn,
+    ),
+    (
+        HookEventType::TaskCompleted,
+        SignalAuthority::AmbiguousPerTurn,
+    ),
+    // MetaAwaitingInput — user prompt / permission UI
+    (
+        HookEventType::Notification,
+        SignalAuthority::MetaAwaitingInput,
+    ),
+    // Inferential — contextual, not a direct hook event
+    (HookEventType::ConfigChange, SignalAuthority::Inferential),
+    (HookEventType::PreCompact, SignalAuthority::Inferential),
+    (HookEventType::TeammateIdle, SignalAuthority::Inferential),
+    (HookEventType::Unknown, SignalAuthority::Inferential),
+    (HookEventType::WorktreeCreate, SignalAuthority::Inferential),
+    (HookEventType::WorktreeRemove, SignalAuthority::Inferential),
+];
+
 pub(super) fn classify_signal(event_type: HookEventType) -> SignalAuthority {
-    match event_type {
-        HookEventType::SessionEnd => SignalAuthority::DefinitiveTerminal,
-        HookEventType::SessionStart
-        | HookEventType::PreToolUse
-        | HookEventType::PostToolUse
-        | HookEventType::PostToolUseFailure
-        | HookEventType::UserPromptSubmit
-        | HookEventType::SubagentStart
-        | HookEventType::PermissionRequest => SignalAuthority::DefinitiveTransient,
-        HookEventType::Stop | HookEventType::TaskCompleted | HookEventType::SubagentStop => {
-            SignalAuthority::AmbiguousPerTurn
-        }
-        HookEventType::Notification => SignalAuthority::MetaAwaitingInput,
-        HookEventType::PreCompact
-        | HookEventType::TeammateIdle
-        | HookEventType::WorktreeCreate
-        | HookEventType::WorktreeRemove
-        | HookEventType::ConfigChange
-        | HookEventType::Unknown => SignalAuthority::Inferential,
-    }
+    AUTHORITY_MATRIX
+        .iter()
+        .find_map(|(kind, authority)| {
+            if *kind == event_type {
+                Some(*authority)
+            } else {
+                None
+            }
+        })
+        .expect(
+            "AUTHORITY_MATRIX missing HookEventType variant; see classify_signal_covers_all_event_types",
+        )
 }
