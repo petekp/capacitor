@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+STATE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PLUGIN_ROOT_FILE="$STATE_DIR/plugin-root"
+
+if [[ ! -f "$PLUGIN_ROOT_FILE" ]]; then
+  printf 'circuit: installed plugin root not found at %s; run a /circuit:* prompt first\n' "$PLUGIN_ROOT_FILE" >&2
+  exit 1
+fi
+
+PLUGIN_ROOT="$(tr -d '\n' < "$PLUGIN_ROOT_FILE")"
+if [[ -z "$PLUGIN_ROOT" ]]; then
+  printf 'circuit: installed plugin root file is empty: %s\n' "$PLUGIN_ROOT_FILE" >&2
+  exit 1
+fi
+
+TARGET="$PLUGIN_ROOT/scripts/relay/update-batch.sh"
+if [[ ! -f "$TARGET" ]]; then
+  printf 'circuit: helper not found at %s\n' "$TARGET" >&2
+  exit 1
+fi
+
+exec "$TARGET" "$@"

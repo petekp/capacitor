@@ -1,0 +1,164 @@
+schema_version: "2"
+circuit:
+  id: docs-polish
+  version: "2026-04-14"
+  purpose: >
+    Polish README, CONTRIBUTING, and adjacent documentation files across a
+    repo. Systematic pass over accuracy, clarity, structure, cross-references,
+    and style consistency.
+
+  entry:
+    signals:
+      include: [docs_polish, readme_refresh, contributing_guide, docs_sync, stale_docs]
+      exclude: [feature, bug, migration, architecture_decision]
+
+  entry_modes:
+    default:
+      start_at: frame
+      description: Standard docs polish. Pauses only at high-risk boundaries.
+    lite:
+      start_at: frame
+      description: Quick scan, high-confidence doc issues only.
+    deep:
+      start_at: frame
+      description: Standard plus evidence adjudication for accuracy and terminology.
+    autonomous:
+      start_at: frame
+      description: Unattended docs polish with evidence-gated auto-approval.
+
+  steps:
+    - id: frame
+      title: Frame
+      executor: orchestrator
+      kind: checkpoint
+      protocol: sweep-frame@v1
+      reads: [user.task, repo.snapshot]
+      writes:
+        artifact:
+          path: artifacts/brief.md
+          schema: brief-sweep@v1
+        request: checkpoints/{step_id}-{attempt}.request.json
+        response: checkpoints/{step_id}-{attempt}.response.json
+      checkpoint:
+        kind: sweep_frame
+        options: [continue]
+        materialize_artifact: true
+      gate:
+        kind: checkpoint_selection
+        source: checkpoints/{step_id}-{attempt}.response.json
+        allow: [continue]
+      routes:
+        continue: survey
+
+    - id: survey
+      title: Survey
+      executor: worker
+      kind: dispatch
+      protocol: sweep-survey@v1
+      reads: [artifacts/brief.md]
+      writes:
+        artifact:
+          path: artifacts/analysis.md
+          schema: analysis-sweep@v1
+        request: jobs/{step_id}-{attempt}.request.json
+        receipt: jobs/{step_id}-{attempt}.receipt.json
+        result: jobs/{step_id}-{attempt}.result.json
+      gate:
+        kind: result_verdict
+        source: jobs/{step_id}-{attempt}.result.json
+        pass: [outputs_ready]
+      routes:
+        pass: triage
+
+    - id: triage
+      title: Queue/Triage
+      executor: orchestrator
+      kind: synthesis
+      protocol: sweep-triage@v1
+      reads: [artifacts/brief.md, artifacts/analysis.md]
+      writes:
+        artifact:
+          path: artifacts/queue.md
+          schema: queue@v1
+      gate:
+        kind: schema_sections
+        source: artifacts/queue.md
+        required: [Classified Items, Batch Assignment]
+      routes:
+        pass: execute
+
+    - id: execute
+      title: Batch Execute
+      executor: worker
+      kind: dispatch
+      protocol: sweep-execute@v1
+      reads: [artifacts/queue.md, artifacts/brief.md]
+      writes:
+        artifact:
+          path: artifacts/batch-results.md
+          schema: batch-results@v1
+        request: jobs/{step_id}-{attempt}.request.json
+        receipt: jobs/{step_id}-{attempt}.receipt.json
+        result: jobs/{step_id}-{attempt}.result.json
+      budgets:
+        max_attempts: 3
+      gate:
+        kind: result_verdict
+        source: jobs/{step_id}-{attempt}.result.json
+        pass: [complete_and_hardened, partial]
+      routes:
+        pass: verify
+
+    - id: verify
+      title: Verify
+      executor: worker
+      kind: dispatch
+      protocol: sweep-verify@v1
+      reads: [artifacts/queue.md, artifacts/brief.md]
+      writes:
+        artifact:
+          path: artifacts/review.md
+          schema: review@v1
+        request: jobs/{step_id}-{attempt}.request.json
+        receipt: jobs/{step_id}-{attempt}.receipt.json
+        result: jobs/{step_id}-{attempt}.result.json
+      gate:
+        kind: result_verdict
+        source: jobs/{step_id}-{attempt}.result.json
+        pass: [clean, ship_ready]
+      routes:
+        pass: deferred
+
+    - id: deferred
+      title: Deferred Review
+      executor: orchestrator
+      kind: synthesis
+      protocol: sweep-deferred@v1
+      reads: [artifacts/queue.md, artifacts/review.md]
+      writes:
+        artifact:
+          path: artifacts/deferred.md
+          schema: deferred@v1
+      gate:
+        kind: schema_sections
+        source: artifacts/deferred.md
+        required: [Summary, Items]
+      routes:
+        pass: close
+
+    - id: close
+      title: Close
+      executor: orchestrator
+      kind: synthesis
+      protocol: sweep-close@v1
+      reads: [artifacts/brief.md, artifacts/queue.md, artifacts/deferred.md, optional:artifacts/review.md]
+      writes:
+        artifact:
+          path: artifacts/result.md
+          schema: result@v1
+      gate:
+        kind: schema_sections
+        source: artifacts/result.md
+        required: [Summary, Verification]
+      routes:
+        pass: "@complete"

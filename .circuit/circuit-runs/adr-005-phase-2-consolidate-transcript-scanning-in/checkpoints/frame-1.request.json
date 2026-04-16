@@ -1,0 +1,5 @@
+{
+  "step": "frame",
+  "selection_required": ["continue"],
+  "reason": "brief ready for checkpoint resolution"
+}

@@ -3,6 +3,7 @@ import SwiftUI
 struct ProjectDetailView: View {
     @Environment(AppState.self) var appState: AppState
     @Environment(\.floatingMode) private var floatingMode
+    @Environment(\.openWindow) private var openWindow
     let project: Project
 
     @State private var appeared = false
@@ -36,11 +37,15 @@ struct ProjectDetailView: View {
 
                     if appState.featureState.isIdeaCaptureEnabled {
                         VStack(alignment: .leading, spacing: 12) {
-                            DetailSectionLabel(title: "IDEA QUEUE")
+                            let ideas = appState.getIdeas(for: project)
+                            DetailSectionLabel(
+                                title: "IDEA QUEUE",
+                                count: IdeaQueueMetrics.queuedCount(in: ideas),
+                            )
 
                             let delegationState = appState.delegationState(for: project)
                             IdeaQueueView(
-                                ideas: appState.getIdeas(for: project),
+                                ideas: ideas,
                                 activityForIdea: { idea in
                                     IdeaQueueStatusResolver.resolve(
                                         idea: idea,
@@ -98,28 +103,26 @@ struct ProjectDetailView: View {
                 IdeaDetailModalOverlay(
                     idea: selectedIdea,
                     anchorFrame: selectedIdeaFrame,
+                    orchestrationActivity: selectedIdea.flatMap { ideaActivity(for: $0) },
                     onDismiss: {
-                        selectedIdea = nil
-                        selectedIdeaFrame = nil
+                        dismissIdeaDetail()
                     },
+                    onReview: reviewHandlerForSelectedIdea(),
                     onDelegate: appState.featureState.isDelegationLoopEnabled ? { idea in
                         appState.delegateIdea(idea, for: project)
-                        selectedIdea = nil
-                        selectedIdeaFrame = nil
+                        dismissIdeaDetail()
                     } : nil,
                     onRunMethod: appState.featureState.isMethodRunnerEnabled ? { idea in
                         withAnimation(.easeInOut(duration: 0.2)) {
                             methodSelectorIdea = idea
-                            selectedIdea = nil
-                            selectedIdeaFrame = nil
+                            dismissIdeaDetail()
                         }
                     } : nil,
                     onRemove: { idea in
                         withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                             appState.dismissIdea(idea, for: project)
                         }
-                        selectedIdea = nil
-                        selectedIdeaFrame = nil
+                        dismissIdeaDetail()
                     },
                 )
 
@@ -151,10 +154,76 @@ struct ProjectDetailView: View {
         }
         .accessibilityIdentifier(AccessibilityIdentifiers.projectDetailViewIdentifier(for: project))
     }
+
+    private func ideaActivity(for idea: Idea) -> IdeaQueueActivity? {
+        IdeaQueueStatusResolver.resolve(
+            idea: idea,
+            isGeneratingTitle: appState.isGeneratingTitle(for: idea.id),
+            delegationState: appState.delegationState(for: project),
+            runState: appState.activeRun(for: idea, in: project),
+        )
+    }
+
+    private func reviewHandlerForSelectedIdea() -> ((Idea) -> Void)? {
+        guard let selectedIdea, canOpenReview(for: selectedIdea) else { return nil }
+        return { idea in
+            openReview(for: idea)
+        }
+    }
+
+    private func canOpenReview(for idea: Idea) -> Bool {
+        if hasDelegationReview(for: idea) {
+            return true
+        }
+
+        if let run = appState.activeRun(for: idea, in: project),
+           run.status == "paused",
+           run.activeCheckpoint != nil
+        {
+            return true
+        }
+
+        return false
+    }
+
+    private func hasDelegationReview(for idea: Idea) -> Bool {
+        guard let delegation = appState.delegationState(for: project),
+              delegation.ideaId == idea.id,
+              delegation.currentReview != nil
+        else {
+            return false
+        }
+        return delegation.status == "review_needed" || delegation.status == "resume_failed"
+    }
+
+    private func openReview(for idea: Idea) {
+        if hasDelegationReview(for: idea) {
+            appState.showDelegationReview(project)
+            openWindow(id: "delegation-review")
+            dismissIdeaDetail()
+            return
+        }
+
+        if let run = appState.activeRun(for: idea, in: project),
+           run.status == "paused",
+           run.activeCheckpoint != nil
+        {
+            appState.showRunCheckpointReview(for: run)
+            openWindow(id: "run-checkpoint-review")
+            dismissIdeaDetail()
+            return
+        }
+    }
+
+    private func dismissIdeaDetail() {
+        selectedIdea = nil
+        selectedIdeaFrame = nil
+    }
 }
 
 struct DetailSectionLabel: View {
     let title: String
+    var count: Int?
 
     var body: some View {
         HStack(spacing: 6) {
@@ -166,6 +235,18 @@ struct DetailSectionLabel: View {
                 .font(AppTypography.label.weight(.bold))
                 .tracking(2)
                 .foregroundColor(.white.opacity(0.4))
+
+            if let count {
+                Text("\(count)")
+                    .font(AppTypography.badge)
+                    .foregroundColor(.white.opacity(0.58))
+                    .monospacedDigit()
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.white.opacity(0.08))
+                    .clipShape(Capsule())
+                    .accessibilityLabel("\(count) queued ideas")
+            }
         }
     }
 }

@@ -1,0 +1,24 @@
+{
+  "created_at": "2026-04-16T04:11:18.278Z",
+  "git": {
+    "base_commit": "b7c0b0b9e07c79f800f8286ee97e45186721768f",
+    "branch": "main",
+    "cwd": "/Users/petepetrash/Code/capacitor",
+    "head": "b7c0b0b9e07c79f800f8286ee97e45186721768f"
+  },
+  "narrative": {
+    "debt_markdown": "- CONSTRAINT: 6 existing fragmented transcript consumers still read transcripts directly — NOT yet migrated onto observation::transcript. Rust: `runtime_stats.rs` (token counting), `runtime/projects.rs` (session enumeration), `core_query.rs::get_suggested_projects` (unpinned discovery). Swift: `ProjectCreationCoordinator.swift` (in-progress polling), `DelegationLoopManager.swift` (resume discovery), `SessionSummarizer.swift` (AI summarization tail-read). Each has divergent semantics; plan one follow-up slice per consumer.\n- DECIDED: `#[allow(dead_code)]` on `CoreRuntime::ingest_transcript_observation` in `core/capacitor-core/src/core_ingest.rs:27` left alone in Phase 3 Q4 slice despite the new test making it a live caller. **Why:** strict test-only scope discipline. **How to apply:** when a second live caller appears (e.g., Phase 4 periodic re-scan), remove the attribute and update the stale comment in the same commit.\n- RULED OUT: Periodic transcript re-scan (deferred to Phase 4). Cold-start seeds once; sessions created after boot without hooks remain invisible until next restart.\n- RULED OUT: Cold-start telemetry/logging (deferred to Phase 4 signal-health step).",
+    "goal": "ADR-005 Phase 3 fully verified (all Q1-Q4 checkboxes green). Next chapter: pick between (a) Phase 4 hardening — hook contract evolution (step 12), Claude-native CwdChanged/FileChanged (13), signal-health telemetry (14); or (b) migrate the 6 legacy transcript consumers onto the new observation::transcript service — each is its own slice due to divergent semantics.",
+    "next": "DECIDE next chapter. Phase 4 extends/hardens the architecture; the 6-consumer migration consolidates existing duplicated transcript reads. Phase 4 steps are relatively decoupled (each a separable slice). Consumer migration is 6 slices. Natural default without further signal: Phase 4 step 12 (hook contract evolution) — opens the signal-health telemetry path that informs Phase 4 step 14.",
+    "state_markdown": "- DONE: ADR-005 Phase 3 Q4 shipped as `b7c0b0b9` — contract test `cold_start_equivalent_to_continuous_live_ingest` proves cold-start reconstruction is equivalent to continuous live ingest. +81 LOC test + ADR-005 Q4 checkbox flipped to [x].\n- DONE: Circuit Build run `adr-005-phase-3-q4-evidence-replay-equivalence-tes` completed all 6 phases (Frame → Plan → Act → Verify → Review → Close) with ship_ready verdict.\n- DONE: Full verification independently re-run — cargo fmt clean, cargo clippy -p capacitor-core clean, cargo test -p capacitor-core 921 passed / 0 failed.\n- ADR-005 Phase 3 verification: Q1 [x], Q2 [x], Q3 [x], Q4 [x] — Phase 3 FULLY VERIFIED.\n- Phase 4 (extend/harden) entirely untouched: hook contract evolution (step 12), Claude-native CwdChanged/FileChanged (13), signal-health telemetry (14).\n- 6 legacy transcript consumers still read transcripts directly — NOT yet migrated onto the new service (see debt log below)."
+  },
+  "project_root": "/Users/petepetrash/Code/capacitor",
+  "record_id": "continuity-53a4e899-f928-42c9-9825-a52304137261",
+  "resume_contract": {
+    "auto_resume": false,
+    "mode": "resume_standalone",
+    "requires_explicit_resume": true
+  },
+  "run_ref": null,
+  "schema_version": "1"
+}

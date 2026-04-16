@@ -1,0 +1,144 @@
+schema_version: "2"
+circuit:
+  id: build
+  version: "2026-04-10"
+  purpose: >
+    Build features, scoped refactors, docs, tests, or mixed changes.
+
+  entry:
+    signals:
+      include: [feature, refactor, docs, tests, mixed_changes]
+      exclude: [bug, migration, cleanup, architecture_decision]
+
+  entry_modes:
+    default:
+      start_at: frame
+      description: Standard build on the fixed graph. Pauses only on ambiguity or irreversibility.
+    lite:
+      start_at: frame
+      description: Faster build rigor inside the fixed graph. Review still runs.
+    deep:
+      start_at: frame
+      description: Standard build with deeper rigor inside Frame and Plan.
+    autonomous:
+      start_at: frame
+      description: Standard fixed-graph build with auto-resolved checkpoints.
+
+  steps:
+    - id: frame
+      title: Frame
+      executor: orchestrator
+      kind: checkpoint
+      protocol: build-frame@v1
+      reads: [user.task, repo.snapshot]
+      writes:
+        artifact:
+          path: artifacts/brief.md
+          schema: brief@v1
+        request: checkpoints/{step_id}-{attempt}.request.json
+        response: checkpoints/{step_id}-{attempt}.response.json
+      checkpoint:
+        kind: build_frame
+        options: [continue]
+        materialize_artifact: true
+      gate:
+        kind: checkpoint_selection
+        source: checkpoints/{step_id}-{attempt}.response.json
+        allow: [continue]
+      routes:
+        continue: plan
+
+    - id: plan
+      title: Plan
+      executor: orchestrator
+      kind: synthesis
+      protocol: build-plan@v1
+      reads: [artifacts/brief.md]
+      writes:
+        artifact:
+          path: artifacts/plan.md
+          schema: plan@v1
+      gate:
+        kind: schema_sections
+        source: artifacts/plan.md
+        required: [Approach, Slices, Verification Commands]
+      routes:
+        pass: act
+
+    - id: act
+      title: Act
+      executor: worker
+      kind: dispatch
+      protocol: build-act@v1
+      reads: [artifacts/plan.md]
+      writes:
+        artifact:
+          path: artifacts/implementation-handoff.md
+          schema: implementation-handoff@v1
+        request: phases/implement/jobs/{step_id}-{attempt}.request.json
+        receipt: phases/implement/jobs/{step_id}-{attempt}.receipt.json
+        result: phases/implement/jobs/{step_id}-{attempt}.result.json
+      budgets:
+        max_attempts: 3
+      gate:
+        kind: result_verdict
+        source: phases/implement/jobs/{step_id}-{attempt}.result.json
+        pass: [complete_and_hardened]
+      routes:
+        pass: verify
+
+    - id: verify
+      title: Verify
+      executor: orchestrator
+      kind: synthesis
+      protocol: build-verify@v1
+      reads: [artifacts/plan.md]
+      writes:
+        artifact:
+          path: artifacts/verification.md
+          schema: verification@v1
+      gate:
+        kind: schema_sections
+        source: artifacts/verification.md
+        required: [Verification Results]
+      routes:
+        pass: review
+
+    - id: review
+      title: Review
+      executor: worker
+      kind: dispatch
+      protocol: build-review@v1
+      reads: [artifacts/brief.md, artifacts/plan.md]
+      writes:
+        artifact:
+          path: artifacts/review.md
+          schema: review@v1
+        request: phases/review/jobs/{step_id}-{attempt}.request.json
+        receipt: phases/review/jobs/{step_id}-{attempt}.receipt.json
+        result: phases/review/jobs/{step_id}-{attempt}.result.json
+      budgets:
+        max_attempts: 2
+      gate:
+        kind: result_verdict
+        source: phases/review/jobs/{step_id}-{attempt}.result.json
+        pass: [ship_ready, clean]
+      routes:
+        pass: close
+
+    - id: close
+      title: Close
+      executor: orchestrator
+      kind: synthesis
+      protocol: build-close@v1
+      reads: [artifacts/brief.md, artifacts/plan.md, optional:artifacts/review.md]
+      writes:
+        artifact:
+          path: artifacts/result.md
+          schema: result@v1
+      gate:
+        kind: schema_sections
+        source: artifacts/result.md
+        required: [Changes, Verification, PR Summary]
+      routes:
+        pass: "@complete"

@@ -1,5 +1,17 @@
 import SwiftUI
 
+enum IdeaQueueMetrics {
+    static func isQueued(_ idea: Idea) -> Bool {
+        idea.status != "done"
+    }
+
+    static func queuedCount(in ideas: [Idea]) -> Int {
+        ideas.reduce(0) { count, idea in
+            count + (isQueued(idea) ? 1 : 0)
+        }
+    }
+}
+
 enum IdeaQueueActivity: Equatable {
     case generatingTitle
     case delegationWorking

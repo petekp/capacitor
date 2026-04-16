@@ -2,6 +2,16 @@
 import XCTest
 
 final class IdeaQueueStatusResolverTests: XCTestCase {
+    func testQueuedCountExcludesDoneIdeas() {
+        let ideas = [
+            makeIdea(status: "open"),
+            makeIdea(status: "in-progress"),
+            makeIdea(status: "done"),
+        ]
+
+        XCTAssertEqual(IdeaQueueMetrics.queuedCount(in: ideas), 2)
+    }
+
     func testPrefersReviewReadyForMatchingDelegation() {
         let status = IdeaQueueStatusResolver.resolve(
             idea: makeIdea(),

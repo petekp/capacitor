@@ -69,6 +69,7 @@ See `.claude/docs/architecture-primer.md` for current domain terms: `Project`, `
 ## Conventions
 
 - Run tests after every meaningful change
+- Restart the app after Swift UI changes with `./scripts/dev/restart-alpha-stable.sh` unless explicitly told not to
 - Delete replaced code in the same change — no vestigial code
 - Use terms from `.claude/docs/architecture-primer.md` consistently
 - Prefer `./scripts/dev/restart-alpha-stable.sh` over manual build steps

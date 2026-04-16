@@ -22,7 +22,7 @@ struct IdeaQueueView: View {
     @Environment(\.prefersReducedMotion) private var reduceMotion
 
     private var queuedIdeas: [Idea] {
-        localIdeas.filter { $0.status != "done" }
+        localIdeas.filter(IdeaQueueMetrics.isQueued)
     }
 
     private var draggingIdea: Idea? {

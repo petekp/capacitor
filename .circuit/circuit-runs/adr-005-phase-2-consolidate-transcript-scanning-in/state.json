@@ -1,0 +1,89 @@
+{
+  "schema_version": "1",
+  "run_id": "adr-005-phase-2-consolidate-transcript-scanning-in",
+  "circuit_id": "build",
+  "manifest_version": "2026-04-10",
+  "status": "completed",
+  "current_step": null,
+  "selected_entry_mode": "deep",
+  "git": {
+    "head_at_start": "88ff52fe9e6738dc437f7bb91ced81b41179dbff"
+  },
+  "artifacts": {
+    "artifacts/brief.md": {
+      "status": "complete",
+      "gate": "pass",
+      "produced_by": "frame",
+      "updated_at": "2026-04-16T02:38:18.741Z"
+    },
+    "artifacts/plan.md": {
+      "status": "complete",
+      "gate": "pass",
+      "produced_by": "plan",
+      "updated_at": "2026-04-16T02:42:33.487Z"
+    },
+    "artifacts/implementation-handoff.md": {
+      "status": "complete",
+      "gate": "pass",
+      "produced_by": "act",
+      "updated_at": "2026-04-16T03:20:21.160Z"
+    },
+    "artifacts/verification.md": {
+      "status": "complete",
+      "gate": "pass",
+      "produced_by": "verify",
+      "updated_at": "2026-04-16T03:25:37.195Z"
+    },
+    "artifacts/review.md": {
+      "status": "complete",
+      "gate": "pass",
+      "produced_by": "review",
+      "updated_at": "2026-04-16T03:27:24.618Z"
+    },
+    "artifacts/result.md": {
+      "status": "complete",
+      "gate": "pass",
+      "produced_by": "close",
+      "updated_at": "2026-04-16T03:28:14.336Z"
+    }
+  },
+  "jobs": {
+    "act": {
+      "attempt": 1,
+      "status": "complete",
+      "request": "phases/implement/jobs/act-1.request.json",
+      "completion": "complete",
+      "verdict": "complete_and_hardened",
+      "result": "phases/implement/jobs/act-1.result.json"
+    },
+    "review": {
+      "attempt": 2,
+      "status": "complete",
+      "request": "phases/review/jobs/review-2.request.json",
+      "completion": "complete",
+      "verdict": "ship_ready",
+      "result": "phases/review/jobs/review-2.result.json"
+    }
+  },
+  "checkpoints": {
+    "frame": {
+      "attempt": 1,
+      "status": "resolved",
+      "request_path": "checkpoints/frame-1.request.json",
+      "response_path": "checkpoints/frame-1.response.json",
+      "selection": "continue"
+    }
+  },
+  "routes": {
+    "frame": "plan",
+    "plan": "act",
+    "act": "verify",
+    "verify": "review",
+    "review": "close",
+    "close": "@complete"
+  },
+  "goal": "ADR-005 Phase 2: consolidate transcript scanning into single Rust observation service, wire into reducer as session-existence evidence, add cold-start reconstruction from transcripts (steps 5-7)",
+  "started_at": "2026-04-16T01:01:49.814Z",
+  "updated_at": "2026-04-16T03:28:14.338Z",
+  "terminal_target": "@complete"
+}

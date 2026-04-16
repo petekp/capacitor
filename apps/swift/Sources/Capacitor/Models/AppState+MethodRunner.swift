@@ -112,6 +112,15 @@ extension AppState {
         runState.runCheckpointState(target: target)
     }
 
+    func showRunCheckpointReview(for run: RuntimeRunState) {
+        guard let checkpoint = run.activeCheckpoint else { return }
+        uiState.runCheckpointWindowTarget = RunCheckpointWindowTarget(
+            projectPath: run.projectPath,
+            runID: run.id,
+            checkpointID: checkpoint.id,
+        )
+    }
+
     func submitDelegationReview(
         for project: Project,
         delegation: RuntimeDelegationState,

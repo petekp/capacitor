@@ -1,0 +1,10 @@
+{
+  "kind": "build_frame",
+  "step_id": "frame",
+  "attempt": 1,
+  "summary": "ADR-005 Phase 3 Q4: contract test proving cold-start reconstruction equivalent to continuous live ingest. Test-only scope. Closes Phase 3 verification.",
+  "artifact_path": "artifacts/brief.md",
+  "options": ["continue"],
+  "recommended_option": "continue",
+  "rationale": "Scope is tight (single contract test), invariant is well-defined (reducer equivalence under sequential application), and Phase 2 shipped the constructor under test. The reviewer-unit work to author the brief is complete; no ambiguity remains that would justify pausing for checkpoint input. Proceeding to Plan."
+}

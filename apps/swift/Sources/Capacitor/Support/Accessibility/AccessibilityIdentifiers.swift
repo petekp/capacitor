@@ -5,6 +5,7 @@ enum AccessibilityIdentifiers {
     static let ideaDetailIdentifier = "ax.idea-detail"
     static let ideaDetailDismissIdentifier = "ax.idea-detail.dismiss"
     static let ideaDetailDelegateIdentifier = "ax.idea-detail.delegate"
+    static let ideaDetailReviewIdentifier = "ax.idea-detail.review"
     static let ideaDetailRemoveIdentifier = "ax.idea-detail.remove"
     static let delegationReviewIdentifier = "ax.delegation-review"
     static let delegationReviewApproveIdentifier = "ax.delegation-review.approve"

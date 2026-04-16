@@ -1,0 +1,19 @@
+{
+  "schema_version": "1",
+  "run_id": "docs-polish-adr-005-architecture-sync",
+  "circuit_id": "docs-polish",
+  "manifest_version": "2026-04-14",
+  "status": "in_progress",
+  "current_step": "frame",
+  "selected_entry_mode": "deep",
+  "git": {
+    "head_at_start": "b7c0b0b9e07c79f800f8286ee97e45186721768f"
+  },
+  "artifacts": {},
+  "jobs": {},
+  "checkpoints": {},
+  "routes": {},
+  "goal": "Audit and update all canonical documentation to reflect the post-ADR-005 code state: authority-based multi-signal state detection (Phases 1-3 closed, Slices 1-6 shipped), transcript observation service (Phase 2 steps 5-7), retired ready_reason channel, typed StateSource/SignalAuthority FFI provenance, and 6 fragmented transcript consumers still pending Phase 2 deferred migration. Retire stale framings, sync inventory snapshots, mark verification questions accurately.",
+  "started_at": "2026-04-16T04:51:53.338Z",
+  "updated_at": "2026-04-16T04:51:53.340Z"
+}

@@ -1,0 +1,24 @@
+{
+  "created_at": "2026-04-16T04:15:58.082Z",
+  "git": {
+    "base_commit": "b7c0b0b9e07c79f800f8286ee97e45186721768f",
+    "branch": "main",
+    "cwd": "/Users/petepetrash/Code/capacitor",
+    "head": "b7c0b0b9e07c79f800f8286ee97e45186721768f"
+  },
+  "narrative": {
+    "debt_markdown": "- CONSTRAINT: 6 existing fragmented transcript consumers still read transcripts directly — NOT yet migrated onto observation::transcript. Rust: `runtime_stats.rs` (token counting), `runtime/projects.rs` (session enumeration), `core_query.rs::get_suggested_projects` (unpinned discovery). Swift: `ProjectCreationCoordinator.swift` (in-progress polling), `DelegationLoopManager.swift` (resume discovery), `SessionSummarizer.swift` (AI summarization tail-read). Each has divergent semantics; plan one follow-up slice per consumer.\n- DECIDED: `#[allow(dead_code)]` on `CoreRuntime::ingest_transcript_observation` in `core/capacitor-core/src/core_ingest.rs:27` left alone in Phase 3 Q4 slice despite the new test making it a live caller. **Why:** strict test-only scope discipline. **How to apply:** when a second live caller appears (e.g., first migrated consumer, or Phase 4 periodic re-scan), remove the attribute and update the stale comment in the same commit.\n- RULED OUT: Periodic transcript re-scan (deferred to Phase 4). Cold-start seeds once; sessions created after boot without hooks remain invisible until next restart.\n- RULED OUT: Cold-start telemetry/logging (deferred to Phase 4 signal-health step).\n- RULED OUT: Adding `CwdChanged` or `FileChanged` in Phase 4 step 12 — ADR-005 explicitly defers these to step 13 (\"Consider Claude-native CwdChanged/FileChanged once the authority matrix is stable\").",
+    "goal": "ADR-005 Phase 3 closed (all Q1-Q4 [x]). Decide next-chapter fork: (a) 6-consumer migration onto observation::transcript starting with runtime_stats.rs [RECOMMENDED], or (b) Phase 4 step 12 hook contract evolution narrowed to StopFailure variant.",
+    "next": "DECIDE: pick fork (a) migrate runtime_stats.rs (token counting, Rust-only, simplest semantics) to exercise the shipped observation::transcript query surface — naturally retires the #[allow(dead_code)] on ingest_transcript_observation; or (b) add StopFailure HookEventType variant with authority classification (DefinitiveTransient likely) and reducer transition. Recommendation inverted from prior pending record (which defaulted to step 12): migration is higher information-value per LOC because it validates shipped Phase 2 architecture rather than adding speculative enum variants.",
+    "state_markdown": "- DONE: ADR-005 Phase 3 Q4 shipped as `b7c0b0b9` — Phase 3 fully verified (Q1-Q4 all [x]).\n- INVENTORY: `HookEventType` at `core/capacitor-core/src/domain/types.rs:255` currently has 17 real variants + 2 sentinels (`Unknown`, `TranscriptActivity`). Missing per ADR-005: TaskCreated, StopFailure, PostCompact, Elicitation, ElicitationResult. (CwdChanged/FileChanged explicitly deferred to ADR step 13.)\n- INVENTORY: 6 legacy transcript consumers unchanged — Rust: `runtime_stats.rs` (tokens), `runtime/projects.rs` (enumeration), `core_query.rs::get_suggested_projects` (discovery). Swift: `ProjectCreationCoordinator.swift`, `DelegationLoopManager.swift`, `SessionSummarizer.swift`.\n- PIVOT: earlier continuity recommended Phase 4 step 12 as default; this session flipped to preferring 6-consumer migration because it validates the shipped API surface rather than adding speculative hook variants.\n- STATUS: no slice started yet for the next chapter — user paused mid-fork pending decision."
+  },
+  "project_root": "/Users/petepetrash/Code/capacitor",
+  "record_id": "continuity-f2c32e44-0f0d-4adf-ae5a-a73af0d508fe",
+  "resume_contract": {
+    "auto_resume": false,
+    "mode": "resume_standalone",
+    "requires_explicit_resume": true
+  },
+  "run_ref": null,
+  "schema_version": "1"
+}

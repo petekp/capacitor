@@ -143,6 +143,29 @@ final class AppStateRunCheckpointTests: XCTestCase {
         )
     }
 
+    func testShowRunCheckpointReviewTargetsRunCheckpoint() {
+        let appState = AppState()
+        appState.cancelRuntimeAutomationForTesting()
+        let project = makeProject(name: "Capacitor", path: "/Users/petepetrash/Code/capacitor")
+        let run = makeRun(
+            projectPath: project.path,
+            runID: "run-checkpoint-action",
+            checkpointID: "checkpoint-action",
+            checkpointCreatedAt: "2026-03-24T10:05:00Z",
+        )
+
+        appState.showRunCheckpointReview(for: run)
+
+        XCTAssertEqual(
+            appState.uiState.runCheckpointWindowTarget,
+            AppState.RunCheckpointWindowTarget(
+                projectPath: project.path,
+                runID: "run-checkpoint-action",
+                checkpointID: "checkpoint-action",
+            ),
+        )
+    }
+
     func testSubmitRunCheckpointDecisionMutatesRuntimeRunWithCheckpointIdentity() async throws {
         var capturedRequest: URLRequest?
         let runtimeClient = try RuntimeClient(

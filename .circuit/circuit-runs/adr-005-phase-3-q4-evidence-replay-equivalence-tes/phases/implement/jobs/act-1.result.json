@@ -1,0 +1,11 @@
+{
+  "completion": "complete",
+  "verdict": "complete_and_hardened",
+  "adapter": "codex_rescue",
+  "files_changed": ["core/capacitor-core/src/core_runtime_tests.rs"],
+  "lines_added": 81,
+  "lines_removed": 0,
+  "test_name": "cold_start_equivalent_to_continuous_live_ingest",
+  "test_location": "core/capacitor-core/src/core_runtime_tests.rs:1122 (module cold_start_transcript_tests)",
+  "notes": "Single contract test; three-session fixture across two projects; asserts sessions/projects/routing/diagnostics.events_ingested equality after sort, excludes snapshot_version and generated_at. Full crate suite green: 921 passed / 0 failed. Clippy clean."
+}

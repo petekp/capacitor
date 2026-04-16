@@ -28,19 +28,24 @@ struct MethodSelectorView: View {
                 .accessibilityIdentifier(AccessibilityIdentifiers.methodSelectorDismissIdentifier)
             }
 
-            Text("Choose a workflow for this idea")
+            Text("Choose how Capacitor should orchestrate this idea")
                 .font(AppTypography.bodySecondary)
                 .foregroundColor(.white.opacity(0.6))
 
-            ScrollView(.vertical, showsIndicators: false) {
-                VStack(spacing: 10) {
-                    ForEach(methods, id: \.id) { method in
-                        MethodCard(method: method) {
-                            onSelect(method)
+            if methods.isEmpty {
+                MethodSelectorEmptyState()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView(.vertical, showsIndicators: false) {
+                    VStack(spacing: 10) {
+                        ForEach(methods, id: \.id) { method in
+                            MethodCard(method: method) {
+                                onSelect(method)
+                            }
                         }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .padding(24)
@@ -114,6 +119,27 @@ private struct MethodCard: View {
         method.phases.count
     }
 
+    private var phaseCountLabel: String {
+        "\(phaseCount) \(phaseCount == 1 ? "phase" : "phases")"
+    }
+
+    private var involvementLabel: String {
+        switch method.defaultInvolvement {
+        case .autonomous:
+            "Autonomous"
+        case .supervised:
+            "Supervised"
+        case .collaborative:
+            "Collaborative"
+        }
+    }
+
+    private var phaseSummary: String? {
+        let names = method.phases.map(\.name).filter { !$0.isEmpty }
+        guard !names.isEmpty else { return nil }
+        return names.joined(separator: " -> ")
+    }
+
     private var iconName: String {
         switch method.taskArchetype {
         case "implementation": "bolt.fill"
@@ -141,23 +167,42 @@ private struct MethodCard: View {
                     Text(method.name)
                         .font(AppTypography.bodyMedium.weight(.medium))
                         .foregroundColor(.white)
+                        .lineLimit(1)
 
                     Text(method.description)
                         .font(AppTypography.caption)
                         .foregroundColor(.white.opacity(0.62))
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
+
+                    HStack(spacing: 6) {
+                        metadataBadge(involvementLabel)
+                        metadataBadge(phaseCountLabel)
+                    }
+                    .padding(.top, 2)
+
+                    if let phaseSummary {
+                        HStack(spacing: 6) {
+                            Image(systemName: "point.topleft.down.curvedto.point.bottomright.up")
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundColor(.white.opacity(0.4))
+
+                            Text(phaseSummary)
+                                .font(AppTypography.monoCaption)
+                                .foregroundColor(.white.opacity(0.46))
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                        }
+                        .padding(.top, 1)
+                    }
                 }
 
                 Spacer(minLength: 12)
 
-                Text("\(phaseCount) \(phaseCount == 1 ? "phase" : "phases")")
-                    .font(AppTypography.caption.weight(.medium))
-                    .foregroundColor(.white.opacity(0.68))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Color.white.opacity(isHovered ? 0.14 : 0.08))
-                    .clipShape(Capsule())
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(.white.opacity(isHovered ? 0.72 : 0.38))
+                    .padding(.top, 10)
             }
             .padding(14)
             .background(
@@ -184,5 +229,39 @@ private struct MethodCard: View {
                 isHovered = hovering
             }
         }
+    }
+
+    private func metadataBadge(_ title: String) -> some View {
+        Text(title)
+            .font(AppTypography.caption.weight(.medium))
+            .foregroundColor(.white.opacity(0.68))
+            .lineLimit(1)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(Color.white.opacity(isHovered ? 0.14 : 0.08))
+            .clipShape(Capsule())
+    }
+}
+
+private struct MethodSelectorEmptyState: View {
+    var body: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "square.stack.3d.up.slash")
+                .font(.system(size: 24, weight: .medium))
+                .foregroundColor(.white.opacity(0.38))
+
+            Text("No methods available")
+                .font(AppTypography.bodyMedium)
+                .foregroundColor(.white.opacity(0.72))
+
+            Text("Method templates will appear here when the registry is available.")
+                .font(AppTypography.caption)
+                .foregroundColor(.white.opacity(0.48))
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.vertical, 38)
+        .padding(.horizontal, 16)
     }
 }

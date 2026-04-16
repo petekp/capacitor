@@ -6,6 +6,7 @@ final class AccessibilityIdentifiersTests: XCTestCase {
         XCTAssertEqual(AccessibilityIdentifiers.ideaDetailIdentifier, "ax.idea-detail")
         XCTAssertEqual(AccessibilityIdentifiers.ideaDetailDismissIdentifier, "ax.idea-detail.dismiss")
         XCTAssertEqual(AccessibilityIdentifiers.ideaDetailDelegateIdentifier, "ax.idea-detail.delegate")
+        XCTAssertEqual(AccessibilityIdentifiers.ideaDetailReviewIdentifier, "ax.idea-detail.review")
         XCTAssertEqual(AccessibilityIdentifiers.ideaDetailRemoveIdentifier, "ax.idea-detail.remove")
     }
 

@@ -1,0 +1,6 @@
+{
+  "step": "act",
+  "attempt": 1,
+  "adapter": "codex_rescue",
+  "note": "Dispatched to codex:codex-rescue agent per project policy (always delegate implementation to Codex). Task: author evidence-replay equivalence contract test per artifacts/plan.md. Test-only scope."
+}

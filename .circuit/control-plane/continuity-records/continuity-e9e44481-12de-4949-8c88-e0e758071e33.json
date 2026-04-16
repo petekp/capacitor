@@ -1,0 +1,24 @@
+{
+  "created_at": "2026-04-16T03:40:31.153Z",
+  "git": {
+    "base_commit": "3ae7a954fdf8f0515ee73ec91d865b75b112d212",
+    "branch": "main",
+    "cwd": "/Users/petepetrash/Code/capacitor",
+    "head": "3ae7a954fdf8f0515ee73ec91d865b75b112d212"
+  },
+  "narrative": {
+    "debt_markdown": "- DECIDED: Transcript observations use a dedicated ingest path (`apply_transcript_discovery`), NOT synthetic `IngestHookEventCommand`s. **Why:** transcripts have no PID/event_id/shell context; faking them as hook events would contaminate the hook pipeline and force unused fields. **How to apply:** any future transcript semantic extensions (periodic re-scan, content-based state inference) should extend `apply_transcript_discovery` or add sibling methods — do NOT add more `HookEventType` variants for non-hook signals.\n- DECIDED: `from_storage_with_transcript_cold_start()` is a separate constructor from `from_storage()`. **Why:** tests using in-memory storage (`CoreRuntime::new()`) would otherwise scan real `~/.claude/projects/` and break isolation (found by 55-vs-1 test failure during implementation). **How to apply:** only persistent-snapshot constructors (`new_with_snapshot_file`) call the cold-start variant; in-memory/test runtimes skip the scan.\n- CONSTRAINT: 6 existing fragmented transcript consumers still read transcripts directly — NOT yet migrated onto the new service. Rust: `runtime_stats.rs` (token counting), `runtime/projects.rs` (session enumeration), `core_query.rs::get_suggested_projects` (unpinned discovery). Swift: `ProjectCreationCoordinator.swift` (in-progress polling), `DelegationLoopManager.swift` (resume discovery), `SessionSummarizer.swift` (AI summarization tail-read). Each has divergent semantics; plan one follow-up slice per consumer.\n- RULED OUT: Periodic transcript re-scan (deferred to Phase 4). Cold-start seeds once; sessions created after boot without hooks remain invisible until next restart.\n- RULED OUT: Cold-start telemetry/logging (deferred to Phase 4 signal-health step). `let _ = state.apply_transcript_discovery(discovery)` currently drops `MutationOutcome` in cold-start loop.",
+    "goal": "Pick up ADR-005 Phase 3 Q4 (evidence replay, now unblocked by Phase 2), Phase 4 hardening (telemetry/hook contract/signal-health), or migrate the 6 legacy transcript consumers onto the new observation::transcript service.",
+    "next": "DECIDE next chapter: (a) Phase 3 Q4 evidence replay — write a test that cold-starts from transcripts and verifies snapshot equals continuous operation; (b) Phase 4 work — hook contract evolution (step 12), Claude-native CwdChanged/FileChanged (13), signal-health telemetry (14); (c) migrate 6 legacy transcript consumers (3 Rust, 3 Swift) onto observation::transcript — each is its own slice due to divergent semantics.",
+    "state_markdown": "- DONE: ADR-005 Phase 2 steps 5-7 shipped as `7437f784` — transcript observation service (`observation::transcript`), reducer integration (`apply_transcript_discovery`), cold-start reconstruction (`from_storage_with_transcript_cold_start`). 10 files, +579/-9, 8 new contract tests.\n- DONE: ADR-005 Phase 2 verification checkboxes all checked off (`3ae7a954`).\n- DONE: Housekeeping — parked `.relay/.../handoff-converge.md` deletion cleared (`88ff52fe`).\n- DONE: Circuit Build workflow for Phase 2 completed — Frame → Plan → Act → Verify → Review → Close all green. Run slug: `adr-005-phase-2-consolidate-transcript-scanning-in`.\n- ADR-005 Phase 3 verification: Q1 [x], Q2 [x], Q3 [x], Q4 [ ] — Q4 (evidence replay = continuous operation snapshot) is now unblocked because Phase 2 provides the session-existence baseline.\n- Phase 4 (extend/harden) entirely untouched: hook contract evolution (step 12), Claude-native CwdChanged/FileChanged (13), signal-health telemetry (14)."
+  },
+  "project_root": "/Users/petepetrash/Code/capacitor",
+  "record_id": "continuity-e9e44481-12de-4949-8c88-e0e758071e33",
+  "resume_contract": {
+    "auto_resume": false,
+    "mode": "resume_standalone",
+    "requires_explicit_resume": true
+  },
+  "run_ref": null,
+  "schema_version": "1"
+}

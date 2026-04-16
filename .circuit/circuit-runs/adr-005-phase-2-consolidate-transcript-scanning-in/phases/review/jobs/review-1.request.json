@@ -1,0 +1,9 @@
+{
+  "step": "review",
+  "attempt": 1,
+  "adapter": "direct-reviewer",
+  "brief_path": "artifacts/brief.md",
+  "plan_path": "artifacts/plan.md",
+  "expected_review_artifact_path": "artifacts/review.md",
+  "expected_result_path": "phases/review/jobs/review-1.result.json"
+}
