@@ -119,14 +119,13 @@ final class ActiveProjectResolver {
             // Separate active (Working/Waiting/Compacting) from passive (Ready) sessions.
             // Active sessions always take priority - a session you're using shouldn't
             // lose focus to one that just finished.
-            let isActive = sessionState.state == .working ||
-                sessionState.state == .waiting ||
-                sessionState.state == .compacting
-
-            if isActive {
+            switch sessionState.state {
+            case .working, .waiting, .compacting:
                 activeSessions.append((project, sessionId, updatedAt))
-            } else {
+            case .ready:
                 readySessions.append((project, sessionId, updatedAt))
+            case .idle:
+                continue
             }
 
             sessionSummary.append(

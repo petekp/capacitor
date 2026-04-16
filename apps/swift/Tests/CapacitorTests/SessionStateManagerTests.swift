@@ -177,6 +177,32 @@ final class SessionStateManagerTests: XCTestCase {
         XCTAssertEqual(projected?.stateSource?.authority, .definitiveTerminal)
     }
 
+    func testProjectionPreservesTranscriptActivityStateSource() {
+        let manager = makeManager()
+        let project = makeProject("core-project", path: "/tmp/core-project")
+        let session = makeRuntimeSession(
+            sessionId: "session-1",
+            pid: 1234,
+            state: "idle",
+            stateSource: RuntimeStateSource(
+                eventKind: "transcript_activity",
+                authority: "inferential",
+                observedAt: "2026-04-15T12:00:00Z",
+            ),
+        )
+
+        manager.applyRuntimeProjectStates(
+            [makeRuntimeProjectState(projectPath: project.path, state: "idle", sessionId: session.sessionId)],
+            sessions: [session],
+            for: [project],
+            correlationId: "projection-transcript-activity",
+        )
+
+        let projected = manager.getSessionState(for: project)
+        XCTAssertEqual(projected?.stateSource?.eventKind, .transcriptActivity)
+        XCTAssertEqual(projected?.stateSource?.authority, .inferential)
+    }
+
     func testProjectionPreservesNilStateSourceForLegacySessions() {
         let manager = makeManager()
         let project = makeProject("core-project", path: "/tmp/core-project")

@@ -74,11 +74,12 @@ fn resolve_project_path(project_dir: &Path) -> String {
             return trimmed.to_string();
         }
     }
-    project_dir
+    let directory_name = project_dir
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("unknown")
-        .to_string()
+        .to_string();
+    crate::runtime::projects::try_resolve_encoded_path(&directory_name).unwrap_or(directory_name)
 }
 
 #[cfg(test)]
@@ -144,6 +145,29 @@ mod tests {
         let results = scan_for_sessions(tmp.path());
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].project_path, "fallback-slug");
+    }
+
+    #[test]
+    fn scan_resolves_real_style_claude_project_directory_name() {
+        let tmp = TempDir::new().unwrap();
+        let real_project = tmp
+            .path()
+            .join("Users")
+            .join("pete")
+            .join("Code")
+            .join("repo");
+        fs::create_dir_all(&real_project).unwrap();
+        let slug = crate::runtime::projects::encode_project_path(&real_project.to_string_lossy());
+        let project_dir = setup_project(tmp.path(), &slug, None);
+        add_session(&project_dir, "sess-real-path");
+
+        let results = scan_for_sessions(tmp.path());
+        assert_eq!(results.len(), 1);
+        assert_eq!(
+            results[0].project_path,
+            real_project.to_string_lossy(),
+            "real Claude project directory names should resolve to absolute paths"
+        );
     }
 
     #[test]

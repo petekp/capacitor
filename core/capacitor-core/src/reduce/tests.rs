@@ -5096,6 +5096,49 @@ fn session_start_after_idle_produces_ready() {
 }
 
 #[test]
+fn session_start_after_session_end_clears_terminal_metadata_and_accepts_prompt() {
+    let mut state = ReducerState::default();
+
+    let _ = state.apply_hook_event(event_base(HookEventType::UserPromptSubmit));
+
+    let mut end = event_base(HookEventType::SessionEnd);
+    end.pid = Some(std::process::id());
+    end.recorded_at = "2099-01-31T00:00:05Z".to_string();
+    let _ = state.apply_hook_event(end);
+
+    let mut restart = event_base(HookEventType::SessionStart);
+    restart.recorded_at = "2099-01-31T00:00:10Z".to_string();
+    let outcome = state.apply_hook_event(restart);
+    assert!(outcome.ok);
+
+    let session = state.sessions.get("session-1").expect("session");
+    assert_eq!(session.state, SessionState::Ready);
+    assert!(
+        session.terminated_at.is_none(),
+        "SessionStart must clear terminal metadata"
+    );
+    let source = session.state_source.as_ref().expect("state_source");
+    assert_eq!(source.event_kind, HookEventType::SessionStart);
+    assert_eq!(source.authority, SignalAuthority::DefinitiveTransient);
+    assert_eq!(
+        session.last_authoritative_event_at.as_deref(),
+        Some("2099-01-31T00:00:10Z")
+    );
+
+    let mut prompt = event_base(HookEventType::UserPromptSubmit);
+    prompt.recorded_at = "2099-01-31T00:00:12Z".to_string();
+    let outcome = state.apply_hook_event(prompt);
+    assert!(outcome.ok);
+
+    let session = state.sessions.get("session-1").expect("session");
+    assert_eq!(
+        session.state,
+        SessionState::Working,
+        "Prompt after resurrection should not be blocked by terminal authority"
+    );
+}
+
+#[test]
 /// After a definitive Stop (with stop hook inactive), the session is Idle and
 /// should come back to Ready after SessionStart.
 fn session_start_after_stop_idle_produces_ready() {

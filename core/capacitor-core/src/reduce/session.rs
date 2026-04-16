@@ -293,10 +293,10 @@ fn upsert_session(
         event.event_type,
     );
 
-    let terminated_at = if event.event_type == HookEventType::SessionEnd {
-        Some(updated_at.clone())
-    } else {
-        current.and_then(|record| record.terminated_at.clone())
+    let terminated_at = match event.event_type {
+        HookEventType::SessionEnd => Some(updated_at.clone()),
+        HookEventType::SessionStart => None,
+        _ => current.and_then(|record| record.terminated_at.clone()),
     };
 
     let authority = classify_signal(event.event_type);
@@ -771,6 +771,11 @@ fn should_preserve_state_source(
         return false;
     };
     if authority_rank(incoming_authority) >= authority_rank(source.authority) {
+        return false;
+    }
+    if event.event_type == HookEventType::SessionStart
+        && source.authority == SignalAuthority::DefinitiveTerminal
+    {
         return false;
     }
     let window_secs = authority_freshness_window_secs(source.authority);

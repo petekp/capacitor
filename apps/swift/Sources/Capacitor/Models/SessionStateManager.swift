@@ -42,6 +42,8 @@ private func hookEventType(from value: String) -> HookEventType? {
         .worktreeRemove
     case "config_change", "configChange":
         .configChange
+    case "transcript_activity", "transcriptActivity":
+        .transcriptActivity
     case "session_end", "sessionEnd":
         .sessionEnd
     case "unknown":

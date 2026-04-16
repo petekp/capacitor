@@ -84,6 +84,33 @@ final class ActiveProjectResolverTests: XCTestCase {
         XCTAssertEqual(resolver.activeSource, .claude(sessionId: "session-b"))
     }
 
+    func testIgnoresIdleSessionsWhenResolvingActiveClaudeSource() {
+        let project = makeProject(name: "A", path: "/tmp/project-a")
+
+        let sessionStateManager = SessionStateManager()
+        sessionStateManager.setSessionStatesForTesting([
+            project.path: ProjectSessionState(
+                state: .idle,
+                stateChangedAt: nil,
+                updatedAt: "2026-02-02T19:00:00Z",
+                sessionId: "session-a",
+                workingOn: nil,
+                context: nil,
+                thinking: nil,
+                hasSession: true,
+                stateSource: nil,
+                lastAuthoritativeEventAt: nil,
+            ),
+        ])
+
+        let resolver = ActiveProjectResolver(sessionStateManager: sessionStateManager)
+        resolver.updateProjects([project])
+        resolver.resolve()
+
+        XCTAssertNil(resolver.activeProject)
+        XCTAssertEqual(resolver.activeSource, .none)
+    }
+
     func testResolveReturnsNoneWhenNoSessionOrOverride() {
         let project = makeProject(name: "A", path: "/tmp/project-a")
         let sessionStateManager = SessionStateManager()
