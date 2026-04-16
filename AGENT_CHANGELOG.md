@@ -9,6 +9,14 @@ Use this file only for recent migration context and retired seams that still mat
 
 ## Recent Active Deltas
 
+### 2026-04-16 — Session Resurrection + Transcript Cold-Start Hardening
+
+**State recovery hardening** (`94114b08`): same-session `SessionEnd -> SessionStart` resurrection now clears terminal metadata. `SessionStart` after a terminal event resets `terminated_at`, replaces terminal provenance with `SessionStart / DefinitiveTransient`, refreshes `last_authoritative_event_at`, and allows the following prompt to move the session back to `Working`.
+
+**Transcript cold-start correctness** (`94114b08`): transcript discovery still honors `.project_path` sidecars first, but now falls back to the existing Claude project-directory slug resolver before using the raw directory name. This prevents first-boot transcript reconstruction from creating project keys like `-Users-...` when real `~/.claude/projects` directories have no sidecar file. Swift projection now preserves `transcript_activity` provenance, and `ActiveProjectResolver` ignores Idle sessions when selecting the active Claude source so historical transcript-only sessions do not steal focus from live or ready sessions.
+
+Key files: `core/capacitor-core/src/reduce/session.rs`, `core/capacitor-core/src/observation/transcript/mod.rs`, `apps/swift/Sources/Capacitor/Models/SessionStateManager.swift`, `apps/swift/Sources/Capacitor/Models/ActiveProjectResolver.swift`.
+
 ### 2026-03-29 — ADR-005 Decided + Phase 1 Startup Unblocked
 
 **State detection architecture** (`77ebe7f..279e4bc`): ADR-005 decided the authority-based multi-signal direction, where different signals answer different questions. Hooks remain authoritative for *nuanced state* (waiting, working, idle) because they emit fine-grained lifecycle events. Transcripts own *existence and recovery* — "does this session exist?" and "can we reconstruct it after a restart?" — because transcripts are resilient to hook outages. Shell CWD stays *routing-only* (non-blocking). Phase 1 shipped the first behavior change: hook repair no longer blocks startup, `HookStatus` now distinguishes `NotInstalled`, `PartiallyConfigured`, and `SettingsUnreadable`, and `isFirstRun` now keys off the persisted `~/.capacitor/setup_complete` marker instead of "no hook events seen." Only missing Claude CLI and explicit hook policy blocks still gate setup.
@@ -103,6 +111,8 @@ Live runtime reads moved to authenticated `/runtime/*` endpoints hosted by `hud-
 | Use `fileExists` alone to validate preserved artifacts | Use `isNonEmptyFile` (checks `.typeRegular` + size > 0) | 2026-03-23 |
 | Use `Dictionary(uniqueKeysWithValues:)` for `runStatesByID` | Use `Dictionary(_:uniquingKeysWith:)` with logging to handle path collisions | 2026-03-23 |
 | Send `capture_complete` with empty `completed_media_artifacts` | Rust reducer rejects empty artifacts; at least one screenshot required | 2026-03-23 |
+| Preserve `terminated_at` or `DefinitiveTerminal` provenance across same-session `SessionStart` | Treat `SessionStart` as resurrection: clear terminal metadata and record `SessionStart / DefinitiveTransient` | 2026-04-16 |
+| Treat transcript-only Idle sessions as the active Claude source | Keep them as historical/existence evidence; `ActiveProjectResolver` considers Working/Waiting/Compacting/Ready only | 2026-04-16 |
 | Reconstruct terminal-app ranking from `ShellStateStore` during activation | Use runtime routes when present and fall back explicitly when they are not | 2026-03-15 |
 | Treat `~/.capacitor/runtime/app_snapshot.json` as live runtime truth | Query the authenticated runtime service using `runtime-service.json` | 2026-03 |
 | Add terminal-specific focus logic directly in `TerminalLauncher` or views | Put host automation behind `TerminalDriver` implementations | 2026-03 |

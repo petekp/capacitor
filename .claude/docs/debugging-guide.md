@@ -28,6 +28,7 @@ If the problem smells like reducer correctness:
 
 ```bash
 cargo test -p capacitor-core --test replay_diff
+cargo test -p capacitor-core session_start_after_session_end_clears_terminal_metadata_and_accepts_prompt
 ```
 
 If the problem smells like hook-event mapping or ingest:
@@ -40,6 +41,7 @@ If the problem smells like Swift projection or activation:
 
 ```bash
 cd apps/swift && swift test
+cd apps/swift && swift test --filter 'SessionStateManagerTests/testProjectionPreservesTranscriptActivityStateSource|ActiveProjectResolverTests/testIgnoresIdleSessionsWhenResolvingActiveClaudeSource'
 ```
 
 If the problem smells like project-card AX automation, start with:
@@ -170,6 +172,13 @@ Use this order:
 3. `cargo test -p hud-hook --test session_state_mapping_gate`
 4. `bash scripts/ci/session-state-gate.sh`
 5. Capture the snapshot payload and relevant app-log lines before changing code
+
+For transcript cold-start or same-session `/clear` resurrection issues, also run:
+
+```bash
+cargo test -p capacitor-core 'scan_resolves_real_style_claude_project_directory_name|session_start_after_session_end_clears_terminal_metadata_and_accepts_prompt'
+cd apps/swift && swift test --filter 'SessionStateManagerTests/testProjectionPreservesTranscriptActivityStateSource|ActiveProjectResolverTests/testIgnoresIdleSessionsWhenResolvingActiveClaudeSource'
+```
 
 ## Optional: Transparent UI Server
 

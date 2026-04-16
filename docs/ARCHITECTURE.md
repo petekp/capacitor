@@ -24,17 +24,17 @@ Capacitor uses a dedicated local runtime service as its live application boundar
 
 1. Claude hook events and shell cwd signals reach `hud-hook serve` as distinct live signals into the runtime boundary.
 2. `hud-hook serve` normalizes adapter input and forwards it into the canonical `capacitor-core` runtime.
-3. `capacitor-core` applies ingest, reducer, and query logic, then persists runtime artifacts for durability and replay. ADR-005 authority-based multi-signal state detection is complete (Phases 1-3, 2026-03-29 through 2026-04-15): hooks remain authoritative for nuanced state; transcripts provide session-existence evidence via the transcript observation service (`Inferential` authority); the authority matrix is enforced in the reducer; evidence replay is contract-tested equivalent to continuous ingest.
+3. `capacitor-core` applies ingest, reducer, and query logic, then persists runtime artifacts for durability and replay. ADR-005 authority-based multi-signal state detection is complete (Phases 1-3, 2026-03-29 through 2026-04-16): hooks remain authoritative for nuanced state; transcripts provide session-existence evidence via the transcript observation service (`Inferential` authority); the authority matrix is enforced in the reducer; evidence replay is contract-tested equivalent to continuous ingest.
 4. The Swift app reads typed runtime state from authenticated `/runtime/*` endpoints exposed by the service.
 5. Swift projection layers apply presentation-only freshness guards and hysteresis before updating visible UI state. Hook setup failure is non-blocking: the app launches with diagnostics surfaced in the setup UI rather than gating startup.
 
 ## State Detection Architecture
 
-ADR-005 is complete. All three phases shipped between 2026-03-29 and 2026-04-15:
+ADR-005 is complete. All three phases shipped between 2026-03-29 and 2026-04-16:
 
 - **Phase 1 — Unblock startup** (shipped 2026-03-29, commit `50b81fc1`). Hooks are optional at startup: install or repair failures are informational, not launch-blocking. Only a missing Claude CLI binary or an explicit hook policy block still gates setup. `HookStatus` distinguishes granular setup states; `isFirstRun` derives from a persisted setup marker instead of `HookHealthStatus::Unknown`.
-- **Phase 2 — Transcript observation service** (shipped 2026-04-14/15, steps 5-7). `observation::transcript::scan_for_sessions()` is the single Rust-owned abstraction for transcript discovery. `ReducerState::apply_transcript_discovery()` creates Idle sessions with `Inferential` authority. `CoreRuntime::from_storage_with_transcript_cold_start()` reconstructs session existence from transcripts when the persisted snapshot is empty.
-- **Phase 3 — Authority matrix + provenance + evidence replay** (Slices 1-6, shipped 2026-04-12/15). `SessionSummary` carries typed provenance across the FFI boundary: `state_source: Option<StateSource>` with `event_kind: HookEventType`, `authority: SignalAuthority` (5 tiers: `DefinitiveTerminal`, `DefinitiveTransient`, `AmbiguousPerTurn`, `MetaAwaitingInput`, `Inferential`), and `observed_at: String`. Reducer enforcement (`AUTHORITY_MATRIX` const + two-layer override guards in `reduce/session.rs`) makes terminal states sticky against lower-authority events. Evidence replay is contract-tested equivalent to continuous live ingest.
+- **Phase 2 — Transcript observation service** (shipped 2026-04-14/16, steps 5-7). `observation::transcript::scan_for_sessions()` is the single Rust-owned abstraction for transcript discovery. It resolves project paths from `.project_path` sidecars when present, then from Claude's encoded project-directory names. `ReducerState::apply_transcript_discovery()` creates Idle sessions with `Inferential` authority. `CoreRuntime::from_storage_with_transcript_cold_start()` reconstructs session existence from transcripts when the persisted snapshot is empty.
+- **Phase 3 — Authority matrix + provenance + evidence replay** (Slices 1-6 plus hardening, shipped 2026-04-12/16). `SessionSummary` carries typed provenance across the FFI boundary: `state_source: Option<StateSource>` with `event_kind: HookEventType`, `authority: SignalAuthority` (5 tiers: `DefinitiveTerminal`, `DefinitiveTransient`, `AmbiguousPerTurn`, `MetaAwaitingInput`, `Inferential`), and `observed_at: String`. Reducer enforcement (`AUTHORITY_MATRIX` const + two-layer override guards in `reduce/session.rs`) makes terminal states sticky against lower-authority events while allowing explicit `SessionStart` resurrection to clear terminal metadata. Evidence replay is contract-tested equivalent to continuous live ingest.
 
 Authority matrix (which signal answers which question):
 
@@ -42,6 +42,7 @@ Authority matrix (which signal answers which question):
 - Session existence and recency: **transcripts + hooks** co-equal.
 - Project/terminal routing: **shell CWD** only (non-blocking).
 - State recovery after restart: **persisted snapshot + evidence replay**; cold-start reconstruction from transcripts when snapshot is empty.
+- Active Claude source selection: Swift considers active states and Ready sessions, but ignores Idle transcript-only history so historical cold-start evidence does not select the current project.
 
 See `docs/architecture-decisions/005-authority-based-multi-signal-state-detection.md` for the full phase decisions, binding conditions, and verification questions.
 

@@ -69,6 +69,31 @@ Setup diagnostics now distinguish `NotInstalled`, `PartiallyConfigured`, and
 `SettingsUnreadable`. Do not collapse all non-installed states back into "hooks
 missing" when triaging setup reports.
 
+### SessionStart is the only terminal resurrection path
+
+`DefinitiveTerminal` provenance from `SessionEnd` is intentionally sticky against
+lower-authority events. The exception is same-session `SessionStart`, which must
+clear `terminated_at`, replace terminal provenance with
+`SessionStart / DefinitiveTransient`, and refresh `last_authoritative_event_at`.
+If a post-`/clear` prompt is skipped as `lower_authority_within_freshness_window`,
+run:
+
+```bash
+cargo test -p capacitor-core session_start_after_session_end_clears_terminal_metadata_and_accepts_prompt
+```
+
+### Transcript cold-start must resolve Claude directory slugs
+
+Real `~/.claude/projects/` directories usually do not contain `.project_path`
+sidecars. Transcript discovery should prefer `.project_path` when present, then
+decode Claude's hyphenated project-directory names, and only then fall back to
+the raw directory name. If cold-start sessions appear under keys like
+`-Users-...`, run:
+
+```bash
+cargo test -p capacitor-core scan_resolves_real_style_claude_project_directory_name
+```
+
 ## Swift
 
 ### `OSLog` is unreliable in unsigned debug runs
@@ -128,6 +153,11 @@ The live activation flow is owned by Swift and currently centered on:
 - `apps/swift/Sources/Capacitor/Models/GhosttyAutomationClient.swift`
 
 Rust owns runtime truth and hook ingest. It does not own live terminal activation execution.
+
+`ActiveProjectResolver` should not select transcript-only Idle history as the
+active Claude source. It may select Working/Waiting/Compacting sessions and the
+most recent Ready session when no active sessions exist, but Idle is historical
+evidence only.
 
 ### Query tmux client TTY at activation time
 

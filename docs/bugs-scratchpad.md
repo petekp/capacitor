@@ -39,3 +39,21 @@ Tracked bugs observed during development. Paper trail for issues seen in the wil
 - **Fix**: Added `sessionNameBelongsToProject` validation gate in `SessionResolutionPolicy`. A routed session name is only accepted if it is a generic name (`main`, `dev`, `work`, etc.), or the session name and project slug have a case-insensitive substring relationship. If validation fails, falls back to discovery or the project path's last component.
 - **Regression tests added**: 11 new Swift tests covering CWD-drift rejection, same-project acceptance, generic names, substring matching, and fallback discovery.
 - **Status**: FIXED. 526 Swift tests pass.
+
+## Bug 4: Same-session resurrection preserved terminal metadata
+
+- **Observed**: 2026-04-16 (review finding)
+- **Symptom**: A same-session `SessionEnd -> SessionStart` sequence looked resurrected as `Ready`, but still carried `terminated_at` and `DefinitiveTerminal` provenance. The next prompt within the terminal freshness window could be skipped as lower authority, and liveness still treated the session as dead.
+- **Root cause**: `SessionStart` was exempted from the top-level terminal-authority block but `upsert_session` preserved terminal metadata and `state_source`.
+- **Fix**: `SessionStart` now clears `terminated_at`, records `SessionStart / DefinitiveTransient`, refreshes `last_authoritative_event_at`, and allows the following prompt to return the same session to `Working`.
+- **Regression test added**: `session_start_after_session_end_clears_terminal_metadata_and_accepts_prompt`.
+- **Status**: FIXED. Commit `94114b08`.
+
+## Bug 5: Transcript cold-start used raw Claude directory slugs
+
+- **Observed**: 2026-04-16 (review finding)
+- **Symptom**: Cold-start transcript reconstruction could create sessions under project keys like `-Users-...` instead of absolute project paths when Claude project directories did not contain `.project_path` sidecars.
+- **Root cause**: `observation::transcript::scan_for_sessions()` only honored `.project_path` and otherwise used the raw directory name, while real `~/.claude/projects/` layouts commonly rely on hyphen-encoded project directories.
+- **Fix**: Transcript discovery now prefers `.project_path`, then uses the existing Claude slug resolver, and only falls back to the raw directory name if resolution fails. Swift also preserves `transcript_activity` provenance and ignores Idle transcript-only history when selecting the active Claude source.
+- **Regression tests added**: `scan_resolves_real_style_claude_project_directory_name`, `testProjectionPreservesTranscriptActivityStateSource`, `testIgnoresIdleSessionsWhenResolvingActiveClaudeSource`.
+- **Status**: FIXED. Commit `94114b08`.
