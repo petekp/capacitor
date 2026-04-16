@@ -8,16 +8,19 @@ extension AppState {
             correlationId: String,
             projects: [Project],
         ) async {
-            await applyRuntimeSnapshotIfFresh(
-                snapshot,
-                refreshGeneration: refreshGeneration,
+            let context = RuntimeSnapshotApplicator.RequestContext(
+                generation: refreshGeneration,
                 correlationId: correlationId,
                 projects: projects,
+            )
+            await applyRuntimeSnapshot(
+                snapshot,
+                context: context,
             )
         }
 
         func setRuntimeSnapshotGenerationForTesting(_ generation: UInt64) {
-            runtimeSnapshotGeneration = generation
+            runtimeSnapshotApplicator.setRequestGenerationForTesting(generation)
         }
 
         func handleRuntimeSnapshotFailureForTesting(
@@ -25,11 +28,16 @@ extension AppState {
             correlationId: String,
             errorDescription: String,
         ) {
-            handleRuntimeSnapshotFailureIfFresh(
-                refreshGeneration: refreshGeneration,
+            let context = RuntimeSnapshotApplicator.RequestContext(
+                generation: refreshGeneration,
                 correlationId: correlationId,
+                projects: projectState.projects,
+            )
+            let outcome = runtimeSnapshotApplicator.recordFailure(
+                context: context,
                 errorDescription: errorDescription,
             )
+            executeRuntimeSnapshotEffects(outcome.effects)
         }
 
         func cancelRuntimeAutomationForTesting() {

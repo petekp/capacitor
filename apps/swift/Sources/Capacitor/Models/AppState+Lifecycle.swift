@@ -101,7 +101,7 @@ extension AppState {
             let maxUnavailableRetryDelay: UInt64 = 30_000_000_000 // 30s
 
             while !_Concurrency.Task.isCancelled {
-                let sinceVersion = max(lastPolledSnapshotVersion, lastAppliedSnapshotVersion)
+                let sinceVersion = runtimeSnapshotApplicator.nextLongPollSinceVersion()
 
                 do {
                     let response = try await runtimeClient.longPollSnapshot(sinceVersion: sinceVersion)
@@ -110,15 +110,14 @@ extension AppState {
                     switch response {
                     case let .changed(snapshot):
                         unavailableRetryDelay = 1_000_000_000
-                        lastPolledSnapshotVersion = max(lastPolledSnapshotVersion, snapshot.snapshotVersion)
-                        await applyRuntimeSnapshotIfFresh(
+                        let context = runtimeSnapshotApplicator.makeLongPollContext(projects: projectState.projects)
+                        await applyRuntimeSnapshot(
                             snapshot,
-                            correlationId: nextRuntimeSnapshotCorrelationId(),
-                            projects: projectState.projects,
+                            context: context,
                         )
                     case let .unchanged(snapshotVersion):
                         unavailableRetryDelay = 1_000_000_000
-                        lastPolledSnapshotVersion = max(lastPolledSnapshotVersion, snapshotVersion)
+                        runtimeSnapshotApplicator.recordLongPollUnchanged(snapshotVersion: snapshotVersion)
                     case .unavailable:
                         DebugLog.write(
                             "AppState.longPollSnapshot source=runtime_snapshot_long_poll_unavailable retry_in_ms=\(unavailableRetryDelay / 1_000_000)",
@@ -178,168 +177,56 @@ extension AppState {
 
     func refreshSessionStates() {
         projectState.refreshProjectStatuses(using: engine)
-        runtimeSnapshotGeneration &+= 1
-        let refreshGeneration = runtimeSnapshotGeneration
-        let correlationId = nextRuntimeSnapshotCorrelationId()
-        let currentProjects = projectState.projects
+        let context = runtimeSnapshotApplicator.beginFetch(projects: projectState.projects)
         runtimeSnapshotTask?.cancel()
         runtimeSnapshotTask = _Concurrency.Task { [weak self] in
             guard let self else { return }
 
             do {
-                let snapshot = try await runtimeClient.fetchRuntimeSnapshot(correlationId: correlationId)
+                let snapshot = try await runtimeClient.fetchRuntimeSnapshot(correlationId: context.correlationId)
                 guard !_Concurrency.Task.isCancelled else { return }
 
-                await applyRuntimeSnapshotIfFresh(
+                await applyRuntimeSnapshot(
                     snapshot,
-                    refreshGeneration: refreshGeneration,
-                    correlationId: correlationId,
-                    projects: currentProjects,
+                    context: context,
                 )
             } catch {
                 await MainActor.run {
-                    self.handleRuntimeSnapshotFailureIfFresh(
-                        refreshGeneration: refreshGeneration,
-                        correlationId: correlationId,
+                    let outcome = self.runtimeSnapshotApplicator.recordFailure(
+                        context: context,
                         errorDescription: String(describing: error),
                     )
+                    self.executeRuntimeSnapshotEffects(outcome.effects)
                 }
             }
         }
     }
 
     @MainActor
-    func applyRuntimeSnapshotIfFresh(
+    func applyRuntimeSnapshot(
         _ snapshot: RuntimeSnapshot,
-        refreshGeneration: UInt64,
-        correlationId: String,
-        projects: [Project],
+        context: RuntimeSnapshotApplicator.RequestContext,
     ) async {
-        guard refreshGeneration == runtimeSnapshotGeneration else {
-            DebugLog.write(
-                "AppState.refreshSessionStates source=runtime_snapshot_drop_stale cid=\(correlationId) generation=\(refreshGeneration) current=\(runtimeSnapshotGeneration)",
-            )
-            return
-        }
-
-        await applyRuntimeSnapshotIfFresh(
-            snapshot,
-            correlationId: correlationId,
-            projects: projects,
-        )
+        let outcome = runtimeSnapshotApplicator.apply(snapshot, context: context)
+        executeRuntimeSnapshotEffects(outcome.effects)
     }
 
     @MainActor
-    func applyRuntimeSnapshotIfFresh(
-        _ snapshot: RuntimeSnapshot,
-        correlationId: String,
-        projects: [Project],
-    ) async {
-        lastPolledSnapshotVersion = max(lastPolledSnapshotVersion, snapshot.snapshotVersion)
-
-        guard !_Concurrency.Task.isCancelled else { return }
-
-        if snapshot.snapshotVersion > 0 {
-            if snapshot.snapshotVersion < lastAppliedSnapshotVersion {
-                DebugLog.write(
-                    "AppState.refreshSessionStates source=runtime_snapshot_drop_stale_version cid=\(correlationId) version=\(snapshot.snapshotVersion) current=\(lastAppliedSnapshotVersion)",
-                )
-                return
-            }
-
-            if snapshot.snapshotVersion == lastAppliedSnapshotVersion {
-                DebugLog.write(
-                    "AppState.refreshSessionStates source=runtime_snapshot_noop cid=\(correlationId) version=\(snapshot.snapshotVersion)",
-                )
-                consecutiveRuntimeSnapshotFailures = 0
-                return
+    func executeRuntimeSnapshotEffects(_ effects: [RuntimeSnapshotApplicator.Effect]) {
+        for effect in effects {
+            switch effect {
+            case .updatePostSessionRefreshContext:
+                updatePostSessionRefreshContext()
+            case let .reconcileDelegations(delegations):
+                _Concurrency.Task { [delegationLoopManager] in
+                    await delegationLoopManager?.reconcile(delegations: delegations)
+                }
+            case let .reconcileRunCaptures(runs):
+                _Concurrency.Task { [runCaptureCoordinator] in
+                    await runCaptureCoordinator.reconcile(runs: runs)
+                }
             }
         }
-
-        sessionStateManager.applyRuntimeProjectStates(
-            snapshot.projectStates,
-            sessions: snapshot.sessions,
-            for: projects,
-            correlationId: correlationId,
-        )
-        shellStateStore.applyRuntimeShellState(
-            snapshot.shellState,
-            correlationId: correlationId,
-        )
-        routingStateStore.applyRuntimeRoutingViews(
-            snapshot.routingViews,
-            correlationId: correlationId,
-        )
-        runState.applyDelegationStates(
-            snapshot.delegations,
-            enabled: featureState.isDelegationLoopEnabled,
-        )
-        let previousRunsByID = runState.replaceRunStates(with: snapshot.runs)
-        uiState.runCheckpointWindowTarget = runState.reconcileRunCheckpointWindowTarget(
-            currentTarget: uiState.runCheckpointWindowTarget,
-            previousRunsByID: previousRunsByID,
-        )
-        consecutiveRuntimeSnapshotFailures = 0
-
-        let gcSessions = snapshot.sessions.filter { $0.gcReason != nil }
-        if !gcSessions.isEmpty {
-            DebugLog.write(
-                "AppState.gc_reason sessions=\(gcSessions.map { "\($0.sessionId):\($0.gcReason ?? "")" }.joined(separator: ","))",
-            )
-        }
-
-        DebugLog.write(
-            "AppState.refreshSessionStates source=runtime_snapshot_apply cid=\(correlationId) projects=\(snapshot.projectStates.count) sessions=\(snapshot.sessions.count) shells=\(snapshot.shellState.shells.count) routing=\(snapshot.routingViews.count) runs=\(snapshot.runs.count)",
-        )
-        lastAppliedSnapshotVersion = max(lastAppliedSnapshotVersion, snapshot.snapshotVersion)
-        lastPolledSnapshotVersion = max(lastPolledSnapshotVersion, snapshot.snapshotVersion)
-
-        if featureState.isDelegationLoopEnabled {
-            _Concurrency.Task { [delegationLoopManager] in
-                await delegationLoopManager?.reconcile(delegations: snapshot.delegations)
-            }
-        }
-        _Concurrency.Task { [runCaptureCoordinator] in
-            await runCaptureCoordinator.reconcile(runs: snapshot.runs)
-        }
-        updatePostSessionRefreshContext()
-    }
-
-    @MainActor
-    func handleRuntimeSnapshotFailureIfFresh(
-        refreshGeneration: UInt64,
-        correlationId: String,
-        errorDescription: String,
-    ) {
-        guard refreshGeneration == runtimeSnapshotGeneration else {
-            DebugLog.write(
-                "AppState.refreshSessionStates source=runtime_snapshot_error_drop_stale cid=\(correlationId) generation=\(refreshGeneration) current=\(runtimeSnapshotGeneration)",
-            )
-            return
-        }
-
-        consecutiveRuntimeSnapshotFailures += 1
-        DebugLog.write(
-            "AppState.refreshSessionStates source=runtime_snapshot_error cid=\(correlationId) failures=\(consecutiveRuntimeSnapshotFailures) error=\(errorDescription)",
-        )
-
-        if consecutiveRuntimeSnapshotFailures >= 2 {
-            DebugLog.write(
-                "AppState.refreshSessionStates source=runtime_snapshot_error_clear cid=\(correlationId) failures=\(consecutiveRuntimeSnapshotFailures)",
-            )
-            sessionStateManager.clearRuntimeProjectStates()
-            shellStateStore.clearRuntimeShellState(correlationId: correlationId)
-            routingStateStore.clearRuntimeRoutingViews(correlationId: correlationId)
-            runState.clearDelegationStates()
-            uiState.runCheckpointWindowTarget = nil
-        }
-
-        updatePostSessionRefreshContext()
-    }
-
-    func nextRuntimeSnapshotCorrelationId() -> String {
-        runtimeSnapshotCorrelationCounter &+= 1
-        return "app-snap-\(runtimeSnapshotCorrelationCounter)"
     }
 
     func updatePostSessionRefreshContext() {

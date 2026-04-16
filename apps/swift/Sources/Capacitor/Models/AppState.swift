@@ -20,6 +20,7 @@ class AppState {
     let hookServerManager: HookServerManager
     let projectDetailsManager = ProjectDetailsManager()
     let sessionSummarizer = SessionSummarizer()
+    private(set) var runtimeSnapshotApplicator: RuntimeSnapshotApplicator!
     private(set) var delegationLoopManager: DelegationLoopManager!
     let runCaptureCoordinator: RunCaptureCoordinator
     let projectIngestionWorker = ProjectIngestionWorker()
@@ -36,11 +37,6 @@ class AppState {
     @ObservationIgnored var longPollTask: _Concurrency.Task<Void, Never>?
     @ObservationIgnored var runtimeBootstrapTask: _Concurrency.Task<Void, Never>?
     @ObservationIgnored var runtimeSnapshotTask: _Concurrency.Task<Void, Never>?
-    @ObservationIgnored var runtimeSnapshotGeneration: UInt64 = 0
-    @ObservationIgnored var lastAppliedSnapshotVersion: UInt64 = 0
-    @ObservationIgnored var lastPolledSnapshotVersion: UInt64 = 0
-    @ObservationIgnored var runtimeSnapshotCorrelationCounter: UInt64 = 0
-    @ObservationIgnored var consecutiveRuntimeSnapshotFailures = 0
     private(set) var sessionStateRevision = 0
     @ObservationIgnored var didShutdownForTesting = false
     #if DEBUG
@@ -107,6 +103,16 @@ class AppState {
             "AppState.init config channel=\(featureState.channel.rawValue) profile=\(featureState.profile.rawValue)",
         )
         featureState.refreshRoutingRollout(with: nil)
+        runtimeSnapshotApplicator = RuntimeSnapshotApplicator(
+            sessionStateManager: sessionStateManager,
+            shellStateStore: shellStateStore,
+            routingStateStore: routingStateStore,
+            runState: runState,
+            uiState: uiState,
+            isDelegationLoopEnabled: { [featureState] in
+                featureState.isDelegationLoopEnabled
+            },
+        )
 
         activeProjectResolver = ActiveProjectResolver(
             sessionStateManager: sessionStateManager,
