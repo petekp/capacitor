@@ -7784,6 +7784,7 @@ public enum HookEventType {
     case worktreeCreate
     case worktreeRemove
     case configChange
+    case transcriptActivity
     case sessionEnd
     case unknown
 }
@@ -7829,9 +7830,11 @@ public struct FfiConverterTypeHookEventType: FfiConverterRustBuffer {
 
         case 16: return .configChange
 
-        case 17: return .sessionEnd
+        case 17: return .transcriptActivity
 
-        case 18: return .unknown
+        case 18: return .sessionEnd
+
+        case 19: return .unknown
 
         default: throw UniffiInternalError.unexpectedEnumCase
         }
@@ -7887,11 +7890,14 @@ public struct FfiConverterTypeHookEventType: FfiConverterRustBuffer {
         case .configChange:
             writeInt(&buf, Int32(16))
 
-        case .sessionEnd:
+        case .transcriptActivity:
             writeInt(&buf, Int32(17))
 
-        case .unknown:
+        case .sessionEnd:
             writeInt(&buf, Int32(18))
+
+        case .unknown:
+            writeInt(&buf, Int32(19))
         }
     }
 }
