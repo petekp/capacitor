@@ -1119,6 +1119,87 @@ mod cold_start_transcript_tests {
     }
 
     #[test]
+    fn cold_start_equivalent_to_continuous_live_ingest() {
+        let tmp = TempDir::new().unwrap();
+        setup_transcript(&tmp, "proj-a", "/repo/a", "sess-1");
+        setup_transcript(&tmp, "proj-a", "/repo/a", "sess-2");
+        setup_transcript(&tmp, "proj-b", "/repo/b", "sess-3");
+
+        let discoveries = crate::observation::transcript::scan_for_sessions(tmp.path());
+
+        let storage_a = Arc::new(InMemorySnapshotStorage::default());
+        let config_a =
+            StorageConfig::with_roots(tmp.path().join("cap_a"), tmp.path().to_path_buf());
+        let runtime_a = CoreRuntime::from_storage_with_transcript_cold_start(storage_a, config_a)
+            .expect("runtime_a");
+        let snapshot_a = runtime_a.app_snapshot().expect("snapshot_a");
+
+        let storage_b = Arc::new(InMemorySnapshotStorage::default());
+        let config_b =
+            StorageConfig::with_roots(tmp.path().join("cap_b"), tmp.path().to_path_buf());
+        let runtime_b = CoreRuntime::from_storage(storage_b, config_b).expect("runtime_b");
+        for discovery in &discoveries {
+            runtime_b
+                .ingest_transcript_observation(discovery.clone())
+                .expect("live ingest ok");
+        }
+        let snapshot_b = runtime_b.app_snapshot().expect("snapshot_b");
+
+        assert_eq!(snapshot_a.sessions.len(), 3, "three sessions from fixture");
+        assert_eq!(
+            snapshot_b.sessions.len(),
+            3,
+            "three sessions from live replay"
+        );
+
+        let mut sessions_a = snapshot_a.sessions.clone();
+        let mut sessions_b = snapshot_b.sessions.clone();
+        sessions_a.sort_by(|left, right| left.session_id.cmp(&right.session_id));
+        sessions_b.sort_by(|left, right| left.session_id.cmp(&right.session_id));
+        assert_eq!(
+            sessions_a, sessions_b,
+            "sessions must match after equivalent replay"
+        );
+
+        let mut projects_a = snapshot_a.projects.clone();
+        let mut projects_b = snapshot_b.projects.clone();
+        projects_a.sort_by(|left, right| left.project_id.cmp(&right.project_id));
+        projects_b.sort_by(|left, right| left.project_id.cmp(&right.project_id));
+        assert_eq!(
+            projects_a, projects_b,
+            "projects must match after equivalent replay"
+        );
+
+        let mut routing_a = snapshot_a.routing.clone();
+        let mut routing_b = snapshot_b.routing.clone();
+        let sort_routing = |routing: &mut Vec<crate::domain::RoutingView>| {
+            routing.sort_by(|left, right| {
+                left.workspace_id
+                    .cmp(&right.workspace_id)
+                    .then_with(|| left.project_path.cmp(&right.project_path))
+                    .then_with(|| left.target.terminal_app.cmp(&right.target.terminal_app))
+                    .then_with(|| left.target.session_name.cmp(&right.target.session_name))
+                    .then_with(|| left.target.pane_id.cmp(&right.target.pane_id))
+                    .then_with(|| left.target.host_tty.cmp(&right.target.host_tty))
+                    .then_with(|| left.reason_code.cmp(&right.reason_code))
+                    .then_with(|| left.reason.cmp(&right.reason))
+                    .then_with(|| left.updated_at.cmp(&right.updated_at))
+            });
+        };
+        sort_routing(&mut routing_a);
+        sort_routing(&mut routing_b);
+        assert_eq!(
+            routing_a, routing_b,
+            "routing must match after equivalent replay"
+        );
+
+        assert_eq!(
+            snapshot_a.diagnostics.events_ingested, snapshot_b.diagnostics.events_ingested,
+            "events_ingested must match"
+        );
+    }
+
+    #[test]
     fn cold_start_sessions_get_upgraded_by_subsequent_hook() {
         let tmp = TempDir::new().unwrap();
         setup_transcript(&tmp, "proj", "/repo", "session-1");
