@@ -6,7 +6,7 @@ A glanceable, bring-your-own-terminal UI for navigating multiple coding agent se
 
 - **Swift App** (`apps/swift/`) — SwiftUI, macOS 14+, Apple Silicon, 120Hz ProMotion
 - **Rust Core** (`core/capacitor-core/`) — Domain types, runtime ingest/reduce/query, snapshot storage, UniFFI exports
-- **Hook Server** (`core/hud-hook/`) — Runtime-service shell plus hook/shell adapters
+- **Runtime Service** (`core/hud-hook/`) — Runtime-service shell plus hook/shell adapters
 
 ## Build & Test
 
@@ -34,7 +34,7 @@ swift test --package-path apps/swift       # All Swift tests
 |---------|----------|
 | CoreRuntime facade | `core/capacitor-core/src/lib.rs` |
 | Domain types | `core/capacitor-core/src/domain/types.rs` |
-| Runtime setup | `core/capacitor-core/src/runtime_setup.rs` |
+| Runtime setup | `core/capacitor-core/src/runtime/setup/` |
 | App composition root | `apps/swift/Sources/Capacitor/Models/AppState.swift` |
 | Runtime service client | `apps/swift/Sources/Capacitor/Models/RuntimeClient.swift` |
 | Runtime service supervision | `apps/swift/Sources/Capacitor/Models/HookServerManager.swift` |

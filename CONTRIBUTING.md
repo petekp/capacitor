@@ -83,7 +83,7 @@ capacitor/
 └── scripts/              # Dev, CI, and release scripts
 ```
 
-[CLAUDE.md](CLAUDE.md) covers architecture and common gotchas.
+For architecture orientation, start at [`.claude/docs/architecture-primer.md`](.claude/docs/architecture-primer.md). [`CLAUDE.md`](CLAUDE.md) covers commands, workflow, and common gotchas.
 
 ## Submitting changes
 

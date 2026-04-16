@@ -8,7 +8,7 @@
 
 Capacitor uses a dedicated local runtime service as its live application boundary.
 
-- VERIFIER_CLAIM(runtime_boundary_service): owner_scope=core/hud-hook/src/serve.rs; Runtime boundary: authenticated local HTTP service hosted by `hud-hook serve`
+- VERIFIER_CLAIM(runtime_boundary_service): owner_scope=core/hud-hook/src/serve.rs; Runtime boundary: authenticated local runtime service hosted by `hud-hook serve`
 - Live runtime reads go through authenticated `/health` and `/runtime/*` endpoints exposed by that service.
 - Persisted artifacts under `~/.capacitor/runtime/` exist for durability, replay, and debugging. They are not the primary live boundary for the app.
 - The UniFFI boundary remains the app-facing path for setup and other non-runtime APIs.
@@ -24,24 +24,31 @@ Capacitor uses a dedicated local runtime service as its live application boundar
 
 1. Claude hook events and shell cwd signals reach `hud-hook serve` as distinct live signals into the runtime boundary.
 2. `hud-hook serve` normalizes adapter input and forwards it into the canonical `capacitor-core` runtime.
-3. `capacitor-core` applies ingest, reducer, and query logic, then persists runtime artifacts for durability and replay. ADR-005's shipped Phase 1 keeps hooks as the live state source while making hook setup non-blocking at launch; the broader multi-signal authority model is still planned.
+3. `capacitor-core` applies ingest, reducer, and query logic, then persists runtime artifacts for durability and replay. ADR-005 authority-based multi-signal state detection is complete (Phases 1-3, 2026-03-29 through 2026-04-15): hooks remain authoritative for nuanced state; transcripts provide session-existence evidence via the transcript observation service (`Inferential` authority); the authority matrix is enforced in the reducer; evidence replay is contract-tested equivalent to continuous ingest.
 4. The Swift app reads typed runtime state from authenticated `/runtime/*` endpoints exposed by the service.
 5. Swift projection layers apply presentation-only freshness guards and hysteresis before updating visible UI state. Hook setup failure is non-blocking: the app launches with diagnostics surfaced in the setup UI rather than gating startup.
 
 ## State Detection Architecture
 
-ADR-005 defines the planned state-detection direction. Today, only Phase 1 is shipped.
+ADR-005 is complete. All three phases shipped between 2026-03-29 and 2026-04-15:
 
-- Hooks are optional at startup: hook install or repair failure is informational, not launch-blocking. Only a missing Claude CLI binary or an explicit hook policy block still gates setup.
-- `HookStatus` distinguishes granular setup states, and `isFirstRun` is driven by a persisted setup marker instead of `HookHealthStatus::Unknown`.
-- Future ADR-005 phases add transcript-backed existence and recency evidence, the authority matrix contract, and evidence replay/backfill. Shell `cwd` remains routing-only in that target design.
+- **Phase 1 — Unblock startup** (shipped 2026-03-29, commit `50b81fc1`). Hooks are optional at startup: install or repair failures are informational, not launch-blocking. Only a missing Claude CLI binary or an explicit hook policy block still gates setup. `HookStatus` distinguishes granular setup states; `isFirstRun` derives from a persisted setup marker instead of `HookHealthStatus::Unknown`.
+- **Phase 2 — Transcript observation service** (shipped 2026-04-14/15, steps 5-7). `observation::transcript::scan_for_sessions()` is the single Rust-owned abstraction for transcript discovery. `ReducerState::apply_transcript_discovery()` creates Idle sessions with `Inferential` authority. `CoreRuntime::from_storage_with_transcript_cold_start()` reconstructs session existence from transcripts when the persisted snapshot is empty.
+- **Phase 3 — Authority matrix + provenance + evidence replay** (Slices 1-6, shipped 2026-04-12/15). `SessionSummary` carries typed provenance across the FFI boundary: `state_source: Option<StateSource>` with `event_kind: HookEventType`, `authority: SignalAuthority` (5 tiers: `DefinitiveTerminal`, `DefinitiveTransient`, `AmbiguousPerTurn`, `MetaAwaitingInput`, `Inferential`), and `observed_at: String`. Reducer enforcement (`AUTHORITY_MATRIX` const + two-layer override guards in `reduce/session.rs`) makes terminal states sticky against lower-authority events. Evidence replay is contract-tested equivalent to continuous live ingest.
 
-See `docs/architecture-decisions/005-authority-based-multi-signal-state-detection.md` for the full phase plan and binding completion conditions.
+Authority matrix (which signal answers which question):
+
+- Nuanced session state (waiting, working, compacting, idle): **hooks** primary; transcripts degrade to coarse "active/inactive" from mtime evidence.
+- Session existence and recency: **transcripts + hooks** co-equal.
+- Project/terminal routing: **shell CWD** only (non-blocking).
+- State recovery after restart: **persisted snapshot + evidence replay**; cold-start reconstruction from transcripts when snapshot is empty.
+
+See `docs/architecture-decisions/005-authority-based-multi-signal-state-detection.md` for the full phase decisions, binding conditions, and verification questions.
 
 ## Activation Boundaries
 
 - Rust derives canonical routing targets from shell and session evidence.
-- `ActivationPolicy` interprets routing state into activation intent and applies only explicit local fallback when runtime facts are missing or incomplete.
+- `ActivationPolicy` (in `apps/swift/Sources/Capacitor/Models/`) interprets routing state (derived in Rust) into activation intent. When runtime facts are missing or incomplete, it applies a documented local fallback ladder — explicit per-host rules in the policy itself — rather than guessing from partial data.
 - `TerminalActivationCoordinator` owns request arbitration, stale-request suppression, and activation outcome reporting.
 - VERIFIER_CLAIM(tmux_router_exclusive_command_owner): owner_scope=apps/swift/Sources/Capacitor/Models/TmuxRouter.swift; `TmuxRouter` is the only place raw tmux command strings are built or executed.
 - `GhosttyTerminalDriver` plus `GhosttyAutomationClient` own Ghostty's native routing and launch behavior.

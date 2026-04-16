@@ -59,9 +59,11 @@ If you skip this, Swift can fail with checksum mismatches or mismatched call sha
 ### Managed hook config must match the current mixed transport contract
 
 Capacitor accepts only the canonical nested managed hook format from the current
-event/type contract. Do not add ad hoc hook fallbacks or alternate config shapes
-to patch setup problems. The live ingress flows through the local hook endpoint
-into the runtime service.
+event/type contract — an object keyed first by event type (e.g. `"PreToolUse"`),
+then by matcher, with each entry carrying a `hooks` array of managed hook
+descriptors. Do not add ad hoc hook fallbacks or alternate config shapes to patch
+setup problems. The live ingress flows through the local hook endpoint into the
+runtime service.
 
 Setup diagnostics now distinguish `NotInstalled`, `PartiallyConfigured`, and
 `SettingsUnreadable`. Do not collapse all non-installed states back into "hooks

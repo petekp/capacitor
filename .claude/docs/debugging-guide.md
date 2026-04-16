@@ -7,13 +7,13 @@ Use this guide for runtime and activation debugging only.
 
 ## Runtime Surfaces
 
-These are the runtime paths you will touch while debugging:
+These are the runtime paths you will touch while debugging. Each entry names the path, then the kind of problem it helps with:
 
-- Runtime service connection: `~/.capacitor/runtime/runtime-service.json`
-- Setup marker: `~/.capacitor/setup_complete`
-- Hook binary: `~/.local/bin/hud-hook`
-- Persisted runtime artifact: `~/.capacitor/runtime/app_snapshot.json`
-- Runtime directory: `~/.capacitor/runtime/`
+- `~/.capacitor/runtime/runtime-service.json` — **runtime service connection.** Check first to confirm the service is bootstrapped and reachable; missing file usually means the service did not start.
+- `~/.capacitor/setup_complete` — **setup marker.** Presence drives `isFirstRun` detection; delete only to force re-onboarding.
+- `~/.local/bin/hud-hook` — **hook binary.** Check presence and mtime if hook events stop arriving; if missing, setup never installed or Gatekeeper SIGKILLed a copied (non-symlinked) binary.
+- `~/.capacitor/runtime/app_snapshot.json` — **persisted runtime artifact.** Inspect when the service is unavailable and you need offline state. Treat as debugging/recovery aid, never as live truth.
+- `~/.capacitor/runtime/` — **runtime directory.** Contains all live artifacts; useful for broad inspection or listing recently modified files.
 
 ## First Response Checklist
 
@@ -91,8 +91,7 @@ When the terminal opens, focuses the wrong target, or fails to switch sessions:
 cd apps/swift && swift test --filter 'TerminalLauncherTests|Ghostty.*Tests'
 ```
 
-The reliable activation evidence is the app debug log plus the runtime service snapshot payload.
-Do not assume `activation-traces` is populated in normal production flows.
+To debug activation, collect two artifacts: (1) the app debug log produced by `TerminalLauncher` and related coordinators, and (2) the runtime service snapshot payload returned from the `/runtime/snapshot` endpoint. Do not assume `activation-traces` is populated; it only appears in specific debug modes, not normal production flows.
 
 ## AX Automation Debugging
 

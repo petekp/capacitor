@@ -5,13 +5,15 @@
 
 ## ADR Summary
 
-**Decision:** Capacitor's state detection system adopts an authority-based multi-signal architecture where each signal source answers a different question with explicit authority. Hooks remain authoritative for nuanced session state. Transcripts become the canonical backfill/cold-start/existence path. Shell CWD stays routing-only. The runtime snapshot grows provenance fields.
+**Decision:** Capacitor's state detection system adopts an authority-based multi-signal architecture: each signal source (hooks, transcripts, shell CWD) is designated as the authoritative answer to a specific question, and conflicts resolve by authority rank rather than recency or majority vote. Hooks remain authoritative for nuanced session state. Transcripts become the canonical backfill/cold-start/existence path. Shell CWD stays routing-only. The runtime snapshot grows provenance fields so consumers can see which signal produced each state claim.
 
 **Status:** Decided. Three binding conditions must be met before the architecture is considered complete.
 
 **Supersedes:** The implicit "hooks are the only live-state producer" architecture that currently exists.
 
-## Current-State Snapshot (as of 2026-03-29)
+## Current-State Snapshot (as of 2026-03-29 — ADR decision date)
+
+> **Note:** This table is the inventory *at the moment the ADR was decided*, preserved as historical context. For post-implementation state (Phases 1-3 complete, counts updated), see **Verification Questions for Implementers** below.
 
 | Component | Current Role | Key Files |
 |-----------|-------------|-----------|
@@ -41,7 +43,7 @@
 
 These are prerequisites, not nice-to-haves:
 
-1. **Evidence provenance crosses the FFI boundary.** [x] Complete (Slice 3, 2026-04-15). `SessionSummary` carries `state_source: Option<StateSource>` (typed `event_kind: HookEventType`, typed `authority: SignalAuthority`, RFC3339 `observed_at`) and `last_authoritative_event_at: Option<String>`. The legacy stringly-typed `ready_reason` channel is retired.
+1. **Evidence provenance crosses the FFI boundary.** Provenance (the origin and authorship of each state claim) must be visible to Swift; "FFI boundary" here is the Rust↔Swift bridge exposed via UniFFI. [x] Complete (Slice 3, 2026-04-15). `SessionSummary` carries `state_source: Option<StateSource>` (typed `event_kind: HookEventType`, typed `authority: SignalAuthority`, RFC3339 `observed_at`) and `last_authoritative_event_at: Option<String>`, so Swift can render which signal produced each state claim. The legacy stringly-typed `ready_reason` channel is retired.
 
 2. **Evidence replay on restart.** The runtime service persists raw evidence (hook events, transcript observations), not just fused snapshot conclusions. On restart, evidence is replayed to reconstruct state rather than loading a stale frozen snapshot.
 
@@ -62,7 +64,7 @@ These are prerequisites, not nice-to-haves:
 
 | Abstraction | Purpose | Replaces |
 |-------------|---------|----------|
-| Transcript observation service | Single owner of all transcript scanning, watching, and parsing | Fragmented consumers across `runtime_projects.rs`, `runtime_stats.rs`, `ProjectCreationCoordinator.swift`, `DelegationLoopManager.swift` |
+| Transcript observation service | Single owner of all transcript scanning, watching, and parsing | Fragmented consumers across `runtime/projects.rs`, `runtime_stats.rs`, `ProjectCreationCoordinator.swift`, `DelegationLoopManager.swift` |
 | Evidence provenance fields on snapshot types | Tells Swift which signal produced each state claim | Implicit "trust the snapshot" convention |
 | Authority enforcement in reducer | Encodes the authority matrix as logic, not convention | Current reducer that treats all ingest commands as equal |
 | Evidence persistence layer | Raw evidence log alongside snapshot persistence | Current snapshot-only persistence in `storage/mod.rs` |
@@ -85,7 +87,7 @@ These are prerequisites, not nice-to-haves:
 4. **Remove dead code.** `HookHealthStatus::Unreadable` (no producer), `tmuxPath` (unused), unused `SetupStatus` fields.
 
 ### Phase 2: Consolidate transcripts (moderate risk)
-5. **Build transcript observation service in Rust.** Single abstraction that owns transcript scanning, mtime watching, and incremental parsing. Replace the 4+ fragmented consumers.
+5. **Build transcript observation service in Rust.** Single abstraction that owns transcript scanning, mtime watching, and incremental parsing. Replace the 6 fragmented consumers (3 Rust: `runtime_stats.rs`, `runtime/projects.rs`, `core_query.rs`; 3 Swift: `ProjectCreationCoordinator.swift`, `DelegationLoopManager.swift`, `SessionSummarizer.swift`).
 6. **Wire transcript observations into the reducer.** Initially as session-existence evidence only (not nuanced state). The authority matrix says transcripts answer "does this session exist?" and "is it recently active?"
 7. **Add cold-start reconstruction.** On runtime service startup with no snapshot, reconstruct session existence from transcript files.
 
@@ -117,9 +119,12 @@ These are prerequisites, not nice-to-haves:
 Before claiming each phase is complete, answer:
 
 **Phase 1:**
-- [ ] Can the app launch and show project cards when hooks are completely absent from `settings.json`?
-- [ ] Does a returning user with no hook history see the correct UI (not onboarding copy)?
-- [ ] Does `HookStatus` now distinguish "not installed" from "partially configured" from "settings corrupt"?
+- [x] Can the app launch and show project cards when hooks are completely absent from `settings.json`?
+- [x] Complete (2026-03-29, commit `50b81fc1`). `validateHookSetup()` in `App.swift` gates on runtime service health, not hook install; hook install or repair failures are non-blocking and surfaced as setup-card diagnostics rather than launch gates.
+- [x] Does a returning user with no hook history see the correct UI (not onboarding copy)?
+- [x] Complete (2026-03-29). `isFirstRun` now derives from a persisted setup marker in `~/.capacitor/` instead of `HookHealthStatus::Unknown`, so returning users with missing hook history no longer misclassify as first-run.
+- [x] Does `HookStatus` now distinguish "not installed" from "partially configured" from "settings corrupt"?
+- [x] Complete (2026-03-29). `HookStatus` enum splits into granular states: `NotInstalled`, `PartiallyConfigured`, `SettingsUnreadable`, plus healthy variants. Dead `HookHealthStatus::Unreadable` (no producer) removed.
 
 **Phase 2:**
 - [x] Is there exactly ONE Rust-owned abstraction that handles all transcript scanning?

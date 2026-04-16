@@ -10,7 +10,7 @@ Capacitor's architecture hierarchy is intentionally strict:
 3. `docs/architecture-decisions/004-dedicated-local-runtime-service.md`
 4. `docs/architecture-decisions/005-authority-based-multi-signal-state-detection.md`
 
-Use `AGENT_CHANGELOG.md` only after the canonical read path when you need recent deltas or retired seams to avoid resurrecting.
+Use `AGENT_CHANGELOG.md` only after the canonical read path, when recent deltas or retired seams matter for the task at hand.
 
 ## Top Invariants
 

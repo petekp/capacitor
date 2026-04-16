@@ -52,7 +52,7 @@ Current terminal support:
 
 ## Developing Capacitor
 
-Formal verification is part of the repo's default engineering surface.
+Formal verification is part of the repo's default engineering surface — it enforces architectural ownership rules and contract correctness, and agents and contributors run it as part of the default workflow before commits.
 
 Architecture docs for coding agents start at `.claude/docs/architecture-primer.md`.
 
