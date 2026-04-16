@@ -214,6 +214,9 @@ pub(super) fn reduce_session(
                 SessionUpdate::Skip("config_change_no_session")
             }
         }
+        HookEventType::TranscriptActivity => {
+            SessionUpdate::Skip("transcript_activity_not_a_hook_event")
+        }
         HookEventType::Unknown => SessionUpdate::Skip("unknown_event_type"),
     }
 }
@@ -641,6 +644,10 @@ pub(super) const AUTHORITY_MATRIX: &[(HookEventType, SignalAuthority)] = &[
     // Inferential — contextual, not a direct hook event
     (HookEventType::ConfigChange, SignalAuthority::Inferential),
     (HookEventType::PreCompact, SignalAuthority::Inferential),
+    (
+        HookEventType::TranscriptActivity,
+        SignalAuthority::Inferential,
+    ),
     (HookEventType::TeammateIdle, SignalAuthority::Inferential),
     (HookEventType::Unknown, SignalAuthority::Inferential),
     (HookEventType::WorktreeCreate, SignalAuthority::Inferential),

@@ -24,6 +24,20 @@ impl CoreRuntime {
         self.ingest_hook_event_internal(command, Some(gc_reference_time))
     }
 
+    #[allow(dead_code)] // used by cold-start reconstruction (Phase 2 step 7)
+    pub(crate) fn ingest_transcript_observation(
+        &self,
+        discovery: crate::observation::transcript::TranscriptDiscovery,
+    ) -> Result<MutationOutcome, CoreRuntimeError> {
+        let mut state = self.lock_state()?;
+        let outcome = state.apply_transcript_discovery(discovery);
+        self.bump_version_and_notify();
+        let snapshot = state.snapshot();
+        drop(state);
+        self.persist_snapshot(&snapshot)?;
+        Ok(outcome)
+    }
+
     pub fn unregister_shell(
         &self,
         command: domain::ShellUnregisterCommand,

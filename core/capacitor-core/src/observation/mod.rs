@@ -1,3 +1,5 @@
+pub mod transcript;
+
 use crate::domain::{IngestHookEventCommand, IngestShellSignalCommand};
 
 #[derive(Debug, Clone, PartialEq, Eq)]

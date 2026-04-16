@@ -3,11 +3,12 @@ use std::collections::{BTreeMap, HashMap};
 use chrono::{DateTime, Duration, Utc};
 
 use crate::domain::{
-    AppSnapshot, DiagnosticsSummary, IngestHookEventCommand, IngestShellSignalCommand,
-    MutateDelegationCommand, MutateRunCommand, MutationOutcome, ProjectDelegationState,
-    ProjectSummary, ResolveRoutingCommand, RoutingView, RunState, SessionSummary, ShellSignal,
-    ShellUnregisterCommand,
+    AppSnapshot, DiagnosticsSummary, HookEventType, IngestHookEventCommand,
+    IngestShellSignalCommand, MutateDelegationCommand, MutateRunCommand, MutationOutcome,
+    ProjectDelegationState, ProjectSummary, ResolveRoutingCommand, RoutingView, RunState,
+    SessionSummary, ShellSignal, ShellUnregisterCommand, SignalAuthority, StateSource,
 };
+use crate::observation::transcript::TranscriptDiscovery;
 
 mod event_handler;
 mod gc;
@@ -187,6 +188,79 @@ impl ReducerState {
         command: ShellUnregisterCommand,
     ) -> MutationOutcome {
         event_handler::apply_shell_unregister(self, command)
+    }
+
+    #[must_use]
+    pub(crate) fn apply_transcript_discovery(
+        &mut self,
+        discovery: TranscriptDiscovery,
+    ) -> MutationOutcome {
+        self.events_ingested = self.events_ingested.saturating_add(1);
+
+        let normalized_path = crate::domain::normalize_path_for_matching(&discovery.project_path);
+
+        if let Some(existing) = self.sessions.get(&discovery.session_id) {
+            let existing_authority = existing
+                .state_source
+                .as_ref()
+                .map(|ss| session::classify_signal(ss.event_kind))
+                .unwrap_or(SignalAuthority::Inferential);
+
+            if existing_authority != SignalAuthority::Inferential {
+                return MutationOutcome {
+                    ok: true,
+                    message: "transcript_discovery_skipped_higher_authority".to_string(),
+                };
+            }
+
+            let mut updated = existing.clone();
+            updated.updated_at = discovery.file_mtime_rfc3339.clone();
+            updated.last_activity_at = Some(discovery.file_mtime_rfc3339.clone());
+            updated.state_source = Some(StateSource {
+                event_kind: HookEventType::TranscriptActivity,
+                authority: SignalAuthority::Inferential,
+                observed_at: discovery.file_mtime_rfc3339,
+            });
+            self.sessions.insert(discovery.session_id, updated);
+        } else {
+            let project_id = crate::domain::resolve_project_identity(&normalized_path)
+                .map(|identity| identity.project_id)
+                .unwrap_or_else(|| normalized_path.clone());
+            let workspace_id = crate::domain::default_workspace_id(&normalized_path);
+
+            let session = SessionSummary {
+                session_id: discovery.session_id.clone(),
+                pid: 0,
+                cwd: normalized_path.clone(),
+                project_id,
+                project_path: normalized_path,
+                workspace_id,
+                state: crate::domain::SessionState::Idle,
+                state_changed_at: discovery.file_mtime_rfc3339.clone(),
+                updated_at: discovery.file_mtime_rfc3339.clone(),
+                last_event: Some("transcript_activity".to_string()),
+                last_activity_at: Some(discovery.file_mtime_rfc3339.clone()),
+                terminated_at: None,
+                tools_in_flight: 0,
+                state_source: Some(StateSource {
+                    event_kind: HookEventType::TranscriptActivity,
+                    authority: SignalAuthority::Inferential,
+                    observed_at: discovery.file_mtime_rfc3339,
+                }),
+                last_authoritative_event_at: None,
+                is_alive: false,
+                gc_reason: None,
+            };
+            self.sessions.insert(discovery.session_id, session);
+        }
+
+        self.recompute_projects();
+        self.recompute_routing();
+
+        MutationOutcome {
+            ok: true,
+            message: "transcript_discovery_applied".to_string(),
+        }
     }
 
     #[must_use]

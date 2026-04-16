@@ -5480,6 +5480,7 @@ mod authority_matrix_contract_tests {
         HookEventType::WorktreeCreate,
         HookEventType::WorktreeRemove,
         HookEventType::ConfigChange,
+        HookEventType::TranscriptActivity,
         HookEventType::SessionEnd,
         HookEventType::Unknown,
     ];
@@ -6296,4 +6297,133 @@ fn test_gc_transitions_stale_to_idle_with_gc_reason() {
         survivor.gc_reason, None,
         "Idle survivor should not gain a gc_reason"
     );
+}
+
+mod transcript_discovery_contract_tests {
+    use super::*;
+    use crate::observation::transcript::TranscriptDiscovery;
+    use std::path::PathBuf;
+
+    fn discovery(session_id: &str, project_path: &str, mtime: &str) -> TranscriptDiscovery {
+        TranscriptDiscovery {
+            session_id: session_id.to_string(),
+            project_path: project_path.to_string(),
+            file_path: PathBuf::from(format!("/fake/{session_id}.jsonl")),
+            file_mtime_rfc3339: mtime.to_string(),
+            file_size_bytes: 1024,
+        }
+    }
+
+    #[test]
+    fn transcript_discovery_creates_session_when_absent() {
+        let mut state = ReducerState::default();
+        let outcome =
+            state.apply_transcript_discovery(discovery("sess-1", "/repo", "2099-01-01T00:00:00Z"));
+
+        assert!(outcome.ok);
+        assert_eq!(outcome.message, "transcript_discovery_applied");
+
+        let session = state.sessions.get("sess-1").expect("session created");
+        assert_eq!(session.state, SessionState::Idle);
+        assert_eq!(session.project_path, "/repo");
+        let source = session.state_source.as_ref().expect("has state_source");
+        assert_eq!(source.event_kind, HookEventType::TranscriptActivity);
+        assert_eq!(source.authority, SignalAuthority::Inferential);
+    }
+
+    #[test]
+    fn transcript_discovery_skips_when_hook_state_exists() {
+        let mut state = ReducerState::default();
+        let _ = state.apply_hook_event(event_base(HookEventType::UserPromptSubmit));
+
+        let outcome = state.apply_transcript_discovery(discovery(
+            "session-1",
+            "/repo",
+            "2099-01-01T00:00:00Z",
+        ));
+
+        assert!(outcome.ok);
+        assert_eq!(
+            outcome.message,
+            "transcript_discovery_skipped_higher_authority"
+        );
+        let session = state.sessions.get("session-1").expect("session exists");
+        assert_eq!(session.state, SessionState::Working);
+        let source = session.state_source.as_ref().expect("has state_source");
+        assert_eq!(
+            source.authority,
+            SignalAuthority::DefinitiveTransient,
+            "hook authority preserved"
+        );
+    }
+
+    #[test]
+    fn transcript_discovery_updates_inferential_session() {
+        let mut state = ReducerState::default();
+        let _ =
+            state.apply_transcript_discovery(discovery("sess-1", "/repo", "2099-01-01T00:00:00Z"));
+        let _ =
+            state.apply_transcript_discovery(discovery("sess-1", "/repo", "2099-01-01T01:00:00Z"));
+
+        let session = state.sessions.get("sess-1").expect("session exists");
+        assert_eq!(session.updated_at, "2099-01-01T01:00:00Z");
+        assert_eq!(
+            session.last_activity_at.as_deref(),
+            Some("2099-01-01T01:00:00Z")
+        );
+    }
+
+    #[test]
+    fn hook_event_upgrades_transcript_created_session() {
+        let mut state = ReducerState::default();
+        let _ = state.apply_transcript_discovery(discovery(
+            "session-1",
+            "/repo",
+            "2099-01-01T00:00:00Z",
+        ));
+
+        let session = state.sessions.get("session-1").expect("transcript session");
+        assert_eq!(
+            session.state_source.as_ref().unwrap().authority,
+            SignalAuthority::Inferential
+        );
+
+        let _ = state.apply_hook_event(event_base(HookEventType::UserPromptSubmit));
+
+        let session = state.sessions.get("session-1").expect("upgraded session");
+        assert_eq!(session.state, SessionState::Working);
+        let source = session.state_source.as_ref().expect("has state_source");
+        assert_eq!(
+            source.authority,
+            SignalAuthority::DefinitiveTransient,
+            "hook upgrades authority from Inferential"
+        );
+    }
+
+    #[test]
+    fn transcript_discovery_after_session_end_is_skipped() {
+        let mut state = ReducerState::default();
+        let _ = state.apply_hook_event(event_base(HookEventType::UserPromptSubmit));
+        let mut end = event_base(HookEventType::SessionEnd);
+        end.recorded_at = "2099-01-31T00:00:05Z".to_string();
+        let _ = state.apply_hook_event(end);
+
+        let outcome = state.apply_transcript_discovery(discovery(
+            "session-1",
+            "/repo",
+            "2099-01-31T00:00:10Z",
+        ));
+
+        assert!(outcome.ok);
+        assert_eq!(
+            outcome.message,
+            "transcript_discovery_skipped_higher_authority"
+        );
+        let session = state.sessions.get("session-1").expect("session exists");
+        assert_eq!(
+            session.state_source.as_ref().unwrap().authority,
+            SignalAuthority::DefinitiveTerminal,
+            "terminal authority not overridden by transcript"
+        );
+    }
 }

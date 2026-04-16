@@ -269,6 +269,7 @@ pub enum HookEventType {
     WorktreeCreate,
     WorktreeRemove,
     ConfigChange,
+    TranscriptActivity,
     SessionEnd,
     Unknown,
 }
@@ -293,6 +294,7 @@ impl HookEventType {
             Self::WorktreeCreate => "worktree_create",
             Self::WorktreeRemove => "worktree_remove",
             Self::ConfigChange => "config_change",
+            Self::TranscriptActivity => "transcript_activity",
             Self::SessionEnd => "session_end",
             Self::Unknown => "unknown",
         }

@@ -17,7 +17,7 @@ impl CoreRuntime {
             return Err(CoreRuntimeError::from("snapshot_file path cannot be empty"));
         }
 
-        let runtime = Self::from_storage(
+        let runtime = Self::from_storage_with_transcript_cold_start(
             Arc::new(JsonFileSnapshotStorage::new(path)),
             StorageConfig::default(),
         )?;

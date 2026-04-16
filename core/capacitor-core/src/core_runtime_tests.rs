@@ -1074,3 +1074,142 @@ fn unregister_shell_for_missing_pid_succeeds_with_not_found() {
     assert!(outcome.ok);
     assert!(outcome.message.contains("not found"));
 }
+
+mod cold_start_transcript_tests {
+    use super::*;
+    use crate::domain::SignalAuthority;
+    use tempfile::TempDir;
+
+    fn setup_transcript(tmp: &TempDir, slug: &str, project_path: &str, session_id: &str) {
+        let project_dir = tmp.path().join("projects").join(slug);
+        fs::create_dir_all(&project_dir).unwrap();
+        fs::write(project_dir.join(".project_path"), project_path).unwrap();
+        fs::write(
+            project_dir.join(format!("{session_id}.jsonl")),
+            r#"{"type":"user","content":"hello"}"#,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn cold_start_from_transcripts_creates_valid_sessions() {
+        let tmp = TempDir::new().unwrap();
+        setup_transcript(&tmp, "my-project", "/repo/capacitor", "sess-abc");
+        setup_transcript(&tmp, "other-project", "/repo/other", "sess-def");
+
+        let storage = Arc::new(InMemorySnapshotStorage::default());
+        let config =
+            StorageConfig::with_roots(tmp.path().join("capacitor"), tmp.path().to_path_buf());
+        let runtime =
+            CoreRuntime::from_storage_with_transcript_cold_start(storage, config).expect("runtime");
+
+        let snapshot = runtime.app_snapshot().expect("snapshot");
+        assert_eq!(snapshot.sessions.len(), 2, "two sessions from transcripts");
+
+        let sess_abc = snapshot
+            .sessions
+            .iter()
+            .find(|s| s.session_id == "sess-abc")
+            .expect("sess-abc found");
+        assert_eq!(sess_abc.project_path, "/repo/capacitor");
+        assert_eq!(sess_abc.state, SessionState::Idle);
+        let source = sess_abc.state_source.as_ref().expect("has state_source");
+        assert_eq!(source.event_kind, HookEventType::TranscriptActivity);
+        assert_eq!(source.authority, SignalAuthority::Inferential);
+    }
+
+    #[test]
+    fn cold_start_sessions_get_upgraded_by_subsequent_hook() {
+        let tmp = TempDir::new().unwrap();
+        setup_transcript(&tmp, "proj", "/repo", "session-1");
+
+        let storage = Arc::new(InMemorySnapshotStorage::default());
+        let config = StorageConfig::with_roots(tmp.path().join("cap"), tmp.path().to_path_buf());
+        let runtime =
+            CoreRuntime::from_storage_with_transcript_cold_start(storage, config).expect("runtime");
+
+        let snapshot = runtime.app_snapshot().expect("pre-hook snapshot");
+        let sess = snapshot
+            .sessions
+            .iter()
+            .find(|s| s.session_id == "session-1")
+            .expect("transcript session");
+        assert_eq!(
+            sess.state_source.as_ref().unwrap().authority,
+            SignalAuthority::Inferential
+        );
+
+        let hook = IngestHookEventCommand {
+            event_id: "evt-1".to_string(),
+            recorded_at: "2099-01-31T00:00:00Z".to_string(),
+            event_type: HookEventType::UserPromptSubmit,
+            session_id: "session-1".to_string(),
+            pid: Some(42),
+            project_path: "/repo".to_string(),
+            cwd: Some("/repo".to_string()),
+            file_path: None,
+            workspace_id: None,
+            notification_type: None,
+            stop_hook_active: None,
+            tool_name: None,
+            agent_id: None,
+            teammate_name: None,
+        };
+        let outcome = runtime.ingest_hook_event(hook).expect("hook ingest");
+        assert!(outcome.ok);
+
+        let snapshot = runtime.app_snapshot().expect("post-hook snapshot");
+        let sess = snapshot
+            .sessions
+            .iter()
+            .find(|s| s.session_id == "session-1")
+            .expect("upgraded session");
+        assert_eq!(sess.state, SessionState::Working);
+        assert_eq!(
+            sess.state_source.as_ref().unwrap().authority,
+            SignalAuthority::DefinitiveTransient,
+            "hook upgrades transcript authority"
+        );
+    }
+
+    #[test]
+    fn cold_start_skipped_when_snapshot_exists() {
+        let tmp = TempDir::new().unwrap();
+        setup_transcript(&tmp, "proj", "/repo", "transcript-session");
+
+        let storage = Arc::new(InMemorySnapshotStorage::default());
+        let empty_snapshot = AppSnapshot {
+            projects: vec![],
+            sessions: vec![],
+            shells: vec![],
+            routing: vec![],
+            delegations: vec![],
+            runs: vec![],
+            diagnostics: DiagnosticsSummary {
+                events_ingested: 0,
+                sessions_tracked: 0,
+                shell_signals_tracked: 0,
+                events_skipped: 0,
+                stale_events_skipped: 0,
+                informational_events_skipped: 0,
+                reducer_events_skipped: 0,
+                last_error: None,
+                last_hook_event_at: None,
+            },
+            generated_at: "2099-01-01T00:00:00Z".to_string(),
+            snapshot_version: 1,
+            schema_version: 0,
+        };
+        storage.save_snapshot(&empty_snapshot).unwrap();
+
+        let config = StorageConfig::with_roots(tmp.path().join("cap"), tmp.path().to_path_buf());
+        let runtime =
+            CoreRuntime::from_storage_with_transcript_cold_start(storage, config).expect("runtime");
+
+        let snapshot = runtime.app_snapshot().expect("snapshot");
+        assert!(
+            snapshot.sessions.is_empty(),
+            "transcript sessions NOT created when snapshot exists"
+        );
+    }
+}

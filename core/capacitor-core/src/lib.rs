@@ -155,11 +155,37 @@ impl CoreRuntime {
         snapshot_storage: Arc<dyn SnapshotStorage>,
         app_storage: StorageConfig,
     ) -> Result<Arc<Self>, CoreRuntimeError> {
-        let state = snapshot_storage
+        Self::from_storage_inner(snapshot_storage, app_storage, false)
+    }
+
+    fn from_storage_with_transcript_cold_start(
+        snapshot_storage: Arc<dyn SnapshotStorage>,
+        app_storage: StorageConfig,
+    ) -> Result<Arc<Self>, CoreRuntimeError> {
+        Self::from_storage_inner(snapshot_storage, app_storage, true)
+    }
+
+    fn from_storage_inner(
+        snapshot_storage: Arc<dyn SnapshotStorage>,
+        app_storage: StorageConfig,
+        cold_start_transcript_scan: bool,
+    ) -> Result<Arc<Self>, CoreRuntimeError> {
+        let loaded = snapshot_storage
             .load_snapshot()
-            .map_err(CoreRuntimeError::from)?
-            .map(reduce::ReducerState::from_snapshot)
-            .unwrap_or_default();
+            .map_err(CoreRuntimeError::from)?;
+
+        let state = if let Some(snapshot) = loaded {
+            reduce::ReducerState::from_snapshot(snapshot)
+        } else if cold_start_transcript_scan {
+            let mut state = reduce::ReducerState::default();
+            let discoveries = observation::transcript::scan_for_sessions(app_storage.claude_root());
+            for discovery in discoveries {
+                let _ = state.apply_transcript_discovery(discovery);
+            }
+            state
+        } else {
+            reduce::ReducerState::default()
+        };
 
         Ok(Arc::new(Self {
             state: Mutex::new(state),
