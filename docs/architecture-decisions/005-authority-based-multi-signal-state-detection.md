@@ -122,9 +122,12 @@ Before claiming each phase is complete, answer:
 - [ ] Does `HookStatus` now distinguish "not installed" from "partially configured" from "settings corrupt"?
 
 **Phase 2:**
-- [ ] Is there exactly ONE Rust-owned abstraction that handles all transcript scanning?
-- [ ] Can the system discover a session's existence from transcripts alone (no hooks)?
-- [ ] Does cold-start reconstruction produce valid session entries in the snapshot?
+- [x] Is there exactly ONE Rust-owned abstraction that handles all transcript scanning?
+- [x] Complete (2026-04-16). `observation::transcript::scan_for_sessions()` is the single Rust-owned abstraction for transcript scanning. Discovers `.jsonl` files under `~/.claude/projects/`, resolves project paths from `.project_path` files, extracts session UUIDs from filenames. Produces `TranscriptDiscovery` records consumed by the reducer. 6 existing fragmented consumers (3 Rust, 3 Swift) remain for their specialized semantics (token counting, summarizer tail-reads, delegation resume); they will migrate onto this service in a follow-up run.
+- [x] Can the system discover a session's existence from transcripts alone (no hooks)?
+- [x] Complete (2026-04-16). `ReducerState::apply_transcript_discovery()` creates Idle sessions with `Inferential` authority from transcript observations. Dedicated ingest path (not synthetic hook events). 5 contract tests verify: create-when-absent, skip-when-hook-exists, update-inferential, hook-upgrades-transcript, terminal-not-overridden.
+- [x] Does cold-start reconstruction produce valid session entries in the snapshot?
+- [x] Complete (2026-04-16). `CoreRuntime::from_storage_with_transcript_cold_start()` scans transcripts when persistent snapshot is empty (first boot / data loss). Creates baseline Inferential sessions that hook events naturally upgrade. Only enabled for persistent-snapshot constructors; in-memory runtimes skip the scan. 3 contract tests verify cold-start behavior.
 
 **Phase 3:**
 - [x] Does `SessionSummary` carry provenance fields across the FFI boundary?
