@@ -116,7 +116,7 @@ The bridge relay is part of the successful `SubmitDecision` commit for bridge-ma
 
 The key invariant: bridge-managed status is runtime truth (`active_checkpoint.decision_relay == checkpoint_bridge`), not inferred from filesystem marker presence. For bridge-managed checkpoints, the runtime does not accept and clear a `SubmitDecision` unless the bridge decision file was committed successfully.
 
-Accepted decisions move the decided checkpoint from `active_checkpoint` into the run's `past_checkpoints` history, preserving the decision, timestamp, and review metadata for snapshot consumers.
+Accepted decisions move the decided checkpoint from `active_checkpoint` into the run's bounded `past_checkpoints` history, preserving the decision, timestamp, and review metadata for snapshot consumers. The run kernel keeps the most recent 50 decided checkpoints per run.
 
 ### Timeout Behavior
 

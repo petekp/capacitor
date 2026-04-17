@@ -153,6 +153,51 @@ fn submit_decision_normalizes_bridge_aliases_to_runtime_actions() {
 }
 
 #[test]
+fn submit_decision_retains_only_recent_past_checkpoints() {
+    let mut runs = empty_runs();
+    apply_run_mutation(
+        &mut runs,
+        create_command("run-history-retention", "execution_only"),
+    );
+
+    let mut cmd = base_cmd("run-history-retention");
+    cmd.session_id = Some("s1".to_string());
+    mutate(&mut runs, cmd, RunMutationKind::AttachSession);
+
+    for index in 0..(PAST_CHECKPOINT_RETENTION + 5) {
+        let checkpoint_id = format!("checkpoint-{index:03}");
+
+        let mut emit = base_cmd("run-history-retention");
+        emit.checkpoint_id = Some(checkpoint_id.clone());
+        emit.checkpoint_kind = Some(CheckpointKind::ImplementationMilestone);
+        emit.checkpoint_title = Some(format!("M{index}"));
+        let emit_result = mutate(&mut runs, emit, RunMutationKind::EmitCheckpoint);
+        assert!(emit_result.ok, "{}", emit_result.message);
+
+        let mut decide = base_cmd("run-history-retention");
+        decide.checkpoint_id = Some(checkpoint_id);
+        decide.decision_action = Some("approve".to_string());
+        let decide_result = mutate(&mut runs, decide, RunMutationKind::SubmitDecision);
+        assert!(decide_result.ok, "{}", decide_result.message);
+    }
+
+    let run = runs.values().next().unwrap();
+    assert_eq!(run.past_checkpoints.len(), PAST_CHECKPOINT_RETENTION);
+    assert_eq!(
+        run.past_checkpoints
+            .first()
+            .map(|checkpoint| checkpoint.id.as_str()),
+        Some("checkpoint-005")
+    );
+    assert_eq!(
+        run.past_checkpoints
+            .last()
+            .map(|checkpoint| checkpoint.id.as_str()),
+        Some("checkpoint-054")
+    );
+}
+
+#[test]
 fn advance_phase_works() {
     let mut runs = empty_runs();
     apply_run_mutation(&mut runs, create_command("run-001", "shape_and_execute"));

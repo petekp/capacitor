@@ -16,6 +16,7 @@ use crate::domain::{
 
 const TERMINAL_RUN_RETENTION: Duration = Duration::hours(24);
 const CREATED_RUN_EXPIRY: Duration = Duration::hours(2);
+const PAST_CHECKPOINT_RETENTION: usize = 50;
 
 /// Apply a run mutation to the runs map. Returns a `MutationOutcome`.
 pub(crate) fn apply_run_mutation(
@@ -416,7 +417,7 @@ fn handle_submit_decision(
     // Archive checkpoint and resume run.
     let decided_checkpoint = run.active_checkpoint.take();
     if let Some(checkpoint) = decided_checkpoint {
-        run.past_checkpoints.push(checkpoint);
+        archive_decided_checkpoint(run, checkpoint);
     }
 
     run.status = RunStatus::Active;
@@ -437,6 +438,17 @@ fn normalize_decision_action(action: Option<&str>) -> Result<String, MutationOut
         "approve" | "approved" => Ok("approve".to_string()),
         "request_changes" | "rejected" => Ok("request_changes".to_string()),
         _ => Err(reject(&format!("unrecognized decision_action: {action:?}"))),
+    }
+}
+
+fn archive_decided_checkpoint(run: &mut RunState, checkpoint: ActiveCheckpoint) {
+    run.past_checkpoints.push(checkpoint);
+    let overflow = run
+        .past_checkpoints
+        .len()
+        .saturating_sub(PAST_CHECKPOINT_RETENTION);
+    if overflow > 0 {
+        run.past_checkpoints.drain(0..overflow);
     }
 }
 
