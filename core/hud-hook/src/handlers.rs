@@ -524,11 +524,60 @@ pub(super) fn handle_runtime_mutate_run(
     };
 
     let outcome = if command.kind == RunMutationKind::SubmitDecision {
-        let command_for_relay = command.clone();
-        runtime.mutate_run_with_commit(command, || {
-            crate::checkpoint_bridge_relay::relay_decision(&state.home_dir, &command_for_relay)
-                .map_err(|error| format!("checkpoint bridge relay failed: {error}"))
-        })
+        let relay = match runtime.checkpoint_decision_relay_for(&command) {
+            Ok(relay) => relay,
+            Err(error) => {
+                tracing::warn!(error = %error, "Runtime run mutation relay lookup failed");
+                if let Err(e) = request.respond(json_error(500, "runtime run mutation failed")) {
+                    tracing::debug!("failed to send HTTP response: {e}");
+                }
+                return;
+            }
+        };
+
+        let prepared_decision = match crate::checkpoint_bridge_relay::prepare_decision(
+            &state.home_dir,
+            &command,
+            relay,
+        ) {
+            Ok(prepared) => prepared,
+            Err(error) => {
+                respond_json(
+                    request,
+                    200,
+                    &capacitor_core::domain::MutationOutcome {
+                        ok: false,
+                        message: format!(
+                            "run mutation commit failed: checkpoint bridge relay failed: {error}"
+                        ),
+                    },
+                );
+                return;
+            }
+        };
+
+        let outcome = runtime.mutate_run_with_commit(command, || {
+            if let Some(prepared) = prepared_decision.as_ref() {
+                crate::checkpoint_bridge_relay::commit_prepared_decision(prepared)
+                    .map_err(|error| format!("checkpoint bridge relay failed: {error}"))
+            } else {
+                Ok(())
+            }
+        });
+
+        if let Some(prepared) = prepared_decision.as_ref() {
+            if let Ok(outcome) = &outcome {
+                if outcome.ok {
+                    crate::checkpoint_bridge_relay::cleanup_committed_decision(prepared);
+                } else {
+                    crate::checkpoint_bridge_relay::cleanup_prepared_decision(prepared);
+                }
+            } else {
+                crate::checkpoint_bridge_relay::cleanup_after_failed_mutation(prepared);
+            }
+        }
+
+        outcome
     } else {
         runtime.mutate_run(command)
     };

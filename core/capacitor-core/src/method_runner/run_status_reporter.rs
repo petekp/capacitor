@@ -94,6 +94,7 @@ impl RuntimeRunStatusReporter {
             checkpoint_manifest_path: None,
             checkpoint_media_artifacts: Vec::new(),
             checkpoint_mermaid_sources: Vec::new(),
+            checkpoint_decision_relay: None,
             capture_url: None,
             checkpoint_id: None,
             capture_request_id: None,

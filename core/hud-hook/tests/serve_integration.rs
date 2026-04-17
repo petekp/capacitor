@@ -24,6 +24,23 @@ use std::time::{Duration, Instant};
 use chrono::Utc;
 
 fn create_run_with_active_checkpoint(port: u16, authorization: &str, run_id: &str) -> String {
+    create_run_with_active_checkpoint_relay(port, authorization, run_id, None)
+}
+
+fn create_bridge_run_with_active_checkpoint(
+    port: u16,
+    authorization: &str,
+    run_id: &str,
+) -> String {
+    create_run_with_active_checkpoint_relay(port, authorization, run_id, Some("checkpoint_bridge"))
+}
+
+fn create_run_with_active_checkpoint_relay(
+    port: u16,
+    authorization: &str,
+    run_id: &str,
+    checkpoint_decision_relay: Option<&str>,
+) -> String {
     let create_payload = serde_json::json!({
         "kind": "create",
         "project_path": "/tmp/runtime-service-project",
@@ -71,6 +88,7 @@ fn create_run_with_active_checkpoint(port: u16, authorization: &str, run_id: &st
         "checkpoint_manifest_path": null,
         "checkpoint_media_artifacts": [],
         "checkpoint_mermaid_sources": [],
+        "checkpoint_decision_relay": checkpoint_decision_relay,
         "capture_url": "http://localhost:3000",
         "checkpoint_id": null,
         "capture_request_id": null,
@@ -1473,7 +1491,7 @@ fn runtime_run_submit_decision_writes_checkpoint_bridge_file_when_pending_marker
         ServerGuard::spawn_service_bootstrap_ready(&temp_dir, &snapshot_path, auth_token);
 
     let authorization = format!("Bearer {auth_token}");
-    let checkpoint_id = create_run_with_active_checkpoint(port, &authorization, run_id);
+    let checkpoint_id = create_bridge_run_with_active_checkpoint(port, &authorization, run_id);
 
     let pending = CheckpointBridgePending {
         version: CHECKPOINT_BRIDGE_PROTOCOL_VERSION,
@@ -1548,6 +1566,107 @@ fn runtime_run_submit_decision_is_noop_without_checkpoint_bridge_pending_marker(
 }
 
 #[test]
+fn runtime_run_submit_decision_ignores_stale_bridge_marker_for_non_bridge_checkpoint() {
+    let temp_dir = unique_temp_dir("serve-runtime-run-decision-stale-marker");
+    let snapshot_path = temp_dir.join("snapshot.json");
+    let auth_token = "decision-stale-marker-token";
+    let run_id = "run-decision-stale-marker";
+
+    let (_server, port) =
+        ServerGuard::spawn_service_bootstrap_ready(&temp_dir, &snapshot_path, auth_token);
+
+    let authorization = format!("Bearer {auth_token}");
+    let checkpoint_id = create_run_with_active_checkpoint(port, &authorization, run_id);
+
+    let pending_file = pending_path(&temp_dir, run_id, &checkpoint_id);
+    fs::create_dir_all(pending_file.parent().expect("pending parent"))
+        .expect("create pending parent");
+    fs::write(&pending_file, "{not valid json").expect("write malformed stale marker");
+
+    let (decision_status, decision_body) = submit_decision(
+        port,
+        &authorization,
+        run_id,
+        &checkpoint_id,
+        "approve",
+        Some("Ship it"),
+    );
+    assert_eq!(decision_status, 200, "body: {decision_body}");
+
+    let outcome: serde_json::Value =
+        serde_json::from_str(&decision_body).expect("parse mutation outcome");
+    assert_eq!(
+        outcome["ok"].as_bool(),
+        Some(true),
+        "stale bridge marker must not affect non-bridge checkpoints: {decision_body}"
+    );
+
+    let snapshot = fetch_runtime_snapshot(port, &authorization);
+    assert_eq!(snapshot["runs"][0]["status"].as_str(), Some("active"));
+    assert!(
+        snapshot["runs"][0]["active_checkpoint"].is_null(),
+        "non-bridge checkpoint should still clear after accepted decision"
+    );
+    assert!(
+        !decision_path(&temp_dir, run_id, &checkpoint_id).exists(),
+        "non-bridge checkpoint should not receive a bridge decision file"
+    );
+}
+
+#[test]
+fn runtime_run_submit_decision_rejects_bridge_checkpoint_when_pending_marker_is_missing() {
+    let temp_dir = unique_temp_dir("serve-runtime-run-decision-missing-pending");
+    let snapshot_path = temp_dir.join("snapshot.json");
+    let auth_token = "decision-missing-token";
+    let run_id = "run-decision-missing";
+
+    let (_server, port) =
+        ServerGuard::spawn_service_bootstrap_ready(&temp_dir, &snapshot_path, auth_token);
+
+    let authorization = format!("Bearer {auth_token}");
+    let checkpoint_id = create_bridge_run_with_active_checkpoint(port, &authorization, run_id);
+
+    let pending_file = pending_path(&temp_dir, run_id, &checkpoint_id);
+    assert!(
+        !pending_file.exists(),
+        "test setup should simulate a lost bridge pending marker"
+    );
+
+    let (decision_status, decision_body) = submit_decision(
+        port,
+        &authorization,
+        run_id,
+        &checkpoint_id,
+        "approve",
+        Some("Ship it"),
+    );
+    assert_eq!(decision_status, 200, "body: {decision_body}");
+
+    let outcome: serde_json::Value =
+        serde_json::from_str(&decision_body).expect("parse mutation outcome");
+    assert_eq!(
+        outcome["ok"].as_bool(),
+        Some(false),
+        "missing bridge marker should reject the runtime mutation: {decision_body}"
+    );
+    assert!(
+        outcome["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("checkpoint bridge relay failed"),
+        "body: {decision_body}"
+    );
+
+    let snapshot = fetch_runtime_snapshot(port, &authorization);
+    assert_eq!(snapshot["runs"][0]["status"].as_str(), Some("paused"));
+    assert_eq!(
+        snapshot["runs"][0]["active_checkpoint"]["id"].as_str(),
+        Some(checkpoint_id.as_str()),
+        "checkpoint should remain active and retryable"
+    );
+}
+
+#[test]
 fn runtime_run_submit_decision_does_not_write_checkpoint_bridge_file_when_mutation_is_rejected() {
     let temp_dir = unique_temp_dir("serve-runtime-run-decision-rejected");
     let snapshot_path = temp_dir.join("snapshot.json");
@@ -1558,7 +1677,7 @@ fn runtime_run_submit_decision_does_not_write_checkpoint_bridge_file_when_mutati
         ServerGuard::spawn_service_bootstrap_ready(&temp_dir, &snapshot_path, auth_token);
 
     let authorization = format!("Bearer {auth_token}");
-    let checkpoint_id = create_run_with_active_checkpoint(port, &authorization, run_id);
+    let checkpoint_id = create_bridge_run_with_active_checkpoint(port, &authorization, run_id);
 
     let pending = CheckpointBridgePending {
         version: CHECKPOINT_BRIDGE_PROTOCOL_VERSION,
@@ -1613,7 +1732,7 @@ fn runtime_run_submit_decision_rejects_when_checkpoint_bridge_pending_marker_is_
         ServerGuard::spawn_service_bootstrap_ready(&temp_dir, &snapshot_path, auth_token);
 
     let authorization = format!("Bearer {auth_token}");
-    let checkpoint_id = create_run_with_active_checkpoint(port, &authorization, run_id);
+    let checkpoint_id = create_bridge_run_with_active_checkpoint(port, &authorization, run_id);
 
     let pending_file = pending_path(&temp_dir, run_id, &checkpoint_id);
     fs::create_dir_all(pending_file.parent().expect("pending parent"))
@@ -1675,7 +1794,7 @@ fn runtime_run_submit_decision_rejects_when_checkpoint_bridge_decision_file_cann
         ServerGuard::spawn_service_bootstrap_ready(&temp_dir, &snapshot_path, auth_token);
 
     let authorization = format!("Bearer {auth_token}");
-    let checkpoint_id = create_run_with_active_checkpoint(port, &authorization, run_id);
+    let checkpoint_id = create_bridge_run_with_active_checkpoint(port, &authorization, run_id);
 
     let pending = CheckpointBridgePending {
         version: CHECKPOINT_BRIDGE_PROTOCOL_VERSION,

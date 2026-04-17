@@ -81,6 +81,35 @@ impl CoreRuntime {
         self.persist_snapshot(&snapshot)?;
         Ok(outcome)
     }
+
+    pub fn checkpoint_decision_relay_for(
+        &self,
+        command: &domain::MutateRunCommand,
+    ) -> Result<Option<domain::CheckpointDecisionRelay>, CoreRuntimeError> {
+        let project_path = command.project_path.trim();
+        let run_id = command.run_id.trim();
+        let Some(checkpoint_id) = command
+            .checkpoint_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        else {
+            return Ok(None);
+        };
+
+        if project_path.is_empty() || run_id.is_empty() {
+            return Ok(None);
+        }
+
+        let key = format!("{project_path}#{run_id}");
+        let state = self.lock_state()?;
+        Ok(state
+            .runs
+            .get(&key)
+            .and_then(|run| run.active_checkpoint.as_ref())
+            .filter(|checkpoint| checkpoint.id == checkpoint_id)
+            .and_then(|checkpoint| checkpoint.decision_relay))
+    }
 }
 
 #[uniffi::export]

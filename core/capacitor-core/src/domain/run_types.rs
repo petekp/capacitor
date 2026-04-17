@@ -94,6 +94,12 @@ pub enum RunMutationKind {
     Cancel,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Enum)]
+#[serde(rename_all = "snake_case")]
+pub enum CheckpointDecisionRelay {
+    CheckpointBridge,
+}
+
 // ---------------------------------------------------------------------------
 // Method Templates
 // ---------------------------------------------------------------------------
@@ -243,6 +249,8 @@ pub struct ActiveCheckpoint {
     pub capture_url: Option<String>,
     #[serde(default)]
     pub capture_claim: Option<CaptureClaim>,
+    #[serde(default)]
+    pub decision_relay: Option<CheckpointDecisionRelay>,
     pub decision: Option<CheckpointDecision>,
     pub created_at: String,
     pub decided_at: Option<String>,
@@ -307,6 +315,8 @@ pub struct MutateRunCommand {
     pub checkpoint_manifest_path: Option<String>,
     pub checkpoint_media_artifacts: Vec<MediaArtifact>,
     pub checkpoint_mermaid_sources: Vec<MermaidSource>,
+    #[serde(default)]
+    pub checkpoint_decision_relay: Option<CheckpointDecisionRelay>,
     /// URL to capture via agent-browser (e.g., "http://localhost:3000").
     pub capture_url: Option<String>,
     #[serde(default)]

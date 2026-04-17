@@ -101,6 +101,7 @@ pub fn run_kernel_base_cmd(project_path: &str, run_id: &str) -> MutateRunCommand
         checkpoint_manifest_path: None,
         checkpoint_media_artifacts: vec![],
         checkpoint_mermaid_sources: vec![],
+        checkpoint_decision_relay: None,
         capture_url: None,
         checkpoint_id: None,
         capture_request_id: None,

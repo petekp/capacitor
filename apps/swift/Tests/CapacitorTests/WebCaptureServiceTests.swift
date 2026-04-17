@@ -157,6 +157,7 @@ struct CaptureURLBridgeTests {
             captureStatus: .pending,
             captureUrl: "http://localhost:5173",
             captureClaim: captureClaim,
+            decisionRelay: nil,
             decision: nil,
             createdAt: "2026-03-21T12:00:00Z",
             decidedAt: nil,
@@ -165,6 +166,7 @@ struct CaptureURLBridgeTests {
         #expect(checkpoint.captureUrl == "http://localhost:5173")
         #expect(checkpoint.captureStatus == .pending)
         #expect(checkpoint.captureClaim == captureClaim)
+        #expect(checkpoint.decisionRelay == nil)
     }
 
     @Test
@@ -182,6 +184,7 @@ struct CaptureURLBridgeTests {
             checkpointManifestPath: nil,
             checkpointMediaArtifacts: [],
             checkpointMermaidSources: [],
+            checkpointDecisionRelay: nil,
             captureUrl: "http://localhost:3000",
             checkpointId: "checkpoint-001",
             captureRequestId: "capture-001",
@@ -201,6 +204,7 @@ struct CaptureURLBridgeTests {
 
         #expect(cmd.captureUrl == "http://localhost:3000")
         #expect(cmd.checkpointId == "checkpoint-001")
+        #expect(cmd.checkpointDecisionRelay == nil)
         #expect(cmd.captureRequestId == "capture-001")
         #expect(cmd.clientId == "capacitor-mac-1234")
         #expect(cmd.observedCaptureUrl == "http://localhost:3000")

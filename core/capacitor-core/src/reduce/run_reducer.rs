@@ -313,6 +313,7 @@ fn handle_emit_checkpoint(
         capture_status,
         capture_url,
         capture_claim: None,
+        decision_relay: command.checkpoint_decision_relay,
         decision: None,
         created_at: now.clone(),
         decided_at: None,

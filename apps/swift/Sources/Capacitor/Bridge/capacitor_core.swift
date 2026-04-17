@@ -1020,6 +1020,7 @@ public struct ActiveCheckpoint {
      */
     public var captureUrl: String?
     public var captureClaim: CaptureClaim?
+    public var decisionRelay: CheckpointDecisionRelay?
     public var decision: CheckpointDecision?
     public var createdAt: String
     public var decidedAt: String?
@@ -1029,7 +1030,7 @@ public struct ActiveCheckpoint {
     public init(id: String, phaseId: String, kind: CheckpointKind, status: CheckpointStatus, title: String, summary: String?, briefPath: String?, manifestPath: String?, mediaArtifacts: [MediaArtifact], mermaidSources: [MermaidSource], captureStatus: CaptureStatus,
                 /* 
                     * URL that was captured (or should be captured) via agent-browser.
-                    */ captureUrl: String?, captureClaim: CaptureClaim?, decision: CheckpointDecision?, createdAt: String, decidedAt: String?)
+                    */ captureUrl: String?, captureClaim: CaptureClaim?, decisionRelay: CheckpointDecisionRelay?, decision: CheckpointDecision?, createdAt: String, decidedAt: String?)
     {
         self.id = id
         self.phaseId = phaseId
@@ -1044,6 +1045,7 @@ public struct ActiveCheckpoint {
         self.captureStatus = captureStatus
         self.captureUrl = captureUrl
         self.captureClaim = captureClaim
+        self.decisionRelay = decisionRelay
         self.decision = decision
         self.createdAt = createdAt
         self.decidedAt = decidedAt
@@ -1091,6 +1093,9 @@ extension ActiveCheckpoint: Equatable, Hashable {
         if lhs.captureClaim != rhs.captureClaim {
             return false
         }
+        if lhs.decisionRelay != rhs.decisionRelay {
+            return false
+        }
         if lhs.decision != rhs.decision {
             return false
         }
@@ -1117,6 +1122,7 @@ extension ActiveCheckpoint: Equatable, Hashable {
         hasher.combine(captureStatus)
         hasher.combine(captureUrl)
         hasher.combine(captureClaim)
+        hasher.combine(decisionRelay)
         hasher.combine(decision)
         hasher.combine(createdAt)
         hasher.combine(decidedAt)
@@ -1143,6 +1149,7 @@ public struct FfiConverterTypeActiveCheckpoint: FfiConverterRustBuffer {
                 captureStatus: FfiConverterTypeCaptureStatus.read(from: &buf),
                 captureUrl: FfiConverterOptionString.read(from: &buf),
                 captureClaim: FfiConverterOptionTypeCaptureClaim.read(from: &buf),
+                decisionRelay: FfiConverterOptionTypeCheckpointDecisionRelay.read(from: &buf),
                 decision: FfiConverterOptionTypeCheckpointDecision.read(from: &buf),
                 createdAt: FfiConverterString.read(from: &buf),
                 decidedAt: FfiConverterOptionString.read(from: &buf)
@@ -1163,6 +1170,7 @@ public struct FfiConverterTypeActiveCheckpoint: FfiConverterRustBuffer {
         FfiConverterTypeCaptureStatus.write(value.captureStatus, into: &buf)
         FfiConverterOptionString.write(value.captureUrl, into: &buf)
         FfiConverterOptionTypeCaptureClaim.write(value.captureClaim, into: &buf)
+        FfiConverterOptionTypeCheckpointDecisionRelay.write(value.decisionRelay, into: &buf)
         FfiConverterOptionTypeCheckpointDecision.write(value.decision, into: &buf)
         FfiConverterString.write(value.createdAt, into: &buf)
         FfiConverterOptionString.write(value.decidedAt, into: &buf)
@@ -3997,6 +4005,7 @@ public struct MutateRunCommand {
     public var checkpointManifestPath: String?
     public var checkpointMediaArtifacts: [MediaArtifact]
     public var checkpointMermaidSources: [MermaidSource]
+    public var checkpointDecisionRelay: CheckpointDecisionRelay?
     /**
      * URL to capture via agent-browser (e.g., "http://localhost:3000").
      */
@@ -4024,7 +4033,7 @@ public struct MutateRunCommand {
 
     /// Default memberwise initializers are never public by default, so we
     /// declare one manually.
-    public init(kind: RunMutationKind, projectPath: String, runId: String, methodId: String?, involvement: InvolvementLevel?, checkpointKind: CheckpointKind?, checkpointTitle: String?, checkpointSummary: String?, checkpointBriefPath: String?, checkpointManifestPath: String?, checkpointMediaArtifacts: [MediaArtifact], checkpointMermaidSources: [MermaidSource],
+    public init(kind: RunMutationKind, projectPath: String, runId: String, methodId: String?, involvement: InvolvementLevel?, checkpointKind: CheckpointKind?, checkpointTitle: String?, checkpointSummary: String?, checkpointBriefPath: String?, checkpointManifestPath: String?, checkpointMediaArtifacts: [MediaArtifact], checkpointMermaidSources: [MermaidSource], checkpointDecisionRelay: CheckpointDecisionRelay?,
                 /* 
                     * URL to capture via agent-browser (e.g., "http://localhost:3000").
                     */ captureUrl: String?, checkpointId: String?, captureRequestId: String?, clientId: String?, observedCaptureUrl: String?, captureFailureReason: String?, decisionAction: String?, decisionNote: String?, sessionId: String?, delegationWorkerId: String?,
@@ -4047,6 +4056,7 @@ public struct MutateRunCommand {
         self.checkpointManifestPath = checkpointManifestPath
         self.checkpointMediaArtifacts = checkpointMediaArtifacts
         self.checkpointMermaidSources = checkpointMermaidSources
+        self.checkpointDecisionRelay = checkpointDecisionRelay
         self.captureUrl = captureUrl
         self.checkpointId = checkpointId
         self.captureRequestId = captureRequestId
@@ -4101,6 +4111,9 @@ extension MutateRunCommand: Equatable, Hashable {
             return false
         }
         if lhs.checkpointMermaidSources != rhs.checkpointMermaidSources {
+            return false
+        }
+        if lhs.checkpointDecisionRelay != rhs.checkpointDecisionRelay {
             return false
         }
         if lhs.captureUrl != rhs.captureUrl {
@@ -4164,6 +4177,7 @@ extension MutateRunCommand: Equatable, Hashable {
         hasher.combine(checkpointManifestPath)
         hasher.combine(checkpointMediaArtifacts)
         hasher.combine(checkpointMermaidSources)
+        hasher.combine(checkpointDecisionRelay)
         hasher.combine(captureUrl)
         hasher.combine(checkpointId)
         hasher.combine(captureRequestId)
@@ -4201,6 +4215,7 @@ public struct FfiConverterTypeMutateRunCommand: FfiConverterRustBuffer {
                 checkpointManifestPath: FfiConverterOptionString.read(from: &buf),
                 checkpointMediaArtifacts: FfiConverterSequenceTypeMediaArtifact.read(from: &buf),
                 checkpointMermaidSources: FfiConverterSequenceTypeMermaidSource.read(from: &buf),
+                checkpointDecisionRelay: FfiConverterOptionTypeCheckpointDecisionRelay.read(from: &buf),
                 captureUrl: FfiConverterOptionString.read(from: &buf),
                 checkpointId: FfiConverterOptionString.read(from: &buf),
                 captureRequestId: FfiConverterOptionString.read(from: &buf),
@@ -4232,6 +4247,7 @@ public struct FfiConverterTypeMutateRunCommand: FfiConverterRustBuffer {
         FfiConverterOptionString.write(value.checkpointManifestPath, into: &buf)
         FfiConverterSequenceTypeMediaArtifact.write(value.checkpointMediaArtifacts, into: &buf)
         FfiConverterSequenceTypeMermaidSource.write(value.checkpointMermaidSources, into: &buf)
+        FfiConverterOptionTypeCheckpointDecisionRelay.write(value.checkpointDecisionRelay, into: &buf)
         FfiConverterOptionString.write(value.captureUrl, into: &buf)
         FfiConverterOptionString.write(value.checkpointId, into: &buf)
         FfiConverterOptionString.write(value.captureRequestId, into: &buf)
@@ -7337,6 +7353,52 @@ extension CaptureStatus: Equatable, Hashable {}
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 
+public enum CheckpointDecisionRelay {
+    case checkpointBridge
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCheckpointDecisionRelay: FfiConverterRustBuffer {
+    typealias SwiftType = CheckpointDecisionRelay
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CheckpointDecisionRelay {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        case 1: return .checkpointBridge
+
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: CheckpointDecisionRelay, into buf: inout [UInt8]) {
+        switch value {
+        case .checkpointBridge:
+            writeInt(&buf, Int32(1))
+        }
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCheckpointDecisionRelay_lift(_ buf: RustBuffer) throws -> CheckpointDecisionRelay {
+    return try FfiConverterTypeCheckpointDecisionRelay.lift(buf)
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCheckpointDecisionRelay_lower(_ value: CheckpointDecisionRelay) -> RustBuffer {
+    return FfiConverterTypeCheckpointDecisionRelay.lower(value)
+}
+
+extension CheckpointDecisionRelay: Equatable, Hashable {}
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 public enum CheckpointKind {
     case proposal
     case implementationMilestone
@@ -9538,6 +9600,30 @@ private struct FfiConverterOptionTypeStateSource: FfiConverterRustBuffer {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeStateSource.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+private struct FfiConverterOptionTypeCheckpointDecisionRelay: FfiConverterRustBuffer {
+    typealias SwiftType = CheckpointDecisionRelay?
+
+    static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeCheckpointDecisionRelay.write(value, into: &buf)
+    }
+
+    static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeCheckpointDecisionRelay.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }

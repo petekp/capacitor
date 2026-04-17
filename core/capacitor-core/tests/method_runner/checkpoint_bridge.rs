@@ -10,8 +10,8 @@ use std::time::{Duration, Instant};
 
 use crate::common::read_http_request;
 use capacitor_core::domain::{
-    CheckpointKind, MediaArtifact, MediaArtifactType, MermaidSource, MutateRunCommand,
-    RunMutationKind,
+    CheckpointDecisionRelay, CheckpointKind, MediaArtifact, MediaArtifactType, MermaidSource,
+    MutateRunCommand, RunMutationKind,
 };
 use capacitor_core::method_runner::adapters::{
     FakeInteractiveIO, FakePromptBuilder, FakeWorkerDispatcher, GateCheckpointContext,
@@ -479,6 +479,7 @@ fn runtime_create_cmd(project_path: &str, run_id: &str, method_id: &str) -> Muta
         checkpoint_manifest_path: None,
         checkpoint_media_artifacts: vec![],
         checkpoint_mermaid_sources: vec![],
+        checkpoint_decision_relay: None,
         capture_url: None,
         checkpoint_id: None,
         capture_request_id: None,
@@ -511,6 +512,7 @@ fn runtime_base_cmd(project_path: &str, run_id: &str) -> MutateRunCommand {
         checkpoint_manifest_path: None,
         checkpoint_media_artifacts: vec![],
         checkpoint_mermaid_sources: vec![],
+        checkpoint_decision_relay: None,
         capture_url: None,
         checkpoint_id: None,
         capture_request_id: None,
@@ -604,6 +606,10 @@ fn t5_bridge_emits_runtime_mutation_and_pending_marker() {
     assert_eq!(
         command.checkpoint_kind,
         Some(CheckpointKind::ImplementationMilestone)
+    );
+    assert_eq!(
+        command.checkpoint_decision_relay,
+        Some(CheckpointDecisionRelay::CheckpointBridge)
     );
     assert_eq!(
         command.checkpoint_manifest_path.as_deref(),

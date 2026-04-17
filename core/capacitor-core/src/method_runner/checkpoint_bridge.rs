@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crate::domain::{MutateRunCommand, MutationOutcome, RunMutationKind};
+use crate::domain::{CheckpointDecisionRelay, MutateRunCommand, MutationOutcome, RunMutationKind};
 use crate::method_runner::adapters::{
     GateCheckpointContext, InteractiveIO, InteractivePrompt, InteractiveResponse,
 };
@@ -80,6 +80,7 @@ impl BridgeInteractiveIO {
             checkpoint_manifest_path: Some(manifest_path.to_string_lossy().into_owned()),
             checkpoint_media_artifacts: context.media_artifacts.clone(),
             checkpoint_mermaid_sources: context.mermaid_sources.clone(),
+            checkpoint_decision_relay: Some(CheckpointDecisionRelay::CheckpointBridge),
             capture_url: None,
             checkpoint_id: Some(context.gate_id.clone()),
             capture_request_id: None,
