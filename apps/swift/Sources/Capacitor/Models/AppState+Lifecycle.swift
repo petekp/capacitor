@@ -216,15 +216,11 @@ extension AppState {
         for effect in effects {
             switch effect {
             case .updatePostSessionRefreshContext:
-                updatePostSessionRefreshContext()
+                runtimeSnapshotEffectHandlers.updatePostSessionRefreshContext()
             case let .reconcileDelegations(delegations):
-                _Concurrency.Task { [delegationLoopManager] in
-                    await delegationLoopManager?.reconcile(delegations: delegations)
-                }
+                runtimeSnapshotEffectHandlers.reconcileDelegations(delegations)
             case let .reconcileRunCaptures(runs):
-                _Concurrency.Task { [runCaptureCoordinator] in
-                    await runCaptureCoordinator.reconcile(runs: runs)
-                }
+                runtimeSnapshotEffectHandlers.reconcileRunCaptures(runs)
             }
         }
     }

@@ -40,6 +40,10 @@ extension AppState {
             executeRuntimeSnapshotEffects(outcome.effects)
         }
 
+        func setRuntimeSnapshotEffectHandlersForTesting(_ handlers: RuntimeSnapshotEffectHandlers) {
+            runtimeSnapshotEffectHandlers = handlers
+        }
+
         func cancelRuntimeAutomationForTesting() {
             runtimeBootstrapTask?.cancel()
             runtimeBootstrapTask = nil

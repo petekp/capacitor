@@ -31,6 +31,7 @@ class AppState {
     let activationPolicy = ActivationPolicy()
     let runtimeClient: RuntimeClient
     var methodRunCoordinator: MethodRunCoordinator?
+    @ObservationIgnored var runtimeSnapshotEffectHandlers: RuntimeSnapshotEffectHandlers!
     var engine: CoreRuntime?
 
     @ObservationIgnored var refreshTimer: Timer?
@@ -217,6 +218,14 @@ class AppState {
             },
             generateDescriptionHandler: { [weak self] project in
                 self?.projectDetailsManager.generateDescription(for: project)
+            },
+        )
+
+        runtimeSnapshotEffectHandlers = RuntimeSnapshotEffectHandlers.live(
+            delegationLoopManager: delegationLoopManager,
+            runCaptureCoordinator: runCaptureCoordinator,
+            updatePostSessionRefreshContext: { [weak self] in
+                self?.updatePostSessionRefreshContext()
             },
         )
 
