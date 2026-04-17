@@ -125,6 +125,7 @@ fn handle_create(
         phases,
         current_phase_index: 0,
         active_checkpoint: None,
+        past_checkpoints: Vec::new(),
         session_id: None,
         delegation_worker_id: command.delegation_worker_id.clone(),
         status_message: None,
@@ -398,18 +399,10 @@ fn handle_submit_decision(
         Err(outcome) => return outcome,
     };
 
-    let action = match &command.decision_action {
-        Some(a) if !a.trim().is_empty() => a.trim().to_string(),
-        _ => return reject("missing decision_action"),
+    let action = match normalize_decision_action(command.decision_action.as_deref()) {
+        Ok(action) => action,
+        Err(outcome) => return outcome,
     };
-
-    // Validate that the action is one of the recognized values. This prevents
-    // the runtime from resuming the run with an action that the bridge adapter
-    // or other consumers don't understand, which would desynchronize state.
-    match action.as_str() {
-        "approve" | "approved" | "request_changes" | "rejected" => {}
-        _ => return reject(&format!("unrecognized decision_action: {action:?}")),
-    }
 
     let now = now_rfc3339();
     checkpoint.decision = Some(CheckpointDecision {
@@ -419,14 +412,31 @@ fn handle_submit_decision(
     checkpoint.status = CheckpointStatus::Decided;
     checkpoint.decided_at = Some(now.clone());
 
-    // Clear checkpoint and resume run
+    // Archive checkpoint and resume run.
     let decided_checkpoint = run.active_checkpoint.take();
-    // Keep the decided checkpoint data in the phase history (future enhancement)
-    let _ = decided_checkpoint;
+    if let Some(checkpoint) = decided_checkpoint {
+        run.past_checkpoints.push(checkpoint);
+    }
 
     run.status = RunStatus::Active;
     run.updated_at = now;
     ok(&format!("decision recorded: {action}"))
+}
+
+fn normalize_decision_action(action: Option<&str>) -> Result<String, MutationOutcome> {
+    let action = match action {
+        Some(a) if !a.trim().is_empty() => a.trim().to_ascii_lowercase(),
+        _ => return Err(reject("missing decision_action")),
+    };
+
+    // Normalize bridge/protocol aliases into runtime-facing actions. This prevents
+    // the runtime from resuming the run with an action that the bridge adapter
+    // or other consumers don't understand, which would desynchronize state.
+    match action.as_str() {
+        "approve" | "approved" => Ok("approve".to_string()),
+        "request_changes" | "rejected" => Ok("request_changes".to_string()),
+        _ => Err(reject(&format!("unrecognized decision_action: {action:?}"))),
+    }
 }
 
 fn handle_capture_complete(

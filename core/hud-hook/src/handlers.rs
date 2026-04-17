@@ -3,7 +3,7 @@ use std::sync::atomic::Ordering;
 use capacitor_core::{
     domain::{
         IngestHookEventCommand, IngestShellSignalCommand, MutateDelegationCommand,
-        MutateRunCommand, ResolveRoutingCommand, ShellUnregisterCommand,
+        MutateRunCommand, ResolveRoutingCommand, RunMutationKind, ShellUnregisterCommand,
     },
     runtime::service::RuntimeServiceBootstrap,
 };
@@ -523,14 +523,18 @@ pub(super) fn handle_runtime_mutate_run(
         }
     };
 
-    let command_clone = command.clone();
-    match runtime.mutate_run(command) {
+    let outcome = if command.kind == RunMutationKind::SubmitDecision {
+        let command_for_relay = command.clone();
+        runtime.mutate_run_with_commit(command, || {
+            crate::checkpoint_bridge_relay::relay_decision(&state.home_dir, &command_for_relay)
+                .map_err(|error| format!("checkpoint bridge relay failed: {error}"))
+        })
+    } else {
+        runtime.mutate_run(command)
+    };
+
+    match outcome {
         Ok(outcome) => {
-            crate::checkpoint_bridge_relay::relay_decision(
-                &state.home_dir,
-                &command_clone,
-                &outcome,
-            );
             respond_json(request, 200, &outcome);
         }
         Err(error) => {

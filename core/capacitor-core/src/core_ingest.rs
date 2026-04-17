@@ -52,6 +52,35 @@ impl CoreRuntime {
         self.persist_snapshot(&snapshot)?;
         Ok(outcome)
     }
+
+    pub fn mutate_run_with_commit<F>(
+        &self,
+        command: domain::MutateRunCommand,
+        commit: F,
+    ) -> Result<MutationOutcome, CoreRuntimeError>
+    where
+        F: FnOnce() -> Result<(), String>,
+    {
+        let mut state = self.lock_state()?;
+        let previous_state = state.clone();
+        let outcome = state.apply_run_mutation(command);
+
+        if outcome.ok {
+            if let Err(error) = commit() {
+                *state = previous_state;
+                return Ok(MutationOutcome {
+                    ok: false,
+                    message: format!("run mutation commit failed: {error}"),
+                });
+            }
+        }
+
+        self.bump_version_and_notify();
+        let snapshot = state.snapshot();
+        drop(state);
+        self.persist_snapshot(&snapshot)?;
+        Ok(outcome)
+    }
 }
 
 #[uniffi::export]

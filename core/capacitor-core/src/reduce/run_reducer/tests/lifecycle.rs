@@ -109,6 +109,47 @@ fn submit_decision_resumes_run() {
     let run = runs.values().next().unwrap();
     assert_eq!(run.status, RunStatus::Active);
     assert!(run.active_checkpoint.is_none());
+    assert_eq!(run.past_checkpoints.len(), 1);
+    let decided = &run.past_checkpoints[0];
+    assert_eq!(decided.status, CheckpointStatus::Decided);
+    assert_eq!(
+        decided
+            .decision
+            .as_ref()
+            .map(|decision| decision.action.as_str()),
+        Some("approve")
+    );
+    assert!(decided.decided_at.is_some());
+}
+
+#[test]
+fn submit_decision_normalizes_bridge_aliases_to_runtime_actions() {
+    for (input, canonical) in [
+        ("approved", "approve"),
+        ("rejected", "request_changes"),
+        (" APPROVED ", "approve"),
+        (" ReJeCtEd ", "request_changes"),
+    ] {
+        let mut runs = empty_runs();
+        apply_run_mutation(&mut runs, create_command(input, "execution_only"));
+
+        let mut cmd = base_cmd(input);
+        cmd.session_id = Some("s1".to_string());
+        mutate(&mut runs, cmd, RunMutationKind::AttachSession);
+
+        let mut cmd = base_cmd(input);
+        cmd.checkpoint_id = Some("checkpoint-1".to_string());
+        cmd.checkpoint_kind = Some(CheckpointKind::ImplementationMilestone);
+        cmd.checkpoint_title = Some("M1".to_string());
+        mutate(&mut runs, cmd, RunMutationKind::EmitCheckpoint);
+
+        let mut cmd = base_cmd(input);
+        cmd.checkpoint_id = Some("checkpoint-1".to_string());
+        cmd.decision_action = Some(input.to_string());
+        let result = mutate(&mut runs, cmd, RunMutationKind::SubmitDecision);
+        assert!(result.ok, "{}", result.message);
+        assert_eq!(result.message, format!("decision recorded: {canonical}"));
+    }
 }
 
 #[test]

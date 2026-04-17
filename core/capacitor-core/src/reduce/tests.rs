@@ -88,6 +88,7 @@ fn run_state_fixture(
         }],
         current_phase_index: 0,
         active_checkpoint: None,
+        past_checkpoints: vec![],
         session_id: None,
         delegation_worker_id: None,
         status_message: None,

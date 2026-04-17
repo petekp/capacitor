@@ -1,4 +1,5 @@
 use super::{CoreRuntime, VersionNotifier};
+use crate::domain::CheckpointKind;
 use crate::domain::{
     default_workspace_id, AppSnapshot, DelegationMutationKind, DiagnosticsSummary, HookEventType,
     IdeaMutationKind, IngestHookEventCommand, IngestShellSignalCommand, MutateDelegationCommand,
@@ -154,6 +155,53 @@ fn test_snapshot_idempotent_without_gc() {
     let mut normalized_first = first.clone();
     normalized_first.generated_at = second.generated_at.clone();
     assert_eq!(normalized_first, second);
+}
+
+#[test]
+fn mutate_run_with_commit_rolls_back_accepted_mutation_when_commit_fails() {
+    let runtime = CoreRuntime::new().expect("runtime");
+
+    runtime
+        .mutate_run(make_run_create_command("run-commit", "/repo/run"))
+        .expect("create run");
+
+    let mut attach = make_run_create_command("run-commit", "/repo/run");
+    attach.kind = RunMutationKind::AttachSession;
+    attach.session_id = Some("session-commit".to_string());
+    runtime.mutate_run(attach).expect("attach session");
+
+    let mut emit = make_run_create_command("run-commit", "/repo/run");
+    emit.kind = RunMutationKind::EmitCheckpoint;
+    emit.checkpoint_id = Some("checkpoint-commit".to_string());
+    emit.checkpoint_kind = Some(CheckpointKind::ImplementationMilestone);
+    emit.checkpoint_title = Some("Commit checkpoint".to_string());
+    runtime.mutate_run(emit).expect("emit checkpoint");
+
+    let mut submit = make_run_create_command("run-commit", "/repo/run");
+    submit.kind = RunMutationKind::SubmitDecision;
+    submit.checkpoint_id = Some("checkpoint-commit".to_string());
+    submit.decision_action = Some("approve".to_string());
+
+    let outcome = runtime
+        .mutate_run_with_commit(submit, || Err("relay write failed".to_string()))
+        .expect("submit decision");
+
+    assert!(!outcome.ok);
+    assert!(outcome.message.contains("run mutation commit failed"));
+
+    let snapshot = runtime.app_snapshot().expect("snapshot");
+    let run = snapshot
+        .runs
+        .iter()
+        .find(|run| run.id == "run-commit")
+        .expect("run exists");
+    assert_eq!(run.status, crate::domain::RunStatus::Paused);
+    assert_eq!(
+        run.active_checkpoint
+            .as_ref()
+            .map(|checkpoint| checkpoint.id.as_str()),
+        Some("checkpoint-commit")
+    );
 }
 
 #[test]

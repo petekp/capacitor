@@ -1074,6 +1074,21 @@ private struct SnapshotMermaidSourcePayload: Decodable {
     }
 }
 
+private struct SnapshotCheckpointDecisionPayload: Codable {
+    let action: String
+    let note: String?
+
+    init(action: String, note: String?) {
+        self.action = action
+        self.note = note
+    }
+
+    init(_ decision: CheckpointDecision) {
+        action = decision.action
+        note = decision.note
+    }
+}
+
 private struct SnapshotCheckpointPayload: Decodable {
     let id: String
     let phaseId: String
@@ -1088,6 +1103,7 @@ private struct SnapshotCheckpointPayload: Decodable {
     let captureStatus: RuntimeCaptureStatus
     let captureUrl: String?
     let captureClaim: SnapshotCaptureClaimPayload?
+    let decision: SnapshotCheckpointDecisionPayload?
     let createdAt: String
     let decidedAt: String?
 
@@ -1105,6 +1121,7 @@ private struct SnapshotCheckpointPayload: Decodable {
         case captureStatus = "capture_status"
         case captureUrl = "capture_url"
         case captureClaim = "capture_claim"
+        case decision
         case createdAt = "created_at"
         case decidedAt = "decided_at"
     }
@@ -1131,6 +1148,7 @@ private struct SnapshotCheckpointPayload: Decodable {
         mermaidSources = try container.decodeIfPresent([SnapshotMermaidSourcePayload].self, forKey: .mermaidSources) ?? []
         captureUrl = try container.decodeIfPresent(String.self, forKey: .captureUrl)
         captureClaim = try container.decodeIfPresent(SnapshotCaptureClaimPayload.self, forKey: .captureClaim)
+        decision = try container.decodeIfPresent(SnapshotCheckpointDecisionPayload.self, forKey: .decision)
         createdAt = try container.decode(String.self, forKey: .createdAt)
         decidedAt = try container.decodeIfPresent(String.self, forKey: .decidedAt)
 
@@ -1171,6 +1189,7 @@ private struct SnapshotCheckpointPayload: Decodable {
         captureStatus = RuntimeCaptureStatus(checkpoint.captureStatus)
         captureUrl = checkpoint.captureUrl
         captureClaim = checkpoint.captureClaim.map(SnapshotCaptureClaimPayload.init)
+        decision = checkpoint.decision.map(SnapshotCheckpointDecisionPayload.init)
         createdAt = checkpoint.createdAt
         decidedAt = checkpoint.decidedAt
     }
@@ -1206,6 +1225,7 @@ private struct SnapshotRunPayload: Decodable {
     let createdAt: String
     let updatedAt: String
     let activeCheckpoint: SnapshotCheckpointPayload?
+    let pastCheckpoints: [SnapshotCheckpointPayload]
     let ideaId: String?
     let ideaTitle: String?
     let ideaDescription: String?
@@ -1224,6 +1244,7 @@ private struct SnapshotRunPayload: Decodable {
         case createdAt = "created_at"
         case updatedAt = "updated_at"
         case activeCheckpoint = "active_checkpoint"
+        case pastCheckpoints = "past_checkpoints"
         case ideaId = "idea_id"
         case ideaTitle = "idea_title"
         case ideaDescription = "idea_description"
@@ -1244,6 +1265,7 @@ private struct SnapshotRunPayload: Decodable {
         createdAt = try container.decode(String.self, forKey: .createdAt)
         updatedAt = try container.decode(String.self, forKey: .updatedAt)
         activeCheckpoint = try container.decodeIfPresent(SnapshotCheckpointPayload.self, forKey: .activeCheckpoint)
+        pastCheckpoints = try container.decodeIfPresent([SnapshotCheckpointPayload].self, forKey: .pastCheckpoints) ?? []
         ideaId = try container.decodeIfPresent(String.self, forKey: .ideaId)
         ideaTitle = try container.decodeIfPresent(String.self, forKey: .ideaTitle)
         ideaDescription = try container.decodeIfPresent(String.self, forKey: .ideaDescription)
@@ -1278,6 +1300,7 @@ private struct SnapshotRunPayload: Decodable {
         createdAt = run.createdAt
         updatedAt = run.updatedAt
         activeCheckpoint = run.activeCheckpoint.map(SnapshotCheckpointPayload.init)
+        pastCheckpoints = run.pastCheckpoints.map(SnapshotCheckpointPayload.init)
         ideaId = run.ideaId
         ideaTitle = run.ideaTitle
         ideaDescription = run.ideaDescription
@@ -1352,6 +1375,13 @@ private extension RuntimeCaptureClaim {
     }
 }
 
+private extension RuntimeCheckpointDecision {
+    init(_ payload: SnapshotCheckpointDecisionPayload) {
+        action = payload.action
+        note = payload.note
+    }
+}
+
 private extension RuntimeCheckpointState {
     init(_ payload: SnapshotCheckpointPayload) {
         id = payload.id
@@ -1367,6 +1397,7 @@ private extension RuntimeCheckpointState {
         captureStatus = payload.captureStatus
         captureUrl = payload.captureUrl
         captureClaim = payload.captureClaim.map(RuntimeCaptureClaim.init)
+        decision = payload.decision.map(RuntimeCheckpointDecision.init)
         createdAt = payload.createdAt
         decidedAt = payload.decidedAt
     }
@@ -1395,6 +1426,7 @@ private extension RuntimeRunState {
         createdAt = payload.createdAt
         updatedAt = payload.updatedAt
         activeCheckpoint = payload.activeCheckpoint.map(RuntimeCheckpointState.init)
+        pastCheckpoints = payload.pastCheckpoints.map(RuntimeCheckpointState.init)
         ideaId = payload.ideaId
         ideaTitle = payload.ideaTitle
         ideaDescription = payload.ideaDescription

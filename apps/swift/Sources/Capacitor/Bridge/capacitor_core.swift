@@ -6153,6 +6153,7 @@ public struct RunState {
     public var phases: [PhaseInstance]
     public var currentPhaseIndex: UInt32
     public var activeCheckpoint: ActiveCheckpoint?
+    public var pastCheckpoints: [ActiveCheckpoint]
     public var sessionId: String?
     /**
      * Strangler bridge: links to existing delegation worker when in execution phase.
@@ -6173,7 +6174,7 @@ public struct RunState {
 
     /// Default memberwise initializers are never public by default, so we
     /// declare one manually.
-    public init(id: String, projectPath: String, methodId: String, methodName: String, involvement: InvolvementLevel, status: RunStatus, phases: [PhaseInstance], currentPhaseIndex: UInt32, activeCheckpoint: ActiveCheckpoint?, sessionId: String?,
+    public init(id: String, projectPath: String, methodId: String, methodName: String, involvement: InvolvementLevel, status: RunStatus, phases: [PhaseInstance], currentPhaseIndex: UInt32, activeCheckpoint: ActiveCheckpoint?, pastCheckpoints: [ActiveCheckpoint], sessionId: String?,
                 /* 
                     * Strangler bridge: links to existing delegation worker when in execution phase.
                     */ delegationWorkerId: String?,
@@ -6193,6 +6194,7 @@ public struct RunState {
         self.phases = phases
         self.currentPhaseIndex = currentPhaseIndex
         self.activeCheckpoint = activeCheckpoint
+        self.pastCheckpoints = pastCheckpoints
         self.sessionId = sessionId
         self.delegationWorkerId = delegationWorkerId
         self.statusMessage = statusMessage
@@ -6233,6 +6235,9 @@ extension RunState: Equatable, Hashable {
         if lhs.activeCheckpoint != rhs.activeCheckpoint {
             return false
         }
+        if lhs.pastCheckpoints != rhs.pastCheckpoints {
+            return false
+        }
         if lhs.sessionId != rhs.sessionId {
             return false
         }
@@ -6270,6 +6275,7 @@ extension RunState: Equatable, Hashable {
         hasher.combine(phases)
         hasher.combine(currentPhaseIndex)
         hasher.combine(activeCheckpoint)
+        hasher.combine(pastCheckpoints)
         hasher.combine(sessionId)
         hasher.combine(delegationWorkerId)
         hasher.combine(statusMessage)
@@ -6297,6 +6303,7 @@ public struct FfiConverterTypeRunState: FfiConverterRustBuffer {
                 phases: FfiConverterSequenceTypePhaseInstance.read(from: &buf),
                 currentPhaseIndex: FfiConverterUInt32.read(from: &buf),
                 activeCheckpoint: FfiConverterOptionTypeActiveCheckpoint.read(from: &buf),
+                pastCheckpoints: FfiConverterSequenceTypeActiveCheckpoint.read(from: &buf),
                 sessionId: FfiConverterOptionString.read(from: &buf),
                 delegationWorkerId: FfiConverterOptionString.read(from: &buf),
                 statusMessage: FfiConverterOptionString.read(from: &buf),
@@ -6318,6 +6325,7 @@ public struct FfiConverterTypeRunState: FfiConverterRustBuffer {
         FfiConverterSequenceTypePhaseInstance.write(value.phases, into: &buf)
         FfiConverterUInt32.write(value.currentPhaseIndex, into: &buf)
         FfiConverterOptionTypeActiveCheckpoint.write(value.activeCheckpoint, into: &buf)
+        FfiConverterSequenceTypeActiveCheckpoint.write(value.pastCheckpoints, into: &buf)
         FfiConverterOptionString.write(value.sessionId, into: &buf)
         FfiConverterOptionString.write(value.delegationWorkerId, into: &buf)
         FfiConverterOptionString.write(value.statusMessage, into: &buf)
@@ -9651,6 +9659,31 @@ private struct FfiConverterSequenceString: FfiConverterRustBuffer {
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             try seq.append(FfiConverterString.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+private struct FfiConverterSequenceTypeActiveCheckpoint: FfiConverterRustBuffer {
+    typealias SwiftType = [ActiveCheckpoint]
+
+    static func write(_ value: [ActiveCheckpoint], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeActiveCheckpoint.write(item, into: &buf)
+        }
+    }
+
+    static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [ActiveCheckpoint] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [ActiveCheckpoint]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            try seq.append(FfiConverterTypeActiveCheckpoint.read(from: &buf))
         }
         return seq
     }

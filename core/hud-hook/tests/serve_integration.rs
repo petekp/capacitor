@@ -1603,6 +1603,135 @@ fn runtime_run_submit_decision_does_not_write_checkpoint_bridge_file_when_mutati
 }
 
 #[test]
+fn runtime_run_submit_decision_rejects_when_checkpoint_bridge_pending_marker_is_malformed() {
+    let temp_dir = unique_temp_dir("serve-runtime-run-decision-malformed-pending");
+    let snapshot_path = temp_dir.join("snapshot.json");
+    let auth_token = "decision-malformed-token";
+    let run_id = "run-decision-malformed";
+
+    let (_server, port) =
+        ServerGuard::spawn_service_bootstrap_ready(&temp_dir, &snapshot_path, auth_token);
+
+    let authorization = format!("Bearer {auth_token}");
+    let checkpoint_id = create_run_with_active_checkpoint(port, &authorization, run_id);
+
+    let pending_file = pending_path(&temp_dir, run_id, &checkpoint_id);
+    fs::create_dir_all(pending_file.parent().expect("pending parent"))
+        .expect("create pending parent");
+    fs::write(&pending_file, "{not valid json").expect("write malformed pending marker");
+
+    let (decision_status, decision_body) = submit_decision(
+        port,
+        &authorization,
+        run_id,
+        &checkpoint_id,
+        "approve",
+        Some("Ship it"),
+    );
+    assert_eq!(decision_status, 200, "body: {decision_body}");
+
+    let outcome: serde_json::Value =
+        serde_json::from_str(&decision_body).expect("parse mutation outcome");
+    assert_eq!(
+        outcome["ok"].as_bool(),
+        Some(false),
+        "malformed bridge marker should reject the runtime mutation: {decision_body}"
+    );
+    assert!(
+        outcome["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("checkpoint bridge relay failed"),
+        "body: {decision_body}"
+    );
+
+    let snapshot = fetch_runtime_snapshot(port, &authorization);
+    assert_eq!(snapshot["runs"][0]["status"].as_str(), Some("paused"));
+    assert_eq!(
+        snapshot["runs"][0]["active_checkpoint"]["id"].as_str(),
+        Some(checkpoint_id.as_str()),
+        "checkpoint should remain active and retryable"
+    );
+
+    let decision_file = decision_path(&temp_dir, run_id, &checkpoint_id);
+    assert!(
+        !decision_file.exists(),
+        "relay should not write a decision from a malformed pending marker"
+    );
+    assert!(
+        pending_file.exists(),
+        "malformed pending marker should remain for debugging/retry"
+    );
+}
+
+#[test]
+fn runtime_run_submit_decision_rejects_when_checkpoint_bridge_decision_file_cannot_be_written() {
+    let temp_dir = unique_temp_dir("serve-runtime-run-decision-write-failure");
+    let snapshot_path = temp_dir.join("snapshot.json");
+    let auth_token = "decision-write-failure-token";
+    let run_id = "run-decision-write-failure";
+
+    let (_server, port) =
+        ServerGuard::spawn_service_bootstrap_ready(&temp_dir, &snapshot_path, auth_token);
+
+    let authorization = format!("Bearer {auth_token}");
+    let checkpoint_id = create_run_with_active_checkpoint(port, &authorization, run_id);
+
+    let pending = CheckpointBridgePending {
+        version: CHECKPOINT_BRIDGE_PROTOCOL_VERSION,
+        project_path: "/tmp/runtime-service-project".to_string(),
+        run_id: run_id.to_string(),
+        checkpoint_id: checkpoint_id.clone(),
+        phase_id: "phase-001".to_string(),
+        gate_type: "approval".to_string(),
+        manifest_path: "/tmp/runtime-service-project/.capacitor/checkpoints/gate.json".to_string(),
+        created_at: "2026-03-24T12:00:00Z".to_string(),
+    };
+    let pending_file = pending_path(&temp_dir, run_id, &checkpoint_id);
+    write_json_atomic(&pending_file, &pending).expect("write pending marker");
+
+    let decision_file = decision_path(&temp_dir, run_id, &checkpoint_id);
+    fs::create_dir_all(&decision_file).expect("create conflicting decision directory");
+
+    let (decision_status, decision_body) = submit_decision(
+        port,
+        &authorization,
+        run_id,
+        &checkpoint_id,
+        "approve",
+        Some("Ship it"),
+    );
+    assert_eq!(decision_status, 200, "body: {decision_body}");
+
+    let outcome: serde_json::Value =
+        serde_json::from_str(&decision_body).expect("parse mutation outcome");
+    assert_eq!(
+        outcome["ok"].as_bool(),
+        Some(false),
+        "decision write failure should reject the runtime mutation: {decision_body}"
+    );
+    assert!(
+        outcome["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("checkpoint bridge relay failed"),
+        "body: {decision_body}"
+    );
+
+    let snapshot = fetch_runtime_snapshot(port, &authorization);
+    assert_eq!(snapshot["runs"][0]["status"].as_str(), Some("paused"));
+    assert_eq!(
+        snapshot["runs"][0]["active_checkpoint"]["id"].as_str(),
+        Some(checkpoint_id.as_str()),
+        "checkpoint should remain active and retryable"
+    );
+    assert!(
+        pending_file.exists(),
+        "pending marker should remain when relay cannot commit the decision"
+    );
+}
+
+#[test]
 fn runtime_run_submit_decision_does_not_write_checkpoint_bridge_file_when_unauthorized() {
     let temp_dir = unique_temp_dir("serve-runtime-run-decision-unauthorized");
     let snapshot_path = temp_dir.join("snapshot.json");

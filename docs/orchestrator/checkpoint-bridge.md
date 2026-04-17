@@ -35,13 +35,13 @@ The checkpoint bridge connects method runner gates to the run kernel checkpoint 
    - `RunCheckpointReviewWindow.swift:437-458` (submit flow)
    - `AppState.swift:1414-1429` (mutation dispatch)
 
-8. **Relay writes decision file** -- The hud-hook HTTP handler (`handle_runtime_mutate_run`) calls `relay_decision()` after the runtime mutation succeeds. The relay reads the pending marker, writes a `CheckpointBridgeDecision` JSON to `~/.capacitor/runtime/checkpoint-bridge/<run_id>/<checkpoint_id>.json`, then deletes the pending marker and attempts to clean up the run directory.
-   - HTTP handler: `core/hud-hook/src/serve.rs:282-316`
-   - Relay logic: `core/hud-hook/src/checkpoint_bridge_relay.rs:20-121`
+8. **Relay commits decision file** -- The hud-hook HTTP handler (`handle_runtime_mutate_run`) commits `SubmitDecision` through `mutate_run_with_commit`. For bridge-managed checkpoints, the commit callback reads the pending marker, writes a `CheckpointBridgeDecision` JSON to `~/.capacitor/runtime/checkpoint-bridge/<run_id>/<checkpoint_id>.json`, then deletes the pending marker and attempts to clean up the run directory. If the pending marker is malformed or the decision file cannot be written, the run mutation is rejected and the active checkpoint remains visible for retry.
+   - HTTP handler: `core/hud-hook/src/handlers.rs:498-535`
+   - Relay logic: `core/hud-hook/src/checkpoint_bridge_relay.rs`
 
 9. **Bridge polls and unblocks** -- `BridgeInteractiveIO::capture_response()` polls for the decision file at 500ms intervals. When found, it normalizes the action ("approve"/"approved" -> "approved", "request_changes"/"rejected" -> "rejected", unknown -> "rejected"), clears `current_gate_id`, deletes the decision file, and returns the normalized response to the gate evaluator.
-   - Poll loop: `checkpoint_bridge.rs:283-235`
-   - Normalization: `checkpoint_bridge.rs:112-124`
+   - Poll loop: `checkpoint_bridge.rs:197-239`
+   - Normalization: `checkpoint_bridge.rs:116-128`
 
 ## Protocol Format
 
@@ -103,17 +103,19 @@ Any failure in `emit_gate_checkpoint` cleans up state and falls back to the inte
 
 The key invariant: `current_gate_id` is only set to `Some(gate_id)` after all of pending marker write + runtime mutation succeed (`checkpoint_bridge.rs:283`). If either step fails, `capture_response()` falls through to the fallback IO.
 
-### Relay Side (fail-open)
+### Relay Side (commit-coupled)
 
-`relay_decision` swallows errors and returns early without writing the decision file in several cases:
+`relay_decision` is part of the successful `SubmitDecision` commit for bridge-managed checkpoints:
 
-- **Wrong mutation kind or failed outcome**: Silent no-op. `checkpoint_bridge_relay.rs:21`
-- **Missing checkpoint_id or decision_action**: Logs warning, returns. `checkpoint_bridge_relay.rs:25-43`
-- **No pending marker on disk**: Silent no-op (this is the normal case for non-bridge mutations). `checkpoint_bridge_relay.rs:45-47`
-- **Pending marker unreadable or unparseable**: Logs warning, returns. `checkpoint_bridge_relay.rs:50-72`
-- **Decision file write failure**: Logs warning, returns. `checkpoint_bridge_relay.rs:84-93`
+- **Wrong mutation kind**: No-op.
+- **No pending marker on disk**: No-op (this is the normal case for non-bridge mutations).
+- **Malformed or unreadable pending marker**: Returns an error. The runtime mutation is rejected and the active checkpoint remains visible/retryable.
+- **Decision file write failure**: Returns an error. The runtime mutation is rejected and the active checkpoint remains visible/retryable.
+- **Pending marker cleanup failure after decision write**: Logs warning but does not reject, because the bridge can already unblock from the decision file.
 
-If the relay fails to write the decision file after the HTTP mutation has already succeeded (the runtime has already accepted the decision), the bridge's `capture_response` will continue polling until it hits `DECISION_POLL_TIMEOUT` and returns "rejected". This is a known gap: the runtime state reflects the approved decision but the method runner treats the gate as rejected.
+The key invariant: for bridge-managed checkpoints, the runtime does not accept and clear a `SubmitDecision` unless the bridge decision file was committed successfully.
+
+Accepted decisions move the decided checkpoint from `active_checkpoint` into the run's `past_checkpoints` history, preserving the decision, timestamp, and review metadata for snapshot consumers.
 
 ### Timeout Behavior
 
@@ -182,10 +184,12 @@ This identity is what allows the relay to find the correct pending marker: the S
 
 | Test | What it proves |
 |------|---------------|
-| `runtime_run_submit_decision_writes_checkpoint_bridge_file_when_pending_marker_exists` (line 738) | Relay writes decision file and cleans up pending marker on successful `SubmitDecision` |
-| `runtime_run_submit_decision_is_noop_without_checkpoint_bridge_pending_marker` (line 793) | Relay is a no-op when no pending marker exists (non-bridge mutations) |
-| `runtime_run_submit_decision_does_not_write_checkpoint_bridge_file_when_mutation_is_rejected` (line 823) | Relay does not write decision file when the runtime rejects the mutation |
-| `runtime_run_submit_decision_does_not_write_checkpoint_bridge_file_when_unauthorized` (line 878) | Unauthorized requests never trigger the relay |
+| `runtime_run_submit_decision_writes_checkpoint_bridge_file_when_pending_marker_exists` | Relay writes decision file and cleans up pending marker on successful `SubmitDecision` |
+| `runtime_run_submit_decision_is_noop_without_checkpoint_bridge_pending_marker` | Relay is a no-op when no pending marker exists (non-bridge mutations) |
+| `runtime_run_submit_decision_does_not_write_checkpoint_bridge_file_when_mutation_is_rejected` | Relay does not write decision file when the runtime rejects the mutation |
+| `runtime_run_submit_decision_rejects_when_checkpoint_bridge_pending_marker_is_malformed` | Malformed pending markers reject the mutation and leave the checkpoint retryable |
+| `runtime_run_submit_decision_rejects_when_checkpoint_bridge_decision_file_cannot_be_written` | Decision write failures reject the mutation and leave the checkpoint retryable |
+| `runtime_run_submit_decision_does_not_write_checkpoint_bridge_file_when_unauthorized` | Unauthorized requests never trigger the relay |
 
 ### `apps/swift/Tests/CapacitorTests/AppStateRunCheckpointTests.swift`
 

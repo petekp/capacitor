@@ -55,7 +55,7 @@ The four missing pieces identified in the original analysis have been built and 
 | What exists | What does not exist |
 |-------------|---------------------|
 | Method runs show working/waiting/completed/failed visual state on project cards | **CLOSED.** RunVisualState extended with completed/failed cases + terminal visibility window |
-| Active checkpoint triggers review window | No history of past checkpoints for a run (**DEFERRED** — requires Rust runtime contract change) |
+| Active checkpoint triggers review window | **CLOSED.** Decided checkpoints are archived in `runs[].past_checkpoints`; no timeline UI yet |
 | `RunStatus::Completed` surfaces in project cards and ActivityPanel | **CLOSED.** RunCompletionCard shows method name, elapsed time, and status |
 | Delegation loop and method runner coexist in AppState | No unified "orchestration mode" view that shows both |
 | `DelegationReviewManifest` decodes review JSON for both paths | The shared decoder is exercised by both paths, but delegation loop is disabled by default in `.frontier` |
@@ -70,9 +70,9 @@ The original four missing pieces have been built. The remaining gaps are:
 
 `RunVisualState` extended with `.completed` and `.failed` cases. Terminal states are visible on project cards for 1 hour after completion. The `statusMessage` from the method runner carries phase labels that appear as context text. Card visual state now reflects completed/failed runs with appropriate context text.
 
-### 2. Checkpoint history / timeline — DEFERRED
+### 2. Checkpoint history — CLOSED; timeline UI deferred
 
-Requires Rust-side runtime contract extension to expose `past_checkpoints: Vec<CheckpointSnapshot>` in the runtime snapshot. Currently only the active checkpoint is available. A future run should design the checkpoint archive protocol.
+The Rust run kernel now archives decided checkpoints in `past_checkpoints` when `SubmitDecision` clears `active_checkpoint`. Each archived checkpoint keeps its `decision`, `decided_at`, artifacts, and checkpoint metadata, and Swift decodes this typed history from runtime snapshots. A dedicated timeline UI is still deferred.
 
 ### 3. Method run completion UI — CLOSED
 

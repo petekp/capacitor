@@ -263,6 +263,8 @@ pub struct RunState {
     pub phases: Vec<PhaseInstance>,
     pub current_phase_index: u32,
     pub active_checkpoint: Option<ActiveCheckpoint>,
+    #[serde(default)]
+    pub past_checkpoints: Vec<ActiveCheckpoint>,
     pub session_id: Option<String>,
     /// Strangler bridge: links to existing delegation worker when in execution phase.
     pub delegation_worker_id: Option<String>,

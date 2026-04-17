@@ -356,6 +356,24 @@ final class RuntimeClientTests: XCTestCase {
         XCTAssertEqual(snapshot.runs.first?.delegationWorkerId, "worker-1")
     }
 
+    func testFetchRuntimeSnapshotMapsPastCheckpointsAndDecisions() async throws {
+        let client = try makeClient(
+            coreSnapshot: Self.makeRunPastCheckpointSnapshot(),
+        )
+
+        let snapshot = try await client.fetchRuntimeSnapshot(correlationId: "run-past-checkpoint")
+
+        let run = try XCTUnwrap(snapshot.runs.first)
+        XCTAssertNil(run.activeCheckpoint)
+        XCTAssertEqual(run.pastCheckpoints.count, 1)
+        let checkpoint = try XCTUnwrap(run.pastCheckpoints.first)
+        XCTAssertEqual(checkpoint.id, "checkpoint-decided")
+        XCTAssertEqual(checkpoint.status, "decided")
+        XCTAssertEqual(checkpoint.decidedAt, "2026-02-28T19:06:00Z")
+        XCTAssertEqual(checkpoint.decision?.action, "request_changes")
+        XCTAssertEqual(checkpoint.decision?.note, "Needs one more pass")
+    }
+
     func testFetchRuntimeSnapshotMapsCustomCheckpointKind() async throws {
         let client = try makeClient(
             coreSnapshot: Self.makeRunCustomCheckpointKindSnapshot(),
@@ -1143,6 +1161,14 @@ final class RuntimeClientTests: XCTestCase {
         makeCoreSnapshotResponse(
             runsJSON: """
             ,"runs":[{"id":"run-001","project_path":"/tmp/core-project","method_id":"method-001","method_name":"Execution","status":"paused","session_id":"session-core","delegation_worker_id":"worker-1","created_at":"2026-02-28T19:00:00Z","updated_at":"2026-02-28T19:03:00Z","active_checkpoint":{"id":"checkpoint-001","phase_id":"phase-001","kind":{"custom":{"label":"QA hold"}},"status":"active","title":"Capture homepage","summary":"Wait for QA confirmation.","brief_path":null,"manifest_path":null,"media_artifacts":[],"mermaid_sources":[],"capture_status":"pending","capture_url":"http://localhost:3000","capture_claim":null,"created_at":"2026-02-28T19:00:00Z","decided_at":null}}]
+            """,
+        )
+    }
+
+    private static func makeRunPastCheckpointSnapshot() -> Data {
+        makeCoreSnapshotResponse(
+            runsJSON: """
+            ,"runs":[{"id":"run-001","project_path":"/tmp/core-project","method_id":"method-001","method_name":"Execution","status":"active","session_id":"session-core","delegation_worker_id":"worker-1","created_at":"2026-02-28T19:00:00Z","updated_at":"2026-02-28T19:06:00Z","active_checkpoint":null,"past_checkpoints":[{"id":"checkpoint-decided","phase_id":"phase-001","kind":"implementation_milestone","status":"decided","title":"Capture homepage","summary":"Verify the implementation checkpoint.","brief_path":"/tmp/core-project/brief.md","manifest_path":"/tmp/core-project/manifest.json","media_artifacts":[],"mermaid_sources":[],"capture_status":"not_requested","capture_url":null,"capture_claim":null,"decision":{"action":"request_changes","note":"Needs one more pass"},"created_at":"2026-02-28T19:00:00Z","decided_at":"2026-02-28T19:06:00Z"}]}]
             """,
         )
     }

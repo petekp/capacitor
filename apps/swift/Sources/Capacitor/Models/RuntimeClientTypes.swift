@@ -399,6 +399,11 @@ struct RuntimeCaptureClaim: Equatable {
     let observedCaptureUrl: String?
 }
 
+struct RuntimeCheckpointDecision: Codable, Equatable {
+    let action: String
+    let note: String?
+}
+
 struct RuntimeMediaArtifact: Codable, Equatable {
     let artifactType: String
     let path: String
@@ -441,8 +446,45 @@ struct RuntimeCheckpointState: Equatable {
     let captureStatus: RuntimeCaptureStatus
     let captureUrl: String?
     let captureClaim: RuntimeCaptureClaim?
+    let decision: RuntimeCheckpointDecision?
     let createdAt: String
     let decidedAt: String?
+
+    init(
+        id: String,
+        phaseId: String,
+        kind: RuntimeCheckpointKind,
+        status: String,
+        title: String,
+        summary: String?,
+        briefPath: String?,
+        manifestPath: String?,
+        mediaArtifacts: [RuntimeMediaArtifact],
+        mermaidSources: [RuntimeMermaidSource],
+        captureStatus: RuntimeCaptureStatus,
+        captureUrl: String?,
+        captureClaim: RuntimeCaptureClaim?,
+        decision: RuntimeCheckpointDecision? = nil,
+        createdAt: String,
+        decidedAt: String?,
+    ) {
+        self.id = id
+        self.phaseId = phaseId
+        self.kind = kind
+        self.status = status
+        self.title = title
+        self.summary = summary
+        self.briefPath = briefPath
+        self.manifestPath = manifestPath
+        self.mediaArtifacts = mediaArtifacts
+        self.mermaidSources = mermaidSources
+        self.captureStatus = captureStatus
+        self.captureUrl = captureUrl
+        self.captureClaim = captureClaim
+        self.decision = decision
+        self.createdAt = createdAt
+        self.decidedAt = decidedAt
+    }
 }
 
 struct RuntimePhaseInstance: Equatable, Decodable {
@@ -475,6 +517,7 @@ struct RuntimeRunState: Equatable {
     let createdAt: String
     let updatedAt: String
     let activeCheckpoint: RuntimeCheckpointState?
+    let pastCheckpoints: [RuntimeCheckpointState]
     let ideaId: String?
     let ideaTitle: String?
     let ideaDescription: String?
@@ -493,6 +536,7 @@ struct RuntimeRunState: Equatable {
         createdAt: String,
         updatedAt: String,
         activeCheckpoint: RuntimeCheckpointState?,
+        pastCheckpoints: [RuntimeCheckpointState] = [],
         ideaId: String?,
         ideaTitle: String?,
         ideaDescription: String?,
@@ -510,6 +554,7 @@ struct RuntimeRunState: Equatable {
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.activeCheckpoint = activeCheckpoint
+        self.pastCheckpoints = pastCheckpoints
         self.ideaId = ideaId
         self.ideaTitle = ideaTitle
         self.ideaDescription = ideaDescription
