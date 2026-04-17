@@ -596,7 +596,11 @@ fn emit_and_enforce_gate(
         env.payload = serde_json::json!({ "reason": reason });
         append_event(ctx.events_path, &mut env, &mut *ctx.current_seq)?;
     }
-    report_status_kind(ctx.reporter, RunStatusEventKind::Fail);
+    report_status_message(
+        ctx.reporter,
+        RunStatusEventKind::Pause,
+        format!("Run blocked: {reason}"),
+    );
 
     Err(RunError::PhaseGateBlocked {
         phase_id: phase.id.clone(),

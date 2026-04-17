@@ -315,6 +315,99 @@ fn execute_run_reports_spec_status_messages() {
 }
 
 #[test]
+fn rejected_gate_reports_pause_instead_of_fail() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let source = write_definition(&temp, &gated_method_yaml());
+    let reporter = SpyRunStatusReporter::default();
+    let interactive = FakeInteractiveIO::new("rejected");
+
+    let result = execute_run_with_reporter(
+        &source,
+        &FakePromptBuilder,
+        &FakeWorkerDispatcher,
+        &interactive,
+        &reporter,
+    );
+    assert!(result.is_err(), "rejected gate should block execution");
+
+    let events = reporter.events();
+    assert!(
+        events
+            .iter()
+            .any(|event| event.kind == RunStatusEventKind::Pause),
+        "expected rejected gate to pause the runtime run: {events:?}"
+    );
+    assert!(
+        !events
+            .iter()
+            .any(|event| event.kind == RunStatusEventKind::Fail),
+        "rejected gate should not report a terminal runtime failure: {events:?}"
+    );
+}
+
+#[test]
+fn resumed_rejected_gate_reports_pause_instead_of_fail() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let source = write_definition(&temp, &gated_method_yaml());
+
+    execute_run_with_reporter(
+        &source,
+        &FakePromptBuilder,
+        &FakeWorkerDispatcher,
+        &FakeInteractiveIO::new("approved"),
+        &SpyRunStatusReporter::default(),
+    )
+    .expect("seed complete gated run");
+
+    let paths = MethodRunPaths::new(&source.execution_root);
+    let events_path = paths.events_log();
+    let events = recover_events(&events_path).expect("recover events");
+    let gate_index = events
+        .iter()
+        .position(|event| event.kind == MethodEventKind::GateEvaluated)
+        .expect("expected gate evaluation event");
+
+    {
+        let mut file = std::fs::File::create(&events_path).expect("rewrite events log");
+        for event in &events[..gate_index] {
+            writeln!(
+                file,
+                "{}",
+                serde_json::to_string(event).expect("serialize event")
+            )
+            .expect("write truncated event");
+        }
+    }
+
+    let reporter = SpyRunStatusReporter::default();
+    let result = resume_run_with_reporter(
+        &source.execution_root,
+        &FakePromptBuilder,
+        &FakeWorkerDispatcher,
+        &FakeInteractiveIO::new("rejected"),
+        &reporter,
+    );
+    assert!(
+        result.is_err(),
+        "rejected resumed gate should block execution"
+    );
+
+    let events = reporter.events();
+    assert!(
+        events
+            .iter()
+            .any(|event| event.kind == RunStatusEventKind::Pause),
+        "expected rejected resumed gate to pause the runtime run: {events:?}"
+    );
+    assert!(
+        !events
+            .iter()
+            .any(|event| event.kind == RunStatusEventKind::Fail),
+        "rejected resumed gate should not report a terminal runtime failure: {events:?}"
+    );
+}
+
+#[test]
 fn resume_run_emits_immediate_recovered_phase_heartbeat() {
     let temp = tempfile::tempdir().expect("tempdir");
     let source = write_definition(&temp, &two_phase_method_yaml());
@@ -525,7 +618,7 @@ fn reporter_panics_do_not_abort_run_execution() {
 #[test]
 fn runtime_reporter_posts_mutate_commands_with_expected_mapping() {
     let auth_token = "secret-token";
-    let server = StubMutationServer::spawn(auth_token, 3);
+    let server = StubMutationServer::spawn(auth_token, 4);
     let reporter = RuntimeRunStatusReporter::new(
         server.endpoint(auth_token),
         PathBuf::from("/tmp/project"),
@@ -540,22 +633,30 @@ fn runtime_reporter_posts_mutate_commands_with_expected_mapping() {
         RunStatusEventKind::Heartbeat,
         Some("Composing prompt".to_string()),
     ));
+    reporter.report(RunStatusEvent::new(
+        RunStatusEventKind::Pause,
+        Some("Run blocked: gate rejected".to_string()),
+    ));
     reporter.report(RunStatusEvent::new(RunStatusEventKind::Complete, None));
 
     let request_a = server.captured_request();
     let request_b = server.captured_request();
     let request_c = server.captured_request();
+    let request_d = server.captured_request();
 
     assert_eq!(request_a.request_line, "POST /runtime/run/mutate HTTP/1.1");
     assert_eq!(request_b.request_line, "POST /runtime/run/mutate HTTP/1.1");
     assert_eq!(request_c.request_line, "POST /runtime/run/mutate HTTP/1.1");
+    assert_eq!(request_d.request_line, "POST /runtime/run/mutate HTTP/1.1");
 
     let command_a: MutateRunCommand =
         serde_json::from_str(&request_a.body).expect("parse start command");
     let command_b: MutateRunCommand =
         serde_json::from_str(&request_b.body).expect("parse heartbeat command");
     let command_c: MutateRunCommand =
-        serde_json::from_str(&request_c.body).expect("parse complete command");
+        serde_json::from_str(&request_c.body).expect("parse pause command");
+    let command_d: MutateRunCommand =
+        serde_json::from_str(&request_d.body).expect("parse complete command");
 
     assert_eq!(command_a.kind, RunMutationKind::Start);
     assert_eq!(command_a.status_message.as_deref(), Some("Run started"));
@@ -564,6 +665,11 @@ fn runtime_reporter_posts_mutate_commands_with_expected_mapping() {
         command_b.status_message.as_deref(),
         Some("Composing prompt")
     );
-    assert_eq!(command_c.kind, RunMutationKind::Complete);
-    assert!(command_c.status_message.is_none());
+    assert_eq!(command_c.kind, RunMutationKind::Pause);
+    assert_eq!(
+        command_c.status_message.as_deref(),
+        Some("Run blocked: gate rejected")
+    );
+    assert_eq!(command_d.kind, RunMutationKind::Complete);
+    assert!(command_d.status_message.is_none());
 }

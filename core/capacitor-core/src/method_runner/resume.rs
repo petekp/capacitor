@@ -643,7 +643,11 @@ fn resume_evaluate_gate(
             env.payload = serde_json::json!({ "reason": reason });
             append_event(events_path, &mut env, current_seq)?;
 
-            report_status_kind(reporter, RunStatusEventKind::Fail);
+            report_status_message(
+                reporter,
+                RunStatusEventKind::Pause,
+                format!("Run blocked: {reason}"),
+            );
             Err(RunError::PhaseGateBlocked {
                 phase_id: phase_def.id.clone(),
                 gate_id: gate.id.clone(),

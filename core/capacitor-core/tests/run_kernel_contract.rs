@@ -695,7 +695,7 @@ fn scenario_submit_decision_archives_decided_checkpoint_history() {
         .iter()
         .find(|run| run.id == "run-checkpoint-history")
         .expect("run exists");
-    assert_eq!(run.status, RunStatus::Active);
+    assert_eq!(run.status, RunStatus::Paused);
     assert!(run.active_checkpoint.is_none());
     assert_eq!(run.past_checkpoints.len(), 1);
     let decided = &run.past_checkpoints[0];

@@ -81,7 +81,6 @@ enum ProjectRunVisualStateResolver {
             statusMessage: cleanedStatusMessage(run.statusMessage),
         )
         if run.status == "paused",
-           run.activeCheckpoint != nil,
            !SessionStaleness.isPausedCheckpointStale(
                updatedAt: run.updatedAt,
                now: now,
@@ -112,7 +111,6 @@ enum ProjectRunVisualStateResolver {
 
     private static func priority(for run: RuntimeRunState, now: Date) -> Int? {
         if run.status == "paused",
-           run.activeCheckpoint != nil,
            !SessionStaleness.isPausedCheckpointStale(
                updatedAt: run.updatedAt,
                now: now,
