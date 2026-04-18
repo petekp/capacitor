@@ -72,7 +72,7 @@ The original four missing pieces have been built. The remaining gaps are:
 
 ### 2. Checkpoint history — CLOSED
 
-The Rust run kernel now archives decided checkpoints in `past_checkpoints` when `SubmitDecision` clears `active_checkpoint`. Each archived checkpoint keeps its `decision`, `decided_at`, artifacts, and checkpoint metadata, and Swift decodes this typed history from runtime snapshots. History is bounded to the most recent 50 decided checkpoints per run. Project Detail renders a run checkpoint timeline from the runtime snapshot's archived checkpoints plus any current active checkpoint, including decision state, notes, timestamps, and retry round numbers per phase.
+The Rust run kernel now archives decided checkpoints in `past_checkpoints` when `SubmitDecision` clears `active_checkpoint`. Each archived checkpoint keeps its `decision`, `decided_at`, artifacts, and checkpoint metadata, and Swift decodes this typed history from runtime snapshots. History is bounded to the most recent 50 decided checkpoints per run. Project Detail selects the latest run with checkpoint history and renders a run checkpoint timeline from that run's archived checkpoints plus any current active checkpoint, including decision state, notes, timestamps, and Swift-derived display round numbers per phase.
 
 ### 3. Method run completion UI — CLOSED
 
@@ -99,7 +99,7 @@ Comparing the full aspirational flow with what is now shipped:
 | Completion | Run completes; results surfaced in app | **Shipped.** `RunCompletionCard` in ActivityPanel shows method name, elapsed time, status |
 | Delegation fallback | Method step dispatches to existing delegation Worker | `RunState.delegation_worker_id` strangler bridge field exists. **Not exercised.** |
 | Phase progression UI | User sees which phase is active | **Shipped.** Terminal states visible on cards; statusMessage carries phase labels |
-| Checkpoint history UI | User can see prior checkpoint decisions for the selected run | **Shipped.** Project Detail shows `past_checkpoints` plus `activeCheckpoint` as a run checkpoint timeline |
+| Checkpoint history UI | User can see prior checkpoint decisions for the selected run | **Shipped.** Project Detail selects the latest checkpoint-history run and shows `past_checkpoints` plus `activeCheckpoint` as a run checkpoint timeline |
 
 ---
 

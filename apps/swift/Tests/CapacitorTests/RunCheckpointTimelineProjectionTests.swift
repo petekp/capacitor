@@ -138,6 +138,37 @@ final class RunCheckpointTimelineProjectionTests: XCTestCase {
         XCTAssertEqual(projection.entries.map(\.phaseRoundNumber), [1, 1, 2, 2])
     }
 
+    func testChronologyUsesDisplayedEventTimestamp() throws {
+        let lateDecision = makeCheckpoint(
+            id: "late-decision",
+            phaseID: "implementation",
+            title: "Created first decided second",
+            createdAt: "2026-03-26T10:00:00Z",
+            decidedAt: "2026-03-26T10:30:00Z",
+            decisionAction: "approve",
+        )
+        let earlyDecision = makeCheckpoint(
+            id: "early-decision",
+            phaseID: "implementation",
+            title: "Created second decided first",
+            createdAt: "2026-03-26T10:10:00Z",
+            decidedAt: "2026-03-26T10:20:00Z",
+            decisionAction: "approve",
+        )
+        let run = makeRun(pastCheckpoints: [lateDecision, earlyDecision])
+
+        let projection = try XCTUnwrap(RunCheckpointTimelineProjection(run: run))
+
+        XCTAssertEqual(projection.entries.map(\.checkpointID), [
+            "early-decision",
+            "late-decision",
+        ])
+        XCTAssertEqual(projection.entries.map(\.eventTimestamp), [
+            "2026-03-26T10:20:00Z",
+            "2026-03-26T10:30:00Z",
+        ])
+    }
+
     func testDecisionStateFallbacksUseRuntimeFacts() throws {
         let decidedWithoutDecision = makeCheckpoint(
             id: "checkpoint-decided",
@@ -164,6 +195,22 @@ final class RunCheckpointTimelineProjectionTests: XCTestCase {
             .unknown("escalate"),
         ])
         XCTAssertEqual(projection.entries.map(\.phaseName), ["phase-1", "phase-1"])
+    }
+
+    func testArchivedCheckpointWithoutDecidedAtUsesRecordedTimestampRole() throws {
+        let checkpoint = makeCheckpoint(
+            id: "checkpoint-recorded",
+            phaseID: "phase-1",
+            title: "Archived without decided timestamp",
+            status: "decided",
+            createdAt: "2026-03-26T10:00:00Z",
+        )
+        let run = makeRun(pastCheckpoints: [checkpoint])
+
+        let projection = try XCTUnwrap(RunCheckpointTimelineProjection(run: run))
+
+        XCTAssertEqual(projection.entries.first?.timestampRole, .recorded)
+        XCTAssertEqual(projection.entries.first?.eventTimestamp, "2026-03-26T10:00:00Z")
     }
 
     func testRepeatedGateCheckpointIDsStillProduceDistinctEntryIdentities() throws {
@@ -208,6 +255,42 @@ final class RunCheckpointTimelineProjectionTests: XCTestCase {
             "gate-review#2",
         ])
         XCTAssertEqual(projection.entries.map(\.phaseRoundNumber), [1, 2, 3])
+    }
+
+    func testDuplicateCheckpointIDsWithEqualTimestampsKeepRuntimeOrder() throws {
+        let run = makeRun(
+            pastCheckpoints: [
+                makeCheckpoint(
+                    id: "gate-review",
+                    phaseID: "implementation",
+                    title: "First recorded review",
+                    createdAt: "2026-03-26T10:00:00Z",
+                    decidedAt: "2026-03-26T10:05:00Z",
+                    decisionAction: "request_changes",
+                    decisionNote: "First",
+                ),
+                makeCheckpoint(
+                    id: "gate-review",
+                    phaseID: "implementation",
+                    title: "Second recorded review",
+                    createdAt: "2026-03-26T10:00:00Z",
+                    decidedAt: "2026-03-26T10:05:00Z",
+                    decisionAction: "request_changes",
+                    decisionNote: "Second",
+                ),
+            ],
+        )
+
+        let projection = try XCTUnwrap(RunCheckpointTimelineProjection(run: run))
+
+        XCTAssertEqual(projection.entries.map(\.title), [
+            "First recorded review",
+            "Second recorded review",
+        ])
+        XCTAssertEqual(projection.entries.map(\.id), [
+            "gate-review#0",
+            "gate-review#1",
+        ])
     }
 
     private func makeRun(

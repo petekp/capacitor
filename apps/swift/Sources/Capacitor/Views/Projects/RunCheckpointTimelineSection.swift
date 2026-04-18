@@ -8,6 +8,7 @@ struct RunCheckpointTimelineSection: View {
             DetailSectionLabel(
                 title: "RUN CHECKPOINTS",
                 count: projection.entries.count,
+                countAccessibilityLabel: "\(projection.entries.count) checkpoints",
             )
 
             VStack(alignment: .leading, spacing: 6) {
@@ -149,16 +150,29 @@ private struct RunCheckpointTimelineRow: View {
     }
 
     private var accessibilityLabel: String {
-        "\(entry.title), \(entry.decisionState.label), \(entry.phaseName) round \(entry.phaseRoundNumber)"
+        var parts = [
+            entry.title,
+            entry.decisionState.label,
+            entry.phaseName,
+            "round \(entry.phaseRoundNumber)",
+            entry.kindLabel,
+            timestampText(for: entry),
+        ]
+        if let decisionNote = entry.decisionNote, !decisionNote.isEmpty {
+            parts.append("note: \(decisionNote)")
+        }
+        return parts.joined(separator: ", ")
     }
 
     private func timestampText(for entry: RunCheckpointTimelineProjection.Entry) -> String {
         let timestamp = formattedTimestamp(entry.eventTimestamp)
-        switch entry.source {
-        case .active:
+        switch entry.timestampRole {
+        case .created:
             return "Created \(timestamp)"
-        case .archived:
+        case .decided:
             return "Decided \(timestamp)"
+        case .recorded:
+            return "Recorded \(timestamp)"
         }
     }
 

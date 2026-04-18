@@ -73,7 +73,7 @@ struct ProjectDetailView: View {
                     }
 
                     if appState.featureState.isMethodRunnerEnabled,
-                       let run = appState.activeRun(for: project),
+                       let run = appState.checkpointTimelineRun(for: project),
                        let projection = RunCheckpointTimelineProjection(run: run)
                     {
                         RunCheckpointTimelineSection(projection: projection)
@@ -233,6 +233,7 @@ struct ProjectDetailView: View {
 struct DetailSectionLabel: View {
     let title: String
     var count: Int?
+    var countAccessibilityLabel: String?
 
     var body: some View {
         HStack(spacing: 6) {
@@ -254,7 +255,7 @@ struct DetailSectionLabel: View {
                     .padding(.vertical, 2)
                     .background(Color.white.opacity(0.08))
                     .clipShape(Capsule())
-                    .accessibilityLabel("\(count) queued ideas")
+                    .accessibilityLabel(countAccessibilityLabel ?? "\(count) queued ideas")
             }
         }
     }

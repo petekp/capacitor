@@ -92,6 +92,133 @@ final class AppStateRunTests: XCTestCase {
         XCTAssertNil(appState.activeRun(for: idea, in: project))
     }
 
+    func testCheckpointTimelineRunIncludesCompletedHistoryOutsideVisualRunWindow() async {
+        let appState = AppState()
+        appState.cancelRuntimeAutomationForTesting()
+        let project = makeProject(path: "/tmp/core-project")
+        appState.projectState.projects = [project]
+        appState.setRuntimeSnapshotGenerationForTesting(1)
+
+        let completedRun = makeRun(
+            projectPath: project.path,
+            runID: "run-completed-history",
+            status: "completed",
+            ideaId: nil,
+            createdAt: "2026-03-26T10:00:00Z",
+            updatedAt: "2026-03-26T10:20:00Z",
+            pastCheckpoints: [
+                makeCheckpoint(
+                    id: "checkpoint-approved",
+                    createdAt: "2026-03-26T10:10:00Z",
+                    decidedAt: "2026-03-26T10:15:00Z",
+                    decisionAction: "approve",
+                ),
+            ],
+        )
+
+        await appState.applyRuntimeSnapshotForTesting(
+            makeRuntimeSnapshot(projectPath: project.path, runs: [completedRun]),
+            refreshGeneration: 1,
+            correlationId: "checkpoint-timeline-terminal-history",
+            projects: [project],
+        )
+
+        XCTAssertEqual(appState.checkpointTimelineRun(for: project)?.id, completedRun.id)
+    }
+
+    func testCheckpointTimelineRunIsNotDisplacedByNewerActiveRunWithoutCheckpoints() async {
+        let appState = AppState()
+        appState.cancelRuntimeAutomationForTesting()
+        let project = makeProject(path: "/tmp/core-project")
+        appState.projectState.projects = [project]
+        appState.setRuntimeSnapshotGenerationForTesting(1)
+
+        let historyRun = makeRun(
+            projectPath: project.path,
+            runID: "run-history",
+            status: "completed",
+            ideaId: nil,
+            createdAt: "2026-03-26T10:00:00Z",
+            updatedAt: "2026-03-26T10:15:00Z",
+            pastCheckpoints: [
+                makeCheckpoint(
+                    id: "checkpoint-approved",
+                    createdAt: "2026-03-26T10:10:00Z",
+                    decidedAt: "2026-03-26T10:14:00Z",
+                    decisionAction: "approve",
+                ),
+            ],
+        )
+        let activeRunWithoutHistory = makeRun(
+            projectPath: project.path,
+            runID: "run-active",
+            status: "active",
+            ideaId: nil,
+            createdAt: "2026-03-26T10:20:00Z",
+            updatedAt: "2026-03-26T10:30:00Z",
+        )
+
+        await appState.applyRuntimeSnapshotForTesting(
+            makeRuntimeSnapshot(projectPath: project.path, runs: [historyRun, activeRunWithoutHistory]),
+            refreshGeneration: 1,
+            correlationId: "checkpoint-timeline-not-visual-run",
+            projects: [project],
+        )
+
+        XCTAssertEqual(appState.activeRun(for: project)?.id, activeRunWithoutHistory.id)
+        XCTAssertEqual(appState.checkpointTimelineRun(for: project)?.id, historyRun.id)
+    }
+
+    func testCheckpointTimelineRunPrefersLatestCheckpointEventAcrossHistoryRuns() async {
+        let appState = AppState()
+        appState.cancelRuntimeAutomationForTesting()
+        let project = makeProject(path: "/tmp/core-project")
+        appState.projectState.projects = [project]
+        appState.setRuntimeSnapshotGenerationForTesting(1)
+
+        let olderEventRun = makeRun(
+            projectPath: project.path,
+            runID: "run-newer-updated-older-event",
+            status: "completed",
+            ideaId: nil,
+            createdAt: "2026-03-26T10:00:00Z",
+            updatedAt: "2026-03-26T10:40:00Z",
+            pastCheckpoints: [
+                makeCheckpoint(
+                    id: "checkpoint-older-event",
+                    createdAt: "2026-03-26T10:10:00Z",
+                    decidedAt: "2026-03-26T10:15:00Z",
+                    decisionAction: "approve",
+                ),
+            ],
+        )
+        let newerEventRun = makeRun(
+            projectPath: project.path,
+            runID: "run-older-updated-newer-event",
+            status: "completed",
+            ideaId: nil,
+            createdAt: "2026-03-26T10:01:00Z",
+            updatedAt: "2026-03-26T10:20:00Z",
+            pastCheckpoints: [
+                makeCheckpoint(
+                    id: "checkpoint-newer-event",
+                    createdAt: "2026-03-26T10:12:00Z",
+                    decidedAt: "2026-03-26T10:30:00Z",
+                    decisionAction: "approve",
+                ),
+            ],
+        )
+
+        await appState.applyRuntimeSnapshotForTesting(
+            makeRuntimeSnapshot(projectPath: project.path, runs: [olderEventRun, newerEventRun]),
+            refreshGeneration: 1,
+            correlationId: "checkpoint-timeline-latest-event",
+            projects: [project],
+        )
+
+        XCTAssertEqual(appState.checkpointTimelineRun(for: project)?.id, newerEventRun.id)
+    }
+
     private func makeProject(path: String) -> Project {
         Project(
             name: "Capacitor",
@@ -157,6 +284,8 @@ final class AppStateRunTests: XCTestCase {
         ideaId: String?,
         createdAt: String,
         updatedAt: String,
+        activeCheckpoint: RuntimeCheckpointState? = nil,
+        pastCheckpoints: [RuntimeCheckpointState] = [],
     ) -> RuntimeRunState {
         RuntimeRunState(
             id: runID,
@@ -169,10 +298,40 @@ final class AppStateRunTests: XCTestCase {
             statusMessage: "Drafting packet",
             createdAt: createdAt,
             updatedAt: updatedAt,
-            activeCheckpoint: nil,
+            activeCheckpoint: activeCheckpoint,
+            pastCheckpoints: pastCheckpoints,
             ideaId: ideaId,
             ideaTitle: "Fix bug",
             ideaDescription: "Description",
+        )
+    }
+
+    private func makeCheckpoint(
+        id: String,
+        phaseID: String = "phase-1",
+        createdAt: String,
+        decidedAt: String? = nil,
+        decisionAction: String? = nil,
+    ) -> RuntimeCheckpointState {
+        RuntimeCheckpointState(
+            id: id,
+            phaseId: phaseID,
+            kind: .implementationMilestone,
+            status: decidedAt == nil ? "active" : "decided",
+            title: "Checkpoint \(id)",
+            summary: "Review the current milestone.",
+            briefPath: nil,
+            manifestPath: nil,
+            mediaArtifacts: [],
+            mermaidSources: [],
+            captureStatus: .notRequested,
+            captureUrl: nil,
+            captureClaim: nil,
+            decision: decisionAction.map {
+                RuntimeCheckpointDecision(action: $0, note: nil)
+            },
+            createdAt: createdAt,
+            decidedAt: decidedAt,
         )
     }
 }

@@ -15,6 +15,12 @@ struct RunCheckpointTimelineProjection: Equatable {
             case unknown(String)
         }
 
+        enum TimestampRole: Equatable {
+            case created
+            case decided
+            case recorded
+        }
+
         let id: String
         let checkpointID: String
         let source: Source
@@ -28,9 +34,15 @@ struct RunCheckpointTimelineProjection: Equatable {
         let decisionNote: String?
         let createdAt: String
         let decidedAt: String?
+        let timestampRole: TimestampRole
 
         var eventTimestamp: String {
-            decidedAt ?? createdAt
+            switch timestampRole {
+            case .created, .recorded:
+                createdAt
+            case .decided:
+                decidedAt ?? createdAt
+            }
         }
     }
 
@@ -54,14 +66,16 @@ struct RunCheckpointTimelineProjection: Equatable {
         let checkpoint: RuntimeCheckpointState
         let source: Entry.Source
         let sourceOrder: Int
+        let inputOrder: Int
     }
 
     private static func checkpointRecords(for run: RuntimeRunState) -> [CheckpointRecord] {
-        var records = run.pastCheckpoints.map {
+        var records = run.pastCheckpoints.enumerated().map { index, checkpoint in
             CheckpointRecord(
-                checkpoint: $0,
+                checkpoint: checkpoint,
                 source: .archived,
                 sourceOrder: 0,
+                inputOrder: index,
             )
         }
 
@@ -70,6 +84,7 @@ struct RunCheckpointTimelineProjection: Equatable {
                 checkpoint: activeCheckpoint,
                 source: .active,
                 sourceOrder: 1,
+                inputOrder: run.pastCheckpoints.count,
             ))
         }
 
@@ -104,6 +119,7 @@ struct RunCheckpointTimelineProjection: Equatable {
                 decisionNote: checkpoint.decision?.note,
                 createdAt: checkpoint.createdAt,
                 decidedAt: checkpoint.decidedAt,
+                timestampRole: timestampRole(for: checkpoint, source: record.source),
             )
         }
     }
@@ -112,18 +128,20 @@ struct RunCheckpointTimelineProjection: Equatable {
         _ lhs: CheckpointRecord,
         _ rhs: CheckpointRecord,
     ) -> Bool {
-        let createdComparison = compareTimestamps(lhs.checkpoint.createdAt, rhs.checkpoint.createdAt)
-        if createdComparison != .orderedSame {
-            return createdComparison == .orderedAscending
-        }
-
-        let decidedComparison = compareOptionalTimestamps(lhs.checkpoint.decidedAt, rhs.checkpoint.decidedAt)
-        if decidedComparison != .orderedSame {
-            return decidedComparison == .orderedAscending
+        let eventComparison = compareTimestamps(
+            eventTimestamp(for: lhs.checkpoint, source: lhs.source),
+            eventTimestamp(for: rhs.checkpoint, source: rhs.source),
+        )
+        if eventComparison != .orderedSame {
+            return eventComparison == .orderedAscending
         }
 
         if lhs.sourceOrder != rhs.sourceOrder {
             return lhs.sourceOrder < rhs.sourceOrder
+        }
+
+        if lhs.inputOrder != rhs.inputOrder {
+            return lhs.inputOrder < rhs.inputOrder
         }
 
         return lhs.checkpoint.id < rhs.checkpoint.id
@@ -151,19 +169,6 @@ struct RunCheckpointTimelineProjection: Equatable {
         }
     }
 
-    private static func compareOptionalTimestamps(_ lhs: String?, _ rhs: String?) -> ComparisonResult {
-        switch (lhs, rhs) {
-        case let (.some(lhs), .some(rhs)):
-            compareTimestamps(lhs, rhs)
-        case (.some, .none):
-            .orderedAscending
-        case (.none, .some):
-            .orderedDescending
-        case (.none, .none):
-            .orderedSame
-        }
-    }
-
     private static func decisionState(
         for checkpoint: RuntimeCheckpointState,
         source: Entry.Source,
@@ -183,6 +188,30 @@ struct RunCheckpointTimelineProjection: Equatable {
             return .changesRequested
         default:
             return .unknown(action)
+        }
+    }
+
+    private static func eventTimestamp(
+        for checkpoint: RuntimeCheckpointState,
+        source: Entry.Source,
+    ) -> String {
+        switch timestampRole(for: checkpoint, source: source) {
+        case .created, .recorded:
+            checkpoint.createdAt
+        case .decided:
+            checkpoint.decidedAt ?? checkpoint.createdAt
+        }
+    }
+
+    private static func timestampRole(
+        for checkpoint: RuntimeCheckpointState,
+        source: Entry.Source,
+    ) -> Entry.TimestampRole {
+        switch source {
+        case .active:
+            .created
+        case .archived:
+            checkpoint.decidedAt == nil ? .recorded : .decided
         }
     }
 
