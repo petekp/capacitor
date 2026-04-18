@@ -292,7 +292,7 @@ pub(crate) fn load_projects_with_storage(storage: &StorageConfig) -> Result<Vec<
 
     let _ = save_stats_cache_with_storage(storage, &stats_cache);
 
-    projects.sort_by(|a, b| b.1.cmp(&a.1));
+    projects.sort_by_key(|(_, sort_time)| std::cmp::Reverse(*sort_time));
 
     Ok(projects.into_iter().map(|(p, _)| p).collect())
 }

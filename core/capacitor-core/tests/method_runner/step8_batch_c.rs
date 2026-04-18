@@ -11,7 +11,7 @@ use capacitor_core::method_runner::adapters::{
 };
 use capacitor_core::method_runner::definition::DefinitionSource;
 use capacitor_core::method_runner::events::{recover_events, MethodEventKind};
-use capacitor_core::method_runner::executor::{execute_run, RunError};
+use capacitor_core::method_runner::executor::execute_run;
 use capacitor_core::method_runner::resume::resume_run;
 use capacitor_core::method_runner::state::{rebuild_state, PhaseStatus, RunStatus};
 use capacitor_core::method_runner::storage::MethodRunPaths;
@@ -76,26 +76,25 @@ fn approval_gate_rejected_phase_blocked() {
     // Gate will prompt via InteractiveIO — respond with "rejected"
     let interactive_io = FakeInteractiveIO::new("rejected");
 
-    let result = execute_run(&source, &prompt_builder, &dispatcher, &interactive_io);
-    assert!(result.is_err());
-    let err = result.unwrap_err();
-    match err {
-        RunError::PhaseGateBlocked {
-            phase_id,
-            gate_id,
-            reason,
-        } => {
-            assert_eq!(phase_id, "build");
-            assert_eq!(gate_id, "build-gate");
-            assert_eq!(reason, "gate rejected");
-        }
-        other => panic!("expected PhaseGateBlocked, got: {other:?}"),
-    }
+    let state = execute_run(&source, &prompt_builder, &dispatcher, &interactive_io)
+        .expect("rejected gate should return a blocked handoff state");
+    assert_eq!(state.status, RunStatus::Blocked);
 
     // Verify state on disk shows phase blocked
     let paths = MethodRunPaths::new(tmp.path());
     let events = recover_events(&paths.events_log()).unwrap();
     let state = capacitor_core::method_runner::state::project(&events).unwrap();
+    assert_eq!(
+        events.last().map(|event| event.kind),
+        Some(MethodEventKind::RunBlocked)
+    );
+    let blocked_reason = events
+        .iter()
+        .find(|event| event.kind == MethodEventKind::PhaseBlocked)
+        .and_then(|event| event.payload.get("reason"))
+        .and_then(|reason| reason.as_str())
+        .expect("phase blocked reason");
+    assert_eq!(blocked_reason, "gate rejected");
     let build_phase = state.phases.get("build").expect("build phase exists");
     assert_eq!(build_phase.status, PhaseStatus::Blocked);
 
@@ -182,34 +181,20 @@ method:
     let dispatcher = FakeWorkerDispatcher;
     let interactive_io = FakeInteractiveIO::new("approved");
 
-    let result = execute_run(&source, &prompt_builder, &dispatcher, &interactive_io);
-    assert!(result.is_err());
-
-    let err = result.unwrap_err();
-    match err {
-        RunError::PhaseGateBlocked {
-            phase_id,
-            gate_id,
-            reason,
-        } => {
-            assert_eq!(phase_id, "build");
-            assert_eq!(gate_id, "outputs-gate");
-            assert!(
-                reason.contains("validation failed"),
-                "reason should mention validation_failed: {reason}"
-            );
-            assert!(
-                reason.contains("nonexistent_output"),
-                "reason should mention the missing output: {reason}"
-            );
-        }
-        other => panic!("expected PhaseGateBlocked, got: {other:?}"),
-    }
+    let blocked_state = execute_run(&source, &prompt_builder, &dispatcher, &interactive_io)
+        .expect("validation failure should return a blocked handoff state");
+    assert_eq!(blocked_state.status, RunStatus::Blocked);
 
     // Verify gate event shows validation_failed
     let paths = MethodRunPaths::new(tmp.path());
     let events = recover_events(&paths.events_log()).unwrap();
     let state = capacitor_core::method_runner::state::project(&events).unwrap();
+    let blocked_reason = events
+        .iter()
+        .find(|event| event.kind == MethodEventKind::PhaseBlocked)
+        .and_then(|event| event.payload.get("reason"))
+        .and_then(|reason| reason.as_str())
+        .expect("phase blocked reason");
     let gate_result = state
         .phases
         .get("build")
@@ -218,6 +203,14 @@ method:
         .as_ref()
         .unwrap();
     assert_eq!(gate_result.outcome, "validation_failed");
+    assert!(
+        blocked_reason.contains("nonexistent_output"),
+        "reason should mention the missing output: {blocked_reason}"
+    );
+    assert_eq!(
+        events.last().map(|event| event.kind),
+        Some(MethodEventKind::RunBlocked)
+    );
 }
 
 // ============================================================================
@@ -235,30 +228,20 @@ fn pipeline_clean_gate_blocked() {
     let dispatcher = FakeWorkerDispatcher;
     let interactive_io = FakeInteractiveIO::new("approved");
 
-    let result = execute_run(&source, &prompt_builder, &dispatcher, &interactive_io);
-    assert!(result.is_err());
-
-    let err = result.unwrap_err();
-    match err {
-        RunError::PhaseGateBlocked {
-            phase_id,
-            gate_id,
-            reason,
-        } => {
-            assert_eq!(phase_id, "build");
-            assert_eq!(gate_id, "pipeline-gate");
-            assert!(
-                reason.contains("pipeline_clean requires pipeline-execute"),
-                "reason should mention v1 limitation: {reason}"
-            );
-        }
-        other => panic!("expected PhaseGateBlocked, got: {other:?}"),
-    }
+    let blocked_state = execute_run(&source, &prompt_builder, &dispatcher, &interactive_io)
+        .expect("pipeline_clean gate should return a blocked handoff state");
+    assert_eq!(blocked_state.status, RunStatus::Blocked);
 
     // Verify gate event shows waiting outcome
     let paths = MethodRunPaths::new(tmp.path());
     let events = recover_events(&paths.events_log()).unwrap();
     let state = capacitor_core::method_runner::state::project(&events).unwrap();
+    let blocked_reason = events
+        .iter()
+        .find(|event| event.kind == MethodEventKind::PhaseBlocked)
+        .and_then(|event| event.payload.get("reason"))
+        .and_then(|reason| reason.as_str())
+        .expect("phase blocked reason");
     let gate_result = state
         .phases
         .get("build")
@@ -267,6 +250,14 @@ fn pipeline_clean_gate_blocked() {
         .as_ref()
         .unwrap();
     assert_eq!(gate_result.outcome, "waiting");
+    assert!(
+        blocked_reason.contains("pipeline_clean requires pipeline-execute"),
+        "reason should mention v1 limitation: {blocked_reason}"
+    );
+    assert_eq!(
+        events.last().map(|event| event.kind),
+        Some(MethodEventKind::RunBlocked)
+    );
 }
 
 // ============================================================================

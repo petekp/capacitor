@@ -123,6 +123,51 @@ fn submit_decision_resumes_run() {
 }
 
 #[test]
+fn submit_request_changes_archives_checkpoint_and_keeps_run_paused() {
+    let mut runs = empty_runs();
+    apply_run_mutation(
+        &mut runs,
+        create_command("run-request-changes", "execution_only"),
+    );
+
+    let mut cmd = base_cmd("run-request-changes");
+    cmd.session_id = Some("s1".to_string());
+    mutate(&mut runs, cmd, RunMutationKind::AttachSession);
+
+    let mut cmd = base_cmd("run-request-changes");
+    cmd.checkpoint_kind = Some(CheckpointKind::ImplementationMilestone);
+    cmd.checkpoint_title = Some("M1".to_string());
+    mutate(&mut runs, cmd, RunMutationKind::EmitCheckpoint);
+
+    let mut cmd = base_cmd("run-request-changes");
+    cmd.checkpoint_id = Some(active_checkpoint_id(&runs, "run-request-changes"));
+    cmd.decision_action = Some("request_changes".to_string());
+    cmd.decision_note = Some("Fix the failing checks".to_string());
+    let result = mutate(&mut runs, cmd, RunMutationKind::SubmitDecision);
+    assert!(result.ok, "{}", result.message);
+
+    let run = runs.values().next().unwrap();
+    assert_eq!(run.status, RunStatus::Paused);
+    assert!(run.active_checkpoint.is_none());
+    assert_eq!(run.past_checkpoints.len(), 1);
+    let decided = &run.past_checkpoints[0];
+    assert_eq!(
+        decided
+            .decision
+            .as_ref()
+            .map(|decision| decision.action.as_str()),
+        Some("request_changes")
+    );
+    assert_eq!(
+        decided
+            .decision
+            .as_ref()
+            .and_then(|decision| decision.note.as_deref()),
+        Some("Fix the failing checks")
+    );
+}
+
+#[test]
 fn submit_decision_normalizes_bridge_aliases_to_runtime_actions() {
     for (input, canonical) in [
         ("approved", "approve"),
@@ -217,6 +262,92 @@ fn advance_phase_works() {
     assert_eq!(run.current_phase_index, 1);
     assert_eq!(run.phases[0].status, PhaseStatus::Completed);
     assert_eq!(run.phases[1].status, PhaseStatus::Active);
+}
+
+#[test]
+fn advance_phase_rejects_paused_run_without_active_checkpoint() {
+    let mut runs = empty_runs();
+    apply_run_mutation(
+        &mut runs,
+        create_command("run-paused-advance", "shape_and_execute"),
+    );
+
+    let mut cmd = base_cmd("run-paused-advance");
+    cmd.session_id = Some("s1".to_string());
+    mutate(&mut runs, cmd, RunMutationKind::AttachSession);
+
+    let pause_result = mutate(
+        &mut runs,
+        base_cmd("run-paused-advance"),
+        RunMutationKind::Pause,
+    );
+    assert!(pause_result.ok, "{}", pause_result.message);
+
+    let advance_result = mutate(
+        &mut runs,
+        base_cmd("run-paused-advance"),
+        RunMutationKind::AdvancePhase,
+    );
+    assert!(!advance_result.ok);
+    assert!(advance_result.message.contains("run is not active"));
+
+    let run = runs.values().next().unwrap();
+    assert_eq!(run.status, RunStatus::Paused);
+    assert_eq!(run.current_phase_index, 0);
+}
+
+#[test]
+fn request_changes_pause_requires_resume_before_phase_advance() {
+    let mut runs = empty_runs();
+    apply_run_mutation(
+        &mut runs,
+        create_command("run-request-changes-resume", "shape_and_execute"),
+    );
+
+    let mut cmd = base_cmd("run-request-changes-resume");
+    cmd.session_id = Some("s1".to_string());
+    mutate(&mut runs, cmd, RunMutationKind::AttachSession);
+
+    let mut cmd = base_cmd("run-request-changes-resume");
+    cmd.checkpoint_kind = Some(CheckpointKind::Proposal);
+    cmd.checkpoint_title = Some("Proposal".to_string());
+    mutate(&mut runs, cmd, RunMutationKind::EmitCheckpoint);
+
+    let mut cmd = base_cmd("run-request-changes-resume");
+    cmd.checkpoint_id = Some(active_checkpoint_id(&runs, "run-request-changes-resume"));
+    cmd.decision_action = Some("request_changes".to_string());
+    let decision_result = mutate(&mut runs, cmd, RunMutationKind::SubmitDecision);
+    assert!(decision_result.ok, "{}", decision_result.message);
+
+    let mut pause = base_cmd("run-request-changes-resume");
+    pause.status_message = Some("Run blocked: gate rejected".to_string());
+    let pause_result = mutate(&mut runs, pause, RunMutationKind::Pause);
+    assert!(pause_result.ok, "{}", pause_result.message);
+
+    let advance_while_paused = mutate(
+        &mut runs,
+        base_cmd("run-request-changes-resume"),
+        RunMutationKind::AdvancePhase,
+    );
+    assert!(!advance_while_paused.ok);
+    assert!(advance_while_paused.message.contains("run is not active"));
+
+    let mut resume = base_cmd("run-request-changes-resume");
+    resume.status_message = Some("Run resumed".to_string());
+    let resume_result = mutate(&mut runs, resume, RunMutationKind::Resume);
+    assert!(resume_result.ok, "{}", resume_result.message);
+
+    let advance_after_resume = mutate(
+        &mut runs,
+        base_cmd("run-request-changes-resume"),
+        RunMutationKind::AdvancePhase,
+    );
+    assert!(advance_after_resume.ok, "{}", advance_after_resume.message);
+
+    let run = runs.values().next().unwrap();
+    assert_eq!(run.status, RunStatus::Active);
+    assert_eq!(run.current_phase_index, 1);
+    assert_eq!(run.status_message.as_deref(), Some("Run resumed"));
 }
 
 #[test]

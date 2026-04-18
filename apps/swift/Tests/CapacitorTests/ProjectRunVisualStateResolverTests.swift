@@ -32,6 +32,40 @@ final class ProjectRunVisualStateResolverTests: XCTestCase {
         XCTAssertEqual(resolution.visualState, .waiting(statusMessage: nil))
     }
 
+    func testPausedRunWithoutCheckpointSurfacesAsWaiting() throws {
+        let projectPath = "/tmp/core-project"
+        let now = try XCTUnwrap(parseISO8601Date("2026-03-26T10:06:10Z"))
+        let activeRun = makeRun(
+            id: "run-active",
+            projectPath: projectPath,
+            status: "active",
+            updatedAt: "2026-03-26T10:05:00Z",
+            createdAt: "2026-03-26T10:00:00Z",
+            checkpointID: nil,
+        )
+        let pausedRun = makeRun(
+            id: "run-paused-blocked",
+            projectPath: projectPath,
+            status: "paused",
+            updatedAt: "2026-03-26T10:06:00Z",
+            createdAt: "2026-03-26T10:01:00Z",
+            checkpointID: nil,
+            statusMessage: "Run blocked: gate rejected",
+        )
+
+        let resolution = ProjectRunVisualStateResolver.resolve(
+            projectPath: projectPath,
+            runsByID: runsByID([activeRun, pausedRun]),
+            now: now,
+        )
+
+        XCTAssertEqual(resolution.run, pausedRun)
+        XCTAssertEqual(
+            resolution.visualState,
+            .waiting(statusMessage: "Run blocked: gate rejected"),
+        )
+    }
+
     func testActiveRunWinsOverCreatedRun() throws {
         let projectPath = "/tmp/core-project"
         let now = try XCTUnwrap(parseISO8601Date("2026-03-26T10:05:40Z"))

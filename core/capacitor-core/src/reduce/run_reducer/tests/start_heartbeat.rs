@@ -133,6 +133,25 @@ fn heartbeat_on_created_run_succeeds() {
 }
 
 #[test]
+fn pause_updates_status_message() {
+    let mut runs = empty_runs();
+    apply_run_mutation(&mut runs, create_command("run-001", "execution_only"));
+    start_run(&mut runs, "run-001");
+
+    let mut cmd = base_cmd("run-001");
+    cmd.status_message = Some("Run blocked: gate rejected".to_string());
+    let result = mutate(&mut runs, cmd, RunMutationKind::Pause);
+    assert!(result.ok, "{}", result.message);
+
+    let run = runs.values().next().unwrap();
+    assert_eq!(run.status, RunStatus::Paused);
+    assert_eq!(
+        run.status_message.as_deref(),
+        Some("Run blocked: gate rejected")
+    );
+}
+
+#[test]
 fn full_lifecycle_create_start_heartbeat_advance() {
     let mut runs = empty_runs();
     apply_run_mutation(&mut runs, create_command("run-001", "shape_and_execute"));

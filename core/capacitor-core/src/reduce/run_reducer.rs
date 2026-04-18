@@ -47,16 +47,20 @@ pub(crate) fn apply_run_mutation(
         RunMutationKind::CaptureComplete => handle_capture_complete(runs, &key, &command),
         RunMutationKind::AttachSession => handle_attach_session(runs, &key, &command),
         RunMutationKind::DetachSession => handle_detach_session(runs, &key),
-        RunMutationKind::Pause => handle_status_transition(runs, &key, RunStatus::Paused, "pause"),
+        RunMutationKind::Pause => {
+            handle_status_transition(runs, &key, RunStatus::Paused, &command, "pause")
+        }
         RunMutationKind::Resume => {
-            handle_status_transition(runs, &key, RunStatus::Active, "resume")
+            handle_status_transition(runs, &key, RunStatus::Active, &command, "resume")
         }
         RunMutationKind::Complete => {
-            handle_status_transition(runs, &key, RunStatus::Completed, "complete")
+            handle_status_transition(runs, &key, RunStatus::Completed, &command, "complete")
         }
-        RunMutationKind::Fail => handle_status_transition(runs, &key, RunStatus::Failed, "fail"),
+        RunMutationKind::Fail => {
+            handle_status_transition(runs, &key, RunStatus::Failed, &command, "fail")
+        }
         RunMutationKind::Cancel => {
-            handle_status_transition(runs, &key, RunStatus::Cancelled, "cancel")
+            handle_status_transition(runs, &key, RunStatus::Cancelled, &command, "cancel")
         }
     }
 }
@@ -208,6 +212,10 @@ fn handle_advance_phase(runs: &mut BTreeMap<String, RunState>, key: &str) -> Mut
 
     if run.active_checkpoint.is_some() {
         return reject("active checkpoint must be decided before advancing");
+    }
+
+    if run.status != RunStatus::Active {
+        return reject("run is not active");
     }
 
     let idx = run.current_phase_index as usize;
@@ -414,13 +422,17 @@ fn handle_submit_decision(
     checkpoint.status = CheckpointStatus::Decided;
     checkpoint.decided_at = Some(now.clone());
 
-    // Archive checkpoint and resume run.
+    // Archive checkpoint and advance the run according to the decision.
     let decided_checkpoint = run.active_checkpoint.take();
     if let Some(checkpoint) = decided_checkpoint {
         archive_decided_checkpoint(run, checkpoint);
     }
 
-    run.status = RunStatus::Active;
+    run.status = if action == "request_changes" {
+        RunStatus::Paused
+    } else {
+        RunStatus::Active
+    };
     run.updated_at = now;
     ok(&format!("decision recorded: {action}"))
 }
@@ -536,6 +548,7 @@ fn handle_status_transition(
     runs: &mut BTreeMap<String, RunState>,
     key: &str,
     target: RunStatus,
+    command: &MutateRunCommand,
     label: &str,
 ) -> MutationOutcome {
     let run = match runs.get_mut(key) {
@@ -553,6 +566,9 @@ fn handle_status_transition(
     }
 
     run.status = target;
+    if let Some(msg) = normalized_optional_text(command.status_message.as_deref()) {
+        run.status_message = Some(msg);
+    }
     run.updated_at = now_rfc3339();
     ok(&format!("run {label}"))
 }

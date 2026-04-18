@@ -64,13 +64,6 @@ pub enum RunError {
 
     #[error("step '{step_id}' blocked: {reason}")]
     StepBlocked { step_id: String, reason: String },
-
-    #[error("phase '{phase_id}' blocked by gate '{gate_id}': {reason}")]
-    PhaseGateBlocked {
-        phase_id: String,
-        gate_id: String,
-        reason: String,
-    },
 }
 
 include!("executor_gate_support.rs");
@@ -382,7 +375,9 @@ fn execute_all_phases(ctx: &mut ExecutionContext<'_>) -> Result<Option<MethodRun
 
         // Evaluate phase gate (if present) after all steps complete
         if let Some(ref gate) = phase.gate {
-            emit_and_enforce_gate(ctx, phase, gate)?;
+            if let Some(early_state) = emit_and_enforce_gate(ctx, phase, gate)? {
+                return Ok(Some(early_state));
+            }
         }
 
         // PhaseCompleted
@@ -557,7 +552,7 @@ fn emit_and_enforce_gate(
     ctx: &mut ExecutionContext<'_>,
     phase: &NormalizedPhase,
     gate: &NormalizedGate,
-) -> Result<(), RunError> {
+) -> Result<Option<MethodRunState>, RunError> {
     let current_events = crate::method_runner::events::recover_events(ctx.events_path)?;
     let current_state = project(&current_events)?;
 
@@ -585,7 +580,7 @@ fn emit_and_enforce_gate(
     }
 
     if outcome == GateOutcome::Approved {
-        return Ok(());
+        return Ok(None);
     }
 
     let reason = gate_outcome_reason(&outcome);
@@ -596,13 +591,23 @@ fn emit_and_enforce_gate(
         env.payload = serde_json::json!({ "reason": reason });
         append_event(ctx.events_path, &mut env, &mut *ctx.current_seq)?;
     }
-    report_status_kind(ctx.reporter, RunStatusEventKind::Fail);
 
-    Err(RunError::PhaseGateBlocked {
-        phase_id: phase.id.clone(),
-        gate_id: gate.id.clone(),
-        reason,
-    })
+    {
+        let summary = build_run_summary(ctx.events_path, ctx.normalized, ctx.run_start)?;
+        let mut env = make_envelope(ctx.run_id, MethodEventKind::RunBlocked);
+        env.payload = summary;
+        append_event(ctx.events_path, &mut env, &mut *ctx.current_seq)?;
+    }
+    report_status_message(
+        ctx.reporter,
+        RunStatusEventKind::Pause,
+        format!("Run blocked: {reason}"),
+    );
+
+    let events = crate::method_runner::events::recover_events(ctx.events_path)?;
+    let state = project(&events)?;
+    write_state_atomic(&ctx.paths.state_json(), &state).map_err(RunError::IoError)?;
+    Ok(Some(state))
 }
 
 /// Public wrapper for `execute_step` used by the resume module.

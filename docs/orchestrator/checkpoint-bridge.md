@@ -39,7 +39,7 @@ The checkpoint bridge connects method runner gates to the run kernel checkpoint 
    - HTTP handler: `core/hud-hook/src/handlers.rs:498-535`
    - Relay logic: `core/hud-hook/src/checkpoint_bridge_relay.rs`
 
-9. **Bridge polls and unblocks** -- `BridgeInteractiveIO::capture_response()` polls for the decision file at 500ms intervals. When found, it normalizes the action ("approve"/"approved" -> "approved", "request_changes"/"rejected" -> "rejected", unknown -> "rejected"), clears `current_gate_id`, deletes the decision file, and returns the normalized response to the gate evaluator.
+9. **Bridge polls and unblocks** -- `BridgeInteractiveIO::capture_response()` polls for the decision file at 500ms intervals. When found, it normalizes the action ("approve"/"approved" -> "approved", "request_changes"/"rejected" -> "rejected", unknown -> "rejected"), clears `current_gate_id`, deletes the decision file, and returns the normalized response to the gate evaluator. An approval lets the method runner continue. A request-changes decision records `PhaseBlocked` + `RunBlocked`, reports runtime `Pause` with a "Run blocked: ..." status message, and returns a controlled blocked handoff rather than an execution error.
    - Poll loop: `checkpoint_bridge.rs:197-239`
    - Normalization: `checkpoint_bridge.rs:116-128`
 
@@ -116,11 +116,21 @@ The bridge relay is part of the successful `SubmitDecision` commit for bridge-ma
 
 The key invariant: bridge-managed status is runtime truth (`active_checkpoint.decision_relay == checkpoint_bridge`), not inferred from filesystem marker presence. For bridge-managed checkpoints, the runtime does not accept and clear a `SubmitDecision` unless the bridge decision file was committed successfully.
 
-Accepted decisions move the decided checkpoint from `active_checkpoint` into the run's bounded `past_checkpoints` history, preserving the decision, timestamp, and review metadata for snapshot consumers. The run kernel keeps the most recent 50 decided checkpoints per run.
+Accepted decisions move the decided checkpoint from `active_checkpoint` into the run's bounded `past_checkpoints` history, preserving the decision, timestamp, and review metadata for snapshot consumers. Approvals resume the run as `active`; request-changes decisions leave the run `paused` with no active checkpoint so the runtime remains non-terminal while the method runner records the blocked gate. The run kernel keeps the most recent 50 decided checkpoints per run.
+
+Request-changes is still a blocked-gate handoff, not a full multi-round worker retry loop. The retry loop remains a separate method-runner design step.
+
+A paused run with no active checkpoint cannot advance phases until it is resumed, preventing a request-changes decision from being bypassed by a stray `AdvancePhase` mutation.
+
+Method-runner resume is explicit: resuming a blocked method run appends `RunStarted` in the method-runner event log to move `Blocked -> Running`, reports runtime `Resume`, restarts the blocked phase with `PhaseStarted`, and only then may report `AdvancePhase`. This keeps the runtime reducer and method-runner projection in the same lifecycle order.
+
+The method-runner CLI exits successfully for controlled `Blocked` handoffs. Process supervision treats nonzero exit as infrastructure/execution failure, but runtime truth still comes from runtime mutations and snapshots, not from filesystem relay markers or process exit alone.
+
+Swift review-window targeting still requires `activeCheckpoint`, but project-card projection treats fresh paused runs with or without an active checkpoint as waiting so blocked request-changes runs remain visible.
 
 ### Timeout Behavior
 
-`DECISION_POLL_TIMEOUT` is 3600 seconds (1 hour). Defined at `checkpoint_bridge.rs:28`. After timeout, `capture_response` returns `InteractiveResponse { body: "rejected" }` so the method runner can proceed rather than blocking forever. The poll interval is 500ms (`checkpoint_bridge.rs:223`).
+`DECISION_POLL_TIMEOUT` is 3600 seconds (1 hour). Defined at `checkpoint_bridge.rs:28`. After timeout, `capture_response` returns `InteractiveResponse { body: "rejected" }` so the method runner records a blocked gate rather than waiting forever. The poll interval is 500ms (`checkpoint_bridge.rs:223`).
 
 ## CLI Integration
 
@@ -181,6 +191,23 @@ This identity is what allows the relay to find the correct pending marker: the S
 | `t15_bridge_falls_back_to_prompt_when_mutation_rejected` (line 1359) | Runtime rejection triggers fallback to interactive prompt (fail-closed) |
 | `t15_bridge_falls_back_to_prompt_when_server_unreachable` (line 1399) | Unreachable server triggers fallback to interactive prompt (fail-closed) |
 
+### `core/capacitor-core/tests/method_runner/run_status_reporter.rs`
+
+| Test | What it proves |
+|------|---------------|
+| `rejected_gate_reports_pause_instead_of_fail` | A rejected human gate returns a blocked handoff, persists `RunBlocked`, and reports runtime `Pause` instead of terminal failure |
+| `resumed_rejected_gate_reports_pause_instead_of_fail` | The same controlled blocked handoff holds when the gate is reached through method-runner resume |
+| `resume_blocked_gate_reports_resume_before_advancing_phase` | Resume reports runtime `Resume` before `AdvancePhase` and restarts a blocked phase before completing it |
+| `runtime_reporter_posts_mutate_commands_with_expected_mapping` | Reporter `Pause` and `Resume` events map to matching runtime mutations with status messages |
+
+### `core/capacitor-core/src/reduce/run_reducer/tests/lifecycle.rs`
+
+| Test | What it proves |
+|------|---------------|
+| `submit_request_changes_archives_checkpoint_and_keeps_run_paused` | Runtime request-changes decisions archive the checkpoint without resuming the run |
+| `advance_phase_rejects_paused_run_without_active_checkpoint` | A paused run cannot advance phases without an explicit resume |
+| `request_changes_pause_requires_resume_before_phase_advance` | `Pause -> AdvancePhase` is rejected, while `Resume -> AdvancePhase` succeeds after request-changes |
+
 ### `core/hud-hook/tests/serve_integration.rs`
 
 | Test | What it proves |
@@ -202,3 +229,9 @@ This identity is what allows the relay to find the correct pending marker: the S
 | `testFreshRuntimeSnapshotChoosesOldestPausedRunCheckpointFirst` (line 50) | Queue ordering selects oldest checkpoint first |
 | `testFreshRuntimeSnapshotPresentsNextPausedRunCheckpointAfterFirstCheckpointClears` (line 87) | After a checkpoint clears, the next queued checkpoint surfaces automatically |
 | `testSubmitRunCheckpointDecisionMutatesRuntimeRunWithCheckpointIdentity` (line 146) | Decision submission sends correct mutation payload including `checkpoint_id` and `decision_action` |
+
+### `apps/swift/Tests/CapacitorTests/ProjectRunVisualStateResolverTests.swift`
+
+| Test | What it proves |
+|------|---------------|
+| `testPausedRunWithoutCheckpointSurfacesAsWaiting` | Project-card projection keeps request-changes blocked runs visible after their active checkpoint is archived |

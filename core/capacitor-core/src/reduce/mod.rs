@@ -311,7 +311,7 @@ impl ReducerState {
         });
 
         let mut shells = cleaned_shells.values().cloned().collect::<Vec<_>>();
-        shells.sort_by(|left, right| left.pid.cmp(&right.pid));
+        shells.sort_by_key(|shell| shell.pid);
         let shell_count = shells.len() as u64;
 
         let routing = if cleaned_shells.len() == self.shells.len() {
