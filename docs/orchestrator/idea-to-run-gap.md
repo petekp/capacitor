@@ -55,7 +55,7 @@ The four missing pieces identified in the original analysis have been built and 
 | What exists | What does not exist |
 |-------------|---------------------|
 | Method runs show working/waiting/completed/failed visual state on project cards | **CLOSED.** RunVisualState extended with completed/failed cases + terminal visibility window |
-| Active checkpoint triggers review window | **CLOSED.** Decided checkpoints are archived in `runs[].past_checkpoints`; no timeline UI yet |
+| Active checkpoint triggers review window | **CLOSED.** Decided checkpoints are archived in `runs[].past_checkpoints` and shown in the Project Detail run checkpoint timeline |
 | `RunStatus::Completed` surfaces in project cards and ActivityPanel | **CLOSED.** RunCompletionCard shows method name, elapsed time, and status |
 | Delegation loop and method runner coexist in AppState | No unified "orchestration mode" view that shows both |
 | `DelegationReviewManifest` decodes review JSON for both paths | The shared decoder is exercised by both paths, but delegation loop is disabled by default in `.frontier` |
@@ -70,9 +70,9 @@ The original four missing pieces have been built. The remaining gaps are:
 
 `RunVisualState` extended with `.completed` and `.failed` cases. Terminal states are visible on project cards for 1 hour after completion. The `statusMessage` from the method runner carries phase labels that appear as context text. Card visual state now reflects completed/failed runs with appropriate context text.
 
-### 2. Checkpoint history — CLOSED; timeline UI deferred
+### 2. Checkpoint history — CLOSED
 
-The Rust run kernel now archives decided checkpoints in `past_checkpoints` when `SubmitDecision` clears `active_checkpoint`. Each archived checkpoint keeps its `decision`, `decided_at`, artifacts, and checkpoint metadata, and Swift decodes this typed history from runtime snapshots. History is bounded to the most recent 50 decided checkpoints per run. A dedicated timeline UI is still deferred.
+The Rust run kernel now archives decided checkpoints in `past_checkpoints` when `SubmitDecision` clears `active_checkpoint`. Each archived checkpoint keeps its `decision`, `decided_at`, artifacts, and checkpoint metadata, and Swift decodes this typed history from runtime snapshots. History is bounded to the most recent 50 decided checkpoints per run. Project Detail renders a run checkpoint timeline from the runtime snapshot's archived checkpoints plus any current active checkpoint, including decision state, notes, timestamps, and retry round numbers per phase.
 
 ### 3. Method run completion UI — CLOSED
 
@@ -99,6 +99,7 @@ Comparing the full aspirational flow with what is now shipped:
 | Completion | Run completes; results surfaced in app | **Shipped.** `RunCompletionCard` in ActivityPanel shows method name, elapsed time, status |
 | Delegation fallback | Method step dispatches to existing delegation Worker | `RunState.delegation_worker_id` strangler bridge field exists. **Not exercised.** |
 | Phase progression UI | User sees which phase is active | **Shipped.** Terminal states visible on cards; statusMessage carries phase labels |
+| Checkpoint history UI | User can see prior checkpoint decisions for the selected run | **Shipped.** Project Detail shows `past_checkpoints` plus `activeCheckpoint` as a run checkpoint timeline |
 
 ---
 
@@ -111,6 +112,8 @@ Comparing the full aspirational flow with what is now shipped:
 | Method run coordinator (subprocess) | `apps/swift/Sources/Capacitor/Models/MethodRunCoordinator.swift` |
 | Idea detail + Delegate button | `apps/swift/Sources/Capacitor/Views/Ideas/IdeaDetailModal.swift` |
 | Project detail (idea → method wiring) | `apps/swift/Sources/Capacitor/Views/Projects/ProjectDetailView.swift` |
+| Run checkpoint timeline projection | `apps/swift/Sources/Capacitor/Views/Projects/RunCheckpointTimelineProjection.swift` |
+| Run checkpoint timeline UI | `apps/swift/Sources/Capacitor/Views/Projects/RunCheckpointTimelineSection.swift` |
 | Delegation loop manager | `apps/swift/Sources/Capacitor/Models/DelegationLoopManager.swift` |
 | Method runner binary | `core/capacitor-core/src/bin/method_runner.rs` |
 | Method YAML definition types | `core/capacitor-core/src/method_runner/definition.rs` |

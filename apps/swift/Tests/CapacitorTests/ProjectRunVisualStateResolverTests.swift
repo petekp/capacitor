@@ -308,6 +308,48 @@ final class ProjectRunVisualStateResolverTests: XCTestCase {
         XCTAssertEqual(resolution.visualState, .working(statusMessage: "2/3 Implementation"))
     }
 
+    func testCompletedRunWithPastCheckpointHistoryResolvesCompleted() throws {
+        let projectPath = "/tmp/core-project"
+        let now = try XCTUnwrap(parseISO8601Date("2026-03-26T10:06:10Z"))
+        let completedRun = makeRun(
+            id: "run-completed-with-history",
+            projectPath: projectPath,
+            status: "completed",
+            updatedAt: "2026-03-26T10:05:30Z",
+            createdAt: "2026-03-26T10:00:00Z",
+            checkpointID: nil,
+            pastCheckpoints: [
+                RuntimeCheckpointState(
+                    id: "checkpoint-decided",
+                    phaseId: "phase-checkpoint-decided",
+                    kind: .implementationMilestone,
+                    status: "decided",
+                    title: "Checkpoint checkpoint-decided",
+                    summary: "Review the current milestone.",
+                    briefPath: nil,
+                    manifestPath: nil,
+                    mediaArtifacts: [],
+                    mermaidSources: [],
+                    captureStatus: .notRequested,
+                    captureUrl: nil,
+                    captureClaim: nil,
+                    decision: RuntimeCheckpointDecision(action: "approve", note: nil),
+                    createdAt: "2026-03-26T10:04:00Z",
+                    decidedAt: "2026-03-26T10:05:00Z",
+                ),
+            ],
+        )
+
+        let resolution = ProjectRunVisualStateResolver.resolve(
+            projectPath: projectPath,
+            runsByID: runsByID([completedRun]),
+            now: now,
+        )
+
+        XCTAssertEqual(resolution.run, completedRun)
+        XCTAssertEqual(resolution.visualState, .completed(statusMessage: nil))
+    }
+
     func testNoRunsReturnsNone() throws {
         let resolution = try ProjectRunVisualStateResolver.resolve(
             projectPath: "/tmp/core-project",
@@ -331,6 +373,7 @@ final class ProjectRunVisualStateResolverTests: XCTestCase {
         createdAt: String,
         checkpointID: String?,
         statusMessage: String? = nil,
+        pastCheckpoints: [RuntimeCheckpointState] = [],
     ) -> RuntimeRunState {
         let checkpoint: RuntimeCheckpointState? = if let checkpointID {
             RuntimeCheckpointState(
@@ -366,6 +409,7 @@ final class ProjectRunVisualStateResolverTests: XCTestCase {
             createdAt: createdAt,
             updatedAt: updatedAt,
             activeCheckpoint: checkpoint,
+            pastCheckpoints: pastCheckpoints,
             ideaId: nil,
             ideaTitle: nil,
             ideaDescription: nil,

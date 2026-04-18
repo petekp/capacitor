@@ -72,6 +72,15 @@ struct ProjectDetailView: View {
                         .offset(y: appeared ? 0 : 16)
                     }
 
+                    if appState.featureState.isMethodRunnerEnabled,
+                       let run = appState.activeRun(for: project),
+                       let projection = RunCheckpointTimelineProjection(run: run)
+                    {
+                        RunCheckpointTimelineSection(projection: projection)
+                            .opacity(appeared ? 1 : 0)
+                            .offset(y: appeared ? 0 : 18)
+                    }
+
                     Button(action: {
                         appState.removeProject(project.path)
                         appState.showProjectList()
