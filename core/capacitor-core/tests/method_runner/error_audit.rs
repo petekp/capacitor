@@ -375,7 +375,7 @@ fn error_transition_phase_illegal() {
 
 #[test]
 fn error_transition_step_illegal() {
-    let result = StepStatus::Completed.transition_to(StepStatus::Running, "step-q");
+    let result = StepStatus::Failed.transition_to(StepStatus::Running, "step-q");
     let err = result.unwrap_err();
     let msg = err.to_string();
 

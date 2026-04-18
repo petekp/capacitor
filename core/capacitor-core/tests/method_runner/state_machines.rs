@@ -587,7 +587,7 @@ fn phase_status_skipped_skipped_illegal() {
 }
 
 // =========================================================================
-// StepStatus — 5 variants, 25 total pairs, 6 legal
+// StepStatus — 5 variants, 25 total pairs, 7 legal
 // =========================================================================
 
 // --- Legal transitions ---
@@ -705,11 +705,10 @@ fn step_status_completed_pending_illegal() {
 }
 
 #[test]
-fn step_status_completed_running_illegal() {
-    assert_illegal(
+fn step_status_completed_running_legal() {
+    assert_legal(
         StepStatus::Completed.transition_to(StepStatus::Running, "s1"),
-        "Completed",
-        "Running",
+        StepStatus::Running,
     );
 }
 
@@ -1564,7 +1563,7 @@ fn sequence_worker_full_lifecycle() {
 fn transition_coverage_summary() {
     // RunStatus: 5 variants, 25 pairs, 6 legal, 19 illegal = 25 tested
     // PhaseStatus: 6 variants, 36 pairs, 7 legal, 29 illegal = 36 tested
-    // StepStatus: 5 variants, 25 pairs, 6 legal, 19 illegal = 25 tested
+    // StepStatus: 5 variants, 25 pairs, 7 legal, 18 illegal = 25 tested
     // AttemptStatus: 7 variants, 49 pairs, 8 legal, 41 illegal = 49 tested
     // WorkerStatus: 5 variants, 25 pairs, 4 legal, 21 illegal = 25 tested
 

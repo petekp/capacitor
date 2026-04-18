@@ -544,6 +544,168 @@ fn resume_blocked_gate_reports_resume_before_advancing_phase() {
 }
 
 #[test]
+fn resume_blocked_gate_reexecutes_phase_steps_before_checkpoint_reapproval() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let source = write_definition(&temp, &two_phase_gated_method_yaml());
+
+    let blocked_state = execute_run_with_reporter(
+        &source,
+        &FakePromptBuilder,
+        &FakeWorkerDispatcher,
+        &FakeInteractiveIO::new("rejected"),
+        &SpyRunStatusReporter::default(),
+    )
+    .expect("seed blocked gated run");
+    assert_eq!(blocked_state.status, RunStatus::Blocked);
+
+    let resumed_state = resume_run_with_reporter(
+        &source.execution_root,
+        &FakePromptBuilder,
+        &FakeWorkerDispatcher,
+        &FakeInteractiveIO::new("approved"),
+        &SpyRunStatusReporter::default(),
+    )
+    .expect("resume blocked run");
+    assert_eq!(resumed_state.status, RunStatus::Completed);
+    assert_eq!(
+        resumed_state
+            .phases
+            .get("phase-1")
+            .and_then(|phase| phase.steps.get("step-1"))
+            .map(|step| step.current_attempt),
+        Some(2),
+        "request-changes resume should create a new step attempt"
+    );
+
+    let paths = MethodRunPaths::new(&source.execution_root);
+    let method_events = recover_events(&paths.events_log()).expect("recover events");
+    let phase_blocked_index = method_events
+        .iter()
+        .position(|event| event.kind == MethodEventKind::PhaseBlocked)
+        .expect("expected phase blocked event");
+    let phase_restarted_index = method_events
+        .iter()
+        .enumerate()
+        .skip(phase_blocked_index + 1)
+        .find(|(_, event)| {
+            event.kind == MethodEventKind::PhaseStarted
+                && event.phase_id.as_deref() == Some("phase-1")
+        })
+        .map(|(index, _)| index)
+        .expect("expected blocked phase to restart");
+    let second_gate_index = method_events
+        .iter()
+        .enumerate()
+        .skip(phase_restarted_index + 1)
+        .find(|(_, event)| {
+            event.kind == MethodEventKind::GateEvaluated
+                && event.phase_id.as_deref() == Some("phase-1")
+        })
+        .map(|(index, _)| index)
+        .expect("expected gate to be re-evaluated after restart");
+
+    let worker_dispatch_attempts: Vec<u32> = method_events
+        .iter()
+        .filter(|event| {
+            event.kind == MethodEventKind::WorkerDispatched
+                && event.phase_id.as_deref() == Some("phase-1")
+                && event.step_id.as_deref() == Some("step-1")
+        })
+        .filter_map(|event| event.attempt)
+        .collect();
+    assert_eq!(
+        worker_dispatch_attempts,
+        vec![1, 2],
+        "request-changes resume should preserve the old attempt and run a fresh one"
+    );
+
+    let second_dispatch_index = method_events
+        .iter()
+        .enumerate()
+        .find(|(_, event)| {
+            event.kind == MethodEventKind::WorkerDispatched
+                && event.phase_id.as_deref() == Some("phase-1")
+                && event.step_id.as_deref() == Some("step-1")
+                && event.attempt == Some(2)
+        })
+        .map(|(index, _)| index)
+        .expect("expected second worker dispatch");
+    assert!(
+        phase_restarted_index < second_dispatch_index && second_dispatch_index < second_gate_index,
+        "phase restart must re-run worker before re-evaluating the gate"
+    );
+}
+
+#[test]
+fn request_changes_can_repeat_before_final_approval() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let source = write_definition(&temp, &two_phase_gated_method_yaml());
+
+    let first_blocked_state = execute_run_with_reporter(
+        &source,
+        &FakePromptBuilder,
+        &FakeWorkerDispatcher,
+        &FakeInteractiveIO::new("rejected"),
+        &SpyRunStatusReporter::default(),
+    )
+    .expect("seed first blocked gated run");
+    assert_eq!(first_blocked_state.status, RunStatus::Blocked);
+
+    let second_blocked_state = resume_run_with_reporter(
+        &source.execution_root,
+        &FakePromptBuilder,
+        &FakeWorkerDispatcher,
+        &FakeInteractiveIO::new("rejected"),
+        &SpyRunStatusReporter::default(),
+    )
+    .expect("second request-changes round should remain a controlled block");
+    assert_eq!(second_blocked_state.status, RunStatus::Blocked);
+
+    let completed_state = resume_run_with_reporter(
+        &source.execution_root,
+        &FakePromptBuilder,
+        &FakeWorkerDispatcher,
+        &FakeInteractiveIO::new("approved"),
+        &SpyRunStatusReporter::default(),
+    )
+    .expect("third round should approve and complete");
+    assert_eq!(completed_state.status, RunStatus::Completed);
+    assert_eq!(
+        completed_state
+            .phases
+            .get("phase-1")
+            .and_then(|phase| phase.steps.get("step-1"))
+            .map(|step| step.current_attempt),
+        Some(3),
+        "each request-changes round should preserve the previous attempt and create the next one"
+    );
+
+    let paths = MethodRunPaths::new(&source.execution_root);
+    let method_events = recover_events(&paths.events_log()).expect("recover events");
+    let worker_dispatch_attempts: Vec<u32> = method_events
+        .iter()
+        .filter(|event| {
+            event.kind == MethodEventKind::WorkerDispatched
+                && event.phase_id.as_deref() == Some("phase-1")
+                && event.step_id.as_deref() == Some("step-1")
+        })
+        .filter_map(|event| event.attempt)
+        .collect();
+    assert_eq!(worker_dispatch_attempts, vec![1, 2, 3]);
+    assert_eq!(
+        method_events
+            .iter()
+            .filter(|event| {
+                event.kind == MethodEventKind::PhaseBlocked
+                    && event.phase_id.as_deref() == Some("phase-1")
+            })
+            .count(),
+        2,
+        "two request-changes decisions should produce two blocked phase lifecycles"
+    );
+}
+
+#[test]
 fn resume_run_emits_immediate_recovered_phase_heartbeat() {
     let temp = tempfile::tempdir().expect("tempdir");
     let source = write_definition(&temp, &two_phase_method_yaml());
