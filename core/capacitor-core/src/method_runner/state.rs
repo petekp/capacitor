@@ -153,6 +153,7 @@ impl StepStatus {
                 | (StepStatus::Running, StepStatus::Completed)
                 | (StepStatus::Running, StepStatus::Failed)
                 | (StepStatus::Running, StepStatus::Blocked)
+                | (StepStatus::Completed, StepStatus::Running)
                 | (StepStatus::Blocked, StepStatus::Running)
                 | (StepStatus::Blocked, StepStatus::Failed)
         );

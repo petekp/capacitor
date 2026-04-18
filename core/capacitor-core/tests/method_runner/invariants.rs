@@ -573,9 +573,9 @@ fn invariant_i8_legal_transitions_only() {
     assert!(err.to_string().contains("illegal transition"));
 
     // --- Step ---
-    // Illegal: Completed -> Running
+    // Illegal: Completed -> Blocked
     let err = StepStatus::Completed
-        .transition_to(StepStatus::Running, "test-step")
+        .transition_to(StepStatus::Blocked, "test-step")
         .unwrap_err();
     assert!(err.to_string().contains("illegal transition"));
 

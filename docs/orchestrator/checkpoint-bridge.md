@@ -118,7 +118,7 @@ The key invariant: bridge-managed status is runtime truth (`active_checkpoint.de
 
 Accepted decisions move the decided checkpoint from `active_checkpoint` into the run's bounded `past_checkpoints` history, preserving the decision, timestamp, and review metadata for snapshot consumers. Approvals resume the run as `active`; request-changes decisions leave the run `paused` with no active checkpoint so the runtime remains non-terminal while the method runner records the blocked gate. The run kernel keeps the most recent 50 decided checkpoints per run.
 
-Request-changes is still a blocked-gate handoff, not a full multi-round worker retry loop. The retry loop remains a separate method-runner design step.
+Request-changes is a blocked-gate handoff plus an explicit method-runner retry round. When a blocked gate is resumed, the runner restarts the blocked phase, re-executes its completed steps using fresh attempt numbers, and then emits a new checkpoint. Repeated request-changes decisions repeat that loop while preserving prior attempts as history.
 
 A paused run with no active checkpoint cannot advance phases until it is resumed, preventing a request-changes decision from being bypassed by a stray `AdvancePhase` mutation.
 
@@ -198,6 +198,8 @@ This identity is what allows the relay to find the correct pending marker: the S
 | `rejected_gate_reports_pause_instead_of_fail` | A rejected human gate returns a blocked handoff, persists `RunBlocked`, and reports runtime `Pause` instead of terminal failure |
 | `resumed_rejected_gate_reports_pause_instead_of_fail` | The same controlled blocked handoff holds when the gate is reached through method-runner resume |
 | `resume_blocked_gate_reports_resume_before_advancing_phase` | Resume reports runtime `Resume` before `AdvancePhase` and restarts a blocked phase before completing it |
+| `resume_blocked_gate_reexecutes_phase_steps_before_checkpoint_reapproval` | A request-changes resume re-runs the blocked phase's completed work as a new attempt before re-evaluating the checkpoint |
+| `request_changes_can_repeat_before_final_approval` | Multiple request-changes rounds preserve old attempts and continue with attempts 1, 2, 3 before final approval |
 | `runtime_reporter_posts_mutate_commands_with_expected_mapping` | Reporter `Pause` and `Resume` events map to matching runtime mutations with status messages |
 
 ### `core/capacitor-core/src/reduce/run_reducer/tests/lifecycle.rs`

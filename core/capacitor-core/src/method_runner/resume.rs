@@ -468,6 +468,8 @@ fn resume_phase_loop(
             .get(&phase_def.id)
             .map(|p| p.status)
             .unwrap_or(PhaseStatus::Pending);
+        let rerun_completed_steps =
+            blocked_phase_requires_fresh_round(&current_state, &phase_def.id);
 
         if phase_status == PhaseStatus::Completed || phase_status == PhaseStatus::Skipped {
             continue;
@@ -498,6 +500,7 @@ fn resume_phase_loop(
             dispatcher,
             interactive_io,
             reporter,
+            rerun_completed_steps,
         )?;
 
         if let Some(ref gate) = phase_def.gate {
@@ -546,6 +549,7 @@ fn resume_phase_steps(
     dispatcher: &dyn crate::method_runner::adapters::WorkerDispatcher,
     interactive_io: &dyn crate::method_runner::adapters::InteractiveIO,
     reporter: &dyn RunStatusReporter,
+    rerun_completed_steps: bool,
 ) -> Result<(), RunError> {
     for step_def in &phase_def.steps {
         let current_events = recover_events(events_path)?;
@@ -559,9 +563,15 @@ fn resume_phase_steps(
             .map(|s| s.status)
             .unwrap_or(StepStatus::Pending);
 
-        if step_status == StepStatus::Completed {
+        if step_status == StepStatus::Completed && !rerun_completed_steps {
             continue;
         }
+
+        let first_attempt = if rerun_completed_steps || step_status == StepStatus::Blocked {
+            next_step_attempt(&current_state, &phase_def.id, &step_def.id)
+        } else {
+            1
+        };
 
         let step_context = crate::method_runner::executor::StepExecutionContext {
             paths,
@@ -575,15 +585,40 @@ fn resume_phase_steps(
             interactive_io,
         };
 
-        if let Err(error) = crate::method_runner::executor::execute_step_public_with_reporter(
-            step_context,
-            reporter,
-        ) {
+        if let Err(error) =
+            crate::method_runner::executor::execute_step_public_with_reporter_from_attempt(
+                step_context,
+                reporter,
+                first_attempt,
+            )
+        {
             report_status_kind(reporter, RunStatusEventKind::Fail);
             return Err(error);
         }
     }
     Ok(())
+}
+
+fn blocked_phase_requires_fresh_round(state: &MethodRunState, phase_id: &str) -> bool {
+    state
+        .phases
+        .get(phase_id)
+        .filter(|phase| phase.status == PhaseStatus::Blocked)
+        .and_then(|phase| phase.gate_result.as_ref())
+        .is_some_and(|gate| gate.outcome != "approved")
+}
+
+fn next_step_attempt(state: &MethodRunState, phase_id: &str, step_id: &str) -> u32 {
+    state
+        .phases
+        .get(phase_id)
+        .and_then(|phase| phase.steps.get(step_id))
+        .map(|step| {
+            step.current_attempt
+                .max(step.attempts.keys().next_back().copied().unwrap_or(0))
+                .saturating_add(1)
+        })
+        .unwrap_or(1)
 }
 
 /// Evaluate a gate during resume and block the phase if not approved.

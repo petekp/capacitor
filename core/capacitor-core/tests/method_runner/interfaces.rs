@@ -701,13 +701,16 @@ fn interface_if6_step_legal_transitions() {
     assert!(StepStatus::Blocked
         .transition_to(StepStatus::Running, "s1")
         .is_ok());
+    assert!(StepStatus::Completed
+        .transition_to(StepStatus::Running, "s1")
+        .is_ok());
 }
 
 #[test]
 fn interface_if6_step_illegal_transitions() {
-    // Completed -> Running
+    // Completed -> Blocked
     assert!(StepStatus::Completed
-        .transition_to(StepStatus::Running, "s1")
+        .transition_to(StepStatus::Blocked, "s1")
         .is_err());
 
     // Pending -> Completed (skip)

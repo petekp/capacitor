@@ -619,6 +619,14 @@ pub(crate) fn execute_step_public_with_reporter(
     context: StepExecutionContext<'_>,
     reporter: &dyn RunStatusReporter,
 ) -> Result<(), RunError> {
+    execute_step_public_with_reporter_from_attempt(context, reporter, 1)
+}
+
+pub(crate) fn execute_step_public_with_reporter_from_attempt(
+    context: StepExecutionContext<'_>,
+    reporter: &dyn RunStatusReporter,
+    first_attempt: u32,
+) -> Result<(), RunError> {
     let step = context.step_definition;
     let mut context = context.with_reporter(reporter);
 
@@ -634,12 +642,19 @@ pub(crate) fn execute_step_public_with_reporter(
         )?;
         return Err(RunError::PipelineExecuteBlocked(step.id.clone()));
     }
-    execute_step(&mut context)
+    execute_step_with_first_attempt(&mut context, first_attempt)
 }
 
 fn execute_step(ctx: &mut ReportedStepExecutionContext<'_>) -> Result<(), RunError> {
+    execute_step_with_first_attempt(ctx, 1)
+}
+
+fn execute_step_with_first_attempt(
+    ctx: &mut ReportedStepExecutionContext<'_>,
+    first_attempt: u32,
+) -> Result<(), RunError> {
     match ctx.step.step_definition.action {
-        ActionKind::Dispatch => execute_dispatch_step(ctx),
+        ActionKind::Dispatch => execute_dispatch_step(ctx, first_attempt),
         ActionKind::Synthesis => execute_synthesis_step(
             ctx.step.paths,
             ctx.step.events_path,
@@ -647,8 +662,9 @@ fn execute_step(ctx: &mut ReportedStepExecutionContext<'_>) -> Result<(), RunErr
             &mut *ctx.step.current_seq,
             ctx.step.phase_id,
             ctx.step.step_definition,
+            first_attempt,
         ),
-        ActionKind::Interactive => execute_interactive_step(ctx),
+        ActionKind::Interactive => execute_interactive_step(ctx, first_attempt),
         ActionKind::PipelineExecute => {
             unreachable!("pipeline_execute is blocked before execute_step is called")
         }
@@ -668,7 +684,10 @@ enum AttemptOutcome {
     Failed { reason: String },
 }
 
-fn execute_dispatch_step(ctx: &mut ReportedStepExecutionContext<'_>) -> Result<(), RunError> {
+fn execute_dispatch_step(
+    ctx: &mut ReportedStepExecutionContext<'_>,
+    first_attempt: u32,
+) -> Result<(), RunError> {
     let paths = ctx.step.paths;
     let events_path = ctx.step.events_path;
     let run_id = ctx.step.run_id;
@@ -697,8 +716,9 @@ fn execute_dispatch_step(ctx: &mut ReportedStepExecutionContext<'_>) -> Result<(
 
     let mut last_failure_reason = String::new();
 
-    // Retry loop: attempt 1..=max_attempts
-    for attempt in 1..=step.max_attempts {
+    // Retry loop: max_attempts attempts, starting after any previous review round.
+    let last_attempt = first_attempt.saturating_add(step.max_attempts.saturating_sub(1));
+    for attempt in first_attempt..=last_attempt {
         let attempt_dir = paths.attempt_dir(phase_id, &step.id, attempt);
         std::fs::create_dir_all(&attempt_dir)?;
 
@@ -1008,8 +1028,9 @@ fn execute_synthesis_step(
     current_seq: &mut u64,
     phase_id: &str,
     step: &NormalizedStep,
+    first_attempt: u32,
 ) -> Result<(), RunError> {
-    let attempt: u32 = 1;
+    let attempt = first_attempt;
     let (attempt_dir, attempt_start) = emit_step_and_attempt_start(
         paths,
         events_path,
@@ -1059,14 +1080,17 @@ fn execute_synthesis_step(
 // Interactive step execution
 // ---------------------------------------------------------------------------
 
-fn execute_interactive_step(ctx: &mut ReportedStepExecutionContext<'_>) -> Result<(), RunError> {
+fn execute_interactive_step(
+    ctx: &mut ReportedStepExecutionContext<'_>,
+    first_attempt: u32,
+) -> Result<(), RunError> {
     let paths = ctx.step.paths;
     let events_path = ctx.step.events_path;
     let run_id = ctx.step.run_id;
     let phase_id = ctx.step.phase_id;
     let step = ctx.step.step_definition;
 
-    let attempt: u32 = 1;
+    let attempt = first_attempt;
     let (attempt_dir, attempt_start) = emit_step_and_attempt_start(
         paths,
         events_path,
