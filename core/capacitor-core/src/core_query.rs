@@ -157,7 +157,7 @@ impl CoreRuntime {
             }
         }
 
-        suggestions.sort_by(|a, b| b.1.cmp(&a.1));
+        suggestions.sort_by_key(|(_, task_count)| std::cmp::Reverse(*task_count));
         Ok(suggestions.into_iter().take(8).map(|(s, _)| s).collect())
     }
 
