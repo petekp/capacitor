@@ -19,6 +19,7 @@ use capacitor_core::method_runner::resume::resume_run_with_reporter;
 use capacitor_core::method_runner::run_status_reporter::{
     RunStatusEvent, RunStatusEventKind, RunStatusReporter, RuntimeRunStatusReporter,
 };
+use capacitor_core::method_runner::state::RunStatus;
 use capacitor_core::method_runner::storage::MethodRunPaths;
 use capacitor_core::runtime::service::RuntimeServiceEndpoint;
 
@@ -233,6 +234,49 @@ method:
     .to_string()
 }
 
+fn two_phase_gated_method_yaml() -> String {
+    r#"schema_version: "1"
+method:
+  id: reporter-two-phase-gated-test
+  version: "2026-03-26"
+  title: Reporter Two Phase Gated Test
+  defaults:
+    max_attempts: 1
+    completion_policy: all_complete
+  phases:
+    - id: phase-1
+      title: Discovery
+      execution: serial
+      gate:
+        id: discovery-gate
+        type: approval
+      steps:
+        - id: step-1
+          title: First pass
+          action: dispatch
+          outputs:
+            result:
+              path: artifacts/first.md
+              type: markdown
+          dispatch:
+            instructions: Do the first thing.
+    - id: phase-2
+      title: Implementation
+      execution: serial
+      steps:
+        - id: step-2
+          title: Final pass
+          action: dispatch
+          outputs:
+            result:
+              path: artifacts/final.md
+              type: markdown
+          dispatch:
+            instructions: Do the final thing.
+"#
+    .to_string()
+}
+
 fn write_definition(temp: &tempfile::TempDir, yaml: &str) -> DefinitionSource {
     let definition_path = temp.path().join("method.yaml");
     std::fs::write(&definition_path, yaml).expect("write definition");
@@ -321,14 +365,23 @@ fn rejected_gate_reports_pause_instead_of_fail() {
     let reporter = SpyRunStatusReporter::default();
     let interactive = FakeInteractiveIO::new("rejected");
 
-    let result = execute_run_with_reporter(
+    let state = execute_run_with_reporter(
         &source,
         &FakePromptBuilder,
         &FakeWorkerDispatcher,
         &interactive,
         &reporter,
+    )
+    .expect("rejected gate should produce a controlled blocked handoff");
+    assert_eq!(state.status, RunStatus::Blocked);
+
+    let paths = MethodRunPaths::new(&source.execution_root);
+    let method_events = recover_events(&paths.events_log()).expect("recover events");
+    assert_eq!(
+        method_events.last().map(|event| event.kind),
+        Some(MethodEventKind::RunBlocked),
+        "blocked gate should persist a run-blocked lifecycle event"
     );
-    assert!(result.is_err(), "rejected gate should block execution");
 
     let events = reporter.events();
     assert!(
@@ -342,6 +395,12 @@ fn rejected_gate_reports_pause_instead_of_fail() {
             .iter()
             .any(|event| event.kind == RunStatusEventKind::Fail),
         "rejected gate should not report a terminal runtime failure: {events:?}"
+    );
+    assert!(
+        !events
+            .iter()
+            .any(|event| event.kind == RunStatusEventKind::Complete),
+        "rejected gate should not report runtime completion: {events:?}"
     );
 }
 
@@ -380,16 +439,21 @@ fn resumed_rejected_gate_reports_pause_instead_of_fail() {
     }
 
     let reporter = SpyRunStatusReporter::default();
-    let result = resume_run_with_reporter(
+    let state = resume_run_with_reporter(
         &source.execution_root,
         &FakePromptBuilder,
         &FakeWorkerDispatcher,
         &FakeInteractiveIO::new("rejected"),
         &reporter,
-    );
-    assert!(
-        result.is_err(),
-        "rejected resumed gate should block execution"
+    )
+    .expect("rejected resumed gate should produce a controlled blocked handoff");
+    assert_eq!(state.status, RunStatus::Blocked);
+
+    let method_events = recover_events(&events_path).expect("recover resumed events");
+    assert_eq!(
+        method_events.last().map(|event| event.kind),
+        Some(MethodEventKind::RunBlocked),
+        "resumed rejected gate should persist a run-blocked lifecycle event"
     );
 
     let events = reporter.events();
@@ -404,6 +468,78 @@ fn resumed_rejected_gate_reports_pause_instead_of_fail() {
             .iter()
             .any(|event| event.kind == RunStatusEventKind::Fail),
         "rejected resumed gate should not report a terminal runtime failure: {events:?}"
+    );
+}
+
+#[test]
+fn resume_blocked_gate_reports_resume_before_advancing_phase() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let source = write_definition(&temp, &two_phase_gated_method_yaml());
+
+    let blocked_state = execute_run_with_reporter(
+        &source,
+        &FakePromptBuilder,
+        &FakeWorkerDispatcher,
+        &FakeInteractiveIO::new("rejected"),
+        &SpyRunStatusReporter::default(),
+    )
+    .expect("seed blocked gated run");
+    assert_eq!(blocked_state.status, RunStatus::Blocked);
+
+    let reporter = SpyRunStatusReporter::default();
+    let resumed_state = resume_run_with_reporter(
+        &source.execution_root,
+        &FakePromptBuilder,
+        &FakeWorkerDispatcher,
+        &FakeInteractiveIO::new("approved"),
+        &reporter,
+    )
+    .expect("resume blocked run");
+    assert_eq!(resumed_state.status, RunStatus::Completed);
+
+    let events = reporter.events();
+    let resume_index = events
+        .iter()
+        .position(|event| event.kind == RunStatusEventKind::Resume)
+        .expect("expected runtime resume event");
+    let advance_index = events
+        .iter()
+        .position(|event| event.kind == RunStatusEventKind::AdvancePhase)
+        .expect("expected runtime advance event");
+    assert!(
+        resume_index < advance_index,
+        "runtime resume must precede advance: {events:?}"
+    );
+
+    let paths = MethodRunPaths::new(&source.execution_root);
+    let method_events = recover_events(&paths.events_log()).expect("recover events");
+    let phase_blocked_index = method_events
+        .iter()
+        .position(|event| event.kind == MethodEventKind::PhaseBlocked)
+        .expect("expected phase blocked event");
+    let phase_restarted_index = method_events
+        .iter()
+        .enumerate()
+        .skip(phase_blocked_index + 1)
+        .find(|(_, event)| {
+            event.kind == MethodEventKind::PhaseStarted
+                && event.phase_id.as_deref() == Some("phase-1")
+        })
+        .map(|(index, _)| index)
+        .expect("expected blocked phase to restart before completion");
+    let phase_completed_index = method_events
+        .iter()
+        .enumerate()
+        .skip(phase_restarted_index + 1)
+        .find(|(_, event)| {
+            event.kind == MethodEventKind::PhaseCompleted
+                && event.phase_id.as_deref() == Some("phase-1")
+        })
+        .map(|(index, _)| index)
+        .expect("expected restarted phase to complete");
+    assert!(
+        phase_restarted_index < phase_completed_index,
+        "blocked phase must restart before completing"
     );
 }
 
@@ -618,7 +754,7 @@ fn reporter_panics_do_not_abort_run_execution() {
 #[test]
 fn runtime_reporter_posts_mutate_commands_with_expected_mapping() {
     let auth_token = "secret-token";
-    let server = StubMutationServer::spawn(auth_token, 4);
+    let server = StubMutationServer::spawn(auth_token, 5);
     let reporter = RuntimeRunStatusReporter::new(
         server.endpoint(auth_token),
         PathBuf::from("/tmp/project"),
@@ -637,17 +773,23 @@ fn runtime_reporter_posts_mutate_commands_with_expected_mapping() {
         RunStatusEventKind::Pause,
         Some("Run blocked: gate rejected".to_string()),
     ));
+    reporter.report(RunStatusEvent::new(
+        RunStatusEventKind::Resume,
+        Some("Run resumed".to_string()),
+    ));
     reporter.report(RunStatusEvent::new(RunStatusEventKind::Complete, None));
 
     let request_a = server.captured_request();
     let request_b = server.captured_request();
     let request_c = server.captured_request();
     let request_d = server.captured_request();
+    let request_e = server.captured_request();
 
     assert_eq!(request_a.request_line, "POST /runtime/run/mutate HTTP/1.1");
     assert_eq!(request_b.request_line, "POST /runtime/run/mutate HTTP/1.1");
     assert_eq!(request_c.request_line, "POST /runtime/run/mutate HTTP/1.1");
     assert_eq!(request_d.request_line, "POST /runtime/run/mutate HTTP/1.1");
+    assert_eq!(request_e.request_line, "POST /runtime/run/mutate HTTP/1.1");
 
     let command_a: MutateRunCommand =
         serde_json::from_str(&request_a.body).expect("parse start command");
@@ -656,7 +798,9 @@ fn runtime_reporter_posts_mutate_commands_with_expected_mapping() {
     let command_c: MutateRunCommand =
         serde_json::from_str(&request_c.body).expect("parse pause command");
     let command_d: MutateRunCommand =
-        serde_json::from_str(&request_d.body).expect("parse complete command");
+        serde_json::from_str(&request_d.body).expect("parse resume command");
+    let command_e: MutateRunCommand =
+        serde_json::from_str(&request_e.body).expect("parse complete command");
 
     assert_eq!(command_a.kind, RunMutationKind::Start);
     assert_eq!(command_a.status_message.as_deref(), Some("Run started"));
@@ -670,6 +814,8 @@ fn runtime_reporter_posts_mutate_commands_with_expected_mapping() {
         command_c.status_message.as_deref(),
         Some("Run blocked: gate rejected")
     );
-    assert_eq!(command_d.kind, RunMutationKind::Complete);
-    assert!(command_d.status_message.is_none());
+    assert_eq!(command_d.kind, RunMutationKind::Resume);
+    assert_eq!(command_d.status_message.as_deref(), Some("Run resumed"));
+    assert_eq!(command_e.kind, RunMutationKind::Complete);
+    assert!(command_e.status_message.is_none());
 }

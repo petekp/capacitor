@@ -39,7 +39,7 @@ The checkpoint bridge connects method runner gates to the run kernel checkpoint 
    - HTTP handler: `core/hud-hook/src/handlers.rs:498-535`
    - Relay logic: `core/hud-hook/src/checkpoint_bridge_relay.rs`
 
-9. **Bridge polls and unblocks** -- `BridgeInteractiveIO::capture_response()` polls for the decision file at 500ms intervals. When found, it normalizes the action ("approve"/"approved" -> "approved", "request_changes"/"rejected" -> "rejected", unknown -> "rejected"), clears `current_gate_id`, deletes the decision file, and returns the normalized response to the gate evaluator. An approval lets the method runner continue. A request-changes decision blocks the gate and reports a paused runtime run with a "Run blocked: ..." status message instead of reporting terminal failure.
+9. **Bridge polls and unblocks** -- `BridgeInteractiveIO::capture_response()` polls for the decision file at 500ms intervals. When found, it normalizes the action ("approve"/"approved" -> "approved", "request_changes"/"rejected" -> "rejected", unknown -> "rejected"), clears `current_gate_id`, deletes the decision file, and returns the normalized response to the gate evaluator. An approval lets the method runner continue. A request-changes decision records `PhaseBlocked` + `RunBlocked`, reports runtime `Pause` with a "Run blocked: ..." status message, and returns a controlled blocked handoff rather than an execution error.
    - Poll loop: `checkpoint_bridge.rs:197-239`
    - Normalization: `checkpoint_bridge.rs:116-128`
 
@@ -122,6 +122,10 @@ Request-changes is still a blocked-gate handoff, not a full multi-round worker r
 
 A paused run with no active checkpoint cannot advance phases until it is resumed, preventing a request-changes decision from being bypassed by a stray `AdvancePhase` mutation.
 
+Method-runner resume is explicit: resuming a blocked method run appends `RunStarted` in the method-runner event log to move `Blocked -> Running`, reports runtime `Resume`, restarts the blocked phase with `PhaseStarted`, and only then may report `AdvancePhase`. This keeps the runtime reducer and method-runner projection in the same lifecycle order.
+
+The method-runner CLI exits successfully for controlled `Blocked` handoffs. Process supervision treats nonzero exit as infrastructure/execution failure, but runtime truth still comes from runtime mutations and snapshots, not from filesystem relay markers or process exit alone.
+
 Swift review-window targeting still requires `activeCheckpoint`, but project-card projection treats fresh paused runs with or without an active checkpoint as waiting so blocked request-changes runs remain visible.
 
 ### Timeout Behavior
@@ -191,9 +195,10 @@ This identity is what allows the relay to find the correct pending marker: the S
 
 | Test | What it proves |
 |------|---------------|
-| `rejected_gate_reports_pause_instead_of_fail` | A rejected human gate reports a paused runtime run instead of terminal failure |
-| `resumed_rejected_gate_reports_pause_instead_of_fail` | The same paused reporting holds when the gate is reached through method-runner resume |
-| `runtime_reporter_posts_mutate_commands_with_expected_mapping` | Reporter `Pause` events map to runtime `Pause` mutations and carry the block message |
+| `rejected_gate_reports_pause_instead_of_fail` | A rejected human gate returns a blocked handoff, persists `RunBlocked`, and reports runtime `Pause` instead of terminal failure |
+| `resumed_rejected_gate_reports_pause_instead_of_fail` | The same controlled blocked handoff holds when the gate is reached through method-runner resume |
+| `resume_blocked_gate_reports_resume_before_advancing_phase` | Resume reports runtime `Resume` before `AdvancePhase` and restarts a blocked phase before completing it |
+| `runtime_reporter_posts_mutate_commands_with_expected_mapping` | Reporter `Pause` and `Resume` events map to matching runtime mutations with status messages |
 
 ### `core/capacitor-core/src/reduce/run_reducer/tests/lifecycle.rs`
 
@@ -201,6 +206,7 @@ This identity is what allows the relay to find the correct pending marker: the S
 |------|---------------|
 | `submit_request_changes_archives_checkpoint_and_keeps_run_paused` | Runtime request-changes decisions archive the checkpoint without resuming the run |
 | `advance_phase_rejects_paused_run_without_active_checkpoint` | A paused run cannot advance phases without an explicit resume |
+| `request_changes_pause_requires_resume_before_phase_advance` | `Pause -> AdvancePhase` is rejected, while `Resume -> AdvancePhase` succeeds after request-changes |
 
 ### `core/hud-hook/tests/serve_integration.rs`
 

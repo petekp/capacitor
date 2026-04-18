@@ -17,6 +17,7 @@ use capacitor_core::method_runner::resume::resume_run_with_reporter;
 use capacitor_core::method_runner::run_status_reporter::{
     NoopRunStatusReporter, RunStatusReporter, RuntimeRunStatusReporter,
 };
+use capacitor_core::method_runner::state::RunStatus;
 use capacitor_core::method_runner::worker_dispatch_adapter::CodexWorkerDispatcher;
 use capacitor_core::runtime::service::{RuntimeServiceEndpoint, RUNTIME_SERVICE_DEFAULT_PORT};
 
@@ -276,15 +277,33 @@ fn print_run_result(
     >,
 ) -> ExitCode {
     match result {
-        Ok(state) => {
-            println!("{label} complete: run_id={}", state.run_id);
-            println!("status: {:?}", state.status);
-            println!(
-                "phases: {}",
-                state.phases.keys().cloned().collect::<Vec<_>>().join(", ")
-            );
-            ExitCode::SUCCESS
-        }
+        Ok(state) => match state.status {
+            RunStatus::Completed => {
+                println!("{label} complete: run_id={}", state.run_id);
+                println!("status: {:?}", state.status);
+                println!(
+                    "phases: {}",
+                    state.phases.keys().cloned().collect::<Vec<_>>().join(", ")
+                );
+                ExitCode::SUCCESS
+            }
+            RunStatus::Blocked => {
+                println!("{label} blocked: run_id={}", state.run_id);
+                println!("status: {:?}", state.status);
+                println!(
+                    "phases: {}",
+                    state.phases.keys().cloned().collect::<Vec<_>>().join(", ")
+                );
+                ExitCode::SUCCESS
+            }
+            RunStatus::Created | RunStatus::Running | RunStatus::Failed => {
+                eprintln!(
+                    "{label} ended in unexpected status {:?}: run_id={}",
+                    state.status, state.run_id
+                );
+                ExitCode::FAILURE
+            }
+        },
         Err(e) => {
             eprintln!("error: {e}");
             ExitCode::FAILURE
@@ -558,6 +577,35 @@ Flags:
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeMap;
+
+    use capacitor_core::method_runner::state::{MethodRunState, RunStatus};
+
+    fn method_state(status: RunStatus) -> MethodRunState {
+        MethodRunState {
+            run_id: "run-test".to_string(),
+            status,
+            definition_frozen: true,
+            phases: BTreeMap::new(),
+            seq: 1,
+        }
+    }
+
+    #[test]
+    fn print_run_result_treats_blocked_as_successful_handoff() {
+        assert_eq!(
+            print_run_result("run", Ok(method_state(RunStatus::Blocked))),
+            ExitCode::SUCCESS
+        );
+    }
+
+    #[test]
+    fn print_run_result_rejects_unexpected_running_final_state() {
+        assert_eq!(
+            print_run_result("run", Ok(method_state(RunStatus::Running))),
+            ExitCode::FAILURE
+        );
+    }
 
     #[test]
     fn worker_cwd_prefers_bridge_project_path_over_current_dir_and_root() {

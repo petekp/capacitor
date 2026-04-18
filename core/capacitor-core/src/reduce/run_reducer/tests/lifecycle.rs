@@ -297,6 +297,60 @@ fn advance_phase_rejects_paused_run_without_active_checkpoint() {
 }
 
 #[test]
+fn request_changes_pause_requires_resume_before_phase_advance() {
+    let mut runs = empty_runs();
+    apply_run_mutation(
+        &mut runs,
+        create_command("run-request-changes-resume", "shape_and_execute"),
+    );
+
+    let mut cmd = base_cmd("run-request-changes-resume");
+    cmd.session_id = Some("s1".to_string());
+    mutate(&mut runs, cmd, RunMutationKind::AttachSession);
+
+    let mut cmd = base_cmd("run-request-changes-resume");
+    cmd.checkpoint_kind = Some(CheckpointKind::Proposal);
+    cmd.checkpoint_title = Some("Proposal".to_string());
+    mutate(&mut runs, cmd, RunMutationKind::EmitCheckpoint);
+
+    let mut cmd = base_cmd("run-request-changes-resume");
+    cmd.checkpoint_id = Some(active_checkpoint_id(&runs, "run-request-changes-resume"));
+    cmd.decision_action = Some("request_changes".to_string());
+    let decision_result = mutate(&mut runs, cmd, RunMutationKind::SubmitDecision);
+    assert!(decision_result.ok, "{}", decision_result.message);
+
+    let mut pause = base_cmd("run-request-changes-resume");
+    pause.status_message = Some("Run blocked: gate rejected".to_string());
+    let pause_result = mutate(&mut runs, pause, RunMutationKind::Pause);
+    assert!(pause_result.ok, "{}", pause_result.message);
+
+    let advance_while_paused = mutate(
+        &mut runs,
+        base_cmd("run-request-changes-resume"),
+        RunMutationKind::AdvancePhase,
+    );
+    assert!(!advance_while_paused.ok);
+    assert!(advance_while_paused.message.contains("run is not active"));
+
+    let mut resume = base_cmd("run-request-changes-resume");
+    resume.status_message = Some("Run resumed".to_string());
+    let resume_result = mutate(&mut runs, resume, RunMutationKind::Resume);
+    assert!(resume_result.ok, "{}", resume_result.message);
+
+    let advance_after_resume = mutate(
+        &mut runs,
+        base_cmd("run-request-changes-resume"),
+        RunMutationKind::AdvancePhase,
+    );
+    assert!(advance_after_resume.ok, "{}", advance_after_resume.message);
+
+    let run = runs.values().next().unwrap();
+    assert_eq!(run.status, RunStatus::Active);
+    assert_eq!(run.current_phase_index, 1);
+    assert_eq!(run.status_message.as_deref(), Some("Run resumed"));
+}
+
+#[test]
 fn advance_past_last_phase_completes_run() {
     let mut runs = empty_runs();
     apply_run_mutation(&mut runs, create_command("run-001", "execution_only"));

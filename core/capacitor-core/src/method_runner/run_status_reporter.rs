@@ -17,6 +17,7 @@ pub enum RunStatusEventKind {
     Heartbeat,
     AdvancePhase,
     Pause,
+    Resume,
     Complete,
     Fail,
 }
@@ -28,6 +29,7 @@ impl From<RunStatusEventKind> for RunMutationKind {
             RunStatusEventKind::Heartbeat => Self::Heartbeat,
             RunStatusEventKind::AdvancePhase => Self::AdvancePhase,
             RunStatusEventKind::Pause => Self::Pause,
+            RunStatusEventKind::Resume => Self::Resume,
             RunStatusEventKind::Complete => Self::Complete,
             RunStatusEventKind::Fail => Self::Fail,
         }
