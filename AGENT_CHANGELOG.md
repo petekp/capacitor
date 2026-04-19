@@ -9,6 +9,14 @@ Use this file only for recent migration context and retired seams that still mat
 
 ## Recent Active Deltas
 
+### 2026-04-19 — Run Checkpoint Timeline Durability Closed Out
+
+**Checkpoint history and Project Detail timeline** (PRs #45-#52, `3ac525a9..25df1b94`): run checkpoints now have runtime-owned durable history. The Rust run kernel archives decided checkpoints in `past_checkpoints`, assigns monotonic `history_ordinal` values from `RunState.next_checkpoint_history_ordinal`, preserves ordinals through restart/truncation/legacy snapshots, and keeps the most recent 50 decided checkpoints per run. Swift decodes that snapshot state and Project Detail renders the latest run with checkpoint history from `past_checkpoints` plus any current `activeCheckpoint`; it uses `historyOrdinal` for timeline order and row identity when present and derives only display labels/round numbers in Swift.
+
+**Checkpoint bridge durability** (PRs #49 and #51): bridge-managed decision relay is now commit-coupled. `hud-hook` prepares and commits bridge decision files as part of accepted `SubmitDecision` mutations; missing or malformed pending markers reject bridge-owned decisions and leave the runtime checkpoint retryable. The bridge consumes recovered decision files, removes stale pending markers after successful recovery, removes poisoned decision files on parse/version errors, and deliberately retains pending markers on timeout/error paths that still need runtime retry.
+
+Agent impact: do not infer checkpoint timeline truth from sessions, logs, process exit, or bridge files. Runtime snapshots are the live source for checkpoint facts/history/order; bridge files are relay/debug artifacts only. Do not reintroduce Swift-owned checkpoint ordering or row identity when `historyOrdinal` is present.
+
 ### 2026-04-16 — Session Resurrection + Transcript Cold-Start Hardening
 
 **State recovery hardening** (`94114b08`): same-session `SessionEnd -> SessionStart` resurrection now clears terminal metadata. `SessionStart` after a terminal event resets `terminated_at`, replaces terminal provenance with `SessionStart / DefinitiveTransient`, refreshes `last_authoritative_event_at`, and allows the following prompt to move the session back to `Working`.
@@ -25,7 +33,7 @@ Key files: `docs/architecture-decisions/005-authority-based-multi-signal-state-d
 
 ### 2026-03-24 — Checkpoint Bridge Shipped + Documentation Sweep
 
-**Checkpoint bridge** (7 commits, `69dee75..3db10d1`): `BridgeInteractiveIO` bridges method-runner sync gates to the run kernel checkpoint system via file-based protocol. The bridge is fail-closed (all errors fall back to interactive prompt); the relay side in `hud-hook` is fail-open (known limitation — errors swallowed after HTTP mutation succeeds). Ship review hardened: path sanitization, poll timeout, decision action validation.
+**Checkpoint bridge** (7 commits, `69dee75..3db10d1`): `BridgeInteractiveIO` bridges method-runner sync gates to the run kernel checkpoint system via file-based protocol. The bridge is fail-closed (all errors fall back to interactive prompt). Initial ship had a relay-side post-mutation failure window; that window was closed in the 2026-04-19 durability pass. Ship review hardened: path sanitization, poll timeout, decision action validation.
 
 Key files: `checkpoint_bridge.rs`, `checkpoint_bridge_protocol.rs` (capacitor-core), `checkpoint_bridge_relay.rs` (hud-hook), `RunCheckpointReviewWindow.swift`, `AppState.swift` (run checkpoint routing).
 
@@ -45,6 +53,7 @@ Key files: `checkpoint_bridge.rs`, `checkpoint_bridge_protocol.rs` (capacitor-co
 - The authenticated local runtime service is the live runtime boundary; persisted files remain durability and debugging aids.
 - iTerm and Terminal.app are first-class drivers, not a generic shared host bucket.
 - Transport failure after `capture_complete` preserves artifacts on disk; the `ownedInProgress` retry path recovers from preserved artifacts before attempting a fresh browser capture.
+- Run checkpoint history and Project Detail timeline truth come only from runtime snapshots (`active_checkpoint`, `past_checkpoints`, `history_ordinal`); bridge files, logs, process exit, and Swift array order are not authoritative.
 
 ## Stale Information Detected
 
@@ -120,3 +129,5 @@ Live runtime reads moved to authenticated `/runtime/*` endpoints hosted by `hud-
 | Use `System Events` keystrokes to deliver host launch commands | Use iTerm `write text` or Terminal.app `do script ... in front window` | 2026-03-13 |
 | Use `tmux list-windows` to infer which shared session owns a project path | Use pane-level data via `tmux list-panes` | 2026-03 |
 | Rely on mouse-center visibility alone for project-card AX automation | Prefer the named `Open in Terminal` accessibility action when available | 2026-03 |
+| Infer checkpoint timeline/history/order from sessions, logs, process exit, bridge marker files, or Swift array position | Use runtime snapshot facts: `active_checkpoint`, `past_checkpoints`, and `history_ordinal` | 2026-04-19 |
+| Treat checkpoint bridge relay files as live truth | Treat them as relay/debug artifacts; the authenticated runtime service and run snapshot remain authoritative | 2026-04-19 |

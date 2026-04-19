@@ -10,21 +10,21 @@ The checkpoint bridge connects method runner gates to the run kernel checkpoint 
 ## Pipeline Flow
 
 1. **Gate hit** -- The method runner executor evaluates a gate and calls `InteractiveIO::emit_gate_checkpoint(context)` with a `GateCheckpointContext` containing gate_id, phase_id, checkpoint_kind, title, summary, manifest_path, media_artifacts, and mermaid_sources.
-   - Trait definition: `core/capacitor-core/src/method_runner/adapters.rs:157-164`
+   - Trait definition: `core/capacitor-core/src/method_runner/adapters.rs:145-164`
 
 2. **Path validation** -- `BridgeInteractiveIO::emit_gate_checkpoint` validates both `run_id` and `gate_id` via `validate_path_component()` to prevent path traversal. On failure, it falls back to the standard interactive prompt.
-   - Validation: `checkpoint_bridge.rs:239-256`
+   - Validation: `checkpoint_bridge.rs:265-284`
    - `validate_path_component`: `checkpoint_bridge_protocol.rs:18-34`
 
 3. **Pending marker write** -- The bridge writes a `CheckpointBridgePending` JSON file to `~/.capacitor/runtime/checkpoint-bridge/<run_id>/<checkpoint_id>.pending.json` using atomic rename (`write_json_atomic`).
-   - `checkpoint_bridge.rs:258-270`
+   - `checkpoint_bridge.rs:286-298`
 
 4. **Runtime mutation** -- The bridge POSTs a `MutateRunCommand` with `kind: EmitCheckpoint` to the runtime service endpoint (`/runtime/run/mutate`). The command carries `checkpoint_id` set to the gate_id, `checkpoint_decision_relay: "checkpoint_bridge"`, plus checkpoint metadata (kind, title, summary, manifest_path, media_artifacts, mermaid_sources).
-   - `checkpoint_bridge.rs:67-95` (command construction)
-   - `checkpoint_bridge.rs:166-185` (`post_checkpoint`)
+   - `checkpoint_bridge.rs:73-105` (command construction)
+   - `checkpoint_bridge.rs:189-207` (`post_checkpoint`)
 
 5. **Gate armed** -- On successful mutation, the bridge stores `gate_id` in `current_gate_id`. The subsequent `capture_response()` call will poll for the decision file instead of falling back to stdin/fake IO.
-   - `checkpoint_bridge.rs:283`
+   - `checkpoint_bridge.rs:311`
 
 6. **Swift UI surfaces checkpoint** -- The Swift app's runtime snapshot refresh detects a run with `status == "paused"` and a non-nil `activeCheckpoint`. `RunStateStore.reconcileRunCheckpointWindowTarget` selects the oldest eligible checkpoint and sets `runCheckpointWindowTarget`, which triggers the `RunCheckpointReviewWindow` to open.
    - Snapshot apply: `apps/swift/Sources/Capacitor/Models/RuntimeSnapshotApplicator.swift`
@@ -32,16 +32,16 @@ The checkpoint bridge connects method runner gates to the run kernel checkpoint 
    - Window: `apps/swift/Sources/Capacitor/Views/Projects/RunCheckpointReviewWindow.swift:3`
 
 7. **User submits decision** -- The review window calls `appState.submitRunCheckpointDecision(projectPath:runID:checkpointID:action:note:)` which sends a `MutateRunCommand` with `kind: "submit_decision"`, `checkpoint_id`, `decision_action` ("approve" or "request_changes"), and optional `decision_note`.
-   - `RunCheckpointReviewWindow.swift:437-458` (submit flow)
+   - `RunCheckpointReviewWindow.swift:437-457` (submit flow)
    - `apps/swift/Sources/Capacitor/Models/AppState+Projects.swift` (mutation dispatch)
 
 8. **Relay commits decision file** -- The hud-hook HTTP handler (`handle_runtime_mutate_run`) looks up the active checkpoint's relay requirement. For bridge-managed checkpoints, it reads the pending marker and writes a prepared `CheckpointBridgeDecision` file before entering the runtime mutation commit. The commit callback then performs the final prepared-file rename. If the pending marker is missing/malformed or the decision file cannot be committed, the run mutation is rejected and the active checkpoint remains visible for retry.
-   - HTTP handler: `core/hud-hook/src/handlers.rs:498-535`
+   - HTTP handler: `core/hud-hook/src/handlers.rs:526-580`
    - Relay logic: `core/hud-hook/src/checkpoint_bridge_relay.rs`
 
 9. **Bridge polls and unblocks** -- `BridgeInteractiveIO::capture_response()` polls for the decision file at 500ms intervals. When found, it normalizes the action ("approve"/"approved" -> "approved", "request_changes"/"rejected" -> "rejected", unknown -> "rejected"), clears `current_gate_id`, deletes any remaining pending marker, deletes the decision file, and returns the normalized response to the gate evaluator. Cleaning the pending marker here covers relay crashes after the decision file is committed but before relay-side cleanup runs. An approval lets the method runner continue. A request-changes decision records `PhaseBlocked` + `RunBlocked`, reports runtime `Pause` with a "Run blocked: ..." status message, and returns a controlled blocked handoff rather than an execution error.
-   - Poll loop: `checkpoint_bridge.rs:197-239`
-   - Normalization: `checkpoint_bridge.rs:116-128`
+   - Poll loop: `checkpoint_bridge.rs:216-263`
+   - Normalization: `checkpoint_bridge.rs:123-134`
 
 ## Protocol Format
 
@@ -84,7 +84,7 @@ The bridge communicates between method runner and hud-hook relay through JSON fi
 }
 ```
 
-Both structs use `#[serde(deny_unknown_fields)]` for strict deserialization. The protocol version is `CHECKPOINT_BRIDGE_PROTOCOL_VERSION = 1` (`checkpoint_bridge_protocol.rs:14`). The bridge rejects decision files with a mismatched version (`checkpoint_bridge.rs:145-150`).
+Both structs use `#[serde(deny_unknown_fields)]` for strict deserialization. The protocol version is `CHECKPOINT_BRIDGE_PROTOCOL_VERSION = 1` (`checkpoint_bridge_protocol.rs:14`). The bridge rejects decision files with a mismatched version (`checkpoint_bridge.rs:156-160`).
 
 All file writes use `write_json_atomic` (`checkpoint_bridge_protocol.rs:73-116`), which writes to a `.tmp` sibling and renames into place to prevent partial reads.
 
@@ -94,15 +94,15 @@ All file writes use `write_json_atomic` (`checkpoint_bridge_protocol.rs:73-116`)
 
 Any failure in `emit_gate_checkpoint` cleans up state and falls back to the interactive prompt so the gate can still be resolved via stdin or auto-approve/reject:
 
-- **Path validation failure** (unsafe `run_id` or `gate_id`): Falls back to prompt without writing any files. `checkpoint_bridge.rs:239-256`
-- **Pending marker write failure**: Falls back to prompt. `checkpoint_bridge.rs:261-270`
-- **Runtime mutation rejected** (`ok: false`): Deletes the pending marker and falls back to prompt. The `current_gate_id` is never set, so `capture_response()` delegates to the fallback IO. `checkpoint_bridge.rs:272-281`
-- **Runtime mutation HTTP error**: Same cleanup and fallback path. `checkpoint_bridge.rs:177-183`
+- **Path validation failure** (unsafe `run_id` or `gate_id`): Falls back to prompt without writing any files. `checkpoint_bridge.rs:265-284`
+- **Pending marker write failure**: Falls back to prompt. `checkpoint_bridge.rs:286-298`
+- **Runtime mutation rejected** (`ok: false`): Deletes the pending marker and falls back to prompt. The `current_gate_id` is never set, so `capture_response()` delegates to the fallback IO. `checkpoint_bridge.rs:300-308`
+- **Runtime mutation HTTP error**: Same cleanup and fallback path. `checkpoint_bridge.rs:200-205`, `checkpoint_bridge.rs:300-308`
 - **Decision file parse error** during poll: Returns "rejected", deletes the corrupt decision file, and keeps the pending marker so the runtime-visible checkpoint can still be retried through the relay. `checkpoint_bridge.rs:149-155`, `checkpoint_bridge.rs:251-258`
 - **Decision file version mismatch**: Returns error, which triggers the same "rejected" response, bad-decision cleanup, and pending-marker retention. `checkpoint_bridge.rs:156-160`, `checkpoint_bridge.rs:251-258`
 - **Decision file committed but pending marker cleanup missed**: The bridge consumes the decision, deletes the stale pending marker, then deletes the decision file. This recovers from a hud-hook relay crash after commit but before cleanup.
 
-The key invariant: `current_gate_id` is only set to `Some(gate_id)` after all of pending marker write + runtime mutation succeed (`checkpoint_bridge.rs:283`). If either step fails, `capture_response()` falls through to the fallback IO.
+The key invariant: `current_gate_id` is only set to `Some(gate_id)` after all of pending marker write + runtime mutation succeed (`checkpoint_bridge.rs:311`). If either step fails, `capture_response()` falls through to the fallback IO.
 
 ### Relay Side (commit-coupled)
 
@@ -143,22 +143,22 @@ The `method-runner` binary accepts bridge flags to enable runtime-service-backed
 | `--bridge-project-path <path>` | Override bridge project path (defaults to `--root`) |
 | `--real` | Use real subprocess adapters (orthogonal to bridge) |
 
-- `BridgeOptions` struct: `core/capacitor-core/src/bin/method_runner.rs:20-23`
-- Flag parsing: `method_runner.rs:371-377`
-- `--bridge-project-path` requires `--bridge-run-id`: `method_runner.rs:311-313`
-- `bridge_project_path` defaults to `--root` when omitted: `method_runner.rs:322-325`
+- `BridgeOptions` struct: `core/capacitor-core/src/bin/method_runner.rs:25-28`
+- Flag parsing: `method_runner.rs:424-429`
+- `--bridge-project-path` requires `--bridge-run-id`: `method_runner.rs:347-348`
+- `bridge_project_path` defaults to `--root` when omitted: `method_runner.rs:371-373`
 
-**`make_interactive_io()` selection** (`method_runner.rs:449-477`):
+**`make_interactive_io()` selection** (`method_runner.rs:509-540`):
 
 1. Constructs a fallback IO based on `--approve` / `--reject` / `--response-dir` (default: auto-approve)
 2. If no bridge options are present, returns the fallback directly
 3. If bridge is enabled, discovers the runtime service endpoint via `RuntimeServiceEndpoint::discover()`, then wraps the fallback in `BridgeInteractiveIO`
 
-The fallback IO is passed as the `fallback` field of `BridgeInteractiveIO`. Prompt emissions always delegate to the fallback (`checkpoint_bridge.rs:189-191`). Response capture only uses the bridge path when `current_gate_id` is `Some`; otherwise it delegates to fallback (`checkpoint_bridge.rs:199-201`).
+The fallback IO is passed as the `fallback` field of `BridgeInteractiveIO`. Prompt emissions always delegate to the fallback (`checkpoint_bridge.rs:212-213`). Response capture only uses the bridge path when `current_gate_id` is `Some`; otherwise it delegates to fallback (`checkpoint_bridge.rs:216-224`).
 
 ## Identity Invariant
 
-`checkpoint_id == gate_id` for all bridge-managed checkpoints. This is established in `checkpoint_command()` at `checkpoint_bridge.rs:84` where the command's `checkpoint_id` is set to `context.gate_id`, and in `pending_marker()` at `checkpoint_bridge.rs:104` where the pending marker's `checkpoint_id` is also the gate_id.
+`checkpoint_id == gate_id` for all bridge-managed checkpoints. This is established in `checkpoint_command()` at `checkpoint_bridge.rs:91` where the command's `checkpoint_id` is set to `context.gate_id`, and in `pending_marker()` at `checkpoint_bridge.rs:115` where the pending marker's `checkpoint_id` is also the gate_id.
 
 This identity is what allows the relay to find the correct pending marker: the Swift UI sends back the `checkpoint_id` from the runtime snapshot in its `SubmitDecision` mutation, and the relay uses that same ID to look up `<checkpoint_id>.pending.json` on disk.
 
@@ -186,19 +186,19 @@ This identity is what allows the relay to find the correct pending marker: the S
 
 | Test | What it proves |
 |------|---------------|
-| `t4_checkpoint_bridge_protocol_paths_are_stable` (line 613) | Pending and decision file paths match the documented layout |
-| `t5_bridge_emits_runtime_mutation_and_pending_marker` (line 629) | `emit_gate_checkpoint` POSTs the correct `MutateRunCommand` and writes a valid pending marker |
-| `t6_bridge_normalizes_approve_to_approved` (line 701) | Decision with action "approve" becomes response "approved" |
-| `t7_bridge_normalizes_request_changes_to_rejected` (line 748) | Decision with action "request_changes" becomes response "rejected" |
-| `t8_executor_only_bridges_human_gates` (line 793) | Only human-type gates go through the bridge; auto gates skip it |
-| `t9_bridge_generated_manifest_stays_swift_compatible` (line 881) | Checkpoint metadata round-trips correctly for the Swift decoder |
-| `t13_bridge_crash_recovery_reemits_idempotently_and_returns_existing_decision_immediately` (line 1084) | After crash/restart, re-emitting a checkpoint picks up an existing decision file without re-polling and cleans any stale pending marker |
-| `t14_bridge_isolates_same_gate_id_across_concurrent_runs` (line 1190) | Two runs with the same gate_id use separate bridge directories and do not cross-contaminate |
-| `t15_bridge_falls_back_to_prompt_when_mutation_rejected` (line 1359) | Runtime rejection triggers fallback to interactive prompt (fail-closed) |
-| `t15_bridge_falls_back_to_prompt_when_server_unreachable` (line 1399) | Unreachable server triggers fallback to interactive prompt (fail-closed) |
-| `t16_bridge_timeout_keeps_pending_marker_for_runtime_retry` | Timeout returns "rejected" without deleting the pending marker needed by a runtime retry |
-| `t17_bridge_invalid_decision_keeps_pending_marker_and_removes_bad_file` | Malformed decision files are removed while pending markers remain retryable |
-| `t18_bridge_unsupported_decision_version_keeps_pending_marker_and_removes_bad_file` | Unsupported decision versions are removed while pending markers remain retryable |
+| `t4_checkpoint_bridge_protocol_paths_are_stable` (line 561) | Pending and decision file paths match the documented layout |
+| `t5_bridge_emits_runtime_mutation_and_pending_marker` (line 577) | `emit_gate_checkpoint` POSTs the correct `MutateRunCommand` and writes a valid pending marker |
+| `t6_bridge_normalizes_approve_to_approved` (line 653) | Decision with action "approve" becomes response "approved" |
+| `t7_bridge_normalizes_request_changes_to_rejected` (line 700) | Decision with action "request_changes" becomes response "rejected" |
+| `t8_executor_only_bridges_human_gates` (line 745) | Only human-type gates go through the bridge; auto gates skip it |
+| `t9_bridge_generated_manifest_stays_swift_compatible` (line 833) | Checkpoint metadata round-trips correctly for the Swift decoder |
+| `t13_bridge_crash_recovery_reemits_idempotently_and_returns_existing_decision_immediately` (line 1036) | After crash/restart, re-emitting a checkpoint picks up an existing decision file without re-polling and cleans any stale pending marker |
+| `t14_bridge_isolates_same_gate_id_across_concurrent_runs` (line 1146) | Two runs with the same gate_id use separate bridge directories and do not cross-contaminate |
+| `t15_bridge_falls_back_to_prompt_when_mutation_rejected` (line 1315) | Runtime rejection triggers fallback to interactive prompt (fail-closed) |
+| `t15_bridge_falls_back_to_prompt_when_server_unreachable` (line 1355) | Unreachable server triggers fallback to interactive prompt (fail-closed) |
+| `t16_bridge_timeout_keeps_pending_marker_for_runtime_retry` (line 1385) | Timeout returns "rejected" without deleting the pending marker needed by a runtime retry |
+| `t17_bridge_invalid_decision_keeps_pending_marker_and_removes_bad_file` (line 1426) | Malformed decision files are removed while pending markers remain retryable |
+| `t18_bridge_unsupported_decision_version_keeps_pending_marker_and_removes_bad_file` (line 1468) | Unsupported decision versions are removed while pending markers remain retryable |
 
 ### `core/capacitor-core/tests/method_runner/run_status_reporter.rs`
 
@@ -241,7 +241,7 @@ This identity is what allows the relay to find the correct pending marker: the S
 | `testFreshRuntimeSnapshotTargetsRunCheckpointWithoutTouchingDelegationReviewState` (line 7) | Checkpoint targeting is independent of delegation review state |
 | `testFreshRuntimeSnapshotChoosesOldestPausedRunCheckpointFirst` (line 50) | Queue ordering selects oldest checkpoint first |
 | `testFreshRuntimeSnapshotPresentsNextPausedRunCheckpointAfterFirstCheckpointClears` (line 87) | After a checkpoint clears, the next queued checkpoint surfaces automatically |
-| `testSubmitRunCheckpointDecisionMutatesRuntimeRunWithCheckpointIdentity` (line 146) | Decision submission sends correct mutation payload including `checkpoint_id` and `decision_action` |
+| `testSubmitRunCheckpointDecisionMutatesRuntimeRunWithCheckpointIdentity` (line 169) | Decision submission sends correct mutation payload including `checkpoint_id` and `decision_action` |
 
 ### `apps/swift/Tests/CapacitorTests/RunCheckpointTimelineProjectionTests.swift`
 

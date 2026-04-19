@@ -1,7 +1,7 @@
 # Idea-to-Run Gap Analysis
 
 > Doc role: `gap-analysis`
-> Status: Updated 2026-03-27. The four "missing pieces" identified below have been built and are feature-flagged behind `methodRunner` (enabled in `.frontier`, disabled in `.stable`).
+> Status: Updated 2026-04-19. The four "missing pieces" identified below have been built and are feature-flagged behind `methodRunner` (enabled in `.frontier`, disabled in `.stable`).
 
 ---
 
