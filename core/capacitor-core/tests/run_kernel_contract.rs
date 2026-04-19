@@ -13,8 +13,8 @@
 mod common;
 
 use capacitor_core::domain::{
-    CaptureStatus, CheckpointKind, InvolvementLevel, MediaArtifact, MediaArtifactType,
-    MutateRunCommand, RunMutationKind, RunState, RunStatus,
+    CaptureStatus, CheckpointKind, CheckpointStatus, InvolvementLevel, MediaArtifact,
+    MediaArtifactType, MermaidSource, MutateRunCommand, RunMutationKind, RunState, RunStatus,
 };
 use capacitor_core::CoreRuntime;
 use common::{active_checkpoint_id, mutate_run as mutate};
@@ -728,6 +728,222 @@ fn scenario_submit_decision_archives_decided_checkpoint_history() {
             .map(|decision| decision.action.as_str()),
         Some("request_changes")
     );
+}
+
+#[test]
+fn scenario_approve_archives_full_checkpoint_payload() {
+    let runtime = CoreRuntime::new().expect("runtime");
+
+    runtime
+        .mutate_run(create_cmd("run-checkpoint-payload", "execution_only"))
+        .expect("create");
+
+    let mut cmd = base_cmd("run-checkpoint-payload");
+    cmd.session_id = Some("session-checkpoint-payload".to_string());
+    let outcome = mutate(&runtime, cmd, RunMutationKind::AttachSession);
+    assert!(outcome.ok);
+
+    let mut cmd = base_cmd("run-checkpoint-payload");
+    cmd.checkpoint_id = Some("gate-full-payload".to_string());
+    cmd.checkpoint_kind = Some(CheckpointKind::ImplementationMilestone);
+    cmd.checkpoint_title = Some("Full payload gate".to_string());
+    cmd.checkpoint_summary = Some("Every checkpoint field should survive archive".to_string());
+    cmd.checkpoint_brief_path = Some("/tmp/full-payload-brief.md".to_string());
+    cmd.checkpoint_manifest_path = Some("/tmp/full-payload-manifest.json".to_string());
+    cmd.capture_url = Some("http://localhost:3000/full-payload".to_string());
+    cmd.checkpoint_media_artifacts = vec![MediaArtifact {
+        artifact_type: MediaArtifactType::Screenshot,
+        path: "/tmp/full-payload.png".to_string(),
+        label: "Full payload screenshot".to_string(),
+        width: Some(1440),
+        height: Some(900),
+        duration_secs: None,
+    }];
+    cmd.checkpoint_mermaid_sources = vec![MermaidSource {
+        label: "Review flow".to_string(),
+        source: "flowchart TD; A-->B".to_string(),
+    }];
+    let outcome = mutate(&runtime, cmd, RunMutationKind::EmitCheckpoint);
+    assert!(outcome.ok, "emit failed: {}", outcome.message);
+
+    let mut cmd = base_cmd("run-checkpoint-payload");
+    cmd.checkpoint_id = Some("gate-full-payload".to_string());
+    cmd.decision_action = Some("approve".to_string());
+    cmd.decision_note = Some("Approved with all payload fields intact".to_string());
+    let outcome = mutate(&runtime, cmd, RunMutationKind::SubmitDecision);
+    assert!(outcome.ok, "decision failed: {}", outcome.message);
+    assert_eq!(outcome.message, "decision recorded: approve");
+
+    let snap = runtime.app_snapshot().expect("snapshot");
+    let run = snap
+        .runs
+        .iter()
+        .find(|run| run.id == "run-checkpoint-payload")
+        .expect("run exists");
+    assert_eq!(run.status, RunStatus::Active);
+    assert!(run.active_checkpoint.is_none());
+    assert_eq!(run.past_checkpoints.len(), 1);
+
+    let archived = &run.past_checkpoints[0];
+    assert_eq!(archived.id, "gate-full-payload");
+    assert_eq!(archived.phase_id, "phase-001");
+    assert_eq!(archived.kind, CheckpointKind::ImplementationMilestone);
+    assert_eq!(archived.status, CheckpointStatus::Decided);
+    assert_eq!(archived.title, "Full payload gate");
+    assert_eq!(
+        archived.summary.as_deref(),
+        Some("Every checkpoint field should survive archive")
+    );
+    assert_eq!(
+        archived.brief_path.as_deref(),
+        Some("/tmp/full-payload-brief.md")
+    );
+    assert_eq!(
+        archived.manifest_path.as_deref(),
+        Some("/tmp/full-payload-manifest.json")
+    );
+    assert_eq!(
+        archived.capture_url.as_deref(),
+        Some("http://localhost:3000/full-payload")
+    );
+    assert_eq!(archived.capture_status, CaptureStatus::Pending);
+    assert_eq!(archived.media_artifacts.len(), 1);
+    assert_eq!(
+        archived.media_artifacts[0].artifact_type,
+        MediaArtifactType::Screenshot
+    );
+    assert_eq!(archived.media_artifacts[0].path, "/tmp/full-payload.png");
+    assert_eq!(archived.media_artifacts[0].label, "Full payload screenshot");
+    assert_eq!(archived.media_artifacts[0].width, Some(1440));
+    assert_eq!(archived.media_artifacts[0].height, Some(900));
+    assert_eq!(archived.mermaid_sources.len(), 1);
+    assert_eq!(archived.mermaid_sources[0].label, "Review flow");
+    assert_eq!(archived.mermaid_sources[0].source, "flowchart TD; A-->B");
+    assert!(archived.decided_at.is_some());
+    let decision = archived.decision.as_ref().expect("decision archived");
+    assert_eq!(decision.action, "approve");
+    assert_eq!(
+        decision.note.as_deref(),
+        Some("Approved with all payload fields intact")
+    );
+}
+
+#[test]
+fn scenario_completed_run_preserves_checkpoint_history_after_restart() {
+    let temp = TempDir::new().expect("tempdir");
+    let snap_path = temp.path().join("app_snapshot.json");
+    let runtime = CoreRuntime::new_with_snapshot_file(snap_path.to_string_lossy().to_string())
+        .expect("runtime");
+
+    runtime
+        .mutate_run(create_cmd("run-completed-history", "execution_only"))
+        .expect("create");
+
+    let mut cmd = base_cmd("run-completed-history");
+    cmd.session_id = Some("session-completed-history".to_string());
+    let outcome = mutate(&runtime, cmd, RunMutationKind::AttachSession);
+    assert!(outcome.ok);
+
+    let mut cmd = base_cmd("run-completed-history");
+    cmd.checkpoint_id = Some("gate-before-complete".to_string());
+    cmd.checkpoint_kind = Some(CheckpointKind::ImplementationMilestone);
+    cmd.checkpoint_title = Some("Before completion".to_string());
+    let outcome = mutate(&runtime, cmd, RunMutationKind::EmitCheckpoint);
+    assert!(outcome.ok, "emit failed: {}", outcome.message);
+
+    let mut cmd = base_cmd("run-completed-history");
+    cmd.checkpoint_id = Some("gate-before-complete".to_string());
+    cmd.decision_action = Some("approve".to_string());
+    let outcome = mutate(&runtime, cmd, RunMutationKind::SubmitDecision);
+    assert!(outcome.ok, "decision failed: {}", outcome.message);
+
+    let outcome = mutate(
+        &runtime,
+        base_cmd("run-completed-history"),
+        RunMutationKind::AdvancePhase,
+    );
+    assert!(outcome.ok, "complete failed: {}", outcome.message);
+
+    let snap = runtime.app_snapshot().expect("snapshot");
+    let run = snap
+        .runs
+        .iter()
+        .find(|run| run.id == "run-completed-history")
+        .expect("run exists before restart");
+    assert_eq!(run.status, RunStatus::Completed);
+    assert!(run.active_checkpoint.is_none());
+    assert_eq!(run.past_checkpoints.len(), 1);
+    assert_eq!(run.past_checkpoints[0].id, "gate-before-complete");
+
+    drop(runtime);
+
+    let recovered = CoreRuntime::new_with_snapshot_file(snap_path.to_string_lossy().to_string())
+        .expect("recovered runtime");
+    let snap = recovered.app_snapshot().expect("recovered snapshot");
+    let run = snap
+        .runs
+        .iter()
+        .find(|run| run.id == "run-completed-history")
+        .expect("recovered run exists");
+    assert_eq!(run.status, RunStatus::Completed);
+    assert!(run.active_checkpoint.is_none());
+    assert_eq!(run.past_checkpoints.len(), 1);
+    assert_eq!(run.past_checkpoints[0].id, "gate-before-complete");
+}
+
+#[test]
+fn scenario_checkpoint_history_truncates_oldest_records_deterministically() {
+    let runtime = CoreRuntime::new().expect("runtime");
+
+    runtime
+        .mutate_run(create_cmd("run-checkpoint-retention", "execution_only"))
+        .expect("create");
+
+    let mut cmd = base_cmd("run-checkpoint-retention");
+    cmd.session_id = Some("session-checkpoint-retention".to_string());
+    let outcome = mutate(&runtime, cmd, RunMutationKind::AttachSession);
+    assert!(outcome.ok);
+
+    for index in 0..55 {
+        let checkpoint_id = format!("gate-{index:02}");
+
+        let mut cmd = base_cmd("run-checkpoint-retention");
+        cmd.checkpoint_id = Some(checkpoint_id.clone());
+        cmd.checkpoint_kind = Some(CheckpointKind::ImplementationMilestone);
+        cmd.checkpoint_title = Some(format!("Retention gate {index:02}"));
+        let outcome = mutate(&runtime, cmd, RunMutationKind::EmitCheckpoint);
+        assert!(
+            outcome.ok,
+            "emit {checkpoint_id} failed: {}",
+            outcome.message
+        );
+
+        let mut cmd = base_cmd("run-checkpoint-retention");
+        cmd.checkpoint_id = Some(checkpoint_id.clone());
+        cmd.decision_action = Some("approve".to_string());
+        let outcome = mutate(&runtime, cmd, RunMutationKind::SubmitDecision);
+        assert!(
+            outcome.ok,
+            "decision {checkpoint_id} failed: {}",
+            outcome.message
+        );
+    }
+
+    let snap = runtime.app_snapshot().expect("snapshot");
+    let run = snap
+        .runs
+        .iter()
+        .find(|run| run.id == "run-checkpoint-retention")
+        .expect("run exists");
+    assert_eq!(run.status, RunStatus::Active);
+    assert!(run.active_checkpoint.is_none());
+    assert_eq!(run.past_checkpoints.len(), 50);
+    assert_eq!(run.past_checkpoints.first().unwrap().id, "gate-05");
+    assert_eq!(run.past_checkpoints.last().unwrap().id, "gate-54");
+    assert!(run
+        .past_checkpoints
+        .iter()
+        .all(|checkpoint| checkpoint.status == CheckpointStatus::Decided));
 }
 
 #[test]
