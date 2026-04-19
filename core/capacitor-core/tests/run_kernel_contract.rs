@@ -582,6 +582,9 @@ fn scenario_reemitting_same_checkpoint_is_idempotent() {
         .as_ref()
         .expect("checkpoint exists");
     let first_created_at = first_checkpoint.created_at.clone();
+    let first_history_ordinal = first_checkpoint.history_ordinal;
+    assert_eq!(first_history_ordinal, Some(0));
+    assert_eq!(first_run.next_checkpoint_history_ordinal, 1);
 
     let second = mutate(&runtime, emit_cmd, RunMutationKind::EmitCheckpoint);
     assert!(second.ok, "second emit failed: {}", second.message);
@@ -599,6 +602,8 @@ fn scenario_reemitting_same_checkpoint_is_idempotent() {
     assert_eq!(second_run.status, RunStatus::Paused);
     assert_eq!(second_checkpoint.id, "gate-build");
     assert_eq!(second_checkpoint.created_at, first_created_at);
+    assert_eq!(second_checkpoint.history_ordinal, first_history_ordinal);
+    assert_eq!(second_run.next_checkpoint_history_ordinal, 1);
 }
 
 #[test]
@@ -786,6 +791,7 @@ fn scenario_approve_archives_full_checkpoint_payload() {
 
     let archived = &run.past_checkpoints[0];
     assert_eq!(archived.id, "gate-full-payload");
+    assert_eq!(archived.history_ordinal, Some(0));
     assert_eq!(archived.phase_id, "phase-001");
     assert_eq!(archived.kind, CheckpointKind::ImplementationMilestone);
     assert_eq!(archived.status, CheckpointStatus::Decided);
@@ -874,6 +880,8 @@ fn scenario_completed_run_preserves_checkpoint_history_after_restart() {
     assert!(run.active_checkpoint.is_none());
     assert_eq!(run.past_checkpoints.len(), 1);
     assert_eq!(run.past_checkpoints[0].id, "gate-before-complete");
+    assert_eq!(run.past_checkpoints[0].history_ordinal, Some(0));
+    assert_eq!(run.next_checkpoint_history_ordinal, 1);
 
     drop(runtime);
 
@@ -889,6 +897,8 @@ fn scenario_completed_run_preserves_checkpoint_history_after_restart() {
     assert!(run.active_checkpoint.is_none());
     assert_eq!(run.past_checkpoints.len(), 1);
     assert_eq!(run.past_checkpoints[0].id, "gate-before-complete");
+    assert_eq!(run.past_checkpoints[0].history_ordinal, Some(0));
+    assert_eq!(run.next_checkpoint_history_ordinal, 1);
 }
 
 #[test]
@@ -940,6 +950,14 @@ fn scenario_checkpoint_history_truncates_oldest_records_deterministically() {
     assert_eq!(run.past_checkpoints.len(), 50);
     assert_eq!(run.past_checkpoints.first().unwrap().id, "gate-05");
     assert_eq!(run.past_checkpoints.last().unwrap().id, "gate-54");
+    assert_eq!(
+        run.past_checkpoints
+            .iter()
+            .map(|checkpoint| checkpoint.history_ordinal)
+            .collect::<Vec<_>>(),
+        (5..55).map(Some).collect::<Vec<_>>()
+    );
+    assert_eq!(run.next_checkpoint_history_ordinal, 55);
     assert!(run
         .past_checkpoints
         .iter()
@@ -1116,6 +1134,91 @@ fn run_state_deserializes_without_idea_fields() {
     assert_eq!(run_state.idea_title, None);
     assert_eq!(run_state.idea_description, None);
     assert!(run_state.past_checkpoints.is_empty());
+    assert_eq!(run_state.next_checkpoint_history_ordinal, 0);
+}
+
+#[test]
+fn run_state_deserializes_checkpoint_history_without_ordinals() {
+    let payload = serde_json::json!({
+        "id": "run-legacy-checkpoint-ordinals",
+        "project_path": PROJECT,
+        "method_id": "execution_only",
+        "method_name": "Execution Only",
+        "involvement": "supervised",
+        "status": "paused",
+        "phases": [
+            {
+                "id": "phase-001",
+                "template_id": "execute",
+                "name": "Execute",
+                "status": "active",
+                "checkpoint_policy": "manual",
+                "skill_hint": null,
+                "started_at": "2026-03-26T10:00:00Z",
+                "completed_at": null
+            }
+        ],
+        "current_phase_index": 0,
+        "active_checkpoint": {
+            "id": "gate-active",
+            "phase_id": "phase-001",
+            "kind": "implementation_milestone",
+            "status": "active",
+            "title": "Legacy active gate",
+            "summary": null,
+            "brief_path": null,
+            "manifest_path": null,
+            "media_artifacts": [],
+            "mermaid_sources": [],
+            "capture_status": "not_requested",
+            "capture_url": null,
+            "capture_claim": null,
+            "decision_relay": null,
+            "decision": null,
+            "created_at": "2026-03-26T10:01:00Z",
+            "decided_at": null
+        },
+        "past_checkpoints": [
+            {
+                "id": "gate-archived",
+                "phase_id": "phase-001",
+                "kind": "implementation_milestone",
+                "status": "decided",
+                "title": "Legacy archived gate",
+                "summary": null,
+                "brief_path": null,
+                "manifest_path": null,
+                "media_artifacts": [],
+                "mermaid_sources": [],
+                "capture_status": "not_requested",
+                "capture_url": null,
+                "capture_claim": null,
+                "decision_relay": null,
+                "decision": {"action": "approve", "note": null},
+                "created_at": "2026-03-26T10:00:00Z",
+                "decided_at": "2026-03-26T10:02:00Z"
+            }
+        ],
+        "session_id": "session-legacy",
+        "delegation_worker_id": null,
+        "status_message": null,
+        "created_at": "2026-03-26T10:00:00Z",
+        "updated_at": "2026-03-26T10:05:00Z"
+    });
+
+    let json = payload.to_string();
+    let run_state =
+        serde_json::from_str::<RunState>(&json).expect("deserialize legacy checkpoint history");
+
+    assert_eq!(
+        run_state
+            .active_checkpoint
+            .as_ref()
+            .and_then(|checkpoint| checkpoint.history_ordinal),
+        None
+    );
+    assert_eq!(run_state.past_checkpoints[0].history_ordinal, None);
+    assert_eq!(run_state.next_checkpoint_history_ordinal, 0);
 }
 
 #[test]

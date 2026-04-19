@@ -434,6 +434,7 @@ struct RuntimeMermaidSource: Codable, Equatable {
 
 struct RuntimeCheckpointState: Equatable {
     let id: String
+    let historyOrdinal: UInt64?
     let phaseId: String
     let kind: RuntimeCheckpointKind
     let status: String
@@ -452,6 +453,7 @@ struct RuntimeCheckpointState: Equatable {
 
     init(
         id: String,
+        historyOrdinal: UInt64? = nil,
         phaseId: String,
         kind: RuntimeCheckpointKind,
         status: String,
@@ -469,6 +471,7 @@ struct RuntimeCheckpointState: Equatable {
         decidedAt: String?,
     ) {
         self.id = id
+        self.historyOrdinal = historyOrdinal
         self.phaseId = phaseId
         self.kind = kind
         self.status = status

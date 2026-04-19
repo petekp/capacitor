@@ -72,7 +72,7 @@ The original four missing pieces have been built. The remaining gaps are:
 
 ### 2. Checkpoint history — CLOSED
 
-The Rust run kernel now archives decided checkpoints in `past_checkpoints` when `SubmitDecision` clears `active_checkpoint`. Each archived checkpoint keeps its `decision`, `decided_at`, artifacts, and checkpoint metadata, and Swift decodes this typed history from runtime snapshots. History is bounded to the most recent 50 decided checkpoints per run. Project Detail selects the latest run with checkpoint history and renders a run checkpoint timeline from that run's archived checkpoints plus any current active checkpoint, including decision state, notes, timestamps, and Swift-derived display round numbers per phase.
+The Rust run kernel now archives decided checkpoints in `past_checkpoints` when `SubmitDecision` clears `active_checkpoint`. Each emitted checkpoint receives a runtime-owned `history_ordinal` from the run's durable `next_checkpoint_history_ordinal` cursor, and each archived checkpoint keeps its `history_ordinal`, `decision`, `decided_at`, artifacts, and checkpoint metadata. Swift decodes this typed history from runtime snapshots. History is bounded to the most recent 50 decided checkpoints per run. Project Detail selects the latest run with checkpoint history and renders a run checkpoint timeline from that run's archived checkpoints plus any current active checkpoint, including decision state, notes, timestamps, runtime ordinal-backed row identity/order, and Swift-derived display round numbers per phase.
 
 ### 3. Method run completion UI — CLOSED
 

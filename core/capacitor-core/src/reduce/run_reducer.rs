@@ -131,6 +131,7 @@ fn handle_create(
         current_phase_index: 0,
         active_checkpoint: None,
         past_checkpoints: Vec::new(),
+        next_checkpoint_history_ordinal: 0,
         session_id: None,
         delegation_worker_id: command.delegation_worker_id.clone(),
         status_message: None,
@@ -307,9 +308,12 @@ fn handle_emit_checkpoint(
     } else {
         CaptureStatus::NotRequested
     };
+    let history_ordinal = next_checkpoint_history_ordinal(run);
+    run.next_checkpoint_history_ordinal = history_ordinal.saturating_add(1);
 
     run.active_checkpoint = Some(ActiveCheckpoint {
         id: checkpoint_id,
+        history_ordinal: Some(history_ordinal),
         phase_id,
         kind: checkpoint_kind,
         status: CheckpointStatus::Active,
@@ -462,6 +466,22 @@ fn archive_decided_checkpoint(run: &mut RunState, checkpoint: ActiveCheckpoint) 
     if overflow > 0 {
         run.past_checkpoints.drain(0..overflow);
     }
+}
+
+fn next_checkpoint_history_ordinal(run: &RunState) -> u64 {
+    let next_after_existing_ordinals = run
+        .past_checkpoints
+        .iter()
+        .chain(run.active_checkpoint.iter())
+        .filter_map(|checkpoint| checkpoint.history_ordinal)
+        .max()
+        .map_or(0, |ordinal| ordinal.saturating_add(1));
+    let next_after_legacy_records =
+        run.past_checkpoints.len() as u64 + u64::from(run.active_checkpoint.is_some());
+
+    run.next_checkpoint_history_ordinal
+        .max(next_after_existing_ordinals)
+        .max(next_after_legacy_records)
 }
 
 fn handle_capture_complete(
