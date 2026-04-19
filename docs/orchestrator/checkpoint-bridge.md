@@ -98,8 +98,8 @@ Any failure in `emit_gate_checkpoint` cleans up state and falls back to the inte
 - **Pending marker write failure**: Falls back to prompt. `checkpoint_bridge.rs:261-270`
 - **Runtime mutation rejected** (`ok: false`): Deletes the pending marker and falls back to prompt. The `current_gate_id` is never set, so `capture_response()` delegates to the fallback IO. `checkpoint_bridge.rs:272-281`
 - **Runtime mutation HTTP error**: Same cleanup and fallback path. `checkpoint_bridge.rs:177-183`
-- **Decision file parse error** during poll: Returns "rejected" and deletes the corrupt file. `checkpoint_bridge.rs:225-232`
-- **Decision file version mismatch**: Returns error, which triggers "rejected" response. `checkpoint_bridge.rs:145-150`
+- **Decision file parse error** during poll: Returns "rejected", deletes the corrupt decision file, and keeps the pending marker so the runtime-visible checkpoint can still be retried through the relay. `checkpoint_bridge.rs:149-155`, `checkpoint_bridge.rs:251-258`
+- **Decision file version mismatch**: Returns error, which triggers the same "rejected" response, bad-decision cleanup, and pending-marker retention. `checkpoint_bridge.rs:156-160`, `checkpoint_bridge.rs:251-258`
 - **Decision file committed but pending marker cleanup missed**: The bridge consumes the decision, deletes the stale pending marker, then deletes the decision file. This recovers from a hud-hook relay crash after commit but before cleanup.
 
 The key invariant: `current_gate_id` is only set to `Some(gate_id)` after all of pending marker write + runtime mutation succeed (`checkpoint_bridge.rs:283`). If either step fails, `capture_response()` falls through to the fallback IO.
@@ -131,7 +131,7 @@ Swift review-window targeting still requires `activeCheckpoint`, but project-car
 
 ### Timeout Behavior
 
-`DECISION_POLL_TIMEOUT` is 3600 seconds (1 hour). Defined at `checkpoint_bridge.rs:28`. After timeout, `capture_response` returns `InteractiveResponse { body: "rejected" }` so the method runner records a blocked gate rather than waiting forever. The poll interval is 500ms (`checkpoint_bridge.rs:223`).
+`DECISION_POLL_TIMEOUT` is 3600 seconds (1 hour). Defined at `checkpoint_bridge.rs:28`. After timeout, `capture_response` returns `InteractiveResponse { body: "rejected" }` so the method runner records a blocked gate rather than waiting forever. The bridge clears its in-memory armed gate but deliberately keeps the pending marker, because runtime truth may still expose the active checkpoint and a later retry must be able to commit through the relay. The poll interval is 500ms (`checkpoint_bridge.rs:249`).
 
 ## CLI Integration
 
@@ -196,6 +196,9 @@ This identity is what allows the relay to find the correct pending marker: the S
 | `t14_bridge_isolates_same_gate_id_across_concurrent_runs` (line 1190) | Two runs with the same gate_id use separate bridge directories and do not cross-contaminate |
 | `t15_bridge_falls_back_to_prompt_when_mutation_rejected` (line 1359) | Runtime rejection triggers fallback to interactive prompt (fail-closed) |
 | `t15_bridge_falls_back_to_prompt_when_server_unreachable` (line 1399) | Unreachable server triggers fallback to interactive prompt (fail-closed) |
+| `t16_bridge_timeout_keeps_pending_marker_for_runtime_retry` | Timeout returns "rejected" without deleting the pending marker needed by a runtime retry |
+| `t17_bridge_invalid_decision_keeps_pending_marker_and_removes_bad_file` | Malformed decision files are removed while pending markers remain retryable |
+| `t18_bridge_unsupported_decision_version_keeps_pending_marker_and_removes_bad_file` | Unsupported decision versions are removed while pending markers remain retryable |
 
 ### `core/capacitor-core/tests/method_runner/run_status_reporter.rs`
 

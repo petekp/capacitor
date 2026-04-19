@@ -56,6 +56,12 @@ impl BridgeInteractiveIO {
         }
     }
 
+    #[doc(hidden)]
+    pub fn with_poll_timeout(mut self, poll_timeout: Duration) -> Self {
+        self.poll_timeout = poll_timeout;
+        self
+    }
+
     fn manifest_path(&self, manifest_path: &Path) -> PathBuf {
         if manifest_path.is_absolute() {
             manifest_path.to_path_buf()
@@ -234,6 +240,8 @@ impl InteractiveIO for BridgeInteractiveIO {
                             gate_id, self.poll_timeout
                         );
                         *self.current_gate_id.borrow_mut() = None;
+                        // Keep the pending marker: runtime truth may still expose the
+                        // active checkpoint, and a later retry needs the relay handoff.
                         return InteractiveResponse {
                             body: "rejected".to_string(),
                         };
@@ -243,6 +251,8 @@ impl InteractiveIO for BridgeInteractiveIO {
                 Err(error) => {
                     eprintln!("warning: {}", error);
                     *self.current_gate_id.borrow_mut() = None;
+                    // Drop only the bad decision artifact. The pending marker still
+                    // belongs to the runtime-visible checkpoint retry path.
                     self.delete_decision_file(&gate_id);
                     return InteractiveResponse {
                         body: "rejected".to_string(),
