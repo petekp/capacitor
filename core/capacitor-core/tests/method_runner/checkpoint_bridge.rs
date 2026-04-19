@@ -1136,6 +1136,10 @@ fn t13_bridge_crash_recovery_reemits_idempotently_and_returns_existing_decision_
         !decision_file.exists(),
         "decision file should be cleaned up after crash recovery read"
     );
+    assert!(
+        !pending_file.exists(),
+        "pending marker should be cleaned up after reading a recovered decision"
+    );
 }
 
 #[test]

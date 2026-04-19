@@ -39,7 +39,7 @@ The checkpoint bridge connects method runner gates to the run kernel checkpoint 
    - HTTP handler: `core/hud-hook/src/handlers.rs:498-535`
    - Relay logic: `core/hud-hook/src/checkpoint_bridge_relay.rs`
 
-9. **Bridge polls and unblocks** -- `BridgeInteractiveIO::capture_response()` polls for the decision file at 500ms intervals. When found, it normalizes the action ("approve"/"approved" -> "approved", "request_changes"/"rejected" -> "rejected", unknown -> "rejected"), clears `current_gate_id`, deletes the decision file, and returns the normalized response to the gate evaluator. An approval lets the method runner continue. A request-changes decision records `PhaseBlocked` + `RunBlocked`, reports runtime `Pause` with a "Run blocked: ..." status message, and returns a controlled blocked handoff rather than an execution error.
+9. **Bridge polls and unblocks** -- `BridgeInteractiveIO::capture_response()` polls for the decision file at 500ms intervals. When found, it normalizes the action ("approve"/"approved" -> "approved", "request_changes"/"rejected" -> "rejected", unknown -> "rejected"), clears `current_gate_id`, deletes any remaining pending marker, deletes the decision file, and returns the normalized response to the gate evaluator. Cleaning the pending marker here covers relay crashes after the decision file is committed but before relay-side cleanup runs. An approval lets the method runner continue. A request-changes decision records `PhaseBlocked` + `RunBlocked`, reports runtime `Pause` with a "Run blocked: ..." status message, and returns a controlled blocked handoff rather than an execution error.
    - Poll loop: `checkpoint_bridge.rs:197-239`
    - Normalization: `checkpoint_bridge.rs:116-128`
 
@@ -100,6 +100,7 @@ Any failure in `emit_gate_checkpoint` cleans up state and falls back to the inte
 - **Runtime mutation HTTP error**: Same cleanup and fallback path. `checkpoint_bridge.rs:177-183`
 - **Decision file parse error** during poll: Returns "rejected" and deletes the corrupt file. `checkpoint_bridge.rs:225-232`
 - **Decision file version mismatch**: Returns error, which triggers "rejected" response. `checkpoint_bridge.rs:145-150`
+- **Decision file committed but pending marker cleanup missed**: The bridge consumes the decision, deletes the stale pending marker, then deletes the decision file. This recovers from a hud-hook relay crash after commit but before cleanup.
 
 The key invariant: `current_gate_id` is only set to `Some(gate_id)` after all of pending marker write + runtime mutation succeed (`checkpoint_bridge.rs:283`). If either step fails, `capture_response()` falls through to the fallback IO.
 
@@ -191,7 +192,7 @@ This identity is what allows the relay to find the correct pending marker: the S
 | `t7_bridge_normalizes_request_changes_to_rejected` (line 748) | Decision with action "request_changes" becomes response "rejected" |
 | `t8_executor_only_bridges_human_gates` (line 793) | Only human-type gates go through the bridge; auto gates skip it |
 | `t9_bridge_generated_manifest_stays_swift_compatible` (line 881) | Checkpoint metadata round-trips correctly for the Swift decoder |
-| `t13_bridge_crash_recovery_reemits_idempotently_and_returns_existing_decision_immediately` (line 1084) | After crash/restart, re-emitting a checkpoint picks up an existing decision file without re-polling |
+| `t13_bridge_crash_recovery_reemits_idempotently_and_returns_existing_decision_immediately` (line 1084) | After crash/restart, re-emitting a checkpoint picks up an existing decision file without re-polling and cleans any stale pending marker |
 | `t14_bridge_isolates_same_gate_id_across_concurrent_runs` (line 1190) | Two runs with the same gate_id use separate bridge directories and do not cross-contaminate |
 | `t15_bridge_falls_back_to_prompt_when_mutation_rejected` (line 1359) | Runtime rejection triggers fallback to interactive prompt (fail-closed) |
 | `t15_bridge_falls_back_to_prompt_when_server_unreachable` (line 1399) | Unreachable server triggers fallback to interactive prompt (fail-closed) |
