@@ -8,7 +8,9 @@ struct RunCheckpointTimelineSection: View {
             DetailSectionLabel(
                 title: "RUN CHECKPOINTS",
                 count: projection.entries.count,
-                countAccessibilityLabel: "\(projection.entries.count) checkpoints",
+                countAccessibilityLabel: RunCheckpointTimelineAccessibility.sectionCountLabel(
+                    entryCount: projection.entries.count,
+                ),
             )
 
             VStack(alignment: .leading, spacing: 6) {
@@ -82,7 +84,7 @@ private struct RunCheckpointTimelineRow: View {
                     }
                 }
 
-                Text(timestampText(for: entry))
+                Text(RunCheckpointTimelineAccessibility.timestampText(for: entry))
                     .font(AppTypography.monoCaption)
                     .foregroundColor(.white.opacity(0.34))
             }
@@ -99,7 +101,7 @@ private struct RunCheckpointTimelineRow: View {
                 ),
         )
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(accessibilityLabel)
+        .accessibilityLabel(RunCheckpointTimelineAccessibility.rowLabel(for: entry))
     }
 
     private var timelineRail: some View {
@@ -148,8 +150,14 @@ private struct RunCheckpointTimelineRow: View {
                 ),
         )
     }
+}
 
-    private var accessibilityLabel: String {
+enum RunCheckpointTimelineAccessibility {
+    static func sectionCountLabel(entryCount: Int) -> String {
+        "\(entryCount) \(entryCount == 1 ? "checkpoint" : "checkpoints")"
+    }
+
+    static func rowLabel(for entry: RunCheckpointTimelineProjection.Entry) -> String {
         var parts = [
             entry.title,
             entry.decisionState.label,
@@ -164,7 +172,7 @@ private struct RunCheckpointTimelineRow: View {
         return parts.joined(separator: ", ")
     }
 
-    private func timestampText(for entry: RunCheckpointTimelineProjection.Entry) -> String {
+    static func timestampText(for entry: RunCheckpointTimelineProjection.Entry) -> String {
         let timestamp = formattedTimestamp(entry.eventTimestamp)
         switch entry.timestampRole {
         case .created:
@@ -176,7 +184,7 @@ private struct RunCheckpointTimelineRow: View {
         }
     }
 
-    private func formattedTimestamp(_ timestamp: String) -> String {
+    private static func formattedTimestamp(_ timestamp: String) -> String {
         guard let date = parseISO8601Date(timestamp) else {
             return timestamp
         }
