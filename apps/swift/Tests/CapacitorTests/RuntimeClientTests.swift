@@ -357,7 +357,7 @@ final class RuntimeClientTests: XCTestCase {
         XCTAssertEqual(snapshot.runs.first?.delegationWorkerId, "worker-1")
     }
 
-    func testFetchRuntimeSnapshotMapsPastCheckpointsAndDecisions() async throws {
+    func testFetchRuntimeSnapshotMapsCompletedRunPastCheckpointsAndHistoryOrdinals() async throws {
         let client = try makeClient(
             coreSnapshot: Self.makeRunPastCheckpointSnapshot(),
         )
@@ -365,10 +365,15 @@ final class RuntimeClientTests: XCTestCase {
         let snapshot = try await client.fetchRuntimeSnapshot(correlationId: "run-past-checkpoint")
 
         let run = try XCTUnwrap(snapshot.runs.first)
+        XCTAssertEqual(run.status, "completed")
         XCTAssertNil(run.activeCheckpoint)
-        XCTAssertEqual(run.pastCheckpoints.count, 1)
+        XCTAssertEqual(run.pastCheckpoints.count, 2)
+        XCTAssertEqual(run.pastCheckpoints.map(\.id), [
+            "gate-review",
+            "gate-review",
+        ])
+        XCTAssertEqual(run.pastCheckpoints.map(\.historyOrdinal), [5, 6])
         let checkpoint = try XCTUnwrap(run.pastCheckpoints.first)
-        XCTAssertEqual(checkpoint.id, "checkpoint-decided")
         XCTAssertEqual(checkpoint.historyOrdinal, 5)
         XCTAssertEqual(checkpoint.status, "decided")
         XCTAssertEqual(checkpoint.decidedAt, "2026-02-28T19:06:00Z")
@@ -1170,7 +1175,7 @@ final class RuntimeClientTests: XCTestCase {
     private static func makeRunPastCheckpointSnapshot() -> Data {
         makeCoreSnapshotResponse(
             runsJSON: """
-            ,"runs":[{"id":"run-001","project_path":"/tmp/core-project","method_id":"method-001","method_name":"Execution","status":"active","session_id":"session-core","delegation_worker_id":"worker-1","created_at":"2026-02-28T19:00:00Z","updated_at":"2026-02-28T19:06:00Z","active_checkpoint":null,"past_checkpoints":[{"id":"checkpoint-decided","history_ordinal":5,"phase_id":"phase-001","kind":"implementation_milestone","status":"decided","title":"Capture homepage","summary":"Verify the implementation checkpoint.","brief_path":"/tmp/core-project/brief.md","manifest_path":"/tmp/core-project/manifest.json","media_artifacts":[],"mermaid_sources":[],"capture_status":"not_requested","capture_url":null,"capture_claim":null,"decision":{"action":"request_changes","note":"Needs one more pass"},"created_at":"2026-02-28T19:00:00Z","decided_at":"2026-02-28T19:06:00Z"}]}]
+            ,"runs":[{"id":"run-001","project_path":"/tmp/core-project","method_id":"method-001","method_name":"Execution","status":"completed","session_id":"session-core","delegation_worker_id":"worker-1","created_at":"2026-02-28T19:00:00Z","updated_at":"2026-02-28T19:12:00Z","active_checkpoint":null,"past_checkpoints":[{"id":"gate-review","history_ordinal":5,"phase_id":"phase-001","kind":"implementation_milestone","status":"decided","title":"Capture homepage","summary":"Verify the implementation checkpoint.","brief_path":"/tmp/core-project/brief.md","manifest_path":"/tmp/core-project/manifest.json","media_artifacts":[],"mermaid_sources":[],"capture_status":"not_requested","capture_url":null,"capture_claim":null,"decision":{"action":"request_changes","note":"Needs one more pass"},"created_at":"2026-02-28T19:00:00Z","decided_at":"2026-02-28T19:06:00Z"},{"id":"gate-review","history_ordinal":6,"phase_id":"phase-001","kind":"implementation_milestone","status":"decided","title":"Capture homepage retry","summary":"Verify the implementation checkpoint.","brief_path":"/tmp/core-project/brief.md","manifest_path":"/tmp/core-project/manifest.json","media_artifacts":[],"mermaid_sources":[],"capture_status":"not_requested","capture_url":null,"capture_claim":null,"decision":{"action":"approve","note":null},"created_at":"2026-02-28T19:07:00Z","decided_at":"2026-02-28T19:12:00Z"}]}]
             """,
         )
     }
