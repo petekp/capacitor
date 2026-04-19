@@ -1380,3 +1380,147 @@ fn t15_bridge_falls_back_to_prompt_when_server_unreachable() {
         "bridge should fall back to standard prompt when server is unreachable"
     );
 }
+
+#[test]
+fn t16_bridge_timeout_keeps_pending_marker_for_runtime_retry() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let home_dir = temp.path().join("home");
+    let project_path = temp.path().join("project");
+    let manifest_path = project_path.join("artifacts/checkpoint-manifest.json");
+    std::fs::create_dir_all(manifest_path.parent().expect("manifest parent"))
+        .expect("create manifest parent");
+    std::fs::write(&manifest_path, "{}").expect("write manifest");
+
+    let server = StubMutationServer::spawn("bridge-token");
+    let bridge = make_bridge(
+        "run-timeout",
+        project_path,
+        home_dir.clone(),
+        server.endpoint("bridge-token"),
+    )
+    .with_poll_timeout(Duration::ZERO);
+
+    let mut context = bridge_context(&manifest_path);
+    context.gate_id = "gate-timeout".to_string();
+    context.prompt_message = "Gate 'gate-timeout': Do you approve?".to_string();
+
+    bridge.emit_gate_checkpoint(&context);
+    server.finish();
+
+    let marker = pending_path(&home_dir, "run-timeout", "gate-timeout");
+    assert!(
+        marker.exists(),
+        "pending marker should exist before the decision poll times out"
+    );
+
+    let response =
+        capacitor_core::method_runner::adapters::InteractiveIO::capture_response(&bridge);
+    assert_eq!(response.body, "rejected");
+    assert!(
+        marker.exists(),
+        "pending marker should remain so the runtime-visible checkpoint can be retried"
+    );
+}
+
+#[test]
+fn t17_bridge_invalid_decision_keeps_pending_marker_and_removes_bad_file() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let home_dir = temp.path().join("home");
+    let project_path = temp.path().join("project");
+    let manifest_path = project_path.join("artifacts/checkpoint-manifest.json");
+    std::fs::create_dir_all(manifest_path.parent().expect("manifest parent"))
+        .expect("create manifest parent");
+    std::fs::write(&manifest_path, "{}").expect("write manifest");
+
+    let server = StubMutationServer::spawn("bridge-token");
+    let bridge = make_bridge(
+        "run-invalid-decision",
+        project_path,
+        home_dir.clone(),
+        server.endpoint("bridge-token"),
+    );
+
+    let mut context = bridge_context(&manifest_path);
+    context.gate_id = "gate-invalid-decision".to_string();
+    context.prompt_message = "Gate 'gate-invalid-decision': Do you approve?".to_string();
+
+    bridge.emit_gate_checkpoint(&context);
+    server.finish();
+
+    let marker = pending_path(&home_dir, "run-invalid-decision", "gate-invalid-decision");
+    let decision = decision_path(&home_dir, "run-invalid-decision", "gate-invalid-decision");
+    std::fs::write(&decision, "{not valid json").expect("write malformed decision");
+
+    let response =
+        capacitor_core::method_runner::adapters::InteractiveIO::capture_response(&bridge);
+    assert_eq!(response.body, "rejected");
+    assert!(
+        marker.exists(),
+        "pending marker should remain after an invalid decision so runtime retry is possible"
+    );
+    assert!(
+        !decision.exists(),
+        "invalid decision file should be removed so the next bridge attempt is not poisoned"
+    );
+}
+
+#[test]
+fn t18_bridge_unsupported_decision_version_keeps_pending_marker_and_removes_bad_file() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let home_dir = temp.path().join("home");
+    let project_path = temp.path().join("project");
+    let manifest_path = project_path.join("artifacts/checkpoint-manifest.json");
+    std::fs::create_dir_all(manifest_path.parent().expect("manifest parent"))
+        .expect("create manifest parent");
+    std::fs::write(&manifest_path, "{}").expect("write manifest");
+
+    let server = StubMutationServer::spawn("bridge-token");
+    let bridge = make_bridge(
+        "run-unsupported-decision",
+        project_path,
+        home_dir.clone(),
+        server.endpoint("bridge-token"),
+    );
+
+    let mut context = bridge_context(&manifest_path);
+    context.gate_id = "gate-unsupported-decision".to_string();
+    context.prompt_message = "Gate 'gate-unsupported-decision': Do you approve?".to_string();
+
+    bridge.emit_gate_checkpoint(&context);
+    server.finish();
+
+    let marker = pending_path(
+        &home_dir,
+        "run-unsupported-decision",
+        "gate-unsupported-decision",
+    );
+    let decision = decision_path(
+        &home_dir,
+        "run-unsupported-decision",
+        "gate-unsupported-decision",
+    );
+    write_json_atomic(
+        &decision,
+        &CheckpointBridgeDecision {
+            version: 99,
+            run_id: "run-unsupported-decision".to_string(),
+            checkpoint_id: "gate-unsupported-decision".to_string(),
+            action: "approve".to_string(),
+            note: Some("Future protocol".to_string()),
+            decided_at: "2026-03-24T12:20:00Z".to_string(),
+        },
+    )
+    .expect("write unsupported decision");
+
+    let response =
+        capacitor_core::method_runner::adapters::InteractiveIO::capture_response(&bridge);
+    assert_eq!(response.body, "rejected");
+    assert!(
+        marker.exists(),
+        "pending marker should remain after a version error so runtime retry is possible"
+    );
+    assert!(
+        !decision.exists(),
+        "unsupported decision file should be removed so the next bridge attempt is not poisoned"
+    );
+}
