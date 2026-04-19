@@ -168,6 +168,18 @@ impl BridgeInteractiveIO {
         }
     }
 
+    fn delete_pending_marker(&self, gate_id: &str) {
+        let path = pending_path(&self.home_dir, &self.run_id, gate_id);
+        if let Err(error) = fs_err::remove_file(&path) {
+            if error.kind() != std::io::ErrorKind::NotFound {
+                eprintln!(
+                    "warning: failed to delete checkpoint bridge pending marker {:?}: {}",
+                    path, error
+                );
+            }
+        }
+    }
+
     fn post_checkpoint(&self, context: &GateCheckpointContext) -> bool {
         let command = self.checkpoint_command(context);
         match self.endpoint.mutate_run(&command) {
@@ -211,6 +223,7 @@ impl InteractiveIO for BridgeInteractiveIO {
                 Ok(Some(decision)) => {
                     let body = Self::normalize_decision(&decision);
                     *self.current_gate_id.borrow_mut() = None;
+                    self.delete_pending_marker(&gate_id);
                     self.delete_decision_file(&gate_id);
                     return InteractiveResponse { body };
                 }
