@@ -145,6 +145,7 @@ struct CaptureURLBridgeTests {
         )
         let checkpoint = ActiveCheckpoint(
             id: "test-ckpt",
+            historyOrdinal: nil,
             phaseId: "phase-001",
             kind: .implementationMilestone,
             status: .active,

@@ -86,6 +86,94 @@ fn emit_checkpoint_pauses_run() {
 }
 
 #[test]
+fn emit_checkpoint_assigns_durable_history_ordinals() {
+    let mut runs = empty_runs();
+    apply_run_mutation(
+        &mut runs,
+        create_command("run-history-ordinal", "execution_only"),
+    );
+    attach_session(&mut runs, "run-history-ordinal");
+
+    let mut cmd = base_cmd("run-history-ordinal");
+    cmd.checkpoint_id = Some("gate-repeat".to_string());
+    cmd.checkpoint_kind = Some(CheckpointKind::ImplementationMilestone);
+    cmd.checkpoint_title = Some("First repeated gate".to_string());
+    let result = mutate(&mut runs, cmd, RunMutationKind::EmitCheckpoint);
+    assert!(result.ok, "{}", result.message);
+
+    {
+        let run = runs.values().next().unwrap();
+        let checkpoint = run.active_checkpoint.as_ref().expect("checkpoint");
+        assert_eq!(checkpoint.history_ordinal, Some(0));
+        assert_eq!(run.next_checkpoint_history_ordinal, 1);
+    }
+
+    let mut cmd = base_cmd("run-history-ordinal");
+    cmd.checkpoint_id = Some("gate-repeat".to_string());
+    cmd.decision_action = Some("approve".to_string());
+    let result = mutate(&mut runs, cmd, RunMutationKind::SubmitDecision);
+    assert!(result.ok, "{}", result.message);
+
+    {
+        let run = runs.values().next().unwrap();
+        assert_eq!(run.past_checkpoints.len(), 1);
+        assert_eq!(run.past_checkpoints[0].history_ordinal, Some(0));
+        assert_eq!(run.next_checkpoint_history_ordinal, 1);
+    }
+
+    let mut cmd = base_cmd("run-history-ordinal");
+    cmd.checkpoint_id = Some("gate-repeat".to_string());
+    cmd.checkpoint_kind = Some(CheckpointKind::ImplementationMilestone);
+    cmd.checkpoint_title = Some("Second repeated gate".to_string());
+    let result = mutate(&mut runs, cmd, RunMutationKind::EmitCheckpoint);
+    assert!(result.ok, "{}", result.message);
+
+    let run = runs.values().next().unwrap();
+    let checkpoint = run.active_checkpoint.as_ref().expect("checkpoint");
+    assert_eq!(checkpoint.history_ordinal, Some(1));
+    assert_eq!(run.next_checkpoint_history_ordinal, 2);
+}
+
+#[test]
+fn emit_checkpoint_continues_after_legacy_history_without_ordinals() {
+    let mut runs = empty_runs();
+    apply_run_mutation(
+        &mut runs,
+        create_command("run-legacy-history-ordinal", "execution_only"),
+    );
+    attach_session(&mut runs, "run-legacy-history-ordinal");
+
+    let mut cmd = base_cmd("run-legacy-history-ordinal");
+    cmd.checkpoint_id = Some("legacy-gate".to_string());
+    cmd.checkpoint_kind = Some(CheckpointKind::ImplementationMilestone);
+    let result = mutate(&mut runs, cmd, RunMutationKind::EmitCheckpoint);
+    assert!(result.ok, "{}", result.message);
+
+    let mut cmd = base_cmd("run-legacy-history-ordinal");
+    cmd.checkpoint_id = Some("legacy-gate".to_string());
+    cmd.decision_action = Some("approve".to_string());
+    let result = mutate(&mut runs, cmd, RunMutationKind::SubmitDecision);
+    assert!(result.ok, "{}", result.message);
+
+    {
+        let run = runs.values_mut().next().unwrap();
+        run.past_checkpoints[0].history_ordinal = None;
+        run.next_checkpoint_history_ordinal = 0;
+    }
+
+    let mut cmd = base_cmd("run-legacy-history-ordinal");
+    cmd.checkpoint_id = Some("new-gate".to_string());
+    cmd.checkpoint_kind = Some(CheckpointKind::ImplementationMilestone);
+    let result = mutate(&mut runs, cmd, RunMutationKind::EmitCheckpoint);
+    assert!(result.ok, "{}", result.message);
+
+    let run = runs.values().next().unwrap();
+    let checkpoint = run.active_checkpoint.as_ref().expect("checkpoint");
+    assert_eq!(checkpoint.history_ordinal, Some(1));
+    assert_eq!(run.next_checkpoint_history_ordinal, 2);
+}
+
+#[test]
 fn submit_decision_resumes_run() {
     let mut runs = empty_runs();
     apply_run_mutation(&mut runs, create_command("run-001", "execution_only"));

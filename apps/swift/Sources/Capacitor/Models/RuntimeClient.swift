@@ -1091,6 +1091,7 @@ private struct SnapshotCheckpointDecisionPayload: Codable {
 
 private struct SnapshotCheckpointPayload: Decodable {
     let id: String
+    let historyOrdinal: UInt64?
     let phaseId: String
     let kind: RuntimeCheckpointKind
     let status: String
@@ -1109,6 +1110,7 @@ private struct SnapshotCheckpointPayload: Decodable {
 
     enum CodingKeys: String, CodingKey {
         case id
+        case historyOrdinal = "history_ordinal"
         case phaseId = "phase_id"
         case kind
         case status
@@ -1137,6 +1139,7 @@ private struct SnapshotCheckpointPayload: Decodable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(String.self, forKey: .id)
+        historyOrdinal = try container.decodeIfPresent(UInt64.self, forKey: .historyOrdinal)
         phaseId = try container.decode(String.self, forKey: .phaseId)
         kind = try container.decode(RuntimeCheckpointKind.self, forKey: .kind)
         status = try container.decode(String.self, forKey: .status)
@@ -1177,6 +1180,7 @@ private struct SnapshotCheckpointPayload: Decodable {
 
     init(_ checkpoint: ActiveCheckpoint) {
         id = checkpoint.id
+        historyOrdinal = checkpoint.historyOrdinal
         phaseId = checkpoint.phaseId
         kind = RuntimeCheckpointKind(checkpoint.kind)
         status = RuntimeClient.snapshotCheckpointStatusString(checkpoint.status)
@@ -1385,6 +1389,7 @@ private extension RuntimeCheckpointDecision {
 private extension RuntimeCheckpointState {
     init(_ payload: SnapshotCheckpointPayload) {
         id = payload.id
+        historyOrdinal = payload.historyOrdinal
         phaseId = payload.phaseId
         kind = payload.kind
         status = payload.status

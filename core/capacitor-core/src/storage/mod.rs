@@ -304,6 +304,7 @@ mod tests {
                     current_phase_index: 0,
                     active_checkpoint: None,
                     past_checkpoints: vec![],
+                    next_checkpoint_history_ordinal: 0,
                     session_id: Some("session-1".to_string()),
                     delegation_worker_id: None,
                     status_message: Some(format!("status-{label}-{index}")),

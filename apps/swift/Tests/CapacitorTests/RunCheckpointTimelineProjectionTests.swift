@@ -257,6 +257,53 @@ final class RunCheckpointTimelineProjectionTests: XCTestCase {
         XCTAssertEqual(projection.entries.map(\.phaseRoundNumber), [1, 2, 3])
     }
 
+    func testRuntimeHistoryOrdinalsDriveOrderAndStableIdentities() throws {
+        let run = makeRun(
+            activeCheckpoint: makeCheckpoint(
+                id: "gate-review",
+                historyOrdinal: 2,
+                phaseID: "implementation",
+                title: "Third runtime gate",
+                status: "active",
+                createdAt: "not-a-date",
+            ),
+            pastCheckpoints: [
+                makeCheckpoint(
+                    id: "gate-review",
+                    historyOrdinal: 1,
+                    phaseID: "implementation",
+                    title: "Second runtime gate",
+                    createdAt: "not-a-date",
+                    decidedAt: "not-a-date",
+                    decisionAction: "request_changes",
+                ),
+                makeCheckpoint(
+                    id: "gate-review",
+                    historyOrdinal: 0,
+                    phaseID: "implementation",
+                    title: "First runtime gate",
+                    createdAt: "not-a-date",
+                    decidedAt: "not-a-date",
+                    decisionAction: "request_changes",
+                ),
+            ],
+        )
+
+        let projection = try XCTUnwrap(RunCheckpointTimelineProjection(run: run))
+
+        XCTAssertEqual(projection.entries.map(\.title), [
+            "First runtime gate",
+            "Second runtime gate",
+            "Third runtime gate",
+        ])
+        XCTAssertEqual(projection.entries.map(\.id), [
+            "gate-review#history-0",
+            "gate-review#history-1",
+            "gate-review#history-2",
+        ])
+        XCTAssertEqual(projection.entries.map(\.phaseRoundNumber), [1, 2, 3])
+    }
+
     func testDuplicateCheckpointIDsWithEqualTimestampsKeepRuntimeOrder() throws {
         let run = makeRun(
             pastCheckpoints: [
@@ -321,6 +368,7 @@ final class RunCheckpointTimelineProjectionTests: XCTestCase {
 
     private func makeCheckpoint(
         id: String,
+        historyOrdinal: UInt64? = nil,
         phaseID: String,
         title: String,
         status: String = "decided",
@@ -333,6 +381,7 @@ final class RunCheckpointTimelineProjectionTests: XCTestCase {
     ) -> RuntimeCheckpointState {
         RuntimeCheckpointState(
             id: id,
+            historyOrdinal: historyOrdinal,
             phaseId: phaseID,
             kind: kind,
             status: status,

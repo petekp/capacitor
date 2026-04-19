@@ -235,6 +235,8 @@ pub struct CaptureClaim {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Record)]
 pub struct ActiveCheckpoint {
     pub id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub history_ordinal: Option<u64>,
     pub phase_id: String,
     pub kind: CheckpointKind,
     pub status: CheckpointStatus,
@@ -273,6 +275,8 @@ pub struct RunState {
     pub active_checkpoint: Option<ActiveCheckpoint>,
     #[serde(default)]
     pub past_checkpoints: Vec<ActiveCheckpoint>,
+    #[serde(default)]
+    pub next_checkpoint_history_ordinal: u64,
     pub session_id: Option<String>,
     /// Strangler bridge: links to existing delegation worker when in execution phase.
     pub delegation_worker_id: Option<String>,

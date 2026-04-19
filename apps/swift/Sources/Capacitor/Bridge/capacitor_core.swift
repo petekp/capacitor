@@ -1005,6 +1005,7 @@ public func FfiConverterTypeCoreRuntime_lower(_ value: CoreRuntime) -> UnsafeMut
 
 public struct ActiveCheckpoint {
     public var id: String
+    public var historyOrdinal: UInt64?
     public var phaseId: String
     public var kind: CheckpointKind
     public var status: CheckpointStatus
@@ -1027,12 +1028,13 @@ public struct ActiveCheckpoint {
 
     /// Default memberwise initializers are never public by default, so we
     /// declare one manually.
-    public init(id: String, phaseId: String, kind: CheckpointKind, status: CheckpointStatus, title: String, summary: String?, briefPath: String?, manifestPath: String?, mediaArtifacts: [MediaArtifact], mermaidSources: [MermaidSource], captureStatus: CaptureStatus,
+    public init(id: String, historyOrdinal: UInt64?, phaseId: String, kind: CheckpointKind, status: CheckpointStatus, title: String, summary: String?, briefPath: String?, manifestPath: String?, mediaArtifacts: [MediaArtifact], mermaidSources: [MermaidSource], captureStatus: CaptureStatus,
                 /* 
                     * URL that was captured (or should be captured) via agent-browser.
                     */ captureUrl: String?, captureClaim: CaptureClaim?, decisionRelay: CheckpointDecisionRelay?, decision: CheckpointDecision?, createdAt: String, decidedAt: String?)
     {
         self.id = id
+        self.historyOrdinal = historyOrdinal
         self.phaseId = phaseId
         self.kind = kind
         self.status = status
@@ -1055,6 +1057,9 @@ public struct ActiveCheckpoint {
 extension ActiveCheckpoint: Equatable, Hashable {
     public static func == (lhs: ActiveCheckpoint, rhs: ActiveCheckpoint) -> Bool {
         if lhs.id != rhs.id {
+            return false
+        }
+        if lhs.historyOrdinal != rhs.historyOrdinal {
             return false
         }
         if lhs.phaseId != rhs.phaseId {
@@ -1110,6 +1115,7 @@ extension ActiveCheckpoint: Equatable, Hashable {
 
     public func hash(into hasher: inout Hasher) {
         hasher.combine(id)
+        hasher.combine(historyOrdinal)
         hasher.combine(phaseId)
         hasher.combine(kind)
         hasher.combine(status)
@@ -1137,6 +1143,7 @@ public struct FfiConverterTypeActiveCheckpoint: FfiConverterRustBuffer {
         return
             try ActiveCheckpoint(
                 id: FfiConverterString.read(from: &buf),
+                historyOrdinal: FfiConverterOptionUInt64.read(from: &buf),
                 phaseId: FfiConverterString.read(from: &buf),
                 kind: FfiConverterTypeCheckpointKind.read(from: &buf),
                 status: FfiConverterTypeCheckpointStatus.read(from: &buf),
@@ -1158,6 +1165,7 @@ public struct FfiConverterTypeActiveCheckpoint: FfiConverterRustBuffer {
 
     public static func write(_ value: ActiveCheckpoint, into buf: inout [UInt8]) {
         FfiConverterString.write(value.id, into: &buf)
+        FfiConverterOptionUInt64.write(value.historyOrdinal, into: &buf)
         FfiConverterString.write(value.phaseId, into: &buf)
         FfiConverterTypeCheckpointKind.write(value.kind, into: &buf)
         FfiConverterTypeCheckpointStatus.write(value.status, into: &buf)
@@ -6170,6 +6178,7 @@ public struct RunState {
     public var currentPhaseIndex: UInt32
     public var activeCheckpoint: ActiveCheckpoint?
     public var pastCheckpoints: [ActiveCheckpoint]
+    public var nextCheckpointHistoryOrdinal: UInt64
     public var sessionId: String?
     /**
      * Strangler bridge: links to existing delegation worker when in execution phase.
@@ -6190,7 +6199,7 @@ public struct RunState {
 
     /// Default memberwise initializers are never public by default, so we
     /// declare one manually.
-    public init(id: String, projectPath: String, methodId: String, methodName: String, involvement: InvolvementLevel, status: RunStatus, phases: [PhaseInstance], currentPhaseIndex: UInt32, activeCheckpoint: ActiveCheckpoint?, pastCheckpoints: [ActiveCheckpoint], sessionId: String?,
+    public init(id: String, projectPath: String, methodId: String, methodName: String, involvement: InvolvementLevel, status: RunStatus, phases: [PhaseInstance], currentPhaseIndex: UInt32, activeCheckpoint: ActiveCheckpoint?, pastCheckpoints: [ActiveCheckpoint], nextCheckpointHistoryOrdinal: UInt64, sessionId: String?,
                 /* 
                     * Strangler bridge: links to existing delegation worker when in execution phase.
                     */ delegationWorkerId: String?,
@@ -6211,6 +6220,7 @@ public struct RunState {
         self.currentPhaseIndex = currentPhaseIndex
         self.activeCheckpoint = activeCheckpoint
         self.pastCheckpoints = pastCheckpoints
+        self.nextCheckpointHistoryOrdinal = nextCheckpointHistoryOrdinal
         self.sessionId = sessionId
         self.delegationWorkerId = delegationWorkerId
         self.statusMessage = statusMessage
@@ -6254,6 +6264,9 @@ extension RunState: Equatable, Hashable {
         if lhs.pastCheckpoints != rhs.pastCheckpoints {
             return false
         }
+        if lhs.nextCheckpointHistoryOrdinal != rhs.nextCheckpointHistoryOrdinal {
+            return false
+        }
         if lhs.sessionId != rhs.sessionId {
             return false
         }
@@ -6292,6 +6305,7 @@ extension RunState: Equatable, Hashable {
         hasher.combine(currentPhaseIndex)
         hasher.combine(activeCheckpoint)
         hasher.combine(pastCheckpoints)
+        hasher.combine(nextCheckpointHistoryOrdinal)
         hasher.combine(sessionId)
         hasher.combine(delegationWorkerId)
         hasher.combine(statusMessage)
@@ -6320,6 +6334,7 @@ public struct FfiConverterTypeRunState: FfiConverterRustBuffer {
                 currentPhaseIndex: FfiConverterUInt32.read(from: &buf),
                 activeCheckpoint: FfiConverterOptionTypeActiveCheckpoint.read(from: &buf),
                 pastCheckpoints: FfiConverterSequenceTypeActiveCheckpoint.read(from: &buf),
+                nextCheckpointHistoryOrdinal: FfiConverterUInt64.read(from: &buf),
                 sessionId: FfiConverterOptionString.read(from: &buf),
                 delegationWorkerId: FfiConverterOptionString.read(from: &buf),
                 statusMessage: FfiConverterOptionString.read(from: &buf),
@@ -6342,6 +6357,7 @@ public struct FfiConverterTypeRunState: FfiConverterRustBuffer {
         FfiConverterUInt32.write(value.currentPhaseIndex, into: &buf)
         FfiConverterOptionTypeActiveCheckpoint.write(value.activeCheckpoint, into: &buf)
         FfiConverterSequenceTypeActiveCheckpoint.write(value.pastCheckpoints, into: &buf)
+        FfiConverterUInt64.write(value.nextCheckpointHistoryOrdinal, into: &buf)
         FfiConverterOptionString.write(value.sessionId, into: &buf)
         FfiConverterOptionString.write(value.delegationWorkerId, into: &buf)
         FfiConverterOptionString.write(value.statusMessage, into: &buf)

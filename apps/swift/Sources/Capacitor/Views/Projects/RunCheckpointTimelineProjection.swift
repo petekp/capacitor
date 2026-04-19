@@ -106,7 +106,7 @@ struct RunCheckpointTimelineProjection: Equatable {
             roundNumbersByPhaseID[checkpoint.phaseId] = roundNumber
 
             return Entry(
-                id: "\(checkpoint.id)#\(ordinal)",
+                id: entryID(for: record, fallbackOrdinal: ordinal),
                 checkpointID: checkpoint.id,
                 source: record.source,
                 phaseID: checkpoint.phaseId,
@@ -128,6 +128,14 @@ struct RunCheckpointTimelineProjection: Equatable {
         _ lhs: CheckpointRecord,
         _ rhs: CheckpointRecord,
     ) -> Bool {
+        if lhs.checkpoint.historyOrdinal != nil || rhs.checkpoint.historyOrdinal != nil {
+            let lhsOrdinal = lhs.checkpoint.historyOrdinal ?? UInt64(lhs.inputOrder)
+            let rhsOrdinal = rhs.checkpoint.historyOrdinal ?? UInt64(rhs.inputOrder)
+            if lhsOrdinal != rhsOrdinal {
+                return lhsOrdinal < rhsOrdinal
+            }
+        }
+
         let eventComparison = compareTimestamps(
             eventTimestamp(for: lhs.checkpoint, source: lhs.source),
             eventTimestamp(for: rhs.checkpoint, source: rhs.source),
@@ -145,6 +153,13 @@ struct RunCheckpointTimelineProjection: Equatable {
         }
 
         return lhs.checkpoint.id < rhs.checkpoint.id
+    }
+
+    private static func entryID(for record: CheckpointRecord, fallbackOrdinal: Int) -> String {
+        if let historyOrdinal = record.checkpoint.historyOrdinal {
+            return "\(record.checkpoint.id)#history-\(historyOrdinal)"
+        }
+        return "\(record.checkpoint.id)#\(fallbackOrdinal)"
     }
 
     private static func compareTimestamps(_ lhs: String, _ rhs: String) -> ComparisonResult {
