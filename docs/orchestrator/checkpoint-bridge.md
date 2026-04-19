@@ -26,14 +26,14 @@ The checkpoint bridge connects method runner gates to the run kernel checkpoint 
 5. **Gate armed** -- On successful mutation, the bridge stores `gate_id` in `current_gate_id`. The subsequent `capture_response()` call will poll for the decision file instead of falling back to stdin/fake IO.
    - `checkpoint_bridge.rs:283`
 
-6. **Swift UI surfaces checkpoint** -- The Swift app's runtime snapshot refresh detects a run with `status == "paused"` and a non-nil `activeCheckpoint`. `AppState.reconcileRunCheckpointWindowTarget` selects the oldest eligible checkpoint and sets `runCheckpointWindowTarget`, which triggers the `RunCheckpointReviewWindow` to open.
-   - Routing: `apps/swift/Sources/Capacitor/Models/AppState.swift:1776-1814`
-   - Eligibility: `AppState.swift:1817-1818` -- `run.status == "paused" && run.activeCheckpoint != nil`
+6. **Swift UI surfaces checkpoint** -- The Swift app's runtime snapshot refresh detects a run with `status == "paused"` and a non-nil `activeCheckpoint`. `RunStateStore.reconcileRunCheckpointWindowTarget` selects the oldest eligible checkpoint and sets `runCheckpointWindowTarget`, which triggers the `RunCheckpointReviewWindow` to open.
+   - Snapshot apply: `apps/swift/Sources/Capacitor/Models/RuntimeSnapshotApplicator.swift`
+   - Routing + eligibility: `apps/swift/Sources/Capacitor/Models/RunState.swift` -- `run.status == "paused" && run.activeCheckpoint != nil`
    - Window: `apps/swift/Sources/Capacitor/Views/Projects/RunCheckpointReviewWindow.swift:3`
 
 7. **User submits decision** -- The review window calls `appState.submitRunCheckpointDecision(projectPath:runID:checkpointID:action:note:)` which sends a `MutateRunCommand` with `kind: "submit_decision"`, `checkpoint_id`, `decision_action` ("approve" or "request_changes"), and optional `decision_note`.
    - `RunCheckpointReviewWindow.swift:437-458` (submit flow)
-   - `AppState.swift:1414-1429` (mutation dispatch)
+   - `apps/swift/Sources/Capacitor/Models/AppState+Projects.swift` (mutation dispatch)
 
 8. **Relay commits decision file** -- The hud-hook HTTP handler (`handle_runtime_mutate_run`) looks up the active checkpoint's relay requirement. For bridge-managed checkpoints, it reads the pending marker and writes a prepared `CheckpointBridgeDecision` file before entering the runtime mutation commit. The commit callback then performs the final prepared-file rename. If the pending marker is missing/malformed or the decision file cannot be committed, the run mutation is rejected and the active checkpoint remains visible for retry.
    - HTTP handler: `core/hud-hook/src/handlers.rs:498-535`
@@ -174,7 +174,10 @@ This identity is what allows the relay to find the correct pending marker: the S
 | `apps/swift/Sources/Capacitor/Views/Projects/RunCheckpointReviewWindow.swift` | SwiftUI review window -- content pane, decision rail, submit flow |
 | `apps/swift/Sources/Capacitor/Views/Projects/RunCheckpointTimelineProjection.swift` | Pure presentation projection for past + active checkpoint timeline entries |
 | `apps/swift/Sources/Capacitor/Views/Projects/RunCheckpointTimelineSection.swift` | Project Detail SwiftUI timeline section |
-| `apps/swift/Sources/Capacitor/Models/AppState.swift:1776-1882` | Checkpoint target reconciliation, eligibility, and ordering |
+| `apps/swift/Sources/Capacitor/Models/RuntimeSnapshotApplicator.swift` | Applies runtime snapshots and updates `runCheckpointWindowTarget` from `RunStateStore` |
+| `apps/swift/Sources/Capacitor/Models/RunState.swift` | Checkpoint target reconciliation, eligibility, ordering, state lookup, and Project Detail checkpoint timeline run selection |
+| `apps/swift/Sources/Capacitor/Models/AppState+MethodRunner.swift` | AppState facade for checkpoint review and timeline selectors |
+| `apps/swift/Sources/Capacitor/Models/AppState+Projects.swift` | Runtime `submit_decision` mutation dispatch |
 
 ## Test Contracts
 

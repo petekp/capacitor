@@ -31,7 +31,7 @@ The method runner is a standalone CLI binary that executes structured multi-phas
 3. **Adapter selection** -- CLI flags select adapters: `FakePromptBuilder` / `ShellPromptBuilder` for prompt composition, `FakeWorkerDispatcher` / `CodexWorkerDispatcher` for worker dispatch, and `FakeInteractiveIO` / `CliInteractiveIO` / `FileInteractiveIO` / `BridgeInteractiveIO` for interactive IO.
 4. **Phase execution** -- the executor progresses through phases in order. Each phase contains steps; each step may have multiple attempts.
 5. **Gate evaluation** -- when a phase or step gate is reached, the executor calls `InteractiveIO.emit_gate_checkpoint()` and then `capture_response()`. The `GateOutcome` determines whether execution continues (`Approved`), halts (`Rejected`, `TimedOut`, `ValidationFailed`), or waits (`Waiting`).
-6. **Checkpoint bridge** (when `BridgeInteractiveIO` is active) -- the bridge posts an `EmitCheckpoint` mutation to the runtime service, writes a pending marker to `~/.capacitor/runtime/checkpoint-bridge/<run_id>/`, and polls for a decision file. The Swift UI reads the `ActiveCheckpoint` from the runtime service and writes the decision file when the user decides.
+6. **Checkpoint bridge** (when `BridgeInteractiveIO` is active) -- the bridge posts an `EmitCheckpoint` mutation to the runtime service, writes a pending marker to `~/.capacitor/runtime/checkpoint-bridge/<run_id>/`, and polls for a decision file. The Swift UI reads the active checkpoint from the runtime snapshot and submits a `SubmitDecision` runtime mutation. The hud-hook relay commits the bridge decision file only after the runtime mutation is accepted.
 
 This flow now has a Swift invocation path via `MethodRunCoordinator` (see "Closed Gaps" below). The standalone CLI remains available for testing.
 
@@ -125,5 +125,5 @@ Comparing the full aspirational flow with what is now shipped:
 | Run kernel domain types | `core/capacitor-core/src/domain/run_types.rs` |
 | Run visual state resolver | `apps/swift/Sources/Capacitor/Views/Projects/ProjectRunVisualStateResolver.swift` |
 | Review manifest decoder | `apps/swift/Sources/Capacitor/Models/DelegationReviewManifest.swift` |
-| AppState checkpoint surfacing | `apps/swift/Sources/Capacitor/Models/AppState.swift` |
+| AppState checkpoint/timeline selectors | `apps/swift/Sources/Capacitor/Models/RunState.swift`, `apps/swift/Sources/Capacitor/Models/AppState+MethodRunner.swift` |
 | Feature flags | `apps/swift/Sources/Capacitor/Support/Config/AppConfig.swift` |
