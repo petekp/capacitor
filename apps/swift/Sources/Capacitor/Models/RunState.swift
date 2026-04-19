@@ -364,7 +364,7 @@ final class RunStateStore {
     private func latestCheckpointEventTimestamp(for run: RuntimeRunState) -> String? {
         let archivedTimestamps = run.pastCheckpoints.map { $0.decidedAt ?? $0.createdAt }
         let activeTimestamp = run.activeCheckpoint?.createdAt
-        return (archivedTimestamps + [activeTimestamp].compactMap { $0 })
+        return (archivedTimestamps + [activeTimestamp].compactMap(\.self))
             .max(by: { compareRunTimestamps($0, $1) == .orderedAscending })
     }
 
