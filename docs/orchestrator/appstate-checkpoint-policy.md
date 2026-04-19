@@ -7,8 +7,8 @@
 
 `AppState` maintains two independent window targets for human-in-the-loop review:
 
-- `reviewWindowTarget: ReviewWindowTarget?` -- delegation review routing (`AppState.swift:119`)
-- `runCheckpointWindowTarget: RunCheckpointWindowTarget?` -- run checkpoint routing (`AppState.swift:120`)
+- `reviewWindowTarget: ReviewWindowTarget?` -- delegation review routing (`UIState.swift`)
+- `runCheckpointWindowTarget: RunCheckpointWindowTarget?` -- run checkpoint routing (`UIState.swift`)
 
 These targets are independent. Setting or clearing one never mutates the other.
 
@@ -23,11 +23,11 @@ struct ReviewWindowTarget: Equatable {
 }
 ```
 
-Defined at `AppState.swift:108-111`.
+Defined in `apps/swift/Sources/Capacitor/Models/UIState.swift`.
 
 ### Assignment
 
-`reviewWindowTarget` is set explicitly by `showDelegationReview(_:)` (`AppState.swift:1401-1412`). This method:
+`reviewWindowTarget` is set explicitly by `showDelegationReview(_:)` (`apps/swift/Sources/Capacitor/Models/AppState+Projects.swift`). This method:
 
 1. Checks that `isDelegationLoopEnabled` is true (otherwise falls back to terminal launch).
 2. Looks up the `RuntimeDelegationState` for the project via `delegationState(for:)`.
@@ -54,30 +54,30 @@ struct RunCheckpointWindowTarget: Equatable {
 }
 ```
 
-Defined at `AppState.swift:113-117`.
+Defined in `apps/swift/Sources/Capacitor/Models/UIState.swift`.
 
 ### Assignment
 
-`runCheckpointWindowTarget` is auto-selected by `reconcileRunCheckpointWindowTarget(previousRunsByID:nextRunsByID:)` (`AppState.swift:1776-1815`), which runs on every runtime snapshot apply (`AppState.swift:613-616`).
+`runCheckpointWindowTarget` is auto-selected by `RunStateStore.reconcileRunCheckpointWindowTarget(currentTarget:previousRunsByID:)` (`apps/swift/Sources/Capacitor/Models/RunState.swift`), which runs on every runtime snapshot apply (`apps/swift/Sources/Capacitor/Models/RuntimeSnapshotApplicator.swift`).
 
 ### Reconciliation Algorithm
 
 The reconciliation proceeds in three steps:
 
-**Step 1 -- Retain current target if still valid** (`AppState.swift:1780-1787`):
+**Step 1 -- Retain current target if still valid** (`RunState.swift`):
 
-If `runCheckpointWindowTarget` is already set and the referenced checkpoint still exists in the next snapshot (verified by `runCheckpointState(target:runsByID:)` at `AppState.swift:1872-1885`), the target is kept unchanged. This ensures the user is not interrupted mid-review.
+If `runCheckpointWindowTarget` is already set and the referenced checkpoint still exists in the next snapshot (verified by `runCheckpointState(target:runsByID:)`), the target is kept unchanged. This ensures the user is not interrupted mid-review.
 
-The validity check at `AppState.swift:1876-1879` requires all three conditions:
+The validity check requires all three conditions:
 - The run exists in `runsByID`
 - The run's status is `"paused"`
 - The run's `activeCheckpoint.id` matches `target.checkpointID`
 
-**Step 2 -- Build candidate queue** (`AppState.swift:1789-1797`):
+**Step 2 -- Build candidate queue** (`RunState.swift`):
 
 All eligible runs are filtered, sorted oldest-first, and mapped to targets. If no candidates exist, `runCheckpointWindowTarget` is set to `nil`.
 
-**Step 3 -- Select next target** (`AppState.swift:1810-1814`):
+**Step 3 -- Select next target** (`RunState.swift`):
 
 - If `runCheckpointWindowTarget` was previously set (meaning the current target just became invalid -- advance-on-clear), select `queuedTargets.first` (the oldest remaining candidate).
 - If `runCheckpointWindowTarget` was `nil` (no prior target), only select from newly surfaced checkpoints (`newlySurfacedTargets.first`) to avoid re-presenting checkpoints that were already visible in a prior snapshot.
@@ -86,8 +86,8 @@ All eligible runs are filtered, sorted oldest-first, and mapped to targets. If n
 
 `runCheckpointWindowTarget` is set to `nil` in three places:
 
-1. **No eligible candidates:** `reconcileRunCheckpointWindowTarget` sets it to `nil` when `queuedTargets` is empty (`AppState.swift:1794-1795`).
-2. **Runtime snapshot failure cascade:** After 2+ consecutive snapshot failures, all run state is cleared including the target (`AppState.swift:660`).
+1. **No eligible candidates:** `reconcileRunCheckpointWindowTarget` sets it to `nil` when `queuedTargets` is empty (`RunState.swift`).
+2. **Runtime snapshot failure cascade:** After 2+ consecutive snapshot failures, all run state is cleared including the target (`RuntimeSnapshotApplicator.swift`).
 3. **Window disappear:** `RunCheckpointReviewWindow.onDisappear` sets `appState.runCheckpointWindowTarget = nil` (`RunCheckpointReviewWindow.swift:101-103`).
 
 ## Non-Interference Rule
@@ -95,8 +95,8 @@ All eligible runs are filtered, sorted oldest-first, and mapped to targets. If n
 Setting or clearing `reviewWindowTarget` never mutates `runCheckpointWindowTarget`, and vice versa.
 
 This is structurally guaranteed:
-- `reviewWindowTarget` is only written in `showDelegationReview` (`AppState.swift:1407`), `DelegationReviewWindow.scheduleAutoClose` (`DelegationReviewWindow.swift:706`), and `DelegationReviewWindow.onDisappear` (`DelegationReviewWindow.swift:128`). None of these touch `runCheckpointWindowTarget`.
-- `runCheckpointWindowTarget` is only written in `reconcileRunCheckpointWindowTarget` (`AppState.swift:1795`, `1811`, `1813`), `handleRuntimeSnapshotFailureIfFresh` (`AppState.swift:660`), and `RunCheckpointReviewWindow.onDisappear` (`RunCheckpointReviewWindow.swift:102`). None of these touch `reviewWindowTarget`.
+- `reviewWindowTarget` is only written in `showDelegationReview` (`AppState+Projects.swift`), `DelegationReviewWindow.scheduleAutoClose` (`DelegationReviewWindow.swift`), and `DelegationReviewWindow.onDisappear` (`DelegationReviewWindow.swift`). None of these touch `runCheckpointWindowTarget`.
+- `runCheckpointWindowTarget` is only written from runtime snapshot reconciliation (`RuntimeSnapshotApplicator.swift` + `RunState.swift`), runtime snapshot failure clearing (`RuntimeSnapshotApplicator.swift`), explicit checkpoint review routing (`AppState+MethodRunner.swift`), and `RunCheckpointReviewWindow.onDisappear` (`RunCheckpointReviewWindow.swift`). None of these touch `reviewWindowTarget`.
 
 Proven by `testFreshRuntimeSnapshotTargetsRunCheckpointWithoutTouchingDelegationReviewState` (`AppStateRunCheckpointTests.swift:7-48`): a pre-existing `reviewWindowTarget` is asserted unchanged after a runtime snapshot apply that sets `runCheckpointWindowTarget`.
 
@@ -104,7 +104,7 @@ Proven by `testFreshRuntimeSnapshotTargetsRunCheckpointWithoutTouchingDelegation
 
 ### Eligibility
 
-A run qualifies as a checkpoint candidate when (`AppState.swift:1817-1818`):
+A run qualifies as a checkpoint candidate when (`RunState.swift`):
 
 ```swift
 run.status == "paused" && run.activeCheckpoint != nil
@@ -112,7 +112,7 @@ run.status == "paused" && run.activeCheckpoint != nil
 
 ### Oldest-First Ordering
 
-Candidates are sorted by `runCheckpointCandidatePrecedes` (`AppState.swift:1845-1869`):
+Candidates are sorted by `runCheckpointCandidatePrecedes` (`RunState.swift`):
 
 1. Primary sort: `activeCheckpoint.createdAt` (falls back to `run.createdAt`), parsed as ISO 8601 dates, ascending.
 2. Tiebreaker 1: `run.id` lexicographic ascending.
@@ -128,11 +128,11 @@ Proven by `testFreshRuntimeSnapshotPresentsNextPausedRunCheckpointAfterFirstChec
 
 ### Newly Surfaced Detection
 
-A checkpoint is considered "newly surfaced" (`isNewlySurfacedRunCheckpoint` at `AppState.swift:1821-1834`) when any of:
-- The run did not exist in the previous snapshot (`AppState.swift:1826`)
-- The run was not previously paused (`AppState.swift:1827`)
-- The run did not previously have an active checkpoint (`AppState.swift:1828`)
-- The previous checkpoint ID differs from the current one (`AppState.swift:1833`)
+A checkpoint is considered "newly surfaced" (`isNewlySurfacedRunCheckpoint` in `RunState.swift`) when any of:
+- The run did not exist in the previous snapshot
+- The run was not previously paused
+- The run did not previously have an active checkpoint
+- The previous checkpoint ID differs from the current one
 
 This prevents re-presenting checkpoints that the user has already seen and dismissed.
 
@@ -140,16 +140,16 @@ This prevents re-presenting checkpoints that the user has already seen and dismi
 
 | Purpose | Path |
 |---------|------|
-| Window target types | `apps/swift/Sources/Capacitor/Models/AppState.swift:108-120` |
-| Delegation review assignment | `apps/swift/Sources/Capacitor/Models/AppState.swift:1401-1412` |
-| Checkpoint reconciliation | `apps/swift/Sources/Capacitor/Models/AppState.swift:1776-1815` |
-| Eligibility predicate | `apps/swift/Sources/Capacitor/Models/AppState.swift:1817-1818` |
-| Newly surfaced detection | `apps/swift/Sources/Capacitor/Models/AppState.swift:1821-1834` |
-| Checkpoint target builder | `apps/swift/Sources/Capacitor/Models/AppState.swift:1836-1843` |
-| Candidate sort comparator | `apps/swift/Sources/Capacitor/Models/AppState.swift:1845-1869` |
-| Checkpoint state resolver | `apps/swift/Sources/Capacitor/Models/AppState.swift:1872-1885` |
-| Submission mutation | `apps/swift/Sources/Capacitor/Models/AppState.swift:1414-1446` |
-| Snapshot failure clearing | `apps/swift/Sources/Capacitor/Models/AppState.swift:651-661` |
+| Window target types | `apps/swift/Sources/Capacitor/Models/UIState.swift` |
+| Delegation review assignment | `apps/swift/Sources/Capacitor/Models/AppState+Projects.swift` |
+| Checkpoint reconciliation | `apps/swift/Sources/Capacitor/Models/RunState.swift` |
+| Eligibility predicate | `apps/swift/Sources/Capacitor/Models/RunState.swift` |
+| Newly surfaced detection | `apps/swift/Sources/Capacitor/Models/RunState.swift` |
+| Checkpoint target builder | `apps/swift/Sources/Capacitor/Models/RunState.swift` |
+| Candidate sort comparator | `apps/swift/Sources/Capacitor/Models/RunState.swift` |
+| Checkpoint state resolver | `apps/swift/Sources/Capacitor/Models/RunState.swift` |
+| Submission mutation | `apps/swift/Sources/Capacitor/Models/AppState+Projects.swift` |
+| Snapshot apply and failure clearing | `apps/swift/Sources/Capacitor/Models/RuntimeSnapshotApplicator.swift` |
 
 ## Test Contracts
 

@@ -87,7 +87,7 @@ Driven by `DelegationLoopManager` milestone files. The window reads:
 
 ### Lifecycle
 
-1. `reviewWindowTarget` is set explicitly by `AppState.showDelegationReview(_:)` (`AppState.swift:1401-1412`) when a delegation has an active review.
+1. `reviewWindowTarget` is set explicitly by `AppState.showDelegationReview(_:)` (`AppState+Projects.swift`) when a delegation has an active review.
 2. The window opens via `openWindow(id: "delegation-review")` triggered by `.onChange(of: appState.reviewWindowTarget)` in `ProjectsView` / `DockLayoutView`.
 3. On submission, `submitDelegationReview(for:delegation:decision:note:fromWindow:)` is called (`DelegationReviewWindow.swift:670-688`).
 4. After successful submission, the phase transitions to `.submitted` and a 2-second auto-close timer fires (`DelegationReviewWindow.swift:701-708`) that sets `reviewWindowTarget = nil`.
@@ -124,9 +124,9 @@ Driven by the runtime snapshot's `runs` array. The window reads:
 
 ### Lifecycle
 
-1. `runCheckpointWindowTarget` is auto-selected by `reconcileRunCheckpointWindowTarget` on every runtime snapshot apply (`AppState.swift:613-616`, `AppState.swift:1776-1815`). The oldest paused checkpoint is chosen first.
+1. `runCheckpointWindowTarget` is auto-selected by `RunStateStore.reconcileRunCheckpointWindowTarget` on every runtime snapshot apply (`RuntimeSnapshotApplicator.swift`, `RunState.swift`). The oldest paused checkpoint is chosen first.
 2. The window opens via `openWindow(id: "run-checkpoint-review")` triggered by `.onChange(of: appState.runCheckpointWindowTarget)` in `ProjectsView` / `DockLayoutView`.
-3. On submission, `submitRunCheckpointDecision(projectPath:runID:checkpointID:action:note:)` sends a `submit_decision` mutation to the runtime service (`AppState.swift:1414-1446`).
+3. On submission, `submitRunCheckpointDecision(projectPath:runID:checkpointID:action:note:)` sends a `submit_decision` mutation to the runtime service (`AppState+Projects.swift`).
 4. After successful submission, the phase transitions to `.submitted` and `refreshSessionStates()` is called (`RunCheckpointReviewWindow.swift:452-453`).
 5. Auto-close occurs when the checkpoint disappears from the snapshot (resolved by the runtime). The `.onChange(of: resolvedCheckpointID)` observer dismisses the window when the checkpoint ID goes nil (`RunCheckpointReviewWindow.swift:90-94`).
 6. Setting `runCheckpointWindowTarget = nil` also triggers `dismissWindow(id: "run-checkpoint-review")` (`RunCheckpointReviewWindow.swift:85-89`).
@@ -169,7 +169,7 @@ Both buttons are always visible (no selection-then-submit pattern). The notes fi
 | Delegation review window | `apps/swift/Sources/Capacitor/Views/Projects/DelegationReviewWindow.swift` |
 | Run checkpoint review window | `apps/swift/Sources/Capacitor/Views/Projects/RunCheckpointReviewWindow.swift` |
 | Shared manifest decoder | `apps/swift/Sources/Capacitor/Models/DelegationReviewManifest.swift` |
-| Window target types + routing | `apps/swift/Sources/Capacitor/Models/AppState.swift:108-120` |
+| Window target types + routing | `apps/swift/Sources/Capacitor/Models/UIState.swift`, `apps/swift/Sources/Capacitor/Models/RunState.swift`, `apps/swift/Sources/Capacitor/Models/AppState+MethodRunner.swift` |
 | Scene registration | `apps/swift/Sources/Capacitor/App.swift:169-185` |
 | Window open triggers (dock) | `apps/swift/Sources/Capacitor/Views/Projects/DockLayoutView.swift:110-115` |
 | Window open triggers (projects) | `apps/swift/Sources/Capacitor/Views/Projects/ProjectsView.swift:261-266` |

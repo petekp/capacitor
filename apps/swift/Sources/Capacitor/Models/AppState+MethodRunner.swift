@@ -108,6 +108,10 @@ extension AppState {
         runState.activeRun(for: project)
     }
 
+    func checkpointTimelineRun(for project: Project) -> RuntimeRunState? {
+        runState.checkpointTimelineRun(for: project)
+    }
+
     func runCheckpointState(target: RunCheckpointWindowTarget) -> RuntimeCheckpointState? {
         runState.runCheckpointState(target: target)
     }

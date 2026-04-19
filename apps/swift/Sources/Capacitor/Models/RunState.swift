@@ -119,6 +119,17 @@ final class RunStateStore {
         ).run
     }
 
+    func checkpointTimelineRun(for project: Project) -> RuntimeRunState? {
+        let normalizedProjectPath = PathNormalizer.normalize(project.path)
+        return runStatesByID.values
+            .filter {
+                PathNormalizer.normalize($0.projectPath) == normalizedProjectPath
+                    && hasCheckpointTimelineHistory($0)
+            }
+            .sorted(by: checkpointTimelineRunPrecedes)
+            .first
+    }
+
     func runCheckpointState(target: RunCheckpointWindowTarget) -> RuntimeCheckpointState? {
         runCheckpointState(
             target: target,
@@ -320,6 +331,73 @@ final class RunStateStore {
         }
 
         return lhs.id < rhs.id
+    }
+
+    private func hasCheckpointTimelineHistory(_ run: RuntimeRunState) -> Bool {
+        !run.pastCheckpoints.isEmpty || run.activeCheckpoint != nil
+    }
+
+    private func checkpointTimelineRunPrecedes(
+        _ lhs: RuntimeRunState,
+        _ rhs: RuntimeRunState,
+    ) -> Bool {
+        let lhsEventTimestamp = latestCheckpointEventTimestamp(for: lhs)
+        let rhsEventTimestamp = latestCheckpointEventTimestamp(for: rhs)
+        let eventComparison = compareOptionalRunTimestamps(lhsEventTimestamp, rhsEventTimestamp)
+        if eventComparison != .orderedSame {
+            return eventComparison == .orderedDescending
+        }
+
+        let updatedComparison = compareRunTimestamps(lhs.updatedAt, rhs.updatedAt)
+        if updatedComparison != .orderedSame {
+            return updatedComparison == .orderedDescending
+        }
+
+        let createdComparison = compareRunTimestamps(lhs.createdAt, rhs.createdAt)
+        if createdComparison != .orderedSame {
+            return createdComparison == .orderedDescending
+        }
+
+        return lhs.id < rhs.id
+    }
+
+    private func latestCheckpointEventTimestamp(for run: RuntimeRunState) -> String? {
+        let archivedTimestamps = run.pastCheckpoints.map { $0.decidedAt ?? $0.createdAt }
+        let activeTimestamp = run.activeCheckpoint?.createdAt
+        return (archivedTimestamps + [activeTimestamp].compactMap(\.self))
+            .max(by: { compareRunTimestamps($0, $1) == .orderedAscending })
+    }
+
+    private func compareOptionalRunTimestamps(_ lhs: String?, _ rhs: String?) -> ComparisonResult {
+        switch (lhs, rhs) {
+        case let (.some(lhs), .some(rhs)):
+            compareRunTimestamps(lhs, rhs)
+        case (.some, .none):
+            .orderedDescending
+        case (.none, .some):
+            .orderedAscending
+        case (.none, .none):
+            .orderedSame
+        }
+    }
+
+    private func compareRunTimestamps(_ lhs: String, _ rhs: String) -> ComparisonResult {
+        switch (parseISO8601Date(lhs), parseISO8601Date(rhs)) {
+        case let (.some(lhsDate), .some(rhsDate)):
+            if lhsDate > rhsDate {
+                return .orderedDescending
+            }
+            if lhsDate < rhsDate {
+                return .orderedAscending
+            }
+            return .orderedSame
+        case (.some, .none):
+            return .orderedDescending
+        case (.none, .some):
+            return .orderedAscending
+        case (.none, .none):
+            return lhs.compare(rhs)
+        }
     }
 
     private func runCheckpointState(

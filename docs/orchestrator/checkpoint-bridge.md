@@ -26,14 +26,14 @@ The checkpoint bridge connects method runner gates to the run kernel checkpoint 
 5. **Gate armed** -- On successful mutation, the bridge stores `gate_id` in `current_gate_id`. The subsequent `capture_response()` call will poll for the decision file instead of falling back to stdin/fake IO.
    - `checkpoint_bridge.rs:283`
 
-6. **Swift UI surfaces checkpoint** -- The Swift app's runtime snapshot refresh detects a run with `status == "paused"` and a non-nil `activeCheckpoint`. `AppState.reconcileRunCheckpointWindowTarget` selects the oldest eligible checkpoint and sets `runCheckpointWindowTarget`, which triggers the `RunCheckpointReviewWindow` to open.
-   - Routing: `apps/swift/Sources/Capacitor/Models/AppState.swift:1776-1814`
-   - Eligibility: `AppState.swift:1817-1818` -- `run.status == "paused" && run.activeCheckpoint != nil`
+6. **Swift UI surfaces checkpoint** -- The Swift app's runtime snapshot refresh detects a run with `status == "paused"` and a non-nil `activeCheckpoint`. `RunStateStore.reconcileRunCheckpointWindowTarget` selects the oldest eligible checkpoint and sets `runCheckpointWindowTarget`, which triggers the `RunCheckpointReviewWindow` to open.
+   - Snapshot apply: `apps/swift/Sources/Capacitor/Models/RuntimeSnapshotApplicator.swift`
+   - Routing + eligibility: `apps/swift/Sources/Capacitor/Models/RunState.swift` -- `run.status == "paused" && run.activeCheckpoint != nil`
    - Window: `apps/swift/Sources/Capacitor/Views/Projects/RunCheckpointReviewWindow.swift:3`
 
 7. **User submits decision** -- The review window calls `appState.submitRunCheckpointDecision(projectPath:runID:checkpointID:action:note:)` which sends a `MutateRunCommand` with `kind: "submit_decision"`, `checkpoint_id`, `decision_action` ("approve" or "request_changes"), and optional `decision_note`.
    - `RunCheckpointReviewWindow.swift:437-458` (submit flow)
-   - `AppState.swift:1414-1429` (mutation dispatch)
+   - `apps/swift/Sources/Capacitor/Models/AppState+Projects.swift` (mutation dispatch)
 
 8. **Relay commits decision file** -- The hud-hook HTTP handler (`handle_runtime_mutate_run`) looks up the active checkpoint's relay requirement. For bridge-managed checkpoints, it reads the pending marker and writes a prepared `CheckpointBridgeDecision` file before entering the runtime mutation commit. The commit callback then performs the final prepared-file rename. If the pending marker is missing/malformed or the decision file cannot be committed, the run mutation is rejected and the active checkpoint remains visible for retry.
    - HTTP handler: `core/hud-hook/src/handlers.rs:498-535`
@@ -116,9 +116,9 @@ The bridge relay is part of the successful `SubmitDecision` commit for bridge-ma
 
 The key invariant: bridge-managed status is runtime truth (`active_checkpoint.decision_relay == checkpoint_bridge`), not inferred from filesystem marker presence. For bridge-managed checkpoints, the runtime does not accept and clear a `SubmitDecision` unless the bridge decision file was committed successfully.
 
-Accepted decisions move the decided checkpoint from `active_checkpoint` into the run's bounded `past_checkpoints` history, preserving the decision, timestamp, and review metadata for snapshot consumers. Approvals resume the run as `active`; request-changes decisions leave the run `paused` with no active checkpoint so the runtime remains non-terminal while the method runner records the blocked gate. The run kernel keeps the most recent 50 decided checkpoints per run.
+Accepted decisions move the decided checkpoint from `active_checkpoint` into the run's bounded `past_checkpoints` history, preserving the decision, timestamp, and review metadata for snapshot consumers. Approvals resume the run as `active`; request-changes decisions leave the run `paused` with no active checkpoint so the runtime remains non-terminal while the method runner records the blocked gate. The run kernel keeps the most recent 50 decided checkpoints per run. Project Detail selects the latest run with checkpoint history and renders that run's archived checkpoints with any current `active_checkpoint` as a chronological run checkpoint timeline.
 
-Request-changes is a blocked-gate handoff plus an explicit method-runner retry round. When a blocked gate is resumed, the runner restarts the blocked phase, re-executes its completed steps using fresh attempt numbers, and then emits a new checkpoint. Repeated request-changes decisions repeat that loop while preserving prior attempts as history.
+Request-changes is a blocked-gate handoff plus an explicit method-runner retry attempt. When a blocked gate is resumed, the runner restarts the blocked phase, re-executes its completed steps using fresh attempt numbers, and then emits a new checkpoint. Repeated request-changes decisions repeat that loop while preserving prior attempts as history. The Project Detail timeline derives per-phase display round numbers from the chronological checkpoint history; Rust does not yet persist a dedicated checkpoint round field.
 
 A paused run with no active checkpoint cannot advance phases until it is resumed, preventing a request-changes decision from being bypassed by a stray `AdvancePhase` mutation.
 
@@ -172,7 +172,12 @@ This identity is what allows the relay to find the correct pending marker: the S
 | `core/hud-hook/src/handlers.rs` | HTTP handler that couples bridge relay commit to `SubmitDecision` runtime mutation |
 | `core/capacitor-core/src/bin/method_runner.rs` | CLI flags (`--bridge-run-id`, `--bridge-project-path`) and `make_interactive_io()` |
 | `apps/swift/Sources/Capacitor/Views/Projects/RunCheckpointReviewWindow.swift` | SwiftUI review window -- content pane, decision rail, submit flow |
-| `apps/swift/Sources/Capacitor/Models/AppState.swift:1776-1882` | Checkpoint target reconciliation, eligibility, and ordering |
+| `apps/swift/Sources/Capacitor/Views/Projects/RunCheckpointTimelineProjection.swift` | Pure presentation projection for past + active checkpoint timeline entries |
+| `apps/swift/Sources/Capacitor/Views/Projects/RunCheckpointTimelineSection.swift` | Project Detail SwiftUI timeline section |
+| `apps/swift/Sources/Capacitor/Models/RuntimeSnapshotApplicator.swift` | Applies runtime snapshots and updates `runCheckpointWindowTarget` from `RunStateStore` |
+| `apps/swift/Sources/Capacitor/Models/RunState.swift` | Checkpoint target reconciliation, eligibility, ordering, state lookup, and Project Detail checkpoint timeline run selection |
+| `apps/swift/Sources/Capacitor/Models/AppState+MethodRunner.swift` | AppState facade for checkpoint review and timeline selectors |
+| `apps/swift/Sources/Capacitor/Models/AppState+Projects.swift` | Runtime `submit_decision` mutation dispatch |
 
 ## Test Contracts
 
@@ -232,8 +237,23 @@ This identity is what allows the relay to find the correct pending marker: the S
 | `testFreshRuntimeSnapshotPresentsNextPausedRunCheckpointAfterFirstCheckpointClears` (line 87) | After a checkpoint clears, the next queued checkpoint surfaces automatically |
 | `testSubmitRunCheckpointDecisionMutatesRuntimeRunWithCheckpointIdentity` (line 146) | Decision submission sends correct mutation payload including `checkpoint_id` and `decision_action` |
 
+### `apps/swift/Tests/CapacitorTests/RunCheckpointTimelineProjectionTests.swift`
+
+| Test | What it proves |
+|------|---------------|
+| `RunCheckpointTimelineProjectionTests` | Project Detail timeline projection orders past + active checkpoints by displayed event timestamp, preserves decision states/notes, and derives display rounds per phase |
+
 ### `apps/swift/Tests/CapacitorTests/ProjectRunVisualStateResolverTests.swift`
 
 | Test | What it proves |
 |------|---------------|
 | `testPausedRunWithoutCheckpointSurfacesAsWaiting` | Project-card projection keeps request-changes blocked runs visible after their active checkpoint is archived |
+| `testCompletedRunWithPastCheckpointHistoryResolvesCompleted` | Historical checkpoints do not cause terminal runs to look paused/waiting |
+
+### `apps/swift/Tests/CapacitorTests/AppStateRunTests.swift`
+
+| Test | What it proves |
+|------|---------------|
+| `testCheckpointTimelineRunIncludesCompletedHistoryOutsideVisualRunWindow` | Project Detail timeline selection is independent of project-card freshness windows |
+| `testCheckpointTimelineRunIsNotDisplacedByNewerActiveRunWithoutCheckpoints` | A newer visual run without checkpoints does not hide older durable checkpoint history |
+| `testCheckpointTimelineRunPrefersLatestCheckpointEventAcrossHistoryRuns` | Multiple history-bearing runs use an explicit latest-checkpoint-event selection policy |

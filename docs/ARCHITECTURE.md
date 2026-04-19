@@ -60,7 +60,7 @@ See `docs/architecture-decisions/005-authority-based-multi-signal-state-detectio
 Capacitor supports two independent review flows that share a common window structure:
 
 - **Delegation review** — driven by `DelegationLoopManager` milestone files. Swift owns the delegation lifecycle: idea capture, worktree launch, milestone scanning, review presentation, decision submission, and resume prompts. Multi-round iteration is supported (request changes → new milestone → re-review).
-- **Run checkpoint review** — driven by runtime snapshot `runs` and `activeCheckpoint`. The checkpoint bridge (`checkpoint_bridge.rs`) connects method-runner gates to the run kernel, and `hud-hook` relays decisions back via file-based protocol. `AppState` auto-targets the oldest paused checkpoint. Decided checkpoints are archived in `runs[].past_checkpoints`.
+- **Run checkpoint review** — driven by runtime snapshot `runs`, `activeCheckpoint`, and `past_checkpoints`. The checkpoint bridge (`checkpoint_bridge.rs`) connects method-runner gates to the run kernel, and `hud-hook` relays decisions back via file-based protocol. `AppState` auto-targets the oldest paused checkpoint, while Project Detail selects the latest run with checkpoint history and renders decided checkpoints plus any active checkpoint from runtime snapshot data.
 
 Both flows use `DelegationReviewManifest` as the shared decoder contract and present a left-pane/right-rail review window.
 

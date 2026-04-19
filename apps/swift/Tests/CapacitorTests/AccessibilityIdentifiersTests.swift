@@ -10,6 +10,17 @@ final class AccessibilityIdentifiersTests: XCTestCase {
         XCTAssertEqual(AccessibilityIdentifiers.ideaDetailRemoveIdentifier, "ax.idea-detail.remove")
     }
 
+    func testRunCheckpointAccessibilityIdentifiersRemainStable() {
+        XCTAssertEqual(AccessibilityIdentifiers.runCheckpointReviewIdentifier, "ax.run-checkpoint-review")
+        XCTAssertEqual(AccessibilityIdentifiers.runCheckpointApproveIdentifier, "ax.run-checkpoint-review.approve")
+        XCTAssertEqual(
+            AccessibilityIdentifiers.runCheckpointRequestChangesIdentifier,
+            "ax.run-checkpoint-review.request-changes",
+        )
+        XCTAssertEqual(AccessibilityIdentifiers.runCheckpointNotesIdentifier, "ax.run-checkpoint-review.notes")
+        XCTAssertEqual(AccessibilityIdentifiers.runCheckpointTimelineIdentifier, "ax.run-checkpoint-timeline")
+    }
+
     func testProjectDetailViewIdentifierIsDistinctFromDockNavigationIdentifier() {
         let project = Project(
             name: "Capacitor",

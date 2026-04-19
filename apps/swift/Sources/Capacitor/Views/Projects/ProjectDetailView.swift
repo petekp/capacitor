@@ -72,6 +72,15 @@ struct ProjectDetailView: View {
                         .offset(y: appeared ? 0 : 16)
                     }
 
+                    if appState.featureState.isMethodRunnerEnabled,
+                       let run = appState.checkpointTimelineRun(for: project),
+                       let projection = RunCheckpointTimelineProjection(run: run)
+                    {
+                        RunCheckpointTimelineSection(projection: projection)
+                            .opacity(appeared ? 1 : 0)
+                            .offset(y: appeared ? 0 : 18)
+                    }
+
                     Button(action: {
                         appState.removeProject(project.path)
                         appState.showProjectList()
@@ -224,6 +233,7 @@ struct ProjectDetailView: View {
 struct DetailSectionLabel: View {
     let title: String
     var count: Int?
+    var countAccessibilityLabel: String?
 
     var body: some View {
         HStack(spacing: 6) {
@@ -245,7 +255,7 @@ struct DetailSectionLabel: View {
                     .padding(.vertical, 2)
                     .background(Color.white.opacity(0.08))
                     .clipShape(Capsule())
-                    .accessibilityLabel("\(count) queued ideas")
+                    .accessibilityLabel(countAccessibilityLabel ?? "\(count) queued ideas")
             }
         }
     }
