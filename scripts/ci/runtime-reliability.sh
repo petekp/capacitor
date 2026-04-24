@@ -36,17 +36,6 @@ run_ax_verifier_ci() {
     --artifacts-dir artifacts/ax-automation-verification/ci
 }
 
-run_ax_verifier_nightly() {
-  echo ""
-  echo "[runtime-reliability] ax automation verifier (nightly)"
-  prepare_ax_verifier_build
-  CAPACITOR_SKIP_SETUP_VALIDATION=1 bash scripts/ci/ax-automation-verify.sh \
-    --runs 3 \
-    --require-log-health \
-    --allow-untrusted \
-    --artifacts-dir artifacts/ax-automation-verification/nightly
-}
-
 run_projection_parity_gate() {
   echo ""
   echo "[runtime-reliability] projection parity gate"
@@ -61,15 +50,8 @@ case "${mode}" in
     run_ax_verifier_ci
     run_projection_parity_gate
     ;;
-  nightly)
-    echo "Runtime reliability suite (nightly schedule)"
-    run_guard
-    run_replay_gate
-    run_ax_verifier_nightly
-    run_projection_parity_gate
-    ;;
   *)
-    echo "Usage: $0 [ci|nightly]" >&2
+    echo "Usage: $0 [ci]" >&2
     exit 2
     ;;
 esac

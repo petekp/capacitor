@@ -8,7 +8,7 @@ Keep AX regressions in the project-card/details surface detectable as an operati
 
 - `scripts/ci/ax-automation-verify.sh` is the stable AX verifier entrypoint.
 - Pre-merge runtime reliability now runs a one-pass AX smoke verification lane.
-- Nightly runtime reliability now runs a repeated AX smoke verification lane with log-health checks.
+- Repeated AX smoke verification with log-health checks remains available as an explicit local/pre-release command.
 - `[WindowAX]` lifecycle evidence is emitted from source-owned Swift logging instead of depending on an old local build artifact.
 
 ## Commands
