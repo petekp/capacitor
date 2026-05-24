@@ -218,6 +218,8 @@ struct CapacitorApp: App {
                 .keyboardShortcut("O", modifiers: .command)
             }
 
+            CircuitFirstSliceCommands(appState: appState)
+
             // MARK: - Remove Edit menu
 
             CommandGroup(replacing: .undoRedo) {}
@@ -286,6 +288,30 @@ struct CapacitorApp: App {
         .defaultSize(width: 900, height: 650)
         .windowResizability(.contentMinSize)
         .suppressedFromWindowMenu()
+
+        Window("Circuit Receipt", id: CircuitFirstSliceWindowID.receiptRendering) {
+            ReceiptProofRenderingWindow()
+                .preferredColorScheme(.dark)
+        }
+        .windowStyle(.hiddenTitleBar)
+        .windowResizability(.contentMinSize)
+        .defaultPosition(.topTrailing)
+        .defaultSize(width: 760, height: 620)
+
+        Window("Claude Circuit Receipt", id: CircuitFirstSliceWindowID.claudeReceiptRendering) {
+            let paths = CircuitReceiptProductLoopPaths()
+            ReceiptProofRenderingWindow(
+                store: ReceiptProofRenderingStore(
+                    resultURL: ReceiptFirstProofArtifacts(proofDirectoryURL: paths.nativeSessionDirectory).resultURL,
+                    agentEventURL: paths.agentEventURL,
+                ),
+            )
+            .preferredColorScheme(.dark)
+        }
+        .windowStyle(.hiddenTitleBar)
+        .windowResizability(.contentMinSize)
+        .defaultPosition(.topTrailing)
+        .defaultSize(width: 760, height: 620)
 
         #if DEBUG
             AppDebugWindows(appState: appState)

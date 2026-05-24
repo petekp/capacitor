@@ -1,0 +1,33 @@
+{
+  "kind": "agent_event",
+  "id": "event-receipt-01kscapacitorcircuit000001",
+  "goal_packet_id": "goal-packet-01kscapacitorcircuit000000",
+  "session": {
+    "host": "claude_code",
+    "session_id": "session-receipt-f90f74f274a781c0",
+    "visible_to_owner": true
+  },
+  "type": "receipt",
+  "payload": {
+    "kind": "receipt",
+    "id": "receipt-01kscapacitorcircuit000001",
+    "goal_packet_id": "goal-packet-01kscapacitorcircuit000000",
+    "status": "completed",
+    "summary": "Claude Code CLI received the Circuit-produced GoalPacket body and returned the receipt for the receipt-first transport proof.",
+    "evidence": [
+      "GoalPacket.body was injected into one visible Claude Code CLI session.",
+      "Receipt marker was returned in the native CLI output for Capacitor capture."
+    ],
+    "changed_paths": [],
+    "open_risks": [
+      "This proves the transport receipt path, not useful agent work or checkpoint relay."
+    ],
+    "next_action": "Normalize this raw receipt through the headless Circuit protocol boundary and render it in Capacitor."
+  },
+  "recorded_at": "2026-05-24T15:20:18.040960Z",
+  "normalization": {
+    "mode": "headless_receipt_normalizer",
+    "source_raw_receipt_path": "/Users/petepetrash/Code/capacitor/docs/circuit/proofs/receipt-first-product-loop/native-session/06-native-captured-raw-receipt.txt",
+    "circuit_runtime_invoked": false
+  }
+}

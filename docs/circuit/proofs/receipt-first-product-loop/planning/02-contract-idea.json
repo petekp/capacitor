@@ -1,0 +1,10 @@
+{
+  "captured_at" : "2026-05-24T15:15:00Z",
+  "id" : "idea-01KSCAPACITORCIRCUIT000000",
+  "kind" : "idea",
+  "project" : {
+    "name" : "capacitor",
+    "path" : "\/Users\/petepetrash\/Code\/capacitor"
+  },
+  "text" : "Prove receipt-first Capacitor <-> Circuit slice\n\nProve the receipt-first Capacitor <-> Circuit slice from a captured Capacitor idea.\nUse one visible Claude Code CLI session, return a CIRCUIT_RECEIPT block, normalize it through the headless Circuit protocol boundary, and render it in Capacitor.\nWrite and read all runtime proof artifacts from \/Users\/petepetrash\/Code\/capacitor."
+}

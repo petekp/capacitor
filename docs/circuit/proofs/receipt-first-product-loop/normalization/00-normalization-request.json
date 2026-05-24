@@ -1,0 +1,31 @@
+{
+  "adapter_result" : {
+    "agent_exit_code" : 0,
+    "body_sha256" : "f935d63492d9c0e055f201c81c92640634000b2a505dac02ff0fc98147a17b79",
+    "capture" : {
+      "mode" : "stdout and last-message capture",
+      "preserved_for_normalization" : true,
+      "raw_receipt_path" : "\/Users\/petepetrash\/Code\/capacitor\/docs\/circuit\/proofs\/receipt-first-product-loop\/native-session\/06-native-captured-raw-receipt.txt"
+    },
+    "codex_exit_code" : 0,
+    "finished_at" : "2026-05-24T15:20:18.040960Z",
+    "goal_packet_id" : "goal-packet-01kscapacitorcircuit000000",
+    "host" : "claude_code",
+    "injection" : {
+      "body_path" : "\/Users\/petepetrash\/Code\/capacitor\/docs\/circuit\/proofs\/receipt-first-product-loop\/native-session\/03-native-inserted-goal-body.txt",
+      "exact_body_match" : true,
+      "mode" : "stdin initial prompt"
+    },
+    "kind" : "native_receipt_first_proof_result",
+    "limits" : [
+      "One controlled claude_code CLI session only.",
+      "No Circuit runtime invocation.",
+      "No agent-reasoning orchestration, queueing, checkpoint relay, retries, or generalized session management."
+    ],
+    "status" : "native_capture_complete",
+    "visible_surface" : "Ghostty launched by Capacitor Circuit first-slice action"
+  },
+  "kind" : "normalize_agent_event_request",
+  "raw_receipt_text" : "CIRCUIT_RECEIPT\n{\n  \"kind\": \"receipt\",\n  \"id\": \"receipt-01kscapacitorcircuit000001\",\n  \"goal_packet_id\": \"goal-packet-01kscapacitorcircuit000000\",\n  \"status\": \"completed\",\n  \"summary\": \"Claude Code CLI received the Circuit-produced GoalPacket body and returned the receipt for the receipt-first transport proof.\",\n  \"evidence\": [\n    \"GoalPacket.body was injected into one visible Claude Code CLI session.\",\n    \"Receipt marker was returned in the native CLI output for Capacitor capture.\"\n  ],\n  \"changed_paths\": [],\n  \"open_risks\": [\n    \"This proves the transport receipt path, not useful agent work or checkpoint relay.\"\n  ],\n  \"next_action\": \"Normalize this raw receipt through the headless Circuit protocol boundary and render it in Capacitor.\"\n}\n",
+  "source_raw_receipt_path" : "\/Users\/petepetrash\/Code\/capacitor\/docs\/circuit\/proofs\/receipt-first-product-loop\/native-session\/06-native-captured-raw-receipt.txt"
+}

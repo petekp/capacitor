@@ -1,0 +1,16 @@
+/goal Prove receipt-first Capacitor <-> Circuit slice
+
+Prove the receipt-first Capacitor <-> Circuit slice from a captured Capacitor idea.
+Use one visible Claude Code CLI session, return a CIRCUIT_RECEIPT block, normalize it through the headless Circuit protocol boundary, and render it in Capacitor.
+Write and read all runtime proof artifacts from /Users/petepetrash/Code/capacitor.
+
+This is a transport proof for the Capacitor <-> Circuit product loop. Do not edit files, run broad investigation, spawn subagents, or continue into open-ended work.
+
+Confirm only this smallest handoff: Capacitor injected this exact GoalPacket.body into one visible Claude Code CLI session; you can return one receipt; Capacitor can capture it in the background; Circuit can normalize it; Capacitor can render it.
+
+Preserve the boundary: Capacitor orchestrates native agent sessions and attention, Circuit is the headless intent/protocol layer, and Claude Code/Codex own execution and native subagent primitives. Do not build agent-reasoning orchestration, a runner, flow engine, task DAG, retry platform, broad memory store, new terminal/editor, or SaaS framing.
+
+End immediately with this visible marker and one JSON Receipt object:
+
+CIRCUIT_RECEIPT
+{"kind":"receipt","id":"receipt-01kscapacitorcircuit000000","goal_packet_id":"goal-packet-01kscapacitorcircuit000000","status":"completed","summary":"Claude Code CLI received the Circuit-produced GoalPacket body and returned the receipt for the receipt-first transport proof.","evidence":["GoalPacket.body was injected into one visible Claude Code CLI session.","Receipt marker was returned in the native CLI output for Capacitor capture."],"changed_paths":[],"open_risks":["This proves the transport receipt path, not useful agent work or checkpoint relay."],"next_action":"Normalize this raw receipt through the headless Circuit protocol boundary and render it in Capacitor."}

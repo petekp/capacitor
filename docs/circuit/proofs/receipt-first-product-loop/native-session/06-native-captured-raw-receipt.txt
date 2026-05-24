@@ -1,0 +1,17 @@
+CIRCUIT_RECEIPT
+{
+  "kind": "receipt",
+  "id": "receipt-01kscapacitorcircuit000001",
+  "goal_packet_id": "goal-packet-01kscapacitorcircuit000000",
+  "status": "completed",
+  "summary": "Claude Code CLI received the Circuit-produced GoalPacket body and returned the receipt for the receipt-first transport proof.",
+  "evidence": [
+    "GoalPacket.body was injected into one visible Claude Code CLI session.",
+    "Receipt marker was returned in the native CLI output for Capacitor capture."
+  ],
+  "changed_paths": [],
+  "open_risks": [
+    "This proves the transport receipt path, not useful agent work or checkpoint relay."
+  ],
+  "next_action": "Normalize this raw receipt through the headless Circuit protocol boundary and render it in Capacitor."
+}

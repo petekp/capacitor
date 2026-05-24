@@ -21,6 +21,10 @@ final class AccessibilityIdentifiersTests: XCTestCase {
         XCTAssertEqual(AccessibilityIdentifiers.runCheckpointTimelineIdentifier, "ax.run-checkpoint-timeline")
     }
 
+    func testReceiptProofRenderingAccessibilityIdentifierRemainsStable() {
+        XCTAssertEqual(AccessibilityIdentifiers.receiptProofRenderingIdentifier, "ax.receipt-proof-rendering")
+    }
+
     func testProjectDetailViewIdentifierIsDistinctFromDockNavigationIdentifier() {
         let project = Project(
             name: "Capacitor",

@@ -1,0 +1,57 @@
+{
+  "kind": "focused_test_result",
+  "status": "passed",
+  "checked_at": "2026-05-24T15:21:46Z",
+  "commands": [
+    {
+      "command": "python3 -m unittest tests.circuit_protocol.test_goal_packet_planning tests.circuit_protocol.test_agent_event_normalization",
+      "status": "passed",
+      "summary": "12 protocol tests passed"
+    },
+    {
+      "command": "python3 scripts/circuit/plan-goal-packet.py --check",
+      "status": "passed",
+      "summary": "Capacitor-owned fixture proposal and GoalPacket are current"
+    },
+    {
+      "command": "python3 scripts/circuit/normalize-agent-event.py --check",
+      "status": "passed",
+      "summary": "Fresh manual raw receipt normalizes to the checked AgentEvent"
+    },
+    {
+      "command": "python3 scripts/circuit/validate-receipt-first-loop.py --write docs/circuit/proofs/receipt-first-product-loop/validation-result.json",
+      "status": "passed",
+      "summary": "13 Capacitor-owned product-loop checks passed"
+    },
+    {
+      "command": "swift test --package-path apps/swift --filter CircuitReceiptProductLoopTests",
+      "status": "passed",
+      "summary": "3 Swift product-loop tests passed"
+    },
+    {
+      "command": "swift test --package-path apps/swift --filter ReceiptFirstProofAdapterTests",
+      "status": "passed",
+      "summary": "10 Swift native adapter tests passed"
+    },
+    {
+      "command": "swift test --package-path apps/swift --filter ReceiptProofRenderingTests",
+      "status": "passed",
+      "summary": "11 Swift rendering tests passed"
+    },
+    {
+      "command": "git diff --check -- README.md circuit_protocol scripts/circuit tests/circuit_protocol docs/circuit apps/swift/Sources/Capacitor/App.swift apps/swift/Sources/Capacitor/Debug/CircuitReceiptProductLoop.swift apps/swift/Sources/Capacitor/Debug/ReceiptFirstProofAdapter.swift apps/swift/Sources/Capacitor/Debug/ReceiptProofRendering.swift apps/swift/Sources/Capacitor/Features/CircuitFirstSliceCommands.swift apps/swift/Tests/CapacitorTests/CircuitReceiptProductLoopTests.swift apps/swift/Tests/CapacitorTests/ReceiptFirstProofAdapterTests.swift apps/swift/Tests/CapacitorTests/ReceiptProofRenderingTests.swift",
+      "status": "passed",
+      "summary": "No whitespace errors in scoped changed files"
+    }
+  ],
+  "manual_run": {
+    "status": "passed",
+    "trigger": "Capacitor menu Circuit > Run Claude Receipt Loop",
+    "artifact_root": "docs/circuit/proofs/receipt-first-product-loop",
+    "render_screenshot": "docs/circuit/proofs/receipt-first-product-loop/live-window-run-01.png"
+  },
+  "limits": [
+    "Receipt-first Claude Code CLI loop only",
+    "No checkpoint relay, queues, retries, Cursor support, or generalized session management"
+  ]
+}

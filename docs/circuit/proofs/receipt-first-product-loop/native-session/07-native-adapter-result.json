@@ -1,0 +1,26 @@
+{
+  "kind": "native_receipt_first_proof_result",
+  "status": "native_capture_complete",
+  "finished_at": "2026-05-24T15:20:18.040960Z",
+  "goal_packet_id": "goal-packet-01kscapacitorcircuit000000",
+  "host": "claude_code",
+  "body_sha256": "f935d63492d9c0e055f201c81c92640634000b2a505dac02ff0fc98147a17b79",
+  "agent_exit_code": 0,
+  "codex_exit_code": 0,
+  "visible_surface": "Ghostty launched by Capacitor Circuit first-slice action",
+  "injection": {
+    "mode": "stdin initial prompt",
+    "body_path": "/Users/petepetrash/Code/capacitor/docs/circuit/proofs/receipt-first-product-loop/native-session/03-native-inserted-goal-body.txt",
+    "exact_body_match": true
+  },
+  "capture": {
+    "mode": "stdout and last-message capture",
+    "raw_receipt_path": "/Users/petepetrash/Code/capacitor/docs/circuit/proofs/receipt-first-product-loop/native-session/06-native-captured-raw-receipt.txt",
+    "preserved_for_normalization": true
+  },
+  "limits": [
+    "One controlled claude_code CLI session only.",
+    "No Circuit runtime invocation.",
+    "No agent-reasoning orchestration, queueing, checkpoint relay, retries, or generalized session management."
+  ]
+}

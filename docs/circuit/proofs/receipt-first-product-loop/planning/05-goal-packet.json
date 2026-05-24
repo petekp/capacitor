@@ -1,0 +1,12 @@
+{
+  "body" : "\/goal Prove receipt-first Capacitor <-> Circuit slice\n\nProve the receipt-first Capacitor <-> Circuit slice from a captured Capacitor idea.\nUse one visible Claude Code CLI session, return a CIRCUIT_RECEIPT block, normalize it through the headless Circuit protocol boundary, and render it in Capacitor.\nWrite and read all runtime proof artifacts from \/Users\/petepetrash\/Code\/capacitor.\n\nThis is a transport proof for the Capacitor <-> Circuit product loop. Do not edit files, run broad investigation, spawn subagents, or continue into open-ended work.\n\nConfirm only this smallest handoff: Capacitor injected this exact GoalPacket.body into one visible Claude Code CLI session; you can return one receipt; Capacitor can capture it in the background; Circuit can normalize it; Capacitor can render it.\n\nPreserve the boundary: Capacitor orchestrates native agent sessions and attention, Circuit is the headless intent\/protocol layer, and Claude Code\/Codex own execution and native subagent primitives. Do not build agent-reasoning orchestration, a runner, flow engine, task DAG, retry platform, broad memory store, new terminal\/editor, or SaaS framing.\n\nEnd immediately with this visible marker and one JSON Receipt object:\n\nCIRCUIT_RECEIPT\n{\"kind\":\"receipt\",\"id\":\"receipt-01kscapacitorcircuit000000\",\"goal_packet_id\":\"goal-packet-01kscapacitorcircuit000000\",\"status\":\"completed\",\"summary\":\"Claude Code CLI received the Circuit-produced GoalPacket body and returned the receipt for the receipt-first transport proof.\",\"evidence\":[\"GoalPacket.body was injected into one visible Claude Code CLI session.\",\"Receipt marker was returned in the native CLI output for Capacitor capture.\"],\"changed_paths\":[],\"open_risks\":[\"This proves the transport receipt path, not useful agent work or checkpoint relay.\"],\"next_action\":\"Normalize this raw receipt through the headless Circuit protocol boundary and render it in Capacitor.\"}",
+  "checkpoint_expectation" : "Ask only if owner input changes the work.",
+  "expected_return" : "receipt",
+  "id" : "goal-packet-01kscapacitorcircuit000000",
+  "idea_id" : "idea-01KSCAPACITORCIRCUIT000000",
+  "kind" : "goal_packet",
+  "project_path" : "\/Users\/petepetrash\/Code\/capacitor",
+  "pursuit_id" : "pursuit-01kscapacitorcircuit000000",
+  "receipt_expectation" : "Return a compact summary of artifacts created, evidence checked, unresolved risk, and next action.",
+  "target_agent" : "claude_code"
+}
