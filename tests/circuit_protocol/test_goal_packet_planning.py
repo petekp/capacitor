@@ -49,6 +49,49 @@ class GoalPacketPlanningTests(unittest.TestCase):
         self.assertIn("visible Claude Code CLI session", planned["goal_packet"]["body"])
         self.assertIn("Capacitor orchestrates native agent sessions and attention", planned["goal_packet"]["body"])
 
+    def test_plans_claude_code_goal_packet_for_ordinary_captured_intent(self) -> None:
+        idea = make_idea()
+        idea["id"] = "idea-evidence-packets"
+        idea["text"] = "Improve checkpoint evidence packets for high-level review."
+        idea["intent"] = "Improve checkpoint evidence packets for high-level review."
+        idea["success_criteria"] = "I can approve or reject without reading the diff first."
+
+        planned = plan_goal_packet(idea, target_agent="claude_code")
+
+        proposal = planned["pursuit_proposal"]
+        goal_packet = planned["goal_packet"]
+        self.assertEqual(proposal["idea_id"], idea["id"])
+        self.assertEqual(proposal["suggested_agent"], "claude_code")
+        self.assertEqual(goal_packet["target_agent"], "claude_code")
+        self.assertEqual(goal_packet["id"], "goal-packet-evidence-packets")
+        self.assertIn("/goal Improve checkpoint evidence packets for high-level review.", goal_packet["body"])
+        self.assertIn("Success means: I can approve or reject without reading the diff first.", goal_packet["body"])
+        self.assertIn("Do the smallest useful slice", goal_packet["body"])
+        self.assertIn("You may inspect and edit files", goal_packet["body"])
+        self.assertIn("CIRCUIT_RECEIPT", goal_packet["body"])
+        self.assertNotIn("This is a transport proof", goal_packet["body"])
+        self.assertNotIn("Do not edit files", goal_packet["body"])
+
+    def test_keeps_fixture_codex_goal_packet_as_transport_proof(self) -> None:
+        planned = plan_goal_packet(make_idea())
+
+        proposal = planned["pursuit_proposal"]
+        body = planned["goal_packet"]["body"]
+        self.assertEqual(proposal["delivery_target"], "docs/circuit/proofs/receipt-first-product-loop/")
+        self.assertIn("fixture artifacts", body)
+        self.assertIn("one visible Codex session", body)
+        self.assertNotIn("Do the smallest useful slice", body)
+
+    def test_blank_optional_intent_falls_back_to_idea_text(self) -> None:
+        idea = make_idea()
+        idea["id"] = "idea-blank-intent"
+        idea["text"] = "Tighten the ordinary captured idea path."
+        idea["intent"] = "   "
+
+        planned = plan_goal_packet(idea, target_agent="claude_code")
+
+        self.assertIn("/goal Tighten the ordinary captured idea path.", planned["goal_packet"]["body"])
+
     def test_rejects_non_idea_kind(self) -> None:
         idea = make_idea()
         idea["kind"] = "note"
@@ -56,11 +99,11 @@ class GoalPacketPlanningTests(unittest.TestCase):
         with self.assertRaisesRegex(PlanningError, "idea.kind must be idea"):
             plan_goal_packet(idea)
 
-    def test_rejects_non_receipt_first_idea(self) -> None:
+    def test_rejects_blank_idea_text(self) -> None:
         idea = make_idea()
-        idea["text"] = "Build a broad agent work platform."
+        idea["text"] = "   "
 
-        with self.assertRaisesRegex(PlanningError, "Only the receipt-first slice idea"):
+        with self.assertRaisesRegex(PlanningError, "idea.text must not be blank"):
             plan_goal_packet(idea)
 
     def test_rejects_unsupported_agent_selection(self) -> None:

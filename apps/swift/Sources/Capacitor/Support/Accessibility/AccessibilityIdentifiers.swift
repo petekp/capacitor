@@ -17,6 +17,8 @@ enum AccessibilityIdentifiers {
     static let runCheckpointNotesIdentifier = "ax.run-checkpoint-review.notes"
     static let runCheckpointTimelineIdentifier = "ax.run-checkpoint-timeline"
     static let receiptProofRenderingIdentifier = "ax.receipt-proof-rendering"
+    static let returnBriefIdentifier = "ax.return-brief"
+    static let endOfDayClosureIdentifier = "ax.end-of-day-closure"
 
     static let ideaCaptureOverlayIdentifier = "ax.idea-capture-overlay"
     static let ideaCaptureTextAreaIdentifier = "ax.idea-capture-textarea"

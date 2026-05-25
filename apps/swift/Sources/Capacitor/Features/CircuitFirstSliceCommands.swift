@@ -2,6 +2,7 @@ import SwiftUI
 
 extension Notification.Name {
     static let circuitFirstSliceDidCapture = Notification.Name("circuitFirstSliceDidCapture")
+    static let circuitFirstSliceDidFail = Notification.Name("circuitFirstSliceDidFail")
 }
 
 enum CircuitFirstSliceWindowID {

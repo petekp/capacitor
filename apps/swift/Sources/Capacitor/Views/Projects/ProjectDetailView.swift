@@ -10,6 +10,7 @@ struct ProjectDetailView: View {
     @State private var selectedIdea: Idea?
     @State private var selectedIdeaFrame: CGRect?
     @State private var methodSelectorIdea: Idea?
+    @State private var openReceiptWindowAfterCapture = false
 
     private var isModalOpen: Bool {
         selectedIdea != nil || methodSelectorIdea != nil
@@ -36,11 +37,36 @@ struct ProjectDetailView: View {
                     }
 
                     if appState.featureState.isIdeaCaptureEnabled {
+                        WorkBatchListSection(
+                            batches: appState.workBatches(for: project),
+                            checkpointFocusTarget: checkpointFocusTargetForProject,
+                            onOpen: { batch in
+                                appState.openWorkBatch(batch, for: project)
+                            },
+                            onOpenCockpit: { batch in
+                                appState.openWorkBatchCockpit(batch)
+                            },
+                            onUnresolve: { batch, task in
+                                appState.unresolveWorkBatchTask(task, in: batch, for: project)
+                            },
+                            onCheckpointResponse: { batch, checkpoint, response in
+                                appState.submitWorkBatchCheckpointResponse(
+                                    checkpoint,
+                                    in: batch,
+                                    for: project,
+                                    response: response,
+                                )
+                            },
+                        )
+                        .opacity(appeared ? 1 : 0)
+                        .offset(y: appeared ? 0 : 14)
+
                         VStack(alignment: .leading, spacing: 12) {
                             let ideas = appState.getIdeas(for: project)
                             DetailSectionLabel(
-                                title: "IDEA QUEUE",
+                                title: "TASKS",
                                 count: IdeaQueueMetrics.queuedCount(in: ideas),
+                                countAccessibilityLabel: "\(IdeaQueueMetrics.queuedCount(in: ideas)) queued tasks",
                             )
 
                             let delegationState = appState.delegationState(for: project)
@@ -72,13 +98,45 @@ struct ProjectDetailView: View {
                         .offset(y: appeared ? 0 : 16)
                     }
 
-                    if appState.featureState.isMethodRunnerEnabled,
-                       let run = appState.checkpointTimelineRun(for: project),
-                       let projection = RunCheckpointTimelineProjection(run: run)
-                    {
-                        RunCheckpointTimelineSection(projection: projection)
+                    if appState.featureState.isMethodRunnerEnabled {
+                        let timelineRun = appState.checkpointTimelineRun(for: project)
+                        let timelineProjection = timelineRun.flatMap { RunCheckpointTimelineProjection(run: $0) }
+
+                        if let completionRun = completionBriefRun(
+                            timelineRun: timelineRun,
+                            visibleRun: appState.activeRun(for: project),
+                        ),
+                            let completionBrief = ProjectCompletionBriefProjection.make(
+                                project: project,
+                                run: completionRun,
+                                timeline: completionTimeline(
+                                    for: completionRun,
+                                    timelineRun: timelineRun,
+                                    timelineProjection: timelineProjection,
+                                ),
+                            )
+                        {
+                            ProjectCompletionBriefSection(projection: completionBrief)
+                                .opacity(appeared ? 1 : 0)
+                                .offset(y: appeared ? 0 : 18)
+                        }
+
+                        if let run = timelineRun,
+                           let projection = timelineProjection
+                        {
+                            ProjectCaseFileSection(projection: ProjectCaseFileProjection.make(
+                                project: project,
+                                run: run,
+                                timeline: projection,
+                                viewState: appState.operatorViewStateSnapshot,
+                            ))
                             .opacity(appeared ? 1 : 0)
                             .offset(y: appeared ? 0 : 18)
+
+                            RunCheckpointTimelineSection(projection: projection)
+                                .opacity(appeared ? 1 : 0)
+                                .offset(y: appeared ? 0 : 20)
+                        }
                     }
 
                     Button(action: {
@@ -138,7 +196,11 @@ struct ProjectDetailView: View {
                 if let idea = methodSelectorIdea {
                     MethodSelectorModalOverlay(
                         methods: appState.listBuiltinMethods(),
+                        runIntent: IdeaRunIntent.project(idea),
                         onSelect: { method in
+                            if CircuitReceiptGoalPacketMethod.isReceiptGoalPacket(method) {
+                                openReceiptWindowAfterCapture = true
+                            }
                             appState.runMethodOnIdea(idea, method: method, for: project)
                             withAnimation(.easeInOut(duration: 0.2)) {
                                 methodSelectorIdea = nil
@@ -158,8 +220,19 @@ struct ProjectDetailView: View {
                 appeared = true
             }
         }
+        .task(id: caseFileSeenIdentity) {
+            markCaseFileSeen()
+        }
         .onExitCommand {
             appState.showProjectList()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .circuitFirstSliceDidCapture)) { _ in
+            guard openReceiptWindowAfterCapture else { return }
+            openReceiptWindowAfterCapture = false
+            openWindow(id: CircuitFirstSliceWindowID.claudeReceiptRendering)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .circuitFirstSliceDidFail)) { _ in
+            openReceiptWindowAfterCapture = false
         }
         .accessibilityIdentifier(AccessibilityIdentifiers.projectDetailViewIdentifier(for: project))
     }
@@ -227,6 +300,65 @@ struct ProjectDetailView: View {
     private func dismissIdeaDetail() {
         selectedIdea = nil
         selectedIdeaFrame = nil
+    }
+
+    private func completionBriefRun(
+        timelineRun: RuntimeRunState?,
+        visibleRun: RuntimeRunState?,
+    ) -> RuntimeRunState? {
+        if let visibleRun {
+            return visibleRun.status == "completed" ? visibleRun : nil
+        }
+
+        if timelineRun?.status == "completed" {
+            return timelineRun
+        }
+
+        return nil
+    }
+
+    private func completionTimeline(
+        for run: RuntimeRunState,
+        timelineRun: RuntimeRunState?,
+        timelineProjection: RunCheckpointTimelineProjection?,
+    ) -> RunCheckpointTimelineProjection? {
+        guard timelineRun?.id == run.id else { return nil }
+        return timelineProjection
+    }
+
+    private var caseFileSeenIdentity: String {
+        guard let run = appState.checkpointTimelineRun(for: project) else {
+            return "project:\(PathNormalizer.normalize(project.path))"
+        }
+
+        return ([
+            "project:\(PathNormalizer.normalize(project.path))",
+            "run:\(run.id)",
+        ] + checkpointIDs(for: run).map { "checkpoint:\($0)" })
+            .joined(separator: "#")
+    }
+
+    private func markCaseFileSeen() {
+        let run = appState.checkpointTimelineRun(for: project)
+        appState.markProjectCaseFileSeen(
+            projectPath: project.path,
+            runID: run?.id,
+            checkpointIDs: run.map(checkpointIDs(for:)) ?? [],
+        )
+    }
+
+    private func checkpointIDs(for run: RuntimeRunState) -> [String] {
+        run.pastCheckpoints.map(\.id) + [run.activeCheckpoint?.id].compactMap(\.self)
+    }
+
+    private var checkpointFocusTargetForProject: WorkBatchCheckpointFocusTarget? {
+        guard let target = appState.uiState.workBatchCheckpointFocusTarget,
+              target.projectPath == project.path
+        else {
+            return nil
+        }
+
+        return target
     }
 }
 

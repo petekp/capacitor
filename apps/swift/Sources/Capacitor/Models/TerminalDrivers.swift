@@ -426,7 +426,9 @@ func terminalLaunchCommandScript(
 ) -> String {
     switch app {
     case .ghostty:
-        ghosttyCreateWindowShellScript(configuration: ghosttyLaunchConfiguration(
+        // New Work Batch/session launch behavior: when Ghostty is already open,
+        // launch into a tab in the front window instead of spawning another window.
+        ghosttyCreateReusableSurfaceShellScript(configuration: ghosttyLaunchConfiguration(
             projectPath: projectPath,
             command: command,
         ))

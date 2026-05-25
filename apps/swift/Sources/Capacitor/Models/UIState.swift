@@ -37,6 +37,25 @@ struct RunCheckpointWindowTarget: Equatable {
     let checkpointID: String
 }
 
+struct WorkBatchCheckpointFocusTarget: Equatable {
+    let projectPath: String
+    let batchID: String
+    let checkpointID: String
+    let requestID: UUID
+
+    init(
+        projectPath: String,
+        batchID: String,
+        checkpointID: String,
+        requestID: UUID = UUID(),
+    ) {
+        self.projectPath = projectPath
+        self.batchID = batchID
+        self.checkpointID = checkpointID
+        self.requestID = requestID
+    }
+}
+
 @Observable
 @MainActor
 final class UIState {
@@ -47,6 +66,7 @@ final class UIState {
     var projectView: ProjectView = .list
     var reviewWindowTarget: ReviewWindowTarget?
     var runCheckpointWindowTarget: RunCheckpointWindowTarget?
+    var workBatchCheckpointFocusTarget: WorkBatchCheckpointFocusTarget?
 
     var dashboard: DashboardData?
     var isLoading = true

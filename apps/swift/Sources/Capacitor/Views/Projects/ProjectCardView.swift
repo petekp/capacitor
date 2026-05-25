@@ -8,6 +8,7 @@ struct ProjectCardView: View {
     let delegationState: RuntimeDelegationState?
     let activeRunState: RuntimeRunState?
     let projectStatus: ProjectStatus?
+    var workBatchSummary: String?
     var sessionSummary: String?
     let flashState: SessionState?
     let isActive: Bool
@@ -27,6 +28,7 @@ struct ProjectCardView: View {
             delegationState: delegationState,
             activeRunState: activeRunState,
             projectStatus: projectStatus,
+            workBatchSummary: workBatchSummary,
             sessionSummary: sessionSummary,
             flashState: flashState,
             isActive: isActive,
@@ -111,6 +113,7 @@ struct ProjectCard: View {
     let delegationState: RuntimeDelegationState?
     let activeRunState: RuntimeRunState?
     let projectStatus: ProjectStatus?
+    var workBatchSummary: String?
     var sessionSummary: String?
     let flashState: SessionState?
     let isActive: Bool
@@ -136,6 +139,7 @@ struct ProjectCard: View {
         delegationState: RuntimeDelegationState?,
         activeRunState: RuntimeRunState?,
         projectStatus: ProjectStatus?,
+        workBatchSummary: String? = nil,
         sessionSummary: String? = nil,
         flashState: SessionState?,
         isActive: Bool,
@@ -153,6 +157,7 @@ struct ProjectCard: View {
         self.delegationState = delegationState
         self.activeRunState = activeRunState
         self.projectStatus = projectStatus
+        self.workBatchSummary = workBatchSummary
         self.sessionSummary = sessionSummary
         self.flashState = flashState
         self.isActive = isActive
@@ -241,6 +246,7 @@ struct ProjectCard: View {
             activeRunState: activeRunState,
             delegationState: delegationState,
             projectStatus: projectStatus,
+            workBatchSummary: workBatchSummary,
             sessionSummary: sessionSummary,
         ))
     }

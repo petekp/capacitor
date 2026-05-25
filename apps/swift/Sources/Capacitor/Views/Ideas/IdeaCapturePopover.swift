@@ -426,25 +426,57 @@ final class TextViewFocusController {
     private weak var textView: NSTextView?
     private weak var scrollView: NSScrollView?
     private var hasPendingFocus = false
+    private var retryGeneration = 0
+    private var hasScheduledRetry = false
+    private let retryDelays: [TimeInterval]
+
+    init(retryDelays: [TimeInterval] = [0.05, 0.15, 0.35]) {
+        self.retryDelays = retryDelays
+    }
 
     func attach(textView: NSTextView, scrollView: NSScrollView) {
         self.textView = textView
         self.scrollView = scrollView
     }
 
-    func requestFocus() {
-        guard let textView else { return }
+    @discardableResult
+    func requestFocus() -> Bool {
+        attemptFocus(scheduleRetryOnFailure: true)
+    }
+
+    private func attemptFocus(scheduleRetryOnFailure: Bool) -> Bool {
+        guard let textView else {
+            hasPendingFocus = true
+            return false
+        }
 
         guard let window = textView.window ?? scrollView?.window else {
             hasPendingFocus = true
-            return
+            return false
         }
 
         hasPendingFocus = false
 
+        if !NSApp.isActive {
+            NSApp.activate(ignoringOtherApps: true)
+        }
+
+        if window.canBecomeKey, !window.isKeyWindow {
+            window.makeKeyAndOrderFront(nil)
+        }
+
         if window.firstResponder !== textView {
             window.makeFirstResponder(textView)
         }
+
+        let didFocus = window.firstResponder === textView
+        hasPendingFocus = !didFocus
+
+        if !didFocus, scheduleRetryOnFailure {
+            scheduleFocusRetries()
+        }
+
+        return didFocus
     }
 
     func viewDidMoveToWindow() {
@@ -452,6 +484,32 @@ final class TextViewFocusController {
 
         DispatchQueue.main.async { [weak self] in
             self?.requestFocus()
+        }
+    }
+
+    private func scheduleFocusRetries() {
+        guard !hasScheduledRetry else { return }
+
+        hasScheduledRetry = true
+        retryGeneration += 1
+
+        let generation = retryGeneration
+        let delays = retryDelays.isEmpty ? [0] : retryDelays
+        let lastRetryIndex = delays.index(before: delays.endIndex)
+
+        for (index, delay) in delays.enumerated() {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                guard let self, retryGeneration == generation else { return }
+                guard hasPendingFocus else {
+                    hasScheduledRetry = false
+                    return
+                }
+
+                let didFocus = attemptFocus(scheduleRetryOnFailure: false)
+                if didFocus || index == lastRetryIndex {
+                    hasScheduledRetry = false
+                }
+            }
         }
     }
 }
@@ -620,6 +678,15 @@ struct CenteredTextEditor: NSViewRepresentable {
 }
 
 class CenteredNSTextView: NSTextView {
+    override var acceptsFirstResponder: Bool {
+        true
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        window?.makeFirstResponder(self)
+        super.mouseDown(with: event)
+    }
+
     override func layout() {
         super.layout()
         centerTextVertically()

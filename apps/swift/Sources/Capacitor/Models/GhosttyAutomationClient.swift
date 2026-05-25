@@ -412,6 +412,35 @@ func ghosttyCreateWindowAppleScript(configuration: GhosttySurfaceConfigurationOp
     return lines.joined(separator: "\n")
 }
 
+func ghosttyCreateReusableSurfaceAppleScript(configuration: GhosttySurfaceConfigurationOptions) -> String {
+    var lines = [
+        "tell application \"Ghostty\"",
+        "    set launchConfig to new surface configuration",
+    ]
+
+    if let workingDirectory = configuration.initialWorkingDirectory?.trimmingCharacters(in: .whitespacesAndNewlines),
+       !workingDirectory.isEmpty
+    {
+        lines.append("    set initial working directory of launchConfig to \"\(appleScriptEscape(workingDirectory))\"")
+    }
+
+    if let initialInput = configuration.initialInput?.trimmingCharacters(in: .whitespacesAndNewlines),
+       !initialInput.isEmpty
+    {
+        lines.append("    set initial input of launchConfig to \"\(appleScriptEscape(initialInput))\" & linefeed")
+    }
+
+    lines.append("    if (count of windows) > 0 then")
+    lines.append("        set targetWindow to front window")
+    lines.append("        new tab in targetWindow with configuration launchConfig")
+    lines.append("    else")
+    lines.append("        new window with configuration launchConfig")
+    lines.append("    end if")
+    lines.append("end tell")
+
+    return lines.joined(separator: "\n")
+}
+
 func ghosttyCreateTabAppleScript(windowID: String, configuration: GhosttySurfaceConfigurationOptions) -> String {
     var lines = [
         "tell application \"Ghostty\"",
@@ -441,6 +470,14 @@ func ghosttyCreateWindowShellScript(configuration: GhosttySurfaceConfigurationOp
     """
     osascript <<'APPLESCRIPT'
     \(ghosttyCreateWindowAppleScript(configuration: configuration))
+    APPLESCRIPT
+    """
+}
+
+func ghosttyCreateReusableSurfaceShellScript(configuration: GhosttySurfaceConfigurationOptions) -> String {
+    """
+    osascript <<'APPLESCRIPT'
+    \(ghosttyCreateReusableSurfaceAppleScript(configuration: configuration))
     APPLESCRIPT
     """
 }

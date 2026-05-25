@@ -17,7 +17,7 @@ final class ProjectCardContextLineResolverTests: XCTestCase {
         XCTAssertEqual(result, "Generating plan")
     }
 
-    func testCompletedRunWithMethodNameShowsMethodCompleted() {
+    func testCompletedRunShowsFinalReviewCopy() {
         let run = makeRun(methodName: "Shape & Execute", status: "completed")
         let inputs = ProjectCardContextLineResolver.Inputs(
             runVisualState: .completed(statusMessage: nil),
@@ -28,7 +28,7 @@ final class ProjectCardContextLineResolverTests: XCTestCase {
 
         let result = ProjectCardContextLineResolver.resolve(inputs)
 
-        XCTAssertEqual(result, "Shape & Execute completed")
+        XCTAssertEqual(result, "Ready for final review: Shape & Execute")
     }
 
     func testFailedRunFallsBackToDefaultMessage() {
@@ -101,6 +101,21 @@ final class ProjectCardContextLineResolverTests: XCTestCase {
         let result = ProjectCardContextLineResolver.resolve(inputs)
 
         XCTAssertEqual(result, "Refactoring the auth module")
+    }
+
+    func testWorkBatchSummaryWinsOverLegacySessionSummary() {
+        let inputs = ProjectCardContextLineResolver.Inputs(
+            runVisualState: .none,
+            activeRunState: nil,
+            delegationState: nil,
+            projectStatus: makeStatus(workingOn: "Fixed footer responsive breakpoint bug"),
+            workBatchSummary: "Claude Code is starting on add a green border around the mobile prototype.",
+            sessionSummary: "Fixed footer responsive breakpoint bug",
+        )
+
+        let result = ProjectCardContextLineResolver.resolve(inputs)
+
+        XCTAssertEqual(result, "Claude Code is starting on add a green border around the mobile prototype.")
     }
 
     func testStandaloneSessionTrimsWhitespace() {

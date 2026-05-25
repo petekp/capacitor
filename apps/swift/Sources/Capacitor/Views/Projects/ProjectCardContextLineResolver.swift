@@ -17,7 +17,10 @@ enum ProjectCardContextLineResolver {
         let activeRunState: RuntimeRunState?
         let delegationState: RuntimeDelegationState?
         let projectStatus: ProjectStatus?
+        /// New Work Batch path. This is Capacitor-managed task/batch state.
+        var workBatchSummary: String?
         /// Pre-selected summary variant from SessionSummarizer (best fit for card width).
+        /// Legacy path: model summary of recent project-level Claude transcript activity.
         var sessionSummary: String?
     }
 
@@ -39,8 +42,15 @@ enum ProjectCardContextLineResolver {
             return delegationText
         }
 
-        // Priority 3: Standalone session description — prefer width-fitted variant,
-        // fall back to projectStatus.workingOn from hud-status.json
+        // Priority 3: Capacitor-managed Work Batch context.
+        if let workBatchSummary = normalized(inputs.workBatchSummary) {
+            return workBatchSummary
+        }
+
+        // Priority 4: Standalone session description — prefer width-fitted variant,
+        // fall back to projectStatus.workingOn from hud-status.json.
+        // This is the legacy bring-your-own-terminal path and must not override
+        // a newly captured Task that Capacitor has already routed to a Work Batch.
         return sessionDescriptionText(
             delegationState: inputs.delegationState,
             sessionSummary: inputs.sessionSummary,
@@ -58,6 +68,9 @@ enum ProjectCardContextLineResolver {
 
         switch runVisualState {
         case let .completed(statusMessage):
+            if let activeRunState {
+                return ProjectCompletionBriefProjection.attentionReason(for: activeRunState)
+            }
             if hasPhases { return statusMessage }
             if let methodName = activeRunState?.methodName {
                 return "\(methodName) completed"
@@ -132,5 +145,12 @@ enum ProjectCardContextLineResolver {
             !workingOn.isEmpty
         else { return nil }
         return workingOn
+    }
+
+    private static func normalized(_ value: String?) -> String? {
+        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty
+        else { return nil }
+        return trimmed
     }
 }

@@ -487,6 +487,16 @@ struct FloatingWindowConfigurator: NSViewRepresentable {
     let alwaysOnTop: Bool
     var anchoringOwnsLevel: Bool = false
 
+    static func floatingStyleMask(from styleMask: NSWindow.StyleMask) -> NSWindow.StyleMask {
+        var styleMask = styleMask
+        // New floating behavior: keep `.titled` so the standard SwiftUI window
+        // remains keyable for text input. The legacy path removed it, which made
+        // idea capture intermittently impossible to focus in floating mode.
+        styleMask.insert(.titled)
+        styleMask.insert(.fullSizeContentView)
+        return styleMask
+    }
+
     func makeNSView(context: Context) -> NSView {
         let view = NSView()
         DispatchQueue.main.async {
@@ -529,8 +539,7 @@ struct FloatingWindowConfigurator: NSViewRepresentable {
             window.hasShadow = false
             window.titlebarAppearsTransparent = true
             window.titleVisibility = .hidden
-            window.styleMask.insert(.fullSizeContentView)
-            window.styleMask.remove(.titled)
+            window.styleMask = Self.floatingStyleMask(from: window.styleMask)
             window.isMovableByWindowBackground = true
             window.titlebarSeparatorStyle = .none
 

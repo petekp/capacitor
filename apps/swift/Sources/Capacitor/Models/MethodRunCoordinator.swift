@@ -48,17 +48,33 @@ final class MethodRunCoordinator: @unchecked Sendable {
         projectPath: String,
         ideaTitle: String? = nil,
         ideaDescription: String? = nil,
+        ideaIntent: String? = nil,
+        ideaSuccessCriteria: String? = nil,
         timeoutSeconds: Int = defaultTimeoutSeconds,
     ) async throws {
-        let executionRoot = prepareExecutionRoot(runID: runID)
+        let executionRoot: String
+        let binaryPath: String
 
-        // Write context.json so the Rust prompt builder can include task context
-        writeContextFile(
-            executionRoot: executionRoot,
-            title: ideaTitle,
-            description: ideaDescription,
-        )
-        let binaryPath = try resolveMethodRunnerBinary()
+        do {
+            executionRoot = try prepareExecutionRoot(runID: runID)
+
+            // Write context.json so the Rust prompt builder can include task context
+            try writeContextFile(
+                executionRoot: executionRoot,
+                title: ideaTitle,
+                description: ideaDescription,
+                intent: ideaIntent,
+                successCriteria: ideaSuccessCriteria,
+            )
+            binaryPath = try resolveMethodRunnerBinary()
+        } catch {
+            await markRunFailed(
+                runID: runID,
+                projectPath: projectPath,
+                statusMessage: error.localizedDescription,
+            )
+            throw error
+        }
 
         DebugLog.write(
             "MethodRunCoordinator.startRun runID=\(runID) method=\(methodID) root=\(executionRoot)",
@@ -116,6 +132,11 @@ final class MethodRunCoordinator: @unchecked Sendable {
             DebugLog.write(
                 "MethodRunCoordinator.startRun launch failure runID=\(runID) error=\(error.localizedDescription)",
             )
+            await markRunFailed(
+                runID: runID,
+                projectPath: projectPath,
+                statusMessage: error.localizedDescription,
+            )
             throw MethodRunError.launchFailed(underlying: error)
         }
 
@@ -146,42 +167,11 @@ final class MethodRunCoordinator: @unchecked Sendable {
                 "MethodRunCoordinator.startRun failure runID=\(runID) stderr=\(errorSummary)",
             )
 
-            // Mark run as failed in runtime service
-            do {
-                try await mutateRun(RuntimeRunMutationRequest(
-                    kind: "fail",
-                    projectPath: projectPath,
-                    runId: runID,
-                    checkpointId: nil,
-                    methodId: nil,
-                    involvement: nil,
-                    checkpointKind: nil,
-                    checkpointTitle: nil,
-                    checkpointSummary: nil,
-                    checkpointBriefPath: nil,
-                    checkpointManifestPath: nil,
-                    checkpointMediaArtifacts: [],
-                    checkpointMermaidSources: [],
-                    captureUrl: nil,
-                    decisionAction: nil,
-                    decisionNote: nil,
-                    sessionId: nil,
-                    delegationWorkerId: nil,
-                    statusMessage: nil,
-                    captureRequestId: nil,
-                    clientId: nil,
-                    observedCaptureUrl: nil,
-                    captureFailureReason: nil,
-                    completedMediaArtifacts: [],
-                    ideaId: nil,
-                    ideaTitle: nil,
-                    ideaDescription: nil,
-                ))
-            } catch {
-                DebugLog.write(
-                    "MethodRunCoordinator.startRun fail-mutation error runID=\(runID) error=\(error.localizedDescription)",
-                )
-            }
+            await markRunFailed(
+                runID: runID,
+                projectPath: projectPath,
+                statusMessage: errorSummary,
+            )
 
             throw MethodRunError.processExitedWithError(code: exitCode, stderr: errorSummary)
         }
@@ -269,12 +259,15 @@ final class MethodRunCoordinator: @unchecked Sendable {
         executionRoot: String,
         title: String?,
         description: String?,
-    ) {
-        let context: [String: Any] = [
-            "version": 1,
-            "title": title ?? "",
-            "description": description ?? "",
-        ]
+        intent: String?,
+        successCriteria: String?,
+    ) throws {
+        let context = MethodRunContext(
+            title: title,
+            description: description,
+            intent: intent,
+            successCriteria: successCriteria,
+        ).jsonObject
         let data: Data
         do {
             data = try JSONSerialization.data(withJSONObject: context)
@@ -282,22 +275,32 @@ final class MethodRunCoordinator: @unchecked Sendable {
             DebugLog.write(
                 "Warning: MethodRunCoordinator.writeContextFile failed to serialize context.json for executionRoot=\(executionRoot): \(error)",
             )
-            return
+            throw MethodRunError.contextUnavailable
         }
         let contextPath = executionRoot + "/context.json"
-        if !FileManager.default.createFile(atPath: contextPath, contents: data) {
+        do {
+            try data.write(to: URL(fileURLWithPath: contextPath), options: .atomic)
+        } catch {
             DebugLog.write(
                 "Warning: MethodRunCoordinator.writeContextFile failed to create context.json at \(contextPath)",
             )
+            throw MethodRunError.contextUnavailable
         }
     }
 
-    private func prepareExecutionRoot(runID: String) -> String {
+    private func prepareExecutionRoot(runID: String) throws -> String {
         let path = "\(capacitorRoot)/runs/\(runID)"
-        try? FileManager.default.createDirectory(
-            atPath: path,
-            withIntermediateDirectories: true,
-        )
+        do {
+            try FileManager.default.createDirectory(
+                atPath: path,
+                withIntermediateDirectories: true,
+            )
+        } catch {
+            DebugLog.write(
+                "Warning: MethodRunCoordinator.prepareExecutionRoot failed path=\(path): \(error)",
+            )
+            throw MethodRunError.contextUnavailable
+        }
         return path
     }
 
@@ -351,12 +354,55 @@ final class MethodRunCoordinator: @unchecked Sendable {
         }
         return nil
     }
+
+    private func markRunFailed(
+        runID: String,
+        projectPath: String,
+        statusMessage: String?,
+    ) async {
+        do {
+            try await mutateRun(RuntimeRunMutationRequest(
+                kind: "fail",
+                projectPath: projectPath,
+                runId: runID,
+                checkpointId: nil,
+                methodId: nil,
+                involvement: nil,
+                checkpointKind: nil,
+                checkpointTitle: nil,
+                checkpointSummary: nil,
+                checkpointBriefPath: nil,
+                checkpointManifestPath: nil,
+                checkpointMediaArtifacts: [],
+                checkpointMermaidSources: [],
+                captureUrl: nil,
+                decisionAction: nil,
+                decisionNote: nil,
+                sessionId: nil,
+                delegationWorkerId: nil,
+                statusMessage: statusMessage,
+                captureRequestId: nil,
+                clientId: nil,
+                observedCaptureUrl: nil,
+                captureFailureReason: nil,
+                completedMediaArtifacts: [],
+                ideaId: nil,
+                ideaTitle: nil,
+                ideaDescription: nil,
+            ))
+        } catch {
+            DebugLog.write(
+                "MethodRunCoordinator.startRun fail-mutation error runID=\(runID) error=\(error.localizedDescription)",
+            )
+        }
+    }
 }
 
 // MARK: - Errors
 
 enum MethodRunError: LocalizedError {
     case binaryNotFound
+    case contextUnavailable
     case launchFailed(underlying: Error)
     case processExitedWithError(code: Int32, stderr: String)
 
@@ -364,6 +410,8 @@ enum MethodRunError: LocalizedError {
         switch self {
         case .binaryNotFound:
             "method-runner binary not found. Build with `cargo build -p capacitor-core --release` or set METHOD_RUNNER_PATH."
+        case .contextUnavailable:
+            "method-runner context could not be prepared."
         case let .launchFailed(underlying):
             "Failed to launch method-runner: \(underlying.localizedDescription)"
         case let .processExitedWithError(code, stderr):

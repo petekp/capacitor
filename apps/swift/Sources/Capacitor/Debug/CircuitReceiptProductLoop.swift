@@ -10,6 +10,8 @@ struct CircuitContractIdea: Codable, Equatable {
     let id: String
     let project: CircuitContractProject
     let text: String
+    let intent: String
+    let successCriteria: String?
     let capturedAt: String
 
     enum CodingKeys: String, CodingKey {
@@ -17,6 +19,8 @@ struct CircuitContractIdea: Codable, Equatable {
         case id
         case project
         case text
+        case intent
+        case successCriteria = "success_criteria"
         case capturedAt = "captured_at"
     }
 }
@@ -117,15 +121,14 @@ enum CircuitReceiptProductLoopError: Error, Equatable, LocalizedError {
 enum CircuitCapturedIdeaMapper {
     static func map(idea: Idea, project: Project) -> CircuitContractIdea {
         let id = idea.id.hasPrefix("idea-") ? idea.id : "idea-\(idea.id)"
-        let body = [idea.title, idea.description]
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-            .joined(separator: "\n\n")
+        let runIntent = IdeaRunIntent.project(idea)
         return CircuitContractIdea(
             kind: "idea",
             id: id,
             project: CircuitContractProject(name: project.name, path: project.path),
-            text: body.isEmpty ? idea.title : body,
+            text: runIntent.sourceText.isEmpty ? idea.title : runIntent.sourceText,
+            intent: runIntent.intent,
+            successCriteria: runIntent.successCriteria,
             capturedAt: idea.added,
         )
     }

@@ -53,6 +53,95 @@
             XCTAssertEqual(projection.sourceRawReceiptPath, rawReceiptURL.path)
         }
 
+        func testProjectionBuildsOperatorEvidenceBriefFromReceiptAndGoalBody() throws {
+            let directory = temporaryDirectory()
+            defer { try? FileManager.default.removeItem(at: directory) }
+
+            let resultURL = directory.appendingPathComponent("07-native-adapter-result.json")
+            let agentEventURL = directory.appendingPathComponent("01-agent-event.json")
+            let rawReceiptURL = directory.appendingPathComponent("06-native-captured-raw-receipt.txt")
+            let bodyURL = directory.appendingPathComponent("03-native-inserted-goal-body.txt")
+            let summary = "Introduced a 4-level evidence packet model."
+            let evidence = ["Added operator brief projection.", "Kept raw artifacts behind disclosure."]
+            let risks = ["Needs UI validation."]
+            let nextAction = "Approve direction or ask for stronger evidence."
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try Data("/goal Improve checkpoint evidence packets\n\nSuccess means operators can decide from the brief.\n".utf8).write(to: bodyURL)
+            try writeResult(to: resultURL, status: "native_capture_complete", bodyPath: bodyURL.path)
+            try writeRawReceipt(
+                to: rawReceiptURL,
+                receiptStatus: "completed",
+                summary: summary,
+                evidence: evidence,
+                openRisks: risks,
+                nextAction: nextAction,
+            )
+            try writeAgentEvent(
+                to: agentEventURL,
+                receiptStatus: "completed",
+                sourceRawReceiptPath: rawReceiptURL.path,
+                summary: summary,
+                evidence: evidence,
+                openRisks: risks,
+                nextAction: nextAction,
+            )
+
+            let projection = try ReceiptProofRenderingStore(
+                resultURL: resultURL,
+                agentEventURL: agentEventURL,
+            ).loadProjection()
+
+            XCTAssertEqual(projection.operatorBrief.goal, "Improve checkpoint evidence packets")
+            XCTAssertEqual(projection.operatorBrief.claim, summary)
+            XCTAssertEqual(projection.operatorBrief.evidence, evidence)
+            XCTAssertEqual(projection.operatorBrief.risks, risks)
+            XCTAssertEqual(projection.operatorBrief.ask, nextAction)
+        }
+
+        func testOperatorEvidenceBriefUsesPlainFallbacksWhenReceiptFieldsAreEmpty() {
+            let receipt = makeReceipt(
+                summary: "   ",
+                evidence: ["  "],
+                openRisks: ["  "],
+                nextAction: "\n",
+            )
+
+            let brief = OperatorEvidenceBriefProjection.make(
+                receipt: receipt,
+                goalBody: nil,
+            )
+
+            XCTAssertEqual(brief.goal, "Review receipt for goal-packet-rendering-test")
+            XCTAssertEqual(brief.claim, "Receipt captured.")
+            XCTAssertEqual(brief.evidence, ["No evidence reported."])
+            XCTAssertEqual(brief.risks, ["No open risks reported."])
+            XCTAssertEqual(brief.ask, "Review the receipt and decide whether to continue.")
+        }
+
+        func testLoadsRenderingProjectionFromNeutralAgentExitCodeWithoutLegacyCodexField() throws {
+            let directory = temporaryDirectory()
+            defer { try? FileManager.default.removeItem(at: directory) }
+
+            let resultURL = directory.appendingPathComponent("07-native-adapter-result.json")
+            let agentEventURL = directory.appendingPathComponent("01-agent-event.json")
+            let rawReceiptURL = directory.appendingPathComponent("06-native-captured-raw-receipt.txt")
+            try writeResult(to: resultURL, status: "native_capture_complete", includeLegacyCodexExitCode: false)
+            try writeRawReceipt(to: rawReceiptURL, receiptStatus: "completed")
+            try writeAgentEvent(
+                to: agentEventURL,
+                receiptStatus: "completed",
+                sourceRawReceiptPath: rawReceiptURL.path,
+            )
+
+            let projection = try ReceiptProofRenderingStore(
+                resultURL: resultURL,
+                agentEventURL: agentEventURL,
+            ).loadProjection()
+
+            XCTAssertEqual(projection.result.agentExitCode, 0)
+            XCTAssertEqual(projection.result.codexExitCode, 0)
+        }
+
         func testProjectionMapsBlockedAndFailedReceiptStates() throws {
             let result = makeResult(status: "native_capture_complete")
             let blocked = try ReceiptProofRenderingStore.makeProjection(
@@ -273,19 +362,36 @@
         private func writeResult(
             to url: URL,
             status: String,
+            bodyPath: String = "/tmp/body.txt",
+            includeLegacyCodexExitCode: Bool = true,
         ) throws {
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-            let result = makeResult(status: status)
-            let data = try JSONEncoder().encode(result)
+            let result = makeResult(status: status, bodyPath: bodyPath)
+            var data = try JSONEncoder().encode(result)
+            if !includeLegacyCodexExitCode {
+                var object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+                object.removeValue(forKey: "codex_exit_code")
+                data = try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
+            }
             try data.write(to: url)
         }
 
         private func writeRawReceipt(
             to url: URL,
             receiptStatus: String,
+            summary: String = "Rendered a captured receipt.",
+            evidence: [String] = ["Exact body inserted.", "Raw receipt captured."],
+            openRisks: [String] = ["Rendering is proof-only."],
+            nextAction: String = "Stop before queueing.",
         ) throws {
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-            let receipt = makeReceipt(status: receiptStatus)
+            let receipt = makeReceipt(
+                status: receiptStatus,
+                summary: summary,
+                evidence: evidence,
+                openRisks: openRisks,
+                nextAction: nextAction,
+            )
             let data = try JSONEncoder().encode(receipt)
             let json = try XCTUnwrap(String(data: data, encoding: .utf8))
             try Data("CIRCUIT_RECEIPT\n\(json)\n".utf8).write(to: url)
@@ -298,6 +404,10 @@
             includeNormalization: Bool = true,
             normalizationMode: String = "headless_receipt_normalizer",
             circuitRuntimeInvoked: Bool = false,
+            summary: String = "Rendered a captured receipt.",
+            evidence: [String] = ["Exact body inserted.", "Raw receipt captured."],
+            openRisks: [String] = ["Rendering is proof-only."],
+            nextAction: String = "Stop before queueing.",
         ) throws {
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
             let event = makeAgentEvent(
@@ -306,6 +416,10 @@
                 includeNormalization: includeNormalization,
                 normalizationMode: normalizationMode,
                 circuitRuntimeInvoked: circuitRuntimeInvoked,
+                summary: summary,
+                evidence: evidence,
+                openRisks: openRisks,
+                nextAction: nextAction,
             )
             let data = try JSONEncoder().encode(event)
             try data.write(to: url)
@@ -314,6 +428,7 @@
         private func makeResult(
             goalPacketID: String = "goal-packet-rendering-test",
             status: String = "native_capture_complete",
+            bodyPath: String = "/tmp/body.txt",
         ) -> ReceiptProofAdapterResult {
             ReceiptProofAdapterResult(
                 kind: "native_receipt_first_proof_result",
@@ -325,7 +440,7 @@
                 visibleSurface: "Ghostty launched by Capacitor Circuit first-slice action",
                 injection: .init(
                     mode: "stdin initial prompt",
-                    bodyPath: "/tmp/body.txt",
+                    bodyPath: bodyPath,
                     exactBodyMatch: true,
                 ),
                 capture: .init(
@@ -343,17 +458,21 @@
         private func makeReceipt(
             goalPacketID: String = "goal-packet-rendering-test",
             status: String = "completed",
+            summary: String = "Rendered a captured receipt.",
+            evidence: [String] = ["Exact body inserted.", "Raw receipt captured."],
+            openRisks: [String] = ["Rendering is proof-only."],
+            nextAction: String = "Stop before queueing.",
         ) -> ReceiptProofReceipt {
             ReceiptProofReceipt(
                 kind: "receipt",
                 id: "receipt-rendering-test",
                 goalPacketID: goalPacketID,
                 status: status,
-                summary: "Rendered a captured receipt.",
-                evidence: ["Exact body inserted.", "Raw receipt captured."],
+                summary: summary,
+                evidence: evidence,
                 changedPaths: [],
-                openRisks: ["Rendering is proof-only."],
-                nextAction: "Stop before queueing.",
+                openRisks: openRisks,
+                nextAction: nextAction,
             )
         }
 
@@ -365,6 +484,10 @@
             includeNormalization: Bool = true,
             normalizationMode: String = "headless_receipt_normalizer",
             circuitRuntimeInvoked: Bool = false,
+            summary: String = "Rendered a captured receipt.",
+            evidence: [String] = ["Exact body inserted.", "Raw receipt captured."],
+            openRisks: [String] = ["Rendering is proof-only."],
+            nextAction: String = "Stop before queueing.",
         ) -> ReceiptProofAgentEvent {
             ReceiptProofAgentEvent(
                 kind: "agent_event",
@@ -376,7 +499,14 @@
                     visibleToOwner: true,
                 ),
                 type: "receipt",
-                payload: makeReceipt(goalPacketID: receiptGoalPacketID, status: receiptStatus),
+                payload: makeReceipt(
+                    goalPacketID: receiptGoalPacketID,
+                    status: receiptStatus,
+                    summary: summary,
+                    evidence: evidence,
+                    openRisks: openRisks,
+                    nextAction: nextAction,
+                ),
                 recordedAt: "2026-05-24T03:15:23Z",
                 normalization: includeNormalization ? .init(
                     mode: normalizationMode,

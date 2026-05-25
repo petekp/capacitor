@@ -84,6 +84,10 @@ private struct RunCheckpointTimelineRow: View {
                     }
                 }
 
+                if let relationship = entry.revisionRelationship {
+                    revisionRelationshipView(relationship)
+                }
+
                 Text(RunCheckpointTimelineAccessibility.timestampText(for: entry))
                     .font(AppTypography.monoCaption)
                     .foregroundColor(.white.opacity(0.34))
@@ -128,6 +132,39 @@ private struct RunCheckpointTimelineRow: View {
         .frame(width: 38)
     }
 
+    private func revisionRelationshipView(
+        _ relationship: RunCheckpointTimelineProjection.Entry.RevisionRelationship,
+    ) -> some View {
+        HStack(alignment: .top, spacing: 6) {
+            Image(systemName: "arrow.turn.down.right")
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundColor(Color.orange.opacity(0.72))
+                .padding(.top, 3)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Responds to round \(relationship.priorPhaseRoundNumber)")
+                    .font(AppTypography.captionSmall.weight(.semibold))
+                    .foregroundColor(Color.orange.opacity(0.74))
+
+                Text(relationship.priorDecisionNote)
+                    .font(AppTypography.caption)
+                    .foregroundColor(.white.opacity(0.5))
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(Color.orange.opacity(0.07))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .strokeBorder(Color.orange.opacity(0.12), lineWidth: 0.5),
+                ),
+        )
+    }
+
     private var decisionPill: some View {
         HStack(spacing: 5) {
             Circle()
@@ -168,6 +205,9 @@ enum RunCheckpointTimelineAccessibility {
         ]
         if let decisionNote = entry.decisionNote, !decisionNote.isEmpty {
             parts.append("note: \(decisionNote)")
+        }
+        if let relationship = entry.revisionRelationship {
+            parts.append("responds to round \(relationship.priorPhaseRoundNumber): \(relationship.priorDecisionNote)")
         }
         return parts.joined(separator: ", ")
     }

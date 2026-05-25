@@ -17,6 +17,25 @@
             XCTAssertEqual(mapped.capturedAt, "2026-05-24T01:30:00Z")
         }
 
+        func testMapsCapturedIdeaIntentAndSuccessCriteriaToContractIdea() {
+            let mapped = CircuitCapturedIdeaMapper.map(
+                idea: makeIdea(
+                    id: "01HXSUCCESS",
+                    title: "Improve checkpoint evidence packets",
+                    description: """
+                    Success means: I can approve or reject without reading the diff first.
+
+                    Keep raw diffs behind disclosure.
+                    """,
+                ),
+                project: makeProject(),
+            )
+
+            XCTAssertEqual(mapped.intent, "Improve checkpoint evidence packets")
+            XCTAssertEqual(mapped.successCriteria, "I can approve or reject without reading the diff first.")
+            XCTAssertTrue(mapped.text.contains("Keep raw diffs behind disclosure."))
+        }
+
         func testPlanningBoundaryWritesRequestAndDecodesHeadlessResponse() async throws {
             let root = temporaryDirectory()
             defer { try? FileManager.default.removeItem(at: root) }
@@ -170,7 +189,7 @@
                 "finished_at": "2026-05-24T01:35:00Z",
                 "goal_packet_id": "goal-packet-claude-loop",
                 "host": "claude_code",
-                "body_sha256": "abc123",
+                "body_sha256": "7e3ca295e2f89272223605bff2575d18a44015e5af027b0e465d6270c5bb479e",
                 "agent_exit_code": 0,
                 "codex_exit_code": 0,
                 "visible_surface": "Ghostty launched by Capacitor Circuit first-slice action",
@@ -201,11 +220,12 @@
         private func makeIdea(
             id: String = "01HXIDEA",
             title: String = "Prove the receipt-first Capacitor <-> Circuit slice",
+            description: String = "Use one visible Claude Code CLI session and return a CIRCUIT_RECEIPT.",
         ) -> Idea {
             Idea(
                 id: id,
                 title: title,
-                description: "Use one visible Claude Code CLI session and return a CIRCUIT_RECEIPT.",
+                description: description,
                 added: "2026-05-24T01:30:00Z",
                 effort: "small",
                 status: "open",

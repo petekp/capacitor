@@ -141,7 +141,7 @@ final class GhosttyTerminalDriverTests: XCTestCase {
         )
     }
 
-    func testLaunchCommandScriptUsesNativeWindowCreation() {
+    func testLaunchCommandScriptReusesFrontGhosttyWindowWhenPossible() {
         let script = TerminalScripts.launchWithCommand(
             projectPath: "/Users/pete/Code/capacitor",
             command: "claude --resume",
@@ -151,6 +151,9 @@ final class GhosttyTerminalDriverTests: XCTestCase {
         XCTAssertTrue(script.contains("new surface configuration"))
         XCTAssertTrue(script.contains("set initial working directory of launchConfig"))
         XCTAssertTrue(script.contains("set initial input of launchConfig to \"claude --resume\" & linefeed"))
+        XCTAssertTrue(script.contains("if (count of windows) > 0 then"))
+        XCTAssertTrue(script.contains("set targetWindow to front window"))
+        XCTAssertTrue(script.contains("new tab in targetWindow with configuration launchConfig"))
         XCTAssertTrue(script.contains("new window with configuration launchConfig"))
         XCTAssertFalse(script.contains("open -a "))
     }

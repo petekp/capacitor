@@ -13,7 +13,6 @@ SUPPORTED_TARGET_AGENT = "codex"
 SUPPORTED_TARGET_AGENTS = {"codex", "claude_code"}
 SUPPORTED_ID_PREFIX = "idea-"
 SUPPORTED_ID_SUFFIX = "receipt-first-001"
-SUPPORTED_IDEA_PHRASE = "receipt-first Capacitor <-> Circuit slice"
 
 
 class PlanningError(Exception):
@@ -52,8 +51,26 @@ def validate_idea(idea: Mapping[str, Any]) -> None:
     require_fields(idea, ["kind", "id", "project.name", "project.path", "text"], "idea")
     if idea["kind"] != "idea":
         raise PlanningError(f"idea.kind must be idea, got {idea['kind']!r}")
-    if SUPPORTED_IDEA_PHRASE not in str(idea["text"]):
-        raise PlanningError("Only the receipt-first slice idea is supported by this planner.")
+    if not str(idea["text"]).strip():
+        raise PlanningError("idea.text must not be blank")
+
+
+def compact_text(value: Any) -> str:
+    return str(value).strip()
+
+
+def goal_text_from_idea(idea: Mapping[str, Any]) -> str:
+    intent = compact_text(idea.get("intent"))
+    if not intent:
+        intent = compact_text(idea["text"])
+    success_criteria = compact_text(idea.get("success_criteria") or "")
+    if success_criteria:
+        return f"{intent}\n\nSuccess means: {success_criteria}"
+    return intent
+
+
+def is_fixture_transport_proof(target_agent: str, suffix: str) -> bool:
+    return target_agent == "codex" and suffix == SUPPORTED_ID_SUFFIX
 
 
 def plan_goal_packet(
@@ -74,10 +91,10 @@ def plan_goal_packet(
     host_phrase = "one visible Codex session"
     if target_agent == "claude_code":
         host_phrase = "one visible Claude Code CLI session"
-    idea_text = str(idea["text"]).strip()
+    idea_text = goal_text_from_idea(idea)
 
-    proposal_goal = f"Prove the receipt-first Capacitor <-> Circuit slice with one captured idea and {host_phrase} receipt."
-    if target_agent == "codex" and suffix == SUPPORTED_ID_SUFFIX:
+    proposal_goal = f"Do the captured Capacitor idea through one bounded {host_phrase} run with a receipt."
+    if is_fixture_transport_proof(target_agent, suffix):
         proposal_goal = "Prove the receipt-first Capacitor <-> Circuit slice with one fixture-backed path and one visible Codex session receipt."
 
     pursuit_proposal = {
@@ -93,28 +110,36 @@ def plan_goal_packet(
             "docs/circuit/migration-inventory.md",
         ],
         "risks": [
-            "Mistaking fixture artifacts for product-code Capacitor injection.",
-            "Letting receipt return expand into a runner, flow engine, or status platform.",
+            "Letting the run expand beyond the captured idea.",
+            "Skipping focused verification before returning the receipt.",
             "Skipping the raw receipt capture boundary.",
         ],
         "suggested_agent": target_agent,
         "checkpoint_condition": "Stop if the proof requires a runner, flow engine, method system, product platform, broad memory store, new terminal, new editor, or SaaS framing.",
-        "delivery_target": "docs/circuit/proofs/receipt-first-product-loop/",
+        "delivery_target": project_path,
     }
+    if is_fixture_transport_proof(target_agent, suffix):
+        pursuit_proposal["risks"] = [
+            "Mistaking fixture artifacts for product-code Capacitor injection.",
+            "Letting receipt return expand into a runner, flow engine, or status platform.",
+            "Skipping the raw receipt capture boundary.",
+        ]
+        pursuit_proposal["delivery_target"] = "docs/circuit/proofs/receipt-first-product-loop/"
+
     receipt_id = f"receipt-{suffix}"
     body = f"""/goal {idea_text}
 
-This is a transport proof for the Capacitor <-> Circuit product loop. Do not edit files, run broad investigation, spawn subagents, or continue into open-ended work.
+You are running inside {host_phrase} launched by Capacitor from a captured idea.
 
-Confirm only this smallest handoff: Capacitor injected this exact GoalPacket.body into {host_phrase}; you can return one receipt; Capacitor can capture it in the background; Circuit can normalize it; Capacitor can render it.
+Do the smallest useful slice that satisfies the captured intent and success criteria. You may inspect and edit files in this project as needed, and you should run focused verification before returning. Keep the work bounded to this idea; if owner direction is needed before continuing, stop and return a blocked receipt instead of guessing.
 
 Preserve the boundary: Capacitor orchestrates native agent sessions and attention, Circuit is the headless intent/protocol layer, and Claude Code/Codex own execution and native subagent primitives. Do not build agent-reasoning orchestration, a runner, flow engine, task DAG, retry platform, broad memory store, new terminal/editor, or SaaS framing.
 
-End immediately with this visible marker and one JSON Receipt object:
+End with this visible marker and one JSON Receipt object. Use status exactly `completed`, `blocked`, or `failed`; summarize what changed, what evidence was checked, changed paths, open risks, and the next action:
 
 {MARKER}
-{{"kind":"receipt","id":"{receipt_id}","goal_packet_id":"{goal_packet_id}","status":"completed","summary":"Claude Code CLI received the Circuit-produced GoalPacket body and returned the receipt for the receipt-first transport proof.","evidence":["GoalPacket.body was injected into {host_phrase}.","Receipt marker was returned in the native CLI output for Capacitor capture."],"changed_paths":[],"open_risks":["This proves the transport receipt path, not useful agent work or checkpoint relay."],"next_action":"Normalize this raw receipt through the headless Circuit protocol boundary and render it in Capacitor."}}"""
-    if target_agent == "codex" and suffix == SUPPORTED_ID_SUFFIX:
+{{"kind":"receipt","id":"{receipt_id}","goal_packet_id":"{goal_packet_id}","status":"completed","summary":"Replace with the outcome of the bounded work.","evidence":["Replace with focused verification or artifacts checked."],"changed_paths":[],"open_risks":[],"next_action":"Replace with the next operator action."}}"""
+    if is_fixture_transport_proof(target_agent, suffix):
         body = f"/goal Prove the receipt-first Capacitor <-> Circuit slice with the smallest live path: one captured idea, one Circuit-shaped pursuit proposal, one GoalPacket whose body contains the visible {MARKER} return instruction, one visible Codex session, one captured raw receipt block, one normalized AgentEvent, and one Capacitor rendering expectation. Use fixture artifacts where product integration does not exist yet, preserve the owner-first boundary, and do not build a runner, flow engine, method system, product platform, broad memory store, new terminal/editor, or SaaS framing. When finished, end with a visible {MARKER} line followed by one JSON Receipt object whose status is exactly one of completed, blocked, or failed."
 
     goal_packet = {

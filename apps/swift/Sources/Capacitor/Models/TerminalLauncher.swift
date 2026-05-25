@@ -180,6 +180,27 @@ final class TerminalLauncher {
         activationCoordinator.launchTerminal(for: project)
     }
 
+    func focusExistingTerminal(projectPath: String, sessionName: String? = nil) async -> Bool {
+        pendingActivationFailureReason = nil
+        let app = await resolveActivationIntent(
+            clientTty: nil,
+            projectPath: projectPath,
+            sessionName: sessionName,
+        ).terminalApp.app
+        let driver = driverRegistry.driver(for: app)
+        let result = await driver.focus(
+            clientTty: nil,
+            projectPath: projectPath,
+            tmuxSessionHint: sessionName,
+        )
+        if case let .failed(reason) = result {
+            pendingActivationFailureReason = reason
+        } else {
+            pendingActivationFailureReason = driver.lastFailureReason
+        }
+        return result == .focused
+    }
+
     /// Instance method that wires real dependencies into the shared coordinator flow.
     /// Uses activateProjectSessionOverride when available (for test injection).
     private func runResolvedActivation(sessionName: String, projectPath: String) async -> Bool {

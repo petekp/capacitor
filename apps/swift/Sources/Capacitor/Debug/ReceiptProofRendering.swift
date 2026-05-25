@@ -8,6 +8,10 @@ struct ReceiptProofAdapterResult: Codable, Equatable {
     let goalPacketID: String
     let bodySHA256: String
     let codexExitCode: Int
+    var agentExitCode: Int {
+        codexExitCode
+    }
+
     let visibleSurface: String
     let injection: Injection
     let capture: Capture
@@ -43,11 +47,44 @@ struct ReceiptProofAdapterResult: Codable, Equatable {
         case finishedAt = "finished_at"
         case goalPacketID = "goal_packet_id"
         case bodySHA256 = "body_sha256"
+        case agentExitCode = "agent_exit_code"
         case codexExitCode = "codex_exit_code"
         case visibleSurface = "visible_surface"
         case injection
         case capture
         case limits
+    }
+}
+
+extension ReceiptProofAdapterResult {
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        kind = try container.decode(String.self, forKey: .kind)
+        status = try container.decode(String.self, forKey: .status)
+        finishedAt = try container.decode(String.self, forKey: .finishedAt)
+        goalPacketID = try container.decode(String.self, forKey: .goalPacketID)
+        bodySHA256 = try container.decode(String.self, forKey: .bodySHA256)
+        codexExitCode = try container.decodeIfPresent(Int.self, forKey: .agentExitCode)
+            ?? container.decode(Int.self, forKey: .codexExitCode)
+        visibleSurface = try container.decode(String.self, forKey: .visibleSurface)
+        injection = try container.decode(Injection.self, forKey: .injection)
+        capture = try container.decode(Capture.self, forKey: .capture)
+        limits = try container.decode([String].self, forKey: .limits)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(kind, forKey: .kind)
+        try container.encode(status, forKey: .status)
+        try container.encode(finishedAt, forKey: .finishedAt)
+        try container.encode(goalPacketID, forKey: .goalPacketID)
+        try container.encode(bodySHA256, forKey: .bodySHA256)
+        try container.encode(agentExitCode, forKey: .agentExitCode)
+        try container.encode(codexExitCode, forKey: .codexExitCode)
+        try container.encode(visibleSurface, forKey: .visibleSurface)
+        try container.encode(injection, forKey: .injection)
+        try container.encode(capture, forKey: .capture)
+        try container.encode(limits, forKey: .limits)
     }
 }
 
@@ -121,6 +158,54 @@ struct ReceiptProofAgentEvent: Codable, Equatable {
     }
 }
 
+struct OperatorEvidenceBriefProjection: Equatable {
+    let goal: String
+    let claim: String
+    let evidence: [String]
+    let risks: [String]
+    let ask: String
+
+    static func make(
+        receipt: ReceiptProofReceipt,
+        goalBody: String?,
+    ) -> OperatorEvidenceBriefProjection {
+        OperatorEvidenceBriefProjection(
+            goal: extractedGoal(from: goalBody) ?? "Review receipt for \(receipt.goalPacketID)",
+            claim: cleaned(receipt.summary) ?? "Receipt captured.",
+            evidence: cleanedList(receipt.evidence, fallback: "No evidence reported."),
+            risks: cleanedList(receipt.openRisks, fallback: "No open risks reported."),
+            ask: cleaned(receipt.nextAction) ?? "Review the receipt and decide whether to continue.",
+        )
+    }
+
+    private static func extractedGoal(from body: String?) -> String? {
+        guard let body else { return nil }
+        for line in body.split(separator: "\n", omittingEmptySubsequences: false) {
+            let trimmed = String(line).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+            if trimmed.hasPrefix("/goal ") {
+                return cleaned(String(trimmed.dropFirst("/goal ".count)))
+            }
+            return cleaned(trimmed)
+        }
+        return nil
+    }
+
+    private static func cleaned(_ value: String?) -> String? {
+        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty
+        else {
+            return nil
+        }
+        return trimmed
+    }
+
+    private static func cleanedList(_ values: [String], fallback: String) -> [String] {
+        let cleanedValues = values.compactMap(cleaned)
+        return cleanedValues.isEmpty ? [fallback] : cleanedValues
+    }
+}
+
 struct ReceiptProofRenderingProjection: Equatable {
     let state: String
     let primaryText: String
@@ -130,6 +215,7 @@ struct ReceiptProofRenderingProjection: Equatable {
     let result: ReceiptProofAdapterResult
     let agentEvent: ReceiptProofAgentEvent
     let receipt: ReceiptProofReceipt
+    let operatorBrief: OperatorEvidenceBriefProjection
     let resultPath: String
     let agentEventPath: String
     let sourceRawReceiptPath: String?
@@ -142,7 +228,7 @@ struct ReceiptProofRenderingProjection: Equatable {
             ("Adapter", result.status),
             ("Agent", receipt.status),
             ("Host", agentEvent.session.host),
-            ("Exit", String(result.codexExitCode)),
+            ("Exit", String(result.agentExitCode)),
             ("Recorded", agentEvent.recordedAt),
         ]
     }
@@ -257,6 +343,10 @@ struct ReceiptProofRenderingStore {
         return try Self.makeProjection(
             result: result,
             agentEvent: agentEvent,
+            goalBody: Self.optionalText(
+                atPath: result.injection.bodyPath,
+                fileManager: fileManager,
+            ),
             resultPath: resultURL.path,
             agentEventPath: agentEventURL.path,
         )
@@ -310,6 +400,7 @@ struct ReceiptProofRenderingStore {
     static func makeProjection(
         result: ReceiptProofAdapterResult,
         agentEvent: ReceiptProofAgentEvent,
+        goalBody: String? = nil,
         resultPath: String,
         agentEventPath: String,
     ) throws -> ReceiptProofRenderingProjection {
@@ -371,10 +462,22 @@ struct ReceiptProofRenderingStore {
             result: result,
             agentEvent: agentEvent,
             receipt: receipt,
+            operatorBrief: OperatorEvidenceBriefProjection.make(
+                receipt: receipt,
+                goalBody: goalBody,
+            ),
             resultPath: resultPath,
             agentEventPath: agentEventPath,
             sourceRawReceiptPath: agentEvent.normalization?.sourceRawReceiptPath,
         )
+    }
+
+    private static func optionalText(
+        atPath path: String,
+        fileManager: FileManager,
+    ) -> String? {
+        guard fileManager.fileExists(atPath: path) else { return nil }
+        return try? String(contentsOfFile: path, encoding: .utf8)
     }
 }
 
@@ -418,32 +521,24 @@ struct ReceiptProofRenderingWindow: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 header(for: projection)
+                operatorBriefView(projection.operatorBrief)
+
                 metadataGrid(for: projection)
 
-                section("SUMMARY") {
-                    Text(projection.secondaryText)
-                        .font(AppTypography.body)
-                        .foregroundColor(.white.opacity(0.84))
-                        .textSelection(.enabled)
-                }
+                section("RAW RECEIPT DETAILS") {
+                    VStack(alignment: .leading, spacing: 14) {
+                        receiptDetail(label: "Summary", value: projection.secondaryText)
 
-                if !projection.receipt.evidence.isEmpty {
-                    section("EVIDENCE") {
-                        bulletList(projection.receipt.evidence)
+                        if !projection.receipt.evidence.isEmpty {
+                            receiptDetailList(label: "Evidence", items: projection.receipt.evidence)
+                        }
+
+                        if !projection.receipt.openRisks.isEmpty {
+                            receiptDetailList(label: "Receipt-reported risks", items: projection.receipt.openRisks)
+                        }
+
+                        receiptDetail(label: "Receipt next action", value: projection.receipt.nextAction)
                     }
-                }
-
-                if !projection.receipt.openRisks.isEmpty {
-                    section("RECEIPT-REPORTED RISKS") {
-                        bulletList(projection.receipt.openRisks)
-                    }
-                }
-
-                section("RECEIPT NEXT ACTION") {
-                    Text(projection.receipt.nextAction)
-                        .font(AppTypography.bodySecondary)
-                        .foregroundColor(.white.opacity(0.74))
-                        .textSelection(.enabled)
                 }
 
                 section("ARTIFACTS") {
@@ -465,6 +560,51 @@ struct ReceiptProofRenderingWindow: View {
             .padding(24)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    private func operatorBriefView(_ brief: OperatorEvidenceBriefProjection) -> some View {
+        section("OPERATOR BRIEF") {
+            VStack(alignment: .leading, spacing: 14) {
+                briefField(label: "Goal", value: brief.goal)
+                briefField(label: "Claim", value: brief.claim)
+                briefList(label: "Evidence", items: brief.evidence)
+                briefList(label: "Risk", items: brief.risks)
+                briefField(label: "Ask", value: brief.ask)
+            }
+            .padding(14)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color.white.opacity(0.055))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .strokeBorder(Color.white.opacity(0.08), lineWidth: 0.75),
+                    ),
+            )
+        }
+    }
+
+    private func briefField(label: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            briefLabel(label)
+            Text(value)
+                .font(AppTypography.bodySecondary)
+                .foregroundColor(.white.opacity(0.78))
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
+        }
+    }
+
+    private func briefList(label: String, items: [String]) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            briefLabel(label)
+            bulletList(items)
+        }
+    }
+
+    private func briefLabel(_ label: String) -> some View {
+        Text(label.uppercased())
+            .font(AppTypography.caption.weight(.bold))
+            .foregroundColor(.white.opacity(0.4))
     }
 
     private func header(for projection: ReceiptProofRenderingProjection) -> some View {
@@ -501,6 +641,27 @@ struct ReceiptProofRenderingWindow: View {
             }
 
             Spacer(minLength: 0)
+        }
+    }
+
+    private func receiptDetail(label: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(label.uppercased())
+                .font(AppTypography.caption.weight(.bold))
+                .foregroundColor(.white.opacity(0.34))
+            Text(value)
+                .font(AppTypography.bodySecondary)
+                .foregroundColor(.white.opacity(0.72))
+                .textSelection(.enabled)
+        }
+    }
+
+    private func receiptDetailList(label: String, items: [String]) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text(label.uppercased())
+                .font(AppTypography.caption.weight(.bold))
+                .foregroundColor(.white.opacity(0.34))
+            bulletList(items)
         }
     }
 

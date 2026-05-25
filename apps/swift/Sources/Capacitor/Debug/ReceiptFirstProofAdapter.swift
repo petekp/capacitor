@@ -128,6 +128,7 @@ enum ReceiptFirstProofAdapterError: Error, Equatable, LocalizedError {
 struct ReceiptFirstProofAdapter {
     typealias RunShell = (String) async -> (exitCode: Int32, output: String?)
     typealias TerminalScriptBuilder = (_ projectPath: String, _ command: String) -> String
+    static let defaultCaptureTimeoutSeconds: TimeInterval = 600
 
     private let runShell: RunShell
     private let terminalScriptBuilder: TerminalScriptBuilder
@@ -238,7 +239,7 @@ struct ReceiptFirstProofAdapter {
     func launchAndWaitForCapture(
         packetURL: URL = ReceiptFirstProofArtifacts.defaultGoalPacketURL(),
         proofDirectoryURL: URL = ReceiptFirstProofArtifacts.defaultProofDirectoryURL(),
-        timeoutSeconds: TimeInterval = 120,
+        timeoutSeconds: TimeInterval = Self.defaultCaptureTimeoutSeconds,
         pollIntervalNanoseconds: UInt64 = 500_000_000,
     ) async throws -> ReceiptFirstProofLaunchResult {
         let result = try await launch(
@@ -247,6 +248,8 @@ struct ReceiptFirstProofAdapter {
         )
         try await waitForCapture(
             artifacts: result.launch.artifacts,
+            expectedGoalPacketID: result.launch.packet.id,
+            expectedBodySHA256: result.launch.bodySHA256,
             timeoutSeconds: timeoutSeconds,
             pollIntervalNanoseconds: pollIntervalNanoseconds,
         )
@@ -256,7 +259,7 @@ struct ReceiptFirstProofAdapter {
     func launchAndWaitForCapture(
         packet: ReceiptFirstProofGoalPacket,
         proofDirectoryURL: URL,
-        timeoutSeconds: TimeInterval = 120,
+        timeoutSeconds: TimeInterval = Self.defaultCaptureTimeoutSeconds,
         pollIntervalNanoseconds: UInt64 = 500_000_000,
     ) async throws -> ReceiptFirstProofLaunchResult {
         let result = try await launch(
@@ -265,6 +268,8 @@ struct ReceiptFirstProofAdapter {
         )
         try await waitForCapture(
             artifacts: result.launch.artifacts,
+            expectedGoalPacketID: result.launch.packet.id,
+            expectedBodySHA256: result.launch.bodySHA256,
             timeoutSeconds: timeoutSeconds,
             pollIntervalNanoseconds: pollIntervalNanoseconds,
         )
@@ -331,13 +336,19 @@ struct ReceiptFirstProofAdapter {
 
     private func waitForCapture(
         artifacts: ReceiptFirstProofArtifacts,
+        expectedGoalPacketID: String,
+        expectedBodySHA256: String,
         timeoutSeconds: TimeInterval,
         pollIntervalNanoseconds: UInt64,
     ) async throws {
         let deadline = Date().addingTimeInterval(timeoutSeconds)
 
         while Date() < deadline {
-            if try captureIsReady(artifacts: artifacts) {
+            if try captureIsReady(
+                artifacts: artifacts,
+                expectedGoalPacketID: expectedGoalPacketID,
+                expectedBodySHA256: expectedBodySHA256,
+            ) {
                 return
             }
 
@@ -350,7 +361,11 @@ struct ReceiptFirstProofAdapter {
         )
     }
 
-    private func captureIsReady(artifacts: ReceiptFirstProofArtifacts) throws -> Bool {
+    private func captureIsReady(
+        artifacts: ReceiptFirstProofArtifacts,
+        expectedGoalPacketID: String,
+        expectedBodySHA256: String,
+    ) throws -> Bool {
         guard fileManager.fileExists(atPath: artifacts.resultURL.path) else {
             return false
         }
@@ -363,6 +378,14 @@ struct ReceiptFirstProofAdapter {
         }
 
         guard result.status == "native_capture_complete" || result.status == "native_capture_with_nonzero_exit" else {
+            return false
+        }
+
+        guard result.goalPacketID == expectedGoalPacketID,
+              result.bodySHA256 == expectedBodySHA256,
+              result.injection.bodyPath == artifacts.insertedBodyURL.path,
+              result.capture.rawReceiptPath == artifacts.rawReceiptURL.path
+        else {
             return false
         }
 
@@ -503,9 +526,17 @@ struct ReceiptFirstProofAdapter {
                         return "CIRCUIT_RECEIPT\\n" + candidate[start:index + 1]
             return None
 
+        def agent_output_from_transcript(text):
+            marker = "\\nAGENT_CLI_OUTPUT\\n"
+            index = text.rfind(marker)
+            if index < 0:
+                return ""
+            return text[index + len(marker):]
+
         last_message = read_text(last_message_path)
         transcript = read_text(transcript_path)
-        receipt_block = extract_last_receipt_block(last_message) or extract_last_receipt_block(transcript)
+        agent_output = agent_output_from_transcript(transcript)
+        receipt_block = extract_last_receipt_block(last_message) or extract_last_receipt_block(agent_output)
         finished_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
         if not receipt_block:

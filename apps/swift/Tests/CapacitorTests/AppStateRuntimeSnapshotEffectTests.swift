@@ -51,6 +51,319 @@ final class AppStateRuntimeSnapshotEffectTests: XCTestCase {
         ])
     }
 
+    func testRuntimeSnapshotApplyReconcilesWorkBatchBindings() async throws {
+        let fileManager = FileManager.default
+        let tempDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let projectRoot = tempDir.appendingPathComponent("project", isDirectory: true)
+        let worktreeURL = projectRoot.appendingPathComponent(".capacitor/worktrees/batch-mobile", isDirectory: true)
+        try fileManager.createDirectory(at: worktreeURL, withIntermediateDirectories: true)
+        addTeardownBlock {
+            try? fileManager.removeItem(at: tempDir)
+        }
+
+        let stateStore = WorkBatchStateStore(
+            fileURL: tempDir.appendingPathComponent("state.json"),
+            fileManager: fileManager,
+        )
+        let bindingStore = WorkBatchCockpitBindingStore(
+            fileURL: tempDir.appendingPathComponent("bindings.json"),
+            fileManager: fileManager,
+        )
+        let now = Date(timeIntervalSince1970: 1_775_000_000)
+        try stateStore.save(WorkBatchStateSnapshot(
+            version: 1,
+            batches: [
+                WorkBatchRecord(
+                    id: "batch-mobile",
+                    name: "Mobile prototype",
+                    projectPath: projectRoot.path,
+                    status: .waiting,
+                    currentActivitySummary: "Claude Code session needs reconnect.",
+                    taskIDs: ["task-green"],
+                    cockpitBindingID: "batch-mobile",
+                    createdAt: now,
+                    updatedAt: now,
+                ),
+            ],
+            tasks: [
+                WorkBatchTaskRecord(
+                    id: "task-green",
+                    sourceIdeaID: "task-green",
+                    title: "Add green border",
+                    body: "",
+                    status: .queued,
+                    batchID: "batch-mobile",
+                    createdAt: now,
+                    updatedAt: now,
+                ),
+            ],
+            classifications: [],
+        ))
+        try bindingStore.upsert(WorkBatchCockpitBinding(
+            id: "batch-mobile",
+            batchID: "batch-mobile",
+            batchName: "Mobile prototype",
+            projectPath: projectRoot.path,
+            worktreeName: "batch-mobile",
+            worktreePath: worktreeURL.path,
+            host: .claudeCode,
+            claudeSessionID: "session-batch",
+            status: .stale,
+            createdAt: now,
+            updatedAt: now,
+        ))
+
+        let router = WorkBatchAutoRouter(
+            classifier: { _ in throw NSError(domain: "test", code: 1) },
+            stateStoreFactory: { _ in stateStore },
+            bindingStoreFactory: { _ in bindingStore },
+        )
+        let appState = AppState(
+            runtimeClient: RuntimeClient(isEnabledOverride: false),
+            workBatchAutoRouter: router,
+        )
+        appState.cancelRuntimeAutomationForTesting()
+        appState.setRuntimeSnapshotGenerationForTesting(1)
+        let project = makeProject(path: projectRoot.path)
+
+        await appState.applyRuntimeSnapshotForTesting(
+            makeRuntimeSnapshot(
+                projectPath: projectRoot.path,
+                sessions: [
+                    makeRuntimeSession(
+                        sessionId: "session-batch",
+                        cwd: worktreeURL.path,
+                        projectPath: worktreeURL.path,
+                    ),
+                ],
+                delegations: [],
+                runs: [],
+            ),
+            refreshGeneration: 1,
+            correlationId: "work-batch-reconcile",
+            projects: [project],
+        )
+
+        XCTAssertEqual(try bindingStore.binding(batchID: "batch-mobile")?.status, .running)
+        XCTAssertEqual(try stateStore.load().batches[0].status, .working)
+    }
+
+    func testRuntimeSnapshotApplyIngestsWorkBatchCompletionReportsAndShowsToast() async throws {
+        let fileManager = FileManager.default
+        let tempDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let projectRoot = tempDir.appendingPathComponent("project", isDirectory: true)
+        let worktreeURL = projectRoot.appendingPathComponent(".capacitor/worktrees/batch-mobile", isDirectory: true)
+        try fileManager.createDirectory(at: worktreeURL, withIntermediateDirectories: true)
+        addTeardownBlock {
+            try? fileManager.removeItem(at: tempDir)
+        }
+
+        let stateStore = WorkBatchStateStore(
+            fileURL: tempDir.appendingPathComponent("state.json"),
+            fileManager: fileManager,
+        )
+        let bindingStore = WorkBatchCockpitBindingStore(
+            fileURL: tempDir.appendingPathComponent("bindings.json"),
+            fileManager: fileManager,
+        )
+        let now = Date(timeIntervalSince1970: 1_775_000_000)
+        try stateStore.save(WorkBatchStateSnapshot(
+            version: 1,
+            batches: [
+                WorkBatchRecord(
+                    id: "batch-mobile",
+                    name: "Mobile prototype",
+                    projectPath: projectRoot.path,
+                    status: .working,
+                    currentActivitySummary: "Adding green border.",
+                    taskIDs: ["task-green"],
+                    cockpitBindingID: "batch-mobile",
+                    createdAt: now,
+                    updatedAt: now,
+                ),
+            ],
+            tasks: [
+                WorkBatchTaskRecord(
+                    id: "task-green",
+                    sourceIdeaID: "task-green",
+                    title: "Add green border",
+                    body: "",
+                    status: .working,
+                    batchID: "batch-mobile",
+                    createdAt: now,
+                    updatedAt: now,
+                ),
+            ],
+            classifications: [],
+        ))
+        try bindingStore.upsert(WorkBatchCockpitBinding(
+            id: "batch-mobile",
+            batchID: "batch-mobile",
+            batchName: "Mobile prototype",
+            projectPath: projectRoot.path,
+            worktreeName: "batch-mobile",
+            worktreePath: worktreeURL.path,
+            host: .claudeCode,
+            claudeSessionID: "session-batch",
+            status: .running,
+            createdAt: now,
+            updatedAt: now,
+        ))
+        _ = try WorkBatchCompletionReportStore(worktreePath: worktreeURL.path, fileManager: fileManager)
+            .write(WorkBatchCompletionReport(
+                taskID: "task-green",
+                status: "done",
+                summary: "Added green border",
+                evidence: ["Updated prototype styles"],
+                completedAt: now.addingTimeInterval(10),
+            ))
+
+        let router = WorkBatchAutoRouter(
+            classifier: { _ in throw NSError(domain: "test", code: 1) },
+            stateStoreFactory: { _ in stateStore },
+            bindingStoreFactory: { _ in bindingStore },
+        )
+        let appState = AppState(
+            runtimeClient: RuntimeClient(isEnabledOverride: false),
+            workBatchAutoRouter: router,
+        )
+        appState.cancelRuntimeAutomationForTesting()
+        appState.setRuntimeSnapshotGenerationForTesting(1)
+        let project = makeProject(path: projectRoot.path)
+
+        await appState.applyRuntimeSnapshotForTesting(
+            makeRuntimeSnapshot(
+                projectPath: projectRoot.path,
+                sessions: [
+                    makeRuntimeSession(
+                        sessionId: "session-batch",
+                        cwd: worktreeURL.path,
+                        projectPath: worktreeURL.path,
+                    ),
+                ],
+                delegations: [],
+                runs: [],
+            ),
+            refreshGeneration: 1,
+            correlationId: "work-batch-completion",
+            projects: [project],
+        )
+
+        XCTAssertEqual(appState.uiState.toast?.message, "Task done: Add green border.")
+        XCTAssertEqual(try stateStore.load().tasks[0].status, .done)
+        XCTAssertEqual(try stateStore.load().batches[0].status, .idle)
+        XCTAssertEqual(try bindingStore.binding(batchID: "batch-mobile")?.status, .done)
+    }
+
+    func testRuntimeSnapshotApplyIngestsWorkBatchCheckpointRequestsAndShowsToast() async throws {
+        let fileManager = FileManager.default
+        let tempDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let projectRoot = tempDir.appendingPathComponent("project", isDirectory: true)
+        let worktreeURL = projectRoot.appendingPathComponent(".capacitor/worktrees/batch-mobile", isDirectory: true)
+        try fileManager.createDirectory(at: worktreeURL, withIntermediateDirectories: true)
+        addTeardownBlock {
+            try? fileManager.removeItem(at: tempDir)
+        }
+
+        let stateStore = WorkBatchStateStore(
+            fileURL: tempDir.appendingPathComponent("state.json"),
+            fileManager: fileManager,
+        )
+        let bindingStore = WorkBatchCockpitBindingStore(
+            fileURL: tempDir.appendingPathComponent("bindings.json"),
+            fileManager: fileManager,
+        )
+        let now = Date(timeIntervalSince1970: 1_775_000_000)
+        try stateStore.save(WorkBatchStateSnapshot(
+            version: 1,
+            batches: [
+                WorkBatchRecord(
+                    id: "batch-mobile",
+                    name: "Mobile prototype",
+                    projectPath: projectRoot.path,
+                    status: .working,
+                    currentActivitySummary: "Adding green border.",
+                    taskIDs: ["task-green"],
+                    cockpitBindingID: "batch-mobile",
+                    createdAt: now,
+                    updatedAt: now,
+                ),
+            ],
+            tasks: [
+                WorkBatchTaskRecord(
+                    id: "task-green",
+                    sourceIdeaID: "task-green",
+                    title: "Add green border",
+                    body: "",
+                    status: .working,
+                    batchID: "batch-mobile",
+                    createdAt: now,
+                    updatedAt: now,
+                ),
+            ],
+            classifications: [],
+        ))
+        try bindingStore.upsert(WorkBatchCockpitBinding(
+            id: "batch-mobile",
+            batchID: "batch-mobile",
+            batchName: "Mobile prototype",
+            projectPath: projectRoot.path,
+            worktreeName: "batch-mobile",
+            worktreePath: worktreeURL.path,
+            host: .claudeCode,
+            claudeSessionID: "session-batch",
+            status: .running,
+            createdAt: now,
+            updatedAt: now,
+        ))
+        _ = try WorkBatchCheckpointRequestStore(worktreePath: worktreeURL.path, fileManager: fileManager)
+            .write(WorkBatchCheckpointRequest(
+                checkpointID: "checkpoint-green-token",
+                taskID: "task-green",
+                question: "Which green token should I use?",
+                reason: "The Task did not say whether this is debug-only.",
+                recommendedAction: "Use production if this is product-facing.",
+                requestedAt: now.addingTimeInterval(10),
+            ))
+
+        let router = WorkBatchAutoRouter(
+            classifier: { _ in throw NSError(domain: "test", code: 1) },
+            stateStoreFactory: { _ in stateStore },
+            bindingStoreFactory: { _ in bindingStore },
+        )
+        let appState = AppState(
+            runtimeClient: RuntimeClient(isEnabledOverride: false),
+            workBatchAutoRouter: router,
+        )
+        appState.cancelRuntimeAutomationForTesting()
+        appState.setRuntimeSnapshotGenerationForTesting(1)
+        let project = makeProject(path: projectRoot.path)
+
+        await appState.applyRuntimeSnapshotForTesting(
+            makeRuntimeSnapshot(
+                projectPath: projectRoot.path,
+                sessions: [
+                    makeRuntimeSession(
+                        sessionId: "session-batch",
+                        cwd: worktreeURL.path,
+                        projectPath: worktreeURL.path,
+                    ),
+                ],
+                delegations: [],
+                runs: [],
+            ),
+            refreshGeneration: 1,
+            correlationId: "work-batch-checkpoint",
+            projects: [project],
+        )
+
+        XCTAssertEqual(appState.uiState.toast?.message, "Checkpoint ready: Add green border.")
+        XCTAssertEqual(try stateStore.load().tasks[0].status, .needsYou)
+        XCTAssertEqual(try stateStore.load().batches[0].status, .waiting)
+        XCTAssertEqual(try stateStore.load().checkpoints.first?.status, .pending)
+        XCTAssertEqual(try bindingStore.binding(batchID: "batch-mobile")?.status, .waiting)
+    }
+
     private func makeProject(path: String) -> Project {
         Project(
             name: "Capacitor",
@@ -68,6 +381,7 @@ final class AppStateRuntimeSnapshotEffectTests: XCTestCase {
 
     private func makeRuntimeSnapshot(
         projectPath: String,
+        sessions: [RuntimeSession] = [],
         delegations: [RuntimeDelegationState],
         runs: [RuntimeRunState],
     ) -> RuntimeSnapshot {
@@ -88,12 +402,37 @@ final class AppStateRuntimeSnapshotEffectTests: XCTestCase {
                     hasSession: true,
                 ),
             ],
-            sessions: [],
+            sessions: sessions,
             shellState: ShellCwdState(version: 1, shells: [:]),
             routingViews: [],
             delegations: delegations,
             runs: runs,
             snapshotVersion: 0,
+        )
+    }
+
+    private func makeRuntimeSession(
+        sessionId: String,
+        cwd: String,
+        projectPath: String,
+    ) -> RuntimeSession {
+        RuntimeSession(
+            sessionId: sessionId,
+            pid: 1234,
+            state: "working",
+            cwd: cwd,
+            projectId: nil,
+            workspaceId: nil,
+            projectPath: projectPath,
+            updatedAt: "2026-04-17T00:00:00Z",
+            stateChangedAt: "2026-04-17T00:00:00Z",
+            lastEvent: nil,
+            lastActivityAt: nil,
+            toolsInFlight: nil,
+            stateSource: nil,
+            lastAuthoritativeEventAt: nil,
+            gcReason: nil,
+            isAlive: true,
         )
     }
 

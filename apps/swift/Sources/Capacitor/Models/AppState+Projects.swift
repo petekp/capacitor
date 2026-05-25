@@ -419,6 +419,186 @@ extension AppState {
         projectFeatureCoordinator.getIdeas(for: project)
     }
 
+    func workBatches(for project: Project) -> [WorkBatchProjection] {
+        workBatchAutoRouter.projections(for: project.path)
+    }
+
+    func workBatchContextSummary(for project: Project) -> String? {
+        let summary = workBatches(for: project)
+            .first(where: { batch in
+                switch batch.status {
+                case .working, .waiting, .ready, .compacting:
+                    true
+                case .idle:
+                    false
+                }
+            })?
+            .currentActivitySummary
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return summary?.isEmpty == false ? summary : nil
+    }
+
+    func openWorkBatch(_ batch: WorkBatchProjection, for project: Project) {
+        switch WorkBatchOpenActionResolver.resolve(batch) {
+        case let .answerCheckpoint(checkpoint):
+            uiState.workBatchCheckpointFocusTarget = WorkBatchCheckpointFocusTarget(
+                projectPath: project.path,
+                batchID: batch.id,
+                checkpointID: checkpoint.id,
+            )
+            uiState.toast = ToastMessage("Checkpoint needs your input.")
+
+        case .openCockpit:
+            openWorkBatchCockpit(batch)
+        }
+    }
+
+    func openWorkBatchCockpit(_ batch: WorkBatchProjection) {
+        guard let binding = batch.binding else {
+            uiState.toast = .error("No Claude Code session is bound to this Work Batch yet.")
+            return
+        }
+
+        _Concurrency.Task { [weak self] in
+            guard let self else { return }
+            do {
+                _ = try await workBatchAutoRouter.openCockpit(binding: binding)
+            } catch {
+                await MainActor.run {
+                    let message = (error as? LocalizedError)?.errorDescription
+                        ?? "Couldn't open the Claude Code session."
+                    self.uiState.toast = .error(message)
+                }
+            }
+        }
+    }
+
+    func unresolveWorkBatchTask(
+        _ task: WorkBatchTaskRecord,
+        in batch: WorkBatchProjection,
+        for project: Project,
+    ) {
+        _Concurrency.Task { [weak self] in
+            guard let self else { return }
+            do {
+                let result = try workBatchAutoRouter.unresolveTask(
+                    project: project,
+                    batchID: batch.id,
+                    taskID: task.id,
+                )
+                try? projectDetailsManager.updateIdeaStatus(
+                    for: project,
+                    ideaID: result.task.sourceIdeaID ?? result.task.id,
+                    newStatus: "open",
+                )
+
+                if let binding = result.binding,
+                   shouldResumeWorkBatchBinding(binding)
+                {
+                    _ = try await workBatchAutoRouter.openCockpit(binding: binding)
+                }
+
+                await MainActor.run {
+                    self.uiState.toast = ToastMessage("Reopened \(result.task.displayTitle).")
+                    self.refreshSessionStates()
+                }
+            } catch {
+                await MainActor.run {
+                    let message = (error as? LocalizedError)?.errorDescription
+                        ?? "Couldn't reopen the Task."
+                    self.uiState.toast = .error(message)
+                }
+            }
+        }
+    }
+
+    func submitWorkBatchCheckpointResponse(
+        _ checkpoint: WorkBatchCheckpointRecord,
+        in batch: WorkBatchProjection,
+        for project: Project,
+        response: String,
+    ) {
+        _Concurrency.Task { [weak self] in
+            guard let self else { return }
+            do {
+                let result = try workBatchAutoRouter.submitCheckpointResponse(
+                    project: project,
+                    batchID: batch.id,
+                    checkpointID: checkpoint.id,
+                    response: response,
+                )
+
+                if let binding = result.binding,
+                   shouldResumeWorkBatchBinding(binding)
+                {
+                    _ = try await workBatchAutoRouter.openCockpit(binding: binding)
+                }
+
+                await MainActor.run {
+                    if self.uiState.workBatchCheckpointFocusTarget?.projectPath == project.path,
+                       self.uiState.workBatchCheckpointFocusTarget?.batchID == batch.id,
+                       self.uiState.workBatchCheckpointFocusTarget?.checkpointID == checkpoint.id
+                    {
+                        self.uiState.workBatchCheckpointFocusTarget = nil
+                    }
+                    self.uiState.toast = ToastMessage("Answered checkpoint for \(result.task.displayTitle).")
+                    self.refreshSessionStates()
+                }
+            } catch {
+                await MainActor.run {
+                    let message = (error as? LocalizedError)?.errorDescription
+                        ?? "Couldn't answer the checkpoint."
+                    self.uiState.toast = .error(message)
+                }
+            }
+        }
+    }
+
+    func handleWorkBatchCompletionIngestResults(
+        _ results: [WorkBatchCompletionIngestResult],
+        projects: [Project],
+    ) {
+        guard !results.isEmpty else { return }
+
+        let projectsByPath = Dictionary(uniqueKeysWithValues: projects.map { ($0.path, $0) })
+        for result in results {
+            guard let project = projectsByPath[result.projectPath] else { continue }
+            try? projectDetailsManager.updateIdeaStatus(
+                for: project,
+                ideaID: result.sourceIdeaID ?? result.taskID,
+                newStatus: "done",
+            )
+        }
+
+        if results.count == 1, let result = results.first {
+            uiState.toast = ToastMessage("Task done: \(result.taskTitle).")
+        } else {
+            uiState.toast = ToastMessage("\(results.count) Tasks done.")
+        }
+    }
+
+    func handleWorkBatchCheckpointIngestResults(
+        _ results: [WorkBatchCheckpointIngestResult],
+        projects _: [Project],
+    ) {
+        guard !results.isEmpty else { return }
+
+        if results.count == 1, let result = results.first {
+            uiState.toast = ToastMessage("Checkpoint ready: \(result.taskTitle).")
+        } else {
+            uiState.toast = ToastMessage("\(results.count) checkpoints need you.")
+        }
+    }
+
+    private func shouldResumeWorkBatchBinding(_ binding: WorkBatchCockpitBinding) -> Bool {
+        switch binding.status {
+        case .stale, .waiting, .done:
+            true
+        case .launching, .running:
+            false
+        }
+    }
+
     func isGeneratingTitle(for ideaID: String) -> Bool {
         projectFeatureCoordinator.isGeneratingTitle(for: ideaID)
     }
@@ -429,6 +609,35 @@ extension AppState {
 
     func reorderIdeas(_ reorderedIdeas: [Idea], for project: Project) {
         projectFeatureCoordinator.reorderIdeas(reorderedIdeas, for: project)
+    }
+
+    func startWorkBatchRouting(for idea: Idea, project: Project) {
+        _Concurrency.Task { [weak self] in
+            guard let self else { return }
+            do {
+                let result = try await workBatchAutoRouter.routeCapturedTask(
+                    project: project,
+                    idea: idea,
+                )
+                await MainActor.run {
+                    self.uiState.toast = ToastMessage(
+                        result.startedNewSession
+                            ? "Task started in \(result.batch.name)."
+                            : "Task added to \(result.batch.name).",
+                        isError: false,
+                    )
+                    self.refreshSessionStates()
+                }
+            } catch {
+                await MainActor.run {
+                    DebugLog.write(
+                        "AppState.startWorkBatchRouting failure project=\(project.path) idea=\(idea.id) error=\(error.localizedDescription)",
+                    )
+                    self.uiState.toast = .error("Task saved, but Capacitor couldn't start Claude Code.")
+                    self.refreshSessionStates()
+                }
+            }
+        }
     }
 
     func delegateIdea(_ idea: Idea, for project: Project) {

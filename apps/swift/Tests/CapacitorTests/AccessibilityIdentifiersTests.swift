@@ -25,6 +25,14 @@ final class AccessibilityIdentifiersTests: XCTestCase {
         XCTAssertEqual(AccessibilityIdentifiers.receiptProofRenderingIdentifier, "ax.receipt-proof-rendering")
     }
 
+    func testReturnBriefAccessibilityIdentifierRemainsStable() {
+        XCTAssertEqual(AccessibilityIdentifiers.returnBriefIdentifier, "ax.return-brief")
+    }
+
+    func testEndOfDayClosureAccessibilityIdentifierRemainsStable() {
+        XCTAssertEqual(AccessibilityIdentifiers.endOfDayClosureIdentifier, "ax.end-of-day-closure")
+    }
+
     func testProjectDetailViewIdentifierIsDistinctFromDockNavigationIdentifier() {
         let project = Project(
             name: "Capacitor",

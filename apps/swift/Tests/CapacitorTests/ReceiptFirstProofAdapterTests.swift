@@ -21,6 +21,10 @@
             )
         }
 
+        func testDefaultCaptureTimeoutLeavesRoomForOrdinaryUsefulWork() {
+            XCTAssertEqual(ReceiptFirstProofAdapter.defaultCaptureTimeoutSeconds, 600)
+        }
+
         func testPrepareLaunchReadsExactContractGoalBodyAndBuildsCaptureCommand() throws {
             let packetURL = ReceiptFirstProofArtifacts.defaultGoalPacketURL()
             guard FileManager.default.fileExists(atPath: packetURL.path) else {
@@ -149,7 +153,10 @@
                 runShell: { _ in
                     _Concurrency.Task {
                         try? await _Concurrency.Task.sleep(nanoseconds: 20_000_000)
-                        try? self.writeCompletedCapture(in: proofDirectory)
+                        try? self.writeCompletedCapture(
+                            in: proofDirectory,
+                            bodySHA256: "59aab3a4cb2a4be80c058625221f204cab2df954e8c1ccbdc1e98b0af182bbca",
+                        )
                     }
                     return (0, "osascript ok")
                 },
@@ -167,6 +174,88 @@
             XCTAssertEqual(result.shellExitCode, 0)
             XCTAssertTrue(FileManager.default.fileExists(atPath: result.launch.artifacts.rawReceiptURL.path))
             XCTAssertTrue(FileManager.default.fileExists(atPath: result.launch.artifacts.resultURL.path))
+        }
+
+        func testLaunchAndWaitForCaptureIgnoresStaleCaptureForDifferentBodyHash() async throws {
+            let proofDirectory = temporaryDirectory()
+            defer { try? FileManager.default.removeItem(at: proofDirectory) }
+
+            let packetURL = proofDirectory.appendingPathComponent("packet.json")
+            try writePacket(
+                to: packetURL,
+                projectPath: "/Users/pete/Code/example",
+                body: "/goal Run a tiny receipt proof. End with CIRCUIT_RECEIPT followed by JSON.",
+            )
+
+            let adapter = ReceiptFirstProofAdapter(
+                runShell: { _ in
+                    _Concurrency.Task {
+                        try? await _Concurrency.Task.sleep(nanoseconds: 10_000_000)
+                        try? self.writeCompletedCapture(in: proofDirectory, bodySHA256: "stale-body")
+                        try? await _Concurrency.Task.sleep(nanoseconds: 20_000_000)
+                        try? self.writeCompletedCapture(
+                            in: proofDirectory,
+                            bodySHA256: "59aab3a4cb2a4be80c058625221f204cab2df954e8c1ccbdc1e98b0af182bbca",
+                        )
+                    }
+                    return (0, "osascript ok")
+                },
+                terminalScriptBuilder: { _, command in command },
+            )
+
+            let result = try await adapter.launchAndWaitForCapture(
+                packetURL: packetURL,
+                proofDirectoryURL: proofDirectory,
+                timeoutSeconds: 1,
+                pollIntervalNanoseconds: 5_000_000,
+            )
+
+            let resultData = try Data(contentsOf: result.launch.artifacts.resultURL)
+            let resultJSON = try XCTUnwrap(JSONSerialization.jsonObject(with: resultData) as? [String: Any])
+            XCTAssertEqual(resultJSON["body_sha256"] as? String, result.launch.bodySHA256)
+        }
+
+        func testCaptureShellScriptDoesNotTreatInsertedPromptReceiptAsAgentOutput() async throws {
+            let proofDirectory = temporaryDirectory()
+            defer { try? FileManager.default.removeItem(at: proofDirectory) }
+
+            let projectDirectory = proofDirectory.appendingPathComponent("project", isDirectory: true)
+            let binDirectory = proofDirectory.appendingPathComponent("bin", isDirectory: true)
+            try FileManager.default.createDirectory(at: projectDirectory, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: binDirectory, withIntermediateDirectories: true)
+
+            let fakeClaudeURL = binDirectory.appendingPathComponent("claude")
+            try writeSilentFakeClaude(to: fakeClaudeURL)
+
+            let packetURL = proofDirectory.appendingPathComponent("packet.json")
+            try writePacket(
+                to: packetURL,
+                targetAgent: "claude_code",
+                projectPath: projectDirectory.path,
+                body: """
+                /goal Run a tiny receipt proof.
+                CIRCUIT_RECEIPT
+                {"kind":"receipt","id":"prompt-template","goal_packet_id":"goal-packet-test-001","status":"completed","summary":"do not capture prompt","evidence":[],"changed_paths":[],"open_risks":[],"next_action":"ignore"}
+                """,
+            )
+
+            let adapter = ReceiptFirstProofAdapter()
+            let launch = try adapter.prepareLaunch(
+                packetURL: packetURL,
+                proofDirectoryURL: proofDirectory,
+            )
+
+            let result = await TerminalLauncher.runBashScriptWithResult("""
+            export PATH=\(shellEscape(binDirectory.path)):"$PATH"
+            \(launch.shellScript)
+            """)
+
+            XCTAssertEqual(result.exitCode, 2, result.output ?? "missing output")
+            XCTAssertFalse(FileManager.default.fileExists(atPath: launch.artifacts.rawReceiptURL.path))
+
+            let resultData = try Data(contentsOf: launch.artifacts.resultURL)
+            let resultJSON = try XCTUnwrap(JSONSerialization.jsonObject(with: resultData) as? [String: Any])
+            XCTAssertEqual(resultJSON["status"] as? String, "blocked_no_receipt")
         }
 
         func testCaptureShellScriptPreservesRawReceiptWithFakeCodex() async throws {
@@ -357,7 +446,25 @@
             )
         }
 
-        private func writeCompletedCapture(in proofDirectory: URL) throws {
+        private func writeSilentFakeClaude(to url: URL) throws {
+            let script = """
+            #!/bin/bash
+            set -euo pipefail
+            cat >/dev/null
+            exit 0
+            """
+
+            try Data(script.utf8).write(to: url)
+            try FileManager.default.setAttributes(
+                [.posixPermissions: 0o755],
+                ofItemAtPath: url.path,
+            )
+        }
+
+        private func writeCompletedCapture(
+            in proofDirectory: URL,
+            bodySHA256: String,
+        ) throws {
             let artifacts = ReceiptFirstProofArtifacts(proofDirectoryURL: proofDirectory)
             let rawReceipt = """
             CIRCUIT_RECEIPT
@@ -370,7 +477,7 @@
                 "status": "native_capture_complete",
                 "finished_at": "2026-05-24T03:15:23Z",
                 "goal_packet_id": "goal-packet-test-001",
-                "body_sha256": "abc123",
+                "body_sha256": bodySHA256,
                 "codex_exit_code": 0,
                 "visible_surface": "Ghostty launched by Capacitor Circuit first-slice action",
                 "injection": [

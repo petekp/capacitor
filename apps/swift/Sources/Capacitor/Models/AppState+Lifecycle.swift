@@ -208,6 +208,20 @@ extension AppState {
         context: RuntimeSnapshotApplicator.RequestContext,
     ) async {
         let outcome = runtimeSnapshotApplicator.apply(snapshot, context: context)
+        if outcome.decision == .applied {
+            _ = workBatchAutoRouter.reconcileBindings(
+                projects: context.projects,
+                sessions: snapshot.sessions,
+            )
+            let completedTasks = workBatchAutoRouter.ingestCompletionReports(
+                projects: context.projects,
+            )
+            handleWorkBatchCompletionIngestResults(completedTasks, projects: context.projects)
+            let checkpoints = workBatchAutoRouter.ingestCheckpointRequests(
+                projects: context.projects,
+            )
+            handleWorkBatchCheckpointIngestResults(checkpoints, projects: context.projects)
+        }
         executeRuntimeSnapshotEffects(outcome.effects)
     }
 

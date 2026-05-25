@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -102,8 +103,8 @@ def validate_artifacts() -> list[dict[str, str]]:
     require_fields(idea, ["kind", "id", "project", "text"], "idea")
     require(idea["kind"] == "idea", "contract idea kind must be idea")
     require(idea["project"]["path"] == str(ROOT), "contract idea project path must be Capacitor root")
-    require("receipt-first Capacitor <-> Circuit slice" in idea["text"], "contract idea must be receipt-first")
-    checked.append({"path": str(paths["idea"].relative_to(ROOT)), "evidence": "contract Idea is receipt-first and Capacitor-owned"})
+    require(str(idea["text"]).strip() != "", "contract idea text must not be blank")
+    checked.append({"path": str(paths["idea"].relative_to(ROOT)), "evidence": "contract Idea is captured and Capacitor-owned"})
 
     require(planning_request["kind"] == "plan_goal_packet_request", "planning request kind mismatch")
     require(planning_request["target_agent"] == "claude_code", "planning request must target claude_code")
@@ -116,22 +117,25 @@ def validate_artifacts() -> list[dict[str, str]]:
 
     require_fields(goal_packet, ["kind", "id", "idea_id", "pursuit_id", "target_agent", "project_path", "body", "expected_return"], "goal_packet")
     require(goal_packet == planning_response["goal_packet"], "goal packet artifact must match planning response")
+    require(goal_packet["idea_id"] == idea["id"], "goal packet must target the captured contract idea")
     require(goal_packet["target_agent"] == "claude_code", "goal packet must target claude_code")
     require(goal_packet["project_path"] == str(ROOT), "goal packet project path must be Capacitor root")
     require(goal_packet["expected_return"] == "receipt", "goal packet must expect one receipt")
     require(MARKER in goal_packet["body"], "goal packet body must include visible receipt marker")
     require(inserted_body == goal_packet["body"], "inserted body must exactly match GoalPacket.body")
-    checked.append({"path": str(paths["goal_packet"].relative_to(ROOT)), "evidence": "GoalPacket is Claude receipt-first and exactly inserted"})
+    checked.append({"path": str(paths["goal_packet"].relative_to(ROOT)), "evidence": "GoalPacket is Claude receipt contract and exactly inserted"})
 
     require("Claude Code CLI" in transcript, "transcript must show visible Claude Code CLI surface")
     require(MARKER in raw_receipt_text, "raw receipt must include marker")
     require(raw_receipt_text.lstrip().startswith(MARKER), "raw receipt must start with marker")
+    require("Replace with" not in raw_receipt_text, "raw receipt must not be the prompt template receipt")
     checked.append({"path": str(paths["raw_receipt"].relative_to(ROOT)), "evidence": "raw CIRCUIT_RECEIPT preserved"})
 
     require(adapter_result["kind"] == "native_receipt_first_proof_result", "adapter result kind mismatch")
     require(adapter_result["status"] in {"native_capture_complete", "native_capture_with_nonzero_exit"}, "adapter result must be captured")
     require(adapter_result["host"] == "claude_code", "adapter result must be Claude Code")
     require(adapter_result["goal_packet_id"] == goal_packet["id"], "adapter result goal packet mismatch")
+    require(adapter_result["body_sha256"] == hashlib.sha256(inserted_body.encode()).hexdigest(), "adapter body hash must match inserted body")
     require(adapter_result["injection"]["exact_body_match"] is True, "adapter must prove exact body insertion")
     require(adapter_result["capture"]["preserved_for_normalization"] is True, "adapter must preserve capture for normalization")
     require(Path(adapter_result["capture"]["raw_receipt_path"]).resolve() == paths["raw_receipt"].resolve(), "adapter raw receipt path mismatch")
