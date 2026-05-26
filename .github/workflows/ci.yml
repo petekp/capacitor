@@ -2,10 +2,19 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - "pkp/**"
   pull_request:
     branches: [main]
   workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
