@@ -274,6 +274,8 @@ Implementation note:
 
 ### P1: Safe Wake Boundary
 
+Status: first guardrail implementation added on 2026-05-26.
+
 Implement only after the policy and claim artifacts are in place:
 
 - Use runtime exact-session state, `toolsInFlight`, last event/activity, and liveness to decide whether a session is at a safe input boundary.
@@ -285,6 +287,13 @@ Acceptance:
 - No new Ghostty window or tmux session appears for a healthy visible batch cockpit.
 - A stale binding reconnects in the Batch Worktree.
 - A live active session is not interrupted mid-tool.
+
+Implementation note:
+
+- `WorkBatchDeliveryPolicyInput` now separates `exactLiveSessionExists` from `safeWakeBoundarySatisfied`.
+- An exact live Claude session without a proven safe wake boundary returns `safe_wake_deferred` instead of `wake_existing_session`.
+- `WorkBatchAutoRouter` keeps the existing Ghostty wake path closed by default behind `safeWakeBoundaryAllowsInput`.
+- Focused tests cover the default no-wake behavior, the explicit safe-boundary wake path, and runtime snapshot reconciliation without terminal input.
 
 ### P1: UI Honesty And Manual Test Script
 

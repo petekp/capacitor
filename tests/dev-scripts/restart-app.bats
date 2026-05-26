@@ -142,16 +142,31 @@ reap_runtime_service "$TEST_PORT"
 
 @test "kill_stale_capacitor_daemon removes legacy daemon residue" {
     local signals_log="$TEST_DIR/daemon-signals.log"
+    local launchctl_log="$TEST_DIR/launchctl.log"
     local daemon_state_file="$TEST_DIR/daemon-state"
     local daemon_root="$TEST_HOME/.capacitor/daemon"
+    local launch_agent="$TEST_HOME/Library/LaunchAgents/com.capacitor.daemon.plist"
 
     mkdir -p "$daemon_root"
+    mkdir -p "$(dirname "$launch_agent")"
     printf 'socket\n' > "$TEST_HOME/.capacitor/daemon.sock"
     printf 'legacy\n' > "$daemon_root/state.json"
+    printf '<plist><dict/></plist>\n' > "$launch_agent"
     printf 'present\n' > "$daemon_state_file"
 
     run_restart_cleanup_shell '
 sleep() { :; }
+id() {
+    if [[ "${1:-}" == "-u" ]]; then
+        printf "501\n"
+        return 0
+    fi
+    command id "$@"
+}
+launchctl() {
+    printf "%s\n" "$*" >> "$LAUNCHCTL_LOG"
+    return 0
+}
 pgrep() {
     if [[ "$(cat "$DAEMON_STATE_FILE")" == "present" ]]; then
         printf "5151\n"
@@ -171,11 +186,16 @@ source "$SCRIPT_PATH"
 kill_stale_capacitor_daemon
 ' \
         SIGNALS_LOG="$signals_log" \
+        LAUNCHCTL_LOG="$launchctl_log" \
         DAEMON_STATE_FILE="$daemon_state_file"
 
     [ "$status" -eq 0 ]
     [ ! -f "$TEST_HOME/.capacitor/daemon.sock" ]
     [ ! -d "$daemon_root" ]
+    [ ! -f "$launch_agent" ]
+
+    run grep -F -- "bootout gui/501 $launch_agent" "$launchctl_log"
+    [ "$status" -eq 0 ]
 
     run grep -F -- "-TERM -f [c]apacitor-daemon" "$signals_log"
     [ "$status" -eq 0 ]

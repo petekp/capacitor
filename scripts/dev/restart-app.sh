@@ -34,6 +34,10 @@ legacy_daemon_dir_path() {
     printf '%s\n' "${CAPACITOR_LEGACY_DAEMON_DIR:-$HOME/.capacitor/daemon}"
 }
 
+legacy_daemon_launch_agent_path() {
+    printf '%s\n' "$HOME/Library/LaunchAgents/com.capacitor.daemon.plist"
+}
+
 read_pid_from_file() {
     local path="$1"
     local pid=""
@@ -187,6 +191,19 @@ wait_for_pattern_exit() {
 
 kill_stale_capacitor_daemon() {
     local legacy_pattern='[c]apacitor-daemon'
+    local launch_agent_path
+    local launch_domain
+
+    launch_agent_path="$(legacy_daemon_launch_agent_path)"
+    launch_domain="gui/$(id -u)"
+
+    if [[ -f "$launch_agent_path" ]]; then
+        echo "Unloading legacy capacitor-daemon LaunchAgent..."
+        launchctl bootout "$launch_domain" "$launch_agent_path" >/dev/null 2>&1 ||
+            launchctl remove com.capacitor.daemon >/dev/null 2>&1 ||
+            true
+        rm -f "$launch_agent_path"
+    fi
 
     if pgrep -f "$legacy_pattern" >/dev/null 2>&1; then
         echo "Cleaning up legacy capacitor-daemon..."

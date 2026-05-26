@@ -3,9 +3,20 @@ import Foundation
 import XCTest
 
 final class WorkBatchDeliveryPolicyTests: XCTestCase {
-    func testHealthyRunningBindingWakesExactLiveSession() {
+    func testHealthyRunningBindingDefersWakeWithoutSafeBoundary() {
         XCTAssertEqual(
             WorkBatchDeliveryPolicy.decide(input(bindingStatus: .running, exactLiveSessionExists: true)),
+            .safeWakeDeferred,
+        )
+    }
+
+    func testHealthyRunningBindingWakesExactLiveSessionAtSafeBoundary() {
+        XCTAssertEqual(
+            WorkBatchDeliveryPolicy.decide(input(
+                bindingStatus: .running,
+                exactLiveSessionExists: true,
+                safeWakeBoundarySatisfied: true,
+            )),
             .wakeExistingSession,
         )
     }
@@ -38,12 +49,26 @@ final class WorkBatchDeliveryPolicyTests: XCTestCase {
         )
     }
 
-    func testRecoverableBindingWithExactLiveSessionWakesInPlace() {
+    func testRecoverableBindingWithExactLiveSessionDefersWithoutSafeBoundary() {
         for status in [WorkBatchCockpitBindingStatus.stale, .waiting, .done] {
             XCTAssertEqual(
                 WorkBatchDeliveryPolicy.decide(input(bindingStatus: status, exactLiveSessionExists: true)),
+                .safeWakeDeferred,
+                "Expected \(status) with an exact live Claude process to wait for a proven safe wake boundary.",
+            )
+        }
+    }
+
+    func testRecoverableBindingWithExactLiveSessionWakesInPlaceAtSafeBoundary() {
+        for status in [WorkBatchCockpitBindingStatus.stale, .waiting, .done] {
+            XCTAssertEqual(
+                WorkBatchDeliveryPolicy.decide(input(
+                    bindingStatus: status,
+                    exactLiveSessionExists: true,
+                    safeWakeBoundarySatisfied: true,
+                )),
                 .wakeExistingSession,
-                "Expected \(status) with an exact live Claude process to wake in place.",
+                "Expected \(status) with an exact live Claude process and safe boundary to wake in place.",
             )
         }
     }
@@ -192,6 +217,7 @@ final class WorkBatchDeliveryPolicyTests: XCTestCase {
     private func input(
         bindingStatus: WorkBatchCockpitBindingStatus?,
         exactLiveSessionExists: Bool,
+        safeWakeBoundarySatisfied: Bool = false,
         now: Date? = nil,
         mirrorWriteSucceeded: Bool = true,
         checkpoints: [WorkBatchCheckpointRecord] = [],
@@ -232,6 +258,7 @@ final class WorkBatchDeliveryPolicyTests: XCTestCase {
             reconciliationIssues: issues,
             mirrorWriteSucceeded: mirrorWriteSucceeded,
             exactLiveSessionExists: exactLiveSessionExists,
+            safeWakeBoundarySatisfied: safeWakeBoundarySatisfied,
             deliveryRecord: deliveryRecord,
         )
     }

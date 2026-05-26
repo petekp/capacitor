@@ -156,11 +156,9 @@ final class AppStateRuntimeSnapshotEffectTests: XCTestCase {
 
         XCTAssertEqual(try bindingStore.binding(batchID: "batch-mobile")?.status, .running)
         XCTAssertEqual(try stateStore.load().batches[0].status, .working)
-        XCTAssertEqual(try stateStore.load().deliveryRecord(batchID: "batch-mobile")?.lastDeliveryAttemptKind, WorkBatchDeliveryAction.wakeExistingSession.rawValue)
+        XCTAssertNil(try stateStore.load().deliveryRecord(batchID: "batch-mobile")?.lastDeliveryAttemptKind)
         let wakes = await wakeRecorder.snapshot()
-        XCTAssertEqual(wakes.count, 1)
-        XCTAssertEqual(wakes[0].projectPath, worktreeURL.path)
-        XCTAssertEqual(wakes[0].sessionName, "Mobile prototype")
+        XCTAssertEqual(wakes, [])
     }
 
     func testRuntimeSnapshotApplyIngestsWorkBatchTaskClaims() async throws {

@@ -93,12 +93,14 @@ final class WorkBatchAutoRouter {
     typealias StateStoreFactory = (String) -> WorkBatchStateStore
     typealias BindingStoreFactory = (String) -> WorkBatchCockpitBindingStore
     typealias ProcessSessionLookup = WorkBatchBindingReconciler.ProcessSessionLookup
+    typealias SafeWakeBoundaryLookup = (WorkBatchCockpitBinding) -> Bool
 
     private let classifier: Classifier
     private let stateStoreFactory: StateStoreFactory
     private let bindingStoreFactory: BindingStoreFactory
     private let taskSessionCoordinator: WorkBatchTaskSessionCoordinator
     private let processSessionIDs: ProcessSessionLookup
+    private let safeWakeBoundaryAllowsInput: SafeWakeBoundaryLookup
     private var isRouting = false
     private var routeWaiters: [CheckedContinuation<Void, Never>] = []
     private var latestRuntimeSessions: [RuntimeSession] = []
@@ -110,6 +112,7 @@ final class WorkBatchAutoRouter {
         bindingStoreFactory: BindingStoreFactory? = nil,
         taskSessionCoordinator: WorkBatchTaskSessionCoordinator? = nil,
         processSessionIDs: ProcessSessionLookup? = nil,
+        safeWakeBoundaryAllowsInput: SafeWakeBoundaryLookup? = nil,
     ) {
         let defaultClassifier = ClaudeWorkBatchClassifier()
         let processScanner = WorkBatchClaudeProcessScanner()
@@ -126,6 +129,10 @@ final class WorkBatchAutoRouter {
         self.processSessionIDs = processSessionIDs ?? { binding in
             processScanner.sessionIDs(inWorktree: binding.worktreePath)
         }
+        // New Work Batch delivery keeps wakeups closed by default. The existing
+        // Ghostty text-input path remains behind this proof hook until a caller
+        // can prove both the exact cockpit target and a safe Claude input boundary.
+        self.safeWakeBoundaryAllowsInput = safeWakeBoundaryAllowsInput ?? { _ in false }
     }
 
     func routeCapturedTask(
@@ -1121,6 +1128,7 @@ final class WorkBatchAutoRouter {
             reconciliationIssues: reconciliationIssues,
             mirrorWriteSucceeded: mirrorWriteSucceeded,
             exactLiveSessionExists: binding.map(exactLiveSessionExists) ?? false,
+            safeWakeBoundarySatisfied: binding.map(safeWakeBoundaryAllowsInput) ?? false,
             deliveryRecord: state.deliveryRecord(batchID: batchID),
         ))
 

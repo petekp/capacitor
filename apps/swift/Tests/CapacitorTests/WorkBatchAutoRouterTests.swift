@@ -572,7 +572,7 @@ final class WorkBatchAutoRouterTests: XCTestCase {
         )
     }
 
-    func testRoutesRelatedTaskToProcessLiveBindingWithoutResumingCockpit() async throws {
+    func testRoutesRelatedTaskToProcessLiveBindingWithoutUnsafeWake() async throws {
         let harness = try RouterHarness()
         try harness.seedMobileBatch(status: .waiting, bindingStatus: .stale, taskStatus: .queued)
         var state = try harness.stateStore.load()
@@ -612,6 +612,77 @@ final class WorkBatchAutoRouterTests: XCTestCase {
             ),
             processSessionIDs: { binding in
                 binding.batchID == "batch-mobile" ? ["assigned-session-existing"] : []
+            },
+        )
+        let issues = router.reconcileBindings(
+            projects: [harness.project],
+            sessions: [],
+            now: harness.now,
+        )
+
+        XCTAssertTrue(issues.isEmpty)
+
+        let result = try await router.routeCapturedTask(
+            project: harness.project,
+            idea: harness.idea(id: "idea-green", title: "Add green border around the mobile prototype"),
+            now: harness.now.addingTimeInterval(5),
+        )
+
+        XCTAssertFalse(result.startedNewSession)
+        XCTAssertEqual(result.binding?.status, .running)
+        let scripts = await terminalRecorder.snapshot()
+        XCTAssertEqual(scripts, [])
+        let wakes = await wakeRecorder.snapshot()
+        XCTAssertEqual(wakes, [])
+        let updatedState = try harness.stateStore.load()
+        XCTAssertEqual(updatedState.tasks.first(where: { $0.id == "idea-green" })?.status, .queued)
+        XCTAssertEqual(updatedState.batches[0].currentActivitySummary, "Queued Add green border around the mobile prototype in Mobile prototype.")
+        XCTAssertNil(updatedState.deliveryRecord(batchID: "batch-mobile")?.lastDeliveryAttemptKind)
+    }
+
+    func testRoutesRelatedTaskToProcessLiveBindingWakesOnlyAtSafeBoundary() async throws {
+        let harness = try RouterHarness()
+        try harness.seedMobileBatch(status: .waiting, bindingStatus: .stale, taskStatus: .queued)
+        var state = try harness.stateStore.load()
+        state.batches[0].currentActivitySummary = "Claude Code session needs reconnect."
+        try harness.stateStore.save(state)
+
+        let terminalRecorder = TerminalScriptRecorder()
+        let wakeRecorder = ExistingTerminalWakeRecorder(result: true)
+        let router = WorkBatchAutoRouter(
+            classifier: { request in
+                .existing(
+                    taskID: request.task.id,
+                    batchID: "batch-mobile",
+                    confidence: 0.88,
+                    rationale: "Same mobile prototype area.",
+                    summary: "Added to Mobile prototype.",
+                    createdAt: harness.now,
+                )
+            },
+            stateStoreFactory: { _ in harness.stateStore },
+            bindingStoreFactory: { _ in harness.bindingStore },
+            taskSessionCoordinator: WorkBatchTaskSessionCoordinator(
+                worktreeService: harness.worktreeService(expectedName: "should-not-launch"),
+                fileManager: harness.fileManager,
+                claudePathResolver: { "/opt/homebrew/bin/claude" },
+                runTerminalScript: { script in
+                    await terminalRecorder.record(script)
+                },
+                wakeExistingTerminal: { projectPath, sessionName, prompt in
+                    await wakeRecorder.record(
+                        projectPath: projectPath,
+                        sessionName: sessionName,
+                        prompt: prompt,
+                    )
+                },
+                bindingStoreFactory: { _ in harness.bindingStore },
+            ),
+            processSessionIDs: { binding in
+                binding.batchID == "batch-mobile" ? ["assigned-session-existing"] : []
+            },
+            safeWakeBoundaryAllowsInput: { binding in
+                binding.batchID == "batch-mobile"
             },
         )
         let issues = router.reconcileBindings(

@@ -21,6 +21,7 @@ struct WorkBatchDeliveryPolicyInput: Equatable {
     let reconciliationIssues: [WorkBatchBindingReconciliationIssue]
     let mirrorWriteSucceeded: Bool
     let exactLiveSessionExists: Bool
+    let safeWakeBoundarySatisfied: Bool
     let deliveryRecord: WorkBatchDeliveryRecord?
 }
 
@@ -59,9 +60,10 @@ enum WorkBatchDeliveryPolicy {
         switch binding.status {
         case .stale, .waiting, .done:
             if input.exactLiveSessionExists {
-                return alreadyAttemptedCurrentGeneration(input.deliveryRecord)
-                    ? .queueOnly
-                    : .wakeExistingSession
+                if alreadyAttemptedCurrentGeneration(input.deliveryRecord) {
+                    return .queueOnly
+                }
+                return input.safeWakeBoundarySatisfied ? .wakeExistingSession : .safeWakeDeferred
             }
             if alreadyAttemptedCurrentGeneration(input.deliveryRecord) {
                 return .safeWakeDeferred
@@ -73,9 +75,10 @@ enum WorkBatchDeliveryPolicy {
             guard input.exactLiveSessionExists else {
                 return .safeWakeDeferred
             }
-            return alreadyAttemptedCurrentGeneration(input.deliveryRecord)
-                ? .queueOnly
-                : .wakeExistingSession
+            if alreadyAttemptedCurrentGeneration(input.deliveryRecord) {
+                return .queueOnly
+            }
+            return input.safeWakeBoundarySatisfied ? .wakeExistingSession : .safeWakeDeferred
         }
     }
 

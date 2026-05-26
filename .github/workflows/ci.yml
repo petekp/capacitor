@@ -118,7 +118,7 @@ jobs:
           retention-days: 14
 
   test-scripts:
-    name: Test Release Scripts
+    name: Test Shell Scripts
     runs-on: macos-14
     needs: test-surface-audit
     steps:
@@ -126,6 +126,9 @@ jobs:
 
       - name: Install bats
         run: brew install bats-core
+
+      - name: Run dev script tests
+        run: bats tests/dev-scripts
 
       - name: Run release script tests
         run: bats tests/release-scripts
