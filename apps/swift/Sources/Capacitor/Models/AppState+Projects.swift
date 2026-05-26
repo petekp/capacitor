@@ -309,9 +309,38 @@ extension AppState {
 
         switch action {
         case .openTerminal:
+            if openWorkBatchPrimarySurface(for: project) {
+                return
+            }
             launchTerminal(for: project)
         case .openDelegationReview:
             showDelegationReview(project)
+        }
+    }
+
+    private func openWorkBatchPrimarySurface(for project: Project) -> Bool {
+        let batches = workBatches(for: project)
+        switch WorkBatchProjectPrimaryActionResolver.resolve(batches) {
+        case .legacyTerminal:
+            return false
+
+        case let .openWorkBatch(batchID):
+            guard let batch = batches.first(where: { $0.id == batchID }) else {
+                return false
+            }
+            // New Work Batch behavior: a project card enters the managed batch
+            // cockpit/checkpoint before falling back to legacy project tmux.
+            openWorkBatch(batch, for: project)
+            return true
+
+        case .showProjectDetail:
+            guard featureState.isProjectDetailsEnabled else {
+                return false
+            }
+            // New Work Batch behavior: when several batches could be correct,
+            // show the batch list rather than guessing and creating a tmux session.
+            showProjectDetail(project)
+            return true
         }
     }
 
@@ -424,18 +453,7 @@ extension AppState {
     }
 
     func workBatchContextSummary(for project: Project) -> String? {
-        let summary = workBatches(for: project)
-            .first(where: { batch in
-                switch batch.status {
-                case .working, .waiting, .ready, .compacting:
-                    true
-                case .idle:
-                    false
-                }
-            })?
-            .currentActivitySummary
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return summary?.isEmpty == false ? summary : nil
+        WorkBatchProjectContextSummaryResolver.resolve(workBatches(for: project))
     }
 
     func openWorkBatch(_ batch: WorkBatchProjection, for project: Project) {
@@ -492,11 +510,11 @@ extension AppState {
                     newStatus: "open",
                 )
 
-                if let binding = result.binding,
-                   shouldResumeWorkBatchBinding(binding)
-                {
-                    _ = try await workBatchAutoRouter.openCockpit(binding: binding)
-                }
+                _ = try await workBatchAutoRouter.followThroughWorkBatchDelivery(
+                    project: project,
+                    batchID: batch.id,
+                    preferredTaskID: result.task.id,
+                )
 
                 await MainActor.run {
                     self.uiState.toast = ToastMessage("Reopened \(result.task.displayTitle).")
@@ -528,11 +546,11 @@ extension AppState {
                     response: response,
                 )
 
-                if let binding = result.binding,
-                   shouldResumeWorkBatchBinding(binding)
-                {
-                    _ = try await workBatchAutoRouter.openCockpit(binding: binding)
-                }
+                _ = try await workBatchAutoRouter.followThroughWorkBatchDelivery(
+                    project: project,
+                    batchID: batch.id,
+                    preferredTaskID: result.task.id,
+                )
 
                 await MainActor.run {
                     if self.uiState.workBatchCheckpointFocusTarget?.projectPath == project.path,
@@ -549,6 +567,55 @@ extension AppState {
                     let message = (error as? LocalizedError)?.errorDescription
                         ?? "Couldn't answer the checkpoint."
                     self.uiState.toast = .error(message)
+                }
+            }
+        }
+    }
+
+    func followThroughWorkBatchCompletionResults(
+        _ results: [WorkBatchCompletionIngestResult],
+        projects: [Project],
+    ) async {
+        guard !results.isEmpty else { return }
+
+        let projectsByPath = Dictionary(uniqueKeysWithValues: projects.map { ($0.path, $0) })
+        var followed: Set<String> = []
+        for result in results {
+            guard let project = projectsByPath[result.projectPath] else { continue }
+            let key = "\(result.projectPath)|\(result.batchID)"
+            guard followed.insert(key).inserted else { continue }
+            do {
+                _ = try await workBatchAutoRouter.followThroughWorkBatchDelivery(
+                    project: project,
+                    batchID: result.batchID,
+                )
+            } catch {
+                DebugLog.write(
+                    "AppState.followThroughWorkBatchCompletionResults failure project=\(project.path) batch=\(result.batchID) error=\(error.localizedDescription)",
+                )
+            }
+        }
+    }
+
+    func followThroughOpenWorkBatchTasks(projects: [Project]) async {
+        for project in projects {
+            for batch in workBatchAutoRouter.projections(for: project.path) {
+                guard batch.checkpoints.allSatisfy({ $0.status != .pending }),
+                      let task = batch.tasks.first(where: { $0.status == .queued })
+                else {
+                    continue
+                }
+
+                do {
+                    _ = try await workBatchAutoRouter.followThroughWorkBatchDelivery(
+                        project: project,
+                        batchID: batch.id,
+                        preferredTaskID: task.id,
+                    )
+                } catch {
+                    DebugLog.write(
+                        "AppState.followThroughOpenWorkBatchTasks failure project=\(project.path) batch=\(batch.id) task=\(task.id) error=\(error.localizedDescription)",
+                    )
                 }
             }
         }
@@ -587,15 +654,6 @@ extension AppState {
             uiState.toast = ToastMessage("Checkpoint ready: \(result.taskTitle).")
         } else {
             uiState.toast = ToastMessage("\(results.count) checkpoints need you.")
-        }
-    }
-
-    private func shouldResumeWorkBatchBinding(_ binding: WorkBatchCockpitBinding) -> Bool {
-        switch binding.status {
-        case .stale, .waiting, .done:
-            true
-        case .launching, .running:
-            false
         }
     }
 

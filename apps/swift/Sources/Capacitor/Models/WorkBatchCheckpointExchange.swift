@@ -53,7 +53,7 @@ struct WorkBatchCheckpointRequestStore {
             includingPropertiesForKeys: nil,
         )
         let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
+        decoder.dateDecodingStrategy = .capacitorISO8601
 
         return urls
             .filter { $0.pathExtension == "json" }

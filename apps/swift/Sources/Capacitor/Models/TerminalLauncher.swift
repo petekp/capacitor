@@ -18,7 +18,7 @@ struct AppleScriptExecutionResult: Equatable {
     let error: String?
 }
 
-private struct DefaultAppleScriptClient: AppleScriptClient {
+struct DefaultAppleScriptClient: AppleScriptClient {
     func runOutput(_ script: String) -> AppleScriptExecutionResult {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")

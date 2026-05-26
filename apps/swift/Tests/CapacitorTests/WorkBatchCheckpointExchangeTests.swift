@@ -70,6 +70,37 @@ final class WorkBatchCheckpointExchangeTests: XCTestCase {
         XCTAssertEqual(try store.loadRequests().map(\.request), [validRequest])
     }
 
+    func testCheckpointRequestStoreLoadsAgentWrittenFractionalSecondDates() throws {
+        let fileManager = FileManager.default
+        let tempDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        addTeardownBlock {
+            try? fileManager.removeItem(at: tempDir)
+        }
+
+        let directoryURL = tempDir.appendingPathComponent(WorkBatchCheckpointRequestStore.relativeDirectory, isDirectory: true)
+        try fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+        try """
+        {
+          "checkpoint_id": "checkpoint-green",
+          "task_id": "task-green",
+          "question": "Which green should I use?",
+          "reason": "The task did not say.",
+          "requested_at": "2026-05-25T19:02:00.000Z"
+        }
+        """.write(
+            to: directoryURL.appendingPathComponent("checkpoint-green.json"),
+            atomically: true,
+            encoding: .utf8,
+        )
+
+        let loaded = try WorkBatchCheckpointRequestStore(worktreePath: tempDir.path, fileManager: fileManager).loadRequests()
+
+        XCTAssertEqual(loaded.count, 1)
+        XCTAssertEqual(loaded[0].request.checkpointID, "checkpoint-green")
+        XCTAssertEqual(loaded[0].request.requestedAt, parseISO8601Date("2026-05-25T19:02:00.000Z"))
+    }
+
     func testCheckpointResponseStoreWritesResponseBackToBatchWorktree() throws {
         let fileManager = FileManager.default
         let tempDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)

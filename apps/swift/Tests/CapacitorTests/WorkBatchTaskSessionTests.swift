@@ -33,6 +33,7 @@ final class WorkBatchTaskSessionTests: XCTestCase {
 
         XCTAssertFalse(prompt.contains("\n"))
         XCTAssertTrue(prompt.contains("Read .capacitor/work-batch-context.md first"))
+        XCTAssertTrue(prompt.contains("write the Task claim"))
         XCTAssertTrue(prompt.contains("write the Done report"))
     }
 
@@ -43,6 +44,7 @@ final class WorkBatchTaskSessionTests: XCTestCase {
 
         XCTAssertFalse(prompt.contains("\n"))
         XCTAssertTrue(prompt.contains("Read .capacitor/work-batch-context.md again"))
+        XCTAssertTrue(prompt.contains("write the Task claim"))
         XCTAssertTrue(prompt.contains("reopened Task"))
         XCTAssertTrue(prompt.contains("Done report"))
     }
@@ -144,6 +146,69 @@ final class WorkBatchTaskSessionTests: XCTestCase {
     }
 
     @MainActor
+    func testWakeExistingSessionInputsResumePromptIntoVisibleCockpit() async throws {
+        let wakeRecorder = ExistingTerminalWakeRecorder(result: true)
+        let binding = WorkBatchCockpitBinding(
+            id: "batch-mobile",
+            batchID: "batch-mobile",
+            batchName: "Mobile prototype",
+            projectPath: "/tmp/project",
+            worktreeName: "batch-mobile",
+            worktreePath: "/tmp/project/.capacitor/worktrees/batch-mobile",
+            host: .claudeCode,
+            claudeSessionID: "assigned-session",
+            status: .running,
+            createdAt: Date(timeIntervalSince1970: 100),
+            updatedAt: Date(timeIntervalSince1970: 100),
+        )
+        let coordinator = WorkBatchTaskSessionCoordinator(
+            wakeExistingTerminal: { projectPath, sessionName, prompt in
+                await wakeRecorder.record(
+                    projectPath: projectPath,
+                    sessionName: sessionName,
+                    prompt: prompt,
+                )
+            },
+        )
+
+        try await coordinator.wakeExistingSession(binding)
+
+        let attempts = await wakeRecorder.snapshot()
+        XCTAssertEqual(attempts.count, 1)
+        XCTAssertEqual(attempts[0].projectPath, "/tmp/project/.capacitor/worktrees/batch-mobile")
+        XCTAssertEqual(attempts[0].sessionName, "Mobile prototype")
+        XCTAssertTrue(attempts[0].prompt.contains("Read .capacitor/work-batch-context.md again"))
+        XCTAssertTrue(attempts[0].prompt.contains("Continue any queued Task"))
+    }
+
+    @MainActor
+    func testWakeExistingSessionThrowsWhenVisibleCockpitCannotBeWoken() async throws {
+        let binding = WorkBatchCockpitBinding(
+            id: "batch-mobile",
+            batchID: "batch-mobile",
+            batchName: "Mobile prototype",
+            projectPath: "/tmp/project",
+            worktreeName: "batch-mobile",
+            worktreePath: "/tmp/project/.capacitor/worktrees/batch-mobile",
+            host: .claudeCode,
+            claudeSessionID: "assigned-session",
+            status: .running,
+            createdAt: Date(timeIntervalSince1970: 100),
+            updatedAt: Date(timeIntervalSince1970: 100),
+        )
+        let coordinator = WorkBatchTaskSessionCoordinator(
+            wakeExistingTerminal: { _, _, _ in false },
+        )
+
+        do {
+            try await coordinator.wakeExistingSession(binding)
+            XCTFail("Expected failed wake to throw")
+        } catch let error as WorkBatchTaskSessionError {
+            XCTAssertEqual(error, .existingSessionWakeFailed)
+        }
+    }
+
+    @MainActor
     func testOpenExistingStaleSessionLaunchesClaudeResumeInBatchWorktree() async throws {
         let recorder = TerminalScriptRecorder()
         let binding = WorkBatchCockpitBinding(
@@ -198,16 +263,22 @@ final class WorkBatchTaskSessionTests: XCTestCase {
                     status: "queued",
                 ),
             ],
+            deliveryGeneration: "batch-mobile:1775000000",
             updatedAt: now,
         )
 
         XCTAssertTrue(mirror.markdown.contains("Batch: Mobile prototype"))
         XCTAssertTrue(mirror.markdown.contains("- [queued] Add green border around the mobile prototype (`task-1`)"))
+        XCTAssertTrue(mirror.markdown.contains(".capacitor/work-batch-claims/<task-id>.json"))
+        XCTAssertTrue(mirror.markdown.contains("\"status\":\"working\""))
+        XCTAssertTrue(mirror.markdown.contains("\"delivery_generation\":\"batch-mobile:1775000000\""))
         XCTAssertTrue(mirror.markdown.contains(".capacitor/work-batch-completions/<task-id>.json"))
         XCTAssertTrue(mirror.markdown.contains(".capacitor/work-batch-checkpoints/<checkpoint-id>.json"))
         XCTAssertTrue(mirror.markdown.contains(".capacitor/work-batch-checkpoint-responses/<checkpoint-id>.json"))
         XCTAssertTrue(mirror.markdown.contains("\"status\":\"done\""))
         XCTAssertTrue(mirror.markdown.contains("If user input is needed before continuing, ask for a checkpoint"))
+        XCTAssertTrue(mirror.markdown.contains("current agent-readable view"))
+        XCTAssertFalse(mirror.markdown.contains("source of truth"))
         XCTAssertTrue(mirror.markdown.contains("Use the existing design tokens if possible."))
     }
 
@@ -559,6 +630,30 @@ private actor ExistingTerminalFocusRecorder {
 
     func record(projectPath: String, sessionName: String?) -> Bool {
         attempts.append(Attempt(projectPath: projectPath, sessionName: sessionName))
+        return result
+    }
+
+    func snapshot() -> [Attempt] {
+        attempts
+    }
+}
+
+private actor ExistingTerminalWakeRecorder {
+    struct Attempt: Equatable {
+        let projectPath: String
+        let sessionName: String?
+        let prompt: String
+    }
+
+    private let result: Bool
+    private var attempts: [Attempt] = []
+
+    init(result: Bool) {
+        self.result = result
+    }
+
+    func record(projectPath: String, sessionName: String?, prompt: String) -> Bool {
+        attempts.append(Attempt(projectPath: projectPath, sessionName: sessionName, prompt: prompt))
         return result
     }
 

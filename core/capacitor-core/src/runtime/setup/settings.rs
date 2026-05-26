@@ -76,26 +76,26 @@ impl SetupChecker {
             None => return HookSettingsStatus::NotInstalled,
         };
 
-        let missing_events: Vec<String> = managed_hook_event_contracts()
-            .filter_map(|contract| {
-                let has_hook = hooks
-                    .get(contract.event_name)
-                    .map(|configured_hooks| {
-                        self.has_hud_hook_with_correct_config(configured_hooks, contract)
-                    })
-                    .unwrap_or(false);
+        let mut missing_events = Vec::new();
+        let mut repair_events = Vec::new();
 
-                if has_hook {
-                    None
-                } else {
-                    Some(contract.event_name.to_string())
-                }
-            })
-            .collect();
+        for contract in managed_hook_event_contracts() {
+            let Some(configured_hooks) = hooks.get(contract.event_name) else {
+                missing_events.push(contract.event_name.to_string());
+                continue;
+            };
 
-        if missing_events.is_empty() {
-            HookSettingsStatus::Installed
-        } else {
+            if !self.has_hud_hook_with_correct_config(configured_hooks, contract) {
+                missing_events.push(contract.event_name.to_string());
+                continue;
+            }
+
+            if self.managed_hook_config_needs_repair(configured_hooks, contract) {
+                repair_events.push(contract.event_name.to_string());
+            }
+        }
+
+        if !missing_events.is_empty() {
             HookSettingsStatus::PartiallyConfigured {
                 reason: format!(
                     "Missing or invalid managed hook configuration for {} event(s)",
@@ -103,6 +103,16 @@ impl SetupChecker {
                 ),
                 missing_events,
             }
+        } else if !repair_events.is_empty() {
+            HookSettingsStatus::PartiallyConfigured {
+                reason: format!(
+                    "Managed hook configuration needs repair for {} event(s)",
+                    repair_events.len()
+                ),
+                missing_events: repair_events,
+            }
+        } else {
+            HookSettingsStatus::Installed
         }
     }
 
@@ -138,6 +148,33 @@ impl SetupChecker {
             }
         }
         false
+    }
+
+    fn managed_hook_config_needs_repair(
+        &self,
+        hooks: &[HookConfig],
+        contract: &ClaudeHookEventContract,
+    ) -> bool {
+        let mut managed_hook_count = 0usize;
+
+        for hook_config in hooks {
+            let Some(inner_hooks) = hook_config.hooks.as_ref() else {
+                continue;
+            };
+
+            for hook in inner_hooks {
+                if !is_managed_hook(hook) {
+                    continue;
+                }
+
+                managed_hook_count += 1;
+                if !inner_hook_matches_managed_contract(hook, contract) {
+                    return true;
+                }
+            }
+        }
+
+        managed_hook_count > 1
     }
 
     pub(super) fn normalize_hud_hook_config(

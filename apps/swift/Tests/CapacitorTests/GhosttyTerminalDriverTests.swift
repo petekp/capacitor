@@ -37,6 +37,14 @@ final class GhosttyTerminalDriverTests: XCTestCase {
         func activateWindow(id _: String) -> Result<Void, TerminalActivationFailureReason> {
             .success(())
         }
+
+        func inputText(_: String, terminalID _: String) -> Result<Void, TerminalActivationFailureReason> {
+            .success(())
+        }
+
+        func sendKey(_: String, terminalID _: String) -> Result<Void, TerminalActivationFailureReason> {
+            .success(())
+        }
     }
 
     private final class RecordingGhosttyAutomationClient: GhosttyAutomationClient {
@@ -44,6 +52,8 @@ final class GhosttyTerminalDriverTests: XCTestCase {
         var selectedTabs: [(tabID: String, windowID: String)] = []
         var focusedTerminals: [String] = []
         var activatedWindows: [String] = []
+        var inputTexts: [(text: String, terminalID: String)] = []
+        var sentKeys: [(key: String, terminalID: String)] = []
 
         func supportStatus() -> GhosttyAutomationSupportStatus {
             .supported("1.3.0")
@@ -73,6 +83,16 @@ final class GhosttyTerminalDriverTests: XCTestCase {
 
         func activateWindow(id: String) -> Result<Void, TerminalActivationFailureReason> {
             activatedWindows.append(id)
+            return .success(())
+        }
+
+        func inputText(_ text: String, terminalID: String) -> Result<Void, TerminalActivationFailureReason> {
+            inputTexts.append((text: text, terminalID: terminalID))
+            return .success(())
+        }
+
+        func sendKey(_ key: String, terminalID: String) -> Result<Void, TerminalActivationFailureReason> {
+            sentKeys.append((key: key, terminalID: terminalID))
             return .success(())
         }
     }

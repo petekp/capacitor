@@ -213,14 +213,19 @@ extension AppState {
                 projects: context.projects,
                 sessions: snapshot.sessions,
             )
+            _ = workBatchAutoRouter.ingestTaskClaims(
+                projects: context.projects,
+            )
             let completedTasks = workBatchAutoRouter.ingestCompletionReports(
                 projects: context.projects,
             )
+            await followThroughWorkBatchCompletionResults(completedTasks, projects: context.projects)
             handleWorkBatchCompletionIngestResults(completedTasks, projects: context.projects)
             let checkpoints = workBatchAutoRouter.ingestCheckpointRequests(
                 projects: context.projects,
             )
             handleWorkBatchCheckpointIngestResults(checkpoints, projects: context.projects)
+            await followThroughOpenWorkBatchTasks(projects: context.projects)
         }
         executeRuntimeSnapshotEffects(outcome.effects)
     }

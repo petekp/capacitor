@@ -24,6 +24,8 @@ protocol GhosttyAutomationClient {
     func selectTab(id: String, inWindowID windowID: String) -> Result<Void, TerminalActivationFailureReason>
     func focusTerminal(id: String) -> Result<Void, TerminalActivationFailureReason>
     func activateWindow(id: String) -> Result<Void, TerminalActivationFailureReason>
+    func inputText(_ text: String, terminalID: String) -> Result<Void, TerminalActivationFailureReason>
+    func sendKey(_ key: String, terminalID: String) -> Result<Void, TerminalActivationFailureReason>
 }
 
 struct GhosttyTerminalSnapshot: Equatable {
@@ -141,6 +143,14 @@ struct DefaultGhosttyAutomationClient: GhosttyAutomationClient {
 
     func activateWindow(id: String) -> Result<Void, TerminalActivationFailureReason> {
         runAction(Self.makeActivateWindowScript(windowID: id))
+    }
+
+    func inputText(_ text: String, terminalID: String) -> Result<Void, TerminalActivationFailureReason> {
+        runAction(Self.makeInputTextScript(text: text, terminalID: terminalID))
+    }
+
+    func sendKey(_ key: String, terminalID: String) -> Result<Void, TerminalActivationFailureReason> {
+        runAction(Self.makeSendKeyScript(key: key, terminalID: terminalID))
     }
 
     static func parseSnapshotOutput(_ output: String) -> GhosttyAppSnapshot {
@@ -304,6 +314,22 @@ struct DefaultGhosttyAutomationClient: GhosttyAutomationClient {
         """
         tell application "Ghostty"
             activate window (first window whose id is "\(appleScriptEscape(windowID))")
+        end tell
+        """
+    }
+
+    private static func makeInputTextScript(text: String, terminalID: String) -> String {
+        """
+        tell application "Ghostty"
+            input text "\(appleScriptEscape(text))" to terminal id "\(appleScriptEscape(terminalID))"
+        end tell
+        """
+    }
+
+    private static func makeSendKeyScript(key: String, terminalID: String) -> String {
+        """
+        tell application "Ghostty"
+            send key "\(appleScriptEscape(key))" to terminal id "\(appleScriptEscape(terminalID))"
         end tell
         """
     }

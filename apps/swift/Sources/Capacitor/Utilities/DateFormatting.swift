@@ -71,6 +71,20 @@ func parseISO8601Date(_ string: String) -> Date? {
     return nil
 }
 
+extension JSONDecoder.DateDecodingStrategy {
+    static let capacitorISO8601 = JSONDecoder.DateDecodingStrategy.custom { decoder in
+        let container = try decoder.singleValueContainer()
+        let value = try container.decode(String.self)
+        guard let date = parseISO8601Date(value) else {
+            throw DecodingError.dataCorruptedError(
+                in: container,
+                debugDescription: "Expected ISO8601 date string.",
+            )
+        }
+        return date
+    }
+}
+
 /// Format the current wall-clock time using the canonical shared ISO8601 formatter.
 func currentISO8601Timestamp() -> String {
     formatISO8601Timestamp(Date())

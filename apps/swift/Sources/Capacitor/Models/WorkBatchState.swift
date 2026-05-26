@@ -214,12 +214,35 @@ struct WorkBatchCheckpointRecord: Codable, Equatable, Identifiable {
     }
 }
 
+struct WorkBatchDeliveryRecord: Codable, Equatable, Identifiable {
+    let batchID: String
+    var lastContextWrittenAt: Date?
+    var lastDeliveryGeneration: String?
+    var lastDeliveryAttemptAt: Date?
+    var lastDeliveryAttemptKind: String?
+    var lastClaimAt: Date?
+
+    var id: String {
+        batchID
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case batchID = "batch_id"
+        case lastContextWrittenAt = "last_context_written_at"
+        case lastDeliveryGeneration = "last_delivery_generation"
+        case lastDeliveryAttemptAt = "last_delivery_attempt_at"
+        case lastDeliveryAttemptKind = "last_delivery_attempt_kind"
+        case lastClaimAt = "last_claim_at"
+    }
+}
+
 struct WorkBatchStateSnapshot: Codable, Equatable {
     var version: Int
     var batches: [WorkBatchRecord]
     var tasks: [WorkBatchTaskRecord]
     var classifications: [WorkBatchClassificationRecord]
     var checkpoints: [WorkBatchCheckpointRecord]
+    var deliveryRecords: [WorkBatchDeliveryRecord]
 
     enum CodingKeys: String, CodingKey {
         case version
@@ -227,6 +250,7 @@ struct WorkBatchStateSnapshot: Codable, Equatable {
         case tasks
         case classifications
         case checkpoints
+        case deliveryRecords = "delivery_records"
     }
 
     init(
@@ -235,12 +259,14 @@ struct WorkBatchStateSnapshot: Codable, Equatable {
         tasks: [WorkBatchTaskRecord],
         classifications: [WorkBatchClassificationRecord],
         checkpoints: [WorkBatchCheckpointRecord] = [],
+        deliveryRecords: [WorkBatchDeliveryRecord] = [],
     ) {
         self.version = version
         self.batches = batches
         self.tasks = tasks
         self.classifications = classifications
         self.checkpoints = checkpoints
+        self.deliveryRecords = deliveryRecords
     }
 
     init(from decoder: Decoder) throws {
@@ -250,6 +276,10 @@ struct WorkBatchStateSnapshot: Codable, Equatable {
         tasks = try container.decode([WorkBatchTaskRecord].self, forKey: .tasks)
         classifications = try container.decode([WorkBatchClassificationRecord].self, forKey: .classifications)
         checkpoints = try container.decodeIfPresent([WorkBatchCheckpointRecord].self, forKey: .checkpoints) ?? []
+        deliveryRecords = try container.decodeIfPresent(
+            [WorkBatchDeliveryRecord].self,
+            forKey: .deliveryRecords,
+        ) ?? []
     }
 
     func encode(to encoder: Encoder) throws {
@@ -259,6 +289,7 @@ struct WorkBatchStateSnapshot: Codable, Equatable {
         try container.encode(tasks, forKey: .tasks)
         try container.encode(classifications, forKey: .classifications)
         try container.encode(checkpoints, forKey: .checkpoints)
+        try container.encode(deliveryRecords, forKey: .deliveryRecords)
     }
 
     static let empty = WorkBatchStateSnapshot(
@@ -267,7 +298,74 @@ struct WorkBatchStateSnapshot: Codable, Equatable {
         tasks: [],
         classifications: [],
         checkpoints: [],
+        deliveryRecords: [],
     )
+}
+
+extension WorkBatchStateSnapshot {
+    func deliveryRecord(batchID: String) -> WorkBatchDeliveryRecord? {
+        deliveryRecords.first { $0.batchID == batchID }
+    }
+
+    mutating func upsertDeliveryRecord(_ record: WorkBatchDeliveryRecord) {
+        if let index = deliveryRecords.firstIndex(where: { $0.batchID == record.batchID }) {
+            deliveryRecords[index] = record
+        } else {
+            deliveryRecords.append(record)
+        }
+    }
+
+    mutating func recordContextWrite(
+        batchID: String,
+        updatedAt: Date,
+        deliveryGeneration: String,
+    ) {
+        var record = deliveryRecord(batchID: batchID) ?? WorkBatchDeliveryRecord(
+            batchID: batchID,
+            lastContextWrittenAt: nil,
+            lastDeliveryGeneration: nil,
+            lastDeliveryAttemptAt: nil,
+            lastDeliveryAttemptKind: nil,
+            lastClaimAt: nil,
+        )
+        record.lastContextWrittenAt = updatedAt
+        record.lastDeliveryGeneration = deliveryGeneration
+        upsertDeliveryRecord(record)
+    }
+
+    mutating func recordDeliveryAttempt(
+        batchID: String,
+        attemptedAt: Date,
+        kind: String,
+    ) {
+        var record = deliveryRecord(batchID: batchID) ?? WorkBatchDeliveryRecord(
+            batchID: batchID,
+            lastContextWrittenAt: nil,
+            lastDeliveryGeneration: nil,
+            lastDeliveryAttemptAt: nil,
+            lastDeliveryAttemptKind: nil,
+            lastClaimAt: nil,
+        )
+        record.lastDeliveryAttemptAt = attemptedAt
+        record.lastDeliveryAttemptKind = kind
+        upsertDeliveryRecord(record)
+    }
+
+    mutating func recordTaskClaim(
+        batchID: String,
+        claimedAt: Date,
+    ) {
+        var record = deliveryRecord(batchID: batchID) ?? WorkBatchDeliveryRecord(
+            batchID: batchID,
+            lastContextWrittenAt: nil,
+            lastDeliveryGeneration: nil,
+            lastDeliveryAttemptAt: nil,
+            lastDeliveryAttemptKind: nil,
+            lastClaimAt: nil,
+        )
+        record.lastClaimAt = claimedAt
+        upsertDeliveryRecord(record)
+    }
 }
 
 struct WorkBatchStateStore {
@@ -363,6 +461,82 @@ enum WorkBatchOpenActionResolver {
     }
 }
 
+enum WorkBatchProjectPrimaryAction: Equatable {
+    case openWorkBatch(batchID: String)
+    case showProjectDetail
+    case legacyTerminal
+}
+
+enum WorkBatchProjectPrimaryActionResolver {
+    static func resolve(_ batches: [WorkBatchProjection]) -> WorkBatchProjectPrimaryAction {
+        guard !batches.isEmpty else {
+            return .legacyTerminal
+        }
+
+        if let checkpointBatch = batches.first(where: { !$0.pendingCheckpoints.isEmpty }) {
+            return .openWorkBatch(batchID: checkpointBatch.id)
+        }
+
+        let activeBatches = batches.filter { batch in
+            switch batch.status {
+            case .working, .waiting, .ready, .compacting:
+                true
+            case .idle:
+                false
+            }
+        }
+
+        let activeBoundBatches = activeBatches.filter { $0.binding != nil }
+        if activeBoundBatches.count == 1, let batch = activeBoundBatches.first {
+            return .openWorkBatch(batchID: batch.id)
+        }
+
+        if activeBatches.count > 0 {
+            return .showProjectDetail
+        }
+
+        let boundBatches = batches.filter { $0.binding != nil }
+        if boundBatches.count == 1, let batch = boundBatches.first {
+            return .openWorkBatch(batchID: batch.id)
+        }
+
+        return .showProjectDetail
+    }
+}
+
+enum WorkBatchProjectContextSummaryResolver {
+    static func resolve(_ batches: [WorkBatchProjection]) -> String? {
+        let activeSummary = batches
+            .first { batch in
+                switch batch.status {
+                case .working, .waiting, .ready, .compacting:
+                    true
+                case .idle:
+                    false
+                }
+            }?
+            .currentActivitySummary
+
+        if let activeSummary = normalized(activeSummary) {
+            return activeSummary
+        }
+
+        // New Work Batch behavior: once Tasks are Capacitor-managed, the card
+        // should not fall back to stale legacy transcript summaries after completion.
+        let latestIdleSummary = batches
+            .first { $0.status == .idle }?
+            .currentActivitySummary
+        return normalized(latestIdleSummary)
+    }
+
+    private static func normalized(_ value: String?) -> String? {
+        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty
+        else { return nil }
+        return trimmed
+    }
+}
+
 enum WorkBatchProjectionBuilder {
     static func build(
         state: WorkBatchStateSnapshot,
@@ -434,6 +608,23 @@ enum WorkBatchProjectionBuilder {
         for batch: WorkBatchRecord,
         tasks: [WorkBatchTaskRecord],
     ) -> String {
+        if batch.status == .working {
+            let workingTasks = tasks.filter { $0.status == .working }
+            let queuedTasks = tasks.filter { $0.status == .queued }
+
+            if let workingTask = workingTasks.last,
+               !queuedTasks.isEmpty
+            {
+                return "Working on \(workingTask.displayTitle). \(queuedTasks.count) queued."
+            }
+
+            if workingTasks.isEmpty,
+               let queuedTask = queuedTasks.last
+            {
+                return "Queued \(queuedTask.displayTitle)."
+            }
+        }
+
         let summary = batch.currentActivitySummary.trimmingCharacters(in: .whitespacesAndNewlines)
         guard summary.contains("..."),
               let task = tasks.last

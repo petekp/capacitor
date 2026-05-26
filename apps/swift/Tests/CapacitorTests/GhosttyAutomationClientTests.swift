@@ -5,9 +5,11 @@ import XCTest
 final class GhosttyAutomationClientTests: XCTestCase {
     private final class StubAppleScriptClient: AppleScriptClient {
         var results: [AppleScriptExecutionResult] = []
+        private(set) var scripts: [String] = []
 
-        func runOutput(_: String) -> AppleScriptExecutionResult {
-            nextResult()
+        func runOutput(_ script: String) -> AppleScriptExecutionResult {
+            scripts.append(script)
+            return nextResult()
         }
 
         private func nextResult() -> AppleScriptExecutionResult {
@@ -15,6 +17,54 @@ final class GhosttyAutomationClientTests: XCTestCase {
                 return AppleScriptExecutionResult(success: true, output: nil, error: nil)
             }
             return results.removeFirst()
+        }
+    }
+
+    private final class RecordingGhosttyAutomationClient: GhosttyAutomationClient {
+        var snapshot = GhosttyAppSnapshot(windows: [])
+        var selectedTabs: [(tabID: String, windowID: String)] = []
+        var focusedTerminals: [String] = []
+        var inputTexts: [(text: String, terminalID: String)] = []
+        var sentKeys: [(key: String, terminalID: String)] = []
+
+        func supportStatus() -> GhosttyAutomationSupportStatus {
+            .supported("1.3.0")
+        }
+
+        func createWindow(configuration _: GhosttySurfaceConfigurationOptions) -> Result<Void, TerminalActivationFailureReason> {
+            .success(())
+        }
+
+        func createTab(inWindowID _: String, configuration _: GhosttySurfaceConfigurationOptions) -> Result<Void, TerminalActivationFailureReason> {
+            .success(())
+        }
+
+        func readSnapshot() -> Result<GhosttyAppSnapshot, TerminalActivationFailureReason> {
+            .success(snapshot)
+        }
+
+        func selectTab(id: String, inWindowID windowID: String) -> Result<Void, TerminalActivationFailureReason> {
+            selectedTabs.append((tabID: id, windowID: windowID))
+            return .success(())
+        }
+
+        func focusTerminal(id: String) -> Result<Void, TerminalActivationFailureReason> {
+            focusedTerminals.append(id)
+            return .success(())
+        }
+
+        func activateWindow(id _: String) -> Result<Void, TerminalActivationFailureReason> {
+            .success(())
+        }
+
+        func inputText(_ text: String, terminalID: String) -> Result<Void, TerminalActivationFailureReason> {
+            inputTexts.append((text: text, terminalID: terminalID))
+            return .success(())
+        }
+
+        func sendKey(_ key: String, terminalID: String) -> Result<Void, TerminalActivationFailureReason> {
+            sentKeys.append((key: key, terminalID: terminalID))
+            return .success(())
         }
     }
 
@@ -112,6 +162,128 @@ final class GhosttyAutomationClientTests: XCTestCase {
 
         XCTAssertEqual(match?.source, .cachedTerminalID)
         XCTAssertEqual(match?.terminal?.id, "term-2")
+    }
+
+    func testInputTextTargetsGhosttyTerminalByID() {
+        let appleScript = StubAppleScriptClient()
+        let client = DefaultGhosttyAutomationClient(
+            appleScript: appleScript,
+            versionProvider: { "1.3.0" },
+        )
+
+        let result = client.inputText("Read .capacitor/work-batch-context.md again", terminalID: "term-1")
+
+        if case .failure = result {
+            XCTFail("Expected input text to succeed")
+        }
+        XCTAssertEqual(appleScript.scripts.count, 1)
+        XCTAssertTrue(appleScript.scripts[0].contains("input text"))
+        XCTAssertTrue(appleScript.scripts[0].contains("terminal id \"term-1\""))
+        XCTAssertTrue(appleScript.scripts[0].contains("work-batch-context.md again"))
+    }
+
+    func testSendKeyTargetsGhosttyTerminalByID() {
+        let appleScript = StubAppleScriptClient()
+        let client = DefaultGhosttyAutomationClient(
+            appleScript: appleScript,
+            versionProvider: { "1.3.0" },
+        )
+
+        let result = client.sendKey("enter", terminalID: "term-1")
+
+        if case .failure = result {
+            XCTFail("Expected send key to succeed")
+        }
+        XCTAssertEqual(appleScript.scripts.count, 1)
+        XCTAssertTrue(appleScript.scripts[0].contains("send key \"enter\""))
+        XCTAssertTrue(appleScript.scripts[0].contains("terminal id \"term-1\""))
+    }
+
+    func testWorkBatchWakerInputsPromptIntoMatchedWorktreeTerminal() {
+        let automationClient = RecordingGhosttyAutomationClient()
+        automationClient.snapshot = GhosttyAppSnapshot(windows: [
+            GhosttyWindowSnapshot(
+                id: "window-1",
+                name: "Ghostty",
+                isFront: true,
+                tabs: [
+                    GhosttyTabSnapshot(
+                        id: "tab-1",
+                        name: "Mobile Prototype Polish",
+                        index: 1,
+                        isSelected: true,
+                        terminals: [
+                            GhosttyTerminalSnapshot(
+                                id: "term-1",
+                                name: "Mobile Prototype Polish",
+                                workingDirectory: "/Users/pete/Code/app/.capacitor/worktrees/batch-mobile",
+                            ),
+                        ],
+                        focusedTerminalID: "term-1",
+                    ),
+                ],
+            ),
+        ])
+        let waker = WorkBatchGhosttySessionWaker(
+            automationClient: automationClient,
+            homeDirectory: "/Users/pete",
+        )
+
+        let didWake = waker.wake(
+            worktreePath: "/Users/pete/Code/app/.capacitor/worktrees/batch-mobile",
+            batchName: "Mobile Prototype Polish",
+            prompt: "Read .capacitor/work-batch-context.md again",
+        )
+
+        XCTAssertTrue(didWake)
+        XCTAssertEqual(automationClient.focusedTerminals, ["term-1"])
+        XCTAssertEqual(automationClient.inputTexts.count, 1)
+        XCTAssertEqual(automationClient.inputTexts[0].text, "Read .capacitor/work-batch-context.md again")
+        XCTAssertEqual(automationClient.inputTexts[0].terminalID, "term-1")
+        XCTAssertEqual(automationClient.sentKeys.count, 1)
+        XCTAssertEqual(automationClient.sentKeys[0].key, "enter")
+        XCTAssertEqual(automationClient.sentKeys[0].terminalID, "term-1")
+    }
+
+    func testWorkBatchWakerDoesNotInputWhenNoWorktreeTerminalMatches() {
+        let automationClient = RecordingGhosttyAutomationClient()
+        automationClient.snapshot = GhosttyAppSnapshot(windows: [
+            GhosttyWindowSnapshot(
+                id: "window-1",
+                name: "Ghostty",
+                isFront: true,
+                tabs: [
+                    GhosttyTabSnapshot(
+                        id: "tab-1",
+                        name: "Other",
+                        index: 1,
+                        isSelected: true,
+                        terminals: [
+                            GhosttyTerminalSnapshot(
+                                id: "term-1",
+                                name: "Other",
+                                workingDirectory: "/Users/pete/Code/other",
+                            ),
+                        ],
+                        focusedTerminalID: "term-1",
+                    ),
+                ],
+            ),
+        ])
+        let waker = WorkBatchGhosttySessionWaker(
+            automationClient: automationClient,
+            homeDirectory: "/Users/pete",
+        )
+
+        let didWake = waker.wake(
+            worktreePath: "/Users/pete/Code/app/.capacitor/worktrees/batch-mobile",
+            batchName: "Mobile Prototype Polish",
+            prompt: "Read context",
+        )
+
+        XCTAssertFalse(didWake)
+        XCTAssertTrue(automationClient.inputTexts.isEmpty)
+        XCTAssertTrue(automationClient.sentKeys.isEmpty)
     }
 
     func testBestGhosttyRouteMatchPrefersWorkingDirectoryOverStaleTitle() {

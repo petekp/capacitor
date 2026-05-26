@@ -57,6 +57,37 @@ final class WorkBatchCompletionReportTests: XCTestCase {
         XCTAssertEqual(try store.loadReports().map(\.report), [validReport])
     }
 
+    func testReportStoreLoadsAgentWrittenFractionalSecondDates() throws {
+        let fileManager = FileManager.default
+        let tempDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        addTeardownBlock {
+            try? fileManager.removeItem(at: tempDir)
+        }
+
+        let directoryURL = tempDir.appendingPathComponent(WorkBatchCompletionReportStore.relativeDirectory, isDirectory: true)
+        try fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+        try """
+        {
+          "task_id": "task-green",
+          "status": "done",
+          "summary": "Added border",
+          "evidence": ["Changed CSS"],
+          "completed_at": "2026-05-25T19:02:00.000Z"
+        }
+        """.write(
+            to: directoryURL.appendingPathComponent("task-green.json"),
+            atomically: true,
+            encoding: .utf8,
+        )
+
+        let loaded = try WorkBatchCompletionReportStore(worktreePath: tempDir.path, fileManager: fileManager).loadReports()
+
+        XCTAssertEqual(loaded.count, 1)
+        XCTAssertEqual(loaded[0].report.taskID, "task-green")
+        XCTAssertEqual(loaded[0].report.completedAt, parseISO8601Date("2026-05-25T19:02:00.000Z"))
+    }
+
     func testDeletingReportRemovesAnyLoadedReportForTheTaskID() throws {
         let fileManager = FileManager.default
         let tempDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)

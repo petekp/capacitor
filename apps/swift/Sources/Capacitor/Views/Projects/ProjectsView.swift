@@ -549,7 +549,7 @@ struct ProjectsView: View {
         CompactProjectCardView(
             project: project,
             onTap: {
-                appState.launchTerminal(for: project)
+                appState.handlePrimaryProjectAction(for: project)
             },
             onInfoTap: appState.featureState.isProjectDetailsEnabled ? { appState.showProjectDetail(project) } : nil,
             onMoveToRecent: {

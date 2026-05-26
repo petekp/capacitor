@@ -19,6 +19,8 @@ struct WorkBatchBindingReconciliationResult: Equatable {
 }
 
 enum WorkBatchBindingReconciler {
+    typealias ProcessSessionLookup = (WorkBatchCockpitBinding) -> [String]
+
     static let defaultLaunchGrace: TimeInterval = 90
 
     static func reconcile(
@@ -27,6 +29,7 @@ enum WorkBatchBindingReconciler {
         sessions: [RuntimeSession],
         now: Date,
         launchGrace: TimeInterval = defaultLaunchGrace,
+        processSessionIDs: ProcessSessionLookup = { _ in [] },
     ) -> WorkBatchBindingReconciliationResult {
         var updatedState = state
         var updatedBindings: [WorkBatchCockpitBinding] = []
@@ -38,12 +41,17 @@ enum WorkBatchBindingReconciler {
                 .filter(isLiveSession)
                 .filter { sessionIsInsideBatchWorktree($0, worktreePath: binding.worktreePath) }
             let exactSessions = liveSessionsInWorktree.filter { $0.sessionId == binding.claudeSessionID }
-            let otherSessionIDs = liveSessionsInWorktree
+            let runtimeOtherSessionIDs = liveSessionsInWorktree
                 .map(\.sessionId)
                 .filter { $0 != binding.claudeSessionID }
-                .sorted()
+            let processSessionIDs = processSessionIDs(binding)
+            let processExactCount = processSessionIDs.count(where: { $0 == binding.claudeSessionID })
+            let processOtherSessionIDs = processSessionIDs.filter { $0 != binding.claudeSessionID }
+            let otherSessionIDs = Set(runtimeOtherSessionIDs + processOtherSessionIDs).sorted()
+            let hasDuplicateExactProcess = processExactCount > 1
+            let hasExactSession = !exactSessions.isEmpty || processExactCount > 0
 
-            if !otherSessionIDs.isEmpty {
+            if !otherSessionIDs.isEmpty || hasDuplicateExactProcess {
                 if updatedBinding.status != .waiting {
                     updatedBinding.status = .waiting
                     updatedBinding.updatedAt = now
@@ -59,10 +67,14 @@ enum WorkBatchBindingReconciler {
                 issues.append(WorkBatchBindingReconciliationIssue(
                     kind: .duplicateCockpit,
                     batchID: binding.batchID,
-                    sessionIDs: ([binding.claudeSessionID] + otherSessionIDs).sorted(),
+                    sessionIDs: duplicateIssueSessionIDs(
+                        bindingSessionID: binding.claudeSessionID,
+                        otherSessionIDs: otherSessionIDs,
+                        hasDuplicateExactProcess: hasDuplicateExactProcess,
+                    ),
                     message: "Multiple Claude Code sessions are active in the Batch Worktree.",
                 ))
-            } else if !exactSessions.isEmpty {
+            } else if hasExactSession {
                 if batchNeedsUser(binding.batchID, in: updatedState) {
                     if updatedBinding.status != .waiting {
                         updatedBinding.status = .waiting
@@ -129,6 +141,19 @@ enum WorkBatchBindingReconciler {
             return false
         }
         return session.isAlive ?? true
+    }
+
+    private static func duplicateIssueSessionIDs(
+        bindingSessionID: String,
+        otherSessionIDs: [String],
+        hasDuplicateExactProcess: Bool,
+    ) -> [String] {
+        var sessionIDs = Set(otherSessionIDs)
+        sessionIDs.insert(bindingSessionID)
+        if hasDuplicateExactProcess {
+            sessionIDs.insert("\(bindingSessionID) (duplicate process)")
+        }
+        return sessionIDs.sorted()
     }
 
     private static func shouldRemainLaunching(

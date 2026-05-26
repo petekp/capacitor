@@ -43,7 +43,7 @@ pub(super) fn is_managed_hook_command(cmd: Option<&str>) -> bool {
     let Some(command) = cmd else {
         return false;
     };
-    is_current_managed_hook_command(Some(command))
+    is_current_managed_hook_command(Some(command)) || is_retired_managed_hook_command(Some(command))
 }
 
 pub(super) fn is_hud_hook_url(url: Option<&str>) -> bool {
@@ -74,6 +74,42 @@ pub(super) fn is_current_managed_hook_command(cmd: Option<&str>) -> bool {
         return false;
     };
     command.trim() == managed_command_hook_command()
+}
+
+fn is_retired_managed_hook_command(cmd: Option<&str>) -> bool {
+    let Some(command) = cmd else {
+        return false;
+    };
+    let command = command.trim();
+    if command.is_empty() || is_current_managed_hook_command(Some(command)) {
+        return false;
+    }
+
+    command_posts_to_retired_hook_endpoint(command) || is_retired_handle_command(command)
+}
+
+fn command_posts_to_retired_hook_endpoint(command: &str) -> bool {
+    command.contains(HOOK_HTTP_URL) && command.contains("/usr/bin/curl")
+}
+
+fn is_retired_handle_command(command: &str) -> bool {
+    let mut remaining = command.trim();
+    loop {
+        if let Some(stripped) = remaining.strip_prefix("CAPACITOR_HOOK_MARKER=1 ") {
+            remaining = stripped.trim_start();
+            continue;
+        }
+        if let Some(stripped) = remaining.strip_prefix("CAPACITOR_CORE_ENABLED=1 ") {
+            remaining = stripped.trim_start();
+            continue;
+        }
+        break;
+    }
+
+    remaining == "hud-hook handle"
+        || remaining == "$HOME/.local/bin/hud-hook handle"
+        || remaining == "~/.local/bin/hud-hook handle"
+        || remaining.ends_with("/.local/bin/hud-hook handle")
 }
 
 pub(super) fn managed_inner_hook(contract: &ClaudeHookEventContract) -> InnerHook {
@@ -143,16 +179,26 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_is_managed_hook_command_accepts_only_current_contract_command() {
+    fn test_is_managed_hook_command_accepts_current_and_retired_capacitor_commands() {
+        let retired_no_auth_hook_command = format!(
+            "/bin/sh -c '/usr/bin/curl -fsS -X POST \"{}\" --data-binary @- >/dev/null 2>&1 || true'",
+            HOOK_HTTP_URL
+        );
+        let marker_prefixed_handle_command = format!(
+            "CAPACITOR_HOOK_MARKER=1 $HOME/.local/bin/{}",
+            retired_handle_command()
+        );
         let cases = [
             (managed_command_hook_command(), true),
-            (marker_prefixed_managed_command(), false),
-            (retired_prefixed_handle_command(), false),
+            (marker_prefixed_managed_command(), true),
+            (retired_no_auth_hook_command, true),
+            (marker_prefixed_handle_command, true),
+            (retired_prefixed_handle_command(), true),
             (
                 format!("$HOME/.local/bin/{}", retired_handle_command()),
-                false,
+                true,
             ),
-            (retired_handle_command(), false),
+            (retired_handle_command(), true),
             (retired_state_tracker_command(), false),
             (format!("echo {}", retired_handle_command()), false),
             ("custom-hud-hook-wrapper handle".to_string(), false),
@@ -166,6 +212,19 @@ mod tests {
                 "command mismatch for: {cmd}"
             );
         }
+    }
+
+    #[test]
+    fn test_current_managed_hook_command_accepts_only_current_contract_command() {
+        assert!(is_current_managed_hook_command(Some(
+            managed_command_hook_command().as_str()
+        )));
+        assert!(!is_current_managed_hook_command(Some(
+            retired_prefixed_handle_command().as_str()
+        )));
+        assert!(!is_current_managed_hook_command(Some(
+            marker_prefixed_managed_command().as_str()
+        )));
     }
 
     #[test]
