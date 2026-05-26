@@ -647,6 +647,82 @@ final class WorkBatchAutoRouterTests: XCTestCase {
         )
     }
 
+    func testNoClaimAfterDeliveryAttemptMarksBatchWaitingWithoutRepeatingWake() async throws {
+        let harness = try RouterHarness()
+        try harness.seedMobileBatch(
+            status: .working,
+            bindingStatus: .running,
+            taskStatus: .queued,
+            deliveryRecords: [
+                WorkBatchDeliveryRecord(
+                    batchID: "batch-mobile",
+                    lastContextWrittenAt: harness.now,
+                    lastDeliveryGeneration: "batch-mobile:current",
+                    lastDeliveryAttemptAt: harness.now,
+                    lastDeliveryAttemptKind: WorkBatchDeliveryAction.wakeExistingSession.rawValue,
+                    lastClaimAt: nil,
+                ),
+            ],
+        )
+        let terminalRecorder = TerminalScriptRecorder()
+        let wakeRecorder = ExistingTerminalWakeRecorder(result: true)
+        let router = WorkBatchAutoRouter(
+            classifier: { _ in throw NSError(domain: "test", code: 1) },
+            stateStoreFactory: { _ in harness.stateStore },
+            bindingStoreFactory: { _ in harness.bindingStore },
+            taskSessionCoordinator: WorkBatchTaskSessionCoordinator(
+                worktreeService: harness.worktreeService(expectedName: "should-not-launch"),
+                fileManager: harness.fileManager,
+                claudePathResolver: { "/opt/homebrew/bin/claude" },
+                runTerminalScript: { script in
+                    await terminalRecorder.record(script)
+                },
+                wakeExistingTerminal: { projectPath, sessionName, prompt in
+                    await wakeRecorder.record(
+                        projectPath: projectPath,
+                        sessionName: sessionName,
+                        prompt: prompt,
+                    )
+                },
+                bindingStoreFactory: { _ in harness.bindingStore },
+            ),
+            processSessionIDs: { binding in
+                binding.batchID == "batch-mobile" ? ["assigned-session-existing"] : []
+            },
+        )
+
+        _ = try await router.followThroughWorkBatchDelivery(
+            project: harness.project,
+            batchID: "batch-mobile",
+            preferredTaskID: "idea-old",
+            now: harness.now.addingTimeInterval(WorkBatchDeliveryPolicy.pickupClaimTimeout + 1),
+        )
+
+        let launchedScripts = await terminalRecorder.snapshot()
+        let wakeAttempts = await wakeRecorder.snapshot()
+        XCTAssertEqual(launchedScripts, [])
+        XCTAssertEqual(wakeAttempts, [])
+        let state = try harness.stateStore.load()
+        XCTAssertEqual(state.tasks.first?.status, .queued)
+        XCTAssertEqual(state.batches.first?.status, .waiting)
+        XCTAssertEqual(
+            state.batches.first?.currentActivitySummary,
+            "Claude Code has not picked up Adjust mobile spacing yet. Click to re-enter.",
+        )
+        XCTAssertEqual(
+            state.deliveryRecord(batchID: "batch-mobile")?.lastDeliveryAttemptKind,
+            WorkBatchDeliveryAction.wakeExistingSession.rawValue,
+        )
+
+        _ = try await router.followThroughWorkBatchDelivery(
+            project: harness.project,
+            batchID: "batch-mobile",
+            preferredTaskID: "idea-old",
+            now: harness.now.addingTimeInterval(WorkBatchDeliveryPolicy.pickupClaimTimeout + 2),
+        )
+        XCTAssertEqual(try harness.stateStore.load(), state)
+    }
+
     func testFailedNewSessionLaunchLeavesBatchWaitingNotWorking() async throws {
         let harness = try RouterHarness()
         struct LaunchError: Error {}

@@ -66,6 +66,44 @@ final class WorkBatchDeliveryPolicyTests: XCTestCase {
         )
     }
 
+    func testCurrentGenerationWakeAttemptTimesOutWithoutClaim() {
+        XCTAssertEqual(
+            WorkBatchDeliveryPolicy.decide(input(
+                bindingStatus: .running,
+                exactLiveSessionExists: true,
+                now: Self.now.addingTimeInterval(WorkBatchDeliveryPolicy.pickupClaimTimeout + 1),
+                deliveryRecord: WorkBatchDeliveryRecord(
+                    batchID: "batch-mobile",
+                    lastContextWrittenAt: Self.now,
+                    lastDeliveryGeneration: "batch-mobile:now",
+                    lastDeliveryAttemptAt: Self.now,
+                    lastDeliveryAttemptKind: WorkBatchDeliveryAction.wakeExistingSession.rawValue,
+                    lastClaimAt: nil,
+                ),
+            )),
+            .waitForPickupTimeout,
+        )
+    }
+
+    func testCurrentGenerationWakeAttemptDoesNotTimeoutAfterClaim() {
+        XCTAssertEqual(
+            WorkBatchDeliveryPolicy.decide(input(
+                bindingStatus: .running,
+                exactLiveSessionExists: true,
+                now: Self.now.addingTimeInterval(WorkBatchDeliveryPolicy.pickupClaimTimeout + 1),
+                deliveryRecord: WorkBatchDeliveryRecord(
+                    batchID: "batch-mobile",
+                    lastContextWrittenAt: Self.now,
+                    lastDeliveryGeneration: "batch-mobile:now",
+                    lastDeliveryAttemptAt: Self.now,
+                    lastDeliveryAttemptKind: WorkBatchDeliveryAction.wakeExistingSession.rawValue,
+                    lastClaimAt: Self.now.addingTimeInterval(10),
+                ),
+            )),
+            .queueOnly,
+        )
+    }
+
     func testPendingCheckpointWaitsForCheckpoint() {
         XCTAssertEqual(
             WorkBatchDeliveryPolicy.decide(input(
@@ -154,6 +192,7 @@ final class WorkBatchDeliveryPolicyTests: XCTestCase {
     private func input(
         bindingStatus: WorkBatchCockpitBindingStatus?,
         exactLiveSessionExists: Bool,
+        now: Date? = nil,
         mirrorWriteSucceeded: Bool = true,
         checkpoints: [WorkBatchCheckpointRecord] = [],
         issues: [WorkBatchBindingReconciliationIssue] = [],
@@ -161,6 +200,7 @@ final class WorkBatchDeliveryPolicyTests: XCTestCase {
     ) -> WorkBatchDeliveryPolicyInput {
         WorkBatchDeliveryPolicyInput(
             batchID: "batch-mobile",
+            now: now ?? Self.now,
             tasks: [
                 WorkBatchTaskRecord(
                     id: "task-green",

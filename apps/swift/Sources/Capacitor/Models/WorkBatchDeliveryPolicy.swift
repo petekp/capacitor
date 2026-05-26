@@ -8,11 +8,13 @@ enum WorkBatchDeliveryAction: String, Equatable {
     case waitForCheckpoint = "wait_for_checkpoint"
     case waitForDuplicateCockpit = "wait_for_duplicate_cockpit"
     case waitForDeliveryFailure = "wait_for_delivery_failure"
+    case waitForPickupTimeout = "wait_for_pickup_timeout"
     case safeWakeDeferred = "safe_wake_deferred"
 }
 
 struct WorkBatchDeliveryPolicyInput: Equatable {
     let batchID: String
+    let now: Date
     let tasks: [WorkBatchTaskRecord]
     let checkpoints: [WorkBatchCheckpointRecord]
     let binding: WorkBatchCockpitBinding?
@@ -23,6 +25,8 @@ struct WorkBatchDeliveryPolicyInput: Equatable {
 }
 
 enum WorkBatchDeliveryPolicy {
+    static let pickupClaimTimeout: TimeInterval = 5 * 60
+
     static func decide(_ input: WorkBatchDeliveryPolicyInput) -> WorkBatchDeliveryAction {
         guard input.mirrorWriteSucceeded else {
             return .waitForDeliveryFailure
@@ -43,8 +47,13 @@ enum WorkBatchDeliveryPolicy {
         }
 
         let hasOpenTasks = input.tasks.contains { $0.status != .done }
+        let hasQueuedTasks = input.tasks.contains { $0.status == .queued }
         guard hasOpenTasks else {
             return .queueOnly
+        }
+
+        if hasQueuedTasks, pickupClaimTimedOut(input.deliveryRecord, now: input.now) {
+            return .waitForPickupTimeout
         }
 
         switch binding.status {
@@ -83,5 +92,27 @@ enum WorkBatchDeliveryPolicy {
         ]
         return attemptedKinds.contains(record.lastDeliveryAttemptKind ?? "") &&
             lastDeliveryAttemptAt >= lastContextWrittenAt
+    }
+
+    private static func pickupClaimTimedOut(
+        _ record: WorkBatchDeliveryRecord?,
+        now: Date,
+    ) -> Bool {
+        guard let record,
+              let lastContextWrittenAt = record.lastContextWrittenAt,
+              let lastDeliveryAttemptAt = record.lastDeliveryAttemptAt,
+              lastDeliveryAttemptAt >= lastContextWrittenAt,
+              now.timeIntervalSince(lastDeliveryAttemptAt) >= pickupClaimTimeout
+        else {
+            return false
+        }
+
+        if let lastClaimAt = record.lastClaimAt,
+           lastClaimAt >= lastContextWrittenAt
+        {
+            return false
+        }
+
+        return true
     }
 }

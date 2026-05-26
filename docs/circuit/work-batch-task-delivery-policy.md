@@ -251,6 +251,8 @@ Acceptance:
 
 ### P1: No-Claim Watchdog
 
+Status: first implementation added on 2026-05-26.
+
 Implement:
 
 - Track `queued_at`, `last_context_written_at`, `last_delivery_attempt_at`, and `last_claim_at` for a batch or task.
@@ -262,6 +264,13 @@ Acceptance:
 - Capacitor does not repeatedly spam resumes or prompts.
 - The user can see "not picked up yet" instead of a false working state.
 - Manual cockpit use still works: if Claude later writes a claim or Done report, Capacitor recovers.
+
+Implementation note:
+
+- Current code uses the existing Task `updated_at` plus `last_context_written_at`, `last_delivery_attempt_at`, and `last_claim_at` as the first watchdog watermark.
+- After a wake/resume attempt for the current delivery generation, if no current-generation claim appears within five minutes, the delivery policy returns `wait_for_pickup_timeout`.
+- The router marks the batch `Waiting` with plain copy and does not send another wake/resume prompt.
+- A later valid claim, Done report, or Checkpoint still recovers through the normal refresh ingestion path.
 
 ### P1: Safe Wake Boundary
 

@@ -1114,6 +1114,7 @@ final class WorkBatchAutoRouter {
         let batchTasks = state.tasks.filter { $0.batchID == batchID }
         let policyAction = WorkBatchDeliveryPolicy.decide(WorkBatchDeliveryPolicyInput(
             batchID: batchID,
+            now: now,
             tasks: batchTasks,
             checkpoints: state.checkpoints.filter { $0.batchID == batchID },
             binding: binding,
@@ -1205,6 +1206,19 @@ final class WorkBatchAutoRouter {
             )
             return binding
 
+        case .waitForPickupTimeout:
+            let taskID = preferredTaskID ?? firstQueuedTaskID(in: batchTasks) ?? firstOpenTaskID(in: batchTasks)
+            let taskTitle = taskID
+                .flatMap { id in batchTasks.first(where: { $0.id == id })?.displayTitle }
+                ?? "the queued Task"
+            try markBatchPickupTimedOut(
+                stateStore: stateStore,
+                batchID: batchID,
+                summary: "Claude Code has not picked up \(taskTitle) yet. Click to re-enter.",
+                now: now,
+            )
+            return binding
+
         case .resumeExistingSession:
             guard let binding else { return nil }
             let taskID = preferredTaskID ?? firstOpenTaskID(in: batchTasks)
@@ -1247,6 +1261,10 @@ final class WorkBatchAutoRouter {
 
     private func firstOpenTaskID(in tasks: [WorkBatchTaskRecord]) -> String? {
         tasks.first { $0.status != .done }?.id
+    }
+
+    private func firstQueuedTaskID(in tasks: [WorkBatchTaskRecord]) -> String? {
+        tasks.first { $0.status == .queued }?.id
     }
 
     private func exactLiveSessionExists(for binding: WorkBatchCockpitBinding) -> Bool {
@@ -1497,6 +1515,38 @@ final class WorkBatchAutoRouter {
             state.tasks[taskIndex].status = .queued
             state.tasks[taskIndex].updatedAt = now
         }
+        try stateStore.save(state)
+    }
+
+    private func markBatchPickupTimedOut(
+        stateStore: WorkBatchStateStore,
+        batchID: String,
+        summary: String,
+        now: Date,
+    ) throws {
+        var state = try stateStore.load()
+        var didChange = false
+        if let batchIndex = state.batches.firstIndex(where: { $0.id == batchID }) {
+            if state.batches[batchIndex].status != .waiting ||
+                state.batches[batchIndex].currentActivitySummary != summary
+            {
+                state.batches[batchIndex].status = .waiting
+                state.batches[batchIndex].currentActivitySummary = summary
+                state.batches[batchIndex].updatedAt = now
+                didChange = true
+            }
+        }
+        for taskIndex in state.tasks.indices where state.tasks[taskIndex].batchID == batchID {
+            guard state.tasks[taskIndex].status != .done,
+                  state.tasks[taskIndex].status != .needsYou
+            else { continue }
+            if state.tasks[taskIndex].status != .queued {
+                state.tasks[taskIndex].status = .queued
+                state.tasks[taskIndex].updatedAt = now
+                didChange = true
+            }
+        }
+        guard didChange else { return }
         try stateStore.save(state)
     }
 
