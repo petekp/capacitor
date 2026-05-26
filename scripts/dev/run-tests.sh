@@ -95,7 +95,7 @@ fi
 echo ""
 
 echo -e "${YELLOW}[7/10] Rust Tests${NC}"
-if cargo test 2>&1; then
+if cargo test --lib --bins --tests 2>&1; then
     echo -e "${GREEN}✓ Rust tests passed${NC}"
 else
     echo -e "${RED}✗ Rust tests failed${NC}"

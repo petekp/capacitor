@@ -6,6 +6,7 @@ REPO_ROOT="$(git -C "$SCRIPT_DIR/../.." rev-parse --show-toplevel)"
 HOOK_PATH="$(git -C "$REPO_ROOT" rev-parse --git-path hooks/pre-commit)"
 
 mkdir -p "$(dirname "$HOOK_PATH")"
+rm -f "$HOOK_PATH"
 
 cat > "$HOOK_PATH" <<'EOF'
 #!/usr/bin/env bash

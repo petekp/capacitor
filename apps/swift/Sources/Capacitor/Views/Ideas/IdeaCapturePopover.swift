@@ -5,6 +5,8 @@ enum TaskCaptureSurfaceCopy {
     static let cardActionTitle = "Task"
     static let cardActionAccessibilityLabel = "Add task to this project"
     static let cardActionHelp = "Add task"
+    static let cardAccessibilityActionName = "Add Task"
+    static let cardContextMenuTitle = "Add Task..."
 
     static let placeholders = [
         "What should Capacitor do?",
@@ -23,6 +25,8 @@ enum TaskCaptureSurfaceCopy {
         cardActionTitle,
         cardActionAccessibilityLabel,
         cardActionHelp,
+        cardAccessibilityActionName,
+        cardContextMenuTitle,
         keyboardHint,
         submitTitle,
         emptyQueueTitle,

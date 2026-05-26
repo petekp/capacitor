@@ -14,8 +14,8 @@ A glanceable, bring-your-own-terminal UI for navigating multiple coding agent se
 # Rust
 cargo fmt                                  # Format (required before commits)
 cargo clippy -- -D warnings                # Lint
-cargo test                                 # All Rust tests
-cargo test -p capacitor-core               # Core crate only
+cargo test --lib --bins --tests            # All Rust testable targets
+cargo test -p capacitor-core --lib --bins --tests  # Core crate testable targets
 cargo test -p capacitor-core --test delegation_contract  # Delegation contracts
 
 # Swift

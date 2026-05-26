@@ -155,8 +155,10 @@ jobs:
       - name: Check for unused dependencies
         run: cargo machete
 
-      - name: Run cargo test
-        run: cargo test
+      - name: Run Rust tests
+        # Test Rust's testable targets without also building exported staticlib/cdylib artifacts.
+        # The release artifact path is covered separately by Build Smoke Test.
+        run: cargo test --lib --bins --tests
 
   test-hook:
     name: Test Hook Binary

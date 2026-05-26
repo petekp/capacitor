@@ -594,6 +594,11 @@ struct ProjectCard: View {
             .applyIf(onInfoTap) { view, action in
                 view.accessibilityAction(named: "View Details", action)
             }
+            .applyIf(onCaptureIdea) { view, action in
+                view.accessibilityAction(named: TaskCaptureSurfaceCopy.cardAccessibilityActionName) {
+                    action(.zero)
+                }
+            }
             .applyIf(accessibilityHintText) { view, hint in
                 view.accessibilityHint(hint)
             }

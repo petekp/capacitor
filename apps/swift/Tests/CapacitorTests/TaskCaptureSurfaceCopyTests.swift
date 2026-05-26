@@ -6,6 +6,8 @@ final class TaskCaptureSurfaceCopyTests: XCTestCase {
         XCTAssertEqual(TaskCaptureSurfaceCopy.cardActionTitle, "Task")
         XCTAssertEqual(TaskCaptureSurfaceCopy.cardActionAccessibilityLabel, "Add task to this project")
         XCTAssertEqual(TaskCaptureSurfaceCopy.cardActionHelp, "Add task")
+        XCTAssertEqual(TaskCaptureSurfaceCopy.cardAccessibilityActionName, "Add Task")
+        XCTAssertEqual(TaskCaptureSurfaceCopy.cardContextMenuTitle, "Add Task...")
         XCTAssertEqual(TaskCaptureSurfaceCopy.submitTitle, "Add Task")
         XCTAssertEqual(TaskCaptureSurfaceCopy.emptyQueueTitle, "No tasks queued")
     }
