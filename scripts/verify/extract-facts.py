@@ -18,10 +18,12 @@ from verifier_common import (
     list_repo_files,
     load_json,
     module_name_for,
+    parse_tree_sitter_source,
     read_text,
     relpath,
     sha256_text,
     strip_string_delimiters,
+    tree_sitter_root_node,
     tree_sitter_string_literals,
     unique_entries,
     utc_now,
@@ -188,16 +190,6 @@ def raw_text_entries(content: str) -> list[dict[str, Any]]:
     )
 
 
-def parse_tree_sitter_source(parser, content: str):
-    encoded = content.encode("utf-8")
-    try:
-        return parser.parse(encoded)
-    except TypeError as error:
-        if "bytes" not in str(error) and "str" not in str(error):
-            raise
-        return parser.parse(content)
-
-
 def identifier_refs_for(language: str, content: str, *, tree=None) -> list[dict[str, Any]]:
     if language not in {"python", "rust", "swift"}:
         return []
@@ -231,7 +223,7 @@ def identifier_refs_for(language: str, content: str, *, tree=None) -> list[dict[
         for child in node.children:
             visit(child)
 
-    visit(tree.root_node)
+    visit(tree_sitter_root_node(tree))
     return unique_entries(tokens)
 
 
@@ -539,7 +531,7 @@ def ast_fact_sets(language: str, content: str, *, tree=None) -> dict[str, list[d
         for child in node.children:
             visit(child)
 
-    visit(tree.root_node)
+    visit(tree_sitter_root_node(tree))
     return {key: unique_entries(value) for key, value in facts.items()}
 
 

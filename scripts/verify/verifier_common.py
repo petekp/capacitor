@@ -335,10 +335,20 @@ def get_tree_sitter_parser(language: str):
     ) from last_error
 
 
+def parse_tree_sitter_source(parser, content: str):
+    encoded = content.encode("utf-8")
+    try:
+        return parser.parse(encoded)
+    except TypeError as error:
+        if "bytes" not in str(error) and "str" not in str(error):
+            raise
+        return parser.parse(content)
+
+
 def tree_sitter_string_literals(language: str, content: str, *, tree=None) -> list[dict[str, Any]]:
     if tree is None:
         parser = get_tree_sitter_parser(language)
-        tree = parser.parse(content.encode("utf-8"))
+        tree = parse_tree_sitter_source(parser, content)
     string_types = {
         "rust": {"string_literal", "raw_string_literal"},
         "swift": {"line_string_literal", "multi_line_string_literal", "string_literal"},
@@ -370,8 +380,15 @@ def tree_sitter_string_literals(language: str, content: str, *, tree=None) -> li
         for child in node.children:
             visit(child)
 
-    visit(tree.root_node)
+    visit(tree_sitter_root_node(tree))
     return literals
+
+
+def tree_sitter_root_node(tree):
+    root_node = tree.root_node
+    if callable(root_node):
+        return root_node()
+    return root_node
 
 
 def strip_string_delimiters(value: str) -> str:
