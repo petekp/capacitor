@@ -130,6 +130,15 @@ class ExtractorTests(unittest.TestCase):
 
             self.assertEqual([], module["http_routes"])
 
+    def test_parse_tree_sitter_source_supports_string_only_parser_bindings(self) -> None:
+        class StringOnlyParser:
+            def parse(self, source):
+                if isinstance(source, bytes):
+                    raise TypeError("argument 'source': 'bytes' object is not an instance of 'str'")
+                return ("parsed", source)
+
+        self.assertEqual(("parsed", "let value = 1"), self.extractor.parse_tree_sitter_source(StringOnlyParser(), "let value = 1"))
+
 
 if __name__ == "__main__":
     unittest.main()

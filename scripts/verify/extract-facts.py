@@ -188,13 +188,23 @@ def raw_text_entries(content: str) -> list[dict[str, Any]]:
     )
 
 
+def parse_tree_sitter_source(parser, content: str):
+    encoded = content.encode("utf-8")
+    try:
+        return parser.parse(encoded)
+    except TypeError as error:
+        if "bytes" not in str(error) and "str" not in str(error):
+            raise
+        return parser.parse(content)
+
+
 def identifier_refs_for(language: str, content: str, *, tree=None) -> list[dict[str, Any]]:
     if language not in {"python", "rust", "swift"}:
         return []
 
     if tree is None:
         parser = get_tree_sitter_parser(language)
-        tree = parser.parse(content.encode("utf-8"))
+        tree = parse_tree_sitter_source(parser, content)
     excluded_node_types = {
         "comment",
         "block_comment",
@@ -431,7 +441,7 @@ def rust_definition_value(node, content: str) -> str | None:
 def ast_fact_sets(language: str, content: str, *, tree=None) -> dict[str, list[dict[str, Any]]]:
     if tree is None:
         parser = get_tree_sitter_parser(language)
-        tree = parser.parse(content.encode("utf-8"))
+        tree = parse_tree_sitter_source(parser, content)
     facts = {
         "imports": [],
         "calls": [],
@@ -627,7 +637,7 @@ def extract_module(path: pathlib.Path, repo_root: pathlib.Path) -> dict[str, Any
     tree = None
     if language in {"rust", "swift"}:
         parser = get_tree_sitter_parser(language)
-        tree = parser.parse(content.encode("utf-8"))
+        tree = parse_tree_sitter_source(parser, content)
         string_literals = tree_sitter_string_literals(language, content, tree=tree)
     bindings = static_string_bindings(language, content)
 
