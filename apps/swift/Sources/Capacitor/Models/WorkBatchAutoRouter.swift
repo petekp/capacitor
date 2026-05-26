@@ -567,16 +567,30 @@ final class WorkBatchAutoRouter {
         }
 
         let task = state.tasks[taskIndex]
-        state.batches[batchIndex].status = .waiting
-        state.batches[batchIndex].currentActivitySummary = "Answered checkpoint for \(task.displayTitle). Claude Code will continue."
-        state.batches[batchIndex].updatedAt = now
+        let openTasks = state.tasks.filter { $0.batchID == batchID && $0.status != .done }
+        if openTasks.isEmpty {
+            // New Work Batch Done behavior: answering a stale checkpoint for an
+            // already-completed Task should close the attention item, not imply
+            // Claude Code has more work to continue.
+            state.batches[batchIndex].status = .idle
+            state.batches[batchIndex].currentActivitySummary = "Done: all Tasks completed."
+            state.batches[batchIndex].updatedAt = now
+            if bindings[bindingIndex].status != .done {
+                bindings[bindingIndex].status = .done
+                bindings[bindingIndex].updatedAt = now
+            }
+        } else {
+            state.batches[batchIndex].status = .waiting
+            state.batches[batchIndex].currentActivitySummary = "Answered checkpoint for \(task.displayTitle). Claude Code will continue."
+            state.batches[batchIndex].updatedAt = now
 
-        switch bindings[bindingIndex].status {
-        case .stale, .waiting, .done:
-            bindings[bindingIndex].status = .waiting
-            bindings[bindingIndex].updatedAt = now
-        case .launching, .running:
-            break
+            switch bindings[bindingIndex].status {
+            case .stale, .waiting, .done:
+                bindings[bindingIndex].status = .waiting
+                bindings[bindingIndex].updatedAt = now
+            case .launching, .running:
+                break
+            }
         }
 
         try stateStore.save(state)
@@ -610,6 +624,7 @@ final class WorkBatchAutoRouter {
     @discardableResult
     func openCockpit(binding: WorkBatchCockpitBinding) async throws -> ClaudeCodeTaskSessionLaunchRequest? {
         var currentBinding = binding
+        var focusOnlyExistingProcess = false
         if hasRuntimeSessionSnapshot {
             let bindingStore = bindingStoreFactory(binding.projectPath)
             let result = try reconcileBindings(
@@ -618,15 +633,17 @@ final class WorkBatchAutoRouter {
                 sessions: latestRuntimeSessions,
                 now: Date(),
             )
-            if hasDuplicateCockpitIssue(for: binding.batchID, in: result.issues) {
+            if hasBlockingDuplicateCockpitIssue(for: binding, in: result.issues) {
                 throw WorkBatchAutoRouterError.duplicateCockpit(batchName: binding.batchName)
             }
+            focusOnlyExistingProcess = hasAssignedSessionProcessDuplicateIssue(for: binding, in: result.issues)
             currentBinding = result.bindings.first(where: { $0.batchID == binding.batchID }) ?? binding
         }
 
         return try await taskSessionCoordinator.openExistingSession(
             currentBinding,
-            allowResumeWhenFocusFails: shouldResumeExistingBinding(currentBinding),
+            allowResumeWhenFocusFails: shouldResumeExistingBinding(currentBinding) && !focusOnlyExistingProcess,
+            preferFocusBeforeResume: true,
         )
     }
 
@@ -1030,13 +1047,56 @@ final class WorkBatchAutoRouter {
         }
     }
 
-    private func hasDuplicateCockpitIssue(
-        for batchID: String,
+    private func hasBlockingDuplicateCockpitIssue(
+        for binding: WorkBatchCockpitBinding,
         in issues: [WorkBatchBindingReconciliationIssue],
     ) -> Bool {
         issues.contains { issue in
-            issue.batchID == batchID && issue.kind == .duplicateCockpit
+            guard issue.batchID == binding.batchID, issue.kind == .duplicateCockpit else {
+                return false
+            }
+            // New Work Batch cockpit behavior: two processes attached to the
+            // same assigned Claude session are a delivery risk, but manual
+            // re-entry should still focus that cockpit. Different session IDs
+            // in the same worktree are still ambiguous and must block.
+            return issue.sessionIDs.contains {
+                isForeignDuplicateSessionID($0, assignedSessionID: binding.claudeSessionID)
+            }
         }
+    }
+
+    private func hasAssignedSessionProcessDuplicateIssue(
+        for binding: WorkBatchCockpitBinding,
+        in issues: [WorkBatchBindingReconciliationIssue],
+    ) -> Bool {
+        issues.contains { issue in
+            issue.batchID == binding.batchID &&
+                issue.kind == .duplicateCockpit &&
+                issue.sessionIDs.contains(assignedSessionDuplicateProcessMarker(binding.claudeSessionID))
+        }
+    }
+
+    private func isForeignDuplicateSessionID(_ sessionID: String, assignedSessionID: String) -> Bool {
+        sessionID != assignedSessionID && sessionID != assignedSessionDuplicateProcessMarker(assignedSessionID)
+    }
+
+    private func assignedSessionDuplicateProcessMarker(_ assignedSessionID: String) -> String {
+        "\(assignedSessionID) (duplicate process)"
+    }
+
+    private func duplicateCockpitSummary(
+        for binding: WorkBatchCockpitBinding?,
+        batchID: String,
+        issues: [WorkBatchBindingReconciliationIssue],
+    ) -> String {
+        guard let binding,
+              binding.batchID == batchID,
+              hasAssignedSessionProcessDuplicateIssue(for: binding, in: issues),
+              !hasBlockingDuplicateCockpitIssue(for: binding, in: issues)
+        else {
+            return "Multiple Claude Code sessions match this Work Batch."
+        }
+        return "Claude Code is already open; click to re-enter."
     }
 
     @discardableResult
@@ -1113,19 +1173,24 @@ final class WorkBatchAutoRouter {
             return binding
 
         case .waitForDuplicateCockpit:
+            let summary = duplicateCockpitSummary(
+                for: binding,
+                batchID: batchID,
+                issues: reconciliationIssues,
+            )
             if let taskID = preferredTaskID ?? firstOpenTaskID(in: batchTasks) {
                 try markReconciliationBlocked(
                     stateStore: stateStore,
                     batchID: batchID,
                     taskID: taskID,
-                    summary: "Multiple Claude Code sessions match this Work Batch.",
+                    summary: summary,
                     now: now,
                 )
             } else {
                 try markBatchDeliveryWaiting(
                     stateStore: stateStore,
                     batchID: batchID,
-                    summary: "Multiple Claude Code sessions match this Work Batch.",
+                    summary: summary,
                     now: now,
                 )
             }

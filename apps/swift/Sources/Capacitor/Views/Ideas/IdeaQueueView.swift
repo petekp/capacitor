@@ -242,11 +242,11 @@ struct IdeaQueueView: View {
 
     private var emptyState: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("No ideas in queue")
+            Text(TaskCaptureSurfaceCopy.emptyQueueTitle)
                 .font(AppTypography.body)
                 .foregroundColor(.white.opacity(0.5))
 
-            Text("Hover over the project card and click \"+ Idea\" to add one")
+            Text(TaskCaptureSurfaceCopy.emptyQueueHint)
                 .font(AppTypography.caption)
                 .foregroundColor(.white.opacity(0.4))
         }
@@ -356,7 +356,7 @@ struct IdeaQueueRow: View {
                         .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
                 }
                 .buttonStyle(.plain)
-                .help("Remove idea")
+                .help("Remove task")
             }
         }
         .transition(.opacity.combined(with: .scale(scale: 0.9)))

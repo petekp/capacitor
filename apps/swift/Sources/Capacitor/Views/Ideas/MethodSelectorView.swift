@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// A sheet that presents available method templates for an idea.
+/// Legacy sheet that presents available method templates for a captured Task.
 /// When a method is selected, it calls the `onSelect` callback with the method ID.
 struct MethodSelectorView: View {
     let methods: [MethodTemplate]
@@ -29,7 +29,7 @@ struct MethodSelectorView: View {
                 .accessibilityIdentifier(AccessibilityIdentifiers.methodSelectorDismissIdentifier)
             }
 
-            Text("Choose how Capacitor should orchestrate this idea")
+            Text("Choose how Capacitor should handle this task")
                 .font(AppTypography.bodySecondary)
                 .foregroundColor(.white.opacity(0.6))
 

@@ -636,7 +636,8 @@ final class WorkBatchAutoRouterTests: XCTestCase {
         XCTAssertEqual(wakes.count, 1)
         XCTAssertEqual(wakes[0].projectPath, harness.mobileWorktreePath)
         XCTAssertEqual(wakes[0].sessionName, "Mobile prototype")
-        XCTAssertTrue(wakes[0].prompt.contains("Read .capacitor/work-batch-context.md again"))
+        XCTAssertEqual(wakes[0].prompt, "Assessing updated tasks...")
+        XCTAssertFalse(wakes[0].prompt.contains("Task claim"))
         let updatedState = try harness.stateStore.load()
         XCTAssertEqual(updatedState.tasks.first(where: { $0.id == "idea-green" })?.status, .queued)
         XCTAssertEqual(updatedState.batches[0].currentActivitySummary, "Claude Code was nudged to pick up Add green border around the mobile prototype.")
@@ -1015,7 +1016,10 @@ final class WorkBatchAutoRouterTests: XCTestCase {
         let scripts = await terminalRecorder.snapshot()
         XCTAssertEqual(scripts.count, 1)
         XCTAssertTrue(scripts[0].contains("--resume"))
-        XCTAssertTrue(scripts[0].contains("Read .capacitor/work-batch-context.md again"))
+        XCTAssertTrue(scripts[0].contains("--append-system-prompt-file"))
+        XCTAssertTrue(scripts[0].contains(".capacitor/work-batch-agent-instructions.md"))
+        XCTAssertFalse(scripts[0].contains("Task claim"))
+        XCTAssertTrue(scripts[0].contains("Assessing updated tasks..."))
     }
 
     func testProjectionReadsStoredBatchesAndBindings() throws {
@@ -1224,6 +1228,55 @@ final class WorkBatchAutoRouterTests: XCTestCase {
         XCTAssertEqual(state.tasks.first(where: { $0.id == "idea-green" })?.status, .queued)
     }
 
+    func testDuplicateAssignedSessionProcessKeepsUserFacingSummaryActionable() async throws {
+        let harness = try RouterHarness()
+        try harness.seedMobileBatch(status: .working, bindingStatus: .running)
+        let terminalRecorder = TerminalScriptRecorder()
+        let router = WorkBatchAutoRouter(
+            classifier: { request in
+                .existing(
+                    taskID: request.task.id,
+                    batchID: "batch-mobile",
+                    confidence: 0.88,
+                    rationale: "Same mobile prototype area.",
+                    summary: "Added to Mobile prototype.",
+                    createdAt: harness.now,
+                )
+            },
+            stateStoreFactory: { _ in harness.stateStore },
+            bindingStoreFactory: { _ in harness.bindingStore },
+            taskSessionCoordinator: WorkBatchTaskSessionCoordinator(
+                worktreeService: harness.worktreeService(expectedName: "should-not-launch"),
+                fileManager: harness.fileManager,
+                claudePathResolver: { "/opt/homebrew/bin/claude" },
+                runTerminalScript: { script in
+                    await terminalRecorder.record(script)
+                },
+                bindingStoreFactory: { _ in harness.bindingStore },
+            ),
+            processSessionIDs: { _ in ["assigned-session-existing", "assigned-session-existing"] },
+        )
+        router.reconcileBindings(
+            projects: [harness.project],
+            sessions: [],
+            now: harness.now,
+        )
+
+        let result = try await router.routeCapturedTask(
+            project: harness.project,
+            idea: harness.idea(id: "idea-green", title: "Add green border around the mobile prototype"),
+            now: harness.now,
+        )
+
+        XCTAssertFalse(result.startedNewSession)
+        let scripts = await terminalRecorder.snapshot()
+        XCTAssertTrue(scripts.isEmpty)
+        let state = try harness.stateStore.load()
+        XCTAssertEqual(state.batches.first?.status, .waiting)
+        XCTAssertEqual(state.batches.first?.currentActivitySummary, "Claude Code is already open; click to re-enter.")
+        XCTAssertEqual(state.tasks.first(where: { $0.id == "idea-green" })?.status, .queued)
+    }
+
     func testPendingCheckpointPreventsResumeAfterNewRelatedTask() async throws {
         let harness = try RouterHarness()
         try harness.seedMobileBatch(status: .waiting, bindingStatus: .waiting)
@@ -1321,6 +1374,123 @@ final class WorkBatchAutoRouterTests: XCTestCase {
             XCTAssertEqual(error, .duplicateCockpit(batchName: "Mobile prototype"))
         }
 
+        let scripts = await terminalRecorder.snapshot()
+        XCTAssertTrue(scripts.isEmpty)
+    }
+
+    func testOpenCockpitFocusesAssignedSessionWhenOnlyDuplicateProcessMatches() async throws {
+        let harness = try RouterHarness()
+        try harness.seedMobileBatch(status: .waiting, bindingStatus: .waiting)
+        let binding = try XCTUnwrap(harness.bindingStore.binding(batchID: "batch-mobile"))
+        let terminalRecorder = TerminalScriptRecorder()
+        let focusRecorder = ExistingTerminalFocusRecorder(result: true)
+        let router = WorkBatchAutoRouter(
+            classifier: { _ in throw NSError(domain: "test", code: 1) },
+            stateStoreFactory: { _ in harness.stateStore },
+            bindingStoreFactory: { _ in harness.bindingStore },
+            taskSessionCoordinator: WorkBatchTaskSessionCoordinator(
+                fileManager: harness.fileManager,
+                claudePathResolver: { "/opt/homebrew/bin/claude" },
+                runTerminalScript: { script in
+                    await terminalRecorder.record(script)
+                },
+                focusExistingTerminal: { projectPath, sessionName in
+                    await focusRecorder.record(projectPath: projectPath, sessionName: sessionName)
+                },
+                bindingStoreFactory: { _ in harness.bindingStore },
+            ),
+            processSessionIDs: { _ in ["assigned-session-existing", "assigned-session-existing"] },
+        )
+        router.reconcileBindings(
+            projects: [harness.project],
+            sessions: [],
+            now: harness.now,
+        )
+
+        let request = try await router.openCockpit(binding: binding)
+
+        XCTAssertNil(request)
+        let focusAttempts = await focusRecorder.snapshot()
+        XCTAssertEqual(focusAttempts.count, 1)
+        XCTAssertEqual(focusAttempts[0].projectPath, harness.mobileWorktreePath)
+        XCTAssertEqual(focusAttempts[0].sessionName, "Mobile prototype")
+        let scripts = await terminalRecorder.snapshot()
+        XCTAssertTrue(scripts.isEmpty)
+    }
+
+    func testOpenCockpitDoesNotResumeWhenDuplicateAssignedProcessCannotBeFocused() async throws {
+        let harness = try RouterHarness()
+        try harness.seedMobileBatch(status: .waiting, bindingStatus: .waiting)
+        let binding = try XCTUnwrap(harness.bindingStore.binding(batchID: "batch-mobile"))
+        let terminalRecorder = TerminalScriptRecorder()
+        let focusRecorder = ExistingTerminalFocusRecorder(result: false)
+        let router = WorkBatchAutoRouter(
+            classifier: { _ in throw NSError(domain: "test", code: 1) },
+            stateStoreFactory: { _ in harness.stateStore },
+            bindingStoreFactory: { _ in harness.bindingStore },
+            taskSessionCoordinator: WorkBatchTaskSessionCoordinator(
+                fileManager: harness.fileManager,
+                claudePathResolver: { "/opt/homebrew/bin/claude" },
+                runTerminalScript: { script in
+                    await terminalRecorder.record(script)
+                },
+                focusExistingTerminal: { projectPath, sessionName in
+                    await focusRecorder.record(projectPath: projectPath, sessionName: sessionName)
+                },
+                bindingStoreFactory: { _ in harness.bindingStore },
+            ),
+            processSessionIDs: { _ in ["assigned-session-existing", "assigned-session-existing"] },
+        )
+        router.reconcileBindings(
+            projects: [harness.project],
+            sessions: [],
+            now: harness.now,
+        )
+
+        do {
+            _ = try await router.openCockpit(binding: binding)
+            XCTFail("Expected focus failure to stop before spawning another duplicate process")
+        } catch let error as WorkBatchTaskSessionError {
+            XCTAssertEqual(error, .existingSessionFocusFailed)
+        }
+
+        let focusAttempts = await focusRecorder.snapshot()
+        XCTAssertEqual(focusAttempts.count, 1)
+        XCTAssertEqual(focusAttempts[0].sessionName, "Mobile prototype")
+        let scripts = await terminalRecorder.snapshot()
+        XCTAssertTrue(scripts.isEmpty)
+    }
+
+    func testOpenCockpitFocusesVisibleStaleBindingBeforeResume() async throws {
+        let harness = try RouterHarness()
+        try harness.seedMobileBatch(status: .waiting, bindingStatus: .stale)
+        let binding = try XCTUnwrap(harness.bindingStore.binding(batchID: "batch-mobile"))
+        let terminalRecorder = TerminalScriptRecorder()
+        let focusRecorder = ExistingTerminalFocusRecorder(result: true)
+        let router = WorkBatchAutoRouter(
+            classifier: { _ in throw NSError(domain: "test", code: 1) },
+            stateStoreFactory: { _ in harness.stateStore },
+            bindingStoreFactory: { _ in harness.bindingStore },
+            taskSessionCoordinator: WorkBatchTaskSessionCoordinator(
+                fileManager: harness.fileManager,
+                claudePathResolver: { "/opt/homebrew/bin/claude" },
+                runTerminalScript: { script in
+                    await terminalRecorder.record(script)
+                },
+                focusExistingTerminal: { projectPath, sessionName in
+                    await focusRecorder.record(projectPath: projectPath, sessionName: sessionName)
+                },
+                bindingStoreFactory: { _ in harness.bindingStore },
+            ),
+        )
+
+        let request = try await router.openCockpit(binding: binding)
+
+        XCTAssertNil(request)
+        let focusAttempts = await focusRecorder.snapshot()
+        XCTAssertEqual(focusAttempts.count, 1)
+        XCTAssertEqual(focusAttempts[0].projectPath, harness.mobileWorktreePath)
+        XCTAssertEqual(focusAttempts[0].sessionName, "Mobile prototype")
         let scripts = await terminalRecorder.snapshot()
         XCTAssertTrue(scripts.isEmpty)
     }
@@ -1669,6 +1839,60 @@ final class WorkBatchAutoRouterTests: XCTestCase {
         XCTAssertTrue(mirror.contains("[queued] Adjust mobile spacing (`idea-old`)"))
         XCTAssertTrue(mirror.contains("[answered] Which green token should I use? (`checkpoint-green-token`, Task `idea-old`)"))
         XCTAssertTrue(mirror.contains("User response: Use the production green token."))
+    }
+
+    func testSubmitCheckpointResponseForDoneTaskClosesStaleAttentionWithoutReopeningWork() throws {
+        let harness = try RouterHarness()
+        try harness.seedMobileBatch(status: .waiting, bindingStatus: .waiting)
+        var state = try harness.stateStore.load()
+        state.tasks[0].status = .done
+        state.batches[0].currentActivitySummary = "Checkpoint ready: Did Capacitor ingest the completion?"
+        state.checkpoints = [
+            WorkBatchCheckpointRecord(
+                id: "checkpoint-ingestion",
+                batchID: "batch-mobile",
+                taskID: "idea-old",
+                question: "Did Capacitor ingest the completion?",
+                reason: "The worker already wrote a done report.",
+                recommendedAction: "Confirm the task is complete.",
+                status: .pending,
+                requestedAt: harness.now,
+                respondedAt: nil,
+                response: nil,
+                updatedAt: harness.now,
+            ),
+        ]
+        try harness.stateStore.save(state)
+        let router = WorkBatchAutoRouter(
+            classifier: { _ in throw NSError(domain: "test", code: 1) },
+            stateStoreFactory: { _ in harness.stateStore },
+            bindingStoreFactory: { _ in harness.bindingStore },
+        )
+
+        let result = try router.submitCheckpointResponse(
+            project: harness.project,
+            batchID: "batch-mobile",
+            checkpointID: "checkpoint-ingestion",
+            response: "Capacitor has ingested it; no more code changes needed.",
+            now: harness.now.addingTimeInterval(20),
+        )
+
+        XCTAssertEqual(result.task.status, .done)
+        XCTAssertEqual(result.checkpoint.status, .answered)
+        let updatedState = try harness.stateStore.load()
+        XCTAssertEqual(updatedState.tasks.first?.status, .done)
+        XCTAssertEqual(updatedState.checkpoints.first?.status, .answered)
+        XCTAssertEqual(updatedState.batches.first?.status, .idle)
+        XCTAssertEqual(updatedState.batches.first?.currentActivitySummary, "Done: all Tasks completed.")
+        XCTAssertEqual(try harness.bindingStore.binding(batchID: "batch-mobile")?.status, .done)
+
+        let mirror = try String(
+            contentsOf: URL(fileURLWithPath: harness.mobileWorktreePath)
+                .appendingPathComponent(WorkBatchContextMirror.relativePath),
+            encoding: .utf8,
+        )
+        XCTAssertTrue(mirror.contains("[done] Adjust mobile spacing (`idea-old`)"))
+        XCTAssertTrue(mirror.contains("[answered] Did Capacitor ingest the completion? (`checkpoint-ingestion`, Task `idea-old`)"))
     }
 
     func testCheckpointResponseFollowThroughRunsDeliveryPolicy() async throws {
@@ -2044,6 +2268,29 @@ private actor TerminalScriptRecorder {
 
     func snapshot() -> [String] {
         scripts
+    }
+}
+
+private actor ExistingTerminalFocusRecorder {
+    struct Attempt: Equatable {
+        let projectPath: String
+        let sessionName: String?
+    }
+
+    private let result: Bool
+    private var attempts: [Attempt] = []
+
+    init(result: Bool) {
+        self.result = result
+    }
+
+    func record(projectPath: String, sessionName: String?) -> Bool {
+        attempts.append(Attempt(projectPath: projectPath, sessionName: sessionName))
+        return result
+    }
+
+    func snapshot() -> [Attempt] {
+        attempts
     }
 }
 

@@ -3,6 +3,23 @@ import Foundation
 import XCTest
 
 final class WorkBatchTaskSessionTests: XCTestCase {
+    private final class ActivationLogCollector {
+        private let lock = NSLock()
+        private var lines: [String] = []
+
+        func append(_ line: String) {
+            lock.lock()
+            defer { lock.unlock() }
+            lines.append(line)
+        }
+
+        func snapshot() -> [String] {
+            lock.lock()
+            defer { lock.unlock() }
+            return lines
+        }
+    }
+
     func testClaudeStartRequestUsesAssignedSessionID() {
         let request = ClaudeCodeTaskSessionLaunchRequest(
             worktreePath: "/tmp/project/.capacitor/worktrees/batch-ui",
@@ -26,27 +43,59 @@ final class WorkBatchTaskSessionTests: XCTestCase {
         XCTAssertFalse(request.arguments.contains("--resume"))
     }
 
-    func testInitialPromptIsSingleLineForTerminalLaunchScripts() {
+    func testInitialPromptIsOperatorFacingAndSingleLine() {
         let prompt = WorkBatchTaskSessionCoordinator.initialPrompt(
             contextMirrorRelativePath: WorkBatchContextMirror.relativePath,
         )
 
         XCTAssertFalse(prompt.contains("\n"))
-        XCTAssertTrue(prompt.contains("Read .capacitor/work-batch-context.md first"))
-        XCTAssertTrue(prompt.contains("write the Task claim"))
-        XCTAssertTrue(prompt.contains("write the Done report"))
+        XCTAssertEqual(prompt, "Assessing tasks...")
+        XCTAssertFalse(prompt.contains("Read .capacitor/work-batch-context.md"))
+        XCTAssertFalse(prompt.contains("Task claim"))
+        XCTAssertFalse(prompt.contains("Done report"))
+        XCTAssertFalse(prompt.contains("Checkpoint request"))
     }
 
-    func testResumePromptIsSingleLineAndNudgesClaudeBackToBatchContext() {
+    func testResumePromptIsOperatorFacingAndSingleLine() {
         let prompt = WorkBatchTaskSessionCoordinator.resumePrompt(
             contextMirrorRelativePath: WorkBatchContextMirror.relativePath,
         )
 
         XCTAssertFalse(prompt.contains("\n"))
-        XCTAssertTrue(prompt.contains("Read .capacitor/work-batch-context.md again"))
-        XCTAssertTrue(prompt.contains("write the Task claim"))
-        XCTAssertTrue(prompt.contains("reopened Task"))
+        XCTAssertEqual(prompt, "Assessing updated tasks...")
+        XCTAssertFalse(prompt.contains("Read .capacitor/work-batch-context.md"))
+        XCTAssertFalse(prompt.contains("Task claim"))
+        XCTAssertFalse(prompt.contains("Done report"))
+        XCTAssertFalse(prompt.contains("Checkpoint request"))
+    }
+
+    func testAgentInstructionsPromptCarriesHiddenBatchContract() {
+        let prompt = WorkBatchTaskSessionCoordinator.agentInstructionsPrompt(
+            contextMirrorRelativePath: WorkBatchContextMirror.relativePath,
+        )
+
+        XCTAssertFalse(prompt.contains("\n"))
+        XCTAssertTrue(prompt.contains("Read .capacitor/work-batch-context.md"))
+        XCTAssertTrue(prompt.contains("Task claim"))
         XCTAssertTrue(prompt.contains("Done report"))
+        XCTAssertTrue(prompt.contains("Checkpoint request"))
+        XCTAssertTrue(prompt.contains("Do not narrate Capacitor artifact mechanics"))
+    }
+
+    func testLaunchRequestAppendsSystemPromptFileBeforeVisiblePrompt() {
+        let request = ClaudeCodeTaskSessionLaunchRequest(
+            worktreePath: "/tmp/project/.capacitor/worktrees/batch-ui",
+            batchName: "Mobile prototype",
+            sessionID: "56c839a4-3a6c-46a1-9e04-c9d6bde7f4b8",
+            appendedSystemPromptFile: ".capacitor/work-batch-agent-instructions.md",
+            mode: .start(prompt: "Assessing tasks..."),
+        )
+
+        XCTAssertEqual(request.arguments.suffix(3), [
+            "--append-system-prompt-file",
+            ".capacitor/work-batch-agent-instructions.md",
+            "Assessing tasks...",
+        ])
     }
 
     func testClaudeResumeRequestUsesAssignedSessionID() {
@@ -105,6 +154,45 @@ final class WorkBatchTaskSessionTests: XCTestCase {
     }
 
     @MainActor
+    func testOpenExistingRunningSessionWritesFocusedActivationTrace() async throws {
+        let collector = ActivationLogCollector()
+        DebugLog.setTestObserver { line in
+            collector.append(line)
+        }
+        defer { DebugLog.setTestObserver(nil) }
+
+        let binding = WorkBatchCockpitBinding(
+            id: "batch-mobile",
+            batchID: "batch-mobile",
+            batchName: "Mobile prototype",
+            projectPath: "/tmp/project",
+            worktreeName: "batch-mobile",
+            worktreePath: "/tmp/project/.capacitor/worktrees/batch-mobile",
+            host: .claudeCode,
+            claudeSessionID: "assigned-session",
+            status: .running,
+            createdAt: Date(timeIntervalSince1970: 100),
+            updatedAt: Date(timeIntervalSince1970: 100),
+        )
+        let coordinator = WorkBatchTaskSessionCoordinator(
+            claudePathResolver: { "/opt/homebrew/bin/claude" },
+            runTerminalScript: { _ in },
+            focusExistingTerminal: { _, _ in true },
+        )
+
+        _ = try await coordinator.openExistingSession(binding)
+
+        let lines = collector.snapshot()
+        XCTAssertTrue(lines.contains {
+            $0.contains("[TerminalActivation]")
+                && $0.contains("surface=\"work_batch_session\"")
+                && $0.contains("route=\"work_batch_cockpit\"")
+                && $0.contains("action=\"focus_existing\"")
+                && $0.contains("outcome=\"focused\"")
+        })
+    }
+
+    @MainActor
     func testOpenExistingRunningSessionDoesNotResumeWhenFocusFails() async throws {
         let recorder = TerminalScriptRecorder()
         let focusRecorder = ExistingTerminalFocusRecorder(result: false)
@@ -146,6 +234,91 @@ final class WorkBatchTaskSessionTests: XCTestCase {
     }
 
     @MainActor
+    func testManualOpenCanFocusStaleBindingBeforeResume() async throws {
+        let recorder = TerminalScriptRecorder()
+        let focusRecorder = ExistingTerminalFocusRecorder(result: true)
+        let binding = WorkBatchCockpitBinding(
+            id: "batch-mobile",
+            batchID: "batch-mobile",
+            batchName: "Mobile prototype",
+            projectPath: "/tmp/project",
+            worktreeName: "batch-mobile",
+            worktreePath: "/tmp/project/.capacitor/worktrees/batch-mobile",
+            host: .claudeCode,
+            claudeSessionID: "assigned-session",
+            status: .stale,
+            createdAt: Date(timeIntervalSince1970: 100),
+            updatedAt: Date(timeIntervalSince1970: 100),
+        )
+        let coordinator = WorkBatchTaskSessionCoordinator(
+            claudePathResolver: { "/opt/homebrew/bin/claude" },
+            runTerminalScript: { script in
+                await recorder.record(script)
+            },
+            focusExistingTerminal: { projectPath, sessionName in
+                await focusRecorder.record(projectPath: projectPath, sessionName: sessionName)
+            },
+        )
+
+        let request = try await coordinator.openExistingSession(
+            binding,
+            allowResumeWhenFocusFails: true,
+            preferFocusBeforeResume: true,
+        )
+
+        XCTAssertNil(request)
+        let focusAttempts = await focusRecorder.snapshot()
+        XCTAssertEqual(focusAttempts.count, 1)
+        XCTAssertEqual(focusAttempts[0].projectPath, "/tmp/project/.capacitor/worktrees/batch-mobile")
+        XCTAssertEqual(focusAttempts[0].sessionName, "Mobile prototype")
+        let scripts = await recorder.snapshot()
+        XCTAssertTrue(scripts.isEmpty)
+    }
+
+    @MainActor
+    func testManualOpenResumesStaleBindingWhenFocusFails() async throws {
+        let recorder = TerminalScriptRecorder()
+        let focusRecorder = ExistingTerminalFocusRecorder(result: false)
+        let binding = WorkBatchCockpitBinding(
+            id: "batch-mobile",
+            batchID: "batch-mobile",
+            batchName: "Mobile prototype",
+            projectPath: "/tmp/project",
+            worktreeName: "batch-mobile",
+            worktreePath: "/tmp/project/.capacitor/worktrees/batch-mobile",
+            host: .claudeCode,
+            claudeSessionID: "assigned-session",
+            status: .stale,
+            createdAt: Date(timeIntervalSince1970: 100),
+            updatedAt: Date(timeIntervalSince1970: 100),
+        )
+        let coordinator = WorkBatchTaskSessionCoordinator(
+            claudePathResolver: { "/opt/homebrew/bin/claude" },
+            runTerminalScript: { script in
+                await recorder.record(script)
+            },
+            focusExistingTerminal: { projectPath, sessionName in
+                await focusRecorder.record(projectPath: projectPath, sessionName: sessionName)
+            },
+        )
+
+        let request = try await coordinator.openExistingSession(
+            binding,
+            allowResumeWhenFocusFails: true,
+            preferFocusBeforeResume: true,
+        )
+
+        XCTAssertEqual(request?.arguments.first, "--resume")
+        XCTAssertEqual(request?.arguments.dropFirst().first, "assigned-session")
+        let focusAttempts = await focusRecorder.snapshot()
+        XCTAssertEqual(focusAttempts.count, 1)
+        let scripts = await recorder.snapshot()
+        XCTAssertEqual(scripts.count, 1)
+        XCTAssertTrue(scripts[0].contains("--resume"))
+        XCTAssertTrue(scripts[0].contains("assigned-session"))
+    }
+
+    @MainActor
     func testWakeExistingSessionInputsResumePromptIntoVisibleCockpit() async throws {
         let wakeRecorder = ExistingTerminalWakeRecorder(result: true)
         let binding = WorkBatchCockpitBinding(
@@ -177,8 +350,8 @@ final class WorkBatchTaskSessionTests: XCTestCase {
         XCTAssertEqual(attempts.count, 1)
         XCTAssertEqual(attempts[0].projectPath, "/tmp/project/.capacitor/worktrees/batch-mobile")
         XCTAssertEqual(attempts[0].sessionName, "Mobile prototype")
-        XCTAssertTrue(attempts[0].prompt.contains("Read .capacitor/work-batch-context.md again"))
-        XCTAssertTrue(attempts[0].prompt.contains("Continue any queued Task"))
+        XCTAssertEqual(attempts[0].prompt, "Assessing updated tasks...")
+        XCTAssertFalse(attempts[0].prompt.contains("Task claim"))
     }
 
     @MainActor
@@ -239,12 +412,14 @@ final class WorkBatchTaskSessionTests: XCTestCase {
 
         XCTAssertEqual(request?.arguments.first, "--resume")
         XCTAssertEqual(request?.arguments.dropFirst().first, "assigned-session")
-        XCTAssertTrue(request?.arguments.last?.contains("Read .capacitor/work-batch-context.md again") == true)
+        XCTAssertTrue(request?.arguments.last?.contains("Assessing updated tasks...") == true)
         let scripts = await recorder.snapshot()
         XCTAssertEqual(scripts.count, 1)
         XCTAssertTrue(scripts[0].contains("--resume"))
         XCTAssertTrue(scripts[0].contains("assigned-session"))
-        XCTAssertTrue(scripts[0].contains("reopened Task"))
+        XCTAssertTrue(scripts[0].contains("--append-system-prompt-file"))
+        XCTAssertTrue(scripts[0].contains(".capacitor/work-batch-agent-instructions.md"))
+        XCTAssertFalse(scripts[0].contains("Task claim"))
         XCTAssertTrue(scripts[0].contains("/tmp/project/.capacitor/worktrees/batch-mobile"))
     }
 
@@ -272,6 +447,7 @@ final class WorkBatchTaskSessionTests: XCTestCase {
         XCTAssertTrue(mirror.markdown.contains(".capacitor/work-batch-claims/<task-id>.json"))
         XCTAssertTrue(mirror.markdown.contains("\"status\":\"working\""))
         XCTAssertTrue(mirror.markdown.contains("\"delivery_generation\":\"batch-mobile:1775000000\""))
+        XCTAssertFalse(mirror.markdown.contains("\"\""))
         XCTAssertTrue(mirror.markdown.contains(".capacitor/work-batch-completions/<task-id>.json"))
         XCTAssertTrue(mirror.markdown.contains(".capacitor/work-batch-checkpoints/<checkpoint-id>.json"))
         XCTAssertTrue(mirror.markdown.contains(".capacitor/work-batch-checkpoint-responses/<checkpoint-id>.json"))
@@ -469,10 +645,18 @@ final class WorkBatchTaskSessionTests: XCTestCase {
         XCTAssertEqual(result.binding.claudeSessionID, "68d42879-5c45-40da-86de-2427c64411dc")
         XCTAssertEqual(result.binding.worktreeName, "batch-mobile")
         XCTAssertEqual(result.launchRequest.arguments.prefix(2), ["--session-id", "68d42879-5c45-40da-86de-2427c64411dc"])
+        XCTAssertTrue(result.launchRequest.arguments.contains("--append-system-prompt-file"))
 
         let mirror = try String(contentsOf: result.contextMirrorURL, encoding: .utf8)
         XCTAssertTrue(mirror.contains("Add green border around the mobile prototype"))
+        XCTAssertTrue(mirror.contains("Keep visible terminal updates short and operator-facing"))
         XCTAssertTrue(result.contextMirrorURL.path.hasSuffix(WorkBatchContextMirror.relativePath))
+        let instructionsURL = result.contextMirrorURL
+            .deletingLastPathComponent()
+            .appendingPathComponent("work-batch-agent-instructions.md")
+        let instructions = try String(contentsOf: instructionsURL, encoding: .utf8)
+        XCTAssertTrue(instructions.contains("Read .capacitor/work-batch-context.md"))
+        XCTAssertTrue(instructions.contains("Task claim"))
 
         let loaded = try WorkBatchCockpitBindingStore(fileURL: storeURL, fileManager: fileManager).load()
         XCTAssertEqual(loaded, [result.binding])
@@ -481,7 +665,10 @@ final class WorkBatchTaskSessionTests: XCTestCase {
         XCTAssertEqual(launchedScripts.count, 1)
         XCTAssertTrue(launchedScripts[0].contains("--session-id"))
         XCTAssertTrue(launchedScripts[0].contains("68d42879-5c45-40da-86de-2427c64411dc"))
-        XCTAssertTrue(launchedScripts[0].contains("Read .capacitor/work-batch-context.md first"))
+        XCTAssertTrue(launchedScripts[0].contains("--append-system-prompt-file"))
+        XCTAssertTrue(launchedScripts[0].contains(".capacitor/work-batch-agent-instructions.md"))
+        XCTAssertFalse(launchedScripts[0].contains("Task claim"))
+        XCTAssertTrue(launchedScripts[0].contains("Assessing tasks..."))
     }
 
     @MainActor

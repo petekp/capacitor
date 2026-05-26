@@ -41,10 +41,14 @@ struct ProjectDetailView: View {
                             batches: appState.workBatches(for: project),
                             checkpointFocusTarget: checkpointFocusTargetForProject,
                             onOpen: { batch in
-                                appState.openWorkBatch(batch, for: project)
+                                appState.openWorkBatch(
+                                    batch,
+                                    for: project,
+                                    source: batch.pendingCheckpoints.isEmpty ? .workBatchCard : .checkpointRow,
+                                )
                             },
                             onOpenCockpit: { batch in
-                                appState.openWorkBatchCockpit(batch)
+                                appState.openWorkBatchCockpit(batch, source: .terminalIcon)
                             },
                             onUnresolve: { batch, task in
                                 appState.unresolveWorkBatchTask(task, in: batch, for: project)
@@ -387,7 +391,7 @@ struct DetailSectionLabel: View {
                     .padding(.vertical, 2)
                     .background(Color.white.opacity(0.08))
                     .clipShape(Capsule())
-                    .accessibilityLabel(countAccessibilityLabel ?? "\(count) queued ideas")
+                    .accessibilityLabel(countAccessibilityLabel ?? "\(count) queued tasks")
             }
         }
     }

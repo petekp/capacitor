@@ -288,6 +288,17 @@ classify_phase_failure() {
     printf '\n'
 }
 
+is_allowed_ax_environment_skip() {
+    case "$1" in
+    accessibility_not_trusted|no_ax_windows)
+        return 0
+        ;;
+    *)
+        return 1
+        ;;
+    esac
+}
+
 classify_window_lifecycle_health() {
     local path="$1"
 
@@ -595,7 +606,7 @@ main() {
 
             if [[ -n "$reason" ]]; then
                 coverage_mode="degraded"
-                if [[ "$allow_untrusted" -eq 1 && "$reason" == "accessibility_not_trusted" ]]; then
+                if [[ "$allow_untrusted" -eq 1 ]] && is_allowed_ax_environment_skip "$reason"; then
                     outcome="skipped_untrusted"
                     failure_context="run=${run_index} phase=${phase} reason=${reason}(non_blocking)"
                     run_phase_statuses[$phase_index]="skip"

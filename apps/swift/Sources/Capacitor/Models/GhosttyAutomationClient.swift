@@ -80,19 +80,63 @@ private struct GhosttyRouteCandidate {
     let stableID: String
 }
 
+final class GhosttyAutomationSupportCache {
+    static let shared = GhosttyAutomationSupportCache()
+
+    private let lock = NSLock()
+    private var cachedSupportedStatus: GhosttyAutomationSupportStatus?
+
+    func status(resolve: () -> GhosttyAutomationSupportStatus) -> GhosttyAutomationSupportStatus {
+        lock.lock()
+        if let cachedSupportedStatus {
+            lock.unlock()
+            return cachedSupportedStatus
+        }
+        lock.unlock()
+
+        let resolvedStatus = resolve()
+        guard case .supported = resolvedStatus else {
+            return resolvedStatus
+        }
+
+        lock.lock()
+        if cachedSupportedStatus == nil {
+            cachedSupportedStatus = resolvedStatus
+        }
+        let status = cachedSupportedStatus ?? resolvedStatus
+        lock.unlock()
+        return status
+    }
+
+    func clear() {
+        lock.lock()
+        cachedSupportedStatus = nil
+        lock.unlock()
+    }
+}
+
 struct DefaultGhosttyAutomationClient: GhosttyAutomationClient {
     private let appleScript: AppleScriptClient
     private let versionProvider: () -> String?
+    private let supportCache: GhosttyAutomationSupportCache
 
     init(
         appleScript: AppleScriptClient,
         versionProvider: @escaping () -> String? = { DefaultGhosttyAutomationClient.installedGhosttyVersion() },
+        supportCache: GhosttyAutomationSupportCache = .shared,
     ) {
         self.appleScript = appleScript
         self.versionProvider = versionProvider
+        self.supportCache = supportCache
     }
 
     func supportStatus() -> GhosttyAutomationSupportStatus {
+        supportCache.status {
+            computeSupportStatus()
+        }
+    }
+
+    private func computeSupportStatus() -> GhosttyAutomationSupportStatus {
         let version = versionProvider()?
             .trimmingCharacters(in: .whitespacesAndNewlines)
 

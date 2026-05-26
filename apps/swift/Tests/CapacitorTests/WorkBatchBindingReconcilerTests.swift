@@ -80,7 +80,7 @@ final class WorkBatchBindingReconcilerTests: XCTestCase {
 
         XCTAssertEqual(result.bindings[0].status, .waiting)
         XCTAssertEqual(result.state.batches[0].status, .waiting)
-        XCTAssertEqual(result.state.batches[0].currentActivitySummary, "Multiple Claude Code sessions match this Work Batch.")
+        XCTAssertEqual(result.state.batches[0].currentActivitySummary, "Claude Code is already open; click to re-enter.")
         XCTAssertEqual(result.state.tasks[0].status, .queued)
         XCTAssertEqual(result.issues.map(\.kind), [.duplicateCockpit])
         XCTAssertTrue(result.issues[0].sessionIDs.contains("session-batch (duplicate process)"))
@@ -173,7 +173,7 @@ final class WorkBatchBindingReconcilerTests: XCTestCase {
         XCTAssertTrue(result.issues.isEmpty)
     }
 
-    func testDoneBindingStaysDoneWhenTerminalIsStillAliveAndAllTasksAreDone() {
+    func testDoneBindingShowsReadyWhenTerminalIsStillAliveAndAllTasksAreDone() {
         let now = Date(timeIntervalSince1970: 1_775_000_200)
         var inputState = state(status: .idle, summary: "Done: Added green border.")
         inputState.tasks[0].status = .done
@@ -192,9 +192,125 @@ final class WorkBatchBindingReconcilerTests: XCTestCase {
             now: now,
         )
 
-        XCTAssertEqual(result.state, inputState)
+        XCTAssertEqual(result.state.batches[0].status, .ready)
+        XCTAssertEqual(result.state.batches[0].currentActivitySummary, "Done: Added green border.")
+        XCTAssertEqual(result.state.tasks[0].status, .done)
         XCTAssertEqual(result.bindings, [inputBinding])
         XCTAssertTrue(result.issues.isEmpty)
+    }
+
+    func testDoneBatchIgnoresDuplicateOldCockpitsWhenAllTasksAreDone() {
+        let now = Date(timeIntervalSince1970: 1_775_000_200)
+        var inputState = state(status: .waiting, summary: "Multiple Claude Code sessions match this Work Batch.")
+        inputState.tasks[0].status = .done
+        let inputBinding = binding(status: .waiting)
+
+        let result = WorkBatchBindingReconciler.reconcile(
+            state: inputState,
+            bindings: [inputBinding],
+            sessions: [
+                runtimeSession(
+                    sessionId: "session-batch",
+                    cwd: "/tmp/project/.capacitor/worktrees/batch-mobile",
+                    isAlive: true,
+                ),
+                runtimeSession(
+                    sessionId: "manual-duplicate",
+                    cwd: "/tmp/project/.capacitor/worktrees/batch-mobile/src",
+                    isAlive: true,
+                ),
+            ],
+            now: now,
+        )
+
+        XCTAssertEqual(result.bindings[0].status, .done)
+        XCTAssertEqual(result.state.batches[0].status, .ready)
+        XCTAssertEqual(result.state.batches[0].currentActivitySummary, "Done: all Tasks completed.")
+        XCTAssertTrue(result.issues.isEmpty)
+    }
+
+    func testPendingCheckpointPreventsAllDoneCleanupEvenWhenTaskWasMarkedDone() {
+        let now = Date(timeIntervalSince1970: 1_775_000_200)
+        var inputState = state(status: .waiting, summary: "Checkpoint ready: Which green token should I use?")
+        inputState.tasks[0].status = .done
+        inputState.checkpoints = [
+            WorkBatchCheckpointRecord(
+                id: "checkpoint-green-token",
+                batchID: "batch-mobile",
+                taskID: "task-green",
+                question: "Which green token should I use?",
+                reason: "The Task did not say whether this is debug-only.",
+                recommendedAction: nil,
+                status: .pending,
+                requestedAt: now,
+                respondedAt: nil,
+                response: nil,
+                updatedAt: now,
+            ),
+        ]
+
+        let result = WorkBatchBindingReconciler.reconcile(
+            state: inputState,
+            bindings: [binding(status: .done)],
+            sessions: [
+                runtimeSession(
+                    sessionId: "session-batch",
+                    cwd: "/tmp/project/.capacitor/worktrees/batch-mobile",
+                    isAlive: true,
+                ),
+            ],
+            now: now,
+        )
+
+        XCTAssertEqual(result.bindings[0].status, .waiting)
+        XCTAssertEqual(result.state.batches[0].status, .waiting)
+        XCTAssertEqual(result.state.batches[0].currentActivitySummary, "Checkpoint ready: Which green token should I use?")
+        XCTAssertTrue(result.issues.isEmpty)
+    }
+
+    func testPendingCheckpointSummaryWinsOverDuplicateCockpitSummary() {
+        let now = Date(timeIntervalSince1970: 1_775_000_200)
+        var inputState = state(status: .waiting, summary: "Checkpoint ready: Which green token should I use?")
+        inputState.tasks[0].status = .needsYou
+        inputState.checkpoints = [
+            WorkBatchCheckpointRecord(
+                id: "checkpoint-green-token",
+                batchID: "batch-mobile",
+                taskID: "task-green",
+                question: "Which green token should I use?",
+                reason: "The Task did not say whether this is debug-only.",
+                recommendedAction: nil,
+                status: .pending,
+                requestedAt: now,
+                respondedAt: nil,
+                response: nil,
+                updatedAt: now,
+            ),
+        ]
+
+        let result = WorkBatchBindingReconciler.reconcile(
+            state: inputState,
+            bindings: [binding(status: .running)],
+            sessions: [
+                runtimeSession(
+                    sessionId: "session-batch",
+                    cwd: "/tmp/project/.capacitor/worktrees/batch-mobile",
+                    isAlive: true,
+                ),
+                runtimeSession(
+                    sessionId: "manual-duplicate",
+                    cwd: "/tmp/project/.capacitor/worktrees/batch-mobile/src",
+                    isAlive: true,
+                ),
+            ],
+            now: now,
+        )
+
+        XCTAssertEqual(result.bindings[0].status, .waiting)
+        XCTAssertEqual(result.state.batches[0].status, .waiting)
+        XCTAssertEqual(result.state.batches[0].currentActivitySummary, "Checkpoint ready: Which green token should I use?")
+        XCTAssertEqual(result.state.tasks[0].status, .needsYou)
+        XCTAssertEqual(result.issues.map(\.kind), [.duplicateCockpit])
     }
 
     func testPendingCheckpointKeepsLiveBindingWaiting() {

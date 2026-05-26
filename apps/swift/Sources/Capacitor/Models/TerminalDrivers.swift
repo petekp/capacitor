@@ -67,16 +67,16 @@ final class GhosttyTerminalDriver: TerminalDriver {
                 tmuxSessionHint: tmuxSessionHint,
                 preferredTerminalID: preferredID,
             ) {
-                // When clientTty is nil (direct focus), skip CWD matches in the
-                // already-selected tab — the CWD may be stale from a prior tmux
-                // session, and re-focusing the visible tab is a no-op that would
-                // incorrectly short-circuit ensureAndSwitch.
-                let isStaleDirectFocusMatch = resolvedTty == nil
+                // A selected CWD match is useful enough to bring Ghostty forward,
+                // but it may still be stale after a tmux session switch. Report it
+                // as already selected so the higher-level tmux flow can continue
+                // when an attached client exists.
+                let isSelectedDirectCwdMatch = resolvedTty == nil
                     && route.source == .terminalWorkingDirectory
                     && route.tab?.isSelected == true
 
-                if !isStaleDirectFocusMatch, executeRoute(route, clientTty: resolvedTty) {
-                    return .focused
+                if executeRoute(route, clientTty: resolvedTty) {
+                    return isSelectedDirectCwdMatch ? .alreadySelected : .focused
                 }
 
                 if preferredID != nil, let resolvedTty {
@@ -194,7 +194,6 @@ final class GhosttyTerminalDriver: TerminalDriver {
                 {
                     terminalIDByClientTTY[clientTty] = terminal.id
                 }
-                return true
             case let .failure(reason):
                 lastFailureReason = reason
                 return false

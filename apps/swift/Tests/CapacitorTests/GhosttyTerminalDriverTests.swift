@@ -178,7 +178,7 @@ final class GhosttyTerminalDriverTests: XCTestCase {
         XCTAssertFalse(script.contains("open -a "))
     }
 
-    func testDirectFocusSkipsStaleCwdMatchInSelectedTab() async {
+    func testDirectFocusActivatesSelectedCwdMatch() async {
         let automationClient = RecordingGhosttyAutomationClient()
         automationClient.snapshot = GhosttyAppSnapshot(windows: [
             GhosttyWindowSnapshot(
@@ -215,9 +215,74 @@ final class GhosttyTerminalDriverTests: XCTestCase {
             tmuxSessionHint: nil,
         )
 
-        XCTAssertEqual(result, .relaunchNeeded)
+        XCTAssertEqual(result, .alreadySelected)
         XCTAssertTrue(automationClient.selectedTabs.isEmpty)
-        XCTAssertTrue(automationClient.focusedTerminals.isEmpty)
+        XCTAssertEqual(automationClient.focusedTerminals, ["term-1"])
+        XCTAssertEqual(automationClient.activatedWindows, ["win-1"])
+    }
+
+    func testDirectFocusFocusesSelectedCwdMatchInBackgroundWindow() async {
+        let automationClient = RecordingGhosttyAutomationClient()
+        automationClient.snapshot = GhosttyAppSnapshot(windows: [
+            GhosttyWindowSnapshot(
+                id: "win-front",
+                name: "Ghostty",
+                isFront: true,
+                tabs: [
+                    GhosttyTabSnapshot(
+                        id: "tab-front",
+                        name: "notes",
+                        index: 1,
+                        isSelected: true,
+                        terminals: [
+                            GhosttyTerminalSnapshot(
+                                id: "term-front",
+                                name: "notes",
+                                workingDirectory: "/Users/pete/Notes",
+                            ),
+                        ],
+                        focusedTerminalID: "term-front",
+                    ),
+                ],
+            ),
+            GhosttyWindowSnapshot(
+                id: "win-back",
+                name: "capacitor",
+                isFront: false,
+                tabs: [
+                    GhosttyTabSnapshot(
+                        id: "tab-back",
+                        name: "capacitor",
+                        index: 1,
+                        isSelected: true,
+                        terminals: [
+                            GhosttyTerminalSnapshot(
+                                id: "term-back",
+                                name: "capacitor",
+                                workingDirectory: "/Users/pete/Code/capacitor",
+                            ),
+                        ],
+                        focusedTerminalID: "term-back",
+                    ),
+                ],
+            ),
+        ])
+
+        let driver = GhosttyTerminalDriver(
+            automationClient: automationClient,
+            isRunning: { true },
+        )
+
+        let result = await driver.focus(
+            clientTty: nil,
+            projectPath: "/Users/pete/Code/capacitor",
+            tmuxSessionHint: nil,
+        )
+
+        XCTAssertEqual(result, .alreadySelected)
+        XCTAssertTrue(automationClient.selectedTabs.isEmpty)
+        XCTAssertEqual(automationClient.focusedTerminals, ["term-back"])
+        XCTAssertEqual(automationClient.activatedWindows, ["win-back"])
     }
 
     func testDirectFocusFindsCwdMatchInDifferentTab() async {
@@ -276,6 +341,7 @@ final class GhosttyTerminalDriverTests: XCTestCase {
         XCTAssertEqual(automationClient.selectedTabs.first?.tabID, "tab-2")
         XCTAssertEqual(automationClient.selectedTabs.first?.windowID, "win-1")
         XCTAssertEqual(automationClient.focusedTerminals, ["term-2"])
+        XCTAssertEqual(automationClient.activatedWindows, ["win-1"])
     }
 
     func testDirectFocusAllowsTitleMatchInSelectedTab() async {
@@ -318,6 +384,7 @@ final class GhosttyTerminalDriverTests: XCTestCase {
         XCTAssertEqual(result, .focused)
         XCTAssertTrue(automationClient.selectedTabs.isEmpty)
         XCTAssertEqual(automationClient.focusedTerminals, ["term-1"])
+        XCTAssertEqual(automationClient.activatedWindows, ["win-1"])
     }
 
     /// Regression test for terminal tab switch bug:

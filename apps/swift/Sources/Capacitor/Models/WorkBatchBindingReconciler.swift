@@ -49,21 +49,11 @@ enum WorkBatchBindingReconciler {
             let processOtherSessionIDs = processSessionIDs.filter { $0 != binding.claudeSessionID }
             let otherSessionIDs = Set(runtimeOtherSessionIDs + processOtherSessionIDs).sorted()
             let hasDuplicateExactProcess = processExactCount > 1
+            let hasDuplicateCockpit = !otherSessionIDs.isEmpty || hasDuplicateExactProcess
             let hasExactSession = !exactSessions.isEmpty || processExactCount > 0
+            let needsUser = batchNeedsUser(binding.batchID, in: updatedState)
 
-            if !otherSessionIDs.isEmpty || hasDuplicateExactProcess {
-                if updatedBinding.status != .waiting {
-                    updatedBinding.status = .waiting
-                    updatedBinding.updatedAt = now
-                }
-                markBatch(
-                    binding.batchID,
-                    in: &updatedState,
-                    status: .waiting,
-                    summary: "Multiple Claude Code sessions match this Work Batch.",
-                    queueUnfinishedTasks: true,
-                    now: now,
-                )
+            func recordDuplicateIssue() {
                 issues.append(WorkBatchBindingReconciliationIssue(
                     kind: .duplicateCockpit,
                     batchID: binding.batchID,
@@ -74,22 +64,62 @@ enum WorkBatchBindingReconciler {
                     ),
                     message: "Multiple Claude Code sessions are active in the Batch Worktree.",
                 ))
+            }
+
+            if needsUser, hasDuplicateCockpit {
+                if updatedBinding.status != .waiting {
+                    updatedBinding.status = .waiting
+                    updatedBinding.updatedAt = now
+                }
+                // New Work Batch checkpoint behavior: the user's pending
+                // decision stays visible even if duplicate cockpits also exist.
+                markWaitingForUser(binding.batchID, in: &updatedState, now: now)
+                recordDuplicateIssue()
+                updatedBindings.append(updatedBinding)
+                continue
+            }
+
+            // New Work Batch Done behavior: old/duplicate Claude Code cockpits
+            // should not pull a completed batch back into Needs You.
+            if batchHasNoOpenTasks(binding.batchID, in: updatedState), !needsUser {
+                if updatedBinding.status != .done {
+                    updatedBinding.status = .done
+                    updatedBinding.updatedAt = now
+                }
+                markDoneIfUseful(
+                    binding.batchID,
+                    in: &updatedState,
+                    liveCockpitIsReady: hasExactSession,
+                    now: now,
+                )
+                updatedBindings.append(updatedBinding)
+                continue
+            }
+
+            if hasDuplicateCockpit {
+                if updatedBinding.status != .waiting {
+                    updatedBinding.status = .waiting
+                    updatedBinding.updatedAt = now
+                }
+                markBatch(
+                    binding.batchID,
+                    in: &updatedState,
+                    status: .waiting,
+                    summary: duplicateCockpitSummary(
+                        hasForeignDuplicate: !otherSessionIDs.isEmpty,
+                        hasDuplicateExactProcess: hasDuplicateExactProcess,
+                    ),
+                    queueUnfinishedTasks: true,
+                    now: now,
+                )
+                recordDuplicateIssue()
             } else if hasExactSession {
-                if batchNeedsUser(binding.batchID, in: updatedState) {
+                if needsUser {
                     if updatedBinding.status != .waiting {
                         updatedBinding.status = .waiting
                         updatedBinding.updatedAt = now
                     }
                     markWaitingForUser(binding.batchID, in: &updatedState, now: now)
-                    updatedBindings.append(updatedBinding)
-                    continue
-                }
-
-                // New Work Batch Done behavior: a still-open Claude Code terminal
-                // should not make a completed batch look active again.
-                if updatedBinding.status == .done,
-                   batchHasNoOpenTasks(binding.batchID, in: updatedState)
-                {
                     updatedBindings.append(updatedBinding)
                     continue
                 }
@@ -106,7 +136,7 @@ enum WorkBatchBindingReconciler {
                     updatedBinding.status = .stale
                     updatedBinding.updatedAt = now
                 }
-                if batchNeedsUser(binding.batchID, in: updatedState) {
+                if needsUser {
                     markWaitingForUser(binding.batchID, in: &updatedState, now: now)
                 } else {
                     markBatch(
@@ -154,6 +184,16 @@ enum WorkBatchBindingReconciler {
             sessionIDs.insert("\(bindingSessionID) (duplicate process)")
         }
         return sessionIDs.sorted()
+    }
+
+    private static func duplicateCockpitSummary(
+        hasForeignDuplicate: Bool,
+        hasDuplicateExactProcess: Bool,
+    ) -> String {
+        if hasDuplicateExactProcess, !hasForeignDuplicate {
+            return "Claude Code is already open; click to re-enter."
+        }
+        return "Multiple Claude Code sessions match this Work Batch."
     }
 
     private static func shouldRemainLaunching(
@@ -212,6 +252,32 @@ enum WorkBatchBindingReconciler {
         return !tasks.isEmpty && tasks.allSatisfy { $0.status == .done }
     }
 
+    private static func markDoneIfUseful(
+        _ batchID: String,
+        in state: inout WorkBatchStateSnapshot,
+        liveCockpitIsReady: Bool,
+        now: Date,
+    ) {
+        guard let index = state.batches.firstIndex(where: { $0.id == batchID }) else { return }
+        let targetStatus: WorkBatchStatus = liveCockpitIsReady ? .ready : .idle
+        var changed = false
+        // New Work Batch status rule: completed work with a live assigned cockpit stays Ready
+        // so the user can see that Claude is still open and awaiting direction.
+        if state.batches[index].status != targetStatus {
+            state.batches[index].status = targetStatus
+            changed = true
+        }
+        let summary = state.batches[index].currentActivitySummary
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if shouldReplaceSummaryAfterCompletion(summary) {
+            state.batches[index].currentActivitySummary = "Done: all Tasks completed."
+            changed = true
+        }
+        if changed {
+            state.batches[index].updatedAt = now
+        }
+    }
+
     private static func batchNeedsUser(
         _ batchID: String,
         in state: WorkBatchStateSnapshot,
@@ -253,6 +319,14 @@ enum WorkBatchBindingReconciler {
     }
 
     private static func shouldReplaceSummaryAfterRecovery(_ summary: String) -> Bool {
+        let normalized = summary.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return normalized.isEmpty ||
+            normalized.contains("needs reconnect") ||
+            normalized.contains("needs attention") ||
+            normalized.contains("multiple claude code sessions")
+    }
+
+    private static func shouldReplaceSummaryAfterCompletion(_ summary: String) -> Bool {
         let normalized = summary.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         return normalized.isEmpty ||
             normalized.contains("needs reconnect") ||

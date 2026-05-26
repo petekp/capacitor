@@ -417,6 +417,7 @@ final class GhosttyAutomationClientTests: XCTestCase {
         let client = DefaultGhosttyAutomationClient(
             appleScript: StubAppleScriptClient(),
             versionProvider: { "1.2.9" },
+            supportCache: GhosttyAutomationSupportCache(),
         )
 
         XCTAssertEqual(client.supportStatus(), .unsupported(.ghosttyUnsupportedVersion("1.2.9")))
@@ -430,12 +431,65 @@ final class GhosttyAutomationClientTests: XCTestCase {
         let client = DefaultGhosttyAutomationClient(
             appleScript: appleScript,
             versionProvider: { "1.3.0" },
+            supportCache: GhosttyAutomationSupportCache(),
         )
 
         XCTAssertEqual(
             client.supportStatus(),
             .unsupported(.ghosttyAutomationUnavailable("Apple events disabled")),
         )
+    }
+
+    func testReadSnapshotCachesSuccessfulSupportProbe() throws {
+        let output = makeRow(
+            windowID: "window-1",
+            windowName: "Ghostty",
+            isFront: true,
+            tabID: "tab-1",
+            tabName: "caps",
+            tabIndex: 1,
+            tabSelected: true,
+            terminalID: "term-1",
+            terminalName: "caps",
+            terminalWorkingDirectory: "/Users/pete/Code/capacitor",
+            focusedTerminalID: "term-1",
+        )
+        let appleScript = StubAppleScriptClient()
+        appleScript.results = [
+            AppleScriptExecutionResult(success: true, output: "1", error: nil),
+            AppleScriptExecutionResult(success: true, output: output, error: nil),
+            AppleScriptExecutionResult(success: true, output: output, error: nil),
+        ]
+        let client = DefaultGhosttyAutomationClient(
+            appleScript: appleScript,
+            versionProvider: { "1.3.0" },
+            supportCache: GhosttyAutomationSupportCache(),
+        )
+
+        XCTAssertEqual(try client.readSnapshot().get().windows.count, 1)
+        XCTAssertEqual(try client.readSnapshot().get().windows.count, 1)
+        XCTAssertEqual(appleScript.scripts.count(where: { $0.contains("count of windows") }), 1)
+        XCTAssertEqual(appleScript.scripts.count(where: { $0.contains("set fieldSep") }), 2)
+    }
+
+    func testSupportStatusDoesNotCacheFailedProbe() {
+        let appleScript = StubAppleScriptClient()
+        appleScript.results = [
+            AppleScriptExecutionResult(success: false, output: nil, error: "Apple events disabled"),
+            AppleScriptExecutionResult(success: true, output: "1", error: nil),
+        ]
+        let client = DefaultGhosttyAutomationClient(
+            appleScript: appleScript,
+            versionProvider: { "1.3.0" },
+            supportCache: GhosttyAutomationSupportCache(),
+        )
+
+        XCTAssertEqual(
+            client.supportStatus(),
+            .unsupported(.ghosttyAutomationUnavailable("Apple events disabled")),
+        )
+        XCTAssertEqual(client.supportStatus(), .supported("1.3.0"))
+        XCTAssertEqual(appleScript.scripts.count(where: { $0.contains("count of windows") }), 2)
     }
 
     private func makeRow(

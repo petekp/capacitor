@@ -218,6 +218,50 @@ final class SessionStateManagerTests: XCTestCase {
         XCTAssertNil(manager.getSessionState(for: project)?.stateSource)
     }
 
+    func testLiveClaudeProcessEvidenceProjectsIdleRuntimeStateAsReady() {
+        let manager = makeManager()
+        let project = makeProject("core-project", path: "/tmp/core-project")
+
+        manager.applyRuntimeProjectStates(
+            [makeRuntimeProjectState(projectPath: project.path, state: "idle", sessionId: "session-1")],
+            liveClaudeProcessesByProjectPath: [
+                project.path: LiveClaudeProjectProcessEvidence(
+                    processCount: 1,
+                    sessionIDs: ["session-1"],
+                ),
+            ],
+            for: [project],
+            correlationId: "projection-live-process-ready",
+        )
+
+        let projected = manager.getSessionState(for: project)
+        XCTAssertEqual(projected?.state, .ready)
+        XCTAssertEqual(projected?.sessionId, "session-1")
+        XCTAssertEqual(manager.getPreferredSessionId(for: project), "session-1")
+    }
+
+    func testLiveClaudeProcessEvidenceCreatesSyntheticReadyStateForManualSession() {
+        let manager = makeManager()
+        let project = makeProject("manual-project", path: "/tmp/manual-project")
+
+        manager.applyRuntimeProjectStates(
+            [],
+            liveClaudeProcessesByProjectPath: [
+                project.path: LiveClaudeProjectProcessEvidence(
+                    processCount: 1,
+                    sessionIDs: [],
+                ),
+            ],
+            for: [project],
+            correlationId: "projection-manual-process-ready",
+        )
+
+        let projected = manager.getSessionState(for: project)
+        XCTAssertEqual(projected?.state, .ready)
+        XCTAssertTrue(projected?.hasSession == true)
+        XCTAssertNil(projected?.sessionId)
+    }
+
     func testProjectionPreservesLastAuthoritativeEventAt() {
         let manager = makeManager()
         let project = makeProject("core-project", path: "/tmp/core-project")

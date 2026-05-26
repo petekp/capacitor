@@ -29,7 +29,11 @@ run_ax_verifier_ci() {
   echo ""
   echo "[runtime-reliability] ax automation verifier (ci)"
   prepare_ax_verifier_build
-  CAPACITOR_SKIP_SETUP_VALIDATION=1 bash scripts/ci/ax-automation-verify.sh \
+  local deterministic_projects_source="$workspace_root/artifacts/ax-automation-verification/ci/projects.force-seed.json"
+  rm -f "$deterministic_projects_source"
+  CAPACITOR_PROJECTS_FILE="${CAPACITOR_PROJECTS_FILE:-$deterministic_projects_source}" \
+    CAPACITOR_SKIP_SETUP_VALIDATION=1 \
+    bash scripts/ci/ax-automation-verify.sh \
     --runs 1 \
     --skip-details \
     --allow-untrusted \

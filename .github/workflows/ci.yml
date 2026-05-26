@@ -68,9 +68,11 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y bats
 
       - name: Run verifier unit self-tests
-        run: python3 -m unittest discover -s tests/verify/unit -p 'test_*.py'
+        run: .verifier/.venv/bin/python -m unittest discover -s tests/verify/unit -p 'test_*.py'
 
       - name: Run verifier Bats coverage
+        env:
+          VENV_DIR: ${{ github.workspace }}/.verifier/.venv
         run: bats tests/verify
 
   verifier-full:

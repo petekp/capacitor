@@ -111,6 +111,14 @@ final class IdeaCapturePopoverTests: XCTestCase {
         XCTAssertTrue(textView.acceptsFirstResponder)
     }
 
+    func testCaptureTextViewsDoNotBecomeWindowDragHandles() {
+        let scrollView = FocusAwareScrollView(frame: .zero)
+        let textView = CenteredNSTextView(frame: .zero)
+
+        XCTAssertFalse(scrollView.mouseDownCanMoveWindow)
+        XCTAssertFalse(textView.mouseDownCanMoveWindow)
+    }
+
     private func pumpRunLoop(for interval: TimeInterval) {
         let limit = Date().addingTimeInterval(interval)
         while RunLoop.main.run(mode: .default, before: limit), Date() < limit {}

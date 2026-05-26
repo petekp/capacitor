@@ -27,6 +27,7 @@ final class TerminalActivationCoordinator {
 
     enum TerminalFocusResult: Equatable {
         case focused
+        case alreadySelected
         case relaunchNeeded
         case failed(TerminalActivationFailureReason?)
 
@@ -49,15 +50,57 @@ final class TerminalActivationCoordinator {
         // resolving tmux clients. This handles non-tmux terminals that are
         // already open for the project.
         let directFocus = await activateTerminal(nil, projectPath, nil)
+        TerminalActivationTrace.log(
+            surface: .activationFlow,
+            route: "direct_focus",
+            projectPath: projectPath,
+            sessionName: sessionName,
+            evidence: ["ghostty_snapshot", "working_directory_or_title"],
+            action: "focus_existing",
+            outcome: directFocus.traceOutcome,
+            reason: directFocus.traceFailureReason,
+        )
         if directFocus == .focused {
             return true
         }
 
         let clientTty = await resolveAnyClientTty()
+        TerminalActivationTrace.log(
+            surface: .activationFlow,
+            route: "tmux_client",
+            projectPath: projectPath,
+            sessionName: sessionName,
+            evidence: clientTty == nil ? ["tmux_client_absent"] : ["tmux_client_present"],
+            action: "resolve_client",
+            outcome: clientTty == nil ? "none" : "resolved",
+            reason: clientTty,
+        )
 
         guard let clientTty else {
+            if directFocus == .alreadySelected {
+                TerminalActivationTrace.log(
+                    surface: .activationFlow,
+                    route: "direct_focus",
+                    projectPath: projectPath,
+                    sessionName: sessionName,
+                    evidence: ["already_selected", "no_tmux_client"],
+                    action: "accept_existing",
+                    outcome: "focused",
+                )
+                return true
+            }
             debugLog("runActivationFlow noClient, launching attach-or-create session=\(sessionName)")
-            guard await launchTerminalWithTmux(sessionName, projectPath) else {
+            let launched = await launchTerminalWithTmux(sessionName, projectPath)
+            TerminalActivationTrace.log(
+                surface: .activationFlow,
+                route: "launch",
+                projectPath: projectPath,
+                sessionName: sessionName,
+                evidence: ["no_existing_terminal", "no_tmux_client"],
+                action: "launch_tmux_attach",
+                outcome: launched ? "launched" : "failed",
+            )
+            guard launched else {
                 return false
             }
             if let poll = pollForNewClient {
@@ -68,18 +111,47 @@ final class TerminalActivationCoordinator {
 
         let targetPane = await resolveTargetPane?(clientTty)
         let switched = await ensureAndSwitch(sessionName, projectPath, clientTty, targetPane)
+        TerminalActivationTrace.log(
+            surface: .activationFlow,
+            route: "tmux_switch",
+            projectPath: projectPath,
+            sessionName: sessionName,
+            evidence: ["client_tty:\(clientTty)", targetPane.map { "target_pane:\($0)" } ?? "target_pane:none"],
+            action: "ensure_and_switch",
+            outcome: switched ? "switched" : "failed",
+        )
         guard switched else {
             debugLog("runActivationFlow ensureAndSwitch failed session=\(sessionName)")
             return false
         }
 
         let focusResult = await activateTerminal(clientTty, projectPath, sessionName)
+        TerminalActivationTrace.log(
+            surface: .activationFlow,
+            route: "post_switch_focus",
+            projectPath: projectPath,
+            sessionName: sessionName,
+            evidence: ["client_tty:\(clientTty)", "session_hint"],
+            action: "focus_switched_terminal",
+            outcome: focusResult.traceOutcome,
+            reason: focusResult.traceFailureReason,
+        )
         switch focusResult {
-        case .focused:
+        case .focused, .alreadySelected:
             return true
         case .relaunchNeeded:
             debugLog("runActivationFlow terminal gone for tty=\(clientTty), relaunching")
-            guard await launchTerminalWithTmux(sessionName, projectPath) else {
+            let launched = await launchTerminalWithTmux(sessionName, projectPath)
+            TerminalActivationTrace.log(
+                surface: .activationFlow,
+                route: "launch",
+                projectPath: projectPath,
+                sessionName: sessionName,
+                evidence: ["tmux_client_without_visible_terminal"],
+                action: "launch_tmux_attach",
+                outcome: launched ? "launched" : "failed",
+            )
+            guard launched else {
                 return false
             }
             if let poll = pollForNewClient {

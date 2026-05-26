@@ -55,40 +55,13 @@ private struct WorkBatchRow: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top, spacing: 10) {
                 Button(action: onOpen) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack(alignment: .center, spacing: 10) {
-                            StatusChip(state: batch.status.sessionState, style: .compact)
-
-                            Text(batch.name)
-                                .font(AppTypography.cardTitle)
-                                .foregroundStyle(.white.opacity(0.92))
-                                .lineLimit(1)
-
-                            Spacer(minLength: 8)
-
-                            Text("\(batch.queuedTaskCount)")
-                                .font(AppTypography.badge)
-                                .foregroundStyle(.white.opacity(0.6))
-                                .monospacedDigit()
-                                .frame(minWidth: 18)
-                        }
-
-                        Text(batch.currentActivitySummary)
-                            .font(AppTypography.bodySecondary)
-                            .foregroundStyle(.white.opacity(0.58))
-                            .lineLimit(2)
-                            .multilineTextAlignment(.leading)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    summaryContent
                 }
                 .buttonStyle(.plain)
                 .contentShape(Rectangle())
 
                 Button(action: onOpenCockpit) {
-                    Image(systemName: "terminal")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.72))
-                        .frame(width: 24, height: 24)
+                    terminalIcon
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Open Claude Code session")
@@ -119,6 +92,41 @@ private struct WorkBatchRow: View {
         .background(Color.white.opacity(0.055))
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .accessibilityLabel("\(batch.name), \(batch.status.label), \(batch.queuedTaskCount) queued tasks")
+    }
+
+    private var summaryContent: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .center, spacing: 10) {
+                StatusChip(state: batch.status.sessionState, style: .compact)
+
+                Text(batch.name)
+                    .font(AppTypography.cardTitle)
+                    .foregroundStyle(.white.opacity(0.92))
+                    .lineLimit(1)
+
+                Spacer(minLength: 8)
+
+                Text("\(batch.queuedTaskCount)")
+                    .font(AppTypography.badge)
+                    .foregroundStyle(.white.opacity(0.6))
+                    .monospacedDigit()
+                    .frame(minWidth: 18)
+            }
+
+            Text(batch.currentActivitySummary)
+                .font(AppTypography.bodySecondary)
+                .foregroundStyle(.white.opacity(0.58))
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var terminalIcon: some View {
+        Image(systemName: "terminal")
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(.white.opacity(0.72))
+            .frame(width: 24, height: 24)
     }
 }
 

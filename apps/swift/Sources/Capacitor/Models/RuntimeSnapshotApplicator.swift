@@ -2,6 +2,8 @@ import Foundation
 
 @MainActor
 final class RuntimeSnapshotApplicator {
+    typealias LiveClaudeProcessEvidenceProvider = ([Project]) -> [String: LiveClaudeProjectProcessEvidence]
+
     struct RequestContext: Equatable {
         let generation: UInt64?
         let correlationId: String
@@ -38,6 +40,7 @@ final class RuntimeSnapshotApplicator {
     private let runState: RunStateStore
     private let uiState: UIState
     private let isDelegationLoopEnabled: () -> Bool
+    private let liveClaudeProcessEvidenceProvider: LiveClaudeProcessEvidenceProvider
 
     private var requestGeneration: UInt64 = 0
     private var correlationCounter: UInt64 = 0
@@ -52,6 +55,7 @@ final class RuntimeSnapshotApplicator {
         runState: RunStateStore,
         uiState: UIState,
         isDelegationLoopEnabled: @escaping () -> Bool,
+        liveClaudeProcessEvidenceProvider: LiveClaudeProcessEvidenceProvider? = nil,
     ) {
         self.sessionStateManager = sessionStateManager
         self.shellStateStore = shellStateStore
@@ -59,6 +63,10 @@ final class RuntimeSnapshotApplicator {
         self.runState = runState
         self.uiState = uiState
         self.isDelegationLoopEnabled = isDelegationLoopEnabled
+        let processScanner = WorkBatchClaudeProcessScanner()
+        self.liveClaudeProcessEvidenceProvider = liveClaudeProcessEvidenceProvider ?? { projects in
+            processScanner.processEvidenceByProjectPath(for: projects)
+        }
     }
 
     func beginFetch(projects: [Project]) -> RequestContext {
@@ -116,6 +124,7 @@ final class RuntimeSnapshotApplicator {
         sessionStateManager.applyRuntimeProjectStates(
             snapshot.projectStates,
             sessions: snapshot.sessions,
+            liveClaudeProcessesByProjectPath: liveClaudeProcessEvidenceProvider(context.projects),
             for: context.projects,
             correlationId: context.correlationId,
         )

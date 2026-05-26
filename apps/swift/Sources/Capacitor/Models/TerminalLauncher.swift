@@ -193,12 +193,22 @@ final class TerminalLauncher {
             projectPath: projectPath,
             tmuxSessionHint: sessionName,
         )
+        TerminalActivationTrace.log(
+            surface: .directFocus,
+            route: "focus_existing_terminal",
+            projectPath: projectPath,
+            sessionName: sessionName,
+            evidence: sessionName == nil ? ["working_directory_or_title"] : ["session_hint", "working_directory_or_title"],
+            action: "focus_existing",
+            outcome: result.traceOutcome,
+            reason: result.traceFailureReason,
+        )
         if case let .failed(reason) = result {
             pendingActivationFailureReason = reason
         } else {
             pendingActivationFailureReason = driver.lastFailureReason
         }
-        return result == .focused
+        return result == .focused || result == .alreadySelected
     }
 
     /// Instance method that wires real dependencies into the shared coordinator flow.
@@ -285,6 +295,16 @@ final class TerminalLauncher {
         let driver = driverRegistry.driver(for: app)
         let tmuxCommand = TmuxRouter.makeAttachCommand(session: session, projectPath: projectPath)
         let launched = await driver.launch(command: tmuxCommand, projectPath: projectPath)
+        TerminalActivationTrace.log(
+            surface: .activationFlow,
+            route: "launch",
+            projectPath: projectPath,
+            sessionName: session,
+            evidence: ["terminal_driver:\(app.processName)", "tmux_attach_command"],
+            action: "launch_terminal",
+            outcome: launched ? "launched" : "failed",
+            reason: driver.lastFailureReason.map { String(describing: $0) },
+        )
         if !launched {
             pendingActivationFailureReason = driver.lastFailureReason
         }

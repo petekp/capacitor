@@ -295,13 +295,28 @@ extension AppState {
         projectState.getProjectStatus(for: project)
     }
 
-    func launchTerminal(for project: Project) {
+    func launchTerminal(
+        for project: Project,
+        source: TerminalActivationTrace.Surface = .projectCard,
+    ) {
+        TerminalActivationTrace.log(
+            surface: source,
+            route: "legacy_project_terminal",
+            projectPath: project.path,
+            projectName: project.name,
+            evidence: ["project_path", "manual_override"],
+            action: "activate_terminal",
+            outcome: "started",
+        )
         activeProjectResolver.setManualOverride(project)
         activeProjectResolver.resolve()
         terminalLauncher.launchTerminal(for: project)
     }
 
-    func handlePrimaryProjectAction(for project: Project) {
+    func handlePrimaryProjectAction(
+        for project: Project,
+        source: TerminalActivationTrace.Surface = .projectCard,
+    ) {
         let action = ProjectPrimaryActionResolver.resolve(
             delegationState: delegationState(for: project),
             isDelegationEnabled: featureState.isDelegationLoopEnabled,
@@ -309,34 +324,94 @@ extension AppState {
 
         switch action {
         case .openTerminal:
-            if openWorkBatchPrimarySurface(for: project) {
+            if openWorkBatchPrimarySurface(for: project, source: source) {
                 return
             }
-            launchTerminal(for: project)
+            launchTerminal(for: project, source: source)
         case .openDelegationReview:
+            TerminalActivationTrace.log(
+                surface: source,
+                route: "delegation_review",
+                projectPath: project.path,
+                projectName: project.name,
+                evidence: ["delegation_state"],
+                action: "open_review",
+                outcome: "started",
+            )
             showDelegationReview(project)
         }
     }
 
-    private func openWorkBatchPrimarySurface(for project: Project) -> Bool {
+    private func openWorkBatchPrimarySurface(
+        for project: Project,
+        source: TerminalActivationTrace.Surface,
+    ) -> Bool {
         let batches = workBatches(for: project)
         switch WorkBatchProjectPrimaryActionResolver.resolve(batches) {
         case .legacyTerminal:
+            TerminalActivationTrace.log(
+                surface: source,
+                route: "work_batch_primary",
+                projectPath: project.path,
+                projectName: project.name,
+                evidence: ["no_work_batches"],
+                action: "fall_through",
+                outcome: "legacy_terminal",
+            )
             return false
 
         case let .openWorkBatch(batchID):
             guard let batch = batches.first(where: { $0.id == batchID }) else {
+                TerminalActivationTrace.log(
+                    surface: source,
+                    route: "work_batch_primary",
+                    projectPath: project.path,
+                    projectName: project.name,
+                    batchID: batchID,
+                    evidence: ["missing_resolved_batch"],
+                    action: "fall_through",
+                    outcome: "legacy_terminal",
+                )
                 return false
             }
+            TerminalActivationTrace.log(
+                surface: source,
+                route: "work_batch_primary",
+                projectPath: project.path,
+                projectName: project.name,
+                batchID: batch.id,
+                batchName: batch.name,
+                evidence: batch.pendingCheckpoints.isEmpty ? ["single_or_priority_batch"] : ["pending_checkpoint"],
+                action: "open_work_batch",
+                outcome: batch.pendingCheckpoints.isEmpty ? "cockpit" : "checkpoint",
+            )
             // New Work Batch behavior: a project card enters the managed batch
             // cockpit/checkpoint before falling back to legacy project tmux.
-            openWorkBatch(batch, for: project)
+            openWorkBatch(batch, for: project, source: source)
             return true
 
         case .showProjectDetail:
             guard featureState.isProjectDetailsEnabled else {
+                TerminalActivationTrace.log(
+                    surface: source,
+                    route: "work_batch_primary",
+                    projectPath: project.path,
+                    projectName: project.name,
+                    evidence: ["ambiguous_work_batches", "project_detail_disabled"],
+                    action: "fall_through",
+                    outcome: "legacy_terminal",
+                )
                 return false
             }
+            TerminalActivationTrace.log(
+                surface: source,
+                route: "work_batch_primary",
+                projectPath: project.path,
+                projectName: project.name,
+                evidence: ["ambiguous_work_batches"],
+                action: "show_project_detail",
+                outcome: "detail",
+            )
             // New Work Batch behavior: when several batches could be correct,
             // show the batch list rather than guessing and creating a tmux session.
             showProjectDetail(project)
@@ -456,9 +531,29 @@ extension AppState {
         WorkBatchProjectContextSummaryResolver.resolve(workBatches(for: project))
     }
 
-    func openWorkBatch(_ batch: WorkBatchProjection, for project: Project) {
+    func openWorkBatch(
+        _ batch: WorkBatchProjection,
+        for project: Project,
+        source: TerminalActivationTrace.Surface = .workBatchCard,
+    ) {
         switch WorkBatchOpenActionResolver.resolve(batch) {
         case let .answerCheckpoint(checkpoint):
+            TerminalActivationTrace.log(
+                surface: source,
+                route: "checkpoint_review",
+                projectPath: project.path,
+                projectName: project.name,
+                batchID: batch.id,
+                batchName: batch.name,
+                evidence: ["pending_checkpoint", "project_detail_form"],
+                action: "show_checkpoint",
+                outcome: "needs_input",
+                reason: checkpoint.id,
+            )
+            // New Work Batch checkpoint behavior: the checkpoint answer field
+            // lives in Project Detail, so project-card re-entry must navigate
+            // there before asking the row to focus the pending decision.
+            showProjectDetail(project)
             uiState.workBatchCheckpointFocusTarget = WorkBatchCheckpointFocusTarget(
                 projectPath: project.path,
                 batchID: batch.id,
@@ -467,12 +562,24 @@ extension AppState {
             uiState.toast = ToastMessage("Checkpoint needs your input.")
 
         case .openCockpit:
-            openWorkBatchCockpit(batch)
+            openWorkBatchCockpit(batch, source: source)
         }
     }
 
-    func openWorkBatchCockpit(_ batch: WorkBatchProjection) {
+    func openWorkBatchCockpit(
+        _ batch: WorkBatchProjection,
+        source: TerminalActivationTrace.Surface = .workBatchCard,
+    ) {
         guard let binding = batch.binding else {
+            TerminalActivationTrace.log(
+                surface: source,
+                route: "work_batch_cockpit",
+                batchID: batch.id,
+                batchName: batch.name,
+                evidence: ["missing_binding"],
+                action: "open_cockpit",
+                outcome: "blocked_no_binding",
+            )
             uiState.toast = .error("No Claude Code session is bound to this Work Batch yet.")
             return
         }
@@ -480,11 +587,34 @@ extension AppState {
         _Concurrency.Task { [weak self] in
             guard let self else { return }
             do {
-                _ = try await workBatchAutoRouter.openCockpit(binding: binding)
+                let request = try await workBatchAutoRouter.openCockpit(binding: binding)
+                TerminalActivationTrace.log(
+                    surface: source,
+                    route: "work_batch_cockpit",
+                    projectPath: binding.projectPath,
+                    batchID: binding.batchID,
+                    batchName: binding.batchName,
+                    sessionName: binding.claudeSessionID,
+                    evidence: ["batch_binding", "batch_worktree"],
+                    action: "open_cockpit",
+                    outcome: request == nil ? "focused_existing" : "resume_launched",
+                )
             } catch {
                 await MainActor.run {
                     let message = (error as? LocalizedError)?.errorDescription
                         ?? "Couldn't open the Claude Code session."
+                    TerminalActivationTrace.log(
+                        surface: source,
+                        route: "work_batch_cockpit",
+                        projectPath: binding.projectPath,
+                        batchID: binding.batchID,
+                        batchName: binding.batchName,
+                        sessionName: binding.claudeSessionID,
+                        evidence: ["batch_binding", "batch_worktree"],
+                        action: "open_cockpit",
+                        outcome: "failed",
+                        reason: message,
+                    )
                     self.uiState.toast = .error(message)
                 }
             }

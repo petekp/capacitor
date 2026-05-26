@@ -178,7 +178,7 @@ struct DockLayoutView: View {
             flashState: flashState,
             isActive: isActive,
             onTap: {
-                appState.handlePrimaryProjectAction(for: project)
+                appState.handlePrimaryProjectAction(for: project, source: .dockCard)
             },
             onInfoTap: canShowDetails ? { appState.showProjectDetail(project) } : nil,
             onMoveToDormant: { appState.moveToDormant(project) },

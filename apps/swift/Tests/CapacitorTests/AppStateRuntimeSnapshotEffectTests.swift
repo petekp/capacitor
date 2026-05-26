@@ -387,7 +387,7 @@ final class AppStateRuntimeSnapshotEffectTests: XCTestCase {
 
         XCTAssertEqual(appState.uiState.toast?.message, "Task done: Add green border.")
         XCTAssertEqual(try stateStore.load().tasks[0].status, .done)
-        XCTAssertEqual(try stateStore.load().batches[0].status, .idle)
+        XCTAssertEqual(try stateStore.load().batches[0].status, .ready)
         XCTAssertEqual(try bindingStore.binding(batchID: "batch-mobile")?.status, .done)
     }
 

@@ -85,3 +85,17 @@ teardown() {
 
     [ "$status" -eq 0 ]
 }
+
+@test "allow-untrusted treats missing AX windows as an environmental skip" {
+    run env HOME="$TEST_DIR/home" /bin/bash -lc "
+        source '$TEST_DIR/scripts/ci/ax-automation-verify.sh'
+        allow_untrusted=1
+        reason=no_ax_windows
+        if [[ \"\$allow_untrusted\" -eq 1 ]] && is_allowed_ax_environment_skip \"\$reason\"; then
+            exit 0
+        fi
+        exit 1
+    "
+
+    [ "$status" -eq 0 ]
+}

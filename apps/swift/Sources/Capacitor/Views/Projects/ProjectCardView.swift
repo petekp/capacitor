@@ -904,8 +904,8 @@ private struct ProjectCardActionBar: View {
         HStack(spacing: 0) {
             ProjectCardActionButton(
                 icon: "plus",
-                title: "Idea",
-                accessibilityLabel: "Capture idea for this project",
+                title: TaskCaptureSurfaceCopy.cardActionTitle,
+                accessibilityLabel: TaskCaptureSurfaceCopy.cardActionAccessibilityLabel,
                 action: onCaptureIdea,
             )
 
@@ -1118,8 +1118,8 @@ struct CardActionButtons: View {
                     entranceDelay: 0,
                     style: style,
                 )
-                .help("Capture idea")
-                .accessibilityLabel("Capture idea for this project")
+                .help(TaskCaptureSurfaceCopy.cardActionHelp)
+                .accessibilityLabel(TaskCaptureSurfaceCopy.cardActionAccessibilityLabel)
             }
 
             if let onDetails {

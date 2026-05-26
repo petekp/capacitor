@@ -518,7 +518,7 @@ struct RunCheckpointReviewWindow: View {
                    let project = projectForFollowThrough()
                 {
                     Button {
-                        appState.launchTerminal(for: project)
+                        appState.launchTerminal(for: project, source: .terminalIcon)
                     } label: {
                         HStack(spacing: 6) {
                             Image(systemName: "terminal")

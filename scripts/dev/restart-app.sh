@@ -215,8 +215,11 @@ write_debug_bundle_metadata() {
     local plist_path="$1"
 
     write_plist_string "$plist_path" "CFBundleIdentifier" "com.capacitor.app.debug"
-    write_plist_string "$plist_path" "CFBundleName" "Capacitor"
-    write_plist_string "$plist_path" "CFBundleDisplayName" "Capacitor"
+    # New dev behavior: give the repo-built app a distinct LaunchServices name
+    # so manual testing and automation do not accidentally target the installed
+    # release bundle at /Applications/Capacitor.app.
+    write_plist_string "$plist_path" "CFBundleName" "Capacitor Debug"
+    write_plist_string "$plist_path" "CFBundleDisplayName" "Capacitor Debug"
     write_plist_string "$plist_path" "CapacitorChannel" "$CHANNEL"
     write_plist_string "$plist_path" "CapacitorProfile" "$PROFILE"
     write_plist_string "$plist_path" "CapacitorSkipSetupValidation" "$SKIP_SETUP_VALIDATION"
@@ -617,14 +620,36 @@ open -n "$DEBUG_APP"
 # Avoid activating the installed release app by targeting the debug binary PID.
 APP_PID=""
 for _ in {1..30}; do
-    APP_PID=$(pgrep -f "$DEBUG_APP/Contents/MacOS/Capacitor$" | head -n 1 || true)
+    APP_PID=$(pgrep -n -f "$DEBUG_APP/Contents/MacOS/Capacitor$" || true)
     if [ -n "$APP_PID" ]; then
         break
     fi
     sleep 0.2
 done
 
+if [ -z "$APP_PID" ]; then
+    echo "LaunchServices did not report the debug app process; falling back to direct bundle executable launch." >&2
+    nohup "$DEBUG_APP_BIN" >/tmp/capacitor-debug-app.launch.log 2>&1 &
+    for _ in {1..60}; do
+        APP_PID=$(pgrep -n -f "$DEBUG_APP/Contents/MacOS/Capacitor$" || true)
+        if [ -n "$APP_PID" ]; then
+            break
+        fi
+        sleep 0.2
+    done
+fi
+
 if [ -n "$APP_PID" ]; then
+    # LaunchServices can occasionally leave more than one debug app process
+    # around during rapid rebuild/relaunch cycles. Keep the newest process so
+    # manual testing never clicks an older copy of the same debug bundle.
+    while IFS= read -r DEBUG_PID; do
+        [[ -z "$DEBUG_PID" ]] && continue
+        if [[ "$DEBUG_PID" != "$APP_PID" ]]; then
+            terminate_pid_with_escalation "$DEBUG_PID" "duplicate debug app"
+        fi
+    done < <(pgrep -f "$DEBUG_APP/Contents/MacOS/Capacitor$" || true)
+
     for _ in {1..20}; do
         WIN_COUNT=$(osascript -e "tell application \"System Events\" to tell process whose unix id is $APP_PID to count windows" 2>/dev/null || echo 0)
         if [ "$WIN_COUNT" != "0" ]; then

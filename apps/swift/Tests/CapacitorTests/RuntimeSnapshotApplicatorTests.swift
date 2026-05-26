@@ -79,6 +79,49 @@ final class RuntimeSnapshotApplicatorTests: XCTestCase {
         XCTAssertEqual(fixture.runState.runStatesByID[RuntimeRunKey(run: run)], run)
     }
 
+    func testFreshSnapshotPassesLiveClaudeProcessEvidenceToSessionProjection() {
+        let project = makeProject(path: "/tmp/capacitor")
+        let fixture = Fixture(liveClaudeProcessEvidenceProvider: { projects in
+            XCTAssertEqual(projects.map(\.path), [project.path])
+            return [
+                project.path: LiveClaudeProjectProcessEvidence(
+                    processCount: 1,
+                    sessionIDs: ["live-session"],
+                ),
+            ]
+        })
+
+        let outcome = fixture.applicator.apply(
+            RuntimeSnapshot(
+                projectStates: [
+                    RuntimeProjectState(
+                        projectId: nil,
+                        workspaceId: nil,
+                        projectPath: project.path,
+                        state: "idle",
+                        updatedAt: "2026-03-05T00:00:00Z",
+                        stateChangedAt: "2026-03-05T00:00:00Z",
+                        sessionId: "runtime-session",
+                        latestSessionId: "runtime-session",
+                        sessionCount: 1,
+                        activeCount: 0,
+                        hasSession: true,
+                    ),
+                ],
+                sessions: [],
+                shellState: ShellCwdState(version: 1, shells: [:]),
+                routingViews: [],
+                delegations: [],
+                runs: [],
+                snapshotVersion: 0,
+            ),
+            context: fixture.applicator.beginFetch(projects: [project]),
+        )
+
+        XCTAssertEqual(outcome.decision, .applied)
+        XCTAssertEqual(fixture.sessionStateManager.getSessionState(for: project)?.state, .ready)
+    }
+
     func testFreshSnapshotUsesCompositeRunKey() {
         let fixture = Fixture()
         let sharedRunID = "run-shared"
@@ -377,7 +420,10 @@ final class RuntimeSnapshotApplicatorTests: XCTestCase {
         let uiState = UIState()
         let applicator: RuntimeSnapshotApplicator
 
-        init(isDelegationLoopEnabled: Bool = true) {
+        init(
+            isDelegationLoopEnabled: Bool = true,
+            liveClaudeProcessEvidenceProvider: RuntimeSnapshotApplicator.LiveClaudeProcessEvidenceProvider? = nil,
+        ) {
             applicator = RuntimeSnapshotApplicator(
                 sessionStateManager: sessionStateManager,
                 shellStateStore: shellStateStore,
@@ -385,6 +431,7 @@ final class RuntimeSnapshotApplicatorTests: XCTestCase {
                 runState: runState,
                 uiState: uiState,
                 isDelegationLoopEnabled: { isDelegationLoopEnabled },
+                liveClaudeProcessEvidenceProvider: liveClaudeProcessEvidenceProvider ?? { _ in [:] },
             )
         }
     }

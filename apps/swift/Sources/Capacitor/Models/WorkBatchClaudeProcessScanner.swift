@@ -1,5 +1,18 @@
 import Foundation
 
+struct LiveClaudeProjectProcessEvidence: Equatable {
+    let processCount: Int
+    let sessionIDs: [String]
+
+    var hasLiveProcess: Bool {
+        processCount > 0
+    }
+
+    var firstSessionID: String? {
+        sessionIDs.first
+    }
+}
+
 struct WorkBatchClaudeProcessScanner {
     struct ProcessRecord: Equatable {
         let pid: Int32
@@ -51,6 +64,44 @@ struct WorkBatchClaudeProcessScanner {
         }
     }
 
+    func processEvidenceByProjectPath(for projects: [Project]) -> [String: LiveClaudeProjectProcessEvidence] {
+        let candidates = projects.compactMap { project -> (path: String, normalizedPath: String, depth: Int)? in
+            let normalizedPath = PathNormalizer.normalize(project.path)
+            guard !normalizedPath.isEmpty, normalizedPath != "/" else { return nil }
+            return (
+                path: project.path,
+                normalizedPath: normalizedPath,
+                depth: normalizedPath.split(separator: "/").count,
+            )
+        }
+
+        var processCounts: [String: Int] = [:]
+        var sessionIDsByProject: [String: [String]] = [:]
+
+        for process in processListProvider() {
+            guard Self.commandLooksLikeClaude(process.command),
+                  let cwd = process.cwd,
+                  let projectPath = Self.deepestProjectPath(containing: cwd, in: candidates)
+            else {
+                continue
+            }
+
+            processCounts[projectPath, default: 0] += 1
+            if let sessionID = process.sessionID {
+                sessionIDsByProject[projectPath, default: []].append(sessionID)
+            }
+        }
+
+        var result: [String: LiveClaudeProjectProcessEvidence] = [:]
+        for (projectPath, count) in processCounts {
+            result[projectPath] = LiveClaudeProjectProcessEvidence(
+                processCount: count,
+                sessionIDs: sessionIDsByProject[projectPath, default: []],
+            )
+        }
+        return result
+    }
+
     private static func readClaudeProcesses() -> [ProcessRecord] {
         let processLines = runProcess(
             executablePath: "/bin/ps",
@@ -58,9 +109,7 @@ struct WorkBatchClaudeProcessScanner {
         )
         return processLines.compactMap(parseProcessLine).compactMap { parsed in
             let (pid, command) = parsed
-            guard commandLooksLikeClaude(command),
-                  command.contains("--session-id") || command.contains("--resume")
-            else {
+            guard commandLooksLikeClaude(command) else {
                 return nil
             }
             return ProcessRecord(
@@ -86,6 +135,22 @@ struct WorkBatchClaudeProcessScanner {
     private static func commandLooksLikeClaude(_ command: String) -> Bool {
         let firstToken = command.split(whereSeparator: \.isWhitespace).first.map(String.init) ?? ""
         return firstToken == "claude" || firstToken.hasSuffix("/claude")
+    }
+
+    private static func deepestProjectPath(
+        containing cwd: String,
+        in candidates: [(path: String, normalizedPath: String, depth: Int)],
+    ) -> String? {
+        let normalizedCwd = PathNormalizer.normalize(cwd)
+        return candidates
+            .filter { pathIsInside(normalizedCwd, root: $0.normalizedPath) }
+            .max { lhs, rhs in
+                if lhs.depth == rhs.depth {
+                    return lhs.normalizedPath < rhs.normalizedPath
+                }
+                return lhs.depth < rhs.depth
+            }?
+            .path
     }
 
     private static func cwd(for pid: Int32) -> String? {
