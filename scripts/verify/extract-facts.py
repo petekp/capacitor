@@ -23,6 +23,13 @@ from verifier_common import (
     relpath,
     sha256_text,
     strip_string_delimiters,
+    tree_sitter_node_child_count,
+    tree_sitter_node_children,
+    tree_sitter_node_end_byte,
+    tree_sitter_node_end_point,
+    tree_sitter_node_start_byte,
+    tree_sitter_node_start_point,
+    tree_sitter_node_type,
     tree_sitter_root_node,
     tree_sitter_string_literals,
     unique_entries,
@@ -213,14 +220,14 @@ def identifier_refs_for(language: str, content: str, *, tree=None) -> list[dict[
     tokens: list[dict[str, Any]] = []
 
     def visit(node) -> None:
-        if node.type in excluded_node_types:
+        if tree_sitter_node_type(node) in excluded_node_types:
             return
-        if node.child_count == 0:
-            text = source[node.start_byte : node.end_byte].decode("utf-8", "replace")
+        if tree_sitter_node_child_count(node) == 0:
+            text = source[tree_sitter_node_start_byte(node) : tree_sitter_node_end_byte(node)].decode("utf-8", "replace")
             if IDENTIFIER_PATTERN.match(text) and text not in keywords:
-                tokens.append({"value": text, "line": node.start_point[0] + 1})
+                tokens.append({"value": text, "line": tree_sitter_node_start_point(node)[0] + 1})
             return
-        for child in node.children:
+        for child in tree_sitter_node_children(node):
             visit(child)
 
     visit(tree_sitter_root_node(tree))
@@ -363,26 +370,31 @@ def process_execs_for(language: str, content: str, bindings: dict[str, dict[str,
 
 
 def span_for(node) -> dict[str, dict[str, int]]:
+    start_point = tree_sitter_node_start_point(node)
+    end_point = tree_sitter_node_end_point(node)
     return {
         "start": {
-            "line": node.start_point[0] + 1,
-            "column": node.start_point[1] + 1,
+            "line": start_point[0] + 1,
+            "column": start_point[1] + 1,
         },
         "end": {
-            "line": node.end_point[0] + 1,
-            "column": node.end_point[1] + 1,
+            "line": end_point[0] + 1,
+            "column": end_point[1] + 1,
         },
     }
 
 
 def node_text(content: str, node) -> str:
-    return content.encode("utf-8")[node.start_byte : node.end_byte].decode("utf-8", "replace")
+    return content.encode("utf-8")[tree_sitter_node_start_byte(node) : tree_sitter_node_end_byte(node)].decode(
+        "utf-8",
+        "replace",
+    )
 
 
 def fact_entry(value: str, node, *, kind: str, language: str, confidence: str) -> dict[str, Any]:
     return {
         "value": value.strip(),
-        "line": node.start_point[0] + 1,
+        "line": tree_sitter_node_start_point(node)[0] + 1,
         "kind": kind,
         "language": language,
         "confidence": confidence,
@@ -417,15 +429,15 @@ def decorate_lexical_entries(
 
 
 def swift_definition_value(node, content: str) -> str | None:
-    for child in node.children:
-        if child.type in {"simple_identifier", "type_identifier"}:
+    for child in tree_sitter_node_children(node):
+        if tree_sitter_node_type(child) in {"simple_identifier", "type_identifier"}:
             return node_text(content, child)
     return None
 
 
 def rust_definition_value(node, content: str) -> str | None:
-    for child in node.children:
-        if child.type in {"identifier", "type_identifier"}:
+    for child in tree_sitter_node_children(node):
+        if tree_sitter_node_type(child) in {"identifier", "type_identifier"}:
             return node_text(content, child)
     return None
 
@@ -458,10 +470,11 @@ def ast_fact_sets(language: str, content: str, *, tree=None) -> dict[str, list[d
         return facts
 
     def visit(node) -> None:
-        node_type = node.type
+        node_type = tree_sitter_node_type(node)
+        children = tree_sitter_node_children(node)
         if language == "swift":
             if node_type == "import_declaration":
-                identifier = next((child for child in node.children if child.type == "identifier"), None)
+                identifier = next((child for child in children if tree_sitter_node_type(child) == "identifier"), None)
                 if identifier is not None:
                     facts["imports"].append(
                         fact_entry(node_text(content, identifier), identifier, kind="import", language=language, confidence="high")
@@ -473,9 +486,16 @@ def ast_fact_sets(language: str, content: str, *, tree=None) -> dict[str, list[d
                         fact_entry(value, node, kind="definition", language=language, confidence="high")
                     )
             elif node_type == "inheritance_specifier":
-                for child in node.children:
-                    if child.type == "user_type":
-                        nested = next((grand for grand in child.children if grand.type == "type_identifier"), None)
+                for child in children:
+                    if tree_sitter_node_type(child) == "user_type":
+                        nested = next(
+                            (
+                                grand
+                                for grand in tree_sitter_node_children(child)
+                                if tree_sitter_node_type(grand) == "type_identifier"
+                            ),
+                            None,
+                        )
                         if nested is not None:
                             facts["implements"].append(
                                 fact_entry(
@@ -486,8 +506,8 @@ def ast_fact_sets(language: str, content: str, *, tree=None) -> dict[str, list[d
                                     confidence="high",
                                 )
                             )
-            elif node_type == "call_expression" and node.children:
-                target = node.children[0]
+            elif node_type == "call_expression" and children:
+                target = children[0]
                 facts["calls"].append(
                     fact_entry(node_text(content, target), target, kind="call", language=language, confidence="high")
                 )
@@ -498,7 +518,7 @@ def ast_fact_sets(language: str, content: str, *, tree=None) -> dict[str, list[d
         elif language == "rust":
             if node_type == "use_declaration":
                 scoped = next(
-                    (child for child in node.children if child.type in {"scoped_identifier", "identifier"}),
+                    (child for child in children if tree_sitter_node_type(child) in {"scoped_identifier", "identifier"}),
                     None,
                 )
                 if scoped is not None:
@@ -512,14 +532,14 @@ def ast_fact_sets(language: str, content: str, *, tree=None) -> dict[str, list[d
                         fact_entry(value, node, kind="definition", language=language, confidence="high")
                     )
             elif node_type == "impl_item":
-                for child in node.children:
-                    if child.type == "type_identifier":
+                for child in children:
+                    if tree_sitter_node_type(child) == "type_identifier":
                         facts["implements"].append(
                             fact_entry(node_text(content, child), child, kind="implement", language=language, confidence="high")
                         )
                         break
-            elif node_type == "call_expression" and node.children:
-                target = node.children[0]
+            elif node_type == "call_expression" and children:
+                target = children[0]
                 facts["calls"].append(
                     fact_entry(node_text(content, target), target, kind="call", language=language, confidence="high")
                 )
@@ -528,7 +548,7 @@ def ast_fact_sets(language: str, content: str, *, tree=None) -> dict[str, list[d
                     fact_entry(node_text(content, node), node, kind="reference", language=language, confidence="medium")
                 )
 
-        for child in node.children:
+        for child in children:
             visit(child)
 
     visit(tree_sitter_root_node(tree))

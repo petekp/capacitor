@@ -356,28 +356,33 @@ def tree_sitter_string_literals(language: str, content: str, *, tree=None) -> li
     literals: list[dict[str, Any]] = []
 
     def visit(node) -> None:
-        if node.type in string_types:
-            text = content.encode("utf-8")[node.start_byte : node.end_byte].decode("utf-8", "replace")
+        node_type = tree_sitter_node_type(node)
+        start_byte = tree_sitter_node_start_byte(node)
+        end_byte = tree_sitter_node_end_byte(node)
+        start_point = tree_sitter_node_start_point(node)
+        end_point = tree_sitter_node_end_point(node)
+        if node_type in string_types:
+            text = content.encode("utf-8")[start_byte:end_byte].decode("utf-8", "replace")
             literals.append(
                 {
                     "value": strip_string_delimiters(text),
-                    "line": node.start_point[0] + 1,
+                    "line": start_point[0] + 1,
                     "kind": "string_literal",
                     "language": language,
                     "confidence": "high",
                     "source_span": {
                         "start": {
-                            "line": node.start_point[0] + 1,
-                            "column": node.start_point[1] + 1,
+                            "line": start_point[0] + 1,
+                            "column": start_point[1] + 1,
                         },
                         "end": {
-                            "line": node.end_point[0] + 1,
-                            "column": node.end_point[1] + 1,
+                            "line": end_point[0] + 1,
+                            "column": end_point[1] + 1,
                         },
                     },
                 }
             )
-        for child in node.children:
+        for child in tree_sitter_node_children(node):
             visit(child)
 
     visit(tree_sitter_root_node(tree))
@@ -389,6 +394,72 @@ def tree_sitter_root_node(tree):
     if callable(root_node):
         return root_node()
     return root_node
+
+
+def _tree_sitter_value(target, name: str, fallback=None):
+    value = getattr(target, name, fallback)
+    if callable(value):
+        return value()
+    return value
+
+
+def tree_sitter_node_type(node) -> str:
+    value = _tree_sitter_value(node, "type", None)
+    if value is None:
+        value = _tree_sitter_value(node, "kind", "")
+    return str(value)
+
+
+def tree_sitter_node_child_count(node) -> int:
+    return int(_tree_sitter_value(node, "child_count", 0))
+
+
+def tree_sitter_node_children(node):
+    children = getattr(node, "children", None)
+    if children is not None:
+        return list(children() if callable(children) else children)
+
+    child = getattr(node, "child", None)
+    if not callable(child):
+        return []
+
+    result = []
+    for index in range(tree_sitter_node_child_count(node)):
+        value = child(index)
+        if value is not None:
+            result.append(value)
+    return result
+
+
+def tree_sitter_node_start_byte(node) -> int:
+    return int(_tree_sitter_value(node, "start_byte", 0))
+
+
+def tree_sitter_node_end_byte(node) -> int:
+    return int(_tree_sitter_value(node, "end_byte", 0))
+
+
+def _tree_sitter_point_value(point, index: int, attr_name: str) -> int:
+    if isinstance(point, (tuple, list)):
+        return int(point[index])
+    value = _tree_sitter_value(point, attr_name, None)
+    if value is not None:
+        return int(value)
+    return 0
+
+
+def tree_sitter_node_start_point(node) -> tuple[int, int]:
+    point = _tree_sitter_value(node, "start_point", None)
+    if point is None:
+        point = _tree_sitter_value(node, "start_position", (0, 0))
+    return (_tree_sitter_point_value(point, 0, "row"), _tree_sitter_point_value(point, 1, "column"))
+
+
+def tree_sitter_node_end_point(node) -> tuple[int, int]:
+    point = _tree_sitter_value(node, "end_point", None)
+    if point is None:
+        point = _tree_sitter_value(node, "end_position", (0, 0))
+    return (_tree_sitter_point_value(point, 0, "row"), _tree_sitter_point_value(point, 1, "column"))
 
 
 def strip_string_delimiters(value: str) -> str:
