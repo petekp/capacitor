@@ -36,8 +36,12 @@ EXCLUDED_DIRS = {
 }
 
 # Directory basenames that should be excluded anywhere in the tree, not just at
-# the repo root.  Matches any path component (e.g. apps/www/node_modules).
+# the repo root. Matches any path component (e.g. apps/www/node_modules).
 _EXCLUDED_ANYWHERE = {"node_modules", ".build", ".next", "__pycache__"}
+
+# macOS app bundles can contain many generated files and copied framework
+# sources. They are runtime artifacts, not verifier input.
+_EXCLUDED_COMPONENT_SUFFIXES = (".app",)
 
 PRODUCTION_EXTENSIONS = {
     ".rs",
@@ -162,6 +166,8 @@ def is_excluded_path(relative_path: str) -> bool:
     parts = normalized.split("/")
     for part in parts:
         if part in _EXCLUDED_ANYWHERE:
+            return True
+        if part.endswith(_EXCLUDED_COMPONENT_SUFFIXES):
             return True
     return False
 

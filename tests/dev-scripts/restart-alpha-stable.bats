@@ -26,14 +26,14 @@ teardown() {
     rm -rf "$TEST_DIR"
 }
 
-@test "restart-alpha-stable injects the llm feature overrides for the recommended flow" {
+@test "restart-alpha-stable injects the Task-first feature overrides for the recommended flow" {
     run env -i \
         HOME="$TEST_DIR/home" \
         PATH="$PATH" \
         /bin/bash "$SCRIPT_DIR/restart-alpha-stable.sh"
 
     [ "$status" -eq 0 ]
-    [[ "$output" == *"CAPACITOR_FEATURES_ENABLED=projectDetails,llmFeatures"* ]]
+    [[ "$output" == *"CAPACITOR_FEATURES_ENABLED=projectDetails,ideaCapture,llmFeatures"* ]]
     [[ "$output" == *"ARGS=--channel alpha --profile stable"* ]]
 }
 
@@ -45,20 +45,20 @@ teardown() {
         /bin/bash "$SCRIPT_DIR/restart-alpha-stable.sh"
 
     [ "$status" -eq 0 ]
-    [[ "$output" == *"CAPACITOR_FEATURES_ENABLED=projectDetails,llmFeatures"* ]]
-    # projectDetails and llmFeatures must be stripped; ideaCapture remains.
-    [[ "$output" == *"CAPACITOR_FEATURES_DISABLED=ideaCapture"* ]]
+    [[ "$output" == *"CAPACITOR_FEATURES_ENABLED=projectDetails,ideaCapture,llmFeatures"* ]]
+    # All forced-on flags must be stripped from the disabled list.
+    [[ "$output" == *"CAPACITOR_FEATURES_DISABLED="* ]]
 }
 
 @test "restart-alpha-stable handles FEATURES_DISABLED with only forced-on features" {
     run env -i \
         HOME="$TEST_DIR/home" \
         PATH="$PATH" \
-        CAPACITOR_FEATURES_DISABLED="projectDetails,llmFeatures" \
+        CAPACITOR_FEATURES_DISABLED="projectDetails,ideaCapture,llmFeatures" \
         /bin/bash "$SCRIPT_DIR/restart-alpha-stable.sh"
 
     [ "$status" -eq 0 ]
-    [[ "$output" == *"CAPACITOR_FEATURES_ENABLED=projectDetails,llmFeatures"* ]]
+    [[ "$output" == *"CAPACITOR_FEATURES_ENABLED=projectDetails,ideaCapture,llmFeatures"* ]]
     # All disabled flags stripped — result should be empty.
     [[ "$output" == *"CAPACITOR_FEATURES_DISABLED="* ]]
 }

@@ -45,10 +45,13 @@ enum OperatorAttentionPrimaryActionResolver {
              .failedRun,
              .runningRun,
              .runningReceipt,
+             .runningWorkBatch,
+             .waitingWorkBatch,
              .runningSession,
              .staleRun,
              .staleSession,
-             .dormantProject:
+             .dormantProject,
+             .workBatchCheckpoint:
             return .defaultProjectAction
         }
     }

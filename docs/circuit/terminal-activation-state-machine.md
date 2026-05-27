@@ -14,8 +14,8 @@ This document defines how Capacitor decides what to do when the user clicks a pr
 | Claude resume/focus | `apps/swift/Sources/Capacitor/Models/WorkBatchTaskSession.swift` | Focuses visible Work Batch cockpits first, resumes assigned Claude sessions only when allowed, and writes focus/resume trace events. |
 | Activation coordinator | `apps/swift/Sources/Capacitor/Models/TerminalActivationCoordinator.swift` | Orders direct Ghostty focus, tmux client resolution, tmux switch, post-switch focus, and launch fallback. |
 | Terminal driver | `apps/swift/Sources/Capacitor/Models/TerminalDrivers.swift` | Reads Ghostty window/tab/terminal snapshots and activates the best existing route before launch. |
-| Launch facade | `apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift` | Wires activation policy, tmux routing, terminal drivers, and final launch. |
-| Restart hygiene | `scripts/dev/restart-app.sh` | Launches the repo-built Capacitor Debug app and removes older duplicate debug app processes after LaunchServices opens the new build. |
+| Launch facade | `apps/swift/Sources/Capacitor/Models/TerminalLauncher.swift` | Wires activation policy, tmux routing, terminal drivers, final launch, and the narrow automation environment for shell/AppleScript helpers. |
+| Restart hygiene | `scripts/dev/restart-app.sh` | Launches the repo-built Capacitor Debug app, removes older duplicate debug app processes, and rejects non-Debug Capacitor processes after LaunchServices opens the new build. |
 
 ## State Machine
 
@@ -51,8 +51,8 @@ Focus existing cockpit
   v
 Ghostty direct focus by batch worktree/project path/title/session hint
   |-- focused -> done
-  |-- already selected and no tmux client -> done
-  |-- already selected and tmux client exists -> continue to tmux switch
+  |-- already selected and tmux route is not trusted -> done
+  |-- already selected and trusted runtime tmux route exists -> continue to tmux switch
   |-- not found -> continue
   `-- automation failure -> bail
 
@@ -122,21 +122,25 @@ Example:
 | Non-tmux project terminal exists | Direct focus succeeds before tmux launch. | Ghostty working directory/title. | `TerminalActivationCoordinatorTests`, `TerminalLauncherTests`. |
 | tmux client exists for route | Switch the client to the target session and focus the switched terminal. | tmux client TTY, target pane, session name. | `TerminalActivationCoordinatorTests`, `TerminalLauncherTests`, `TmuxRouterTests`. |
 | No visible terminal and no tmux client | Launch attach/create terminal. | Negative Ghostty/tmux evidence. | `TerminalActivationCoordinatorTests`. |
-| Direct focus says already selected while a tmux client exists | Continue through tmux switch so stale selected CWD does not mask the intended tmux session. | Direct focus result plus tmux client. | `TerminalActivationCoordinatorTests`. |
+| Direct focus says already selected from fallback project evidence | Accept the visible terminal; do not chase a tmux session just because the generated project slug might exist. | Direct focus result plus untrusted fallback route. | `TerminalActivationCoordinatorTests`, `TerminalLauncherTests`. |
+| Direct focus says already selected while a trusted runtime tmux route exists | Continue through tmux switch so stale selected CWD does not mask the intended tmux session. | Direct focus result plus runtime route, host TTY, or pane evidence. | `TerminalActivationCoordinatorTests`, `TerminalLauncherTests`. |
 | Stale Work Batch binding with visible cockpit | Focus first; resume only if focus fails and policy allows resume. | Binding status, visible terminal focus result. | `WorkBatchTaskSessionTests`, `WorkBatchAutoRouterTests`. |
 | Duplicate Claude processes for the assigned session id | Focus existing process only; do not start another resume. | Assigned Claude session id process scan. | `WorkBatchAutoRouterTests`. |
 | Multiple Claude Code sessions match one Work Batch | Bail with a plain ambiguity error. | Runtime session reconciliation issues. | `WorkBatchAutoRouterTests`. |
 | Multiple active Work Batches for a project | Show Project Detail rather than guessing. | Work Batch projection. | `WorkBatchProjectPrimaryActionResolverTests`. |
 | Pending checkpoint exists | Primary open goes to the checkpoint surface; terminal icon still opens cockpit. | Work Batch checkpoint projection. | `WorkBatchOpenActionResolverTests`, `AppStateWorkBatchOpenTests`. |
 | Duplicate Capacitor Debug processes after restart | Keep newest debug app process so manual clicks target the latest build. | Debug app binary path, newest PID. | `RestartAppScriptTests`, live `pgrep` check. |
-| Release app and debug app both installed | Restart script launches and activates Capacitor Debug by PID, not bundle name. | Debug app path, PID-targeted System Events activation. | `restart-alpha-stable` manual check. |
+| Release app and debug app both installed | Restart script launches and activates Capacitor Debug by PID, not bundle name. Any other Capacitor app process is unsafe and gets stopped or reported. | Debug app path, PID-targeted System Events activation, non-Debug process scan. | `restart-alpha-stable` manual check, dev-script Bats. |
+| Debug app is running from the right path but sources changed afterward | Manual verification fails before UI testing and tells the operator to restart. | Debug app binary, bundled Rust artifacts, Swift/Rust source mtimes. | `check-terminal-activation-state` Bats. |
+| Capacitor Debug was launched from Codex or another agent host | Debug app launch uses a narrow env; terminal automation uses a narrow env; terminal-launched commands explicitly drop no-color flags. Do not forward host secrets, Codex paths, `NO_COLOR`, or `TERM=dumb` into user-facing terminals. | `TerminalAutomationEnvironment`, restart app env builder, command wrapper. | `TerminalLauncherTests`, `GhosttyTerminalDriverTests`, `restart-app` Bats. |
+| Ghostty was already running with polluted environment | New Claude/tmux commands still start through `env -i HOME=... TERM=... PATH=... /bin/sh -c ...`. Existing already-running shells or Claude processes keep their old environment until the user closes/relaunches them. | Ghostty process env, launched command wrapper. | `TerminalLauncherTests`, live process-env check. |
 
 ## Live Manual Checklist
 
-Use `scripts/dev/check-terminal-activation-state.sh` before and after each click. Capture notes under `docs/circuit/proofs/operator-product-loop/`.
+Use `scripts/dev/check-terminal-activation-state.sh --activate-debug --require-debug-frontmost` before each manual UI check. If it reports a non-Debug Capacitor process or stale Debug bundle, stop and restart before testing. Then use `scripts/dev/check-terminal-activation-state.sh` after each click to capture the activation trace. Capture notes under `docs/circuit/proofs/operator-product-loop/`.
 
 1. Restart with `./scripts/dev/restart-alpha-stable.sh`.
-2. Run `scripts/dev/check-terminal-activation-state.sh`.
+2. Run `scripts/dev/check-terminal-activation-state.sh --activate-debug --require-debug-frontmost`.
 3. Raw-click a Project card with one active Work Batch.
    - Expected: correct existing Ghostty/Claude cockpit foregrounds.
    - Expected: no new Ghostty window, no duplicate Capacitor Debug process, no duplicate Claude resume.

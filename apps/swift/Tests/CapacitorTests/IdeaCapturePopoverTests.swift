@@ -79,7 +79,13 @@ final class IdeaCapturePopoverTests: XCTestCase {
     }
 
     func testFocusControllerRetriesWhenInitialFocusAttemptIsRejected() {
-        let focusController = TextViewFocusController(retryDelays: [0.01, 0.02])
+        var scheduledRetries: [() -> Void] = []
+        let focusController = TextViewFocusController(
+            retryDelays: [0.01, 0.02],
+            retryScheduler: { action, _ in
+                scheduledRetries.append(action)
+            },
+        )
         let window = TestWindow(
             contentRect: CGRect(origin: .zero, size: ideaCaptureTestWindowSize),
             styleMask: [.borderless],
@@ -98,9 +104,10 @@ final class IdeaCapturePopoverTests: XCTestCase {
         textView.acceptsFocus = false
         XCTAssertFalse(focusController.requestFocus())
         XCTAssertFalse(window.firstResponder === textView)
+        XCTAssertEqual(scheduledRetries.count, 2)
 
         textView.acceptsFocus = true
-        pumpRunLoop(for: 0.2)
+        scheduledRetries.first?()
 
         XCTAssertTrue(window.firstResponder === textView)
     }

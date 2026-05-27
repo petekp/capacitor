@@ -111,7 +111,7 @@ install_name_tool -id "@rpath/libcapacitor_core.dylib" target/release/libcapacit
 echo "Generating UniFFI bindings..."
 BINDINGS_TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$BINDINGS_TMP_DIR"' EXIT
-cargo run -p capacitor-core --bin uniffi-bindgen generate \
+cargo run --release -p capacitor-core --bin uniffi-bindgen generate \
     --library target/release/libcapacitor_core.dylib \
     --language swift --out-dir "$BINDINGS_TMP_DIR"
 cp "$BINDINGS_TMP_DIR/capacitor_core.swift" apps/swift/Sources/Capacitor/Bridge/

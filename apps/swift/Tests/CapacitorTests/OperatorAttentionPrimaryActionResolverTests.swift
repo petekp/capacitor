@@ -98,6 +98,30 @@ final class OperatorAttentionPrimaryActionResolverTests: XCTestCase {
         )
         XCTAssertEqual(
             OperatorAttentionPrimaryActionResolver.resolve(
+                attentionItem: attentionItem(kind: .runningWorkBatch),
+                delegationState: nil,
+                isDelegationEnabled: true,
+            ),
+            .defaultProjectAction,
+        )
+        XCTAssertEqual(
+            OperatorAttentionPrimaryActionResolver.resolve(
+                attentionItem: attentionItem(kind: .workBatchCheckpoint),
+                delegationState: nil,
+                isDelegationEnabled: true,
+            ),
+            .defaultProjectAction,
+        )
+        XCTAssertEqual(
+            OperatorAttentionPrimaryActionResolver.resolve(
+                attentionItem: attentionItem(kind: .waitingWorkBatch),
+                delegationState: nil,
+                isDelegationEnabled: true,
+            ),
+            .defaultProjectAction,
+        )
+        XCTAssertEqual(
+            OperatorAttentionPrimaryActionResolver.resolve(
                 attentionItem: attentionItem(kind: .dormantProject),
                 delegationState: nil,
                 isDelegationEnabled: true,

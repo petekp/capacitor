@@ -47,6 +47,7 @@ struct StatusChipsRow: View {
     let sessionState: ProjectSessionState?
     var delegationState: RuntimeDelegationState?
     var activeRunState: RuntimeRunState?
+    var workBatchState: SessionState?
     var style: StatusChip.ChipStyle = .normal
 
     enum Presentation: Equatable {
@@ -60,6 +61,7 @@ struct StatusChipsRow: View {
         sessionState: ProjectSessionState?,
         delegationState: RuntimeDelegationState?,
         activeRunState: RuntimeRunState?,
+        workBatchState: SessionState? = nil,
     ) -> Presentation {
         // Runs win over delegation chips because a paused or active method run is the
         // most urgent project-level state the card can surface.
@@ -75,6 +77,11 @@ struct StatusChipsRow: View {
         if delegationState?.status == "resume_failed" {
             return .delegationResumeFailed
         }
+        // New Work Batch behavior: Capacitor-managed checkpoint/queue state should
+        // be visible on the project card instead of leaving the card looking Idle.
+        if let workBatchState {
+            return .session(workBatchState)
+        }
         return .session(sessionState?.state)
     }
 
@@ -85,6 +92,7 @@ struct StatusChipsRow: View {
             sessionState: sessionState,
             delegationState: delegationState,
             activeRunState: activeRunState,
+            workBatchState: workBatchState,
         )
     }
 

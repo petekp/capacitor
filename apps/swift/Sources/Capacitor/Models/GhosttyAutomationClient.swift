@@ -226,14 +226,15 @@ struct DefaultGhosttyAutomationClient: GhosttyAutomationClient {
                 fields.append("")
             }
 
-            let windowID = fields[0]
+            let windowID = fields[0].trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !windowID.isEmpty else { continue }
             let windowName = nilIfEmpty(fields[1])
             let isFront = fields[2].lowercased() == "true"
-            let tabID = fields[3]
+            let tabID = fields[3].trimmingCharacters(in: .whitespacesAndNewlines)
             let tabName = nilIfEmpty(fields[4])
             let tabIndex = Int(fields[5]) ?? 0
             let tabSelected = fields[6].lowercased() == "true"
-            let terminalID = fields[7]
+            let terminalID = fields[7].trimmingCharacters(in: .whitespacesAndNewlines)
             let terminalName = nilIfEmpty(fields[8])
             let terminalWorkingDirectory = nilIfEmpty(fields[9])
             let focusedTerminalID = nilIfEmpty(fields[10])
@@ -772,7 +773,11 @@ private func ghosttyTitleCandidate(
     homeDirectory: String,
     tmuxSessionHint: String?,
 ) -> GhosttyTitleMatch? {
-    let normalizedTitle = normalizeGhosttyPath(title, homeDirectory: homeDirectory).lowercased()
+    let normalizedTitle = normalizeGhosttyPath(
+        title,
+        homeDirectory: homeDirectory,
+        stripKnownShellTitleSuffix: true,
+    ).lowercased()
     let caseInsensitiveProjectPath = projectPath.lowercased()
     let caseInsensitiveHomeDirectory = homeDirectory.lowercased()
     if let pathMatch = ghosttyPathRankAndDistance(
@@ -816,8 +821,16 @@ func appleScriptEscape(_ s: String) -> String {
         .replacingOccurrences(of: "\"", with: "\\\"")
 }
 
-private func normalizeGhosttyPath(_ path: String, homeDirectory: String) -> String {
-    let trimmed = extractPathCandidate(fromTitle: path).trimmingCharacters(in: .whitespacesAndNewlines)
+private func normalizeGhosttyPath(
+    _ path: String,
+    homeDirectory: String,
+    stripKnownShellTitleSuffix: Bool = false,
+) -> String {
+    let trimmed = extractPathCandidate(
+        fromTitle: path,
+        stripKnownShellTitleSuffix: stripKnownShellTitleSuffix,
+    )
+    .trimmingCharacters(in: .whitespacesAndNewlines)
     let expandedHome = homeDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
 
     let expanded: String = if trimmed == "~" {
@@ -844,37 +857,73 @@ private func normalizeGhosttyPath(_ path: String, homeDirectory: String) -> Stri
     return normalized
 }
 
-private func extractPathCandidate(fromTitle title: String) -> String {
+private func extractPathCandidate(fromTitle title: String, stripKnownShellTitleSuffix: Bool = false) -> String {
     let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
     if trimmed.hasPrefix("~/") || trimmed == "~" || trimmed.hasPrefix("/") {
-        return trimmed
+        return normalizeExtractedPathCandidate(trimmed, stripKnownShellTitleSuffix: stripKnownShellTitleSuffix)
     }
 
     if let ellipsisRange = trimmed.range(of: "…/") {
-        return "/" + trimmed[ellipsisRange.upperBound...]
+        return normalizeExtractedPathCandidate(
+            "/" + trimmed[ellipsisRange.upperBound...],
+            stripKnownShellTitleSuffix: stripKnownShellTitleSuffix,
+        )
     }
     if let dotsRange = trimmed.range(of: ".../") {
-        return "/" + trimmed[dotsRange.upperBound...]
+        return normalizeExtractedPathCandidate(
+            "/" + trimmed[dotsRange.upperBound...],
+            stripKnownShellTitleSuffix: stripKnownShellTitleSuffix,
+        )
     }
 
     if let suffixAfterColon = trimmed.split(separator: ":", omittingEmptySubsequences: false).last {
         let candidate = String(suffixAfterColon).trimmingCharacters(in: .whitespacesAndNewlines)
         if candidate.hasPrefix("~/") || candidate == "~" || candidate.hasPrefix("/") {
-            return candidate
+            return normalizeExtractedPathCandidate(candidate, stripKnownShellTitleSuffix: stripKnownShellTitleSuffix)
         }
     }
 
     if let slashRange = trimmed.range(of: "~/", options: .backwards) {
-        return String(trimmed[slashRange.lowerBound...])
+        return normalizeExtractedPathCandidate(
+            String(trimmed[slashRange.lowerBound...]),
+            stripKnownShellTitleSuffix: stripKnownShellTitleSuffix,
+        )
     }
     if let slashRange = trimmed.range(of: "/", options: .backwards) {
         let candidate = String(trimmed[slashRange.lowerBound...])
         if candidate.count > 1 {
-            return candidate
+            return normalizeExtractedPathCandidate(candidate, stripKnownShellTitleSuffix: stripKnownShellTitleSuffix)
         }
     }
 
     return trimmed
+}
+
+private func normalizeExtractedPathCandidate(_ candidate: String, stripKnownShellTitleSuffix: Bool) -> String {
+    guard stripKnownShellTitleSuffix else {
+        return candidate
+    }
+    return trimKnownShellTitleSuffix(fromPathCandidate: candidate)
+}
+
+private func trimKnownShellTitleSuffix(fromPathCandidate candidate: String) -> String {
+    let trimmed = candidate.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let separatorRange = trimmed.range(of: " - ") else {
+        return trimmed
+    }
+
+    let suffix = trimmed[separatorRange.upperBound...]
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+        .trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+        .lowercased()
+    let knownShellSuffixes = ["", "zsh", "bash", "fish", "sh", "tmux", "claude"]
+    guard knownShellSuffixes.contains(suffix) else {
+        return trimmed
+    }
+
+    let prefix = trimmed[..<separatorRange.lowerBound]
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+    return prefix.isEmpty ? trimmed : prefix
 }
 
 private func ghosttyPathRankAndDistance(shellPath: String, projectPath: String, homeDir: String) -> (rank: Int, distance: Int)? {

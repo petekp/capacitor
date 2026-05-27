@@ -275,6 +275,40 @@ final class TerminalActivationCoordinatorTests: XCTestCase {
         XCTAssertFalse(launched)
     }
 
+    func testActivationFlowAcceptsAlreadySelectedDirectMatchBeforeFallbackTmuxResolution() async {
+        var launched = false
+        var switched = false
+        var resolvedClient = false
+
+        let ok = await TerminalActivationCoordinator.runActivationFlow(
+            sessionName: "parable-school",
+            projectPath: "/Users/pete/Code/parable-school",
+            resolveAnyClientTty: {
+                resolvedClient = true
+                return "/dev/ttys003"
+            },
+            ensureAndSwitch: { _, _, _, _ in
+                switched = true
+                return false
+            },
+            launchTerminalWithTmux: { _, _ in
+                launched = true
+                return false
+            },
+            activateTerminal: { clientTty, _, sessionName in
+                XCTAssertNil(clientTty)
+                XCTAssertNil(sessionName)
+                return .alreadySelected
+            },
+            switchAlreadySelectedDirectMatchWhenClientExists: false,
+        )
+
+        XCTAssertTrue(ok)
+        XCTAssertFalse(resolvedClient)
+        XCTAssertFalse(switched)
+        XCTAssertFalse(launched)
+    }
+
     func testActivationFlowLogsDirectFocusTmuxClientAndLaunchDecision() async {
         let collector = ActivationLogCollector()
         DebugLog.setTestObserver { line in

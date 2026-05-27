@@ -100,7 +100,7 @@ final class WorkBatchAutoRouter {
     private let bindingStoreFactory: BindingStoreFactory
     private let taskSessionCoordinator: WorkBatchTaskSessionCoordinator
     private let processSessionIDs: ProcessSessionLookup
-    private let safeWakeBoundaryAllowsInput: SafeWakeBoundaryLookup
+    private let safeWakeBoundaryAllowsInputOverride: SafeWakeBoundaryLookup?
     private var isRouting = false
     private var routeWaiters: [CheckedContinuation<Void, Never>] = []
     private var latestRuntimeSessions: [RuntimeSession] = []
@@ -129,10 +129,10 @@ final class WorkBatchAutoRouter {
         self.processSessionIDs = processSessionIDs ?? { binding in
             processScanner.sessionIDs(inWorktree: binding.worktreePath)
         }
-        // New Work Batch delivery keeps wakeups closed by default. The existing
-        // Ghostty text-input path remains behind this proof hook until a caller
-        // can prove both the exact cockpit target and a safe Claude input boundary.
-        self.safeWakeBoundaryAllowsInput = safeWakeBoundaryAllowsInput ?? { _ in false }
+        // New Work Batch delivery keeps the legacy Ghostty text-input path
+        // behind a proven safe boundary. Tests may inject an override, but
+        // production derives this from reducer-backed runtime session state.
+        safeWakeBoundaryAllowsInputOverride = safeWakeBoundaryAllowsInput
     }
 
     func routeCapturedTask(
@@ -358,6 +358,77 @@ final class WorkBatchAutoRouter {
         let state = (try? stateStoreFactory(projectPath).load()) ?? .empty
         let bindings = (try? bindingStoreFactory(projectPath).load()) ?? []
         return WorkBatchProjectionBuilder.build(state: state, bindings: bindings)
+    }
+
+    func startSessionForUnboundBatch(
+        project: Project,
+        batchID: String,
+        now: Date = Date(),
+    ) async throws -> WorkBatchCockpitBinding {
+        await acquireRouteTurn()
+        defer { releaseRouteTurn() }
+
+        let stateStore = stateStoreFactory(project.path)
+        let bindingStore = bindingStoreFactory(project.path)
+
+        if let existingBinding = try bindingStore.binding(batchID: batchID) {
+            return existingBinding
+        }
+
+        let state = try stateStore.load()
+        guard let batch = state.batches.first(where: { $0.id == batchID }) else {
+            throw WorkBatchAutoRouterError.batchNotFound
+        }
+
+        let openTasks = state.tasks
+            .filter { $0.batchID == batchID && $0.status != .done }
+            .sorted { $0.createdAt < $1.createdAt }
+        guard !openTasks.isEmpty else {
+            throw WorkBatchAutoRouterError.taskNotFound
+        }
+
+        let deliveryGeneration = Self.deliveryGeneration(batchID: batch.id, updatedAt: now)
+        let startResult: WorkBatchTaskSessionStartResult
+        do {
+            startResult = try await taskSessionCoordinator.startNewSession(
+                WorkBatchTaskSessionStartRequest(
+                    projectPath: project.path,
+                    batchID: batch.id,
+                    batchName: batch.name,
+                    tasks: openTasks.map(\.taskItem),
+                    deliveryGeneration: deliveryGeneration,
+                    now: now,
+                ),
+            )
+        } catch {
+            try markLaunchFailed(
+                stateStore: stateStore,
+                batchID: batch.id,
+                taskID: openTasks[0].id,
+                now: now,
+            )
+            throw error
+        }
+
+        var stateAfterLaunch = try stateStore.load()
+        if let batchIndex = stateAfterLaunch.batches.firstIndex(where: { $0.id == batch.id }) {
+            stateAfterLaunch.batches[batchIndex].cockpitBindingID = startResult.binding.id
+            stateAfterLaunch.batches[batchIndex].status = .working
+            stateAfterLaunch.batches[batchIndex].currentActivitySummary = "Claude Code is starting on \(openTasks.first?.displayTitle ?? batch.name)."
+            stateAfterLaunch.batches[batchIndex].updatedAt = now
+        }
+        for taskIndex in stateAfterLaunch.tasks.indices where stateAfterLaunch.tasks[taskIndex].batchID == batch.id && stateAfterLaunch.tasks[taskIndex].status == .queued {
+            stateAfterLaunch.tasks[taskIndex].status = .working
+            stateAfterLaunch.tasks[taskIndex].updatedAt = now
+        }
+        stateAfterLaunch.recordContextWrite(
+            batchID: batch.id,
+            updatedAt: now,
+            deliveryGeneration: deliveryGeneration,
+        )
+        try stateStore.save(stateAfterLaunch)
+
+        return startResult.binding
     }
 
     @discardableResult
@@ -647,10 +718,13 @@ final class WorkBatchAutoRouter {
             currentBinding = result.bindings.first(where: { $0.batchID == binding.batchID }) ?? binding
         }
 
+        let canResumeExistingBinding = shouldResumeExistingBinding(currentBinding) && !focusOnlyExistingProcess
+        let preferFocusBeforeResume = !canResumeExistingBinding || exactLiveSessionExists(for: currentBinding)
+
         return try await taskSessionCoordinator.openExistingSession(
             currentBinding,
-            allowResumeWhenFocusFails: shouldResumeExistingBinding(currentBinding) && !focusOnlyExistingProcess,
-            preferFocusBeforeResume: true,
+            allowResumeWhenFocusFails: canResumeExistingBinding,
+            preferFocusBeforeResume: preferFocusBeforeResume,
         )
     }
 
@@ -1128,7 +1202,7 @@ final class WorkBatchAutoRouter {
             reconciliationIssues: reconciliationIssues,
             mirrorWriteSucceeded: mirrorWriteSucceeded,
             exactLiveSessionExists: binding.map(exactLiveSessionExists) ?? false,
-            safeWakeBoundarySatisfied: binding.map(safeWakeBoundaryAllowsInput) ?? false,
+            safeWakeBoundarySatisfied: binding.map(safeWakeBoundarySatisfied) ?? false,
             deliveryRecord: state.deliveryRecord(batchID: batchID),
         ))
 
@@ -1281,12 +1355,111 @@ final class WorkBatchAutoRouter {
         }
         guard hasRuntimeSessionSnapshot else { return false }
         return latestRuntimeSessions.contains { session in
-            session.sessionId == binding.claudeSessionID &&
-                session.gcReason == nil &&
-                (session.isAlive ?? true) &&
-                (pathIsInside(session.cwd, root: binding.worktreePath) ||
-                    pathIsInside(session.projectPath, root: binding.worktreePath))
+            runtimeSessionMatchesBinding(session, binding: binding) ||
+                runtimeSessionIsSignalAbsenceReadyBoundary(session, binding: binding)
         }
+    }
+
+    private func safeWakeBoundarySatisfied(for binding: WorkBatchCockpitBinding) -> Bool {
+        if let safeWakeBoundaryAllowsInputOverride {
+            return safeWakeBoundaryAllowsInputOverride(binding)
+        }
+        guard hasRuntimeSessionSnapshot else { return false }
+        if latestRuntimeSessions.contains(where: { session in
+            runtimeSessionMatchesBinding(session, binding: binding) &&
+                runtimeSessionIsAtSafeWakeBoundary(session)
+        }) {
+            return true
+        }
+
+        if latestRuntimeSessions.contains(where: { session in
+            runtimeSessionIsSignalAbsenceReadyBoundary(session, binding: binding)
+        }) {
+            return true
+        }
+
+        let processSessionIDs = processSessionIDs(binding)
+        return latestRuntimeSessions.contains { session in
+            runtimeSessionIsProcessBackedAwaitingInputBoundary(
+                session,
+                binding: binding,
+                processSessionIDs: processSessionIDs,
+            )
+        }
+    }
+
+    private func runtimeSessionMatchesBinding(
+        _ session: RuntimeSession,
+        binding: WorkBatchCockpitBinding,
+    ) -> Bool {
+        runtimeSessionIdentityMatchesBinding(session, binding: binding) &&
+            session.gcReason == nil
+    }
+
+    private func runtimeSessionIdentityMatchesBinding(
+        _ session: RuntimeSession,
+        binding: WorkBatchCockpitBinding,
+    ) -> Bool {
+        runtimeSessionPathAndIDMatchBinding(session, binding: binding) &&
+            (session.isAlive ?? true)
+    }
+
+    private func runtimeSessionPathAndIDMatchBinding(
+        _ session: RuntimeSession,
+        binding: WorkBatchCockpitBinding,
+    ) -> Bool {
+        session.sessionId == binding.claudeSessionID &&
+            (pathIsInside(session.cwd, root: binding.worktreePath) ||
+                pathIsInside(session.projectPath, root: binding.worktreePath))
+    }
+
+    private func runtimeSessionIsAtSafeWakeBoundary(_ session: RuntimeSession) -> Bool {
+        runtimeSessionIsReadyWithoutTools(session) &&
+            session.gcReason == nil
+    }
+
+    /// New Work Batch path: a session can age out of transcript signals while
+    /// still being the exact assigned Claude cockpit, alive, ready, and idle.
+    /// That is safe enough for the tiny task-refresh wake prompt.
+    private func runtimeSessionIsSignalAbsenceReadyBoundary(
+        _ session: RuntimeSession,
+        binding: WorkBatchCockpitBinding,
+    ) -> Bool {
+        runtimeSessionIdentityMatchesBinding(session, binding: binding) &&
+            runtimeSessionIsReadyWithoutTools(session) &&
+            session.gcReason == "signal_absence"
+    }
+
+    /// New Work Batch path: the reducer can lose PID confidence for an old
+    /// session while a direct process scan still proves the exact assigned
+    /// Claude cockpit is alive in the Batch Worktree. If that stale snapshot
+    /// also says Claude was awaiting input and no tools are running, the tiny
+    /// task-refresh wake is still the least surprising product behavior.
+    private func runtimeSessionIsProcessBackedAwaitingInputBoundary(
+        _ session: RuntimeSession,
+        binding: WorkBatchCockpitBinding,
+        processSessionIDs: [String],
+    ) -> Bool {
+        processSessionIDs.contains(binding.claudeSessionID) &&
+            runtimeSessionPathAndIDMatchBinding(session, binding: binding) &&
+            session.gcReason == "signal_absence" &&
+            session.toolsInFlight == 0 &&
+            runtimeSessionLooksAwaitingInput(session)
+    }
+
+    private func runtimeSessionLooksAwaitingInput(_ session: RuntimeSession) -> Bool {
+        let state = session.state.lowercased()
+        if state == "ready" {
+            return true
+        }
+        return state == "idle" &&
+            session.stateSource?.authority == "meta_awaiting_input"
+    }
+
+    private func runtimeSessionIsReadyWithoutTools(_ session: RuntimeSession) -> Bool {
+        session.state.lowercased() == "ready" &&
+            session.toolsInFlight == 0 &&
+            session.isAlive == true
     }
 
     private func pathIsInside(_ path: String, root: String) -> Bool {
@@ -1652,6 +1825,7 @@ final class WorkBatchAutoRouter {
               let relatedBatch = WorkBatchRelatednessPolicy.bestRelatedBatch(
                   for: request.task,
                   among: existingBatches,
+                  ignoringTokensFrom: request,
               )
         else {
             return classification
@@ -1689,6 +1863,9 @@ private enum WorkBatchRelatednessPolicy {
         "its", "make", "more", "new", "now", "old", "one", "other", "same", "session", "should", "some",
         "task", "that", "the", "this", "through", "use", "used", "using", "was", "were", "when", "with",
         "work",
+
+        "change", "changes", "check", "checking", "create", "created", "disposable", "file", "files",
+        "keep", "local", "note", "notes", "sentence", "tiny", "txt", "update", "updated",
     ]
 
     private static let aliases: [String: String] = [
@@ -1718,14 +1895,18 @@ private enum WorkBatchRelatednessPolicy {
     static func bestRelatedBatch(
         for task: WorkBatchTaskRecord,
         among batches: [WorkBatchProjection],
+        ignoringTokensFrom request: WorkBatchClassificationRequest,
     ) -> WorkBatchProjection? {
+        let ignoredTokens = projectIdentityTokens(from: request)
         let taskTokens = tokenSet("\(task.displayTitle) \(task.body)")
+            .subtracting(ignoredTokens)
         guard !taskTokens.isEmpty else { return nil }
 
         let candidates = batches
             .filter { $0.status != .idle }
             .compactMap { batch -> (batch: WorkBatchProjection, score: Int)? in
                 let batchTokens = tokenSet(batchText(batch))
+                    .subtracting(ignoredTokens)
                 let score = taskTokens.intersection(batchTokens).count
                 return score > 0 ? (batch, score) : nil
             }
@@ -1746,6 +1927,12 @@ private enum WorkBatchRelatednessPolicy {
                 + batch.tasks.flatMap { [$0.displayTitle, $0.body] },
         )
         .joined(separator: " ")
+    }
+
+    private static func projectIdentityTokens(from request: WorkBatchClassificationRequest) -> Set<String> {
+        let projectURL = URL(fileURLWithPath: request.projectPath)
+        let lastPathComponent = projectURL.lastPathComponent
+        return tokenSet("\(request.projectName) \(lastPathComponent)")
     }
 
     private static func tokenSet(_ text: String) -> Set<String> {

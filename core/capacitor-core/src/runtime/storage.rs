@@ -122,7 +122,8 @@ impl StorageConfig {
     /// Path to a project's data directory.
     /// Example: ~/.capacitor/projects/p2_%2FUsers%2Fpete%2FCode%2Fmy-project/
     pub(crate) fn project_data_dir(&self, project_path: &str) -> PathBuf {
-        let encoded = Self::encode_path(project_path);
+        let storage_path = Self::normalize_project_path_for_storage(project_path);
+        let encoded = Self::encode_path(&storage_path);
         self.root.join("projects").join(encoded)
     }
 
@@ -167,6 +168,45 @@ impl StorageConfig {
     /// Example: `/Users/pete/Code/my-project` -> `p2_%2FUsers%2Fpete%2FCode%2Fmy-project`
     pub(crate) fn encode_path(path: &str) -> String {
         Self::encode_path_v2(path)
+    }
+
+    /// Normalize the project path before choosing Capacitor-owned per-project
+    /// storage. This is intentionally separate from `encode_path`: encoded
+    /// historical paths must remain lossless, while live Task/Work Batch state
+    /// needs one stable key for common macOS aliases such as `/private/tmp`.
+    pub(crate) fn normalize_project_path_for_storage(project_path: &str) -> String {
+        let trimmed = project_path.trim();
+        if trimmed.is_empty() {
+            return String::new();
+        }
+
+        let without_trailing = if trimmed == "/" {
+            "/"
+        } else {
+            trimmed.trim_end_matches('/')
+        };
+        let normalized = if without_trailing.is_empty() {
+            "/"
+        } else {
+            without_trailing
+        };
+
+        #[cfg(target_os = "macos")]
+        {
+            let normalized = if normalized == "/private/tmp" {
+                "/tmp".to_string()
+            } else if let Some(suffix) = normalized.strip_prefix("/private/tmp/") {
+                format!("/tmp/{suffix}")
+            } else {
+                normalized.to_string()
+            };
+            normalized.to_lowercase()
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            normalized.to_string()
+        }
     }
 
     /// Decodes an encoded path back to the original filesystem path.
@@ -386,7 +426,9 @@ mod tests {
     #[test]
     fn test_project_data_dir_path() {
         let config = StorageConfig::with_root(PathBuf::from("/tmp/capacitor"));
-        let encoded = StorageConfig::encode_path("/Users/pete/Code/my-project");
+        let encoded = StorageConfig::encode_path(
+            &StorageConfig::normalize_project_path_for_storage("/Users/pete/Code/my-project"),
+        );
         assert_eq!(
             config.project_data_dir("/Users/pete/Code/my-project"),
             PathBuf::from("/tmp/capacitor/projects").join(encoded)
@@ -396,7 +438,9 @@ mod tests {
     #[test]
     fn test_project_ideas_file_path() {
         let config = StorageConfig::with_root(PathBuf::from("/tmp/capacitor"));
-        let encoded = StorageConfig::encode_path("/Users/pete/Code/my-project");
+        let encoded = StorageConfig::encode_path(
+            &StorageConfig::normalize_project_path_for_storage("/Users/pete/Code/my-project"),
+        );
         assert_eq!(
             config.project_ideas_file("/Users/pete/Code/my-project"),
             PathBuf::from("/tmp/capacitor/projects")
@@ -408,7 +452,9 @@ mod tests {
     #[test]
     fn test_project_order_file_path() {
         let config = StorageConfig::with_root(PathBuf::from("/tmp/capacitor"));
-        let encoded = StorageConfig::encode_path("/Users/pete/Code/my-project");
+        let encoded = StorageConfig::encode_path(
+            &StorageConfig::normalize_project_path_for_storage("/Users/pete/Code/my-project"),
+        );
         assert_eq!(
             config.project_order_file("/Users/pete/Code/my-project"),
             PathBuf::from("/tmp/capacitor/projects")
@@ -515,6 +561,37 @@ mod tests {
         let encoded = StorageConfig::encode_path(original);
         let decoded = StorageConfig::decode_path(&encoded);
         assert_eq!(decoded, original);
+    }
+
+    #[test]
+    fn test_project_storage_key_normalizes_trailing_slashes() {
+        assert_eq!(
+            StorageConfig::normalize_project_path_for_storage("/Users/pete/Code/project///"),
+            StorageConfig::normalize_project_path_for_storage("/Users/pete/Code/project"),
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn test_project_storage_key_normalizes_macos_private_tmp_alias() {
+        assert_eq!(
+            StorageConfig::normalize_project_path_for_storage("/private/tmp/project"),
+            "/tmp/project"
+        );
+        assert_eq!(
+            StorageConfig::normalize_project_path_for_storage("/private/tmp/project///"),
+            "/tmp/project"
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn test_project_data_dir_uses_same_key_for_tmp_aliases() {
+        let config = StorageConfig::with_root(PathBuf::from("/tmp/capacitor"));
+        assert_eq!(
+            config.project_data_dir("/private/tmp/project"),
+            config.project_data_dir("/tmp/project"),
+        );
     }
 
     // ─────────────────────────────────────────────────────────────────────────────

@@ -451,15 +451,26 @@ extension NSView {
 // MARK: - Vertically Centered Text Editor
 
 final class TextViewFocusController {
+    typealias RetryScheduler = (_ action: @escaping () -> Void, _ delay: TimeInterval) -> Void
+
     private weak var textView: NSTextView?
     private weak var scrollView: NSScrollView?
     private var hasPendingFocus = false
     private var retryGeneration = 0
     private var hasScheduledRetry = false
     private let retryDelays: [TimeInterval]
+    private let retryScheduler: RetryScheduler
 
-    init(retryDelays: [TimeInterval] = [0, 0.05, 0.15, 0.35, 0.75]) {
+    init(
+        retryDelays: [TimeInterval] = [0, 0.05, 0.15, 0.35, 0.75],
+        retryScheduler: @escaping RetryScheduler = { action, delay in
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                action()
+            }
+        },
+    ) {
         self.retryDelays = retryDelays
+        self.retryScheduler = retryScheduler
     }
 
     func attach(textView: NSTextView, scrollView: NSScrollView) {
@@ -526,7 +537,7 @@ final class TextViewFocusController {
         let lastRetryIndex = delays.index(before: delays.endIndex)
 
         for (index, delay) in delays.enumerated() {
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            retryScheduler({ [weak self] in
                 guard let self, retryGeneration == generation else { return }
                 guard hasPendingFocus else {
                     hasScheduledRetry = false
@@ -537,7 +548,7 @@ final class TextViewFocusController {
                 if didFocus || index == lastRetryIndex {
                     hasScheduledRetry = false
                 }
-            }
+            }, delay)
         }
     }
 }

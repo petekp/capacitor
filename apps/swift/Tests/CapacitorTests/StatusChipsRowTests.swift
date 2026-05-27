@@ -52,6 +52,28 @@ final class StatusChipsRowTests: XCTestCase {
         XCTAssertEqual(presentation, .session(.waiting))
     }
 
+    func testWorkBatchStateWinsOverIdleLegacySession() {
+        let presentation = StatusChipsRow.presentation(
+            sessionState: makeSessionState(.idle),
+            delegationState: nil,
+            activeRunState: nil,
+            workBatchState: .waiting,
+        )
+
+        XCTAssertEqual(presentation, .session(.waiting))
+    }
+
+    func testActiveRunWinsOverWorkBatchState() {
+        let presentation = StatusChipsRow.presentation(
+            sessionState: makeSessionState(.idle),
+            delegationState: nil,
+            activeRunState: makeRun(status: "active", checkpointID: nil),
+            workBatchState: .waiting,
+        )
+
+        XCTAssertEqual(presentation, .session(.working))
+    }
+
     private func makeSessionState(_ state: SessionState) -> ProjectSessionState {
         ProjectSessionState(
             state: state,

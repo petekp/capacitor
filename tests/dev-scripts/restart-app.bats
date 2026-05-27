@@ -140,6 +140,54 @@ reap_runtime_service "$TEST_PORT"
     [[ "$output" == *"stable"* ]]
 }
 
+@test "build_sanitized_debug_app_env keeps agent host environment out of debug app launch" {
+    run_restart_cleanup_shell '
+USER="pete"
+LOGNAME="pete"
+HOME="$TEST_HOME"
+SHELL="/bin/zsh"
+TMPDIR="/tmp/capacitor-test"
+LANG="en_US.UTF-8"
+LC_CTYPE="UTF-8"
+SSH_AUTH_SOCK="/tmp/ssh.sock"
+__CF_USER_TEXT_ENCODING="0x1F5:0x0:0x0"
+NO_COLOR="1"
+TERM="dumb"
+COLORTERM=""
+CODEX_THREAD_ID="thread"
+OPENAI_API_KEY="secret"
+CAPACITOR_FEATURES_ENABLED="projectDetails"
+source "$SCRIPT_PATH"
+build_sanitized_debug_app_env
+printf "%s\n" "${SANITIZED_APP_ENV[@]}"
+'
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"env"* ]]
+    [[ "$output" == *"-i"* ]]
+    [[ "$output" == *"HOME=$TEST_HOME"* ]]
+    [[ "$output" == *"USER=pete"* ]]
+    [[ "$output" == *"LOGNAME=pete"* ]]
+    [[ "$output" == *"SHELL=/bin/zsh"* ]]
+    [[ "$output" == *"TMPDIR=/tmp/capacitor-test"* ]]
+    [[ "$output" == *"LANG=en_US.UTF-8"* ]]
+    [[ "$output" == *"SSH_AUTH_SOCK=/tmp/ssh.sock"* ]]
+    [[ "$output" == *"PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"* ]]
+    [[ "$output" != *"NO_COLOR"* ]]
+    [[ "$output" != *"TERM=dumb"* ]]
+    [[ "$output" != *"COLORTERM"* ]]
+    [[ "$output" != *"LC_CTYPE"* ]]
+    [[ "$output" != *"CODEX_THREAD_ID"* ]]
+    [[ "$output" != *"OPENAI_API_KEY"* ]]
+    [[ "$output" != *"CAPACITOR_FEATURES_ENABLED"* ]]
+}
+
+@test "restart script regenerates UniFFI bindings through the release target" {
+    run grep -F -- "cargo run --release -p capacitor-core --bin uniffi-bindgen generate" "$SCRIPT_PATH"
+
+    [ "$status" -eq 0 ]
+}
+
 @test "kill_stale_capacitor_daemon removes legacy daemon residue" {
     local signals_log="$TEST_DIR/daemon-signals.log"
     local launchctl_log="$TEST_DIR/launchctl.log"
@@ -202,4 +250,112 @@ kill_stale_capacitor_daemon
 
     run grep -F -- "-KILL -f [c]apacitor-daemon" "$signals_log"
     [ "$status" -eq 1 ]
+}
+
+@test "terminate_installed_release_capacitor removes the installed release app before debug launch" {
+    local signals_log="$TEST_DIR/release-app-signals.log"
+    local release_state_file="$TEST_DIR/release-app-state"
+    local release_pid=4242
+
+    printf 'present\n' > "$release_state_file"
+
+    run_restart_cleanup_shell '
+sleep() { :; }
+kill() {
+    printf "%s\n" "$*" >> "$SIGNALS_LOG"
+    if [[ "$1" == "-0" ]]; then
+        shift
+        if [[ "${1:-}" == "$RELEASE_PID" && "$(cat "$RELEASE_STATE_FILE")" == "present" ]]; then
+            return 0
+        fi
+        return 1
+    fi
+    if [[ "${1:-}" == "-TERM" && "${2:-}" == "$RELEASE_PID" ]]; then
+        printf "gone\n" > "$RELEASE_STATE_FILE"
+    fi
+    return 0
+}
+pgrep() {
+    if [[ "${1:-}" == "-f" && "${2:-}" == "/Applications/Capacitor.app/Contents/MacOS/Capacitor$" ]]; then
+        if [[ "$(cat "$RELEASE_STATE_FILE")" == "present" ]]; then
+            printf "%s\n" "$RELEASE_PID"
+        fi
+        return 0
+    fi
+    return 1
+}
+source "$SCRIPT_PATH"
+terminate_installed_release_capacitor
+assert_no_installed_release_capacitor
+' \
+        SIGNALS_LOG="$signals_log" \
+        RELEASE_STATE_FILE="$release_state_file" \
+        RELEASE_PID="$release_pid"
+
+    [ "$status" -eq 0 ]
+
+    run grep -F -- "-TERM $release_pid" "$signals_log"
+    [ "$status" -eq 0 ]
+}
+
+@test "terminate_non_debug_capacitor_processes removes all non-canonical Capacitor builds" {
+    local signals_log="$TEST_DIR/non-debug-app-signals.log"
+    local debug_binary="$TEST_DIR/CapacitorDebug.app/Contents/MacOS/Capacitor"
+    local release_pid=4242
+    local home_release_pid=4243
+    local swift_run_pid=4244
+
+    run_restart_cleanup_shell '
+sleep() { :; }
+kill() {
+    printf "%s\n" "$*" >> "$SIGNALS_LOG"
+    return 0
+}
+pgrep() {
+    if [[ "${1:-}" == "-fl" && "${2:-}" == "/Capacitor$" ]]; then
+        printf "%s\n" \
+            "4000 $DEBUG_BINARY" \
+            "$RELEASE_PID /Applications/Capacitor.app/Contents/MacOS/Capacitor" \
+            "$HOME_RELEASE_PID /Users/pete/Applications/Capacitor.app/Contents/MacOS/Capacitor" \
+            "$SWIFT_RUN_PID /Users/pete/Code/capacitor/apps/swift/.build/debug/Capacitor"
+        return 0
+    fi
+    return 1
+}
+source "$SCRIPT_PATH"
+terminate_non_debug_capacitor_processes "$DEBUG_BINARY"
+' \
+        SIGNALS_LOG="$signals_log" \
+        DEBUG_BINARY="$debug_binary" \
+        RELEASE_PID="$release_pid" \
+        HOME_RELEASE_PID="$home_release_pid" \
+        SWIFT_RUN_PID="$swift_run_pid"
+
+    [ "$status" -eq 0 ]
+
+    run grep -F -- "-TERM 4000" "$signals_log"
+    [ "$status" -eq 1 ]
+
+    run grep -F -- "-TERM $release_pid" "$signals_log"
+    [ "$status" -eq 0 ]
+
+    run grep -F -- "-TERM $home_release_pid" "$signals_log"
+    [ "$status" -eq 0 ]
+
+    run grep -F -- "-TERM $swift_run_pid" "$signals_log"
+    [ "$status" -eq 0 ]
+}
+
+@test "assert_debug_app_frontmost can be relaxed for CI AX verification" {
+    run_restart_cleanup_shell '
+CAPACITOR_ALLOW_BACKGROUND_DEBUG_APP=1
+frontmost_app_snapshot() {
+    printf "%s\n%s\n%s\n" "Setup Assistant" "329" "/System/Library/CoreServices/Setup Assistant.app"
+}
+source "$SCRIPT_PATH"
+assert_debug_app_frontmost "$TEST_DIR/CapacitorDebug.app" "7612"
+' \
+        TEST_DIR="$TEST_DIR"
+
+    [ "$status" -eq 0 ]
 }

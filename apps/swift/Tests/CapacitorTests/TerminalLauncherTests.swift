@@ -67,6 +67,67 @@ final class TerminalLauncherTests: XCTestCase {
         wait(for: [exp], timeout: 5.0)
     }
 
+    func testTerminalAutomationEnvironmentDoesNotLeakNoColorHostSettings() {
+        let environment = TerminalLauncher.terminalAutomationEnvironment(source: [
+            "PATH": "/Users/pete/.codex/tmp/arg0/codex:/usr/bin",
+            "NO_COLOR": "1",
+            "TERM": "dumb",
+            "COLORTERM": "",
+            "FORCE_COLOR": "0",
+            "CLICOLOR": "0",
+            "CODEX_THREAD_ID": "thread",
+            "OPENAI_API_KEY": "secret",
+            "CAPACITOR_INGEST_KEY": "secret",
+            "KEEP_ME": "no",
+            "HOME": "/Users/pete",
+            "USER": "pete",
+            "LOGNAME": "pete",
+            "SHELL": "/bin/zsh",
+            "TMPDIR": "/tmp/custom",
+            "LANG": "en_US.UTF-8",
+            "LC_CTYPE": "C.UTF-8",
+            "SSH_AUTH_SOCK": "/tmp/ssh.sock",
+        ])
+
+        XCTAssertNil(environment["NO_COLOR"])
+        XCTAssertNil(environment["TERM"])
+        XCTAssertNil(environment["COLORTERM"])
+        XCTAssertNil(environment["FORCE_COLOR"])
+        XCTAssertNil(environment["CLICOLOR"])
+        XCTAssertNil(environment["CODEX_THREAD_ID"])
+        XCTAssertNil(environment["OPENAI_API_KEY"])
+        XCTAssertNil(environment["CAPACITOR_INGEST_KEY"])
+        XCTAssertNil(environment["KEEP_ME"])
+        XCTAssertEqual(environment["HOME"], "/Users/pete")
+        XCTAssertEqual(environment["USER"], "pete")
+        XCTAssertEqual(environment["LOGNAME"], "pete")
+        XCTAssertEqual(environment["SHELL"], "/bin/zsh")
+        XCTAssertEqual(environment["TMPDIR"], "/tmp/custom")
+        XCTAssertEqual(environment["LANG"], "en_US.UTF-8")
+        XCTAssertNil(environment["LC_CTYPE"])
+        XCTAssertEqual(environment["SSH_AUTH_SOCK"], "/tmp/ssh.sock")
+        XCTAssertEqual(environment["PATH"], "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin")
+    }
+
+    func testTerminalUserCommandDropsNoColorFlagsForLaunchedCommand() {
+        let command = "tmux new-session -A -s 'capacitor' -c '/Users/pete/Code/capacitor'"
+
+        let wrapped = terminalUserCommand(command)
+
+        XCTAssertTrue(wrapped.hasPrefix("env -i "))
+        XCTAssertTrue(wrapped.contains("HOME=\"$HOME\""))
+        XCTAssertTrue(wrapped.contains("TERM=\"$TERM\""))
+        XCTAssertTrue(wrapped.contains("COLORTERM=\"$COLORTERM\""))
+        XCTAssertTrue(wrapped.contains("SSH_AUTH_SOCK=\"$SSH_AUTH_SOCK\""))
+        XCTAssertTrue(wrapped.contains("PATH=\"$HOME/.local/bin:$HOME/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin\""))
+        XCTAssertTrue(wrapped.contains("/bin/sh -c"))
+        XCTAssertFalse(wrapped.contains("NO_COLOR"))
+        XCTAssertFalse(wrapped.contains("OPENAI_API_KEY"))
+        XCTAssertFalse(wrapped.contains("CODEX_THREAD_ID"))
+        XCTAssertTrue(wrapped.contains("tmux new-session -A"))
+        XCTAssertTrue(wrapped.contains("'\\''capacitor'\\''"))
+    }
+
     func testRunBashScriptWithResultCancellationTerminatesProcessPromptly() async {
         let exp = expectation(description: "cancelled runBashScriptWithResult returns promptly")
         let readyURL = FileManager.default.temporaryDirectory
@@ -368,6 +429,62 @@ final class TerminalLauncherTests: XCTestCase {
         XCTAssertEqual(intent.sessionName, "capacitor")
         XCTAssertEqual(intent.hostTty, "/dev/ttys002")
         XCTAssertEqual(intent.paneId, "%42")
+    }
+
+    func testFallbackIntentDoesNotSwitchAwayFromAlreadySelectedDirectMatch() {
+        let intent = ActivationPolicyIntent(
+            terminalApp: ActivationPolicyTerminalAppDecision(app: .ghostty, source: .fallback),
+            sessionName: "parable-school",
+            hostTty: nil,
+            paneId: nil,
+        )
+
+        XCTAssertFalse(TerminalLauncher.shouldSwitchAlreadySelectedDirectMatch(
+            intent: intent,
+            resolvedSessionName: "parable-school",
+        ))
+    }
+
+    func testRuntimeRouteIntentMaySwitchAwayFromAlreadySelectedDirectMatch() {
+        let intent = ActivationPolicyIntent(
+            terminalApp: ActivationPolicyTerminalAppDecision(app: .ghostty, source: .runtimeRoute),
+            sessionName: "parable-school",
+            hostTty: "/dev/ttys003",
+            paneId: "%12",
+        )
+
+        XCTAssertTrue(TerminalLauncher.shouldSwitchAlreadySelectedDirectMatch(
+            intent: intent,
+            resolvedSessionName: "parable-school",
+        ))
+    }
+
+    func testRuntimePaneEvidenceMaySwitchEvenWhenTerminalAppFallsBack() {
+        let intent = ActivationPolicyIntent(
+            terminalApp: ActivationPolicyTerminalAppDecision(app: .ghostty, source: .fallback),
+            sessionName: "parable-school",
+            hostTty: "/dev/ttys003",
+            paneId: "%12",
+        )
+
+        XCTAssertTrue(TerminalLauncher.shouldSwitchAlreadySelectedDirectMatch(
+            intent: intent,
+            resolvedSessionName: "parable-school",
+        ))
+    }
+
+    func testRuntimeRouteIntentDoesNotSwitchWhenResolvedSessionDiffers() {
+        let intent = ActivationPolicyIntent(
+            terminalApp: ActivationPolicyTerminalAppDecision(app: .ghostty, source: .runtimeRoute),
+            sessionName: "old-session",
+            hostTty: "/dev/ttys003",
+            paneId: "%12",
+        )
+
+        XCTAssertFalse(TerminalLauncher.shouldSwitchAlreadySelectedDirectMatch(
+            intent: intent,
+            resolvedSessionName: "parable-school",
+        ))
     }
 
     // MARK: - Unified Activation Tests
@@ -686,7 +803,10 @@ final class TerminalLauncherTests: XCTestCase {
 
         XCTAssertTrue(script.contains("open -b com.googlecode.iterm2"))
         XCTAssertTrue(script.contains("tell application \"iTerm\""))
-        XCTAssertTrue(script.contains("write text \"claude --resume\""))
+        XCTAssertTrue(script.contains("write text \"env -i"))
+        XCTAssertTrue(script.contains("PATH="))
+        XCTAssertTrue(script.contains("/bin/sh -c"))
+        XCTAssertTrue(script.contains("claude --resume"))
         XCTAssertFalse(script.contains("tell process \"iTerm2\""))
         XCTAssertTrue(script.contains("claude --resume"))
     }
@@ -700,7 +820,10 @@ final class TerminalLauncherTests: XCTestCase {
 
         XCTAssertTrue(script.contains("open -b com.apple.Terminal"))
         XCTAssertTrue(script.contains("tell application \"Terminal\""))
-        XCTAssertTrue(script.contains("do script \"claude --resume\" in front window"))
+        XCTAssertTrue(script.contains("do script \"env -i"))
+        XCTAssertTrue(script.contains("PATH="))
+        XCTAssertTrue(script.contains("/bin/sh -c"))
+        XCTAssertTrue(script.contains("claude --resume"))
         XCTAssertFalse(script.contains("tell process \"Terminal\""))
         XCTAssertTrue(script.contains("claude --resume"))
     }

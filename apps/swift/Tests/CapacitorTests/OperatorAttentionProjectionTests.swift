@@ -74,6 +74,46 @@ final class OperatorAttentionProjectionTests: XCTestCase {
         XCTAssertEqual(summary.needsYou.map(\.title), ["Older checkpoint", "Newer checkpoint"])
     }
 
+    func testWorkBatchCheckpointAppearsInNeedsYou() {
+        let project = makeProject(name: "Parable", path: "/tmp/parable")
+        let checkpointDate = Date(timeIntervalSince1970: 1_800_000_010)
+        let batch = makeWorkBatch(
+            id: "batch-typeface",
+            name: "Typeface unification",
+            status: .idle,
+            taskStatus: .needsYou,
+            checkpoint: WorkBatchCheckpointRecord(
+                id: "checkpoint-typeface",
+                batchID: "batch-typeface",
+                taskID: "task-typeface",
+                question: "Which source typeface should I use?",
+                reason: "Multiple source stories use different typefaces.",
+                recommendedAction: "Choose the source story.",
+                status: .pending,
+                requestedAt: checkpointDate,
+                respondedAt: nil,
+                response: nil,
+                updatedAt: checkpointDate,
+            ),
+        )
+
+        let summary = OperatorAttentionProjection.build(
+            projects: [project],
+            workBatchesByProjectPath: [project.path: [batch]],
+            now: now,
+        )
+
+        XCTAssertEqual(summary.needsYou.map(\.title), ["Typeface unification"])
+        XCTAssertEqual(summary.needsYou.first?.kind, .workBatchCheckpoint)
+        XCTAssertEqual(
+            summary.needsYou.first?.reason,
+            "Checkpoint ready: Which source typeface should I use?",
+        )
+        XCTAssertEqual(summary.needsYou.first?.recommendedAction, "Choose the source story.")
+        XCTAssertEqual(summary.needsYou.first?.target, .project(path: project.path))
+        XCTAssertEqual(summary.dormant, [])
+    }
+
     func testHealthyActiveRunAppearsInRunningNormally() {
         let project = makeProject(name: "Active", path: "/tmp/active")
         let run = makeRun(
@@ -94,6 +134,73 @@ final class OperatorAttentionProjectionTests: XCTestCase {
         XCTAssertEqual(summary.runningNormally.first?.kind, .runningRun)
         XCTAssertEqual(summary.runningNormally.first?.reason, "Implementing attention projection")
         XCTAssertEqual(summary.needsYou, [])
+    }
+
+    func testRunningWorkBatchAppearsInRunningNormally() {
+        let project = makeProject(name: "Parable", path: "/tmp/parable")
+        let batch = makeWorkBatch(
+            id: "batch-type-scale",
+            name: "Type scale",
+            status: .working,
+            currentActivitySummary: "Working on make all type a bit larger.",
+            taskStatus: .working,
+        )
+
+        let summary = OperatorAttentionProjection.build(
+            projects: [project],
+            workBatchesByProjectPath: [project.path: [batch]],
+            now: now,
+        )
+
+        XCTAssertEqual(summary.runningNormally.map(\.title), ["Parable"])
+        XCTAssertEqual(summary.runningNormally.first?.kind, .runningWorkBatch)
+        XCTAssertEqual(summary.runningNormally.first?.reason, "Working on make all type a bit larger.")
+        XCTAssertEqual(summary.dormant, [])
+    }
+
+    func testWaitingWorkBatchAppearsAsExceptionInsteadOfRunningNormally() {
+        let project = makeProject(name: "Parable", path: "/tmp/parable")
+        let batch = makeWorkBatch(
+            id: "batch-type-scale",
+            name: "Type scale",
+            status: .waiting,
+            currentActivitySummary: "Claude Code session needs reconnect.",
+            taskStatus: .queued,
+        )
+
+        let summary = OperatorAttentionProjection.build(
+            projects: [project],
+            workBatchesByProjectPath: [project.path: [batch]],
+            now: now,
+        )
+
+        XCTAssertEqual(summary.exceptions.map(\.title), ["Type scale"])
+        XCTAssertEqual(summary.exceptions.first?.kind, .waitingWorkBatch)
+        XCTAssertEqual(summary.exceptions.first?.reason, "Claude Code session needs reconnect.")
+        XCTAssertEqual(summary.exceptions.first?.recommendedAction, "Reconnect session")
+        XCTAssertEqual(summary.exceptions.first?.target, .project(path: project.path))
+        XCTAssertEqual(summary.runningNormally, [])
+        XCTAssertEqual(summary.dormant, [])
+    }
+
+    func testWaitingWorkBatchDuplicateSummaryRecommendsResolvingDuplicateSessions() {
+        let project = makeProject(name: "Parable", path: "/tmp/parable")
+        let batch = makeWorkBatch(
+            id: "batch-type-scale",
+            name: "Type scale",
+            status: .waiting,
+            currentActivitySummary: "Multiple Claude Code sessions match this Work Batch.",
+            taskStatus: .queued,
+        )
+
+        let summary = OperatorAttentionProjection.build(
+            projects: [project],
+            workBatchesByProjectPath: [project.path: [batch]],
+            now: now,
+        )
+
+        XCTAssertEqual(summary.exceptions.first?.kind, .waitingWorkBatch)
+        XCTAssertEqual(summary.exceptions.first?.recommendedAction, "Resolve duplicate sessions")
     }
 
     func testRunningReceiptLoopAppearsInRunningNormallyWithHandoffCopy() {
@@ -473,6 +580,38 @@ final class OperatorAttentionProjectionTests: XCTestCase {
             hasSession: true,
             stateSource: nil,
             lastAuthoritativeEventAt: nil,
+        )
+    }
+
+    private func makeWorkBatch(
+        id: String,
+        name: String,
+        status: WorkBatchStatus,
+        currentActivitySummary: String = "Checkpoint ready",
+        taskStatus: WorkBatchTaskStatus,
+        checkpoint: WorkBatchCheckpointRecord? = nil,
+    ) -> WorkBatchProjection {
+        let updatedAt = Date(timeIntervalSince1970: 1_800_000_000)
+        let task = WorkBatchTaskRecord(
+            id: "task-\(id)",
+            sourceIdeaID: "idea-\(id)",
+            title: name,
+            body: "",
+            status: taskStatus,
+            batchID: id,
+            createdAt: updatedAt,
+            updatedAt: updatedAt,
+        )
+
+        return WorkBatchProjection(
+            id: id,
+            name: name,
+            status: status,
+            queuedTaskCount: taskStatus == .queued ? 1 : 0,
+            currentActivitySummary: currentActivitySummary,
+            tasks: [task],
+            checkpoints: checkpoint.map { [$0] } ?? [],
+            binding: nil,
         )
     }
 

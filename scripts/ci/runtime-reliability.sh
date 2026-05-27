@@ -32,6 +32,7 @@ run_ax_verifier_ci() {
   local deterministic_projects_source="$workspace_root/artifacts/ax-automation-verification/ci/projects.force-seed.json"
   rm -f "$deterministic_projects_source"
   CAPACITOR_PROJECTS_FILE="${CAPACITOR_PROJECTS_FILE:-$deterministic_projects_source}" \
+    CAPACITOR_ALLOW_BACKGROUND_DEBUG_APP=1 \
     CAPACITOR_SKIP_SETUP_VALIDATION=1 \
     bash scripts/ci/ax-automation-verify.sh \
     --runs 1 \

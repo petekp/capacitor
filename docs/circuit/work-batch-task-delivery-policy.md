@@ -177,10 +177,13 @@ Initial policy:
 | Binding is running but exact live session is missing after grace | Mark stale and resume stored session id. |
 | Done report arrives while queued Tasks remain | Mark reported Task done, rewrite mirror, run delivery policy for remaining queued Tasks. |
 
-Later safe wake extension:
+Safe wake boundary:
 
-- If runtime says the exact bound session is alive, in the Batch Worktree, not using tools, and waiting at an input boundary, Capacitor may send a short wakeup.
-- That extension needs its own proof because it depends on terminal/session targeting. It should not be implemented by generic terminal injection first.
+- If runtime says the exact bound session is alive, in the Batch Worktree, `ready`, and has `tools_in_flight == 0`, Capacitor may send a short wakeup.
+- If runtime has aged the exact bound session into `signal_absence`, Capacitor may still send the short wakeup only when direct process evidence proves that same assigned session is alive in the Batch Worktree, runtime reports `tools_in_flight == 0`, and the last runtime state source says Claude was awaiting input.
+- Process-scanner evidence by itself is not enough to satisfy this boundary. It can prove that the assigned session exists, but it must be paired with runtime input-boundary evidence before Capacitor sends terminal input.
+- Missing `tools_in_flight` evidence is treated as unsafe for the process-backed `signal_absence` exception. We should not guess that no tools are running.
+- This keeps the wake path useful for truly ready sessions without falling back to generic terminal injection while Claude is still working.
 
 ### User-Facing Copy
 
@@ -292,8 +295,9 @@ Implementation note:
 
 - `WorkBatchDeliveryPolicyInput` now separates `exactLiveSessionExists` from `safeWakeBoundarySatisfied`.
 - An exact live Claude session without a proven safe wake boundary returns `safe_wake_deferred` instead of `wake_existing_session`.
-- `WorkBatchAutoRouter` keeps the existing Ghostty wake path closed by default behind `safeWakeBoundaryAllowsInput`.
-- Focused tests cover the default no-wake behavior, the explicit safe-boundary wake path, and runtime snapshot reconciliation without terminal input.
+- `WorkBatchAutoRouter` derives the production safe boundary from runtime session state: exact assigned session id, inside the Batch Worktree, alive, `ready`, no GC reason, and `tools_in_flight == 0`.
+- It also accepts the narrow process-backed `signal_absence` shape seen in live use: exact assigned process in the Batch Worktree, runtime `signal_absence`, no tools in flight, and runtime state source `meta_awaiting_input`.
+- Focused tests cover process-only no-wake behavior, the explicit test override, the runtime-ready wake path, the process-backed signal-absence wake path, runtime-working deferral, runtime-ready-with-tools deferral, and runtime snapshot reconciliation without terminal input.
 
 ### P1: UI Honesty And Manual Test Script
 

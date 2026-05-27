@@ -210,7 +210,12 @@ final class GhosttyTerminalDriver: TerminalDriver {
     }
 
     private func reusableWindowID(from snapshot: GhosttyAppSnapshot) -> String? {
-        snapshot.windows.first(where: \.isFront)?.id ?? snapshot.windows.first?.id
+        snapshot.windows
+            .first(where: { $0.isFront && !$0.id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })?
+            .id
+            ?? snapshot.windows
+            .first(where: { !$0.id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })?
+            .id
     }
 }
 
@@ -413,8 +418,20 @@ private func hostFocusResult(
 private func ghosttyLaunchConfiguration(projectPath: String?, command: String) -> GhosttySurfaceConfigurationOptions {
     GhosttySurfaceConfigurationOptions(
         initialWorkingDirectory: projectPath,
-        initialInput: command,
+        initialInput: terminalUserCommand(command),
     )
+}
+
+func terminalUserCommand(_ command: String) -> String {
+    let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else {
+        return command
+    }
+
+    // New terminal-launch behavior: run Capacitor-launched commands from a
+    // narrow env so a polluted Ghostty/tmux parent cannot leak agent-host flags,
+    // secrets, or no-color settings into Claude/tmux.
+    return "env -i HOME=\"$HOME\" USER=\"$USER\" LOGNAME=\"$LOGNAME\" SHELL=\"$SHELL\" TMPDIR=\"$TMPDIR\" LANG=\"$LANG\" TERM=\"$TERM\" COLORTERM=\"$COLORTERM\" SSH_AUTH_SOCK=\"$SSH_AUTH_SOCK\" PATH=\"$HOME/.local/bin:$HOME/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin\" /bin/sh -c \(shellEscape(trimmed))"
 }
 
 func terminalLaunchCommandScript(
@@ -508,7 +525,7 @@ private func hostTerminalSendCommandScript(
     isRunning: Bool,
 ) -> String {
     let delay = isRunning ? 1.0 : 2.5
-    let escapedCommand = command
+    let escapedCommand = terminalUserCommand(command)
         .replacingOccurrences(of: "\\", with: "\\\\")
         .replacingOccurrences(of: "\"", with: "\\\"")
 

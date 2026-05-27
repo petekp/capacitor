@@ -80,11 +80,16 @@ enum WorkBatchBindingReconciler {
             }
 
             // New Work Batch Done behavior: old/duplicate Claude Code cockpits
-            // should not pull a completed batch back into Needs You.
+            // should not pull a completed batch back into Needs You. Still
+            // record duplicate evidence so a click does not silently focus the
+            // wrong cockpit.
             if batchHasNoOpenTasks(binding.batchID, in: updatedState), !needsUser {
                 if updatedBinding.status != .done {
                     updatedBinding.status = .done
                     updatedBinding.updatedAt = now
+                }
+                if hasDuplicateCockpit {
+                    recordDuplicateIssue()
                 }
                 markDoneIfUseful(
                     binding.batchID,
@@ -167,10 +172,20 @@ enum WorkBatchBindingReconciler {
     }
 
     private static func isLiveSession(_ session: RuntimeSession) -> Bool {
-        if session.gcReason != nil {
+        guard session.isAlive ?? true else {
             return false
         }
-        return session.isAlive ?? true
+
+        guard let gcReason = session.gcReason else {
+            return true
+        }
+
+        // New Work Batch cockpit behavior: a bound Claude Code session can
+        // age out of transcript signals while still being a valid, visible
+        // cockpit. Only treat that snapshot as live when it is safely idle.
+        return gcReason == "signal_absence" &&
+            session.state.lowercased() == "ready" &&
+            session.toolsInFlight == 0
     }
 
     private static func duplicateIssueSessionIDs(

@@ -19,7 +19,7 @@ if [[ ! -f "$DYLIB_PATH" ]]; then
 fi
 
 cd "$PROJECT_ROOT"
-cargo run -p capacitor-core --bin uniffi-bindgen generate \
+cargo run --release -p capacitor-core --bin uniffi-bindgen generate \
     --library "$DYLIB_PATH" \
     --language swift \
     --out-dir "$TMP_DIR" >/dev/null

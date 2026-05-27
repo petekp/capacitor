@@ -107,6 +107,41 @@ final class GhosttyAutomationClientTests: XCTestCase {
         XCTAssertEqual(snapshot.windows.first?.tabs.first?.terminals.count, 2)
     }
 
+    func testParseSnapshotOutputSkipsWhitespaceOnlyWindowIDs() {
+        let output = [
+            makeRow(
+                windowID: " ",
+                windowName: "Invalid",
+                isFront: true,
+                tabID: "tab-invalid",
+                tabName: "Invalid",
+                tabIndex: 1,
+                tabSelected: true,
+                terminalID: "term-invalid",
+                terminalName: "Invalid",
+                terminalWorkingDirectory: "/Users/pete/Code/invalid",
+                focusedTerminalID: "term-invalid",
+            ),
+            makeRow(
+                windowID: "window-valid",
+                windowName: "Ghostty",
+                isFront: false,
+                tabID: "tab-valid",
+                tabName: "Valid",
+                tabIndex: 1,
+                tabSelected: true,
+                terminalID: "term-valid",
+                terminalName: "Valid",
+                terminalWorkingDirectory: "/Users/pete/Code/capacitor",
+                focusedTerminalID: "term-valid",
+            ),
+        ].joined(separator: GhosttyAppleScriptDelimiters.row)
+
+        let snapshot = DefaultGhosttyAutomationClient.parseSnapshotOutput(output)
+
+        XCTAssertEqual(snapshot.windows.map(\.id), ["window-valid"])
+    }
+
     func testBestGhosttyRouteMatchPrefersCachedTerminalID() {
         let snapshot = GhosttyAppSnapshot(windows: [
             GhosttyWindowSnapshot(
@@ -320,6 +355,182 @@ final class GhosttyAutomationClientTests: XCTestCase {
 
         XCTAssertEqual(match?.source, .terminalWorkingDirectory)
         XCTAssertEqual(match?.terminal?.id, "term-1")
+    }
+
+    func testBestGhosttyRouteMatchAcceptsHostPrefixedHomePathTitleWithShellSuffix() {
+        let snapshot = GhosttyAppSnapshot(windows: [
+            GhosttyWindowSnapshot(
+                id: "window-1",
+                name: "petepetrash@Petes-MacBook-Pro-2025:~/Code/pete-2025 - zsh",
+                isFront: true,
+                tabs: [
+                    GhosttyTabSnapshot(
+                        id: "tab-1",
+                        name: "petepetrash@Petes-MacBook-Pro-2025:~/Code/pete-2025 - zsh",
+                        index: 1,
+                        isSelected: true,
+                        terminals: [
+                            GhosttyTerminalSnapshot(
+                                id: "term-1",
+                                name: "petepetrash@Petes-MacBook-Pro-2025:~/Code/pete-2025 - zsh",
+                                workingDirectory: nil,
+                            ),
+                        ],
+                        focusedTerminalID: "term-1",
+                    ),
+                ],
+            ),
+        ])
+
+        let match = bestGhosttyRouteMatch(
+            snapshot: snapshot,
+            projectPath: "/Users/petepetrash/Code/pete-2025",
+            homeDirectory: "/Users/petepetrash",
+            tmuxSessionHint: "pete-2025",
+        )
+
+        XCTAssertEqual(match?.terminal?.id, "term-1")
+        XCTAssertEqual(match?.source, .terminalName)
+    }
+
+    func testBestGhosttyRouteMatchAcceptsEllipsizedPathTitleWithShellSuffix() {
+        let snapshot = GhosttyAppSnapshot(windows: [
+            GhosttyWindowSnapshot(
+                id: "window-1",
+                name: "…/Code/pete-2025 - zsh",
+                isFront: true,
+                tabs: [
+                    GhosttyTabSnapshot(
+                        id: "tab-1",
+                        name: "…/Code/pete-2025 - zsh",
+                        index: 1,
+                        isSelected: true,
+                        terminals: [
+                            GhosttyTerminalSnapshot(
+                                id: "term-1",
+                                name: "…/Code/pete-2025 - zsh",
+                                workingDirectory: nil,
+                            ),
+                        ],
+                        focusedTerminalID: "term-1",
+                    ),
+                ],
+            ),
+        ])
+
+        let match = bestGhosttyRouteMatch(
+            snapshot: snapshot,
+            projectPath: "/Users/petepetrash/Code/pete-2025",
+            homeDirectory: "/Users/petepetrash",
+            tmuxSessionHint: "pete-2025",
+        )
+
+        XCTAssertEqual(match?.terminal?.id, "term-1")
+        XCTAssertEqual(match?.source, .terminalName)
+    }
+
+    func testBestGhosttyRouteMatchDoesNotStripUnknownTitleSuffixAsPathEvidence() {
+        let snapshot = GhosttyAppSnapshot(windows: [
+            GhosttyWindowSnapshot(
+                id: "window-1",
+                name: nil,
+                isFront: true,
+                tabs: [
+                    GhosttyTabSnapshot(
+                        id: "tab-1",
+                        name: nil,
+                        index: 1,
+                        isSelected: true,
+                        terminals: [
+                            GhosttyTerminalSnapshot(
+                                id: "term-1",
+                                name: "petepetrash@Petes-MacBook-Pro-2025:~/Code/pete-2025 - notes",
+                                workingDirectory: nil,
+                            ),
+                        ],
+                        focusedTerminalID: "term-1",
+                    ),
+                ],
+            ),
+        ])
+
+        let match = bestGhosttyRouteMatch(
+            snapshot: snapshot,
+            projectPath: "/Users/petepetrash/Code/pete-2025",
+            homeDirectory: "/Users/petepetrash",
+            tmuxSessionHint: nil,
+        )
+
+        XCTAssertNil(match)
+    }
+
+    func testBestGhosttyRouteMatchDoesNotStripShellSuffixFromFilesystemProjectPath() {
+        let snapshot = GhosttyAppSnapshot(windows: [
+            GhosttyWindowSnapshot(
+                id: "window-1",
+                name: nil,
+                isFront: true,
+                tabs: [
+                    GhosttyTabSnapshot(
+                        id: "tab-1",
+                        name: nil,
+                        index: 1,
+                        isSelected: true,
+                        terminals: [
+                            GhosttyTerminalSnapshot(
+                                id: "term-1",
+                                name: nil,
+                                workingDirectory: "/Users/pete/Code/foo",
+                            ),
+                        ],
+                        focusedTerminalID: "term-1",
+                    ),
+                ],
+            ),
+        ])
+
+        let match = bestGhosttyRouteMatch(
+            snapshot: snapshot,
+            projectPath: "/Users/pete/Code/foo - zsh",
+            homeDirectory: "/Users/pete",
+        )
+
+        XCTAssertNil(match)
+    }
+
+    func testBestGhosttyRouteMatchAcceptsShellSuffixInFilesystemProjectPath() {
+        let snapshot = GhosttyAppSnapshot(windows: [
+            GhosttyWindowSnapshot(
+                id: "window-1",
+                name: nil,
+                isFront: true,
+                tabs: [
+                    GhosttyTabSnapshot(
+                        id: "tab-1",
+                        name: nil,
+                        index: 1,
+                        isSelected: true,
+                        terminals: [
+                            GhosttyTerminalSnapshot(
+                                id: "term-1",
+                                name: nil,
+                                workingDirectory: "/Users/pete/Code/foo - zsh",
+                            ),
+                        ],
+                        focusedTerminalID: "term-1",
+                    ),
+                ],
+            ),
+        ])
+
+        let match = bestGhosttyRouteMatch(
+            snapshot: snapshot,
+            projectPath: "/Users/pete/Code/foo - zsh",
+            homeDirectory: "/Users/pete",
+        )
+
+        XCTAssertEqual(match?.terminal?.id, "term-1")
+        XCTAssertEqual(match?.source, .terminalWorkingDirectory)
     }
 
     func testBestGhosttyRouteMatchRespectsManagedWorktreeIsolation() {

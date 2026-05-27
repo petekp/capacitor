@@ -266,15 +266,80 @@ final class RuntimeSnapshotApplicatorTests: XCTestCase {
         )
 
         XCTAssertEqual(outcome.decision, .duplicateVersionNoop)
-        XCTAssertTrue(outcome.effects.isEmpty)
+        XCTAssertEqual(outcome.effects, [.updatePostSessionRefreshContext])
         XCTAssertEqual(fixture.sessionStateManager.getSessionState(for: project)?.sessionId, "baseline-session")
         XCTAssertEqual(fixture.shellStateStore.state?.shells["111"]?.cwd, "/baseline")
         XCTAssertEqual(fixture.runState.runStatesByID[RuntimeRunKey(run: baselineRun)], baselineRun)
         XCTAssertNil(fixture.runState.runStatesByID[RuntimeRunKey(run: updatedRun)])
         XCTAssertTrue(
-            observedLines.contains { $0.contains("source=runtime_snapshot_noop") && $0.contains("version=9") },
-            "expected no-op log for repeated nonzero snapshot version",
+            observedLines.contains {
+                $0.contains("source=runtime_snapshot_volatile_refresh") && $0.contains("version=9")
+            },
+            "expected volatile refresh log for repeated nonzero snapshot version",
         )
+    }
+
+    func testRepeatedNonzeroSnapshotVersionRefreshesLiveProcessEvidence() {
+        let project = makeProject(path: "/tmp/capacitor")
+        var liveEvidence: [String: LiveClaudeProjectProcessEvidence] = [
+            project.path: LiveClaudeProjectProcessEvidence(
+                processCount: 1,
+                sessionIDs: ["live-session"],
+            ),
+        ]
+        let fixture = Fixture(liveClaudeProcessEvidenceProvider: { _ in liveEvidence })
+
+        let context = fixture.applicator.beginFetch(projects: [project])
+        _ = fixture.applicator.apply(
+            makeRuntimeSnapshot(
+                projectPath: project.path,
+                sessionId: "runtime-session",
+                shellCwd: "/baseline",
+                shellPid: "111",
+                snapshotVersion: 9,
+                state: "idle",
+                activeCount: 0,
+            ),
+            context: context,
+        )
+
+        XCTAssertEqual(fixture.sessionStateManager.getSessionState(for: project)?.state, .ready)
+
+        liveEvidence = [:]
+        let firstOutcome = fixture.applicator.apply(
+            makeRuntimeSnapshot(
+                projectPath: project.path,
+                sessionId: "changed-session-ignored",
+                shellCwd: "/changed-ignored",
+                shellPid: "111",
+                snapshotVersion: 9,
+                state: "working",
+            ),
+            context: context,
+        )
+
+        XCTAssertEqual(firstOutcome.decision, .duplicateVersionNoop)
+        XCTAssertEqual(firstOutcome.effects, [.updatePostSessionRefreshContext])
+        XCTAssertEqual(fixture.sessionStateManager.getSessionState(for: project)?.state, .ready)
+
+        let secondOutcome = fixture.applicator.apply(
+            makeRuntimeSnapshot(
+                projectPath: project.path,
+                sessionId: "changed-session-ignored",
+                shellCwd: "/changed-ignored",
+                shellPid: "111",
+                snapshotVersion: 9,
+                state: "working",
+            ),
+            context: context,
+        )
+
+        XCTAssertEqual(secondOutcome.decision, .duplicateVersionNoop)
+        XCTAssertEqual(secondOutcome.effects, [.updatePostSessionRefreshContext])
+        let projectedState = fixture.sessionStateManager.getSessionState(for: project)
+        XCTAssertEqual(projectedState?.state, .idle)
+        XCTAssertEqual(projectedState?.sessionId, "runtime-session")
+        XCTAssertEqual(fixture.shellStateStore.state?.shells["111"]?.cwd, "/baseline")
     }
 
     func testOlderSnapshotVersionCannotOverrideNewerAppliedVersion() {
@@ -460,6 +525,8 @@ final class RuntimeSnapshotApplicatorTests: XCTestCase {
         runs: [RuntimeRunState] = [],
         runtimeSessions: [RuntimeSession] = [],
         snapshotVersion: UInt64 = 0,
+        state: String = "working",
+        activeCount: Int = 1,
     ) -> RuntimeSnapshot {
         let timestamp = "2026-03-05T00:00:00Z"
         return RuntimeSnapshot(
@@ -468,13 +535,13 @@ final class RuntimeSnapshotApplicatorTests: XCTestCase {
                     projectId: nil,
                     workspaceId: nil,
                     projectPath: projectPath,
-                    state: "working",
+                    state: state,
                     updatedAt: timestamp,
                     stateChangedAt: timestamp,
                     sessionId: sessionId,
                     latestSessionId: sessionId,
                     sessionCount: 1,
-                    activeCount: 1,
+                    activeCount: activeCount,
                     hasSession: true,
                 ),
             ],

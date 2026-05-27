@@ -34,7 +34,7 @@ final class WorkBatchTaskSessionTests: XCTestCase {
                 "--session-id",
                 "56c839a4-3a6c-46a1-9e04-c9d6bde7f4b8",
                 "--permission-mode",
-                "dontAsk",
+                "auto",
                 "--name",
                 "Mobile prototype",
                 "Read the batch context and begin.",
@@ -111,6 +111,8 @@ final class WorkBatchTaskSessionTests: XCTestCase {
             [
                 "--resume",
                 "68d42879-5c45-40da-86de-2427c64411dc",
+                "--permission-mode",
+                "auto",
             ],
         )
     }

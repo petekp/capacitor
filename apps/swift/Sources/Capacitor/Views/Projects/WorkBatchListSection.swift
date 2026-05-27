@@ -168,6 +168,14 @@ private struct WorkBatchCheckpointCard: View {
                             .foregroundStyle(.white.opacity(0.58))
                             .fixedSize(horizontal: false, vertical: true)
                     }
+
+                    let recommendedAction = checkpoint.recommendedAction?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                    if !recommendedAction.isEmpty {
+                        Text("Recommended: \(recommendedAction)")
+                            .font(AppTypography.caption.weight(.semibold))
+                            .foregroundStyle(.orange.opacity(0.82))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
             }
 
@@ -239,23 +247,6 @@ private struct WorkBatchTaskRow: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel("Unresolve \(task.displayTitle)")
             }
-        }
-    }
-}
-
-private extension WorkBatchStatus {
-    var sessionState: SessionState {
-        switch self {
-        case .ready:
-            .ready
-        case .working:
-            .working
-        case .waiting:
-            .waiting
-        case .compacting:
-            .compacting
-        case .idle:
-            .idle
         }
     }
 }

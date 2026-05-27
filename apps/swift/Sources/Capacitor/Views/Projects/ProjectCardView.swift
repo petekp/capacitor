@@ -8,6 +8,7 @@ struct ProjectCardView: View {
     let delegationState: RuntimeDelegationState?
     let activeRunState: RuntimeRunState?
     let projectStatus: ProjectStatus?
+    var workBatchState: SessionState?
     var workBatchSummary: String?
     var sessionSummary: String?
     let flashState: SessionState?
@@ -28,6 +29,7 @@ struct ProjectCardView: View {
             delegationState: delegationState,
             activeRunState: activeRunState,
             projectStatus: projectStatus,
+            workBatchState: workBatchState,
             workBatchSummary: workBatchSummary,
             sessionSummary: sessionSummary,
             flashState: flashState,
@@ -113,6 +115,7 @@ struct ProjectCard: View {
     let delegationState: RuntimeDelegationState?
     let activeRunState: RuntimeRunState?
     let projectStatus: ProjectStatus?
+    var workBatchState: SessionState?
     var workBatchSummary: String?
     var sessionSummary: String?
     let flashState: SessionState?
@@ -139,6 +142,7 @@ struct ProjectCard: View {
         delegationState: RuntimeDelegationState?,
         activeRunState: RuntimeRunState?,
         projectStatus: ProjectStatus?,
+        workBatchState: SessionState? = nil,
         workBatchSummary: String? = nil,
         sessionSummary: String? = nil,
         flashState: SessionState?,
@@ -157,6 +161,7 @@ struct ProjectCard: View {
         self.delegationState = delegationState
         self.activeRunState = activeRunState
         self.projectStatus = projectStatus
+        self.workBatchState = workBatchState
         self.workBatchSummary = workBatchSummary
         self.sessionSummary = sessionSummary
         self.flashState = flashState
@@ -192,7 +197,7 @@ struct ProjectCard: View {
         if layoutMode == .dock {
             return dockPresentation.currentState
         }
-        return visibleRunVisualState.sessionState ?? sessionState?.state ?? .idle
+        return visibleRunVisualState.sessionState ?? workBatchState ?? sessionState?.state ?? .idle
     }
 
     private var nameColor: Color {
@@ -279,6 +284,9 @@ struct ProjectCard: View {
         if delegationStatus == "resume_failed" {
             return "Worker resume failed"
         }
+        if let workBatchState {
+            return workBatchState.accessibilityStatusDescription
+        }
         return currentState.accessibilityStatusDescription
     }
 
@@ -355,6 +363,7 @@ struct ProjectCard: View {
                     sessionState: sessionState,
                     delegationState: delegationState,
                     activeRunState: activeRunState,
+                    workBatchState: workBatchState,
                 )
 
                 ProjectCardContent(
@@ -418,6 +427,7 @@ struct ProjectCard: View {
                     sessionState: sessionState,
                     delegationState: delegationState,
                     activeRunState: activeRunState,
+                    workBatchState: workBatchState,
                     style: .compact,
                 )
                 .padding(.top, glassConfig.dockChipTopPaddingRounded)
@@ -746,6 +756,7 @@ private struct ProjectCardHeader: View {
     let sessionState: ProjectSessionState?
     let delegationState: RuntimeDelegationState?
     let activeRunState: RuntimeRunState?
+    let workBatchState: SessionState?
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
@@ -768,6 +779,7 @@ private struct ProjectCardHeader: View {
                 sessionState: sessionState,
                 delegationState: delegationState,
                 activeRunState: activeRunState,
+                workBatchState: workBatchState,
             )
         }
     }

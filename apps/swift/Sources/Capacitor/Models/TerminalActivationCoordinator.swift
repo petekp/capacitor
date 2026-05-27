@@ -45,6 +45,7 @@ final class TerminalActivationCoordinator {
         activateTerminal: (String?, String, String?) async -> TerminalFocusResult,
         resolveTargetPane: ((String?) async -> String?)? = nil,
         pollForNewClient: (() async -> String?)? = nil,
+        switchAlreadySelectedDirectMatchWhenClientExists: Bool = true,
     ) async -> Bool {
         // Try to focus an existing terminal by content (CWD, title) before
         // resolving tmux clients. This handles non-tmux terminals that are
@@ -61,6 +62,25 @@ final class TerminalActivationCoordinator {
             reason: directFocus.traceFailureReason,
         )
         if directFocus == .focused {
+            return true
+        }
+
+        // New activation behavior: if the selected Ghostty terminal already
+        // matches the project by CWD, accept it unless runtime gave us a trusted
+        // tmux route. Legacy fallback session names are only guesses and should
+        // not pull the user away from a visible non-tmux cockpit.
+        if directFocus == .alreadySelected,
+           !switchAlreadySelectedDirectMatchWhenClientExists
+        {
+            TerminalActivationTrace.log(
+                surface: .activationFlow,
+                route: "direct_focus",
+                projectPath: projectPath,
+                sessionName: sessionName,
+                evidence: ["already_selected", "tmux_route_untrusted"],
+                action: "accept_existing",
+                outcome: "focused",
+            )
             return true
         }
 

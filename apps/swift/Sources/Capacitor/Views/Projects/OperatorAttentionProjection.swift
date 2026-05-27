@@ -12,12 +12,15 @@ struct OperatorAttentionItem: Identifiable, Equatable {
     enum Kind: Equatable {
         case checkpoint
         case delegationReview
+        case workBatchCheckpoint
         case completedRun
         case completedReceipt
         case failedRun
         case failedReceipt
         case runningRun
         case runningReceipt
+        case runningWorkBatch
+        case waitingWorkBatch
         case runningSession
         case staleRun
         case staleSession
@@ -71,6 +74,7 @@ enum OperatorAttentionProjection {
         runsByID: [RuntimeRunKey: RuntimeRunState] = [:],
         delegationStatesByProjectPath: [String: RuntimeDelegationState] = [:],
         sessionStatesByProjectPath: [String: ProjectSessionState] = [:],
+        workBatchesByProjectPath: [String: [WorkBatchProjection]] = [:],
         receiptRunsByProjectPath: [String: ReceiptLoopRunState] = [:],
         dormantProjectPaths: Set<String> = [],
         now: Date = Date(),
@@ -93,6 +97,12 @@ enum OperatorAttentionProjection {
             },
             uniquingKeysWith: { first, _ in first },
         )
+        let normalizedWorkBatches = Dictionary(
+            workBatchesByProjectPath.map {
+                (PathNormalizer.normalize($0.key), $0.value)
+            },
+            uniquingKeysWith: { first, _ in first },
+        )
         let normalizedDormantPaths = Set(dormantProjectPaths.map(PathNormalizer.normalize))
         let runs = Array(runsByID.values)
         let latestReceiptProofRunID = latestReceiptProofRunID(
@@ -108,6 +118,7 @@ enum OperatorAttentionProjection {
                     runs: runs,
                     delegationState: normalizedDelegationStates[PathNormalizer.normalize(project.path)],
                     sessionState: normalizedSessionStates[PathNormalizer.normalize(project.path)],
+                    workBatches: normalizedWorkBatches[PathNormalizer.normalize(project.path)] ?? [],
                     receiptRun: normalizedReceiptRuns[PathNormalizer.normalize(project.path)],
                     latestReceiptProofRunID: latestReceiptProofRunID,
                     dormantProjectPaths: normalizedDormantPaths,
@@ -144,6 +155,7 @@ enum OperatorAttentionProjection {
         runs: [RuntimeRunState],
         delegationState: RuntimeDelegationState?,
         sessionState: ProjectSessionState?,
+        workBatches: [WorkBatchProjection],
         receiptRun: ReceiptLoopRunState?,
         latestReceiptProofRunID: String?,
         dormantProjectPaths: Set<String>,
@@ -178,6 +190,14 @@ enum OperatorAttentionProjection {
                 sortDate: lastChangedAt,
                 newestFirst: false,
             )
+        }
+
+        if let candidate = workBatchCheckpointCandidate(
+            project: project,
+            normalizedProjectPath: normalizedProjectPath,
+            workBatches: workBatches,
+        ) {
+            return candidate
         }
 
         if let delegationState,
@@ -224,6 +244,14 @@ enum OperatorAttentionProjection {
                 recommendedAction: "Inspect run",
                 newestFirst: true,
             )
+        }
+
+        if let candidate = waitingWorkBatchCandidate(
+            project: project,
+            normalizedProjectPath: normalizedProjectPath,
+            workBatches: workBatches,
+        ) {
+            return candidate
         }
 
         if let receiptRun,
@@ -316,6 +344,14 @@ enum OperatorAttentionProjection {
             )
         }
 
+        if let candidate = runningWorkBatchCandidate(
+            project: project,
+            normalizedProjectPath: normalizedProjectPath,
+            workBatches: workBatches,
+        ) {
+            return candidate
+        }
+
         if let receiptRun, receiptRun.status == .running {
             return receiptCandidate(
                 category: .runningNormally,
@@ -399,6 +435,129 @@ enum OperatorAttentionProjection {
             sortDate: nil,
             newestFirst: false,
         )
+    }
+
+    private static func workBatchCheckpointCandidate(
+        project: Project,
+        normalizedProjectPath: String,
+        workBatches: [WorkBatchProjection],
+    ) -> Candidate? {
+        guard let match = workBatches
+            .compactMap({ batch -> (batch: WorkBatchProjection, checkpoint: WorkBatchCheckpointRecord)? in
+                guard let checkpoint = batch.pendingCheckpoints.first else { return nil }
+                return (batch, checkpoint)
+            })
+            .sorted(by: { lhs, rhs in
+                if lhs.checkpoint.updatedAt != rhs.checkpoint.updatedAt {
+                    return lhs.checkpoint.updatedAt < rhs.checkpoint.updatedAt
+                }
+                return lhs.checkpoint.id < rhs.checkpoint.id
+            })
+            .first
+        else {
+            return nil
+        }
+
+        return Candidate(
+            category: .needsYou,
+            item: OperatorAttentionItem(
+                id: "work-batch-checkpoint:\(normalizedProjectPath):\(match.batch.id):\(match.checkpoint.id)",
+                kind: .workBatchCheckpoint,
+                projectPath: project.path,
+                title: match.batch.name,
+                reason: "Checkpoint ready: \(match.checkpoint.question)",
+                ageLabel: nil,
+                recommendedAction: cleaned(match.checkpoint.recommendedAction) ?? "Answer checkpoint",
+                lastChangedAt: match.checkpoint.updatedAt,
+                target: .project(path: project.path),
+            ),
+            sortDate: match.checkpoint.updatedAt,
+            newestFirst: false,
+        )
+    }
+
+    private static func runningWorkBatchCandidate(
+        project: Project,
+        normalizedProjectPath: String,
+        workBatches: [WorkBatchProjection],
+    ) -> Candidate? {
+        guard let batch = workBatches.first(where: { batch in
+            switch batch.status {
+            case .ready, .working, .compacting:
+                true
+            case .idle, .waiting:
+                false
+            }
+        }) else {
+            return nil
+        }
+
+        let lastChangedAt = batch.tasks.map(\.updatedAt).max()
+        return Candidate(
+            category: .runningNormally,
+            item: OperatorAttentionItem(
+                id: "running-work-batch:\(normalizedProjectPath):\(batch.id)",
+                kind: .runningWorkBatch,
+                projectPath: project.path,
+                title: project.name,
+                reason: cleaned(batch.currentActivitySummary) ?? "\(batch.name) is active",
+                ageLabel: nil,
+                recommendedAction: nil,
+                lastChangedAt: lastChangedAt,
+                target: .project(path: project.path),
+            ),
+            sortDate: lastChangedAt,
+            newestFirst: true,
+        )
+    }
+
+    private static func waitingWorkBatchCandidate(
+        project: Project,
+        normalizedProjectPath: String,
+        workBatches: [WorkBatchProjection],
+    ) -> Candidate? {
+        guard let batch = workBatches.first(where: { $0.status == .waiting }) else {
+            return nil
+        }
+
+        let lastChangedAt = batch.tasks.map(\.updatedAt).max()
+        return Candidate(
+            category: .exceptions,
+            item: OperatorAttentionItem(
+                id: "waiting-work-batch:\(normalizedProjectPath):\(batch.id)",
+                kind: .waitingWorkBatch,
+                projectPath: project.path,
+                title: batch.name,
+                reason: cleaned(batch.currentActivitySummary) ?? "\(batch.name) needs attention",
+                ageLabel: nil,
+                recommendedAction: waitingWorkBatchRecommendedAction(batch.currentActivitySummary),
+                lastChangedAt: lastChangedAt,
+                target: .project(path: project.path),
+            ),
+            sortDate: lastChangedAt,
+            newestFirst: false,
+        )
+    }
+
+    private static func waitingWorkBatchRecommendedAction(_ summary: String) -> String {
+        let normalized = summary.lowercased()
+        if normalized.contains("multiple claude code sessions") ||
+            normalized.contains("duplicate")
+        {
+            return "Resolve duplicate sessions"
+        }
+        if normalized.contains("reconnect") ||
+            normalized.contains("missing") ||
+            normalized.contains("no live claude")
+        {
+            return "Reconnect session"
+        }
+        if normalized.contains("pickup") ||
+            normalized.contains("pick up")
+        {
+            return "Inspect pickup"
+        }
+        return "Inspect batch"
     }
 
     private static func receiptCandidate(

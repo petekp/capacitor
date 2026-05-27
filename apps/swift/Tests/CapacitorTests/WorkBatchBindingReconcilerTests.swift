@@ -65,6 +65,78 @@ final class WorkBatchBindingReconcilerTests: XCTestCase {
         XCTAssertTrue(result.issues.isEmpty)
     }
 
+    func testReadySignalAbsentRuntimeSessionMarksBindingRunningWithoutProcessProbe() {
+        let now = Date(timeIntervalSince1970: 1_775_000_200)
+        let result = WorkBatchBindingReconciler.reconcile(
+            state: state(status: .waiting, summary: "Claude Code session needs reconnect."),
+            bindings: [binding(status: .stale)],
+            sessions: [
+                runtimeSession(
+                    sessionId: "session-batch",
+                    state: "ready",
+                    cwd: "/tmp/project/.capacitor/worktrees/batch-mobile",
+                    toolsInFlight: 0,
+                    isAlive: true,
+                    gcReason: "signal_absence",
+                ),
+            ],
+            now: now,
+        )
+
+        XCTAssertEqual(result.bindings[0].status, .running)
+        XCTAssertEqual(result.state.batches[0].status, .working)
+        XCTAssertEqual(result.state.batches[0].currentActivitySummary, "Claude Code is working in Mobile prototype.")
+        XCTAssertTrue(result.issues.isEmpty)
+    }
+
+    func testSignalAbsentRuntimeSessionWithToolInFlightIsNotLiveWithoutProcessProbe() {
+        let now = Date(timeIntervalSince1970: 1_775_000_200)
+        let result = WorkBatchBindingReconciler.reconcile(
+            state: state(status: .working, summary: "Claude Code is working in Mobile prototype."),
+            bindings: [binding(status: .running)],
+            sessions: [
+                runtimeSession(
+                    sessionId: "session-batch",
+                    state: "ready",
+                    cwd: "/tmp/project/.capacitor/worktrees/batch-mobile",
+                    toolsInFlight: 1,
+                    isAlive: true,
+                    gcReason: "signal_absence",
+                ),
+            ],
+            now: now,
+        )
+
+        XCTAssertEqual(result.bindings[0].status, .stale)
+        XCTAssertEqual(result.state.batches[0].status, .waiting)
+        XCTAssertEqual(result.state.batches[0].currentActivitySummary, "Claude Code session needs reconnect.")
+        XCTAssertEqual(result.issues.map(\.kind), [.missingCockpit])
+    }
+
+    func testSignalAbsentWorkingRuntimeSessionIsNotLiveWithoutProcessProbe() {
+        let now = Date(timeIntervalSince1970: 1_775_000_200)
+        let result = WorkBatchBindingReconciler.reconcile(
+            state: state(status: .working, summary: "Claude Code is working in Mobile prototype."),
+            bindings: [binding(status: .running)],
+            sessions: [
+                runtimeSession(
+                    sessionId: "session-batch",
+                    state: "working",
+                    cwd: "/tmp/project/.capacitor/worktrees/batch-mobile",
+                    toolsInFlight: 0,
+                    isAlive: true,
+                    gcReason: "signal_absence",
+                ),
+            ],
+            now: now,
+        )
+
+        XCTAssertEqual(result.bindings[0].status, .stale)
+        XCTAssertEqual(result.state.batches[0].status, .waiting)
+        XCTAssertEqual(result.state.batches[0].currentActivitySummary, "Claude Code session needs reconnect.")
+        XCTAssertEqual(result.issues.map(\.kind), [.missingCockpit])
+    }
+
     func testDuplicateSameSessionProcessesFlagDuplicateCockpit() {
         let now = Date(timeIntervalSince1970: 1_775_000_200)
         var inputState = state(status: .working, summary: "Adding green border.")
@@ -199,7 +271,7 @@ final class WorkBatchBindingReconcilerTests: XCTestCase {
         XCTAssertTrue(result.issues.isEmpty)
     }
 
-    func testDoneBatchIgnoresDuplicateOldCockpitsWhenAllTasksAreDone() {
+    func testDoneBatchRecordsDuplicateOldCockpitsWithoutPullingWorkBackToWaiting() {
         let now = Date(timeIntervalSince1970: 1_775_000_200)
         var inputState = state(status: .waiting, summary: "Multiple Claude Code sessions match this Work Batch.")
         inputState.tasks[0].status = .done
@@ -226,7 +298,11 @@ final class WorkBatchBindingReconcilerTests: XCTestCase {
         XCTAssertEqual(result.bindings[0].status, .done)
         XCTAssertEqual(result.state.batches[0].status, .ready)
         XCTAssertEqual(result.state.batches[0].currentActivitySummary, "Done: all Tasks completed.")
-        XCTAssertTrue(result.issues.isEmpty)
+        XCTAssertEqual(result.issues.map(\.kind), [.duplicateCockpit])
+        XCTAssertEqual(
+            result.issues[0].sessionIDs,
+            ["manual-duplicate", "session-batch"],
+        )
     }
 
     func testPendingCheckpointPreventsAllDoneCleanupEvenWhenTaskWasMarkedDone() {
@@ -523,15 +599,17 @@ final class WorkBatchBindingReconcilerTests: XCTestCase {
 
     private func runtimeSession(
         sessionId: String,
+        state: String = "working",
         cwd: String,
         projectPath: String? = nil,
+        toolsInFlight: Int? = nil,
         isAlive: Bool?,
         gcReason: String? = nil,
     ) -> RuntimeSession {
         RuntimeSession(
             sessionId: sessionId,
             pid: 1234,
-            state: "working",
+            state: state,
             cwd: cwd,
             projectId: nil,
             workspaceId: nil,
@@ -540,7 +618,7 @@ final class WorkBatchBindingReconcilerTests: XCTestCase {
             stateChangedAt: "2026-05-25T00:00:00Z",
             lastEvent: nil,
             lastActivityAt: nil,
-            toolsInFlight: nil,
+            toolsInFlight: toolsInFlight,
             stateSource: nil,
             lastAuthoritativeEventAt: nil,
             gcReason: gcReason,

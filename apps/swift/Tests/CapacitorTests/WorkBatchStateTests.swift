@@ -464,6 +464,115 @@ final class WorkBatchStateTests: XCTestCase {
         )
     }
 
+    func testProjectVisualStateElevatesPendingCheckpointEvenWhenBatchIsIdle() {
+        let now = Date(timeIntervalSince1970: 100)
+        let state = WorkBatchStateSnapshot(
+            version: 1,
+            batches: [
+                WorkBatchRecord(
+                    id: "batch-mobile",
+                    name: "Mobile Prototype Polish",
+                    projectPath: "/tmp/project",
+                    status: .idle,
+                    currentActivitySummary: "Checkpoint ready: Which green token should I use?",
+                    taskIDs: ["task-green"],
+                    cockpitBindingID: nil,
+                    createdAt: now,
+                    updatedAt: now,
+                ),
+            ],
+            tasks: [
+                task(id: "task-green", batchID: "batch-mobile", status: .needsYou),
+            ],
+            classifications: [],
+            checkpoints: [
+                WorkBatchCheckpointRecord(
+                    id: "checkpoint-green-token",
+                    batchID: "batch-mobile",
+                    taskID: "task-green",
+                    question: "Which green token should I use?",
+                    reason: "There are multiple green tokens.",
+                    recommendedAction: nil,
+                    status: .pending,
+                    requestedAt: now,
+                    respondedAt: nil,
+                    response: nil,
+                    updatedAt: now,
+                ),
+            ],
+        )
+        let projections = WorkBatchProjectionBuilder.build(state: state, bindings: [])
+
+        XCTAssertEqual(WorkBatchProjectVisualStateResolver.resolve(projections), .waiting)
+    }
+
+    func testProjectVisualStateUsesFirstActiveBatchStatus() {
+        let old = Date(timeIntervalSince1970: 100)
+        let recent = Date(timeIntervalSince1970: 200)
+        let state = WorkBatchStateSnapshot(
+            version: 1,
+            batches: [
+                WorkBatchRecord(
+                    id: "batch-idle",
+                    name: "Done",
+                    projectPath: "/tmp/project",
+                    status: .idle,
+                    currentActivitySummary: "Done: Older work.",
+                    taskIDs: ["task-done"],
+                    cockpitBindingID: nil,
+                    createdAt: recent,
+                    updatedAt: recent,
+                ),
+                WorkBatchRecord(
+                    id: "batch-working",
+                    name: "Mobile Prototype Polish",
+                    projectPath: "/tmp/project",
+                    status: .working,
+                    currentActivitySummary: "Working on Add green border.",
+                    taskIDs: ["task-green"],
+                    cockpitBindingID: nil,
+                    createdAt: old,
+                    updatedAt: old,
+                ),
+            ],
+            tasks: [
+                task(id: "task-done", batchID: "batch-idle", status: .done),
+                task(id: "task-green", batchID: "batch-working", status: .working),
+            ],
+            classifications: [],
+        )
+        let projections = WorkBatchProjectionBuilder.build(state: state, bindings: [])
+
+        XCTAssertEqual(WorkBatchProjectVisualStateResolver.resolve(projections), .working)
+    }
+
+    func testProjectVisualStateIgnoresIdleDoneBatches() {
+        let now = Date(timeIntervalSince1970: 100)
+        let state = WorkBatchStateSnapshot(
+            version: 1,
+            batches: [
+                WorkBatchRecord(
+                    id: "batch-done",
+                    name: "Done",
+                    projectPath: "/tmp/project",
+                    status: .idle,
+                    currentActivitySummary: "Done: Softened mobile prototype border.",
+                    taskIDs: ["task-done"],
+                    cockpitBindingID: nil,
+                    createdAt: now,
+                    updatedAt: now,
+                ),
+            ],
+            tasks: [
+                task(id: "task-done", batchID: "batch-done", status: .done),
+            ],
+            classifications: [],
+        )
+        let projections = WorkBatchProjectionBuilder.build(state: state, bindings: [])
+
+        XCTAssertNil(WorkBatchProjectVisualStateResolver.resolve(projections))
+    }
+
     private func batch(id: String, name: String, updatedAt: Date) -> WorkBatchRecord {
         WorkBatchRecord(
             id: id,

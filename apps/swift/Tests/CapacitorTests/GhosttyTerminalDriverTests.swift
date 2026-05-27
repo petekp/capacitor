@@ -115,7 +115,7 @@ final class GhosttyTerminalDriverTests: XCTestCase {
             [
                 GhosttySurfaceConfigurationOptions(
                     initialWorkingDirectory: "/Users/pete/Code/capacitor",
-                    initialInput: "tmux new-session -A -s 'capacitor' -c '/Users/pete/Code/capacitor'",
+                    initialInput: terminalUserCommand("tmux new-session -A -s 'capacitor' -c '/Users/pete/Code/capacitor'"),
                 ),
             ],
         )
@@ -156,7 +156,40 @@ final class GhosttyTerminalDriverTests: XCTestCase {
             automationClient.createdTabs.first?.configuration,
             GhosttySurfaceConfigurationOptions(
                 initialWorkingDirectory: "/Users/pete/Code/attune",
-                initialInput: "tmux new-session -A -s 'attune' -c '/Users/pete/Code/attune'",
+                initialInput: terminalUserCommand("tmux new-session -A -s 'attune' -c '/Users/pete/Code/attune'"),
+            ),
+        )
+    }
+
+    func testLaunchIgnoresWhitespaceOnlyGhosttyWindowIDs() async {
+        let automationClient = StubGhosttyAutomationClient()
+        automationClient.snapshot = GhosttyAppSnapshot(windows: [
+            GhosttyWindowSnapshot(
+                id: " ",
+                name: "Ghostty",
+                isFront: true,
+                tabs: [],
+            ),
+        ])
+
+        let driver = GhosttyTerminalDriver(
+            automationClient: automationClient,
+            isRunning: { true },
+        )
+
+        let launched = await driver.launch(
+            command: "tmux new-session -A -s 'pete-2025' -c '/Users/pete/Code/pete-2025'",
+            projectPath: "/Users/pete/Code/pete-2025",
+        )
+
+        XCTAssertTrue(launched)
+        XCTAssertTrue(automationClient.createdTabs.isEmpty)
+        XCTAssertEqual(automationClient.createdWindowConfigurations.count, 1)
+        XCTAssertEqual(
+            automationClient.createdWindowConfigurations.first,
+            GhosttySurfaceConfigurationOptions(
+                initialWorkingDirectory: "/Users/pete/Code/pete-2025",
+                initialInput: terminalUserCommand("tmux new-session -A -s 'pete-2025' -c '/Users/pete/Code/pete-2025'"),
             ),
         )
     }
@@ -170,7 +203,10 @@ final class GhosttyTerminalDriverTests: XCTestCase {
 
         XCTAssertTrue(script.contains("new surface configuration"))
         XCTAssertTrue(script.contains("set initial working directory of launchConfig"))
-        XCTAssertTrue(script.contains("set initial input of launchConfig to \"claude --resume\" & linefeed"))
+        XCTAssertTrue(script.contains("env -i"))
+        XCTAssertTrue(script.contains("PATH="))
+        XCTAssertTrue(script.contains("/bin/sh -c"))
+        XCTAssertTrue(script.contains("claude --resume"))
         XCTAssertTrue(script.contains("if (count of windows) > 0 then"))
         XCTAssertTrue(script.contains("set targetWindow to front window"))
         XCTAssertTrue(script.contains("new tab in targetWindow with configuration launchConfig"))

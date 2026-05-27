@@ -154,9 +154,9 @@ private final class AVFoundationReadyChimeAudioBackend: ReadyChime.AudioBackend 
         }
 
         let sampleRate: Double = 44100
-        let duration1 = 0.15
-        let duration2 = 0.20
-        let gap = 0.08
+        let duration1 = 0.12
+        let duration2 = 0.16
+        let gap = 0.045
 
         let totalDuration = duration1 + gap + duration2
         let frameCount = AVAudioFrameCount(totalDuration * sampleRate)
@@ -178,10 +178,10 @@ private final class AVFoundationReadyChimeAudioBackend: ReadyChime.AudioBackend 
             var sample: Float = 0
 
             if t < duration1 {
-                sample = Float(woodenKnock(t: t, duration: duration1, pitch: 0.9) * 0.35)
+                sample = Float(softBell(t: t, duration: duration1, frequency: 440.0) * 0.18)
             } else if t >= duration1 + gap, t < totalDuration {
                 let t2 = t - duration1 - gap
-                sample = Float(woodenKnock(t: t2, duration: duration2, pitch: 1.15) * 0.38)
+                sample = Float(softBell(t: t2, duration: duration2, frequency: 554.37) * 0.16)
             }
 
             floatData[i] = sample
@@ -217,32 +217,22 @@ private final class AVFoundationReadyChimeAudioBackend: ReadyChime.AudioBackend 
         return true
     }
 
-    private func woodenKnock(t: Double, duration _: Double, pitch: Double) -> Double {
-        let fundamental: Double = 680 * pitch
-        let harmonic2: Double = fundamental * 2.3
-        let harmonic3: Double = fundamental * 4.1
+    private func softBell(t: Double, duration: Double, frequency: Double) -> Double {
+        let attackTime = 0.018
+        let releaseTime = 0.055
 
-        let attackTime = 0.003
         let attack = min(1.0, t / attackTime)
-        let attackCurve = attack * attack
+        let release = min(1.0, max(0.0, (duration - t) / releaseTime))
+        let smoothAttack = attack * attack * (3.0 - 2.0 * attack)
+        let smoothRelease = release * release * (3.0 - 2.0 * release)
+        let decay = exp(-3.8 * t)
 
-        let decayRate = 12.0
-        let decay = exp(-decayRate * t)
+        let fundamental = sin(2.0 * .pi * frequency * t)
+        let octave = sin(2.0 * .pi * frequency * 2.0 * t) * 0.08
+        let fifth = sin(2.0 * .pi * frequency * 1.5 * t) * 0.06
+        let body = fundamental + octave + fifth
 
-        let tone1 = sin(2.0 * .pi * fundamental * t)
-        let tone2 = sin(2.0 * .pi * harmonic2 * t) * 0.3
-        let tone3 = sin(2.0 * .pi * harmonic3 * t) * 0.1
-
-        let noiseAmount = 0.15 * exp(-40.0 * t)
-        let noise = (Double.random(in: -1 ... 1)) * noiseAmount
-
-        let vibrato = 1.0 + 0.008 * sin(2.0 * .pi * 25 * t) * exp(-8.0 * t)
-
-        let body = (tone1 + tone2 + tone3) * vibrato
-
-        let envelope = attackCurve * decay
-
-        return (body + noise) * envelope
+        return body * smoothAttack * smoothRelease * decay
     }
 
     private func setupAudioEngine() {

@@ -251,6 +251,7 @@ struct ProjectsView: View {
             runsByID: appState.runState.runStatesByID,
             delegationStatesByProjectPath: appState.runState.delegationStates,
             sessionStatesByProjectPath: sessionStates,
+            workBatchesByProjectPath: appState.workBatchesByProjectPath(for: appState.projectState.projects),
             receiptRunsByProjectPath: appState.receiptLoopRunsByProjectPath,
             dormantProjectPaths: appState.projectState.manuallyDormant,
         )
@@ -481,6 +482,7 @@ struct ProjectsView: View {
             delegationState: appState.delegationState(for: project),
             activeRunState: appState.activeRun(for: project),
             projectStatus: projectStatus,
+            workBatchState: appState.workBatchSessionState(for: project),
             workBatchSummary: appState.workBatchContextSummary(for: project),
             sessionSummary: appState.sessionSummarizer.bestSummary(for: project.path),
             flashState: flashState,

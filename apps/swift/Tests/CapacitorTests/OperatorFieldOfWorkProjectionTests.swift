@@ -132,6 +132,25 @@ final class OperatorFieldOfWorkProjectionTests: XCTestCase {
         XCTAssertEqual(sections.first?.rows.first?.attentionItem?.kind, .staleSession)
     }
 
+    func testWaitingWorkBatchExceptionSurfacesInNeedsYouSection() {
+        let project = makeProject(name: "Batch", path: "/tmp/batch")
+        let summary = OperatorAttentionSummary(
+            exceptions: [
+                item(kind: .waitingWorkBatch, projectPath: project.path, title: "Batch needs recovery"),
+            ],
+        )
+
+        let sections = OperatorFieldOfWorkProjection.make(
+            projects: [project],
+            summary: summary,
+            projectOrder: [],
+            hiddenProjectPaths: [],
+        )
+
+        XCTAssertEqual(sections.map(\.kind), [.needsYou])
+        XCTAssertEqual(sections.first?.rows.first?.attentionItem?.kind, .waitingWorkBatch)
+    }
+
     func testCheckpointBeatsExceptionForSameProject() {
         let project = makeProject(name: "Needs Direction", path: "/tmp/needs-direction")
         let summary = OperatorAttentionSummary(

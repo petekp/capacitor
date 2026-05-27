@@ -531,6 +531,18 @@ extension AppState {
         WorkBatchProjectContextSummaryResolver.resolve(workBatches(for: project))
     }
 
+    func workBatchSessionState(for project: Project) -> SessionState? {
+        WorkBatchProjectVisualStateResolver.resolve(workBatches(for: project))
+    }
+
+    func workBatchesByProjectPath(for projects: [Project]) -> [String: [WorkBatchProjection]] {
+        Dictionary(
+            uniqueKeysWithValues: projects.map { project in
+                (project.path, workBatches(for: project))
+            },
+        )
+    }
+
     func openWorkBatch(
         _ batch: WorkBatchProjection,
         for project: Project,
@@ -562,7 +574,65 @@ extension AppState {
             uiState.toast = ToastMessage("Checkpoint needs your input.")
 
         case .openCockpit:
+            guard batch.binding != nil else {
+                startUnboundWorkBatchCockpit(batch, for: project, source: source)
+                return
+            }
             openWorkBatchCockpit(batch, source: source)
+        }
+    }
+
+    private func startUnboundWorkBatchCockpit(
+        _ batch: WorkBatchProjection,
+        for project: Project,
+        source: TerminalActivationTrace.Surface,
+    ) {
+        TerminalActivationTrace.log(
+            surface: source,
+            route: "work_batch_cockpit",
+            projectPath: project.path,
+            projectName: project.name,
+            batchID: batch.id,
+            batchName: batch.name,
+            evidence: ["missing_binding", "queued_tasks"],
+            action: "retry_start",
+            outcome: "started",
+        )
+
+        _Concurrency.Task { [weak self] in
+            guard let self else { return }
+            do {
+                _ = try await workBatchAutoRouter.startSessionForUnboundBatch(
+                    project: project,
+                    batchID: batch.id,
+                )
+                await MainActor.run {
+                    self.uiState.toast = ToastMessage("Starting \(batch.name).")
+                    self.refreshSessionStates()
+                }
+            } catch {
+                await MainActor.run {
+                    let message = (error as? LocalizedError)?.errorDescription
+                        ?? error.localizedDescription
+                    TerminalActivationTrace.log(
+                        surface: source,
+                        route: "work_batch_cockpit",
+                        projectPath: project.path,
+                        projectName: project.name,
+                        batchID: batch.id,
+                        batchName: batch.name,
+                        evidence: ["missing_binding", "queued_tasks"],
+                        action: "retry_start",
+                        outcome: "failed",
+                        reason: message,
+                    )
+                    DebugLog.write(
+                        "AppState.startUnboundWorkBatchCockpit failure project=\(project.path) batch=\(batch.id) error=\(message)",
+                    )
+                    self.uiState.toast = .error("Task saved, but Capacitor couldn't start Claude Code.")
+                    self.refreshSessionStates()
+                }
+            }
         }
     }
 

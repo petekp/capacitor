@@ -83,6 +83,53 @@ final class WorkBatchClaudeProcessScannerTests: XCTestCase {
         XCTAssertEqual(evidence[app.path]?.sessionIDs, ["session-app"])
     }
 
+    func testProjectEvidenceIgnoresClaudeDesktopHelpersAndShellMentions() {
+        let scanner = WorkBatchClaudeProcessScanner(processListProvider: {
+            [
+                WorkBatchClaudeProcessScanner.ProcessRecord(
+                    pid: 10,
+                    command: "/Applications/Claude.app/Contents/MacOS/Claude",
+                    cwd: "/Users/test/Code/app",
+                ),
+                WorkBatchClaudeProcessScanner.ProcessRecord(
+                    pid: 11,
+                    command: "zsh -lc claude",
+                    cwd: "/Users/test/Code/app",
+                ),
+                WorkBatchClaudeProcessScanner.ProcessRecord(
+                    pid: 12,
+                    command: "rg claude",
+                    cwd: "/Users/test/Code/app",
+                ),
+            ]
+        })
+
+        let app = makeProject("App", path: "/Users/test/Code/app")
+
+        XCTAssertEqual(scanner.processEvidenceByProjectPath(for: [app]), [:])
+    }
+
+    func testProjectEvidenceRequiresClaudeProcessCwdInsideProject() {
+        let scanner = WorkBatchClaudeProcessScanner(processListProvider: {
+            [
+                WorkBatchClaudeProcessScanner.ProcessRecord(
+                    pid: 10,
+                    command: "/Users/test/.local/bin/claude --session-id missing-cwd",
+                    cwd: nil,
+                ),
+                WorkBatchClaudeProcessScanner.ProcessRecord(
+                    pid: 11,
+                    command: "/Users/test/.local/bin/claude --session-id outside",
+                    cwd: "/Users/test/Other",
+                ),
+            ]
+        })
+
+        let app = makeProject("App", path: "/Users/test/Code/app")
+
+        XCTAssertEqual(scanner.processEvidenceByProjectPath(for: [app]), [:])
+    }
+
     private func makeProject(_ name: String, path: String) -> Project {
         Project(
             name: name,

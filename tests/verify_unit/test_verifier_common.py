@@ -8,7 +8,7 @@ import unittest
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts/verify"))
 
-from verifier_common import Violation, build_layer_payload, recursive_glob_match  # noqa: E402
+from verifier_common import Violation, build_layer_payload, is_excluded_path, recursive_glob_match  # noqa: E402
 
 
 class VerifierCommonTests(unittest.TestCase):
@@ -17,6 +17,13 @@ class VerifierCommonTests(unittest.TestCase):
             recursive_glob_match(
                 "apps/swift/Sources/Capacitor/Models/BadLauncher.swift",
                 "apps/swift/Sources/**/*.swift",
+            )
+        )
+
+    def test_excluded_path_skips_app_bundles(self) -> None:
+        self.assertTrue(
+            is_excluded_path(
+                "apps/swift/CapacitorDebug.app/Contents/Frameworks/Sparkle.framework/Headers/SUUpdater.h"
             )
         )
 

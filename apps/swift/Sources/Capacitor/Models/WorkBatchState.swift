@@ -21,6 +21,21 @@ enum WorkBatchStatus: String, Codable, Equatable {
             "Idle"
         }
     }
+
+    var sessionState: SessionState {
+        switch self {
+        case .ready:
+            .ready
+        case .working:
+            .working
+        case .waiting:
+            .waiting
+        case .compacting:
+            .compacting
+        case .idle:
+            .idle
+        }
+    }
 }
 
 enum WorkBatchTaskStatus: String, Codable, Equatable {
@@ -534,6 +549,26 @@ enum WorkBatchProjectContextSummaryResolver {
               !trimmed.isEmpty
         else { return nil }
         return trimmed
+    }
+}
+
+enum WorkBatchProjectVisualStateResolver {
+    static func resolve(_ batches: [WorkBatchProjection]) -> SessionState? {
+        if batches.contains(where: { !$0.pendingCheckpoints.isEmpty }) {
+            return .waiting
+        }
+
+        return batches
+            .first { batch in
+                switch batch.status {
+                case .ready, .working, .waiting, .compacting:
+                    true
+                case .idle:
+                    false
+                }
+            }?
+            .status
+            .sessionState
     }
 }
 

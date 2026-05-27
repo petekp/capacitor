@@ -249,7 +249,7 @@ struct ClaudeCodeTaskSessionLaunchRequest: Equatable {
         worktreePath: String,
         batchName: String,
         sessionID: String,
-        permissionMode: String = "dontAsk",
+        permissionMode: String = "auto",
         appendedSystemPrompt: String? = nil,
         appendedSystemPromptFile: String? = nil,
         mode: Mode,
@@ -281,6 +281,8 @@ struct ClaudeCodeTaskSessionLaunchRequest: Equatable {
             var values = [
                 "--resume",
                 sessionID,
+                "--permission-mode",
+                permissionMode,
             ]
             values.append(contentsOf: appendedSystemPromptArguments)
             if let prompt {
