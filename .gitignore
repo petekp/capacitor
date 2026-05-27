@@ -23,6 +23,7 @@ target/
 
 # Swift build artifacts
 apps/swift/.build/
+apps/swift/.build-preview/
 apps/swift/.swiftpm/
 apps/swift/*.app
 apps/swift/Capacitor.app/

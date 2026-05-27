@@ -1,0 +1,16 @@
+{
+  "appPath" : "\/Users\/petepetrash\/Code\/capacitor\/apps\/swift\/CapacitorPreview.app",
+  "buildCommand" : "'\/bin\/bash' '\/Users\/petepetrash\/Code\/capacitor\/scripts\/dev\/build-preview-app.sh' '--worktree' '\/Users\/petepetrash\/Code\/capacitor' '--app-path' '\/Users\/petepetrash\/Code\/capacitor\/apps\/swift\/CapacitorPreview.app' '--bundle-id' 'com.capacitor.app.preview' '--display-name' 'Capacitor Preview'",
+  "buildLogPath" : "\/Users\/petepetrash\/Code\/capacitor\/docs\/circuit\/proofs\/operator-product-loop\/macos-preview-work\/latest-build.log",
+  "bundleID" : "com.capacitor.app.preview",
+  "dirtyState" : "dirty",
+  "displayName" : "Capacitor Preview",
+  "expectedBundleID" : "com.capacitor.app.preview",
+  "expectedDisplayName" : "Capacitor Preview",
+  "gitHead" : "d8f0c9b499345e41623b8e93c3ca125e2c023adf",
+  "launchTime" : "2026-05-27T21:11:20Z",
+  "pid" : 76869,
+  "recordedAt" : "2026-05-27T21:11:20Z",
+  "status" : "ready_to_inspect",
+  "worktreePath" : "\/Users\/petepetrash\/Code\/capacitor"
+}

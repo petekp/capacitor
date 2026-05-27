@@ -50,6 +50,9 @@ struct ProjectDetailView: View {
                             onOpenCockpit: { batch in
                                 appState.openWorkBatchCockpit(batch, source: .terminalIcon)
                             },
+                            onOpenPreview: { batch in
+                                appState.openWorkBatchPreview(batch, for: project)
+                            },
                             onUnresolve: { batch, task in
                                 appState.unresolveWorkBatchTask(task, in: batch, for: project)
                             },

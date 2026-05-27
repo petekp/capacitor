@@ -69,6 +69,10 @@ capacitor_release_processes() {
     pgrep -fl '/Applications/Capacitor.app/Contents/MacOS/Capacitor$' 2>/dev/null || true
 }
 
+capacitor_preview_processes() {
+    pgrep -fl '/CapacitorPreview\.app/Contents/MacOS/Capacitor$' 2>/dev/null || true
+}
+
 non_debug_capacitor_processes() {
     local debug_binary="$DEBUG_APP_PATH/Contents/MacOS/Capacitor"
     local process_line
@@ -76,7 +80,8 @@ non_debug_capacitor_processes() {
     pgrep -fl '/Capacitor$' 2>/dev/null | while IFS= read -r process_line; do
         [[ -z "$process_line" ]] && continue
         case "$process_line" in
-            *"$debug_binary")
+            *"$debug_binary" | \
+            *'/CapacitorPreview.app/Contents/MacOS/Capacitor')
                 ;;
             *)
                 printf '%s\n' "$process_line"
@@ -174,6 +179,9 @@ frontmost_capacitor_guard() {
     fi
 
     case "$front_app_path" in
+        */CapacitorPreview.app)
+            return 0
+            ;;
         */Capacitor.app)
             echo "error: frontmost Capacitor app is not the Debug build." >&2
             echo "front_app: $front_app_name" >&2
@@ -365,6 +373,11 @@ echo
 echo "capacitor_release_processes:"
 RELEASE_PROCESSES="$(capacitor_release_processes)"
 printf '%s\n' "$RELEASE_PROCESSES"
+echo
+
+echo "capacitor_preview_processes:"
+PREVIEW_PROCESSES="$(capacitor_preview_processes)"
+printf '%s\n' "$PREVIEW_PROCESSES"
 echo
 
 echo "capacitor_non_debug_processes:"

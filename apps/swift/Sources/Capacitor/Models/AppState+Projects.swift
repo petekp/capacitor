@@ -524,7 +524,8 @@ extension AppState {
     }
 
     func workBatches(for project: Project) -> [WorkBatchProjection] {
-        workBatchAutoRouter.projections(for: project.path)
+        _ = workBatchProjectionRevision
+        return workBatchAutoRouter.projections(for: project.path)
     }
 
     func workBatchContextSummary(for project: Project) -> String? {
@@ -685,6 +686,58 @@ extension AppState {
                         outcome: "failed",
                         reason: message,
                     )
+                    self.uiState.toast = .error(message)
+                }
+            }
+        }
+    }
+
+    func openWorkBatchPreview(
+        _ batch: WorkBatchProjection,
+        for project: Project,
+    ) {
+        _Concurrency.Task { [weak self] in
+            guard let self else { return }
+            await MainActor.run {
+                switch batch.preview?.status {
+                case .readyToInspect:
+                    self.uiState.toast = ToastMessage("Bringing preview forward...")
+                case .previewBuilding:
+                    self.uiState.toast = ToastMessage("Preview building")
+                default:
+                    self.uiState.toast = ToastMessage("Building preview...")
+                }
+            }
+
+            do {
+                let record = try await workBatchAutoRouter.openPreview(
+                    project: project,
+                    batchID: batch.id,
+                    onRecordChanged: { [weak self] _ in
+                        self?.invalidateWorkBatchProjections()
+                    },
+                )
+
+                await MainActor.run {
+                    self.invalidateWorkBatchProjections()
+                    switch record.status {
+                    case .readyToInspect:
+                        self.uiState.toast = ToastMessage("Preview ready")
+                    case .previewUnavailable:
+                        self.uiState.toast = .error(record.failureReason ?? "Preview unavailable")
+                    case .previewFailed:
+                        self.uiState.toast = .error(record.failureReason ?? "Preview failed")
+                    case .previewAvailable:
+                        self.uiState.toast = ToastMessage("Preview available")
+                    case .previewBuilding:
+                        self.uiState.toast = ToastMessage("Preview building")
+                    }
+                    self.refreshSessionStates()
+                }
+            } catch {
+                await MainActor.run {
+                    let message = (error as? LocalizedError)?.errorDescription
+                        ?? "Couldn't open preview."
                     self.uiState.toast = .error(message)
                 }
             }

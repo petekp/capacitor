@@ -43,6 +43,7 @@ class AppState {
     @ObservationIgnored var runtimeBootstrapTask: _Concurrency.Task<Void, Never>?
     @ObservationIgnored var runtimeSnapshotTask: _Concurrency.Task<Void, Never>?
     private(set) var sessionStateRevision = 0
+    private(set) var workBatchProjectionRevision = 0
     @ObservationIgnored var didShutdownForTesting = false
     #if DEBUG
         @ObservationIgnored var runtimeBootstrapTraceForTesting: [String] = []
@@ -272,6 +273,10 @@ class AppState {
         longPollTask?.cancel()
         runtimeBootstrapTask?.cancel()
         runtimeSnapshotTask?.cancel()
+    }
+
+    func invalidateWorkBatchProjections() {
+        workBatchProjectionRevision &+= 1
     }
 }
 

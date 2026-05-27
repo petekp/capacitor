@@ -434,6 +434,7 @@ struct WorkBatchProjection: Equatable, Identifiable {
     let tasks: [WorkBatchTaskRecord]
     let checkpoints: [WorkBatchCheckpointRecord]
     let binding: WorkBatchCockpitBinding?
+    let preview: WorkBatchPreviewProjection?
 
     init(
         id: String,
@@ -444,6 +445,7 @@ struct WorkBatchProjection: Equatable, Identifiable {
         tasks: [WorkBatchTaskRecord],
         checkpoints: [WorkBatchCheckpointRecord] = [],
         binding: WorkBatchCockpitBinding?,
+        preview: WorkBatchPreviewProjection? = nil,
     ) {
         self.id = id
         self.name = name
@@ -453,6 +455,7 @@ struct WorkBatchProjection: Equatable, Identifiable {
         self.tasks = tasks
         self.checkpoints = checkpoints
         self.binding = binding
+        self.preview = preview
     }
 
     var pendingCheckpoints: [WorkBatchCheckpointRecord] {
@@ -573,13 +576,22 @@ enum WorkBatchProjectVisualStateResolver {
 }
 
 enum WorkBatchProjectionBuilder {
+    typealias PreviewProjector = (
+        _ batch: WorkBatchRecord,
+        _ binding: WorkBatchCockpitBinding?,
+        _ previewRecord: WorkBatchPreviewRecord?,
+    ) -> WorkBatchPreviewProjection?
+
     static func build(
         state: WorkBatchStateSnapshot,
         bindings: [WorkBatchCockpitBinding],
+        previewRecords: [WorkBatchPreviewRecord] = [],
+        previewProjector: PreviewProjector? = nil,
     ) -> [WorkBatchProjection] {
         let tasksByBatch = Dictionary(grouping: state.tasks, by: \.batchID)
         let checkpointsByBatch = Dictionary(grouping: state.checkpoints, by: \.batchID)
         let bindingsByBatch = Dictionary(uniqueKeysWithValues: bindings.map { ($0.batchID, $0) })
+        let previewsByBatch = Dictionary(uniqueKeysWithValues: previewRecords.map { ($0.batchID, $0) })
 
         return state.batches
             .sorted { lhs, rhs in
@@ -608,6 +620,7 @@ enum WorkBatchProjectionBuilder {
                         return lhs.id.localizedStandardCompare(rhs.id) == .orderedAscending
                     }
                 let sortedTasks = tasks.sorted { $0.createdAt < $1.createdAt }
+                let binding = bindingsByBatch[batch.id]
                 return WorkBatchProjection(
                     id: batch.id,
                     name: batch.name,
@@ -616,7 +629,8 @@ enum WorkBatchProjectionBuilder {
                     currentActivitySummary: displaySummary(for: batch, tasks: sortedTasks),
                     tasks: sortedTasks,
                     checkpoints: checkpoints,
-                    binding: bindingsByBatch[batch.id],
+                    binding: binding,
+                    preview: previewProjector?(batch, binding, previewsByBatch[batch.id]),
                 )
             }
     }

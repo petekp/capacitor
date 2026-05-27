@@ -92,15 +92,24 @@ final class WorkBatchAutoRouter {
     typealias Classifier = @Sendable (WorkBatchClassificationRequest) async throws -> WorkBatchClassificationRecord
     typealias StateStoreFactory = (String) -> WorkBatchStateStore
     typealias BindingStoreFactory = (String) -> WorkBatchCockpitBindingStore
+    typealias PreviewStoreFactory = (String) -> WorkBatchPreviewStateStore
     typealias ProcessSessionLookup = WorkBatchBindingReconciler.ProcessSessionLookup
     typealias SafeWakeBoundaryLookup = (WorkBatchCockpitBinding) -> Bool
+    typealias PreviewRunner = (MacOSPreviewWorkRequest) async throws -> MacOSPreviewWorkProof
+    typealias PreviewActivator = (WorkBatchPreviewRecord) -> Bool
+    typealias PreviewRunningMatcher = (WorkBatchPreviewRecord) -> Bool
 
     private let classifier: Classifier
     private let stateStoreFactory: StateStoreFactory
     private let bindingStoreFactory: BindingStoreFactory
+    private let previewStoreFactory: PreviewStoreFactory
     private let taskSessionCoordinator: WorkBatchTaskSessionCoordinator
     private let processSessionIDs: ProcessSessionLookup
     private let safeWakeBoundaryAllowsInputOverride: SafeWakeBoundaryLookup?
+    private let previewRunner: PreviewRunner
+    private let previewActivator: PreviewActivator
+    private let previewRunningMatcher: PreviewRunningMatcher
+    private let previewProjector: WorkBatchPreviewProjector
     private var isRouting = false
     private var routeWaiters: [CheckedContinuation<Void, Never>] = []
     private var latestRuntimeSessions: [RuntimeSession] = []
@@ -110,12 +119,19 @@ final class WorkBatchAutoRouter {
         classifier: Classifier? = nil,
         stateStoreFactory: StateStoreFactory? = nil,
         bindingStoreFactory: BindingStoreFactory? = nil,
+        previewStoreFactory: PreviewStoreFactory? = nil,
         taskSessionCoordinator: WorkBatchTaskSessionCoordinator? = nil,
         processSessionIDs: ProcessSessionLookup? = nil,
         safeWakeBoundaryAllowsInput: SafeWakeBoundaryLookup? = nil,
+        previewRunner: PreviewRunner? = nil,
+        previewActivator: PreviewActivator? = nil,
+        previewRunningMatcher: PreviewRunningMatcher? = nil,
+        previewProjector: WorkBatchPreviewProjector = WorkBatchPreviewProjector(),
     ) {
         let defaultClassifier = ClaudeWorkBatchClassifier()
         let processScanner = WorkBatchClaudeProcessScanner()
+        let previewCoordinator = MacOSPreviewWorkCoordinator()
+        let previewActivity = WorkBatchPreviewAppActivity()
         self.classifier = classifier ?? { request in
             try await defaultClassifier.classify(request)
         }
@@ -125,6 +141,9 @@ final class WorkBatchAutoRouter {
         self.bindingStoreFactory = bindingStoreFactory ?? { projectPath in
             WorkBatchCockpitBindingStore(projectPath: projectPath)
         }
+        self.previewStoreFactory = previewStoreFactory ?? { projectPath in
+            WorkBatchPreviewStateStore(projectPath: projectPath)
+        }
         self.taskSessionCoordinator = taskSessionCoordinator ?? WorkBatchTaskSessionCoordinator()
         self.processSessionIDs = processSessionIDs ?? { binding in
             processScanner.sessionIDs(inWorktree: binding.worktreePath)
@@ -133,6 +152,16 @@ final class WorkBatchAutoRouter {
         // behind a proven safe boundary. Tests may inject an override, but
         // production derives this from reducer-backed runtime session state.
         safeWakeBoundaryAllowsInputOverride = safeWakeBoundaryAllowsInput
+        self.previewRunner = previewRunner ?? { request in
+            try await previewCoordinator.run(request)
+        }
+        self.previewActivator = previewActivator ?? { record in
+            previewActivity.activate(record: record)
+        }
+        self.previewRunningMatcher = previewRunningMatcher ?? { record in
+            previewActivity.isMatchingRunning(record: record)
+        }
+        self.previewProjector = previewProjector
     }
 
     func routeCapturedTask(
@@ -357,7 +386,123 @@ final class WorkBatchAutoRouter {
     func projections(for projectPath: String) -> [WorkBatchProjection] {
         let state = (try? stateStoreFactory(projectPath).load()) ?? .empty
         let bindings = (try? bindingStoreFactory(projectPath).load()) ?? []
-        return WorkBatchProjectionBuilder.build(state: state, bindings: bindings)
+        let previewRecords = (try? previewStoreFactory(projectPath).load()) ?? []
+        let previewProjector = previewProjector
+        return WorkBatchProjectionBuilder.build(
+            state: state,
+            bindings: bindings,
+            previewRecords: previewRecords,
+        ) { batch, binding, previewRecord in
+            previewProjector.projection(
+                projectPath: projectPath,
+                batch: batch,
+                binding: binding,
+                previewRecord: previewRecord,
+            )
+        }
+    }
+
+    func openPreview(
+        project: Project,
+        batchID: String,
+        now: Date = Date(),
+        onRecordChanged: ((WorkBatchPreviewRecord) -> Void)? = nil,
+    ) async throws -> WorkBatchPreviewRecord {
+        let stateStore = stateStoreFactory(project.path)
+        let bindingStore = bindingStoreFactory(project.path)
+        let previewStore = previewStoreFactory(project.path)
+        let state = try stateStore.load()
+
+        guard state.batches.contains(where: { $0.id == batchID }) else {
+            throw WorkBatchAutoRouterError.batchNotFound
+        }
+
+        guard let binding = try bindingStore.binding(batchID: batchID) else {
+            let record = WorkBatchPreviewRecord.unavailable(
+                batchID: batchID,
+                projectPath: project.path,
+                worktreePath: nil,
+                reason: "No batch worktree yet",
+                updatedAt: now,
+            )
+            try previewStore.upsert(record)
+            onRecordChanged?(record)
+            return record
+        }
+
+        guard previewProjector.isCapacitorPreviewBuildToolAvailable(projectPath: project.path),
+              previewProjector.isCapacitorPreviewSourceCapable(at: binding.worktreePath)
+        else {
+            let record = WorkBatchPreviewRecord.unavailable(
+                batchID: batchID,
+                projectPath: project.path,
+                worktreePath: binding.worktreePath,
+                reason: "Preview is not available in this batch worktree",
+                updatedAt: now,
+            )
+            try previewStore.upsert(record)
+            onRecordChanged?(record)
+            return record
+        }
+
+        if let existingRecord = try previewStore.record(batchID: batchID),
+           existingRecord.status == .readyToInspect,
+           existingRecord.worktreePath.map(PathNormalizer.normalize) == PathNormalizer.normalize(binding.worktreePath),
+           previewRunningMatcher(existingRecord)
+        {
+            _ = previewActivator(existingRecord)
+            return existingRecord
+        }
+
+        let request = MacOSPreviewWorkRequest.capacitorPreview(
+            worktreeURL: URL(fileURLWithPath: binding.worktreePath, isDirectory: true),
+            proofDirectoryURL: previewStore.previewDirectoryURL(batchID: batchID),
+            buildScriptURL: previewProjector.buildScriptURL(projectPath: project.path),
+        )
+        let building = WorkBatchPreviewRecord.building(
+            batchID: batchID,
+            projectPath: project.path,
+            binding: binding,
+            request: request,
+            updatedAt: now,
+        )
+        try previewStore.upsert(building)
+        onRecordChanged?(building)
+
+        let proof: MacOSPreviewWorkProof
+        do {
+            proof = try await previewRunner(request)
+        } catch {
+            let failed = WorkBatchPreviewRecord(
+                id: batchID,
+                batchID: batchID,
+                projectPath: project.path,
+                worktreePath: PathNormalizer.normalize(binding.worktreePath),
+                status: .previewFailed,
+                appPath: PathNormalizer.normalize(request.appURL.path),
+                bundleID: request.expectedBundleID,
+                displayName: request.expectedDisplayName,
+                pid: nil,
+                proofPath: request.proofURL.path,
+                buildLogPath: request.buildLogURL.path,
+                failureReason: "Preview build could not run: \(error.localizedDescription)",
+                updatedAt: now,
+            )
+            try previewStore.upsert(failed)
+            onRecordChanged?(failed)
+            return failed
+        }
+
+        let record = WorkBatchPreviewRecord.fromProof(
+            proof,
+            batchID: batchID,
+            projectPath: project.path,
+            proofPath: request.proofURL.path,
+            updatedAt: now,
+        )
+        try previewStore.upsert(record)
+        onRecordChanged?(record)
+        return record
     }
 
     func startSessionForUnboundBatch(

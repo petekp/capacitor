@@ -87,6 +87,12 @@ enum AppDebugSupport {
 
                 Divider()
 
+                Section("Preview Work Proof") {
+                    MacOSPreviewWorkProofMenuButton(appState: appState)
+                }
+
+                Divider()
+
                 Button("Return to Setup Screen") {
                     withAnimation(.easeInOut(duration: 0.4)) {
                         setupComplete = false
@@ -233,6 +239,48 @@ enum AppDebugSupport {
         var body: some View {
             Button("Open Native Receipt Rendering") {
                 openWindow(id: CircuitFirstSliceWindowID.receiptRendering)
+            }
+        }
+    }
+
+    struct MacOSPreviewWorkProofMenuButton: View {
+        let appState: AppState
+
+        @State private var isRunning = false
+
+        var body: some View {
+            Button(isRunning ? "Building Capacitor Preview..." : "Build and Open Capacitor Preview") {
+                run()
+            }
+            .disabled(isRunning)
+        }
+
+        private func run() {
+            guard !isRunning else { return }
+            isRunning = true
+
+            _Concurrency.Task {
+                let request = MacOSPreviewWorkRequest.capacitorPreview()
+                do {
+                    let proof = try await MacOSPreviewWorkCoordinator().run(request)
+                    DebugLog.write(
+                        "[MacOSPreviewWork] status=\(proof.status.rawValue) app=\(proof.appPath ?? "<nil>") pid=\(proof.pid.map(String.init) ?? "<nil>") proof=\(request.proofURL.path)",
+                    )
+                    await MainActor.run {
+                        if proof.isReadyToInspect {
+                            appState.uiState.toast = ToastMessage("Capacitor Preview ready")
+                        } else {
+                            appState.uiState.toast = .error("Capacitor Preview failed")
+                        }
+                        isRunning = false
+                    }
+                } catch {
+                    DebugLog.write("[MacOSPreviewWork] failed error=\(error.localizedDescription)")
+                    await MainActor.run {
+                        appState.uiState.toast = .error("Capacitor Preview failed")
+                        isRunning = false
+                    }
+                }
             }
         }
     }

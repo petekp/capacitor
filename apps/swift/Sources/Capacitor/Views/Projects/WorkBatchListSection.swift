@@ -5,6 +5,7 @@ struct WorkBatchListSection: View {
     let checkpointFocusTarget: WorkBatchCheckpointFocusTarget?
     let onOpen: (WorkBatchProjection) -> Void
     let onOpenCockpit: (WorkBatchProjection) -> Void
+    let onOpenPreview: (WorkBatchProjection) -> Void
     let onUnresolve: (WorkBatchProjection, WorkBatchTaskRecord) -> Void
     let onCheckpointResponse: (WorkBatchProjection, WorkBatchCheckpointRecord, String) -> Void
 
@@ -29,6 +30,7 @@ struct WorkBatchListSection: View {
                             checkpointFocusTarget: checkpointFocusTarget,
                             onOpen: { onOpen(batch) },
                             onOpenCockpit: { onOpenCockpit(batch) },
+                            onOpenPreview: { onOpenPreview(batch) },
                             onUnresolve: { task in
                                 onUnresolve(batch, task)
                             },
@@ -48,6 +50,7 @@ private struct WorkBatchRow: View {
     let checkpointFocusTarget: WorkBatchCheckpointFocusTarget?
     let onOpen: () -> Void
     let onOpenCockpit: () -> Void
+    let onOpenPreview: () -> Void
     let onUnresolve: (WorkBatchTaskRecord) -> Void
     let onCheckpointResponse: (WorkBatchCheckpointRecord, String) -> Void
 
@@ -65,6 +68,21 @@ private struct WorkBatchRow: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Open Claude Code session")
+                .help("Open Claude Code session")
+
+                if let preview = batch.preview {
+                    Button(action: onOpenPreview) {
+                        previewIcon(for: preview)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!preview.isActionEnabled)
+                    .accessibilityLabel(preview.actionLabel)
+                    .help(preview.reason ?? preview.actionLabel)
+                }
+            }
+
+            if let preview = batch.preview {
+                previewStatusLine(preview)
             }
 
             if !batch.pendingCheckpoints.isEmpty {
@@ -127,6 +145,66 @@ private struct WorkBatchRow: View {
             .font(.system(size: 11, weight: .semibold))
             .foregroundStyle(.white.opacity(0.72))
             .frame(width: 24, height: 24)
+    }
+
+    private func previewIcon(for preview: WorkBatchPreviewProjection) -> some View {
+        Image(systemName: preview.symbolName)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(preview.iconColor)
+            .frame(width: 24, height: 24)
+    }
+
+    private func previewStatusLine(_ preview: WorkBatchPreviewProjection) -> some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(preview.iconColor)
+                .frame(width: 5, height: 5)
+
+            Text(preview.label)
+                .font(AppTypography.caption.weight(.semibold))
+                .foregroundStyle(.white.opacity(0.68))
+                .lineLimit(1)
+
+            if let reason = preview.reason, !reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Text(reason)
+                    .font(AppTypography.caption)
+                    .foregroundStyle(.white.opacity(0.45))
+                    .lineLimit(1)
+            }
+        }
+        .accessibilityLabel(preview.reason.map { "\(preview.label). \($0)" } ?? preview.label)
+    }
+}
+
+private extension WorkBatchPreviewProjection {
+    var symbolName: String {
+        switch status {
+        case .previewAvailable:
+            "play.rectangle"
+        case .previewUnavailable:
+            label == "Preview already open" ? "exclamationmark.triangle" : "eye.slash"
+        case .previewBuilding:
+            "hourglass"
+        case .readyToInspect:
+            "eye"
+        case .previewFailed:
+            "exclamationmark.triangle"
+        }
+    }
+
+    var iconColor: Color {
+        switch status {
+        case .previewAvailable:
+            .white.opacity(0.66)
+        case .previewUnavailable:
+            .white.opacity(0.38)
+        case .previewBuilding:
+            .blue.opacity(0.85)
+        case .readyToInspect:
+            .green.opacity(0.78)
+        case .previewFailed:
+            .orange.opacity(0.85)
+        }
     }
 }
 

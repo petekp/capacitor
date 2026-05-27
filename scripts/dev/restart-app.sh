@@ -204,7 +204,8 @@ non_debug_capacitor_processes() {
     pgrep -fl '/Capacitor$' 2>/dev/null | while IFS= read -r process_line; do
         [[ -z "$process_line" ]] && continue
         case "$process_line" in
-            *"$expected_debug_binary")
+            *"$expected_debug_binary" | \
+            *'/CapacitorPreview.app/Contents/MacOS/Capacitor')
                 ;;
             *)
                 printf '%s\n' "$process_line"
@@ -230,9 +231,10 @@ terminate_non_debug_capacitor_processes() {
     local process_line
     local pid
 
-    # New dev behavior: after launching the repo Debug app, any other Capacitor
-    # GUI process is unsafe for manual testing. This catches /Applications,
-    # ~/Applications, a repo release bundle, and stale direct swift-run builds.
+    # New dev behavior: after launching the repo Debug app, most other Capacitor
+    # GUI processes are unsafe for manual testing. Capacitor Preview is allowed
+    # because Work Batch preview verification intentionally opens it beside
+    # Debug.
     while IFS= read -r process_line; do
         [[ -z "$process_line" ]] && continue
         pid="${process_line%% *}"

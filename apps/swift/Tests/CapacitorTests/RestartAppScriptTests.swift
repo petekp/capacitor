@@ -32,4 +32,18 @@ final class RestartAppScriptTests: XCTestCase {
         XCTAssertTrue(script.contains("nohup \"$DEBUG_APP_BIN\" >/tmp/capacitor-debug-app.launch.log 2>&1 &"))
         XCTAssertTrue(script.contains("for _ in {1..60}; do"))
     }
+
+    func testRestartScriptAllowsCapacitorPreviewBesideDebug() throws {
+        let repoRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let scriptURL = repoRoot.appendingPathComponent("scripts/dev/restart-app.sh")
+        let script = try String(contentsOf: scriptURL, encoding: .utf8)
+
+        XCTAssertTrue(script.contains("CapacitorPreview.app/Contents/MacOS/Capacitor"))
+        XCTAssertTrue(script.contains("Capacitor Preview is allowed"))
+    }
 }
