@@ -140,6 +140,9 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Select Xcode
+        run: ./scripts/ci/select-xcode.sh
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
@@ -178,6 +181,9 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Select Xcode
+        run: ./scripts/ci/select-xcode.sh
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
@@ -210,9 +216,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Select Xcode 26.3 (Swift 6.2)
-        run: |
-          sudo xcode-select -s /Applications/Xcode_26.3.app/Contents/Developer
-          swift --version
+        run: ./scripts/ci/select-xcode.sh /Applications/Xcode_26.3.app/Contents/Developer
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -239,9 +243,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Select Xcode 26.3 (Swift 6.2)
-        run: |
-          sudo xcode-select -s /Applications/Xcode_26.3.app/Contents/Developer
-          swift --version
+        run: ./scripts/ci/select-xcode.sh /Applications/Xcode_26.3.app/Contents/Developer
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -291,9 +293,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Select Xcode 26.3 (Swift 6.2)
-        run: |
-          sudo xcode-select -s /Applications/Xcode_26.3.app/Contents/Developer
-          swift --version
+        run: ./scripts/ci/select-xcode.sh /Applications/Xcode_26.3.app/Contents/Developer
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
