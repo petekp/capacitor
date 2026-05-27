@@ -1,0 +1,10 @@
+{
+  "kind": "idea",
+  "id": "idea-receipt-first-001",
+  "project": {
+    "name": "capacitor",
+    "path": "/Users/petepetrash/Code/capacitor"
+  },
+  "text": "Prove the receipt-first Capacitor <-> Circuit slice with the smallest live path and fixture artifacts.",
+  "captured_at": "2026-05-24T01:30:00Z"
+}

@@ -800,8 +800,9 @@ mod tests {
             // /tmp might not exist or might be a project
             ValidationResult::PathNotFound { .. } => {}
             ValidationResult::NotAProject { .. } => {}
+            ValidationResult::MissingClaudeMd { .. } => {}
             other => panic!(
-                "Expected DangerousPath, PathNotFound, or NotAProject, got {:?}",
+                "Expected DangerousPath, PathNotFound, NotAProject, or MissingClaudeMd, got {:?}",
                 other
             ),
         }

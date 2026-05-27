@@ -5,9 +5,11 @@ import XCTest
 final class GhosttyAutomationClientTests: XCTestCase {
     private final class StubAppleScriptClient: AppleScriptClient {
         var results: [AppleScriptExecutionResult] = []
+        private(set) var scripts: [String] = []
 
-        func runOutput(_: String) -> AppleScriptExecutionResult {
-            nextResult()
+        func runOutput(_ script: String) -> AppleScriptExecutionResult {
+            scripts.append(script)
+            return nextResult()
         }
 
         private func nextResult() -> AppleScriptExecutionResult {
@@ -15,6 +17,54 @@ final class GhosttyAutomationClientTests: XCTestCase {
                 return AppleScriptExecutionResult(success: true, output: nil, error: nil)
             }
             return results.removeFirst()
+        }
+    }
+
+    private final class RecordingGhosttyAutomationClient: GhosttyAutomationClient {
+        var snapshot = GhosttyAppSnapshot(windows: [])
+        var selectedTabs: [(tabID: String, windowID: String)] = []
+        var focusedTerminals: [String] = []
+        var inputTexts: [(text: String, terminalID: String)] = []
+        var sentKeys: [(key: String, terminalID: String)] = []
+
+        func supportStatus() -> GhosttyAutomationSupportStatus {
+            .supported("1.3.0")
+        }
+
+        func createWindow(configuration _: GhosttySurfaceConfigurationOptions) -> Result<Void, TerminalActivationFailureReason> {
+            .success(())
+        }
+
+        func createTab(inWindowID _: String, configuration _: GhosttySurfaceConfigurationOptions) -> Result<Void, TerminalActivationFailureReason> {
+            .success(())
+        }
+
+        func readSnapshot() -> Result<GhosttyAppSnapshot, TerminalActivationFailureReason> {
+            .success(snapshot)
+        }
+
+        func selectTab(id: String, inWindowID windowID: String) -> Result<Void, TerminalActivationFailureReason> {
+            selectedTabs.append((tabID: id, windowID: windowID))
+            return .success(())
+        }
+
+        func focusTerminal(id: String) -> Result<Void, TerminalActivationFailureReason> {
+            focusedTerminals.append(id)
+            return .success(())
+        }
+
+        func activateWindow(id _: String) -> Result<Void, TerminalActivationFailureReason> {
+            .success(())
+        }
+
+        func inputText(_ text: String, terminalID: String) -> Result<Void, TerminalActivationFailureReason> {
+            inputTexts.append((text: text, terminalID: terminalID))
+            return .success(())
+        }
+
+        func sendKey(_ key: String, terminalID: String) -> Result<Void, TerminalActivationFailureReason> {
+            sentKeys.append((key: key, terminalID: terminalID))
+            return .success(())
         }
     }
 
@@ -55,6 +105,41 @@ final class GhosttyAutomationClientTests: XCTestCase {
         XCTAssertEqual(snapshot.windows.first?.tabs.count, 1)
         XCTAssertEqual(snapshot.windows.first?.tabs.first?.focusedTerminalID, "term-1")
         XCTAssertEqual(snapshot.windows.first?.tabs.first?.terminals.count, 2)
+    }
+
+    func testParseSnapshotOutputSkipsWhitespaceOnlyWindowIDs() {
+        let output = [
+            makeRow(
+                windowID: " ",
+                windowName: "Invalid",
+                isFront: true,
+                tabID: "tab-invalid",
+                tabName: "Invalid",
+                tabIndex: 1,
+                tabSelected: true,
+                terminalID: "term-invalid",
+                terminalName: "Invalid",
+                terminalWorkingDirectory: "/Users/pete/Code/invalid",
+                focusedTerminalID: "term-invalid",
+            ),
+            makeRow(
+                windowID: "window-valid",
+                windowName: "Ghostty",
+                isFront: false,
+                tabID: "tab-valid",
+                tabName: "Valid",
+                tabIndex: 1,
+                tabSelected: true,
+                terminalID: "term-valid",
+                terminalName: "Valid",
+                terminalWorkingDirectory: "/Users/pete/Code/capacitor",
+                focusedTerminalID: "term-valid",
+            ),
+        ].joined(separator: GhosttyAppleScriptDelimiters.row)
+
+        let snapshot = DefaultGhosttyAutomationClient.parseSnapshotOutput(output)
+
+        XCTAssertEqual(snapshot.windows.map(\.id), ["window-valid"])
     }
 
     func testBestGhosttyRouteMatchPrefersCachedTerminalID() {
@@ -114,6 +199,128 @@ final class GhosttyAutomationClientTests: XCTestCase {
         XCTAssertEqual(match?.terminal?.id, "term-2")
     }
 
+    func testInputTextTargetsGhosttyTerminalByID() {
+        let appleScript = StubAppleScriptClient()
+        let client = DefaultGhosttyAutomationClient(
+            appleScript: appleScript,
+            versionProvider: { "1.3.0" },
+        )
+
+        let result = client.inputText("Read .capacitor/work-batch-context.md again", terminalID: "term-1")
+
+        if case .failure = result {
+            XCTFail("Expected input text to succeed")
+        }
+        XCTAssertEqual(appleScript.scripts.count, 1)
+        XCTAssertTrue(appleScript.scripts[0].contains("input text"))
+        XCTAssertTrue(appleScript.scripts[0].contains("terminal id \"term-1\""))
+        XCTAssertTrue(appleScript.scripts[0].contains("work-batch-context.md again"))
+    }
+
+    func testSendKeyTargetsGhosttyTerminalByID() {
+        let appleScript = StubAppleScriptClient()
+        let client = DefaultGhosttyAutomationClient(
+            appleScript: appleScript,
+            versionProvider: { "1.3.0" },
+        )
+
+        let result = client.sendKey("enter", terminalID: "term-1")
+
+        if case .failure = result {
+            XCTFail("Expected send key to succeed")
+        }
+        XCTAssertEqual(appleScript.scripts.count, 1)
+        XCTAssertTrue(appleScript.scripts[0].contains("send key \"enter\""))
+        XCTAssertTrue(appleScript.scripts[0].contains("terminal id \"term-1\""))
+    }
+
+    func testWorkBatchWakerInputsPromptIntoMatchedWorktreeTerminal() {
+        let automationClient = RecordingGhosttyAutomationClient()
+        automationClient.snapshot = GhosttyAppSnapshot(windows: [
+            GhosttyWindowSnapshot(
+                id: "window-1",
+                name: "Ghostty",
+                isFront: true,
+                tabs: [
+                    GhosttyTabSnapshot(
+                        id: "tab-1",
+                        name: "Mobile Prototype Polish",
+                        index: 1,
+                        isSelected: true,
+                        terminals: [
+                            GhosttyTerminalSnapshot(
+                                id: "term-1",
+                                name: "Mobile Prototype Polish",
+                                workingDirectory: "/Users/pete/Code/app/.capacitor/worktrees/batch-mobile",
+                            ),
+                        ],
+                        focusedTerminalID: "term-1",
+                    ),
+                ],
+            ),
+        ])
+        let waker = WorkBatchGhosttySessionWaker(
+            automationClient: automationClient,
+            homeDirectory: "/Users/pete",
+        )
+
+        let didWake = waker.wake(
+            worktreePath: "/Users/pete/Code/app/.capacitor/worktrees/batch-mobile",
+            batchName: "Mobile Prototype Polish",
+            prompt: "Read .capacitor/work-batch-context.md again",
+        )
+
+        XCTAssertTrue(didWake)
+        XCTAssertEqual(automationClient.focusedTerminals, ["term-1"])
+        XCTAssertEqual(automationClient.inputTexts.count, 1)
+        XCTAssertEqual(automationClient.inputTexts[0].text, "Read .capacitor/work-batch-context.md again")
+        XCTAssertEqual(automationClient.inputTexts[0].terminalID, "term-1")
+        XCTAssertEqual(automationClient.sentKeys.count, 1)
+        XCTAssertEqual(automationClient.sentKeys[0].key, "enter")
+        XCTAssertEqual(automationClient.sentKeys[0].terminalID, "term-1")
+    }
+
+    func testWorkBatchWakerDoesNotInputWhenNoWorktreeTerminalMatches() {
+        let automationClient = RecordingGhosttyAutomationClient()
+        automationClient.snapshot = GhosttyAppSnapshot(windows: [
+            GhosttyWindowSnapshot(
+                id: "window-1",
+                name: "Ghostty",
+                isFront: true,
+                tabs: [
+                    GhosttyTabSnapshot(
+                        id: "tab-1",
+                        name: "Other",
+                        index: 1,
+                        isSelected: true,
+                        terminals: [
+                            GhosttyTerminalSnapshot(
+                                id: "term-1",
+                                name: "Other",
+                                workingDirectory: "/Users/pete/Code/other",
+                            ),
+                        ],
+                        focusedTerminalID: "term-1",
+                    ),
+                ],
+            ),
+        ])
+        let waker = WorkBatchGhosttySessionWaker(
+            automationClient: automationClient,
+            homeDirectory: "/Users/pete",
+        )
+
+        let didWake = waker.wake(
+            worktreePath: "/Users/pete/Code/app/.capacitor/worktrees/batch-mobile",
+            batchName: "Mobile Prototype Polish",
+            prompt: "Read context",
+        )
+
+        XCTAssertFalse(didWake)
+        XCTAssertTrue(automationClient.inputTexts.isEmpty)
+        XCTAssertTrue(automationClient.sentKeys.isEmpty)
+    }
+
     func testBestGhosttyRouteMatchPrefersWorkingDirectoryOverStaleTitle() {
         let snapshot = GhosttyAppSnapshot(windows: [
             GhosttyWindowSnapshot(
@@ -148,6 +355,182 @@ final class GhosttyAutomationClientTests: XCTestCase {
 
         XCTAssertEqual(match?.source, .terminalWorkingDirectory)
         XCTAssertEqual(match?.terminal?.id, "term-1")
+    }
+
+    func testBestGhosttyRouteMatchAcceptsHostPrefixedHomePathTitleWithShellSuffix() {
+        let snapshot = GhosttyAppSnapshot(windows: [
+            GhosttyWindowSnapshot(
+                id: "window-1",
+                name: "petepetrash@Petes-MacBook-Pro-2025:~/Code/pete-2025 - zsh",
+                isFront: true,
+                tabs: [
+                    GhosttyTabSnapshot(
+                        id: "tab-1",
+                        name: "petepetrash@Petes-MacBook-Pro-2025:~/Code/pete-2025 - zsh",
+                        index: 1,
+                        isSelected: true,
+                        terminals: [
+                            GhosttyTerminalSnapshot(
+                                id: "term-1",
+                                name: "petepetrash@Petes-MacBook-Pro-2025:~/Code/pete-2025 - zsh",
+                                workingDirectory: nil,
+                            ),
+                        ],
+                        focusedTerminalID: "term-1",
+                    ),
+                ],
+            ),
+        ])
+
+        let match = bestGhosttyRouteMatch(
+            snapshot: snapshot,
+            projectPath: "/Users/petepetrash/Code/pete-2025",
+            homeDirectory: "/Users/petepetrash",
+            tmuxSessionHint: "pete-2025",
+        )
+
+        XCTAssertEqual(match?.terminal?.id, "term-1")
+        XCTAssertEqual(match?.source, .terminalName)
+    }
+
+    func testBestGhosttyRouteMatchAcceptsEllipsizedPathTitleWithShellSuffix() {
+        let snapshot = GhosttyAppSnapshot(windows: [
+            GhosttyWindowSnapshot(
+                id: "window-1",
+                name: "…/Code/pete-2025 - zsh",
+                isFront: true,
+                tabs: [
+                    GhosttyTabSnapshot(
+                        id: "tab-1",
+                        name: "…/Code/pete-2025 - zsh",
+                        index: 1,
+                        isSelected: true,
+                        terminals: [
+                            GhosttyTerminalSnapshot(
+                                id: "term-1",
+                                name: "…/Code/pete-2025 - zsh",
+                                workingDirectory: nil,
+                            ),
+                        ],
+                        focusedTerminalID: "term-1",
+                    ),
+                ],
+            ),
+        ])
+
+        let match = bestGhosttyRouteMatch(
+            snapshot: snapshot,
+            projectPath: "/Users/petepetrash/Code/pete-2025",
+            homeDirectory: "/Users/petepetrash",
+            tmuxSessionHint: "pete-2025",
+        )
+
+        XCTAssertEqual(match?.terminal?.id, "term-1")
+        XCTAssertEqual(match?.source, .terminalName)
+    }
+
+    func testBestGhosttyRouteMatchDoesNotStripUnknownTitleSuffixAsPathEvidence() {
+        let snapshot = GhosttyAppSnapshot(windows: [
+            GhosttyWindowSnapshot(
+                id: "window-1",
+                name: nil,
+                isFront: true,
+                tabs: [
+                    GhosttyTabSnapshot(
+                        id: "tab-1",
+                        name: nil,
+                        index: 1,
+                        isSelected: true,
+                        terminals: [
+                            GhosttyTerminalSnapshot(
+                                id: "term-1",
+                                name: "petepetrash@Petes-MacBook-Pro-2025:~/Code/pete-2025 - notes",
+                                workingDirectory: nil,
+                            ),
+                        ],
+                        focusedTerminalID: "term-1",
+                    ),
+                ],
+            ),
+        ])
+
+        let match = bestGhosttyRouteMatch(
+            snapshot: snapshot,
+            projectPath: "/Users/petepetrash/Code/pete-2025",
+            homeDirectory: "/Users/petepetrash",
+            tmuxSessionHint: nil,
+        )
+
+        XCTAssertNil(match)
+    }
+
+    func testBestGhosttyRouteMatchDoesNotStripShellSuffixFromFilesystemProjectPath() {
+        let snapshot = GhosttyAppSnapshot(windows: [
+            GhosttyWindowSnapshot(
+                id: "window-1",
+                name: nil,
+                isFront: true,
+                tabs: [
+                    GhosttyTabSnapshot(
+                        id: "tab-1",
+                        name: nil,
+                        index: 1,
+                        isSelected: true,
+                        terminals: [
+                            GhosttyTerminalSnapshot(
+                                id: "term-1",
+                                name: nil,
+                                workingDirectory: "/Users/pete/Code/foo",
+                            ),
+                        ],
+                        focusedTerminalID: "term-1",
+                    ),
+                ],
+            ),
+        ])
+
+        let match = bestGhosttyRouteMatch(
+            snapshot: snapshot,
+            projectPath: "/Users/pete/Code/foo - zsh",
+            homeDirectory: "/Users/pete",
+        )
+
+        XCTAssertNil(match)
+    }
+
+    func testBestGhosttyRouteMatchAcceptsShellSuffixInFilesystemProjectPath() {
+        let snapshot = GhosttyAppSnapshot(windows: [
+            GhosttyWindowSnapshot(
+                id: "window-1",
+                name: nil,
+                isFront: true,
+                tabs: [
+                    GhosttyTabSnapshot(
+                        id: "tab-1",
+                        name: nil,
+                        index: 1,
+                        isSelected: true,
+                        terminals: [
+                            GhosttyTerminalSnapshot(
+                                id: "term-1",
+                                name: nil,
+                                workingDirectory: "/Users/pete/Code/foo - zsh",
+                            ),
+                        ],
+                        focusedTerminalID: "term-1",
+                    ),
+                ],
+            ),
+        ])
+
+        let match = bestGhosttyRouteMatch(
+            snapshot: snapshot,
+            projectPath: "/Users/pete/Code/foo - zsh",
+            homeDirectory: "/Users/pete",
+        )
+
+        XCTAssertEqual(match?.terminal?.id, "term-1")
+        XCTAssertEqual(match?.source, .terminalWorkingDirectory)
     }
 
     func testBestGhosttyRouteMatchRespectsManagedWorktreeIsolation() {
@@ -245,6 +628,7 @@ final class GhosttyAutomationClientTests: XCTestCase {
         let client = DefaultGhosttyAutomationClient(
             appleScript: StubAppleScriptClient(),
             versionProvider: { "1.2.9" },
+            supportCache: GhosttyAutomationSupportCache(),
         )
 
         XCTAssertEqual(client.supportStatus(), .unsupported(.ghosttyUnsupportedVersion("1.2.9")))
@@ -258,12 +642,65 @@ final class GhosttyAutomationClientTests: XCTestCase {
         let client = DefaultGhosttyAutomationClient(
             appleScript: appleScript,
             versionProvider: { "1.3.0" },
+            supportCache: GhosttyAutomationSupportCache(),
         )
 
         XCTAssertEqual(
             client.supportStatus(),
             .unsupported(.ghosttyAutomationUnavailable("Apple events disabled")),
         )
+    }
+
+    func testReadSnapshotCachesSuccessfulSupportProbe() throws {
+        let output = makeRow(
+            windowID: "window-1",
+            windowName: "Ghostty",
+            isFront: true,
+            tabID: "tab-1",
+            tabName: "caps",
+            tabIndex: 1,
+            tabSelected: true,
+            terminalID: "term-1",
+            terminalName: "caps",
+            terminalWorkingDirectory: "/Users/pete/Code/capacitor",
+            focusedTerminalID: "term-1",
+        )
+        let appleScript = StubAppleScriptClient()
+        appleScript.results = [
+            AppleScriptExecutionResult(success: true, output: "1", error: nil),
+            AppleScriptExecutionResult(success: true, output: output, error: nil),
+            AppleScriptExecutionResult(success: true, output: output, error: nil),
+        ]
+        let client = DefaultGhosttyAutomationClient(
+            appleScript: appleScript,
+            versionProvider: { "1.3.0" },
+            supportCache: GhosttyAutomationSupportCache(),
+        )
+
+        XCTAssertEqual(try client.readSnapshot().get().windows.count, 1)
+        XCTAssertEqual(try client.readSnapshot().get().windows.count, 1)
+        XCTAssertEqual(appleScript.scripts.count(where: { $0.contains("count of windows") }), 1)
+        XCTAssertEqual(appleScript.scripts.count(where: { $0.contains("set fieldSep") }), 2)
+    }
+
+    func testSupportStatusDoesNotCacheFailedProbe() {
+        let appleScript = StubAppleScriptClient()
+        appleScript.results = [
+            AppleScriptExecutionResult(success: false, output: nil, error: "Apple events disabled"),
+            AppleScriptExecutionResult(success: true, output: "1", error: nil),
+        ]
+        let client = DefaultGhosttyAutomationClient(
+            appleScript: appleScript,
+            versionProvider: { "1.3.0" },
+            supportCache: GhosttyAutomationSupportCache(),
+        )
+
+        XCTAssertEqual(
+            client.supportStatus(),
+            .unsupported(.ghosttyAutomationUnavailable("Apple events disabled")),
+        )
+        XCTAssertEqual(client.supportStatus(), .supported("1.3.0"))
+        XCTAssertEqual(appleScript.scripts.count(where: { $0.contains("count of windows") }), 2)
     }
 
     private func makeRow(

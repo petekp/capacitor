@@ -37,6 +37,14 @@ final class GhosttyTerminalDriverTests: XCTestCase {
         func activateWindow(id _: String) -> Result<Void, TerminalActivationFailureReason> {
             .success(())
         }
+
+        func inputText(_: String, terminalID _: String) -> Result<Void, TerminalActivationFailureReason> {
+            .success(())
+        }
+
+        func sendKey(_: String, terminalID _: String) -> Result<Void, TerminalActivationFailureReason> {
+            .success(())
+        }
     }
 
     private final class RecordingGhosttyAutomationClient: GhosttyAutomationClient {
@@ -44,6 +52,8 @@ final class GhosttyTerminalDriverTests: XCTestCase {
         var selectedTabs: [(tabID: String, windowID: String)] = []
         var focusedTerminals: [String] = []
         var activatedWindows: [String] = []
+        var inputTexts: [(text: String, terminalID: String)] = []
+        var sentKeys: [(key: String, terminalID: String)] = []
 
         func supportStatus() -> GhosttyAutomationSupportStatus {
             .supported("1.3.0")
@@ -75,6 +85,16 @@ final class GhosttyTerminalDriverTests: XCTestCase {
             activatedWindows.append(id)
             return .success(())
         }
+
+        func inputText(_ text: String, terminalID: String) -> Result<Void, TerminalActivationFailureReason> {
+            inputTexts.append((text: text, terminalID: terminalID))
+            return .success(())
+        }
+
+        func sendKey(_ key: String, terminalID: String) -> Result<Void, TerminalActivationFailureReason> {
+            sentKeys.append((key: key, terminalID: terminalID))
+            return .success(())
+        }
     }
 
     func testLaunchUsesNativeWindowCreation() async {
@@ -95,7 +115,7 @@ final class GhosttyTerminalDriverTests: XCTestCase {
             [
                 GhosttySurfaceConfigurationOptions(
                     initialWorkingDirectory: "/Users/pete/Code/capacitor",
-                    initialInput: "tmux new-session -A -s 'capacitor' -c '/Users/pete/Code/capacitor'",
+                    initialInput: terminalUserCommand("tmux new-session -A -s 'capacitor' -c '/Users/pete/Code/capacitor'"),
                 ),
             ],
         )
@@ -136,12 +156,45 @@ final class GhosttyTerminalDriverTests: XCTestCase {
             automationClient.createdTabs.first?.configuration,
             GhosttySurfaceConfigurationOptions(
                 initialWorkingDirectory: "/Users/pete/Code/attune",
-                initialInput: "tmux new-session -A -s 'attune' -c '/Users/pete/Code/attune'",
+                initialInput: terminalUserCommand("tmux new-session -A -s 'attune' -c '/Users/pete/Code/attune'"),
             ),
         )
     }
 
-    func testLaunchCommandScriptUsesNativeWindowCreation() {
+    func testLaunchIgnoresWhitespaceOnlyGhosttyWindowIDs() async {
+        let automationClient = StubGhosttyAutomationClient()
+        automationClient.snapshot = GhosttyAppSnapshot(windows: [
+            GhosttyWindowSnapshot(
+                id: " ",
+                name: "Ghostty",
+                isFront: true,
+                tabs: [],
+            ),
+        ])
+
+        let driver = GhosttyTerminalDriver(
+            automationClient: automationClient,
+            isRunning: { true },
+        )
+
+        let launched = await driver.launch(
+            command: "tmux new-session -A -s 'pete-2025' -c '/Users/pete/Code/pete-2025'",
+            projectPath: "/Users/pete/Code/pete-2025",
+        )
+
+        XCTAssertTrue(launched)
+        XCTAssertTrue(automationClient.createdTabs.isEmpty)
+        XCTAssertEqual(automationClient.createdWindowConfigurations.count, 1)
+        XCTAssertEqual(
+            automationClient.createdWindowConfigurations.first,
+            GhosttySurfaceConfigurationOptions(
+                initialWorkingDirectory: "/Users/pete/Code/pete-2025",
+                initialInput: terminalUserCommand("tmux new-session -A -s 'pete-2025' -c '/Users/pete/Code/pete-2025'"),
+            ),
+        )
+    }
+
+    func testLaunchCommandScriptReusesFrontGhosttyWindowWhenPossible() {
         let script = TerminalScripts.launchWithCommand(
             projectPath: "/Users/pete/Code/capacitor",
             command: "claude --resume",
@@ -150,12 +203,18 @@ final class GhosttyTerminalDriverTests: XCTestCase {
 
         XCTAssertTrue(script.contains("new surface configuration"))
         XCTAssertTrue(script.contains("set initial working directory of launchConfig"))
-        XCTAssertTrue(script.contains("set initial input of launchConfig to \"claude --resume\" & linefeed"))
+        XCTAssertTrue(script.contains("env -i"))
+        XCTAssertTrue(script.contains("PATH="))
+        XCTAssertTrue(script.contains("/bin/sh -c"))
+        XCTAssertTrue(script.contains("claude --resume"))
+        XCTAssertTrue(script.contains("if (count of windows) > 0 then"))
+        XCTAssertTrue(script.contains("set targetWindow to front window"))
+        XCTAssertTrue(script.contains("new tab in targetWindow with configuration launchConfig"))
         XCTAssertTrue(script.contains("new window with configuration launchConfig"))
         XCTAssertFalse(script.contains("open -a "))
     }
 
-    func testDirectFocusSkipsStaleCwdMatchInSelectedTab() async {
+    func testDirectFocusActivatesSelectedCwdMatch() async {
         let automationClient = RecordingGhosttyAutomationClient()
         automationClient.snapshot = GhosttyAppSnapshot(windows: [
             GhosttyWindowSnapshot(
@@ -192,9 +251,74 @@ final class GhosttyTerminalDriverTests: XCTestCase {
             tmuxSessionHint: nil,
         )
 
-        XCTAssertEqual(result, .relaunchNeeded)
+        XCTAssertEqual(result, .alreadySelected)
         XCTAssertTrue(automationClient.selectedTabs.isEmpty)
-        XCTAssertTrue(automationClient.focusedTerminals.isEmpty)
+        XCTAssertEqual(automationClient.focusedTerminals, ["term-1"])
+        XCTAssertEqual(automationClient.activatedWindows, ["win-1"])
+    }
+
+    func testDirectFocusFocusesSelectedCwdMatchInBackgroundWindow() async {
+        let automationClient = RecordingGhosttyAutomationClient()
+        automationClient.snapshot = GhosttyAppSnapshot(windows: [
+            GhosttyWindowSnapshot(
+                id: "win-front",
+                name: "Ghostty",
+                isFront: true,
+                tabs: [
+                    GhosttyTabSnapshot(
+                        id: "tab-front",
+                        name: "notes",
+                        index: 1,
+                        isSelected: true,
+                        terminals: [
+                            GhosttyTerminalSnapshot(
+                                id: "term-front",
+                                name: "notes",
+                                workingDirectory: "/Users/pete/Notes",
+                            ),
+                        ],
+                        focusedTerminalID: "term-front",
+                    ),
+                ],
+            ),
+            GhosttyWindowSnapshot(
+                id: "win-back",
+                name: "capacitor",
+                isFront: false,
+                tabs: [
+                    GhosttyTabSnapshot(
+                        id: "tab-back",
+                        name: "capacitor",
+                        index: 1,
+                        isSelected: true,
+                        terminals: [
+                            GhosttyTerminalSnapshot(
+                                id: "term-back",
+                                name: "capacitor",
+                                workingDirectory: "/Users/pete/Code/capacitor",
+                            ),
+                        ],
+                        focusedTerminalID: "term-back",
+                    ),
+                ],
+            ),
+        ])
+
+        let driver = GhosttyTerminalDriver(
+            automationClient: automationClient,
+            isRunning: { true },
+        )
+
+        let result = await driver.focus(
+            clientTty: nil,
+            projectPath: "/Users/pete/Code/capacitor",
+            tmuxSessionHint: nil,
+        )
+
+        XCTAssertEqual(result, .alreadySelected)
+        XCTAssertTrue(automationClient.selectedTabs.isEmpty)
+        XCTAssertEqual(automationClient.focusedTerminals, ["term-back"])
+        XCTAssertEqual(automationClient.activatedWindows, ["win-back"])
     }
 
     func testDirectFocusFindsCwdMatchInDifferentTab() async {
@@ -253,6 +377,7 @@ final class GhosttyTerminalDriverTests: XCTestCase {
         XCTAssertEqual(automationClient.selectedTabs.first?.tabID, "tab-2")
         XCTAssertEqual(automationClient.selectedTabs.first?.windowID, "win-1")
         XCTAssertEqual(automationClient.focusedTerminals, ["term-2"])
+        XCTAssertEqual(automationClient.activatedWindows, ["win-1"])
     }
 
     func testDirectFocusAllowsTitleMatchInSelectedTab() async {
@@ -295,6 +420,7 @@ final class GhosttyTerminalDriverTests: XCTestCase {
         XCTAssertEqual(result, .focused)
         XCTAssertTrue(automationClient.selectedTabs.isEmpty)
         XCTAssertEqual(automationClient.focusedTerminals, ["term-1"])
+        XCTAssertEqual(automationClient.activatedWindows, ["win-1"])
     }
 
     /// Regression test for terminal tab switch bug:

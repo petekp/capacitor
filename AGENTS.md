@@ -14,8 +14,8 @@ A glanceable, bring-your-own-terminal UI for navigating multiple coding agent se
 # Rust
 cargo fmt                                  # Format (required before commits)
 cargo clippy -- -D warnings                # Lint
-cargo test                                 # All Rust tests
-cargo test -p capacitor-core               # Core crate only
+cargo test --lib --bins --tests            # All Rust testable targets
+cargo test -p capacitor-core --lib --bins --tests  # Core crate testable targets
 cargo test -p capacitor-core --test delegation_contract  # Delegation contracts
 
 # Swift
@@ -59,6 +59,7 @@ swift test --package-path apps/swift       # All Swift tests
 - **Refresh UniFFI bindings after Rust API changes** — Run `./scripts/dev/refresh-uniffi-bindings.sh`, then verify with `./scripts/ci/check-uniffi-bindings.sh`
 - **UniFFI Task shadows Swift Task** — Use `_Concurrency.Task` explicitly in async code
 - **Swift package links release Rust core** — `../../target/release`, so Rust API changes need a fresh release build
+- **Debug app only for manual testing** — Use `./scripts/dev/restart-alpha-stable.sh`, then verify with `./scripts/dev/check-terminal-activation-state.sh --activate-debug --require-debug-frontmost`. Interact with `apps/swift/CapacitorDebug.app` / `Capacitor Debug`, not `/Applications/Capacitor.app`. If the guard reports a non-Debug or stale Debug build, stop and restart before testing.
 - **Hook symlink, not copy** — Use `ln -s` for hud-hook (copying triggers Gatekeeper SIGKILL)
 - **Always run `cargo fmt`** — CI enforces formatting
 

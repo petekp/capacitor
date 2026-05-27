@@ -1,0 +1,12 @@
+{
+  "body" : "\/goal Verify receipt capture guard stale-artifact fix\n\nSuccess means: inspect the changed adapter tests and confirm the new guard rejects stale body hashes and prompt-only receipts. Do not edit files unless you find a clear issue.\n\nYou are running inside one visible Claude Code CLI session launched by Capacitor from a captured idea.\n\nDo the smallest useful slice that satisfies the captured intent and success criteria. You may inspect and edit files in this project as needed, and you should run focused verification before returning. Keep the work bounded to this idea; if owner direction is needed before continuing, stop and return a blocked receipt instead of guessing.\n\nPreserve the boundary: Capacitor orchestrates native agent sessions and attention, Circuit is the headless intent\/protocol layer, and Claude Code\/Codex own execution and native subagent primitives. Do not build agent-reasoning orchestration, a runner, flow engine, task DAG, retry platform, broad memory store, new terminal\/editor, or SaaS framing.\n\nEnd with this visible marker and one JSON Receipt object. Use status exactly `completed`, `blocked`, or `failed`; summarize what changed, what evidence was checked, changed paths, open risks, and the next action:\n\nCIRCUIT_RECEIPT\n{\"kind\":\"receipt\",\"id\":\"receipt-01ksdz0q8rckjzw6fkg94bvyz8\",\"goal_packet_id\":\"goal-packet-01ksdz0q8rckjzw6fkg94bvyz8\",\"status\":\"completed\",\"summary\":\"Replace with the outcome of the bounded work.\",\"evidence\":[\"Replace with focused verification or artifacts checked.\"],\"changed_paths\":[],\"open_risks\":[],\"next_action\":\"Replace with the next operator action.\"}",
+  "checkpoint_expectation" : "Ask only if owner input changes the work.",
+  "expected_return" : "receipt",
+  "id" : "goal-packet-01ksdz0q8rckjzw6fkg94bvyz8",
+  "idea_id" : "idea-01KSDZ0Q8RCKJZW6FKG94BVYZ8",
+  "kind" : "goal_packet",
+  "project_path" : "\/Users\/petepetrash\/Code\/capacitor",
+  "pursuit_id" : "pursuit-01ksdz0q8rckjzw6fkg94bvyz8",
+  "receipt_expectation" : "Return a compact summary of artifacts created, evidence checked, unresolved risk, and next action.",
+  "target_agent" : "claude_code"
+}

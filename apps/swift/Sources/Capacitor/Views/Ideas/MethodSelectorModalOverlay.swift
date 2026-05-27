@@ -3,6 +3,7 @@ import SwiftUI
 
 struct MethodSelectorModalOverlay: View {
     let methods: [MethodTemplate]
+    var runIntent: IdeaRunIntent?
     let onSelect: (MethodTemplate) -> Void
     let onDismiss: () -> Void
 
@@ -16,6 +17,7 @@ struct MethodSelectorModalOverlay: View {
 
             MethodSelectorView(
                 methods: methods,
+                runIntent: runIntent,
                 onSelect: onSelect,
                 onDismiss: onDismiss,
             )

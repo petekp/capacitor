@@ -1,9 +1,10 @@
 import SwiftUI
 
-/// A sheet that presents available method templates for an idea.
+/// Legacy sheet that presents available method templates for a captured Task.
 /// When a method is selected, it calls the `onSelect` callback with the method ID.
 struct MethodSelectorView: View {
     let methods: [MethodTemplate]
+    var runIntent: IdeaRunIntent?
     let onSelect: (MethodTemplate) -> Void
     let onDismiss: () -> Void
 
@@ -28,9 +29,13 @@ struct MethodSelectorView: View {
                 .accessibilityIdentifier(AccessibilityIdentifiers.methodSelectorDismissIdentifier)
             }
 
-            Text("Choose how Capacitor should orchestrate this idea")
+            Text("Choose how Capacitor should handle this task")
                 .font(AppTypography.bodySecondary)
                 .foregroundColor(.white.opacity(0.6))
+
+            if let runIntent {
+                MethodSelectorIntentSummary(runIntent: runIntent)
+            }
 
             if methods.isEmpty {
                 MethodSelectorEmptyState()
@@ -106,6 +111,42 @@ struct MethodSelectorView: View {
                 ),
                 lineWidth: 0.75,
             )
+    }
+}
+
+private struct MethodSelectorIntentSummary: View {
+    let runIntent: IdeaRunIntent
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            labeledText(label: "Intent", value: runIntent.intent)
+
+            if let successCriteria = runIntent.successCriteria {
+                labeledText(label: "Success means", value: successCriteria)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.white.opacity(0.06))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.08), lineWidth: 0.75),
+        )
+    }
+
+    private func labeledText(label: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(label.uppercased())
+                .font(AppTypography.label.weight(.bold))
+                .foregroundColor(.white.opacity(0.38))
+
+            Text(value)
+                .font(AppTypography.caption)
+                .foregroundColor(.white.opacity(0.74))
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 }
 

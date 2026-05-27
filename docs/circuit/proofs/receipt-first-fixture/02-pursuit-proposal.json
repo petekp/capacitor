@@ -1,0 +1,21 @@
+{
+  "kind": "pursuit_proposal",
+  "id": "pursuit-receipt-first-001",
+  "idea_id": "idea-receipt-first-001",
+  "goal": "Prove the receipt-first Capacitor <-> Circuit slice with one fixture-backed path and one visible Codex session receipt.",
+  "why_now": "docs/circuit/receipt-first-product-loop.md defines the Claude Code CLI receipt loop as the smallest live product proof.",
+  "dependencies": [
+    "AGENTS.md",
+    "README.md",
+    "docs/circuit/receipt-first-product-loop.md",
+    "docs/circuit/migration-inventory.md"
+  ],
+  "risks": [
+    "Mistaking fixture artifacts for product-code Capacitor injection.",
+    "Letting receipt return expand into a runner, flow engine, or status platform.",
+    "Skipping the raw receipt capture boundary."
+  ],
+  "suggested_agent": "codex",
+  "checkpoint_condition": "Stop if the proof requires a runner, flow engine, method system, product platform, broad memory store, new terminal, new editor, or SaaS framing.",
+  "delivery_target": "docs/circuit/proofs/receipt-first-product-loop/"
+}

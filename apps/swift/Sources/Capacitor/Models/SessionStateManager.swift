@@ -86,6 +86,7 @@ final class SessionStateManager {
         enum Scope: Equatable {
             case direct
             case repoFallback
+            case liveProcess
         }
 
         let scope: Scope
@@ -178,6 +179,7 @@ final class SessionStateManager {
     func applyRuntimeProjectStates(
         _ runtimeProjects: [RuntimeProjectState],
         sessions: [RuntimeSession] = [],
+        liveClaudeProcessesByProjectPath: [String: LiveClaudeProjectProcessEvidence] = [:],
         for projects: [Project],
         correlationId: String? = nil,
     ) {
@@ -190,6 +192,7 @@ final class SessionStateManager {
         applyRuntimeProjectStatesInternal(
             runtimeProjects,
             sessionIndex: sessionIndex,
+            liveClaudeProcessesByProjectPath: liveClaudeProcessesByProjectPath,
             projects: projects,
             correlationId: cid,
             requestGeneration: applyGeneration,
@@ -204,11 +207,19 @@ final class SessionStateManager {
     private func applyRuntimeProjectStatesInternal(
         _ runtimeProjects: [RuntimeProjectState],
         sessionIndex: [String: RuntimeSession],
+        liveClaudeProcessesByProjectPath: [String: LiveClaudeProjectProcessEvidence],
         projects: [Project],
         correlationId: String,
         requestGeneration: UInt64,
     ) {
-        let mergeResult = mergeRuntimeProjectStates(runtimeProjects, sessionIndex: sessionIndex, projects: projects, now: clock.now(), processLiveness: checkProcessLiveness)
+        let mergeResult = mergeRuntimeProjectStates(
+            runtimeProjects,
+            sessionIndex: sessionIndex,
+            liveClaudeProcessesByProjectPath: liveClaudeProcessesByProjectPath,
+            projects: projects,
+            now: clock.now(),
+            processLiveness: checkProcessLiveness,
+        )
         let merged = mergeResult.states
         let emptyStabilized = stabilizeEmptyRuntimeSnapshotIfNeeded(merged)
         let idleStabilized = stabilizeIdleTransitions(emptyStabilized)
@@ -487,6 +498,7 @@ final class SessionStateManager {
     private nonisolated func mergeRuntimeProjectStates(
         _ states: [RuntimeProjectState],
         sessionIndex: [String: RuntimeSession],
+        liveClaudeProcessesByProjectPath: [String: LiveClaudeProjectProcessEvidence],
         projects: [Project],
         now: Date,
         processLiveness: ProcessLivenessChecker,
@@ -628,16 +640,32 @@ final class SessionStateManager {
         var latestSessionIds: [String: String] = [:]
         for (projectPath, best) in bestStates {
             let state = best.state
-            let mappedState = normalizedRuntimeState(state, pid: best.representativePid, isAlive: best.isAlive, now: now, processLiveness: processLiveness)
+            let processEvidence = liveClaudeProcessEvidence(
+                for: projectPath,
+                in: liveClaudeProcessesByProjectPath,
+            )
+            let hasLiveProcess = processEvidence?.hasLiveProcess == true
+            var mappedState = normalizedRuntimeState(
+                state,
+                pid: best.representativePid,
+                isAlive: best.isAlive,
+                now: now,
+                processLiveness: processLiveness,
+            )
+            // New Work Batch/Claude-process projection: Rust keeps the durable hook snapshot,
+            // while Swift keeps live cockpits visible when a Claude process is still running.
+            if mappedState == .idle, hasLiveProcess {
+                mappedState = .ready
+            }
             let sessionState = ProjectSessionState(
                 state: mappedState,
                 stateChangedAt: state.stateChangedAt,
                 updatedAt: state.updatedAt,
-                sessionId: state.sessionId,
+                sessionId: state.sessionId ?? processEvidence?.firstSessionID,
                 workingOn: nil,
                 context: nil,
                 thinking: nil,
-                hasSession: state.hasSession,
+                hasSession: state.hasSession || hasLiveProcess,
                 stateSource: best.representativeSession?.stateSource.flatMap(runtimeStateSourceToDomain),
                 lastAuthoritativeEventAt: best.representativeSession?.lastAuthoritativeEventAt,
             )
@@ -649,10 +677,56 @@ final class SessionStateManager {
             )
             if let latestId = state.latestSessionId ?? state.sessionId {
                 latestSessionIds[projectPath] = latestId
+            } else if let processSessionId = processEvidence?.firstSessionID {
+                latestSessionIds[projectPath] = processSessionId
+            }
+        }
+
+        for info in projectInfos where merged[info.project.path] == nil {
+            guard let processEvidence = liveClaudeProcessEvidence(
+                for: info.project.path,
+                in: liveClaudeProcessesByProjectPath,
+            ), processEvidence.hasLiveProcess else { continue }
+
+            // New live-process fallback: a manually opened Claude cockpit may exist before
+            // hook/runtime events arrive. Show it as Ready without inventing durable Rust state.
+            merged[info.project.path] = ProjectSessionState(
+                state: .ready,
+                stateChangedAt: nil,
+                updatedAt: nil,
+                sessionId: processEvidence.firstSessionID,
+                workingOn: nil,
+                context: nil,
+                thinking: nil,
+                hasSession: true,
+                stateSource: nil,
+                lastAuthoritativeEventAt: nil,
+            )
+            attributions[info.project.path] = SessionAttribution(
+                scope: .liveProcess,
+                sourceProjectPath: info.project.path,
+                sourceSessionId: processEvidence.firstSessionID,
+            )
+            if let processSessionId = processEvidence.firstSessionID {
+                latestSessionIds[info.project.path] = processSessionId
             }
         }
 
         return MergeResult(states: merged, attributions: attributions, latestSessionIds: latestSessionIds)
+    }
+
+    private nonisolated func liveClaudeProcessEvidence(
+        for projectPath: String,
+        in evidenceByProjectPath: [String: LiveClaudeProjectProcessEvidence],
+    ) -> LiveClaudeProjectProcessEvidence? {
+        if let exact = evidenceByProjectPath[projectPath] {
+            return exact
+        }
+
+        let normalizedProjectPath = PathNormalizer.normalize(projectPath)
+        return evidenceByProjectPath.first {
+            PathNormalizer.normalize($0.key) == normalizedProjectPath
+        }?.value
     }
 
     private nonisolated func matchesProject(

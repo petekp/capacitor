@@ -76,7 +76,9 @@ if ! ./scripts/verify/verify.sh --repo-root "$(pwd)" --layers 1 --changed-only >
 fi
 
 # 4. Rust tests (the main value - catches broken tests)
-if ! cargo test --quiet 2>/dev/null; then
+# Match CI's Rust test target set: testable lib/bin/integration targets here,
+# exported staticlib/cdylib artifacts in the build-smoke path.
+if ! cargo test --lib --bins --tests --quiet 2>/dev/null; then
     echo -e "${RED}✗ Rust tests failed${NC}"
     exit 1
 fi

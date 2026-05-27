@@ -1,0 +1,9 @@
+{
+  "captured_at" : "2026-05-24T21:42:19.672445+00:00",
+  "description" : "Verify the receipt capture guard after the stale-artifact fix.\nSuccess means: inspect the changed adapter tests and confirm the new guard rejects stale body hashes and prompt-only receipts. Do not edit files unless you find a clear issue.",
+  "id" : "01KSDZ0Q8RCKJZW6FKG94BVYZ8",
+  "kind" : "capacitor_captured_idea",
+  "project_name" : "capacitor",
+  "project_path" : "\/Users\/petepetrash\/Code\/capacitor",
+  "title" : "Verify receipt capture guard stale-artifact fix"
+}

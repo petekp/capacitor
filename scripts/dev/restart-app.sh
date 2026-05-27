@@ -34,6 +34,10 @@ legacy_daemon_dir_path() {
     printf '%s\n' "${CAPACITOR_LEGACY_DAEMON_DIR:-$HOME/.capacitor/daemon}"
 }
 
+legacy_daemon_launch_agent_path() {
+    printf '%s\n' "$HOME/Library/LaunchAgents/com.capacitor.daemon.plist"
+}
+
 read_pid_from_file() {
     local path="$1"
     local pid=""
@@ -185,8 +189,150 @@ wait_for_pattern_exit() {
     return 1
 }
 
+installed_release_capacitor_pattern() {
+    printf '%s\n' '/Applications/Capacitor.app/Contents/MacOS/Capacitor$'
+}
+
+installed_release_capacitor_pids() {
+    pgrep -f "$(installed_release_capacitor_pattern)" 2>/dev/null || true
+}
+
+non_debug_capacitor_processes() {
+    local expected_debug_binary="$1"
+    local process_line
+
+    pgrep -fl '/Capacitor$' 2>/dev/null | while IFS= read -r process_line; do
+        [[ -z "$process_line" ]] && continue
+        case "$process_line" in
+            *"$expected_debug_binary")
+                ;;
+            *)
+                printf '%s\n' "$process_line"
+                ;;
+        esac
+    done || true
+}
+
+terminate_installed_release_capacitor() {
+    local pid
+
+    # New dev behavior: the repo Debug app and installed release app have the
+    # same human-facing product name. Keep the release build out of dev runs so
+    # manual checks and AX automation cannot silently attach to the wrong app.
+    while IFS= read -r pid; do
+        [[ -z "$pid" ]] && continue
+        terminate_pid_with_escalation "$pid" "installed release Capacitor app"
+    done < <(installed_release_capacitor_pids)
+}
+
+terminate_non_debug_capacitor_processes() {
+    local expected_debug_binary="$1"
+    local process_line
+    local pid
+
+    # New dev behavior: after launching the repo Debug app, any other Capacitor
+    # GUI process is unsafe for manual testing. This catches /Applications,
+    # ~/Applications, a repo release bundle, and stale direct swift-run builds.
+    while IFS= read -r process_line; do
+        [[ -z "$process_line" ]] && continue
+        pid="${process_line%% *}"
+        [[ -z "$pid" ]] && continue
+        terminate_pid_with_escalation "$pid" "non-Debug Capacitor app"
+    done < <(non_debug_capacitor_processes "$expected_debug_binary")
+}
+
+assert_no_installed_release_capacitor() {
+    local pids
+
+    pids="$(installed_release_capacitor_pids)"
+    if [[ -z "$pids" ]]; then
+        return 0
+    fi
+
+    echo "Error: Installed release Capacitor is still running during a Debug restart." >&2
+    echo "Release PIDs: $pids" >&2
+    echo "Close /Applications/Capacitor.app, then rerun ./scripts/dev/restart-alpha-stable.sh." >&2
+    return 1
+}
+
+assert_no_non_debug_capacitor_processes() {
+    local expected_debug_binary="$1"
+    local process_lines
+
+    process_lines="$(non_debug_capacitor_processes "$expected_debug_binary")"
+    if [[ -z "$process_lines" ]]; then
+        return 0
+    fi
+
+    echo "Error: A non-Debug Capacitor build is still running during a Debug restart." >&2
+    echo "Non-Debug processes:" >&2
+    printf '%s\n' "$process_lines" >&2
+    echo "Expected debug binary: $expected_debug_binary" >&2
+    echo "Manual testing would be unsafe; rerun ./scripts/dev/restart-alpha-stable.sh." >&2
+    return 1
+}
+
+frontmost_app_snapshot() {
+    osascript \
+        -e 'tell application "System Events"' \
+        -e 'set frontProc to first application process whose frontmost is true' \
+        -e 'set procName to name of frontProc' \
+        -e 'set procID to unix id of frontProc' \
+        -e 'try' \
+        -e 'set procPath to POSIX path of application file of frontProc' \
+        -e 'on error' \
+        -e 'set procPath to ""' \
+        -e 'end try' \
+        -e 'return procName & linefeed & procID & linefeed & procPath' \
+        -e 'end tell' 2>/dev/null || true
+}
+
+assert_debug_app_frontmost() {
+    local expected_path="$1"
+    local expected_pid="$2"
+    local snapshot
+    local front_name
+    local front_pid
+    local front_path
+
+    if [[ "${CAPACITOR_ALLOW_BACKGROUND_DEBUG_APP:-0}" == "1" ]]; then
+        return 0
+    fi
+
+    snapshot="$(frontmost_app_snapshot)"
+    front_name="$(printf '%s\n' "$snapshot" | sed -n '1p')"
+    front_pid="$(printf '%s\n' "$snapshot" | sed -n '2p')"
+    front_path="$(printf '%s\n' "$snapshot" | sed -n '3p')"
+
+    if [[ "$front_path" == "$expected_path" || "$front_pid" == "$expected_pid" ]]; then
+        return 0
+    fi
+
+    echo "Error: Debug app launched, but it is not the proven frontmost app." >&2
+    echo "Expected path: $expected_path" >&2
+    echo "Expected pid: $expected_pid" >&2
+    echo "Front app: ${front_name:-<unknown>}" >&2
+    echo "Front pid: ${front_pid:-<unknown>}" >&2
+    echo "Front path: ${front_path:-<empty>}" >&2
+    echo "Manual testing would be unsafe; rerun ./scripts/dev/restart-alpha-stable.sh." >&2
+    return 1
+}
+
 kill_stale_capacitor_daemon() {
     local legacy_pattern='[c]apacitor-daemon'
+    local launch_agent_path
+    local launch_domain
+
+    launch_agent_path="$(legacy_daemon_launch_agent_path)"
+    launch_domain="gui/$(id -u)"
+
+    if [[ -f "$launch_agent_path" ]]; then
+        echo "Unloading legacy capacitor-daemon LaunchAgent..."
+        launchctl bootout "$launch_domain" "$launch_agent_path" >/dev/null 2>&1 ||
+            launchctl remove com.capacitor.daemon >/dev/null 2>&1 ||
+            true
+        rm -f "$launch_agent_path"
+    fi
 
     if pgrep -f "$legacy_pattern" >/dev/null 2>&1; then
         echo "Cleaning up legacy capacitor-daemon..."
@@ -215,8 +361,11 @@ write_debug_bundle_metadata() {
     local plist_path="$1"
 
     write_plist_string "$plist_path" "CFBundleIdentifier" "com.capacitor.app.debug"
-    write_plist_string "$plist_path" "CFBundleName" "Capacitor"
-    write_plist_string "$plist_path" "CFBundleDisplayName" "Capacitor"
+    # New dev behavior: give the repo-built app a distinct LaunchServices name
+    # so manual testing and automation do not accidentally target the installed
+    # release bundle at /Applications/Capacitor.app.
+    write_plist_string "$plist_path" "CFBundleName" "Capacitor Debug"
+    write_plist_string "$plist_path" "CFBundleDisplayName" "Capacitor Debug"
     write_plist_string "$plist_path" "CapacitorChannel" "$CHANNEL"
     write_plist_string "$plist_path" "CapacitorProfile" "$PROFILE"
     write_plist_string "$plist_path" "CapacitorSkipSetupValidation" "$SKIP_SETUP_VALIDATION"
@@ -226,6 +375,38 @@ write_debug_bundle_metadata() {
     fi
     if [[ -n "${CAPACITOR_FEATURES_DISABLED:-}" ]]; then
         write_plist_string "$plist_path" "CapacitorFeaturesDisabled" "$CAPACITOR_FEATURES_DISABLED"
+    fi
+}
+
+build_sanitized_debug_app_env() {
+    local resolved_user="${USER:-}"
+    if [[ -z "$resolved_user" ]]; then
+        resolved_user="$(id -un 2>/dev/null || true)"
+    fi
+    resolved_user="${resolved_user:-user}"
+
+    local resolved_logname="${LOGNAME:-$resolved_user}"
+    local resolved_home="${HOME:-$PROJECT_ROOT}"
+    local resolved_shell="${SHELL:-/bin/zsh}"
+    local resolved_tmpdir="${TMPDIR:-/tmp}"
+    local resolved_lang="${LANG:-en_US.UTF-8}"
+
+    SANITIZED_APP_ENV=(
+        env -i
+        "HOME=$resolved_home"
+        "USER=$resolved_user"
+        "LOGNAME=$resolved_logname"
+        "SHELL=$resolved_shell"
+        "TMPDIR=$resolved_tmpdir"
+        "LANG=$resolved_lang"
+        "PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+    )
+
+    if [[ -n "${SSH_AUTH_SOCK:-}" ]]; then
+        SANITIZED_APP_ENV+=("SSH_AUTH_SOCK=$SSH_AUTH_SOCK")
+    fi
+    if [[ -n "${__CF_USER_TEXT_ENCODING:-}" ]]; then
+        SANITIZED_APP_ENV+=("__CF_USER_TEXT_ENCODING=$__CF_USER_TEXT_ENCODING")
     fi
 }
 
@@ -370,7 +551,7 @@ fi
 
 # Kill any existing Capacitor instances (graceful first, then force)
 # Prefer killing the release app first to avoid confusing launches.
-pkill -f '/Applications/Capacitor.app/Contents/MacOS/Capacitor' 2>/dev/null || true
+terminate_installed_release_capacitor
 sleep 0.2
 # Use killall for reliability - matches process name directly
 killall Capacitor 2>/dev/null || true
@@ -419,7 +600,7 @@ if [ "$SWIFT_ONLY" != true ]; then
     # Always regenerate UniFFI bindings to prevent checksum mismatch crashes
     BINDINGS_TMP_DIR="$(mktemp -d)"
     trap 'rm -rf "$BINDINGS_TMP_DIR"' EXIT
-    cargo run -p capacitor-core --bin uniffi-bindgen generate \
+    cargo run --release -p capacitor-core --bin uniffi-bindgen generate \
         --library target/release/libcapacitor_core.dylib \
         --language swift \
         --out-dir "$BINDINGS_TMP_DIR"
@@ -611,20 +792,46 @@ if ! codesign --force --deep --sign "$SIGNING_IDENTITY" --identifier com.capacit
 fi
 
 # Launch the debug app bundle via LaunchServices.
-open -n "$DEBUG_APP"
+# New debug-launch behavior: this script is often run from Codex or another
+# agent host. Start Capacitor Debug with a narrow app environment so host-only
+# flags, paths, and secrets do not later leak into user-facing terminal sessions.
+build_sanitized_debug_app_env
+"${SANITIZED_APP_ENV[@]}" open -n "$DEBUG_APP"
 
 # Bring the debug build to the foreground (best-effort).
 # Avoid activating the installed release app by targeting the debug binary PID.
 APP_PID=""
 for _ in {1..30}; do
-    APP_PID=$(pgrep -f "$DEBUG_APP/Contents/MacOS/Capacitor$" | head -n 1 || true)
+    APP_PID=$(pgrep -n -f "$DEBUG_APP/Contents/MacOS/Capacitor$" || true)
     if [ -n "$APP_PID" ]; then
         break
     fi
     sleep 0.2
 done
 
+if [ -z "$APP_PID" ]; then
+    echo "LaunchServices did not report the debug app process; falling back to direct bundle executable launch." >&2
+    "${SANITIZED_APP_ENV[@]}" nohup "$DEBUG_APP_BIN" >/tmp/capacitor-debug-app.launch.log 2>&1 &
+    for _ in {1..60}; do
+        APP_PID=$(pgrep -n -f "$DEBUG_APP/Contents/MacOS/Capacitor$" || true)
+        if [ -n "$APP_PID" ]; then
+            break
+        fi
+        sleep 0.2
+    done
+fi
+
 if [ -n "$APP_PID" ]; then
+    # LaunchServices can occasionally leave more than one debug app process
+    # around during rapid rebuild/relaunch cycles. Keep the newest process so
+    # manual testing never clicks an older copy of the same debug bundle.
+    while IFS= read -r DEBUG_PID; do
+        [[ -z "$DEBUG_PID" ]] && continue
+        if [[ "$DEBUG_PID" != "$APP_PID" ]]; then
+            terminate_pid_with_escalation "$DEBUG_PID" "duplicate debug app"
+        fi
+    done < <(pgrep -f "$DEBUG_APP/Contents/MacOS/Capacitor$" || true)
+
     for _ in {1..20}; do
         WIN_COUNT=$(osascript -e "tell application \"System Events\" to tell process whose unix id is $APP_PID to count windows" 2>/dev/null || echo 0)
         if [ "$WIN_COUNT" != "0" ]; then
@@ -634,5 +841,16 @@ if [ -n "$APP_PID" ]; then
     done
     osascript -e "tell application \"System Events\" to set frontmost of (first process whose unix id is $APP_PID) to true" >/dev/null 2>&1 || true
 else
-    echo "Warning: debug app did not stay running. Check Console.app logs for Capacitor."
+    echo "Error: debug app did not stay running. Check Console.app logs for Capacitor." >&2
+    exit 1
 fi
+
+# LaunchServices, automation tools, or a previous manual click can reopen the
+# installed release app while the Debug app is being rebuilt. Treat that as an
+# invalid dev state so subsequent manual verification cannot target the wrong
+# build by name.
+terminate_installed_release_capacitor
+assert_no_installed_release_capacitor
+terminate_non_debug_capacitor_processes "$DEBUG_APP_BIN"
+assert_no_non_debug_capacitor_processes "$DEBUG_APP_BIN"
+assert_debug_app_frontmost "$DEBUG_APP" "$APP_PID"

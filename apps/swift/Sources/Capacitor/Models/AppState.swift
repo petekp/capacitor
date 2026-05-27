@@ -17,8 +17,10 @@ class AppState {
     let routingStateStore = RoutingStateStore()
     let terminalLauncher = TerminalLauncher()
     let sessionStateManager = SessionStateManager()
+    let operatorViewStateStore: OperatorViewStateStore
     let hookServerManager: HookServerManager
     let projectDetailsManager = ProjectDetailsManager()
+    let workBatchAutoRouter: WorkBatchAutoRouter
     let sessionSummarizer = SessionSummarizer()
     private(set) var runtimeSnapshotApplicator: RuntimeSnapshotApplicator!
     private(set) var delegationLoopManager: DelegationLoopManager!
@@ -33,6 +35,8 @@ class AppState {
     var methodRunCoordinator: MethodRunCoordinator?
     @ObservationIgnored var runtimeSnapshotEffectHandlers: RuntimeSnapshotEffectHandlers!
     var engine: CoreRuntime?
+    private(set) var operatorViewStateSnapshot = OperatorViewStateStore.Snapshot.empty
+    var receiptLoopRunsByProjectPath: [String: ReceiptLoopRunState] = [:]
 
     @ObservationIgnored var refreshTimer: Timer?
     @ObservationIgnored var longPollTask: _Concurrency.Task<Void, Never>?
@@ -76,9 +80,14 @@ class AppState {
     init(
         runtimeClient: RuntimeClient = RuntimeClient.shared,
         hookServerManager: HookServerManager = HookServerManager(),
+        operatorViewStateStore: OperatorViewStateStore = OperatorViewStateStore(),
+        workBatchAutoRouter: WorkBatchAutoRouter? = nil,
+        operatorViewOpenedAt: Date = Date(),
     ) {
         self.runtimeClient = runtimeClient
         self.hookServerManager = hookServerManager
+        self.operatorViewStateStore = operatorViewStateStore
+        self.workBatchAutoRouter = workBatchAutoRouter ?? WorkBatchAutoRouter()
         runCaptureCoordinator = RunCaptureCoordinator(runtimeClient: runtimeClient)
         methodRunCoordinator = MethodRunCoordinator(mutateRun: { request in
             try await runtimeClient.mutateRun(request)
@@ -193,7 +202,16 @@ class AppState {
                 self?.uiState.error = $0
             },
             captureIdeaHandler: { [weak self] project, text in
-                self?.projectDetailsManager.captureIdea(for: project, text: text) ?? .failure(AppFeatureError.ideaCaptureDisabled)
+                guard let self else {
+                    return .failure(AppFeatureError.ideaCaptureDisabled)
+                }
+                switch projectDetailsManager.captureTask(for: project, text: text) {
+                case let .success(idea):
+                    startWorkBatchRouting(for: idea, project: project)
+                    return .success(())
+                case let .failure(error):
+                    return .failure(error)
+                }
             },
             checkIdeasFileChangesHandler: { [weak self] projects in
                 self?.projectDetailsManager.checkIdeasFileChanges(for: projects)
@@ -246,6 +264,7 @@ class AppState {
         }
 
         scheduleRuntimeBootstrap()
+        loadOperatorViewState(openedAt: operatorViewOpenedAt)
     }
 
     deinit {
@@ -253,5 +272,42 @@ class AppState {
         longPollTask?.cancel()
         runtimeBootstrapTask?.cancel()
         runtimeSnapshotTask?.cancel()
+    }
+}
+
+extension AppState {
+    func loadOperatorViewState(openedAt: Date = Date()) {
+        _Concurrency.Task { [weak self] in
+            guard let self else { return }
+            do {
+                let previousSnapshot = try await operatorViewStateStore.load()
+                operatorViewStateSnapshot = previousSnapshot
+                try await operatorViewStateStore.recordAppOpened(at: openedAt)
+            } catch {
+                DebugLog.write("AppState.loadOperatorViewState failed error=\(error.localizedDescription)")
+            }
+        }
+    }
+
+    func markProjectCaseFileSeen(
+        projectPath: String,
+        runID: String?,
+        checkpointIDs: [String],
+        at date: Date = Date(),
+    ) {
+        _Concurrency.Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await operatorViewStateStore.markProjectSeen(projectPath, at: date)
+                if let runID {
+                    try await operatorViewStateStore.markRunSeen(runID: runID, at: date)
+                }
+                for checkpointID in checkpointIDs {
+                    try await operatorViewStateStore.markCheckpointSeen(checkpointID: checkpointID, at: date)
+                }
+            } catch {
+                DebugLog.write("AppState.markProjectCaseFileSeen failed error=\(error.localizedDescription)")
+            }
+        }
     }
 }

@@ -309,13 +309,20 @@ private func waitForWindow(in appElement: AXUIElement, timeout: TimeInterval, bu
     let deadline = Date().addingTimeInterval(timeout)
     while Date() < deadline {
         if let windows = copyAttribute(appElement, name: kAXWindowsAttribute as CFString) as? [AXUIElement],
-           !windows.isEmpty
+           windows.contains(where: isWindowElement)
         {
             return
         }
         Thread.sleep(forTimeInterval: 0.2)
     }
     throw RunnerError.windowNotFound(bundleID: bundleID)
+}
+
+private func isWindowElement(_ element: AXUIElement) -> Bool {
+    guard let role = copyAttribute(element, name: kAXRoleAttribute as CFString) as? String else {
+        return false
+    }
+    return role == kAXWindowRole as String
 }
 
 private struct KeyChord {

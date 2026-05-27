@@ -21,6 +21,13 @@ struct RunCheckpointTimelineProjection: Equatable {
             case recorded
         }
 
+        struct RevisionRelationship: Equatable {
+            let priorEntryID: String
+            let priorCheckpointID: String
+            let priorPhaseRoundNumber: Int
+            let priorDecisionNote: String
+        }
+
         let id: String
         let checkpointID: String
         let source: Source
@@ -32,6 +39,7 @@ struct RunCheckpointTimelineProjection: Equatable {
         let summary: String?
         let decisionState: DecisionState
         let decisionNote: String?
+        let revisionRelationship: RevisionRelationship?
         let createdAt: String
         let decidedAt: String?
         let timestampRole: TimestampRole
@@ -99,14 +107,18 @@ struct RunCheckpointTimelineProjection: Equatable {
             uniqueKeysWithValues: phases.map { ($0.id, $0.name) },
         )
         var roundNumbersByPhaseID: [String: Int] = [:]
+        var latestRequestByPhaseID: [String: Entry.RevisionRelationship] = [:]
 
         return checkpointRecords.enumerated().map { ordinal, record in
             let checkpoint = record.checkpoint
             let roundNumber = (roundNumbersByPhaseID[checkpoint.phaseId] ?? 0) + 1
             roundNumbersByPhaseID[checkpoint.phaseId] = roundNumber
+            let entryID = entryID(for: record, fallbackOrdinal: ordinal)
+            let decisionState = decisionState(for: checkpoint, source: record.source)
+            let decisionNote = checkpoint.decision?.note
 
-            return Entry(
-                id: entryID(for: record, fallbackOrdinal: ordinal),
+            let entry = Entry(
+                id: entryID,
                 checkpointID: checkpoint.id,
                 source: record.source,
                 phaseID: checkpoint.phaseId,
@@ -115,12 +127,30 @@ struct RunCheckpointTimelineProjection: Equatable {
                 kindLabel: kindLabel(for: checkpoint.kind),
                 title: checkpoint.title,
                 summary: checkpoint.summary,
-                decisionState: decisionState(for: checkpoint, source: record.source),
-                decisionNote: checkpoint.decision?.note,
+                decisionState: decisionState,
+                decisionNote: decisionNote,
+                revisionRelationship: latestRequestByPhaseID[checkpoint.phaseId],
                 createdAt: checkpoint.createdAt,
                 decidedAt: checkpoint.decidedAt,
                 timestampRole: timestampRole(for: checkpoint, source: record.source),
             )
+
+            if record.source == .archived {
+                if decisionState == .changesRequested,
+                   let note = cleaned(decisionNote)
+                {
+                    latestRequestByPhaseID[checkpoint.phaseId] = Entry.RevisionRelationship(
+                        priorEntryID: entryID,
+                        priorCheckpointID: checkpoint.id,
+                        priorPhaseRoundNumber: roundNumber,
+                        priorDecisionNote: note,
+                    )
+                } else {
+                    latestRequestByPhaseID[checkpoint.phaseId] = nil
+                }
+            }
+
+            return entry
         }
     }
 
@@ -241,5 +271,14 @@ struct RunCheckpointTimelineProjection: Equatable {
         case let .custom(label):
             label
         }
+    }
+
+    private static func cleaned(_ value: String?) -> String? {
+        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty
+        else {
+            return nil
+        }
+        return trimmed
     }
 }

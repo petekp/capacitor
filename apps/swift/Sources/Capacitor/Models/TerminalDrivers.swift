@@ -67,16 +67,16 @@ final class GhosttyTerminalDriver: TerminalDriver {
                 tmuxSessionHint: tmuxSessionHint,
                 preferredTerminalID: preferredID,
             ) {
-                // When clientTty is nil (direct focus), skip CWD matches in the
-                // already-selected tab — the CWD may be stale from a prior tmux
-                // session, and re-focusing the visible tab is a no-op that would
-                // incorrectly short-circuit ensureAndSwitch.
-                let isStaleDirectFocusMatch = resolvedTty == nil
+                // A selected CWD match is useful enough to bring Ghostty forward,
+                // but it may still be stale after a tmux session switch. Report it
+                // as already selected so the higher-level tmux flow can continue
+                // when an attached client exists.
+                let isSelectedDirectCwdMatch = resolvedTty == nil
                     && route.source == .terminalWorkingDirectory
                     && route.tab?.isSelected == true
 
-                if !isStaleDirectFocusMatch, executeRoute(route, clientTty: resolvedTty) {
-                    return .focused
+                if executeRoute(route, clientTty: resolvedTty) {
+                    return isSelectedDirectCwdMatch ? .alreadySelected : .focused
                 }
 
                 if preferredID != nil, let resolvedTty {
@@ -194,7 +194,6 @@ final class GhosttyTerminalDriver: TerminalDriver {
                 {
                     terminalIDByClientTTY[clientTty] = terminal.id
                 }
-                return true
             case let .failure(reason):
                 lastFailureReason = reason
                 return false
@@ -211,7 +210,12 @@ final class GhosttyTerminalDriver: TerminalDriver {
     }
 
     private func reusableWindowID(from snapshot: GhosttyAppSnapshot) -> String? {
-        snapshot.windows.first(where: \.isFront)?.id ?? snapshot.windows.first?.id
+        snapshot.windows
+            .first(where: { $0.isFront && !$0.id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })?
+            .id
+            ?? snapshot.windows
+            .first(where: { !$0.id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })?
+            .id
     }
 }
 
@@ -414,8 +418,20 @@ private func hostFocusResult(
 private func ghosttyLaunchConfiguration(projectPath: String?, command: String) -> GhosttySurfaceConfigurationOptions {
     GhosttySurfaceConfigurationOptions(
         initialWorkingDirectory: projectPath,
-        initialInput: command,
+        initialInput: terminalUserCommand(command),
     )
+}
+
+func terminalUserCommand(_ command: String) -> String {
+    let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else {
+        return command
+    }
+
+    // New terminal-launch behavior: run Capacitor-launched commands from a
+    // narrow env so a polluted Ghostty/tmux parent cannot leak agent-host flags,
+    // secrets, or no-color settings into Claude/tmux.
+    return "env -i HOME=\"$HOME\" USER=\"$USER\" LOGNAME=\"$LOGNAME\" SHELL=\"$SHELL\" TMPDIR=\"$TMPDIR\" LANG=\"$LANG\" TERM=\"$TERM\" COLORTERM=\"$COLORTERM\" SSH_AUTH_SOCK=\"$SSH_AUTH_SOCK\" PATH=\"$HOME/.local/bin:$HOME/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin\" /bin/sh -c \(shellEscape(trimmed))"
 }
 
 func terminalLaunchCommandScript(
@@ -426,7 +442,9 @@ func terminalLaunchCommandScript(
 ) -> String {
     switch app {
     case .ghostty:
-        ghosttyCreateWindowShellScript(configuration: ghosttyLaunchConfiguration(
+        // New Work Batch/session launch behavior: when Ghostty is already open,
+        // launch into a tab in the front window instead of spawning another window.
+        ghosttyCreateReusableSurfaceShellScript(configuration: ghosttyLaunchConfiguration(
             projectPath: projectPath,
             command: command,
         ))
@@ -507,7 +525,7 @@ private func hostTerminalSendCommandScript(
     isRunning: Bool,
 ) -> String {
     let delay = isRunning ? 1.0 : 2.5
-    let escapedCommand = command
+    let escapedCommand = terminalUserCommand(command)
         .replacingOccurrences(of: "\\", with: "\\\\")
         .replacingOccurrences(of: "\"", with: "\\\"")
 

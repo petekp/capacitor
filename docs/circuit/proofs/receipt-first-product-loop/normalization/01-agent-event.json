@@ -1,0 +1,37 @@
+{
+  "kind": "agent_event",
+  "id": "event-receipt-01ksdz0q8rckjzw6fkg94bvyz8",
+  "goal_packet_id": "goal-packet-01ksdz0q8rckjzw6fkg94bvyz8",
+  "session": {
+    "host": "claude_code",
+    "session_id": "session-receipt-2cc2d14db2dc247b",
+    "visible_to_owner": true
+  },
+  "type": "receipt",
+  "payload": {
+    "kind": "receipt",
+    "id": "receipt-01ksdz0q8rckjzw6fkg94bvyz8",
+    "goal_packet_id": "goal-packet-01ksdz0q8rckjzw6fkg94bvyz8",
+    "status": "completed",
+    "summary": "Verified receipt capture guards reject stale artifacts (mismatched body hash) and prompt-only receipts. Both Swift guard at adapter level and Python guard in capture script confirmed working. All 13 tests passing.",
+    "evidence": [
+      "swift test filter ReceiptFirstProofAdapterTests: 13/13 passing",
+      "testLaunchAndWaitForCaptureIgnoresStaleCaptureForDifferentBodyHash validates body_sha256 guard",
+      "testCaptureShellScriptDoesNotTreatInsertedPromptReceiptAsAgentOutput validates blocked_no_receipt with exit 2",
+      "captureIsReady() line 385: body hash equality guard",
+      "Python extraction logic lines 536-556: receipt from agent_output only"
+    ],
+    "changed_paths": [
+      "apps/swift/Sources/Capacitor/Debug/ReceiptFirstProofAdapter.swift",
+      "apps/swift/Tests/CapacitorTests/ReceiptFirstProofAdapterTests.swift"
+    ],
+    "open_risks": [],
+    "next_action": "No action required - verification complete"
+  },
+  "recorded_at": "2026-05-24T21:48:05.501659Z",
+  "normalization": {
+    "mode": "headless_receipt_normalizer",
+    "source_raw_receipt_path": "/Users/petepetrash/Code/capacitor/docs/circuit/proofs/receipt-first-product-loop/native-session/06-native-captured-raw-receipt.txt",
+    "circuit_runtime_invoked": false
+  }
+}

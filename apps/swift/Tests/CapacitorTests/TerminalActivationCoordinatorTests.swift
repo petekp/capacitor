@@ -3,6 +3,23 @@ import XCTest
 
 @MainActor
 final class TerminalActivationCoordinatorTests: XCTestCase {
+    private final class ActivationLogCollector {
+        private let lock = NSLock()
+        private var lines: [String] = []
+
+        func append(_ line: String) {
+            lock.lock()
+            defer { lock.unlock() }
+            lines.append(line)
+        }
+
+        func snapshot() -> [String] {
+            lock.lock()
+            defer { lock.unlock() }
+            return lines
+        }
+    }
+
     private actor AsyncGate {
         private var isOpen = false
         private var waiters: [CheckedContinuation<Void, Never>] = []
@@ -229,6 +246,133 @@ final class TerminalActivationCoordinatorTests: XCTestCase {
         )
 
         XCTAssertFalse(ok)
+        XCTAssertFalse(launched)
+    }
+
+    func testActivationFlowTreatsAlreadySelectedDirectMatchAsSuccessWhenNoTmuxClientMatches() async {
+        var launched = false
+        var switched = false
+
+        let ok = await TerminalActivationCoordinator.runActivationFlow(
+            sessionName: "parable-school",
+            projectPath: "/Users/pete/Code/parable-school",
+            resolveAnyClientTty: { nil },
+            ensureAndSwitch: { _, _, _, _ in
+                switched = true
+                return false
+            },
+            launchTerminalWithTmux: { _, _ in
+                launched = true
+                return false
+            },
+            activateTerminal: { clientTty, _, _ in
+                clientTty == nil ? .alreadySelected : .focused
+            },
+        )
+
+        XCTAssertTrue(ok)
+        XCTAssertFalse(switched)
+        XCTAssertFalse(launched)
+    }
+
+    func testActivationFlowAcceptsAlreadySelectedDirectMatchBeforeFallbackTmuxResolution() async {
+        var launched = false
+        var switched = false
+        var resolvedClient = false
+
+        let ok = await TerminalActivationCoordinator.runActivationFlow(
+            sessionName: "parable-school",
+            projectPath: "/Users/pete/Code/parable-school",
+            resolveAnyClientTty: {
+                resolvedClient = true
+                return "/dev/ttys003"
+            },
+            ensureAndSwitch: { _, _, _, _ in
+                switched = true
+                return false
+            },
+            launchTerminalWithTmux: { _, _ in
+                launched = true
+                return false
+            },
+            activateTerminal: { clientTty, _, sessionName in
+                XCTAssertNil(clientTty)
+                XCTAssertNil(sessionName)
+                return .alreadySelected
+            },
+            switchAlreadySelectedDirectMatchWhenClientExists: false,
+        )
+
+        XCTAssertTrue(ok)
+        XCTAssertFalse(resolvedClient)
+        XCTAssertFalse(switched)
+        XCTAssertFalse(launched)
+    }
+
+    func testActivationFlowLogsDirectFocusTmuxClientAndLaunchDecision() async {
+        let collector = ActivationLogCollector()
+        DebugLog.setTestObserver { line in
+            collector.append(line)
+        }
+        defer { DebugLog.setTestObserver(nil) }
+
+        let ok = await TerminalActivationCoordinator.runActivationFlow(
+            sessionName: "launch-last-session",
+            projectPath: "/tmp/launch-last-project",
+            resolveAnyClientTty: { nil },
+            ensureAndSwitch: { _, _, _, _ in
+                XCTFail("tmux switch should not run without a client")
+                return false
+            },
+            launchTerminalWithTmux: { sessionName, projectPath in
+                XCTAssertEqual(sessionName, "launch-last-session")
+                XCTAssertEqual(projectPath, "/tmp/launch-last-project")
+                return true
+            },
+            activateTerminal: { clientTty, projectPath, sessionName in
+                XCTAssertNil(clientTty)
+                XCTAssertEqual(projectPath, "/tmp/launch-last-project")
+                XCTAssertNil(sessionName)
+                return .relaunchNeeded
+            },
+        )
+
+        XCTAssertTrue(ok)
+        let lines = collector.snapshot()
+        XCTAssertTrue(lines.contains { $0.contains("[TerminalActivation]") && $0.contains("route=\"direct_focus\"") && $0.contains("outcome=\"relaunch_needed\"") })
+        XCTAssertTrue(lines.contains { $0.contains("[TerminalActivation]") && $0.contains("route=\"tmux_client\"") && $0.contains("outcome=\"none\"") })
+        XCTAssertTrue(lines.contains { $0.contains("[TerminalActivation]") && $0.contains("route=\"launch\"") && $0.contains("action=\"launch_tmux_attach\"") && $0.contains("outcome=\"launched\"") })
+    }
+
+    func testActivationFlowStillSwitchesWhenAlreadySelectedDirectMatchHasTmuxClient() async {
+        var switchedSession: String?
+        var launched = false
+
+        let ok = await TerminalActivationCoordinator.runActivationFlow(
+            sessionName: "parable-school",
+            projectPath: "/Users/pete/Code/parable-school",
+            resolveAnyClientTty: { "/dev/ttys003" },
+            ensureAndSwitch: { sessionName, _, clientTty, _ in
+                switchedSession = sessionName
+                XCTAssertEqual(clientTty, "/dev/ttys003")
+                return true
+            },
+            launchTerminalWithTmux: { _, _ in
+                launched = true
+                return false
+            },
+            activateTerminal: { clientTty, _, sessionName in
+                if clientTty == nil {
+                    XCTAssertNil(sessionName)
+                    return .alreadySelected
+                }
+                XCTAssertEqual(sessionName, "parable-school")
+                return .focused
+            },
+        )
+
+        XCTAssertTrue(ok)
+        XCTAssertEqual(switchedSession, "parable-school")
         XCTAssertFalse(launched)
     }
 

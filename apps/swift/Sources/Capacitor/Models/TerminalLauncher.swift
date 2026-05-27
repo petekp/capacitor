@@ -18,11 +18,75 @@ struct AppleScriptExecutionResult: Equatable {
     let error: String?
 }
 
-private struct DefaultAppleScriptClient: AppleScriptClient {
+enum TerminalAutomationEnvironment {
+    private static let basePath = [
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+        "/usr/bin",
+        "/bin",
+        "/usr/sbin",
+        "/sbin",
+    ].joined(separator: ":")
+
+    private static let passthroughKeys = [
+        "HOME",
+        "USER",
+        "LOGNAME",
+        "SHELL",
+        "TMPDIR",
+        "LANG",
+        "SSH_AUTH_SOCK",
+    ]
+
+    static func make(
+        source: [String: String] = ProcessInfo.processInfo.environment,
+    ) -> [String: String] {
+        var environment: [String: String] = [
+            "PATH": basePath,
+        ]
+
+        for key in passthroughKeys {
+            guard let value = source[key]?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !value.isEmpty
+            else {
+                continue
+            }
+            environment[key] = value
+        }
+
+        if environment["HOME"] == nil {
+            environment["HOME"] = NSHomeDirectory()
+        }
+        if environment["USER"] == nil {
+            environment["USER"] = NSUserName()
+        }
+        if environment["LOGNAME"] == nil {
+            environment["LOGNAME"] = environment["USER"]
+        }
+        if environment["SHELL"] == nil {
+            environment["SHELL"] = "/bin/zsh"
+        }
+
+        return environment
+    }
+}
+
+struct DefaultAppleScriptClient: AppleScriptClient {
+    private let environmentProvider: () -> [String: String]
+
+    init(
+        environmentProvider: @escaping () -> [String: String] = {
+            TerminalAutomationEnvironment.make()
+        },
+    ) {
+        self.environmentProvider = environmentProvider
+    }
+
     func runOutput(_ script: String) -> AppleScriptExecutionResult {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
         process.arguments = ["-e", script]
+        process.environment = environmentProvider()
 
         let outputPipe = Pipe()
         let errorPipe = Pipe()
@@ -180,6 +244,37 @@ final class TerminalLauncher {
         activationCoordinator.launchTerminal(for: project)
     }
 
+    func focusExistingTerminal(projectPath: String, sessionName: String? = nil) async -> Bool {
+        pendingActivationFailureReason = nil
+        let app = await resolveActivationIntent(
+            clientTty: nil,
+            projectPath: projectPath,
+            sessionName: sessionName,
+        ).terminalApp.app
+        let driver = driverRegistry.driver(for: app)
+        let result = await driver.focus(
+            clientTty: nil,
+            projectPath: projectPath,
+            tmuxSessionHint: sessionName,
+        )
+        TerminalActivationTrace.log(
+            surface: .directFocus,
+            route: "focus_existing_terminal",
+            projectPath: projectPath,
+            sessionName: sessionName,
+            evidence: sessionName == nil ? ["working_directory_or_title"] : ["session_hint", "working_directory_or_title"],
+            action: "focus_existing",
+            outcome: result.traceOutcome,
+            reason: result.traceFailureReason,
+        )
+        if case let .failed(reason) = result {
+            pendingActivationFailureReason = reason
+        } else {
+            pendingActivationFailureReason = driver.lastFailureReason
+        }
+        return result == .focused || result == .alreadySelected
+    }
+
     /// Instance method that wires real dependencies into the shared coordinator flow.
     /// Uses activateProjectSessionOverride when available (for test injection).
     private func runResolvedActivation(sessionName: String, projectPath: String) async -> Bool {
@@ -187,6 +282,11 @@ final class TerminalLauncher {
         if let activateProjectSessionOverride {
             return await activateProjectSessionOverride(sessionName, projectPath)
         }
+        let initialIntent = await resolveActivationIntent(
+            clientTty: nil,
+            projectPath: projectPath,
+            sessionName: sessionName,
+        )
         return await TerminalActivationCoordinator.runActivationFlow(
             sessionName: sessionName,
             projectPath: projectPath,
@@ -238,7 +338,33 @@ final class TerminalLauncher {
             pollForNewClient: { [weak self] in
                 await self?.tmuxRouter.pollForNewClient()
             },
+            switchAlreadySelectedDirectMatchWhenClientExists: Self.shouldSwitchAlreadySelectedDirectMatch(
+                intent: initialIntent,
+                resolvedSessionName: sessionName,
+            ),
         )
+    }
+
+    static func shouldSwitchAlreadySelectedDirectMatch(
+        intent: ActivationPolicyIntent,
+        resolvedSessionName: String,
+    ) -> Bool {
+        let hasRuntimeRouteEvidence = intent.terminalApp.source == .runtimeRoute
+            || intent.hostTty?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+            || intent.paneId?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+
+        guard hasRuntimeRouteEvidence else {
+            return false
+        }
+
+        guard let routedSession = intent.sessionName?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+            !routedSession.isEmpty
+        else {
+            return false
+        }
+
+        return routedSession == resolvedSessionName
     }
 
     static func resolveAnyTmuxClientTty(
@@ -264,6 +390,16 @@ final class TerminalLauncher {
         let driver = driverRegistry.driver(for: app)
         let tmuxCommand = TmuxRouter.makeAttachCommand(session: session, projectPath: projectPath)
         let launched = await driver.launch(command: tmuxCommand, projectPath: projectPath)
+        TerminalActivationTrace.log(
+            surface: .activationFlow,
+            route: "launch",
+            projectPath: projectPath,
+            sessionName: session,
+            evidence: ["terminal_driver:\(app.processName)", "tmux_attach_command"],
+            action: "launch_terminal",
+            outcome: launched ? "launched" : "failed",
+            reason: driver.lastFailureReason.map { String(describing: $0) },
+        )
         if !launched {
             pendingActivationFailureReason = driver.lastFailureReason
         }
@@ -369,9 +505,7 @@ final class TerminalLauncher {
                     process.executableURL = URL(fileURLWithPath: "/bin/bash")
                     process.arguments = ["-c", script]
 
-                    var env = ProcessInfo.processInfo.environment
-                    env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:" + (env["PATH"] ?? "")
-                    process.environment = env
+                    process.environment = Self.terminalAutomationEnvironment()
 
                     let pipe = Pipe()
                     let errorPipe = Pipe()
@@ -447,6 +581,16 @@ final class TerminalLauncher {
         } onCancel: {
             processHolder.terminateIfRunning()
         }
+    }
+
+    nonisolated static func terminalAutomationEnvironment(
+        source: [String: String] = ProcessInfo.processInfo.environment,
+    ) -> [String: String] {
+        // New terminal automation behavior: build a narrow environment for
+        // open/osascript/tmux helpers instead of forwarding Capacitor's app
+        // process environment. This keeps Codex/app-only flags and secrets out
+        // of user-facing terminal launches.
+        TerminalAutomationEnvironment.make(source: source)
     }
 }
 

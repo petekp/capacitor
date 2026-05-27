@@ -140,6 +140,95 @@ fn test_register_hooks_in_settings_deduplicates_managed_entries_per_event() {
 }
 
 #[test]
+fn test_register_hooks_migrates_retired_capacitor_entries_and_deduplicates() {
+    let (_temp, storage) = setup_test_env();
+    let checker = SetupChecker::new(storage.clone());
+
+    let retired_no_auth_command = format!(
+        "/bin/sh -c '/usr/bin/curl -fsS --connect-timeout 1 --max-time 1 -X POST \"{}\" -H \"Content-Type: application/json\" --data-binary @- >/dev/null 2>&1 || true'",
+        HOOK_HTTP_URL
+    );
+    let retired_handle_command = format!(
+        "CAPACITOR_HOOK_MARKER=1 $HOME/.local/bin/{}",
+        retired_handle_command()
+    );
+    let existing = serde_json::json!({
+        "hooks": {
+            "PreToolUse": [
+                {
+                    "matcher": "*",
+                    "hooks": [{"type": "command", "command": retired_no_auth_command}]
+                },
+                {
+                    "matcher": "*",
+                    "hooks": [{"type": "command", "command": managed_command_hook_command()}]
+                },
+                {
+                    "matcher": "*",
+                    "hooks": [{"type": "command", "command": retired_handle_command, "async": true, "timeout": 30}]
+                },
+                {
+                    "matcher": {"tools": ["BashTool"]},
+                    "hooks": [{"type": "command", "command": "notify.sh"}]
+                }
+            ]
+        }
+    });
+    fs::write(
+        storage.claude_settings_file(),
+        serde_json::to_string_pretty(&existing).unwrap(),
+    )
+    .unwrap();
+
+    checker.register_hooks_in_settings().unwrap();
+
+    let settings_content = fs::read_to_string(storage.claude_settings_file()).unwrap();
+    assert!(
+        !settings_content.contains("hud-hook handle"),
+        "retired handle hook should be removed during managed hook normalization"
+    );
+    assert_eq!(
+        settings_content.matches(HOOK_HTTP_URL).count(),
+        managed_hook_event_contracts().count(),
+        "each managed event should have exactly one current hook endpoint command"
+    );
+
+    let settings: SettingsFile = serde_json::from_str(&settings_content).unwrap();
+    let pre_tool_use = settings
+        .hooks
+        .expect("hooks should exist")
+        .remove("PreToolUse")
+        .expect("PreToolUse hook list should exist");
+    let managed_count = pre_tool_use
+        .iter()
+        .filter(|hook_config| {
+            hook_config
+                .hooks
+                .as_ref()
+                .map(|hooks| hooks.iter().any(is_managed_hook))
+                .unwrap_or(false)
+        })
+        .count();
+
+    assert_eq!(managed_count, 1);
+    assert!(
+        pre_tool_use.iter().any(|hook_config| {
+            hook_config.matcher == Some(serde_json::json!({"tools": ["BashTool"]}))
+                && hook_config
+                    .hooks
+                    .as_ref()
+                    .map(|hooks| {
+                        hooks
+                            .iter()
+                            .any(|hook| hook.command.as_deref() == Some("notify.sh"))
+                    })
+                    .unwrap_or(false)
+        }),
+        "custom hook should survive Capacitor cleanup"
+    );
+}
+
+#[test]
 fn test_register_hooks_preserves_noncanonical_flat_entries() {
     let (_temp, storage) = setup_test_env();
     let checker = SetupChecker::new(storage.clone());
@@ -371,6 +460,43 @@ fn test_hooks_registered_rejects_http_transport_for_any_managed_event() {
             HookSettingsStatus::PartiallyConfigured { .. }
         ),
         "HTTP hook on any managed event should be rejected since all contracts require command transport"
+    );
+}
+
+#[test]
+fn test_hooks_registered_requires_repair_when_retired_managed_entries_remain() {
+    let (_temp, storage) = setup_test_env();
+    let checker = SetupChecker::new(storage.clone());
+
+    checker.register_hooks_in_settings().unwrap();
+
+    let settings_content = fs::read_to_string(storage.claude_settings_file()).unwrap();
+    let mut settings: serde_json::Value = serde_json::from_str(&settings_content).unwrap();
+    settings["hooks"]["PreToolUse"]
+        .as_array_mut()
+        .expect("PreToolUse hooks should exist")
+        .push(serde_json::json!({
+            "matcher": "*",
+            "hooks": [{
+                "type": "command",
+                "command": format!("CAPACITOR_HOOK_MARKER=1 $HOME/.local/bin/{}", retired_handle_command()),
+                "async": true,
+                "timeout": 30,
+            }],
+        }));
+    fs::write(
+        storage.claude_settings_file(),
+        serde_json::to_string_pretty(&settings).unwrap(),
+    )
+    .unwrap();
+
+    assert!(
+        matches!(
+            checker.hooks_registered_in_settings(),
+            HookSettingsStatus::PartiallyConfigured { missing_events, .. }
+                if missing_events == vec!["PreToolUse".to_string()]
+        ),
+        "retired Capacitor-managed hooks should make setup repair the event"
     );
 }
 

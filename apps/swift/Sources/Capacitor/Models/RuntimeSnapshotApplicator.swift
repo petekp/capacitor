@@ -2,6 +2,8 @@ import Foundation
 
 @MainActor
 final class RuntimeSnapshotApplicator {
+    typealias LiveClaudeProcessEvidenceProvider = ([Project]) -> [String: LiveClaudeProjectProcessEvidence]
+
     struct RequestContext: Equatable {
         let generation: UInt64?
         let correlationId: String
@@ -38,11 +40,14 @@ final class RuntimeSnapshotApplicator {
     private let runState: RunStateStore
     private let uiState: UIState
     private let isDelegationLoopEnabled: () -> Bool
+    private let liveClaudeProcessEvidenceProvider: LiveClaudeProcessEvidenceProvider
 
     private var requestGeneration: UInt64 = 0
     private var correlationCounter: UInt64 = 0
     private var lastAppliedSnapshotVersion: UInt64 = 0
     private var lastPolledSnapshotVersion: UInt64 = 0
+    private var lastAppliedProjectStates: [RuntimeProjectState] = []
+    private var lastAppliedSessions: [RuntimeSession] = []
     private var consecutiveRuntimeSnapshotFailures = 0
 
     init(
@@ -52,6 +57,7 @@ final class RuntimeSnapshotApplicator {
         runState: RunStateStore,
         uiState: UIState,
         isDelegationLoopEnabled: @escaping () -> Bool,
+        liveClaudeProcessEvidenceProvider: LiveClaudeProcessEvidenceProvider? = nil,
     ) {
         self.sessionStateManager = sessionStateManager
         self.shellStateStore = shellStateStore
@@ -59,6 +65,10 @@ final class RuntimeSnapshotApplicator {
         self.runState = runState
         self.uiState = uiState
         self.isDelegationLoopEnabled = isDelegationLoopEnabled
+        let processScanner = WorkBatchClaudeProcessScanner()
+        self.liveClaudeProcessEvidenceProvider = liveClaudeProcessEvidenceProvider ?? { projects in
+            processScanner.processEvidenceByProjectPath(for: projects)
+        }
     }
 
     func beginFetch(projects: [Project]) -> RequestContext {
@@ -106,16 +116,28 @@ final class RuntimeSnapshotApplicator {
 
             if snapshot.snapshotVersion == lastAppliedSnapshotVersion {
                 DebugLog.write(
-                    "AppState.refreshSessionStates source=runtime_snapshot_noop cid=\(context.correlationId) version=\(snapshot.snapshotVersion)",
+                    "AppState.refreshSessionStates source=runtime_snapshot_volatile_refresh cid=\(context.correlationId) version=\(snapshot.snapshotVersion)",
+                )
+                // New Work Batch/Claude-process projection: the runtime snapshot version
+                // protects durable service state, but live Claude process evidence is volatile.
+                // Re-apply the last durable project/session state with fresh process evidence
+                // so active cockpits can become Ready and then clear without a service version bump.
+                sessionStateManager.applyRuntimeProjectStates(
+                    lastAppliedProjectStates,
+                    sessions: lastAppliedSessions,
+                    liveClaudeProcessesByProjectPath: liveClaudeProcessEvidenceProvider(context.projects),
+                    for: context.projects,
+                    correlationId: context.correlationId,
                 )
                 consecutiveRuntimeSnapshotFailures = 0
-                return Outcome(decision: .duplicateVersionNoop, effects: [])
+                return Outcome(decision: .duplicateVersionNoop, effects: [.updatePostSessionRefreshContext])
             }
         }
 
         sessionStateManager.applyRuntimeProjectStates(
             snapshot.projectStates,
             sessions: snapshot.sessions,
+            liveClaudeProcessesByProjectPath: liveClaudeProcessEvidenceProvider(context.projects),
             for: context.projects,
             correlationId: context.correlationId,
         )
@@ -150,6 +172,8 @@ final class RuntimeSnapshotApplicator {
         DebugLog.write(
             "AppState.refreshSessionStates source=runtime_snapshot_apply cid=\(context.correlationId) projects=\(snapshot.projectStates.count) sessions=\(snapshot.sessions.count) shells=\(snapshot.shellState.shells.count) routing=\(snapshot.routingViews.count) runs=\(snapshot.runs.count)",
         )
+        lastAppliedProjectStates = snapshot.projectStates
+        lastAppliedSessions = snapshot.sessions
         lastAppliedSnapshotVersion = max(lastAppliedSnapshotVersion, snapshot.snapshotVersion)
         lastPolledSnapshotVersion = max(lastPolledSnapshotVersion, snapshot.snapshotVersion)
 

@@ -78,6 +78,15 @@ enum AppDebugSupport {
 
                 Divider()
 
+                Section("Receipt-First Proof") {
+                    ReceiptProofRenderingMenuButton()
+                    Button("Launch Native Injection/Capture Proof") {
+                        launchReceiptFirstProof()
+                    }
+                }
+
+                Divider()
+
                 Button("Return to Setup Screen") {
                     withAnimation(.easeInOut(duration: 0.4)) {
                         setupComplete = false
@@ -147,6 +156,26 @@ enum AppDebugSupport {
                 print("[Debug] Failed to remove hooks: \(error)")
             }
         }
+
+        private func launchReceiptFirstProof() {
+            _Concurrency.Task {
+                do {
+                    let result = try await ReceiptFirstProofAdapter().launchAndWaitForCapture()
+                    DebugLog.write(
+                        "[ReceiptFirstProof] completed goalPacket=\(result.launch.packet.id) rawReceipt=\(result.launch.artifacts.rawReceiptURL.path)",
+                    )
+                    await MainActor.run {
+                        appState.uiState.toast = ToastMessage("Receipt proof captured")
+                        NotificationCenter.default.post(name: .circuitFirstSliceDidCapture, object: nil)
+                    }
+                } catch {
+                    DebugLog.write("[ReceiptFirstProof] launch failed error=\(error.localizedDescription)")
+                    await MainActor.run {
+                        appState.uiState.toast = .error("Receipt proof launch failed")
+                    }
+                }
+            }
+        }
     }
 
     struct AppDebugWindows: Scene {
@@ -195,6 +224,16 @@ enum AppDebugSupport {
                 openWindow(id: "project-debug-panel")
             }
             .keyboardShortcut("D", modifiers: [.command, .shift])
+        }
+    }
+
+    struct ReceiptProofRenderingMenuButton: View {
+        @Environment(\.openWindow) private var openWindow
+
+        var body: some View {
+            Button("Open Native Receipt Rendering") {
+                openWindow(id: CircuitFirstSliceWindowID.receiptRendering)
+            }
         }
     }
 #endif

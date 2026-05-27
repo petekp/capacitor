@@ -1,0 +1,31 @@
+{
+  "adapter_result" : {
+    "agent_exit_code" : 0,
+    "body_sha256" : "40dd4e2f3663a4b1ed7be1d96c5e0091d83623bd89ffbf20fa81d73edddfea70",
+    "capture" : {
+      "mode" : "stdout and last-message capture",
+      "preserved_for_normalization" : true,
+      "raw_receipt_path" : "\/Users\/petepetrash\/Code\/capacitor\/docs\/circuit\/proofs\/receipt-first-product-loop\/native-session\/06-native-captured-raw-receipt.txt"
+    },
+    "codex_exit_code" : 0,
+    "finished_at" : "2026-05-24T21:48:05.501659Z",
+    "goal_packet_id" : "goal-packet-01ksdz0q8rckjzw6fkg94bvyz8",
+    "host" : "claude_code",
+    "injection" : {
+      "body_path" : "\/Users\/petepetrash\/Code\/capacitor\/docs\/circuit\/proofs\/receipt-first-product-loop\/native-session\/03-native-inserted-goal-body.txt",
+      "exact_body_match" : true,
+      "mode" : "stdin initial prompt"
+    },
+    "kind" : "native_receipt_first_proof_result",
+    "limits" : [
+      "One controlled claude_code CLI session only.",
+      "No Circuit runtime invocation.",
+      "No agent-reasoning orchestration, queueing, checkpoint relay, retries, or generalized session management."
+    ],
+    "status" : "native_capture_complete",
+    "visible_surface" : "Ghostty launched by Capacitor Circuit first-slice action"
+  },
+  "kind" : "normalize_agent_event_request",
+  "raw_receipt_text" : "CIRCUIT_RECEIPT\n{\"kind\":\"receipt\",\"id\":\"receipt-01ksdz0q8rckjzw6fkg94bvyz8\",\"goal_packet_id\":\"goal-packet-01ksdz0q8rckjzw6fkg94bvyz8\",\"status\":\"completed\",\"summary\":\"Verified receipt capture guards reject stale artifacts (mismatched body hash) and prompt-only receipts. Both Swift guard at adapter level and Python guard in capture script confirmed working. All 13 tests passing.\",\"evidence\":[\"swift test filter ReceiptFirstProofAdapterTests: 13\/13 passing\",\"testLaunchAndWaitForCaptureIgnoresStaleCaptureForDifferentBodyHash validates body_sha256 guard\",\"testCaptureShellScriptDoesNotTreatInsertedPromptReceiptAsAgentOutput validates blocked_no_receipt with exit 2\",\"captureIsReady() line 385: body hash equality guard\",\"Python extraction logic lines 536-556: receipt from agent_output only\"],\"changed_paths\":[\"apps\/swift\/Sources\/Capacitor\/Debug\/ReceiptFirstProofAdapter.swift\",\"apps\/swift\/Tests\/CapacitorTests\/ReceiptFirstProofAdapterTests.swift\"],\"open_risks\":[],\"next_action\":\"No action required - verification complete\"}\n",
+  "source_raw_receipt_path" : "\/Users\/petepetrash\/Code\/capacitor\/docs\/circuit\/proofs\/receipt-first-product-loop\/native-session\/06-native-captured-raw-receipt.txt"
+}

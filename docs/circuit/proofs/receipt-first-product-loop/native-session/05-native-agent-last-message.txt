@@ -1,0 +1,43 @@
+Verification complete. Let me summarize the findings:
+
+## Receipt Capture Guard Stale-Artifact Fix ✓
+
+All 13 tests pass with 100% success rate.
+
+**Guard #1: Stale Body Hash Rejection**
+- Location: `ReceiptFirstProofAdapter.swift:384-389` in `captureIsReady()`
+- Implementation: Multi-field guard checking body hash match
+  ```swift
+  guard result.goalPacketID == expectedGoalPacketID,
+        result.bodySHA256 == expectedBodySHA256,
+        result.injection.bodyPath == artifacts.insertedBodyURL.path,
+        result.capture.rawReceiptPath == artifacts.rawReceiptURL.path
+  ```
+- Test: `testLaunchAndWaitForCaptureIgnoresStaleCaptureForDifferentBodyHash` (lines 179-216)
+  - Writes stale capture with hash "stale-body"
+  - Then writes correct capture with expected hash
+  - Verifies final result has correct `body_sha256`
+  - ✓ Passes
+
+**Guard #2: Prompt-Only Receipt Rejection**
+- Location: `ReceiptFirstProofAdapter.swift:536-556` (Python script in shell script)
+- Implementation: Extracts receipt only from agent output (after "AGENT_CLI_OUTPUT" marker), never from inserted body
+  ```python
+  receipt_block = extract_last_receipt_block(last_message) or extract_last_receipt_block(agent_output)
+  if not receipt_block:
+      result_path.write_text(json.dumps({"status": "blocked_no_receipt", ...}))
+      sys.exit(2)
+  ```
+- Test: `testCaptureShellScriptDoesNotTreatInsertedPromptReceiptAsAgentOutput` (lines 218-259)
+  - Inserts goal packet body containing a CIRCUIT_RECEIPT template
+  - Uses fake claude that outputs nothing
+  - Verifies exit code 2, no raw receipt file created, status="blocked_no_receipt"
+  - ✓ Passes
+
+**Evidence**
+- All ReceiptFirstProofAdapterTests: 13/13 passing
+- Body hash guard validated in `captureIsReady()` with multi-field equality check
+- Prompt extraction logic properly bounded to agent output only, not inserted body
+
+CIRCUIT_RECEIPT
+{"kind":"receipt","id":"receipt-01ksdz0q8rckjzw6fkg94bvyz8","goal_packet_id":"goal-packet-01ksdz0q8rckjzw6fkg94bvyz8","status":"completed","summary":"Verified receipt capture guards reject stale artifacts (mismatched body hash) and prompt-only receipts. Both Swift guard at adapter level and Python guard in capture script confirmed working. All 13 tests passing.","evidence":["swift test filter ReceiptFirstProofAdapterTests: 13/13 passing","testLaunchAndWaitForCaptureIgnoresStaleCaptureForDifferentBodyHash validates body_sha256 guard","testCaptureShellScriptDoesNotTreatInsertedPromptReceiptAsAgentOutput validates blocked_no_receipt with exit 2","captureIsReady() line 385: body hash equality guard","Python extraction logic lines 536-556: receipt from agent_output only"],"changed_paths":["apps/swift/Sources/Capacitor/Debug/ReceiptFirstProofAdapter.swift","apps/swift/Tests/CapacitorTests/ReceiptFirstProofAdapterTests.swift"],"open_risks":[],"next_action":"No action required - verification complete"}

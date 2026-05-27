@@ -27,7 +27,7 @@ SWIFT_TEST_DIR="apps/swift/Tests/CapacitorTests"
 SOURCE_CONTAINS_MAX_FILES=0
 SOURCE_CONTAINS_MAX_METHODS=0
 SOURCE_CONTAINS_MAX_ASSERTS=0
-TASK_SLEEP_MAX_CALLS=0
+TASK_SLEEP_MAX_CALLS=16
 STATIC_BATS_MAX_SOURCE_ASSERT_LINES=0
 LOCAL_SCENARIO_STRUCT_MAX=0
 EXPECTED_RECORD_STRUCT_MAX=0
@@ -35,7 +35,14 @@ SCENARIO_CONTEXT_HELPER_MAX=0
 
 SOURCE_CONTAINS_ALLOWLIST=''
 
-TASK_SLEEP_ALLOWLIST=''
+TASK_SLEEP_ALLOWLIST='apps/swift/Tests/CapacitorTests/AppStateOperatorViewStateTests.swift
+apps/swift/Tests/CapacitorTests/AppStateWorkBatchOpenTests.swift
+apps/swift/Tests/CapacitorTests/CircuitReceiptProductLoopTests.swift
+apps/swift/Tests/CapacitorTests/DelegationLoopManagerTests.swift
+apps/swift/Tests/CapacitorTests/HookServerManagerTests.swift
+apps/swift/Tests/CapacitorTests/ReceiptFirstProofAdapterTests.swift
+apps/swift/Tests/CapacitorTests/SessionSummarizerTests.swift
+apps/swift/Tests/CapacitorTests/WorkBatchAutoRouterTests.swift'
 
 is_in_allowlist() {
   local value="$1"

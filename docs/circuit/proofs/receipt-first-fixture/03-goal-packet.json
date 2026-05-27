@@ -1,0 +1,12 @@
+{
+  "kind": "goal_packet",
+  "id": "goal-packet-receipt-first-001",
+  "idea_id": "idea-receipt-first-001",
+  "pursuit_id": "pursuit-receipt-first-001",
+  "target_agent": "codex",
+  "project_path": "/Users/petepetrash/Code/capacitor",
+  "body": "/goal Prove the receipt-first Capacitor <-> Circuit slice with the smallest live path: one captured idea, one Circuit-shaped pursuit proposal, one GoalPacket whose body contains the visible CIRCUIT_RECEIPT return instruction, one visible Codex session, one captured raw receipt block, one normalized AgentEvent, and one Capacitor rendering expectation. Use fixture artifacts where product integration does not exist yet, preserve the owner-first boundary, and do not build a runner, flow engine, method system, product platform, broad memory store, new terminal/editor, or SaaS framing. When finished, end with a visible CIRCUIT_RECEIPT line followed by one JSON Receipt object whose status is exactly one of completed, blocked, or failed.",
+  "expected_return": "receipt",
+  "receipt_expectation": "Return a compact summary of artifacts created, evidence checked, unresolved risk, and next action.",
+  "checkpoint_expectation": "Ask only if owner input changes the work."
+}

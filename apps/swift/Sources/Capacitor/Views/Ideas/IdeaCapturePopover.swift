@@ -1,6 +1,39 @@
 import AppKit
 import SwiftUI
 
+enum TaskCaptureSurfaceCopy {
+    static let cardActionTitle = "Task"
+    static let cardActionAccessibilityLabel = "Add task to this project"
+    static let cardActionHelp = "Add task"
+    static let cardAccessibilityActionName = "Add Task"
+    static let cardContextMenuTitle = "Add Task..."
+
+    static let placeholders = [
+        "What should Capacitor do?",
+        "Describe the task...",
+        "What needs doing?",
+        "What should change?",
+        "Give Capacitor a task",
+    ]
+
+    static let keyboardHint = "⏎ Add Task  ⇧⏎ Add Task & keep adding  ⎋ Cancel"
+    static let submitTitle = "Add Task"
+    static let emptyQueueTitle = "No tasks queued"
+    static let emptyQueueHint = "Hover over a project card and click \"+ Task\" to add one"
+
+    static let userFacingStrings: [String] = [
+        cardActionTitle,
+        cardActionAccessibilityLabel,
+        cardActionHelp,
+        cardAccessibilityActionName,
+        cardContextMenuTitle,
+        keyboardHint,
+        submitTitle,
+        emptyQueueTitle,
+        emptyQueueHint,
+    ] + placeholders
+}
+
 struct IdeaCaptureTextAreaLayout {
     static let maxWidth: CGFloat = 500
     static let horizontalPadding: CGFloat = 48
@@ -29,16 +62,8 @@ struct IdeaCaptureOverlay: View {
     @State private var isCapturing = false
     @State private var returnMonitor: Any?
     @State private var showingSuccess = false
-    @State private var placeholder: String = placeholders.randomElement()!
+    @State private var placeholder: String = TaskCaptureSurfaceCopy.placeholders.randomElement()!
     @State private var isTextFieldFocused = false
-
-    private static let placeholders = [
-        "What's your idea?",
-        "Dream big...",
-        "I'm all ears",
-        "What's next?",
-        "Make something happen",
-    ]
 
     private enum Layout {
         static let maxTextWidth = IdeaCaptureTextAreaLayout.maxWidth
@@ -83,6 +108,9 @@ struct IdeaCaptureOverlay: View {
         }
         .onAppear {
             installReturnMonitor()
+            DispatchQueue.main.async {
+                focusTextArea()
+            }
         }
         .onDisappear {
             removeReturnMonitor()
@@ -125,7 +153,7 @@ struct IdeaCaptureOverlay: View {
             }
 
             HStack {
-                Text("⏎ Save  ⇧⏎ Save & add another  ⎋ Cancel")
+                Text(TaskCaptureSurfaceCopy.keyboardHint)
                     .font(AppTypography.bodyMedium)
                     .foregroundColor(.white.opacity(0.4))
 
@@ -136,7 +164,7 @@ struct IdeaCaptureOverlay: View {
                         Image(systemName: "checkmark")
                             .font(.system(size: 14, weight: .semibold))
                         if !showingSuccess {
-                            Text("Save")
+                            Text(TaskCaptureSurfaceCopy.submitTitle)
                                 .font(AppTypography.cardTitle)
                         }
                     }
@@ -423,28 +451,71 @@ extension NSView {
 // MARK: - Vertically Centered Text Editor
 
 final class TextViewFocusController {
+    typealias RetryScheduler = (_ action: @escaping () -> Void, _ delay: TimeInterval) -> Void
+
     private weak var textView: NSTextView?
     private weak var scrollView: NSScrollView?
     private var hasPendingFocus = false
+    private var retryGeneration = 0
+    private var hasScheduledRetry = false
+    private let retryDelays: [TimeInterval]
+    private let retryScheduler: RetryScheduler
+
+    init(
+        retryDelays: [TimeInterval] = [0, 0.05, 0.15, 0.35, 0.75],
+        retryScheduler: @escaping RetryScheduler = { action, delay in
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                action()
+            }
+        },
+    ) {
+        self.retryDelays = retryDelays
+        self.retryScheduler = retryScheduler
+    }
 
     func attach(textView: NSTextView, scrollView: NSScrollView) {
         self.textView = textView
         self.scrollView = scrollView
     }
 
-    func requestFocus() {
-        guard let textView else { return }
+    @discardableResult
+    func requestFocus() -> Bool {
+        attemptFocus(scheduleRetryOnFailure: true)
+    }
+
+    private func attemptFocus(scheduleRetryOnFailure: Bool) -> Bool {
+        guard let textView else {
+            hasPendingFocus = true
+            return false
+        }
 
         guard let window = textView.window ?? scrollView?.window else {
             hasPendingFocus = true
-            return
+            return false
         }
 
         hasPendingFocus = false
 
+        if !NSApp.isActive {
+            NSApp.activate(ignoringOtherApps: true)
+        }
+
+        if window.canBecomeKey, !window.isKeyWindow {
+            window.makeKeyAndOrderFront(nil)
+        }
+
         if window.firstResponder !== textView {
             window.makeFirstResponder(textView)
         }
+
+        let didFocus = window.firstResponder === textView
+        hasPendingFocus = !didFocus
+
+        if !didFocus, scheduleRetryOnFailure {
+            scheduleFocusRetries()
+        }
+
+        return didFocus
     }
 
     func viewDidMoveToWindow() {
@@ -454,14 +525,50 @@ final class TextViewFocusController {
             self?.requestFocus()
         }
     }
+
+    private func scheduleFocusRetries() {
+        guard !hasScheduledRetry else { return }
+
+        hasScheduledRetry = true
+        retryGeneration += 1
+
+        let generation = retryGeneration
+        let delays = retryDelays.isEmpty ? [0] : retryDelays
+        let lastRetryIndex = delays.index(before: delays.endIndex)
+
+        for (index, delay) in delays.enumerated() {
+            retryScheduler({ [weak self] in
+                guard let self, retryGeneration == generation else { return }
+                guard hasPendingFocus else {
+                    hasScheduledRetry = false
+                    return
+                }
+
+                let didFocus = attemptFocus(scheduleRetryOnFailure: false)
+                if didFocus || index == lastRetryIndex {
+                    hasScheduledRetry = false
+                }
+            }, delay)
+        }
+    }
 }
 
 final class FocusAwareScrollView: NSScrollView {
     var onDidMoveToWindow: (() -> Void)?
+    var onMouseDown: (() -> Void)?
+
+    override var mouseDownCanMoveWindow: Bool {
+        false
+    }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         onDidMoveToWindow?()
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        onMouseDown?()
+        super.mouseDown(with: event)
     }
 }
 
@@ -485,6 +592,9 @@ struct CenteredTextEditor: NSViewRepresentable {
         scrollView.drawsBackground = false
         scrollView.onDidMoveToWindow = {
             context.coordinator.scrollViewDidMoveToWindow()
+        }
+        scrollView.onMouseDown = {
+            context.coordinator.requestFocus()
         }
 
         let textContainer = NSTextContainer()
@@ -620,6 +730,23 @@ struct CenteredTextEditor: NSViewRepresentable {
 }
 
 class CenteredNSTextView: NSTextView {
+    override var acceptsFirstResponder: Bool {
+        true
+    }
+
+    override var mouseDownCanMoveWindow: Bool {
+        false
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        if !NSApp.isActive {
+            NSApp.activate(ignoringOtherApps: true)
+        }
+        window?.makeKeyAndOrderFront(nil)
+        window?.makeFirstResponder(self)
+        super.mouseDown(with: event)
+    }
+
     override func layout() {
         super.layout()
         centerTextVertically()

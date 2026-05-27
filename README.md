@@ -72,6 +72,18 @@ On first launch, it installs a small hook binary (`~/.local/bin/hud-hook`) and a
 
 It doesn't call the Anthropic API directly. It observes local Claude Code activity and manages its own local runtime state.
 
+## Circuit Protocol Slice
+
+Capacitor now owns the live receipt-first Capacitor/Circuit product-loop slice
+inside this repo. The app still does not become an agent reasoning engine:
+Capacitor owns native session lifecycle, attention, injection, observation, and
+projection; the local `circuit_protocol/` package owns the small headless
+planning and receipt-normalization contract; Claude Code remains the execution
+substrate.
+
+Start at `docs/circuit/receipt-first-product-loop.md` for the current boundary,
+paths, checks, and deferred scope.
+
 ## Data & privacy
 
 Capacitor reads from `~/.claude/` (transcripts, settings) and writes its own state to `~/.capacitor/`. It also adds hook entries to `~/.claude/settings.json` but doesn't touch your other settings.

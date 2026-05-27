@@ -8,6 +8,7 @@ struct RunCheckpointReviewWindow: View {
     @State private var manifestLoadError: String?
     @State private var note = ""
     @State private var phase: RunCheckpointReviewPhase = .review
+    @State private var followThroughSubmission: RunCheckpointFollowThroughSubmission?
 
     private struct Context {
         let target: AppState.RunCheckpointWindowTarget
@@ -55,7 +56,7 @@ struct RunCheckpointReviewWindow: View {
     var body: some View {
         Group {
             if case .submitted = phase {
-                submittedReceiptView
+                submittedFollowThroughView
             } else if let context {
                 HStack(spacing: 0) {
                     contentPane(context: context)
@@ -83,20 +84,24 @@ struct RunCheckpointReviewWindow: View {
             await loadManifest()
         }
         .onChange(of: appState.uiState.runCheckpointWindowTarget) { _, newValue in
-            if newValue == nil {
+            if newValue == nil, !phase.isSubmitted {
                 dismissWindow(id: "run-checkpoint-review")
             }
         }
         .onChange(of: resolvedCheckpointID) { oldValue, newValue in
-            if oldValue != nil, newValue == nil {
+            if oldValue != nil, newValue == nil, !phase.isSubmitted {
                 dismissWindow(id: "run-checkpoint-review")
             }
         }
         .onChange(of: targetIdentity) { oldValue, newValue in
             guard oldValue != newValue else { return }
+            if phase.isSubmitted, newValue == nil {
+                return
+            }
             phase = .review
             note = ""
             manifestLoadError = nil
+            followThroughSubmission = nil
         }
         .onDisappear {
             appState.uiState.runCheckpointWindowTarget = nil
@@ -129,16 +134,22 @@ struct RunCheckpointReviewWindow: View {
                     }
                 }
 
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(context.checkpoint.title)
-                        .font(AppTypography.cardTitle)
-                        .foregroundColor(.white.opacity(0.94))
+                let operatorBrief = RunCheckpointOperatorBriefProjection.make(
+                    run: context.run,
+                    checkpoint: context.checkpoint,
+                    manifest: manifest,
+                    manifestLoadError: manifestLoadError,
+                )
 
-                    Text(checkpointSummary(for: context))
-                        .font(AppTypography.body)
-                        .foregroundColor(.white.opacity(0.85))
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                if let continuity = RunCheckpointRevisionContinuityProjection.make(
+                    run: context.run,
+                    checkpoint: context.checkpoint,
+                    operatorBrief: operatorBrief,
+                ) {
+                    revisionContinuityView(continuity)
                 }
+
+                operatorBriefView(operatorBrief)
 
                 HStack(spacing: 16) {
                     metadataItem(label: "Run", value: context.run.id)
@@ -341,6 +352,92 @@ struct RunCheckpointReviewWindow: View {
         .background(Color.black.opacity(0.2))
     }
 
+    private func operatorBriefView(_ brief: RunCheckpointOperatorBrief) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionLabel("OPERATOR BRIEF")
+
+            VStack(alignment: .leading, spacing: 14) {
+                briefField(label: "Goal", value: brief.goal)
+                briefField(label: "Claim", value: brief.claim)
+                briefList(label: "Changed", items: brief.changed)
+                briefList(label: "Evidence", items: brief.evidence)
+                briefList(label: "Risk", items: brief.risks)
+                briefField(label: "Ask", value: brief.ask)
+            }
+            .padding(14)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color.white.opacity(0.055))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .strokeBorder(Color.white.opacity(0.08), lineWidth: 0.75),
+                    ),
+            )
+        }
+    }
+
+    private func revisionContinuityView(_ continuity: RunCheckpointRevisionContinuity) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionLabel("REVISION CONTINUITY")
+
+            VStack(alignment: .leading, spacing: 14) {
+                briefField(label: "You Asked", value: continuity.youAsked)
+                briefField(label: "Agent Response", value: continuity.agentResponse)
+                briefList(label: "Evidence", items: continuity.evidence)
+                briefList(label: "Remaining Risk", items: continuity.remainingRisks)
+            }
+            .padding(14)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color.orange.opacity(0.075))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .strokeBorder(Color.orange.opacity(0.18), lineWidth: 0.75),
+                    ),
+            )
+        }
+    }
+
+    private func briefField(label: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            briefLabel(label)
+            Text(value)
+                .font(AppTypography.bodySecondary)
+                .foregroundColor(.white.opacity(0.8))
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
+        }
+    }
+
+    private func briefList(label: String, items: [String]) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            briefLabel(label)
+
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+                    HStack(alignment: .top, spacing: 8) {
+                        Circle()
+                            .fill(Color.white.opacity(0.35))
+                            .frame(width: 4, height: 4)
+                            .padding(.top, 7)
+
+                        Text(item)
+                            .font(AppTypography.bodySecondary)
+                            .foregroundColor(.white.opacity(0.76))
+                            .fixedSize(horizontal: false, vertical: true)
+                            .textSelection(.enabled)
+                    }
+                }
+            }
+        }
+    }
+
+    private func briefLabel(_ label: String) -> some View {
+        Text(label.uppercased())
+            .font(AppTypography.caption.weight(.bold))
+            .foregroundColor(.white.opacity(0.4))
+    }
+
     private func decisionButton(
         title: String,
         icon: String,
@@ -383,42 +480,115 @@ struct RunCheckpointReviewWindow: View {
         .accessibilityIdentifier(accessibilityIdentifier)
     }
 
-    private var submittedReceiptView: some View {
-        VStack {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(spacing: 10) {
-                    Image(systemName: "paperplane.circle.fill")
-                        .font(AppTypography.sectionTitle.weight(.semibold))
-                        .foregroundColor(.blue.opacity(0.7))
+    private var submittedFollowThroughView: some View {
+        TimelineView(.periodic(from: Date(), by: 5)) { timeline in
+            let projection = followThroughProjection(now: timeline.date)
+            VStack {
+                followThroughCard(projection)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(32)
+        }
+    }
 
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Decision submitted")
-                            .font(AppTypography.sectionTitle)
-                            .foregroundColor(.white.opacity(0.9))
+    private func followThroughCard(_ projection: RunCheckpointFollowThroughProjection) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 10) {
+                Image(systemName: projection.iconName)
+                    .font(AppTypography.sectionTitle.weight(.semibold))
+                    .foregroundColor(tint(for: projection).opacity(0.78))
 
-                        Text("Waiting for the runtime snapshot to clear this checkpoint.")
-                            .font(AppTypography.body)
-                            .foregroundColor(.white.opacity(0.72))
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(projection.title)
+                        .font(AppTypography.sectionTitle)
+                        .foregroundColor(.white.opacity(0.9))
+
+                    Text(projection.message)
+                        .font(AppTypography.body)
+                        .foregroundColor(.white.opacity(0.72))
+                }
+            }
+
+            Text(projection.detail)
+                .font(AppTypography.bodySecondary)
+                .foregroundColor(.white.opacity(0.58))
+
+            HStack(spacing: 10) {
+                if projection.recommendedAction == "Inspect terminal",
+                   let project = projectForFollowThrough()
+                {
+                    Button {
+                        appState.launchTerminal(for: project, source: .terminalIcon)
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "terminal")
+                            Text("Inspect Terminal")
+                        }
+                        .font(AppTypography.bodySecondary.weight(.semibold))
                     }
+                    .buttonStyle(.plain)
+                    .foregroundColor(.white.opacity(0.86))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(Color.white.opacity(0.08)),
+                    )
                 }
 
-                Text("This window closes automatically once the active checkpoint disappears from the run snapshot.")
-                    .font(AppTypography.bodySecondary)
-                    .foregroundColor(.white.opacity(0.58))
+                Button {
+                    appState.uiState.runCheckpointWindowTarget = nil
+                    dismissWindow(id: "run-checkpoint-review")
+                } label: {
+                    Text("Close")
+                        .font(AppTypography.bodySecondary.weight(.semibold))
+                }
+                .buttonStyle(.plain)
+                .foregroundColor(.white.opacity(0.7))
             }
-            .padding(24)
-            .frame(maxWidth: 440, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(Color.black.opacity(0.2))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .strokeBorder(Color.white.opacity(0.08), lineWidth: 0.5),
-                    ),
+        }
+        .padding(24)
+        .frame(maxWidth: 480, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color.black.opacity(0.2))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.08), lineWidth: 0.5),
+                ),
+        )
+    }
+
+    private func followThroughProjection(now: Date) -> RunCheckpointFollowThroughProjection {
+        guard let followThroughSubmission else {
+            return RunCheckpointFollowThroughProjection(
+                state: .decisionAccepted,
+                title: "Decision accepted",
+                message: "Waiting for the next runtime snapshot.",
+                detail: "Capacitor is watching for the run to move forward.",
+                iconName: "paperplane.circle.fill",
+                tintName: "blue",
+                recommendedAction: nil,
             )
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(32)
+
+        return RunCheckpointFollowThroughProjection.make(
+            submission: followThroughSubmission,
+            run: appState.runState(
+                projectPath: followThroughSubmission.target.projectPath,
+                runID: followThroughSubmission.target.runID,
+            ),
+            now: now,
+        )
+    }
+
+    private func projectForFollowThrough() -> Project? {
+        guard let projectPath = followThroughSubmission?.target.projectPath else {
+            return nil
+        }
+        return appState.projectState.projects.first {
+            PathNormalizer.normalize($0.path) == PathNormalizer.normalize(projectPath)
+        }
     }
 
     private var emptyStateView: some View {
@@ -448,6 +618,11 @@ struct RunCheckpointReviewWindow: View {
                     checkpointID: context.target.checkpointID,
                     action: decision.rawValue,
                     note: note.isEmpty ? nil : note,
+                )
+                followThroughSubmission = RunCheckpointFollowThroughSubmission(
+                    target: context.target,
+                    decision: decision,
+                    submittedAt: Date(),
                 )
                 phase = .submitted(decision)
                 appState.refreshSessionStates()
@@ -500,16 +675,6 @@ struct RunCheckpointReviewWindow: View {
 
         let lastPathComponent = URL(fileURLWithPath: projectPath).lastPathComponent
         return lastPathComponent.isEmpty ? projectPath : lastPathComponent
-    }
-
-    private func checkpointSummary(for context: Context) -> String {
-        if let summary = manifest?.summary, !summary.isEmpty {
-            return summary
-        }
-        if let summary = context.checkpoint.summary, !summary.isEmpty {
-            return summary
-        }
-        return "This run is paused and waiting for your decision."
     }
 
     private func checkpointKindLabel(_ kind: RuntimeCheckpointKind) -> String {
@@ -671,14 +836,18 @@ struct RunCheckpointReviewWindow: View {
             error.localizedDescription
         }
     }
-}
 
-private enum RunCheckpointDecision: String, Equatable {
-    case approve
-    case requestChanges = "request_changes"
-
-    var isPrimary: Bool {
-        self == .approve
+    private func tint(for projection: RunCheckpointFollowThroughProjection) -> Color {
+        switch projection.tintName {
+        case "green":
+            .green
+        case "red":
+            .red
+        case "orange":
+            .orange
+        default:
+            .blue
+        }
     }
 }
 
@@ -687,6 +856,13 @@ private enum RunCheckpointReviewPhase: Equatable {
     case submitting(RunCheckpointDecision)
     case submitted(RunCheckpointDecision)
     case failed(String)
+
+    var isSubmitted: Bool {
+        if case .submitted = self {
+            return true
+        }
+        return false
+    }
 }
 
 private let runCheckpointTimestampFormatter: DateFormatter = {

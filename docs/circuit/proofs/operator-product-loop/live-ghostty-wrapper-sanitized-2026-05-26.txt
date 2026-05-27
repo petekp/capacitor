@@ -1,0 +1,13 @@
+NO_COLOR=absent
+FORCE_COLOR=absent
+CLICOLOR=absent
+CODEX_THREAD_ID=absent
+CODEX_SHELL=absent
+OPENAI_API_KEY=absent
+CAPACITOR_INGEST_KEY=absent
+CAPACITOR_FEATURES_ENABLED=absent
+PATH=/Users/petepetrash/.local/bin:/Users/petepetrash/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+TERM=xterm-ghostty
+COLORTERM=truecolor
+PWD=/Users/petepetrash/Code/capacitor
+wrapper-done

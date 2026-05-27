@@ -118,7 +118,7 @@ struct IdeaDetailOverlay: View {
         case .generatingTitle:
             return IdeaDetailOrchestrationPresentation(
                 title: orchestrationActivity.label,
-                detail: "Capacitor is turning the note into a queue title.",
+                detail: "Capacitor is preparing the task.",
                 symbolName: "sparkles",
                 tint: orchestrationActivity.tint,
                 showsProgress: true,
@@ -146,8 +146,8 @@ struct IdeaDetailOverlay: View {
             return IdeaDetailOrchestrationPresentation(
                 title: orchestrationActivity.label,
                 detail: phaseName == nil
-                    ? "The method run is moving through its workflow."
-                    : "The method run will pause when it needs input.",
+                    ? "The task is moving through its run."
+                    : "The task will pause when it needs input.",
                 symbolName: "play.fill",
                 tint: orchestrationActivity.tint,
                 showsProgress: true,
@@ -165,7 +165,7 @@ struct IdeaDetailOverlay: View {
         case .inProgress:
             return IdeaDetailOrchestrationPresentation(
                 title: orchestrationActivity.label,
-                detail: "This idea is already marked as in progress.",
+                detail: "This task is already marked as in progress.",
                 symbolName: "circle.fill",
                 tint: orchestrationActivity.tint,
                 showsProgress: false,

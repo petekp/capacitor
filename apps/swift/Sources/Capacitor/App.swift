@@ -218,6 +218,8 @@ struct CapacitorApp: App {
                 .keyboardShortcut("O", modifiers: .command)
             }
 
+            CircuitFirstSliceCommands(appState: appState)
+
             // MARK: - Remove Edit menu
 
             CommandGroup(replacing: .undoRedo) {}
@@ -286,6 +288,30 @@ struct CapacitorApp: App {
         .defaultSize(width: 900, height: 650)
         .windowResizability(.contentMinSize)
         .suppressedFromWindowMenu()
+
+        Window("Circuit Receipt", id: CircuitFirstSliceWindowID.receiptRendering) {
+            ReceiptProofRenderingWindow()
+                .preferredColorScheme(.dark)
+        }
+        .windowStyle(.hiddenTitleBar)
+        .windowResizability(.contentMinSize)
+        .defaultPosition(.topTrailing)
+        .defaultSize(width: 760, height: 620)
+
+        Window("Claude Circuit Receipt", id: CircuitFirstSliceWindowID.claudeReceiptRendering) {
+            let paths = CircuitReceiptProductLoopPaths()
+            ReceiptProofRenderingWindow(
+                store: ReceiptProofRenderingStore(
+                    resultURL: ReceiptFirstProofArtifacts(proofDirectoryURL: paths.nativeSessionDirectory).resultURL,
+                    agentEventURL: paths.agentEventURL,
+                ),
+            )
+            .preferredColorScheme(.dark)
+        }
+        .windowStyle(.hiddenTitleBar)
+        .windowResizability(.contentMinSize)
+        .defaultPosition(.topTrailing)
+        .defaultSize(width: 760, height: 620)
 
         #if DEBUG
             AppDebugWindows(appState: appState)
@@ -461,6 +487,16 @@ struct FloatingWindowConfigurator: NSViewRepresentable {
     let alwaysOnTop: Bool
     var anchoringOwnsLevel: Bool = false
 
+    static func floatingStyleMask(from styleMask: NSWindow.StyleMask) -> NSWindow.StyleMask {
+        var styleMask = styleMask
+        // New floating behavior: keep `.titled` so the standard SwiftUI window
+        // remains keyable for text input. The legacy path removed it, which made
+        // idea capture intermittently impossible to focus in floating mode.
+        styleMask.insert(.titled)
+        styleMask.insert(.fullSizeContentView)
+        return styleMask
+    }
+
     func makeNSView(context: Context) -> NSView {
         let view = NSView()
         DispatchQueue.main.async {
@@ -503,8 +539,7 @@ struct FloatingWindowConfigurator: NSViewRepresentable {
             window.hasShadow = false
             window.titlebarAppearsTransparent = true
             window.titleVisibility = .hidden
-            window.styleMask.insert(.fullSizeContentView)
-            window.styleMask.remove(.titled)
+            window.styleMask = Self.floatingStyleMask(from: window.styleMask)
             window.isMovableByWindowBackground = true
             window.titlebarSeparatorStyle = .none
 

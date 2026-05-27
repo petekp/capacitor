@@ -74,6 +74,141 @@ final class RunCheckpointTimelineProjectionTests: XCTestCase {
         XCTAssertEqual(projection.entries[2].eventTimestamp, "2026-03-26T10:20:00Z")
     }
 
+    func testRevisionRelationshipLinksLaterSamePhaseCheckpointToRequestChangesNote() throws {
+        let run = makeRun(
+            activeCheckpoint: makeCheckpoint(
+                id: "checkpoint-2",
+                historyOrdinal: 1,
+                phaseID: "implementation",
+                title: "Revision checkpoint",
+                status: "active",
+                createdAt: "2026-03-26T10:20:00Z",
+            ),
+            pastCheckpoints: [
+                makeCheckpoint(
+                    id: "checkpoint-1",
+                    historyOrdinal: 0,
+                    phaseID: "implementation",
+                    title: "First review",
+                    createdAt: "2026-03-26T10:00:00Z",
+                    decidedAt: "2026-03-26T10:05:00Z",
+                    decisionAction: "request_changes",
+                    decisionNote: "Make the packet less code-centric.",
+                ),
+            ],
+        )
+
+        let projection = try XCTUnwrap(RunCheckpointTimelineProjection(run: run))
+
+        XCTAssertNil(projection.entries[0].revisionRelationship)
+        XCTAssertEqual(
+            projection.entries[1].revisionRelationship,
+            RunCheckpointTimelineProjection.Entry.RevisionRelationship(
+                priorEntryID: "checkpoint-1#history-0",
+                priorCheckpointID: "checkpoint-1",
+                priorPhaseRoundNumber: 1,
+                priorDecisionNote: "Make the packet less code-centric.",
+            ),
+        )
+    }
+
+    func testApprovalRespondsToRequestThenClearsRelationshipForLaterCheckpoint() throws {
+        let run = makeRun(
+            activeCheckpoint: makeCheckpoint(
+                id: "checkpoint-3",
+                historyOrdinal: 2,
+                phaseID: "implementation",
+                title: "Final checkpoint",
+                status: "active",
+                createdAt: "2026-03-26T10:20:00Z",
+            ),
+            pastCheckpoints: [
+                makeCheckpoint(
+                    id: "checkpoint-1",
+                    historyOrdinal: 0,
+                    phaseID: "implementation",
+                    title: "First review",
+                    createdAt: "2026-03-26T10:00:00Z",
+                    decidedAt: "2026-03-26T10:05:00Z",
+                    decisionAction: "request_changes",
+                    decisionNote: "Tighten evidence.",
+                ),
+                makeCheckpoint(
+                    id: "checkpoint-2",
+                    historyOrdinal: 1,
+                    phaseID: "implementation",
+                    title: "Revision approved",
+                    createdAt: "2026-03-26T10:10:00Z",
+                    decidedAt: "2026-03-26T10:15:00Z",
+                    decisionAction: "approve",
+                ),
+            ],
+        )
+
+        let projection = try XCTUnwrap(RunCheckpointTimelineProjection(run: run))
+
+        XCTAssertEqual(projection.entries[1].revisionRelationship?.priorCheckpointID, "checkpoint-1")
+        XCTAssertNil(projection.entries[2].revisionRelationship)
+    }
+
+    func testRevisionRelationshipDoesNotCrossPhaseBoundaries() throws {
+        let run = makeRun(
+            activeCheckpoint: makeCheckpoint(
+                id: "implementation-1",
+                historyOrdinal: 1,
+                phaseID: "implementation",
+                title: "Implementation checkpoint",
+                status: "active",
+                createdAt: "2026-03-26T10:20:00Z",
+            ),
+            pastCheckpoints: [
+                makeCheckpoint(
+                    id: "design-1",
+                    historyOrdinal: 0,
+                    phaseID: "design",
+                    title: "Design review",
+                    createdAt: "2026-03-26T10:00:00Z",
+                    decidedAt: "2026-03-26T10:05:00Z",
+                    decisionAction: "request_changes",
+                    decisionNote: "Revise the design.",
+                ),
+            ],
+        )
+
+        let projection = try XCTUnwrap(RunCheckpointTimelineProjection(run: run))
+
+        XCTAssertNil(projection.entries[1].revisionRelationship)
+    }
+
+    func testBlankRequestNoteDoesNotCreateRevisionRelationship() throws {
+        let run = makeRun(
+            activeCheckpoint: makeCheckpoint(
+                id: "checkpoint-2",
+                historyOrdinal: 1,
+                phaseID: "implementation",
+                title: "Revision checkpoint",
+                status: "active",
+                createdAt: "2026-03-26T10:20:00Z",
+            ),
+            pastCheckpoints: [
+                makeCheckpoint(
+                    id: "checkpoint-1",
+                    historyOrdinal: 0,
+                    phaseID: "implementation",
+                    title: "First review",
+                    createdAt: "2026-03-26T10:00:00Z",
+                    decidedAt: "2026-03-26T10:05:00Z",
+                    decisionAction: "request_changes",
+                    decisionNote: "   ",
+                ),
+            ],
+        )
+
+        let projection = try XCTUnwrap(RunCheckpointTimelineProjection(run: run))
+
+        XCTAssertNil(projection.entries[1].revisionRelationship)
+    }
+
     func testRoundNumbersAreTrackedPerPhase() throws {
         let run = makeRun(
             activeCheckpoint: makeCheckpoint(

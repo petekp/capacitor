@@ -1,0 +1,65 @@
+{
+  "kind": "capacitor_receipt_first_loop_validation_result",
+  "status": "passed",
+  "root": "/Users/petepetrash/Code/capacitor",
+  "proof": "/Users/petepetrash/Code/capacitor/docs/circuit/proofs/receipt-first-product-loop",
+  "check_count": 13,
+  "checks": [
+    {
+      "path": "apps/swift/Sources/Capacitor/Debug/CircuitReceiptProductLoop.swift",
+      "evidence": "no old capacitor-circuit runtime path tokens"
+    },
+    {
+      "path": "apps/swift/Sources/Capacitor/Debug/ReceiptFirstProofAdapter.swift",
+      "evidence": "no old capacitor-circuit runtime path tokens"
+    },
+    {
+      "path": "apps/swift/Sources/Capacitor/Debug/ReceiptProofRendering.swift",
+      "evidence": "no old capacitor-circuit runtime path tokens"
+    },
+    {
+      "path": "apps/swift/Sources/Capacitor/Features/CircuitFirstSliceCommands.swift",
+      "evidence": "no old capacitor-circuit runtime path tokens"
+    },
+    {
+      "path": "docs/circuit/proofs/receipt-first-product-loop/planning/01-capacitor-idea-source.json",
+      "evidence": "Capacitor idea source targets this repo"
+    },
+    {
+      "path": "docs/circuit/proofs/receipt-first-product-loop/planning/02-contract-idea.json",
+      "evidence": "contract Idea is captured and Capacitor-owned"
+    },
+    {
+      "path": "docs/circuit/proofs/receipt-first-product-loop/planning/03-planning-request.json",
+      "evidence": "planning request targets Claude Code"
+    },
+    {
+      "path": "docs/circuit/proofs/receipt-first-product-loop/planning/04-planning-response.json",
+      "evidence": "headless planning response recorded"
+    },
+    {
+      "path": "docs/circuit/proofs/receipt-first-product-loop/planning/05-goal-packet.json",
+      "evidence": "GoalPacket is Claude receipt contract and exactly inserted"
+    },
+    {
+      "path": "docs/circuit/proofs/receipt-first-product-loop/native-session/06-native-captured-raw-receipt.txt",
+      "evidence": "raw CIRCUIT_RECEIPT preserved"
+    },
+    {
+      "path": "docs/circuit/proofs/receipt-first-product-loop/native-session/07-native-adapter-result.json",
+      "evidence": "adapter captured Claude receipt from Capacitor-owned path"
+    },
+    {
+      "path": "docs/circuit/proofs/receipt-first-product-loop/normalization/00-normalization-request.json",
+      "evidence": "normalization request preserves raw inputs"
+    },
+    {
+      "path": "docs/circuit/proofs/receipt-first-product-loop/normalization/01-agent-event.json",
+      "evidence": "headless AgentEvent normalized from Claude receipt"
+    }
+  ],
+  "limits": [
+    "Validates the Claude Code CLI receipt-first product loop only.",
+    "Does not validate checkpoint relay, queues, retries, Cursor, or generalized session management."
+  ]
+}

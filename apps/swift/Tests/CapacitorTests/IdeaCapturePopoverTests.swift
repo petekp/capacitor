@@ -78,6 +78,54 @@ final class IdeaCapturePopoverTests: XCTestCase {
         XCTAssertTrue(window.firstResponder === textView)
     }
 
+    func testFocusControllerRetriesWhenInitialFocusAttemptIsRejected() {
+        var scheduledRetries: [() -> Void] = []
+        let focusController = TextViewFocusController(
+            retryDelays: [0.01, 0.02],
+            retryScheduler: { action, _ in
+                scheduledRetries.append(action)
+            },
+        )
+        let window = TestWindow(
+            contentRect: CGRect(origin: .zero, size: ideaCaptureTestWindowSize),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false,
+        )
+        let container = NSView(frame: CGRect(origin: .zero, size: ideaCaptureTestWindowSize))
+        let scrollView = NSScrollView(frame: container.bounds)
+        let textView = TemporarilyRefusingTextView(frame: scrollView.bounds)
+
+        scrollView.documentView = textView
+        window.contentView = container
+        container.addSubview(scrollView)
+        focusController.attach(textView: textView, scrollView: scrollView)
+
+        textView.acceptsFocus = false
+        XCTAssertFalse(focusController.requestFocus())
+        XCTAssertFalse(window.firstResponder === textView)
+        XCTAssertEqual(scheduledRetries.count, 2)
+
+        textView.acceptsFocus = true
+        scheduledRetries.first?()
+
+        XCTAssertTrue(window.firstResponder === textView)
+    }
+
+    func testCenteredTextViewAcceptsClickFocus() {
+        let textView = CenteredNSTextView(frame: .zero)
+
+        XCTAssertTrue(textView.acceptsFirstResponder)
+    }
+
+    func testCaptureTextViewsDoNotBecomeWindowDragHandles() {
+        let scrollView = FocusAwareScrollView(frame: .zero)
+        let textView = CenteredNSTextView(frame: .zero)
+
+        XCTAssertFalse(scrollView.mouseDownCanMoveWindow)
+        XCTAssertFalse(textView.mouseDownCanMoveWindow)
+    }
+
     private func pumpRunLoop(for interval: TimeInterval) {
         let limit = Date().addingTimeInterval(interval)
         while RunLoop.main.run(mode: .default, before: limit), Date() < limit {}
@@ -93,5 +141,17 @@ private final class TestWindow: NSWindow {
 
     override var canBecomeMain: Bool {
         true
+    }
+}
+
+private final class TemporarilyRefusingTextView: NSTextView {
+    var acceptsFocus = true
+
+    override var acceptsFirstResponder: Bool {
+        acceptsFocus
+    }
+
+    override func becomeFirstResponder() -> Bool {
+        acceptsFocus && super.becomeFirstResponder()
     }
 }

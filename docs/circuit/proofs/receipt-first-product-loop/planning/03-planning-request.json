@@ -1,0 +1,16 @@
+{
+  "idea" : {
+    "captured_at" : "2026-05-24T21:42:19.672445+00:00",
+    "id" : "idea-01KSDZ0Q8RCKJZW6FKG94BVYZ8",
+    "intent" : "Verify receipt capture guard stale-artifact fix",
+    "kind" : "idea",
+    "project" : {
+      "name" : "capacitor",
+      "path" : "\/Users\/petepetrash\/Code\/capacitor"
+    },
+    "success_criteria" : "inspect the changed adapter tests and confirm the new guard rejects stale body hashes and prompt-only receipts. Do not edit files unless you find a clear issue.",
+    "text" : "Verify receipt capture guard stale-artifact fix\n\nVerify the receipt capture guard after the stale-artifact fix.\nSuccess means: inspect the changed adapter tests and confirm the new guard rejects stale body hashes and prompt-only receipts. Do not edit files unless you find a clear issue."
+  },
+  "kind" : "plan_goal_packet_request",
+  "target_agent" : "claude_code"
+}

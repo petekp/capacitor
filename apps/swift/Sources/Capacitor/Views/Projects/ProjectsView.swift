@@ -47,6 +47,14 @@ struct ProjectsView: View {
         return ProjectOrdering.orderedProjects(paused, customOrder: appState.projectState.projectOrder)
     }
 
+    private var shouldShowReturnBrief: Bool {
+        appState.featureState.isProjectCreationEnabled || appState.featureState.isMethodRunnerEnabled
+    }
+
+    private var shouldUseAttentionFieldOfWork: Bool {
+        shouldShowReturnBrief
+    }
+
     var body: some View {
         // Bridge nested session-state updates into this view's observation graph.
         let _ = appState.sessionStateRevision
@@ -146,90 +154,43 @@ struct ProjectsView: View {
                             }
                             .padding(.top, 8)
                         } else {
-                            let grouped = ProjectOrdering.orderedGroupedProjects(
-                                nonPausedProjects,
-                                order: appState.projectState.projectOrder,
-                                sessionStates: sessionStates,
-                            )
-                            let activePaths = Set(grouped.active.map(\.path))
-                            let rows = grouped.active + grouped.idle
-                            let reorderDirections = rowOrderTracker.snapshotAndDirections(for: rows.map(\.path))
-                            let hasVisibleProjects = !grouped.active.isEmpty || !grouped.idle.isEmpty
+                            let attentionSummary = operatorAttentionSummary(sessionStates: sessionStates)
+                            let attentionSections = operatorFieldOfWorkSections(summary: attentionSummary)
+
+                            if shouldShowReturnBrief {
+                                ReturnBriefView(content: ReturnBriefContent.make(
+                                    from: attentionSummary,
+                                    viewState: appState.operatorViewStateSnapshot,
+                                ))
+                                .padding(.bottom, 4)
+
+                                EndOfDayClosureSection(content: EndOfDayClosureContent.make(
+                                    from: attentionSummary,
+                                    runs: closureRuns(),
+                                ))
+                                .padding(.bottom, 4)
+                            }
 
                             if appState.featureState.isProjectCreationEnabled {
                                 ActivityPanel()
                             }
 
-                            if hasVisibleProjects {
-                                if !grouped.active.isEmpty {
-                                    SectionHeader(
-                                        title: "In Progress",
-                                        count: grouped.active.count,
-                                    )
-                                    .padding(.top, 4)
-                                    .transition(.opacity)
+                            if shouldUseAttentionFieldOfWork {
+                                let fullCardRows = attentionSections.flatMap { section in
+                                    section.rows.filter { !(section.kind == .dormantHidden && $0.isHidden) }
                                 }
-
-                                ForEach(Array(rows.enumerated()), id: \.element.path) { index, project in
-                                    if index == grouped.active.count, !grouped.idle.isEmpty {
-                                        SectionHeader(
-                                            title: "Idle",
-                                            count: grouped.idle.count,
-                                        )
-                                        .padding(.top, grouped.active.isEmpty ? 4 : 10)
-                                        .id("idle-section-header")
-                                        .transition(.opacity)
-                                    }
-
-                                    let sessionState = ProjectOrdering.sessionState(for: project.path, sessionStates: sessionStates)
-                                    let projectStatus = appState.getProjectStatus(for: project)
-                                    let flashState = appState.isFlashing(project)
-                                    let group: ActivityGroup = activePaths.contains(project.path) ? .active : .idle
-                                    let groupProjects = group == .active ? grouped.active : grouped.idle
-                                    activeProjectCard(
-                                        project: project,
-                                        sessionState: sessionState,
-                                        projectStatus: projectStatus,
-                                        flashState: flashState,
-                                        index: index,
-                                        group: group,
-                                        groupProjects: groupProjects,
-                                        reorderZIndex: reorderDirections[project.path] ?? 0,
-                                    )
-                                }
-                            }
-
-                            if !pausedProjects.isEmpty {
-                                PausedSectionHeader(
-                                    count: pausedProjects.count,
-                                    isCollapsed: pausedCollapsed,
-                                    onToggle: {
-                                        let expanding = pausedCollapsed
-                                        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-                                            pausedCollapsed.toggle()
-                                        }
-                                        if expanding {
-                                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                                                withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-                                                    scrollProxy.scrollTo("scroll-end", anchor: .bottom)
-                                                }
-                                            }
-                                        }
-                                    },
+                                let reorderDirections = rowOrderTracker.snapshotAndDirections(for: fullCardRows.map(\.project.path))
+                                attentionFieldOfWorkSections(
+                                    sections: attentionSections,
+                                    sessionStates: sessionStates,
+                                    reorderDirections: reorderDirections,
+                                    scrollProxy: scrollProxy,
                                 )
-                                .padding(.top, hasVisibleProjects ? 12 : 4)
-                                .transition(.opacity)
-
-                                if !pausedCollapsed {
-                                    VStack(spacing: 0) {
-                                        ForEach(Array(pausedProjects.enumerated()), id: \.element.path) { index, project in
-                                            pausedProjectCard(project: project, index: index)
-                                        }
-                                        // Anchor inside the eager VStack so it's always materialized
-                                        // when the section is expanded (LazyVStack won't defer it)
-                                        Color.clear.frame(height: 1).id("scroll-end")
-                                    }
-                                }
+                            } else {
+                                legacyActiveIdleSections(
+                                    sessionStates: sessionStates,
+                                    scrollProxy: scrollProxy,
+                                )
                             }
                         }
                     }
@@ -282,9 +243,228 @@ struct ProjectsView: View {
         }
     }
 
+    private func operatorAttentionSummary(
+        sessionStates: [String: ProjectSessionState],
+    ) -> OperatorAttentionSummary {
+        OperatorAttentionProjection.build(
+            projects: appState.projectState.projects,
+            runsByID: appState.runState.runStatesByID,
+            delegationStatesByProjectPath: appState.runState.delegationStates,
+            sessionStatesByProjectPath: sessionStates,
+            workBatchesByProjectPath: appState.workBatchesByProjectPath(for: appState.projectState.projects),
+            receiptRunsByProjectPath: appState.receiptLoopRunsByProjectPath,
+            dormantProjectPaths: appState.projectState.manuallyDormant,
+        )
+    }
+
+    private func operatorFieldOfWorkSections(
+        summary: OperatorAttentionSummary,
+    ) -> [OperatorFieldOfWorkSection] {
+        OperatorFieldOfWorkProjection.make(
+            projects: appState.projectState.projects,
+            summary: summary,
+            projectOrder: appState.projectState.projectOrder,
+            hiddenProjectPaths: appState.projectState.manuallyDormant,
+        )
+    }
+
+    private func closureRuns() -> [RuntimeRunState] {
+        Array(appState.runState.runStatesByID.values)
+            + appState.receiptLoopRunsByProjectPath.values.map { $0.runtimeRunState() }
+    }
+
+    @ViewBuilder
+    private func legacyActiveIdleSections(
+        sessionStates: [String: ProjectSessionState],
+        scrollProxy: ScrollViewProxy,
+    ) -> some View {
+        let grouped = ProjectOrdering.orderedGroupedProjects(
+            nonPausedProjects,
+            order: appState.projectState.projectOrder,
+            sessionStates: sessionStates,
+        )
+        let activePaths = Set(grouped.active.map(\.path))
+        let rows = grouped.active + grouped.idle
+        let reorderDirections = rowOrderTracker.snapshotAndDirections(for: rows.map(\.path))
+        let hasVisibleProjects = !grouped.active.isEmpty || !grouped.idle.isEmpty
+
+        if hasVisibleProjects {
+            if !grouped.active.isEmpty {
+                SectionHeader(
+                    title: "In Progress",
+                    count: grouped.active.count,
+                )
+                .padding(.top, 4)
+                .transition(.opacity)
+            }
+
+            ForEach(Array(rows.enumerated()), id: \.element.path) { index, project in
+                if index == grouped.active.count, !grouped.idle.isEmpty {
+                    SectionHeader(
+                        title: "Idle",
+                        count: grouped.idle.count,
+                    )
+                    .padding(.top, grouped.active.isEmpty ? 4 : 10)
+                    .id("idle-section-header")
+                    .transition(.opacity)
+                }
+
+                let sessionState = ProjectOrdering.sessionState(for: project.path, sessionStates: sessionStates)
+                let projectStatus = appState.getProjectStatus(for: project)
+                let flashState = appState.isFlashing(project)
+                let group: ActivityGroup = activePaths.contains(project.path) ? .active : .idle
+                let groupProjects = group == .active ? grouped.active : grouped.idle
+                activeProjectCard(
+                    project: project,
+                    sessionState: sessionState,
+                    projectStatus: projectStatus,
+                    flashState: flashState,
+                    index: index,
+                    group: group,
+                    groupProjects: groupProjects,
+                    reorderZIndex: reorderDirections[project.path] ?? 0,
+                )
+            }
+        }
+
+        legacyHiddenProjectsSection(
+            hasVisibleProjects: hasVisibleProjects,
+            scrollProxy: scrollProxy,
+        )
+    }
+
+    private func attentionFieldOfWorkSections(
+        sections: [OperatorFieldOfWorkSection],
+        sessionStates: [String: ProjectSessionState],
+        reorderDirections: [String: Double],
+        scrollProxy: ScrollViewProxy,
+    ) -> some View {
+        ForEach(Array(sections.enumerated()), id: \.element.kind) { sectionIndex, section in
+            let visibleRows = visibleRows(for: section)
+            let hiddenRows = hiddenRows(for: section)
+            let groupProjects = visibleRows.map(\.project)
+
+            SectionHeader(
+                title: section.title,
+                count: section.rows.count,
+            )
+            .padding(.top, sectionIndex == 0 ? 4 : 10)
+            .transition(.opacity)
+
+            ForEach(Array(visibleRows.enumerated()), id: \.element.project.path) { rowIndex, row in
+                let project = row.project
+                let sessionState = ProjectOrdering.sessionState(for: project.path, sessionStates: sessionStates)
+                let projectStatus = appState.getProjectStatus(for: project)
+                let flashState = appState.isFlashing(project)
+                activeProjectCard(
+                    project: project,
+                    attentionItem: row.attentionItem,
+                    sessionState: sessionState,
+                    projectStatus: projectStatus,
+                    flashState: flashState,
+                    index: rowIndex,
+                    group: section.kind.cardActivityGroup,
+                    groupProjects: groupProjects,
+                    reorderZIndex: reorderDirections[project.path] ?? 0,
+                )
+            }
+
+            if section.kind == .dormantHidden, !hiddenRows.isEmpty {
+                hiddenProjectsDisclosure(
+                    rows: hiddenRows,
+                    topPadding: visibleRows.isEmpty ? 2 : 8,
+                    scrollProxy: scrollProxy,
+                )
+            }
+        }
+    }
+
+    private func visibleRows(
+        for section: OperatorFieldOfWorkSection,
+    ) -> [OperatorFieldOfWorkSection.Row] {
+        if section.kind == .dormantHidden {
+            return section.rows.filter { !$0.isHidden }
+        }
+        return section.rows
+    }
+
+    private func hiddenRows(
+        for section: OperatorFieldOfWorkSection,
+    ) -> [OperatorFieldOfWorkSection.Row] {
+        guard section.kind == .dormantHidden else { return [] }
+        return section.rows.filter(\.isHidden)
+    }
+
+    @ViewBuilder
+    private func legacyHiddenProjectsSection(
+        hasVisibleProjects: Bool,
+        scrollProxy: ScrollViewProxy,
+    ) -> some View {
+        if !pausedProjects.isEmpty {
+            hiddenProjectsDisclosure(
+                projects: pausedProjects,
+                topPadding: hasVisibleProjects ? 12 : 4,
+                scrollProxy: scrollProxy,
+            )
+        }
+    }
+
+    private func hiddenProjectsDisclosure(
+        rows: [OperatorFieldOfWorkSection.Row],
+        topPadding: CGFloat,
+        scrollProxy: ScrollViewProxy,
+    ) -> some View {
+        hiddenProjectsDisclosure(
+            projects: rows.map(\.project),
+            topPadding: topPadding,
+            scrollProxy: scrollProxy,
+        )
+    }
+
+    @ViewBuilder
+    private func hiddenProjectsDisclosure(
+        projects: [Project],
+        topPadding: CGFloat,
+        scrollProxy: ScrollViewProxy,
+    ) -> some View {
+        if !projects.isEmpty {
+            PausedSectionHeader(
+                count: projects.count,
+                isCollapsed: pausedCollapsed,
+                onToggle: {
+                    let expanding = pausedCollapsed
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                        pausedCollapsed.toggle()
+                    }
+                    if expanding {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                                scrollProxy.scrollTo("scroll-end", anchor: .bottom)
+                            }
+                        }
+                    }
+                },
+            )
+            .padding(.top, topPadding)
+            .transition(.opacity)
+
+            if !pausedCollapsed {
+                VStack(spacing: 0) {
+                    ForEach(Array(projects.enumerated()), id: \.element.path) { index, project in
+                        pausedProjectCard(project: project, index: index, count: projects.count)
+                    }
+                    // Anchor inside the eager VStack so it's always materialized
+                    // when the section is expanded (LazyVStack won't defer it)
+                    Color.clear.frame(height: 1).id("scroll-end")
+                }
+            }
+        }
+    }
+
     @ViewBuilder
     private func activeProjectCard(
         project: Project,
+        attentionItem: OperatorAttentionItem? = nil,
         sessionState: ProjectSessionState?,
         projectStatus: ProjectStatus?,
         flashState: SessionState?,
@@ -302,11 +482,13 @@ struct ProjectsView: View {
             delegationState: appState.delegationState(for: project),
             activeRunState: appState.activeRun(for: project),
             projectStatus: projectStatus,
+            workBatchState: appState.workBatchSessionState(for: project),
+            workBatchSummary: appState.workBatchContextSummary(for: project),
             sessionSummary: appState.sessionSummarizer.bestSummary(for: project.path),
             flashState: flashState,
             isActive: appState.activeProjectPath == project.path,
             onTap: {
-                appState.handlePrimaryProjectAction(for: project)
+                handlePrimaryProjectAction(for: project, attentionItem: attentionItem)
             },
             onInfoTap: canShowDetails ? { appState.showProjectDetail(project) } : nil,
             onMoveToDormant: {
@@ -339,11 +521,37 @@ struct ProjectsView: View {
         )
     }
 
-    private func pausedProjectCard(project: Project, index: Int) -> some View {
+    private func handlePrimaryProjectAction(
+        for project: Project,
+        attentionItem: OperatorAttentionItem?,
+    ) {
+        let action = OperatorAttentionPrimaryActionResolver.resolve(
+            attentionItem: attentionItem,
+            delegationState: appState.delegationState(for: project),
+            isDelegationEnabled: appState.featureState.isDelegationLoopEnabled,
+        )
+
+        switch action {
+        case .defaultProjectAction:
+            appState.handlePrimaryProjectAction(for: project)
+        case .openDelegationReview:
+            appState.showDelegationReview(project)
+        case let .openRunCheckpointReview(projectPath, runID, checkpointID):
+            appState.showRunCheckpointReview(
+                projectPath: projectPath,
+                runID: runID,
+                checkpointID: checkpointID,
+            )
+        case .openReceiptProof:
+            openWindow(id: CircuitFirstSliceWindowID.claudeReceiptRendering)
+        }
+    }
+
+    private func pausedProjectCard(project: Project, index: Int, count: Int? = nil) -> some View {
         CompactProjectCardView(
             project: project,
             onTap: {
-                appState.launchTerminal(for: project)
+                appState.handlePrimaryProjectAction(for: project)
             },
             onInfoTap: appState.featureState.isProjectDetailsEnabled ? { appState.showProjectDetail(project) } : nil,
             onMoveToRecent: {
@@ -356,7 +564,7 @@ struct ProjectsView: View {
                     appState.removeProject(project.path)
                 }
             },
-            showSeparator: index < pausedProjects.count - 1,
+            showSeparator: index < (count ?? pausedProjects.count) - 1,
         )
         .pausedProjectCardModifiers(
             project: project,
@@ -376,6 +584,15 @@ struct ProjectsView: View {
                 order: appState.projectState.projectOrder,
                 sessionStates: sessionStates,
             )
+            if shouldUseAttentionFieldOfWork {
+                let attentionSummary = operatorAttentionSummary(sessionStates: sessionStates)
+                return operatorFieldOfWorkSections(summary: attentionSummary)
+                    .flatMap { section in
+                        section.rows
+                            .filter { !(section.kind == .dormantHidden && $0.isHidden) }
+                            .map(\.project)
+                    }
+            }
             return grouped.active + grouped.idle
         }
     #endif

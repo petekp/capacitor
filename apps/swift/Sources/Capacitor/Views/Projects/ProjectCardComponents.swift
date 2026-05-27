@@ -273,7 +273,7 @@ struct ProjectContextMenu: View {
         }
         if let onCaptureIdea {
             Button(action: onCaptureIdea) {
-                Label("Capture Idea...", systemImage: "lightbulb")
+                Label(TaskCaptureSurfaceCopy.cardContextMenuTitle, systemImage: "plus")
             }
         }
         Divider()

@@ -8,6 +8,8 @@ struct ProjectCardView: View {
     let delegationState: RuntimeDelegationState?
     let activeRunState: RuntimeRunState?
     let projectStatus: ProjectStatus?
+    var workBatchState: SessionState?
+    var workBatchSummary: String?
     var sessionSummary: String?
     let flashState: SessionState?
     let isActive: Bool
@@ -27,6 +29,8 @@ struct ProjectCardView: View {
             delegationState: delegationState,
             activeRunState: activeRunState,
             projectStatus: projectStatus,
+            workBatchState: workBatchState,
+            workBatchSummary: workBatchSummary,
             sessionSummary: sessionSummary,
             flashState: flashState,
             isActive: isActive,
@@ -111,6 +115,8 @@ struct ProjectCard: View {
     let delegationState: RuntimeDelegationState?
     let activeRunState: RuntimeRunState?
     let projectStatus: ProjectStatus?
+    var workBatchState: SessionState?
+    var workBatchSummary: String?
     var sessionSummary: String?
     let flashState: SessionState?
     let isActive: Bool
@@ -136,6 +142,8 @@ struct ProjectCard: View {
         delegationState: RuntimeDelegationState?,
         activeRunState: RuntimeRunState?,
         projectStatus: ProjectStatus?,
+        workBatchState: SessionState? = nil,
+        workBatchSummary: String? = nil,
         sessionSummary: String? = nil,
         flashState: SessionState?,
         isActive: Bool,
@@ -153,6 +161,8 @@ struct ProjectCard: View {
         self.delegationState = delegationState
         self.activeRunState = activeRunState
         self.projectStatus = projectStatus
+        self.workBatchState = workBatchState
+        self.workBatchSummary = workBatchSummary
         self.sessionSummary = sessionSummary
         self.flashState = flashState
         self.isActive = isActive
@@ -187,7 +197,7 @@ struct ProjectCard: View {
         if layoutMode == .dock {
             return dockPresentation.currentState
         }
-        return visibleRunVisualState.sessionState ?? sessionState?.state ?? .idle
+        return visibleRunVisualState.sessionState ?? workBatchState ?? sessionState?.state ?? .idle
     }
 
     private var nameColor: Color {
@@ -241,6 +251,7 @@ struct ProjectCard: View {
             activeRunState: activeRunState,
             delegationState: delegationState,
             projectStatus: projectStatus,
+            workBatchSummary: workBatchSummary,
             sessionSummary: sessionSummary,
         ))
     }
@@ -272,6 +283,9 @@ struct ProjectCard: View {
         }
         if delegationStatus == "resume_failed" {
             return "Worker resume failed"
+        }
+        if let workBatchState {
+            return workBatchState.accessibilityStatusDescription
         }
         return currentState.accessibilityStatusDescription
     }
@@ -349,6 +363,7 @@ struct ProjectCard: View {
                     sessionState: sessionState,
                     delegationState: delegationState,
                     activeRunState: activeRunState,
+                    workBatchState: workBatchState,
                 )
 
                 ProjectCardContent(
@@ -412,6 +427,7 @@ struct ProjectCard: View {
                     sessionState: sessionState,
                     delegationState: delegationState,
                     activeRunState: activeRunState,
+                    workBatchState: workBatchState,
                     style: .compact,
                 )
                 .padding(.top, glassConfig.dockChipTopPaddingRounded)
@@ -588,6 +604,11 @@ struct ProjectCard: View {
             .applyIf(onInfoTap) { view, action in
                 view.accessibilityAction(named: "View Details", action)
             }
+            .applyIf(onCaptureIdea) { view, action in
+                view.accessibilityAction(named: TaskCaptureSurfaceCopy.cardAccessibilityActionName) {
+                    action(.zero)
+                }
+            }
             .applyIf(accessibilityHintText) { view, hint in
                 view.accessibilityHint(hint)
             }
@@ -735,6 +756,7 @@ private struct ProjectCardHeader: View {
     let sessionState: ProjectSessionState?
     let delegationState: RuntimeDelegationState?
     let activeRunState: RuntimeRunState?
+    let workBatchState: SessionState?
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
@@ -757,6 +779,7 @@ private struct ProjectCardHeader: View {
                 sessionState: sessionState,
                 delegationState: delegationState,
                 activeRunState: activeRunState,
+                workBatchState: workBatchState,
             )
         }
     }
@@ -898,8 +921,8 @@ private struct ProjectCardActionBar: View {
         HStack(spacing: 0) {
             ProjectCardActionButton(
                 icon: "plus",
-                title: "Idea",
-                accessibilityLabel: "Capture idea for this project",
+                title: TaskCaptureSurfaceCopy.cardActionTitle,
+                accessibilityLabel: TaskCaptureSurfaceCopy.cardActionAccessibilityLabel,
                 action: onCaptureIdea,
             )
 
@@ -1112,8 +1135,8 @@ struct CardActionButtons: View {
                     entranceDelay: 0,
                     style: style,
                 )
-                .help("Capture idea")
-                .accessibilityLabel("Capture idea for this project")
+                .help(TaskCaptureSurfaceCopy.cardActionHelp)
+                .accessibilityLabel(TaskCaptureSurfaceCopy.cardActionAccessibilityLabel)
             }
 
             if let onDetails {

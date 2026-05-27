@@ -24,6 +24,8 @@ protocol GhosttyAutomationClient {
     func selectTab(id: String, inWindowID windowID: String) -> Result<Void, TerminalActivationFailureReason>
     func focusTerminal(id: String) -> Result<Void, TerminalActivationFailureReason>
     func activateWindow(id: String) -> Result<Void, TerminalActivationFailureReason>
+    func inputText(_ text: String, terminalID: String) -> Result<Void, TerminalActivationFailureReason>
+    func sendKey(_ key: String, terminalID: String) -> Result<Void, TerminalActivationFailureReason>
 }
 
 struct GhosttyTerminalSnapshot: Equatable {
@@ -78,19 +80,63 @@ private struct GhosttyRouteCandidate {
     let stableID: String
 }
 
+final class GhosttyAutomationSupportCache {
+    static let shared = GhosttyAutomationSupportCache()
+
+    private let lock = NSLock()
+    private var cachedSupportedStatus: GhosttyAutomationSupportStatus?
+
+    func status(resolve: () -> GhosttyAutomationSupportStatus) -> GhosttyAutomationSupportStatus {
+        lock.lock()
+        if let cachedSupportedStatus {
+            lock.unlock()
+            return cachedSupportedStatus
+        }
+        lock.unlock()
+
+        let resolvedStatus = resolve()
+        guard case .supported = resolvedStatus else {
+            return resolvedStatus
+        }
+
+        lock.lock()
+        if cachedSupportedStatus == nil {
+            cachedSupportedStatus = resolvedStatus
+        }
+        let status = cachedSupportedStatus ?? resolvedStatus
+        lock.unlock()
+        return status
+    }
+
+    func clear() {
+        lock.lock()
+        cachedSupportedStatus = nil
+        lock.unlock()
+    }
+}
+
 struct DefaultGhosttyAutomationClient: GhosttyAutomationClient {
     private let appleScript: AppleScriptClient
     private let versionProvider: () -> String?
+    private let supportCache: GhosttyAutomationSupportCache
 
     init(
         appleScript: AppleScriptClient,
         versionProvider: @escaping () -> String? = { DefaultGhosttyAutomationClient.installedGhosttyVersion() },
+        supportCache: GhosttyAutomationSupportCache = .shared,
     ) {
         self.appleScript = appleScript
         self.versionProvider = versionProvider
+        self.supportCache = supportCache
     }
 
     func supportStatus() -> GhosttyAutomationSupportStatus {
+        supportCache.status {
+            computeSupportStatus()
+        }
+    }
+
+    private func computeSupportStatus() -> GhosttyAutomationSupportStatus {
         let version = versionProvider()?
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
@@ -143,6 +189,14 @@ struct DefaultGhosttyAutomationClient: GhosttyAutomationClient {
         runAction(Self.makeActivateWindowScript(windowID: id))
     }
 
+    func inputText(_ text: String, terminalID: String) -> Result<Void, TerminalActivationFailureReason> {
+        runAction(Self.makeInputTextScript(text: text, terminalID: terminalID))
+    }
+
+    func sendKey(_ key: String, terminalID: String) -> Result<Void, TerminalActivationFailureReason> {
+        runAction(Self.makeSendKeyScript(key: key, terminalID: terminalID))
+    }
+
     static func parseSnapshotOutput(_ output: String) -> GhosttyAppSnapshot {
         let fieldSeparator = GhosttyAppleScriptDelimiters.field
         let rowSeparator = GhosttyAppleScriptDelimiters.row
@@ -172,14 +226,15 @@ struct DefaultGhosttyAutomationClient: GhosttyAutomationClient {
                 fields.append("")
             }
 
-            let windowID = fields[0]
+            let windowID = fields[0].trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !windowID.isEmpty else { continue }
             let windowName = nilIfEmpty(fields[1])
             let isFront = fields[2].lowercased() == "true"
-            let tabID = fields[3]
+            let tabID = fields[3].trimmingCharacters(in: .whitespacesAndNewlines)
             let tabName = nilIfEmpty(fields[4])
             let tabIndex = Int(fields[5]) ?? 0
             let tabSelected = fields[6].lowercased() == "true"
-            let terminalID = fields[7]
+            let terminalID = fields[7].trimmingCharacters(in: .whitespacesAndNewlines)
             let terminalName = nilIfEmpty(fields[8])
             let terminalWorkingDirectory = nilIfEmpty(fields[9])
             let focusedTerminalID = nilIfEmpty(fields[10])
@@ -308,6 +363,22 @@ struct DefaultGhosttyAutomationClient: GhosttyAutomationClient {
         """
     }
 
+    private static func makeInputTextScript(text: String, terminalID: String) -> String {
+        """
+        tell application "Ghostty"
+            input text "\(appleScriptEscape(text))" to terminal id "\(appleScriptEscape(terminalID))"
+        end tell
+        """
+    }
+
+    private static func makeSendKeyScript(key: String, terminalID: String) -> String {
+        """
+        tell application "Ghostty"
+            send key "\(appleScriptEscape(key))" to terminal id "\(appleScriptEscape(terminalID))"
+        end tell
+        """
+    }
+
     private static func makeCreateWindowScript(configuration: GhosttySurfaceConfigurationOptions) -> String {
         ghosttyCreateWindowAppleScript(configuration: configuration)
     }
@@ -412,6 +483,35 @@ func ghosttyCreateWindowAppleScript(configuration: GhosttySurfaceConfigurationOp
     return lines.joined(separator: "\n")
 }
 
+func ghosttyCreateReusableSurfaceAppleScript(configuration: GhosttySurfaceConfigurationOptions) -> String {
+    var lines = [
+        "tell application \"Ghostty\"",
+        "    set launchConfig to new surface configuration",
+    ]
+
+    if let workingDirectory = configuration.initialWorkingDirectory?.trimmingCharacters(in: .whitespacesAndNewlines),
+       !workingDirectory.isEmpty
+    {
+        lines.append("    set initial working directory of launchConfig to \"\(appleScriptEscape(workingDirectory))\"")
+    }
+
+    if let initialInput = configuration.initialInput?.trimmingCharacters(in: .whitespacesAndNewlines),
+       !initialInput.isEmpty
+    {
+        lines.append("    set initial input of launchConfig to \"\(appleScriptEscape(initialInput))\" & linefeed")
+    }
+
+    lines.append("    if (count of windows) > 0 then")
+    lines.append("        set targetWindow to front window")
+    lines.append("        new tab in targetWindow with configuration launchConfig")
+    lines.append("    else")
+    lines.append("        new window with configuration launchConfig")
+    lines.append("    end if")
+    lines.append("end tell")
+
+    return lines.joined(separator: "\n")
+}
+
 func ghosttyCreateTabAppleScript(windowID: String, configuration: GhosttySurfaceConfigurationOptions) -> String {
     var lines = [
         "tell application \"Ghostty\"",
@@ -441,6 +541,14 @@ func ghosttyCreateWindowShellScript(configuration: GhosttySurfaceConfigurationOp
     """
     osascript <<'APPLESCRIPT'
     \(ghosttyCreateWindowAppleScript(configuration: configuration))
+    APPLESCRIPT
+    """
+}
+
+func ghosttyCreateReusableSurfaceShellScript(configuration: GhosttySurfaceConfigurationOptions) -> String {
+    """
+    osascript <<'APPLESCRIPT'
+    \(ghosttyCreateReusableSurfaceAppleScript(configuration: configuration))
     APPLESCRIPT
     """
 }
@@ -665,7 +773,11 @@ private func ghosttyTitleCandidate(
     homeDirectory: String,
     tmuxSessionHint: String?,
 ) -> GhosttyTitleMatch? {
-    let normalizedTitle = normalizeGhosttyPath(title, homeDirectory: homeDirectory).lowercased()
+    let normalizedTitle = normalizeGhosttyPath(
+        title,
+        homeDirectory: homeDirectory,
+        stripKnownShellTitleSuffix: true,
+    ).lowercased()
     let caseInsensitiveProjectPath = projectPath.lowercased()
     let caseInsensitiveHomeDirectory = homeDirectory.lowercased()
     if let pathMatch = ghosttyPathRankAndDistance(
@@ -709,8 +821,16 @@ func appleScriptEscape(_ s: String) -> String {
         .replacingOccurrences(of: "\"", with: "\\\"")
 }
 
-private func normalizeGhosttyPath(_ path: String, homeDirectory: String) -> String {
-    let trimmed = extractPathCandidate(fromTitle: path).trimmingCharacters(in: .whitespacesAndNewlines)
+private func normalizeGhosttyPath(
+    _ path: String,
+    homeDirectory: String,
+    stripKnownShellTitleSuffix: Bool = false,
+) -> String {
+    let trimmed = extractPathCandidate(
+        fromTitle: path,
+        stripKnownShellTitleSuffix: stripKnownShellTitleSuffix,
+    )
+    .trimmingCharacters(in: .whitespacesAndNewlines)
     let expandedHome = homeDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
 
     let expanded: String = if trimmed == "~" {
@@ -737,37 +857,73 @@ private func normalizeGhosttyPath(_ path: String, homeDirectory: String) -> Stri
     return normalized
 }
 
-private func extractPathCandidate(fromTitle title: String) -> String {
+private func extractPathCandidate(fromTitle title: String, stripKnownShellTitleSuffix: Bool = false) -> String {
     let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
     if trimmed.hasPrefix("~/") || trimmed == "~" || trimmed.hasPrefix("/") {
-        return trimmed
+        return normalizeExtractedPathCandidate(trimmed, stripKnownShellTitleSuffix: stripKnownShellTitleSuffix)
     }
 
     if let ellipsisRange = trimmed.range(of: "…/") {
-        return "/" + trimmed[ellipsisRange.upperBound...]
+        return normalizeExtractedPathCandidate(
+            "/" + trimmed[ellipsisRange.upperBound...],
+            stripKnownShellTitleSuffix: stripKnownShellTitleSuffix,
+        )
     }
     if let dotsRange = trimmed.range(of: ".../") {
-        return "/" + trimmed[dotsRange.upperBound...]
+        return normalizeExtractedPathCandidate(
+            "/" + trimmed[dotsRange.upperBound...],
+            stripKnownShellTitleSuffix: stripKnownShellTitleSuffix,
+        )
     }
 
     if let suffixAfterColon = trimmed.split(separator: ":", omittingEmptySubsequences: false).last {
         let candidate = String(suffixAfterColon).trimmingCharacters(in: .whitespacesAndNewlines)
         if candidate.hasPrefix("~/") || candidate == "~" || candidate.hasPrefix("/") {
-            return candidate
+            return normalizeExtractedPathCandidate(candidate, stripKnownShellTitleSuffix: stripKnownShellTitleSuffix)
         }
     }
 
     if let slashRange = trimmed.range(of: "~/", options: .backwards) {
-        return String(trimmed[slashRange.lowerBound...])
+        return normalizeExtractedPathCandidate(
+            String(trimmed[slashRange.lowerBound...]),
+            stripKnownShellTitleSuffix: stripKnownShellTitleSuffix,
+        )
     }
     if let slashRange = trimmed.range(of: "/", options: .backwards) {
         let candidate = String(trimmed[slashRange.lowerBound...])
         if candidate.count > 1 {
-            return candidate
+            return normalizeExtractedPathCandidate(candidate, stripKnownShellTitleSuffix: stripKnownShellTitleSuffix)
         }
     }
 
     return trimmed
+}
+
+private func normalizeExtractedPathCandidate(_ candidate: String, stripKnownShellTitleSuffix: Bool) -> String {
+    guard stripKnownShellTitleSuffix else {
+        return candidate
+    }
+    return trimKnownShellTitleSuffix(fromPathCandidate: candidate)
+}
+
+private func trimKnownShellTitleSuffix(fromPathCandidate candidate: String) -> String {
+    let trimmed = candidate.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let separatorRange = trimmed.range(of: " - ") else {
+        return trimmed
+    }
+
+    let suffix = trimmed[separatorRange.upperBound...]
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+        .trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+        .lowercased()
+    let knownShellSuffixes = ["", "zsh", "bash", "fish", "sh", "tmux", "claude"]
+    guard knownShellSuffixes.contains(suffix) else {
+        return trimmed
+    }
+
+    let prefix = trimmed[..<separatorRange.lowerBound]
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+    return prefix.isEmpty ? trimmed : prefix
 }
 
 private func ghosttyPathRankAndDistance(shellPath: String, projectPath: String, homeDir: String) -> (rank: Int, distance: Int)? {

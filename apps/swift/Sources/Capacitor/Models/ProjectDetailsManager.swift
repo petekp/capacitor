@@ -39,6 +39,10 @@ final class ProjectDetailsManager {
     // MARK: - Idea Capture
 
     func captureIdea(for project: Project, text: String) -> Result<Void, Error> {
+        captureTask(for: project, text: text).map { _ in () }
+    }
+
+    func captureTask(for project: Project, text: String) -> Result<Idea, Error> {
         guard let engine else {
             return .failure(NSError(domain: "HUD", code: 1, userInfo: [
                 NSLocalizedDescriptionKey: "Engine not initialized",
@@ -49,7 +53,12 @@ final class ProjectDetailsManager {
             let ideaId = try engine.captureIdea(projectPath: project.path, ideaText: text)
             loadIdeas(for: project)
             sensemakeIdea(ideaId: ideaId, rawInput: text, project: project)
-            return .success(())
+            return .success(
+                projectIdeas[project.path]?.first { $0.id == ideaId } ?? fallbackCapturedIdea(
+                    id: ideaId,
+                    text: text,
+                ),
+            )
         } catch {
             return .failure(error)
         }
@@ -167,14 +176,32 @@ final class ProjectDetailsManager {
         projectIdeas[project.path] ?? []
     }
 
+    private func fallbackCapturedIdea(id: String, text: String) -> Idea {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return Idea(
+            id: id,
+            title: String(trimmed.prefix(Constants.fallbackTitleLength)),
+            description: trimmed,
+            added: ISO8601DateFormatter.shared.string(from: Date()),
+            effort: "small",
+            status: "open",
+            triage: "pending",
+            related: nil,
+        )
+    }
+
     func isGeneratingTitle(for ideaId: String) -> Bool {
         generatingTitleForIdeas.contains(ideaId)
     }
 
     func updateIdeaStatus(for project: Project, idea: Idea, newStatus: String) throws {
+        try updateIdeaStatus(for: project, ideaID: idea.id, newStatus: newStatus)
+    }
+
+    func updateIdeaStatus(for project: Project, ideaID: String, newStatus: String) throws {
         try engine?.updateIdeaStatus(
             projectPath: project.path,
-            ideaId: idea.id,
+            ideaId: ideaID,
             newStatus: newStatus,
         )
         loadIdeas(for: project)

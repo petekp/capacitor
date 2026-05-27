@@ -203,7 +203,9 @@ struct CreationCard: View {
 
     private func openProject() {
         if let project = appState.projectState.projects.first(where: { $0.path == creation.path }) {
-            appState.launchTerminal(for: project)
+            // New Work Batch path: tracked projects re-enter through the same
+            // primary action as project cards, so Open does not bypass batches.
+            appState.handlePrimaryProjectAction(for: project, source: .activityPanel)
         } else {
             let projectURL = URL(fileURLWithPath: creation.path)
             let projectName = projectURL.lastPathComponent.isEmpty ? creation.path : projectURL.lastPathComponent
@@ -219,7 +221,10 @@ struct CreationCard: View {
                 stats: nil,
                 isMissing: false,
             )
-            appState.launchTerminal(for: adHocProject)
+            // Legacy creation path: ad hoc completed creations may not be in
+            // Capacitor's project list yet, so they still fall back to a
+            // project terminal until the project is tracked.
+            appState.launchTerminal(for: adHocProject, source: .activityPanel)
         }
     }
 
