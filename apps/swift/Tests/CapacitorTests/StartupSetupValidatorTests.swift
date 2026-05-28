@@ -7,6 +7,7 @@ final class StartupSetupValidatorTests: XCTestCase {
             setupStatus: SetupTestFixtures.setupStatus(
                 dependencies: [SetupTestFixtures.claudeDependency(found: true)],
                 hooks: .settingsUnreadable(reason: "Failed to parse settings.json"),
+                readiness: .autoRepairable(status: .settingsUnreadable(reason: "Failed to parse settings.json")),
             ),
             capacitorDir: "/tmp/capacitor-startup",
         )
@@ -20,7 +21,6 @@ final class StartupSetupValidatorTests: XCTestCase {
             using: StartupSetupValidationHooks(
                 shouldSkipSetupValidation: { false },
                 makeRuntime: { runtime },
-                startupDecision: { SetupReadinessCoordinator.startupDecision(from: $0) },
                 writeStartupLog: { recordedEvents.append($0) },
                 setSetupComplete: { setupComplete = $0 },
                 isSetupComplete: { setupComplete },

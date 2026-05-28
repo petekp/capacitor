@@ -1,6 +1,6 @@
 use super::env::{which, which_with_fallback};
 use super::paths::resolve_symlink_target;
-use super::{DependencyStatus, HookSettingsStatus, HookStatus, SetupChecker};
+use super::{DependencyStatus, HookStatus, SetupChecker};
 use fs_err as fs;
 use std::fmt;
 use std::process::Command;
@@ -137,22 +137,7 @@ impl SetupChecker {
             };
         }
 
-        match self.hooks_registered_in_settings() {
-            HookSettingsStatus::NotInstalled => HookStatus::NotInstalled,
-            HookSettingsStatus::PartiallyConfigured {
-                missing_events,
-                reason,
-            } => HookStatus::PartiallyConfigured {
-                missing_events,
-                reason,
-            },
-            HookSettingsStatus::SettingsUnreadable { reason } => {
-                HookStatus::SettingsUnreadable { reason }
-            }
-            HookSettingsStatus::Installed => HookStatus::Installed {
-                version: "binary".to_string(),
-            },
-        }
+        self.hooks_registered_in_settings()
     }
 
     pub(super) fn check_policy_blocks(&self) -> Option<String> {
@@ -533,7 +518,7 @@ mod tests {
 
         let status = checker.check_hooks_status();
         assert!(
-            matches!(status, HookStatus::Installed { .. }),
+            matches!(status, HookStatus::Installed),
             "check_hooks_status should accept valid relative symlink targets, got: {status:?}"
         );
     }

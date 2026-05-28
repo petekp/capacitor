@@ -443,14 +443,14 @@ final class SetupRequirementsManager {
             case .shellOptional:
                 ScenarioState(
                     claude: .completed(detail: "Installed"),
-                    hooks: HookPresentationPolicy.setupStepStatus(for: .installed(version: "preview")),
+                    hooks: HookPresentationPolicy.setupStepStatus(for: .installed),
                     shell: .actionNeeded(message: "Add to ~/.zshrc"),
                 )
 
             case .allComplete:
                 ScenarioState(
                     claude: .completed(detail: "Installed"),
-                    hooks: HookPresentationPolicy.setupStepStatus(for: .installed(version: "preview")),
+                    hooks: HookPresentationPolicy.setupStepStatus(for: .installed),
                     shell: .completed(detail: "Active"),
                 )
             }

@@ -69,7 +69,7 @@ impl CoreRuntime {
             .map(|d| d.found)
             .unwrap_or(false);
 
-        let config_ok = matches!(setup_status.hooks, HookStatus::Installed { .. });
+        let config_ok = matches!(setup_status.hooks, HookStatus::Installed);
         let firing_ok = matches!(health.status, runtime::types::HookHealthStatus::Healthy);
         let is_first_run = !self.app_storage.setup_marker_path().exists();
 
@@ -90,7 +90,7 @@ impl CoreRuntime {
             HookStatus::NotInstalled
             | HookStatus::PartiallyConfigured { .. }
             | HookStatus::SettingsUnreadable { .. } => Some(HookIssue::ConfigMissing),
-            HookStatus::Installed { .. } => match &health.status {
+            HookStatus::Installed => match &health.status {
                 runtime::types::HookHealthStatus::Healthy => None,
                 runtime::types::HookHealthStatus::Unknown => Some(HookIssue::NotFiring {
                     last_seen_secs: None,

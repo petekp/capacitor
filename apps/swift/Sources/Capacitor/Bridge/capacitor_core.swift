@@ -6381,17 +6381,24 @@ public struct SetupStatus {
     public var dependencies: [DependencyStatus]
     public var hooks: HookStatus
     public var storageReady: Bool
-    public var allReady: Bool
-    public var blockingReason: String?
+    /**
+     * Rust-owned readiness decision. Single source of truth for the startup
+     * gate; Swift consumes this instead of re-deriving it.
+     */
+    public var readiness: SetupReadiness
 
     /// Default memberwise initializers are never public by default, so we
     /// declare one manually.
-    public init(dependencies: [DependencyStatus], hooks: HookStatus, storageReady: Bool, allReady: Bool, blockingReason: String?) {
+    public init(dependencies: [DependencyStatus], hooks: HookStatus, storageReady: Bool,
+                /* 
+                    * Rust-owned readiness decision. Single source of truth for the startup
+                    * gate; Swift consumes this instead of re-deriving it.
+                    */ readiness: SetupReadiness)
+    {
         self.dependencies = dependencies
         self.hooks = hooks
         self.storageReady = storageReady
-        self.allReady = allReady
-        self.blockingReason = blockingReason
+        self.readiness = readiness
     }
 }
 
@@ -6406,10 +6413,7 @@ extension SetupStatus: Equatable, Hashable {
         if lhs.storageReady != rhs.storageReady {
             return false
         }
-        if lhs.allReady != rhs.allReady {
-            return false
-        }
-        if lhs.blockingReason != rhs.blockingReason {
+        if lhs.readiness != rhs.readiness {
             return false
         }
         return true
@@ -6419,8 +6423,7 @@ extension SetupStatus: Equatable, Hashable {
         hasher.combine(dependencies)
         hasher.combine(hooks)
         hasher.combine(storageReady)
-        hasher.combine(allReady)
-        hasher.combine(blockingReason)
+        hasher.combine(readiness)
     }
 }
 
@@ -6434,8 +6437,7 @@ public struct FfiConverterTypeSetupStatus: FfiConverterRustBuffer {
                 dependencies: FfiConverterSequenceTypeDependencyStatus.read(from: &buf),
                 hooks: FfiConverterTypeHookStatus.read(from: &buf),
                 storageReady: FfiConverterBool.read(from: &buf),
-                allReady: FfiConverterBool.read(from: &buf),
-                blockingReason: FfiConverterOptionString.read(from: &buf)
+                readiness: FfiConverterTypeSetupReadiness.read(from: &buf)
             )
     }
 
@@ -6443,8 +6445,7 @@ public struct FfiConverterTypeSetupStatus: FfiConverterRustBuffer {
         FfiConverterSequenceTypeDependencyStatus.write(value.dependencies, into: &buf)
         FfiConverterTypeHookStatus.write(value.hooks, into: &buf)
         FfiConverterBool.write(value.storageReady, into: &buf)
-        FfiConverterBool.write(value.allReady, into: &buf)
-        FfiConverterOptionString.write(value.blockingReason, into: &buf)
+        FfiConverterTypeSetupReadiness.write(value.readiness, into: &buf)
     }
 }
 
@@ -8000,7 +8001,7 @@ public enum HookStatus {
     case notInstalled
     case partiallyConfigured(missingEvents: [String], reason: String)
     case settingsUnreadable(reason: String)
-    case installed(version: String)
+    case installed
     case policyBlocked(reason: String)
     case binaryBroken(reason: String)
     /**
@@ -8024,7 +8025,7 @@ public struct FfiConverterTypeHookStatus: FfiConverterRustBuffer {
 
         case 3: return try .settingsUnreadable(reason: FfiConverterString.read(from: &buf))
 
-        case 4: return try .installed(version: FfiConverterString.read(from: &buf))
+        case 4: return .installed
 
         case 5: return try .policyBlocked(reason: FfiConverterString.read(from: &buf))
 
@@ -8050,9 +8051,8 @@ public struct FfiConverterTypeHookStatus: FfiConverterRustBuffer {
             writeInt(&buf, Int32(3))
             FfiConverterString.write(reason, into: &buf)
 
-        case let .installed(version):
+        case .installed:
             writeInt(&buf, Int32(4))
-            FfiConverterString.write(version, into: &buf)
 
         case let .policyBlocked(reason):
             writeInt(&buf, Int32(5))
@@ -8893,6 +8893,142 @@ public func FfiConverterTypeSessionState_lower(_ value: SessionState) -> RustBuf
 }
 
 extension SessionState: Equatable, Hashable {}
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/* 
+ * Why the runtime is holding setup open and requires explicit user action
+ * (as opposed to a state the app can silently auto-repair). The payload
+ * preserves enough for Swift `DebugLog` to distinguish the two welcome cases:
+ * `ClaudeMissing` -> `.claudeMissing`, `PolicyBlocked { reason }` ->
+ * `.hooksBlockedByPolicy(reason:)`.
+ */
+
+public enum SetupBlockReason {
+    /**
+     * The required `claude` dependency is not installed.
+     */
+    case claudeMissing
+    /**
+     * Hooks are explicitly blocked by a Claude settings policy flag.
+     */
+    case policyBlocked(reason: String)
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSetupBlockReason: FfiConverterRustBuffer {
+    typealias SwiftType = SetupBlockReason
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SetupBlockReason {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        case 1: return .claudeMissing
+
+        case 2: return try .policyBlocked(reason: FfiConverterString.read(from: &buf))
+
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: SetupBlockReason, into buf: inout [UInt8]) {
+        switch value {
+        case .claudeMissing:
+            writeInt(&buf, Int32(1))
+
+        case let .policyBlocked(reason):
+            writeInt(&buf, Int32(2))
+            FfiConverterString.write(reason, into: &buf)
+        }
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSetupBlockReason_lift(_ buf: RustBuffer) throws -> SetupBlockReason {
+    return try FfiConverterTypeSetupBlockReason.lift(buf)
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSetupBlockReason_lower(_ value: SetupBlockReason) -> RustBuffer {
+    return FfiConverterTypeSetupBlockReason.lower(value)
+}
+
+extension SetupBlockReason: Equatable, Hashable {}
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/* 
+ * The single, Rust-owned setup-readiness decision. Swift switches on this and
+ * owns *which* side-effect to run; it no longer re-derives the gate.
+ *
+ * - `Ready`: every requirement is satisfied.
+ * - `NeedsUserAction { reason }`: setup is held open pending the user
+ * (`ClaudeMissing` or `PolicyBlocked`); maps to the Swift welcome flow.
+ * - `AutoRepairable { status }`: a non-blocking hook state the app can repair
+ * on its own; carries the originating `HookStatus` so Swift can log it.
+ */
+
+public enum SetupReadiness {
+    case ready
+    case needsUserAction(reason: SetupBlockReason)
+    case autoRepairable(status: HookStatus)
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSetupReadiness: FfiConverterRustBuffer {
+    typealias SwiftType = SetupReadiness
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SetupReadiness {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        case 1: return .ready
+
+        case 2: return try .needsUserAction(reason: FfiConverterTypeSetupBlockReason.read(from: &buf))
+
+        case 3: return try .autoRepairable(status: FfiConverterTypeHookStatus.read(from: &buf))
+
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: SetupReadiness, into buf: inout [UInt8]) {
+        switch value {
+        case .ready:
+            writeInt(&buf, Int32(1))
+
+        case let .needsUserAction(reason):
+            writeInt(&buf, Int32(2))
+            FfiConverterTypeSetupBlockReason.write(reason, into: &buf)
+
+        case let .autoRepairable(status):
+            writeInt(&buf, Int32(3))
+            FfiConverterTypeHookStatus.write(status, into: &buf)
+        }
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSetupReadiness_lift(_ buf: RustBuffer) throws -> SetupReadiness {
+    return try FfiConverterTypeSetupReadiness.lift(buf)
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSetupReadiness_lower(_ value: SetupReadiness) -> RustBuffer {
+    return FfiConverterTypeSetupReadiness.lower(value)
+}
+
+extension SetupReadiness: Equatable, Hashable {}
 
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.

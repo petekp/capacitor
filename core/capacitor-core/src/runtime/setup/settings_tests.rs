@@ -1,7 +1,7 @@
 use super::env::{is_managed_hook, managed_command_hook_command, HOOK_HTTP_URL};
 use super::settings::{HookConfig, InnerHook, SettingsFile};
 use super::test_support::{retired_handle_command, retired_state_tracker_command, setup_test_env};
-use super::{HookSettingsStatus, SetupChecker};
+use super::{HookStatus, SetupChecker};
 use crate::runtime::contracts::managed_hook_event_contracts;
 use fs_err as fs;
 use std::collections::HashMap;
@@ -273,7 +273,7 @@ fn test_register_hooks_preserves_noncanonical_flat_entries() {
     );
     assert_eq!(
         checker.hooks_registered_in_settings(),
-        HookSettingsStatus::Installed
+        HookStatus::Installed
     );
 }
 
@@ -384,7 +384,7 @@ fn test_hooks_registered_checks_all_critical_events() {
 
     assert!(matches!(
         checker.hooks_registered_in_settings(),
-        HookSettingsStatus::PartiallyConfigured { .. }
+        HookStatus::PartiallyConfigured { .. }
     ));
 }
 
@@ -420,7 +420,7 @@ fn test_hooks_registered_checks_matchers() {
 
     assert!(matches!(
         checker.hooks_registered_in_settings(),
-        HookSettingsStatus::PartiallyConfigured { .. }
+        HookStatus::PartiallyConfigured { .. }
     ));
 }
 
@@ -457,7 +457,7 @@ fn test_hooks_registered_rejects_http_transport_for_any_managed_event() {
     assert!(
         matches!(
             checker.hooks_registered_in_settings(),
-            HookSettingsStatus::PartiallyConfigured { .. }
+            HookStatus::PartiallyConfigured { .. }
         ),
         "HTTP hook on any managed event should be rejected since all contracts require command transport"
     );
@@ -493,7 +493,7 @@ fn test_hooks_registered_requires_repair_when_retired_managed_entries_remain() {
     assert!(
         matches!(
             checker.hooks_registered_in_settings(),
-            HookSettingsStatus::PartiallyConfigured { missing_events, .. }
+            HookStatus::PartiallyConfigured { missing_events, .. }
                 if missing_events == vec!["PreToolUse".to_string()]
         ),
         "retired Capacitor-managed hooks should make setup repair the event"
@@ -557,7 +557,7 @@ fn test_register_hooks_migrates_existing_http_hooks_to_command_transport() {
 
     assert_eq!(
         checker.hooks_registered_in_settings(),
-        HookSettingsStatus::Installed
+        HookStatus::Installed
     );
 }
 

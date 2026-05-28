@@ -2,7 +2,7 @@ use super::env::{
     apply_managed_contract, inner_hook_matches_managed_contract, is_managed_hook,
     managed_inner_hook, matcher_matches_all_tools,
 };
-use super::{HookSettingsStatus, SetupChecker};
+use super::{HookStatus, SetupChecker};
 use crate::runtime::contracts::{managed_hook_event_contracts, ClaudeHookEventContract};
 use crate::runtime::error::HudFfiError;
 use fs_err as fs;
@@ -47,16 +47,21 @@ pub(super) struct InnerHook {
 }
 
 impl SetupChecker {
-    pub(super) fn hooks_registered_in_settings(&self) -> HookSettingsStatus {
+    /// Determines whether Capacitor's managed hooks are correctly registered in
+    /// Claude's `settings.json`. Returns the matching `HookStatus` directly —
+    /// only ever one of `NotInstalled`, `SettingsUnreadable`,
+    /// `PartiallyConfigured`, or `Installed`; the binary/symlink/policy variants
+    /// are decided by `check_hooks_status` before this is consulted.
+    pub(super) fn hooks_registered_in_settings(&self) -> HookStatus {
         let settings_path = self.storage.claude_settings_file();
         if !settings_path.exists() {
-            return HookSettingsStatus::NotInstalled;
+            return HookStatus::NotInstalled;
         }
 
         let content = match fs::read_to_string(&settings_path) {
             Ok(c) => c,
             Err(error) => {
-                return HookSettingsStatus::SettingsUnreadable {
+                return HookStatus::SettingsUnreadable {
                     reason: format!("Failed to read settings.json: {error}"),
                 };
             }
@@ -65,7 +70,7 @@ impl SetupChecker {
         let settings: SettingsFile = match serde_json::from_str(&content) {
             Ok(s) => s,
             Err(error) => {
-                return HookSettingsStatus::SettingsUnreadable {
+                return HookStatus::SettingsUnreadable {
                     reason: format!("Failed to parse settings.json: {error}"),
                 };
             }
@@ -73,7 +78,7 @@ impl SetupChecker {
 
         let hooks = match settings.hooks {
             Some(h) => h,
-            None => return HookSettingsStatus::NotInstalled,
+            None => return HookStatus::NotInstalled,
         };
 
         let mut missing_events = Vec::new();
@@ -96,7 +101,7 @@ impl SetupChecker {
         }
 
         if !missing_events.is_empty() {
-            HookSettingsStatus::PartiallyConfigured {
+            HookStatus::PartiallyConfigured {
                 reason: format!(
                     "Missing or invalid managed hook configuration for {} event(s)",
                     missing_events.len()
@@ -104,7 +109,7 @@ impl SetupChecker {
                 missing_events,
             }
         } else if !repair_events.is_empty() {
-            HookSettingsStatus::PartiallyConfigured {
+            HookStatus::PartiallyConfigured {
                 reason: format!(
                     "Managed hook configuration needs repair for {} event(s)",
                     repair_events.len()
@@ -112,7 +117,7 @@ impl SetupChecker {
                 missing_events: repair_events,
             }
         } else {
-            HookSettingsStatus::Installed
+            HookStatus::Installed
         }
     }
 

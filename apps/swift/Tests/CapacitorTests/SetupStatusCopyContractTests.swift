@@ -6,7 +6,7 @@ final class SetupStatusCopyContractTests: XCTestCase {
         let scenarios: [LabeledExpectationScenario<HookStatus, SetupStepStatus>] = [
             LabeledExpectationScenario(
                 label: "installed",
-                input: .installed(version: "1.2.3"),
+                input: .installed,
                 expected: .completed(detail: "Connected"),
             ),
             LabeledExpectationScenario(
