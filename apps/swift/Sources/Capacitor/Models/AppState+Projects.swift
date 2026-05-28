@@ -391,30 +391,20 @@ extension AppState {
             return true
 
         case .showProjectDetail:
-            guard featureState.isProjectDetailsEnabled else {
-                TerminalActivationTrace.log(
-                    surface: source,
-                    route: "work_batch_primary",
-                    projectPath: project.path,
-                    projectName: project.name,
-                    evidence: ["ambiguous_work_batches", "project_detail_disabled"],
-                    action: "fall_through",
-                    outcome: "legacy_terminal",
-                )
-                return false
-            }
             TerminalActivationTrace.log(
                 surface: source,
                 route: "work_batch_primary",
                 projectPath: project.path,
                 projectName: project.name,
                 evidence: ["ambiguous_work_batches"],
-                action: "show_project_detail",
-                outcome: "detail",
+                action: "stay_on_batch_home",
+                outcome: "choose_batch",
             )
-            // New Work Batch behavior: when several batches could be correct,
-            // show the batch list rather than guessing and creating a tmux session.
-            showProjectDetail(project)
+            // New batch-first home behavior: Work Batches are already visible
+            // on the home surface, so ambiguity should not open legacy detail
+            // chrome or fall through to a project-level terminal.
+            showProjectList()
+            uiState.toast = ToastMessage("Choose a Work Batch for \(project.name).")
             return true
         }
     }
@@ -563,9 +553,9 @@ extension AppState {
                 outcome: "needs_input",
                 reason: checkpoint.id,
             )
-            // New Work Batch checkpoint behavior: the checkpoint answer field
-            // lives in Project Detail, so project-card re-entry must navigate
-            // there before asking the row to focus the pending decision.
+            // Legacy Project Detail checkpoint behavior. The batch-first home
+            // answers checkpoints inline and uses openWorkBatchHomeCockpit for
+            // card taps, so this path remains only for existing detail callers.
             showProjectDetail(project)
             uiState.workBatchCheckpointFocusTarget = WorkBatchCheckpointFocusTarget(
                 projectPath: project.path,
@@ -690,6 +680,20 @@ extension AppState {
                 }
             }
         }
+    }
+
+    func openWorkBatchHomeCockpit(
+        _ batch: WorkBatchProjection,
+        for project: Project,
+        source: TerminalActivationTrace.Surface = .workBatchCard,
+    ) {
+        // New batch-first card behavior: a card tap always re-enters or starts
+        // the cockpit. Pending checkpoint answers live in the task popover.
+        guard batch.binding != nil else {
+            startUnboundWorkBatchCockpit(batch, for: project, source: source)
+            return
+        }
+        openWorkBatchCockpit(batch, source: source)
     }
 
     func openWorkBatchPreview(

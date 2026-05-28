@@ -55,6 +55,13 @@ struct ProjectsView: View {
         shouldShowReturnBrief
     }
 
+    private var shouldUseBatchFirstHome: Bool {
+        // New home model: Projects are section headers and Work Batches are
+        // the primary cards. Legacy attention/detail surfaces stay in code
+        // for now, but this home surface should not route users into them.
+        true
+    }
+
     var body: some View {
         // Bridge nested session-state updates into this view's observation graph.
         let _ = appState.sessionStateRevision
@@ -157,7 +164,7 @@ struct ProjectsView: View {
                             let attentionSummary = operatorAttentionSummary(sessionStates: sessionStates)
                             let attentionSections = operatorFieldOfWorkSections(summary: attentionSummary)
 
-                            if shouldShowReturnBrief {
+                            if shouldShowReturnBrief, !shouldUseBatchFirstHome {
                                 ReturnBriefView(content: ReturnBriefContent.make(
                                     from: attentionSummary,
                                     viewState: appState.operatorViewStateSnapshot,
@@ -175,7 +182,12 @@ struct ProjectsView: View {
                                 ActivityPanel()
                             }
 
-                            if shouldUseAttentionFieldOfWork {
+                            if shouldUseBatchFirstHome {
+                                batchFirstHomeSections(
+                                    sessionStates: sessionStates,
+                                    scrollProxy: scrollProxy,
+                                )
+                            } else if shouldUseAttentionFieldOfWork {
                                 let fullCardRows = attentionSections.flatMap { section in
                                     section.rows.filter { !(section.kind == .dormantHidden && $0.isHidden) }
                                 }
@@ -407,6 +419,82 @@ struct ProjectsView: View {
                 scrollProxy: scrollProxy,
             )
         }
+    }
+
+    @ViewBuilder
+    private func batchFirstHomeSections(
+        sessionStates: [String: ProjectSessionState],
+        scrollProxy _: ScrollViewProxy,
+    ) -> some View {
+        let sections = WorkBatchHomeProjection.make(
+            projects: appState.projectState.projects,
+            projectOrder: appState.projectState.projectOrder,
+            hiddenProjectPaths: appState.projectState.manuallyDormant,
+            batchesByProjectPath: appState.workBatchesByProjectPath(for: appState.projectState.projects),
+        )
+
+        if sections.isEmpty {
+            Text("No visible projects")
+                .font(AppTypography.bodySecondary)
+                .foregroundStyle(.white.opacity(0.45))
+                .padding(.vertical, 8)
+        } else {
+            ForEach(Array(sections.enumerated()), id: \.element.id) { sectionIndex, section in
+                WorkBatchHomeSectionHeader(
+                    section: section,
+                    onCaptureTask: appState.featureState.isIdeaCaptureEnabled
+                        ? { appState.showIdeaCaptureModal(for: section.project, from: nil) }
+                        : nil,
+                )
+                .padding(.top, sectionIndex == 0 ? 4 : 12)
+
+                if section.batches.isEmpty {
+                    WorkBatchEmptyProjectRow()
+                } else {
+                    let sessionState = ProjectOrdering.sessionState(
+                        for: section.project.path,
+                        sessionStates: sessionStates,
+                    )
+                    ForEach(section.batches) { batch in
+                        WorkBatchHomeCardView(
+                            project: section.project,
+                            batch: batch,
+                            isActive: isActiveBatch(batch, project: section.project, sessionState: sessionState),
+                            flashState: nil,
+                            onOpenCockpit: {
+                                appState.openWorkBatchHomeCockpit(batch, for: section.project, source: .workBatchCard)
+                            },
+                            onOpenPreview: batch.preview == nil ? nil : {
+                                appState.openWorkBatchPreview(batch, for: section.project)
+                            },
+                            onUnresolve: { task in
+                                appState.unresolveWorkBatchTask(task, in: batch, for: section.project)
+                            },
+                            onCheckpointResponse: { checkpoint, response in
+                                appState.submitWorkBatchCheckpointResponse(
+                                    checkpoint,
+                                    in: batch,
+                                    for: section.project,
+                                    response: response,
+                                )
+                            },
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    private func isActiveBatch(
+        _ batch: WorkBatchProjection,
+        project: Project,
+        sessionState: ProjectSessionState?,
+    ) -> Bool {
+        guard appState.activeProjectPath == project.path else { return false }
+        guard let batchSessionID = batch.binding?.claudeSessionID else {
+            return false
+        }
+        return sessionState?.sessionId == batchSessionID
     }
 
     private func hiddenProjectsDisclosure(

@@ -163,7 +163,6 @@ struct DockLayoutView: View {
         grouped: (active: [Project], idle: [Project]),
     ) -> some View {
         let isActive = appState.activeProjectPath == project.path
-        let canShowDetails = appState.featureState.isProjectDetailsEnabled
         let canCaptureIdeas = appState.featureState.isIdeaCaptureEnabled
         let group: ActivityGroup = activePaths.contains(project.path) ? .active : .idle
         let groupProjects = group == .active ? grouped.active : grouped.idle
@@ -180,7 +179,9 @@ struct DockLayoutView: View {
             onTap: {
                 appState.handlePrimaryProjectAction(for: project, source: .dockCard)
             },
-            onInfoTap: canShowDetails ? { appState.showProjectDetail(project) } : nil,
+            // New batch-first behavior: dock cards should not expose the
+            // legacy Project Detail affordance while batches are the cockpit.
+            onInfoTap: nil,
             onMoveToDormant: { appState.moveToDormant(project) },
             onCaptureIdea: canCaptureIdeas ? { frame in appState.showIdeaCaptureModal(for: project, from: frame) } : nil,
             onRemove: { appState.removeProject(project.path) },
