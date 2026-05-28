@@ -188,9 +188,22 @@ struct CapacitorApp: App {
             .onAppear {
                 appDelegate.appState = appState
             }
+            // In floating mode the window keeps `.titled` (for keyability), which
+            // makes SwiftUI reserve a title-bar safe area and inset the content —
+            // leaving the titlebar region visible as a lighter strip with a top
+            // edge highlight. Extend the content under it so it fills to the
+            // window's top edge, matching the old borderless look. Docked mode
+            // keeps its inset so content stays below the real title bar.
+            .ignoresSafeArea(.container, edges: floatingMode ? .top : [])
         }
         .defaultSize(width: 360, height: 700)
         .windowResizability(.contentSize)
+        // Hidden title bar at the SwiftUI level so the window never draws a
+        // title bar strip in floating mode. The window keeps `.titled` under
+        // the hood, so it stays keyable for idea-capture text input. Runtime
+        // styleMask mutation alone wasn't authoritative — SwiftUI re-applied
+        // its own title bar styling and the strip kept showing.
+        .windowStyle(.hiddenTitleBar)
         .commands {
             // MARK: - Capacitor (app menu)
 
