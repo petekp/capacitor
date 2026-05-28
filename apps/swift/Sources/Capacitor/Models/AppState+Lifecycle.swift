@@ -115,9 +115,9 @@ extension AppState {
                             snapshot,
                             context: context,
                         )
-                    case let .unchanged(snapshotVersion):
+                    case let .unchanged(changeVersion):
                         unavailableRetryDelay = 1_000_000_000
-                        runtimeSnapshotApplicator.recordLongPollUnchanged(snapshotVersion: snapshotVersion)
+                        runtimeSnapshotApplicator.recordLongPollUnchanged(changeVersion: changeVersion)
                     case .unavailable:
                         DebugLog.write(
                             "AppState.longPollSnapshot source=runtime_snapshot_long_poll_unavailable retry_in_ms=\(unavailableRetryDelay / 1_000_000)",

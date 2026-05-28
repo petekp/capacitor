@@ -1166,12 +1166,30 @@ public struct AppSnapshot {
     public var runs: [RunState]
     public var diagnostics: DiagnosticsSummary
     public var generatedAt: String
-    public var snapshotVersion: UInt64
+    /**
+     * Live change counter (AtomicU64) stamped by `core_query::app_snapshot`.
+     * This is the ordered counter the wire + Swift applicator consume.
+     */
+    public var changeVersion: UInt64
+    /**
+     * Disk format version owned by `storage`; used for load-time quarantine.
+     * Stamped to `DISK_FORMAT_VERSION` on save; reduce/query leave it default.
+     */
+    public var diskFormatVersion: UInt64
     public var schemaVersion: UInt32
 
     /// Default memberwise initializers are never public by default, so we
     /// declare one manually.
-    public init(projects: [ProjectSummary], sessions: [SessionSummary], shells: [ShellSignal], routing: [RoutingView], delegations: [ProjectDelegationState], runs: [RunState], diagnostics: DiagnosticsSummary, generatedAt: String, snapshotVersion: UInt64, schemaVersion: UInt32) {
+    public init(projects: [ProjectSummary], sessions: [SessionSummary], shells: [ShellSignal], routing: [RoutingView], delegations: [ProjectDelegationState], runs: [RunState], diagnostics: DiagnosticsSummary, generatedAt: String,
+                /* 
+                    * Live change counter (AtomicU64) stamped by `core_query::app_snapshot`.
+                    * This is the ordered counter the wire + Swift applicator consume.
+                    */ changeVersion: UInt64,
+                /* 
+                    * Disk format version owned by `storage`; used for load-time quarantine.
+                    * Stamped to `DISK_FORMAT_VERSION` on save; reduce/query leave it default.
+                    */ diskFormatVersion: UInt64, schemaVersion: UInt32)
+    {
         self.projects = projects
         self.sessions = sessions
         self.shells = shells
@@ -1180,7 +1198,8 @@ public struct AppSnapshot {
         self.runs = runs
         self.diagnostics = diagnostics
         self.generatedAt = generatedAt
-        self.snapshotVersion = snapshotVersion
+        self.changeVersion = changeVersion
+        self.diskFormatVersion = diskFormatVersion
         self.schemaVersion = schemaVersion
     }
 }
@@ -1211,7 +1230,10 @@ extension AppSnapshot: Equatable, Hashable {
         if lhs.generatedAt != rhs.generatedAt {
             return false
         }
-        if lhs.snapshotVersion != rhs.snapshotVersion {
+        if lhs.changeVersion != rhs.changeVersion {
+            return false
+        }
+        if lhs.diskFormatVersion != rhs.diskFormatVersion {
             return false
         }
         if lhs.schemaVersion != rhs.schemaVersion {
@@ -1229,7 +1251,8 @@ extension AppSnapshot: Equatable, Hashable {
         hasher.combine(runs)
         hasher.combine(diagnostics)
         hasher.combine(generatedAt)
-        hasher.combine(snapshotVersion)
+        hasher.combine(changeVersion)
+        hasher.combine(diskFormatVersion)
         hasher.combine(schemaVersion)
     }
 }
@@ -1249,7 +1272,8 @@ public struct FfiConverterTypeAppSnapshot: FfiConverterRustBuffer {
                 runs: FfiConverterSequenceTypeRunState.read(from: &buf),
                 diagnostics: FfiConverterTypeDiagnosticsSummary.read(from: &buf),
                 generatedAt: FfiConverterString.read(from: &buf),
-                snapshotVersion: FfiConverterUInt64.read(from: &buf),
+                changeVersion: FfiConverterUInt64.read(from: &buf),
+                diskFormatVersion: FfiConverterUInt64.read(from: &buf),
                 schemaVersion: FfiConverterUInt32.read(from: &buf)
             )
     }
@@ -1263,7 +1287,8 @@ public struct FfiConverterTypeAppSnapshot: FfiConverterRustBuffer {
         FfiConverterSequenceTypeRunState.write(value.runs, into: &buf)
         FfiConverterTypeDiagnosticsSummary.write(value.diagnostics, into: &buf)
         FfiConverterString.write(value.generatedAt, into: &buf)
-        FfiConverterUInt64.write(value.snapshotVersion, into: &buf)
+        FfiConverterUInt64.write(value.changeVersion, into: &buf)
+        FfiConverterUInt64.write(value.diskFormatVersion, into: &buf)
         FfiConverterUInt32.write(value.schemaVersion, into: &buf)
     }
 }

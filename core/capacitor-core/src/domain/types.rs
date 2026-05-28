@@ -189,8 +189,14 @@ pub struct AppSnapshot {
     pub runs: Vec<super::run_types::RunState>,
     pub diagnostics: DiagnosticsSummary,
     pub generated_at: String,
+    /// Live change counter (AtomicU64) stamped by `core_query::app_snapshot`.
+    /// This is the ordered counter the wire + Swift applicator consume.
     #[serde(default)]
-    pub snapshot_version: u64,
+    pub change_version: u64,
+    /// Disk format version owned by `storage`; used for load-time quarantine.
+    /// Stamped to `DISK_FORMAT_VERSION` on save; reduce/query leave it default.
+    #[serde(default)]
+    pub disk_format_version: u64,
     #[serde(default)]
     pub schema_version: u32,
 }

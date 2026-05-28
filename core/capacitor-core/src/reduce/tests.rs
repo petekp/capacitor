@@ -164,7 +164,8 @@ fn routing_state_fixture(sessions: Vec<SessionSummary>, shells: Vec<ShellSignal>
             last_hook_event_at: None,
         },
         generated_at: "2099-03-27T00:00:00Z".to_string(),
-        snapshot_version: 0,
+        change_version: 0,
+        disk_format_version: 0,
         schema_version: 0,
     })
 }
@@ -451,10 +452,11 @@ fn snapshot_uses_correct_version_constants() {
 
     let snapshot = state.snapshot();
 
-    assert_eq!(
-        snapshot.snapshot_version,
-        crate::storage::CURRENT_SNAPSHOT_SCHEMA_VERSION as u64
-    );
+    // reduce::snapshot() stamps neither the live change counter nor the disk
+    // format version: core_query owns change_version, storage owns
+    // disk_format_version. Both stay at their default until their owner stamps.
+    assert_eq!(snapshot.change_version, 0);
+    assert_eq!(snapshot.disk_format_version, 0);
     assert_eq!(snapshot.schema_version, crate::domain::SCHEMA_VERSION);
 }
 
@@ -3009,7 +3011,8 @@ fn snapshot_omits_expired_shells() {
             last_hook_event_at: None,
         },
         generated_at: now.to_rfc3339(),
-        snapshot_version: 0,
+        change_version: 0,
+        disk_format_version: 0,
         schema_version: 0,
     });
 
@@ -3068,7 +3071,8 @@ fn snapshot_populates_session_is_alive_from_last_activity_at() {
             last_hook_event_at: None,
         },
         generated_at: now.to_rfc3339(),
-        snapshot_version: 0,
+        change_version: 0,
+        disk_format_version: 0,
         schema_version: 0,
     });
 
@@ -3200,7 +3204,8 @@ fn orphaned_session_gc_evicts_stale_same_project_sibling_on_new_session_start() 
             last_hook_event_at: None,
         },
         generated_at: "2099-03-31T00:00:00Z".to_string(),
-        snapshot_version: 0,
+        change_version: 0,
+        disk_format_version: 0,
         schema_version: 0,
     });
 
@@ -3802,7 +3807,8 @@ fn gc_transitions_stale_working_to_idle_after_signal_absence() {
             last_hook_event_at: None,
         },
         generated_at: now.to_rfc3339(),
-        snapshot_version: 0,
+        change_version: 0,
+        disk_format_version: 0,
         schema_version: 0,
     });
 
@@ -3858,7 +3864,8 @@ fn snapshot_preserves_fresh_working_session() {
             last_hook_event_at: None,
         },
         generated_at: now.to_rfc3339(),
-        snapshot_version: 0,
+        change_version: 0,
+        disk_format_version: 0,
         schema_version: 0,
     });
 
@@ -3913,7 +3920,8 @@ fn gc_boundary_at_signal_absence_grace() {
             last_hook_event_at: None,
         },
         generated_at: now.to_rfc3339(),
-        snapshot_version: 0,
+        change_version: 0,
+        disk_format_version: 0,
         schema_version: 0,
     });
 
@@ -3976,7 +3984,8 @@ fn snapshot_gc_fixes_project_state_with_orphan_and_idle_session() {
             last_hook_event_at: None,
         },
         generated_at: now.to_rfc3339(),
-        snapshot_version: 0,
+        change_version: 0,
+        disk_format_version: 0,
         schema_version: 0,
     });
 
@@ -4267,7 +4276,8 @@ fn gc_transitions_all_stale_sessions_to_idle() {
             last_hook_event_at: None,
         },
         generated_at: now.to_rfc3339(),
-        snapshot_version: 0,
+        change_version: 0,
+        disk_format_version: 0,
         schema_version: 0,
     });
 
@@ -4354,7 +4364,8 @@ fn snapshot_gc_evicts_stale_when_fresh_session_exists() {
             last_hook_event_at: None,
         },
         generated_at: now.to_rfc3339(),
-        snapshot_version: 0,
+        change_version: 0,
+        disk_format_version: 0,
         schema_version: 0,
     });
 
@@ -4432,7 +4443,8 @@ fn orphaned_session_gc_evicts_stale_idle_sibling_without_terminated_at() {
             last_hook_event_at: None,
         },
         generated_at: "2099-04-01T12:00:00Z".to_string(),
-        snapshot_version: 0,
+        change_version: 0,
+        disk_format_version: 0,
         schema_version: 0,
     });
 
@@ -4504,7 +4516,8 @@ fn event_time_cleanup_uses_adjusted_gc_reference_time_when_provided() {
             last_hook_event_at: None,
         },
         generated_at: raw_recorded_at.to_string(),
-        snapshot_version: 0,
+        change_version: 0,
+        disk_format_version: 0,
         schema_version: 0,
     };
 
@@ -4605,7 +4618,8 @@ fn snapshot_gc_cross_project_isolation() {
             last_hook_event_at: None,
         },
         generated_at: base.to_rfc3339(),
-        snapshot_version: 0,
+        change_version: 0,
+        disk_format_version: 0,
         schema_version: 0,
     });
 
@@ -4671,7 +4685,8 @@ fn orphaned_session_gc_sole_session_no_eviction() {
             last_hook_event_at: None,
         },
         generated_at: "2099-01-01T00:00:00Z".to_string(),
-        snapshot_version: 0,
+        change_version: 0,
+        disk_format_version: 0,
         schema_version: 0,
     });
 
@@ -4758,7 +4773,8 @@ fn snapshot_gc_ready_session_uses_correct_anchor() {
                 last_hook_event_at: None,
             },
             generated_at: base.to_rfc3339(),
-            snapshot_version: 0,
+            change_version: 0,
+            disk_format_version: 0,
             schema_version: 0,
         });
 
@@ -4819,7 +4835,8 @@ fn snapshot_gc_ready_session_uses_correct_anchor() {
                 last_hook_event_at: None,
             },
             generated_at: base.to_rfc3339(),
-            snapshot_version: 0,
+            change_version: 0,
+            disk_format_version: 0,
             schema_version: 0,
         });
 
@@ -4880,7 +4897,8 @@ fn snapshot_gc_ready_session_uses_correct_anchor() {
                 last_hook_event_at: None,
             },
             generated_at: base.to_rfc3339(),
-            snapshot_version: 0,
+            change_version: 0,
+            disk_format_version: 0,
             schema_version: 0,
         });
 
@@ -4940,7 +4958,8 @@ fn recompute_projects_normalizes_path_variants() {
             last_hook_event_at: None,
         },
         generated_at: "2099-01-01T00:01:00Z".to_string(),
-        snapshot_version: 0,
+        change_version: 0,
+        disk_format_version: 0,
         schema_version: 0,
     });
 
@@ -4998,7 +5017,8 @@ fn gc_does_not_touch_alive_sessions() {
             last_hook_event_at: None,
         },
         generated_at: base.to_rfc3339(),
-        snapshot_version: 0,
+        change_version: 0,
+        disk_format_version: 0,
         schema_version: 0,
     });
 
@@ -5050,7 +5070,8 @@ fn gc_transitions_stale_orphan_to_idle() {
             last_hook_event_at: None,
         },
         generated_at: base.to_rfc3339(),
-        snapshot_version: 0,
+        change_version: 0,
+        disk_format_version: 0,
         schema_version: 0,
     });
 
@@ -5278,7 +5299,8 @@ fn session_alive_via_recent_last_activity_at() {
             last_hook_event_at: None,
         },
         generated_at: now.to_rfc3339(),
-        snapshot_version: 0,
+        change_version: 0,
+        disk_format_version: 0,
         schema_version: 0,
     });
 
@@ -5324,7 +5346,8 @@ fn session_not_alive_when_last_activity_stale() {
             last_hook_event_at: None,
         },
         generated_at: now.to_rfc3339(),
-        snapshot_version: 0,
+        change_version: 0,
+        disk_format_version: 0,
         schema_version: 0,
     });
 
@@ -5399,7 +5422,8 @@ fn snapshot_gc_transitions_sole_dead_session_to_idle() {
             last_hook_event_at: None,
         },
         generated_at: now.to_rfc3339(),
-        snapshot_version: 0,
+        change_version: 0,
+        disk_format_version: 0,
         schema_version: 0,
     });
 
@@ -5914,7 +5938,8 @@ fn snapshot_gc_preserves_recently_dead_sole_session() {
             last_hook_event_at: None,
         },
         generated_at: now.to_rfc3339(),
-        snapshot_version: 0,
+        change_version: 0,
+        disk_format_version: 0,
         schema_version: 0,
     });
 
@@ -5960,7 +5985,8 @@ fn snapshot_gc_preserves_sole_idle_session_even_with_pid_zero() {
             last_hook_event_at: None,
         },
         generated_at: now.to_rfc3339(),
-        snapshot_version: 0,
+        change_version: 0,
+        disk_format_version: 0,
         schema_version: 0,
     });
 
@@ -6010,7 +6036,8 @@ fn gc_removes_idle_sessions_past_retention() {
             last_hook_event_at: None,
         },
         generated_at: now.to_rfc3339(),
-        snapshot_version: 0,
+        change_version: 0,
+        disk_format_version: 0,
         schema_version: 0,
     });
 
@@ -6060,7 +6087,8 @@ fn gc_retains_recent_idle_sessions() {
             last_hook_event_at: None,
         },
         generated_at: now.to_rfc3339(),
-        snapshot_version: 0,
+        change_version: 0,
+        disk_format_version: 0,
         schema_version: 0,
     });
 
@@ -6123,7 +6151,8 @@ fn test_gc_returns_true_on_change() {
             last_hook_event_at: None,
         },
         generated_at: now.to_rfc3339(),
-        snapshot_version: 0,
+        change_version: 0,
+        disk_format_version: 0,
         schema_version: 0,
     });
 
@@ -6165,7 +6194,8 @@ fn test_gc_returns_false_on_no_change() {
             last_hook_event_at: None,
         },
         generated_at: now.to_rfc3339(),
-        snapshot_version: 0,
+        change_version: 0,
+        disk_format_version: 0,
         schema_version: 0,
     });
 
@@ -6216,7 +6246,8 @@ fn test_gc_reason_set_on_idle_transition() {
             last_hook_event_at: None,
         },
         generated_at: now.to_rfc3339(),
-        snapshot_version: 0,
+        change_version: 0,
+        disk_format_version: 0,
         schema_version: 0,
     });
 
@@ -6262,7 +6293,8 @@ fn test_gc_reason_cleared_on_hook_event() {
             last_hook_event_at: None,
         },
         generated_at: "2099-04-01T12:00:00Z".to_string(),
-        snapshot_version: 0,
+        change_version: 0,
+        disk_format_version: 0,
         schema_version: 0,
     });
 
@@ -6323,7 +6355,8 @@ fn test_gc_transitions_stale_to_idle_with_gc_reason() {
             last_hook_event_at: None,
         },
         generated_at: now.to_rfc3339(),
-        snapshot_version: 0,
+        change_version: 0,
+        disk_format_version: 0,
         schema_version: 0,
     });
 

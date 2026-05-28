@@ -231,7 +231,8 @@ fn seeded_snapshot_without_routing() -> serde_json::Value {
             "last_hook_event_at": "2026-03-12T00:00:00Z"
         },
         "generated_at": "2026-03-12T00:00:00Z",
-        "snapshot_version": 1,
+        "change_version": 0,
+        "disk_format_version": 1,
         "schema_version": 3
     })
 }
@@ -301,7 +302,8 @@ fn seeded_snapshot_with_gc_candidate() -> serde_json::Value {
             "last_hook_event_at": "2026-03-12T00:00:00Z"
         },
         "generated_at": "2026-03-12T00:00:00Z",
-        "snapshot_version": 1,
+        "change_version": 0,
+        "disk_format_version": 1,
         "schema_version": 3
     });
     // Use recent timestamps for the idle session so it survives IDLE_RETENTION (24hr).
@@ -370,10 +372,10 @@ fn fetch_runtime_snapshot(port: u16, authorization: &str) -> serde_json::Value {
     serde_json::from_str(&body).expect("runtime snapshot json")
 }
 
-fn current_runtime_snapshot_version(port: u16, authorization: &str) -> u64 {
-    fetch_runtime_snapshot(port, authorization)["snapshot_version"]
+fn current_runtime_change_version(port: u16, authorization: &str) -> u64 {
+    fetch_runtime_snapshot(port, authorization)["change_version"]
         .as_u64()
-        .expect("snapshot_version")
+        .expect("change_version")
 }
 
 fn poll_runtime_snapshot(port: u16, authorization: &str, since_version: u64) -> (u16, String) {
@@ -698,7 +700,7 @@ fn long_poll_returns_immediately_when_version_behind() {
         serde_json::from_str(&poll_body).expect("runtime poll snapshot json");
     assert_eq!(poll_json["changed"].as_bool(), Some(true));
     assert!(
-        poll_json["snapshot_version"].as_u64().unwrap_or_default() >= 1,
+        poll_json["change_version"].as_u64().unwrap_or_default() >= 1,
         "body: {poll_body}"
     );
 }
@@ -713,7 +715,7 @@ fn long_poll_blocks_then_wakes_on_mutation() {
         ServerGuard::spawn_service_bootstrap_ready(&temp_dir, &snapshot_path, auth_token);
 
     let authorization = format!("Bearer {auth_token}");
-    let since_version = current_runtime_snapshot_version(port, authorization.as_str());
+    let since_version = current_runtime_change_version(port, authorization.as_str());
 
     let (poll_tx, poll_rx) = mpsc::channel();
     let authorization_for_poll = authorization.clone();
@@ -744,9 +746,9 @@ fn long_poll_blocks_then_wakes_on_mutation() {
         serde_json::from_str(&poll_body).expect("runtime poll snapshot json");
     assert_eq!(poll_json["changed"].as_bool(), Some(true));
     assert!(
-        poll_json["snapshot_version"]
+        poll_json["change_version"]
             .as_u64()
-            .expect("snapshot_version")
+            .expect("change_version")
             > since_version,
         "body: {poll_body}"
     );
@@ -766,7 +768,7 @@ fn long_poll_timeout_returns_changed_false() {
     );
 
     let authorization = format!("Bearer {auth_token}");
-    let since_version = current_runtime_snapshot_version(port, authorization.as_str());
+    let since_version = current_runtime_change_version(port, authorization.as_str());
 
     let start = Instant::now();
     let (poll_status, poll_body) =
@@ -787,7 +789,7 @@ fn long_poll_timeout_returns_changed_false() {
         serde_json::from_str(&poll_body).expect("runtime poll timeout json");
     assert_eq!(poll_json["changed"].as_bool(), Some(false));
     assert_eq!(
-        poll_json["snapshot_version"].as_u64(),
+        poll_json["change_version"].as_u64(),
         Some(since_version),
         "body: {poll_body}"
     );
@@ -803,7 +805,7 @@ fn long_poll_returns_immediately_when_since_version_is_ahead() {
         ServerGuard::spawn_service_bootstrap_ready(&temp_dir, &snapshot_path, auth_token);
 
     let authorization = format!("Bearer {auth_token}");
-    let current_version = current_runtime_snapshot_version(port, authorization.as_str());
+    let current_version = current_runtime_change_version(port, authorization.as_str());
 
     let start = Instant::now();
     let (poll_status, poll_body) = poll_runtime_snapshot(port, authorization.as_str(), 999_999);
@@ -819,7 +821,7 @@ fn long_poll_returns_immediately_when_since_version_is_ahead() {
         serde_json::from_str(&poll_body).expect("runtime poll snapshot json");
     assert_eq!(poll_json["changed"].as_bool(), Some(true));
     assert_eq!(
-        poll_json["snapshot_version"].as_u64(),
+        poll_json["change_version"].as_u64(),
         Some(current_version),
         "body: {poll_body}"
     );
@@ -852,7 +854,7 @@ fn long_poll_rejects_requests_above_concurrent_waiter_limit() {
     );
 
     let authorization = format!("Bearer {auth_token}");
-    let since_version = current_runtime_snapshot_version(port, authorization.as_str());
+    let since_version = current_runtime_change_version(port, authorization.as_str());
     let (started_tx, started_rx) = mpsc::channel();
 
     let poll_handles = (0..2)
@@ -1029,12 +1031,12 @@ fn test_concurrent_mutations() {
 
     let snapshot_json: serde_json::Value =
         serde_json::from_str(&snapshot_body).expect("runtime snapshot json");
-    let snapshot_version = snapshot_json["snapshot_version"]
+    let change_version = snapshot_json["change_version"]
         .as_u64()
-        .expect("snapshot_version");
+        .expect("change_version");
     assert!(
-        snapshot_version >= 10,
-        "expected snapshot_version to reflect at least 10 mutations, got {snapshot_version}"
+        change_version >= 10,
+        "expected change_version to reflect at least 10 mutations, got {change_version}"
     );
 }
 

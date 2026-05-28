@@ -103,7 +103,8 @@ impl ReducerState {
             runs: snapshot_runs,
             diagnostics,
             generated_at: _,
-            snapshot_version: _,
+            change_version: _,
+            disk_format_version: _,
             schema_version: _,
         } = snapshot;
 
@@ -361,7 +362,10 @@ impl ReducerState {
                 last_hook_event_at: self.last_hook_event_at.clone(),
             },
             generated_at: crate::domain::now_rfc3339(),
-            snapshot_version: crate::storage::CURRENT_SNAPSHOT_SCHEMA_VERSION as u64,
+            // change_version is stamped by core_query::app_snapshot (live counter);
+            // disk_format_version is stamped by storage on save. Reduce owns neither.
+            change_version: 0,
+            disk_format_version: 0,
             schema_version: crate::domain::SCHEMA_VERSION,
         }
     }

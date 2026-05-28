@@ -5,7 +5,7 @@ impl CoreRuntime {
     pub fn app_snapshot(&self) -> Result<AppSnapshot, CoreRuntimeError> {
         let state = self.lock_state()?;
         let mut snapshot = state.snapshot();
-        snapshot.snapshot_version = self.version.load(Ordering::Relaxed);
+        snapshot.change_version = self.version.load(Ordering::Relaxed);
         Ok(snapshot)
     }
 

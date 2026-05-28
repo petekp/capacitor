@@ -44,8 +44,8 @@ final class RuntimeSnapshotApplicator {
 
     private var requestGeneration: UInt64 = 0
     private var correlationCounter: UInt64 = 0
-    private var lastAppliedSnapshotVersion: UInt64 = 0
-    private var lastPolledSnapshotVersion: UInt64 = 0
+    private var lastAppliedChangeVersion: UInt64 = 0
+    private var lastPolledChangeVersion: UInt64 = 0
     private var lastAppliedProjectStates: [RuntimeProjectState] = []
     private var lastAppliedSessions: [RuntimeSession] = []
     private var consecutiveRuntimeSnapshotFailures = 0
@@ -89,11 +89,11 @@ final class RuntimeSnapshotApplicator {
     }
 
     func nextLongPollSinceVersion() -> UInt64 {
-        max(lastPolledSnapshotVersion, lastAppliedSnapshotVersion)
+        max(lastPolledChangeVersion, lastAppliedChangeVersion)
     }
 
-    func recordLongPollUnchanged(snapshotVersion: UInt64) {
-        lastPolledSnapshotVersion = max(lastPolledSnapshotVersion, snapshotVersion)
+    func recordLongPollUnchanged(changeVersion: UInt64) {
+        lastPolledChangeVersion = max(lastPolledChangeVersion, changeVersion)
     }
 
     func apply(_ snapshot: RuntimeSnapshot, context: RequestContext) -> Outcome {
@@ -104,19 +104,19 @@ final class RuntimeSnapshotApplicator {
             return Outcome(decision: .ignoredStaleGeneration, effects: [])
         }
 
-        lastPolledSnapshotVersion = max(lastPolledSnapshotVersion, snapshot.snapshotVersion)
+        lastPolledChangeVersion = max(lastPolledChangeVersion, snapshot.changeVersion)
 
-        if snapshot.snapshotVersion > 0 {
-            if snapshot.snapshotVersion < lastAppliedSnapshotVersion {
+        if snapshot.changeVersion > 0 {
+            if snapshot.changeVersion < lastAppliedChangeVersion {
                 DebugLog.write(
-                    "AppState.refreshSessionStates source=runtime_snapshot_drop_stale_version cid=\(context.correlationId) version=\(snapshot.snapshotVersion) current=\(lastAppliedSnapshotVersion)",
+                    "AppState.refreshSessionStates source=runtime_snapshot_drop_stale_version cid=\(context.correlationId) version=\(snapshot.changeVersion) current=\(lastAppliedChangeVersion)",
                 )
                 return Outcome(decision: .ignoredStaleVersion, effects: [])
             }
 
-            if snapshot.snapshotVersion == lastAppliedSnapshotVersion {
+            if snapshot.changeVersion == lastAppliedChangeVersion {
                 DebugLog.write(
-                    "AppState.refreshSessionStates source=runtime_snapshot_volatile_refresh cid=\(context.correlationId) version=\(snapshot.snapshotVersion)",
+                    "AppState.refreshSessionStates source=runtime_snapshot_volatile_refresh cid=\(context.correlationId) version=\(snapshot.changeVersion)",
                 )
                 // New Work Batch/Claude-process projection: the runtime snapshot version
                 // protects durable service state, but live Claude process evidence is volatile.
@@ -174,8 +174,8 @@ final class RuntimeSnapshotApplicator {
         )
         lastAppliedProjectStates = snapshot.projectStates
         lastAppliedSessions = snapshot.sessions
-        lastAppliedSnapshotVersion = max(lastAppliedSnapshotVersion, snapshot.snapshotVersion)
-        lastPolledSnapshotVersion = max(lastPolledSnapshotVersion, snapshot.snapshotVersion)
+        lastAppliedChangeVersion = max(lastAppliedChangeVersion, snapshot.changeVersion)
+        lastPolledChangeVersion = max(lastPolledChangeVersion, snapshot.changeVersion)
 
         var effects: [Effect] = []
         if delegationLoopEnabled {

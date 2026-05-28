@@ -10,7 +10,7 @@ impl CoreRuntime {
             .wait_for_change(&self.version, since_version, timeout)
     }
 
-    pub fn snapshot_version(&self) -> u64 {
+    pub fn change_version(&self) -> u64 {
         self.version.load(Ordering::Relaxed)
     }
 

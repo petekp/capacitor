@@ -173,7 +173,7 @@ pub(super) fn handle_runtime_poll_snapshot(
             200,
             &serde_json::json!({
                 "changed": false,
-                "snapshot_version": runtime.snapshot_version(),
+                "change_version": runtime.change_version(),
             }),
         ),
     }

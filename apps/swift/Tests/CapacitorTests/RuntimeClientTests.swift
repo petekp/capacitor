@@ -115,7 +115,7 @@ final class RuntimeClientTests: XCTestCase {
         XCTAssertEqual(snapshot.routingViews.count, 1)
         XCTAssertTrue(snapshot.delegations.isEmpty)
         XCTAssertTrue(snapshot.runs.isEmpty)
-        XCTAssertEqual(snapshot.snapshotVersion, 0)
+        XCTAssertEqual(snapshot.changeVersion, 0)
         XCTAssertEqual(snapshot.projectStates.first?.projectPath, "/tmp/core-project")
         XCTAssertEqual(snapshot.sessions.first?.sessionId, "session-core")
         XCTAssertNil(snapshot.sessions.first?.gcReason)
@@ -124,7 +124,7 @@ final class RuntimeClientTests: XCTestCase {
     func testFetchRuntimeSnapshotMapsSnapshotVersionAndSessionGcReason() async throws {
         let client = try makeClient(
             coreSnapshot: Self.makeCoreSnapshotResponse(
-                snapshotVersion: 17,
+                changeVersion: 17,
                 sessionGcReasonJSON: "\"runtime_gc\"",
             ),
         )
@@ -132,7 +132,7 @@ final class RuntimeClientTests: XCTestCase {
         let snapshot = try await client.fetchRuntimeSnapshot(correlationId: "runtime-version-gc")
         let session = try XCTUnwrap(snapshot.sessions.first)
 
-        XCTAssertEqual(snapshot.snapshotVersion, 17)
+        XCTAssertEqual(snapshot.changeVersion, 17)
         XCTAssertEqual(session.gcReason, "runtime_gc")
     }
 
@@ -222,7 +222,7 @@ final class RuntimeClientTests: XCTestCase {
                         headerFields: ["Content-Type": "application/json"],
                     ),
                 )
-                return (Self.makeLongPollChangedResponse(snapshotVersion: 17), response)
+                return (Self.makeLongPollChangedResponse(changeVersion: 17), response)
             },
         )
 
@@ -244,7 +244,7 @@ final class RuntimeClientTests: XCTestCase {
 
         switch response {
         case let .changed(snapshot):
-            XCTAssertEqual(snapshot.snapshotVersion, 17)
+            XCTAssertEqual(snapshot.changeVersion, 17)
             XCTAssertEqual(snapshot.projectStates.first?.projectPath, "/tmp/core-project")
             XCTAssertEqual(snapshot.sessions.first?.sessionId, "session-core")
         default:
@@ -267,15 +267,15 @@ final class RuntimeClientTests: XCTestCase {
                         headerFields: ["Content-Type": "application/json"],
                     ),
                 )
-                return (Self.makeLongPollUnchangedResponse(snapshotVersion: 42), response)
+                return (Self.makeLongPollUnchangedResponse(changeVersion: 42), response)
             },
         )
 
         let response = try await client.longPollSnapshot(sinceVersion: 41)
 
         switch response {
-        case let .unchanged(snapshotVersion):
-            XCTAssertEqual(snapshotVersion, 42)
+        case let .unchanged(changeVersion):
+            XCTAssertEqual(changeVersion, 42)
         default:
             XCTFail("expected unchanged long-poll response")
         }
@@ -1231,9 +1231,9 @@ final class RuntimeClientTests: XCTestCase {
         return Data(json.utf8)
     }
 
-    private static func makeLongPollChangedResponse(snapshotVersion: UInt64) -> Data {
+    private static func makeLongPollChangedResponse(changeVersion: UInt64) -> Data {
         guard var object = try? JSONSerialization.jsonObject(
-            with: makeCoreSnapshotResponse(snapshotVersion: snapshotVersion),
+            with: makeCoreSnapshotResponse(changeVersion: changeVersion),
         ) as? [String: Any]
         else {
             return Data()
@@ -1242,12 +1242,12 @@ final class RuntimeClientTests: XCTestCase {
         return (try? JSONSerialization.data(withJSONObject: object)) ?? Data()
     }
 
-    private static func makeLongPollUnchangedResponse(snapshotVersion: UInt64) -> Data {
-        Data(#"{"changed":false,"snapshot_version":\#(snapshotVersion)}"#.utf8)
+    private static func makeLongPollUnchangedResponse(changeVersion: UInt64) -> Data {
+        Data(#"{"changed":false,"change_version":\#(changeVersion)}"#.utf8)
     }
 
     private static func makeCoreSnapshotResponse(
-        snapshotVersion: UInt64? = nil,
+        changeVersion: UInt64? = nil,
         shellUpdatedAt: String = "2026-02-28T19:00:00Z",
         routeReasonCode: String = "tmux_client_attached",
         shellTmuxClientTty: String? = "/dev/ttys099",
@@ -1255,8 +1255,8 @@ final class RuntimeClientTests: XCTestCase {
         delegationJSON: String = ",\"delegations\":[]",
         runsJSON: String = ",\"runs\":[]",
     ) -> Data {
-        let snapshotVersionJSON = if let snapshotVersion {
-            "\"snapshot_version\":\(snapshotVersion),"
+        let changeVersionJSON = if let changeVersion {
+            "\"change_version\":\(changeVersion),"
         } else {
             ""
         }
@@ -1271,7 +1271,7 @@ final class RuntimeClientTests: XCTestCase {
             "null"
         }
         let json = """
-        {\(snapshotVersionJSON)"projects":[{"project_id":"/tmp/core-project/.git","workspace_id":"workspace-core","project_path":"/tmp/core-project","display_name":"core-project","state":"working","updated_at":"2026-02-28T19:00:00Z","state_changed_at":"2026-02-28T19:00:00Z","representative_session_id":"session-core","latest_session_id":"session-core","session_count":1,"active_count":1,"has_session":true}],"sessions":[{"session_id":"session-core","pid":4242,"cwd":"/tmp/core-project","project_id":"/tmp/core-project/.git","project_path":"/tmp/core-project","workspace_id":"workspace-core","state":"working","state_changed_at":"2026-02-28T19:00:00Z","updated_at":"2026-02-28T19:00:00Z","last_event":"user_prompt_submit","last_activity_at":"2026-02-28T19:00:00Z","tools_in_flight":1\(sessionGcReasonField)}],"shells":[{"pid":4242,"cwd":"/tmp/core-project","tty":"/dev/ttys001","parent_app":"Ghostty","tmux_session":"core","tmux_client_tty":\(shellTmuxClientTtyJSON),"tmux_pane":"%42","updated_at":"\(shellUpdatedAt)"}],"routing":[{"workspace_id":"workspace-core","project_path":"/tmp/core-project","status":"attached","target":{"kind":"tmux_pane","terminal_app":"Ghostty","session_name":"core","pane_id":"%42","host_tty":"/dev/ttys099"},"reason_code":"\(routeReasonCode)","reason":"Attached tmux pane","updated_at":"2026-02-28T19:00:00Z"}]\(delegationJSON)\(runsJSON),"diagnostics":{"events_ingested":7,"sessions_tracked":1,"shell_signals_tracked":1,"events_skipped":0,"stale_events_skipped":0,"informational_events_skipped":0,"reducer_events_skipped":0,"last_error":null},"generated_at":"2026-02-28T19:00:00Z"}
+        {\(changeVersionJSON)"projects":[{"project_id":"/tmp/core-project/.git","workspace_id":"workspace-core","project_path":"/tmp/core-project","display_name":"core-project","state":"working","updated_at":"2026-02-28T19:00:00Z","state_changed_at":"2026-02-28T19:00:00Z","representative_session_id":"session-core","latest_session_id":"session-core","session_count":1,"active_count":1,"has_session":true}],"sessions":[{"session_id":"session-core","pid":4242,"cwd":"/tmp/core-project","project_id":"/tmp/core-project/.git","project_path":"/tmp/core-project","workspace_id":"workspace-core","state":"working","state_changed_at":"2026-02-28T19:00:00Z","updated_at":"2026-02-28T19:00:00Z","last_event":"user_prompt_submit","last_activity_at":"2026-02-28T19:00:00Z","tools_in_flight":1\(sessionGcReasonField)}],"shells":[{"pid":4242,"cwd":"/tmp/core-project","tty":"/dev/ttys001","parent_app":"Ghostty","tmux_session":"core","tmux_client_tty":\(shellTmuxClientTtyJSON),"tmux_pane":"%42","updated_at":"\(shellUpdatedAt)"}],"routing":[{"workspace_id":"workspace-core","project_path":"/tmp/core-project","status":"attached","target":{"kind":"tmux_pane","terminal_app":"Ghostty","session_name":"core","pane_id":"%42","host_tty":"/dev/ttys099"},"reason_code":"\(routeReasonCode)","reason":"Attached tmux pane","updated_at":"2026-02-28T19:00:00Z"}]\(delegationJSON)\(runsJSON),"diagnostics":{"events_ingested":7,"sessions_tracked":1,"shell_signals_tracked":1,"events_skipped":0,"stale_events_skipped":0,"informational_events_skipped":0,"reducer_events_skipped":0,"last_error":null},"generated_at":"2026-02-28T19:00:00Z"}
         """
         return Data(json.utf8)
     }

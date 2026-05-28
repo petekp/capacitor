@@ -488,7 +488,7 @@ final class AppStateRuntimeSnapshotEffectTests: XCTestCase {
             ],
             delegations: [],
             runs: [],
-            snapshotVersion: 7,
+            changeVersion: 7,
         )
 
         await appState.applyRuntimeSnapshotForTesting(
@@ -859,7 +859,7 @@ final class AppStateRuntimeSnapshotEffectTests: XCTestCase {
         sessions: [RuntimeSession] = [],
         delegations: [RuntimeDelegationState],
         runs: [RuntimeRunState],
-        snapshotVersion: UInt64 = 0,
+        changeVersion: UInt64 = 0,
     ) -> RuntimeSnapshot {
         let timestamp = "2026-04-17T00:00:00Z"
         return RuntimeSnapshot(
@@ -883,7 +883,7 @@ final class AppStateRuntimeSnapshotEffectTests: XCTestCase {
             routingViews: [],
             delegations: delegations,
             runs: runs,
-            snapshotVersion: snapshotVersion,
+            changeVersion: changeVersion,
         )
     }
 

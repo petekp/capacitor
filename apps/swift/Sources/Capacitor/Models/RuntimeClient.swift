@@ -116,7 +116,7 @@ final class RuntimeClient {
             case 200:
                 let metadata = try JSONDecoder().decode(LongPollMetadata.self, from: data)
                 guard metadata.changed else {
-                    return .unchanged(snapshotVersion: metadata.snapshotVersion ?? sinceVersion)
+                    return .unchanged(changeVersion: metadata.changeVersion ?? sinceVersion)
                 }
 
                 let snapshot = try makeRuntimeSnapshot(
@@ -453,7 +453,7 @@ final class RuntimeClient {
             routingViews: mapRoutingViews(snapshot),
             delegations: mapDelegations(snapshot),
             runs: runs,
-            snapshotVersion: snapshot.snapshotVersion,
+            changeVersion: snapshot.changeVersion,
         )
     }
 
@@ -617,22 +617,22 @@ final class RuntimeClient {
 
 private struct LongPollMetadata: Decodable {
     let changed: Bool
-    let snapshotVersion: UInt64?
+    let changeVersion: UInt64?
 
     enum CodingKeys: String, CodingKey {
         case changed
-        case snapshotVersion = "snapshot_version"
+        case changeVersion = "change_version"
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         changed = try container.decodeIfPresent(Bool.self, forKey: .changed) ?? true
-        snapshotVersion = try container.decodeIfPresent(UInt64.self, forKey: .snapshotVersion)
+        changeVersion = try container.decodeIfPresent(UInt64.self, forKey: .changeVersion)
     }
 }
 
 private struct SnapshotPayload: Decodable {
-    let snapshotVersion: UInt64
+    let changeVersion: UInt64
     let projects: [SnapshotProjectPayload]
     let sessions: [SnapshotSessionPayload]
     let shells: [SnapshotShellPayload]
@@ -641,7 +641,7 @@ private struct SnapshotPayload: Decodable {
     let runs: [SnapshotRunPayload]
 
     enum CodingKeys: String, CodingKey {
-        case snapshotVersion = "snapshot_version"
+        case changeVersion = "change_version"
         case projects
         case sessions
         case shells
@@ -652,7 +652,7 @@ private struct SnapshotPayload: Decodable {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        snapshotVersion = try container.decodeIfPresent(UInt64.self, forKey: .snapshotVersion) ?? 0
+        changeVersion = try container.decodeIfPresent(UInt64.self, forKey: .changeVersion) ?? 0
         projects = try container.decode([SnapshotProjectPayload].self, forKey: .projects)
         sessions = try container.decode([SnapshotSessionPayload].self, forKey: .sessions)
         shells = try container.decode([SnapshotShellPayload].self, forKey: .shells)

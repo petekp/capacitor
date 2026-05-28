@@ -90,11 +90,11 @@ fn runtime_tracks_project_and_session_in_snapshot() {
 }
 
 #[test]
-fn test_snapshot_version_increments_on_mutation() {
+fn test_change_version_increments_on_mutation() {
     let runtime = CoreRuntime::new().expect("runtime");
 
     let initial = runtime.app_snapshot().expect("initial snapshot");
-    assert_eq!(initial.snapshot_version, 0);
+    assert_eq!(initial.change_version, 0);
 
     runtime
         .ingest_hook_event(IngestHookEventCommand {
@@ -117,27 +117,27 @@ fn test_snapshot_version_increments_on_mutation() {
 
     let updated = runtime.app_snapshot().expect("updated snapshot");
     assert!(
-        updated.snapshot_version > initial.snapshot_version,
+        updated.change_version > initial.change_version,
         "expected mutation to advance snapshot version, got {} -> {}",
-        initial.snapshot_version,
-        updated.snapshot_version
+        initial.change_version,
+        updated.change_version
     );
 }
 
 #[test]
-fn test_snapshot_version_stable_on_read() {
+fn test_change_version_stable_on_read() {
     let runtime = CoreRuntime::new().expect("runtime");
 
     let first = runtime.app_snapshot().expect("first snapshot");
     let second = runtime.app_snapshot().expect("second snapshot");
 
-    assert_eq!(first.snapshot_version, second.snapshot_version);
+    assert_eq!(first.change_version, second.change_version);
 }
 
 #[test]
 fn test_rejected_mutation_does_not_advance_change_counter() {
     // B2 documented rule: bump_version_and_notify (which wakes long-pollers and
-    // advances the change counter exposed via app_snapshot().snapshot_version)
+    // advances the change counter exposed via app_snapshot().change_version)
     // must only fire when a mutation is accepted (MutationOutcome.ok == true).
     // A rejected mutation changes no state, so it must not wake pollers or
     // advance the counter. These triggers all sit on paths that bumped
@@ -146,7 +146,7 @@ fn test_rejected_mutation_does_not_advance_change_counter() {
     let runtime = CoreRuntime::new().expect("runtime");
 
     let baseline = runtime.app_snapshot().expect("baseline snapshot");
-    assert_eq!(baseline.snapshot_version, 0);
+    assert_eq!(baseline.change_version, 0);
 
     // ingest_shell_signal with empty cwd/tty is a deterministic reducer reject.
     let outcome = runtime
@@ -167,8 +167,8 @@ fn test_rejected_mutation_does_not_advance_change_counter() {
         runtime
             .app_snapshot()
             .expect("snapshot after rejected shell signal")
-            .snapshot_version,
-        baseline.snapshot_version,
+            .change_version,
+        baseline.change_version,
         "rejected shell signal must not advance the change counter",
     );
 
@@ -181,8 +181,8 @@ fn test_rejected_mutation_does_not_advance_change_counter() {
         runtime
             .app_snapshot()
             .expect("snapshot after rejected run")
-            .snapshot_version,
-        baseline.snapshot_version,
+            .change_version,
+        baseline.change_version,
         "rejected run mutation must not advance the change counter",
     );
 
@@ -200,8 +200,8 @@ fn test_rejected_mutation_does_not_advance_change_counter() {
         runtime
             .app_snapshot()
             .expect("snapshot after rejected delegation")
-            .snapshot_version,
-        baseline.snapshot_version,
+            .change_version,
+        baseline.change_version,
         "rejected delegation mutation must not advance the change counter",
     );
 
@@ -218,15 +218,15 @@ fn test_rejected_mutation_does_not_advance_change_counter() {
         runtime
             .app_snapshot()
             .expect("snapshot after rejected hook event")
-            .snapshot_version,
-        baseline.snapshot_version,
+            .change_version,
+        baseline.change_version,
         "rejected hook event must not advance the change counter",
     );
 
     // A long-poller waiting since the baseline version must NOT be woken by any
     // of the rejected mutations above (the counter never advanced).
     let woke =
-        runtime.wait_for_version_change(baseline.snapshot_version, StdDuration::from_millis(50));
+        runtime.wait_for_version_change(baseline.change_version, StdDuration::from_millis(50));
     assert_eq!(
         woke, None,
         "rejected mutations must not wake long-pollers waiting since the baseline version",
@@ -255,8 +255,8 @@ fn test_rejected_project_rename_does_not_advance_change_counter() {
         runtime
             .app_snapshot()
             .expect("snapshot after rejected rename")
-            .snapshot_version,
-        baseline.snapshot_version,
+            .change_version,
+        baseline.change_version,
         "rejected project rename must not advance the change counter",
     );
 }
@@ -272,8 +272,8 @@ fn test_snapshot_idempotent_without_gc() {
     let first = runtime.app_snapshot().expect("first snapshot");
     let second = runtime.app_snapshot().expect("second snapshot");
 
-    assert_eq!(first.snapshot_version, 0);
-    assert_eq!(second.snapshot_version, 0);
+    assert_eq!(first.change_version, 0);
+    assert_eq!(second.change_version, 0);
     assert_eq!(first.sessions, second.sessions);
     assert_eq!(first.sessions.len(), 1);
     assert_eq!(first.sessions[0].state, SessionState::Waiting);
@@ -309,7 +309,7 @@ fn mutate_run_with_commit_rolls_back_accepted_mutation_when_commit_fails() {
     let version_before_rollback = runtime
         .app_snapshot()
         .expect("snapshot after setup mutations")
-        .snapshot_version;
+        .change_version;
 
     let mut submit = make_run_create_command("run-commit", "/repo/run");
     submit.kind = RunMutationKind::SubmitDecision;
@@ -327,7 +327,7 @@ fn mutate_run_with_commit_rolls_back_accepted_mutation_when_commit_fails() {
         runtime
             .app_snapshot()
             .expect("snapshot after rolled-back commit")
-            .snapshot_version,
+            .change_version,
         version_before_rollback,
         "rolled-back commit-failing mutation must not advance the change counter",
     );
@@ -532,7 +532,8 @@ fn run_gc_at_uses_explicit_reference_time() {
             last_hook_event_at: None,
         },
         generated_at: now.to_rfc3339(),
-        snapshot_version: 0,
+        change_version: 0,
+        disk_format_version: 0,
         schema_version: 0,
     };
 
@@ -939,7 +940,8 @@ fn stale_dead_snapshot_for_gc_read_test() -> AppSnapshot {
             last_hook_event_at: None,
         },
         generated_at: now,
-        snapshot_version: 0,
+        change_version: 0,
+        disk_format_version: 0,
         schema_version: 0,
     }
 }
@@ -985,7 +987,8 @@ fn stale_dead_snapshot_for_gc_notify_test() -> AppSnapshot {
             last_hook_event_at: None,
         },
         generated_at: now.to_rfc3339(),
-        snapshot_version: 0,
+        change_version: 0,
+        disk_format_version: 0,
         schema_version: 0,
     }
 }
@@ -1114,7 +1117,8 @@ fn snapshot_payload(sessions: Vec<SessionSummary>, last_hook_event_at: Option<St
             last_hook_event_at: None,
         },
         generated_at: now,
-        snapshot_version: 0,
+        change_version: 0,
+        disk_format_version: 0,
         schema_version: 0,
     };
     let mut value = serde_json::to_value(snapshot).expect("serialize snapshot to value");
@@ -1446,7 +1450,8 @@ mod cold_start_transcript_tests {
                 last_hook_event_at: None,
             },
             generated_at: "2099-01-01T00:00:00Z".to_string(),
-            snapshot_version: 1,
+            change_version: 0,
+            disk_format_version: 1,
             schema_version: 0,
         };
         storage.save_snapshot(&empty_snapshot).unwrap();

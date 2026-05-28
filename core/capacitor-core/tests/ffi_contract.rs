@@ -595,7 +595,8 @@ fn fixture_snapshot_json() -> &'static str {
     "last_error": null
   },
   "generated_at": "2099-02-28T19:00:00Z",
-  "snapshot_version": 1,
+  "change_version": 0,
+  "disk_format_version": 1,
   "schema_version": 3
 }"#
 }
