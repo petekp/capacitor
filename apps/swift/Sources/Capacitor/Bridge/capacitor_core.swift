@@ -557,25 +557,9 @@ public protocol CoreRuntimeProtocol: AnyObject {
 
     func mutateDelegation(command: MutateDelegationCommand) throws -> MutationOutcome
 
-    /**
-     * Accept an idea mutation command.
-     *
-     * STUB: logs the command and persists a version bump, but does not yet
-     * mutate model state. Callers receive `ok: true` as acknowledgment.
-     */
-    func mutateIdea(command: MutateIdeaCommand) throws -> MutationOutcome
-
     func mutateProject(command: MutateProjectCommand) throws -> MutationOutcome
 
     func mutateRun(command: MutateRunCommand) throws -> MutationOutcome
-
-    /**
-     * Accept a worktree mutation command.
-     *
-     * STUB: logs the command and persists a version bump, but does not yet
-     * mutate model state. Callers receive `ok: true` as acknowledgment.
-     */
-    func mutateWorktree(command: MutateWorktreeCommand) throws -> MutationOutcome
 
     func removeHooks() throws -> InstallResult
 
@@ -823,19 +807,6 @@ open class CoreRuntime:
         })
     }
 
-    /**
-     * Accept an idea mutation command.
-     *
-     * STUB: logs the command and persists a version bump, but does not yet
-     * mutate model state. Callers receive `ok: true` as acknowledgment.
-     */
-    open func mutateIdea(command: MutateIdeaCommand) throws -> MutationOutcome {
-        return try FfiConverterTypeMutationOutcome.lift(rustCallWithError(FfiConverterTypeCoreRuntimeError.lift) {
-            uniffi_capacitor_core_fn_method_coreruntime_mutate_idea(self.uniffiClonePointer(),
-                                                                    FfiConverterTypeMutateIdeaCommand.lower(command), $0)
-        })
-    }
-
     open func mutateProject(command: MutateProjectCommand) throws -> MutationOutcome {
         return try FfiConverterTypeMutationOutcome.lift(rustCallWithError(FfiConverterTypeCoreRuntimeError.lift) {
             uniffi_capacitor_core_fn_method_coreruntime_mutate_project(self.uniffiClonePointer(),
@@ -847,19 +818,6 @@ open class CoreRuntime:
         return try FfiConverterTypeMutationOutcome.lift(rustCallWithError(FfiConverterTypeCoreRuntimeError.lift) {
             uniffi_capacitor_core_fn_method_coreruntime_mutate_run(self.uniffiClonePointer(),
                                                                    FfiConverterTypeMutateRunCommand.lower(command), $0)
-        })
-    }
-
-    /**
-     * Accept a worktree mutation command.
-     *
-     * STUB: logs the command and persists a version bump, but does not yet
-     * mutate model state. Callers receive `ok: true` as acknowledgment.
-     */
-    open func mutateWorktree(command: MutateWorktreeCommand) throws -> MutationOutcome {
-        return try FfiConverterTypeMutationOutcome.lift(rustCallWithError(FfiConverterTypeCoreRuntimeError.lift) {
-            uniffi_capacitor_core_fn_method_coreruntime_mutate_worktree(self.uniffiClonePointer(),
-                                                                        FfiConverterTypeMutateWorktreeCommand.lower(command), $0)
         })
     }
 
@@ -3838,99 +3796,6 @@ public func FfiConverterTypeMutateDelegationCommand_lower(_ value: MutateDelegat
     return FfiConverterTypeMutateDelegationCommand.lower(value)
 }
 
-public struct MutateIdeaCommand {
-    public var kind: IdeaMutationKind
-    public var projectPath: String
-    public var ideaId: String
-    public var title: String?
-    public var description: String?
-    public var status: String?
-
-    /// Default memberwise initializers are never public by default, so we
-    /// declare one manually.
-    public init(kind: IdeaMutationKind, projectPath: String, ideaId: String, title: String?, description: String?, status: String?) {
-        self.kind = kind
-        self.projectPath = projectPath
-        self.ideaId = ideaId
-        self.title = title
-        self.description = description
-        self.status = status
-    }
-}
-
-extension MutateIdeaCommand: Equatable, Hashable {
-    public static func == (lhs: MutateIdeaCommand, rhs: MutateIdeaCommand) -> Bool {
-        if lhs.kind != rhs.kind {
-            return false
-        }
-        if lhs.projectPath != rhs.projectPath {
-            return false
-        }
-        if lhs.ideaId != rhs.ideaId {
-            return false
-        }
-        if lhs.title != rhs.title {
-            return false
-        }
-        if lhs.description != rhs.description {
-            return false
-        }
-        if lhs.status != rhs.status {
-            return false
-        }
-        return true
-    }
-
-    public func hash(into hasher: inout Hasher) {
-        hasher.combine(kind)
-        hasher.combine(projectPath)
-        hasher.combine(ideaId)
-        hasher.combine(title)
-        hasher.combine(description)
-        hasher.combine(status)
-    }
-}
-
-#if swift(>=5.8)
-    @_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeMutateIdeaCommand: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MutateIdeaCommand {
-        return
-            try MutateIdeaCommand(
-                kind: FfiConverterTypeIdeaMutationKind.read(from: &buf),
-                projectPath: FfiConverterString.read(from: &buf),
-                ideaId: FfiConverterString.read(from: &buf),
-                title: FfiConverterOptionString.read(from: &buf),
-                description: FfiConverterOptionString.read(from: &buf),
-                status: FfiConverterOptionString.read(from: &buf)
-            )
-    }
-
-    public static func write(_ value: MutateIdeaCommand, into buf: inout [UInt8]) {
-        FfiConverterTypeIdeaMutationKind.write(value.kind, into: &buf)
-        FfiConverterString.write(value.projectPath, into: &buf)
-        FfiConverterString.write(value.ideaId, into: &buf)
-        FfiConverterOptionString.write(value.title, into: &buf)
-        FfiConverterOptionString.write(value.description, into: &buf)
-        FfiConverterOptionString.write(value.status, into: &buf)
-    }
-}
-
-#if swift(>=5.8)
-    @_documentation(visibility: private)
-#endif
-public func FfiConverterTypeMutateIdeaCommand_lift(_ buf: RustBuffer) throws -> MutateIdeaCommand {
-    return try FfiConverterTypeMutateIdeaCommand.lift(buf)
-}
-
-#if swift(>=5.8)
-    @_documentation(visibility: private)
-#endif
-public func FfiConverterTypeMutateIdeaCommand_lower(_ value: MutateIdeaCommand) -> RustBuffer {
-    return FfiConverterTypeMutateIdeaCommand.lower(value)
-}
-
 public struct MutateProjectCommand {
     public var kind: ProjectMutationKind
     public var projectPath: String
@@ -4286,83 +4151,6 @@ public func FfiConverterTypeMutateRunCommand_lift(_ buf: RustBuffer) throws -> M
 #endif
 public func FfiConverterTypeMutateRunCommand_lower(_ value: MutateRunCommand) -> RustBuffer {
     return FfiConverterTypeMutateRunCommand.lower(value)
-}
-
-public struct MutateWorktreeCommand {
-    public var kind: WorktreeMutationKind
-    public var repoPath: String
-    public var worktreeName: String
-    public var force: Bool
-
-    /// Default memberwise initializers are never public by default, so we
-    /// declare one manually.
-    public init(kind: WorktreeMutationKind, repoPath: String, worktreeName: String, force: Bool) {
-        self.kind = kind
-        self.repoPath = repoPath
-        self.worktreeName = worktreeName
-        self.force = force
-    }
-}
-
-extension MutateWorktreeCommand: Equatable, Hashable {
-    public static func == (lhs: MutateWorktreeCommand, rhs: MutateWorktreeCommand) -> Bool {
-        if lhs.kind != rhs.kind {
-            return false
-        }
-        if lhs.repoPath != rhs.repoPath {
-            return false
-        }
-        if lhs.worktreeName != rhs.worktreeName {
-            return false
-        }
-        if lhs.force != rhs.force {
-            return false
-        }
-        return true
-    }
-
-    public func hash(into hasher: inout Hasher) {
-        hasher.combine(kind)
-        hasher.combine(repoPath)
-        hasher.combine(worktreeName)
-        hasher.combine(force)
-    }
-}
-
-#if swift(>=5.8)
-    @_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeMutateWorktreeCommand: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MutateWorktreeCommand {
-        return
-            try MutateWorktreeCommand(
-                kind: FfiConverterTypeWorktreeMutationKind.read(from: &buf),
-                repoPath: FfiConverterString.read(from: &buf),
-                worktreeName: FfiConverterString.read(from: &buf),
-                force: FfiConverterBool.read(from: &buf)
-            )
-    }
-
-    public static func write(_ value: MutateWorktreeCommand, into buf: inout [UInt8]) {
-        FfiConverterTypeWorktreeMutationKind.write(value.kind, into: &buf)
-        FfiConverterString.write(value.repoPath, into: &buf)
-        FfiConverterString.write(value.worktreeName, into: &buf)
-        FfiConverterBool.write(value.force, into: &buf)
-    }
-}
-
-#if swift(>=5.8)
-    @_documentation(visibility: private)
-#endif
-public func FfiConverterTypeMutateWorktreeCommand_lift(_ buf: RustBuffer) throws -> MutateWorktreeCommand {
-    return try FfiConverterTypeMutateWorktreeCommand.lift(buf)
-}
-
-#if swift(>=5.8)
-    @_documentation(visibility: private)
-#endif
-public func FfiConverterTypeMutateWorktreeCommand_lower(_ value: MutateWorktreeCommand) -> RustBuffer {
-    return FfiConverterTypeMutateWorktreeCommand.lower(value)
 }
 
 public struct MutationOutcome {
@@ -8320,64 +8108,6 @@ extension HudFfiError: Foundation.LocalizedError {
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 
-public enum IdeaMutationKind {
-    case add
-    case update
-    case remove
-}
-
-#if swift(>=5.8)
-    @_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeIdeaMutationKind: FfiConverterRustBuffer {
-    typealias SwiftType = IdeaMutationKind
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> IdeaMutationKind {
-        let variant: Int32 = try readInt(&buf)
-        switch variant {
-        case 1: return .add
-
-        case 2: return .update
-
-        case 3: return .remove
-
-        default: throw UniffiInternalError.unexpectedEnumCase
-        }
-    }
-
-    public static func write(_ value: IdeaMutationKind, into buf: inout [UInt8]) {
-        switch value {
-        case .add:
-            writeInt(&buf, Int32(1))
-
-        case .update:
-            writeInt(&buf, Int32(2))
-
-        case .remove:
-            writeInt(&buf, Int32(3))
-        }
-    }
-}
-
-#if swift(>=5.8)
-    @_documentation(visibility: private)
-#endif
-public func FfiConverterTypeIdeaMutationKind_lift(_ buf: RustBuffer) throws -> IdeaMutationKind {
-    return try FfiConverterTypeIdeaMutationKind.lift(buf)
-}
-
-#if swift(>=5.8)
-    @_documentation(visibility: private)
-#endif
-public func FfiConverterTypeIdeaMutationKind_lower(_ value: IdeaMutationKind) -> RustBuffer {
-    return FfiConverterTypeIdeaMutationKind.lower(value)
-}
-
-extension IdeaMutationKind: Equatable, Hashable {}
-
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
-
 public enum InvolvementLevel {
     case autonomous
     case supervised
@@ -9208,58 +8938,6 @@ public func FfiConverterTypeSignalAuthority_lower(_ value: SignalAuthority) -> R
 }
 
 extension SignalAuthority: Equatable, Hashable {}
-
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
-
-public enum WorktreeMutationKind {
-    case create
-    case remove
-}
-
-#if swift(>=5.8)
-    @_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeWorktreeMutationKind: FfiConverterRustBuffer {
-    typealias SwiftType = WorktreeMutationKind
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> WorktreeMutationKind {
-        let variant: Int32 = try readInt(&buf)
-        switch variant {
-        case 1: return .create
-
-        case 2: return .remove
-
-        default: throw UniffiInternalError.unexpectedEnumCase
-        }
-    }
-
-    public static func write(_ value: WorktreeMutationKind, into buf: inout [UInt8]) {
-        switch value {
-        case .create:
-            writeInt(&buf, Int32(1))
-
-        case .remove:
-            writeInt(&buf, Int32(2))
-        }
-    }
-}
-
-#if swift(>=5.8)
-    @_documentation(visibility: private)
-#endif
-public func FfiConverterTypeWorktreeMutationKind_lift(_ buf: RustBuffer) throws -> WorktreeMutationKind {
-    return try FfiConverterTypeWorktreeMutationKind.lift(buf)
-}
-
-#if swift(>=5.8)
-    @_documentation(visibility: private)
-#endif
-public func FfiConverterTypeWorktreeMutationKind_lower(_ value: WorktreeMutationKind) -> RustBuffer {
-    return FfiConverterTypeWorktreeMutationKind.lower(value)
-}
-
-extension WorktreeMutationKind: Equatable, Hashable {}
 
 #if swift(>=5.8)
     @_documentation(visibility: private)
@@ -10381,16 +10059,10 @@ private var initializationResult: InitializationResult = {
     if uniffi_capacitor_core_checksum_method_coreruntime_mutate_delegation() != 22057 {
         return InitializationResult.apiChecksumMismatch
     }
-    if uniffi_capacitor_core_checksum_method_coreruntime_mutate_idea() != 56147 {
-        return InitializationResult.apiChecksumMismatch
-    }
     if uniffi_capacitor_core_checksum_method_coreruntime_mutate_project() != 22074 {
         return InitializationResult.apiChecksumMismatch
     }
     if uniffi_capacitor_core_checksum_method_coreruntime_mutate_run() != 27321 {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if uniffi_capacitor_core_checksum_method_coreruntime_mutate_worktree() != 63118 {
         return InitializationResult.apiChecksumMismatch
     }
     if uniffi_capacitor_core_checksum_method_coreruntime_remove_hooks() != 18263 {

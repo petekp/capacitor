@@ -1,11 +1,8 @@
-mod observation_journal;
-
 use std::fs;
 use std::os::unix::io::AsRawFd;
 use std::path::{Path, PathBuf};
 
 use crate::domain::AppSnapshot;
-pub use observation_journal::{InMemoryObservationJournalStore, ObservationJournalStore};
 
 /// Snapshot disk format version (incremented when AppSnapshot serialization changes).
 pub(crate) const CURRENT_SNAPSHOT_SCHEMA_VERSION: u32 = 1;

@@ -5,11 +5,12 @@
 
 uniffi::setup_scaffolding!();
 
+mod core_diagnostics;
 mod core_gc;
+mod core_ideas;
 mod core_ingest;
 mod core_lifecycle;
 mod core_query;
-mod core_serve;
 #[cfg(test)]
 #[path = "core_runtime_tests.rs"]
 mod tests;
@@ -18,7 +19,6 @@ pub mod domain;
 pub mod ingest;
 pub mod method_runner;
 pub mod observation;
-pub mod projection;
 pub mod reduce;
 pub mod runtime;
 pub mod runtime_stats;
@@ -32,9 +32,8 @@ use std::sync::{Arc, Condvar, Mutex};
 use chrono::{DateTime, Utc};
 use domain::{
     default_workspace_id, display_name, now_rfc3339, AppSnapshot, IngestHookEventCommand,
-    IngestShellSignalCommand, MutateDelegationCommand, MutateIdeaCommand, MutateProjectCommand,
-    MutateWorktreeCommand, MutationOutcome, ProjectMutationKind, ResolveRoutingCommand,
-    RoutingView,
+    IngestShellSignalCommand, MutateDelegationCommand, MutateProjectCommand, MutationOutcome,
+    ProjectMutationKind, ResolveRoutingCommand, RoutingView,
 };
 use runtime::{
     artifacts::{count_artifacts_in_dir, count_hooks_in_dir},

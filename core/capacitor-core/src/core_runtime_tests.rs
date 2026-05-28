@@ -2,10 +2,9 @@ use super::{CoreRuntime, VersionNotifier};
 use crate::domain::CheckpointKind;
 use crate::domain::{
     default_workspace_id, AppSnapshot, DelegationMutationKind, DiagnosticsSummary, HookEventType,
-    IdeaMutationKind, IngestHookEventCommand, IngestShellSignalCommand, MutateDelegationCommand,
-    MutateIdeaCommand, MutateProjectCommand, MutateRunCommand, MutateWorktreeCommand,
-    ProjectMutationKind, ProjectSummary, RunMutationKind, SessionState, SessionSummary,
-    ShellUnregisterCommand, WorktreeMutationKind,
+    IngestHookEventCommand, IngestShellSignalCommand, MutateDelegationCommand,
+    MutateProjectCommand, MutateRunCommand, ProjectMutationKind, ProjectSummary, RunMutationKind,
+    SessionState, SessionSummary, ShellUnregisterCommand,
 };
 use crate::runtime::service::{RUNTIME_SERVICE_PORT_ENV, RUNTIME_SERVICE_TOKEN_ENV};
 use crate::runtime::state::snapshot::test_support::{
@@ -296,30 +295,6 @@ fn test_all_mutation_paths_notify() {
                 kind: ProjectMutationKind::Add,
                 project_path: "/repo/project".to_string(),
                 display_name: Some("project".to_string()),
-            })
-            .map(|_| ())
-    });
-
-    assert_mutation_advances_version_and_wakes(CoreRuntime::new().expect("runtime"), |runtime| {
-        runtime
-            .mutate_idea(MutateIdeaCommand {
-                kind: IdeaMutationKind::Add,
-                project_path: "/repo/idea".to_string(),
-                idea_id: "idea-001".to_string(),
-                title: Some("Version notifier".to_string()),
-                description: Some("prove wakeups".to_string()),
-                status: Some("new".to_string()),
-            })
-            .map(|_| ())
-    });
-
-    assert_mutation_advances_version_and_wakes(CoreRuntime::new().expect("runtime"), |runtime| {
-        runtime
-            .mutate_worktree(MutateWorktreeCommand {
-                kind: WorktreeMutationKind::Create,
-                repo_path: "/repo/worktree".to_string(),
-                worktree_name: "notifier-proof".to_string(),
-                force: false,
             })
             .map(|_| ())
     });

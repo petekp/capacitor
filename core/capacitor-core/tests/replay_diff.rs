@@ -8,9 +8,6 @@ use capacitor_core::domain::{
     AppSnapshot, HookEventType, IngestHookEventCommand, IngestShellSignalCommand,
     MutateProjectCommand, ProjectMutationKind, SessionState,
 };
-use capacitor_core::observation::{ObservationRecord, ObservationSourceKind};
-use capacitor_core::projection::{SnapshotReadModel, SnapshotReadModelProjector};
-use capacitor_core::storage::{InMemoryObservationJournalStore, ObservationJournalStore};
 use capacitor_core::CoreRuntime;
 
 #[derive(Debug, serde::Deserialize)]
@@ -34,11 +31,6 @@ struct ReplayExpected {
     project_states: BTreeMap<String, String>,
     session_states: BTreeMap<String, String>,
     shell_count: usize,
-}
-
-#[derive(Debug, Default, PartialEq, Eq)]
-struct ShadowParityReport {
-    mismatch_reasons: Vec<String>,
 }
 
 #[test]
@@ -90,21 +82,6 @@ fn run_replay_case(case: &ReplayCase) -> AppSnapshot {
     runtime.app_snapshot().expect("snapshot")
 }
 
-fn replay_observations(case: &ReplayCase) -> Vec<ObservationRecord> {
-    case.events
-        .iter()
-        .filter_map(|event| match event {
-            ReplayEvent::Hook { command } => {
-                Some(ObservationRecord::from_hook_event(command.clone()))
-            }
-            ReplayEvent::Shell { command } => {
-                Some(ObservationRecord::from_shell_signal(command.clone()))
-            }
-            ReplayEvent::ProjectMutation { .. } => None,
-        })
-        .collect()
-}
-
 fn assert_expected(case: &ReplayCase, snapshot: &AppSnapshot) {
     assert_eq!(
         snapshot.diagnostics.events_ingested, case.expected.events_ingested,
@@ -153,73 +130,6 @@ fn normalized_snapshot(mut snapshot: AppSnapshot) -> serde_json::Value {
     snapshot.generated_at.clear();
 
     serde_json::to_value(snapshot).expect("serialize snapshot")
-}
-
-fn projection_parity_report(
-    snapshot: &AppSnapshot,
-    read_model: &SnapshotReadModel,
-) -> ShadowParityReport {
-    let mut mismatch_reasons = Vec::new();
-
-    if snapshot.projects.len() != read_model.snapshot.projects.len() {
-        mismatch_reasons.push(format!(
-            "project_count:{}!={}",
-            snapshot.projects.len(),
-            read_model.snapshot.projects.len()
-        ));
-    }
-
-    if snapshot.sessions.len() != read_model.snapshot.sessions.len() {
-        mismatch_reasons.push(format!(
-            "session_count:{}!={}",
-            snapshot.sessions.len(),
-            read_model.snapshot.sessions.len()
-        ));
-    }
-
-    if snapshot.shells.len() != read_model.snapshot.shells.len() {
-        mismatch_reasons.push(format!(
-            "shell_count:{}!={}",
-            snapshot.shells.len(),
-            read_model.snapshot.shells.len()
-        ));
-    }
-
-    let snapshot_project_states = snapshot_state_map(snapshot.projects.iter().map(|project| {
-        (
-            project.project_path.clone(),
-            state_label(project.state).to_string(),
-        )
-    }));
-    let read_model_project_states =
-        snapshot_state_map(read_model.snapshot.projects.iter().map(|project| {
-            (
-                project.project_path.clone(),
-                state_label(project.state).to_string(),
-            )
-        }));
-    if snapshot_project_states != read_model_project_states {
-        mismatch_reasons.push("project_states_mismatch".to_string());
-    }
-
-    let snapshot_session_states = snapshot_state_map(snapshot.sessions.iter().map(|session| {
-        (
-            session.session_id.clone(),
-            state_label(session.state).to_string(),
-        )
-    }));
-    let read_model_session_states =
-        snapshot_state_map(read_model.snapshot.sessions.iter().map(|session| {
-            (
-                session.session_id.clone(),
-                state_label(session.state).to_string(),
-            )
-        }));
-    if snapshot_session_states != read_model_session_states {
-        mismatch_reasons.push("session_states_mismatch".to_string());
-    }
-
-    ShadowParityReport { mismatch_reasons }
 }
 
 fn state_label(state: SessionState) -> &'static str {
@@ -290,107 +200,5 @@ fn replay_diff_project_mutation_variant_deserializes() {
             assert_eq!(command.display_name.as_deref(), Some("demo"));
         }
         _ => panic!("expected project mutation event"),
-    }
-}
-
-#[test]
-fn replay_diff_observation_scaffold_collects_non_mutation_events() {
-    let cases = replay_cases();
-    assert!(
-        !cases.is_empty(),
-        "replay corpus fixtures should not be empty"
-    );
-
-    for case in cases {
-        let observations = replay_observations(&case);
-        let expected_count = case
-            .events
-            .iter()
-            .filter(|event| matches!(event, ReplayEvent::Hook { .. } | ReplayEvent::Shell { .. }))
-            .count();
-
-        assert_eq!(
-            observations.len(),
-            expected_count,
-            "observation scaffold count mismatch for case '{}'",
-            case.name
-        );
-        assert!(observations
-            .iter()
-            .all(|observation| !observation.recorded_at.is_empty()));
-    }
-}
-
-#[test]
-fn replay_diff_observation_journal_store_round_trips_replay_observations() {
-    let case = replay_cases()
-        .into_iter()
-        .next()
-        .expect("expected at least one replay case");
-    let observations = replay_observations(&case);
-    let store = InMemoryObservationJournalStore::default();
-
-    for observation in observations.clone() {
-        store.append(observation).expect("append observation");
-    }
-
-    let recorded = store.list().expect("list observations");
-    assert_eq!(recorded.len(), observations.len());
-    assert!(
-        recorded.iter().any(|observation| matches!(
-            observation.source_kind,
-            ObservationSourceKind::ClaudeHook | ObservationSourceKind::ShellSignal
-        )),
-        "expected replay observations to retain source kinds"
-    );
-}
-
-#[test]
-fn replay_diff_snapshot_projector_scaffold_tracks_applied_observations() {
-    let case = replay_cases()
-        .into_iter()
-        .next()
-        .expect("expected at least one replay case");
-    let observations = replay_observations(&case);
-    let snapshot = run_replay_case(&case);
-    let projector = SnapshotReadModelProjector;
-
-    let read_model = projector.project(&snapshot, &observations);
-    let checkpoint = projector.checkpoint(&observations);
-
-    assert_eq!(projector.descriptor().name, "app_snapshot_read_model");
-    assert_eq!(read_model.snapshot.projects.len(), snapshot.projects.len());
-    assert_eq!(read_model.snapshot.sessions.len(), snapshot.sessions.len());
-    assert_eq!(read_model.applied_observation_count, observations.len());
-    assert_eq!(checkpoint.applied_observation_count, observations.len());
-}
-
-#[test]
-fn replay_diff_projection_read_model_matches_runtime_snapshot() {
-    let cases = replay_cases();
-    assert!(
-        !cases.is_empty(),
-        "replay corpus fixtures should not be empty"
-    );
-
-    for case in cases {
-        let observations = replay_observations(&case);
-        let snapshot = run_replay_case(&case);
-        let projector = SnapshotReadModelProjector;
-        let read_model = projector.project(&snapshot, &observations);
-        let report = projection_parity_report(&snapshot, &read_model);
-
-        assert!(
-            report.mismatch_reasons.is_empty(),
-            "projection parity mismatch for case '{}': {:?}",
-            case.name,
-            report.mismatch_reasons
-        );
-        assert_eq!(
-            read_model.applied_observation_count,
-            observations.len(),
-            "applied observation count mismatch for case '{}'",
-            case.name
-        );
     }
 }

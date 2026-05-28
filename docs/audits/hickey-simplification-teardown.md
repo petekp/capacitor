@@ -1,12 +1,14 @@
 # Capacitor — Rich Hickey Simplification Teardown
 
-> Doc role: `audit` · Generated 2026-05-28 via the `hickey-simplification-teardown` workflow
+> Doc role: `historical-evidence`
+> Status: Historical evidence only. Do not treat this as the current architecture spec.
+> Generated 2026-05-28 via the `hickey-simplification-teardown` workflow
 > (77 agents: 13 subsystem maps + teardowns, 6 cross-cutting lenses, completeness critic,
 > 5 gap-coverage passes, 36 adversarial verifications → 24 confirmed / 12 rejected).
-> NOT a current-architecture spec. Recommendations are checked against the documented
-> invariants (Rust = truth; Swift = projection + side-effects; the authenticated runtime
-> service is the live boundary; persisted artifacts are NOT the primary boundary; one owner
-> per concept). Findings that "simplify" by breaking an essential invariant are rejected.
+> Recommendations are checked against the documented invariants (Rust = truth; Swift = projection +
+> side-effects; the authenticated runtime service is the live boundary; persisted artifacts are NOT
+> the primary boundary; one owner per concept). Findings that "simplify" by breaking an essential
+> invariant are rejected.
 
 ---
 

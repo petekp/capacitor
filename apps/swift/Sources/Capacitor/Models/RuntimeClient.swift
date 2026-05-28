@@ -613,102 +613,6 @@ final class RuntimeClient {
         }
         return trimmed.uppercased()
     }
-
-    fileprivate static func snapshotSessionStateString(_ state: SessionState) -> String {
-        switch state {
-        case .working:
-            "working"
-        case .ready:
-            "ready"
-        case .idle:
-            "idle"
-        case .compacting:
-            "compacting"
-        case .waiting:
-            "waiting"
-        }
-    }
-
-    fileprivate static func snapshotRoutingStatusString(_ status: RoutingStatus) -> String {
-        switch status {
-        case .attached:
-            "attached"
-        case .detached:
-            "detached"
-        case .unavailable:
-            "unavailable"
-        }
-    }
-
-    fileprivate static func snapshotDelegationStatusString(_ status: DelegationStatus) -> String {
-        snakeCaseEnumCaseName(status)
-    }
-
-    fileprivate static func snapshotRunStatusString(_ status: RunStatus) -> String {
-        snakeCaseEnumCaseName(status)
-    }
-
-    fileprivate static func snapshotCheckpointStatusString(_ status: CheckpointStatus) -> String {
-        snakeCaseEnumCaseName(status)
-    }
-
-    fileprivate static func snapshotRoutingTargetKindString(_ kind: RoutingTargetKind) -> String {
-        switch kind {
-        case .tmuxPane:
-            "tmux_pane"
-        case .tmuxSession:
-            "tmux_session"
-        case .terminalApp:
-            "terminal_app"
-        case .none:
-            "none"
-        }
-    }
-
-    fileprivate static func snapshotMediaArtifactTypeString(_ type: MediaArtifactType) -> String {
-        snakeCaseEnumCaseName(type)
-    }
-
-    fileprivate static func snapshotDelegationSubmittedMilestoneID(_ delegation: ProjectDelegationState) -> String? {
-        guard let reflectedValue = Mirror(reflecting: delegation)
-            .children
-            .first(where: { $0.label == "submittedMilestoneId" })?
-            .value
-        else {
-            return nil
-        }
-        return unwrapOptionalString(reflectedValue)
-    }
-
-    fileprivate static func snakeCaseEnumCaseName(_ value: some Any) -> String {
-        let rawName = String(describing: value)
-        guard !rawName.isEmpty else { return rawName }
-
-        var result = ""
-        result.reserveCapacity(rawName.count + 4)
-
-        for character in rawName {
-            if character.isUppercase, !result.isEmpty {
-                result.append("_")
-            }
-            result.append(contentsOf: String(character).lowercased())
-        }
-
-        return result
-    }
-
-    private static func unwrapOptionalString(_ value: Any) -> String? {
-        if let string = value as? String {
-            return string
-        }
-
-        let mirror = Mirror(reflecting: value)
-        guard mirror.displayStyle == .optional else {
-            return nil
-        }
-
-        return mirror.children.first?.value as? String
-    }
 }
 
 private struct LongPollMetadata: Decodable {
@@ -756,16 +660,6 @@ private struct SnapshotPayload: Decodable {
         delegations = try container.decodeIfPresent([SnapshotDelegationPayload].self, forKey: .delegations) ?? []
         runs = try container.decodeIfPresent([SnapshotRunPayload].self, forKey: .runs) ?? []
     }
-
-    init(_ snapshot: AppSnapshot) {
-        snapshotVersion = snapshot.snapshotVersion
-        projects = snapshot.projects.map(SnapshotProjectPayload.init)
-        sessions = snapshot.sessions.map(SnapshotSessionPayload.init)
-        shells = snapshot.shells.map(SnapshotShellPayload.init)
-        routing = snapshot.routing.map(SnapshotRoutingPayload.init)
-        delegations = snapshot.delegations.map(SnapshotDelegationPayload.init)
-        runs = snapshot.runs.map(SnapshotRunPayload.init)
-    }
 }
 
 private struct SnapshotProjectPayload: Decodable {
@@ -793,20 +687,6 @@ private struct SnapshotProjectPayload: Decodable {
         case sessionCount = "session_count"
         case activeCount = "active_count"
         case hasSession = "has_session"
-    }
-
-    init(_ project: ProjectSummary) {
-        projectId = project.projectId
-        workspaceId = project.workspaceId
-        projectPath = project.projectPath
-        state = RuntimeClient.snapshotSessionStateString(project.state)
-        updatedAt = project.updatedAt
-        stateChangedAt = project.stateChangedAt
-        representativeSessionId = project.representativeSessionId
-        latestSessionId = project.latestSessionId
-        sessionCount = project.sessionCount
-        activeCount = project.activeCount
-        hasSession = project.hasSession
     }
 }
 
@@ -846,31 +726,6 @@ private struct SnapshotSessionPayload: Decodable {
         case gcReason = "gc_reason"
         case isAlive = "is_alive"
     }
-
-    init(_ session: SessionSummary) {
-        sessionId = session.sessionId
-        pid = session.pid
-        cwd = session.cwd
-        projectId = session.projectId
-        projectPath = session.projectPath
-        workspaceId = session.workspaceId
-        state = RuntimeClient.snapshotSessionStateString(session.state)
-        stateChangedAt = session.stateChangedAt
-        updatedAt = session.updatedAt
-        lastEvent = session.lastEvent
-        lastActivityAt = session.lastActivityAt
-        toolsInFlight = session.toolsInFlight
-        stateSource = session.stateSource.map {
-            SnapshotStateSourcePayload(
-                eventKind: RuntimeClient.snakeCaseEnumCaseName($0.eventKind),
-                authority: RuntimeClient.snakeCaseEnumCaseName($0.authority),
-                observedAt: $0.observedAt,
-            )
-        }
-        lastAuthoritativeEventAt = session.lastAuthoritativeEventAt
-        gcReason = session.gcReason
-        isAlive = session.isAlive
-    }
 }
 
 private struct SnapshotStateSourcePayload: Decodable {
@@ -905,17 +760,6 @@ private struct SnapshotShellPayload: Decodable {
         case tmuxPane = "tmux_pane"
         case updatedAt = "updated_at"
     }
-
-    init(_ shell: ShellSignal) {
-        pid = shell.pid
-        cwd = shell.cwd
-        tty = shell.tty
-        parentApp = shell.parentApp
-        tmuxSession = shell.tmuxSession
-        tmuxClientTty = shell.tmuxClientTty
-        tmuxPane = shell.tmuxPane
-        updatedAt = shell.updatedAt
-    }
 }
 
 private struct SnapshotRoutingPayload: Decodable {
@@ -936,16 +780,6 @@ private struct SnapshotRoutingPayload: Decodable {
         case reason
         case updatedAt = "updated_at"
     }
-
-    init(_ route: RoutingView) {
-        workspaceId = route.workspaceId
-        projectPath = route.projectPath
-        status = RuntimeClient.snapshotRoutingStatusString(route.status)
-        target = CoreRoutingTarget(route.target)
-        reasonCode = route.reasonCode
-        reason = route.reason
-        updatedAt = route.updatedAt
-    }
 }
 
 private struct SnapshotDelegationReviewPayload: Decodable {
@@ -959,13 +793,6 @@ private struct SnapshotDelegationReviewPayload: Decodable {
         case briefPath = "brief_path"
         case manifestPath = "manifest_path"
         case requestedAt = "requested_at"
-    }
-
-    init(_ review: DelegationReviewState) {
-        milestoneId = review.milestoneId
-        briefPath = review.briefPath
-        manifestPath = review.manifestPath
-        requestedAt = review.requestedAt
     }
 }
 
@@ -995,20 +822,6 @@ private struct SnapshotDelegationPayload: Decodable {
         case submittedMilestoneId = "submitted_milestone_id"
         case currentReview = "current_review"
     }
-
-    init(_ delegation: ProjectDelegationState) {
-        projectPath = delegation.projectPath
-        workerId = delegation.workerId
-        ideaId = delegation.ideaId
-        worktreeName = delegation.worktreeName
-        worktreePath = delegation.worktreePath
-        sessionId = delegation.sessionId
-        status = RuntimeClient.snapshotDelegationStatusString(delegation.status)
-        startedAt = delegation.startedAt
-        updatedAt = delegation.updatedAt
-        submittedMilestoneId = RuntimeClient.snapshotDelegationSubmittedMilestoneID(delegation)
-        currentReview = delegation.currentReview.map(SnapshotDelegationReviewPayload.init)
-    }
 }
 
 private struct SnapshotCaptureClaimPayload: Decodable {
@@ -1022,13 +835,6 @@ private struct SnapshotCaptureClaimPayload: Decodable {
         case clientId = "client_id"
         case claimedAt = "claimed_at"
         case observedCaptureUrl = "observed_capture_url"
-    }
-
-    init(_ claim: CaptureClaim) {
-        captureRequestId = claim.captureRequestId
-        clientId = claim.clientId
-        claimedAt = claim.claimedAt
-        observedCaptureUrl = claim.observedCaptureUrl
     }
 }
 
@@ -1048,15 +854,6 @@ private struct SnapshotMediaArtifactPayload: Decodable {
         case height
         case durationSecs = "duration_secs"
     }
-
-    init(_ artifact: MediaArtifact) {
-        artifactType = RuntimeClient.snapshotMediaArtifactTypeString(artifact.artifactType)
-        path = artifact.path
-        label = artifact.label
-        width = artifact.width.map(Int.init)
-        height = artifact.height.map(Int.init)
-        durationSecs = artifact.durationSecs
-    }
 }
 
 private struct SnapshotMermaidSourcePayload: Decodable {
@@ -1067,26 +864,11 @@ private struct SnapshotMermaidSourcePayload: Decodable {
         case label
         case source
     }
-
-    init(_ source: MermaidSource) {
-        label = source.label
-        self.source = source.source
-    }
 }
 
-private struct SnapshotCheckpointDecisionPayload: Codable {
+private struct SnapshotCheckpointDecisionPayload: Decodable {
     let action: String
     let note: String?
-
-    init(action: String, note: String?) {
-        self.action = action
-        self.note = note
-    }
-
-    init(_ decision: CheckpointDecision) {
-        action = decision.action
-        note = decision.note
-    }
 }
 
 private struct SnapshotCheckpointPayload: Decodable {
@@ -1177,26 +959,6 @@ private struct SnapshotCheckpointPayload: Decodable {
             captureStatus = .failed(reason: payload.failed.reason)
         }
     }
-
-    init(_ checkpoint: ActiveCheckpoint) {
-        id = checkpoint.id
-        historyOrdinal = checkpoint.historyOrdinal
-        phaseId = checkpoint.phaseId
-        kind = RuntimeCheckpointKind(checkpoint.kind)
-        status = RuntimeClient.snapshotCheckpointStatusString(checkpoint.status)
-        title = checkpoint.title
-        summary = checkpoint.summary
-        briefPath = checkpoint.briefPath
-        manifestPath = checkpoint.manifestPath
-        mediaArtifacts = checkpoint.mediaArtifacts.map(SnapshotMediaArtifactPayload.init)
-        mermaidSources = checkpoint.mermaidSources.map(SnapshotMermaidSourcePayload.init)
-        captureStatus = RuntimeCaptureStatus(checkpoint.captureStatus)
-        captureUrl = checkpoint.captureUrl
-        captureClaim = checkpoint.captureClaim.map(SnapshotCaptureClaimPayload.init)
-        decision = checkpoint.decision.map(SnapshotCheckpointDecisionPayload.init)
-        createdAt = checkpoint.createdAt
-        decidedAt = checkpoint.decidedAt
-    }
 }
 
 private struct SnapshotPhasePayload: Decodable {
@@ -1274,41 +1036,6 @@ private struct SnapshotRunPayload: Decodable {
         ideaTitle = try container.decodeIfPresent(String.self, forKey: .ideaTitle)
         ideaDescription = try container.decodeIfPresent(String.self, forKey: .ideaDescription)
     }
-
-    init(_ run: RunState) {
-        id = run.id
-        projectPath = run.projectPath
-        methodId = run.methodId
-        methodName = run.methodName
-        status = RuntimeClient.snapshotRunStatusString(run.status)
-        sessionId = run.sessionId
-        delegationWorkerId = run.delegationWorkerId
-        statusMessage = run.statusMessage
-        phases = run.phases.map { phase in
-            SnapshotPhasePayload(
-                id: phase.id,
-                name: phase.name,
-                status: {
-                    switch phase.status {
-                    case .pending: "pending"
-                    case .active: "active"
-                    case .completed: "completed"
-                    case .skipped: "skipped"
-                    }
-                }(),
-                startedAt: phase.startedAt,
-                completedAt: phase.completedAt,
-            )
-        }
-        currentPhaseIndex = Int(run.currentPhaseIndex)
-        createdAt = run.createdAt
-        updatedAt = run.updatedAt
-        activeCheckpoint = run.activeCheckpoint.map(SnapshotCheckpointPayload.init)
-        pastCheckpoints = run.pastCheckpoints.map(SnapshotCheckpointPayload.init)
-        ideaId = run.ideaId
-        ideaTitle = run.ideaTitle
-        ideaDescription = run.ideaDescription
-    }
 }
 
 private struct ResolveRoutingRequest: Encodable {
@@ -1322,33 +1049,6 @@ private struct ResolveRoutingRequest: Encodable {
         case workspaceId = "workspace_id"
         case sessionName = "session_name"
         case clientTty = "client_tty"
-    }
-}
-
-private extension CoreRoutingTarget {
-    init(_ target: RoutingTarget) {
-        kind = RuntimeClient.snapshotRoutingTargetKindString(target.kind)
-        terminalApp = target.terminalApp
-        sessionName = target.sessionName
-        paneId = target.paneId
-        hostTty = target.hostTty
-    }
-}
-
-private extension RuntimeCaptureStatus {
-    init(_ status: CaptureStatus) {
-        switch status {
-        case .notRequested:
-            self = .notRequested
-        case .pending:
-            self = .pending
-        case .inProgress:
-            self = .inProgress
-        case .completed:
-            self = .completed
-        case let .failed(reason):
-            self = .failed(reason: reason)
-        }
     }
 }
 

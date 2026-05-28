@@ -357,39 +357,6 @@ pub struct MutateProjectCommand {
     pub display_name: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Enum)]
-#[serde(rename_all = "snake_case")]
-pub enum IdeaMutationKind {
-    Add,
-    Update,
-    Remove,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Record)]
-pub struct MutateIdeaCommand {
-    pub kind: IdeaMutationKind,
-    pub project_path: String,
-    pub idea_id: String,
-    pub title: Option<String>,
-    pub description: Option<String>,
-    pub status: Option<String>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Enum)]
-#[serde(rename_all = "snake_case")]
-pub enum WorktreeMutationKind {
-    Create,
-    Remove,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Record)]
-pub struct MutateWorktreeCommand {
-    pub kind: WorktreeMutationKind,
-    pub repo_path: String,
-    pub worktree_name: String,
-    pub force: bool,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Record)]
 pub struct MutateDelegationCommand {
     pub kind: DelegationMutationKind,
