@@ -2,7 +2,53 @@ use super::env::{which, which_with_fallback};
 use super::paths::resolve_symlink_target;
 use super::{DependencyStatus, HookSettingsStatus, HookStatus, SetupChecker};
 use fs_err as fs;
+use std::fmt;
 use std::process::Command;
+
+/// Typed failure modes from probing the hook binary. Replaces the previous
+/// string-packed `SYMLINK_BROKEN:target:reason` scheme that `check_hooks_status`
+/// had to `splitn`-parse back. `check_hooks_status` matches on these variants
+/// directly; the `Display` impl preserves the exact human-facing message text
+/// (notably "missing required subcommands", which a test asserts on).
+#[derive(Debug)]
+pub(super) enum BinaryProbeError {
+    /// Symlink exists but its target is missing (app moved or repo cleaned).
+    SymlinkBroken { target: String, reason: String },
+    /// Binary path does not exist.
+    NotFound,
+    /// Binary was killed by macOS (exit 137) — typically a Gatekeeper SIGKILL.
+    KilledByMacos,
+    /// Binary ran but `--help` failed with a non-success exit code.
+    ProbeFailed { code: i32, stderr: String },
+    /// `--help` succeeded but the output lacked required subcommands.
+    MissingSubcommands,
+    /// Failed to spawn the binary process at all.
+    SpawnFailed { message: String },
+}
+
+impl fmt::Display for BinaryProbeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            BinaryProbeError::SymlinkBroken { reason, .. } => write!(f, "{reason}"),
+            BinaryProbeError::NotFound => write!(f, "Binary not found"),
+            BinaryProbeError::KilledByMacos => {
+                write!(
+                    f,
+                    "Binary killed by macOS (exit 137). Try reinstalling the app."
+                )
+            }
+            BinaryProbeError::ProbeFailed { code, stderr } => {
+                write!(f, "Binary failed --help probe (exit {code}): {stderr}")
+            }
+            BinaryProbeError::MissingSubcommands => {
+                write!(f, "Binary missing required subcommands (`serve` and `cwd`)")
+            }
+            BinaryProbeError::SpawnFailed { message } => {
+                write!(f, "Failed to run binary: {message}")
+            }
+        }
+    }
+}
 
 impl SetupChecker {
     pub(super) fn check_all_dependencies(&self) -> Vec<DependencyStatus> {
@@ -80,17 +126,15 @@ impl SetupChecker {
             return HookStatus::NotInstalled;
         }
 
-        if let Err(reason) = self.verify_hook_binary() {
-            if reason.starts_with("SYMLINK_BROKEN:") {
-                let parts: Vec<&str> = reason.splitn(3, ':').collect();
-                if parts.len() >= 3 {
-                    return HookStatus::SymlinkBroken {
-                        target: parts[1].to_string(),
-                        reason: parts[2].to_string(),
-                    };
+        if let Err(error) = self.verify_hook_binary() {
+            return match error {
+                BinaryProbeError::SymlinkBroken { target, reason } => {
+                    HookStatus::SymlinkBroken { target, reason }
                 }
-            }
-            return HookStatus::BinaryBroken { reason };
+                other => HookStatus::BinaryBroken {
+                    reason: other.to_string(),
+                },
+            };
         }
 
         match self.hooks_registered_in_settings() {
@@ -134,21 +178,24 @@ impl SetupChecker {
         None
     }
 
-    pub(super) fn verify_hook_binary(&self) -> Result<(), String> {
+    pub(super) fn verify_hook_binary(&self) -> Result<(), BinaryProbeError> {
         let binary_path = self.get_hook_binary_path();
 
-        if let Some(target) = resolve_symlink_target(&binary_path)? {
-            if !target.target_path.exists() {
-                return Err(format!(
-                    "SYMLINK_BROKEN:{}:Symlink target no longer exists. \
-                     The app may have moved or `cargo clean` was run.",
-                    target.target_path.display()
-                ));
+        match resolve_symlink_target(&binary_path) {
+            Ok(Some(target)) if !target.target_path.exists() => {
+                return Err(BinaryProbeError::SymlinkBroken {
+                    target: target.target_path.display().to_string(),
+                    reason: "Symlink target no longer exists. \
+                             The app may have moved or `cargo clean` was run."
+                        .to_string(),
+                });
             }
+            Ok(_) => {}
+            Err(message) => return Err(BinaryProbeError::SpawnFailed { message }),
         }
 
         if !binary_path.exists() {
-            return Err("Binary not found".to_string());
+            return Err(BinaryProbeError::NotFound);
         }
 
         let output = Command::new(&binary_path)
@@ -161,29 +208,26 @@ impl SetupChecker {
             Ok(output) => {
                 let code = output.status.code().unwrap_or(-1);
                 if code == 137 {
-                    return Err(
-                        "Binary killed by macOS (exit 137). Try reinstalling the app.".to_string(),
-                    );
+                    return Err(BinaryProbeError::KilledByMacos);
                 }
                 if !output.status.success() {
                     let stderr = String::from_utf8_lossy(&output.stderr);
-                    return Err(format!(
-                        "Binary failed --help probe (exit {}): {}",
+                    return Err(BinaryProbeError::ProbeFailed {
                         code,
-                        stderr.trim()
-                    ));
+                        stderr: stderr.trim().to_string(),
+                    });
                 }
 
                 let stdout = String::from_utf8_lossy(&output.stdout);
                 if !(stdout.contains("serve") && stdout.contains("cwd")) {
-                    return Err(
-                        "Binary missing required subcommands (`serve` and `cwd`)".to_string()
-                    );
+                    return Err(BinaryProbeError::MissingSubcommands);
                 }
 
                 Ok(())
             }
-            Err(e) => Err(format!("Failed to run binary: {}", e)),
+            Err(e) => Err(BinaryProbeError::SpawnFailed {
+                message: e.to_string(),
+            }),
         }
     }
 }
@@ -409,11 +453,13 @@ mod tests {
 
         let checker = SetupChecker::new(storage);
         let result = checker.verify_hook_binary();
+        // The typed error's Display text must still contain the load-bearing
+        // "missing required subcommands" phrase after the BinaryProbeError move.
         assert!(
             result
                 .as_ref()
                 .err()
-                .is_some_and(|message| message.contains("missing required subcommands")),
+                .is_some_and(|error| error.to_string().contains("missing required subcommands")),
             "verify_hook_binary should reject help output missing required subcommands, got: {result:?}"
         );
     }

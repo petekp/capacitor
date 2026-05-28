@@ -7,13 +7,9 @@ impl CoreRuntime {
         gc_reference_time: Option<DateTime<Utc>>,
     ) -> Result<MutationOutcome, CoreRuntimeError> {
         let normalized = ingest::normalize_hook_event(command);
-        let mut state = self.lock_state()?;
-        let outcome = state.apply_hook_event_with_gc_reference_time(normalized, gc_reference_time);
-        self.bump_version_and_notify();
-        let snapshot = state.snapshot();
-        drop(state);
-        self.persist_snapshot(&snapshot)?;
-        Ok(outcome)
+        self.commit(|state| {
+            state.apply_hook_event_with_gc_reference_time(normalized, gc_reference_time)
+        })
     }
 
     pub fn ingest_hook_event_with_gc_reference_time(
@@ -29,30 +25,23 @@ impl CoreRuntime {
         &self,
         discovery: crate::observation::transcript::TranscriptDiscovery,
     ) -> Result<MutationOutcome, CoreRuntimeError> {
-        let mut state = self.lock_state()?;
-        let outcome = state.apply_transcript_discovery(discovery);
-        self.bump_version_and_notify();
-        let snapshot = state.snapshot();
-        drop(state);
-        self.persist_snapshot(&snapshot)?;
-        Ok(outcome)
+        self.commit(|state| state.apply_transcript_discovery(discovery))
     }
 
     pub fn unregister_shell(
         &self,
         command: domain::ShellUnregisterCommand,
     ) -> Result<MutationOutcome, CoreRuntimeError> {
-        let mut state = self.lock_state()?;
-        let outcome = state.apply_shell_unregister(command);
-        if outcome.ok {
-            self.bump_version_and_notify();
-        }
-        let snapshot = state.snapshot();
-        drop(state);
-        self.persist_snapshot(&snapshot)?;
-        Ok(outcome)
+        self.commit(|state| state.apply_shell_unregister(command))
     }
 
+    /// Rollback variant of [`CoreRuntime::commit`] for run mutations gated by an
+    /// external commit hook (e.g. a relay write). Locks once, snapshots the
+    /// prior state, applies the run mutation, and on an accepted mutation runs
+    /// `commit`. If `commit` fails, the reducer state is restored and an
+    /// `ok:false` outcome is returned. Obeys the same bump-on-ok rule as
+    /// [`CoreRuntime::commit`]: neither a rejected apply nor a failed `commit`
+    /// advances the change version or wakes long-pollers.
     pub fn mutate_run_with_commit<F>(
         &self,
         command: domain::MutateRunCommand,
@@ -61,25 +50,22 @@ impl CoreRuntime {
     where
         F: FnOnce() -> Result<(), String>,
     {
-        let mut state = self.lock_state()?;
-        let previous_state = state.clone();
-        let outcome = state.apply_run_mutation(command);
+        self.try_commit(|state| {
+            let previous_state = state.clone();
+            let outcome = state.apply_run_mutation(command);
 
-        if outcome.ok {
-            if let Err(error) = commit() {
-                *state = previous_state;
-                return Ok(MutationOutcome {
-                    ok: false,
-                    message: format!("run mutation commit failed: {error}"),
-                });
+            if outcome.ok {
+                if let Err(error) = commit() {
+                    *state = previous_state;
+                    return MutationOutcome {
+                        ok: false,
+                        message: format!("run mutation commit failed: {error}"),
+                    };
+                }
             }
-        }
 
-        self.bump_version_and_notify();
-        let snapshot = state.snapshot();
-        drop(state);
-        self.persist_snapshot(&snapshot)?;
-        Ok(outcome)
+            outcome
+        })
     }
 
     pub fn checkpoint_decision_relay_for(
@@ -126,131 +112,27 @@ impl CoreRuntime {
         command: IngestShellSignalCommand,
     ) -> Result<MutationOutcome, CoreRuntimeError> {
         let normalized = ingest::normalize_shell_signal(command);
-        let mut state = self.lock_state()?;
-        let outcome = state.apply_shell_signal(normalized);
-        self.bump_version_and_notify();
-        let snapshot = state.snapshot();
-        drop(state);
-        self.persist_snapshot(&snapshot)?;
-        Ok(outcome)
+        self.commit(|state| state.apply_shell_signal(normalized))
     }
 
     pub fn mutate_project(
         &self,
         command: MutateProjectCommand,
     ) -> Result<MutationOutcome, CoreRuntimeError> {
-        let mut state = self.lock_state()?;
-        let outcome = match command.kind {
-            ProjectMutationKind::Add => {
-                let normalized_path =
-                    crate::domain::normalize_path_for_matching(&command.project_path);
-                if normalized_path.is_empty() {
-                    MutationOutcome {
-                        ok: false,
-                        message: "project_path cannot be empty".to_string(),
-                    }
-                } else {
-                    let project_id = crate::domain::resolve_project_identity(&normalized_path)
-                        .map(|identity| identity.project_id)
-                        .unwrap_or_else(|| normalized_path.clone());
-                    let workspace_id = default_workspace_id(&normalized_path);
-                    let display_name = command
-                        .display_name
-                        .filter(|value| !value.trim().is_empty())
-                        .unwrap_or_else(|| display_name(&normalized_path));
-
-                    state.projects.insert(
-                        normalized_path.clone(),
-                        domain::ProjectSummary {
-                            project_path: normalized_path,
-                            project_id,
-                            workspace_id,
-                            display_name,
-                            state: domain::SessionState::Idle,
-                            state_changed_at: now_rfc3339(),
-                            updated_at: now_rfc3339(),
-                            representative_session_id: None,
-                            latest_session_id: None,
-                            session_count: 0,
-                            active_count: 0,
-                            has_session: false,
-                        },
-                    );
-
-                    MutationOutcome {
-                        ok: true,
-                        message: "project added".to_string(),
-                    }
-                }
-            }
-            ProjectMutationKind::Remove => {
-                let normalized_path =
-                    crate::domain::normalize_path_for_matching(&command.project_path);
-                state.projects.remove(&normalized_path);
-                state.delegations.remove(&normalized_path);
-                state
-                    .sessions
-                    .retain(|_, session| session.project_path != normalized_path);
-                MutationOutcome {
-                    ok: true,
-                    message: "project removed".to_string(),
-                }
-            }
-            ProjectMutationKind::Rename => {
-                let normalized_path =
-                    crate::domain::normalize_path_for_matching(&command.project_path);
-                if let Some(project) = state.projects.get_mut(&normalized_path) {
-                    if let Some(name) = command.display_name {
-                        if !name.trim().is_empty() {
-                            project.display_name = name;
-                        }
-                    }
-                    project.updated_at = now_rfc3339();
-                    MutationOutcome {
-                        ok: true,
-                        message: "project renamed".to_string(),
-                    }
-                } else {
-                    MutationOutcome {
-                        ok: false,
-                        message: "project not found".to_string(),
-                    }
-                }
-            }
-        };
-
-        if outcome.ok {
-            self.bump_version_and_notify();
-        }
-        let snapshot = state.snapshot();
-        drop(state);
-        self.persist_snapshot(&snapshot)?;
-        Ok(outcome)
+        self.commit(|state| state.apply_project_mutation(command))
     }
 
     pub fn mutate_delegation(
         &self,
         command: MutateDelegationCommand,
     ) -> Result<MutationOutcome, CoreRuntimeError> {
-        let mut state = self.lock_state()?;
-        let outcome = state.apply_delegation_mutation(command);
-        self.bump_version_and_notify();
-        let snapshot = state.snapshot();
-        drop(state);
-        self.persist_snapshot(&snapshot)?;
-        Ok(outcome)
+        self.commit(|state| state.apply_delegation_mutation(command))
     }
 
     pub fn mutate_run(
         &self,
         command: domain::MutateRunCommand,
     ) -> Result<MutationOutcome, CoreRuntimeError> {
-        let mut state = self.lock_state()?;
-        let outcome = state.apply_run_mutation(command);
-        self.bump_version_and_notify();
-        let snapshot = state.snapshot();
-        drop(state);
-        self.persist_snapshot(&snapshot)?;
-        Ok(outcome)
+        self.commit(|state| state.apply_run_mutation(command))
     }
 }

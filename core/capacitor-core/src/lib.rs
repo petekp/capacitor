@@ -31,9 +31,8 @@ use std::sync::{Arc, Condvar, Mutex};
 
 use chrono::{DateTime, Utc};
 use domain::{
-    default_workspace_id, display_name, now_rfc3339, AppSnapshot, IngestHookEventCommand,
-    IngestShellSignalCommand, MutateDelegationCommand, MutateProjectCommand, MutationOutcome,
-    ProjectMutationKind, ResolveRoutingCommand, RoutingView,
+    AppSnapshot, IngestHookEventCommand, IngestShellSignalCommand, MutateDelegationCommand,
+    MutateProjectCommand, MutationOutcome, ResolveRoutingCommand, RoutingView,
 };
 use runtime::{
     artifacts::{count_artifacts_in_dir, count_hooks_in_dir},
@@ -206,6 +205,44 @@ impl CoreRuntime {
     fn bump_version_and_notify(&self) {
         self.version.fetch_add(1, Ordering::Relaxed);
         self.notifier.notify();
+    }
+
+    /// Single mutation epilogue shared by every shaped state mutator.
+    ///
+    /// Locks the reducer state once, runs `mutate` to produce a
+    /// [`MutationOutcome`], applies ONE documented rule — bump the change
+    /// version and wake long-pollers **only when `outcome.ok`** — then
+    /// snapshots, drops the lock, and persists. A rejected mutation
+    /// (`outcome.ok == false`) changed no state, so it must neither advance the
+    /// change counter nor wake any waiter. See `core_ingest.rs::try_commit` for
+    /// the rollback variant used by run mutations with an external commit hook.
+    fn commit<F>(&self, mutate: F) -> Result<MutationOutcome, CoreRuntimeError>
+    where
+        F: FnOnce(&mut reduce::ReducerState) -> MutationOutcome,
+    {
+        let mut state = self.lock_state()?;
+        let outcome = mutate(&mut state);
+        if outcome.ok {
+            self.bump_version_and_notify();
+        }
+        let snapshot = state.snapshot();
+        drop(state);
+        self.persist_snapshot(&snapshot)?;
+        Ok(outcome)
+    }
+
+    /// Rollback-aware [`commit`] for mutators with an external commit hook.
+    ///
+    /// Shares the exact epilogue and the bump-on-ok rule of [`commit`]; the
+    /// `mutate` closure owns the rollback decision (it holds `&mut ReducerState`
+    /// and can restore a prior clone before returning an `ok:false` outcome).
+    /// Because the closure returns the *final* outcome, a rollback path that
+    /// returns `ok:false` is automatically excluded from the version bump.
+    fn try_commit<F>(&self, mutate: F) -> Result<MutationOutcome, CoreRuntimeError>
+    where
+        F: FnOnce(&mut reduce::ReducerState) -> MutationOutcome,
+    {
+        self.commit(mutate)
     }
 
     fn persist_snapshot(&self, snapshot: &AppSnapshot) -> Result<(), CoreRuntimeError> {

@@ -135,6 +135,133 @@ fn test_snapshot_version_stable_on_read() {
 }
 
 #[test]
+fn test_rejected_mutation_does_not_advance_change_counter() {
+    // B2 documented rule: bump_version_and_notify (which wakes long-pollers and
+    // advances the change counter exposed via app_snapshot().snapshot_version)
+    // must only fire when a mutation is accepted (MutationOutcome.ok == true).
+    // A rejected mutation changes no state, so it must not wake pollers or
+    // advance the counter. These triggers all sit on paths that bumped
+    // UNCONDITIONALLY before the commit() combinator landed, so this test was
+    // RED against pre-B2 code and proves the fix.
+    let runtime = CoreRuntime::new().expect("runtime");
+
+    let baseline = runtime.app_snapshot().expect("baseline snapshot");
+    assert_eq!(baseline.snapshot_version, 0);
+
+    // ingest_shell_signal with empty cwd/tty is a deterministic reducer reject.
+    let outcome = runtime
+        .ingest_shell_signal(IngestShellSignalCommand {
+            pid: 4242,
+            cwd: String::new(),
+            tty: String::new(),
+            parent_app: "terminal".to_string(),
+            tmux_session: None,
+            tmux_client_tty: None,
+            tmux_pane: None,
+            tmux_panes: vec![],
+            recorded_at: Utc::now().to_rfc3339(),
+        })
+        .expect("ingest shell signal");
+    assert!(!outcome.ok, "empty cwd/tty must be rejected");
+    assert_eq!(
+        runtime
+            .app_snapshot()
+            .expect("snapshot after rejected shell signal")
+            .snapshot_version,
+        baseline.snapshot_version,
+        "rejected shell signal must not advance the change counter",
+    );
+
+    // mutate_run with empty run_id is a deterministic reducer reject.
+    let mut bad_run = make_run_create_command("", "/repo/run");
+    bad_run.run_id = String::new();
+    let outcome = runtime.mutate_run(bad_run).expect("mutate run");
+    assert!(!outcome.ok, "empty run_id must be rejected");
+    assert_eq!(
+        runtime
+            .app_snapshot()
+            .expect("snapshot after rejected run")
+            .snapshot_version,
+        baseline.snapshot_version,
+        "rejected run mutation must not advance the change counter",
+    );
+
+    // mutate_delegation Complete on an absent delegation is a deterministic reject.
+    let mut complete = make_delegation_start_command("/repo/absent", "worker-absent");
+    complete.kind = DelegationMutationKind::Complete;
+    let outcome = runtime
+        .mutate_delegation(complete)
+        .expect("mutate delegation");
+    assert!(
+        !outcome.ok,
+        "completing an absent delegation must be rejected"
+    );
+    assert_eq!(
+        runtime
+            .app_snapshot()
+            .expect("snapshot after rejected delegation")
+            .snapshot_version,
+        baseline.snapshot_version,
+        "rejected delegation mutation must not advance the change counter",
+    );
+
+    // ingest_hook_event is the highest-volume ingest path. An empty event_id is a
+    // deterministic reducer reject (apply_hook_event_with_gc_reference_time returns
+    // ok:false before touching session state).
+    let mut bad_hook = make_hook_event_command("evt-reject", "session-reject", "/repo/reject");
+    bad_hook.event_id = String::new();
+    let outcome = runtime
+        .ingest_hook_event(bad_hook)
+        .expect("ingest hook event");
+    assert!(!outcome.ok, "empty event_id must be rejected");
+    assert_eq!(
+        runtime
+            .app_snapshot()
+            .expect("snapshot after rejected hook event")
+            .snapshot_version,
+        baseline.snapshot_version,
+        "rejected hook event must not advance the change counter",
+    );
+
+    // A long-poller waiting since the baseline version must NOT be woken by any
+    // of the rejected mutations above (the counter never advanced).
+    let woke =
+        runtime.wait_for_version_change(baseline.snapshot_version, StdDuration::from_millis(50));
+    assert_eq!(
+        woke, None,
+        "rejected mutations must not wake long-pollers waiting since the baseline version",
+    );
+}
+
+#[test]
+fn test_rejected_project_rename_does_not_advance_change_counter() {
+    // Positive control on an already-guarded path: mutate_project Rename of an
+    // absent project returns ok:false and (already) does not bump. This keeps
+    // explicit coverage of the guarded path after migration onto commit().
+    let runtime = CoreRuntime::new().expect("runtime");
+    let baseline = runtime.app_snapshot().expect("baseline snapshot");
+
+    let outcome = runtime
+        .mutate_project(MutateProjectCommand {
+            kind: ProjectMutationKind::Rename,
+            project_path: "/repo/never-added".to_string(),
+            display_name: Some("renamed".to_string()),
+        })
+        .expect("mutate project");
+    assert!(!outcome.ok, "renaming an absent project must be rejected");
+    assert!(outcome.message.contains("not found"));
+
+    assert_eq!(
+        runtime
+            .app_snapshot()
+            .expect("snapshot after rejected rename")
+            .snapshot_version,
+        baseline.snapshot_version,
+        "rejected project rename must not advance the change counter",
+    );
+}
+
+#[test]
 fn test_snapshot_idempotent_without_gc() {
     let storage = Arc::new(InMemorySnapshotStorage::default());
     storage
@@ -176,6 +303,14 @@ fn mutate_run_with_commit_rolls_back_accepted_mutation_when_commit_fails() {
     emit.checkpoint_title = Some("Commit checkpoint".to_string());
     runtime.mutate_run(emit).expect("emit checkpoint");
 
+    // Pin the no-bump-on-rollback contract: try_commit must not advance the change
+    // counter when the commit fails and the accepted mutation is rolled back, since
+    // the rolled-back ok:false outcome leaves no observable state change.
+    let version_before_rollback = runtime
+        .app_snapshot()
+        .expect("snapshot after setup mutations")
+        .snapshot_version;
+
     let mut submit = make_run_create_command("run-commit", "/repo/run");
     submit.kind = RunMutationKind::SubmitDecision;
     submit.checkpoint_id = Some("checkpoint-commit".to_string());
@@ -187,6 +322,15 @@ fn mutate_run_with_commit_rolls_back_accepted_mutation_when_commit_fails() {
 
     assert!(!outcome.ok);
     assert!(outcome.message.contains("run mutation commit failed"));
+
+    assert_eq!(
+        runtime
+            .app_snapshot()
+            .expect("snapshot after rolled-back commit")
+            .snapshot_version,
+        version_before_rollback,
+        "rolled-back commit-failing mutation must not advance the change counter",
+    );
 
     let snapshot = runtime.app_snapshot().expect("snapshot");
     let run = snapshot
